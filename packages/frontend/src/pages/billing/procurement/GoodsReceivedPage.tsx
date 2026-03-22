@@ -64,15 +64,34 @@ export default function GoodsReceivedPage() {
     staleTime: 30000,
   });
 
-  // Query for purchase orders (for create modal)
-  const { data: purchaseOrders = [] } = useQuery({
-    queryKey: ['purchase-orders', facilityId, 'for-grn'],
+  // Query for purchase orders (for create modal) — include sent and partially received
+  const { data: sentPOs2 = [] } = useQuery({
+    queryKey: ['purchase-orders', facilityId, 'for-grn-sent'],
     queryFn: () => procurementService.purchaseOrders.list({
       facilityId: facilityId || undefined,
-      status: 'sent', // Only sent POs can be received
+      status: 'sent' as any,
     }),
     staleTime: 30000,
   });
+  const { data: partialPOs2 = [] } = useQuery({
+    queryKey: ['purchase-orders', facilityId, 'for-grn-partial'],
+    queryFn: () => procurementService.purchaseOrders.list({
+      facilityId: facilityId || undefined,
+      status: 'partially_received' as any,
+    }),
+    staleTime: 30000,
+  });
+  const purchaseOrders = useMemo(() => {
+    const arr1 = Array.isArray(sentPOs2) ? sentPOs2 : [];
+    const arr2 = Array.isArray(partialPOs2) ? partialPOs2 : [];
+    const all = [...arr1, ...arr2];
+    const seen = new Set<string>();
+    return all.filter(po => {
+      if (seen.has(po.id)) return false;
+      seen.add(po.id);
+      return true;
+    });
+  }, [sentPOs2, partialPOs2]);
 
   // Mutations
   const createMutation = useMutation({

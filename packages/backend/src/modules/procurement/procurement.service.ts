@@ -431,6 +431,19 @@ export class ProcurementService {
       throw new BadRequestException('Only selected (approved) quotations can be converted to POs');
     }
 
+    // Enforce quotation validity period (PPDA compliance)
+    if (quotation.validUntil) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const validUntil = new Date(quotation.validUntil);
+      validUntil.setHours(0, 0, 0, 0);
+      if (validUntil < today) {
+        throw new BadRequestException(
+          `Quotation ${quotation.quotationNumber} expired on ${quotation.validUntil}. Request a new quotation from the supplier.`,
+        );
+      }
+    }
+
     const supplier = quotation.supplier;
     if (!supplier) throw new NotFoundException('Supplier not found on quotation');
     if (supplier.status !== SupplierStatus.ACTIVE) {
@@ -571,6 +584,24 @@ export class ProcurementService {
   }
 
   async createGoodsReceipt(dto: CreateGoodsReceiptDto, userId: string, tenantId?: string): Promise<GoodsReceiptNote> {
+    // Validate PO status — prevent receiving on fully received/closed/cancelled POs
+    if (dto.purchaseOrderId) {
+      const po = await this.poRepo.findOne({
+        where: { id: dto.purchaseOrderId, ...(tenantId ? { tenantId } : {}) },
+      });
+      if (!po) throw new NotFoundException('Purchase Order not found');
+      if ([POStatus.FULLY_RECEIVED, POStatus.CLOSED, POStatus.CANCELLED].includes(po.status)) {
+        throw new BadRequestException(
+          `Cannot receive delivery for PO ${po.orderNumber} — status is ${po.status.replace('_', ' ')}. Each delivery should be received only once per PO.`,
+        );
+      }
+      if (![POStatus.SENT, POStatus.PARTIALLY_RECEIVED].includes(po.status)) {
+        throw new BadRequestException(
+          `PO ${po.orderNumber} is not ready for delivery (status: ${po.status}). PO must be sent to the supplier first.`,
+        );
+      }
+    }
+
     const grnNumber = await this.generateGRNNumber(dto.facilityId, tenantId);
 
     // Calculate totals

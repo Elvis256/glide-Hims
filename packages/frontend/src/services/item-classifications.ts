@@ -11,6 +11,8 @@ export interface ItemCategory {
   icon?: string;
   sortOrder: number;
   isActive: boolean;
+  defaultRetailMarkup?: number;
+  defaultWholesaleMarkup?: number;
   createdAt: string;
   updatedAt: string;
 }

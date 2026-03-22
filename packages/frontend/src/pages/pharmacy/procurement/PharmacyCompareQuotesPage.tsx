@@ -428,7 +428,14 @@ export default function PharmacyCompareQuotesPage() {
       </div>
 
       {/* Create PO Modal */}
-      {showCreatePO && selectedQuotationForPO && (
+      {showCreatePO && selectedQuotationForPO && (() => {
+        const isExpired = selectedQuotationForPO.validUntil
+          ? new Date(selectedQuotationForPO.validUntil) < new Date(new Date().toISOString().split('T')[0])
+          : false;
+        const daysUntilExpiry = selectedQuotationForPO.validUntil
+          ? Math.ceil((new Date(selectedQuotationForPO.validUntil).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+          : null;
+        return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg">
             <div className="p-6 border-b border-gray-200">
@@ -442,6 +449,25 @@ export default function PharmacyCompareQuotesPage() {
                 <p className="font-medium text-blue-800">Total: {formatCurrency(selectedQuotationForPO.totalAmount)}</p>
                 <p className="text-blue-600">{selectedQuotationForPO.items?.length || 0} items • {selectedQuotationForPO.deliveryDays} days delivery</p>
               </div>
+              {/* Quotation validity warning */}
+              {selectedQuotationForPO.validUntil && (
+                <div className={`rounded-lg p-3 text-sm flex items-start gap-2 ${isExpired ? 'bg-red-50 border border-red-200' : daysUntilExpiry !== null && daysUntilExpiry <= 7 ? 'bg-yellow-50 border border-yellow-200' : 'bg-green-50 border border-green-200'}`}>
+                  <AlertCircle className={`w-4 h-4 mt-0.5 flex-shrink-0 ${isExpired ? 'text-red-500' : daysUntilExpiry !== null && daysUntilExpiry <= 7 ? 'text-yellow-500' : 'text-green-500'}`} />
+                  <div>
+                    <p className={`font-medium ${isExpired ? 'text-red-800' : daysUntilExpiry !== null && daysUntilExpiry <= 7 ? 'text-yellow-800' : 'text-green-800'}`}>
+                      {isExpired
+                        ? `Quotation expired on ${new Date(selectedQuotationForPO.validUntil).toLocaleDateString()}`
+                        : `Valid until ${new Date(selectedQuotationForPO.validUntil).toLocaleDateString()}`}
+                    </p>
+                    {!isExpired && daysUntilExpiry !== null && daysUntilExpiry <= 7 && (
+                      <p className="text-yellow-600">Expires in {daysUntilExpiry} day{daysUntilExpiry !== 1 ? 's' : ''} — act soon</p>
+                    )}
+                    {isExpired && (
+                      <p className="text-red-600">Request a new quotation from the supplier before creating a PO.</p>
+                    )}
+                  </div>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Expected Delivery Date</label>
                 <input type="date" value={poExpectedDelivery} onChange={(e) => setPoExpectedDelivery(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
@@ -471,15 +497,16 @@ export default function PharmacyCompareQuotesPage() {
                   deliveryAddress: poDeliveryAddress,
                   notes: poNotes,
                 })}
-                disabled={createPOMutation.isPending || !poExpectedDelivery}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50"
+                disabled={createPOMutation.isPending || !poExpectedDelivery || isExpired}
+                className={`px-4 py-2 rounded-lg text-sm disabled:opacity-50 ${isExpired ? 'bg-gray-400 text-white cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
               >
-                {createPOMutation.isPending ? 'Creating...' : 'Create Purchase Order'}
+                {createPOMutation.isPending ? 'Creating...' : isExpired ? 'Quotation Expired' : 'Create Purchase Order'}
               </button>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
