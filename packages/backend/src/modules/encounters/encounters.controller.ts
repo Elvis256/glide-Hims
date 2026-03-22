@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { EncountersService } from './encounters.service';
-import { CreateEncounterDto, UpdateEncounterDto, UpdateStatusDto, EncounterQueryDto, CompleteConsultationDto } from './encounters.dto';
+import { CreateEncounterDto, UpdateEncounterDto, UpdateStatusDto, EncounterQueryDto, CompleteConsultationDto, ReturnReasonDto } from './encounters.dto';
 import { AuthWithPermissions, AuthWithOwnership } from '../auth/decorators/auth.decorator';
 
 @ApiTags('Encounters')
@@ -112,7 +112,7 @@ export class EncountersController {
   @ApiOperation({ summary: 'Return patient to doctor with reason' })
   returnToDoctor(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: { reason: string },
+    @Body() dto: ReturnReasonDto,
     @Request() req: any,
   ) {
     return this.encountersService.returnToDoctor(id, dto.reason, req.user.id, req.user?.tenantId);
@@ -123,7 +123,7 @@ export class EncountersController {
   @ApiOperation({ summary: 'Return patient to pharmacy with reason' })
   returnToPharmacy(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: { reason: string },
+    @Body() dto: ReturnReasonDto,
     @Request() req: any,
   ) {
     return this.encountersService.returnToPharmacy(id, dto.reason, req.user.id, req.user?.tenantId);
@@ -134,7 +134,7 @@ export class EncountersController {
   @ApiOperation({ summary: 'Return patient to lab with reason' })
   returnToLab(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: { reason: string },
+    @Body() dto: ReturnReasonDto,
     @Request() req: any,
   ) {
     return this.encountersService.returnToLab(id, dto.reason, req.user.id, req.user?.tenantId);
