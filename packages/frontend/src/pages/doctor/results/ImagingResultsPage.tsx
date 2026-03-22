@@ -121,7 +121,7 @@ const transformPatient = (
         bodyPart: order.bodyPart || 'N/A',
         date: orderDate.toISOString().split('T')[0],
         time: orderDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-        radiologist: result?.radiologist?.fullName || (result?.reportedBy ? `${result.reportedBy.firstName} ${result.reportedBy.lastName}` : 'Pending Review'),
+        radiologist: result?.radiologist?.fullName || result?.reportedBy?.fullName || (result?.reportedBy ? `${result.reportedBy.firstName || ''} ${result.reportedBy.lastName || ''}`.trim() : '') || 'Pending Review',
         status: mapStatus(order, result),
         hasCriticalFindings: order.priority === 'stat',
         thumbnailPlaceholder: getThumbnailPlaceholder(order.modality),
