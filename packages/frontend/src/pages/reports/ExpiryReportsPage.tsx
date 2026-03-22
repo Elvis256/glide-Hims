@@ -27,6 +27,7 @@ import api from '../../services/api';
 import { formatCurrency } from '../../lib/currency';
 import { printService } from '../../lib/print';
 import { asList } from '../../utils/unwrapResponse';
+import { useFacilityId } from '../../lib/facility';
 
 interface ExpiryItem {
   id: string;
@@ -49,6 +50,7 @@ interface ExpirySummary {
 }
 
 export default function ExpiryReportsPage() {
+  const facilityId = useFacilityId();
   const [dateRange, setDateRange] = useState('all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -60,8 +62,8 @@ export default function ExpiryReportsPage() {
     queryFn: async () => {
       try {
         // Fetch inventory with expiry information
-        const response = await api.get('/inventory', {
-          params: { limit: 200, expiringWithin: 90 },
+        const response = await api.get(`/inventory/expiring/${facilityId}`, {
+          params: { days: 90 },
         });
         
         const inventory = asList(response.data);
