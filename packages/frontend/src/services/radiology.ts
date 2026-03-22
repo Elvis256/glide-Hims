@@ -36,12 +36,12 @@ export interface ImagingOrder {
   priority: 'routine' | 'urgent' | 'stat';
   status: 'ordered' | 'scheduled' | 'in_progress' | 'completed' | 'reported' | 'cancelled' | 'pending';
   orderedById: string;
-  orderedBy?: { firstName: string; lastName: string; fullName?: string };
+  orderedBy?: { fullName?: string; firstName?: string; lastName?: string };
   doctor?: { id: string; fullName: string };
   orderedAt: string;
   scheduledAt?: string;
   performedById?: string;
-  performedBy?: { firstName: string; lastName: string };
+  performedBy?: { fullName?: string; firstName?: string; lastName?: string };
   performedAt?: string;
   completedAt?: string; // Legacy alias for performedAt
   technologistNotes?: string;
@@ -61,11 +61,11 @@ export interface ImagingResult {
   findingCategory: 'normal' | 'abnormal' | 'critical' | 'incidental';
   isCritical: boolean;
   reportedById: string;
-  reportedBy?: { firstName: string; lastName: string };
+  reportedBy?: { fullName?: string; firstName?: string; lastName?: string };
   radiologist?: { id: string; fullName: string }; // Legacy alias
   reportedAt: string;
   verifiedById?: string;
-  verifiedBy?: { firstName: string; lastName: string };
+  verifiedBy?: { fullName?: string; firstName?: string; lastName?: string };
   verifiedAt?: string;
   status?: 'draft' | 'finalized' | 'pending' | 'preliminary' | 'final'; // Legacy support
   images?: Array<{ id: string; url: string; description?: string }>;
