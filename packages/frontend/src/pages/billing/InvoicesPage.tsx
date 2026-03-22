@@ -82,10 +82,11 @@ export default function InvoicesPage() {
   const [statusFilter, setStatusFilter] = useState<InvoiceStatus | 'all'>('all');
   const [customerTypeFilter, setCustomerTypeFilter] = useState<CustomerType | 'all'>('all');
   const [dateFilter, setDateFilter] = useState('');
+  const [dateToFilter, setDateToFilter] = useState('');
   const [selectedInvoices, setSelectedInvoices] = useState<string[]>([]);
   const [viewingInvoice, setViewingInvoice] = useState<Invoice | null>(null);
   const [viewingInvoiceItems, setViewingInvoiceItems] = useState<{ description: string; quantity: number; unitPrice: number }[]>([]);
-  const [showFilters, setShowFilters] = useState(false);
+  const [showFilters] = useState(false);
   const [cancellingInvoice, setCancellingInvoice] = useState<Invoice | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [returnDoctorInvoice, setReturnDoctorInvoice] = useState<Invoice | null>(null);
@@ -200,8 +201,12 @@ export default function InvoicesPage() {
 
   // Fetch invoices from API
   const { data: apiInvoices, isLoading } = useQuery({
-    queryKey: ['invoices', statusFilter],
-    queryFn: () => billingService.invoices.list({ status: getApiStatus(statusFilter) }),
+    queryKey: ['invoices', statusFilter, dateFilter, dateToFilter],
+    queryFn: () => billingService.invoices.list({
+      status: getApiStatus(statusFilter),
+      dateFrom: dateFilter || undefined,
+      dateTo: dateToFilter || undefined,
+    }),
     staleTime: 30000,
   });
 
@@ -336,12 +341,10 @@ export default function InvoicesPage() {
       const matchesSearch =
         invoice.invoiceNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
         invoice.customerName.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesStatus = statusFilter === 'all' || invoice.status === statusFilter;
       const matchesType = customerTypeFilter === 'all' || invoice.customerType === customerTypeFilter;
-      const matchesDate = !dateFilter || invoice.date === dateFilter;
-      return matchesSearch && matchesStatus && matchesType && matchesDate;
+      return matchesSearch && matchesType;
     });
-  }, [searchQuery, statusFilter, customerTypeFilter, dateFilter, invoices]);
+  }, [searchQuery, customerTypeFilter, invoices]);
 
   const summaryStats = useMemo(() => {
     const total = invoices.reduce((sum, inv) => sum + inv.amount, 0);
@@ -429,14 +432,49 @@ export default function InvoicesPage() {
             />
           </div>
 
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className={`flex items-center gap-2 px-3 py-2 border rounded-lg text-sm hover:bg-gray-50 ${showFilters ? 'bg-blue-50 border-blue-200' : ''}`}
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as InvoiceStatus | 'all')}
+            className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            <Filter className="w-4 h-4" />
-            Filters
-            <ChevronDown className={`w-4 h-4 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
-          </button>
+            <option value="all">All Status</option>
+            <option value="pending">Pending</option>
+            <option value="partial">Partial</option>
+            <option value="paid">Paid</option>
+            <option value="cancelled">Cancelled</option>
+            <option value="refunded">Refunded</option>
+          </select>
+
+          <div className="flex items-center gap-1">
+            <input
+              type="date"
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value)}
+              className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              title="From date"
+            />
+            <span className="text-gray-400 text-xs">to</span>
+            <input
+              type="date"
+              value={dateToFilter}
+              onChange={(e) => setDateToFilter(e.target.value)}
+              className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              title="To date"
+            />
+          </div>
+
+          {(statusFilter !== 'all' || dateFilter || dateToFilter) && (
+            <button
+              onClick={() => {
+                setStatusFilter('all');
+                setDateFilter('');
+                setDateToFilter('');
+              }}
+              className="text-sm text-blue-600 hover:underline whitespace-nowrap"
+            >
+              Clear filters
+            </button>
+          )}
 
           {selectedInvoices.length > 0 && (
             <div className="flex items-center gap-2 ml-auto">
@@ -452,61 +490,6 @@ export default function InvoicesPage() {
             </div>
           )}
         </div>
-
-        {showFilters && (
-          <div className="flex items-center gap-4 mt-3 pt-3 border-t">
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Status</label>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as InvoiceStatus | 'all')}
-                className="border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="all">All Status</option>
-                <option value="draft">Draft</option>
-                <option value="pending">Pending</option>
-                <option value="partial">Partial</option>
-                <option value="paid">Paid</option>
-                <option value="cancelled">Cancelled</option>
-                <option value="refunded">Refunded</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Customer Type</label>
-              <select
-                value={customerTypeFilter}
-                onChange={(e) => setCustomerTypeFilter(e.target.value as CustomerType | 'all')}
-                className="border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="all">All Types</option>
-                <option value="patient">Patient</option>
-                <option value="insurance">Insurance</option>
-                <option value="corporate">Corporate</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Date</label>
-              <input
-                type="date"
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-                className="border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            {(statusFilter !== 'all' || customerTypeFilter !== 'all' || dateFilter) && (
-              <button
-                onClick={() => {
-                  setStatusFilter('all');
-                  setCustomerTypeFilter('all');
-                  setDateFilter('');
-                }}
-                className="text-sm text-blue-600 hover:underline mt-4"
-              >
-                Clear filters
-              </button>
-            )}
-          </div>
-        )}
       </div>
 
       {/* Invoice List */}
