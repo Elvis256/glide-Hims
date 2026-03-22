@@ -56,9 +56,9 @@ export default function EncountersPage() {
   const [dateFilter, setDateFilter] = useState<string>('');
   const [showNewVisitModal, setShowNewVisitModal] = useState(false);
 
-  // Fetch encounters
+  // Fetch encounters — default to today if no date filter selected
   const { data: encountersData, isLoading } = useQuery({
-    queryKey: ['encounters', search, statusFilter, dateFilter],
+    queryKey: ['encounters', search, statusFilter, dateFilter, facilityId],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (search) params.set('search', search);
@@ -66,7 +66,13 @@ export default function EncountersPage() {
       if (dateFilter) {
         params.set('dateFrom', dateFilter);
         params.set('dateTo', dateFilter);
+      } else {
+        // Default to today
+        const today = new Date().toISOString().slice(0, 10);
+        params.set('dateFrom', today);
+        params.set('dateTo', today);
       }
+      if (facilityId) params.set('facilityId', facilityId);
       params.set('limit', '50');
       const response = await api.get(`/encounters?${params}`);
       return response.data as { data: Encounter[]; total: number };

@@ -604,7 +604,7 @@ export class EncountersService {
   async getTodayStats(facilityId: string, tenantId?: string): Promise<{
     total: number;
     waiting: number;
-    inProgress: number;
+    inConsultation: number;
     completed: number;
   }> {
     const today = new Date();
@@ -619,17 +619,14 @@ export class EncountersService {
       )
       .addSelect(
         `SUM(CASE WHEN encounter.status = 'in_consultation' THEN 1 ELSE 0 END)`,
-        'inProgress',
+        'inConsultation',
       )
       .addSelect(
         `SUM(CASE WHEN encounter.status IN ('completed', 'discharged') THEN 1 ELSE 0 END)`,
         'completed',
       )
       .where('encounter.facility_id = :facilityId', { facilityId })
-      .andWhere(
-        `(encounter.created_at >= :today OR encounter.status NOT IN ('completed', 'discharged', 'cancelled'))`,
-        { today },
-      );
+      .andWhere('encounter.created_at >= :today', { today });
 
     if (tenantId) {
       qb.andWhere('encounter.tenant_id = :tenantId', { tenantId });
@@ -640,7 +637,7 @@ export class EncountersService {
     return {
       total: parseInt(result.total, 10) || 0,
       waiting: parseInt(result.waiting, 10) || 0,
-      inProgress: parseInt(result.inProgress, 10) || 0,
+      inConsultation: parseInt(result.inConsultation, 10) || 0,
       completed: parseInt(result.completed, 10) || 0,
     };
   }
