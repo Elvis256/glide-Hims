@@ -27,6 +27,9 @@ import api from '../services/api';
 import { formatCurrency } from '../lib/currency';
 import { usePermissions } from '../components/PermissionGate';
 import AccessDenied from '../components/AccessDenied';
+import { printService } from '../lib/print';
+import { useInstitutionInfo } from '../lib/useInstitutionInfo';
+import { usePrintFormat } from '../lib/usePrintFormat';
 
 interface InvoiceItem {
   id: string;
@@ -105,6 +108,8 @@ export default function CashierPage() {
   const { hasPermission } = usePermissions();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const inst = useInstitutionInfo();
+  const { printFormat } = usePrintFormat();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
@@ -125,6 +130,7 @@ export default function CashierPage() {
     receiptNumber?: string;
     change: number;
   } | null>(null);
+  const [lastPaidInvoice, setLastPaidInvoice] = useState<Invoice | null>(null);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editingPrice, setEditingPrice] = useState<number>(0);
   // Fetch invoices
@@ -175,12 +181,19 @@ export default function CashierPage() {
       queryClient.invalidateQueries({ queryKey: ['invoices-pending-stats'] });
       queryClient.invalidateQueries({ queryKey: ['daily-revenue'] });
       const change = paymentAmount - (selectedInvoice?.balanceDue || 0);
+      const receiptNum = data?.receiptNumber || data?.data?.receiptNumber || '';
+      if (selectedInvoice) {
+        setLastPaidInvoice({
+          ...selectedInvoice,
+          payments: [{ id: data?.id || '', amount: paymentAmount, method: paymentMethod, receiptNumber: receiptNum, paidAt: new Date().toISOString() }, ...(selectedInvoice.payments || [])],
+        });
+      }
       setCompletedPayment({
         patientName: selectedInvoice?.patient?.fullName || selectedInvoice?.patient?.mrn || 'Patient',
         invoiceNumber: selectedInvoice?.invoiceNumber || '',
         amountPaid: paymentAmount,
         method: paymentMethod,
-        receiptNumber: data?.receiptNumber || data?.data?.receiptNumber,
+        receiptNumber: receiptNum,
         change: change > 0 ? change : 0,
       });
       setSelectedInvoice(null);
@@ -405,6 +418,41 @@ export default function CashierPage() {
     });
   };
 
+  const handlePrintReceipt = (invoice: Invoice, payment?: { receiptNumber: string; amount: number; method: string; paidAt: string }) => {
+    const variant = printService.getVariant(printFormat);
+    const header = printService.buildHeader(inst, variant);
+    const lastPayment = payment || invoice.payments?.[0];
+    if (!lastPayment) {
+      toast.error('No payment found for this invoice');
+      return;
+    }
+    const paidDate = new Date(lastPayment.paidAt);
+    const servicesHtml = (invoice.items || []).length > 0
+      ? `<div class="mb-2">
+          <div class="font-bold text-xs">Services:</div>
+          ${invoice.items.map(item => printService.kvRow(item.description, Number(item.amount).toLocaleString())).join('')}
+        </div>
+        <div class="border-dashed"></div>`
+      : '';
+    const body = `
+      <div class="text-center font-bold mb-2">PAYMENT RECEIPT</div>
+      <div class="border-dashed"></div>
+      ${printService.kvRow('Receipt No', lastPayment.receiptNumber, true)}
+      ${printService.kvRow('Invoice No', invoice.invoiceNumber)}
+      ${printService.kvRow('Date', `${paidDate.toLocaleDateString()} ${paidDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`)}
+      <div class="border-dashed" style="margin:6px 0;"></div>
+      ${printService.kvRow('Patient', invoice.patient?.fullName || 'Unknown', true)}
+      ${printService.kvRow('MRN', invoice.patient?.mrn || 'N/A')}
+      <div class="border-dashed" style="margin:6px 0;"></div>
+      ${servicesHtml}
+      ${printService.kvRow('TOTAL PAID', `UGX ${Number(lastPayment.amount).toLocaleString()}`, true)}
+      ${printService.kvRow('Payment Method', lastPayment.method.replace('_', ' '))}
+      <div class="border-dashed" style="margin:6px 0;"></div>
+    `;
+    const footer = printService.buildFooter(inst, variant);
+    printService.printBilling(header + body + footer, printFormat, { title: `Receipt ${lastPayment.receiptNumber}` });
+  };
+
   // Stats from dedicated endpoints (not affected by status filter)
   const pendingInvoices: Invoice[] = Array.isArray(pendingData) ? pendingData : (pendingData?.data || []);
   const pendingCount = pendingInvoices.length;
@@ -470,7 +518,9 @@ export default function CashierPage() {
             <div className="flex flex-col gap-3">
               <button
                 onClick={() => {
-                  navigate('/billing/reception/receipt', { state: { invoiceNumber: completedPayment.invoiceNumber } });
+                  if (lastPaidInvoice) {
+                    handlePrintReceipt(lastPaidInvoice);
+                  }
                 }}
                 className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
               >
@@ -980,7 +1030,7 @@ export default function CashierPage() {
                     </p>
                   </div>
                   <button
-                    onClick={() => navigate('/billing/reception/receipt', { state: { invoiceNumber: selectedInvoice.invoiceNumber } })}
+                    onClick={() => handlePrintReceipt(selectedInvoice)}
                     className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors"
                   >
                     <Printer className="w-4 h-4" />
