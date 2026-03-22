@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, FindOptionsWhere, DataSource } from 'typeorm';
+import { Repository, Like, ILike, FindOptionsWhere, DataSource } from 'typeorm';
 import { Item, StockLedger, StockBalance, MovementType } from '../../database/entities/inventory.entity';
 import {
   CreateItemDto,
@@ -66,23 +66,31 @@ export class InventoryService {
   }) {
     const { page = 1, limit = 20, search, category, isDrug, status, tenantId } = params;
 
-    const where: FindOptionsWhere<Item> = {};
-
+    // Build base filter conditions
+    const baseWhere: FindOptionsWhere<Item> = {};
     if (tenantId) {
-      (where as any).tenantId = tenantId;
-    }
-    if (search) {
-      // Search by name or code
-      where.name = Like(`%${search}%`);
+      (baseWhere as any).tenantId = tenantId;
     }
     if (category) {
-      where.category = category;
+      baseWhere.category = category;
     }
     if (isDrug !== undefined) {
-      where.isDrug = isDrug;
+      baseWhere.isDrug = isDrug;
     }
     if (status) {
-      where.status = status;
+      baseWhere.status = status as any;
+    }
+
+    // If search term, create OR conditions for name/code/genericName
+    let where: FindOptionsWhere<Item> | FindOptionsWhere<Item>[];
+    if (search) {
+      where = [
+        { ...baseWhere, name: ILike(`%${search}%`) },
+        { ...baseWhere, code: ILike(`%${search}%`) },
+        { ...baseWhere, genericName: ILike(`%${search}%`) },
+      ];
+    } else {
+      where = baseWhere;
     }
 
     const [data, total] = await this.itemRepository.findAndCount({
