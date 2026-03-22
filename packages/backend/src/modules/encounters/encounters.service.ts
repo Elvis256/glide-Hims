@@ -349,9 +349,9 @@ export class EncountersService {
 
   async updateStatus(id: string, status: EncounterStatus, providerId?: string, reason?: string, tenantId?: string): Promise<Encounter> {
     const saved = await this.dataSource.transaction(async (manager) => {
+      // Lock row first without relations (FOR UPDATE can't apply to outer joins)
       const encounter = await manager.findOne(Encounter, {
         where: { id, ...(tenantId ? { tenantId } : {}) },
-        relations: ['patient'],
         lock: { mode: 'pessimistic_write' },
       });
 
@@ -414,15 +414,21 @@ export class EncountersService {
 
   async returnToDoctor(id: string, reason: string, userId: string, tenantId?: string): Promise<Encounter> {
     const saved = await this.dataSource.transaction(async (manager) => {
+      // Lock row first without relations (FOR UPDATE can't apply to outer joins)
       const encounter = await manager.findOne(Encounter, {
         where: { id, ...(tenantId ? { tenantId } : {}) },
-        relations: ['patient'],
         lock: { mode: 'pessimistic_write' },
       });
 
       if (!encounter) {
         throw new NotFoundException('Encounter not found');
       }
+
+      // Load patient relation separately
+      const full = await manager.findOne(Encounter, {
+        where: { id },
+        relations: ['patient'],
+      });
 
       const originalStatus = encounter.status;
       this.validateStatusTransition(encounter.status, EncounterStatus.RETURN_TO_DOCTOR);
@@ -443,7 +449,9 @@ export class EncountersService {
         bounceCount,
       };
 
-      return manager.save(Encounter, encounter);
+      const result = await manager.save(Encounter, encounter);
+      if (full?.patient) result.patient = full.patient;
+      return result;
     });
 
     this.auditLogService.log({
