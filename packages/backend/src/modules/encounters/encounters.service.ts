@@ -263,7 +263,10 @@ export class EncountersService {
     }
 
     if (dateTo) {
-      qb.andWhere('encounter.created_at <= :dateTo', { dateTo });
+      // Add 1 day so '2026-03-21' covers the entire day (up to 2026-03-22 00:00:00)
+      const endOfDay = new Date(dateTo);
+      endOfDay.setDate(endOfDay.getDate() + 1);
+      qb.andWhere('encounter.created_at < :dateTo', { dateTo: endOfDay.toISOString().slice(0, 10) });
     }
 
     qb.orderBy('encounter.createdAt', 'DESC')
