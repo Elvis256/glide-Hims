@@ -411,9 +411,9 @@ export default function ConsumptionReportsPage() {
                   <td className="px-6 py-4 text-sm text-gray-500">{index + 1}</td>
                   <td className="px-6 py-4 text-sm font-medium text-gray-900">{item.name}</td>
                   <td className="px-6 py-4 text-sm text-gray-600">{item.category}</td>
-                  <td className="px-6 py-4 text-sm text-gray-900 text-right font-medium">{item.totalQuantity.toLocaleString()}</td>
-                  <td className="px-6 py-4 text-sm text-gray-900 text-right">{formatCurrency(item.totalValue)}</td>
-                  <td className="px-6 py-4 text-sm text-gray-900 text-right">{item.avgDailyConsumption}</td>
+                  <td className="px-6 py-4 text-sm text-gray-900 text-right font-medium">{(item.totalQuantity ?? 0).toLocaleString()}</td>
+                  <td className="px-6 py-4 text-sm text-gray-900 text-right">{formatCurrency(item.totalValue ?? 0)}</td>
+                  <td className="px-6 py-4 text-sm text-gray-900 text-right">{(item.avgDailyConsumption ?? 0).toLocaleString()}</td>
                   <td className="px-6 py-4">
                     <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full ${getTrendBadge(itemTrend)}`}>
                       {getTrendIcon(itemTrend)}
@@ -453,8 +453,8 @@ export default function ConsumptionReportsPage() {
                       <span className="text-sm font-medium text-gray-900">{dept.department}</span>
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-900 text-right">{dept.quantity.toLocaleString()}</td>
-                  <td className="px-6 py-4 text-sm text-gray-900 text-right font-medium">{formatCurrency(dept.value)}</td>
+                  <td className="px-6 py-4 text-sm text-gray-900 text-right">{(dept.quantity ?? 0).toLocaleString()}</td>
+                  <td className="px-6 py-4 text-sm text-gray-900 text-right font-medium">{formatCurrency(dept.value ?? 0)}</td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex items-center justify-end gap-2">
                       <div className="w-24 bg-gray-200 rounded-full h-2">
