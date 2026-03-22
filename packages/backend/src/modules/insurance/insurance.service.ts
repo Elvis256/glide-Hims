@@ -92,6 +92,88 @@ export class InsuranceService {
         .getRawOne(),
     ]);
 
+    // Enhanced KPIs
+    const tenantCond = tenantId ? 'claim.tenant_id = :tenantId' : '1=1';
+    const tenantParams = tenantId ? { tenantId } : {};
+
+    const [
+      approvalRateResult,
+      avgClaimTATResult,
+      outstandingAmountResult,
+      monthlyTrendResult,
+      denialRateResult,
+    ] = await Promise.all([
+      // Approval rate: approved+partially_approved+paid / total non-draft
+      this.claimRepo
+        .createQueryBuilder('claim')
+        .select(
+          `ROUND(
+            CASE WHEN COUNT(*) = 0 THEN 0
+            ELSE 100.0 * SUM(CASE WHEN claim.status IN (:...approvedStatuses) THEN 1 ELSE 0 END) / COUNT(*)
+            END, 1)`,
+          'rate',
+        )
+        .where('claim.facilityId = :facilityId', { facilityId })
+        .andWhere('claim.status != :draft', { draft: ClaimStatus.DRAFT })
+        .andWhere(tenantCond, tenantParams)
+        .setParameter('approvedStatuses', [ClaimStatus.APPROVED, ClaimStatus.PARTIALLY_APPROVED, ClaimStatus.PAID])
+        .getRawOne(),
+
+      // Average claim TAT (submission to payment) in days
+      this.claimRepo
+        .createQueryBuilder('claim')
+        .select('ROUND(AVG(EXTRACT(EPOCH FROM (claim.paidAt - claim.submittedAt)) / 86400), 1)', 'avgDays')
+        .where('claim.facilityId = :facilityId', { facilityId })
+        .andWhere('claim.paidAt IS NOT NULL')
+        .andWhere('claim.submittedAt IS NOT NULL')
+        .andWhere(tenantCond, tenantParams)
+        .getRawOne(),
+
+      // Outstanding amount: approved but unpaid
+      this.claimRepo
+        .createQueryBuilder('claim')
+        .select('COALESCE(SUM(claim.totalApproved - claim.totalPaid), 0)', 'total')
+        .where('claim.facilityId = :facilityId', { facilityId })
+        .andWhere('claim.status IN (:...outstandingStatuses)', {
+          outstandingStatuses: [ClaimStatus.APPROVED, ClaimStatus.PARTIALLY_APPROVED],
+        })
+        .andWhere(tenantCond, tenantParams)
+        .getRawOne(),
+
+      // Monthly trend: last 12 months
+      this.claimRepo
+        .createQueryBuilder('claim')
+        .select("TO_CHAR(claim.createdAt, 'YYYY-MM')", 'month')
+        .addSelect('COUNT(*)', 'submitted')
+        .addSelect(`SUM(CASE WHEN claim.status IN ('approved','partially_approved','paid') THEN 1 ELSE 0 END)`, 'approved')
+        .addSelect(`SUM(CASE WHEN claim.status = 'rejected' THEN 1 ELSE 0 END)`, 'denied')
+        .addSelect('COALESCE(SUM(claim.totalClaimed), 0)', 'claimedAmount')
+        .addSelect('COALESCE(SUM(claim.totalApproved), 0)', 'approvedAmount')
+        .addSelect('COALESCE(SUM(claim.totalPaid), 0)', 'paidAmount')
+        .where('claim.facilityId = :facilityId', { facilityId })
+        .andWhere("claim.createdAt >= NOW() - INTERVAL '12 months'")
+        .andWhere(tenantCond, tenantParams)
+        .groupBy("TO_CHAR(claim.createdAt, 'YYYY-MM')")
+        .orderBy('month', 'ASC')
+        .getRawMany(),
+
+      // Denial rate
+      this.claimRepo
+        .createQueryBuilder('claim')
+        .select(
+          `ROUND(
+            CASE WHEN COUNT(*) = 0 THEN 0
+            ELSE 100.0 * SUM(CASE WHEN claim.status = :rejected THEN 1 ELSE 0 END) / COUNT(*)
+            END, 1)`,
+          'rate',
+        )
+        .where('claim.facilityId = :facilityId', { facilityId })
+        .andWhere('claim.status != :draft', { draft: ClaimStatus.DRAFT })
+        .andWhere(tenantCond, tenantParams)
+        .setParameter('rejected', ClaimStatus.REJECTED)
+        .getRawOne(),
+    ]);
+
     return {
       totalProviders,
       activePolicies,
@@ -101,6 +183,19 @@ export class InsuranceService {
       totalClaimedThisMonth: parseFloat(totalClaimedThisMonth?.total || 0),
       totalApprovedThisMonth: parseFloat(totalApprovedThisMonth?.total || 0),
       totalPaidThisMonth: parseFloat(totalPaidThisMonth?.total || 0),
+      approvalRate: parseFloat(approvalRateResult?.rate || 0),
+      avgClaimTAT: parseFloat(avgClaimTATResult?.avgDays || 0),
+      outstandingAmount: parseFloat(outstandingAmountResult?.total || 0),
+      denialRate: parseFloat(denialRateResult?.rate || 0),
+      monthlyTrend: (monthlyTrendResult || []).map((r: any) => ({
+        month: r.month,
+        submitted: parseInt(r.submitted) || 0,
+        approved: parseInt(r.approved) || 0,
+        denied: parseInt(r.denied) || 0,
+        claimedAmount: parseFloat(r.claimedAmount) || 0,
+        approvedAmount: parseFloat(r.approvedAmount) || 0,
+        paidAmount: parseFloat(r.paidAmount) || 0,
+      })),
     };
   }
 
@@ -594,26 +689,146 @@ export class InsuranceService {
   }
 
   async getDenialsAnalysis(facilityId: string, startDate: string, endDate: string, tenantId?: string) {
-    const qb = this.claimRepo
-      .createQueryBuilder('claim')
-      .select('claim.denialCode', 'code')
-      .addSelect('claim.denialReason', 'reason')
-      .addSelect('COUNT(*)', 'count')
-      .addSelect('SUM(claim.totalClaimed)', 'totalClaimed')
-      .where('claim.facilityId = :facilityId', { facilityId })
-      .andWhere('claim.status = :status', { status: ClaimStatus.REJECTED })
-      .andWhere('claim.serviceDate BETWEEN :startDate AND :endDate', {
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
-      });
-    if (tenantId) qb.andWhere('claim.tenant_id = :tenantId', { tenantId });
-    const denials = await qb
-      .groupBy('claim.denialCode')
-      .addGroupBy('claim.denialReason')
-      .orderBy('count', 'DESC')
-      .getRawMany();
+    const tenantCond = tenantId ? 'claim.tenant_id = :tenantId' : '1=1';
+    const tenantParams = tenantId ? { tenantId } : {};
+    const dateRange = { startDate: new Date(startDate), endDate: new Date(endDate) };
 
-    return denials;
+    const [
+      summaryResult,
+      topDenialReasonsResult,
+      denialsByProviderResult,
+      denialTrendResult,
+      resubmissionResult,
+      resolutionResult,
+    ] = await Promise.all([
+      // Summary: totalDenied, totalDeniedValue, denialRate
+      this.claimRepo
+        .createQueryBuilder('claim')
+        .select('SUM(CASE WHEN claim.status = :rejected THEN 1 ELSE 0 END)', 'totalDenied')
+        .addSelect('COALESCE(SUM(CASE WHEN claim.status = :rejected THEN claim.totalClaimed ELSE 0 END), 0)', 'totalDeniedValue')
+        .addSelect('COUNT(*)', 'totalSubmitted')
+        .where('claim.facilityId = :facilityId', { facilityId })
+        .andWhere('claim.status != :draft', { draft: ClaimStatus.DRAFT })
+        .andWhere('claim.serviceDate BETWEEN :startDate AND :endDate', dateRange)
+        .andWhere(tenantCond, tenantParams)
+        .setParameter('rejected', ClaimStatus.REJECTED)
+        .getRawOne(),
+
+      // Top denial reasons
+      this.claimRepo
+        .createQueryBuilder('claim')
+        .select('COALESCE(claim.denialReason, \'Unspecified\')', 'reason')
+        .addSelect('COUNT(*)', 'count')
+        .addSelect('COALESCE(SUM(claim.totalClaimed), 0)', 'value')
+        .where('claim.facilityId = :facilityId', { facilityId })
+        .andWhere('claim.status = :status', { status: ClaimStatus.REJECTED })
+        .andWhere('claim.serviceDate BETWEEN :startDate AND :endDate', dateRange)
+        .andWhere(tenantCond, tenantParams)
+        .groupBy('claim.denialReason')
+        .orderBy('count', 'DESC')
+        .limit(10)
+        .getRawMany(),
+
+      // Denials by provider
+      this.claimRepo
+        .createQueryBuilder('claim')
+        .leftJoin('claim.provider', 'provider')
+        .select('provider.name', 'provider')
+        .addSelect('SUM(CASE WHEN claim.status = :rejected THEN 1 ELSE 0 END)', 'denied')
+        .addSelect('COUNT(*)', 'total')
+        .where('claim.facilityId = :facilityId', { facilityId })
+        .andWhere('claim.status != :draft', { draft: ClaimStatus.DRAFT })
+        .andWhere('claim.serviceDate BETWEEN :startDate AND :endDate', dateRange)
+        .andWhere(tenantCond, tenantParams)
+        .setParameter('rejected', ClaimStatus.REJECTED)
+        .groupBy('provider.name')
+        .orderBy('denied', 'DESC')
+        .getRawMany(),
+
+      // Denial trend by month
+      this.claimRepo
+        .createQueryBuilder('claim')
+        .select("TO_CHAR(claim.serviceDate, 'YYYY-MM')", 'month')
+        .addSelect('SUM(CASE WHEN claim.status = :rejected THEN 1 ELSE 0 END)', 'denied')
+        .addSelect(`SUM(CASE WHEN claim.status IN ('approved','partially_approved','paid') THEN 1 ELSE 0 END)`, 'approved')
+        .addSelect('COUNT(*)', 'total')
+        .where('claim.facilityId = :facilityId', { facilityId })
+        .andWhere('claim.status != :draft', { draft: ClaimStatus.DRAFT })
+        .andWhere('claim.serviceDate BETWEEN :startDate AND :endDate', dateRange)
+        .andWhere(tenantCond, tenantParams)
+        .setParameter('rejected', ClaimStatus.REJECTED)
+        .groupBy("TO_CHAR(claim.serviceDate, 'YYYY-MM')")
+        .orderBy('month', 'ASC')
+        .getRawMany(),
+
+      // Resubmission success rate: claims that were rejected then later approved (via appealed status)
+      this.claimRepo
+        .createQueryBuilder('claim')
+        .select('COUNT(*)', 'appealedTotal')
+        .addSelect(`SUM(CASE WHEN claim.status IN ('approved','partially_approved','paid') THEN 1 ELSE 0 END)`, 'appealedApproved')
+        .where('claim.facilityId = :facilityId', { facilityId })
+        .andWhere('claim.denialReason IS NOT NULL')
+        .andWhere('claim.status != :rejected', { rejected: ClaimStatus.REJECTED })
+        .andWhere('claim.status != :draft', { draft: ClaimStatus.DRAFT })
+        .andWhere(tenantCond, tenantParams)
+        .getRawOne(),
+
+      // Avg days to resolution (from submission to review for rejected claims)
+      this.claimRepo
+        .createQueryBuilder('claim')
+        .select('ROUND(AVG(EXTRACT(EPOCH FROM (claim.reviewedAt - claim.submittedAt)) / 86400), 1)', 'avgDays')
+        .where('claim.facilityId = :facilityId', { facilityId })
+        .andWhere('claim.status = :status', { status: ClaimStatus.REJECTED })
+        .andWhere('claim.reviewedAt IS NOT NULL')
+        .andWhere('claim.submittedAt IS NOT NULL')
+        .andWhere('claim.serviceDate BETWEEN :startDate AND :endDate', dateRange)
+        .andWhere(tenantCond, tenantParams)
+        .getRawOne(),
+    ]);
+
+    const totalDenied = parseInt(summaryResult?.totalDenied) || 0;
+    const totalSubmitted = parseInt(summaryResult?.totalSubmitted) || 0;
+
+    return {
+      totalDenied,
+      totalDeniedValue: parseFloat(summaryResult?.totalDeniedValue) || 0,
+      denialRate: totalSubmitted > 0 ? Math.round((totalDenied / totalSubmitted) * 1000) / 10 : 0,
+      topDenialReasons: (topDenialReasonsResult || []).map((r: any) => {
+        const count = parseInt(r.count) || 0;
+        return {
+          reason: r.reason,
+          count,
+          value: parseFloat(r.value) || 0,
+          percentage: totalDenied > 0 ? Math.round((count / totalDenied) * 1000) / 10 : 0,
+        };
+      }),
+      denialsByProvider: (denialsByProviderResult || []).map((r: any) => {
+        const denied = parseInt(r.denied) || 0;
+        const total = parseInt(r.total) || 0;
+        return {
+          provider: r.provider || 'Unknown',
+          denied,
+          total,
+          rate: total > 0 ? Math.round((denied / total) * 1000) / 10 : 0,
+        };
+      }),
+      denialTrend: (denialTrendResult || []).map((r: any) => {
+        const denied = parseInt(r.denied) || 0;
+        const total = parseInt(r.total) || 0;
+        return {
+          month: r.month,
+          denied,
+          approved: parseInt(r.approved) || 0,
+          rate: total > 0 ? Math.round((denied / total) * 1000) / 10 : 0,
+        };
+      }),
+      resubmissionSuccessRate: (() => {
+        const appealedTotal = parseInt(resubmissionResult?.appealedTotal) || 0;
+        const appealedApproved = parseInt(resubmissionResult?.appealedApproved) || 0;
+        return appealedTotal > 0 ? Math.round((appealedApproved / appealedTotal) * 1000) / 10 : 0;
+      })(),
+      avgDaysToResolution: parseFloat(resolutionResult?.avgDays) || 0,
+    };
   }
 
   async getProviderPerformance(facilityId: string, startDate: string, endDate: string, tenantId?: string) {
@@ -876,5 +1091,41 @@ export class InsuranceService {
     }
 
     return savedClaim;
+  }
+
+  // ============ BATCH SUBMISSION ============
+  async batchSubmitClaims(
+    encounterIds: string[],
+    facilityId: string,
+    tenantId?: string,
+    userId?: string,
+  ): Promise<{
+    submitted: number;
+    failed: number;
+    errors: Array<{ encounterId: string; error: string }>;
+  }> {
+    let submitted = 0;
+    let failed = 0;
+    const errors: Array<{ encounterId: string; error: string }> = [];
+
+    for (const encounterId of encounterIds) {
+      try {
+        const claim = await this.createClaimFromEncounter(encounterId, facilityId, tenantId);
+        // Auto-submit the newly created claim
+        if (userId) {
+          await this.submitClaim(claim.id, userId, tenantId);
+        }
+        submitted++;
+      } catch (err: any) {
+        failed++;
+        errors.push({
+          encounterId,
+          error: err.message || 'Unknown error',
+        });
+        this.logger.warn(`Batch submit failed for encounter ${encounterId}: ${err.message}`);
+      }
+    }
+
+    return { submitted, failed, errors };
   }
 }

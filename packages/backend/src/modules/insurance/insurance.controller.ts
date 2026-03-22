@@ -255,6 +255,21 @@ export class InsuranceController {
   }
 
   // ============ REPORTS ============
+  @Get('reports/denials-analysis')
+  @AuthWithPermissions('insurance.reports.read')
+  @ApiOperation({ summary: 'Get detailed denials analysis' })
+  @ApiQuery({ name: 'facilityId', required: true })
+  @ApiQuery({ name: 'startDate', required: true })
+  @ApiQuery({ name: 'endDate', required: true })
+  async getDetailedDenialsAnalysis(
+    @Query('facilityId') facilityId: string,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @Request() req?: any,
+  ) {
+    return this.insuranceService.getDenialsAnalysis(facilityId, startDate, endDate, req?.user?.tenantId);
+  }
+
   @Get('reports/claim-status')
   @AuthWithPermissions('insurance.reports.read')
   @ApiOperation({ summary: 'Get claim status report' })
@@ -298,6 +313,24 @@ export class InsuranceController {
     @Request() req?: any,
   ) {
     return this.insuranceService.getProviderPerformance(facilityId, startDate, endDate, req?.user?.tenantId);
+  }
+
+  // ============ BATCH OPERATIONS ============
+  @Post('batch-submit')
+  @AuthWithPermissions('insurance.claims.create')
+  @ApiOperation({ summary: 'Batch create and submit claims from encounters' })
+  @ApiQuery({ name: 'facilityId', required: true })
+  async batchSubmitClaims(
+    @Body() body: { encounterIds: string[] },
+    @Query('facilityId') facilityId: string,
+    @Request() req: any,
+  ) {
+    return this.insuranceService.batchSubmitClaims(
+      body.encounterIds,
+      facilityId,
+      req.user?.tenantId,
+      req.user?.id,
+    );
   }
 
   // ============ ENCOUNTERS AWAITING CLAIMS ============
