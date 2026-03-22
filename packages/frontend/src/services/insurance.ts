@@ -181,8 +181,11 @@ export const insuranceService = {
 
   // Providers
   providers: {
-    list: async (): Promise<InsuranceProvider[]> => {
-      const response = await api.get<InsuranceProvider[]>('/insurance/providers');
+    list: async (facilityId?: string): Promise<InsuranceProvider[]> => {
+      const fId = facilityId || sessionStorage.getItem('glide_active_facility_id');
+      const response = await api.get<InsuranceProvider[]>('/insurance/providers', {
+        params: { facilityId: fId },
+      });
       return response.data;
     },
     getById: async (id: string): Promise<InsuranceProvider> => {
@@ -230,7 +233,10 @@ export const insuranceService = {
   // Pre-Authorization
   preAuth: {
     list: async (params?: { patientId?: string; status?: string }): Promise<PreAuth[]> => {
-      const response = await api.get<PreAuth[]>('/insurance/pre-auth', { params });
+      const facilityId = sessionStorage.getItem('glide_active_facility_id');
+      const response = await api.get<PreAuth[]>('/insurance/pre-auth', {
+        params: { facilityId, ...params },
+      });
       return response.data;
     },
     getById: async (id: string): Promise<PreAuth> => {
@@ -258,7 +264,10 @@ export const insuranceService = {
   // Claims
   claims: {
     list: async (params?: { patientId?: string; status?: string }): Promise<Claim[]> => {
-      const response = await api.get<Claim[]>('/insurance/claims', { params });
+      const facilityId = sessionStorage.getItem('glide_active_facility_id');
+      const response = await api.get<Claim[]>('/insurance/claims', {
+        params: { facilityId, ...params },
+      });
       return response.data;
     },
     getById: async (id: string): Promise<Claim> => {
