@@ -201,7 +201,7 @@ export const billingService = {
       return raw.map((p: any) => ({
         ...p,
         paymentMethod: p.method || p.paymentMethod,
-        receivedBy: p.receivedBy?.username || p.receivedBy,
+        receivedBy: p.receivedBy?.fullName || p.receivedBy?.username || p.receivedBy,
         patientName: p.patientName || p.invoice?.patient?.fullName,
       }));
     },

@@ -39,11 +39,23 @@ export default function PrintReceiptPage() {
   const { printFormat, setPrintFormat } = usePrintFormat();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedReceipt, setSelectedReceipt] = useState<PaymentReceipt | null>(null);
-  const [dateFilter, setDateFilter] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [dateFilter, setDateFilter] = useState<string>('');
 
   const { data: paymentsData, isLoading, error } = useQuery({
     queryKey: ['payments', dateFilter],
-    queryFn: () => billingService.payments.list({ startDate: dateFilter, endDate: dateFilter }),
+    queryFn: () => {
+      if (dateFilter) {
+        return billingService.payments.list({ startDate: dateFilter, endDate: dateFilter });
+      }
+      // No date filter: fetch recent receipts (last 30 days)
+      const end = new Date();
+      const start = new Date();
+      start.setDate(start.getDate() - 30);
+      return billingService.payments.list({
+        startDate: start.toISOString().split('T')[0],
+        endDate: end.toISOString().split('T')[0],
+      });
+    },
   });
 
   // Transform API payments to receipt format
@@ -272,8 +284,8 @@ export default function PrintReceiptPage() {
               <div className="flex items-center justify-center h-full text-gray-400">
                 <div className="text-center">
                   <Receipt className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                  <p>No receipts found for this date</p>
-                  <p className="text-xs mt-1">Try selecting a different date</p>
+                  <p>No receipts found{dateFilter ? ' for this date' : ''}</p>
+                  <p className="text-xs mt-1">{dateFilter ? 'Try clearing the date filter to see all recent receipts' : 'No recent payments in the last 30 days'}</p>
                 </div>
               </div>
             ) : filteredReceipts.map((receipt) => (
