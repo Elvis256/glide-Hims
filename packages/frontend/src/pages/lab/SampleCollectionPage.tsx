@@ -207,7 +207,13 @@ export default function SampleCollectionPage() {
       }
       
       // Look up the lab test by code to get the real UUID
-      const labTest = await labService.tests.getByCode(firstTest.testCode || firstTest.testId);
+      let labTest = await labService.tests.getByCode(firstTest.testCode || firstTest.testId);
+      // Fallback: search by test name when code doesn't match catalog
+      if (!labTest && firstTest.testName) {
+        const allTests = await labService.tests.list({ search: firstTest.testName });
+        const tests = Array.isArray(allTests) ? allTests : (allTests as any)?.data || [];
+        labTest = tests.find((t: any) => t.name.toLowerCase().includes(firstTest.testName!.toLowerCase()));
+      }
       if (!labTest) {
         throw new Error(`Lab test not found for code: ${firstTest.testCode || firstTest.testId}`);
       }

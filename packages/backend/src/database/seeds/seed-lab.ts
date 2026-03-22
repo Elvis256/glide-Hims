@@ -467,15 +467,14 @@ export async function seedLabTests(dataSource: DataSource) {
     return;
   }
 
-  // Check if lab tests already exist
-  const existingCount = await labTestRepo.count();
-  if (existingCount > 0) {
-    console.log(`✅ Lab tests already seeded (${existingCount} tests found)`);
-    return;
-  }
-
   let created = 0;
+  let skipped = 0;
   for (const test of labTests) {
+    const existing = await labTestRepo.findOne({ where: { code: test.code } });
+    if (existing) {
+      skipped++;
+      continue;
+    }
     const labTest = labTestRepo.create({
       code: test.code,
       name: test.name,
@@ -491,7 +490,7 @@ export async function seedLabTests(dataSource: DataSource) {
     created++;
   }
 
-  console.log(`✅ Created ${created} lab tests`);
+  console.log(`✅ Created ${created} lab tests (${skipped} already existed)`);
   console.log('\n📋 Lab Test Categories:');
   console.log('   - Hematology: CBC, Hemoglobin, Differential, ESR, Coagulation, CD4');
   console.log('   - Chemistry: RFT, LFT, Lipids, Blood Sugar, HbA1c, Thyroid, PSA');
