@@ -278,7 +278,7 @@ export class InsuranceService {
     if (tenantId) where.tenantId = tenantId;
     return this.policyRepo.find({
       where,
-      relations: ['provider'],
+      relations: ['provider', 'patient'],
     });
   }
 

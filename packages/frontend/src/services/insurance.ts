@@ -30,17 +30,30 @@ export interface InsurancePolicy {
   patientId: string;
   providerId: string;
   provider?: InsuranceProvider;
+  patient?: {
+    id: string;
+    fullName: string;
+    mrn: string;
+  };
   policyNumber: string;
   memberNumber?: string;
   principalName?: string;
+  principalMemberNumber?: string;
+  memberType?: 'principal' | 'spouse' | 'child' | 'dependent';
   relationship?: string;
-  coverageType: 'inpatient' | 'outpatient' | 'comprehensive' | 'maternity' | 'dental';
+  coverageType: 'inpatient' | 'outpatient' | 'comprehensive' | 'maternity' | 'dental' | 'optical' | 'both';
   coverageLimit?: number;
+  annualLimit?: number;
   usedAmount?: number;
   copayPercent?: number;
-  startDate: string;
-  endDate: string;
-  status: 'active' | 'inactive' | 'expired' | 'suspended';
+  copayPercentage?: number;
+  copayAmount?: number;
+  effectiveDate?: string;
+  expiryDate?: string;
+  startDate?: string;
+  endDate?: string;
+  status: 'active' | 'inactive' | 'expired' | 'suspended' | 'pending' | 'cancelled';
+  isVerified?: boolean;
   verifiedAt?: string;
   createdAt: string;
 }
