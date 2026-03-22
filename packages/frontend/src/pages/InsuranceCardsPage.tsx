@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { asList } from '../utils/unwrapResponse';
 import {
   CreditCard,
   Search,
@@ -48,13 +49,13 @@ const mapPolicyStatus = (status: InsurancePolicy['status']): InsuranceCard['stat
 // Transform InsurancePolicy to InsuranceCard for UI display
 const policyToCard = (policy: InsurancePolicy): InsuranceCard => ({
   id: policy.id,
-  patientName: policy.principalName || 'Unknown Patient',
-  patientMrn: policy.patientId,
+  patientName: policy.patient?.fullName || policy.principalName || 'Unknown Patient',
+  patientMrn: policy.patient?.mrn || policy.patientId,
   provider: policy.provider?.name || 'Unknown Provider',
   policyNumber: policy.policyNumber,
-  membershipType: policy.coverageType.charAt(0).toUpperCase() + policy.coverageType.slice(1),
-  issueDate: policy.startDate,
-  expiryDate: policy.endDate,
+  membershipType: policy.coverageType ? policy.coverageType.charAt(0).toUpperCase() + policy.coverageType.slice(1) : 'N/A',
+  issueDate: policy.effectiveDate || policy.startDate || '',
+  expiryDate: policy.expiryDate || policy.endDate || '',
   status: mapPolicyStatus(policy.status),
   dependents: 0,
   cardNumber: policy.memberNumber || policy.policyNumber,
@@ -81,7 +82,10 @@ export default function InsuranceCardsPage() {
   // Fetch insurance policies from API
   const { data: policies = [], isLoading, error } = useQuery({
     queryKey: ['insurance-policies'],
-    queryFn: () => insuranceService.policies.list(),
+    queryFn: async () => {
+      const res = await insuranceService.policies.list();
+      return asList<InsurancePolicy>(res);
+    },
   });
 
   const createPolicyMutation = useMutation({

@@ -424,7 +424,7 @@ export default function InsurancePage() {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="text-sm text-gray-900">
-                    {policy.patient?.firstName} {policy.patient?.lastName}
+                    {policy.patient?.fullName || `${policy.patient?.firstName || ''} ${policy.patient?.lastName || ''}`.trim() || 'Unknown Patient'}
                   </div>
                   <div className="text-sm text-gray-500">{policy.patient?.mrn}</div>
                 </td>
@@ -536,7 +536,7 @@ export default function InsurancePage() {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="text-sm text-gray-900">
-                    {claim.patient?.firstName} {claim.patient?.lastName}
+                    {claim.patient?.fullName || `${claim.patient?.firstName || ''} ${claim.patient?.lastName || ''}`.trim() || 'Unknown Patient'}
                   </div>
                   <div className="text-sm text-gray-500">{claim.patient?.mrn}</div>
                 </td>
