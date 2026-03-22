@@ -6,11 +6,17 @@ import { BatchStockBalance } from '../../database/entities/batch-stock.entity';
 import {
   ExpiryAlert,
   ExpiryAlertStatus,
+  AlertLevel,
 } from '../../database/entities/inventory.entity';
 import { Appointment } from '../appointments/entities/appointment.entity';
 import { Provider } from '../../database/entities/provider.entity';
 import { User } from '../../database/entities/user.entity';
 import { InAppNotification, InAppNotificationType } from '../../database/entities/in-app-notification.entity';
+import { Facility } from '../../database/entities/facility.entity';
+import { ExpiryAlertConfig, ExpiryAlertHistory, AlertSeverity, AlertChannel } from '../../database/entities/expiry-alert.entity';
+import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../../database/entities/notification-config.entity';
 
 @Injectable()
 export class ScheduledTasksService {
@@ -29,69 +35,335 @@ export class ScheduledTasksService {
     private readonly userRepo: Repository<User>,
     @InjectRepository(InAppNotification)
     private readonly notificationRepo: Repository<InAppNotification>,
+    @InjectRepository(Facility)
+    private readonly facilityRepo: Repository<Facility>,
+    @InjectRepository(ExpiryAlertConfig)
+    private readonly expiryAlertConfigRepo: Repository<ExpiryAlertConfig>,
+    @InjectRepository(ExpiryAlertHistory)
+    private readonly expiryAlertHistoryRepo: Repository<ExpiryAlertHistory>,
+    private readonly inAppNotificationsService: InAppNotificationsService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /**
-   * Check for expiring medications daily at 7 AM.
-   * Creates ExpiryAlert records for batches expiring within 30 days.
+   * Check for expiring drugs daily at 7 AM.
+   * Queries all active facilities, finds items expiring within 30/60/90 days,
+   * creates ExpiryAlert records, sends in-app notifications and SMS for urgent items.
    */
-  @Cron('0 7 * * *', { name: 'check-medication-expiry' })
-  async checkMedicationExpiry() {
-    this.logger.log('Running medication expiry check...');
-    try {
-      const now = new Date();
-      const thirtyDaysFromNow = new Date();
-      thirtyDaysFromNow.setDate(now.getDate() + 30);
+  @Cron('0 7 * * *', { name: 'check-expiring-drugs' })
+  async checkExpiringDrugs() {
+    this.logger.log('Running daily drug expiry alert check...');
 
-      const batches = await this.batchStockRepo
-        .createQueryBuilder('batch')
-        .where('batch.expiry_date <= :expiry', { expiry: thirtyDaysFromNow })
-        .andWhere('batch.expiry_date > :now', { now })
-        .andWhere('batch.quantity > 0')
-        .andWhere('batch.deleted_at IS NULL')
+    let facilitiesChecked = 0;
+    let totalExpiringItems = 0;
+    let totalAlertsSent = 0;
+
+    try {
+      const facilities = await this.facilityRepo
+        .createQueryBuilder('facility')
+        .where('facility.status = :status', { status: 'active' })
+        .andWhere('facility.deleted_at IS NULL')
         .getMany();
 
-      this.logger.log(
-        `Found ${batches.length} batches expiring within 30 days`,
-      );
+      this.logger.log(`Found ${facilities.length} active facilities to check`);
 
-      for (const batch of batches) {
-        const existingAlert = await this.expiryAlertRepo.findOne({
-          where: {
-            itemId: batch.itemId,
-            batchNumber: batch.batchNumber,
-            status: ExpiryAlertStatus.ACTIVE,
-          },
-        });
-
-        if (!existingAlert) {
-          const daysUntilExpiry = Math.ceil(
-            (batch.expiryDate.getTime() - now.getTime()) /
-              (1000 * 60 * 60 * 24),
+      for (const facility of facilities) {
+        try {
+          const result = await this.processExpiringDrugsForFacility(facility);
+          facilitiesChecked++;
+          totalExpiringItems += result.expiringItems;
+          totalAlertsSent += result.alertsSent;
+        } catch (error) {
+          this.logger.error(
+            `Drug expiry check failed for facility ${facility.name} (${facility.id})`,
+            error instanceof Error ? error.stack : String(error),
           );
-
-          const alert = this.expiryAlertRepo.create({
-            itemId: batch.itemId,
-            batchNumber: batch.batchNumber,
-            expiryDate: batch.expiryDate,
-            alertDate: now,
-            quantity: Number(batch.quantity),
-            status:
-              daysUntilExpiry <= 7
-                ? ExpiryAlertStatus.ACTIVE
-                : ExpiryAlertStatus.NEAR_EXPIRY,
-            facilityId: batch.facilityId,
-          });
-
-          await this.expiryAlertRepo.save(alert);
         }
       }
 
-      this.logger.log('Medication expiry check completed');
+      this.logger.log(
+        `Drug expiry check completed — Checked ${facilitiesChecked} facilities, ` +
+        `found ${totalExpiringItems} expiring items, sent ${totalAlertsSent} alerts`,
+      );
     } catch (error) {
       this.logger.error(
-        'Medication expiry check failed',
+        'Drug expiry alert check failed',
         error instanceof Error ? error.stack : String(error),
+      );
+    }
+  }
+
+  private async processExpiringDrugsForFacility(
+    facility: Facility,
+  ): Promise<{ expiringItems: number; alertsSent: number }> {
+    const now = new Date();
+    const ninetyDaysFromNow = new Date();
+    ninetyDaysFromNow.setDate(now.getDate() + 90);
+
+    const batches = await this.batchStockRepo
+      .createQueryBuilder('batch')
+      .leftJoinAndSelect('batch.item', 'item')
+      .where('batch.facility_id = :facilityId', { facilityId: facility.id })
+      .andWhere('batch.expiry_date <= :expiry', { expiry: ninetyDaysFromNow })
+      .andWhere('batch.expiry_date > :now', { now })
+      .andWhere('batch.quantity > 0')
+      .andWhere('batch.status = :status', { status: 'active' })
+      .andWhere('batch.deleted_at IS NULL')
+      .orderBy('batch.expiry_date', 'ASC')
+      .getMany();
+
+    if (batches.length === 0) return { expiringItems: 0, alertsSent: 0 };
+
+    const urgentItems: BatchStockBalance[] = [];   // ≤30 days
+    const warningItems: BatchStockBalance[] = [];  // 31–60 days
+    const infoItems: BatchStockBalance[] = [];     // 61–90 days
+
+    for (const batch of batches) {
+      const daysUntilExpiry = Math.ceil(
+        (batch.expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
+      );
+
+      let alertLevel: AlertLevel;
+      let expiryStatus: ExpiryAlertStatus;
+
+      if (daysUntilExpiry <= 30) {
+        alertLevel = AlertLevel.URGENT;
+        expiryStatus = daysUntilExpiry <= 7
+          ? ExpiryAlertStatus.ACTIVE
+          : ExpiryAlertStatus.NEAR_EXPIRY;
+        urgentItems.push(batch);
+      } else if (daysUntilExpiry <= 60) {
+        alertLevel = AlertLevel.WARNING;
+        expiryStatus = ExpiryAlertStatus.NEAR_EXPIRY;
+        warningItems.push(batch);
+      } else {
+        alertLevel = AlertLevel.INFO;
+        expiryStatus = ExpiryAlertStatus.NEAR_EXPIRY;
+        infoItems.push(batch);
+      }
+
+      // Create or update ExpiryAlert record
+      const existingAlert = await this.expiryAlertRepo.findOne({
+        where: {
+          itemId: batch.itemId,
+          batchNumber: batch.batchNumber,
+          facilityId: facility.id,
+        },
+      });
+
+      if (existingAlert) {
+        existingAlert.daysUntilExpiry = daysUntilExpiry;
+        existingAlert.alertLevel = alertLevel;
+        existingAlert.quantity = Number(batch.quantity);
+        existingAlert.status = expiryStatus;
+        existingAlert.alertDate = now;
+        await this.expiryAlertRepo.save(existingAlert);
+      } else {
+        const alert = this.expiryAlertRepo.create({
+          itemId: batch.itemId,
+          batchNumber: batch.batchNumber,
+          expiryDate: batch.expiryDate,
+          alertDate: now,
+          quantity: Number(batch.quantity),
+          status: expiryStatus,
+          alertLevel,
+          daysUntilExpiry,
+          facilityId: facility.id,
+          tenantId: batch.tenantId,
+        });
+        await this.expiryAlertRepo.save(alert);
+      }
+    }
+
+    let alertsSent = 0;
+
+    // Send in-app notifications for urgent items (≤30 days)
+    if (urgentItems.length > 0) {
+      alertsSent += await this.sendExpiryInAppNotifications(
+        facility, urgentItems, AlertLevel.URGENT, 30,
+      );
+    }
+
+    // Send in-app notifications for warning items (31–60 days)
+    if (warningItems.length > 0) {
+      alertsSent += await this.sendExpiryInAppNotifications(
+        facility, warningItems, AlertLevel.WARNING, 60,
+      );
+    }
+
+    // Send SMS only for urgent items (≤30 days)
+    if (urgentItems.length > 0) {
+      alertsSent += await this.sendExpirySmsAlerts(facility, urgentItems);
+    }
+
+    // Record history for the facility
+    await this.recordAlertHistory(
+      facility, batches.length, urgentItems.length, warningItems.length, infoItems.length,
+    );
+
+    return { expiringItems: batches.length, alertsSent };
+  }
+
+  private async sendExpiryInAppNotifications(
+    facility: Facility,
+    items: BatchStockBalance[],
+    level: AlertLevel,
+    dayWindow: number,
+  ): Promise<number> {
+    try {
+      const pharmacyUserIds = await this.inAppNotificationsService.getUserIdsByRole(
+        ['pharmacist', 'pharmacy manager', 'pharmacy'],
+        facility.id,
+        facility.tenantId,
+      );
+
+      if (pharmacyUserIds.length === 0) return 0;
+
+      const titlePrefix = level === AlertLevel.URGENT ? '🚨' : '⚠️';
+      const typeLabel = level === AlertLevel.URGENT ? 'URGENT' : 'WARNING';
+      const itemNames = items
+        .slice(0, 5)
+        .map((b) => b.item?.name || b.itemId)
+        .join(', ');
+      const suffix = items.length > 5 ? ` and ${items.length - 5} more` : '';
+
+      await this.inAppNotificationsService.notifyMany(
+        pharmacyUserIds,
+        {
+          type: InAppNotificationType.GENERAL,
+          title: `${titlePrefix} Drug Expiry Alert — ${typeLabel}`,
+          message: `${items.length} item(s) expiring within ${dayWindow} days at ${facility.name}: ${itemNames}${suffix}`,
+          facilityId: facility.id,
+          senderName: 'System — Drug Expiry Monitor',
+          metadata: {
+            alertLevel: level,
+            dayWindow,
+            facilityId: facility.id,
+            facilityName: facility.name,
+            itemCount: items.length,
+            items: items.slice(0, 10).map((b) => ({
+              itemId: b.itemId,
+              itemName: b.item?.name,
+              batchNumber: b.batchNumber,
+              expiryDate: b.expiryDate,
+              quantity: Number(b.quantity),
+            })),
+          },
+        },
+        facility.tenantId,
+      );
+
+      // Mark alerts as in-app sent
+      await this.expiryAlertRepo
+        .createQueryBuilder()
+        .update(ExpiryAlert)
+        .set({ inAppSent: true })
+        .where('facility_id = :facilityId', { facilityId: facility.id })
+        .andWhere('alert_level = :level', { level })
+        .andWhere('in_app_sent = false')
+        .execute();
+
+      return pharmacyUserIds.length;
+    } catch (error) {
+      this.logger.warn(
+        `Failed to send in-app expiry notifications for facility ${facility.name}: ${(error as Error).message}`,
+      );
+      return 0;
+    }
+  }
+
+  private async sendExpirySmsAlerts(
+    facility: Facility,
+    urgentItems: BatchStockBalance[],
+  ): Promise<number> {
+    try {
+      const smsConfigs = await this.notificationsService.getConfig(
+        facility.id,
+        NotificationType.SMS,
+        facility.tenantId,
+      );
+
+      const smsConfig = smsConfigs.find((c) => c.isEnabled);
+      if (!smsConfig) return 0;
+
+      // Check facility-level expiry alert config for phone numbers
+      const alertConfig = await this.expiryAlertConfigRepo.findOne({
+        where: { facilityId: facility.id, isActive: true },
+      });
+
+      const phones = alertConfig?.notifyPhones;
+      if (!phones || phones.length === 0) return 0;
+
+      const itemNames = urgentItems
+        .slice(0, 3)
+        .map((b) => b.item?.name || b.batchNumber)
+        .join(', ');
+      const suffix = urgentItems.length > 3 ? ` +${urgentItems.length - 3} more` : '';
+      const message =
+        `URGENT: ${urgentItems.length} drug(s) expiring within 30 days at ${facility.name}. ` +
+        `Items: ${itemNames}${suffix}. Please take action.`;
+
+      let smsSentCount = 0;
+      for (const phone of phones) {
+        try {
+          await this.notificationsService.sendSms(smsConfig, phone, message);
+          smsSentCount++;
+        } catch (error) {
+          this.logger.warn(
+            `Failed to send expiry SMS to ${phone} for facility ${facility.name}: ${(error as Error).message}`,
+          );
+        }
+      }
+
+      // Mark alerts as SMS sent
+      if (smsSentCount > 0) {
+        await this.expiryAlertRepo
+          .createQueryBuilder()
+          .update(ExpiryAlert)
+          .set({ smsSent: true })
+          .where('facility_id = :facilityId', { facilityId: facility.id })
+          .andWhere('alert_level = :level', { level: AlertLevel.URGENT })
+          .andWhere('sms_sent = false')
+          .execute();
+      }
+
+      return smsSentCount;
+    } catch (error) {
+      this.logger.warn(
+        `Failed to send expiry SMS alerts for facility ${facility.name}: ${(error as Error).message}`,
+      );
+      return 0;
+    }
+  }
+
+  private async recordAlertHistory(
+    facility: Facility,
+    totalItems: number,
+    urgentCount: number,
+    warningCount: number,
+    infoCount: number,
+  ): Promise<void> {
+    try {
+      let severity = AlertSeverity.LOW;
+      if (urgentCount > 0) severity = AlertSeverity.CRITICAL;
+      else if (warningCount > 0) severity = AlertSeverity.HIGH;
+      else if (infoCount > 0) severity = AlertSeverity.MEDIUM;
+
+      const history = this.expiryAlertHistoryRepo.create({
+        alertType: 'drug_expiry_daily',
+        itemsAffected: totalItems,
+        severity,
+        message: `Daily check: ${urgentCount} urgent (≤30d), ${warningCount} warning (31-60d), ${infoCount} info (61-90d)`,
+        channel: AlertChannel.IN_APP,
+        sentAt: new Date(),
+        facilityId: facility.id,
+        tenantId: facility.tenantId,
+      });
+
+      await this.expiryAlertHistoryRepo.save(history);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to record alert history for facility ${facility.name}: ${(error as Error).message}`,
       );
     }
   }

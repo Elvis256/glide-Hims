@@ -7,10 +7,26 @@ import { Appointment } from '../appointments/entities/appointment.entity';
 import { Provider } from '../../database/entities/provider.entity';
 import { User } from '../../database/entities/user.entity';
 import { InAppNotification } from '../../database/entities/in-app-notification.entity';
+import { Facility } from '../../database/entities/facility.entity';
+import { ExpiryAlertConfig, ExpiryAlertHistory } from '../../database/entities/expiry-alert.entity';
+import { InAppNotificationsModule } from '../in-app-notifications/in-app-notifications.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([ExpiryAlert, BatchStockBalance, Appointment, Provider, User, InAppNotification]),
+    TypeOrmModule.forFeature([
+      ExpiryAlert,
+      BatchStockBalance,
+      Appointment,
+      Provider,
+      User,
+      InAppNotification,
+      Facility,
+      ExpiryAlertConfig,
+      ExpiryAlertHistory,
+    ]),
+    InAppNotificationsModule,
+    NotificationsModule,
   ],
   providers: [ScheduledTasksService],
 })
