@@ -167,7 +167,8 @@ export class BillingService {
       .createQueryBuilder('invoice')
       .leftJoinAndSelect('invoice.items', 'items')
       .leftJoinAndSelect('invoice.patient', 'patient')
-      .leftJoinAndSelect('invoice.payments', 'payments');
+      .leftJoinAndSelect('invoice.payments', 'payments')
+      .leftJoinAndSelect('invoice.encounter', 'encounter');
 
     if (tenantId) {
       qb.andWhere('(invoice.tenant_id = :tenantId OR invoice.tenant_id IS NULL)', { tenantId });
@@ -679,7 +680,7 @@ export class BillingService {
     }
     return this.invoiceRepository.find({
       where,
-      relations: ['patient', 'items'],
+      relations: ['patient', 'items', 'encounter'],
       order: { createdAt: 'ASC' },
     });
   }

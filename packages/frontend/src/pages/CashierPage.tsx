@@ -55,6 +55,7 @@ interface Invoice {
   encounter?: {
     id: string;
     visitNumber: string;
+    type?: string;
     patient?: {
       id: string;
       mrn: string;
@@ -105,7 +106,7 @@ export default function CashierPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('pending');
+  const [statusFilter, setStatusFilter] = useState<string>('');
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [paymentMethod, setPaymentMethod] = useState<string>('cash');
@@ -137,6 +138,25 @@ export default function CashierPage() {
     },
   });
 
+  // Fetch stats separately (not affected by status filter)
+  const { data: pendingData } = useQuery({
+    queryKey: ['invoices-pending-stats'],
+    queryFn: async () => {
+      const response = await api.get('/billing/invoices/pending');
+      return response.data;
+    },
+    staleTime: 30000,
+  });
+
+  const { data: dailyRevenueData } = useQuery({
+    queryKey: ['daily-revenue'],
+    queryFn: async () => {
+      const response = await api.get('/billing/revenue/daily');
+      return response.data;
+    },
+    staleTime: 30000,
+  });
+
   // Payment mutation
   const [paymentError, setPaymentError] = useState<string | null>(null);
   
@@ -152,6 +172,8 @@ export default function CashierPage() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['invoices-pending-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['daily-revenue'] });
       const change = paymentAmount - (selectedInvoice?.balanceDue || 0);
       setCompletedPayment({
         patientName: selectedInvoice?.patient?.fullName || selectedInvoice?.patient?.mrn || 'Patient',
@@ -383,14 +405,11 @@ export default function CashierPage() {
     });
   };
 
-  // Stats - use correct field names and handle NaN
-  const pendingCount = invoices.filter((inv) => inv.status === 'pending' || inv.status === 'partially_paid').length;
-  const pendingAmount = invoices
-    .filter((inv) => ['pending', 'partially_paid'].includes(inv.status))
-    .reduce((sum, inv) => sum + (Number(inv.balanceDue) || 0), 0);
-  const todayCollected = invoices
-    .filter((inv) => inv.status === 'paid')
-    .reduce((sum, inv) => sum + (Number(inv.amountPaid) || 0), 0);
+  // Stats from dedicated endpoints (not affected by status filter)
+  const pendingInvoices: Invoice[] = Array.isArray(pendingData) ? pendingData : (pendingData?.data || []);
+  const pendingCount = pendingInvoices.length;
+  const pendingAmount = pendingInvoices.reduce((sum, inv) => sum + (Number(inv.balanceDue) || 0), 0);
+  const todayCollected = Number(dailyRevenueData?.totalCollected) || 0;
   
   // Change calculation for cash payments
   const changeAmount = selectedInvoice && paymentMethod === 'cash'
@@ -477,7 +496,7 @@ export default function CashierPage() {
           <p className="text-gray-600">Collect payments and issue receipts</p>
         </div>
         <button
-          onClick={() => refetch()}
+          onClick={() => { refetch(); queryClient.invalidateQueries({ queryKey: ['invoices-pending-stats'] }); queryClient.invalidateQueries({ queryKey: ['daily-revenue'] }); }}
           className="flex items-center gap-2 px-4 py-2 text-gray-600 bg-white border rounded-lg hover:bg-gray-50"
         >
           <RefreshCw className="w-4 h-4" />
@@ -586,7 +605,7 @@ export default function CashierPage() {
                         <span>{inv.patient?.mrn || inv.encounter?.patient?.mrn || 'N/A'}</span>
                       </div>
                       <p className="text-xs text-gray-500 mt-1">
-                        {inv.items?.length || 0} item(s) • {inv.encounter?.visitNumber || 'N/A'}
+                        {inv.items?.length || 0} item(s) • {inv.encounter?.type?.toUpperCase() || inv.items?.[0]?.chargeType || 'Walk-in'}
                       </p>
                     </div>
                     <div className="text-right">
