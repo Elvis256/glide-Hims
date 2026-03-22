@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { insuranceService } from '../services/insurance';
 import { formatCurrency } from '../lib/currency';
+import { asList } from '../utils/unwrapResponse';
 import {
   Shield,
   Users,
@@ -106,19 +107,23 @@ export default function InsurancePage() {
     setLoading(true);
     try {
       if (activeTab === 'dashboard') {
-        const [providersList, policiesList, claimsList, preAuthsList] = await Promise.all([
+        const [provRaw, polRaw, clmRaw, paRaw] = await Promise.all([
           insuranceService.providers.list(),
           insuranceService.policies.list(),
           insuranceService.claims.list(),
           insuranceService.preAuth.list(),
         ]);
+        const providersList = asList(provRaw);
+        const policiesList = asList(polRaw);
+        const claimsList = asList(clmRaw);
+        const preAuthsList = asList(paRaw);
         const now = new Date();
         const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
         setStats({
           totalProviders: providersList.length,
           activePolicies: policiesList.filter((p: any) => p.status === 'active').length,
           pendingClaims: claimsList.filter((c: any) => ['draft', 'submitted', 'processing'].includes(c.status)).length,
-          totalClaimsValue: claimsList.reduce((sum: number, c: any) => sum + (c.totalAmount || 0), 0),
+          totalClaimsValue: claimsList.reduce((sum: number, c: any) => sum + Number(c.totalAmount || 0), 0),
           pendingPreAuths: preAuthsList.filter((p: any) => ['pending', 'submitted'].includes(p.status)).length,
           claimsThisMonth: claimsList.filter((c: any) => new Date(c.createdAt) >= monthStart).length,
           approvedThisMonth: claimsList.filter((c: any) => c.status === 'approved' && new Date(c.createdAt) >= monthStart).length,
@@ -126,16 +131,16 @@ export default function InsurancePage() {
         });
       } else if (activeTab === 'providers') {
         const data = await insuranceService.providers.list();
-        setProviders(data as any);
+        setProviders(asList(data));
       } else if (activeTab === 'policies') {
         const data = await insuranceService.policies.list();
-        setPolicies(data as any);
+        setPolicies(asList(data));
       } else if (activeTab === 'claims') {
         const data = await insuranceService.claims.list();
-        setClaims(data as any);
+        setClaims(asList(data));
       } else if (activeTab === 'preauth') {
         const data = await insuranceService.preAuth.list();
-        setPreAuths(data as any);
+        setPreAuths(asList(data));
       }
     } catch (error) {
       console.error('Error loading data:', error);
