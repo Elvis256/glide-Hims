@@ -644,6 +644,7 @@ const navigationSections: NavSection[] = [
         permissions: ['insurance.read', 'insurance.create'],
         children: [
           { name: 'Insurance Dashboard', href: '/insurance', icon: ShieldCheck, permissions: ['insurance.read'] },
+          { name: 'Claims Analytics', href: '/insurance/dashboard', icon: BarChart3, permissions: ['insurance.read'] },
           { name: 'Claims', href: '/insurance/claims', icon: FileText, permissions: ['insurance.read'] },
           { name: 'Pre-auth', href: '/insurance/preauth', icon: FileCheck, permissions: ['insurance.create'] },
           { name: 'Providers', href: '/insurance/providers', icon: Building, permissions: ['insurance.read'] },
@@ -841,6 +842,7 @@ const navigationSections: NavSection[] = [
       { name: 'Drug Database', href: '/integrations/drugs', icon: Pill, permissions: ['pharmacy.read'] },
       { name: 'Lab Reference', href: '/integrations/lab-reference', icon: TestTube, permissions: ['lab.read'] },
       { name: 'SMS Notifications', href: '/integrations/sms', icon: MessageSquare, permissions: ['admin', 'notifications.create'] },
+      { name: 'DHIS2 Reporting', href: '/integrations/dhis2', icon: Database, permissions: ['admin', 'settings.manage'] },
     ],
   },
   // 14. Administration
