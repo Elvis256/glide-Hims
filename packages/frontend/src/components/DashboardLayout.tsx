@@ -486,6 +486,7 @@ const navigationSections: NavSection[] = [
           { name: 'Results Entry', href: '/lab/results', icon: ClipboardCheck, permissions: ['lab.update'] },
           { name: 'Lab Reports', href: '/lab/reports', icon: FileText, permissions: ['lab.read'] },
           { name: 'Lab Analytics', href: '/lab/analytics', icon: BarChart3, permissions: ['lab.read', 'analytics.read'] },
+          { name: 'Sample Referrals', href: '/lab/sample-referrals', icon: GitBranch, permissions: ['lab.read'] },
         ],
       },
       {
@@ -707,6 +708,7 @@ const navigationSections: NavSection[] = [
       { name: 'Inventory', href: '/inventory', icon: Package, permissions: ['inventory.read'] },
       { name: 'Unit Issue', href: '/stores/issue', icon: ArrowRightLeft, permissions: ['stores.create'] },
       { name: 'Store Transfers', href: '/stores/transfers', icon: ArrowDownUp, permissions: ['stores.update'] },
+      { name: 'Stock Transfers', href: '/inventory/transfers', icon: ArrowRightLeft, permissions: ['stores.update'] },
       {
         name: 'Procurement',
         icon: Truck,
@@ -762,6 +764,7 @@ const navigationSections: NavSection[] = [
           { name: 'Visit Reports', href: '/reports/visits', icon: ClipboardList, permissions: ['reports.read'] },
           { name: 'Disease Statistics', href: '/reports/diseases', icon: Activity, permissions: ['reports.read'] },
           { name: 'Mortality Reports', href: '/reports/mortality', icon: FileText, permissions: ['reports.read'] },
+          { name: 'HMIS 105', href: '/reports/hmis-105', icon: ClipboardList, permissions: ['reports.read'] },
         ],
       },
       {
