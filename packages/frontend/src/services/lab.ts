@@ -182,7 +182,12 @@ export const labService = {
     getByCode: async (code: string): Promise<LabTest | undefined> => {
       const response = await api.get('/lab/tests', { params: { search: code } });
       const tests = response.data as LabTest[];
-      return tests.find(t => t.code === code);
+      // Try exact code match first
+      const exactMatch = tests.find(t => t.code === code);
+      if (exactMatch) return exactMatch;
+      // Fallback: partial name match (handles service-catalog codes like LAB006)
+      return tests.find(t => t.name.toLowerCase().includes(code.toLowerCase()) || 
+                             code.toLowerCase().includes(t.name.toLowerCase()));
     },
     create: async (data: Partial<LabTest>): Promise<LabTest> => {
       const response = await api.post('/lab/tests', data);

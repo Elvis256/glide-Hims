@@ -113,12 +113,19 @@ export class LabService {
     const preparedSamples: LabSample[] = [];
 
     for (const tc of testCodes) {
-      // Resolve lab test by code
-      const labTest = await this.labTestRepo.findOne({
+      // Resolve lab test by code, with name-based fallback
+      let labTest = await this.labTestRepo.findOne({
         where: { code: tc.code, ...(tenantId ? { tenantId } : {}) },
       });
+      if (!labTest && tc.name) {
+        labTest = await this.labTestRepo
+          .createQueryBuilder('t')
+          .where('t.name ILIKE :name', { name: `%${tc.name}%` })
+          .andWhere(tenantId ? 't.tenant_id = :tenantId' : '1=1', { tenantId })
+          .getOne();
+      }
       if (!labTest) {
-        this.logger.warn(`Lab test not found for code: ${tc.code}, skipping`);
+        this.logger.warn(`Lab test not found for code: ${tc.code} (name: ${tc.name}), skipping`);
         continue;
       }
 
@@ -183,7 +190,21 @@ export class LabService {
     // Resolve labTestId from code if not provided
     let labTestId = dto.labTestId;
     if (!labTestId && dto.labTestCode) {
-      const labTest = await this.labTestRepo.findOne({ where: { code: dto.labTestCode, ...(tenantId ? { tenantId } : {}) } });
+      const tenantWhere = tenantId ? { tenantId } : {};
+      // Try exact code match first
+      let labTest = await this.labTestRepo.findOne({ where: { code: dto.labTestCode, ...tenantWhere } });
+      // Fallback: search by name (handles service-catalog codes like LAB006 → "HIV Test")
+      if (!labTest) {
+        const order = await this.orderRepo.findOne({ where: { id: dto.orderId } });
+        const testEntry = (order?.testCodes as any[])?.find((t: any) => t.code === dto.labTestCode);
+        if (testEntry?.name) {
+          labTest = await this.labTestRepo
+            .createQueryBuilder('t')
+            .where('t.name ILIKE :name', { name: `%${testEntry.name}%` })
+            .andWhere(tenantId ? 't.tenant_id = :tenantId' : '1=1', { tenantId })
+            .getOne();
+        }
+      }
       if (!labTest) {
         throw new NotFoundException(`Lab test not found with code: ${dto.labTestCode}`);
       }
