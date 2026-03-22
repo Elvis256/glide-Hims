@@ -520,6 +520,7 @@ export class BillingService {
       .createQueryBuilder('payment')
       .leftJoinAndSelect('payment.invoice', 'invoice')
       .leftJoinAndSelect('invoice.patient', 'patient')
+      .leftJoinAndSelect('invoice.items', 'items')
       .leftJoinAndSelect('payment.receivedBy', 'receivedBy');
 
     if (tenantId) {
