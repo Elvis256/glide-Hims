@@ -77,6 +77,9 @@ export interface CreateInvoiceDto {
   }>;
   taxPercent?: number;
   notes?: string;
+  paymentType?: 'cash' | 'insurance' | 'corporate' | 'membership';
+  insurancePolicyId?: string;
+  discountAmount?: number;
 }
 
 export interface AddInvoiceItemDto {
