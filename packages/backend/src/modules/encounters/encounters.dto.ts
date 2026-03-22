@@ -121,6 +121,12 @@ class DiagnosisDto {
   type: 'primary' | 'secondary' | 'differential';
 }
 
+export class ReturnReasonDto {
+  @IsString()
+  @IsNotEmpty({ message: 'Reason is required' })
+  reason: string;
+}
+
 export class CompleteConsultationDto {
   @IsString()
   @IsOptional()
