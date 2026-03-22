@@ -30,7 +30,8 @@ import {
 import { patientsService, type Patient as ApiPatient } from '../../../services/patients';
 import { billingService, type CreateInvoiceDto, type Invoice } from '../../../services/billing';
 import { servicesService, type Service } from '../../../services/services';
-import { insuranceService } from '../../../services/insurance';
+import { insuranceService, type InsurancePolicy } from '../../../services/insurance';
+import { getInsurancePriceLists, type InsurancePriceList } from '../../../services/pricing';
 import { useAuthStore } from '../../../store/auth';
 import { formatCurrency } from '../../../lib/currency';
 import { asList } from '../../../utils/unwrapResponse';
@@ -40,6 +41,8 @@ import { usePrintFormat } from '../../../lib/usePrintFormat';
 import PrintFormatSelector from '../../../components/PrintFormatSelector';
 
 interface InsuranceInfo {
+  policyId: string;
+  providerId: string;
   provider: string;
   policyNumber: string;
   copayPercent: number;
@@ -47,19 +50,11 @@ interface InsuranceInfo {
   usedAmount: number;
 }
 
-interface MembershipInfo {
-  type: string;
-  discountPercent: number;
-}
-
 interface Patient {
   id: string;
   mrn: string;
   fullName: string;
   phone: string;
-  paymentType: 'cash' | 'insurance' | 'membership';
-  insurance?: InsuranceInfo;
-  membership?: MembershipInfo;
 }
 
 // Helper to transform API patient to local Patient interface
@@ -68,22 +63,6 @@ const transformPatient = (apiPatient: ApiPatient): Patient => ({
   mrn: apiPatient.mrn,
   fullName: apiPatient.fullName,
   phone: apiPatient.phone || '',
-  paymentType: (apiPatient.paymentType as 'cash' | 'insurance' | 'membership') || 'cash',
-  insurance: apiPatient.paymentType === 'insurance' && apiPatient.insuranceProvider
-    ? {
-        provider: apiPatient.insuranceProvider,
-        policyNumber: apiPatient.insurancePolicyNumber || '',
-        copayPercent: 0,
-        coverageLimit: 0,
-        usedAmount: 0,
-      }
-    : undefined,
-  membership: apiPatient.paymentType === 'membership' && apiPatient.membershipType
-    ? {
-        type: apiPatient.membershipType,
-        discountPercent: 15,
-      }
-    : undefined,
 });
 
 interface BillItem {
@@ -91,10 +70,13 @@ interface BillItem {
   name: string;
   quantity: number;
   unitPrice: number;
+  cashPrice: number;
+  insurancePrice?: number;
   lineTotal: number;
 }
 
-type PaymentMethod = 'cash' | 'card' | 'mobile_money' | 'insurance';
+type PayerType = 'cash' | 'insurance';
+type PaymentMethod = 'cash' | 'card' | 'mobile_money';
 type DiscountType = 'percentage' | 'fixed';
 
 export default function NewOPDBillPage() {
@@ -110,9 +92,12 @@ export default function NewOPDBillPage() {
   const [serviceSearch, setServiceSearch] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
   const [billNumber, setBillNumber] = useState('');
+  const [payerType, setPayerType] = useState<PayerType>('cash');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [discountType, setDiscountType] = useState<DiscountType>('percentage');
   const [discountValue, setDiscountValue] = useState<number>(0);
+  const [selectedPolicy, setSelectedPolicy] = useState<InsurancePolicy | null>(null);
+  const [insurancePriceMap, setInsurancePriceMap] = useState<Record<string, number>>({});
 
   // Debounce search term
   useEffect(() => {
@@ -152,30 +137,63 @@ export default function NewOPDBillPage() {
     return asList(patientSearchData).map(transformPatient);
   }, [patientSearchData]);
 
-  // Fetch insurance policy for selected patient
+  // Fetch insurance policies for selected patient
   const { data: patientPolicies } = useQuery({
-    queryKey: ['insurance-policy', selectedPatient?.id],
+    queryKey: ['insurance-policies', selectedPatient?.id],
     queryFn: () => insuranceService.policies.getByPatient(selectedPatient!.id),
-    enabled: !!selectedPatient && selectedPatient.paymentType === 'insurance',
+    enabled: !!selectedPatient && payerType === 'insurance',
     staleTime: 60000,
   });
 
-  // Update selected patient's insurance details when policy loads
-  useEffect(() => {
-    if (patientPolicies && patientPolicies.length > 0 && selectedPatient?.paymentType === 'insurance') {
-      const activePolicy = patientPolicies.find(p => p.status === 'active') || patientPolicies[0];
-      setSelectedPatient(prev => prev ? {
-        ...prev,
-        insurance: {
-          provider: activePolicy.provider?.name || prev.insurance?.provider || '',
-          policyNumber: activePolicy.policyNumber || prev.insurance?.policyNumber || '',
-          copayPercent: activePolicy.copayPercent ?? 20,
-          coverageLimit: activePolicy.coverageLimit ?? 5000000,
-          usedAmount: activePolicy.usedAmount ?? 0,
-        },
-      } : prev);
-    }
+  const activePolicies = useMemo(() => {
+    const raw = asList(patientPolicies);
+    return raw.filter((p: InsurancePolicy) => p.status === 'active');
   }, [patientPolicies]);
+
+  // Auto-select first active policy
+  useEffect(() => {
+    if (activePolicies.length > 0 && !selectedPolicy) {
+      setSelectedPolicy(activePolicies[0]);
+    }
+  }, [activePolicies]);
+
+  // Fetch insurance price lists when a policy is selected
+  const { data: insurancePrices } = useQuery({
+    queryKey: ['insurance-prices', selectedPolicy?.providerId],
+    queryFn: () => getInsurancePriceLists({
+      insuranceProviderId: selectedPolicy!.providerId,
+      isActive: true,
+    }),
+    enabled: !!selectedPolicy?.providerId && payerType === 'insurance',
+    staleTime: 60000,
+  });
+
+  // Build insurance price map: serviceId → agreedPrice
+  useEffect(() => {
+    const priceList = asList(insurancePrices);
+    if (priceList.length > 0) {
+      const map: Record<string, number> = {};
+      priceList.forEach((ipl: InsurancePriceList) => {
+        if (ipl.serviceId) {
+          map[ipl.serviceId] = Number(ipl.agreedPrice);
+        }
+      });
+      setInsurancePriceMap(map);
+    } else {
+      setInsurancePriceMap({});
+    }
+  }, [insurancePrices]);
+
+  // When payer type changes, update bill item prices
+  useEffect(() => {
+    if (billItems.length === 0) return;
+    setBillItems(prev => prev.map(item => {
+      const price = payerType === 'insurance' && insurancePriceMap[item.serviceId]
+        ? insurancePriceMap[item.serviceId]
+        : item.cashPrice;
+      return { ...item, unitPrice: price, insurancePrice: insurancePriceMap[item.serviceId], lineTotal: item.quantity * price };
+    }));
+  }, [payerType, insurancePriceMap]);
 
   // Create invoice mutation
   const createInvoiceMutation = useMutation({
@@ -222,14 +240,18 @@ export default function NewOPDBillPage() {
         )
       );
     } else {
+      const insPrice = insurancePriceMap[service.id];
+      const effectivePrice = payerType === 'insurance' && insPrice ? insPrice : service.price;
       setBillItems([
         ...billItems,
         {
           serviceId: service.id,
           name: service.name,
           quantity: 1,
-          unitPrice: service.price,
-          lineTotal: service.price,
+          unitPrice: effectivePrice,
+          cashPrice: service.price,
+          insurancePrice: insPrice,
+          lineTotal: effectivePrice,
         },
       ]);
     }
@@ -271,16 +293,11 @@ export default function NewOPDBillPage() {
 
     const afterManualDiscount = subtotal - manualDiscount;
 
-    if (!selectedPatient) {
-      const tax = Math.round(afterManualDiscount * 0.18);
-      return { manualDiscount, insuranceCovers: 0, patientCopay: 0, membershipDiscount: 0, tax, totalDue: afterManualDiscount + tax };
-    }
-
-    if (selectedPatient.paymentType === 'insurance' && selectedPatient.insurance && paymentMethod === 'insurance') {
-      const remaining = selectedPatient.insurance.coverageLimit - selectedPatient.insurance.usedAmount;
-      const copayPercent = selectedPatient.insurance.copayPercent;
+    if (payerType === 'insurance' && selectedPolicy) {
+      const copayPercent = Number(selectedPolicy.copayPercent) || 20;
+      const remaining = (Number(selectedPolicy.coverageLimit) || 0) - (Number(selectedPolicy.usedAmount) || 0);
       const patientCopay = Math.round(afterManualDiscount * (copayPercent / 100));
-      const insuranceAmount = Math.min(afterManualDiscount - patientCopay, remaining);
+      const insuranceAmount = remaining > 0 ? Math.min(afterManualDiscount - patientCopay, remaining) : 0;
       const actualPatientPay = afterManualDiscount - insuranceAmount;
       return {
         manualDiscount,
@@ -292,24 +309,9 @@ export default function NewOPDBillPage() {
       };
     }
 
-    if (selectedPatient.paymentType === 'membership' && selectedPatient.membership) {
-      const membershipDiscountPercent = selectedPatient.membership.discountPercent;
-      const membershipDiscount = Math.round(afterManualDiscount * (membershipDiscountPercent / 100));
-      const afterMembership = afterManualDiscount - membershipDiscount;
-      const tax = Math.round(afterMembership * 0.18);
-      return {
-        manualDiscount,
-        insuranceCovers: 0,
-        patientCopay: 0,
-        membershipDiscount,
-        tax,
-        totalDue: afterMembership + tax,
-      };
-    }
-
     const tax = Math.round(afterManualDiscount * 0.18);
     return { manualDiscount, insuranceCovers: 0, patientCopay: 0, membershipDiscount: 0, tax, totalDue: afterManualDiscount + tax };
-  }, [selectedPatient, subtotal, discountType, discountValue, paymentMethod]);
+  }, [subtotal, discountType, discountValue, payerType, selectedPolicy]);
 
   const handleSaveDraft = () => {
     if (!selectedPatient || billItems.length === 0) {
@@ -353,8 +355,11 @@ export default function NewOPDBillPage() {
         unitPrice: item.unitPrice,
         discountPercent: discountType === 'percentage' ? discountValue : undefined,
       })),
-      taxPercent: 18, // 18% VAT
-      notes: `Payment method: ${paymentMethod}${discountAmount > 0 ? `, Discount applied: UGX ${discountAmount.toLocaleString()}` : ''}`,
+      taxPercent: payerType === 'insurance' ? 0 : 18,
+      paymentType: payerType === 'insurance' ? 'insurance' : 'cash',
+      insurancePolicyId: payerType === 'insurance' && selectedPolicy ? selectedPolicy.id : undefined,
+      discountAmount: discountAmount > 0 ? discountAmount : undefined,
+      notes: `Payment method: ${paymentMethod}${payerType === 'insurance' && selectedPolicy ? `, Insurance: ${selectedPolicy.provider?.name || 'N/A'} (${selectedPolicy.policyNumber})` : ''}${discountAmount > 0 ? `, Discount: UGX ${discountAmount.toLocaleString()}` : ''}`,
     };
 
     createInvoiceMutation.mutate(invoiceData);
@@ -469,6 +474,9 @@ export default function NewOPDBillPage() {
                 setSelectedPatient(null);
                 setBillItems([]);
                 setDiscountValue(0);
+                setPayerType('cash');
+                setSelectedPolicy(null);
+                setInsurancePriceMap({});
               }}
               className="flex-1 flex items-center justify-center gap-2 px-4 py-3 border border-gray-300 rounded-xl hover:bg-gray-50 font-medium transition-colors"
             >
@@ -560,32 +568,97 @@ export default function NewOPDBillPage() {
                   </button>
                 </div>
                 <div className="mt-3 pt-3 border-t border-blue-100">
-                  {selectedPatient.paymentType === 'insurance' && selectedPatient.insurance && (
-                    <div className="flex items-center gap-3 text-sm">
-                      <div className="flex items-center gap-1.5 bg-green-100 text-green-700 px-2.5 py-1 rounded-lg">
-                        <Shield className="w-3.5 h-3.5" />
-                        <span className="font-medium">{selectedPatient.insurance.provider}</span>
-                      </div>
-                      <span className="text-gray-500">
-                        Remaining: <span className="font-medium text-gray-700">{formatCurrency(selectedPatient.insurance.coverageLimit - selectedPatient.insurance.usedAmount)}</span>
-                      </span>
-                      <span className="text-gray-400">•</span>
-                      <span className="text-gray-500">Co-pay: <span className="font-medium text-gray-700">{selectedPatient.insurance.copayPercent}%</span></span>
-                    </div>
-                  )}
-                  {selectedPatient.paymentType === 'membership' && selectedPatient.membership && (
-                    <div className="flex items-center gap-2 text-sm">
-                      <div className="flex items-center gap-1.5 bg-purple-100 text-purple-700 px-2.5 py-1 rounded-lg">
-                        <CreditCard className="w-3.5 h-3.5" />
-                        <span className="font-medium">{selectedPatient.membership.type}</span>
-                      </div>
-                      <span className="text-gray-500">({selectedPatient.membership.discountPercent}% discount)</span>
-                    </div>
-                  )}
-                  {selectedPatient.paymentType === 'cash' && (
-                    <div className="flex items-center gap-1.5 text-sm bg-gray-100 text-gray-600 px-2.5 py-1 rounded-lg w-fit">
-                      <Banknote className="w-3.5 h-3.5" />
-                      <span className="font-medium">Self-Pay Patient</span>
+                  {/* Payer Type Selector */}
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">Payer Type</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { setPayerType('cash'); setSelectedPolicy(null); }}
+                      className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                        payerType === 'cash'
+                          ? 'bg-green-100 text-green-700 border-2 border-green-400 shadow-sm'
+                          : 'bg-gray-50 text-gray-500 border border-gray-200 hover:bg-gray-100'
+                      }`}
+                    >
+                      <Banknote className="w-4 h-4" />
+                      Cash / Self-Pay
+                    </button>
+                    <button
+                      onClick={() => setPayerType('insurance')}
+                      className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                        payerType === 'insurance'
+                          ? 'bg-purple-100 text-purple-700 border-2 border-purple-400 shadow-sm'
+                          : 'bg-gray-50 text-gray-500 border border-gray-200 hover:bg-gray-100'
+                      }`}
+                    >
+                      <Shield className="w-4 h-4" />
+                      Insurance
+                    </button>
+                  </div>
+
+                  {/* Insurance Policy Selector (shown when insurance payer type) */}
+                  {payerType === 'insurance' && (
+                    <div className="mt-3 space-y-2">
+                      {activePolicies.length === 0 ? (
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm">
+                          <div className="flex items-center gap-2 text-amber-700">
+                            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                            <span className="font-medium">No active insurance policies found</span>
+                          </div>
+                          <p className="text-amber-600 text-xs mt-1 ml-6">
+                            Please add an insurance policy for this patient in the Insurance module, or switch to Cash.
+                          </p>
+                        </div>
+                      ) : (
+                        <>
+                          <label className="text-xs font-medium text-gray-500 block">Select Insurance Policy</label>
+                          <div className="space-y-1.5">
+                            {activePolicies.map((policy: InsurancePolicy) => (
+                              <button
+                                key={policy.id}
+                                onClick={() => setSelectedPolicy(policy)}
+                                className={`w-full flex items-center justify-between p-2.5 rounded-lg text-left text-sm transition-all ${
+                                  selectedPolicy?.id === policy.id
+                                    ? 'bg-purple-50 border-2 border-purple-400 shadow-sm'
+                                    : 'bg-gray-50 border border-gray-200 hover:bg-gray-100'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <Shield className="w-4 h-4 text-purple-500" />
+                                  <div>
+                                    <p className="font-medium text-gray-800">{policy.provider?.name || 'Unknown Provider'}</p>
+                                    <p className="text-xs text-gray-500">#{policy.policyNumber} • {policy.coverageType}</p>
+                                  </div>
+                                </div>
+                                {selectedPolicy?.id === policy.id && (
+                                  <CheckCircle className="w-4 h-4 text-purple-600" />
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                          {selectedPolicy && (
+                            <div className="bg-purple-50 rounded-lg p-2.5 text-xs space-y-1">
+                              <div className="flex justify-between">
+                                <span className="text-gray-500">Coverage Limit</span>
+                                <span className="font-medium">{formatCurrency(Number(selectedPolicy.coverageLimit) || 0)}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-gray-500">Used</span>
+                                <span className="font-medium">{formatCurrency(Number(selectedPolicy.usedAmount) || 0)}</span>
+                              </div>
+                              <div className="flex justify-between text-purple-700 font-medium">
+                                <span>Remaining</span>
+                                <span>{formatCurrency((Number(selectedPolicy.coverageLimit) || 0) - (Number(selectedPolicy.usedAmount) || 0))}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-gray-500">Co-pay</span>
+                                <span className="font-medium">{Number(selectedPolicy.copayPercent) || 20}%</span>
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
@@ -619,9 +692,6 @@ export default function NewOPDBillPage() {
                         onClick={() => {
                           setSelectedPatient(patient);
                           setSearchTerm('');
-                          if (patient.paymentType === 'insurance') {
-                            setPaymentMethod('insurance');
-                          }
                         }}
                         className="w-full flex items-center gap-3 p-3 hover:bg-blue-50 text-left border-b last:border-b-0 transition-colors"
                       >
@@ -635,11 +705,6 @@ export default function NewOPDBillPage() {
                             {patient.phone && <span>• {patient.phone}</span>}
                           </p>
                         </div>
-                        {patient.paymentType !== 'cash' && (
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${patient.paymentType === 'insurance' ? 'bg-green-100 text-green-700' : 'bg-purple-100 text-purple-700'}`}>
-                            {patient.paymentType}
-                          </span>
-                        )}
                       </button>
                     ))}
                   </div>
@@ -703,6 +768,8 @@ export default function NewOPDBillPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
                   {filteredServices.map((service) => {
                     const isAdded = billItems.some(item => item.serviceId === service.id);
+                    const insPrice = insurancePriceMap[service.id];
+                    const showInsPrice = payerType === 'insurance' && insPrice != null;
                     return (
                       <button
                         key={service.id}
@@ -726,7 +793,16 @@ export default function NewOPDBillPage() {
                             <Tag className="w-3 h-3" />
                             {service.category}
                           </span>
-                          <span className="text-xs font-bold text-blue-600">{formatCurrency(service.price)}</span>
+                          <div className="text-right">
+                            {showInsPrice ? (
+                              <>
+                                <span className="text-xs font-bold text-purple-600">{formatCurrency(insPrice)}</span>
+                                <span className="text-[10px] text-gray-400 line-through ml-1">{formatCurrency(service.price)}</span>
+                              </>
+                            ) : (
+                              <span className="text-xs font-bold text-blue-600">{formatCurrency(service.price)}</span>
+                            )}
+                          </div>
                         </div>
                       </button>
                     );
@@ -846,8 +922,10 @@ export default function NewOPDBillPage() {
 
               {/* Payment Method */}
               <div className="border-t pt-3 mb-3 flex-shrink-0">
-                <span className="text-sm font-medium text-gray-700 mb-2 block">Payment Method</span>
-                <div className="grid grid-cols-2 gap-2">
+                <span className="text-sm font-medium text-gray-700 mb-2 block">
+                  {payerType === 'insurance' ? 'Co-pay Collection Method' : 'Payment Method'}
+                </span>
+                <div className="grid grid-cols-3 gap-2">
                   <button
                     onClick={() => setPaymentMethod('cash')}
                     className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${
@@ -875,22 +953,17 @@ export default function NewOPDBillPage() {
                     <Smartphone className="w-4 h-4" />
                     Mobile Money
                   </button>
-                  {selectedPatient?.paymentType === 'insurance' && (
-                    <button
-                      onClick={() => setPaymentMethod('insurance')}
-                      className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${
-                        paymentMethod === 'insurance' ? 'bg-purple-100 text-purple-700 border-purple-300' : 'bg-gray-50 text-gray-600'
-                      } border`}
-                    >
-                      <Shield className="w-4 h-4" />
-                      Insurance
-                    </button>
-                  )}
                 </div>
               </div>
 
               {/* Totals */}
               <div className="border-t pt-3 space-y-1.5 flex-shrink-0 text-sm">
+                {payerType === 'insurance' && selectedPolicy && (
+                  <div className="flex items-center gap-1.5 text-purple-700 bg-purple-50 px-2 py-1.5 rounded-lg mb-2">
+                    <Shield className="w-3.5 h-3.5" />
+                    <span className="font-medium text-xs">{selectedPolicy.provider?.name} — Insurance Pricing</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-gray-500">Subtotal</span>
                   <span className="font-medium">{formatCurrency(subtotal)}</span>
@@ -899,12 +972,6 @@ export default function NewOPDBillPage() {
                   <div className="flex justify-between text-orange-600">
                     <span>Discount ({discountType === 'percentage' ? `${discountValue}%` : 'Fixed'})</span>
                     <span>-{formatCurrency(billingCalculations.manualDiscount)}</span>
-                  </div>
-                )}
-                {billingCalculations.membershipDiscount > 0 && (
-                  <div className="flex justify-between text-purple-600">
-                    <span>Membership Discount</span>
-                    <span>-{formatCurrency(billingCalculations.membershipDiscount)}</span>
                   </div>
                 )}
                 {billingCalculations.insuranceCovers > 0 && (
@@ -920,7 +987,7 @@ export default function NewOPDBillPage() {
                   </div>
                 )}
                 <div className="flex justify-between text-lg font-bold pt-3 border-t border-dashed">
-                  <span>Total Due</span>
+                  <span>{payerType === 'insurance' ? 'Patient Pays' : 'Total Due'}</span>
                   <span className="text-blue-600">{formatCurrency(billingCalculations.totalDue)}</span>
                 </div>
               </div>
@@ -937,7 +1004,7 @@ export default function NewOPDBillPage() {
                 </button>
                 <button
                   onClick={handleGenerateBill}
-                  disabled={!selectedPatient || billItems.length === 0 || isCreatingInvoice}
+                  disabled={!selectedPatient || billItems.length === 0 || isCreatingInvoice || (payerType === 'insurance' && !selectedPolicy)}
                   className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 font-medium text-sm shadow-sm transition-colors"
                 >
                   {isCreatingInvoice ? (
