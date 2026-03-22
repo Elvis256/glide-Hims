@@ -3,7 +3,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { MembershipService } from './membership.service';
-import { CreateMembershipSchemeDto, UpdateMembershipSchemeDto, CreatePatientMembershipDto, UpdatePatientMembershipDto } from './membership.dto';
+import { CreateMembershipSchemeDto, UpdateMembershipSchemeDto, CreatePatientMembershipDto, UpdatePatientMembershipDto, RenewMembershipDto } from './membership.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 
 @ApiTags('Membership')
@@ -111,7 +111,7 @@ export class MembershipController {
   @Post('memberships/:id/renew')
   @AuthWithPermissions('membership.update')
   @ApiOperation({ summary: 'Renew patient membership' })
-  async renewMembership(@Param('id', ParseUUIDPipe) id: string, @Body() dto: { endDate: string }, @Request() req: any) {
+  async renewMembership(@Param('id', ParseUUIDPipe) id: string, @Body() dto: RenewMembershipDto, @Request() req: any) {
     return this.service.updateMembership(id, { endDate: dto.endDate, status: 'active' } as any, req.user?.tenantId);
   }
 

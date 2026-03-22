@@ -4,6 +4,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { AssetsService } from './assets.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { AssetStatus } from '../../database/entities/fixed-asset.entity';
+import { RunDepreciationDto, CompleteTransferDto } from './dto/assets.dto';
 
 @ApiTags('Assets')
 @ApiBearerAuth()
@@ -87,7 +88,7 @@ export class AssetsController {
   @AuthWithPermissions('assets.create')
   @ApiOperation({ summary: 'Run monthly depreciation' })
   async runDepreciation(
-    @Body() data: { facilityId: string; year: number; month: number },
+    @Body() data: RunDepreciationDto,
     @Request() req: any,
   ) {
     return this.assetsService.runDepreciation(data.facilityId, data.year, data.month, req.user?.tenantId);
@@ -159,7 +160,7 @@ export class AssetsController {
   @ApiOperation({ summary: 'Complete asset transfer' })
   async completeTransfer(
     @Param('transferId') transferId: string,
-    @Body() data: { receivedBy: string },
+    @Body() data: CompleteTransferDto,
     @Request() req: any,
   ) {
     return this.assetsService.completeTransfer(transferId, data.receivedBy, req.user?.tenantId);

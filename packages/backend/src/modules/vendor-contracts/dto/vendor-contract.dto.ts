@@ -101,3 +101,8 @@ export class RenewContractDto {
   @IsString()
   notes?: string;
 }
+
+export class TerminateContractDto {
+  @IsString()
+  reason: string;
+}

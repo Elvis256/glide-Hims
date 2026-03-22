@@ -954,3 +954,29 @@ export class GenerateRosterDto {
   @IsNotEmpty() @IsArray() employeeIds: string[];
   @IsNotEmpty() @IsArray() shiftPattern: { shiftDefinitionId: string; dayOfWeek: number }[];
 }
+
+// ============ STAFF LIFECYCLE DTOs ============
+
+export class DeactivateStaffDto {
+  @IsOptional()
+  @IsString()
+  reason?: string;
+}
+
+export class OffboardStaffDto {
+  @IsString()
+  @IsNotEmpty()
+  reason: string;
+
+  @IsOptional()
+  @IsDateString()
+  terminationDate?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  revokeAccess?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  deactivateAccount?: boolean;
+}

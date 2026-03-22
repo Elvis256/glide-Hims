@@ -4,6 +4,15 @@ import { OpenFDAService } from './openfda.service';
 import { AfricasTalkingService } from './africas-talking.service';
 import { LOINCService } from './loinc.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import {
+  CheckDrugInteractionsDto,
+  SendSmsDto,
+  SendBulkSmsDto,
+  SendAppointmentReminderDto,
+  SendLabResultsNotificationDto,
+  SendPrescriptionReadyDto,
+  CheckLabValueDto,
+} from './integrations.dto';
 
 @ApiTags('integrations')
 @Controller('integrations')
@@ -68,7 +77,7 @@ export class IntegrationsController {
   @Post('drugs/interactions')
   @AuthWithPermissions('pharmacy.read')
   @ApiOperation({ summary: 'Check drug interactions between medications' })
-  async checkDrugInteractions(@Body() dto: { drugs: string[] }) {
+  async checkDrugInteractions(@Body() dto: CheckDrugInteractionsDto) {
     if (!dto.drugs || dto.drugs.length < 2) {
       return { hasInteractions: false, interactions: [], message: 'Need at least 2 drugs to check' };
     }
@@ -124,7 +133,7 @@ export class IntegrationsController {
   @Post('sms/send')
   @AuthWithPermissions('notifications.create')
   @ApiOperation({ summary: 'Send SMS to a phone number' })
-  async sendSMS(@Body() dto: { to: string; message: string; from?: string }) {
+  async sendSMS(@Body() dto: SendSmsDto) {
     const result = await this.africasTalkingService.sendSMS(dto.to, dto.message, dto.from);
     return result;
   }
@@ -132,7 +141,7 @@ export class IntegrationsController {
   @Post('sms/send-bulk')
   @AuthWithPermissions('notifications.create')
   @ApiOperation({ summary: 'Send bulk SMS to multiple recipients' })
-  async sendBulkSMS(@Body() dto: { recipients: string[]; message: string; from?: string }) {
+  async sendBulkSMS(@Body() dto: SendBulkSmsDto) {
     const result = await this.africasTalkingService.sendBulkSMS(dto.recipients, dto.message, dto.from);
     return result;
   }
@@ -140,14 +149,7 @@ export class IntegrationsController {
   @Post('sms/appointment-reminder')
   @AuthWithPermissions('notifications.create')
   @ApiOperation({ summary: 'Send appointment reminder SMS' })
-  async sendAppointmentReminder(@Body() dto: {
-    phone: string;
-    patientName: string;
-    appointmentDate: string;
-    appointmentTime: string;
-    doctorName?: string;
-    hospitalName?: string;
-  }) {
+  async sendAppointmentReminder(@Body() dto: SendAppointmentReminderDto) {
     return this.africasTalkingService.sendAppointmentReminder(
       dto.phone,
       dto.patientName,
@@ -161,11 +163,7 @@ export class IntegrationsController {
   @Post('sms/lab-results')
   @AuthWithPermissions('notifications.create')
   @ApiOperation({ summary: 'Send lab results ready notification' })
-  async sendLabResultsNotification(@Body() dto: {
-    phone: string;
-    patientName: string;
-    hospitalName?: string;
-  }) {
+  async sendLabResultsNotification(@Body() dto: SendLabResultsNotificationDto) {
     return this.africasTalkingService.sendLabResultsNotification(
       dto.phone,
       dto.patientName,
@@ -176,11 +174,7 @@ export class IntegrationsController {
   @Post('sms/prescription-ready')
   @AuthWithPermissions('notifications.create')
   @ApiOperation({ summary: 'Send prescription ready notification' })
-  async sendPrescriptionReady(@Body() dto: {
-    phone: string;
-    patientName: string;
-    pharmacyLocation?: string;
-  }) {
+  async sendPrescriptionReady(@Body() dto: SendPrescriptionReadyDto) {
     return this.africasTalkingService.sendPrescriptionReady(
       dto.phone,
       dto.patientName,
@@ -233,7 +227,7 @@ export class IntegrationsController {
   @Post('loinc/check-value')
   @AuthWithPermissions('lab.read')
   @ApiOperation({ summary: 'Check if a lab value is within normal range' })
-  async checkLabValue(@Body() dto: { loincCode: string; value: number }) {
+  async checkLabValue(@Body() dto: CheckLabValueDto) {
     const result = this.loincService.checkValue(dto.loincCode, dto.value);
     return result;
   }

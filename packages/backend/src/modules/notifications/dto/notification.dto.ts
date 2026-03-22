@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString, IsNumber, IsBoolean, IsUUID } from 'class-validator';
+import { IsEnum, IsOptional, IsString, IsNumber, IsBoolean, IsUUID, IsArray, IsNotEmpty } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { NotificationType, NotificationProvider } from '../../../database/entities/notification-config.entity';
 import { ReminderType, ReminderChannel } from '../../../database/entities/patient-reminder.entity';
@@ -146,4 +146,29 @@ export class TestNotificationDto {
   @IsOptional()
   @IsString()
   testPhone?: string;
+}
+
+export class SendBulkNotificationDto {
+  @IsUUID()
+  facilityId: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  patientIds: string[];
+
+  @IsString()
+  @IsNotEmpty()
+  channel: string;
+
+  @IsOptional()
+  @IsString()
+  subject?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  message: string;
+
+  @IsString()
+  @IsNotEmpty()
+  type: string;
 }

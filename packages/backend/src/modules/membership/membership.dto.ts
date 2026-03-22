@@ -30,3 +30,8 @@ export class CreatePatientMembershipDto {
 export class UpdatePatientMembershipDto extends PartialType(CreatePatientMembershipDto) {
   @ApiProperty({ required: false }) @IsOptional() @IsString() status?: string;
 }
+
+export class RenewMembershipDto {
+  @IsDateString()
+  endDate: string;
+}

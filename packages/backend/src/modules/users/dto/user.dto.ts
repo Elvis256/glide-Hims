@@ -12,6 +12,7 @@ import {
   ValidateNested,
   ValidateIf,
   IsBoolean,
+  IsArray,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
@@ -225,4 +226,10 @@ export class UserListQueryDto {
   @IsOptional()
   @IsString()
   status?: string;
+}
+
+export class AssignMultiplePermissionsDto {
+  @IsArray()
+  @IsUUID('4', { each: true })
+  permissionIds: string[];
 }

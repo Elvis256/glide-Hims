@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Put, Body, Param, Query, Request } from '@nestjs/common';
 import { VendorContractsService } from './vendor-contracts.service';
-import { CreateVendorContractDto, UpdateVendorContractDto, CreateAmendmentDto, RenewContractDto } from './dto/vendor-contract.dto';
+import { CreateVendorContractDto, UpdateVendorContractDto, CreateAmendmentDto, RenewContractDto, TerminateContractDto } from './dto/vendor-contract.dto';
 import { ContractStatus } from '../../database/entities/vendor-contract.entity';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 
@@ -63,7 +63,7 @@ export class VendorContractsController {
 
   @AuthWithPermissions('procurement.update')
   @Post(':id/terminate')
-  terminate(@Param('id') id: string, @Body() body: { reason: string }, @Request() req: any) {
+  terminate(@Param('id') id: string, @Body() body: TerminateContractDto, @Request() req: any) {
     return this.service.terminate(id, body.reason, req.user?.tenantId);
   }
 

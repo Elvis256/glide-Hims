@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, Query, ParseUUIDPipe, Request } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { FacilitiesService, CreateUnitDto, UpdateUnitDto } from './facilities.service';
-import { CreateFacilityDto, UpdateFacilityDto, CreateDepartmentDto, UpdateDepartmentDto } from './dto/facility.dto';
+import { CreateFacilityDto, UpdateFacilityDto, CreateDepartmentDto, UpdateDepartmentDto, UpdateFacilityModulesDto } from './dto/facility.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 
@@ -206,7 +206,7 @@ export class FacilitiesController {
   @ApiOperation({ summary: 'Update enabled modules for a facility' })
   async updateFacilityModules(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() body: { enabledModules: string[]; sharedModules?: string[] },
+    @Body() body: UpdateFacilityModulesDto,
     @Request() req: any,
   ) {
     return this.facilitiesService.updateFacilityModules(id, body.enabledModules, body.sharedModules, req.user?.tenantId);

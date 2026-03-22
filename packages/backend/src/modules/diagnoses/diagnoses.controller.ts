@@ -2,7 +2,7 @@ import { Controller, Get, Post, Body, Patch, Param, Delete, Query, ParseUUIDPipe
 import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { DiagnosesService } from './diagnoses.service';
 import { WHOICDService } from './who-icd.service';
-import { CreateDiagnosisDto, UpdateDiagnosisDto, DiagnosisSearchDto } from './dto/diagnosis.dto';
+import { CreateDiagnosisDto, UpdateDiagnosisDto, DiagnosisSearchDto, ImportDiagnosisDto, BulkImportDiagnosisDto } from './dto/diagnosis.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { DiagnosisCategory } from '../../database/entities/diagnosis.entity';
 
@@ -118,7 +118,7 @@ export class DiagnosesController {
   @Post('who/import')
   @AuthWithPermissions('diagnoses.create')
   @ApiOperation({ summary: 'Import diagnosis from WHO to local database' })
-  async importFromWHO(@Body() dto: { code: string; version?: 'ICD-10' | 'ICD-11' }, @Request() req: any) {
+  async importFromWHO(@Body() dto: ImportDiagnosisDto, @Request() req: any) {
     const diagnosis = await this.whoICDService.importToLocal(dto.code, dto.version || 'ICD-10', req.user?.tenantId);
     if (!diagnosis) {
       return { success: false, message: `Code ${dto.code} not found in WHO API` };
@@ -129,7 +129,7 @@ export class DiagnosesController {
   @Post('who/bulk-import')
   @AuthWithPermissions('diagnoses.create')
   @ApiOperation({ summary: 'Bulk import diagnoses from WHO search results' })
-  async bulkImportFromWHO(@Body() dto: { codes: Array<{ code: string; title: string; chapter?: string }> }, @Request() req: any) {
+  async bulkImportFromWHO(@Body() dto: BulkImportDiagnosisDto, @Request() req: any) {
     const imported = await this.whoICDService.bulkImport(dto.codes, req.user?.tenantId);
     return { success: true, message: `Imported ${imported} new diagnoses`, imported };
   }

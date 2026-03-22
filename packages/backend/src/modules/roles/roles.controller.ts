@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, Query, ParseUUIDPipe, Put, Request } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { RolesService } from './roles.service';
-import { CreateRoleDto, UpdateRoleDto, CreatePermissionDto, AssignPermissionDto, BulkUpdatePermissionsDto } from './dto/role.dto';
+import { CreateRoleDto, UpdateRoleDto, CreatePermissionDto, AssignPermissionDto, BulkUpdatePermissionsDto, SetParentRoleDto } from './dto/role.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 
 @ApiTags('roles')
@@ -66,7 +66,7 @@ export class RolesController {
   @Patch(':id/parent')
   @AuthWithPermissions('roles.update')
   @ApiOperation({ summary: 'Set parent role for inheritance' })
-  async setParentRole(@Param('id', ParseUUIDPipe) id: string, @Body() body: { parentRoleId: string | null }, @Request() req: any) {
+  async setParentRole(@Param('id', ParseUUIDPipe) id: string, @Body() body: SetParentRoleDto, @Request() req: any) {
     const role = await this.rolesService.setParentRole(id, body.parentRoleId, req.user?.tenantId);
     return { message: 'Parent role updated', data: role };
   }

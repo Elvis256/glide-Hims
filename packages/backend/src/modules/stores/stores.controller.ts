@@ -3,7 +3,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { StoresService } from './stores.service';
-import { CreateStoreDto, UpdateStoreDto, CreateTransferDto, ApproveTransferDto, ReceiveTransferDto } from './stores.dto';
+import { CreateStoreDto, UpdateStoreDto, CreateTransferDto, ApproveTransferDto, ReceiveTransferDto, AdjustStockDto, TransferStockDto } from './stores.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { TransferStatus } from '../../database/entities/store.entity';
 
@@ -84,15 +84,7 @@ export class StoresController {
   @ApiOperation({ summary: 'Adjust stock for an item' })
   adjustStock(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: { 
-      quantity: number; 
-      type: 'in' | 'out' | 'adjustment'; 
-      reason: string;
-      batchNumber?: string;
-      expiryDate?: string;
-      reference?: string;
-      storeId?: string;
-    },
+    @Body() dto: AdjustStockDto,
     @Request() req: any,
   ) {
     const facilityId = req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
@@ -140,7 +132,7 @@ export class StoresController {
   @ApiOperation({ summary: 'Transfer stock for an item between stores' })
   transferStock(
     @Param('itemId', ParseUUIDPipe) itemId: string,
-    @Body() dto: { fromStoreId: string; toStoreId: string; quantity: number; reason?: string },
+    @Body() dto: TransferStockDto,
     @Request() req: any,
   ) {
     return this.service.transferStock(itemId, dto, req.user.id, req.user?.tenantId);

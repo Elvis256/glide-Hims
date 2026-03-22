@@ -8,7 +8,8 @@ import {
   CreateNotificationConfigDto, 
   SendReminderDto, 
   ScheduleReminderDto,
-  TestNotificationDto 
+  TestNotificationDto,
+  SendBulkNotificationDto,
 } from './dto/notification.dto';
 import { NotificationType } from '../../database/entities/notification-config.entity';
 
@@ -135,7 +136,7 @@ export class NotificationsController {
   @AuthWithPermissions('notifications.create')
   @ApiOperation({ summary: 'Send bulk SMS/WhatsApp/Email to multiple patients' })
   async sendBulk(
-    @Body() dto: { facilityId: string; patientIds: string[]; channel: string; subject?: string; message: string; type: string },
+    @Body() dto: SendBulkNotificationDto,
     @CurrentUser() user: any,
     @Request() req: any,
   ) {
