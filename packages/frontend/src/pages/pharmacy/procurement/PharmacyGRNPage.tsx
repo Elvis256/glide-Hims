@@ -25,6 +25,8 @@ import { usePermissions } from '../../../components/PermissionGate';
 import AccessDenied from '../../../components/AccessDenied';
 import { procurementService, type GoodsReceipt, type GRNStatus as APIGRNStatus, type PurchaseOrder, type CreateGoodsReceiptDto } from '../../../services/procurement';
 import { supplierService } from '../../../services/suppliers';
+import inventoryService from '../../../services/inventory';
+import { categoryService } from '../../../services/item-classifications';
 import { useFacilityId } from '../../../lib/facility';
 import { useAuthStore } from '../../../store/auth';
 import { asList } from '../../../utils/unwrapResponse';
@@ -155,11 +157,25 @@ export default function PharmacyGRNPage() {
     queryFn: () => procurementService.goodsReceipts.list(),
   });
 
-  // Fetch sent POs for the dropdown
-  const { data: purchaseOrders = [] } = useQuery({
+  // Fetch sent and partially received POs for the dropdown
+  const { data: sentPOs = [] } = useQuery({
     queryKey: ['purchaseOrders', 'sent'],
-    queryFn: () => procurementService.purchaseOrders.list({ status: 'sent' }),
+    queryFn: () => procurementService.purchaseOrders.list({ status: 'sent' as any }),
   });
+  const { data: partialPOs = [] } = useQuery({
+    queryKey: ['purchaseOrders', 'partially_received'],
+    queryFn: () => procurementService.purchaseOrders.list({ status: 'partially_received' as any }),
+  });
+  const purchaseOrders = useMemo(() => {
+    const all = [...asList(sentPOs), ...asList(partialPOs)];
+    // Deduplicate by id
+    const seen = new Set<string>();
+    return all.filter(po => {
+      if (seen.has(po.id)) return false;
+      seen.add(po.id);
+      return true;
+    });
+  }, [sentPOs, partialPOs]);
 
   // Fetch suppliers
   const { data: suppliersData } = useQuery({
@@ -168,7 +184,7 @@ export default function PharmacyGRNPage() {
   });
   const suppliers = asList(suppliersData);
 
-  // When PO is selected, fetch its details and populate items
+  // When PO is selected, fetch its details and populate items with remaining quantities
   const handlePOSelect = async (poId: string) => {
     setSelectedPOId(poId);
     if (!poId) {
@@ -180,23 +196,77 @@ export default function PharmacyGRNPage() {
       const now = new Date();
       const dateStr = `${String(now.getDate()).padStart(2, '0')}${String(now.getMonth() + 1).padStart(2, '0')}${now.getFullYear()}`;
       const supplierPrefix = (po.supplier?.name || 'SUP').substring(0, 3).toUpperCase();
-      setReceivedItems(po.items.map((item, idx) => ({
-        itemId: item.itemId,
-        itemCode: item.itemCode,
-        itemName: item.itemName,
-        itemUnit: item.itemUnit,
-        quantityExpected: item.quantityOrdered,
-        quantityReceived: item.quantityOrdered,
-        unitCost: item.unitPrice,
-        sellingPrice: 0,
-        markupPercentage: 0,
-        retailPrice: 0,
-        wholesalePrice: 0,
-        batchNumber: `${supplierPrefix}-${dateStr}${po.items.length > 1 ? `-${idx + 1}` : ''}`,
-        expiryDate: '',
-        qualityStatus: 'pending',
-        purchaseOrderItemId: item.id,
-      })));
+
+      // Only show items with remaining quantities (skip fully received items)
+      const pendingItems = po.items.filter(item => {
+        const remaining = item.quantityOrdered - (item.quantityReceived || 0);
+        return remaining > 0;
+      });
+
+      if (pendingItems.length === 0) {
+        toast.error('All items on this PO have already been fully received');
+        setReceivedItems([]);
+        return;
+      }
+
+      // Fetch item details and category defaults for markup auto-population
+      let categoryMarkups: Record<string, { retail: number; wholesale: number }> = {};
+      try {
+        const categories = await categoryService.list(facilityId);
+        const cats = asList(categories);
+        for (const cat of cats) {
+          if (cat.defaultRetailMarkup || cat.defaultWholesaleMarkup) {
+            categoryMarkups[cat.id] = {
+              retail: Number(cat.defaultRetailMarkup) || 0,
+              wholesale: Number(cat.defaultWholesaleMarkup) || 0,
+            };
+          }
+        }
+      } catch { /* categories optional */ }
+
+      // For each pending item, try to fetch markup from existing item data
+      const itemsWithMarkup = await Promise.all(pendingItems.map(async (item, idx) => {
+        const remaining = item.quantityOrdered - (item.quantityReceived || 0);
+        let markupPct = 0;
+        let retailPrice = 0;
+        let wholesalePrice = 0;
+
+        try {
+          const invItem = await inventoryService.items.getById(item.itemId);
+          if (invItem.markupPercentage && invItem.markupPercentage > 0) {
+            markupPct = Number(invItem.markupPercentage);
+          } else if (invItem.categoryId && categoryMarkups[invItem.categoryId]) {
+            markupPct = categoryMarkups[invItem.categoryId].retail;
+          }
+        } catch { /* item lookup optional */ }
+
+        const unitCost = Number(item.unitPrice) || 0;
+        if (markupPct > 0 && unitCost > 0) {
+          retailPrice = Math.round(unitCost * (1 + markupPct / 100));
+          const wholesaleMarkup = Math.max(markupPct - 10, 5);
+          wholesalePrice = Math.round(unitCost * (1 + wholesaleMarkup / 100));
+        }
+
+        return {
+          itemId: item.itemId,
+          itemCode: item.itemCode,
+          itemName: item.itemName,
+          itemUnit: item.itemUnit,
+          quantityExpected: remaining,
+          quantityReceived: remaining,
+          unitCost,
+          sellingPrice: retailPrice,
+          markupPercentage: markupPct,
+          retailPrice,
+          wholesalePrice,
+          batchNumber: `${supplierPrefix}-${dateStr}${pendingItems.length > 1 ? `-${idx + 1}` : ''}`,
+          expiryDate: '',
+          qualityStatus: 'pending',
+          purchaseOrderItemId: item.id,
+        };
+      }));
+
+      setReceivedItems(itemsWithMarkup);
     } catch {
       toast.error('Failed to load PO details');
     }
@@ -767,7 +837,7 @@ export default function PharmacyGRNPage() {
                       <option value="">Select PO...</option>
                       {purchaseOrders.map(po => (
                         <option key={po.id} value={po.id}>
-                          {po.orderNumber} - {po.supplier?.name || 'Unknown'}
+                          {po.orderNumber} - {po.supplier?.name || 'Unknown'}{(po.status as string) === 'partially_received' ? ' (Partial)' : ''}
                         </option>
                       ))}
                     </select>
