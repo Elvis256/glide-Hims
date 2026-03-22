@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   Search,
@@ -115,6 +115,7 @@ function getCounselingCategory(drugName: string): string {
 export default function DispenseMedicationPage() {
   const { hasPermission } = usePermissions();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const inst = useInstitutionInfo();
   const [searchTerm, setSearchTerm] = useState('');
@@ -129,6 +130,7 @@ export default function DispenseMedicationPage() {
   const [dispensedInfo, setDispensedInfo] = useState<{ patientName: string; itemCount: number; oosCount: number; total: number } | null>(null);
   const [editingItem, setEditingItem] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<Record<string, any>>({});
+  const [autoSelectDone, setAutoSelectDone] = useState(false);
 
   // Batch selection state (FEFO)
   type BatchSelection = { batchId: string; batchNumber: string; expiryDate: string; allocatedQty: number };
@@ -144,6 +146,20 @@ export default function DispenseMedicationPage() {
     queryFn: () => prescriptionsService.getPending(),
     staleTime: 30000,
   });
+
+  // Auto-select prescription from URL param (when navigating from queue "Start" button)
+  const urlPrescriptionId = searchParams.get('prescription');
+  useEffect(() => {
+    if (autoSelectDone || !urlPrescriptionId || !prescriptionsData) return;
+    const allRx = Array.isArray(prescriptionsData) ? prescriptionsData : (prescriptionsData as any)?.data || [];
+    const match = allRx.find((p: any) => p.id === urlPrescriptionId);
+    if (match) {
+      setSelectedPrescription(match);
+      setCurrentStep('verify');
+      setAutoSelectDone(true);
+      toast.success(`Prescription ${match.prescriptionNumber || match.id.slice(0, 8)} loaded from queue`);
+    }
+  }, [urlPrescriptionId, prescriptionsData, autoSelectDone]);
 
   // Search prescriptions
   const { data: searchResults } = useQuery({

@@ -198,27 +198,45 @@ export default function PharmacyQueuePage() {
     }));
   }, [returnedData]);
 
-  const queueStats = useMemo(() => ({
-    waiting: queueData.filter((i) => i.status === 'pending').length,
-    inProgress: queueData.filter((i) => i.status === 'partially_dispensed' || i.status === 'dispensing').length,
-    ready: queueData.filter((i) => i.status === 'ready').length,
-    collected: queueData.filter((i) => i.status === 'collected' || i.status === 'dispensed').length,
-    returned: returnedPatients.length,
-    avgWaitTime: Math.round(
-      queueData.filter((i) => i.status === 'pending').reduce((acc, i) => {
-        const waitMinutes = Math.floor((Date.now() - new Date(i.createdAt).getTime()) / 60000);
-        return acc + waitMinutes;
-      }, 0) / Math.max(queueData.filter((i) => i.status === 'pending').length, 1)
-    ),
-  }), [queueData, returnedPatients]);
+  const queueStats = useMemo(() => {
+    const pending = queueData.filter((i) => i.status === 'pending');
+    const avgMinutes = Math.round(
+      pending.reduce((acc, i) => {
+        return acc + Math.floor((Date.now() - new Date(i.createdAt).getTime()) / 60000);
+      }, 0) / Math.max(pending.length, 1)
+    );
+    let avgFormatted: string;
+    if (avgMinutes < 60) avgFormatted = `${avgMinutes}m`;
+    else if (avgMinutes < 1440) avgFormatted = `${Math.floor(avgMinutes / 60)}h ${avgMinutes % 60}m`;
+    else avgFormatted = `${Math.floor(avgMinutes / 1440)}d ${Math.floor((avgMinutes % 1440) / 60)}h`;
+
+    return {
+      waiting: pending.length,
+      inProgress: queueData.filter((i) => i.status === 'partially_dispensed' || i.status === 'dispensing').length,
+      ready: queueData.filter((i) => i.status === 'ready').length,
+      collected: queueData.filter((i) => i.status === 'collected' || i.status === 'dispensed').length,
+      returned: returnedPatients.length,
+      avgWaitTime: avgFormatted,
+    };
+  }, [queueData, returnedPatients]);
 
   if (!hasPermission('pharmacy.update')) {
     return <AccessDenied />;
   }
 
   const getWaitTime = (createdAt: string) => {
-    return Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000);
+    const minutes = Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000);
+    if (minutes < 60) return `${minutes}m`;
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    if (hours < 24) return `${hours}h ${mins}m`;
+    const days = Math.floor(hours / 24);
+    const remainingHours = hours % 24;
+    return `${days}d ${remainingHours}h`;
   };
+
+  const getWaitMinutes = (createdAt: string) =>
+    Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -353,7 +371,7 @@ export default function PharmacyQueuePage() {
                 </div>
                 <div className="bg-gray-50 p-3 rounded-lg">
                   <p className="text-gray-500 text-xs">Wait Time</p>
-                  <p className="font-medium">{getWaitTime(drawerPrescription.createdAt)} min</p>
+                  <p className="font-medium">{getWaitTime(drawerPrescription.createdAt)}</p>
                 </div>
               </div>
               <div>
@@ -492,7 +510,7 @@ export default function PharmacyQueuePage() {
             </div>
             <div>
               <p className="text-sm text-gray-600">Avg Wait</p>
-              <p className="text-2xl font-bold text-purple-600">{queueStats.avgWaitTime}m</p>
+              <p className="text-2xl font-bold text-purple-600">{queueStats.avgWaitTime}</p>
             </div>
           </div>
         </div>
@@ -577,7 +595,7 @@ export default function PharmacyQueuePage() {
             <div className="flex items-center gap-3">
               <div className="text-right mr-4">
                 <p className="text-sm text-blue-100">Wait Time</p>
-                <p className="text-2xl font-bold">{getWaitTime(nextWaiting.createdAt)} min</p>
+                <p className="text-2xl font-bold">{getWaitTime(nextWaiting.createdAt)}</p>
               </div>
               <button 
                 onClick={handleCallNext}
@@ -686,8 +704,8 @@ export default function PharmacyQueuePage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
                         <Clock className="w-4 h-4 text-gray-400" />
-                        <span className={`font-medium ${getWaitTime(item.createdAt) > 30 ? 'text-red-600' : 'text-gray-700'}`}>
-                          {getWaitTime(item.createdAt)} min
+                        <span className={`font-medium ${getWaitMinutes(item.createdAt) > 30 ? 'text-red-600' : 'text-gray-700'}`}>
+                          {getWaitTime(item.createdAt)}
                         </span>
                       </div>
                     </td>
