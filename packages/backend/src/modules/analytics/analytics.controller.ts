@@ -92,4 +92,24 @@ export class AnalyticsController {
   async getDashboardAlerts(@CurrentUser() user: any) {
     return this.analyticsService.getDashboardAlerts(user.facilityId, user.tenantId);
   }
+
+  @Get('hmis-105')
+  @AuthWithPermissions('analytics.read')
+  @ApiOperation({ summary: 'HMIS 105 - Uganda Monthly OPD Summary Report' })
+  @ApiQuery({ name: 'facilityId', required: false, description: 'Facility UUID (defaults to user facility)' })
+  @ApiQuery({ name: 'month', required: true, description: 'Report month (1-12)' })
+  @ApiQuery({ name: 'year', required: true, description: 'Report year' })
+  async getHMIS105Report(
+    @CurrentUser() user: any,
+    @Query('facilityId') facilityId?: string,
+    @Query('month') month?: string,
+    @Query('year') year?: string,
+  ) {
+    return this.analyticsService.getHMIS105Report(
+      user.tenantId,
+      facilityId || user.facilityId,
+      parseInt(month || '0', 10),
+      parseInt(year || '0', 10),
+    );
+  }
 }

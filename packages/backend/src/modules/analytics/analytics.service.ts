@@ -990,4 +990,576 @@ export class AnalyticsService {
       monthlyTrend,
     };
   }
+
+  // ─── HMIS 105: Uganda Monthly OPD Summary ───────────────────────────
+
+  async getHMIS105Report(
+    tenantId: string | undefined,
+    facilityId: string,
+    month: number,
+    year: number,
+  ) {
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 1);
+
+    const [sectionA, sectionB, sectionC, sectionD, sectionE] =
+      await Promise.all([
+        this.hmis105SectionA(facilityId, startDate, endDate, tenantId),
+        this.hmis105SectionB(facilityId, startDate, endDate, tenantId),
+        this.hmis105SectionC(facilityId, startDate, endDate, tenantId),
+        this.hmis105SectionD(facilityId, startDate, endDate, tenantId),
+        this.hmis105SectionE(facilityId, startDate, endDate, tenantId),
+      ]);
+
+    return {
+      reportTitle: 'HMIS 105 - Health Unit Outpatient Monthly Report',
+      facility: facilityId,
+      period: { month, year },
+      generatedAt: new Date().toISOString(),
+      sectionA,
+      sectionB,
+      sectionC,
+      sectionD,
+      sectionE,
+    };
+  }
+
+  /**
+   * Section A: OPD Diagnoses – encounters grouped by ICD-10 category,
+   * broken down by age-band and sex.
+   */
+  private async hmis105SectionA(
+    facilityId: string,
+    startDate: Date,
+    endDate: Date,
+    tenantId?: string,
+  ) {
+    // ── Top 20 diagnoses by age band / sex ──
+    const topParams: any[] = [facilityId, startDate, endDate];
+    let topSql = `
+      SELECT
+        d->>'code'        AS code,
+        d->>'description' AS diagnosis,
+        CASE
+          WHEN AGE(date_trunc('month', $2::timestamptz), p.date_of_birth) < INTERVAL '29 days'  THEN '0-28d'
+          WHEN AGE(date_trunc('month', $2::timestamptz), p.date_of_birth) < INTERVAL '5 years'  THEN '29d-4y'
+          WHEN AGE(date_trunc('month', $2::timestamptz), p.date_of_birth) < INTERVAL '13 years' THEN '5-12y'
+          WHEN AGE(date_trunc('month', $2::timestamptz), p.date_of_birth) < INTERVAL '20 years' THEN '13-19y'
+          WHEN AGE(date_trunc('month', $2::timestamptz), p.date_of_birth) < INTERVAL '60 years' THEN '20-59y'
+          ELSE '60+'
+        END AS age_band,
+        UPPER(LEFT(p.gender, 1)) AS sex,
+        COUNT(*) AS count
+      FROM clinical_notes cn
+      JOIN encounters e ON e.id = cn.encounter_id
+      JOIN patients p    ON p.id = e.patient_id,
+        jsonb_array_elements(cn.diagnoses::jsonb) AS d
+      WHERE e.facility_id = $1
+        AND cn.created_at >= $2
+        AND cn.created_at <  $3
+        AND cn.diagnoses IS NOT NULL
+        AND e.deleted_at IS NULL
+        AND cn.deleted_at IS NULL`;
+    if (tenantId) {
+      topSql += ` AND e.tenant_id = $${topParams.length + 1}`;
+      topParams.push(tenantId);
+    }
+    topSql += `
+      GROUP BY d->>'code', d->>'description', age_band, sex
+      ORDER BY count DESC`;
+
+    const rawDiagnoses = await this.encounterRepo
+      .query(topSql, topParams)
+      .catch((err) => {
+        this.logger.warn('HMIS105 SectionA top diagnoses failed: ' + err.message);
+        return [];
+      });
+
+    // Pivot raw rows into { code, diagnosis, totalCount, ageSexBreakdown }
+    const diagMap = new Map<string, any>();
+    for (const r of rawDiagnoses) {
+      const key = r.code || r.diagnosis;
+      if (!diagMap.has(key)) {
+        diagMap.set(key, {
+          code: r.code,
+          diagnosis: r.diagnosis,
+          totalCount: 0,
+          ageSexBreakdown: {},
+        });
+      }
+      const entry = diagMap.get(key);
+      const cnt = parseInt(r.count, 10) || 0;
+      entry.totalCount += cnt;
+      if (!entry.ageSexBreakdown[r.age_band]) {
+        entry.ageSexBreakdown[r.age_band] = { M: 0, F: 0 };
+      }
+      entry.ageSexBreakdown[r.age_band][r.sex === 'M' ? 'M' : 'F'] += cnt;
+    }
+
+    const top20Diagnoses = [...diagMap.values()]
+      .sort((a, b) => b.totalCount - a.totalCount)
+      .slice(0, 20);
+
+    // ── Diagnosis groups by ICD-10 chapter (first letter of code) ──
+    const grpParams: any[] = [facilityId, startDate, endDate];
+    let grpSql = `
+      SELECT
+        UPPER(LEFT(d->>'code', 1))  AS chapter_letter,
+        CASE
+          WHEN AGE(date_trunc('month', $2::timestamptz), p.date_of_birth) < INTERVAL '29 days'  THEN '0-28d'
+          WHEN AGE(date_trunc('month', $2::timestamptz), p.date_of_birth) < INTERVAL '5 years'  THEN '29d-4y'
+          WHEN AGE(date_trunc('month', $2::timestamptz), p.date_of_birth) < INTERVAL '13 years' THEN '5-12y'
+          WHEN AGE(date_trunc('month', $2::timestamptz), p.date_of_birth) < INTERVAL '20 years' THEN '13-19y'
+          WHEN AGE(date_trunc('month', $2::timestamptz), p.date_of_birth) < INTERVAL '60 years' THEN '20-59y'
+          ELSE '60+'
+        END AS age_band,
+        UPPER(LEFT(p.gender, 1)) AS sex,
+        COUNT(*) AS count
+      FROM clinical_notes cn
+      JOIN encounters e ON e.id = cn.encounter_id
+      JOIN patients p    ON p.id = e.patient_id,
+        jsonb_array_elements(cn.diagnoses::jsonb) AS d
+      WHERE e.facility_id = $1
+        AND cn.created_at >= $2
+        AND cn.created_at <  $3
+        AND cn.diagnoses IS NOT NULL
+        AND d->>'code' IS NOT NULL
+        AND e.deleted_at IS NULL
+        AND cn.deleted_at IS NULL`;
+    if (tenantId) {
+      grpSql += ` AND e.tenant_id = $${grpParams.length + 1}`;
+      grpParams.push(tenantId);
+    }
+    grpSql += `
+      GROUP BY chapter_letter, age_band, sex
+      ORDER BY chapter_letter`;
+
+    const rawGroups = await this.encounterRepo
+      .query(grpSql, grpParams)
+      .catch((err) => {
+        this.logger.warn('HMIS105 SectionA diagnosis groups failed: ' + err.message);
+        return [];
+      });
+
+    const chapterMap = new Map<string, any>();
+    for (const r of rawGroups) {
+      const ch = r.chapter_letter || '?';
+      if (!chapterMap.has(ch)) {
+        chapterMap.set(ch, { chapter: ch, totalCount: 0, ageSexBreakdown: {} });
+      }
+      const entry = chapterMap.get(ch);
+      const cnt = parseInt(r.count, 10) || 0;
+      entry.totalCount += cnt;
+      if (!entry.ageSexBreakdown[r.age_band]) {
+        entry.ageSexBreakdown[r.age_band] = { M: 0, F: 0 };
+      }
+      entry.ageSexBreakdown[r.age_band][r.sex === 'M' ? 'M' : 'F'] += cnt;
+    }
+
+    return {
+      title: 'Section A: OPD Diagnoses',
+      diagnosisByChapter: [...chapterMap.values()].sort(
+        (a, b) => b.totalCount - a.totalCount,
+      ),
+      top20Diagnoses,
+    };
+  }
+
+  /**
+   * Section B: Laboratory – tests by category with positive / negative counts.
+   */
+  private async hmis105SectionB(
+    facilityId: string,
+    startDate: Date,
+    endDate: Date,
+    tenantId?: string,
+  ) {
+    // Tests performed grouped by test category
+    const catParams: any[] = [facilityId, startDate, endDate];
+    let catSql = `
+      SELECT
+        lt.category,
+        COUNT(DISTINCT ls.id) AS total_samples,
+        COUNT(lr.id)          AS total_results,
+        COUNT(lr.id) FILTER (WHERE lr.abnormal_flag != 'NORMAL') AS positive_abnormal,
+        COUNT(lr.id) FILTER (WHERE lr.abnormal_flag  = 'NORMAL') AS negative_normal
+      FROM lab_samples ls
+      JOIN lab_tests   lt ON lt.id = ls.lab_test_id
+      LEFT JOIN lab_results lr ON lr.sample_id = ls.id AND lr.deleted_at IS NULL
+      WHERE ls.facility_id = $1
+        AND ls.created_at >= $2
+        AND ls.created_at <  $3
+        AND ls.deleted_at IS NULL`;
+    if (tenantId) {
+      catSql += ` AND ls.tenant_id = $${catParams.length + 1}`;
+      catParams.push(tenantId);
+    }
+    catSql += `
+      GROUP BY lt.category
+      ORDER BY total_samples DESC`;
+
+    const byCategory = await this.encounterRepo
+      .query(catSql, catParams)
+      .catch((err) => {
+        this.logger.warn('HMIS105 SectionB lab by category failed: ' + err.message);
+        return [];
+      });
+
+    // Totals
+    const totParams: any[] = [facilityId, startDate, endDate];
+    let totSql = `
+      SELECT
+        COUNT(DISTINCT ls.id) AS total_samples,
+        COUNT(lr.id)          AS total_results
+      FROM lab_samples ls
+      LEFT JOIN lab_results lr ON lr.sample_id = ls.id AND lr.deleted_at IS NULL
+      WHERE ls.facility_id = $1
+        AND ls.created_at >= $2
+        AND ls.created_at <  $3
+        AND ls.deleted_at IS NULL`;
+    if (tenantId) {
+      totSql += ` AND ls.tenant_id = $${totParams.length + 1}`;
+      totParams.push(tenantId);
+    }
+
+    const totals = await this.encounterRepo
+      .query(totSql, totParams)
+      .catch((err) => {
+        this.logger.warn('HMIS105 SectionB lab totals failed: ' + err.message);
+        return [{ total_samples: 0, total_results: 0 }];
+      });
+
+    return {
+      title: 'Section B: Laboratory',
+      byCategory: byCategory.map((r: any) => ({
+        category: r.category,
+        totalSamples: parseInt(r.total_samples, 10) || 0,
+        totalResults: parseInt(r.total_results, 10) || 0,
+        positiveAbnormal: parseInt(r.positive_abnormal, 10) || 0,
+        negativeNormal: parseInt(r.negative_normal, 10) || 0,
+      })),
+      totalSamples: parseInt(totals[0]?.total_samples, 10) || 0,
+      totalResults: parseInt(totals[0]?.total_results, 10) || 0,
+    };
+  }
+
+  /**
+   * Section C: Pharmacy / Dispensing – top medicines, prescriptions filled,
+   * and stock-out days.
+   */
+  private async hmis105SectionC(
+    facilityId: string,
+    startDate: Date,
+    endDate: Date,
+    tenantId?: string,
+  ) {
+    // Top 20 dispensed medicines by quantity
+    const medParams: any[] = [facilityId, startDate, endDate];
+    let medSql = `
+      SELECT
+        pi.drug_name,
+        pi.drug_code,
+        SUM(pi.quantity_dispensed) AS total_dispensed
+      FROM prescription_items pi
+      JOIN prescriptions p ON p.id = pi.prescription_id
+      JOIN encounters e    ON e.id = p.encounter_id
+      WHERE e.facility_id = $1
+        AND p.created_at >= $2
+        AND p.created_at <  $3
+        AND pi.is_dispensed = true
+        AND p.deleted_at IS NULL
+        AND pi.deleted_at IS NULL`;
+    if (tenantId) {
+      medSql += ` AND p.tenant_id = $${medParams.length + 1}`;
+      medParams.push(tenantId);
+    }
+    medSql += `
+      GROUP BY pi.drug_name, pi.drug_code
+      ORDER BY total_dispensed DESC
+      LIMIT 20`;
+
+    const topMedicines = await this.encounterRepo
+      .query(medSql, medParams)
+      .catch((err) => {
+        this.logger.warn('HMIS105 SectionC top medicines failed: ' + err.message);
+        return [];
+      });
+
+    // Total prescriptions filled
+    const rxParams: any[] = [facilityId, startDate, endDate];
+    let rxSql = `
+      SELECT
+        COUNT(*) FILTER (WHERE p.status IN ('DISPENSED','PARTIALLY_DISPENSED','COLLECTED')) AS filled,
+        COUNT(*) AS total
+      FROM prescriptions p
+      JOIN encounters e ON e.id = p.encounter_id
+      WHERE e.facility_id = $1
+        AND p.created_at >= $2
+        AND p.created_at <  $3
+        AND p.deleted_at IS NULL`;
+    if (tenantId) {
+      rxSql += ` AND p.tenant_id = $${rxParams.length + 1}`;
+      rxParams.push(tenantId);
+    }
+
+    const rxTotals = await this.encounterRepo
+      .query(rxSql, rxParams)
+      .catch((err) => {
+        this.logger.warn('HMIS105 SectionC prescription totals failed: ' + err.message);
+        return [{ filled: 0, total: 0 }];
+      });
+
+    // Stock-out days: count days with zero balance_after on SALE movements
+    const soParams: any[] = [facilityId, startDate, endDate];
+    let soSql = `
+      SELECT
+        i.name AS item_name,
+        COUNT(DISTINCT DATE(sl.created_at)) AS stockout_days
+      FROM stock_ledger sl
+      JOIN items i ON i.id = sl.item_id
+      WHERE sl.facility_id = $1
+        AND sl.created_at >= $2
+        AND sl.created_at <  $3
+        AND sl.balance_after = 0
+        AND i.is_drug = true
+        AND sl.deleted_at IS NULL`;
+    if (tenantId) {
+      soSql += ` AND sl.tenant_id = $${soParams.length + 1}`;
+      soParams.push(tenantId);
+    }
+    soSql += `
+      GROUP BY i.name
+      ORDER BY stockout_days DESC
+      LIMIT 20`;
+
+    const stockOuts = await this.encounterRepo
+      .query(soSql, soParams)
+      .catch((err) => {
+        this.logger.warn('HMIS105 SectionC stock-out days failed: ' + err.message);
+        return [];
+      });
+
+    return {
+      title: 'Section C: Pharmacy / Dispensing',
+      top20Medicines: topMedicines.map((r: any) => ({
+        drugName: r.drug_name,
+        drugCode: r.drug_code,
+        totalDispensed: parseInt(r.total_dispensed, 10) || 0,
+      })),
+      prescriptionsFilled: parseInt(rxTotals[0]?.filled, 10) || 0,
+      prescriptionsTotal: parseInt(rxTotals[0]?.total, 10) || 0,
+      stockOutItems: stockOuts.map((r: any) => ({
+        itemName: r.item_name,
+        stockoutDays: parseInt(r.stockout_days, 10) || 0,
+      })),
+    };
+  }
+
+  /**
+   * Section D: Maternal Health – ANC visits, deliveries, birth outcomes.
+   */
+  private async hmis105SectionD(
+    facilityId: string,
+    startDate: Date,
+    endDate: Date,
+    _tenantId?: string,
+  ) {
+    // ANC visits (first vs return) – maternity tables have no tenant_id
+    const ancParams: any[] = [facilityId, startDate, endDate];
+    const ancSql = `
+      SELECT
+        COUNT(*) FILTER (WHERE av.visit_number = 1) AS anc_first_visits,
+        COUNT(*) FILTER (WHERE av.visit_number > 1) AS anc_return_visits,
+        COUNT(*) AS anc_total_visits
+      FROM antenatal_visits av
+      JOIN antenatal_registrations ar ON ar.id = av.registration_id
+      WHERE ar.facility_id = $1
+        AND av.visit_date >= $2
+        AND av.visit_date <  $3`;
+
+    const ancData = await this.encounterRepo
+      .query(ancSql, ancParams)
+      .catch((err) => {
+        this.logger.warn('HMIS105 SectionD ANC visits failed: ' + err.message);
+        return [{ anc_first_visits: 0, anc_return_visits: 0, anc_total_visits: 0 }];
+      });
+
+    // Deliveries by mode
+    const delParams: any[] = [facilityId, startDate, endDate];
+    const delSql = `
+      SELECT
+        lr.delivery_mode,
+        COUNT(*) AS count
+      FROM labour_records lr
+      WHERE lr.facility_id = $1
+        AND lr.delivery_time >= $2
+        AND lr.delivery_time <  $3
+        AND lr.delivery_time IS NOT NULL
+      GROUP BY lr.delivery_mode`;
+
+    const deliveries = await this.encounterRepo
+      .query(delSql, delParams)
+      .catch((err) => {
+        this.logger.warn('HMIS105 SectionD deliveries failed: ' + err.message);
+        return [];
+      });
+
+    const deliverySummary: Record<string, number> = {
+      svd: 0,
+      assisted: 0,
+      caesarean: 0,
+      breech: 0,
+      total: 0,
+    };
+    for (const r of deliveries) {
+      const cnt = parseInt(r.count, 10) || 0;
+      deliverySummary[r.delivery_mode] = cnt;
+      deliverySummary.total += cnt;
+    }
+
+    // Birth outcomes
+    const outParams: any[] = [facilityId, startDate, endDate];
+    const outSql = `
+      SELECT
+        dout.outcome,
+        COUNT(*) AS count
+      FROM delivery_outcomes dout
+      JOIN labour_records lr ON lr.id = dout.labour_record_id
+      WHERE lr.facility_id = $1
+        AND dout.time_of_birth >= $2
+        AND dout.time_of_birth <  $3
+      GROUP BY dout.outcome`;
+
+    const outcomes = await this.encounterRepo
+      .query(outSql, outParams)
+      .catch((err) => {
+        this.logger.warn('HMIS105 SectionD birth outcomes failed: ' + err.message);
+        return [];
+      });
+
+    const birthOutcomes: Record<string, number> = {
+      live_birth: 0,
+      stillbirth: 0,
+      neonatal_death: 0,
+      total: 0,
+    };
+    for (const r of outcomes) {
+      const cnt = parseInt(r.count, 10) || 0;
+      birthOutcomes[r.outcome] = cnt;
+      birthOutcomes.total += cnt;
+    }
+
+    return {
+      title: 'Section D: Maternal Health',
+      ancFirstVisits: parseInt(ancData[0]?.anc_first_visits, 10) || 0,
+      ancReturnVisits: parseInt(ancData[0]?.anc_return_visits, 10) || 0,
+      ancTotalVisits: parseInt(ancData[0]?.anc_total_visits, 10) || 0,
+      deliveries: deliverySummary,
+      birthOutcomes,
+    };
+  }
+
+  /**
+   * Section E: Summary Statistics – attendance, admissions, discharges,
+   * deaths, referrals.
+   */
+  private async hmis105SectionE(
+    facilityId: string,
+    startDate: Date,
+    endDate: Date,
+    tenantId?: string,
+  ) {
+    // OPD attendance (new encounters = first for that patient in month, rest = return)
+    const opdParams: any[] = [facilityId, startDate, endDate];
+    let opdSql = `
+      SELECT
+        COUNT(*) AS total_opd,
+        COUNT(*) FILTER (WHERE e.type = 'OPD') AS opd_visits,
+        COUNT(*) FILTER (WHERE rn = 1) AS new_visits,
+        COUNT(*) FILTER (WHERE rn > 1) AS return_visits
+      FROM (
+        SELECT
+          e.id,
+          e.type,
+          ROW_NUMBER() OVER (PARTITION BY e.patient_id ORDER BY e.created_at) AS rn
+        FROM encounters e
+        WHERE e.facility_id = $1
+          AND e.created_at >= $2
+          AND e.created_at <  $3
+          AND e.status != 'CANCELLED'
+          AND e.deleted_at IS NULL`;
+    if (tenantId) {
+      opdSql += ` AND e.tenant_id = $${opdParams.length + 1}`;
+      opdParams.push(tenantId);
+    }
+    opdSql += `
+      ) e`;
+
+    const opdData = await this.encounterRepo
+      .query(opdSql, opdParams)
+      .catch((err) => {
+        this.logger.warn('HMIS105 SectionE OPD attendance failed: ' + err.message);
+        return [{ total_opd: 0, opd_visits: 0, new_visits: 0, return_visits: 0 }];
+      });
+
+    // Admissions, discharges, deaths
+    const admParams: any[] = [facilityId, startDate, endDate];
+    let admSql = `
+      SELECT
+        COUNT(*) FILTER (WHERE a.admission_date >= $2 AND a.admission_date < $3) AS admissions,
+        COUNT(*) FILTER (WHERE a.discharge_date >= $2 AND a.discharge_date < $3 AND a.status = 'DISCHARGED') AS discharges,
+        COUNT(*) FILTER (WHERE a.discharge_date >= $2 AND a.discharge_date < $3 AND a.status = 'DECEASED')   AS deaths
+      FROM admissions a
+      JOIN encounters e ON e.id = a.encounter_id
+      WHERE e.facility_id = $1
+        AND a.deleted_at IS NULL
+        AND (
+          (a.admission_date >= $2 AND a.admission_date < $3)
+          OR (a.discharge_date >= $2 AND a.discharge_date < $3)
+        )`;
+    if (tenantId) {
+      admSql += ` AND a.tenant_id = $${admParams.length + 1}`;
+      admParams.push(tenantId);
+    }
+
+    const admData = await this.admissionRepo
+      .query(admSql, admParams)
+      .catch((err) => {
+        this.logger.warn('HMIS105 SectionE admissions failed: ' + err.message);
+        return [{ admissions: 0, discharges: 0, deaths: 0 }];
+      });
+
+    // Referrals out
+    const refParams: any[] = [facilityId, startDate, endDate];
+    let refSql = `
+      SELECT COUNT(*) AS referrals_out
+      FROM referrals r
+      WHERE r.from_facility_id = $1
+        AND r.created_at >= $2
+        AND r.created_at <  $3
+        AND r.deleted_at IS NULL`;
+    if (tenantId) {
+      refSql += ` AND r.tenant_id = $${refParams.length + 1}`;
+      refParams.push(tenantId);
+    }
+
+    const refData = await this.encounterRepo
+      .query(refSql, refParams)
+      .catch((err) => {
+        this.logger.warn('HMIS105 SectionE referrals failed: ' + err.message);
+        return [{ referrals_out: 0 }];
+      });
+
+    return {
+      title: 'Section E: Summary Statistics',
+      totalOPDAttendance: parseInt(opdData[0]?.total_opd, 10) || 0,
+      opdVisits: parseInt(opdData[0]?.opd_visits, 10) || 0,
+      newVisits: parseInt(opdData[0]?.new_visits, 10) || 0,
+      returnVisits: parseInt(opdData[0]?.return_visits, 10) || 0,
+      totalAdmissions: parseInt(admData[0]?.admissions, 10) || 0,
+      totalDischarges: parseInt(admData[0]?.discharges, 10) || 0,
+      deaths: parseInt(admData[0]?.deaths, 10) || 0,
+      referralsOut: parseInt(refData[0]?.referrals_out, 10) || 0,
+    };
+  }
 }
