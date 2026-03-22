@@ -289,7 +289,7 @@ export class PrescriptionsService {
       .leftJoinAndSelect('encounter.patient', 'patient')
       .leftJoinAndSelect('prescription.prescribedBy', 'doctor')
       .where('prescription.status IN (:...statuses)', {
-        statuses: [PrescriptionStatus.PENDING, PrescriptionStatus.PARTIALLY_DISPENSED],
+        statuses: [PrescriptionStatus.PENDING, PrescriptionStatus.DISPENSING, PrescriptionStatus.PARTIALLY_DISPENSED],
       });
 
     if (tenantId) {
