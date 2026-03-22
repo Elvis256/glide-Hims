@@ -54,6 +54,7 @@ import { DisposalModule } from './modules/disposal/disposal.module';
 import { AppointmentsModule } from './modules/appointments/appointments.module';
 import { SchedulesModule } from './modules/schedules/schedules.module';
 import { SupplierReturnsModule } from './modules/supplier-returns/supplier-returns.module';
+import { StockTransferModule } from './modules/stock-transfer/stock-transfer.module';
 import { DoctorDutyModule } from './modules/doctor-duty/doctor-duty.module';
 import { RFQModule } from './modules/rfq/rfq.module';
 import { VendorContractsModule } from './modules/vendor-contracts/vendor-contracts.module';
@@ -204,6 +205,7 @@ import { ScheduledTasksModule } from './modules/scheduled-tasks/scheduled-tasks.
     // Phase 17: Pharmacy Expiry & Disposal
     DisposalModule,
     SupplierReturnsModule,
+    StockTransferModule,
 
     // Phase 18: RFQ, Vendor Management & Invoice Matching
     RFQModule,
