@@ -526,32 +526,59 @@ export default function DispenseMedicationPage() {
 
   const handlePrintLabel = (item: PrescriptionItem) => {
     if (!selectedPrescription) return;
-    const win = window.open('', '_blank', 'width=400,height=300');
+    const patientName = selectedPrescription.patient?.fullName || 'Unknown';
+    const mrn = selectedPrescription.patient?.mrn || '-';
+    const rxNum = selectedPrescription.prescriptionNumber;
+    const dateStr = new Date(selectedPrescription.createdAt).toLocaleDateString();
+    const isHighAlert = highAlertDrugs?.has(item.drugName.toLowerCase());
+    const stockInfo = findDrugStock(item);
+    const batch = batchSelections[item.id];
+    const batchNo = batch?.batchNumber || '-';
+    const expiryStr = batch?.expiryDate ? new Date(batch.expiryDate).toLocaleDateString() : '-';
+
+    const win = window.open('', '_blank', 'width=500,height=400');
     if (!win) return;
     win.document.write(`
-      <html><head><title>Medication Label</title>
+      <html><head><title>Medication Label — ${item.drugName}</title>
       <style>
-        body { font-family: monospace; padding: 16px; font-size: 12px; }
-        .header { font-weight: bold; font-size: 14px; border-bottom: 1px solid #000; padding-bottom: 4px; margin-bottom: 8px; }
-        .field { margin: 4px 0; }
-        .big { font-size: 15px; font-weight: bold; margin: 8px 0; }
-        .warn { color: red; font-weight: bold; }
+        @page { size: 100mm 70mm; margin: 0; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: Arial, Helvetica, sans-serif; padding: 8px 12px; font-size: 11px; width: 100mm; }
+        .facility { font-weight: bold; font-size: 13px; text-align: center; border-bottom: 2px solid #000; padding-bottom: 4px; margin-bottom: 6px; text-transform: uppercase; }
+        .row { display: flex; justify-content: space-between; margin: 2px 0; }
+        .row span { font-size: 10px; }
+        .drug { font-size: 16px; font-weight: bold; text-align: center; margin: 6px 0 4px; padding: 4px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; }
+        .dosage { text-align: center; font-size: 13px; font-weight: bold; margin: 4px 0; }
+        .instructions { font-size: 10px; margin: 4px 0; padding: 4px; border: 1px dashed #999; border-radius: 3px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; margin: 4px 0; font-size: 10px; }
+        .grid b { font-size: 9px; color: #555; text-transform: uppercase; }
+        .warn { color: #c00; font-weight: bold; text-align: center; font-size: 11px; margin: 4px 0; border: 2px solid #c00; padding: 2px; }
+        .footer { border-top: 1px solid #999; margin-top: 6px; padding-top: 4px; font-size: 8px; color: #666; text-align: center; }
+        @media print { body { padding: 4px 8px; } }
       </style></head><body>
-      <div class="header">${inst.name} — PHARMACY LABEL</div>
-      <div class="field"><b>Patient:</b> ${selectedPrescription.patient?.fullName || 'Unknown'}</div>
-      <div class="field"><b>MRN:</b> ${selectedPrescription.patient?.mrn || '-'}</div>
-      <div class="field"><b>Rx #:</b> ${selectedPrescription.prescriptionNumber}</div>
-      <div class="field"><b>Date:</b> ${new Date(selectedPrescription.createdAt).toLocaleDateString()}</div>
-      <hr/>
-      <div class="big">${item.drugName}</div>
-      <div class="field"><b>Dose:</b> ${item.dose}</div>
-      <div class="field"><b>Freq:</b> ${item.frequency}</div>
-      <div class="field"><b>Duration:</b> ${item.duration}</div>
-      <div class="field"><b>Qty:</b> ${item.quantity}</div>
-      ${item.instructions ? `<div class="field"><b>Instructions:</b> ${item.instructions}</div>` : ''}
-      ${highAlertDrugs?.has(item.drugName.toLowerCase()) ? '<div class="warn">⚠ HIGH-ALERT MEDICATION — Double check dose</div>' : ''}
-      <hr/>
-      <div class="field" style="font-size:10px">Dispensed by ${inst.name}. Keep out of reach of children.</div>
+      <div class="facility">${inst.name}</div>
+      <div class="row">
+        <span><b>Patient:</b> ${patientName}</span>
+        <span><b>MRN:</b> ${mrn}</span>
+      </div>
+      <div class="row">
+        <span><b>Rx:</b> ${rxNum}</span>
+        <span><b>Date:</b> ${dateStr}</span>
+      </div>
+      <div class="drug">${item.drugName}</div>
+      <div class="dosage">${item.dose} — ${item.frequency} — ${item.duration}</div>
+      ${item.instructions ? `<div class="instructions">📋 ${item.instructions}</div>` : ''}
+      ${isHighAlert ? '<div class="warn">⚠ HIGH-ALERT MEDICATION</div>' : ''}
+      <div class="grid">
+        <div><b>Qty Dispensed</b><br/>${item.quantity}</div>
+        <div><b>Route</b><br/>${item.route || 'Oral'}</div>
+        <div><b>Batch #</b><br/>${batchNo}</div>
+        <div><b>Expiry</b><br/>${expiryStr}</div>
+      </div>
+      <div class="footer">
+        Keep out of reach of children. Store as directed. Dispensed by ${inst.name}.<br/>
+        Complete the full course of medication unless advised otherwise by your doctor.
+      </div>
       </body></html>
     `);
     win.document.close();
