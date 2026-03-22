@@ -308,4 +308,40 @@ export const insuranceService = {
       return response.data;
     },
   },
+
+  // Dashboard & Analytics
+  dashboard: {
+    get: async (facilityId?: string): Promise<any> => {
+      const fId = facilityId || sessionStorage.getItem('glide_active_facility_id');
+      const response = await api.get('/insurance/dashboard', { params: { facilityId: fId } });
+      return response.data;
+    },
+    getDenialsAnalysis: async (params: { startDate: string; endDate: string }): Promise<any> => {
+      const facilityId = sessionStorage.getItem('glide_active_facility_id');
+      const response = await api.get('/insurance/reports/denials-analysis', {
+        params: { ...params, facilityId },
+      });
+      return response.data;
+    },
+    getProviderPerformance: async (params: { startDate: string; endDate: string }): Promise<any> => {
+      const facilityId = sessionStorage.getItem('glide_active_facility_id');
+      const response = await api.get('/insurance/reports/provider-performance', {
+        params: { ...params, facilityId },
+      });
+      return response.data;
+    },
+  },
+
+  // Batch operations
+  batchSubmitClaims: async (encounterIds: string[]): Promise<{
+    submitted: number;
+    failed: number;
+    errors: Array<{ encounterId: string; error: string }>;
+  }> => {
+    const facilityId = sessionStorage.getItem('glide_active_facility_id');
+    const response = await api.post('/insurance/batch-submit', { encounterIds }, {
+      params: { facilityId },
+    });
+    return response.data;
+  },
 };
