@@ -25,12 +25,17 @@ import {
   Trash2,
   Save,
   X,
+  Calendar,
+  Hash,
+  ChevronDown,
 } from 'lucide-react';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 import { prescriptionsService, type Prescription, type PrescriptionItem } from '../../services/prescriptions';
 import { storesService } from '../../services/stores';
+import { pharmacyService, type BatchStock } from '../../services/pharmacy';
 import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
+import { useFacilityId } from '../../lib/facility';
 import { asList } from '../../utils/unwrapResponse';
 
 type DispenseStep = 'search' | 'verify' | 'pick' | 'check' | 'dispense';
@@ -89,6 +94,24 @@ const counselingPoints: Record<string, string[]> = {
   ],
 };
 
+// Map common drug names to counseling categories
+const drugCategoryKeywords: [string[], string][] = [
+  [['amoxicillin', 'azithromycin', 'ciprofloxacin', 'metronidazole', 'doxycycline', 'ceftriaxone', 'erythromycin', 'penicillin', 'cloxacillin', 'cotrimoxazole'], 'antibiotic'],
+  [['paracetamol', 'tramadol', 'morphine', 'codeine', 'pethidine', 'diclofenac'], 'analgesic'],
+  [['amlodipine', 'enalapril', 'losartan', 'nifedipine', 'atenolol', 'lisinopril', 'captopril', 'hydrochlorothiazide'], 'antihypertensive'],
+  [['metformin', 'glibenclamide', 'insulin', 'glimepiride', 'gliclazide'], 'antidiabetic'],
+  [['warfarin', 'heparin', 'enoxaparin', 'rivaroxaban'], 'anticoagulant'],
+  [['ibuprofen', 'indomethacin', 'naproxen', 'piroxicam', 'aspirin', 'meloxicam', 'ketoprofen'], 'nsaid'],
+];
+
+function getCounselingCategory(drugName: string): string {
+  const lower = drugName.toLowerCase();
+  for (const [keywords, category] of drugCategoryKeywords) {
+    if (keywords.some(kw => lower.includes(kw))) return category;
+  }
+  return 'default';
+}
+
 export default function DispenseMedicationPage() {
   const { hasPermission } = usePermissions();
   const navigate = useNavigate();
@@ -106,6 +129,14 @@ export default function DispenseMedicationPage() {
   const [dispensedInfo, setDispensedInfo] = useState<{ patientName: string; itemCount: number; oosCount: number; total: number } | null>(null);
   const [editingItem, setEditingItem] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<Record<string, any>>({});
+
+  // Batch selection state (FEFO)
+  type BatchSelection = { batchId: string; batchNumber: string; expiryDate: string; allocatedQty: number };
+  const [batchSelections, setBatchSelections] = useState<Record<string, BatchSelection>>({});
+  const [batchPickerItemId, setBatchPickerItemId] = useState<string | null>(null);
+  const [batchPickerBatches, setBatchPickerBatches] = useState<BatchStock[]>([]);
+  const [batchLoading, setBatchLoading] = useState(false);
+  const facilityId = useFacilityId();
 
   // Fetch pending prescriptions
   const { data: prescriptionsData, isLoading } = useQuery({
@@ -130,16 +161,18 @@ export default function DispenseMedicationPage() {
   });
 
   // Create maps for drug matching (by name, generic name, and code)
+  type InventoryEntry = { price: number; stock: number; name: string; itemId: string };
   const inventoryLookup = useMemo(() => {
-    const byName = new Map<string, { price: number; stock: number; name: string }>();
-    const byGeneric = new Map<string, { price: number; stock: number; name: string }>();
-    const byCode = new Map<string, { price: number; stock: number; name: string }>();
+    const byName = new Map<string, InventoryEntry>();
+    const byGeneric = new Map<string, InventoryEntry>();
+    const byCode = new Map<string, InventoryEntry>();
     const items = Array.isArray(inventoryData) ? inventoryData : (asList(inventoryData));
     items.forEach((item: any) => {
-      const entry = {
+      const entry: InventoryEntry = {
         price: item.sellingPrice || item.retailPrice || item.unitCost || 0,
         stock: item.availableStock ?? item.currentStock ?? 0,
         name: item.name,
+        itemId: item.itemId || item.id,
       };
       byName.set(item.name.toLowerCase(), entry);
       if (item.genericName) byGeneric.set(item.genericName.toLowerCase(), entry);
@@ -149,7 +182,7 @@ export default function DispenseMedicationPage() {
   }, [inventoryData]);
 
   // Match prescription drug to inventory (fuzzy: exact name > code > generic > partial)
-  const findDrugStock = (item: PrescriptionItem): { price: number; stock: number; name: string } | null => {
+  const findDrugStock = (item: PrescriptionItem): InventoryEntry | null => {
     const drugNameLower = item.drugName.toLowerCase();
     const drugCodeLower = (item.drugCode || '').toLowerCase();
     // Exact name match
@@ -218,10 +251,12 @@ export default function DispenseMedicationPage() {
         prescriptionId: selectedPrescription.id,
         items: dispensableItems.map(item => {
           const stockInfo = findDrugStock(item);
+          const batch = batchSelections[item.id];
           return {
             prescriptionItemId: item.id,
             quantity: item.quantity,
             unitPrice: item.unitPrice || stockInfo?.price || 0,
+            ...(batch ? { batchNumber: batch.batchNumber, expiryDate: batch.expiryDate } : {}),
           };
         }),
         counselingProvided: counselingComplete,
@@ -253,6 +288,7 @@ export default function DispenseMedicationPage() {
       setExternalPurchaseItems(new Set());
       setSubstituteNotes({});
       setSearchTerm('');
+      setBatchSelections({});
     },
     onError: (err: any) => {
       toast.error(err.message || 'Failed to dispense');
@@ -366,6 +402,68 @@ export default function DispenseMedicationPage() {
       selectedPrescription.items.forEach((item) => next.add(item.id));
       return next;
     });
+  };
+
+  // Auto-allocate FEFO batches for all dispensable items
+  const autoAllocateBatches = async () => {
+    if (!selectedPrescription || !facilityId) return;
+    setBatchLoading(true);
+    const newSelections: Record<string, BatchSelection> = {};
+    try {
+      for (const item of selectedPrescription.items) {
+        if (item.isDispensed) continue;
+        const stockInfo = findDrugStock(item);
+        if (!stockInfo?.itemId) continue;
+        try {
+          const allocation = await pharmacyService.batchStock.allocateFEFO({
+            itemId: stockInfo.itemId,
+            facilityId,
+            quantity: item.quantity,
+          });
+          if (allocation?.allocations?.length > 0) {
+            const first = allocation.allocations[0];
+            newSelections[item.id] = {
+              batchId: first.batchId,
+              batchNumber: first.batchNumber,
+              expiryDate: first.expiryDate,
+              allocatedQty: first.allocatedQuantity,
+            };
+          }
+        } catch {
+          // No batch available for this item — skip silently
+        }
+      }
+      setBatchSelections(prev => ({ ...prev, ...newSelections }));
+    } finally {
+      setBatchLoading(false);
+    }
+  };
+
+  // Open batch picker modal for an item
+  const openBatchPicker = async (prescriptionItemId: string, inventoryItemId: string) => {
+    setBatchPickerItemId(prescriptionItemId);
+    setBatchPickerBatches([]);
+    try {
+      const batches = await pharmacyService.batchStock.getByItem(inventoryItemId);
+      const batchList = Array.isArray(batches) ? batches : asList(batches);
+      setBatchPickerBatches(batchList);
+    } catch {
+      toast.error('Failed to load batches');
+    }
+  };
+
+  // Select a batch from the picker modal
+  const selectBatch = (batch: BatchStock, prescriptionItemId: string, qty: number) => {
+    setBatchSelections(prev => ({
+      ...prev,
+      [prescriptionItemId]: {
+        batchId: batch.id,
+        batchNumber: batch.batchNumber,
+        expiryDate: batch.expiryDate,
+        allocatedQty: Math.min(batch.availableQuantity, qty),
+      },
+    }));
+    setBatchPickerItemId(null);
   };
 
   const handleCheckItem = (medicationId: string) => {
@@ -762,6 +860,40 @@ export default function DispenseMedicationPage() {
                               </div>
                               {item.instructions && <p className="text-xs text-gray-500 truncate">{item.instructions}</p>}
                               {stockInfo && <p className="text-xs text-gray-400">Matched: {stockInfo.name}</p>}
+                              {/* FEFO Batch Info */}
+                              {batchSelections[item.id] && !isUnavailable && (
+                                <div className="flex items-center gap-2 mt-1">
+                                  <span className="inline-flex items-center gap-1 text-xs bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded border border-purple-200">
+                                    <Hash className="w-3 h-3" />
+                                    {batchSelections[item.id].batchNumber}
+                                  </span>
+                                  <span className="inline-flex items-center gap-1 text-xs bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded border border-amber-200">
+                                    <Calendar className="w-3 h-3" />
+                                    Exp: {new Date(batchSelections[item.id].expiryDate).toLocaleDateString()}
+                                  </span>
+                                  {currentStep === 'pick' && stockInfo?.itemId && (
+                                    <button
+                                      onClick={() => openBatchPicker(item.id, stockInfo.itemId)}
+                                      className="text-xs text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-0.5"
+                                      title="Change batch"
+                                    >
+                                      <ChevronDown className="w-3 h-3" /> Change
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                              {currentStep === 'pick' && !batchSelections[item.id] && !isUnavailable && !item.isDispensed && stockInfo?.itemId && (
+                                <div className="flex items-center gap-2 mt-1">
+                                  <span className="text-xs text-gray-400 italic">No batch selected</span>
+                                  <button
+                                    onClick={() => openBatchPicker(item.id, stockInfo.itemId)}
+                                    className="text-xs text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-0.5"
+                                    title="Select batch"
+                                  >
+                                    <ChevronDown className="w-3 h-3" /> Select Batch
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </td>
@@ -908,7 +1040,7 @@ export default function DispenseMedicationPage() {
                   <div className="flex items-center justify-between">
                     <p className="text-sm text-gray-600">Verify patient identity and prescription details</p>
                     <button
-                      onClick={() => setCurrentStep('pick')}
+                      onClick={() => { setCurrentStep('pick'); autoAllocateBatches(); }}
                       className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                     >
                       <Shield className="w-4 h-4" />
@@ -919,9 +1051,16 @@ export default function DispenseMedicationPage() {
 
                 {currentStep === 'pick' && (
                   <div className="flex items-center justify-between">
-                    <p className="text-sm text-gray-600">
-                      {allPicked ? 'All items picked' : 'Pick each medication from shelves'}
-                    </p>
+                    <div className="flex items-center gap-3">
+                      <p className="text-sm text-gray-600">
+                        {allPicked ? 'All items picked' : 'Pick each medication from shelves'}
+                      </p>
+                      {batchLoading && (
+                        <span className="flex items-center gap-1 text-xs text-purple-600">
+                          <Loader2 className="w-3 h-3 animate-spin" /> Auto-selecting batches (FEFO)…
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-2">
                       {!allPicked && (
                         <button
@@ -1023,6 +1162,27 @@ export default function DispenseMedicationPage() {
                       </div>
                     )}
 
+                    {/* Counseling Points per Drug */}
+                    {dispensableItems.length > 0 && (
+                      <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg space-y-2">
+                        <p className="font-semibold text-blue-800 text-sm flex items-center gap-1">
+                          <FileText className="w-4 h-4" /> Counseling Points
+                        </p>
+                        {dispensableItems.map(item => {
+                          const category = getCounselingCategory(item.drugName);
+                          const points = counselingPoints[category] || counselingPoints.default;
+                          return (
+                            <div key={item.id} className="ml-1">
+                              <p className="text-xs font-medium text-blue-900">{item.drugName} <span className="text-blue-500 font-normal">({category})</span></p>
+                              <ul className="list-disc ml-4 text-xs text-blue-700 space-y-0.5">
+                                {points.map((pt, i) => <li key={i}>{pt}</li>)}
+                              </ul>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
                     <label className="flex items-center gap-3 cursor-pointer">
                       <input
                         type="checkbox"
@@ -1069,6 +1229,92 @@ export default function DispenseMedicationPage() {
         </div>
       </div>
       </>)}
+
+      {/* Batch Picker Modal */}
+      {batchPickerItemId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-lg font-semibold text-gray-900">Select Batch</h3>
+              <button onClick={() => setBatchPickerItemId(null)} className="p-1 hover:bg-gray-100 rounded">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="p-4 max-h-80 overflow-y-auto">
+              {batchPickerBatches.length === 0 ? (
+                <div className="flex items-center justify-center py-8 text-gray-500">
+                  <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading batches…
+                </div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-gray-500 uppercase border-b">
+                      <th className="pb-2">Batch #</th>
+                      <th className="pb-2">Expiry</th>
+                      <th className="pb-2 text-right">Available</th>
+                      <th className="pb-2">Status</th>
+                      <th className="pb-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {batchPickerBatches
+                      .sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime())
+                      .map(batch => {
+                        const isExpired = batch.isExpired || new Date(batch.expiryDate) < new Date();
+                        const isDisabled = isExpired || batch.status === 'quarantined' || batch.availableQuantity <= 0;
+                        const isSelected = batchSelections[batchPickerItemId]?.batchId === batch.id;
+                        const prescItem = selectedPrescription?.items.find(i => i.id === batchPickerItemId);
+                        return (
+                          <tr
+                            key={batch.id}
+                            className={`border-b last:border-0 ${isDisabled ? 'opacity-40' : isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+                          >
+                            <td className="py-2 font-mono text-xs">{batch.batchNumber}</td>
+                            <td className="py-2">
+                              <span className={`text-xs ${isExpired ? 'text-red-600 font-bold' : batch.isNearExpiry ? 'text-yellow-600' : 'text-gray-700'}`}>
+                                {new Date(batch.expiryDate).toLocaleDateString()}
+                              </span>
+                              {isExpired && <span className="ml-1 text-xs text-red-500">EXPIRED</span>}
+                              {!isExpired && batch.isNearExpiry && <span className="ml-1 text-xs text-yellow-500">NEAR EXPIRY</span>}
+                            </td>
+                            <td className="py-2 text-right font-medium">{batch.availableQuantity}</td>
+                            <td className="py-2">
+                              <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                batch.status === 'active' ? 'bg-green-100 text-green-700' :
+                                batch.status === 'quarantined' ? 'bg-red-100 text-red-700' :
+                                'bg-gray-100 text-gray-500'
+                              }`}>
+                                {batch.status}
+                              </span>
+                            </td>
+                            <td className="py-2">
+                              {!isDisabled && (
+                                <button
+                                  onClick={() => selectBatch(batch, batchPickerItemId, prescItem?.quantity || 0)}
+                                  className={`px-2.5 py-1 rounded text-xs font-medium ${
+                                    isSelected ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-blue-100'
+                                  }`}
+                                >
+                                  {isSelected ? '✓ Selected' : 'Select'}
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <div className="p-3 border-t bg-gray-50 rounded-b-xl flex items-center justify-between text-xs text-gray-500">
+              <span>Sorted by expiry date (FEFO — First Expiry First Out)</span>
+              <button onClick={() => setBatchPickerItemId(null)} className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-xs font-medium">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
