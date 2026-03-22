@@ -170,6 +170,7 @@ const InvoicesPage = lazy(() => import('./pages/billing/InvoicesPage'));
 const PaymentsPage = lazy(() => import('./pages/billing/PaymentsPage'));
 const ClaimsPage = lazy(() => import('./pages/billing/insurance/ClaimsPage'));
 const InsuranceProvidersPage = lazy(() => import('./pages/billing/insurance/ProvidersPage'));
+const InsuranceDashboardPage = lazy(() => import('./pages/insurance/InsuranceDashboardPage'));
 const RequisitionsPage = lazy(() => import('./pages/billing/procurement/RequisitionsPage'));
 const RFQPage = lazy(() => import('./pages/billing/procurement/RFQPage'));
 const CompareQuotesPage = lazy(() => import('./pages/billing/procurement/CompareQuotesPage'));
@@ -377,6 +378,7 @@ const HMIS105ReportPage = lazy(() => import('./pages/reports/HMIS105ReportPage')
 const DrugDatabasePage = lazy(() => import('./pages/integrations/DrugDatabasePage'));
 const LabReferencePage = lazy(() => import('./pages/integrations/LabReferencePage'));
 const SMSNotificationsPage = lazy(() => import('./pages/integrations/SMSNotificationsPage'));
+const DHIS2SettingsPage = lazy(() => import('./pages/integrations/DHIS2SettingsPage'));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -865,6 +867,7 @@ function AppRoutes() {
                 <Route path="/hr/my-attendance" element={<ProtectedRoute><MyAttendancePage /></ProtectedRoute>} />
                 <Route path="/hr/my-appraisals" element={<ProtectedRoute><MyAppraisalsPage /></ProtectedRoute>} />
                 <Route path="/finance" element={<FinanceRoute><FinancePage /></FinanceRoute>} />
+                <Route path="/insurance/dashboard" element={<BillingRoute><InsuranceDashboardPage /></BillingRoute>} />
                 <Route path="/insurance" element={<BillingRoute><InsurancePage /></BillingRoute>} />
                 <Route path="/analytics" element={<AdminRoute><AnalyticsPage /></AdminRoute>} />
                 <Route path="/membership" element={<AdminRoute><MembershipPage /></AdminRoute>} />
@@ -1003,6 +1006,7 @@ function AppRoutes() {
                 <Route path="/integrations/drugs" element={<PharmacistRoute><DrugDatabasePage /></PharmacistRoute>} />
                 <Route path="/integrations/lab-reference" element={<LabTechRoute><LabReferencePage /></LabTechRoute>} />
                 <Route path="/integrations/sms" element={<AdminRoute><SMSNotificationsPage /></AdminRoute>} />
+                <Route path="/integrations/dhis2" element={<AdminRoute><DHIS2SettingsPage /></AdminRoute>} />
 
                 {/* Notifications Module */}
                 <Route path="/notifications/settings" element={<AdminRoute><NotificationSettingsPage /></AdminRoute>} />
