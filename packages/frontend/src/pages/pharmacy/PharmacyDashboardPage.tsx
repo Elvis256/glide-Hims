@@ -22,6 +22,15 @@ import { pharmacyService } from '../../services/pharmacy';
 import type { DashboardKPIs } from '../../services/pharmacy';
 import { formatCurrency } from '../../lib/currency';
 
+function formatWaitTime(minutes: number): string {
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (hours < 24) return `${hours}h ${mins}m`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ${hours % 24}h`;
+}
+
 function getAlertBadgeClass(count: number): string {
   if (count === 0) return 'bg-green-100 text-green-700';
   if (count <= 5) return 'bg-yellow-100 text-yellow-700';
@@ -134,7 +143,7 @@ export default function PharmacyDashboardPage() {
             <KPICard
               title="Queue Size"
               value={kpis.queue.pendingCount}
-              subtitle={kpis.queue.avgWaitMinutes != null ? `~${kpis.queue.avgWaitMinutes} min avg wait` : undefined}
+              subtitle={kpis.queue.avgWaitMinutes != null ? `~${formatWaitTime(kpis.queue.avgWaitMinutes)} avg wait` : undefined}
               icon={<Users className="w-6 h-6 text-blue-600" />}
               color="bg-blue-100"
             />

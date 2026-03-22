@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Prescription, PrescriptionStatus } from '../../database/entities/prescription.entity';
 import { StockBalance, Item, ExpiryAlert, ExpiryAlertStatus } from '../../database/entities/inventory.entity';
+import { BatchStockBalance } from '../../database/entities/batch-stock.entity';
 import { PharmacySale, PharmacySaleItem, SaleStatus } from '../../database/entities/pharmacy-sale.entity';
 
 export interface DashboardKPIs {
@@ -41,6 +42,7 @@ export class PharmacyDashboardService {
     @InjectRepository(StockBalance) private stockBalanceRepo: Repository<StockBalance>,
     @InjectRepository(Item) private itemRepo: Repository<Item>,
     @InjectRepository(ExpiryAlert) private expiryAlertRepo: Repository<ExpiryAlert>,
+    @InjectRepository(BatchStockBalance) private batchStockRepo: Repository<BatchStockBalance>,
     @InjectRepository(PharmacySale) private saleRepo: Repository<PharmacySale>,
     @InjectRepository(PharmacySaleItem) private saleItemRepo: Repository<PharmacySaleItem>,
   ) {}
@@ -60,22 +62,26 @@ export class PharmacyDashboardService {
   // ── Queue Stats ─────────────────────────────────────────────────────────
 
   private async getQueueKPIs(tenantId?: string, facilityId?: string): Promise<DashboardKPIs['queue']> {
-    // Pending prescriptions
+    const cutoff48h = new Date(Date.now() - 48 * 60 * 60 * 1000);
+
+    // Pending prescriptions — only count those from last 48 hours as active queue
     const pendingQuery = this.prescriptionRepo.createQueryBuilder('p')
       .where('p.status IN (:...statuses)', {
         statuses: [PrescriptionStatus.PENDING, PrescriptionStatus.DISPENSING, PrescriptionStatus.PARTIALLY_DISPENSED],
-      });
+      })
+      .andWhere('p.created_at >= :cutoff', { cutoff: cutoff48h.toISOString() });
 
     if (tenantId) pendingQuery.andWhere('p.tenant_id = :tenantId', { tenantId });
 
     const pendingCount = await pendingQuery.getCount();
 
-    // Average wait time: difference between createdAt and dispensingStartedAt for recently started ones
+    // Average wait time — only for recent prescriptions to avoid stale data skewing
     const waitQuery = this.prescriptionRepo.createQueryBuilder('p')
       .select('AVG(EXTRACT(EPOCH FROM (COALESCE(p.dispensing_started_at, NOW()) - p.created_at)) / 60)', 'avgWait')
       .where('p.status IN (:...statuses)', {
         statuses: [PrescriptionStatus.PENDING, PrescriptionStatus.DISPENSING, PrescriptionStatus.PARTIALLY_DISPENSED],
-      });
+      })
+      .andWhere('p.created_at >= :cutoff', { cutoff: cutoff48h.toISOString() });
 
     if (tenantId) waitQuery.andWhere('p.tenant_id = :tenantId', { tenantId });
 
@@ -109,20 +115,40 @@ export class PharmacyDashboardService {
 
     const outOfStockCount = await outOfStockQuery.getCount();
 
-    // Expiring soon (within 90 days)
-    const expiringSoonQuery = this.expiryAlertRepo.createQueryBuilder('ea')
-      .where('ea.status IN (:...statuses)', {
-        statuses: [ExpiryAlertStatus.ACTIVE, ExpiryAlertStatus.NEAR_EXPIRY],
-      })
-      .andWhere('ea.expiry_date <= :threshold', {
-        threshold: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
-      })
-      .andWhere('ea.expiry_date > :now', { now: new Date() });
+    // Expiring soon (within 90 days) — check expiry alerts first, fall back to batch stock
+    const threshold90d = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+    const now = new Date();
 
-    if (tenantId) expiringSoonQuery.andWhere('ea.tenant_id = :tenantId', { tenantId });
-    if (facilityId) expiringSoonQuery.andWhere('ea.facility_id = :facilityId', { facilityId });
+    let expiringSoonCount = 0;
+    try {
+      const expiringSoonQuery = this.expiryAlertRepo.createQueryBuilder('ea')
+        .where('ea.status IN (:...statuses)', {
+          statuses: [ExpiryAlertStatus.ACTIVE, ExpiryAlertStatus.NEAR_EXPIRY],
+        })
+        .andWhere('ea.expiry_date <= :threshold', { threshold: threshold90d })
+        .andWhere('ea.expiry_date > :now', { now });
 
-    const expiringSoonCount = await expiringSoonQuery.getCount();
+      if (tenantId) expiringSoonQuery.andWhere('ea.tenant_id = :tenantId', { tenantId });
+      if (facilityId) expiringSoonQuery.andWhere('ea.facility_id = :facilityId', { facilityId });
+
+      expiringSoonCount = await expiringSoonQuery.getCount();
+    } catch {
+      // ExpiryAlert table may not exist yet
+    }
+
+    // If no expiry alerts, query batch_stock_balances directly
+    if (expiringSoonCount === 0) {
+      const batchExpiryQuery = this.batchStockRepo.createQueryBuilder('bs')
+        .where('bs.expiry_date <= :threshold', { threshold: threshold90d })
+        .andWhere('bs.expiry_date > :now', { now })
+        .andWhere('bs.quantity > 0')
+        .andWhere('bs.status = :status', { status: 'active' });
+
+      if (tenantId) batchExpiryQuery.andWhere('bs.tenant_id = :tenantId', { tenantId });
+      if (facilityId) batchExpiryQuery.andWhere('bs.facility_id = :facilityId', { facilityId });
+
+      expiringSoonCount = await batchExpiryQuery.getCount();
+    }
 
     return { lowStockCount, expiringSoonCount, outOfStockCount };
   }
