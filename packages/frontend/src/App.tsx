@@ -202,6 +202,7 @@ const SampleCollectionPage = lazy(() => import('./pages/lab/SampleCollectionPage
 const ResultsEntryPage = lazy(() => import('./pages/lab/ResultsEntryPage'));
 const LabReportsPage = lazy(() => import('./pages/lab/LabReportsPage'));
 const LabAnalyticsPage = lazy(() => import('./pages/lab/LabAnalyticsPage'));
+const SampleReferralPage = lazy(() => import('./pages/lab/SampleReferralPage'));
 const RadiologyQueuePage = lazy(() => import('./pages/radiology/RadiologyQueuePage'));
 const ImagingOrdersPage = lazy(() => import('./pages/radiology/ImagingOrdersPage'));
 const RadiologyResultsPage = lazy(() => import('./pages/radiology/RadiologyResultsPage'));
@@ -260,6 +261,7 @@ const StoresSupplierPage = lazy(() => import('./pages/stores/StoresSupplierPage'
 const StoresExpiryPage = lazy(() => import('./pages/stores/StoresExpiryPage'));
 const StockAdjustmentsPage = lazy(() => import('./pages/stores/StockAdjustmentsPage'));
 const StockTakePage = lazy(() => import('./pages/stores/StockTakePage'));
+const StockTransferPage = lazy(() => import('./pages/inventory/StockTransferPage'));
 const StoresAssetRegisterPage = lazy(() => import('./pages/stores/AssetRegisterPage'));
 const MaintenanceSchedulePage = lazy(() => import('./pages/stores/MaintenanceSchedulePage'));
 const ConsumptionReportsPage = lazy(() => import('./pages/stores/ConsumptionReportsPage'));
@@ -371,6 +373,7 @@ const OutstandingReportsPage = lazy(() => import('./pages/reports/OutstandingRep
 const StockReportsPage = lazy(() => import('./pages/reports/StockReportsPage'));
 const ExpiryReportsPage = lazy(() => import('./pages/reports/ExpiryReportsPage'));
 const InventoryConsumptionReportsPage = lazy(() => import('./pages/reports/ConsumptionReportsPage'));
+const HMIS105ReportPage = lazy(() => import('./pages/reports/HMIS105ReportPage'));
 const DrugDatabasePage = lazy(() => import('./pages/integrations/DrugDatabasePage'));
 const LabReferencePage = lazy(() => import('./pages/integrations/LabReferencePage'));
 const SMSNotificationsPage = lazy(() => import('./pages/integrations/SMSNotificationsPage'));
@@ -727,6 +730,7 @@ function AppRoutes() {
                 <Route path="/lab/results" element={<LabTechRoute><ResultsEntryPage /></LabTechRoute>} />
                 <Route path="/lab/reports" element={<LabTechRoute><LabReportsPage /></LabTechRoute>} />
                 <Route path="/lab/analytics" element={<LabTechRoute><LabAnalyticsPage /></LabTechRoute>} />
+                <Route path="/lab/sample-referrals" element={<LabTechRoute><SampleReferralPage /></LabTechRoute>} />
                 
                 {/* Radiology Module */}
                 <Route path="/radiology/queue" element={<RadiologyRoute><RadiologyQueuePage /></RadiologyRoute>} />
@@ -802,6 +806,7 @@ function AppRoutes() {
                 <Route path="/stores/main" element={<StoreKeeperRoute><MainInventoryPage /></StoreKeeperRoute>} />
                 <Route path="/stores/issue" element={<StoreKeeperRoute><UnitIssuePage /></StoreKeeperRoute>} />
                 <Route path="/stores/transfers" element={<StoreKeeperRoute><StoreTransfersPage /></StoreKeeperRoute>} />
+                <Route path="/inventory/transfers" element={<StoreKeeperRoute><StockTransferPage /></StoreKeeperRoute>} />
                 <Route path="/stores/procurement" element={<StoreKeeperRoute><StoresProcurementPage /></StoreKeeperRoute>} />
                 <Route path="/stores/suppliers" element={<StoreKeeperRoute><StoresSupplierPage /></StoreKeeperRoute>} />
                 <Route path="/stores/expiry" element={<StoreKeeperRoute><StoresExpiryPage /></StoreKeeperRoute>} />
@@ -1017,6 +1022,7 @@ function AppRoutes() {
                 <Route path="/reports/stock" element={<StoreKeeperRoute><StockReportsPage /></StoreKeeperRoute>} />
                 <Route path="/reports/expiry" element={<StoreKeeperRoute><ExpiryReportsPage /></StoreKeeperRoute>} />
                 <Route path="/reports/consumption" element={<StoreKeeperRoute><InventoryConsumptionReportsPage /></StoreKeeperRoute>} />
+                <Route path="/reports/hmis-105" element={<AdminRoute><HMIS105ReportPage /></AdminRoute>} />
                 
                 {/* 404 Catch-all */}
                 <Route path="*" element={<NotFoundPage />} />
