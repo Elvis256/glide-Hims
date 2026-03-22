@@ -466,6 +466,7 @@ export async function seedLabTests(dataSource: DataSource) {
     console.log('❌ Default facility not found. Run base seed first.');
     return;
   }
+  const tenantId = (facility as any).tenantId || (facility as any).tenant_id;
 
   let created = 0;
   let skipped = 0;
@@ -485,6 +486,7 @@ export async function seedLabTests(dataSource: DataSource) {
       price: test.price,
       referenceRanges: test.referenceRanges,
       status: LabTestStatus.ACTIVE,
+      ...(tenantId ? { tenantId } : {}),
     });
     await labTestRepo.save(labTest);
     created++;
