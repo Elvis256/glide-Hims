@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsUUID, ValidateIf } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsUUID, ValidateIf, IsArray } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 
 export class CreateFacilityDto {
@@ -70,3 +70,14 @@ export class CreateDepartmentDto {
 }
 
 export class UpdateDepartmentDto extends PartialType(CreateDepartmentDto) {}
+
+export class UpdateFacilityModulesDto {
+  @IsArray()
+  @IsString({ each: true })
+  enabledModules: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  sharedModules?: string[];
+}

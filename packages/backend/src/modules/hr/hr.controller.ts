@@ -51,6 +51,8 @@ import {
   CreateOnboardingFromTemplateDto,
   UpdateOnboardingTaskDto,
   GenerateRosterDto,
+  DeactivateStaffDto,
+  OffboardStaffDto,
 } from './dto/hr.dto';
 import { EmploymentStatus } from '../../database/entities/employee.entity';
 import { LeaveStatus } from '../../database/entities/leave-request.entity';
@@ -120,7 +122,7 @@ export class HrController {
   @Post('staff/:id/deactivate')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Deactivate a staff member' })
-  async deactivateStaff(@Param('id') id: string, @Body() body: { reason?: string }, @Request() req: any) {
+  async deactivateStaff(@Param('id') id: string, @Body() body: DeactivateStaffDto, @Request() req: any) {
     return this.hrService.deactivateStaff(id, body.reason, req.user?.tenantId);
   }
 
@@ -136,7 +138,7 @@ export class HrController {
   @ApiOperation({ summary: 'Offboard a staff member (deactivate, revoke access, record termination)' })
   async offboardStaff(
     @Param('id') id: string,
-    @Body() dto: { reason: string; terminationDate?: string; revokeAccess?: boolean; deactivateAccount?: boolean },
+    @Body() dto: OffboardStaffDto,
     @Request() req: any,
   ) {
     return this.hrService.offboardEmployee(id, dto, req.user?.sub || req.user?.id, req.user?.tenantId);

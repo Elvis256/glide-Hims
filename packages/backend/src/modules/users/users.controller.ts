@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { UsersService } from './users.service';
-import { CreateUserDto, UpdateUserDto, AssignRoleDto, UserListQueryDto, LinkEmployeeDto, AssignPermissionDto } from './dto/user.dto';
+import { CreateUserDto, UpdateUserDto, AssignRoleDto, UserListQueryDto, LinkEmployeeDto, AssignPermissionDto, AssignMultiplePermissionsDto } from './dto/user.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { AuthService } from '../auth/auth.service';
 import { AdminResetPasswordDto } from '../auth/dto/auth.dto';
@@ -234,7 +234,7 @@ export class UsersController {
   @ApiResponse({ status: 201, description: 'Permissions assigned successfully' })
   async assignMultiplePermissions(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: { permissionIds: string[] },
+    @Body() dto: AssignMultiplePermissionsDto,
     @Request() req: any,
   ) {
     const permissions = await this.usersService.assignMultiplePermissions(id, dto.permissionIds, req.user.sub, req.user?.tenantId);

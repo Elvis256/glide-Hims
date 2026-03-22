@@ -3,6 +3,7 @@ import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { SystemSettingsService } from './system-settings.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { Public } from '../auth/decorators/public.decorator';
+import { UpsertSystemSettingDto } from './dto/system-settings.dto';
 
 @ApiTags('settings')
 @Controller('settings')
@@ -52,7 +53,7 @@ export class SystemSettingsController {
   @ApiQuery({ name: 'tenantId', required: false, description: 'Tenant ID' })
   async upsert(
     @Param('key') key: string,
-    @Body() body: { value: any; description?: string },
+    @Body() body: UpsertSystemSettingDto,
     @Query('tenantId') tenantId?: string,
   ) {
     const setting = await this.systemSettingsService.upsert(

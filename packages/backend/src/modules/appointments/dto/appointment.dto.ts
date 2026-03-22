@@ -57,6 +57,17 @@ export class UpdateAppointmentDto extends PartialType(CreateAppointmentDto) {
   cancellationReason?: string;
 }
 
+export class UpdateAppointmentStatusDto {
+  @ApiProperty({ enum: AppointmentStatus })
+  @IsEnum(AppointmentStatus)
+  status: AppointmentStatus;
+
+  @ApiPropertyOptional({ description: 'Cancellation reason' })
+  @IsOptional()
+  @IsString()
+  cancellationReason?: string;
+}
+
 export class AppointmentQueryDto {
   @ApiPropertyOptional({ description: 'Filter by date (YYYY-MM-DD)' })
   @IsOptional()

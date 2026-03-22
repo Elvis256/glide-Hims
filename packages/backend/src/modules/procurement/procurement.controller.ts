@@ -19,6 +19,7 @@ import {
   CreatePOFromQuotationDto,
   CreateGoodsReceiptDto,
   InspectGRNDto,
+  CreateGRNFromPODto,
 } from './dto/procurement.dto';
 import { PRStatus, PRPriority } from '../../database/entities/purchase-request.entity';
 import { POStatus } from '../../database/entities/purchase-order.entity';
@@ -149,7 +150,7 @@ export class ProcurementController {
   @Post('goods-receipts/from-po')
   @AuthWithPermissions('procurement.create')
   createGRNFromPO(
-    @Body() body: { purchaseOrderId: string; receivedItems: { itemId: string; quantityReceived: number; batchNumber?: string; expiryDate?: string }[] },
+    @Body() body: CreateGRNFromPODto,
     @Request() req: any,
   ) {
     return this.procurementService.createGRNFromPO(body.purchaseOrderId, body.receivedItems, req.user.id, req.user?.tenantId);

@@ -9,6 +9,7 @@ import {
   IsBoolean,
   IsArray,
   Min,
+  ArrayNotEmpty,
 } from 'class-validator';
 import { ProviderType, ClaimSubmissionMethod } from '../../../database/entities/insurance-provider.entity';
 import { CoverageType, MemberType, PolicyStatus } from '../../../database/entities/insurance-policy.entity';
@@ -337,6 +338,14 @@ export class CreatePreAuthDto {
   @IsNumber()
   @Min(1)
   expectedLosDays?: number;
+}
+
+export class BatchSubmitClaimsDto {
+  @ApiProperty({ type: [String] })
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsString({ each: true })
+  encounterIds: string[];
 }
 
 export class ProcessPreAuthDto {

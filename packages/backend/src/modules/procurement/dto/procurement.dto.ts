@@ -287,6 +287,32 @@ export class CreateGoodsReceiptDto {
   items: CreateGRNItemDto[];
 }
 
+export class CreateGRNFromPOReceivedItemDto {
+  @IsString()
+  itemId: string;
+
+  @IsNumber()
+  quantityReceived: number;
+
+  @IsOptional()
+  @IsString()
+  batchNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  expiryDate?: string;
+}
+
+export class CreateGRNFromPODto {
+  @IsString()
+  purchaseOrderId: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateGRNFromPOReceivedItemDto)
+  receivedItems: CreateGRNFromPOReceivedItemDto[];
+}
+
 export class InspectGRNDto {
   @IsArray()
   inspectedItems: {

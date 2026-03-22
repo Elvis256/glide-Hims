@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsUUID, IsNumber, IsArray, ValidateNested, IsDateString } from 'class-validator';
+import { IsString, IsOptional, IsUUID, IsNumber, IsArray, ValidateNested, IsDateString, IsBoolean, IsNotEmpty } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateInvoiceMatchItemDto {
@@ -53,6 +53,15 @@ export class CreateInvoiceMatchDto {
   @ValidateNested({ each: true })
   @Type(() => CreateInvoiceMatchItemDto)
   items: CreateInvoiceMatchItemDto[];
+}
+
+export class ResolveItemDto {
+  @IsBoolean() qtyMatch: boolean;
+  @IsBoolean() priceMatch: boolean;
+}
+
+export class FlagMatchDto {
+  @IsString() @IsNotEmpty() reason: string;
 }
 
 export class ApproveMatchDto {

@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Body, Param, Query, Request } from '@nestjs/common';
 import { InvoiceMatchingService } from './invoice-matching.service';
-import { CreateInvoiceMatchDto, ApproveMatchDto } from './dto/invoice-match.dto';
+import { CreateInvoiceMatchDto, ApproveMatchDto, ResolveItemDto, FlagMatchDto } from './dto/invoice-match.dto';
 import { InvoiceMatchStatus } from '../../database/entities/invoice-match.entity';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 
@@ -34,7 +34,7 @@ export class InvoiceMatchingController {
 
   @AuthWithPermissions('procurement.create')
   @Post('items/:itemId/resolve')
-  resolveItem(@Param('itemId') itemId: string, @Body() dto: { qtyMatch: boolean; priceMatch: boolean }, @Request() req: any) {
+  resolveItem(@Param('itemId') itemId: string, @Body() dto: ResolveItemDto, @Request() req: any) {
     return this.service.resolveItem(itemId, dto, req.user?.id || 'system', req.user?.tenantId);
   }
 
@@ -52,7 +52,7 @@ export class InvoiceMatchingController {
 
   @AuthWithPermissions('procurement.create')
   @Post(':id/flag')
-  flag(@Param('id') id: string, @Body() body: { reason: string }, @Request() req: any) {
+  flag(@Param('id') id: string, @Body() body: FlagMatchDto, @Request() req: any) {
     return this.service.flag(id, body.reason, req.user?.tenantId);
   }
 }

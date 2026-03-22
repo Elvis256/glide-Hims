@@ -7,7 +7,7 @@ import { ApiTags, ApiOperation, ApiQuery, ApiConsumes, ApiBody } from '@nestjs/s
 import { Response, Request } from 'express';
 import { createReadStream, existsSync } from 'fs';
 import { PatientsService, UploadDocumentDto, CreateNoteDto } from './patients.service';
-import { CreatePatientDto, UpdatePatientDto, PatientSearchDto } from './dto/patient.dto';
+import { CreatePatientDto, UpdatePatientDto, PatientSearchDto, MergePatientDto, LinkUserDto } from './dto/patient.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { DocumentCategory } from '../../database/entities/patient-document.entity';
 
@@ -256,7 +256,7 @@ export class PatientsController {
   async mergePatients(
     @Param('primaryId', ParseUUIDPipe) primaryId: string,
     @Param('secondaryId', ParseUUIDPipe) secondaryId: string,
-    @Body() body: { reason?: string },
+    @Body() body: MergePatientDto,
     @Req() req: Request,
   ) {
     const userId = (req as any).user?.id;
@@ -280,7 +280,7 @@ export class PatientsController {
   @ApiOperation({ summary: 'Link a user account to patient' })
   async linkUser(
     @Param('id', ParseUUIDPipe) patientId: string,
-    @Body() body: { userId: string },
+    @Body() body: LinkUserDto,
     @Req() req: Request,
   ) {
     const patient = await this.patientsService.linkUser(patientId, body.userId, (req as any).user?.tenantId);

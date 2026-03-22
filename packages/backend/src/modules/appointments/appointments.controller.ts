@@ -15,7 +15,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AppointmentsService } from './appointments.service';
-import { CreateAppointmentDto, UpdateAppointmentDto, AppointmentQueryDto } from './dto/appointment.dto';
+import { CreateAppointmentDto, UpdateAppointmentDto, AppointmentQueryDto, UpdateAppointmentStatusDto } from './dto/appointment.dto';
 import { AppointmentStatus } from './entities/appointment.entity';
 
 @ApiTags('Appointments')
@@ -86,7 +86,7 @@ export class AppointmentsController {
   @ApiOperation({ summary: 'Update appointment status' })
   updateStatus(
     @Param('id') id: string,
-    @Body() body: { status: AppointmentStatus; cancellationReason?: string },
+    @Body() body: UpdateAppointmentStatusDto,
     @Headers('x-facility-id') facilityId: string,
     @Request() req: any,
   ) {

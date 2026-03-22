@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Delete, Body, Param, HttpCode, HttpStatus, Request } from '@nestjs/common';
 import { BiometricsService } from './biometrics.service';
-import { RegisterBiometricDto, UpdateStaffCoverageDto, FingerIndex } from './dto/biometric.dto';
+import { RegisterBiometricDto, UpdateStaffCoverageDto, FingerIndex, RecordVerificationDto } from './dto/biometric.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 
 @Controller('biometrics')
@@ -61,7 +61,7 @@ export class BiometricsController {
   @Post('verify')
   @HttpCode(HttpStatus.OK)
   @AuthWithPermissions('users.read')
-  async recordVerification(@Body() body: { userId: string; fingerIndex: FingerIndex }, @Request() req: any) {
+  async recordVerification(@Body() body: RecordVerificationDto, @Request() req: any) {
     await this.biometricsService.recordVerification(body.userId, body.fingerIndex, req.user?.tenantId);
     return { message: 'Verification recorded' };
   }

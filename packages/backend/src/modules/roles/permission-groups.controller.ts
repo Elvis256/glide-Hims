@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Request, ParseUUIDPipe } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { PermissionGroupsService } from './permission-groups.service';
+import { CreatePermissionGroupDto, UpdatePermissionGroupDto, SetPermissionGroupPermissionsDto } from './dto/role.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 
 @ApiTags('permission-groups')
@@ -25,14 +26,14 @@ export class PermissionGroupsController {
   @Post()
   @AuthWithPermissions('roles.create')
   @ApiOperation({ summary: 'Create permission group' })
-  async create(@Body() dto: { name: string; description?: string; permissionIds?: string[] }, @Request() req: any) {
+  async create(@Body() dto: CreatePermissionGroupDto, @Request() req: any) {
     return this.service.create(dto, req.user?.tenantId);
   }
 
   @Put(':id')
   @AuthWithPermissions('roles.update')
   @ApiOperation({ summary: 'Update permission group' })
-  async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: { name?: string; description?: string }, @Request() req: any) {
+  async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdatePermissionGroupDto, @Request() req: any) {
     return this.service.update(id, dto, req.user?.tenantId);
   }
 
@@ -47,7 +48,7 @@ export class PermissionGroupsController {
   @Put(':id/permissions')
   @AuthWithPermissions('roles.update')
   @ApiOperation({ summary: 'Set permissions for group' })
-  async setPermissions(@Param('id', ParseUUIDPipe) id: string, @Body() dto: { permissionIds: string[] }, @Request() req: any) {
+  async setPermissions(@Param('id', ParseUUIDPipe) id: string, @Body() dto: SetPermissionGroupPermissionsDto, @Request() req: any) {
     return this.service.setPermissions(id, dto.permissionIds, req.user?.tenantId);
   }
 

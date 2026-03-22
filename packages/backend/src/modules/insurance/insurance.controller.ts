@@ -20,6 +20,7 @@ import {
   ProcessClaimDto,
   ProcessPreAuthDto,
   RecordPaymentDto,
+  BatchSubmitClaimsDto,
 } from './dto/insurance.dto';
 import { ClaimStatus } from '../../database/entities/insurance-claim.entity';
 import { PolicyStatus } from '../../database/entities/insurance-policy.entity';
@@ -321,7 +322,7 @@ export class InsuranceController {
   @ApiOperation({ summary: 'Batch create and submit claims from encounters' })
   @ApiQuery({ name: 'facilityId', required: true })
   async batchSubmitClaims(
-    @Body() body: { encounterIds: string[] },
+    @Body() body: BatchSubmitClaimsDto,
     @Query('facilityId') facilityId: string,
     @Request() req: any,
   ) {

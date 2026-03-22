@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsBoolean, IsEnum, IsArray, IsNumber } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, IsEnum, IsArray, IsNumber, ValidateNested } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { DiagnosisCategory } from '../../../database/entities/diagnosis.entity';
 
@@ -94,6 +94,34 @@ export class UpdateDiagnosisDto {
   @IsArray()
   @IsString({ each: true })
   synonyms?: string[];
+}
+
+export class ImportDiagnosisDto {
+  @IsString()
+  code: string;
+
+  @IsOptional()
+  @IsString()
+  version?: 'ICD-10' | 'ICD-11';
+}
+
+export class BulkImportCodeDto {
+  @IsString()
+  code: string;
+
+  @IsString()
+  title: string;
+
+  @IsOptional()
+  @IsString()
+  chapter?: string;
+}
+
+export class BulkImportDiagnosisDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => BulkImportCodeDto)
+  codes: BulkImportCodeDto[];
 }
 
 export class DiagnosisSearchDto {

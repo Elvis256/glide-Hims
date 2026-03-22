@@ -5,6 +5,7 @@ import { PaymentVoucherStatus, PaymentMethod } from '../../database/entities/sup
 import { CreditNoteType, CreditNoteStatus } from '../../database/entities/supplier-credit-note.entity';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { ApplyCreditNoteDto } from './dto/supplier-finance.dto';
 
 @ApiTags('Supplier Finance')
 @ApiBearerAuth()
@@ -129,7 +130,7 @@ export class SupplierFinanceController {
   @ApiOperation({ summary: 'Apply credit note to payment' })
   async applyCreditNote(
     @Param('id') id: string,
-    @Body() data: { paymentVoucherId: string; amount: number },
+    @Body() data: ApplyCreditNoteDto,
     @Request() req: any,
   ) {
     return this.supplierFinanceService.applyCreditNote(id, data.paymentVoucherId, data.amount, req.user?.tenantId);

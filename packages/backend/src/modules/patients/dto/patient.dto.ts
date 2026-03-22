@@ -120,6 +120,18 @@ export class CreatePatientDto {
 
 export class UpdatePatientDto extends PartialType(CreatePatientDto) {}
 
+export class MergePatientDto {
+  @IsOptional()
+  @IsString()
+  reason?: string;
+}
+
+export class LinkUserDto {
+  @IsString()
+  @IsNotEmpty()
+  userId: string;
+}
+
 export class PatientSearchDto {
   @ApiPropertyOptional()
   @IsOptional()
