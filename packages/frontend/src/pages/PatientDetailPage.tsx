@@ -877,7 +877,7 @@ export default function PatientDetailPage() {
                               {formatDate(visit.visitDate || visit.createdAt)}
                             </div>
                             <div className="text-sm text-gray-500">
-                              {visit.visitNumber} • {visit.type?.toUpperCase()} • {visit.department || 'General'}
+                              {visit.visitNumber} • {visit.type?.toUpperCase()} • {(typeof visit.department === 'object' ? visit.department?.name : visit.department) || 'General'}
                             </div>
                           </div>
                         </div>
@@ -910,7 +910,7 @@ export default function PatientDetailPage() {
                             </div>
                             <div>
                               <span className="text-gray-500 block">Department</span>
-                              <span className="text-gray-900">{visit.department || 'N/A'}</span>
+                              <span className="text-gray-900">{(typeof visit.department === 'object' ? visit.department?.name : visit.department) || 'N/A'}</span>
                             </div>
                             <div>
                               <span className="text-gray-500 block">Visit Type</span>
