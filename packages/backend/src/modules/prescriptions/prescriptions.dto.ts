@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsUUID, IsArray, ValidateNested, IsNumber, IsDateString, IsEnum, Min } from 'class-validator';
+import { IsString, IsOptional, IsUUID, IsArray, ValidateNested, IsNumber, IsDateString, IsEnum, IsIn, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PrescriptionStatus } from '../../database/entities/prescription.entity';
 
@@ -145,7 +145,12 @@ export class PrescriptionQueryDto {
 }
 
 export class UpdateStatusDto {
+  @IsString()
+  @IsIn(['pending', 'dispensing', 'ready', 'collected', 'cancelled'])
   status: 'pending' | 'dispensing' | 'ready' | 'collected' | 'cancelled';
+
+  @IsString()
+  @IsOptional()
   notes?: string;
 }
 
