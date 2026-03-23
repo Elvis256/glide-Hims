@@ -21,35 +21,42 @@ import { EmploymentType, Gender, StaffCategory } from '../../../database/entitie
 export { StaffCategory } from '../../../database/entities/employee.entity';
 
 // Employee profile to be created with user
+// All fields are optional — the service provides sensible defaults
 export class CreateEmployeeProfileDto {
-  @ApiProperty({ description: 'Facility ID where employee works' })
+  @ApiPropertyOptional({ description: 'Facility ID where employee works' })
+  @IsOptional()
   @IsUUID()
-  facilityId: string;
+  facilityId?: string;
 
-  @ApiProperty({ enum: StaffCategory, description: 'Category of staff member' })
+  @ApiPropertyOptional({ enum: StaffCategory, description: 'Category of staff member' })
+  @IsOptional()
   @IsEnum(StaffCategory)
-  staffCategory: StaffCategory;
+  staffCategory?: StaffCategory;
 
-  @ApiProperty({ example: 'Senior Consultant' })
+  @ApiPropertyOptional({ example: 'Senior Consultant' })
+  @IsOptional()
   @IsString()
-  jobTitle: string;
+  jobTitle?: string;
 
   @ApiPropertyOptional({ example: 'Outpatient' })
   @IsOptional()
   @IsString()
   department?: string;
 
-  @ApiProperty({ enum: EmploymentType })
+  @ApiPropertyOptional({ enum: EmploymentType })
+  @IsOptional()
   @IsEnum(EmploymentType)
-  employmentType: EmploymentType;
+  employmentType?: EmploymentType;
 
-  @ApiProperty({ example: '1990-01-15' })
+  @ApiPropertyOptional({ example: '1990-01-15' })
+  @IsOptional()
   @IsDateString()
-  dateOfBirth: string;
+  dateOfBirth?: string;
 
-  @ApiProperty({ enum: Gender })
+  @ApiPropertyOptional({ enum: Gender })
+  @IsOptional()
   @IsEnum(Gender)
-  gender: Gender;
+  gender?: Gender;
 
   @ApiPropertyOptional({ example: 'CM12345678' })
   @IsOptional()
