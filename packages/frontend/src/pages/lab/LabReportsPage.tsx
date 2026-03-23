@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useFacilityId } from '../../lib/facility';
-import { labService } from '../../services/lab';
+import { labService, type LabSample, type LabResult } from '../../services/lab';
 import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
 import { generateLabReportPdf, printLabReport, type LabReportFormat, type LabReportData } from '../../lib/labReport';
 import {
@@ -41,6 +41,9 @@ interface TestResult {
   unit: string;
   status: 'Normal' | 'Abnormal' | 'Critical';
   parameter?: string;
+  referenceRange?: string;
+  referenceMin?: number;
+  referenceMax?: number;
 }
 
 interface PatientTest {
@@ -99,96 +102,91 @@ export default function LabReportsPage() {
   const [shareMessage, setShareMessage] = useState('');
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
-  // Fetch patients with lab results
+  // Fetch patients with completed lab samples and their results
   const { data: patientsData, isLoading: loadingPatients } = useQuery({
     queryKey: ['lab-report-patients', facilityId],
     queryFn: async (): Promise<Patient[]> => {
-      try {
-        const orders = await labService.orders.list({ 
-          facilityId, 
-          status: 'completed' 
-        });
-        
-        const patientMap = new Map<string, Patient>();
-        
-        for (const order of orders) {
-          if (!order.patient) continue;
-          
-          const patientId = order.patient.id;
-          if (!patientMap.has(patientId)) {
-            patientMap.set(patientId, {
-              id: order.patient.mrn || patientId,
-              name: order.patient.fullName || 'Unknown',
-              age: 0,
-              gender: 'Unknown',
-              email: (order.patient as any).email,
-              phone: order.patient.phone || (order.patient as any).phone,
-              dob: (order.patient as any).dateOfBirth,
-              tests: [],
-            });
-          }
-          
-          const patient = patientMap.get(patientId)!;
-          const doctorName = order.doctor?.fullName || (order as any).orderedByName || '';
-          
-          for (const test of order.tests || []) {
-            // Build result entries from individual parameters if available
-            const resultEntries: TestResult[] = [];
-            const resultData = test.result as any;
-            
-            if (resultData?.results && Array.isArray(resultData.results)) {
-              // Multi-parameter results
-              for (const r of resultData.results) {
-                resultEntries.push({
-                  date: order.completedAt || order.createdAt,
-                  value: parseFloat(r.value) || 0,
-                  unit: r.unit || '',
-                  status: r.abnormalFlag === 'critical' ? 'Critical' : r.abnormalFlag === 'normal' ? 'Normal' : 'Abnormal',
-                  parameter: r.parameter || r.name || test.testName,
-                });
-              }
-            } else if (resultData?.value !== undefined) {
-              resultEntries.push({
-                date: order.completedAt || order.createdAt,
-                value: parseFloat(resultData.value) || 0,
-                unit: resultData.unit || '',
-                status: resultData.abnormalFlag === 'normal' ? 'Normal' : 
-                        resultData.abnormalFlag === 'critical' ? 'Critical' : 'Abnormal',
-                parameter: test.testName,
-              });
-            }
-            
-            const existingTest = patient.tests.find(t => t.testName === (test.testName || test.name));
-            
-            if (existingTest && resultEntries.length) {
-              existingTest.results.push(...resultEntries);
-            } else {
-              patient.tests.push({
-                id: test.id,
-                testName: test.testName || test.name || '',
-                testCode: test.testCode || '',
-                category: test.category || 'General',
-                results: resultEntries,
-                referenceRange: resultData?.referenceRange || '',
-                doctorReviewed: resultData?.status === 'validated' || resultData?.status === 'released',
-                lastReportDate: order.completedAt || order.createdAt,
-                sampleType: order.sampleType || '',
-                sampleNumber: order.sampleId || order.orderNumber || '',
-                sampleDate: order.collectedAt || order.createdAt,
-                doctorName,
-              });
-            }
-          }
-        }
-        
-        if (patientMap.size > 0) {
-          return Array.from(patientMap.values());
-        }
-      } catch (error) {
-        throw error;
-      }
+      // Get completed samples
+      const samplesResp = await labService.samples.list({ facilityId, status: 'completed' });
+      const samples: LabSample[] = Array.isArray(samplesResp) ? samplesResp : (samplesResp as any)?.data || [];
       
-      return [];
+      if (samples.length === 0) return [];
+
+      // Fetch results for each sample in parallel
+      const sampleResults = await Promise.all(
+        samples.map(async (s) => {
+          try {
+            const results = await labService.results.getForSample(s.id);
+            return { sample: s, results: Array.isArray(results) ? results : (results as any)?.data || [] };
+          } catch {
+            return { sample: s, results: [] as LabResult[] };
+          }
+        })
+      );
+
+      // Group by patient
+      const patientMap = new Map<string, Patient>();
+
+      for (const { sample, results } of sampleResults) {
+        const patientId = sample.patient?.id || sample.patientId;
+        const patientMrn = sample.patient?.mrn || patientId;
+        const patientName = sample.patient?.fullName || 
+          [sample.patient?.firstName, sample.patient?.lastName].filter(Boolean).join(' ') || 'Unknown';
+
+        if (!patientMap.has(patientId)) {
+          patientMap.set(patientId, {
+            id: patientMrn,
+            name: patientName,
+            age: 0,
+            gender: 'Unknown',
+            tests: [],
+          });
+        }
+
+        const patient = patientMap.get(patientId)!;
+        const testName = sample.labTest?.name || 'Unknown Test';
+        const testCode = sample.labTest?.code || '';
+        const category = sample.labTest?.category || 'General';
+
+        // Build result entries from lab_results
+        const resultEntries: TestResult[] = results.map((r: LabResult) => ({
+          date: sample.collectionTime || sample.createdAt,
+          value: (r.numericValue ?? parseFloat(r.value)) || 0,
+          unit: r.unit || '',
+          status: (r.abnormalFlag === 'critical' || r.abnormalFlag === 'critical_low' || r.abnormalFlag === 'critical_high')
+            ? 'Critical' as const
+            : (r.abnormalFlag === 'low' || r.abnormalFlag === 'high') ? 'Abnormal' as const : 'Normal' as const,
+          parameter: r.parameter,
+          referenceRange: r.referenceRange || '',
+          referenceMin: r.referenceMin,
+          referenceMax: r.referenceMax,
+        }));
+
+        // Check if this test already exists for this patient (e.g. re-run)
+        const existing = patient.tests.find(t => t.testName === testName && t.sampleNumber === sample.sampleNumber);
+        if (existing) {
+          existing.results.push(...resultEntries);
+        } else {
+          patient.tests.push({
+            id: sample.id,
+            testName,
+            testCode,
+            category,
+            results: resultEntries,
+            referenceRange: results[0]?.referenceRange || '',
+            doctorReviewed: results.some((r: LabResult) => r.status === 'validated' || r.status === 'released'),
+            lastReportDate: new Date(sample.createdAt).toLocaleDateString(),
+            sampleType: (sample as any).sampleType || sample.labTest?.sampleType || '',
+            sampleNumber: sample.sampleNumber,
+            sampleDate: sample.collectionTime
+              ? new Date(sample.collectionTime).toLocaleDateString()
+              : new Date(sample.createdAt).toLocaleDateString(),
+            doctorName: '',
+          });
+        }
+      }
+
+      return Array.from(patientMap.values());
     },
   });
 
@@ -279,11 +277,11 @@ export default function LabReportsPage() {
   const buildTestReportData = (patient: Patient, test: PatientTest): LabReportData => {
     const params = test.results.map((r) => ({
       name: r.parameter || test.testName,
-      value: String(r.value),
+      value: r.value === 0 && r.parameter ? String(r.value) : String(r.value),
       unit: r.unit,
-      normalMin: undefined as number | undefined,
-      normalMax: undefined as number | undefined,
-      referenceRange: test.referenceRange,
+      normalMin: r.referenceMin,
+      normalMax: r.referenceMax,
+      referenceRange: r.referenceRange || test.referenceRange,
     }));
     return {
       format: selectedFormat,
@@ -314,9 +312,9 @@ export default function LabReportsPage() {
         name: r.parameter || test.testName,
         value: String(r.value),
         unit: r.unit,
-        normalMin: undefined as number | undefined,
-        normalMax: undefined as number | undefined,
-        referenceRange: test.referenceRange,
+        normalMin: r.referenceMin,
+        normalMax: r.referenceMax,
+        referenceRange: r.referenceRange || test.referenceRange,
       }))
     );
     return {
@@ -469,8 +467,8 @@ export default function LabReportsPage() {
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50" id="lab-reports-content">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-violet-100 rounded-lg">
-            <FileText className="w-6 h-6 text-violet-600" />
+          <div className="p-2 bg-teal-100 rounded-lg">
+            <FileText className="w-6 h-6 text-teal-700" />
           </div>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Lab Reports</h1>
@@ -478,9 +476,9 @@ export default function LabReportsPage() {
           </div>
         </div>
         <div className="flex gap-3">
-          <div className="px-4 py-2 bg-violet-50 border border-violet-200 rounded-lg text-center">
-            <p className="text-xl font-bold text-violet-600">{patientCount}</p>
-            <p className="text-xs text-violet-500">Patients</p>
+          <div className="px-4 py-2 bg-teal-50 border border-teal-200 rounded-lg text-center">
+            <p className="text-xl font-bold text-teal-700">{patientCount}</p>
+            <p className="text-xs text-teal-600">Patients</p>
           </div>
           <div className="px-4 py-2 bg-amber-50 border border-amber-200 rounded-lg text-center">
             <p className="text-xl font-bold text-amber-600">{pendingReviewCount}</p>
@@ -499,7 +497,7 @@ export default function LabReportsPage() {
                 placeholder="Search patients..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-violet-500"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500"
               />
             </div>
           </div>
@@ -515,7 +513,7 @@ export default function LabReportsPage() {
                 key={patient.id}
                 onClick={() => { setSelectedPatient(patient); setSelectedTest(null); }}
                 className={`p-4 hover:bg-gray-50 cursor-pointer transition-colors ${
-                  selectedPatient?.id === patient.id ? 'bg-violet-50 border-l-4 border-violet-500' : ''
+                  selectedPatient?.id === patient.id ? 'bg-teal-50 border-l-4 border-teal-600' : ''
                 }`}
               >
                 <div className="flex items-center gap-3">
@@ -548,7 +546,7 @@ export default function LabReportsPage() {
                     <select
                       value={selectedFormat}
                       onChange={(e) => setSelectedFormat(e.target.value as LabReportFormat)}
-                      className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-violet-500"
+                      className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500"
                     >
                       {reportFormats.map((f) => (
                         <option key={f.value} value={f.value}>{f.label}</option>
@@ -603,7 +601,7 @@ export default function LabReportsPage() {
                             <p className="text-sm font-medium text-gray-700">Previous Results</p>
                             <button
                               onClick={() => setShowTrendChart(!showTrendChart)}
-                              className="text-sm text-violet-600 hover:text-violet-700 flex items-center gap-1"
+                              className="text-sm text-teal-700 hover:text-teal-800 flex items-center gap-1"
                             >
                               <BarChart3 className="w-4 h-4" />
                               {showTrendChart ? 'Hide Chart' : 'Show Trend'}
@@ -680,7 +678,7 @@ export default function LabReportsPage() {
                   </div>
                   <button
                     onClick={handlePreview}
-                    className="text-sm text-violet-600 hover:text-violet-700 flex items-center gap-1"
+                    className="text-sm text-teal-700 hover:text-teal-800 flex items-center gap-1"
                   >
                     <FileCheck className="w-4 h-4" />
                     Preview
@@ -722,7 +720,7 @@ export default function LabReportsPage() {
                   <button
                     onClick={handleDownload}
                     disabled={isGeneratingPdf}
-                    className="px-3 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 flex items-center gap-2 disabled:opacity-50"
+                    className="px-3 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 flex items-center gap-2 disabled:opacity-50"
                   >
                     <Download className="w-4 h-4" />
                     {isGeneratingPdf ? 'Generating...' : 'Download'}
@@ -747,7 +745,7 @@ export default function LabReportsPage() {
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
             <div className="flex items-center justify-between p-4 border-b border-gray-200">
               <div className="flex items-center gap-2">
-                <Share2 className="w-5 h-5 text-violet-600" />
+                <Share2 className="w-5 h-5 text-teal-700" />
                 <h3 className="font-semibold text-gray-900">
                   Share Report via {shareMethod === 'email' ? 'Email' : shareMethod === 'whatsapp' ? 'WhatsApp' : 'SMS'}
                 </h3>
@@ -780,7 +778,7 @@ export default function LabReportsPage() {
                     value={recipientEmail}
                     onChange={(e) => setRecipientEmail(e.target.value)}
                     placeholder="patient@email.com"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-violet-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500"
                   />
                 </div>
               ) : (
@@ -793,7 +791,7 @@ export default function LabReportsPage() {
                     value={recipientPhone}
                     onChange={(e) => setRecipientPhone(e.target.value)}
                     placeholder="+256700000000"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-violet-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500"
                   />
                 </div>
               )}
@@ -806,7 +804,7 @@ export default function LabReportsPage() {
                   value={shareMessage}
                   onChange={(e) => setShareMessage(e.target.value)}
                   rows={2}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-violet-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500"
                 />
               </div>
 
@@ -832,7 +830,7 @@ export default function LabReportsPage() {
               </button>
               <button
                 onClick={handleShare}
-                className="px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 flex items-center gap-2"
+                className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 flex items-center gap-2"
               >
                 <Send className="w-4 h-4" />
                 Send
@@ -848,7 +846,7 @@ export default function LabReportsPage() {
           <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl mx-4 max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between p-4 border-b border-gray-200">
               <div className="flex items-center gap-2">
-                <FileText className="w-5 h-5 text-violet-600" />
+                <FileText className="w-5 h-5 text-teal-700" />
                 <h3 className="font-semibold text-gray-900">Report Preview</h3>
               </div>
               <button onClick={() => setShowPreviewModal(false)} className="text-gray-400 hover:text-gray-600">
@@ -859,12 +857,12 @@ export default function LabReportsPage() {
             <div className="flex-1 overflow-auto p-6">
               {/* Structured preview */}
               <div className="border rounded-lg overflow-hidden">
-                <div className="bg-violet-700 text-white p-4 text-center">
+                <div className="bg-teal-700 text-white p-4 text-center">
                   {inst.logo && (
                     <img src={inst.logo} alt="Logo" className="w-12 h-12 mx-auto mb-2 rounded" />
                   )}
                   <h2 className="text-lg font-bold">{inst.name || 'Hospital'}</h2>
-                  <p className="text-xs text-violet-200">
+                  <p className="text-xs text-teal-200">
                     {[inst.address, inst.phone, inst.email].filter(Boolean).join(' | ')}
                   </p>
                   <p className="text-sm mt-1 font-medium">Laboratory Report</p>
@@ -880,7 +878,7 @@ export default function LabReportsPage() {
                 </div>
                 {selectedPatient.tests.map((test) => (
                   <div key={test.id} className="border-b last:border-b-0">
-                    <div className="px-4 py-2 bg-violet-50 font-medium text-violet-800 text-sm">
+                    <div className="px-4 py-2 bg-teal-50 font-medium text-teal-800 text-sm">
                       {test.testName} {test.testCode ? `(${test.testCode})` : ''} — {test.category}
                     </div>
                     <table className="w-full text-sm">
@@ -901,7 +899,7 @@ export default function LabReportsPage() {
                               {r.value} 
                             </td>
                             <td className="px-3 py-1.5 text-gray-500">{r.unit}</td>
-                            <td className="px-3 py-1.5 text-gray-500">{test.referenceRange}</td>
+                            <td className="px-3 py-1.5 text-gray-500">{r.referenceRange || test.referenceRange}</td>
                             <td className="px-3 py-1.5">
                               {r.status !== 'Normal' && (
                                 <span className={`px-1.5 py-0.5 rounded text-xs ${statusColors[r.status]}`}>{r.status}</span>
@@ -936,7 +934,7 @@ export default function LabReportsPage() {
               </button>
               <button
                 onClick={() => { setShowPreviewModal(false); handleDownload(); }}
-                className="px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 flex items-center gap-2"
+                className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 flex items-center gap-2"
               >
                 <Download className="w-4 h-4" />
                 Download
