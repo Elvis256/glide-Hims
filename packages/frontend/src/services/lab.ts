@@ -41,6 +41,10 @@ export interface LabSample {
     fullName?: string;
     firstName?: string;
     lastName?: string;
+    gender?: string;
+    dateOfBirth?: string;
+    phone?: string;
+    email?: string;
   };
   orderId?: string;
   labTestId?: string;
