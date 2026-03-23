@@ -108,7 +108,7 @@ export default function FinancialReportsPage() {
         })),
         totalDebit: Number(raw?.totalDebit || 0),
         totalCredit: Number(raw?.totalCredit || 0),
-        isBalanced: raw?.isBalanced ?? true,
+        isBalanced: raw?.isBalanced ?? false,
       };
     },
     enabled: shouldFetchReport && reportParams?.type === 'trial_balance' && !!facilityId,
@@ -248,15 +248,18 @@ export default function FinancialReportsPage() {
       });
     } else if (previewReport.type === 'cash_flow' && cashFlowData) {
       csvContent = 'Section,Description,Amount\n';
-      (cashFlowData.operating || []).forEach((item: any) => {
+      (cashFlowData.operatingActivities?.items || []).forEach((item: any) => {
         csvContent += `Operating,"${item.description || item.account}",${item.amount}\n`;
       });
-      (cashFlowData.investing || []).forEach((item: any) => {
+      (cashFlowData.investingActivities?.items || []).forEach((item: any) => {
         csvContent += `Investing,"${item.description || item.account}",${item.amount}\n`;
       });
-      (cashFlowData.financing || []).forEach((item: any) => {
+      (cashFlowData.financingActivities?.items || []).forEach((item: any) => {
         csvContent += `Financing,"${item.description || item.account}",${item.amount}\n`;
       });
+      csvContent += `\nOpening Cash Balance,,${Number(cashFlowData.openingCash || 0)}\n`;
+      csvContent += `Net Change in Cash,,${Number(cashFlowData.netChange || 0)}\n`;
+      csvContent += `Closing Cash Balance,,${Number(cashFlowData.closingCash || 0)}\n`;
     }
     
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -277,6 +280,8 @@ export default function FinancialReportsPage() {
   }, []);
 
   // Download PDF (uses browser print to PDF)
+  // NOTE: Currently identical to handlePrint — no dedicated PDF library is available,
+  // so this falls back to the browser's print-to-PDF dialog.
   const handleDownloadPDF = useCallback(() => {
     const el = document.getElementById('financial-reports-content');
     if (el) {
@@ -404,6 +409,7 @@ export default function FinancialReportsPage() {
     }
 
     return (
+      <>
       <div className="grid grid-cols-2 gap-6">
         <div>
           <h3 className="font-semibold text-gray-700 mb-2 flex items-center gap-2">
@@ -477,6 +483,12 @@ export default function FinancialReportsPage() {
           </div>
         </div>
       </div>
+      {Math.abs(totalAssets - (totalLiabilities + totalEquity)) > 0.01 && (
+        <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+          ⚠️ Balance sheet does not balance: Assets ({formatCurrency(totalAssets)}) ≠ Liabilities + Equity ({formatCurrency(totalLiabilities + totalEquity)})
+        </div>
+      )}
+      </>
     );
   };
 
@@ -595,16 +607,16 @@ export default function FinancialReportsPage() {
       );
     };
 
-    const operatingTotal = (cashFlowData.operating || []).reduce((s: number, i: any) => s + Number(i.amount || 0), 0);
-    const investingTotal = (cashFlowData.investing || []).reduce((s: number, i: any) => s + Number(i.amount || 0), 0);
-    const financingTotal = (cashFlowData.financing || []).reduce((s: number, i: any) => s + Number(i.amount || 0), 0);
+    const operatingTotal = Number(cashFlowData.operatingActivities?.total || 0);
+    const investingTotal = Number(cashFlowData.investingActivities?.total || 0);
+    const financingTotal = Number(cashFlowData.financingActivities?.total || 0);
     const netChange = operatingTotal + investingTotal + financingTotal;
 
     return (
       <div className="space-y-4">
-        {renderSection('Operating Activities', cashFlowData.operating, 'text-blue-700')}
-        {renderSection('Investing Activities', cashFlowData.investing, 'text-orange-700')}
-        {renderSection('Financing Activities', cashFlowData.financing, 'text-purple-700')}
+        {renderSection('Operating Activities', cashFlowData.operatingActivities?.items || [], 'text-blue-700')}
+        {renderSection('Investing Activities', cashFlowData.investingActivities?.items || [], 'text-orange-700')}
+        {renderSection('Financing Activities', cashFlowData.financingActivities?.items || [], 'text-purple-700')}
 
         <div className="bg-gray-100 rounded-lg p-4 flex justify-between items-center">
           <div>
@@ -928,7 +940,7 @@ export default function FinancialReportsPage() {
             <div className="p-6 overflow-auto max-h-[calc(90vh-140px)]">
               <div className="max-w-3xl mx-auto">
                 <div className="text-center mb-6">
-                  <h1 className="text-xl font-bold text-gray-900">Sample Hospital</h1>
+                  <h1 className="text-xl font-bold text-gray-900">{reportTypeConfig[previewReport.type].label}</h1>
                   <h2 className="text-lg font-semibold text-gray-700">{reportTypeConfig[previewReport.type].label}</h2>
                   <p className="text-sm text-gray-500">For the period {previewReport.dateRange}</p>
                 </div>

@@ -34,7 +34,7 @@ interface PettyCashFund {
 interface PettyCashTransaction {
   id: string;
   fundId: string;
-  type: 'expense' | 'replenishment';
+  type: 'expense' | 'topup';
   amount: number;
   description: string;
   category?: string;
@@ -75,7 +75,7 @@ export default function PettyCashPage() {
   });
 
   const createFundMutation = useMutation({
-    mutationFn: async (payload: { name: string; facilityId: string; imprestAmount: number; custodian: string }) => {
+    mutationFn: async (payload: { name: string; facilityId: string; imprestAmount: number; custodianId: string }) => {
       const response = await api.post('/finance/petty-cash/funds', payload);
       return response.data;
     },
@@ -94,7 +94,7 @@ export default function PettyCashPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['petty-cash-funds', facilityId] });
-      queryClient.invalidateQueries({ queryKey: ['petty-cash-statement', activeFundId] });
+      queryClient.invalidateQueries({ queryKey: ['petty-cash-statement', statementFundId] });
       toast.success('Expense recorded');
       setShowExpenseModal(false);
     },
@@ -103,7 +103,11 @@ export default function PettyCashPage() {
 
   const replenishMutation = useMutation({
     mutationFn: async (fundId: string) => {
-      const response = await api.post(`/finance/petty-cash/funds/${fundId}/replenish`);
+      const amountStr = window.prompt('Enter replenishment amount:');
+      if (!amountStr) throw new Error('Cancelled');
+      const amount = Number(amountStr);
+      if (isNaN(amount) || amount <= 0) throw new Error('Invalid amount');
+      const response = await api.post(`/finance/petty-cash/funds/${fundId}/replenish`, { amount });
       return response.data;
     },
     onSuccess: () => {
@@ -177,7 +181,7 @@ export default function PettyCashPage() {
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                       txn.type === 'expense' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
                     }`}>
-                      {txn.type === 'expense' ? 'Expense' : 'Replenish'}
+                      {txn.type === 'expense' ? 'Expense' : 'Top-up'}
                     </span>
                   </div>
                   <div className="col-span-2 text-gray-900">
@@ -419,7 +423,7 @@ export default function PettyCashPage() {
                   name: fd.get('name') as string,
                   facilityId,
                   imprestAmount: Number(fd.get('imprestAmount')),
-                  custodian: fd.get('custodian') as string,
+                  custodianId: fd.get('custodianId') as string,
                 });
               }}
             >
@@ -434,8 +438,8 @@ export default function PettyCashPage() {
                     <input type="number" name="imprestAmount" required min="0" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0.00" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Custodian</label>
-                    <input type="text" name="custodian" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Person responsible" />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Custodian ID</label>
+                    <input type="text" name="custodianId" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="UUID of custodian" />
                   </div>
                 </div>
               </div>

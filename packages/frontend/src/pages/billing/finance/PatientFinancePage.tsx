@@ -88,7 +88,11 @@ export default function PatientFinancePage() {
     queryKey: ['credit-notes', facilityId],
     queryFn: async () => {
       const response = await api.get('/finance/patient/credit-notes', { params: { facilityId } });
-      return response.data?.data || response.data || [];
+      const raw = response.data?.data || response.data || [];
+      return (Array.isArray(raw) ? raw : []).map((cn: any) => ({
+        ...cn,
+        creditNoteNumber: cn.creditNoteNumber || cn.noteNumber || cn.note_number || '',
+      }));
     },
     enabled: !!facilityId && activeTab === 'credit-notes',
   });
@@ -98,7 +102,12 @@ export default function PatientFinancePage() {
     queryKey: ['patient-deposits', facilityId],
     queryFn: async () => {
       const response = await api.get('/finance/patient/deposits', { params: { facilityId } });
-      return response.data?.data || response.data || [];
+      const raw = response.data?.data || response.data || [];
+      return (Array.isArray(raw) ? raw : []).map((d: any) => ({
+        ...d,
+        method: d.method || d.paymentMethod || d.payment_method || '',
+        reference: d.reference || d.paymentReference || d.payment_reference || '',
+      }));
     },
     enabled: !!facilityId && activeTab === 'deposits',
   });
@@ -118,14 +127,20 @@ export default function PatientFinancePage() {
     queryKey: ['patient-waivers', facilityId],
     queryFn: async () => {
       const response = await api.get('/finance/patient/waivers', { params: { facilityId } });
-      return response.data?.data || response.data || [];
+      const raw = response.data?.data || response.data || [];
+      return (Array.isArray(raw) ? raw : []).map((w: any) => ({
+        ...w,
+        waivedAmount: w.waivedAmount || w.waiverAmount || w.waiver_amount || 0,
+        originalAmount: w.originalAmount || w.original_amount || w.waiverAmount || 0,
+        invoiceNumber: w.invoiceNumber || w.invoice_number || w.invoiceId || '',
+      }));
     },
     enabled: !!facilityId && activeTab === 'waivers',
   });
 
   // Create Credit Note
   const createCreditNoteMutation = useMutation({
-    mutationFn: async (payload: { patientId: string; amount: number; reason: string; facilityId: string }) => {
+    mutationFn: async (payload: { patientId: string; amount: number; reason: string; noteNumber: string; facilityId: string }) => {
       const response = await api.post('/finance/patient/credit-notes', payload);
       return response.data;
     },
@@ -139,8 +154,8 @@ export default function PatientFinancePage() {
 
   // Apply Credit Note to Invoice
   const applyCreditNoteMutation = useMutation({
-    mutationFn: async ({ id, invoiceId }: { id: string; invoiceId: string }) => {
-      const response = await api.patch(`/finance/patient/credit-notes/${id}`, { invoiceId, status: 'applied' });
+    mutationFn: async ({ id, invoiceId, amount }: { id: string; invoiceId: string; amount: number }) => {
+      const response = await api.post(`/finance/patient/credit-notes/${id}/apply`, { invoiceId, amount });
       return response.data;
     },
     onSuccess: () => {
@@ -152,7 +167,7 @@ export default function PatientFinancePage() {
 
   // Create Deposit
   const createDepositMutation = useMutation({
-    mutationFn: async (payload: { patientId: string; amount: number; method: string; reference: string; facilityId: string }) => {
+    mutationFn: async (payload: { patientId: string; amount: number; paymentMethod: string; depositNumber: string; paymentReference?: string; facilityId: string }) => {
       const response = await api.post('/finance/patient/deposits', payload);
       return response.data;
     },
@@ -166,8 +181,8 @@ export default function PatientFinancePage() {
 
   // Apply Deposit to Invoice
   const applyDepositMutation = useMutation({
-    mutationFn: async ({ id, invoiceId }: { id: string; invoiceId: string }) => {
-      const response = await api.patch(`/finance/patient/deposits/${id}`, { invoiceId, status: 'applied' });
+    mutationFn: async ({ id, invoiceId, amount }: { id: string; invoiceId: string; amount: number }) => {
+      const response = await api.post(`/finance/patient/deposits/${id}/apply`, { invoiceId, amount });
       return response.data;
     },
     onSuccess: () => {
@@ -179,7 +194,7 @@ export default function PatientFinancePage() {
 
   // Create Waiver
   const createWaiverMutation = useMutation({
-    mutationFn: async (payload: { patientId: string; invoiceId: string; waivedAmount: number; reason: string; facilityId: string }) => {
+    mutationFn: async (payload: { patientId: string; invoiceId: string; requestedAmount: number; reason: string; facilityId: string }) => {
       const response = await api.post('/finance/patient/waivers', payload);
       return response.data;
     },
@@ -193,9 +208,14 @@ export default function PatientFinancePage() {
 
   // Approve/Reject Waiver
   const updateWaiverMutation = useMutation({
-    mutationFn: async ({ id, status }: { id: string; status: 'approved' | 'rejected' }) => {
-      const response = await api.patch(`/finance/patient/waivers/${id}`, { status });
-      return response.data;
+    mutationFn: async ({ id, status, reason }: { id: string; status: 'approved' | 'rejected'; reason?: string }) => {
+      if (status === 'approved') {
+        const response = await api.patch(`/finance/patient/waivers/${id}/approve`, {});
+        return response.data;
+      } else {
+        const response = await api.patch(`/finance/patient/waivers/${id}/reject`, { reason: reason || 'Rejected' });
+        return response.data;
+      }
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['patient-waivers', facilityId] });
@@ -322,7 +342,8 @@ export default function PatientFinancePage() {
                         <button
                           onClick={() => {
                             const invoiceId = window.prompt('Enter Invoice ID to apply credit note:');
-                            if (invoiceId) applyCreditNoteMutation.mutate({ id: cn.id, invoiceId });
+                            const amountStr = window.prompt('Enter amount to apply:', String(cn.amount));
+                            if (invoiceId && amountStr) applyCreditNoteMutation.mutate({ id: cn.id, invoiceId, amount: Number(amountStr) });
                           }}
                           className="text-xs text-blue-600 hover:underline"
                         >
@@ -383,7 +404,8 @@ export default function PatientFinancePage() {
                         <button
                           onClick={() => {
                             const invoiceId = window.prompt('Enter Invoice ID to apply deposit:');
-                            if (invoiceId) applyDepositMutation.mutate({ id: dep.id, invoiceId });
+                            const amountStr = window.prompt('Enter amount to apply:', String(dep.amount));
+                            if (invoiceId && amountStr) applyDepositMutation.mutate({ id: dep.id, invoiceId, amount: Number(amountStr) });
                           }}
                           className="text-xs text-blue-600 hover:underline"
                         >
@@ -449,7 +471,10 @@ export default function PatientFinancePage() {
                             <CheckCircle className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={() => updateWaiverMutation.mutate({ id: waiver.id, status: 'rejected' })}
+                            onClick={() => {
+                              const reason = window.prompt('Enter rejection reason:');
+                              if (reason) updateWaiverMutation.mutate({ id: waiver.id, status: 'rejected', reason });
+                            }}
                             disabled={updateWaiverMutation.isPending}
                             className="p-1.5 hover:bg-red-100 rounded text-red-500" title="Reject"
                           >
@@ -493,6 +518,7 @@ export default function PatientFinancePage() {
                     patientId: fd.get('patientId') as string,
                     amount: Number(fd.get('amount')),
                     reason: fd.get('reason') as string,
+                    noteNumber: `CN-${Date.now()}`,
                     facilityId,
                   });
                 }}
@@ -530,8 +556,9 @@ export default function PatientFinancePage() {
                   createDepositMutation.mutate({
                     patientId: fd.get('patientId') as string,
                     amount: Number(fd.get('amount')),
-                    method: fd.get('method') as string,
-                    reference: fd.get('reference') as string,
+                    paymentMethod: fd.get('method') as string,
+                    depositNumber: `DEP-${Date.now()}`,
+                    paymentReference: fd.get('reference') as string,
                     facilityId,
                   });
                 }}
@@ -580,7 +607,7 @@ export default function PatientFinancePage() {
                   createWaiverMutation.mutate({
                     patientId: fd.get('patientId') as string,
                     invoiceId: fd.get('invoiceId') as string,
-                    waivedAmount: Number(fd.get('waivedAmount')),
+                    requestedAmount: Number(fd.get('waivedAmount')),
                     reason: fd.get('reason') as string,
                     facilityId,
                   });
