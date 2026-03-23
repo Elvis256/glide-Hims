@@ -7,6 +7,7 @@ import { DataSource } from 'typeorm';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import helmet from 'helmet';
+import * as cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { GlobalJwtAuthGuard } from './modules/auth/guards/global-jwt.guard';
 import { SecurityAuditInterceptor } from './common/interceptors/security-audit.interceptor';
@@ -76,6 +77,9 @@ async function bootstrap() {
 
   // Correlation ID middleware (request tracing)
   app.use(correlationIdMiddleware);
+
+  // Cookie parser for httpOnly JWT cookies
+  app.use(cookieParser());
 
   // Increase body size limit for logo uploads (base64 encoded images)
   app.useBodyParser('json', { limit: '10mb' });
