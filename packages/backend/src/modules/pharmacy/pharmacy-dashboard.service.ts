@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Prescription, PrescriptionStatus } from '../../database/entities/prescription.entity';
@@ -37,6 +37,8 @@ export interface DashboardKPIs {
 
 @Injectable()
 export class PharmacyDashboardService {
+  private readonly logger = new Logger(PharmacyDashboardService.name);
+
   constructor(
     @InjectRepository(Prescription) private prescriptionRepo: Repository<Prescription>,
     @InjectRepository(StockBalance) private stockBalanceRepo: Repository<StockBalance>,
@@ -48,12 +50,20 @@ export class PharmacyDashboardService {
   ) {}
 
   async getDashboardKPIs(tenantId?: string, facilityId?: string): Promise<DashboardKPIs> {
+    const defaults: DashboardKPIs = {
+      queue: { pendingCount: 0, avgWaitMinutes: null },
+      stockAlerts: { lowStockCount: 0, expiringSoonCount: 0, outOfStockCount: 0 },
+      revenue: { todayTotal: 0, monthTotal: 0, avgTransactionValue: 0 },
+      dispensing: { totalDispensedToday: 0, controlledSubstancesToday: 0 },
+      recentActivity: [],
+    };
+
     const [queue, stockAlerts, revenue, dispensing, recentActivity] = await Promise.all([
-      this.getQueueKPIs(tenantId, facilityId),
-      this.getStockAlertKPIs(tenantId, facilityId),
-      this.getRevenueKPIs(tenantId, facilityId),
-      this.getDispensingKPIs(tenantId, facilityId),
-      this.getRecentActivity(tenantId, facilityId),
+      this.getQueueKPIs(tenantId, facilityId).catch((e) => { this.logger.warn('Queue KPI error: ' + e.message); return defaults.queue; }),
+      this.getStockAlertKPIs(tenantId, facilityId).catch((e) => { this.logger.warn('Stock alert KPI error: ' + e.message); return defaults.stockAlerts; }),
+      this.getRevenueKPIs(tenantId, facilityId).catch((e) => { this.logger.warn('Revenue KPI error: ' + e.message); return defaults.revenue; }),
+      this.getDispensingKPIs(tenantId, facilityId).catch((e) => { this.logger.warn('Dispensing KPI error: ' + e.message); return defaults.dispensing; }),
+      this.getRecentActivity(tenantId, facilityId).catch((e) => { this.logger.warn('Recent activity error: ' + e.message); return defaults.recentActivity; }),
     ]);
 
     return { queue, stockAlerts, revenue, dispensing, recentActivity };
@@ -138,16 +148,20 @@ export class PharmacyDashboardService {
 
     // If no expiry alerts, query batch_stock_balances directly
     if (expiringSoonCount === 0) {
-      const batchExpiryQuery = this.batchStockRepo.createQueryBuilder('bs')
-        .where('bs.expiry_date <= :threshold', { threshold: threshold90d })
-        .andWhere('bs.expiry_date > :now', { now })
-        .andWhere('bs.quantity > 0')
-        .andWhere('bs.status = :status', { status: 'active' });
+      try {
+        const batchExpiryQuery = this.batchStockRepo.createQueryBuilder('bs')
+          .where('bs.expiryDate <= :threshold', { threshold: threshold90d })
+          .andWhere('bs.expiryDate > :now', { now })
+          .andWhere('bs.quantity > 0')
+          .andWhere('bs.status = :status', { status: 'active' });
 
-      if (tenantId) batchExpiryQuery.andWhere('bs.tenant_id = :tenantId', { tenantId });
-      if (facilityId) batchExpiryQuery.andWhere('bs.facility_id = :facilityId', { facilityId });
+        if (tenantId) batchExpiryQuery.andWhere('bs.tenantId = :tenantId', { tenantId });
+        if (facilityId) batchExpiryQuery.andWhere('bs.facilityId = :facilityId', { facilityId });
 
-      expiringSoonCount = await batchExpiryQuery.getCount();
+        expiringSoonCount = await batchExpiryQuery.getCount();
+      } catch {
+        // batch_stock_balances table may not exist yet
+      }
     }
 
     return { lowStockCount, expiringSoonCount, outOfStockCount };
