@@ -111,7 +111,7 @@ function categoryIcon(category: string) {
   if (cat.includes('hematol')) return <Activity className="w-4 h-4 text-red-500" />;
   if (cat.includes('chem') || cat.includes('biochem')) return <Beaker className="w-4 h-4 text-blue-500" />;
   if (cat.includes('micro') || cat.includes('parasit')) return <Shield className="w-4 h-4 text-purple-500" />;
-  return <Beaker className="w-4 h-4 text-teal-500" />;
+  return <Beaker className="w-4 h-4 text-blue-500" />;
 }
 
 // ─── Component ──────────────────────────────────────────────────────
@@ -377,7 +377,7 @@ export default function LabReportsPage() {
       {/* ── Header ── */}
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-teal-600 rounded-xl shadow-sm">
+          <div className="p-2.5 bg-blue-600 rounded-xl shadow-sm">
             <FileText className="w-6 h-6 text-white" />
           </div>
           <div>
@@ -387,7 +387,7 @@ export default function LabReportsPage() {
         </div>
         <div className="flex gap-3">
           <div className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-center shadow-sm">
-            <p className="text-2xl font-bold text-teal-700">{patients.length}</p>
+            <p className="text-2xl font-bold text-blue-700">{patients.length}</p>
             <p className="text-xs text-slate-500 font-medium">Patients</p>
           </div>
           <div className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-center shadow-sm">
@@ -414,14 +414,14 @@ export default function LabReportsPage() {
                 placeholder="Search patients..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
             </div>
           </div>
           <div className="flex-1 overflow-auto">
             {isLoading && (
               <div className="p-8 text-center text-slate-400">
-                <div className="w-6 h-6 border-2 border-teal-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
                 <p className="text-sm">Loading patients...</p>
               </div>
             )}
@@ -441,11 +441,11 @@ export default function LabReportsPage() {
                   key={patient.id}
                   onClick={() => { setSelectedPatient(patient); setSelectedTest(null); setExpandedTests(new Set()); }}
                   className={`px-4 py-3 cursor-pointer border-b border-slate-50 transition-all
-                    ${isSelected ? 'bg-teal-50 border-l-3 border-l-teal-600' : 'hover:bg-slate-50'}`}
+                    ${isSelected ? 'bg-blue-50 border-l-3 border-l-blue-600' : 'hover:bg-slate-50'}`}
                 >
                   <div className="flex items-start gap-3">
                     <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold
-                      ${isSelected ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                      ${isSelected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
                       {patient.name.charAt(0).toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -478,7 +478,7 @@ export default function LabReportsPage() {
               <div className="px-5 py-4 border-b border-slate-200 bg-gradient-to-r from-slate-50 to-white">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-full bg-teal-600 text-white flex items-center justify-center text-lg font-bold">
+                    <div className="w-12 h-12 rounded-full bg-blue-600 text-white flex items-center justify-center text-lg font-bold">
                       {selectedPatient.name.charAt(0).toUpperCase()}
                     </div>
                     <div>
@@ -506,7 +506,7 @@ export default function LabReportsPage() {
                         onClick={() => setSelectedFormat(f.value)}
                         className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all
                           ${selectedFormat === f.value
-                            ? 'bg-teal-600 text-white shadow-sm'
+                            ? 'bg-blue-600 text-white shadow-sm'
                             : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                       >
                         {f.label}
@@ -528,7 +528,7 @@ export default function LabReportsPage() {
                         const allIds = new Set(selectedPatient.tests.map(t => t.id));
                         setExpandedTests(expandedTests.size === allIds.size ? new Set() : allIds);
                       }}
-                      className="text-xs text-teal-700 hover:text-teal-800 font-medium"
+                      className="text-xs text-blue-700 hover:text-blue-800 font-medium"
                     >
                       {expandedTests.size === selectedPatient.tests.length ? 'Collapse All' : 'Expand All'}
                     </button>
@@ -546,7 +546,7 @@ export default function LabReportsPage() {
                         <div
                           onClick={() => { toggleTest(test.id); setSelectedTest(test); }}
                           className={`px-4 py-3 flex items-center justify-between cursor-pointer transition-colors
-                            ${isExpanded ? 'bg-teal-50 border-b border-teal-100' : 'bg-slate-50 hover:bg-slate-100'}`}
+                            ${isExpanded ? 'bg-blue-50 border-b border-blue-100' : 'bg-slate-50 hover:bg-slate-100'}`}
                         >
                           <div className="flex items-center gap-3">
                             {categoryIcon(test.category)}
@@ -686,7 +686,7 @@ export default function LabReportsPage() {
                   <button
                     onClick={handleDownload}
                     disabled={isGeneratingPdf}
-                    className="px-4 py-2 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 flex items-center gap-1.5 transition-colors disabled:opacity-50 shadow-sm"
+                    className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-1.5 transition-colors disabled:opacity-50 shadow-sm"
                   >
                     <Download className="w-4 h-4" />
                     {isGeneratingPdf ? 'Generating...' : 'Download PDF'}
@@ -714,10 +714,10 @@ export default function LabReportsPage() {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4">
             <div className="flex items-center justify-between p-5 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
-                <div className={`p-2 rounded-lg ${shareMethod === 'whatsapp' ? 'bg-green-100' : shareMethod === 'sms' ? 'bg-blue-100' : 'bg-teal-100'}`}>
+                <div className={`p-2 rounded-lg ${shareMethod === 'whatsapp' ? 'bg-green-100' : shareMethod === 'sms' ? 'bg-blue-100' : 'bg-blue-100'}`}>
                   {shareMethod === 'whatsapp' ? <MessageSquare className="w-4 h-4 text-green-700" /> :
                    shareMethod === 'sms' ? <Phone className="w-4 h-4 text-blue-700" /> :
-                   <Mail className="w-4 h-4 text-teal-700" />}
+                   <Mail className="w-4 h-4 text-blue-700" />}
                 </div>
                 <h3 className="font-semibold text-slate-900">
                   Share via {shareMethod === 'email' ? 'Email' : shareMethod === 'whatsapp' ? 'WhatsApp' : 'SMS'}
@@ -740,21 +740,21 @@ export default function LabReportsPage() {
                   <label className="block text-sm font-medium text-slate-700 mb-1.5">Recipient Email</label>
                   <input type="email" value={recipientEmail} onChange={(e) => setRecipientEmail(e.target.value)}
                     placeholder="patient@email.com"
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500 text-sm" />
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" />
                 </div>
               ) : (
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5">Phone Number</label>
                   <input type="tel" value={recipientPhone} onChange={(e) => setRecipientPhone(e.target.value)}
                     placeholder="+256700000000"
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500 text-sm" />
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" />
                 </div>
               )}
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">Message (optional)</label>
                 <textarea value={shareMessage} onChange={(e) => setShareMessage(e.target.value)} rows={2}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500 text-sm" />
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" />
               </div>
 
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex gap-2">
@@ -773,7 +773,7 @@ export default function LabReportsPage() {
                 Cancel
               </button>
               <button onClick={handleShare}
-                className="px-4 py-2 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 flex items-center gap-1.5">
+                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-1.5">
                 <Send className="w-4 h-4" />
                 Send
               </button>
@@ -788,8 +788,8 @@ export default function LabReportsPage() {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl mx-4 max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between p-5 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 bg-teal-100 rounded-lg">
-                  <Eye className="w-4 h-4 text-teal-700" />
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <Eye className="w-4 h-4 text-blue-700" />
                 </div>
                 <h3 className="font-semibold text-slate-900">Report Preview</h3>
               </div>
@@ -802,12 +802,12 @@ export default function LabReportsPage() {
               {/* Simulated report page */}
               <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm bg-white max-w-[600px] mx-auto">
                 {/* Facility header */}
-                <div className="bg-gradient-to-b from-teal-700 to-teal-800 text-white p-5 text-center">
+                <div className="bg-gradient-to-b from-blue-700 to-blue-800 text-white p-5 text-center">
                   {inst.logo && (
                     <img src={inst.logo} alt="Logo" className="w-14 h-14 mx-auto mb-2 rounded-lg bg-white/10 p-1" />
                   )}
                   <h2 className="text-lg font-bold tracking-wide">{inst.name || 'Hospital'}</h2>
-                  <p className="text-teal-200 text-xs mt-1">
+                  <p className="text-blue-200 text-xs mt-1">
                     {[inst.address, inst.phone, inst.email].filter(Boolean).join('  •  ')}
                   </p>
                   <div className="mt-2 inline-block px-3 py-0.5 bg-white/15 rounded text-xs font-medium">
@@ -832,11 +832,11 @@ export default function LabReportsPage() {
                 {/* Test sections */}
                 {selectedPatient.tests.map((test) => (
                   <div key={test.id}>
-                    <div className="px-4 py-2 bg-teal-50 border-b border-teal-100 flex items-center gap-2">
+                    <div className="px-4 py-2 bg-blue-50 border-b border-blue-100 flex items-center gap-2">
                       {categoryIcon(test.category)}
-                      <span className="font-semibold text-teal-800 text-sm">{test.testName}</span>
-                      {test.testCode && <span className="text-xs text-teal-600">({test.testCode})</span>}
-                      <span className="text-xs text-teal-500 ml-auto">{test.category} • {test.sampleDate}</span>
+                      <span className="font-semibold text-blue-800 text-sm">{test.testName}</span>
+                      {test.testCode && <span className="text-xs text-blue-600">({test.testCode})</span>}
+                      <span className="text-xs text-blue-500 ml-auto">{test.category} • {test.sampleDate}</span>
                     </div>
                     <table className="w-full text-xs">
                       <thead>
@@ -914,7 +914,7 @@ export default function LabReportsPage() {
               </button>
               <button
                 onClick={() => { setShowPreviewModal(false); handleDownload(); }}
-                className="px-4 py-2 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 flex items-center gap-1.5 shadow-sm"
+                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-1.5 shadow-sm"
               >
                 <Download className="w-4 h-4" />
                 Download PDF

@@ -14,17 +14,18 @@ import type { InstitutionInfo } from './print';
 import type { PagePreset } from './print';
 
 // ─── Colors ─────────────────────────────────────────────────────────
+// Aligned with system theme (blue-600 primary)
 
-const TEAL     = [15, 118, 110] as const;  // primary header
-const TEAL_DARK = [13, 95, 89] as const;   // darker accent
-const TEAL_LIGHT = [230, 247, 245] as const; // light bg
-const SLATE    = [51, 65, 85] as const;     // body text
-const SLATE_LT = [148, 163, 184] as const;  // muted text
-const WHITE    = [255, 255, 255] as const;
-const RED      = [220, 38, 38] as const;
-const AMBER    = [217, 119, 6] as const;
-const ROW_ALT  = [248, 250, 252] as const;  // alternating row bg
-const BORDER   = [226, 232, 240] as const;  // table borders
+const PRIMARY     = [37, 99, 235] as const;   // blue-600 — primary header/accents
+const PRIMARY_DK  = [29, 78, 216] as const;   // blue-700 — darker accent
+const PRIMARY_LT  = [239, 246, 255] as const; // blue-50  — light bg
+const SLATE       = [51, 65, 85] as const;    // slate-700 — body text
+const SLATE_LT    = [148, 163, 184] as const; // slate-400 — muted text
+const WHITE       = [255, 255, 255] as const;
+const RED         = [220, 38, 38] as const;
+const AMBER       = [217, 119, 6] as const;
+const ROW_ALT     = [248, 250, 252] as const; // slate-50 — alternating row bg
+const BORDER      = [226, 232, 240] as const; // slate-200 — table borders
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -158,7 +159,7 @@ function generateStandardPdf(data: LabReportData): jsPDF {
 
   // ── Colored header bar ──
   const headerH = cfg.compact ? 16 : 28;
-  drawRoundedRect(doc, mx, y, contentW, headerH, 2, TEAL);
+  drawRoundedRect(doc, mx, y, contentW, headerH, 2, PRIMARY);
 
   const logoSize = cfg.compact ? 10 : 16;
   const hasLogo = addLogo(doc, data.institution.logo, mx + 3, y + (headerH - logoSize) / 2, logoSize);
@@ -182,7 +183,7 @@ function generateStandardPdf(data: LabReportData): jsPDF {
     doc.setFont('helvetica', 'bold');
     const badgeText = 'LABORATORY REPORT';
     const badgeW = doc.getTextWidth(badgeText) + 8;
-    drawRoundedRect(doc, pw - mx - badgeW - 2, y + 3, badgeW, 8, 1.5, TEAL_DARK);
+    drawRoundedRect(doc, pw - mx - badgeW - 2, y + 3, badgeW, 8, 1.5, PRIMARY_DK);
     doc.setTextColor(...WHITE);
     doc.text(badgeText, pw - mx - badgeW / 2 - 2, y + 8.5, { align: 'center' });
   }
@@ -196,7 +197,7 @@ function generateStandardPdf(data: LabReportData): jsPDF {
   doc.roundedRect(mx, y, contentW, patBoxH, 1.5, 1.5, 'S');
 
   // Light teal left accent strip
-  drawRoundedRect(doc, mx, y, 2, patBoxH, 0.5, TEAL);
+  drawRoundedRect(doc, mx, y, 2, patBoxH, 0.5, PRIMARY);
 
   const fs = cfg.compact ? 6 : 8;
   doc.setFontSize(fs);
@@ -247,14 +248,14 @@ function generateStandardPdf(data: LabReportData): jsPDF {
 
   // ── Test panel header bar ──
   const panelH = cfg.compact ? 6 : 8;
-  drawRoundedRect(doc, mx, y, contentW, panelH, 1.5, TEAL_LIGHT);
-  doc.setDrawColor(...TEAL);
+  drawRoundedRect(doc, mx, y, contentW, panelH, 1.5, PRIMARY_LT);
+  doc.setDrawColor(...PRIMARY);
   doc.setLineWidth(0.3);
   doc.line(mx, y + panelH, mx + contentW, y + panelH);
 
   doc.setFontSize(cfg.compact ? 7 : 9);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...TEAL_DARK);
+  doc.setTextColor(...PRIMARY_DK);
   const panelLabel = `${data.testName.toUpperCase()}${data.testCode ? ` (${data.testCode})` : ''}`;
   doc.text(panelLabel, mx + 4, y + (cfg.compact ? 4.2 : 5.5));
 
@@ -294,7 +295,7 @@ function generateStandardPdf(data: LabReportData): jsPDF {
       textColor: [...SLATE] as [number, number, number],
     },
     headStyles: {
-      fillColor: [...TEAL] as [number, number, number],
+      fillColor: [...PRIMARY] as [number, number, number],
       textColor: [...WHITE] as [number, number, number],
       fontStyle: 'bold',
       halign: 'left',
@@ -329,10 +330,10 @@ function generateStandardPdf(data: LabReportData): jsPDF {
 
   // ── Flag legend ──
   if (!cfg.compact) {
-    drawRoundedRect(doc, mx, y, contentW, 7, 1, TEAL_LIGHT);
+    drawRoundedRect(doc, mx, y, contentW, 7, 1, PRIMARY_LT);
     doc.setFontSize(6.5);
     doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...TEAL_DARK);
+    doc.setTextColor(...PRIMARY_DK);
     doc.text('Key:', mx + 3, y + 4.5);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(...SLATE);
@@ -409,7 +410,7 @@ function generateSimplifiedPdf(data: LabReportData): jsPDF {
 
   // ── Header ──
   const headerH = cfg.compact ? 12 : 20;
-  drawRoundedRect(doc, mx, y, contentW, headerH, 2, TEAL);
+  drawRoundedRect(doc, mx, y, contentW, headerH, 2, PRIMARY);
 
   const logoSize = cfg.compact ? 8 : 12;
   const hasLogo = addLogo(doc, data.institution.logo, mx + 3, y + (headerH - logoSize) / 2, logoSize);
@@ -463,7 +464,7 @@ function generateSimplifiedPdf(data: LabReportData): jsPDF {
       textColor: [...SLATE] as [number, number, number],
     },
     headStyles: {
-      fillColor: [...TEAL] as [number, number, number],
+      fillColor: [...PRIMARY] as [number, number, number],
       textColor: [...WHITE] as [number, number, number],
       fontStyle: 'bold',
       lineWidth: 0,
@@ -509,7 +510,7 @@ function addFooters(doc: jsPDF, data: LabReportData, cfg: PaperConfig) {
     if (i > 1 && data.institution.name && !cfg.compact) {
       doc.setFontSize(7);
       doc.setFont('helvetica', 'bold');
-      doc.setTextColor(...TEAL_DARK);
+      doc.setTextColor(...PRIMARY_DK);
       doc.text(`${data.institution.name} — ${data.testName} (cont.)`, pw / 2, 7, { align: 'center' });
     }
 
