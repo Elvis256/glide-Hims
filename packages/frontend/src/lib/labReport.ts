@@ -353,7 +353,7 @@ function generateSimplifiedPdf(data: LabReportData): jsPDF {
     head: [['Parameter', 'Result', 'Unit', 'Reference Range', 'Flag']],
     body: tableRows,
     styles: { fontSize: 9, cellPadding: 2 },
-    headStyles: { fillColor: [99, 60, 180], textColor: 255 },
+    headStyles: { fillColor: [15, 118, 110], textColor: 255 },
     didParseCell: (hookData) => {
       if (hookData.section === 'body' && hookData.column.index === 4) {
         const flag = String(hookData.cell.raw || '');
