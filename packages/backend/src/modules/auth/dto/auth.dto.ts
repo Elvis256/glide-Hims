@@ -25,10 +25,10 @@ export class LoginDto {
 }
 
 export class RefreshTokenDto {
-  @ApiProperty({ description: 'Refresh token' })
+  @ApiPropertyOptional({ description: 'Refresh token (optional if sent via cookie)' })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  refreshToken: string;
+  refreshToken?: string;
 }
 
 export class ChangePasswordDto {
@@ -68,6 +68,8 @@ export class AuthResponseDto {
     email: string;
     roles: string[];
     permissions: string[];
+    isSystemAdmin: boolean;
+    tenantId?: string;
     facilityId?: string;
     facility?: {
       id: string;

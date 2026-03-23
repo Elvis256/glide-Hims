@@ -53,6 +53,7 @@ export function getApiErrorMessage(error: unknown, fallback = 'An unexpected err
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -67,13 +68,11 @@ const dispatchSessionExpired = () => {
   }));
 };
 
-// Request interceptor - add auth token and facility ID
+// Request interceptor - attach facility/tenant context headers
+// Auth is handled automatically via httpOnly cookies (no manual token attachment)
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    const { accessToken, user } = useAuthStore.getState();
-    if (accessToken && config.headers) {
-      config.headers.Authorization = `Bearer ${accessToken}`;
-    }
+    const { user } = useAuthStore.getState();
     // Prefer the active facility chosen via FacilitySwitcher (sessionStorage),
     // falling back to the facility assigned at login time.
     const activeFacilityId =
@@ -139,6 +138,12 @@ api.interceptors.response.use(
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
     
     if (error.response?.status === 401 && !originalRequest._retry) {
+      // Don't intercept login/auth failures — let them bubble to the caller
+      const url = originalRequest.url || '';
+      if (url.includes('/auth/login') || url.includes('/auth/register')) {
+        return Promise.reject(error);
+      }
+
       originalRequest._retry = true;
       
       if (isRefreshing) {
@@ -158,27 +163,25 @@ api.interceptors.response.use(
         });
       }
 
-      const refreshToken = useAuthStore.getState().refreshToken;
-      if (refreshToken) {
+      // Attempt cookie-based refresh (httpOnly cookie is sent automatically)
+      const hasAuth = useAuthStore.getState().isAuthenticated;
+      if (hasAuth) {
         isRefreshing = true;
         try {
-          const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
-            refreshToken,
+          const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {}, {
+            withCredentials: true,
           });
           
           const refreshData = response.data?.data || response.data;
-          const { accessToken, refreshToken: newRefreshToken, user } = refreshData;
-          useAuthStore.getState().setTokens(accessToken, newRefreshToken);
+          const { user } = refreshData;
           if (user) {
             useAuthStore.getState().setUser(user);
           }
           
           isRefreshing = false;
-          onTokenRefreshed(accessToken);
+          onTokenRefreshed('cookie');
           
-          if (originalRequest.headers) {
-            originalRequest.headers.Authorization = `Bearer ${accessToken}`;
-          }
+          // Retry with cookies (no Authorization header needed)
           return api(originalRequest);
         } catch (refreshError) {
           isRefreshing = false;
@@ -187,21 +190,20 @@ api.interceptors.response.use(
           // Token refresh failed - session expired
           dispatchSessionExpired();
           useAuthStore.getState().logout();
-          window.location.href = '/login?expired=true';
+          const slug = localStorage.getItem('glide_tenant_slug');
+          localStorage.removeItem('glide_tenant_slug');
+          localStorage.removeItem('glide_active_tenant_id');
+          window.location.href = slug ? `/login/${slug}?expired=true` : '/login?expired=true';
           
           return Promise.reject(refreshError);
         }
       } else {
-        // No refresh token - not logged in or session expired
-        const wasAuthenticated = useAuthStore.getState().isAuthenticated;
+        // Not authenticated - redirect to login
         useAuthStore.getState().logout();
-        
-        if (wasAuthenticated) {
-          dispatchSessionExpired();
-          window.location.href = '/login?expired=true';
-        } else {
-          window.location.href = '/login';
-        }
+        const slug = localStorage.getItem('glide_tenant_slug');
+        localStorage.removeItem('glide_tenant_slug');
+        localStorage.removeItem('glide_active_tenant_id');
+        window.location.href = slug ? `/login/${slug}` : '/login';
       }
     }
 

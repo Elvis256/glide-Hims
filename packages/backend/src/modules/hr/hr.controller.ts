@@ -13,6 +13,7 @@ import {
   Header,
   UseInterceptors,
   UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiConsumes } from '@nestjs/swagger';
@@ -20,6 +21,7 @@ import { HrService } from './hr.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import * as path from 'path';
 import * as fs from 'fs';
+import { validateFileContent } from '../../common/file-validation';
 import {
   CreateEmployeeDto,
   UpdateEmployeeDto,
@@ -684,6 +686,13 @@ export class HrController {
     if (!file) {
       throw new Error('File is required');
     }
+    // Validate file content matches declared MIME type
+    if (file?.path) {
+      const header = fs.readFileSync(file.path, { flag: 'r' }).subarray(0, 16);
+      if (!validateFileContent(header, file.mimetype)) {
+        throw new BadRequestException('File content does not match declared type');
+      }
+    }
     return this.hrService.uploadStaffDocument(userId, file, data, req.user?.tenantId);
   }
 
@@ -713,11 +722,17 @@ export class HrController {
     if (!document) {
       return res.status(404).json({ message: 'Document not found' });
     }
-    const filePath = path.join(process.cwd(), document.filePath);
+    const uploadsDir = path.resolve(process.cwd(), 'uploads');
+    const filePath = path.resolve(path.join(process.cwd(), document.filePath));
+    // Prevent path traversal: resolved path must be within uploads directory
+    if (!filePath.startsWith(uploadsDir)) {
+      return res.status(403).json({ message: 'Invalid file path' });
+    }
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ message: 'File not found' });
     }
-    res.setHeader('Content-Disposition', `inline; filename="${document.documentName}"`);
+    const safeName = (document.documentName || 'document').replace(/[/\\]/g, '_').replace(/[^\w\s.\-()]/g, '_');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
     res.setHeader('Content-Type', document.fileType || 'application/octet-stream');
     return res.sendFile(filePath);
   }

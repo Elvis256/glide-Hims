@@ -6,6 +6,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from '../../../database/entities/user.entity';
 import { CacheService } from '../../cache/cache.service';
+import { Request } from 'express';
 
 export interface JwtPayload {
   sub: string; // user id
@@ -17,6 +18,10 @@ export interface JwtPayload {
   tokenVersion?: number;
 }
 
+function extractJwtFromCookie(req: Request): string | null {
+  return req?.cookies?.accessToken || null;
+}
+
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
@@ -26,7 +31,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private cacheService: CacheService,
   ) {
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      jwtFromRequest: ExtractJwt.fromExtractors([
+        extractJwtFromCookie,
+        ExtractJwt.fromAuthHeaderAsBearerToken(),
+      ]),
       ignoreExpiration: false,
       secretOrKey: configService.get<string>('JWT_SECRET'),
     });
@@ -43,7 +51,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       cacheKey,
       () => this.userRepository.findOne({
         where: { id: payload.sub },
-        select: ['id', 'tokenVersion', 'status'],
+        select: ['id', 'tokenVersion', 'status', 'isSystemAdmin'],
       }),
       30,
     );
@@ -70,6 +78,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       tenantId: payload.tenantId,
       roles: payload.roles,
       facilityId: payload.facilityId,
+      isSystemAdmin: user.isSystemAdmin || false,
     };
   }
 }

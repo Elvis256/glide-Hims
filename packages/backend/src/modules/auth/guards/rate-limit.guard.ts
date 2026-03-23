@@ -106,13 +106,13 @@ export class RateLimitGuard implements CanActivate {
   }
 
   /**
-   * Get client IP from request
+   * Get client IP from request.
+   * Only trust x-forwarded-for when Express trust proxy is configured;
+   * otherwise use the direct socket address to prevent IP spoofing.
    */
   private getClientIp(request: Request): string {
-    const forwarded = request.headers['x-forwarded-for'];
-    if (typeof forwarded === 'string') {
-      return forwarded.split(',')[0].trim();
-    }
+    // request.ip already respects Express "trust proxy" setting,
+    // so it will use x-forwarded-for only when the proxy is trusted.
     return request.ip || request.socket?.remoteAddress || 'unknown';
   }
 

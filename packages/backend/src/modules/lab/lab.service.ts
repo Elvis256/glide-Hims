@@ -199,7 +199,7 @@ export class LabService {
       let labTest = await this.labTestRepo.findOne({ where: { code: dto.labTestCode, ...tenantWhere } });
       // Fallback: search by name keywords from the order's test entry
       if (!labTest) {
-        const order = await this.orderRepo.findOne({ where: { id: dto.orderId } });
+        const order = await this.orderRepo.findOne({ where: { id: dto.orderId, ...(tenantId ? { tenantId } : {}) } });
         const testEntry = (order?.testCodes as any[])?.find((t: any) => t.code === dto.labTestCode);
         if (testEntry?.name) {
           const stopWords = new Set(['test', 'tests', 'blood', 'screening', 'panel', 'complete', 'full', 'basic', 'the', 'a', 'of']);

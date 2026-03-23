@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
+import { authService } from '../services/auth';
 import {
   Building2,
   Users,
@@ -139,6 +140,7 @@ interface NavSubItem {
   icon: React.ComponentType<{ className?: string }>;
   children?: NavLeafItem[];
   permissions?: string[]; // Required permissions to see this item
+  systemAdminOnly?: boolean; // Only visible to system administrators
 }
 
 // Level 1 navigation section (top-level menu)
@@ -853,6 +855,13 @@ const navigationSections: NavSection[] = [
     roles: ['Administrator'],
     items: [
       {
+        name: 'Tenant Management',
+        icon: TenantIcon,
+        href: '/system/tenants',
+        permissions: ['users.read'],
+        systemAdminOnly: true,
+      },
+      {
         name: 'Users & Access',
         icon: Lock,
         permissions: ['users.read', 'users.create', 'roles.read'],
@@ -1316,11 +1325,15 @@ export default function DashboardLayout({ children }: LayoutProps) {
     return () => window.removeEventListener('hospital-settings-changed', handleSettingsChange as EventListener);
   }, []);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    const tenantSlug = localStorage.getItem('glide_tenant_slug');
     sessionStorage.removeItem('glide_active_tenant_id');
     sessionStorage.removeItem('glide_active_facility_id');
+    localStorage.removeItem('glide_active_tenant_id');
+    localStorage.removeItem('glide_tenant_slug');
+    await authService.logout();
     logout();
-    navigate('/login');
+    navigate(tenantSlug ? `/login/${tenantSlug}` : '/login');
   };
 
   // Filter navigation sections based on user roles/permissions
@@ -1336,17 +1349,23 @@ export default function DashboardLayout({ children }: LayoutProps) {
 
   // Filter items within a section and return filtered section
   const filterSectionItems = (section: NavSection): NavSection => {
-    if (isSuperAdmin) return section;
-    
+    const isSystemAdmin = !!user?.isSystemAdmin;
+
     const filteredItems = section.items
       .map((item) => {
+        // System admin only items — hide from non-system-admins
+        if (item.systemAdminOnly && !isSystemAdmin) return null;
         // If item has children, filter children too
         if ('children' in item && item.children) {
-          const filteredChildren = item.children.filter(hasItemPermission);
-          if (filteredChildren.length === 0) return null;
-          return { ...item, children: filteredChildren };
+          if (!isSuperAdmin) {
+            const filteredChildren = item.children.filter(hasItemPermission);
+            if (filteredChildren.length === 0) return null;
+            return { ...item, children: filteredChildren };
+          }
+          return item;
         }
-        // Simple item - check its permission
+        // Simple item - check its permission (Super Admin sees all)
+        if (isSuperAdmin) return item;
         return hasItemPermission(item) ? item : null;
       })
       .filter((item): item is NavSubItem => item !== null);
