@@ -1,25 +1,32 @@
 /**
- * Lab Report PDF Generator
+ * Lab Report PDF Generator — Professional Clinical Format
  *
- * Generates professional lab report PDFs in two formats:
- * - Standard: Full clinical format (Amani-style) — per-test, with facility header,
- *   patient demographics, specimen info, parameter table with abnormal flags,
- *   analysed/verified by, and facility footer.
- * - Simplified: Compact summary of results without full clinical formatting.
+ * Supports:
+ * - Standard: Per-test clinical report (ISO 15189 compliant)
+ * - Simplified: Compact summary of all tests
  *
- * Usage:
- *   import { generateLabReportPdf, printLabReport } from '../lib/labReport';
- *   generateLabReportPdf({ format: 'standard', ... }); // downloads PDF
- *   printLabReport({ format: 'standard', ... });        // opens print dialog
+ * Paper formats: POS/thermal (80mm), A4, A5, Letter
  */
 
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { printService, type InstitutionInfo } from './print';
+import type { InstitutionInfo } from './print';
+import type { PagePreset } from './print';
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+// ─── Colors ─────────────────────────────────────────────────────────
+
+const TEAL     = [15, 118, 110] as const;  // primary header
+const TEAL_DARK = [13, 95, 89] as const;   // darker accent
+const TEAL_LIGHT = [230, 247, 245] as const; // light bg
+const SLATE    = [51, 65, 85] as const;     // body text
+const SLATE_LT = [148, 163, 184] as const;  // muted text
+const WHITE    = [255, 255, 255] as const;
+const RED      = [220, 38, 38] as const;
+const AMBER    = [217, 119, 6] as const;
+const ROW_ALT  = [248, 250, 252] as const;  // alternating row bg
+const BORDER   = [226, 232, 240] as const;  // table borders
+
+// ─── Types ──────────────────────────────────────────────────────────
 
 export type LabReportFormat = 'standard' | 'simplified';
 
@@ -37,9 +44,9 @@ export interface LabReportParam {
 
 export interface LabReportData {
   format: LabReportFormat;
+  paperFormat?: PagePreset;
   institution: InstitutionInfo;
 
-  // Patient
   patientName: string;
   patientMrn?: string;
   patientAge?: string;
@@ -48,7 +55,6 @@ export interface LabReportData {
   patientPhone?: string;
   visitNo?: string;
 
-  // Test / sample
   testName: string;
   testCode?: string;
   testCategory?: string;
@@ -56,30 +62,48 @@ export interface LabReportData {
   sampleNumber?: string;
   orderNumber?: string;
 
-  // Dates
   sampleDate?: string;
   testDate?: string;
   validatedDate?: string;
 
-  // Clinical
   referringDoctor?: string;
   parameters: LabReportParam[];
   comments?: string;
 
-  // Staff
   analysedBy?: string;
   verifiedBy?: string;
 }
 
-// ---------------------------------------------------------------------------
-// Abnormal flag helpers
-// ---------------------------------------------------------------------------
+// ─── Paper format → jsPDF config ────────────────────────────────────
+
+interface PaperConfig {
+  format: string | [number, number];
+  orientation: 'portrait' | 'landscape';
+  marginX: number;
+  marginTop: number;
+  fontSize: number;
+  compact: boolean;
+}
+
+function getPaperConfig(preset?: PagePreset): PaperConfig {
+  switch (preset) {
+    case 'receipt':
+      return { format: [80, 297], orientation: 'portrait', marginX: 4, marginTop: 4, fontSize: 7, compact: true };
+    case 'a5':
+      return { format: 'a5', orientation: 'portrait', marginX: 10, marginTop: 10, fontSize: 8, compact: false };
+    case 'letter':
+      return { format: 'letter', orientation: 'portrait', marginX: 14, marginTop: 12, fontSize: 9, compact: false };
+    default: // a4
+      return { format: 'a4', orientation: 'portrait', marginX: 14, marginTop: 12, fontSize: 9, compact: false };
+  }
+}
+
+// ─── Flag helpers ───────────────────────────────────────────────────
 
 function getFlag(p: LabReportParam): string {
   if (!p.value || p.value === '—') return '';
   const num = parseFloat(p.value);
   if (isNaN(num)) {
-    // Qualitative: compare text to textNormal
     if (p.textNormal && p.value.toLowerCase() !== p.textNormal.toLowerCase()) return '#';
     return '';
   }
@@ -90,415 +114,474 @@ function getFlag(p: LabReportParam): string {
   return '';
 }
 
-function getFlagColor(flag: string): [number, number, number] {
-  if (flag === '##' || flag === '**') return [220, 38, 38];  // red
-  if (flag === '#' || flag === '*') return [234, 88, 12];     // orange
-  return [0, 0, 0];
+function getFlagLabel(flag: string): string {
+  switch (flag) {
+    case '**': return 'CRIT LOW';
+    case '##': return 'CRIT HIGH';
+    case '*': return 'LOW';
+    case '#': return 'HIGH';
+    default: return '';
+  }
 }
 
-// ---------------------------------------------------------------------------
-// Standard (Amani-style) PDF
-// ---------------------------------------------------------------------------
+function getFlagColor(flag: string): readonly [number, number, number] {
+  if (flag === '##' || flag === '**') return RED;
+  if (flag === '#' || flag === '*') return AMBER;
+  return SLATE;
+}
+
+// ─── Draw helpers ───────────────────────────────────────────────────
+
+function addLogo(doc: jsPDF, logo: string | undefined, x: number, y: number, size: number): boolean {
+  if (!logo) return false;
+  try {
+    doc.addImage(logo, 'PNG', x, y, size, size);
+    return true;
+  } catch { return false; }
+}
+
+function drawRoundedRect(doc: jsPDF, x: number, y: number, w: number, h: number, r: number, color: readonly [number, number, number]) {
+  doc.setFillColor(color[0], color[1], color[2]);
+  doc.roundedRect(x, y, w, h, r, r, 'F');
+}
+
+// ─── Standard PDF ───────────────────────────────────────────────────
 
 function generateStandardPdf(data: LabReportData): jsPDF {
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const cfg = getPaperConfig(data.paperFormat);
+  const doc = new jsPDF({ orientation: cfg.orientation, unit: 'mm', format: cfg.format });
   const pw = doc.internal.pageSize.getWidth();
   const ph = doc.internal.pageSize.getHeight();
-  let y = 12;
+  const mx = cfg.marginX;
+  const contentW = pw - mx * 2;
+  let y = cfg.marginTop;
 
-  // ── Facility header (with logo if available) ──
-  if (data.institution.logo) {
-    try {
-      doc.addImage(data.institution.logo, 'PNG', (pw - 18) / 2, y, 18, 18);
-      y += 20;
-    } catch { /* skip logo if invalid */ }
-  }
-  doc.setFontSize(16);
+  // ── Colored header bar ──
+  const headerH = cfg.compact ? 16 : 28;
+  drawRoundedRect(doc, mx, y, contentW, headerH, 2, TEAL);
+
+  const logoSize = cfg.compact ? 10 : 16;
+  const hasLogo = addLogo(doc, data.institution.logo, mx + 3, y + (headerH - logoSize) / 2, logoSize);
+  const textX = hasLogo ? mx + logoSize + 6 : mx + 5;
+
+  doc.setTextColor(...WHITE);
   doc.setFont('helvetica', 'bold');
-  doc.text(data.institution.name || 'Hospital', pw / 2, y, { align: 'center' });
-  y += 5;
+  doc.setFontSize(cfg.compact ? 9 : 14);
+  doc.text(data.institution.name || 'Hospital', textX, y + (cfg.compact ? 6 : 10));
 
-  const tagline = [data.institution.address, data.institution.phone, data.institution.email]
-    .filter(Boolean).join('  |  ');
+  const tagline = [data.institution.address, data.institution.phone, data.institution.email].filter(Boolean).join('  •  ');
   if (tagline) {
-    doc.setFontSize(8);
+    doc.setFontSize(cfg.compact ? 5 : 7);
     doc.setFont('helvetica', 'normal');
-    doc.text(tagline, pw / 2, y, { align: 'center' });
-    y += 4;
+    doc.text(tagline, textX, y + (cfg.compact ? 10 : 15), { maxWidth: contentW - (textX - mx) - 5 });
   }
 
-  doc.setDrawColor(0);
-  doc.setLineWidth(0.5);
-  doc.line(14, y, pw - 14, y);
-  y += 6;
-
-  // ── Patient info block (two-column) ──
-  doc.setFontSize(9);
-  const leftCol = 14;
-  const rightCol = pw / 2 + 5;
-  const labelW = 30;
-
-  const drawField = (label: string, value: string, x: number, yPos: number) => {
+  // "LABORATORY REPORT" badge on right side of header
+  if (!cfg.compact) {
+    doc.setFontSize(7);
     doc.setFont('helvetica', 'bold');
-    doc.text(label, x, yPos);
+    const badgeText = 'LABORATORY REPORT';
+    const badgeW = doc.getTextWidth(badgeText) + 8;
+    drawRoundedRect(doc, pw - mx - badgeW - 2, y + 3, badgeW, 8, 1.5, TEAL_DARK);
+    doc.setTextColor(...WHITE);
+    doc.text(badgeText, pw - mx - badgeW / 2 - 2, y + 8.5, { align: 'center' });
+  }
+
+  y += headerH + 4;
+
+  // ── Patient info bordered box ──
+  const patBoxH = cfg.compact ? 20 : 28;
+  doc.setDrawColor(...BORDER);
+  doc.setLineWidth(0.4);
+  doc.roundedRect(mx, y, contentW, patBoxH, 1.5, 1.5, 'S');
+
+  // Light teal left accent strip
+  drawRoundedRect(doc, mx, y, 2, patBoxH, 0.5, TEAL);
+
+  const fs = cfg.compact ? 6 : 8;
+  doc.setFontSize(fs);
+  const leftCol = mx + 5;
+  const rightCol = mx + contentW / 2 + 2;
+  const labelW = cfg.compact ? 18 : 28;
+  let py = y + (cfg.compact ? 4 : 5.5);
+  const rowH = cfg.compact ? 3.5 : 4.5;
+
+  const drawField = (label: string, value: string, x: number) => {
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...SLATE);
+    doc.text(label, x, py);
     doc.setFont('helvetica', 'normal');
-    doc.text(value || '—', x + labelW, yPos);
+    doc.setTextColor(0);
+    doc.text(value || '—', x + labelW, py);
   };
 
   const leftFields = [
-    ['Patient Name:', data.patientName],
-    ['Age/Gender:', [data.patientAge, data.patientGender].filter(Boolean).join(' / ') || '—'],
+    ['Patient:', data.patientName],
+    ['Age/Sex:', [data.patientAge, data.patientGender].filter(Boolean).join(' / ') || '—'],
     ['DOB:', data.patientDob || '—'],
-    ['Ph No.:', data.patientPhone || '—'],
-    ['Specimen:', data.sampleType || '—'],
     ['Doctor:', data.referringDoctor || '—'],
   ];
-
   const rightFields = [
-    ['MR No:', data.patientMrn || '—'],
-    ['Visit No:', data.visitNo || '—'],
-    ['Lab ID No:', data.sampleNumber || '—'],
-    ['Sample Date:', data.sampleDate || '—'],
-    ['Test Date:', data.testDate || '—'],
-    ['Validated:', data.validatedDate || '—'],
+    ['MRN:', data.patientMrn || '—'],
+    ['Sample ID:', data.sampleNumber || '—'],
+    ['Specimen:', data.sampleType || '—'],
+    ['Date:', data.sampleDate || '—'],
   ];
 
-  const rows = Math.max(leftFields.length, rightFields.length);
-  for (let i = 0; i < rows; i++) {
-    if (leftFields[i]) drawField(leftFields[i][0], leftFields[i][1], leftCol, y);
-    if (rightFields[i]) drawField(rightFields[i][0], rightFields[i][1], rightCol, y);
-    y += 4.5;
+  if (cfg.compact) {
+    // Compact: 2 rows x 2 cols
+    for (let i = 0; i < Math.min(leftFields.length, 3); i++) {
+      drawField(leftFields[i][0], leftFields[i][1], leftCol);
+      if (rightFields[i]) drawField(rightFields[i][0], rightFields[i][1], rightCol);
+      py += rowH;
+    }
+  } else {
+    for (let i = 0; i < Math.max(leftFields.length, rightFields.length); i++) {
+      if (leftFields[i]) drawField(leftFields[i][0], leftFields[i][1], leftCol);
+      if (rightFields[i]) drawField(rightFields[i][0], rightFields[i][1], rightCol);
+      py += rowH;
+    }
   }
 
-  y += 3;
+  y += patBoxH + 4;
+
+  // ── Test panel header bar ──
+  const panelH = cfg.compact ? 6 : 8;
+  drawRoundedRect(doc, mx, y, contentW, panelH, 1.5, TEAL_LIGHT);
+  doc.setDrawColor(...TEAL);
   doc.setLineWidth(0.3);
-  doc.line(14, y, pw - 14, y);
-  y += 6;
+  doc.line(mx, y + panelH, mx + contentW, y + panelH);
 
-  // ── Section title ──
-  doc.setFontSize(12);
+  doc.setFontSize(cfg.compact ? 7 : 9);
   doc.setFont('helvetica', 'bold');
-  doc.text('LABORATORY REPORT', pw / 2, y, { align: 'center' });
-  y += 5;
+  doc.setTextColor(...TEAL_DARK);
+  const panelLabel = `${data.testName.toUpperCase()}${data.testCode ? ` (${data.testCode})` : ''}`;
+  doc.text(panelLabel, mx + 4, y + (cfg.compact ? 4.2 : 5.5));
 
-  const categoryLabel = (data.testCategory || 'general').toUpperCase().replace(/_/g, ' ');
-  doc.setFontSize(10);
-  doc.text(categoryLabel, pw / 2, y, { align: 'center' });
-  y += 6;
+  if (data.testCategory) {
+    doc.setFontSize(cfg.compact ? 5 : 7);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(...SLATE_LT);
+    doc.text(data.testCategory.toUpperCase(), pw - mx - 4, y + (cfg.compact ? 4.2 : 5.5), { align: 'right' });
+  }
 
-  // ── Test panel name ──
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'bold');
-  doc.text(data.testName.toUpperCase(), leftCol, y);
-  y += 6;
+  y += panelH + 2;
 
   // ── Results table ──
   const tableRows = data.parameters.map(p => {
     const flag = getFlag(p);
-    const displayValue = p.value || '—';
-    return [
-      p.name,
-      flag ? `${displayValue} ${flag}` : displayValue,
-      p.referenceRange || '',
-      p.unit || '',
-    ];
+    return {
+      cells: [
+        p.name,
+        p.value || '—',
+        p.unit || '',
+        p.referenceRange || '',
+        flag ? getFlagLabel(flag) : '—',
+      ],
+      flag,
+    };
   });
 
   autoTable(doc, {
     startY: y,
-    head: [['Test Description', 'Result', 'Reference Range', 'SI Units']],
-    body: tableRows,
-    styles: { fontSize: 9, cellPadding: 2 },
-    headStyles: { fillColor: [255, 255, 255], textColor: [0, 0, 0], fontStyle: 'bold', lineWidth: 0.3, lineColor: [0, 0, 0] },
-    bodyStyles: { lineWidth: 0.1, lineColor: [200, 200, 200] },
-    columnStyles: {
-      0: { cellWidth: 65 },
-      1: { cellWidth: 35, halign: 'center' },
-      2: { cellWidth: 45, halign: 'center' },
-      3: { cellWidth: 30, halign: 'center' },
+    head: [['Test Parameter', 'Result', 'Unit', 'Reference Range', 'Flag']],
+    body: tableRows.map(r => r.cells),
+    styles: {
+      fontSize: cfg.compact ? 6 : cfg.fontSize,
+      cellPadding: cfg.compact ? 1.5 : 2.5,
+      lineColor: [...BORDER] as [number, number, number],
+      lineWidth: 0.2,
+      textColor: [...SLATE] as [number, number, number],
     },
+    headStyles: {
+      fillColor: [...TEAL] as [number, number, number],
+      textColor: [...WHITE] as [number, number, number],
+      fontStyle: 'bold',
+      halign: 'left',
+      lineWidth: 0,
+    },
+    bodyStyles: {
+      lineWidth: 0.15,
+      lineColor: [...BORDER] as [number, number, number],
+    },
+    alternateRowStyles: {
+      fillColor: [...ROW_ALT] as [number, number, number],
+    },
+    columnStyles: cfg.compact
+      ? { 0: { cellWidth: 22 }, 1: { cellWidth: 14, halign: 'center' as const }, 2: { cellWidth: 12, halign: 'center' as const }, 3: { cellWidth: 16, halign: 'center' as const }, 4: { cellWidth: 12, halign: 'center' as const } }
+      : { 0: { cellWidth: 55 }, 1: { cellWidth: 30, halign: 'center' as const }, 2: { cellWidth: 25, halign: 'center' as const }, 3: { cellWidth: 35, halign: 'center' as const }, 4: { cellWidth: 25, halign: 'center' as const } },
     didParseCell: (hookData) => {
-      // Color abnormal result cells
-      if (hookData.section === 'body' && hookData.column.index === 1) {
-        const raw = String(hookData.cell.raw || '');
-        if (raw.includes('##') || raw.includes('**')) {
-          hookData.cell.styles.textColor = [220, 38, 38];
-          hookData.cell.styles.fontStyle = 'bold';
-        } else if (raw.includes('#') || raw.includes('*')) {
-          hookData.cell.styles.textColor = [234, 88, 12];
+      if (hookData.section === 'body') {
+        const rowIdx = hookData.row.index;
+        const flag = tableRows[rowIdx]?.flag || '';
+        // Color the Result and Flag columns for abnormals
+        if ((hookData.column.index === 1 || hookData.column.index === 4) && flag) {
+          const color = getFlagColor(flag);
+          hookData.cell.styles.textColor = [...color] as [number, number, number];
           hookData.cell.styles.fontStyle = 'bold';
         }
       }
     },
-    margin: { left: 14, right: 14 },
+    margin: { left: mx, right: mx },
   });
 
-  y = (doc as any).lastAutoTable.finalY + 8;
+  y = (doc as any).lastAutoTable.finalY + 4;
 
-  // ── Key interpretation ──
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Key Interpretation :  * = LOW,   # = HIGH,   ** = CRITICAL LOW,   ## = CRITICAL HIGH', leftCol, y);
-  y += 8;
+  // ── Flag legend ──
+  if (!cfg.compact) {
+    drawRoundedRect(doc, mx, y, contentW, 7, 1, TEAL_LIGHT);
+    doc.setFontSize(6.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...TEAL_DARK);
+    doc.text('Key:', mx + 3, y + 4.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(...SLATE);
+    doc.text('LOW (*)  •  HIGH (#)  •  CRITICAL LOW (**)  •  CRITICAL HIGH (##)', mx + 14, y + 4.5);
+    y += 9;
+  } else {
+    doc.setFontSize(5);
+    doc.setTextColor(...SLATE_LT);
+    doc.text('* LOW  # HIGH  ** CRIT LOW  ## CRIT HIGH', mx, y + 3);
+    y += 5;
+  }
 
   // ── Comments ──
   if (data.comments) {
-    doc.setFontSize(9);
+    doc.setFontSize(cfg.compact ? 6 : 8);
     doc.setFont('helvetica', 'bold');
-    doc.text('Comments:', leftCol, y);
+    doc.setTextColor(...SLATE);
+    doc.text('Comments:', mx, y);
     doc.setFont('helvetica', 'normal');
-    doc.text(data.comments, leftCol + 22, y);
+    doc.text(data.comments, mx + 20, y, { maxWidth: contentW - 22 });
     y += 6;
   }
 
-  // ── Analysed / Verified ──
-  y += 4;
-  doc.setLineWidth(0.3);
-  doc.line(14, y, pw - 14, y);
-  y += 6;
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'normal');
-  if (data.analysedBy) {
-    doc.text(`Analysed By: ${data.analysedBy}`, leftCol, y);
-  }
-  if (data.verifiedBy) {
-    doc.text(`Verified By: ${data.verifiedBy}`, rightCol, y);
-  }
-  y += 8;
+  // ── Signature section ──
+  if (!cfg.compact) {
+    y = Math.max(y + 6, Math.min(ph - 50, y + 12));
+    doc.setDrawColor(...BORDER);
+    doc.setLineWidth(0.3);
+    doc.line(mx, y, mx + contentW, y);
+    y += 6;
 
-  // ── Signature lines ──
-  const sigWidth = 55;
-  const sigY = Math.min(y + 10, ph - 40);
-  doc.setLineWidth(0.3);
-  doc.line(leftCol, sigY, leftCol + sigWidth, sigY);
-  doc.line(rightCol, sigY, rightCol + sigWidth, sigY);
-  doc.setFontSize(8);
-  doc.text('Lab Technologist', leftCol, sigY + 4);
-  doc.text('Pathologist / Supervisor', rightCol, sigY + 4);
+    const sigW = 50;
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(...SLATE);
 
-  y = sigY + 10;
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'normal');
-  doc.text('*** End of Report ***', pw / 2, y, { align: 'center' });
+    if (data.analysedBy) doc.text(`Analysed By: ${data.analysedBy}`, mx, y);
+    if (data.verifiedBy) doc.text(`Verified By: ${data.verifiedBy}`, rightCol, y);
+    y += 10;
+
+    // Signature lines
+    doc.setLineWidth(0.3);
+    doc.setDrawColor(...SLATE_LT);
+    doc.line(mx, y, mx + sigW, y);
+    doc.line(rightCol, y, rightCol + sigW, y);
+    y += 3;
+    doc.setFontSize(7);
+    doc.setTextColor(...SLATE_LT);
+    doc.text('Lab Technologist', mx, y);
+    doc.text('Pathologist / Supervisor', rightCol, y);
+    y += 6;
+  }
+
+  // ── End of report ──
+  doc.setFontSize(cfg.compact ? 5 : 7);
+  doc.setTextColor(...SLATE_LT);
+  doc.text('— End of Report —', pw / 2, Math.min(y + 2, ph - 25), { align: 'center' });
 
   // ── Footer on every page ──
-  const totalPages = (doc as any).internal.getNumberOfPages();
-  for (let i = 1; i <= totalPages; i++) {
-    doc.setPage(i);
-
-    // Repeat facility name at top of continuation pages
-    if (i > 1 && data.institution.name) {
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(0);
-      doc.text(`${data.institution.name} — ${data.testName} (cont.)`, pw / 2, 8, { align: 'center' });
-    }
-
-    doc.setFontSize(7);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(120);
-
-    // Confidentiality disclaimer
-    doc.text(
-      'This report is confidential and intended solely for the requesting clinician. Results should be interpreted in clinical context.',
-      pw / 2, ph - 16, { align: 'center', maxWidth: pw - 28 }
-    );
-
-    const footerParts = [
-      data.institution.address,
-      data.institution.phone,
-      data.institution.email,
-    ].filter(Boolean);
-    if (footerParts.length > 0) {
-      doc.text(footerParts.join('  |  '), pw / 2, ph - 10, { align: 'center' });
-    }
-    doc.text(`Page ${i} of ${totalPages}`, pw - 14, ph - 6, { align: 'right' });
-    doc.text(
-      `Report generated: ${new Date().toLocaleString('en-GB')}`,
-      14, ph - 6
-    );
-    doc.setTextColor(0);
-  }
+  addFooters(doc, data, cfg);
 
   return doc;
 }
 
-// ---------------------------------------------------------------------------
-// Simplified PDF
-// ---------------------------------------------------------------------------
+// ─── Simplified PDF ─────────────────────────────────────────────────
 
 function generateSimplifiedPdf(data: LabReportData): jsPDF {
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const cfg = getPaperConfig(data.paperFormat);
+  const doc = new jsPDF({ orientation: cfg.orientation, unit: 'mm', format: cfg.format });
   const pw = doc.internal.pageSize.getWidth();
-  const ph = doc.internal.pageSize.getHeight();
-  let y = 15;
+  const mx = cfg.marginX;
+  const contentW = pw - mx * 2;
+  let y = cfg.marginTop;
 
-  // ── Header (with logo if available) ──
-  if (data.institution.logo) {
-    try {
-      doc.addImage(data.institution.logo, 'PNG', (pw - 18) / 2, y, 18, 18);
-      y += 20;
-    } catch { /* skip logo if invalid */ }
-  }
-  doc.setFontSize(14);
-  doc.setFont('helvetica', 'bold');
-  doc.text(data.institution.name || 'Hospital', pw / 2, y, { align: 'center' });
-  y += 6;
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  doc.text('Laboratory Results', pw / 2, y, { align: 'center' });
-  y += 4;
-  doc.setLineWidth(0.5);
-  doc.line(14, y, pw - 14, y);
-  y += 6;
+  // ── Header ──
+  const headerH = cfg.compact ? 12 : 20;
+  drawRoundedRect(doc, mx, y, contentW, headerH, 2, TEAL);
 
-  // ── Patient + test info ──
-  doc.setFontSize(9);
+  const logoSize = cfg.compact ? 8 : 12;
+  const hasLogo = addLogo(doc, data.institution.logo, mx + 3, y + (headerH - logoSize) / 2, logoSize);
+  const textX = hasLogo ? mx + logoSize + 5 : mx + 4;
+
+  doc.setTextColor(...WHITE);
   doc.setFont('helvetica', 'bold');
-  doc.text('Patient:', 14, y);
+  doc.setFontSize(cfg.compact ? 8 : 12);
+  doc.text(data.institution.name || 'Hospital', textX, y + (cfg.compact ? 5 : 8));
+  doc.setFontSize(cfg.compact ? 5 : 7);
   doc.setFont('helvetica', 'normal');
-  doc.text(`${data.patientName}  (${data.patientMrn || 'N/A'})`, 34, y);
-  y += 5;
+  doc.text('Laboratory Summary Report', textX, y + (cfg.compact ? 9 : 13));
+
+  y += headerH + 3;
+
+  // ── Patient info ──
+  doc.setFontSize(cfg.compact ? 6 : 8);
   doc.setFont('helvetica', 'bold');
-  doc.text('Test:', 14, y);
+  doc.setTextColor(...SLATE);
+  doc.text('Patient:', mx, y);
   doc.setFont('helvetica', 'normal');
-  doc.text(`${data.testName} (${data.testCode || ''})`, 34, y);
-  y += 5;
+  doc.setTextColor(0);
+  doc.text(`${data.patientName}  (${data.patientMrn || 'N/A'})  •  ${data.patientAge || '—'} / ${data.patientGender || '—'}`, mx + 16, y);
+  y += cfg.compact ? 3.5 : 5;
   doc.setFont('helvetica', 'bold');
-  doc.text('Date:', 14, y);
+  doc.setTextColor(...SLATE);
+  doc.text('Date:', mx, y);
   doc.setFont('helvetica', 'normal');
-  doc.text(data.sampleDate || new Date().toLocaleDateString(), 34, y);
-  y += 8;
+  doc.setTextColor(0);
+  doc.text(data.sampleDate || new Date().toLocaleDateString(), mx + 16, y);
+  y += cfg.compact ? 4 : 6;
 
   // ── Results table ──
   const tableRows = data.parameters.map(p => {
     const flag = getFlag(p);
-    return [
-      p.name,
-      p.value || '—',
-      p.unit || '',
-      p.referenceRange || '',
-      flag || '—',
-    ];
+    return {
+      cells: [p.name, p.value || '—', p.unit || '', p.referenceRange || '', flag ? getFlagLabel(flag) : '—'],
+      flag,
+    };
   });
 
   autoTable(doc, {
     startY: y,
-    head: [['Parameter', 'Result', 'Unit', 'Reference Range', 'Flag']],
-    body: tableRows,
-    styles: { fontSize: 9, cellPadding: 2 },
-    headStyles: { fillColor: [15, 118, 110], textColor: 255 },
+    head: [['Parameter', 'Result', 'Unit', 'Reference', 'Flag']],
+    body: tableRows.map(r => r.cells),
+    styles: {
+      fontSize: cfg.compact ? 5.5 : cfg.fontSize,
+      cellPadding: cfg.compact ? 1.2 : 2,
+      lineColor: [...BORDER] as [number, number, number],
+      lineWidth: 0.15,
+      textColor: [...SLATE] as [number, number, number],
+    },
+    headStyles: {
+      fillColor: [...TEAL] as [number, number, number],
+      textColor: [...WHITE] as [number, number, number],
+      fontStyle: 'bold',
+      lineWidth: 0,
+    },
+    alternateRowStyles: { fillColor: [...ROW_ALT] as [number, number, number] },
     didParseCell: (hookData) => {
-      if (hookData.section === 'body' && hookData.column.index === 4) {
-        const flag = String(hookData.cell.raw || '');
-        if (flag.includes('#') || flag.includes('*')) {
-          hookData.cell.styles.textColor = getFlagColor(flag);
-          hookData.cell.styles.fontStyle = 'bold';
-        }
-      }
-      if (hookData.section === 'body' && hookData.column.index === 1) {
+      if (hookData.section === 'body') {
         const rowIdx = hookData.row.index;
-        const flag = String(tableRows[rowIdx]?.[4] || '');
-        if (flag.includes('#') || flag.includes('*')) {
-          hookData.cell.styles.textColor = getFlagColor(flag);
+        const flag = tableRows[rowIdx]?.flag || '';
+        if ((hookData.column.index === 1 || hookData.column.index === 4) && flag) {
+          hookData.cell.styles.textColor = [...getFlagColor(flag)] as [number, number, number];
           hookData.cell.styles.fontStyle = 'bold';
         }
       }
     },
-    margin: { left: 14, right: 14 },
+    margin: { left: mx, right: mx },
   });
 
-  y = (doc as any).lastAutoTable.finalY + 10;
-
   if (data.comments) {
-    doc.setFontSize(9);
+    y = (doc as any).lastAutoTable.finalY + 4;
+    doc.setFontSize(cfg.compact ? 5.5 : 8);
     doc.setFont('helvetica', 'italic');
-    doc.text(`Comments: ${data.comments}`, 14, y);
-    y += 6;
+    doc.setTextColor(...SLATE);
+    doc.text(`Comments: ${data.comments}`, mx, y, { maxWidth: contentW });
   }
 
-  // ── Footer ──
-  const totalPages = (doc as any).internal.getNumberOfPages();
-  for (let i = 1; i <= totalPages; i++) {
-    doc.setPage(i);
-
-    if (i > 1 && data.institution.name) {
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(0);
-      doc.text(`${data.institution.name} — Lab Summary (cont.)`, pw / 2, 8, { align: 'center' });
-    }
-
-    doc.setFontSize(7);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(120);
-    doc.text(
-      'This report is confidential and intended solely for the requesting clinician.',
-      pw / 2, ph - 14, { align: 'center', maxWidth: pw - 28 }
-    );
-    doc.text(`Generated by ${data.institution.name || 'Hospital'} Lab System`, 14, ph - 8);
-    doc.text(`Report generated: ${new Date().toLocaleString('en-GB')}`, 14, ph - 4);
-    doc.text(`Page ${i} of ${totalPages}`, pw - 14, ph - 8, { align: 'right' });
-    doc.setTextColor(0);
-  }
-
+  addFooters(doc, data, cfg);
   return doc;
 }
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
+// ─── Shared footer ──────────────────────────────────────────────────
 
-/**
- * Generate and download a lab report PDF.
- */
+function addFooters(doc: jsPDF, data: LabReportData, cfg: PaperConfig) {
+  const pw = doc.internal.pageSize.getWidth();
+  const ph = doc.internal.pageSize.getHeight();
+  const mx = cfg.marginX;
+  const totalPages = (doc as any).internal.getNumberOfPages();
+
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+
+    // Continuation header on pages 2+
+    if (i > 1 && data.institution.name && !cfg.compact) {
+      doc.setFontSize(7);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...TEAL_DARK);
+      doc.text(`${data.institution.name} — ${data.testName} (cont.)`, pw / 2, 7, { align: 'center' });
+    }
+
+    const footerY = ph - (cfg.compact ? 6 : 18);
+
+    // Separator line
+    doc.setDrawColor(...BORDER);
+    doc.setLineWidth(0.3);
+    doc.line(mx, footerY, pw - mx, footerY);
+
+    doc.setTextColor(...SLATE_LT);
+
+    if (cfg.compact) {
+      doc.setFontSize(4.5);
+      doc.text(`${data.institution.name || ''} | ${new Date().toLocaleString('en-GB')} | Page ${i}/${totalPages}`, pw / 2, footerY + 3, { align: 'center' });
+    } else {
+      // Confidentiality disclaimer
+      doc.setFontSize(6);
+      doc.setFont('helvetica', 'italic');
+      doc.text(
+        'This report is confidential and intended solely for the requesting clinician. Results should be interpreted in clinical context.',
+        pw / 2, footerY + 4, { align: 'center', maxWidth: pw - mx * 2 - 10 }
+      );
+
+      // Facility contact
+      const footerLine = [data.institution.address, data.institution.phone, data.institution.email].filter(Boolean).join('  •  ');
+      if (footerLine) {
+        doc.setFontSize(6);
+        doc.setFont('helvetica', 'normal');
+        doc.text(footerLine, pw / 2, footerY + 9, { align: 'center' });
+      }
+
+      // Page number + timestamp
+      doc.setFontSize(6);
+      doc.text(`Report generated: ${new Date().toLocaleString('en-GB')}`, mx, footerY + 13);
+      doc.text(`Page ${i} of ${totalPages}`, pw - mx, footerY + 13, { align: 'right' });
+    }
+
+    doc.setTextColor(0);
+  }
+}
+
+// ─── Public API ─────────────────────────────────────────────────────
+
 export function generateLabReportPdf(data: LabReportData, filename?: string): void {
   const doc = data.format === 'standard'
     ? generateStandardPdf(data)
     : generateSimplifiedPdf(data);
 
-  const fname = filename || `Lab_Report_${data.testCode || 'TEST'}_${data.patientMrn || 'patient'}_${new Date().toISOString().split('T')[0]}.pdf`;
+  const fname = filename
+    || `LR-${(data.testName || 'TEST').replace(/\s+/g, '_').toUpperCase()}_${data.patientMrn || 'patient'}_${new Date().toISOString().split('T')[0]}.pdf`;
   doc.save(fname);
 }
 
-/**
- * Generate lab report HTML and send to printer via printService.
- */
 export function printLabReport(data: LabReportData): void {
   const doc = data.format === 'standard'
     ? generateStandardPdf(data)
     : generateSimplifiedPdf(data);
 
-  // Convert jsPDF to blob URL, open in iframe for printing
   const blob = doc.output('blob');
   const url = URL.createObjectURL(blob);
-
   const iframe = document.createElement('iframe');
-  iframe.style.position = 'fixed';
-  iframe.style.left = '-9999px';
-  iframe.style.top = '-9999px';
-  iframe.style.width = '0';
-  iframe.style.height = '0';
+  iframe.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:0;height:0';
   document.body.appendChild(iframe);
-
   iframe.onload = () => {
-    try {
-      iframe.contentWindow?.print();
-    } catch {
-      window.open(url, '_blank');
-    }
-    setTimeout(() => {
-      document.body.removeChild(iframe);
-      URL.revokeObjectURL(url);
-    }, 2000);
+    try { iframe.contentWindow?.print(); }
+    catch { window.open(url, '_blank'); }
+    setTimeout(() => { document.body.removeChild(iframe); URL.revokeObjectURL(url); }, 2000);
   };
-
   iframe.src = url;
 }
 
-/**
- * Build LabReportParam array from the sample parameters + entered result values.
- */
 export function buildReportParams(
   parameters: { name: string; unit: string; referenceRange: string; criticalLow?: number; criticalHigh?: number; textNormal?: string }[],
   resultValues: Record<string, string>,
@@ -508,13 +591,11 @@ export function buildReportParams(
     let normalMin: number | undefined;
     let normalMax: number | undefined;
 
-    // Parse "min-max" range string
     const match = range.match(/^([\d.]+)\s*[-–]\s*([\d.]+)/);
     if (match) {
       normalMin = parseFloat(match[1]);
       normalMax = parseFloat(match[2]);
     } else {
-      // Handle "<value" or ">value"
       const ltMatch = range.match(/^[<≤]\s*([\d.]+)/);
       if (ltMatch) normalMax = parseFloat(ltMatch[1]);
       const gtMatch = range.match(/^[>≥]\s*([\d.]+)/);

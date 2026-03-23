@@ -7,6 +7,8 @@ import { useFacilityId } from '../../lib/facility';
 import { labService, type LabSample, type LabResult } from '../../services/lab';
 import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
 import { generateLabReportPdf, printLabReport, type LabReportFormat, type LabReportData } from '../../lib/labReport';
+import { usePrintFormat } from '../../lib/usePrintFormat';
+import PrintFormatSelector from '../../components/PrintFormatSelector';
 import {
   FileText, Search, Printer, Mail, Download, Eye, CheckCircle, Clock,
   User, ChevronDown, ChevronUp, X, Phone, MessageSquare, Send, Share2,
@@ -118,6 +120,7 @@ export default function LabReportsPage() {
   const { hasPermission } = usePermissions();
   const facilityId = useFacilityId();
   const inst = useInstitutionInfo();
+  const { printFormat, setPrintFormat } = usePrintFormat();
 
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [selectedTest, setSelectedTest] = useState<PatientTest | null>(null);
@@ -247,6 +250,7 @@ export default function LabReportsPage() {
 
   const buildTestReportData = (patient: Patient, test: PatientTest): LabReportData => ({
     format: selectedFormat,
+    paperFormat: printFormat,
     institution: inst,
     patientName: patient.name,
     patientMrn: patient.mrn,
@@ -275,6 +279,7 @@ export default function LabReportsPage() {
 
   const buildSummaryReportData = (patient: Patient): LabReportData => ({
     format: 'simplified',
+    paperFormat: printFormat,
     institution: inst,
     patientName: patient.name,
     patientMrn: patient.mrn,
@@ -633,9 +638,15 @@ export default function LabReportsPage() {
 
               {/* ── Action bar ── */}
               <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
-                <div className="text-xs text-slate-500 flex items-center gap-2">
-                  <Eye className="w-3.5 h-3.5" />
-                  {reportFormats.find(f => f.value === selectedFormat)?.desc}
+                <div className="flex items-center gap-3">
+                  <div className="text-xs text-slate-500 flex items-center gap-1.5">
+                    <Eye className="w-3.5 h-3.5" />
+                    {reportFormats.find(f => f.value === selectedFormat)?.desc}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-slate-400">Paper:</span>
+                    <PrintFormatSelector value={printFormat} onChange={setPrintFormat} className="!text-xs !py-1" />
+                  </div>
                 </div>
                 <div className="flex gap-2">
                   <button
