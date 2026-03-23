@@ -1,5 +1,28 @@
 import { Entity, Column, ManyToOne, JoinColumn, Index, OneToMany, OneToOne } from 'typeorm';
 import { BaseEntity } from './base.entity';
+import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto';
+
+// Encrypt/decrypt MFA secrets at rest so a DB breach doesn't expose TOTP seeds.
+const MFA_ENC_KEY = process.env.MFA_ENCRYPTION_KEY || process.env.JWT_SECRET || 'fallback-dev-key-change-in-prod!!';
+const MFA_KEY = scryptSync(MFA_ENC_KEY, 'glide-hims-mfa-salt', 32);
+
+function encryptMfaSecret(plain: string): string {
+  const iv = randomBytes(16);
+  const cipher = createCipheriv('aes-256-cbc', MFA_KEY, iv);
+  const encrypted = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
+  return iv.toString('hex') + ':' + encrypted.toString('hex');
+}
+
+function decryptMfaSecret(data: string): string {
+  const [ivHex, encHex] = data.split(':');
+  if (!ivHex || !encHex) return data; // plain-text legacy value
+  try {
+    const decipher = createDecipheriv('aes-256-cbc', MFA_KEY, Buffer.from(ivHex, 'hex'));
+    return Buffer.concat([decipher.update(Buffer.from(encHex, 'hex')), decipher.final()]).toString('utf8');
+  } catch {
+    return data; // plain-text legacy value
+  }
+}
 import { UserRole } from './user-role.entity';
 import { Tenant } from './tenant.entity';
 import { Facility } from './facility.entity';
@@ -70,7 +93,16 @@ export class User extends BaseEntity {
   @Column({ type: 'boolean', default: false, name: 'mfa_enabled' })
   mfaEnabled: boolean;
 
-  @Column({ type: 'varchar', length: 255, nullable: true, name: 'mfa_secret' })
+  @Column({
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+    name: 'mfa_secret',
+    transformer: {
+      to: (value?: string) => (value ? encryptMfaSecret(value) : value),
+      from: (value?: string) => (value ? decryptMfaSecret(value) : value),
+    },
+  })
   mfaSecret?: string;
 
   @Column({ type: 'timestamp', nullable: true, name: 'last_login_at' })

@@ -15,6 +15,7 @@ import * as crypto from 'crypto';
 import { User } from '../../database/entities/user.entity';
 import { UserRole } from '../../database/entities/user-role.entity';
 import { Facility } from '../../database/entities/facility.entity';
+import { Tenant } from '../../database/entities/tenant.entity';
 import { PasswordPolicy, PasswordHistory } from '../../database/entities/password-policy.entity';
 import { RolePermission } from '../../database/entities/role-permission.entity';
 import { Permission } from '../../database/entities/permission.entity';
@@ -37,6 +38,8 @@ export class AuthService {
     private userRoleRepository: Repository<UserRole>,
     @InjectRepository(Facility)
     private facilityRepository: Repository<Facility>,
+    @InjectRepository(Tenant)
+    private tenantRepository: Repository<Tenant>,
     @InjectRepository(PasswordPolicy)
     private passwordPolicyRepository: Repository<PasswordPolicy>,
     @InjectRepository(PasswordHistory)
@@ -85,7 +88,7 @@ export class AuthService {
 
     // Validate that passwordHash exists and is valid before comparing
     if (!user.passwordHash || !user.passwordHash.startsWith('$2')) {
-      this.logger.error(`User ${user.username} has invalid password hash format`);
+      this.logger.error(`User ${user.id} has invalid password hash format`);
       return null;
     }
 
@@ -93,7 +96,7 @@ export class AuthService {
     try {
       isPasswordValid = await bcrypt.compare(password, user.passwordHash);
     } catch (error) {
-      this.logger.error(`Password validation error for user ${user.username}: ${(error as Error).message}`);
+      this.logger.error(`Password validation error for user ${user.id}: ${(error as Error).message}`);
       throw error;
     }
 
@@ -121,6 +124,19 @@ export class AuthService {
   }
 
   async login(loginDto: LoginDto, ipAddress?: string, userAgent?: string): Promise<AuthResponseDto> {
+    const deploymentMode = this.configService.get<string>('DEPLOYMENT_MODE', 'on-premise');
+
+    // On-premise: auto-resolve the single tenant if no tenantId provided
+    if (!loginDto.tenantId && deploymentMode === 'on-premise') {
+      const singleTenant = await this.tenantRepository.findOne({
+        where: { status: 'active' },
+        order: { createdAt: 'ASC' },
+      });
+      if (singleTenant) {
+        loginDto.tenantId = singleTenant.id;
+      }
+    }
+
     let user: User | null;
     try {
       user = await this.validateUser(loginDto.username, loginDto.password, loginDto.tenantId);
@@ -134,7 +150,14 @@ export class AuthService {
 
     if (!user) {
       await this.recordLoginHistory(undefined, ipAddress, userAgent, false, 'Invalid credentials', loginDto.tenantId);
-      this.logger.warn(`Login failed for username: ${loginDto.username}`);
+      this.logger.warn(`Login failed for provided credentials`);
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    // Prevent cross-tenant login: non-system-admins must belong to the requested tenant
+    if (loginDto.tenantId && user.tenantId !== loginDto.tenantId && !user.isSystemAdmin) {
+      await this.recordLoginHistory(user.id, ipAddress, userAgent, false, 'Tenant mismatch', loginDto.tenantId);
+      this.logger.warn(`Cross-tenant login blocked: user ${user.id} (tenant ${user.tenantId}) attempted login to tenant ${loginDto.tenantId}`);
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -292,6 +315,8 @@ export class AuthService {
         email: user.email,
         roles,
         permissions,
+        isSystemAdmin: user.isSystemAdmin || false,
+        tenantId: effectiveTenantId,
         facilityId,
         facility: facility ? {
           id: facility.id,
@@ -339,8 +364,16 @@ export class AuthService {
 
       // Verify tokenVersion for token revocation
       if (payload.tokenVersion !== undefined && payload.tokenVersion !== user.tokenVersion) {
+        // Possible token reuse attack — a previously-rotated token was replayed.
+        this.logger.warn(`Refresh token reuse detected for user ${user.id}. Revoking all sessions.`);
+        user.tokenVersion += 1;
+        await this.userRepository.save(user);
         throw new UnauthorizedException('Token has been revoked');
       }
+
+      // Rotate: bump tokenVersion so this refresh token cannot be used again
+      user.tokenVersion += 1;
+      await this.userRepository.save(user);
 
       // Get current roles
       const userRoles = await this.userRoleRepository.find({
@@ -410,6 +443,8 @@ export class AuthService {
           email: user.email,
           roles,
           permissions,
+          isSystemAdmin: user.isSystemAdmin || false,
+          tenantId: user.tenantId,
           facilityId,
           facility: facility ? {
             id: facility.id,
@@ -455,7 +490,7 @@ export class AuthService {
     // Check password history
     await this.checkPasswordHistory(userId, dto.newPassword);
 
-    const saltRounds = this.configService.get<number>('BCRYPT_ROUNDS', 12);
+    const saltRounds = parseInt(this.configService.get('BCRYPT_ROUNDS', '12'), 10) || 12;
     const newHash = await bcrypt.hash(dto.newPassword, saltRounds);
 
     // Save old password to history
@@ -758,7 +793,7 @@ export class AuthService {
     // Validate password policy
     await this.validatePasswordPolicy(temporaryPassword, targetUserId);
 
-    const saltRounds = this.configService.get<number>('BCRYPT_ROUNDS', 12);
+    const saltRounds = parseInt(this.configService.get('BCRYPT_ROUNDS', '12'), 10) || 12;
     const hashedPassword = await bcrypt.hash(temporaryPassword, saltRounds);
 
     user.passwordHash = hashedPassword;
