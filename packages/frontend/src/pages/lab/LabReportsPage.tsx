@@ -6,8 +6,7 @@ import { toast } from 'sonner';
 import { useFacilityId } from '../../lib/facility';
 import { labService } from '../../services/lab';
 import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
-import { printService } from '../../lib/print';
-import { generateLabReportPdf, printLabReport, buildReportParams, type LabReportFormat, type LabReportData } from '../../lib/labReport';
+import { generateLabReportPdf, printLabReport, type LabReportFormat, type LabReportData } from '../../lib/labReport';
 import {
   FileText,
   Search,
@@ -41,16 +40,22 @@ interface TestResult {
   value: number;
   unit: string;
   status: 'Normal' | 'Abnormal' | 'Critical';
+  parameter?: string;
 }
 
 interface PatientTest {
   id: string;
   testName: string;
+  testCode: string;
   category: string;
   results: TestResult[];
   referenceRange: string;
   doctorReviewed: boolean;
   lastReportDate: string;
+  sampleType: string;
+  sampleNumber: string;
+  sampleDate: string;
+  doctorName: string;
 }
 
 interface Patient {
@@ -60,6 +65,7 @@ interface Patient {
   gender: string;
   email?: string;
   phone?: string;
+  dob?: string;
   tests: PatientTest[];
 }
 
@@ -98,13 +104,11 @@ export default function LabReportsPage() {
     queryKey: ['lab-report-patients', facilityId],
     queryFn: async (): Promise<Patient[]> => {
       try {
-        // Get completed lab orders to find patients with results
         const orders = await labService.orders.list({ 
           facilityId, 
           status: 'completed' 
         });
         
-        // Group by patient and build patient test records
         const patientMap = new Map<string, Patient>();
         
         for (const order of orders) {
@@ -115,38 +119,63 @@ export default function LabReportsPage() {
             patientMap.set(patientId, {
               id: order.patient.mrn || patientId,
               name: order.patient.fullName || 'Unknown',
-              age: 0, // Will need to calculate from DOB if available
+              age: 0,
               gender: 'Unknown',
               email: (order.patient as any).email,
-              phone: (order.patient as any).phone,
+              phone: order.patient.phone || (order.patient as any).phone,
+              dob: (order.patient as any).dateOfBirth,
               tests: [],
             });
           }
           
           const patient = patientMap.get(patientId)!;
+          const doctorName = order.doctor?.fullName || (order as any).orderedByName || '';
           
-          // Add tests from this order
           for (const test of order.tests || []) {
-            const existingTest = patient.tests.find(t => t.testName === test.testName);
-            const testResult: TestResult = {
-              date: order.completedAt || order.createdAt,
-              value: parseFloat((test.result as any)?.value) || 0,
-              unit: (test.result as any)?.unit || '',
-              status: (test.result as any)?.abnormalFlag === 'normal' ? 'Normal' : 
-                      (test.result as any)?.abnormalFlag === 'critical' ? 'Critical' : 'Abnormal',
-            };
+            // Build result entries from individual parameters if available
+            const resultEntries: TestResult[] = [];
+            const resultData = test.result as any;
             
-            if (existingTest) {
-              existingTest.results.push(testResult);
+            if (resultData?.results && Array.isArray(resultData.results)) {
+              // Multi-parameter results
+              for (const r of resultData.results) {
+                resultEntries.push({
+                  date: order.completedAt || order.createdAt,
+                  value: parseFloat(r.value) || 0,
+                  unit: r.unit || '',
+                  status: r.abnormalFlag === 'critical' ? 'Critical' : r.abnormalFlag === 'normal' ? 'Normal' : 'Abnormal',
+                  parameter: r.parameter || r.name || test.testName,
+                });
+              }
+            } else if (resultData?.value !== undefined) {
+              resultEntries.push({
+                date: order.completedAt || order.createdAt,
+                value: parseFloat(resultData.value) || 0,
+                unit: resultData.unit || '',
+                status: resultData.abnormalFlag === 'normal' ? 'Normal' : 
+                        resultData.abnormalFlag === 'critical' ? 'Critical' : 'Abnormal',
+                parameter: test.testName,
+              });
+            }
+            
+            const existingTest = patient.tests.find(t => t.testName === (test.testName || test.name));
+            
+            if (existingTest && resultEntries.length) {
+              existingTest.results.push(...resultEntries);
             } else {
               patient.tests.push({
                 id: test.id,
                 testName: test.testName || test.name || '',
+                testCode: test.testCode || '',
                 category: test.category || 'General',
-                results: [testResult],
-                referenceRange: (test.result as any)?.referenceRange || '',
-                doctorReviewed: (test.result as any)?.status === 'validated' || (test.result as any)?.status === 'released',
+                results: resultEntries,
+                referenceRange: resultData?.referenceRange || '',
+                doctorReviewed: resultData?.status === 'validated' || resultData?.status === 'released',
                 lastReportDate: order.completedAt || order.createdAt,
+                sampleType: order.sampleType || '',
+                sampleNumber: order.sampleId || order.orderNumber || '',
+                sampleDate: order.collectedAt || order.createdAt,
+                doctorName,
               });
             }
           }
@@ -246,20 +275,90 @@ export default function LabReportsPage() {
     return content;
   };
 
-  // Handle print — uses centralized printService
+  // Build LabReportData for a single test
+  const buildTestReportData = (patient: Patient, test: PatientTest): LabReportData => {
+    const params = test.results.map((r) => ({
+      name: r.parameter || test.testName,
+      value: String(r.value),
+      unit: r.unit,
+      normalMin: undefined as number | undefined,
+      normalMax: undefined as number | undefined,
+      referenceRange: test.referenceRange,
+    }));
+    return {
+      format: selectedFormat,
+      institution: inst,
+      patientName: patient.name,
+      patientMrn: patient.id,
+      patientAge: patient.age ? `${patient.age} years` : undefined,
+      patientGender: patient.gender,
+      patientDob: patient.dob,
+      patientPhone: patient.phone,
+      testName: test.testName,
+      testCode: test.testCode,
+      testCategory: test.category,
+      sampleType: test.sampleType,
+      sampleNumber: test.sampleNumber,
+      sampleDate: test.sampleDate,
+      testDate: test.lastReportDate,
+      validatedDate: test.lastReportDate,
+      referringDoctor: test.doctorName,
+      parameters: params,
+    };
+  };
+
+  // Build LabReportData for combined summary
+  const buildSummaryReportData = (patient: Patient): LabReportData => {
+    const allParams = patient.tests.flatMap((test) =>
+      test.results.map((r) => ({
+        name: r.parameter || test.testName,
+        value: String(r.value),
+        unit: r.unit,
+        normalMin: undefined as number | undefined,
+        normalMax: undefined as number | undefined,
+        referenceRange: test.referenceRange,
+      }))
+    );
+    return {
+      format: 'simplified',
+      institution: inst,
+      patientName: patient.name,
+      patientMrn: patient.id,
+      patientAge: patient.age ? `${patient.age} years` : undefined,
+      patientGender: patient.gender,
+      patientDob: patient.dob,
+      patientPhone: patient.phone,
+      testName: `Lab Summary — ${patient.tests.length} test(s)`,
+      testCode: '',
+      testCategory: '',
+      sampleType: '',
+      sampleNumber: '',
+      testDate: new Date().toLocaleDateString(),
+      parameters: allParams,
+    };
+  };
+
+  // Handle print — generates proper PDF and opens print dialog
   const handlePrint = () => {
     if (!selectedPatient) {
       toast.error('Please select a patient first');
       return;
     }
-    const el = document.getElementById('lab-reports-content');
-    if (el) {
-      printService.printDocument(el.innerHTML, { title: 'Lab Reports' });
+    try {
+      if (selectedFormat === 'standard') {
+        for (const test of selectedPatient.tests) {
+          printLabReport(buildTestReportData(selectedPatient, test));
+        }
+      } else {
+        printLabReport(buildSummaryReportData(selectedPatient));
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error('Failed to generate print report');
     }
-    toast.success('Print dialog opened');
   };
 
-  // Handle PDF download — Standard = per-test Amani-style, Simplified = combined summary
+  // Handle PDF download
   const handleDownload = async () => {
     if (!selectedPatient) {
       toast.error('Please select a patient first');
@@ -268,60 +367,12 @@ export default function LabReportsPage() {
     setIsGeneratingPdf(true);
     try {
       if (selectedFormat === 'standard') {
-        // Standard: generate one PDF per test (Amani-style clinical report)
         for (const test of selectedPatient.tests) {
-          const params = test.results.map((r) => ({
-            name: test.testName,
-            value: String(r.value),
-            unit: r.unit,
-            normalMin: undefined as number | undefined,
-            normalMax: undefined as number | undefined,
-            referenceRange: test.referenceRange,
-          }));
-          generateLabReportPdf({
-            format: 'standard',
-            institution: inst,
-            patientName: selectedPatient.name,
-            patientMrn: selectedPatient.id,
-            patientGender: selectedPatient.gender,
-            testName: test.testName,
-            testCode: '',
-            testCategory: test.category,
-            sampleType: '',
-            sampleNumber: '',
-            sampleDate: test.results[0]?.date,
-            testDate: test.lastReportDate,
-            validatedDate: test.lastReportDate,
-            parameters: params,
-          });
+          generateLabReportPdf(buildTestReportData(selectedPatient, test));
         }
         toast.success(`Downloaded ${selectedPatient.tests.length} standard report(s)`);
       } else {
-        // Simplified: combined summary (existing behaviour via shared generator)
-        const allParams = selectedPatient.tests.flatMap((test) =>
-          test.results.map((r) => ({
-            name: test.testName,
-            value: String(r.value),
-            unit: r.unit,
-            normalMin: undefined as number | undefined,
-            normalMax: undefined as number | undefined,
-            referenceRange: test.referenceRange,
-          }))
-        );
-        generateLabReportPdf({
-          format: 'simplified',
-          institution: inst,
-          patientName: selectedPatient.name,
-          patientMrn: selectedPatient.id,
-          patientGender: selectedPatient.gender,
-          testName: `Lab Summary — ${selectedPatient.tests.length} test(s)`,
-          testCode: '',
-          testCategory: '',
-          sampleType: '',
-          sampleNumber: '',
-          testDate: new Date().toLocaleDateString(),
-          parameters: allParams,
-        });
+        generateLabReportPdf(buildSummaryReportData(selectedPatient));
         toast.success('PDF report downloaded successfully');
       }
     } catch (error) {
@@ -805,9 +856,66 @@ export default function LabReportsPage() {
               </button>
             </div>
             
-            <div className="flex-1 overflow-auto p-4">
-              <div className="bg-gray-50 rounded-lg p-6 font-mono text-sm whitespace-pre-wrap">
-                {generateReportContent()}
+            <div className="flex-1 overflow-auto p-6">
+              {/* Structured preview */}
+              <div className="border rounded-lg overflow-hidden">
+                <div className="bg-violet-700 text-white p-4 text-center">
+                  {inst.logo && (
+                    <img src={inst.logo} alt="Logo" className="w-12 h-12 mx-auto mb-2 rounded" />
+                  )}
+                  <h2 className="text-lg font-bold">{inst.name || 'Hospital'}</h2>
+                  <p className="text-xs text-violet-200">
+                    {[inst.address, inst.phone, inst.email].filter(Boolean).join(' | ')}
+                  </p>
+                  <p className="text-sm mt-1 font-medium">Laboratory Report</p>
+                </div>
+                <div className="p-4 bg-gray-50 grid grid-cols-2 gap-x-6 gap-y-1 text-sm border-b">
+                  <div><span className="font-medium text-gray-600">Patient:</span> {selectedPatient.name}</div>
+                  <div><span className="font-medium text-gray-600">MRN:</span> {selectedPatient.id}</div>
+                  <div><span className="font-medium text-gray-600">Gender:</span> {selectedPatient.gender}</div>
+                  <div><span className="font-medium text-gray-600">Date:</span> {new Date().toLocaleDateString()}</div>
+                  {selectedPatient.phone && (
+                    <div><span className="font-medium text-gray-600">Phone:</span> {selectedPatient.phone}</div>
+                  )}
+                </div>
+                {selectedPatient.tests.map((test) => (
+                  <div key={test.id} className="border-b last:border-b-0">
+                    <div className="px-4 py-2 bg-violet-50 font-medium text-violet-800 text-sm">
+                      {test.testName} {test.testCode ? `(${test.testCode})` : ''} — {test.category}
+                    </div>
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-100">
+                        <tr>
+                          <th className="px-3 py-1.5 text-left font-medium text-gray-600">Parameter</th>
+                          <th className="px-3 py-1.5 text-left font-medium text-gray-600">Result</th>
+                          <th className="px-3 py-1.5 text-left font-medium text-gray-600">Unit</th>
+                          <th className="px-3 py-1.5 text-left font-medium text-gray-600">Reference</th>
+                          <th className="px-3 py-1.5 text-left font-medium text-gray-600">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {test.results.map((r, idx) => (
+                          <tr key={idx}>
+                            <td className="px-3 py-1.5">{r.parameter || test.testName}</td>
+                            <td className={`px-3 py-1.5 font-medium ${r.status === 'Critical' ? 'text-red-600' : r.status === 'Abnormal' ? 'text-orange-600' : ''}`}>
+                              {r.value} 
+                            </td>
+                            <td className="px-3 py-1.5 text-gray-500">{r.unit}</td>
+                            <td className="px-3 py-1.5 text-gray-500">{test.referenceRange}</td>
+                            <td className="px-3 py-1.5">
+                              {r.status !== 'Normal' && (
+                                <span className={`px-1.5 py-0.5 rounded text-xs ${statusColors[r.status]}`}>{r.status}</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
+                <div className="p-3 text-center text-xs text-gray-400 border-t">
+                  Generated by {inst.name || 'Hospital'} Lab System
+                </div>
               </div>
             </div>
             
@@ -818,6 +926,13 @@ export default function LabReportsPage() {
               >
                 <Copy className="w-4 h-4" />
                 Copy
+              </button>
+              <button
+                onClick={() => { setShowPreviewModal(false); handlePrint(); }}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 flex items-center gap-2"
+              >
+                <Printer className="w-4 h-4" />
+                Print
               </button>
               <button
                 onClick={() => { setShowPreviewModal(false); handleDownload(); }}
