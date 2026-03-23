@@ -20,11 +20,15 @@ import {
   XCircle,
   X,
   Info,
+  Printer,
+  Download,
 } from 'lucide-react';
 import { labService, type LabSample, type LabResult } from '../../services';
 import type { EnterResultDto } from '../../services/lab';
 import { useFacilityId } from '../../lib/facility';
 import { useAuthStore } from '../../store/auth';
+import { generateLabReportPdf, printLabReport, buildReportParams, type LabReportFormat } from '../../lib/labReport';
+import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
 
 interface TestResult {
   name: string;
@@ -111,6 +115,7 @@ export default function ResultsEntryPage() {
   const queryClient = useQueryClient();
   const facilityId = useFacilityId();
   const { user } = useAuthStore();
+  const inst = useInstitutionInfo();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const orderId = searchParams.get('orderId') || undefined;
@@ -121,6 +126,7 @@ export default function ResultsEntryPage() {
   const [comments, setComments] = useState('');
   const [showCriticalAlert, setShowCriticalAlert] = useState(false);
   const [criticalValues, setCriticalValues] = useState<string[]>([]);
+  const [reportFormat, setReportFormat] = useState<LabReportFormat>('standard');
 
   // Track entered result IDs per sample (needed for validate/release)
   const [enteredResultIds, setEnteredResultIds] = useState<Record<string, string[]>>({});
@@ -805,9 +811,80 @@ export default function ResultsEntryPage() {
               <div className="p-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   {selectedSample.verified && (
-                    <span className="text-sm text-green-600 flex items-center gap-1">
-                      <CheckCircle className="w-4 h-4" /> Results Verified
-                    </span>
+                    <>
+                      <span className="text-sm text-green-600 flex items-center gap-1">
+                        <CheckCircle className="w-4 h-4" /> Results Verified
+                      </span>
+                      <span className="text-gray-300">|</span>
+                      <select
+                        value={reportFormat}
+                        onChange={(e) => setReportFormat(e.target.value as LabReportFormat)}
+                        className="text-xs border rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      >
+                        <option value="standard">Standard Report</option>
+                        <option value="simplified">Simplified Report</option>
+                      </select>
+                      <button
+                        onClick={() => {
+                          if (!selectedSample) return;
+                          const params = buildReportParams(selectedSample.parameters, results);
+                          printLabReport({
+                            format: reportFormat,
+                            institution: inst,
+                            patientName: selectedSample.patientName,
+                            patientMrn: selectedSample.patientMrn,
+                            testName: selectedSample.testName,
+                            testCode: selectedSample.testCode,
+                            testCategory: selectedSample.testCategory,
+                            sampleType: selectedSample.sampleType,
+                            sampleNumber: selectedSample.sampleNumber,
+                            sampleDate: selectedSample.collectedAt,
+                            testDate: new Date().toLocaleString(),
+                            validatedDate: new Date().toLocaleString(),
+                            referringDoctor: selectedSample.referringDoctor,
+                            parameters: params,
+                            comments: selectedSample.comments,
+                            analysedBy: user?.fullName || user?.username,
+                            verifiedBy: user?.fullName || user?.username,
+                          });
+                        }}
+                        className="flex items-center gap-1 px-3 py-1 text-sm border rounded-lg hover:bg-gray-100"
+                        title="Print Report"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                        Print
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (!selectedSample) return;
+                          const params = buildReportParams(selectedSample.parameters, results);
+                          generateLabReportPdf({
+                            format: reportFormat,
+                            institution: inst,
+                            patientName: selectedSample.patientName,
+                            patientMrn: selectedSample.patientMrn,
+                            testName: selectedSample.testName,
+                            testCode: selectedSample.testCode,
+                            testCategory: selectedSample.testCategory,
+                            sampleType: selectedSample.sampleType,
+                            sampleNumber: selectedSample.sampleNumber,
+                            sampleDate: selectedSample.collectedAt,
+                            testDate: new Date().toLocaleString(),
+                            validatedDate: new Date().toLocaleString(),
+                            referringDoctor: selectedSample.referringDoctor,
+                            parameters: params,
+                            comments: selectedSample.comments,
+                            analysedBy: user?.fullName || user?.username,
+                            verifiedBy: user?.fullName || user?.username,
+                          });
+                        }}
+                        className="flex items-center gap-1 px-3 py-1 text-sm border rounded-lg hover:bg-gray-100"
+                        title="Download PDF"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        PDF
+                      </button>
+                    </>
                   )}
                 </div>
                 <div className="flex gap-3">
