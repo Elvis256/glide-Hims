@@ -36,10 +36,18 @@ export class TenantContextInterceptor implements NestInterceptor {
         });
 
         if (facility) {
-          request.tenantContext = {
-            tenantId: facility.tenantId,
-            facilityId: facility.id,
-          } as TenantContext;
+          // Validate the facility belongs to the user's tenant
+          if (user.tenantId && facility.tenantId !== user.tenantId) {
+            this.logger.warn(
+              `Tenant mismatch: user ${user.id} (tenant ${user.tenantId}) tried to access facility ${facilityId} (tenant ${facility.tenantId})`,
+            );
+            request.tenantContext = null;
+          } else {
+            request.tenantContext = {
+              tenantId: facility.tenantId,
+              facilityId: facility.id,
+            } as TenantContext;
+          }
         } else {
           this.logger.warn(`Facility not found: ${facilityId}`);
           request.tenantContext = null;

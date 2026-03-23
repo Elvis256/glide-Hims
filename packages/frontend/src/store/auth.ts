@@ -59,6 +59,7 @@ export const useAuthStore = create<AuthState & AuthActions>()(
 
       hasPermission: (permission: string) => {
         const { user } = get();
+        if (user?.isSystemAdmin) return true;
         if (!user?.permissions) return false;
         const matchRole = (r: string) => user.roles?.some((ur: any) => ur === r || ur?.role === r || ur?.name === r);
         if (matchRole('Super Admin')) return true;
@@ -67,6 +68,7 @@ export const useAuthStore = create<AuthState & AuthActions>()(
 
       hasAnyPermission: (permissions: string[]) => {
         const { user } = get();
+        if (user?.isSystemAdmin) return true;
         if (!user?.permissions) return false;
         const matchRole = (r: string) => user.roles?.some((ur: any) => ur === r || ur?.role === r || ur?.name === r);
         if (matchRole('Super Admin')) return true;
@@ -120,8 +122,6 @@ export const useAuthStore = create<AuthState & AuthActions>()(
       name: 'glide-hims-auth',
       partialize: (state) => ({
         user: state.user,
-        accessToken: state.accessToken,
-        refreshToken: state.refreshToken,
         isAuthenticated: state.isAuthenticated,
       }),
     }

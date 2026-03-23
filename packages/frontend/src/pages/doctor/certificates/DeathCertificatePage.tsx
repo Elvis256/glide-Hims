@@ -22,6 +22,7 @@ import { patientsService } from '../../../services/patients';
 import { printContent, printService } from '../../../lib/print';
 import { useInstitutionInfo } from '../../../lib/useInstitutionInfo';
 import { useDoctorCertPrefs } from '../../../lib/useDoctorCertPrefs';
+import { escapeHtml } from '../../../lib/sanitize';
 
 interface LocalPatient {
   id: string;
@@ -104,9 +105,9 @@ export default function DeathCertificatePage() {
       <div style="font-family:'Times New Roman',Times,serif;max-width:700px;margin:0 auto;padding:24px;color:#111;">
         <div style="text-align:center;border-bottom:3px double #555;padding-bottom:16px;margin-bottom:20px;">
           ${logoHtml}
-          <h1 style="font-size:22px;font-weight:bold;color:#1a1a2e;margin:0;letter-spacing:1px;">${inst.name || 'Medical Facility'}</h1>
-          ${inst.address ? `<p style="margin:4px 0 0;font-size:12px;color:#555;">${inst.address}</p>` : ''}
-          ${inst.phone || inst.email ? `<p style="margin:2px 0 0;font-size:12px;color:#555;">${[inst.phone, inst.email].filter(Boolean).join(' • ')}</p>` : ''}
+          <h1 style="font-size:22px;font-weight:bold;color:#1a1a2e;margin:0;letter-spacing:1px;">${escapeHtml(inst.name) || 'Medical Facility'}</h1>
+          ${inst.address ? `<p style="margin:4px 0 0;font-size:12px;color:#555;">${escapeHtml(inst.address)}</p>` : ''}
+          ${inst.phone || inst.email ? `<p style="margin:2px 0 0;font-size:12px;color:#555;">${[inst.phone, inst.email].filter(Boolean).map(v => escapeHtml(v)).join(' • ')}</p>` : ''}
         </div>
         <div style="text-align:center;margin-bottom:24px;">
           <h2 style="font-size:20px;font-weight:bold;text-decoration:underline;color:#1a1a2e;margin:0;">CERTIFICATE OF DEATH</h2>
@@ -115,37 +116,37 @@ export default function DeathCertificatePage() {
           <table style="width:100%;border-collapse:collapse;margin:0 0 16px;background:#f9fafb;border-radius:6px;">
             <tr>
               <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;width:35%;color:#6b7280;font-size:11px;">Name of Deceased</td>
-              <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;font-weight:600;">${selectedPatient?.name || '________________'}</td>
+              <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;font-weight:600;">${escapeHtml(selectedPatient?.name) || '________________'}</td>
             </tr>
             <tr>
               <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;color:#6b7280;font-size:11px;">Patient ID</td>
-              <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;font-weight:600;">${selectedPatient?.patientId || '________'}</td>
+              <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;font-weight:600;">${escapeHtml(selectedPatient?.patientId) || '________'}</td>
             </tr>
             <tr>
               <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;color:#6b7280;font-size:11px;">Date of Birth</td>
-              <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;font-weight:600;">${selectedPatient?.dateOfBirth || '________'}</td>
+              <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;font-weight:600;">${escapeHtml(selectedPatient?.dateOfBirth) || '________'}</td>
             </tr>
             <tr>
               <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;color:#6b7280;font-size:11px;">Age at Death</td>
-              <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;font-weight:600;">${calculateAge !== null ? `${calculateAge} years` : '________'}</td>
+              <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;font-weight:600;">${calculateAge !== null ? `${escapeHtml(calculateAge)} years` : '________'}</td>
             </tr>
             <tr>
               <td style="padding:8px 14px;color:#6b7280;font-size:11px;">Gender</td>
-              <td style="padding:8px 14px;font-weight:600;">${selectedPatient?.gender || '________'}</td>
+              <td style="padding:8px 14px;font-weight:600;">${escapeHtml(selectedPatient?.gender) || '________'}</td>
             </tr>
           </table>
           <table style="width:100%;border-collapse:collapse;margin:0 0 16px;border:1px solid #e5e7eb;border-radius:6px;">
             <tr>
               <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;width:35%;color:#6b7280;font-size:11px;">Date of Death</td>
-              <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;font-weight:600;">${dateOfDeath}</td>
+              <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;font-weight:600;">${escapeHtml(dateOfDeath)}</td>
             </tr>
             <tr>
               <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;color:#6b7280;font-size:11px;">Time of Death</td>
-              <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;font-weight:600;">${timeOfDeath || 'Not recorded'}</td>
+              <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;font-weight:600;">${escapeHtml(timeOfDeath) || 'Not recorded'}</td>
             </tr>
             <tr>
               <td style="padding:8px 14px;color:#6b7280;font-size:11px;">Place of Death</td>
-              <td style="padding:8px 14px;font-weight:600;">${placeOfDeath || 'Not specified'}</td>
+              <td style="padding:8px 14px;font-weight:600;">${escapeHtml(placeOfDeath) || 'Not specified'}</td>
             </tr>
           </table>
           <div style="border:1px solid #e5e7eb;border-radius:6px;padding:14px;margin:0 0 16px;">
@@ -153,38 +154,38 @@ export default function DeathCertificatePage() {
             <table style="width:100%;border-collapse:collapse;">
               <tr>
                 <td style="padding:6px 0;width:100px;color:#6b7280;font-size:11px;vertical-align:top;">Immediate:</td>
-                <td style="padding:6px 0;">${immediateCause || 'Not specified'}</td>
+                <td style="padding:6px 0;">${escapeHtml(immediateCause) || 'Not specified'}</td>
               </tr>
               <tr>
                 <td style="padding:6px 0;color:#6b7280;font-size:11px;vertical-align:top;">Antecedent:</td>
-                <td style="padding:6px 0;">${antecedentCause || 'Not specified'}</td>
+                <td style="padding:6px 0;">${escapeHtml(antecedentCause) || 'Not specified'}</td>
               </tr>
               <tr>
                 <td style="padding:6px 0;color:#6b7280;font-size:11px;vertical-align:top;">Underlying:</td>
-                <td style="padding:6px 0;">${underlyingCause || 'Not specified'}</td>
+                <td style="padding:6px 0;">${escapeHtml(underlyingCause) || 'Not specified'}</td>
               </tr>
             </table>
           </div>
           <div style="display:flex;gap:12px;margin:0 0 16px;">
             <div style="flex:1;padding:12px;border:1px solid #d1d5db;border-radius:6px;background:#f9fafb;">
               <p style="margin:0 0 4px;color:#6b7280;font-size:11px;">Manner of Death</p>
-              <p style="margin:0;font-weight:600;">${mannerOfDeath}</p>
+              <p style="margin:0;font-weight:600;">${escapeHtml(mannerOfDeath)}</p>
             </div>
             <div style="flex:1;padding:12px;border:1px solid #d1d5db;border-radius:6px;background:#f9fafb;">
               <p style="margin:0 0 4px;color:#6b7280;font-size:11px;">Autopsy</p>
-              <p style="margin:0;font-weight:600;">${autopsyStatus}</p>
+              <p style="margin:0;font-weight:600;">${escapeHtml(autopsyStatus)}</p>
             </div>
           </div>
-          ${contributingConditions ? `<div style="border:1px solid #e5e7eb;border-radius:6px;padding:12px;margin:0 0 16px;"><p style="margin:0 0 6px;color:#6b7280;font-size:11px;">Contributing Conditions</p><p style="margin:0;">${contributingConditions}</p></div>` : ''}
+          ${contributingConditions ? `<div style="border:1px solid #e5e7eb;border-radius:6px;padding:12px;margin:0 0 16px;"><p style="margin:0 0 6px;color:#6b7280;font-size:11px;">Contributing Conditions</p><p style="margin:0;">${escapeHtml(contributingConditions)}</p></div>` : ''}
           <div style="margin-top:40px;padding-top:20px;border-top:1px solid #ddd;">
-            <p style="font-size:11px;color:#6b7280;margin:0 0 16px;">Certified by: ${certifiedBy}</p>
+            <p style="font-size:11px;color:#6b7280;margin:0 0 16px;">Certified by: ${escapeHtml(certifiedBy)}</p>
             <div style="display:flex;justify-content:space-between;align-items:flex-end;">
-              <div><p style="font-size:12px;color:#666;margin:0;">Date: ${new Date().toLocaleDateString()}</p></div>
+              <div><p style="font-size:12px;color:#666;margin:0;">Date: ${escapeHtml(new Date().toLocaleDateString())}</p></div>
               <div style="text-align:center;">
                 <div style="width:200px;border-bottom:1px solid #333;margin-bottom:6px;">&nbsp;</div>
-                <p style="font-size:13px;font-weight:bold;margin:0;">${doctorDetails.name}</p>
-                ${doctorDetails.qualification ? `<p style="font-size:11px;color:#555;margin:2px 0 0;">${doctorDetails.qualification}</p>` : ''}
-                ${doctorDetails.registrationNo ? `<p style="font-size:11px;color:#555;margin:2px 0 0;">Reg. No: ${doctorDetails.registrationNo}</p>` : ''}
+                <p style="font-size:13px;font-weight:bold;margin:0;">${escapeHtml(doctorDetails.name)}</p>
+                ${doctorDetails.qualification ? `<p style="font-size:11px;color:#555;margin:2px 0 0;">${escapeHtml(doctorDetails.qualification)}</p>` : ''}
+                ${doctorDetails.registrationNo ? `<p style="font-size:11px;color:#555;margin:2px 0 0;">Reg. No: ${escapeHtml(doctorDetails.registrationNo)}</p>` : ''}
               </div>
             </div>
           </div>
