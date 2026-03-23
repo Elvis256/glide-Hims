@@ -12,6 +12,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { UsersService } from './users.service';
 import { CreateUserDto, UpdateUserDto, AssignRoleDto, UserListQueryDto, LinkEmployeeDto, AssignPermissionDto, AssignMultiplePermissionsDto } from './dto/user.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
@@ -38,6 +39,7 @@ export class UsersController {
 
   @Post()
   @AuthWithPermissions('users.create')
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   @ApiOperation({ summary: 'Create a new user' })
   @ApiResponse({ status: 201, description: 'User created successfully' })
   @ApiResponse({ status: 409, description: 'Username or email already exists' })
@@ -140,6 +142,7 @@ export class UsersController {
 
   @Post(':id/roles')
   @AuthWithPermissions('users.update')
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   @ApiOperation({ summary: 'Assign role to user' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 201, description: 'Role assigned successfully' })

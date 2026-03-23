@@ -10,6 +10,7 @@
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
+    "audit:security": "pnpm audit --prod",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "db:migrate": "cd packages/backend && pnpm db:migrate",
     "db:seed": "cd packages/backend && pnpm db:seed",
