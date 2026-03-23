@@ -62,42 +62,9 @@ interface PendingSample {
   usingFallbackParameters?: boolean;
 }
 
-const defaultParameters = [
-  // Hematology
-  { name: 'WBC', unit: 'x10^9/L', referenceRange: '4.5-11.0', criticalLow: 2.0, criticalHigh: 30.0 },
-  { name: 'RBC', unit: 'x10^12/L', referenceRange: '4.5-5.5', criticalLow: 2.0, criticalHigh: 7.0 },
-  { name: 'Hemoglobin', unit: 'g/dL', referenceRange: '13.5-17.5', criticalLow: 7.0, criticalHigh: 20.0 },
-  { name: 'Hematocrit', unit: '%', referenceRange: '38-50' },
-  { name: 'Platelets', unit: 'x10^9/L', referenceRange: '150-400', criticalLow: 50, criticalHigh: 1000 },
-  { name: 'MCV', unit: 'fL', referenceRange: '80-100' },
-  { name: 'MCH', unit: 'pg', referenceRange: '27-33' },
-  { name: 'MCHC', unit: 'g/dL', referenceRange: '32-36' },
-  // Chemistry
-  { name: 'Glucose (Fasting)', unit: 'mg/dL', referenceRange: '70-100', criticalLow: 40, criticalHigh: 500 },
-  { name: 'Glucose (Random)', unit: 'mg/dL', referenceRange: '70-140', criticalLow: 40, criticalHigh: 500 },
-  { name: 'HbA1c', unit: '%', referenceRange: '4.0-5.6' },
-  { name: 'Creatinine', unit: 'mg/dL', referenceRange: '0.7-1.3', criticalHigh: 10.0 },
-  { name: 'BUN', unit: 'mg/dL', referenceRange: '7-20', criticalHigh: 100 },
-  { name: 'Sodium', unit: 'mEq/L', referenceRange: '136-145', criticalLow: 120, criticalHigh: 160 },
-  { name: 'Potassium', unit: 'mEq/L', referenceRange: '3.5-5.0', criticalLow: 2.5, criticalHigh: 6.5 },
-  { name: 'Chloride', unit: 'mEq/L', referenceRange: '98-106' },
-  { name: 'CO2', unit: 'mEq/L', referenceRange: '23-29' },
-  { name: 'Calcium', unit: 'mg/dL', referenceRange: '8.5-10.5', criticalLow: 6.0, criticalHigh: 13.0 },
-  { name: 'AST (SGOT)', unit: 'U/L', referenceRange: '10-40' },
-  { name: 'ALT (SGPT)', unit: 'U/L', referenceRange: '7-56' },
-  { name: 'ALP', unit: 'U/L', referenceRange: '44-147' },
-  { name: 'Total Bilirubin', unit: 'mg/dL', referenceRange: '0.1-1.2' },
-  { name: 'Albumin', unit: 'g/dL', referenceRange: '3.5-5.0' },
-  { name: 'Total Protein', unit: 'g/dL', referenceRange: '6.0-8.3' },
-  // Lipid Panel
-  { name: 'Total Cholesterol', unit: 'mg/dL', referenceRange: '<200' },
-  { name: 'Triglycerides', unit: 'mg/dL', referenceRange: '<150' },
-  { name: 'HDL', unit: 'mg/dL', referenceRange: '>40' },
-  { name: 'LDL', unit: 'mg/dL', referenceRange: '<100' },
-  // Urinalysis
-  { name: 'pH', unit: '', referenceRange: '4.5-8.0' },
-  { name: 'Specific Gravity', unit: '', referenceRange: '1.005-1.030' },
-];
+// Default parameters removed — tests without configured reference ranges
+// now show an empty parameter list with a "Configure Test" prompt.
+// This prevents storing junk results with mismatched parameters.
 
 const REJECTION_REASONS = [
   'Hemolyzed',
@@ -233,7 +200,7 @@ export default function ResultsEntryPage() {
               criticalLow: rr.criticalLow,
               criticalHigh: rr.criticalHigh,
             }))
-          : defaultParameters,
+          : [],
         usingFallbackParameters: !hasRanges,
         results: [],
         status: sample.status,
@@ -657,20 +624,20 @@ export default function ResultsEntryPage() {
                 )}
                 {/* Fallback parameters warning */}
                 {selectedSample.usingFallbackParameters && !selectedSample.verified && (
-                  <div className="mb-4 p-3 bg-amber-50 border border-amber-300 rounded-lg flex items-start gap-2.5">
-                    <Info className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div className="mb-4 p-4 bg-amber-50 border border-amber-300 rounded-lg flex items-start gap-2.5">
+                    <Info className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-amber-800">Using default reference ranges</p>
-                      <p className="text-xs text-amber-700 mt-0.5">
-                        <strong>{selectedSample.testName}</strong> has no configured reference ranges in the test catalog.
-                        Shown ranges are generic defaults and may not be appropriate for this test.
+                      <p className="text-sm font-semibold text-amber-800">No parameters configured</p>
+                      <p className="text-sm text-amber-700 mt-1">
+                        <strong>{selectedSample.testName}</strong> has no reference ranges configured in the test catalog.
+                        Please configure the test parameters before entering results to ensure data quality.
                       </p>
                     </div>
                     <button
                       onClick={() => navigate(selectedSample.testId ? `/admin/lab/tests/${selectedSample.testId}` : '/admin/lab/tests')}
-                      className="text-xs text-amber-700 underline hover:text-amber-900 flex-shrink-0 font-medium"
+                      className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 flex-shrink-0"
                     >
-                      Configure →
+                      Configure Test
                     </button>
                   </div>
                 )}
