@@ -80,7 +80,8 @@ export class FinanceService {
       order: { accountCode: 'ASC' },
     });
 
-    return accounts.map(a => ({
+    // Build flat result with parentId
+    const flat = accounts.map(a => ({
       id: a.id,
       facilityId: a.facilityId,
       tenantId: a.tenantId,
@@ -91,12 +92,35 @@ export class FinanceService {
       description: a.description,
       isActive: a.isActive,
       isHeader: a.isHeader,
-      currentBalance: a.currentBalance,
+      currentBalance: Number(a.currentBalance) || 0,
       currency: a.currency,
       createdAt: a.createdAt,
       updatedAt: a.updatedAt,
       parentId: a.parent?.id || null,
     }));
+
+    // Aggregate child balances up to parent/header accounts
+    const map = new Map<string, typeof flat[number]>();
+    flat.forEach(a => map.set(a.id, a));
+
+    const aggregated = new Set<string>();
+    const aggregate = (node: typeof flat[number]): number => {
+      if (aggregated.has(node.id)) return node.currentBalance;
+      aggregated.add(node.id);
+
+      const children = flat.filter(a => a.parentId === node.id);
+      if (children.length === 0) return node.currentBalance;
+
+      const childSum = children.reduce((sum, child) => sum + aggregate(child), 0);
+      if (node.isHeader) {
+        node.currentBalance = childSum;
+      }
+      return node.currentBalance;
+    };
+
+    flat.filter(a => !a.parentId).forEach(aggregate);
+
+    return flat;
   }
 
   async updateAccount(id: string, dto: UpdateAccountDto, tenantId?: string): Promise<ChartOfAccount> {

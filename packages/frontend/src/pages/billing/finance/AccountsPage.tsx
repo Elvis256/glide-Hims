@@ -72,10 +72,27 @@ const buildTree = (accounts: Account[]): Account[] => {
     const node = map.get(acc.id)!;
     if (acc.parentId && map.has(acc.parentId)) {
       map.get(acc.parentId)!.children!.push(node);
-    } else if (!acc.parentId) {
+    } else {
+      // Treat as root if no parentId OR if parent is missing from data
       roots.push(node);
     }
   });
+
+  // Aggregate child balances up to parent accounts
+  const aggregateBalance = (node: Account): number => {
+    if (!node.children || node.children.length === 0) {
+      return Number(node.currentBalance || 0);
+    }
+    const childSum = node.children.reduce((sum, child) => sum + aggregateBalance(child), 0);
+    // Header/parent accounts show the sum of their children
+    // Leaf accounts keep their own balance
+    node.currentBalance = node.isHeader
+      ? childSum
+      : Number(node.currentBalance || 0) + childSum;
+    return node.currentBalance;
+  };
+
+  roots.forEach(aggregateBalance);
 
   return roots;
 };
@@ -200,7 +217,7 @@ export default function AccountsPage() {
   }, [accountTree, searchQuery, typeFilter]);
 
   const summaryStats = useMemo(() => {
-    const byType = flatAccounts.filter((a) => !a.isHeader).reduce(
+    const byType = flatAccounts.filter((a) => !a.isHeader && a.isActive).reduce(
       (acc, account) => {
         acc[account.accountType] = (acc[account.accountType] || 0) + Number(account.currentBalance || 0);
         return acc;
@@ -405,7 +422,7 @@ export default function AccountsPage() {
                   accountCategory: formData.get('accountCategory') as AccountCategory || 'cash',
                   description: formData.get('description') as string || undefined,
                   isActive: formData.get('isActive') === 'true',
-                  isHeader: formData.get('isHeader') === 'on',
+                  isHeader: formData.get('isHeader') === 'true',
                   parentId: formData.get('parentId') as string || null,
                   facilityId,
                 };
