@@ -1,4 +1,4 @@
-import { Controller, Get, Put, Delete, Param, Body, Query } from '@nestjs/common';
+import { Controller, Get, Put, Delete, Param, Body, Query, Request } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { SystemSettingsService } from './system-settings.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
@@ -10,15 +10,56 @@ import { UpsertSystemSettingDto } from './dto/system-settings.dto';
 export class SystemSettingsController {
   constructor(private readonly systemSettingsService: SystemSettingsService) {}
 
+  @Get('platform-overview')
+  @AuthWithPermissions('admin.settings.manage')
+  @ApiOperation({ summary: 'Get platform-wide overview stats (system admin only)' })
+  async getPlatformOverview(@Request() req: any) {
+    if (!req.user?.isSystemAdmin) {
+      return { data: null };
+    }
+    return { data: await this.systemSettingsService.getPlatformOverview() };
+  }
+
+  @Get('platform')
+  @AuthWithPermissions('admin.settings.manage')
+  @ApiOperation({ summary: 'Get platform-level settings (no tenantId)' })
+  async getPlatformSettings(@Request() req: any) {
+    if (!req.user?.isSystemAdmin) {
+      return { data: [] };
+    }
+    return { data: await this.systemSettingsService.getPlatformSettings() };
+  }
+
+  @Put('platform/:key')
+  @AuthWithPermissions('admin.settings.manage')
+  @ApiOperation({ summary: 'Set a platform-level setting (system admin only)' })
+  async setPlatformSetting(
+    @Param('key') key: string,
+    @Body() body: UpsertSystemSettingDto,
+    @Request() req: any,
+  ) {
+    if (!req.user?.isSystemAdmin) {
+      return { message: 'Only system administrators can modify platform settings' };
+    }
+    const setting = await this.systemSettingsService.upsert(
+      `platform.${key}`,
+      body.value,
+      undefined,
+      body.description,
+    );
+    return { message: 'Setting saved', data: setting };
+  }
+
   @Get()
   @AuthWithPermissions('admin.settings.manage')
   @ApiOperation({ summary: 'List all system settings' })
   @ApiQuery({ name: 'prefix', required: false, description: 'Filter settings by key prefix' })
-  @ApiQuery({ name: 'tenantId', required: false, description: 'Filter by tenant' })
   async findAll(
     @Query('prefix') prefix?: string,
-    @Query('tenantId') tenantId?: string,
+    @Request() req?: any,
   ) {
+    // Security: always scope to caller's tenant to prevent cross-tenant config access
+    const tenantId = req?.user?.isSystemAdmin ? undefined : req?.user?.tenantId;
     if (prefix) {
       return this.systemSettingsService.getByPrefix(prefix, tenantId);
     }

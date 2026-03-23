@@ -36,6 +36,10 @@ async function bootstrap() {
     httpsOptions,
   });
 
+  // Trust the first proxy (nginx) so Express uses X-Forwarded-For correctly
+  // for rate limiting, without allowing arbitrary header spoofing.
+  app.set('trust proxy', 1);
+
   const configService = app.get(ConfigService);
 
   // Validate critical environment variables
@@ -53,8 +57,20 @@ async function bootstrap() {
   }
 
   // Security: Helmet HTTP headers
+  const isDev = configService.get('NODE_ENV') !== 'production';
   app.use(helmet({
-    contentSecurityPolicy: false, // Allow Swagger UI in dev
+    contentSecurityPolicy: isDev ? false : {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:', 'blob:'],
+        connectSrc: ["'self'"],
+        fontSrc: ["'self'", 'data:'],
+        objectSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+      },
+    },
     hsts: useHttps ? { maxAge: 31536000, includeSubDomains: true } : false,
   }));
 

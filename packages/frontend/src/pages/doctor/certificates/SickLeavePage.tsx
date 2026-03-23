@@ -21,6 +21,7 @@ import { patientsService } from '../../../services/patients';
 import { printContent, printService } from '../../../lib/print';
 import { useInstitutionInfo } from '../../../lib/useInstitutionInfo';
 import { useDoctorCertPrefs } from '../../../lib/useDoctorCertPrefs';
+import { escapeHtml } from '../../../lib/sanitize';
 import { asList } from '../../../utils/unwrapResponse';
 
 interface Patient {
@@ -105,32 +106,32 @@ export default function SickLeavePage() {
       <div style="font-family:'Times New Roman',Times,serif;max-width:700px;margin:0 auto;padding:24px;color:#111;">
         <div style="text-align:center;border-bottom:3px double #c2410c;padding-bottom:16px;margin-bottom:20px;">
           ${logoHtml}
-          <h1 style="font-size:22px;font-weight:bold;color:#7c2d12;margin:0;letter-spacing:1px;">${inst.name || 'Medical Facility'}</h1>
-          ${inst.address ? `<p style="margin:4px 0 0;font-size:12px;color:#555;">${inst.address}</p>` : ''}
-          ${inst.phone || inst.email ? `<p style="margin:2px 0 0;font-size:12px;color:#555;">${[inst.phone, inst.email].filter(Boolean).join(' • ')}</p>` : ''}
+          <h1 style="font-size:22px;font-weight:bold;color:#7c2d12;margin:0;letter-spacing:1px;">${escapeHtml(inst.name) || 'Medical Facility'}</h1>
+          ${inst.address ? `<p style="margin:4px 0 0;font-size:12px;color:#555;">${escapeHtml(inst.address)}</p>` : ''}
+          ${inst.phone || inst.email ? `<p style="margin:2px 0 0;font-size:12px;color:#555;">${[inst.phone, inst.email].filter(Boolean).map(v => escapeHtml(v)).join(' • ')}</p>` : ''}
         </div>
         <div style="text-align:center;margin-bottom:24px;">
           <h2 style="font-size:20px;font-weight:bold;text-decoration:underline;color:#7c2d12;margin:0;">SICK LEAVE CERTIFICATE</h2>
         </div>
         <div style="font-size:13px;line-height:1.7;">
-          <p>This is to certify that <strong>${selectedPatient?.name || '________________'}</strong>
-          (Patient ID: ${selectedPatient?.patientId || '________'}) has been examined and found to be suffering from:</p>
+          <p>This is to certify that <strong>${escapeHtml(selectedPatient?.name) || '________________'}</strong>
+          (Patient ID: ${escapeHtml(selectedPatient?.patientId) || '________'}) has been examined and found to be suffering from:</p>
           <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;padding:12px;margin:12px 0;">
-            <p style="margin:0;"><strong>Diagnosis:</strong> ${diagnosis || 'Not specified'}</p>
-            ${natureOfIllness ? `<p style="margin:8px 0 0;color:#555;">${natureOfIllness}</p>` : ''}
+            <p style="margin:0;"><strong>Diagnosis:</strong> ${escapeHtml(diagnosis) || 'Not specified'}</p>
+            ${natureOfIllness ? `<p style="margin:8px 0 0;color:#555;">${escapeHtml(natureOfIllness)}</p>` : ''}
           </div>
           <div style="background:#fff7ed;border:1px solid #fdba74;border-radius:6px;padding:12px;margin:12px 0;">
-            <p style="margin:0;">The patient is advised sick leave from <strong>${fromDate}</strong> to <strong>${toDate || '________'}</strong>${numberOfDays > 0 ? ` (${numberOfDays} day${numberOfDays > 1 ? 's' : ''})` : ''}</p>
-            ${resumeDate ? `<p style="margin:8px 0 0;">Fit to resume duties on: <strong>${resumeDate}</strong></p>` : ''}
+            <p style="margin:0;">The patient is advised sick leave from <strong>${escapeHtml(fromDate)}</strong> to <strong>${escapeHtml(toDate) || '________'}</strong>${numberOfDays > 0 ? ` (${escapeHtml(numberOfDays)} day${numberOfDays > 1 ? 's' : ''})` : ''}</p>
+            ${resumeDate ? `<p style="margin:8px 0 0;">Fit to resume duties on: <strong>${escapeHtml(resumeDate)}</strong></p>` : ''}
           </div>
-          ${employerName ? `<div style="border:1px solid #ddd;border-radius:6px;padding:12px;margin:12px 0;"><p style="margin:0;"><strong>Employer:</strong> ${employerName}</p></div>` : ''}
+          ${employerName ? `<div style="border:1px solid #ddd;border-radius:6px;padding:12px;margin:12px 0;"><p style="margin:0;"><strong>Employer:</strong> ${escapeHtml(employerName)}</p></div>` : ''}
           <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:40px;padding-top:20px;border-top:1px solid #ddd;">
-            <div><p style="font-size:12px;color:#666;margin:0;">Date: ${new Date().toLocaleDateString()}</p></div>
+            <div><p style="font-size:12px;color:#666;margin:0;">Date: ${escapeHtml(new Date().toLocaleDateString())}</p></div>
             <div style="text-align:center;">
               <div style="width:200px;border-bottom:1px solid #333;margin-bottom:6px;">&nbsp;</div>
-              <p style="font-size:13px;font-weight:bold;margin:0;">${doctorDetails.name}</p>
-              ${doctorDetails.qualification ? `<p style="font-size:11px;color:#555;margin:2px 0 0;">${doctorDetails.qualification}</p>` : ''}
-              ${doctorDetails.registrationNo ? `<p style="font-size:11px;color:#555;margin:2px 0 0;">Reg. No: ${doctorDetails.registrationNo}</p>` : ''}
+              <p style="font-size:13px;font-weight:bold;margin:0;">${escapeHtml(doctorDetails.name)}</p>
+              ${doctorDetails.qualification ? `<p style="font-size:11px;color:#555;margin:2px 0 0;">${escapeHtml(doctorDetails.qualification)}</p>` : ''}
+              ${doctorDetails.registrationNo ? `<p style="font-size:11px;color:#555;margin:2px 0 0;">Reg. No: ${escapeHtml(doctorDetails.registrationNo)}</p>` : ''}
             </div>
           </div>
         </div>
