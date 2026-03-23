@@ -17,6 +17,7 @@ import {
   Activity,
   Loader2,
   X,
+  Trash2,
 } from 'lucide-react';
 import { labService, type LabTest as APILabTest } from '../../../services';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
@@ -37,6 +38,17 @@ interface LabTest {
   isActive: boolean;
 }
 
+interface ReferenceRange {
+  parameter: string;
+  unit: string;
+  normalMin?: number | '';
+  normalMax?: number | '';
+  criticalLow?: number | '';
+  criticalHigh?: number | '';
+  textNormal?: string;
+  gender?: 'male' | 'female' | 'all';
+}
+
 interface TestFormData {
   code: string;
   name: string;
@@ -47,6 +59,7 @@ interface TestFormData {
   price: number;
   requiresFasting: boolean;
   specialInstructions: string;
+  referenceRanges: ReferenceRange[];
 }
 
 const initialFormData: TestFormData = {
@@ -59,6 +72,7 @@ const initialFormData: TestFormData = {
   price: 0,
   requiresFasting: false,
   specialInstructions: '',
+  referenceRanges: [],
 };
 
 // Backend enum values (lowercase)
@@ -188,16 +202,31 @@ export default function TestCatalogPage() {
 
   const openEditModal = (test: LabTest) => {
     setEditingTest(test);
+    // Find the original API test data to get referenceRanges
+    const apiTest = apiTests?.find((t: APILabTest) => t.id === test.id);
+    const existingRanges: ReferenceRange[] = Array.isArray(apiTest?.referenceRanges)
+      ? apiTest.referenceRanges.map((rr: any) => ({
+          parameter: rr.parameter || '',
+          unit: rr.unit || '',
+          normalMin: rr.normalMin ?? '',
+          normalMax: rr.normalMax ?? '',
+          criticalLow: rr.criticalLow ?? '',
+          criticalHigh: rr.criticalHigh ?? '',
+          textNormal: rr.textNormal || '',
+          gender: rr.gender || 'all',
+        }))
+      : [];
     setFormData({
       code: test.code,
       name: test.name,
-      description: '',
+      description: apiTest?.description || '',
       category: test.category,
       sampleType: test.sampleType,
       turnaroundTimeMinutes: test.turnaroundTimeMinutes || 240,
       price: test.price,
-      requiresFasting: false,
-      specialInstructions: '',
+      requiresFasting: apiTest?.requiresFasting || false,
+      specialInstructions: apiTest?.specialInstructions || '',
+      referenceRanges: existingRanges,
     });
     setIsModalOpen(true);
   };
@@ -220,6 +249,20 @@ export default function TestCatalogPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    // Clean reference ranges: convert empty strings to undefined, remove empty rows
+    const cleanedRanges = formData.referenceRanges
+      .filter(rr => rr.parameter.trim() !== '')
+      .map(rr => ({
+        parameter: rr.parameter.trim(),
+        unit: rr.unit.trim(),
+        ...(rr.normalMin !== '' && rr.normalMin !== undefined ? { normalMin: Number(rr.normalMin) } : {}),
+        ...(rr.normalMax !== '' && rr.normalMax !== undefined ? { normalMax: Number(rr.normalMax) } : {}),
+        ...(rr.criticalLow !== '' && rr.criticalLow !== undefined ? { criticalLow: Number(rr.criticalLow) } : {}),
+        ...(rr.criticalHigh !== '' && rr.criticalHigh !== undefined ? { criticalHigh: Number(rr.criticalHigh) } : {}),
+        ...(rr.textNormal ? { textNormal: rr.textNormal.trim() } : {}),
+        ...(rr.gender && rr.gender !== 'all' ? { gender: rr.gender } : {}),
+      }));
+
     const testData: Partial<APILabTest> = {
       code: formData.code,
       name: formData.name,
@@ -230,6 +273,7 @@ export default function TestCatalogPage() {
       price: formData.price,
       requiresFasting: formData.requiresFasting,
       specialInstructions: formData.specialInstructions || undefined,
+      referenceRanges: cleanedRanges.length > 0 ? cleanedRanges : undefined,
     };
 
     if (editingTest) {
@@ -647,6 +691,133 @@ export default function TestCatalogPage() {
                     <span className="text-sm text-gray-700">Requires Fasting</span>
                   </label>
                 </div>
+              </div>
+
+              {/* Reference Ranges / Parameters Section */}
+              <div className="border-t pt-4 mt-2">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-900">Reference Ranges / Parameters</h3>
+                    <p className="text-xs text-gray-500">Define parameters and their normal/critical ranges for result entry</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setFormData({
+                      ...formData,
+                      referenceRanges: [...formData.referenceRanges, { parameter: '', unit: '', normalMin: '', normalMax: '', criticalLow: '', criticalHigh: '', textNormal: '', gender: 'all' }],
+                    })}
+                    className="flex items-center gap-1 px-3 py-1.5 text-xs text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100"
+                  >
+                    <Plus className="w-3 h-3" />
+                    Add Parameter
+                  </button>
+                </div>
+
+                {formData.referenceRanges.length === 0 ? (
+                  <div className="text-center py-6 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+                    <FlaskConical className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                    <p className="text-sm text-gray-500">No parameters configured</p>
+                    <p className="text-xs text-gray-400">Add parameters to define test-specific reference ranges</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {/* Header row */}
+                    <div className="grid grid-cols-[1fr_80px_70px_70px_70px_70px_32px] gap-1.5 text-xs font-medium text-gray-500 px-1">
+                      <span>Parameter</span>
+                      <span>Unit</span>
+                      <span>Min</span>
+                      <span>Max</span>
+                      <span>Crit Low</span>
+                      <span>Crit High</span>
+                      <span></span>
+                    </div>
+                    {formData.referenceRanges.map((rr, idx) => (
+                      <div key={idx} className="grid grid-cols-[1fr_80px_70px_70px_70px_70px_32px] gap-1.5 items-center">
+                        <input
+                          type="text"
+                          value={rr.parameter}
+                          onChange={(e) => {
+                            const updated = [...formData.referenceRanges];
+                            updated[idx] = { ...rr, parameter: e.target.value };
+                            setFormData({ ...formData, referenceRanges: updated });
+                          }}
+                          placeholder="e.g. Hemoglobin"
+                          className="px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                        <input
+                          type="text"
+                          value={rr.unit}
+                          onChange={(e) => {
+                            const updated = [...formData.referenceRanges];
+                            updated[idx] = { ...rr, unit: e.target.value };
+                            setFormData({ ...formData, referenceRanges: updated });
+                          }}
+                          placeholder="g/dL"
+                          className="px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                        <input
+                          type="number"
+                          value={rr.normalMin}
+                          onChange={(e) => {
+                            const updated = [...formData.referenceRanges];
+                            updated[idx] = { ...rr, normalMin: e.target.value === '' ? '' : Number(e.target.value) };
+                            setFormData({ ...formData, referenceRanges: updated });
+                          }}
+                          placeholder="Min"
+                          step="any"
+                          className="px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                        <input
+                          type="number"
+                          value={rr.normalMax}
+                          onChange={(e) => {
+                            const updated = [...formData.referenceRanges];
+                            updated[idx] = { ...rr, normalMax: e.target.value === '' ? '' : Number(e.target.value) };
+                            setFormData({ ...formData, referenceRanges: updated });
+                          }}
+                          placeholder="Max"
+                          step="any"
+                          className="px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                        <input
+                          type="number"
+                          value={rr.criticalLow}
+                          onChange={(e) => {
+                            const updated = [...formData.referenceRanges];
+                            updated[idx] = { ...rr, criticalLow: e.target.value === '' ? '' : Number(e.target.value) };
+                            setFormData({ ...formData, referenceRanges: updated });
+                          }}
+                          placeholder="C.Low"
+                          step="any"
+                          className="px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                        <input
+                          type="number"
+                          value={rr.criticalHigh}
+                          onChange={(e) => {
+                            const updated = [...formData.referenceRanges];
+                            updated[idx] = { ...rr, criticalHigh: e.target.value === '' ? '' : Number(e.target.value) };
+                            setFormData({ ...formData, referenceRanges: updated });
+                          }}
+                          placeholder="C.High"
+                          step="any"
+                          className="px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = formData.referenceRanges.filter((_, i) => i !== idx);
+                            setFormData({ ...formData, referenceRanges: updated });
+                          }}
+                          className="p-1 text-gray-400 hover:text-red-500 rounded hover:bg-red-50"
+                          title="Remove parameter"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="flex justify-end gap-3 pt-4 border-t">
                 <button
