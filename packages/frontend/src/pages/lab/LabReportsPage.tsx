@@ -7,8 +7,7 @@ import { useFacilityId } from '../../lib/facility';
 import { labService } from '../../services/lab';
 import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
 import { printService } from '../../lib/print';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import { generateLabReportPdf, printLabReport, buildReportParams, type LabReportFormat, type LabReportData } from '../../lib/labReport';
 import {
   FileText,
   Search,
@@ -64,7 +63,10 @@ interface Patient {
   tests: PatientTest[];
 }
 
-const reportTemplates = ['Standard Report', 'Detailed Report', 'Summary Only', 'Trend Analysis'];
+const reportFormats: { value: LabReportFormat; label: string }[] = [
+  { value: 'standard', label: 'Standard Report (per test)' },
+  { value: 'simplified', label: 'Summary Report (all tests)' },
+];
 
 // Share method types
 type ShareMethod = 'email' | 'whatsapp' | 'sms' | 'copy';
@@ -78,7 +80,7 @@ export default function LabReportsPage() {
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [selectedTest, setSelectedTest] = useState<PatientTest | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedTemplate, setSelectedTemplate] = useState('Standard Report');
+  const [selectedFormat, setSelectedFormat] = useState<LabReportFormat>('standard');
   const [expandedTests, setExpandedTests] = useState<Set<string>>(new Set());
   const [showTrendChart, setShowTrendChart] = useState(false);
   
@@ -224,7 +226,7 @@ export default function LabReportsPage() {
     content += `MRN: ${selectedPatient.id}\n`;
     content += `Age/Gender: ${selectedPatient.age} years / ${selectedPatient.gender}\n`;
     content += `Report Date: ${new Date().toLocaleDateString()}\n`;
-    content += `Template: ${selectedTemplate}\n\n`;
+    content += `Format: ${reportFormats.find(f => f.value === selectedFormat)?.label}\n\n`;
     content += `${'='.repeat(50)}\nTEST RESULTS\n${'='.repeat(50)}\n\n`;
     
     for (const test of selectedPatient.tests) {
@@ -257,7 +259,7 @@ export default function LabReportsPage() {
     toast.success('Print dialog opened');
   };
 
-  // Handle PDF download using jsPDF + autoTable
+  // Handle PDF download — Standard = per-test Amani-style, Simplified = combined summary
   const handleDownload = async () => {
     if (!selectedPatient) {
       toast.error('Please select a patient first');
@@ -265,116 +267,63 @@ export default function LabReportsPage() {
     }
     setIsGeneratingPdf(true);
     try {
-      let hospitalName = inst.name || 'Hospital';
-      const hospitalLogo = inst.logo;
-
-      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-      const pageWidth = doc.internal.pageSize.getWidth();
-      let y = 15;
-
-      // Header
-      if (hospitalLogo) {
-        try {
-          doc.addImage(hospitalLogo, 'PNG', (pageWidth - 20) / 2, y, 20, 20);
-          y += 22;
-        } catch { /* skip logo if invalid */ }
-      }
-      doc.setFontSize(16);
-      doc.setFont('helvetica', 'bold');
-      doc.text(hospitalName, pageWidth / 2, y, { align: 'center' });
-      y += 7;
-      doc.setFontSize(11);
-      doc.setFont('helvetica', 'normal');
-      doc.text('Laboratory Report', pageWidth / 2, y, { align: 'center' });
-      y += 5;
-      doc.setLineWidth(0.5);
-      doc.line(14, y, pageWidth - 14, y);
-      y += 6;
-
-      // Patient info
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'bold');
-      doc.text('Patient Information', 14, y);
-      y += 5;
-      doc.setFont('helvetica', 'normal');
-      const patientFields = [
-        ['Patient Name:', selectedPatient.name],
-        ['MRN:', selectedPatient.id],
-        ['Gender:', selectedPatient.gender],
-        ['Report Date:', new Date().toLocaleDateString()],
-      ];
-      for (const [label, value] of patientFields) {
-        doc.setFont('helvetica', 'bold');
-        doc.text(label, 14, y);
-        doc.setFont('helvetica', 'normal');
-        doc.text(value, 50, y);
-        y += 5;
-      }
-      y += 3;
-      doc.line(14, y, pageWidth - 14, y);
-      y += 6;
-
-      // Per-test results
-      for (const test of selectedPatient.tests) {
-        if (y > 260) { doc.addPage(); y = 15; }
-        doc.setFontSize(11);
-        doc.setFont('helvetica', 'bold');
-        doc.text(`Test: ${test.testName}`, 14, y);
-        y += 5;
-        doc.setFontSize(9);
-        doc.setFont('helvetica', 'normal');
-        doc.text(`Category: ${test.category}   Date Collected: ${test.results[0]?.date ?? '—'}   Date Reported: ${test.lastReportDate}`, 14, y);
-        y += 4;
-
-        // Results table rows — one row per result entry
-        const tableRows = test.results.map((r) => [
-          test.testName,
-          String(r.value),
-          r.unit,
-          test.referenceRange,
-          r.status === 'Normal' ? '' : r.status,
-        ]);
-
-        autoTable(doc, {
-          startY: y,
-          head: [['Parameter', 'Value', 'Unit', 'Reference Range', 'Flag']],
-          body: tableRows,
-          styles: { fontSize: 9 },
-          headStyles: { fillColor: [99, 60, 180], textColor: 255 },
-          didParseCell: (data) => {
-            // Bold abnormal/critical flag cells
-            if (data.column.index === 4 && data.cell.raw && data.cell.raw !== '') {
-              data.cell.styles.fontStyle = 'bold';
-              data.cell.styles.textColor = data.cell.raw === 'Critical' ? [220, 38, 38] : [234, 88, 12];
-            }
-            // Bold value cell if abnormal
-            if (data.column.index === 1 && data.row.index >= 0) {
-              const flag = tableRows[data.row.index]?.[4];
-              if (flag && flag !== '') {
-                data.cell.styles.fontStyle = 'bold';
-                data.cell.styles.textColor = flag === 'Critical' ? [220, 38, 38] : [234, 88, 12];
-              }
-            }
-          },
-          margin: { left: 14, right: 14 },
+      if (selectedFormat === 'standard') {
+        // Standard: generate one PDF per test (Amani-style clinical report)
+        for (const test of selectedPatient.tests) {
+          const params = test.results.map((r) => ({
+            name: test.testName,
+            value: String(r.value),
+            unit: r.unit,
+            normalMin: undefined as number | undefined,
+            normalMax: undefined as number | undefined,
+            referenceRange: test.referenceRange,
+          }));
+          generateLabReportPdf({
+            format: 'standard',
+            institution: inst,
+            patientName: selectedPatient.name,
+            patientMrn: selectedPatient.id,
+            patientGender: selectedPatient.gender,
+            testName: test.testName,
+            testCode: '',
+            testCategory: test.category,
+            sampleType: '',
+            sampleNumber: '',
+            sampleDate: test.results[0]?.date,
+            testDate: test.lastReportDate,
+            validatedDate: test.lastReportDate,
+            parameters: params,
+          });
+        }
+        toast.success(`Downloaded ${selectedPatient.tests.length} standard report(s)`);
+      } else {
+        // Simplified: combined summary (existing behaviour via shared generator)
+        const allParams = selectedPatient.tests.flatMap((test) =>
+          test.results.map((r) => ({
+            name: test.testName,
+            value: String(r.value),
+            unit: r.unit,
+            normalMin: undefined as number | undefined,
+            normalMax: undefined as number | undefined,
+            referenceRange: test.referenceRange,
+          }))
+        );
+        generateLabReportPdf({
+          format: 'simplified',
+          institution: inst,
+          patientName: selectedPatient.name,
+          patientMrn: selectedPatient.id,
+          patientGender: selectedPatient.gender,
+          testName: `Lab Summary — ${selectedPatient.tests.length} test(s)`,
+          testCode: '',
+          testCategory: '',
+          sampleType: '',
+          sampleNumber: '',
+          testDate: new Date().toLocaleDateString(),
+          parameters: allParams,
         });
-        y = (doc as any).lastAutoTable.finalY + 6;
+        toast.success('PDF report downloaded successfully');
       }
-
-      // Footer
-      const totalPages = (doc as any).internal.getNumberOfPages();
-      for (let i = 1; i <= totalPages; i++) {
-        doc.setPage(i);
-        doc.setFontSize(8);
-        doc.setFont('helvetica', 'italic');
-        doc.setTextColor(120);
-        doc.text(`Report generated by ${inst.name || 'Hospital'}`, 14, doc.internal.pageSize.getHeight() - 8);
-        doc.text(`Page ${i} of ${totalPages}`, pageWidth - 14, doc.internal.pageSize.getHeight() - 8, { align: 'right' });
-        doc.setTextColor(0);
-      }
-
-      doc.save(`Lab_Report_${selectedPatient.id}_${new Date().toISOString().split('T')[0]}.pdf`);
-      toast.success('PDF report downloaded successfully');
     } catch (error) {
       console.error(error);
       toast.error('Failed to generate PDF report');
@@ -546,12 +495,12 @@ export default function LabReportsPage() {
                   </div>
                   <div className="flex items-center gap-3">
                     <select
-                      value={selectedTemplate}
-                      onChange={(e) => setSelectedTemplate(e.target.value)}
+                      value={selectedFormat}
+                      onChange={(e) => setSelectedFormat(e.target.value as LabReportFormat)}
                       className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-violet-500"
                     >
-                      {reportTemplates.map((t) => (
-                        <option key={t} value={t}>{t}</option>
+                      {reportFormats.map((f) => (
+                        <option key={f.value} value={f.value}>{f.label}</option>
                       ))}
                     </select>
                   </div>
@@ -676,7 +625,7 @@ export default function LabReportsPage() {
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-2 text-sm text-gray-500">
                     <Eye className="w-4 h-4" />
-                    Template: {selectedTemplate}
+                    Format: {reportFormats.find(f => f.value === selectedFormat)?.label}
                   </div>
                   <button
                     onClick={handlePreview}
