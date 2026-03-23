@@ -95,7 +95,16 @@ export default function BudgetPage() {
     queryKey: ['budget-vs-actual', vsActualBudgetId],
     queryFn: async () => {
       const response = await api.get(`/finance/budgets/${vsActualBudgetId}/vs-actual`);
-      return response.data?.data || response.data || [];
+      const raw = response.data?.data || response.data;
+      const lines = raw?.lines || raw?.data?.lines || (Array.isArray(raw) ? raw : []);
+      return lines.map((l: any) => ({
+        ...l,
+        accountCode: l.accountCode || l.account?.accountCode || '',
+        accountName: l.accountName || l.account?.accountName || '',
+        amount: l.amount ?? l.budgetAmount ?? 0,
+        actualAmount: l.actualAmount ?? 0,
+        variance: l.variance ?? 0,
+      }));
     },
     enabled: !!vsActualBudgetId,
   });
@@ -114,7 +123,7 @@ export default function BudgetPage() {
   });
 
   const addLineMutation = useMutation({
-    mutationFn: async ({ budgetId, payload }: { budgetId: string; payload: { accountId: string; period: string; amount: number } }) => {
+    mutationFn: async ({ budgetId, payload }: { budgetId: string; payload: { accountId: string; period: number; amount: number } }) => {
       const response = await api.post(`/finance/budgets/${budgetId}/lines`, payload);
       return response.data;
     },
@@ -489,7 +498,7 @@ export default function BudgetPage() {
                   budgetId: activeBudgetId,
                   payload: {
                     accountId: fd.get('accountId') as string,
-                    period: fd.get('period') as string,
+                    period: parseInt((fd.get('period') as string || '').split('-')[1] || '0'),
                     amount: Number(fd.get('amount')),
                   },
                 });

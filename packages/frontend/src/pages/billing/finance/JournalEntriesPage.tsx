@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { formatCurrency } from '../../../lib/currency';
 import { useFacilityId } from '../../../lib/facility';
 import api from '../../../services/api';
@@ -27,6 +28,7 @@ type EntryStatus = 'draft' | 'posted' | 'reversed';
 
 interface JournalLine {
   id: string;
+  accountId: string;
   accountCode: string;
   accountName: string;
   description: string;
@@ -49,13 +51,12 @@ interface JournalEntry {
   reversedFromId?: string;
 }
 
-const accountsList: { code: string; name: string }[] = [];
-
 interface CreateJournalEntryPayload {
-  date: string;
+  facilityId: string;
+  journalDate: string;
   description: string;
   reference: string;
-  lines: Omit<JournalLine, 'id'>[];
+  lines: { accountId: string; description: string; debit: number; credit: number }[];
 }
 
 const statusConfig: Record<EntryStatus, { label: string; color: string; icon: React.ElementType }> = {
@@ -67,6 +68,24 @@ const statusConfig: Record<EntryStatus, { label: string; color: string; icon: Re
 export default function JournalEntriesPage() {
   const queryClient = useQueryClient();
   const facilityId = useFacilityId();
+
+  const { data: accountsData } = useQuery({
+    queryKey: ['finance-accounts', facilityId],
+    queryFn: async () => {
+      const response = await api.get(`/finance/accounts?facilityId=${facilityId}`);
+      return response.data;
+    },
+    enabled: !!facilityId,
+  });
+
+  const accountsList: { id: string; code: string; name: string }[] = useMemo(() => {
+    const raw = asList(accountsData) || accountsData || [];
+    return (Array.isArray(raw) ? raw : []).map((a: any) => ({
+      id: a.id,
+      code: a.accountCode || '',
+      name: a.accountName || '',
+    }));
+  }, [accountsData]);
   
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<EntryStatus | 'all'>('all');
@@ -77,8 +96,8 @@ export default function JournalEntriesPage() {
   const [viewingEntry, setViewingEntry] = useState<JournalEntry | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newLines, setNewLines] = useState<JournalLine[]>([
-    { id: 'new-1', accountCode: '', accountName: '', description: '', debit: 0, credit: 0 },
-    { id: 'new-2', accountCode: '', accountName: '', description: '', debit: 0, credit: 0 },
+    { id: 'new-1', accountId: '', accountCode: '', accountName: '', description: '', debit: 0, credit: 0 },
+    { id: 'new-2', accountId: '', accountCode: '', accountName: '', description: '', debit: 0, credit: 0 },
   ]);
   const [entryDate, setEntryDate] = useState(new Date().toISOString().split('T')[0]);
   const [entryReference, setEntryReference] = useState('');
@@ -139,6 +158,7 @@ export default function JournalEntriesPage() {
       setShowCreateModal(false);
       resetCreateForm();
     },
+    onError: (err: any) => { toast.error(err?.response?.data?.message || 'Failed to save journal entry'); },
   });
 
   // Post journal entry mutation
@@ -151,12 +171,13 @@ export default function JournalEntriesPage() {
       queryClient.invalidateQueries({ queryKey: ['journal-entries'] });
       setViewingEntry(null);
     },
+    onError: (err: any) => { toast.error(err?.response?.data?.message || 'Failed to post journal entry'); },
   });
 
   const resetCreateForm = () => {
     setNewLines([
-      { id: 'new-1', accountCode: '', accountName: '', description: '', debit: 0, credit: 0 },
-      { id: 'new-2', accountCode: '', accountName: '', description: '', debit: 0, credit: 0 },
+      { id: 'new-1', accountId: '', accountCode: '', accountName: '', description: '', debit: 0, credit: 0 },
+      { id: 'new-2', accountId: '', accountCode: '', accountName: '', description: '', debit: 0, credit: 0 },
     ]);
     setEntryDate(new Date().toISOString().split('T')[0]);
     setEntryReference('');
@@ -165,30 +186,24 @@ export default function JournalEntriesPage() {
 
   const handleSaveAsDraft = () => {
     createMutation.mutate({
-      date: entryDate,
+      facilityId,
+      journalDate: entryDate,
       description: entryDescription,
       reference: entryReference,
-      lines: newLines.map(({ accountCode, accountName, description, debit, credit }) => ({
-        accountCode,
-        accountName,
-        description,
-        debit,
-        credit,
+      lines: newLines.filter(l => l.accountId).map(({ accountId, description, debit, credit }) => ({
+        accountId, description, debit, credit,
       })),
     });
   };
 
   const handlePostEntry = () => {
     createMutation.mutate({
-      date: entryDate,
+      facilityId,
+      journalDate: entryDate,
       description: entryDescription,
       reference: entryReference,
-      lines: newLines.map(({ accountCode, accountName, description, debit, credit }) => ({
-        accountCode,
-        accountName,
-        description,
-        debit,
-        credit,
+      lines: newLines.filter(l => l.accountId).map(({ accountId, description, debit, credit }) => ({
+        accountId, description, debit, credit,
       })),
       post: true,
     });
@@ -232,7 +247,7 @@ export default function JournalEntriesPage() {
   const newLinesTotals = useMemo(() => getEntryTotals(newLines), [newLines]);
 
   const addNewLine = () => {
-    setNewLines([...newLines, { id: `new-${Date.now()}`, accountCode: '', accountName: '', description: '', debit: 0, credit: 0 }]);
+    setNewLines([...newLines, { id: `new-${Date.now()}`, accountId: '', accountCode: '', accountName: '', description: '', debit: 0, credit: 0 }]);
   };
 
   const removeNewLine = (id: string) => {
@@ -244,9 +259,9 @@ export default function JournalEntriesPage() {
   const updateNewLine = (id: string, field: keyof JournalLine, value: string | number) => {
     setNewLines(newLines.map((line) => {
       if (line.id === id) {
-        if (field === 'accountCode') {
-          const account = accountsList.find((a) => a.code === value);
-          return { ...line, accountCode: value as string, accountName: account?.name || '' };
+        if (field === 'accountId') {
+          const account = accountsList.find((a) => a.id === value);
+          return { ...line, accountId: value as string, accountCode: account?.code || '', accountName: account?.name || '' };
         }
         return { ...line, [field]: value };
       }
@@ -637,13 +652,13 @@ export default function JournalEntriesPage() {
                       <tr key={line.id}>
                         <td className="px-4 py-2">
                           <select
-                            value={line.accountCode}
-                            onChange={(e) => updateNewLine(line.id, 'accountCode', e.target.value)}
+                            value={line.accountId}
+                            onChange={(e) => updateNewLine(line.id, 'accountId', e.target.value)}
                             className="w-full border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                           >
                             <option value="">Select account</option>
                             {accountsList.map((acc) => (
-                              <option key={acc.code} value={acc.code}>{acc.code} - {acc.name}</option>
+                              <option key={acc.id} value={acc.id}>{acc.code} - {acc.name}</option>
                             ))}
                           </select>
                         </td>

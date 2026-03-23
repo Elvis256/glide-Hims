@@ -47,7 +47,11 @@ export default function CostCentersPage() {
     queryKey: ['cost-centers', facilityId],
     queryFn: async () => {
       const response = await api.get('/finance/cost-centers', { params: { facilityId } });
-      return response.data?.data || response.data || [];
+      const data = response.data?.data || response.data || [];
+      return (Array.isArray(data) ? data : []).map((cc: any) => ({
+        ...cc,
+        facilityName: cc.facilityName || cc.facility?.name || '',
+      }));
     },
     enabled: !!facilityId,
   });

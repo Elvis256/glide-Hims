@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import api from '../../../services/api';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
@@ -107,6 +107,7 @@ const statusConfig: Record<ExpenseStatus, { label: string; color: string; icon: 
 
 export default function ExpensesPage() {
   const facilityId = useFacilityId();
+  const queryClient = useQueryClient();
   
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<ExpenseCategory | 'all'>('all');
@@ -128,33 +129,55 @@ export default function ExpensesPage() {
     notes: '',
   });
 
-  const handleSubmitExpense = () => {
+  const handleSubmitExpense = async () => {
     if (!expenseForm.category || !expenseForm.amount || !expenseForm.description) {
-      toast.error('Please fill in date, amount, category, and description');
+      toast.error('Please fill required fields');
       return;
     }
-    const newExpense: Expense = {
-      id: `exp-${Date.now()}`,
-      date: expenseForm.date,
-      category: expenseForm.category as ExpenseCategory,
-      description: expenseForm.description,
-      vendor: expenseForm.vendor,
-      amount: parseFloat(expenseForm.amount),
-      status: 'pending',
-      submittedBy: 'Current User',
-      receiptAttached: false,
-      notes: expenseForm.notes,
-    };
-    setLocalExpenses(prev => [newExpense, ...prev]);
-    setShowCreateModal(false);
-    setExpenseForm({ date: new Date().toISOString().split('T')[0], amount: '', category: '', vendor: '', description: '', notes: '' });
-    toast.success('Expense submitted successfully');
+
+    const expenseAccount = expenseAccounts.find(
+      (a: any) => a.accountCategory === expenseForm.category
+    );
+    const cashAccount = (allAccountsData || []).find(
+      (a: any) => a.accountCategory === 'cash' && a.isActive && !a.isHeader
+    );
+
+    if (!expenseAccount) {
+      toast.error('No expense account found for this category');
+      return;
+    }
+    if (!cashAccount) {
+      toast.error('No cash account configured');
+      return;
+    }
+
+    try {
+      const amount = parseFloat(expenseForm.amount);
+      const response = await api.post('/finance/journals', {
+        facilityId,
+        journalDate: expenseForm.date || new Date().toISOString().split('T')[0],
+        description: `Expense: ${expenseForm.description}${expenseForm.vendor ? ` - ${expenseForm.vendor}` : ''}`,
+        reference: `EXP-${Date.now()}`,
+        lines: [
+          { accountId: expenseAccount.id, description: expenseForm.description, debit: amount, credit: 0 },
+          { accountId: cashAccount.id, description: expenseForm.description, debit: 0, credit: amount },
+        ],
+      });
+      if (response.data?.id) {
+        await api.post(`/finance/journals/${response.data.id}/post`);
+      }
+      toast.success('Expense recorded successfully');
+      setShowCreateModal(false);
+      setExpenseForm({ date: new Date().toISOString().split('T')[0], amount: '', category: '', vendor: '', description: '', notes: '' });
+      queryClient.invalidateQueries({ queryKey: ['expense-journals'] });
+      queryClient.invalidateQueries({ queryKey: ['expense-accounts'] });
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to record expense');
+    }
   };
 
   const handleUpdateExpenseStatus = (expenseId: string, newStatus: ExpenseStatus) => {
-    setLocalExpenses(prev => prev.map(e => e.id === expenseId ? { ...e, status: newStatus } : e));
-    setViewingExpense(null);
-    toast.success(`Expense ${newStatus === 'rejected' ? 'rejected' : newStatus === 'approved' ? 'approved' : 'marked as paid'}`);
+    toast.info('Expense status is managed through journal entry posting');
   };
 
   const expenses = localExpenses;
@@ -176,6 +199,16 @@ export default function ExpensesPage() {
   const expenseAccounts: ExpenseAccount[] = useMemo(() => {
     return asList(expenseAccountsData) || expenseAccountsData || [];
   }, [expenseAccountsData]);
+
+  // Fetch all accounts so we can find the cash account for journal entry credit side
+  const { data: allAccountsData } = useQuery({
+    queryKey: ['all-accounts-for-expense', facilityId],
+    queryFn: async () => {
+      const response = await api.get('/finance/accounts', { params: { facilityId } });
+      return Array.isArray(response.data) ? response.data : response.data?.data || [];
+    },
+    enabled: !!facilityId,
+  });
 
   // Fetch journal entries (expense-related transactions)
   const { data: journalEntriesData, isLoading: loadingJournals } = useQuery({
@@ -285,6 +318,8 @@ export default function ExpensesPage() {
       'salaries': 'salaries',
       'supplies': 'supplies',
       'utilities': 'utilities',
+      'maintenance': 'maintenance' as ExpenseCategory,
+      'equipment': 'equipment' as ExpenseCategory,
       'depreciation': 'other',
       'other_expense': 'other',
     };

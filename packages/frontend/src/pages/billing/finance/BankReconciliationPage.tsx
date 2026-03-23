@@ -69,7 +69,12 @@ export default function BankReconciliationPage() {
     queryKey: ['bank-reconciliations', facilityId],
     queryFn: async () => {
       const response = await api.get('/finance/bank-reconciliation', { params: { facilityId } });
-      return response.data?.data || response.data || [];
+      const raw = response.data?.data || response.data || [];
+      return (Array.isArray(raw) ? raw : []).map((r: any) => ({
+        ...r,
+        period: r.period || r.statementDate || '',
+        bankAccountName: r.bankAccountName || r.bankAccount?.accountName || r.bankAccount?.name || '',
+      }));
     },
     enabled: !!facilityId,
   });
@@ -93,7 +98,7 @@ export default function BankReconciliationPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: async (payload: { bankAccountId: string; period: string; statementBalance: number; facilityId: string }) => {
+    mutationFn: async (payload: { bankAccountId: string; statementDate: string; statementBalance: number; facilityId: string }) => {
       const response = await api.post('/finance/bank-reconciliation', payload);
       return response.data;
     },
@@ -106,7 +111,7 @@ export default function BankReconciliationPage() {
   });
 
   const addItemMutation = useMutation({
-    mutationFn: async ({ recId, payload }: { recId: string; payload: { date: string; description: string; amount: number; reference: string } }) => {
+    mutationFn: async ({ recId, payload }: { recId: string; payload: { items: { statementDate: string; statementDescription: string; statementAmount: number; statementReference: string }[] } }) => {
       const response = await api.post(`/finance/bank-reconciliation/${recId}/statement-items`, payload);
       return response.data;
     },
@@ -133,8 +138,8 @@ export default function BankReconciliationPage() {
   });
 
   const manualMatchMutation = useMutation({
-    mutationFn: async ({ itemId, journalId }: { itemId: string; journalId: string }) => {
-      const response = await api.patch(`/finance/bank-reconciliation/items/${itemId}/match`, { journalId });
+    mutationFn: async ({ itemId, journalEntryId }: { itemId: string; journalEntryId: string }) => {
+      const response = await api.patch(`/finance/bank-reconciliation/items/${itemId}/match`, { journalEntryId });
       return response.data;
     },
     onSuccess: () => {
@@ -267,8 +272,8 @@ export default function BankReconciliationPage() {
                     ) : recDetail.status === 'in_progress' ? (
                       <button
                         onClick={() => {
-                          const journalId = window.prompt('Enter journal entry ID to match:');
-                          if (journalId) manualMatchMutation.mutate({ itemId: item.id, journalId });
+                          const journalEntryId = window.prompt('Enter journal entry ID to match:');
+                          if (journalEntryId) manualMatchMutation.mutate({ itemId: item.id, journalEntryId });
                         }}
                         className="text-xs text-blue-600 hover:underline"
                       >
@@ -306,10 +311,12 @@ export default function BankReconciliationPage() {
                   addItemMutation.mutate({
                     recId: activeRecId,
                     payload: {
-                      date: fd.get('date') as string,
-                      description: fd.get('description') as string,
-                      amount: Number(fd.get('amount')),
-                      reference: fd.get('reference') as string,
+                      items: [{
+                        statementDate: fd.get('date') as string,
+                        statementDescription: fd.get('description') as string,
+                        statementAmount: Number(fd.get('amount')),
+                        statementReference: fd.get('reference') as string,
+                      }],
                     },
                   });
                 }}
@@ -465,7 +472,7 @@ export default function BankReconciliationPage() {
                 const fd = new FormData(e.currentTarget);
                 createMutation.mutate({
                   bankAccountId: fd.get('bankAccountId') as string,
-                  period: fd.get('period') as string,
+                  statementDate: `${fd.get('period') as string}-01`,
                   statementBalance: Number(fd.get('statementBalance')),
                   facilityId,
                 });

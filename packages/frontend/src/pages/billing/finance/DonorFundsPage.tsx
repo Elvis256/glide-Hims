@@ -20,11 +20,11 @@ import {
 interface DonorFund {
   id: string;
   name: string;
-  donor: string;
+  donorName: string;
   description: string;
-  totalAmount: number;
-  utilizedAmount: number;
-  remainingAmount: number;
+  grantAmount: number;
+  disbursedAmount: number;
+  remainingBalance: number;
   status: 'active' | 'exhausted' | 'closed';
   createdAt: string;
 }
@@ -75,7 +75,14 @@ export default function DonorFundsPage() {
     queryKey: ['donor-funds', facilityId],
     queryFn: async () => {
       const response = await api.get('/finance/donor-funds', { params: { facilityId } });
-      return response.data?.data || response.data || [];
+      const raw = response.data?.data || response.data || [];
+      return (Array.isArray(raw) ? raw : []).map((f: any) => ({
+        ...f,
+        donorName: f.donorName || f.donor_name || '',
+        grantAmount: Number(f.grantAmount || f.grant_amount || 0),
+        disbursedAmount: Number(f.disbursedAmount || f.disbursed_amount || 0),
+        remainingBalance: Number(f.remainingBalance || f.remaining_balance || 0),
+      }));
     },
     enabled: !!facilityId,
   });
@@ -90,7 +97,7 @@ export default function DonorFundsPage() {
   });
 
   const createFundMutation = useMutation({
-    mutationFn: async (payload: { name: string; donor: string; description: string; totalAmount: number; facilityId: string }) => {
+    mutationFn: async (payload: { name: string; donorName: string; description: string; grantAmount: number; fundCode: string; startDate: string; facilityId: string }) => {
       const response = await api.post('/finance/donor-funds', payload);
       return response.data;
     },
@@ -129,12 +136,12 @@ export default function DonorFundsPage() {
   });
 
   const filtered = funds.filter(
-    (f) => !searchQuery || f.name.toLowerCase().includes(searchQuery.toLowerCase()) || f.donor.toLowerCase().includes(searchQuery.toLowerCase())
+    (f) => !searchQuery || f.name.toLowerCase().includes(searchQuery.toLowerCase()) || f.donorName.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const totalFunding = funds.reduce((sum, f) => sum + f.totalAmount, 0);
-  const totalUtilized = funds.reduce((sum, f) => sum + f.utilizedAmount, 0);
-  const totalRemaining = funds.reduce((sum, f) => sum + f.remainingAmount, 0);
+  const totalFunding = funds.reduce((sum, f) => sum + f.grantAmount, 0);
+  const totalUtilized = funds.reduce((sum, f) => sum + f.disbursedAmount, 0);
+  const totalRemaining = funds.reduce((sum, f) => sum + f.remainingBalance, 0);
   const activeCount = funds.filter((f) => f.status === 'active').length;
 
   return (
@@ -245,7 +252,7 @@ export default function DonorFundsPage() {
               </div>
             ) : filtered.length > 0 ? (
               filtered.map((fund) => {
-                const utilizationPct = fund.totalAmount > 0 ? (fund.utilizedAmount / fund.totalAmount) * 100 : 0;
+                const utilizationPct = fund.grantAmount > 0 ? (fund.disbursedAmount / fund.grantAmount) * 100 : 0;
                 const sc = statusConfig[fund.status] || statusConfig.active;
                 return (
                   <div key={fund.id} className="grid grid-cols-7 py-3 px-4 border-b hover:bg-gray-50 items-center text-sm">
@@ -259,9 +266,9 @@ export default function DonorFundsPage() {
                       </div>
                       {fund.description && <p className="text-xs text-gray-500 mt-0.5 ml-6 truncate">{fund.description}</p>}
                     </div>
-                    <div className="text-gray-700">{fund.donor}</div>
-                    <div className="text-right font-medium text-gray-900">{formatCurrency(fund.totalAmount)}</div>
-                    <div className="text-right font-medium text-orange-600">{formatCurrency(fund.utilizedAmount)}</div>
+                    <div className="text-gray-700">{fund.donorName}</div>
+                    <div className="text-right font-medium text-gray-900">{formatCurrency(fund.grantAmount)}</div>
+                    <div className="text-right font-medium text-orange-600">{formatCurrency(fund.disbursedAmount)}</div>
                     <div>
                       <div className="flex items-center gap-2">
                         <div className="flex-1 bg-gray-200 rounded-full h-2">
@@ -274,7 +281,7 @@ export default function DonorFundsPage() {
                         </div>
                         <span className="text-xs text-gray-500 w-10 text-right">{utilizationPct.toFixed(0)}%</span>
                       </div>
-                      <p className="text-xs text-gray-400 mt-0.5">Remaining: {formatCurrency(fund.remainingAmount)}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">Remaining: {formatCurrency(fund.remainingBalance)}</p>
                     </div>
                     <div className="flex items-center justify-end gap-1">
                       {fund.status === 'active' && (
@@ -357,9 +364,11 @@ export default function DonorFundsPage() {
                 const fd = new FormData(e.currentTarget);
                 createFundMutation.mutate({
                   name: fd.get('name') as string,
-                  donor: fd.get('donor') as string,
+                  donorName: fd.get('donor') as string,
                   description: fd.get('description') as string,
-                  totalAmount: Number(fd.get('totalAmount')),
+                  grantAmount: Number(fd.get('totalAmount')),
+                  fundCode: `DF-${Date.now()}`,
+                  startDate: new Date().toISOString().split('T')[0],
                   facilityId,
                 });
               }}
@@ -475,7 +484,7 @@ export default function DonorFundsPage() {
                   <select name="fundId" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                     <option value="">Select fund...</option>
                     {funds.filter((f) => f.status === 'active').map((f) => (
-                      <option key={f.id} value={f.id}>{f.name} ({formatCurrency(f.remainingAmount)} remaining)</option>
+                      <option key={f.id} value={f.id}>{f.name} ({formatCurrency(f.remainingBalance)} remaining)</option>
                     ))}
                   </select>
                 </div>
