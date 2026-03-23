@@ -64,7 +64,7 @@ export class PharmacyService {
     // Prevent duplicate dispensing of the same prescription
     if (dto.prescriptionId) {
       const existingSale = await this.saleRepo.findOne({
-        where: { prescriptionId: dto.prescriptionId, status: SaleStatus.COMPLETED },
+        where: { prescriptionId: dto.prescriptionId, status: SaleStatus.COMPLETED, ...(tenantId ? { tenantId } : {}) },
       });
       if (existingSale) {
         throw new BadRequestException(

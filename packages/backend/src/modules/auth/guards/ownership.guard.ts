@@ -59,6 +59,15 @@ export class OwnershipGuard implements CanActivate {
       // Build ownership query
       const conditions: string[] = [];
       const params: any[] = [];
+      // Tenant isolation: always require resource belongs to user's tenant
+      let tenantClause = '';
+      if (user.tenantId) {
+        const tenantColumn = this.resolveColumnName(entityMeta, 'tenantId');
+        if (tenantColumn) {
+          tenantClause = ` AND "${tenantColumn}" = $${params.length + 1}`;
+          params.push(user.tenantId);
+        }
+      }
 
       // Check direct ownership
       conditions.push(`"${ownerColumn}" = $${params.length + 1}`);
@@ -80,7 +89,7 @@ export class OwnershipGuard implements CanActivate {
         params.push(user.sub || user.id);
       }
 
-      const query = `SELECT id FROM "${tableName}" WHERE id = $${params.length + 1} AND (${conditions.join(' OR ')})`;
+      const query = `SELECT id FROM "${tableName}" WHERE id = $${params.length + 1}${tenantClause} AND (${conditions.join(' OR ')})`;
       params.push(resourceId);
 
       const result = await this.dataSource.query(query, params);

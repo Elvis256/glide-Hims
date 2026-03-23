@@ -42,9 +42,54 @@ export class UsersController {
   @ApiResponse({ status: 201, description: 'User created successfully' })
   @ApiResponse({ status: 409, description: 'Username or email already exists' })
   async create(@Body() createUserDto: CreateUserDto, @Request() req: any) {
+    // Only system admins can create other system admins
+    if (createUserDto.isSystemAdmin && !req.user?.isSystemAdmin) {
+      createUserDto.isSystemAdmin = false;
+    }
     const tenantId = req.user?.tenantId;
     const user = await this.usersService.create(createUserDto, tenantId);
     return { message: 'User created successfully', data: user };
+  }
+
+  @Get('system-admins')
+  @AuthWithPermissions('users.read')
+  @ApiOperation({ summary: 'List system administrator users' })
+  @ApiResponse({ status: 200, description: 'List of system admin users' })
+  async findSystemAdmins(@Query() query: UserListQueryDto, @Request() req: any) {
+    if (!req.user?.isSystemAdmin) {
+      return { data: [], meta: { total: 0, page: 1, limit: 20, totalPages: 0 } };
+    }
+    return this.usersService.findSystemAdmins(query);
+  }
+
+  @Post('system-reset-password/:id')
+  @AuthWithPermissions('users.read')
+  @UseGuards(RateLimitGuard)
+  @ApiOperation({ summary: 'System admin: reset password for any user (system admin, tenant admin, etc.)' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'Password reset successfully' })
+  async systemResetPassword(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AdminResetPasswordDto,
+    @Request() req: any,
+  ) {
+    if (!req.user?.isSystemAdmin) {
+      return { message: 'Only system administrators can perform this action' };
+    }
+    const result = await this.authService.adminResetPassword(id, dto.newPassword, req.user.sub);
+    return { message: 'Password reset successfully', data: result };
+  }
+
+  @Get('tenant-admins')
+  @AuthWithPermissions('users.read')
+  @ApiOperation({ summary: 'System admin: list all tenant admin users across tenants' })
+  @ApiResponse({ status: 200, description: 'List of tenant admin users' })
+  async findTenantAdmins(@Request() req: any) {
+    if (!req.user?.isSystemAdmin) {
+      return { data: [] };
+    }
+    const admins = await this.usersService.findTenantAdmins();
+    return { data: admins };
   }
 
   @Get()
@@ -75,6 +120,10 @@ export class UsersController {
     @Body() updateUserDto: UpdateUserDto,
     @Request() req: any,
   ) {
+    // Prevent privilege escalation: only system admins can grant system admin
+    if (updateUserDto.isSystemAdmin && !req.user?.isSystemAdmin) {
+      updateUserDto.isSystemAdmin = false;
+    }
     const user = await this.usersService.update(id, updateUserDto, req.user?.tenantId);
     return { message: 'User updated successfully', data: user };
   }
