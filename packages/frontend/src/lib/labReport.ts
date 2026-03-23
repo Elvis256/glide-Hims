@@ -106,7 +106,13 @@ function generateStandardPdf(data: LabReportData): jsPDF {
   const ph = doc.internal.pageSize.getHeight();
   let y = 12;
 
-  // ── Facility header ──
+  // ── Facility header (with logo if available) ──
+  if (data.institution.logo) {
+    try {
+      doc.addImage(data.institution.logo, 'PNG', (pw - 18) / 2, y, 18, 18);
+      y += 20;
+    } catch { /* skip logo if invalid */ }
+  }
   doc.setFontSize(16);
   doc.setFont('helvetica', 'bold');
   doc.text(data.institution.name || 'Hospital', pw / 2, y, { align: 'center' });
@@ -293,7 +299,13 @@ function generateSimplifiedPdf(data: LabReportData): jsPDF {
   const ph = doc.internal.pageSize.getHeight();
   let y = 15;
 
-  // ── Header ──
+  // ── Header (with logo if available) ──
+  if (data.institution.logo) {
+    try {
+      doc.addImage(data.institution.logo, 'PNG', (pw - 18) / 2, y, 18, 18);
+      y += 20;
+    } catch { /* skip logo if invalid */ }
+  }
   doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
   doc.text(data.institution.name || 'Hospital', pw / 2, y, { align: 'center' });
