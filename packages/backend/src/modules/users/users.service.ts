@@ -79,9 +79,13 @@ export class UsersService {
       throw new ConflictException('Username or email already exists');
     }
 
-    // Validate role if provided
+    // Validate role if provided (roles may be global with NULL tenant_id)
     if (roleId) {
-      const role = await this.roleRepository.findOne({ where: { id: roleId, ...(tenantId ? { tenantId } : {}) } });
+      const role = await this.roleRepository.findOne({
+        where: tenantId
+          ? [{ id: roleId, tenantId }, { id: roleId, tenantId: IsNull() }]
+          : { id: roleId },
+      });
       if (!role) {
         throw new NotFoundException('Role not found');
       }
