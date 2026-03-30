@@ -106,6 +106,12 @@ import {
   Coins,
   Send,
   MessageSquare,
+  ScanBarcode,
+  Eye,
+  Glasses,
+  Crosshair,
+  Focus,
+  CircleDot,
 } from 'lucide-react';
 import Logo, { LogoIcon } from './Logo';
 import FacilitySwitcher from './FacilitySwitcher';
@@ -599,6 +605,69 @@ const navigationSections: NavSection[] = [
         ],
       },
       { name: 'Pharmacy Analytics', href: '/pharmacy/analytics', icon: PieChart, permissions: ['pharmacy.read', 'analytics.read'] },
+    ],
+  },
+  // 7a. POS - Point of Sale (Retail Pharmacy / Standalone)
+  {
+    title: 'POS',
+    icon: ScanBarcode,
+    moduleCode: 'pos',
+    roles: ['Pharmacist', 'Cashier'],
+    items: [
+      { name: 'POS Dashboard', href: '/pharmacy/pos', icon: LayoutDashboard, permissions: ['pos.shift'] },
+      { name: 'New Sale', href: '/pharmacy/pos/sale', icon: ShoppingCart, permissions: ['pos.shift'] },
+      { name: 'Shift Management', href: '/pharmacy/pos/shifts', icon: Clock, permissions: ['pos.shift'] },
+      { name: 'POS Reports', href: '/pharmacy/pos/reports', icon: BarChart3, permissions: ['pos.shift'] },
+      {
+        name: 'Wholesale',
+        icon: Boxes,
+        permissions: ['wholesale.manage'],
+        children: [
+          { name: 'Customers', href: '/pharmacy/pos/wholesale/customers', icon: Users, permissions: ['wholesale.manage'] },
+          { name: 'Pricing Tiers', href: '/pharmacy/pos/wholesale/tiers', icon: Layers, permissions: ['wholesale.manage'] },
+          { name: 'Deliveries', href: '/pharmacy/pos/deliveries', icon: Truck, permissions: ['wholesale.manage'] },
+        ],
+      },
+    ],
+  },
+  // 7b. Dental - Dental Clinics
+  {
+    title: 'Dental',
+    icon: CircleDot,
+    moduleCode: 'dental_charting',
+    roles: ['Dentist', 'Dental Hygienist', 'Dental Assistant'],
+    items: [
+      { name: 'Dental Dashboard', href: '/dental', icon: LayoutDashboard, permissions: ['dental.view'] },
+      { name: 'Dental Chart', href: '/dental/chart', icon: Crosshair, permissions: ['dental.view'] },
+      { name: 'Treatment Plans', href: '/dental/treatment-plans', icon: ClipboardList, permissions: ['dental.view'] },
+      { name: 'Procedures (CDT)', href: '/dental/procedures', icon: Scissors, permissions: ['dental.view'] },
+      { name: 'Dental Imaging', href: '/dental/imaging', icon: Scan, permissions: ['dental.view'] },
+      { name: 'Lab Orders', href: '/dental/lab-orders', icon: Package, permissions: ['dental.view'] },
+      { name: 'Orthodontics', href: '/dental/ortho', icon: Activity, permissions: ['dental.view'] },
+      { name: 'Periodontal Chart', href: '/dental/perio', icon: Focus, permissions: ['dental.view'] },
+    ],
+  },
+  // 7c. Optical - Optometry / Optical Centers
+  {
+    title: 'Optical',
+    icon: Eye,
+    moduleCode: 'optical_exams',
+    roles: ['Optometrist', 'Optician', 'Doctor'],
+    items: [
+      { name: 'Optical Dashboard', href: '/optical', icon: LayoutDashboard, permissions: ['optical.view'] },
+      { name: 'Eye Exams', href: '/optical/exams', icon: Eye, permissions: ['optical.manage'] },
+      { name: 'Prescriptions', href: '/optical/prescriptions', icon: FileText, permissions: ['optical.manage'] },
+      { name: 'Spectacle Orders', href: '/optical/orders', icon: Glasses, permissions: ['optical.view'] },
+      {
+        name: 'Inventory',
+        icon: Package,
+        permissions: ['optical.view'],
+        children: [
+          { name: 'Frames', href: '/optical/frames', icon: Glasses, permissions: ['optical.view'] },
+          { name: 'Lenses', href: '/optical/lenses', icon: CircleDot, permissions: ['optical.view'] },
+        ],
+      },
+      { name: 'Visual Field', href: '/optical/visual-field', icon: Crosshair, permissions: ['optical.manage'] },
     ],
   },
   // 7. IPD - Inpatient
