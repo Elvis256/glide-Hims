@@ -43,6 +43,7 @@ export interface SettingsData {
 
 export interface FacilityPreset {
   mode: string;
+  businessType: string;
   name: string;
   description: string;
   icon: string;
