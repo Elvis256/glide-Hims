@@ -60,13 +60,13 @@ export class UsersController {
   @ApiResponse({ status: 200, description: 'List of system admin users' })
   async findSystemAdmins(@Query() query: UserListQueryDto, @Request() req: any) {
     if (!req.user?.isSystemAdmin) {
-      return { data: [], meta: { total: 0, page: 1, limit: 20, totalPages: 0 } };
+      throw new ForbiddenException('System admin access required');
     }
     return this.usersService.findSystemAdmins(query);
   }
 
   @Post('system-reset-password/:id')
-  @AuthWithPermissions('users.read')
+  @AuthWithPermissions('users.update')
   @UseGuards(RateLimitGuard)
   @ApiOperation({ summary: 'System admin: reset password for any user (system admin, tenant admin, etc.)' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
@@ -77,7 +77,7 @@ export class UsersController {
     @Request() req: any,
   ) {
     if (!req.user?.isSystemAdmin) {
-      return { message: 'Only system administrators can perform this action' };
+      throw new ForbiddenException('Only system administrators can perform this action');
     }
     const result = await this.authService.adminResetPassword(id, dto.newPassword, req.user.sub);
     return { message: 'Password reset successfully', data: result };
@@ -89,7 +89,7 @@ export class UsersController {
   @ApiResponse({ status: 200, description: 'List of tenant admin users' })
   async findTenantAdmins(@Request() req: any) {
     if (!req.user?.isSystemAdmin) {
-      return { data: [] };
+      throw new ForbiddenException('System admin access required');
     }
     const admins = await this.usersService.findTenantAdmins();
     return { data: admins };
@@ -336,7 +336,7 @@ export class UsersController {
     @Body() dto: AdminResetPasswordDto,
     @Request() req: any,
   ) {
-    const result = await this.authService.adminResetPassword(id, dto.newPassword, req.user.sub);
+    const result = await this.authService.adminResetPassword(id, dto.newPassword, req.user.sub, req.user.tenantId);
     return { message: 'Password reset successfully', data: result };
   }
 

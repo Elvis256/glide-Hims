@@ -186,10 +186,6 @@ export class AuthController {
   }
 
   private getClientIp(request: Request): string {
-    const forwarded = request.headers['x-forwarded-for'];
-    if (typeof forwarded === 'string') {
-      return forwarded.split(',')[0].trim();
-    }
     return request.ip || request.socket?.remoteAddress || 'unknown';
   }
 }

@@ -68,12 +68,21 @@ export class SystemSettingsController {
 
   @Get('public/:key')
   @Public()
-  @ApiOperation({ summary: 'Get a system setting by key (read-only, no admin required)' })
+  @ApiOperation({ summary: 'Get a public system setting by key (read-only)' })
   @ApiQuery({ name: 'tenantId', required: false, description: 'Filter by tenant' })
   async findOnePublic(
     @Param('key') key: string,
     @Query('tenantId') tenantId?: string,
   ) {
+    // Only allow explicitly public settings
+    const publicKeys = [
+      'facility_name', 'facility_logo', 'facility_address',
+      'login_banner', 'setup_complete', 'deployment_mode',
+      'default_language', 'default_currency',
+    ];
+    if (!publicKeys.includes(key)) {
+      throw new ForbiddenException('This setting is not publicly accessible');
+    }
     return this.systemSettingsService.getByKey(key, tenantId);
   }
 
