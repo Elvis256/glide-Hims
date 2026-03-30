@@ -97,11 +97,21 @@ export class SettingsDto {
   @ApiPropertyOptional({
     description: 'Deployment mode preset',
     example: 'clinic_opd',
-    enum: ['single_user', 'clinic_opd', 'clinic_full', 'multisite_opd', 'hospital'],
+    enum: [
+      'single_user', 'clinic_opd', 'clinic_full', 'multisite_opd', 'hospital',
+      'pharmacy_retail', 'pharmacy_chain', 'pharmacy_wholesale',
+      'dental_general', 'dental_specialist',
+      'optical_center', 'optical_chain',
+    ],
   })
   @IsString()
-  @IsIn(['single_user', 'clinic_opd', 'clinic_full', 'multisite_opd', 'hospital'], {
-    message: 'facilityMode must be one of: single_user, clinic_opd, clinic_full, multisite_opd, hospital',
+  @IsIn([
+    'single_user', 'clinic_opd', 'clinic_full', 'multisite_opd', 'hospital',
+    'pharmacy_retail', 'pharmacy_chain', 'pharmacy_wholesale',
+    'dental_general', 'dental_specialist',
+    'optical_center', 'optical_chain',
+  ], {
+    message: 'facilityMode must be a valid deployment preset',
   })
   @IsOptional()
   facilityMode?: string;

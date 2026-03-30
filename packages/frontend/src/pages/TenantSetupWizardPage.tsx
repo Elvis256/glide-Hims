@@ -15,13 +15,20 @@ import {
   Building2,
   Eye,
   EyeOff,
+  Pill,
+  Smile,
+  Glasses,
+  Building,
+  ShoppingBag,
+  MapPin,
 } from 'lucide-react';
 import { setupService, type FacilityPreset } from '../services/setup';
 import api from '../services/api';
 
-type Step = 'deployment' | 'facility' | 'admin' | 'settings' | 'review';
+type Step = 'business_type' | 'deployment' | 'facility' | 'admin' | 'settings' | 'review';
 
 const steps: { id: Step; title: string; icon: React.ReactNode }[] = [
+  { id: 'business_type', title: 'Business Type', icon: <Building2 className="w-5 h-5" /> },
   { id: 'deployment', title: 'Deployment', icon: <Monitor className="w-5 h-5" /> },
   { id: 'facility', title: 'Facility', icon: <Hospital className="w-5 h-5" /> },
   { id: 'admin', title: 'Admin User', icon: <User className="w-5 h-5" /> },
@@ -33,6 +40,8 @@ const facilityTypes = [
   { value: 'hospital', label: 'Hospital' },
   { value: 'clinic', label: 'Clinic' },
   { value: 'pharmacy', label: 'Pharmacy' },
+  { value: 'dental_clinic', label: 'Dental Clinic' },
+  { value: 'optical_center', label: 'Optical Center' },
   { value: 'laboratory', label: 'Laboratory' },
   { value: 'health_center', label: 'Health Center' },
 ];
@@ -46,6 +55,7 @@ const currencies = [
 ];
 
 const modules = [
+  // Core
   { id: 'patients', label: 'Patient Management', default: true },
   { id: 'encounters', label: 'Encounters/Visits', default: true },
   { id: 'lab', label: 'Laboratory', default: true },
@@ -62,13 +72,36 @@ const modules = [
   { id: 'appointments', label: 'Appointments & Queue', default: false },
   { id: 'finance', label: 'Finance & Accounting', default: false },
   { id: 'reports', label: 'Reports & Analytics', default: true },
+  // Pharmacy-specific
+  { id: 'pos', label: 'Point of Sale', default: false },
+  { id: 'drug_interactions', label: 'Drug Interaction Checks', default: false },
+  { id: 'controlled_substances', label: 'Controlled Substances', default: false },
+  { id: 'wholesale', label: 'Wholesale/Distribution', default: false },
+  { id: 'suppliers', label: 'Supplier Management', default: false },
+  // Dental-specific
+  { id: 'dental_charting', label: 'Dental Charting', default: false },
+  { id: 'dental_procedures', label: 'Dental Procedures & Treatment Plans', default: false },
+  { id: 'dental_imaging', label: 'Dental Imaging/X-Ray', default: false },
+  { id: 'dental_lab', label: 'Dental Lab Orders', default: false },
+  { id: 'orthodontics', label: 'Orthodontics', default: false },
+  { id: 'periodontics', label: 'Periodontics', default: false },
+  { id: 'insurance_preauth', label: 'Insurance Pre-Authorization', default: false },
+  // Optical-specific
+  { id: 'optical_exams', label: 'Eye Examinations', default: false },
+  { id: 'optical_rx', label: 'Optical Prescriptions', default: false },
+  { id: 'optical_inventory', label: 'Frame & Lens Inventory', default: false },
+  { id: 'contact_lenses', label: 'Contact Lens Fitting', default: false },
+  { id: 'optical_lab', label: 'Lens Cutting Lab', default: false },
+  { id: 'visual_field', label: 'Visual Field Testing', default: false },
 ];
 
 const BUILTIN_PRESETS: FacilityPreset[] = [
+  // Hospital & Clinic
   {
     mode: 'single_user',
+    businessType: 'hospital',
     name: 'Single-User Clinic',
-    description: 'Everything done by one person — registration, consultation, billing, and dispensing.',
+    description: 'Everything done by one person on one computer. Includes all core modules with simplified workflows.',
     icon: 'monitor',
     facilityType: 'clinic',
     supportsMultiSite: false,
@@ -79,39 +112,136 @@ const BUILTIN_PRESETS: FacilityPreset[] = [
   },
   {
     mode: 'clinic_opd',
-    name: 'Outpatient Clinic',
-    description: 'Multiple staff with role-based access. OPD focus — no wards or theatre.',
+    businessType: 'hospital',
+    name: 'Clinic – Outpatient Only',
+    description: 'A clinic with only outpatient services. No ward admissions or inpatient care.',
     icon: 'stethoscope',
     facilityType: 'clinic',
     supportsMultiSite: false,
     singleUserMode: false,
     enabledModules: ['patients', 'encounters', 'vitals', 'lab', 'pharmacy', 'radiology', 'billing', 'inventory', 'insurance', 'reports', 'appointments'],
-    recommendedRoles: ['Doctor', 'Nurse', 'Lab Tech', 'Pharmacist', 'Cashier', 'Receptionist'],
-    notes: ['Role-based access', 'Appointments & queue management'],
+    recommendedRoles: ['Doctor', 'Nurse', 'Receptionist', 'Pharmacist', 'Lab Technician', 'Cashier'],
+    notes: ['OPD consultations, triage, vitals recording', 'Lab and pharmacy services included', 'No IPD, theatre, or maternity modules'],
   },
   {
     mode: 'clinic_full',
-    name: 'Full-Service Clinic',
-    description: 'OPD plus basic inpatient beds, minor procedures, and maternity.',
+    businessType: 'hospital',
+    name: 'Clinic – Inpatient & Outpatient',
+    description: 'A clinic that handles both outpatient visits and inpatient admissions.',
     icon: 'bed',
     facilityType: 'clinic',
     supportsMultiSite: false,
     singleUserMode: false,
-    enabledModules: ['patients', 'encounters', 'vitals', 'lab', 'pharmacy', 'radiology', 'billing', 'inventory', 'insurance', 'ipd', 'maternity', 'reports', 'appointments', 'hr'],
-    recommendedRoles: ['Doctor', 'Nurse', 'Lab Tech', 'Pharmacist', 'Cashier', 'Receptionist', 'Ward Nurse'],
-    notes: ['IPD & maternity enabled', 'HR module included'],
+    enabledModules: ['patients', 'encounters', 'vitals', 'lab', 'pharmacy', 'radiology', 'billing', 'inventory', 'insurance', 'reports', 'appointments', 'ipd'],
+    recommendedRoles: ['Doctor', 'Nurse', 'Receptionist', 'Pharmacist', 'Lab Technician', 'Cashier', 'Store Keeper'],
+    notes: ['Supports ward admissions and discharges', 'OPD and IPD billing integration', 'Theatre and maternity can be enabled later if needed'],
   },
   {
     mode: 'hospital',
-    name: 'Hospital',
-    description: 'Full hospital setup with all departments, wards, theatre, and multi-site support.',
+    businessType: 'hospital',
+    name: 'Full Hospital',
+    description: 'Complete hospital management with all modules: OPD, IPD, Emergency, Theatre, Maternity, HR, and Finance.',
     icon: 'building',
     facilityType: 'hospital',
     supportsMultiSite: true,
     singleUserMode: false,
-    enabledModules: ['patients', 'encounters', 'vitals', 'lab', 'pharmacy', 'radiology', 'billing', 'inventory', 'insurance', 'ipd', 'emergency', 'theatre', 'maternity', 'appointments', 'hr', 'finance', 'reports'],
-    recommendedRoles: ['Doctor', 'Nurse', 'Lab Tech', 'Pharmacist', 'Cashier', 'Receptionist', 'Ward Nurse', 'Surgeon', 'Radiologist', 'Admin'],
-    notes: ['All modules enabled', 'Multi-site support'],
+    enabledModules: ['patients', 'encounters', 'vitals', 'lab', 'pharmacy', 'radiology', 'billing', 'inventory', 'insurance', 'reports', 'appointments', 'ipd', 'emergency', 'theatre', 'maternity', 'hr', 'finance'],
+    recommendedRoles: ['Doctor', 'Nurse', 'Receptionist', 'Pharmacist', 'Lab Technician', 'Cashier', 'Store Keeper', 'HR Manager', 'Accountant', 'Radiologist'],
+    notes: ['All modules enabled including HR and Finance', 'Supports multiple wards, theatres, and departments', 'Full reporting and analytics suite'],
+  },
+  // Pharmacy
+  {
+    mode: 'pharmacy_retail',
+    businessType: 'pharmacy',
+    name: 'Retail Pharmacy',
+    description: 'Single-location retail pharmacy with POS, dispensing, stock management, and controlled substance tracking.',
+    icon: 'pill',
+    facilityType: 'pharmacy',
+    supportsMultiSite: false,
+    singleUserMode: false,
+    enabledModules: ['patients', 'pharmacy', 'pos', 'billing', 'inventory', 'controlled_substances', 'drug_interactions', 'insurance', 'reports', 'suppliers'],
+    recommendedRoles: ['Pharmacist', 'Pharmacy Technician', 'Cashier', 'Store Keeper'],
+    notes: ['Full POS with barcode scanning and receipt printing', 'Controlled substance register with DEA compliance', 'Drug interaction checking on every sale', 'Supplier management and purchase orders'],
+  },
+  {
+    mode: 'pharmacy_chain',
+    businessType: 'pharmacy',
+    name: 'Pharmacy Chain',
+    description: 'Multi-branch pharmacy network with centralised purchasing, stock transfers, and consolidated reporting.',
+    icon: 'store',
+    facilityType: 'pharmacy',
+    supportsMultiSite: true,
+    singleUserMode: false,
+    enabledModules: ['patients', 'pharmacy', 'pos', 'billing', 'inventory', 'controlled_substances', 'drug_interactions', 'insurance', 'reports', 'suppliers', 'hr', 'finance'],
+    recommendedRoles: ['Pharmacist', 'Pharmacy Technician', 'Cashier', 'Store Keeper', 'Branch Manager', 'HR Manager', 'Accountant'],
+    notes: ['Central purchasing with branch-level stock transfers', 'Consolidated reporting across all branches', 'HR and finance modules for company management', 'Add branches after setup via Facilities > Add Branch'],
+  },
+  {
+    mode: 'pharmacy_wholesale',
+    businessType: 'pharmacy',
+    name: 'Wholesale / Distribution Pharmacy',
+    description: 'Wholesale pharmaceutical distributor with B2B sales, pricing tiers, delivery tracking, and full supply chain.',
+    icon: 'warehouse',
+    facilityType: 'pharmacy',
+    supportsMultiSite: true,
+    singleUserMode: false,
+    enabledModules: ['pharmacy', 'pos', 'billing', 'inventory', 'controlled_substances', 'drug_interactions', 'wholesale', 'reports', 'suppliers', 'hr', 'finance'],
+    recommendedRoles: ['Pharmacist', 'Sales Representative', 'Warehouse Manager', 'Store Keeper', 'Driver', 'HR Manager', 'Accountant'],
+    notes: ['B2B order management with customer accounts', 'Tiered pricing for different customer categories', 'Delivery tracking and route management', 'Full supply chain: procurement, warehousing, distribution'],
+  },
+  // Dental
+  {
+    mode: 'dental_general',
+    businessType: 'dental',
+    name: 'General Dental Practice',
+    description: 'General dentistry with charting, procedures, imaging, treatment plans, and dental-specific billing.',
+    icon: 'tooth',
+    facilityType: 'dental_clinic',
+    supportsMultiSite: false,
+    singleUserMode: false,
+    enabledModules: ['patients', 'encounters', 'dental_charting', 'dental_procedures', 'dental_imaging', 'dental_lab', 'billing', 'inventory', 'insurance', 'appointments', 'reports'],
+    recommendedRoles: ['Dentist', 'Dental Hygienist', 'Dental Assistant', 'Receptionist', 'Cashier'],
+    notes: ['Interactive dental chart with tooth-level tracking', 'CDT procedure codes for billing', 'Treatment plan builder with multi-visit scheduling', 'Dental lab order tracking (crowns, dentures, etc.)'],
+  },
+  {
+    mode: 'dental_specialist',
+    businessType: 'dental',
+    name: 'Specialist Dental Clinic',
+    description: 'Multi-specialty dental clinic with orthodontics, periodontics, oral surgery, insurance pre-auth, and multi-provider scheduling.',
+    icon: 'tooth-specialist',
+    facilityType: 'dental_clinic',
+    supportsMultiSite: false,
+    singleUserMode: false,
+    enabledModules: ['patients', 'encounters', 'dental_charting', 'dental_procedures', 'dental_imaging', 'dental_lab', 'orthodontics', 'periodontics', 'billing', 'inventory', 'insurance', 'insurance_preauth', 'appointments', 'reports', 'hr', 'finance'],
+    recommendedRoles: ['Dentist', 'Orthodontist', 'Periodontist', 'Oral Surgeon', 'Dental Hygienist', 'Dental Assistant', 'Receptionist', 'Cashier', 'HR Manager'],
+    notes: ['Orthodontic case tracking with adjustment logs', 'Periodontal charting (6 sites per tooth)', 'Insurance pre-authorization workflow', 'Multi-provider scheduling with chair management', 'HR and finance for larger practices'],
+  },
+  // Optical
+  {
+    mode: 'optical_center',
+    businessType: 'optical',
+    name: 'Optical Center',
+    description: 'Full-service optometry with eye exams, prescriptions, frame/lens inventory, contact lenses, and in-house lens lab.',
+    icon: 'glasses',
+    facilityType: 'optical_center',
+    supportsMultiSite: false,
+    singleUserMode: false,
+    enabledModules: ['patients', 'encounters', 'optical_exams', 'optical_rx', 'optical_inventory', 'contact_lenses', 'optical_lab', 'visual_field', 'pos', 'billing', 'inventory', 'insurance', 'appointments', 'reports'],
+    recommendedRoles: ['Optometrist', 'Optician', 'Lab Technician', 'Sales Associate', 'Receptionist', 'Cashier'],
+    notes: ['Structured eye exam forms (OD/OS)', 'Optical Rx management with history comparison', 'Frame & lens inventory with barcode scanning', 'Contact lens fitting and follow-up tracking', 'In-house lens cutting lab with order queue', 'Visual field testing and progression tracking'],
+  },
+  {
+    mode: 'optical_chain',
+    businessType: 'optical',
+    name: 'Optical Chain',
+    description: 'Multi-branch optical network with centralised inventory, lens lab orders, insurance billing, and consolidated reporting.',
+    icon: 'glasses-chain',
+    facilityType: 'optical_center',
+    supportsMultiSite: true,
+    singleUserMode: false,
+    enabledModules: ['patients', 'encounters', 'optical_exams', 'optical_rx', 'optical_inventory', 'contact_lenses', 'optical_lab', 'visual_field', 'pos', 'billing', 'inventory', 'insurance', 'appointments', 'reports', 'hr', 'finance'],
+    recommendedRoles: ['Optometrist', 'Optician', 'Lab Technician', 'Sales Associate', 'Receptionist', 'Cashier', 'Branch Manager', 'HR Manager', 'Accountant'],
+    notes: ['Multi-branch inventory with stock transfers', 'Centralised lens lab processing', 'HR and finance for company management', 'Consolidated reporting across all branches', 'Add branches after setup via Facilities > Add Branch'],
   },
 ];
 
@@ -120,18 +250,27 @@ const presetIcons: Record<string, React.ReactNode> = {
   stethoscope: <Stethoscope className="w-8 h-8" />,
   bed: <Bed className="w-8 h-8" />,
   building: <Building2 className="w-8 h-8" />,
+  'map-pin': <MapPin className="w-8 h-8" />,
+  pill: <Pill className="w-8 h-8" />,
+  store: <ShoppingBag className="w-8 h-8" />,
+  warehouse: <Building className="w-8 h-8" />,
+  tooth: <Smile className="w-8 h-8" />,
+  'tooth-specialist': <Smile className="w-8 h-8" />,
+  glasses: <Glasses className="w-8 h-8" />,
+  'glasses-chain': <Glasses className="w-8 h-8" />,
 };
 
 export default function TenantSetupWizardPage() {
   const navigate = useNavigate();
   const { slug } = useParams<{ slug: string }>();
 
-  const [currentStep, setCurrentStep] = useState<Step>('deployment');
+  const [currentStep, setCurrentStep] = useState<Step>('business_type');
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState('');
   const [tenantName, setTenantName] = useState('');
   const [presets, setPresets] = useState<FacilityPreset[]>(BUILTIN_PRESETS);
+  const [businessType, setBusinessType] = useState('');
 
   // Form data
   const [facilityMode, setFacilityMode] = useState('');
@@ -169,6 +308,8 @@ export default function TenantSetupWizardPage() {
 
   const canGoNext = (): boolean => {
     switch (currentStep) {
+      case 'business_type':
+        return !!businessType;
       case 'deployment':
         return !!facilityMode;
       case 'facility':
@@ -232,10 +373,73 @@ export default function TenantSetupWizardPage() {
     }
   };
 
+  const handleBusinessTypeSelect = (type: string) => {
+    setBusinessType(type);
+    setFacilityMode('');
+    switch (type) {
+      case 'pharmacy':
+        setFacility(prev => ({ ...prev, type: 'pharmacy' }));
+        break;
+      case 'dental':
+        setFacility(prev => ({ ...prev, type: 'dental_clinic' }));
+        break;
+      case 'optical':
+        setFacility(prev => ({ ...prev, type: 'optical_center' }));
+        break;
+      default:
+        break;
+    }
+  };
+
   const selectedPreset = presets.find(p => p.mode === facilityMode);
+
+  const filteredPresets = businessType
+    ? presets.filter(p => p.businessType === businessType)
+    : presets;
+
+  const businessTypeOptions = [
+    { value: 'hospital', label: 'Hospital / Clinic', description: 'Hospitals, clinics, and health centers with OPD, IPD, lab, and pharmacy services.', icon: <Hospital className="w-10 h-10" /> },
+    { value: 'pharmacy', label: 'Pharmacy', description: 'Retail pharmacies, pharmacy chains, and wholesale distributors.', icon: <Pill className="w-10 h-10" /> },
+    { value: 'dental', label: 'Dental', description: 'General dentistry, specialist clinics, orthodontics, and periodontics.', icon: <Smile className="w-10 h-10" /> },
+    { value: 'optical', label: 'Optical', description: 'Optical centers, optometry practices, and optical retail chains.', icon: <Glasses className="w-10 h-10" /> },
+  ];
 
   const renderStep = () => {
     switch (currentStep) {
+      case 'business_type':
+        return (
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">What type of business are you?</h3>
+              <p className="text-sm text-gray-500 mt-1">Select the category that best describes your facility</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {businessTypeOptions.map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => handleBusinessTypeSelect(opt.value)}
+                  className={`p-6 rounded-lg border-2 text-left transition-all hover:shadow-md ${
+                    businessType === opt.value
+                      ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="flex flex-col items-center text-center gap-3">
+                    <div className={`p-3 rounded-xl ${businessType === opt.value ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
+                      {opt.icon}
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900">{opt.label}</h4>
+                      <p className="text-sm text-gray-500 mt-1">{opt.description}</p>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+
       case 'deployment':
         return (
           <div className="space-y-6">
@@ -244,7 +448,7 @@ export default function TenantSetupWizardPage() {
               <p className="text-sm text-gray-500 mt-1">Select the mode that best describes your facility</p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {presets.map(preset => (
+              {filteredPresets.map(preset => (
                 <button
                   key={preset.mode}
                   type="button"
