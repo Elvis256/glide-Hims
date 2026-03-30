@@ -77,6 +77,7 @@ import { HealthModule } from './modules/health/health.module';
 import { TenantModule } from './common/middleware/tenant.module';
 import { AdherenceModule } from './modules/adherence/adherence.module';
 import { ScheduledTasksModule } from './modules/scheduled-tasks/scheduled-tasks.module';
+import { DentalModule } from './modules/dental/dental.module';
 
 @Module({
   imports: [
@@ -243,6 +244,9 @@ import { ScheduledTasksModule } from './modules/scheduled-tasks/scheduled-tasks.
     // Task Scheduling
     ScheduleModule.forRoot(),
     ScheduledTasksModule,
+
+    // Phase 23: Dental Vertical
+    DentalModule,
   ],
   controllers: [AppController],
   providers: [

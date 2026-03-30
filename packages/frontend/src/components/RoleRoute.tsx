@@ -93,4 +93,8 @@ export function RadiologyRoute({ children }: { children: ReactNode }) {
   return <RoleRoute roles={[ROLES.RADIOLOGIST, ROLES.DOCTOR, ROLES.NURSE]}>{children}</RoleRoute>;
 }
 
+export function DentistRoute({ children }: { children: ReactNode }) {
+  return <RoleRoute roles={[ROLES.DOCTOR]}>{children}</RoleRoute>;
+}
+
 export default RoleRoute;
