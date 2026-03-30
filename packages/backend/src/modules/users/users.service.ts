@@ -208,9 +208,8 @@ export class UsersService {
     const queryBuilder = this.userRepository.createQueryBuilder('user');
 
     // Tenant filter MUST come first and use andWhere to never be overwritten
-    if (tenantId) {
-      queryBuilder.where('user.tenant_id = :tenantId', { tenantId });
-    }
+    // When tenantId is undefined, use a non-existent UUID to return empty results (failsafe)
+    queryBuilder.where('user.tenant_id = :tenantId', { tenantId: tenantId || '00000000-0000-0000-0000-000000000000' });
 
     if (search) {
       queryBuilder.andWhere(

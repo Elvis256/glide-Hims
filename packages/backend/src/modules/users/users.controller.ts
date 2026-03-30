@@ -10,6 +10,7 @@ import {
   ParseUUIDPipe,
   Request,
   UseGuards,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
@@ -99,7 +100,11 @@ export class UsersController {
   @ApiOperation({ summary: 'Get all users with pagination' })
   @ApiResponse({ status: 200, description: 'List of users' })
   async findAll(@Query() query: UserListQueryDto, @Request() req: any) {
-    return this.usersService.findAll(query, req.user?.tenantId);
+    const tenantId = req.user?.tenantId;
+    if (!tenantId && !req.user?.isSystemAdmin) {
+      throw new ForbiddenException('Tenant context required');
+    }
+    return this.usersService.findAll(query, tenantId);
   }
 
   @Get(':id')
@@ -109,7 +114,11 @@ export class UsersController {
   @ApiResponse({ status: 200, description: 'User details' })
   @ApiResponse({ status: 404, description: 'User not found' })
   async findOne(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
-    return this.usersService.findOneWithRoles(id, req.user?.tenantId);
+    const tenantId = req.user?.tenantId;
+    if (!tenantId && !req.user?.isSystemAdmin) {
+      throw new ForbiddenException('Tenant context required');
+    }
+    return this.usersService.findOneWithRoles(id, tenantId);
   }
 
   @Patch(':id')
@@ -136,7 +145,11 @@ export class UsersController {
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 200, description: 'User deleted successfully' })
   async remove(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
-    await this.usersService.remove(id, req.user?.tenantId);
+    const tenantId = req.user?.tenantId;
+    if (!tenantId && !req.user?.isSystemAdmin) {
+      throw new ForbiddenException('Tenant context required');
+    }
+    await this.usersService.remove(id, tenantId);
     return { message: 'User deleted successfully' };
   }
 
@@ -151,7 +164,11 @@ export class UsersController {
     @Body() assignRoleDto: AssignRoleDto,
     @Request() req: any,
   ) {
-    const userRole = await this.usersService.assignRole(id, assignRoleDto, req.user?.tenantId);
+    const tenantId = req.user?.tenantId;
+    if (!tenantId && !req.user?.isSystemAdmin) {
+      throw new ForbiddenException('Tenant context required');
+    }
+    const userRole = await this.usersService.assignRole(id, assignRoleDto, tenantId);
     return { message: 'Role assigned successfully', data: userRole };
   }
 
@@ -166,7 +183,11 @@ export class UsersController {
     @Param('roleId', ParseUUIDPipe) roleId: string,
     @Request() req: any,
   ) {
-    await this.usersService.removeRole(id, roleId, req.user?.tenantId);
+    const tenantId = req.user?.tenantId;
+    if (!tenantId && !req.user?.isSystemAdmin) {
+      throw new ForbiddenException('Tenant context required');
+    }
+    await this.usersService.removeRole(id, roleId, tenantId);
     return { message: 'Role removed successfully' };
   }
 

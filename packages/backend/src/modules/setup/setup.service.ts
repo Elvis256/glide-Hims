@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { Repository, DataSource } from 'typeorm';
@@ -857,6 +857,32 @@ export class SetupService {
     await queryRunner.startTransaction();
 
     try {
+      // Lock the tenant row to prevent concurrent initialization
+      const lockedTenant = await queryRunner.manager.findOne(Tenant, {
+        where: { id: tenant.id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!lockedTenant) {
+        throw new NotFoundException('Tenant not found');
+      }
+
+      // Double-check setup status inside the transaction (race condition guard)
+      const setupCheck = await queryRunner.query(
+        `SELECT value FROM system_settings WHERE tenant_id = $1 AND key = 'setup_complete' LIMIT 1`,
+        [tenant.id],
+      );
+      if (setupCheck.length > 0 && setupCheck[0].value === true) {
+        throw new ConflictException('Tenant already initialized');
+      }
+
+      // Check for existing facility (another race condition guard)
+      const existingFacility = await queryRunner.manager.findOne(Facility, {
+        where: { tenantId: tenant.id },
+      });
+      if (existingFacility) {
+        throw new ConflictException('Tenant already initialized');
+      }
+
       // 1. Create Main Facility
       const facilityMode = dto.settings?.facilityMode as FacilityMode | undefined;
       const preset = facilityMode ? getPreset(facilityMode) : null;
