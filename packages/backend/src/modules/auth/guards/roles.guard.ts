@@ -26,9 +26,14 @@ export class RolesGuard implements CanActivate {
       return false;
     }
 
-    // Super Admin / System Admin has access to everything - but log the bypass
-    if (isSuperAdmin(user.roles) || user.isSystemAdmin) {
+    // Super Admin has access to everything - but log the bypass
+    if (isSuperAdmin(user.roles)) {
       this.logSuperAdminAccess(request, requiredRoles);
+      return true;
+    }
+
+    // System admins pass role guard — permissions guard enforces tiered access
+    if (user.isSystemAdmin) {
       return true;
     }
 

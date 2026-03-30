@@ -79,6 +79,7 @@ import { AdherenceModule } from './modules/adherence/adherence.module';
 import { ScheduledTasksModule } from './modules/scheduled-tasks/scheduled-tasks.module';
 import { DentalModule } from './modules/dental/dental.module';
 import { OpticalModule } from './modules/optical/optical.module';
+import { SupportAccessModule } from './modules/support-access/support-access.module';
 
 @Module({
   imports: [
@@ -251,6 +252,9 @@ import { OpticalModule } from './modules/optical/optical.module';
 
     // Phase 24: Optical/Optometry Vertical
     OpticalModule,
+
+    // Support Access (tiered system admin access)
+    SupportAccessModule,
   ],
   controllers: [AppController],
   providers: [
