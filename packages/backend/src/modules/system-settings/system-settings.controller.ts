@@ -1,4 +1,4 @@
-import { Controller, Get, Put, Delete, Param, Body, Query, Request } from '@nestjs/common';
+import { Controller, Get, Put, Delete, Param, Body, Query, Request, ForbiddenException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { SystemSettingsService } from './system-settings.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
@@ -84,7 +84,16 @@ export class SystemSettingsController {
   async findOne(
     @Param('key') key: string,
     @Query('tenantId') tenantId?: string,
+    @Request() req?: any,
   ) {
+    // Non-system-admins can only access their own tenant's settings
+    if (!req?.user?.isSystemAdmin) {
+      const scopedTenantId = req?.user?.tenantId;
+      if (!scopedTenantId) {
+        throw new ForbiddenException('Tenant context required');
+      }
+      return this.systemSettingsService.getByKey(key, scopedTenantId);
+    }
     return this.systemSettingsService.getByKey(key, tenantId);
   }
 
@@ -96,7 +105,22 @@ export class SystemSettingsController {
     @Param('key') key: string,
     @Body() body: UpsertSystemSettingDto,
     @Query('tenantId') tenantId?: string,
+    @Request() req?: any,
   ) {
+    // Non-system-admins can only modify their own tenant's settings
+    if (!req?.user?.isSystemAdmin) {
+      const scopedTenantId = req?.user?.tenantId;
+      if (!scopedTenantId) {
+        throw new ForbiddenException('Tenant context required');
+      }
+      const setting = await this.systemSettingsService.upsert(
+        key,
+        body.value,
+        scopedTenantId,
+        body.description,
+      );
+      return { message: 'Setting saved', data: setting };
+    }
     const setting = await this.systemSettingsService.upsert(
       key,
       body.value,
@@ -113,7 +137,17 @@ export class SystemSettingsController {
   async remove(
     @Param('key') key: string,
     @Query('tenantId') tenantId?: string,
+    @Request() req?: any,
   ) {
+    // Non-system-admins can only delete their own tenant's settings
+    if (!req?.user?.isSystemAdmin) {
+      const scopedTenantId = req?.user?.tenantId;
+      if (!scopedTenantId) {
+        throw new ForbiddenException('Tenant context required');
+      }
+      await this.systemSettingsService.delete(key, scopedTenantId);
+      return { message: 'Setting deleted' };
+    }
     await this.systemSettingsService.delete(key, tenantId);
     return { message: 'Setting deleted' };
   }

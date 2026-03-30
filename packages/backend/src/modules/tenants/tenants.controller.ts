@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, ParseUUIDPipe, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, ParseUUIDPipe, BadRequestException, Request, ForbiddenException } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { TenantsService } from './tenants.service';
 import { CreateTenantDto, UpdateTenantDto } from './dto/tenant.dto';
@@ -30,7 +30,10 @@ export class TenantsController {
   @Post()
   @AuthWithPermissions('tenants.create')
   @ApiOperation({ summary: 'Create tenant' })
-  async create(@Body() dto: CreateTenantDto) {
+  async create(@Body() dto: CreateTenantDto, @Request() req: any) {
+    if (!req.user?.isSystemAdmin) {
+      throw new ForbiddenException('System admin access required');
+    }
     const tenant = await this.tenantsService.create(dto);
     return { message: 'Tenant created', data: tenant };
   }
@@ -38,28 +41,40 @@ export class TenantsController {
   @Get()
   @AuthWithPermissions('tenants.read')
   @ApiOperation({ summary: 'List all tenants' })
-  async findAll() {
+  async findAll(@Request() req: any) {
+    if (!req.user?.isSystemAdmin) {
+      throw new ForbiddenException('System admin access required');
+    }
     return this.tenantsService.findAll();
   }
 
   @Get('with-stats')
   @AuthWithPermissions('tenants.read')
   @ApiOperation({ summary: 'List all tenants with user/facility counts and setup status' })
-  async findAllWithStats() {
+  async findAllWithStats(@Request() req: any) {
+    if (!req.user?.isSystemAdmin) {
+      throw new ForbiddenException('System admin access required');
+    }
     return this.tenantsService.findAllWithStats();
   }
 
   @Get(':id')
   @AuthWithPermissions('tenants.read')
   @ApiOperation({ summary: 'Get tenant by ID' })
-  async findOne(@Param('id', ParseUUIDPipe) id: string) {
+  async findOne(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    if (!req.user?.isSystemAdmin) {
+      throw new ForbiddenException('System admin access required');
+    }
     return this.tenantsService.findOne(id);
   }
 
   @Patch(':id')
   @AuthWithPermissions('tenants.update')
   @ApiOperation({ summary: 'Update tenant' })
-  async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateTenantDto) {
+  async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateTenantDto, @Request() req: any) {
+    if (!req.user?.isSystemAdmin) {
+      throw new ForbiddenException('System admin access required');
+    }
     const tenant = await this.tenantsService.update(id, dto);
     return { message: 'Tenant updated', data: tenant };
   }
@@ -67,7 +82,10 @@ export class TenantsController {
   @Delete(':id')
   @AuthWithPermissions('tenants.delete')
   @ApiOperation({ summary: 'Delete tenant' })
-  async remove(@Param('id', ParseUUIDPipe) id: string) {
+  async remove(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    if (!req.user?.isSystemAdmin) {
+      throw new ForbiddenException('System admin access required');
+    }
     await this.tenantsService.remove(id);
     return { message: 'Tenant deleted' };
   }
