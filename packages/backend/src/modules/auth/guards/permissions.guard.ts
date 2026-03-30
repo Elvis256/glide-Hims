@@ -39,7 +39,7 @@ export class PermissionsGuard implements CanActivate {
       return false;
     }
 
-    if (isSuperAdmin(user.roles)) {
+    if (isSuperAdmin(user.roles) || user.isSystemAdmin) {
       this.logSuperAdminAccess(request, requiredPermissions);
       return true;
     }

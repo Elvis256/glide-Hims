@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, ParseUUIDPipe } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, ParseUUIDPipe, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { TenantsService } from './tenants.service';
 import { CreateTenantDto, UpdateTenantDto } from './dto/tenant.dto';
@@ -17,6 +17,16 @@ export class TenantsController {
     return this.tenantsService.findAllPublic();
   }
 
+  @Get('public/by-slug/:slug')
+  @Public()
+  @ApiOperation({ summary: 'Resolve tenant by slug (public - for login page)' })
+  async publicBySlug(@Param('slug') slug: string) {
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) || slug.length < 3 || slug.length > 100) {
+      throw new BadRequestException('Invalid organization code');
+    }
+    return this.tenantsService.findBySlug(slug);
+  }
+
   @Post()
   @AuthWithPermissions('tenants.create')
   @ApiOperation({ summary: 'Create tenant' })
@@ -30,6 +40,13 @@ export class TenantsController {
   @ApiOperation({ summary: 'List all tenants' })
   async findAll() {
     return this.tenantsService.findAll();
+  }
+
+  @Get('with-stats')
+  @AuthWithPermissions('tenants.read')
+  @ApiOperation({ summary: 'List all tenants with user/facility counts and setup status' })
+  async findAllWithStats() {
+    return this.tenantsService.findAllWithStats();
   }
 
   @Get(':id')

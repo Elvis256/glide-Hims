@@ -141,7 +141,7 @@ export default function RegisterOrganizationPage() {
   }, []);
 
   const [formData, setFormData] = useState<InitializeSetupData>({
-    organization: { name: '', type: 'hospital', country: 'Uganda' },
+    organization: { name: '', slug: '', type: 'hospital', country: 'Uganda' },
     facility: { name: '', type: 'hospital' },
     admin: { fullName: '', email: '', username: '', password: '' },
     settings: {
@@ -154,13 +154,57 @@ export default function RegisterOrganizationPage() {
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [slugChecking, setSlugChecking] = useState(false);
   const currentStepIndex = steps.findIndex(s => s.id === currentStep);
 
+  const checkSlugAvailability = async (slug: string) => {
+    if (!slug || slug.length < 3 || !/^[a-z0-9-]+$/.test(slug)) return;
+    setSlugChecking(true);
+    try {
+      await api.get(`/tenants/public/by-slug/${slug}`);
+      // If found, slug is taken
+      setErrors(prev => ({ ...prev, 'organization.slug': 'This organization code is already taken' }));
+    } catch {
+      // 404 = available
+      setErrors(prev => {
+        const next = { ...prev };
+        if (next['organization.slug'] === 'This organization code is already taken') delete next['organization.slug'];
+        return next;
+      });
+    } finally {
+      setSlugChecking(false);
+    }
+  };
+
   const updateFormData = (section: keyof InitializeSetupData, field: string, value: any) => {
-    setFormData(prev => ({
-      ...prev,
-      [section]: { ...prev[section], [field]: value },
-    }));
+    setFormData(prev => {
+      const updated = {
+        ...prev,
+        [section]: { ...prev[section], [field]: value },
+      };
+      // Auto-generate slug from organization name if user hasn't manually edited it
+      if (section === 'organization' && field === 'name') {
+        const autoSlug = value
+          .toLowerCase()
+          .trim()
+          .replace(/[^a-z0-9\s-]/g, '')
+          .replace(/\s+/g, '-')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '');
+        // Only auto-fill if slug is empty or matches what would be auto-generated from old name
+        const oldAutoSlug = (prev.organization.name || '')
+          .toLowerCase()
+          .trim()
+          .replace(/[^a-z0-9\s-]/g, '')
+          .replace(/\s+/g, '-')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '');
+        if (!prev.organization.slug || prev.organization.slug === oldAutoSlug) {
+          updated.organization = { ...updated.organization, slug: autoSlug };
+        }
+      }
+      return updated;
+    });
     setErrors(prev => ({ ...prev, [`${section}.${field}`]: '' }));
   };
 
@@ -192,6 +236,13 @@ export default function RegisterOrganizationPage() {
       case 'organization':
         if (!formData.organization.name.trim()) {
           newErrors['organization.name'] = 'Organization name is required';
+        }
+        if (!formData.organization.slug?.trim()) {
+          newErrors['organization.slug'] = 'Organization code is required';
+        } else if (!/^[a-z0-9-]+$/.test(formData.organization.slug)) {
+          newErrors['organization.slug'] = 'Only lowercase letters, numbers, and hyphens allowed';
+        } else if (formData.organization.slug.length < 3) {
+          newErrors['organization.slug'] = 'Organization code must be at least 3 characters';
         }
         break;
       case 'facility':
@@ -245,7 +296,8 @@ export default function RegisterOrganizationPage() {
     try {
       await setupService.registerTenant(formData);
       toast.success('Organization registered successfully! You can now sign in.');
-      navigate('/login?registered=true');
+      const slug = formData.organization.slug || formData.organization.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      navigate(`/login/${slug}?registered=true`);
     } catch (error: any) {
       toast.error(error.response?.data?.message || 'Registration failed. Please try again.');
     } finally {
@@ -273,6 +325,22 @@ export default function RegisterOrganizationPage() {
                   placeholder="e.g., Kampala Medical Center"
                 />
                 {errors['organization.name'] && <p className="mt-1 text-sm text-red-500">{errors['organization.name']}</p>}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Organization Code (Slug) *</label>
+                <input
+                  type="text"
+                  value={formData.organization.slug || ''}
+                  onChange={(e) => updateFormData('organization', 'slug', e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                  onBlur={(e) => checkSlugAvailability(e.target.value)}
+                  className={`mt-1 block w-full rounded-lg border ${errors['organization.slug'] ? 'border-red-500' : 'border-gray-300'} px-4 py-3 focus:border-blue-500 focus:ring-blue-500`}
+                  placeholder="e.g., kampala-medical"
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  This will be your login URL: <span className="font-mono text-blue-600">/login/{formData.organization.slug || 'your-code'}</span>
+                  {slugChecking && <span className="ml-2 text-blue-500">Checking availability...</span>}
+                </p>
+                {errors['organization.slug'] && <p className="mt-1 text-sm text-red-500">{errors['organization.slug']}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Organization Type</label>
@@ -582,6 +650,7 @@ export default function RegisterOrganizationPage() {
                 </h3>
                 <p className="mt-1 text-gray-700">{formData.organization.name}</p>
                 <p className="text-sm text-gray-500">{formData.organization.type} • {formData.organization.country}</p>
+                <p className="text-sm text-blue-600 font-mono mt-1">Login URL: /login/{formData.organization.slug}</p>
               </div>
               <div className="bg-blue-50 rounded-lg p-4">
                 <h3 className="font-semibold text-blue-900 flex items-center gap-2">
