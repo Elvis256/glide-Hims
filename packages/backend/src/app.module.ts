@@ -78,6 +78,7 @@ import { TenantModule } from './common/middleware/tenant.module';
 import { AdherenceModule } from './modules/adherence/adherence.module';
 import { ScheduledTasksModule } from './modules/scheduled-tasks/scheduled-tasks.module';
 import { DentalModule } from './modules/dental/dental.module';
+import { OpticalModule } from './modules/optical/optical.module';
 
 @Module({
   imports: [
@@ -247,6 +248,9 @@ import { DentalModule } from './modules/dental/dental.module';
 
     // Phase 23: Dental Vertical
     DentalModule,
+
+    // Phase 24: Optical/Optometry Vertical
+    OpticalModule,
   ],
   controllers: [AppController],
   providers: [
