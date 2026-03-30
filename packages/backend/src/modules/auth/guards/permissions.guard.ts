@@ -174,11 +174,15 @@ export class PermissionsGuard implements CanActivate {
   }
 
   private extractFacilityId(request: any): string | null {
-    const headerFacility = request.headers?.['x-facility-id'];
-    if (headerFacility) return headerFacility;
-    if (request.query?.facilityId) return request.query.facilityId;
-    if (request.body?.facilityId) return request.body.facilityId;
-    if (request.params?.facilityId) return request.params.facilityId;
+    // Always prefer JWT-authenticated facility ID
+    if (request.user?.facilityId) return request.user.facilityId;
+    // Only system admins may specify a different facility via header/query/params
+    if (request.user?.isSystemAdmin) {
+      const headerFacility = request.headers?.['x-facility-id'];
+      if (headerFacility) return headerFacility;
+      if (request.query?.facilityId) return request.query.facilityId;
+      if (request.params?.facilityId) return request.params.facilityId;
+    }
     return null;
   }
 

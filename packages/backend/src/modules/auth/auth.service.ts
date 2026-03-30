@@ -4,6 +4,7 @@ import {
   BadRequestException,
   NotFoundException,
   ConflictException,
+  ForbiddenException,
   Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -182,6 +183,13 @@ export class AuthService {
         window: 1,
       });
       if (!isValid) {
+        // Increment failed login attempts to prevent MFA brute force
+        user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
+        if (user.failedLoginAttempts >= 5) {
+          user.lockedUntil = new Date(Date.now() + 15 * 60 * 1000);
+          this.logger.warn(`Account ${user.id} locked after ${user.failedLoginAttempts} failed MFA attempts`);
+        }
+        await this.userRepository.save(user);
         await this.recordLoginHistory(user.id, ipAddress, userAgent, false, 'Invalid MFA code', user.tenantId);
         throw new UnauthorizedException('Invalid MFA code');
       }
@@ -781,10 +789,16 @@ export class AuthService {
     targetUserId: string,
     newPassword: string | undefined,
     adminUserId: string,
+    callerTenantId?: string,
   ): Promise<{ temporaryPassword: string }> {
     const user = await this.userRepository.findOne({ where: { id: targetUserId } });
     if (!user) {
       throw new NotFoundException('User not found');
+    }
+
+    // Cross-tenant isolation — non-system-admins can only reset within their tenant
+    if (callerTenantId && user.tenantId !== callerTenantId) {
+      throw new ForbiddenException('Cannot reset password for users in another organization');
     }
 
     // Generate random password if not provided
