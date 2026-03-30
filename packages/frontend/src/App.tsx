@@ -252,6 +252,13 @@ const DURReportsPage = lazy(() => import('./pages/pharmacy/DURReportsPage'));
 const DrugDatabaseSyncPage = lazy(() => import('./pages/pharmacy/DrugDatabaseSyncPage'));
 const PrescriptionTemplatesPage = lazy(() => import('./pages/pharmacy/PrescriptionTemplatesPage'));
 const NotificationLogPage = lazy(() => import('./pages/pharmacy/NotificationLogPage'));
+const POSDashboardPage = lazy(() => import('./pages/pos/POSDashboardPage'));
+const POSSalePage = lazy(() => import('./pages/pos/POSSalePage'));
+const POSShiftPage = lazy(() => import('./pages/pos/POSShiftPage'));
+const POSReportsPage = lazy(() => import('./pages/pos/POSReportsPage'));
+const WholesaleCustomersPage = lazy(() => import('./pages/pos/WholesaleCustomersPage'));
+const PricingTiersPage = lazy(() => import('./pages/pos/PricingTiersPage'));
+const DeliveryTrackingPage = lazy(() => import('./pages/pos/DeliveryTrackingPage'));
 const AdmissionsPage = lazy(() => import('./pages/ipd/AdmissionsPage'));
 const WardsBedsPage = lazy(() => import('./pages/ipd/WardsBedsPage'));
 const BHTIssuePage = lazy(() => import('./pages/ipd/BHTIssuePage'));
@@ -817,6 +824,15 @@ function AppRoutes() {
                 <Route path="/pharmacy/drug-db-sync" element={<PharmacistRoute><DrugDatabaseSyncPage /></PharmacistRoute>} />
                 <Route path="/pharmacy/rx-templates" element={<PharmacistRoute><PrescriptionTemplatesPage /></PharmacistRoute>} />
                 <Route path="/pharmacy/notifications" element={<PharmacistRoute><NotificationLogPage /></PharmacistRoute>} />
+                
+                {/* POS Module */}
+                <Route path="/pharmacy/pos" element={<PharmacistRoute><POSDashboardPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/pos/sale" element={<PharmacistRoute><POSSalePage /></PharmacistRoute>} />
+                <Route path="/pharmacy/pos/shifts" element={<PharmacistRoute><POSShiftPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/pos/reports" element={<PharmacistRoute><POSReportsPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/pos/wholesale/customers" element={<PharmacistRoute><WholesaleCustomersPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/pos/wholesale/tiers" element={<PharmacistRoute><PricingTiersPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/pos/deliveries" element={<PharmacistRoute><DeliveryTrackingPage /></PharmacistRoute>} />
                 
                 {/* IPD Module */}
                 <Route path="/ipd/admissions" element={<ClinicalRoute><AdmissionsPage /></ClinicalRoute>} />

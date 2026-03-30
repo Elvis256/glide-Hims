@@ -33,6 +33,7 @@ import { MembershipModule } from './modules/membership/membership.module';
 import { ServicesModule } from './modules/services/services.module';
 import { StoresModule } from './modules/stores/stores.module';
 import { PharmacyModule } from './modules/pharmacy/pharmacy.module';
+import { PosModule } from './modules/pos/pos.module';
 import { SuppliersModule } from './modules/suppliers/suppliers.module';
 import { ProcurementModule } from './modules/procurement/procurement.module';
 import { SyncModule } from './modules/sync/sync.module';
@@ -173,6 +174,7 @@ import { ScheduledTasksModule } from './modules/scheduled-tasks/scheduled-tasks.
     ServicesModule,
     StoresModule,
     PharmacyModule,
+    PosModule,
 
     // Phase 12: Supply Chain & Procurement
     SuppliersModule,
