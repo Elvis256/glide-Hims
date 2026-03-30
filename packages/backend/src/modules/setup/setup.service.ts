@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { ConfigService } from '@nestjs/config';
 import { Repository, DataSource } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { Tenant } from '../../database/entities/tenant.entity';
@@ -10,7 +11,8 @@ import { UserRole } from '../../database/entities/user-role.entity';
 import { SystemSetting } from '../../database/entities/system-setting.entity';
 import { Permission } from '../../database/entities/permission.entity';
 import { RolePermission } from '../../database/entities/role-permission.entity';
-import { InitializeSetupDto, RegisterTenantDto } from './dto/setup.dto';
+import { InitializeSetupDto, RegisterTenantDto, InitializeTenantSetupDto } from './dto/setup.dto';
+import { TenantsService } from '../tenants/tenants.service';
 import {
   FACILITY_PRESETS,
   FACILITY_MODES,
@@ -289,6 +291,7 @@ export class SetupService {
     @InjectRepository(SystemSetting)
     private settingRepo: Repository<SystemSetting>,
     private dataSource: DataSource,
+    private configService: ConfigService,
   ) {}
 
   /**
@@ -296,10 +299,17 @@ export class SetupService {
    */
   async getSetupStatus(): Promise<{ 
     isSetupComplete: boolean; 
+    deploymentMode: string;
     organizationName?: string;
     facilityName?: string;
+    tenantSlug?: string;
+    tenantCount?: number;
   }> {
+    const deploymentMode = this.configService.get<string>('DEPLOYMENT_MODE', 'on-premise');
+
     try {
+      const tenantCount = await this.tenantRepo.count({ where: { status: 'active' } });
+
       // Check if any tenant exists
       const tenant = await this.tenantRepo.findOne({ 
         where: { status: 'active' },
@@ -307,7 +317,7 @@ export class SetupService {
       });
       
       if (!tenant) {
-        return { isSetupComplete: false };
+        return { isSetupComplete: false, deploymentMode, tenantCount: 0 };
       }
 
       // Check if setup_complete setting exists
@@ -318,7 +328,7 @@ export class SetupService {
         });
       } catch (e) {
         // Table might not exist yet
-        return { isSetupComplete: false };
+        return { isSetupComplete: false, deploymentMode, tenantCount };
       }
 
       // Get main facility
@@ -329,13 +339,16 @@ export class SetupService {
 
       return {
         isSetupComplete: setupSetting?.value === true,
+        deploymentMode,
         organizationName: tenant.name,
         facilityName: facility?.name,
+        tenantSlug: tenant.slug,
+        tenantCount,
       };
     } catch (error) {
       // If tables don't exist yet, setup is not complete
       this.logger.log('Error checking setup status: ' + error.message);
-      return { isSetupComplete: false };
+      return { isSetupComplete: false, deploymentMode, tenantCount: 0 };
     }
   }
 
@@ -365,8 +378,16 @@ export class SetupService {
 
     try {
       // 1. Create Organization (Tenant)
+      const slug = dto.organization.slug || TenantsService.generateSlug(dto.organization.name);
+      // Ensure slug uniqueness using raw SQL (tenants table lacks tenant_id column)
+      let finalSlug = slug;
+      let suffix = 1;
+      while ((await queryRunner.query(`SELECT id FROM tenants WHERE slug = $1 LIMIT 1`, [finalSlug])).length > 0) {
+        finalSlug = `${slug}-${suffix++}`;
+      }
       const tenant = queryRunner.manager.create(Tenant, {
         name: dto.organization.name,
+        slug: finalSlug,
         status: 'active',
         description: dto.organization.type || 'Hospital',
         settings: {
@@ -629,8 +650,15 @@ export class SetupService {
 
     try {
       // 1. Create Tenant
+      const regSlug = dto.organization.slug || TenantsService.generateSlug(dto.organization.name);
+      let regFinalSlug = regSlug;
+      let regSuffix = 1;
+      while ((await queryRunner.query(`SELECT id FROM tenants WHERE slug = $1 LIMIT 1`, [regFinalSlug])).length > 0) {
+        regFinalSlug = `${regSlug}-${regSuffix++}`;
+      }
       const tenant = queryRunner.manager.create(Tenant, {
         name: dto.organization.name,
+        slug: regFinalSlug,
         status: 'active',
         description: dto.organization.type || 'Hospital',
         settings: {
@@ -775,6 +803,184 @@ export class SetupService {
       await queryRunner.rollbackTransaction();
       this.logger.error(`Tenant registration failed: ${error.message}`, error.stack);
       throw new BadRequestException(`Registration failed: ${error.message}`);
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  /**
+   * Initialize setup for an existing tenant (created by system admin).
+   * Creates facility, permissions, roles, admin user, and marks setup complete.
+   */
+  async initializeTenantSetup(slug: string, dto: InitializeTenantSetupDto): Promise<{
+    success: boolean;
+    message: string;
+    tenantId: string;
+    facilityId: string;
+    userId: string;
+  }> {
+    // Find the tenant by slug
+    const tenant = await this.tenantRepo.findOne({ where: { slug, status: 'active' } });
+    if (!tenant) {
+      throw new BadRequestException('Organization not found or inactive');
+    }
+
+    // Check if setup already completed
+    const existing = await this.dataSource.query(
+      `SELECT value FROM system_settings WHERE tenant_id = $1 AND key = 'setup_complete' LIMIT 1`,
+      [tenant.id],
+    );
+    if (existing.length > 0 && existing[0].value === true) {
+      throw new BadRequestException('Setup has already been completed for this organization.');
+    }
+
+    // Check username uniqueness within this tenant
+    const existingUser = await this.dataSource.query(
+      `SELECT id FROM users WHERE username = $1 AND tenant_id = $2 AND deleted_at IS NULL LIMIT 1`,
+      [dto.admin.username, tenant.id],
+    );
+    if (existingUser.length > 0) {
+      throw new BadRequestException(`Username "${dto.admin.username}" already exists in this organization`);
+    }
+
+    // Check email uniqueness within this tenant
+    const existingEmail = await this.dataSource.query(
+      `SELECT id FROM users WHERE email = $1 AND tenant_id = $2 AND deleted_at IS NULL LIMIT 1`,
+      [dto.admin.email, tenant.id],
+    );
+    if (existingEmail.length > 0) {
+      throw new BadRequestException(`Email "${dto.admin.email}" is already in use in this organization`);
+    }
+
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      // 1. Create Main Facility
+      const facilityMode = dto.settings?.facilityMode as FacilityMode | undefined;
+      const preset = facilityMode ? getPreset(facilityMode) : null;
+      const facility = queryRunner.manager.create(Facility, {
+        tenantId: tenant.id,
+        name: dto.facility.name,
+        type: dto.facility.type || preset?.facilityType || 'hospital',
+        location: dto.facility.location,
+        status: 'active',
+        contact: {
+          phone: dto.facility.phone,
+          email: dto.facility.email,
+        },
+        settings: {
+          isMainFacility: true,
+          facilityMode: dto.settings?.facilityMode || FACILITY_MODES.HOSPITAL,
+          supportsMultiSite: preset?.supportsMultiSite ?? true,
+          singleUserMode: preset?.singleUserMode ?? false,
+        },
+      });
+      await queryRunner.manager.save(facility);
+
+      // 2. Load or create permissions
+      const permissionMap = new Map<string, Permission>();
+      for (const perm of DEFAULT_PERMISSIONS) {
+        let permission = await queryRunner.manager.findOne(Permission, { where: { code: perm.code } });
+        if (!permission) {
+          permission = queryRunner.manager.create(Permission, perm);
+          await queryRunner.manager.save(permission);
+        }
+        permissionMap.set(perm.code, permission);
+      }
+
+      // 3. Load or create Super Admin role
+      let superAdminRole = await queryRunner.manager.findOne(Role, { where: { name: 'Super Admin' } });
+      if (!superAdminRole) {
+        superAdminRole = queryRunner.manager.create(Role, {
+          name: 'Super Admin',
+          description: 'Full system access - all permissions',
+        });
+        await queryRunner.manager.save(superAdminRole);
+        for (const [, permission] of permissionMap) {
+          const rp = queryRunner.manager.create(RolePermission, { roleId: superAdminRole.id, permissionId: permission.id });
+          await queryRunner.manager.save(rp);
+        }
+      }
+
+      // 4. Load or create default roles
+      for (const roleData of DEFAULT_ROLES) {
+        let role = await queryRunner.manager.findOne(Role, { where: { name: roleData.name } });
+        if (!role) {
+          role = queryRunner.manager.create(Role, { name: roleData.name, description: roleData.description });
+          await queryRunner.manager.save(role);
+          for (const permCode of roleData.permissions) {
+            const permission = permissionMap.get(permCode);
+            if (permission) {
+              const rp = queryRunner.manager.create(RolePermission, { roleId: role.id, permissionId: permission.id });
+              await queryRunner.manager.save(rp);
+            }
+          }
+        }
+      }
+
+      // 5. Create Admin User
+      const passwordHash = await bcrypt.hash(dto.admin.password, 10);
+      const user = queryRunner.manager.create(User, {
+        username: dto.admin.username,
+        email: dto.admin.email,
+        passwordHash,
+        fullName: dto.admin.fullName,
+        phone: dto.admin.phone,
+        status: 'active',
+        mustChangePassword: false,
+        tenantId: tenant.id,
+      });
+      await queryRunner.manager.save(user);
+
+      // 6. Assign Super Admin role
+      const userRole = queryRunner.manager.create(UserRole, {
+        userId: user.id,
+        roleId: superAdminRole.id,
+        facilityId: facility.id,
+      });
+      await queryRunner.manager.save(userRole);
+
+      // 7. Create system settings
+      const isSingleUser = (dto.settings?.facilityMode as FacilityMode) === FACILITY_MODES.SINGLE_USER;
+      const settings = [
+        { key: 'setup_complete', value: true, tenantId: tenant.id, description: 'Initial setup completed' },
+        { key: 'setup_date', value: new Date().toISOString(), tenantId: tenant.id, description: 'Setup completion date' },
+        { key: 'default_facility_id', value: facility.id, tenantId: tenant.id, description: 'Default facility ID' },
+        { key: 'facility_mode', value: dto.settings?.facilityMode || FACILITY_MODES.HOSPITAL, tenantId: tenant.id, description: 'Deployment mode preset' },
+        { key: 'single_user_mode', value: isSingleUser, tenantId: tenant.id, description: 'Single-user clinic mode' },
+      ];
+      for (const setting of settings) {
+        const settingEntity = queryRunner.manager.create(SystemSetting, setting);
+        await queryRunner.manager.save(settingEntity);
+      }
+
+      // Update tenant settings
+      await queryRunner.query(
+        `UPDATE tenants SET settings = settings || $1::jsonb WHERE id = $2`,
+        [JSON.stringify({
+          currency: dto.settings?.currency || 'UGX',
+          timezone: dto.settings?.timezone || 'Africa/Kampala',
+          dateFormat: dto.settings?.dateFormat || 'DD/MM/YYYY',
+          facilityMode: dto.settings?.facilityMode || FACILITY_MODES.HOSPITAL,
+        }), tenant.id],
+      );
+
+      await queryRunner.commitTransaction();
+      this.logger.log(`Tenant setup completed - Org: ${tenant.name}, Facility: ${dto.facility.name}, Admin: ${dto.admin.username}`);
+
+      return {
+        success: true,
+        message: 'Organization setup completed successfully',
+        tenantId: tenant.id,
+        facilityId: facility.id,
+        userId: user.id,
+      };
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      this.logger.error(`Tenant setup failed: ${error.message}`, error.stack);
+      throw new BadRequestException(`Setup failed: ${error.message}`);
     } finally {
       await queryRunner.release();
     }

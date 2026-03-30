@@ -59,11 +59,11 @@ export class ResponseTransformInterceptor<T>
           'data' in data &&
           ('total' in data || 'meta' in data || 'pagination' in data)
         ) {
-          const { data: innerData, ...meta } = data;
+          const { data: innerData, meta: existingMeta, ...rest } = data;
           return {
             statusCode: response.statusCode,
             data: innerData,
-            meta,
+            meta: existingMeta || rest,
             timestamp: new Date().toISOString(),
           };
         }

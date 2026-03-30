@@ -30,8 +30,15 @@ import { PageLoader } from './components/PageLoader';
 
 // Lazy-loaded page components (route-based code splitting)
 const LoginPage = lazy(() => import('./pages/LoginPage'));
+const SystemLoginPage = lazy(() => import('./pages/system/SystemLoginPage'));
+const SystemAdminLayout = lazy(() => import('./pages/system/SystemAdminLayout'));
+const SystemDashboardPage = lazy(() => import('./pages/system/SystemDashboardPage'));
+const SystemUsersPage = lazy(() => import('./pages/system/SystemUsersPage'));
+const PlatformSettingsPage = lazy(() => import('./pages/system/SystemSettingsPage'));
 const SetupWizardPage = lazy(() => import('./pages/SetupWizardPage'));
+const TenantSetupWizardPage = lazy(() => import('./pages/TenantSetupWizardPage'));
 const RegisterOrganizationPage = lazy(() => import('./pages/RegisterOrganizationPage'));
+const TenantManagementPage = lazy(() => import('./pages/admin/TenantManagementPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const SmartDashboardPage = lazy(() => import('./pages/SmartDashboardPage'));
 const UsersPage = lazy(() => import('./pages/UsersPage'));
@@ -420,7 +427,7 @@ function AppRoutes() {
   useEffect(() => {
     const checkSetup = async () => {
       // Skip check if on setup or register page
-      if (window.location.pathname === '/setup' || window.location.pathname === '/register') {
+      if (window.location.pathname.startsWith('/setup') || window.location.pathname === '/register') {
         setSetupChecked(true);
         return;
       }
@@ -503,8 +510,8 @@ function AppRoutes() {
     );
   }
 
-  // Redirect to setup if not complete
-  if (!isSetupComplete && window.location.pathname !== '/setup') {
+  // Redirect to setup if not complete (allow tenant setup wizard and system routes through)
+  if (!isSetupComplete && !window.location.pathname.startsWith('/setup') && !window.location.pathname.startsWith('/system')) {
     return <Navigate to="/setup" replace />;
   }
 
@@ -512,9 +519,27 @@ function AppRoutes() {
     <Suspense fallback={<PageLoader />}>
     <Routes>
       <Route path="/setup" element={<SetupWizardPage />} />
+      <Route path="/setup/:slug" element={<TenantSetupWizardPage />} />
       <Route path="/register" element={<RegisterOrganizationPage />} />
       <Route
-        path="/login"
+        path="/system/login"
+        element={isAuthenticated ? <Navigate to="/system" replace /> : <SystemLoginPage />}
+      />
+      <Route
+        path="/system"
+        element={isAuthenticated ? <SystemAdminLayout /> : <Navigate to="/system/login" replace />}
+      >
+        <Route index element={<SystemDashboardPage />} />
+        <Route path="tenants" element={<TenantManagementPage />} />
+        <Route path="users" element={<SystemUsersPage />} />
+        <Route path="settings" element={<PlatformSettingsPage />} />
+      </Route>
+      <Route
+        path="/admin/tenants"
+        element={isAuthenticated ? <Navigate to="/system/tenants" replace /> : <Navigate to="/system/login" replace />}
+      />
+      <Route
+        path="/login/:slug?"
         element={isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />}
       />
       <Route

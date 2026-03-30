@@ -15,6 +15,7 @@ import { OwnershipGuard } from './guards/ownership.guard';
 import { User } from '../../database/entities/user.entity';
 import { UserRole } from '../../database/entities/user-role.entity';
 import { Facility } from '../../database/entities/facility.entity';
+import { Tenant } from '../../database/entities/tenant.entity';
 import { PasswordPolicy, PasswordHistory } from '../../database/entities/password-policy.entity';
 import { RolePermission } from '../../database/entities/role-permission.entity';
 import { Permission } from '../../database/entities/permission.entity';
@@ -28,7 +29,7 @@ import { Repository } from 'typeorm';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, UserRole, Facility, PasswordPolicy, PasswordHistory, RolePermission, Permission, UserPermission, Employee, Role, LoginHistory, AuditLog]),
+    TypeOrmModule.forFeature([User, UserRole, Facility, Tenant, PasswordPolicy, PasswordHistory, RolePermission, Permission, UserPermission, Employee, Role, LoginHistory, AuditLog]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],

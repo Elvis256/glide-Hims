@@ -1,8 +1,9 @@
-import { Controller, Get, Post, Body, HttpCode, HttpStatus, ForbiddenException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, HttpCode, HttpStatus, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { Public } from '../auth/decorators/public.decorator';
 import { SetupService } from './setup.service';
-import { InitializeSetupDto, RegisterTenantDto } from './dto/setup.dto';
+import { InitializeSetupDto, RegisterTenantDto, InitializeTenantSetupDto } from './dto/setup.dto';
 
 @ApiTags('Setup')
 @Controller('setup')
@@ -19,8 +20,10 @@ export class SetupController {
       type: 'object',
       properties: {
         isSetupComplete: { type: 'boolean' },
+        deploymentMode: { type: 'string', enum: ['on-premise', 'saas'] },
         organizationName: { type: 'string' },
         facilityName: { type: 'string' },
+        tenantSlug: { type: 'string' },
       }
     }
   })
@@ -54,11 +57,29 @@ export class SetupController {
 
   @Post('register-tenant')
   @Public()
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Register a new organization (self-service)' })
   @ApiResponse({ status: 201, description: 'Organization registered successfully' })
   @ApiResponse({ status: 400, description: 'Validation error or duplicate organization/user' })
   async registerTenant(@Body() dto: RegisterTenantDto) {
     return this.setupService.registerTenant(dto);
+  }
+
+  @Post('initialize-tenant/:slug')
+  @Public()
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Initialize setup for an existing tenant (facility, admin, settings)' })
+  @ApiResponse({ status: 201, description: 'Tenant setup completed successfully' })
+  @ApiResponse({ status: 400, description: 'Setup already completed or validation error' })
+  async initializeTenantSetup(
+    @Param('slug') slug: string,
+    @Body() dto: InitializeTenantSetupDto,
+  ) {
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) || slug.length < 3 || slug.length > 100) {
+      throw new BadRequestException('Invalid organization code');
+    }
+    return this.setupService.initializeTenantSetup(slug, dto);
   }
 }
