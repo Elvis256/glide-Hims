@@ -46,7 +46,7 @@ export default function NewBillPage() {
     if (navState?.patientId && !selectedPatient) {
       patientsService.getById(navState.patientId).then(patient => {
         if (patient) setSelectedPatient(patient);
-      }).catch(() => {});
+      }).catch((err) => console.warn('Failed to load patient:', err));
     }
   }, [navState?.patientId]);
 

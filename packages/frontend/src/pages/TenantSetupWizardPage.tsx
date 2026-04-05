@@ -301,7 +301,7 @@ export default function TenantSetupWizardPage() {
 
     setupService.getPresets()
       .then(p => { if (p?.length) setPresets(p); })
-      .catch(() => {});
+      .catch((err) => console.warn('Failed to load presets:', err));
   }, [slug, navigate]);
 
   const currentStepIndex = steps.findIndex(s => s.id === currentStep);

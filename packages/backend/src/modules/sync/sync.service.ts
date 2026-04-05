@@ -89,52 +89,55 @@ export class SyncService {
     userId: string,
     tenantId?: string,
   ): Promise<{ entityId: string; status: string; conflictId?: string }> {
-    // Create queue entry
-    const queueEntry = this.syncQueueRepo.create({
-      facilityId: dto.facilityId,
-      clientId: dto.clientId,
-      deviceName: dto.deviceName,
-      deviceType: dto.deviceType,
-      entityType: change.entityType,
-      entityId: change.entityId,
-      operation: change.operation,
-      clientVersion: change.clientVersion,
-      clientTimestamp: change.clientTimestamp,
-      payload: change.payload,
-      previousPayload: change.previousPayload,
-      status: SyncStatus.PROCESSING,
-      userId,
-      ...(tenantId ? { tenantId } : {}),
-    });
+    // Wrap conflict detection + change application in a single transaction
+    return this.dataSource.transaction(async (manager) => {
+      // Create queue entry
+      const queueEntry = manager.create(SyncQueue, {
+        facilityId: dto.facilityId,
+        clientId: dto.clientId,
+        deviceName: dto.deviceName,
+        deviceType: dto.deviceType,
+        entityType: change.entityType,
+        entityId: change.entityId,
+        operation: change.operation,
+        clientVersion: change.clientVersion,
+        clientTimestamp: change.clientTimestamp,
+        payload: change.payload,
+        previousPayload: change.previousPayload,
+        status: SyncStatus.PROCESSING,
+        userId,
+        ...(tenantId ? { tenantId } : {}),
+      });
 
-    await this.syncQueueRepo.save(queueEntry);
+      await manager.save(queueEntry);
 
-    // Check for conflicts (for updates and deletes)
-    if (change.operation !== SyncOperation.CREATE) {
-      const conflict = await this.detectConflict(dto.facilityId, change, tenantId);
-      
-      if (conflict) {
-        queueEntry.status = SyncStatus.CONFLICT;
-        queueEntry.conflictId = conflict.id;
-        await this.syncQueueRepo.save(queueEntry);
-        return { entityId: change.entityId, status: 'conflict', conflictId: conflict.id };
+      // Check for conflicts (for updates and deletes)
+      if (change.operation !== SyncOperation.CREATE) {
+        const conflict = await this.detectConflict(dto.facilityId, change, tenantId);
+        
+        if (conflict) {
+          queueEntry.status = SyncStatus.CONFLICT;
+          queueEntry.conflictId = conflict.id;
+          await manager.save(queueEntry);
+          return { entityId: change.entityId, status: 'conflict', conflictId: conflict.id };
+        }
       }
-    }
 
-    // Apply the change
-    try {
-      await this.applyChange(change, tenantId);
-      queueEntry.status = SyncStatus.SYNCED;
-      queueEntry.syncedAt = new Date();
-      await this.syncQueueRepo.save(queueEntry);
-      return { entityId: change.entityId, status: 'synced' };
-    } catch (error) {
-      queueEntry.status = SyncStatus.FAILED;
-      queueEntry.errorMessage = error.message;
-      queueEntry.retryCount++;
-      await this.syncQueueRepo.save(queueEntry);
-      return { entityId: change.entityId, status: 'failed' };
-    }
+      // Apply the change
+      try {
+        await this.applyChange(change, tenantId);
+        queueEntry.status = SyncStatus.SYNCED;
+        queueEntry.syncedAt = new Date();
+        await manager.save(queueEntry);
+        return { entityId: change.entityId, status: 'synced' };
+      } catch (error) {
+        queueEntry.status = SyncStatus.FAILED;
+        queueEntry.errorMessage = error.message;
+        queueEntry.retryCount++;
+        await manager.save(queueEntry);
+        return { entityId: change.entityId, status: 'failed' };
+      }
+    });
   }
 
   private async detectConflict(
@@ -394,51 +397,50 @@ export class SyncService {
       throw new BadRequestException('Conflict already resolved');
     }
 
-    conflict.resolution = dto.resolution;
-    conflict.resolvedById = userId;
-    conflict.resolvedAt = new Date();
-    conflict.resolutionNotes = dto.notes;
+    return this.dataSource.transaction(async (manager) => {
+      conflict.resolution = dto.resolution;
+      conflict.resolvedById = userId;
+      conflict.resolvedAt = new Date();
+      conflict.resolutionNotes = dto.notes;
 
-    // Apply resolution
-    let payloadToApply: Record<string, any> | null = null;
+      // Apply resolution
+      let payloadToApply: Record<string, any> | null = null;
 
-    switch (dto.resolution) {
-      case ConflictResolution.CLIENT_WINS:
-        payloadToApply = conflict.clientPayload;
-        break;
-      case ConflictResolution.SERVER_WINS:
-        // No action needed - server already has the data
-        break;
-      case ConflictResolution.MERGED:
-      case ConflictResolution.MANUAL:
-        if (!dto.resolvedPayload) {
-          throw new BadRequestException('Resolved payload required for MERGED or MANUAL resolution');
-        }
-        payloadToApply = dto.resolvedPayload;
-        conflict.resolvedPayload = dto.resolvedPayload;
-        break;
-    }
+      switch (dto.resolution) {
+        case ConflictResolution.CLIENT_WINS:
+          payloadToApply = conflict.clientPayload;
+          break;
+        case ConflictResolution.SERVER_WINS:
+          // No action needed - server already has the data
+          break;
+        case ConflictResolution.MERGED:
+        case ConflictResolution.MANUAL:
+          if (!dto.resolvedPayload) {
+            throw new BadRequestException('Resolved payload required for MERGED or MANUAL resolution');
+          }
+          payloadToApply = dto.resolvedPayload;
+          conflict.resolvedPayload = dto.resolvedPayload;
+          break;
+      }
 
-    if (payloadToApply) {
-      await this.applyChange({
-        entityType: conflict.entityType,
-        entityId: conflict.entityId,
-        operation: SyncOperation.UPDATE,
-        clientVersion: conflict.clientVersion,
-        clientTimestamp: conflict.clientTimestamp,
-        payload: payloadToApply,
-      }, tenantId);
-    }
+      if (payloadToApply) {
+        await this.applyChange({
+          entityType: conflict.entityType,
+          entityId: conflict.entityId,
+          operation: SyncOperation.UPDATE,
+          clientVersion: conflict.clientVersion,
+          clientTimestamp: conflict.clientTimestamp,
+          payload: payloadToApply,
+        }, tenantId);
+      }
 
-    // Update related sync queue entry
-    const queueWhere: any = { conflictId: id };
-    if (tenantId) queueWhere.tenantId = tenantId;
-    await this.syncQueueRepo.update(
-      queueWhere,
-      { status: SyncStatus.SYNCED, syncedAt: new Date() },
-    );
+      // Update related sync queue entry
+      const queueWhere: any = { conflictId: id };
+      if (tenantId) queueWhere.tenantId = tenantId;
+      await manager.update(SyncQueue, queueWhere, { status: SyncStatus.SYNCED, syncedAt: new Date() });
 
-    return this.conflictRepo.save(conflict);
+      return manager.save(SyncConflict, conflict);
+    });
   }
 
   async getSyncStatus(facilityId: string, clientId: string, tenantId?: string): Promise<{
