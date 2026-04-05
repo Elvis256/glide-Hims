@@ -317,6 +317,13 @@ export class PharmacyService {
           );
         }
 
+        // Dose/quantity safety limit
+        if (inventoryItem.maxDispenseQuantity && item.quantity > inventoryItem.maxDispenseQuantity) {
+          throw new BadRequestException(
+            `Quantity ${item.quantity} exceeds max dispense limit of ${inventoryItem.maxDispenseQuantity} for "${inventoryItem.name}".`,
+          );
+        }
+
         // Block dispensing of expired stock (DTO-provided expiry)
         if (item.expiryDate && new Date(item.expiryDate) < new Date()) {
           throw new BadRequestException(

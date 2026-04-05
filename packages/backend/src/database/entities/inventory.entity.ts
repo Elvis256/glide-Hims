@@ -127,6 +127,9 @@ export class Item extends BaseEntity {
   @Column({ name: 'is_controlled', default: false })
   isControlled: boolean; // Controlled substance
 
+  @Column({ type: 'int', name: 'max_dispense_quantity', nullable: true })
+  maxDispenseQuantity?: number; // Max units per single dispense (safety limit)
+
   @Column({ name: 'requires_batch_tracking', default: false })
   requiresBatchTracking: boolean;
 
