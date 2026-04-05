@@ -10,6 +10,9 @@ import { SystemSettingsService } from '../system-settings/system-settings.servic
 import { FinanceService } from '../finance/finance.service';
 import { PricingEngineService } from '../pricing-engine/pricing-engine.service';
 import { CoverageCheckService } from '../insurance/coverage-check.service';
+import { PreAuthorization, PreAuthStatus } from '../../database/entities/pre-authorization.entity';
+import { InsurancePolicy, PolicyStatus } from '../../database/entities/insurance-policy.entity';
+import { multiply, add, subtract } from '../../common/utils/currency';
 
 @Injectable()
 export class BillingService {
@@ -98,23 +101,77 @@ export class BillingService {
       throw new BadRequestException('Discount amount cannot be negative');
     }
 
+    // VAT enforcement: taxPercent can only be 0 if explicitly marked as tax-exempt
+    if (dto.taxPercent !== undefined && dto.taxPercent === 0 && !dto.taxExemptReason) {
+      throw new BadRequestException(
+        'VAT cannot be zero unless the invoice is tax-exempt. Provide a taxExemptReason or remove taxPercent to apply the default 18% VAT.',
+      );
+    }
+
+    // Insurance pre-authorization enforcement
+    if (dto.insurancePolicyId) {
+      const policy = await this.dataSource.getRepository(InsurancePolicy).findOne({
+        where: { id: dto.insurancePolicyId, ...(tenantId ? { tenantId } : {}) },
+      });
+      if (policy) {
+        if (policy.status !== PolicyStatus.ACTIVE) {
+          throw new BadRequestException(`Insurance policy ${policy.policyNumber} is ${policy.status}. Cannot create invoice against a non-active policy.`);
+        }
+
+        // Check for approved pre-authorization
+        const preAuth = await this.dataSource.getRepository(PreAuthorization).findOne({
+          where: {
+            policyId: dto.insurancePolicyId,
+            patientId: dto.patientId,
+            status: PreAuthStatus.APPROVED,
+            ...(tenantId ? { tenantId } : {}),
+          },
+          order: { approvedAt: 'DESC' },
+        });
+
+        // Calculate total for pre-auth comparison
+        let estimatedTotal = 0;
+        for (const item of dto.items) {
+          estimatedTotal = add(estimatedTotal, multiply(item.quantity, item.unitPrice));
+        }
+
+        if (preAuth) {
+          // Validate the pre-auth hasn't expired
+          if (preAuth.validUntil && new Date(preAuth.validUntil) < new Date()) {
+            throw new BadRequestException(
+              `Pre-authorization ${preAuth.authNumber} expired on ${new Date(preAuth.validUntil).toISOString().slice(0, 10)}. Please request a new pre-authorization.`,
+            );
+          }
+
+          // Check if invoice amount exceeds pre-auth approved amount
+          const approvedAmount = Number(preAuth.approvedAmount) || 0;
+          if (approvedAmount > 0 && estimatedTotal > approvedAmount) {
+            throw new BadRequestException(
+              `Invoice total (${estimatedTotal.toLocaleString()}) exceeds pre-authorization approved amount (${approvedAmount.toLocaleString()}) for ${preAuth.authNumber}. ` +
+              `Please request a pre-auth extension or reduce the invoice amount.`,
+            );
+          }
+        }
+      }
+    }
+
     const invoiceNumber = await this.generateInvoiceNumber(tenantId);
 
     // Calculate totals from items
     let subtotal = 0;
     const items = dto.items.map(item => {
-      const amount = item.quantity * item.unitPrice;
-      subtotal += amount;
+      const amount = multiply(item.quantity, item.unitPrice);
+      subtotal = add(subtotal, amount);
       return this.itemRepository.create({
         ...item,
         amount,
       });
     });
 
-    const taxAmount = dto.taxPercent ? (subtotal * dto.taxPercent / 100) : (subtotal * 18 / 100);
     const taxPercent = dto.taxPercent ?? 18;
+    const taxAmount = multiply(subtotal, taxPercent) / 100;
     const discountAmount = dto.discountAmount || 0;
-    const totalAmount = subtotal + taxAmount - discountAmount;
+    const totalAmount = subtract(add(subtotal, taxAmount), discountAmount);
 
     const invoice = this.invoiceRepository.create({
       invoiceNumber,
@@ -142,13 +199,17 @@ export class BillingService {
         where: { id: dto.encounterId, ...(tenantId ? { tenantId } : {}) },
       });
       if (encounter?.facilityId) {
-        this.financeService.autoPostInvoiceJournal({
-          facilityId: encounter.facilityId,
-          invoiceNumber: invoiceNumber,
-          totalAmount: totalAmount,
-          revenueCategory: dto.paymentType || 'consultation',
-          userId,
-        }, tenantId).catch(err => this.logger.error(`GL auto-post failed for ${invoiceNumber}: ${err.message}`, { invoiceNumber, totalAmount, error: err.stack }));
+        try {
+          await this.financeService.autoPostInvoiceJournal({
+            facilityId: encounter.facilityId,
+            invoiceNumber: invoiceNumber,
+            totalAmount: totalAmount,
+            revenueCategory: dto.paymentType || 'consultation',
+            userId,
+          }, tenantId);
+        } catch (err) {
+          this.logger.error(`GL auto-post failed for ${invoiceNumber}: ${err.message}`, { invoiceNumber, totalAmount, error: err.stack });
+        }
       }
       // Update encounter status if linked
       if (encounter && encounter.status === EncounterStatus.PENDING_PHARMACY) {
@@ -252,7 +313,7 @@ export class BillingService {
       throw new BadRequestException('Cannot add items to a paid invoice');
     }
 
-    const amount = dto.quantity * dto.unitPrice;
+    const amount = multiply(dto.quantity, dto.unitPrice);
     const item = this.itemRepository.create({
       ...dto,
       invoiceId,
@@ -270,8 +331,8 @@ export class BillingService {
   async updateItemPrice(invoiceId: string, itemId: string, unitPrice: number, userId?: string, tenantId?: string): Promise<Invoice> {
     const invoice = await this.findInvoice(invoiceId, tenantId);
 
-    if (invoice.status === InvoiceStatus.PAID) {
-      throw new BadRequestException('Cannot update items on a paid invoice');
+    if (invoice.status === InvoiceStatus.PAID || invoice.status === InvoiceStatus.PARTIALLY_PAID) {
+      throw new BadRequestException('Cannot update item price on a paid or partially paid invoice');
     }
 
     const item = await this.itemRepository.findOne({
@@ -282,7 +343,7 @@ export class BillingService {
     }
 
     item.unitPrice = unitPrice;
-    item.amount = item.quantity * unitPrice;
+    item.amount = multiply(item.quantity, unitPrice);
     await this.itemRepository.save(item);
 
     this.logger.log(`Invoice item ${itemId} price updated to ${unitPrice} on ${invoiceId} by ${userId || 'unknown'}`);
@@ -412,6 +473,21 @@ export class BillingService {
         if (existing) {
           throw new BadRequestException(`Duplicate payment: transaction reference '${dto.transactionReference}' already exists on receipt ${existing.receiptNumber}`);
         }
+      } else {
+        // Without a transactionReference, check for duplicate by composite key within 5-minute window
+        const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
+        const duplicateCheck = await manager
+          .createQueryBuilder(Payment, 'p')
+          .where('p.invoiceId = :invoiceId', { invoiceId: dto.invoiceId })
+          .andWhere('p.amount = :amount', { amount: dto.amount })
+          .andWhere('p.method = :method', { method: dto.method })
+          .andWhere('p.paidAt >= :fiveMinAgo', { fiveMinAgo })
+          .getOne();
+        if (duplicateCheck) {
+          throw new BadRequestException(
+            `Possible duplicate payment: a payment of ${dto.amount} via ${dto.method} was already recorded on this invoice at ${duplicateCheck.paidAt?.toISOString() || 'recently'}. If this is intentional, provide a unique transactionReference.`,
+          );
+        }
       }
 
       const savedPayment = await manager.save(payment);
@@ -478,13 +554,17 @@ export class BillingService {
       // Auto-post to General Ledger: DR Cash/Bank, CR Accounts Receivable
       const facilityForGL = fullInvoice?.encounter?.facilityId;
       if (facilityForGL) {
-        this.financeService.autoPostPatientPaymentJournal({
-          facilityId: facilityForGL,
-          receiptNumber,
-          amount: dto.amount,
-          paymentMethod: dto.method || 'cash',
-          userId,
-        }, tenantId).catch(err => this.logger.error(`GL auto-post failed for payment ${receiptNumber}: ${err.message}`, { receiptNumber, amount: dto.amount, error: err.stack }));
+        try {
+          await this.financeService.autoPostPatientPaymentJournal({
+            facilityId: facilityForGL,
+            receiptNumber,
+            amount: dto.amount,
+            paymentMethod: dto.method || 'cash',
+            userId,
+          }, tenantId);
+        } catch (err) {
+          this.logger.error(`GL auto-post failed for payment ${receiptNumber}: ${err.message}`, { receiptNumber, amount: dto.amount, error: err.stack });
+        }
       }
 
       // Send thank you SMS/Email after full payment (non-blocking)
@@ -695,6 +775,11 @@ export class BillingService {
     if (!invoice) {
       throw new NotFoundException('Invoice not found');
     }
+
+    // Segregation of duties: the user who created the invoice cannot cancel it
+    if (userId && invoice.createdById && invoice.createdById === userId) {
+      throw new BadRequestException('Segregation of duties violation: the user who created the invoice cannot cancel it');
+    }
     
     if (invoice.status === InvoiceStatus.PAID) {
       throw new BadRequestException('Cannot cancel a paid invoice. Use refund instead.');
@@ -736,6 +821,11 @@ export class BillingService {
 
       if (!invoice) {
         throw new NotFoundException('Invoice not found');
+      }
+
+      // Segregation of duties: the user who created the invoice cannot refund it
+      if (userId && invoice.createdById && invoice.createdById === userId) {
+        throw new BadRequestException('Segregation of duties violation: the user who created the invoice cannot process a refund');
       }
 
       if (invoice.status !== InvoiceStatus.PAID && invoice.status !== InvoiceStatus.PARTIALLY_PAID) {
@@ -901,7 +991,7 @@ export class BillingService {
           if (policy && isCovered) {
             const copayPercent = Number(policy.copayPercentage || 0);
             const copayFixed = Number(policy.copayAmount || 0);
-            const totalAmount = params.quantity * resolvedUnitPrice;
+            const totalAmount = multiply(params.quantity, resolvedUnitPrice);
 
             if (copayPercent > 0 && copayPercent <= 100) {
               patientCopay = Math.round((totalAmount * copayPercent) / 100);
@@ -932,7 +1022,7 @@ export class BillingService {
       }
 
       // Add item
-      const amount = params.quantity * resolvedUnitPrice;
+      const amount = multiply(params.quantity, resolvedUnitPrice);
       const item = await manager.save(InvoiceItem, manager.create(InvoiceItem, {
         invoiceId: invoice.id,
         serviceCode: params.serviceCode,
@@ -972,7 +1062,7 @@ export class BillingService {
     if (params.description !== undefined) existing.description = params.description;
     if (params.quantity !== undefined) existing.quantity = params.quantity;
     if (params.unitPrice !== undefined) existing.unitPrice = params.unitPrice;
-    existing.amount = existing.quantity * existing.unitPrice;
+    existing.amount = multiply(existing.quantity, existing.unitPrice);
 
     await this.itemRepository.save(existing);
     this.logger.log(`Billable item updated: ${params.referenceType}/${params.referenceId} by ${userId || 'unknown'}`);
@@ -1207,7 +1297,10 @@ export class BillingService {
 
   // ============ WRITE-OFFS ============
 
-  async writeOffInvoice(invoiceId: string, reason: string, userId: string, tenantId?: string): Promise<Invoice> {
+  /** Configurable write-off threshold (in UGX). Amounts above this require supervisor role. */
+  private static readonly WRITE_OFF_LIMIT = 5_000_000;
+
+  async writeOffInvoice(invoiceId: string, reason: string, userId: string, tenantId?: string, userRoles?: string[]): Promise<Invoice> {
     const invoice = await this.invoiceRepository.findOne({
       where: { id: invoiceId, ...(tenantId ? { tenantId } : {}) },
       relations: ['encounter'],
@@ -1217,19 +1310,35 @@ export class BillingService {
     if (invoice.status === InvoiceStatus.CANCELLED) throw new BadRequestException('Cannot write off a cancelled invoice');
 
     const writeOffAmount = Number(invoice.balanceDue);
+
+    // Enforce write-off limit — amounts above threshold require supervisor role
+    if (writeOffAmount > BillingService.WRITE_OFF_LIMIT) {
+      const roles = userRoles || [];
+      const isSupervisor = roles.some(r => ['supervisor', 'admin', 'finance_manager'].includes(r));
+      if (!isSupervisor) {
+        throw new BadRequestException(
+          `Write-off amount (${writeOffAmount}) exceeds the limit of ${BillingService.WRITE_OFF_LIMIT}. Supervisor approval is required.`,
+        );
+      }
+    }
+
     invoice.status = InvoiceStatus.CANCELLED;
     invoice.notes = `${invoice.notes || ''}\nWRITTEN OFF (${new Date().toISOString().slice(0, 10)}): ${reason} — Amount: ${writeOffAmount}`.trim();
     const saved = await this.invoiceRepository.save(invoice);
 
     // GL: DR Bad Debt Expense (5503), CR Accounts Receivable (1200)
     if (invoice.encounter?.facilityId) {
-      this.financeService.autoPostInvoiceJournal({
-        facilityId: invoice.encounter.facilityId,
-        invoiceNumber: `WRITEOFF-${invoice.invoiceNumber}`,
-        totalAmount: writeOffAmount,
-        revenueCategory: 'write_off',
-        userId,
-      }, tenantId).catch(err => this.logger.error(`GL write-off posting failed for ${invoice.invoiceNumber}: ${err.message}`, err.stack));
+      try {
+        await this.financeService.autoPostInvoiceJournal({
+          facilityId: invoice.encounter.facilityId,
+          invoiceNumber: `WRITEOFF-${invoice.invoiceNumber}`,
+          totalAmount: writeOffAmount,
+          revenueCategory: 'write_off',
+          userId,
+        }, tenantId);
+      } catch (err) {
+        this.logger.error(`GL write-off posting failed for ${invoice.invoiceNumber}: ${err.message}`, err.stack);
+      }
     }
 
     return saved;
