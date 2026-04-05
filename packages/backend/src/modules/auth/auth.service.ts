@@ -13,6 +13,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull, In, MoreThan } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
+import * as OTPAuth from 'otpauth';
 import { User } from '../../database/entities/user.entity';
 import { UserRole } from '../../database/entities/user-role.entity';
 import { Facility } from '../../database/entities/facility.entity';
@@ -27,6 +28,7 @@ import { LoginDto, AuthResponseDto, ChangePasswordDto, UpdateProfileDto } from '
 import { JwtPayload } from './strategies/jwt.strategy';
 import { getAccessibleModules } from '../../config/module-registry';
 import { isSuperAdmin } from '../../common/constants/roles.constants';
+import { CacheService } from '../cache/cache.service';
 
 @Injectable()
 export class AuthService {
@@ -57,6 +59,7 @@ export class AuthService {
     private auditLogRepository: Repository<AuditLog>,
     private jwtService: JwtService,
     private configService: ConfigService,
+    private cacheService: CacheService,
   ) {}
 
   async validateUser(username: string, password: string, tenantId?: string): Promise<User | null> {
@@ -175,13 +178,14 @@ export class AuthService {
           mfaRequired: true,
         });
       }
-      const speakeasy = require('speakeasy');
-      const isValid = speakeasy.totp.verify({
-        secret: user.mfaSecret,
-        encoding: 'base32',
-        token: loginDto.mfaCode,
-        window: 1,
+      const totp = new OTPAuth.TOTP({
+        secret: OTPAuth.Secret.fromBase32(user.mfaSecret!),
+        algorithm: 'SHA1',
+        digits: 6,
+        period: 30,
       });
+      const delta = totp.validate({ token: loginDto.mfaCode!, window: 1 });
+      const isValid = delta !== null;
       if (!isValid) {
         // Increment failed login attempts to prevent MFA brute force
         user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
@@ -718,12 +722,15 @@ export class AuthService {
       throw new BadRequestException('MFA is already enabled');
     }
 
-    const speakeasy = require('speakeasy');
     const issuer = this.configService.get<string>('MFA_ISSUER', 'Glide-HIMS');
-    const secret = speakeasy.generateSecret({
-      name: `${issuer}:${user.username}`,
+    const secret = new OTPAuth.Secret({ size: 32 });
+    const totp = new OTPAuth.TOTP({
       issuer,
-      length: 32,
+      label: `${issuer}:${user.username}`,
+      secret,
+      algorithm: 'SHA1',
+      digits: 6,
+      period: 30,
     });
 
     // Store the secret temporarily (not yet enabled)
@@ -732,7 +739,7 @@ export class AuthService {
 
     return {
       secret: secret.base32,
-      otpauthUrl: secret.otpauth_url,
+      otpauthUrl: totp.toString(),
     };
   }
 
@@ -744,13 +751,14 @@ export class AuthService {
       throw new BadRequestException('MFA setup not initiated. Call /auth/mfa/setup first.');
     }
 
-    const speakeasy = require('speakeasy');
-    const isValid = speakeasy.totp.verify({
-      secret: user.mfaSecret,
-      encoding: 'base32',
-      token: code,
-      window: 1,
+    const totp = new OTPAuth.TOTP({
+      secret: OTPAuth.Secret.fromBase32(user.mfaSecret),
+      algorithm: 'SHA1',
+      digits: 6,
+      period: 30,
     });
+    const delta = totp.validate({ token: code, window: 1 });
+    const isValid = delta !== null;
 
     if (!isValid) {
       throw new BadRequestException('Invalid MFA code. Please try again.');
@@ -884,6 +892,17 @@ export class AuthService {
       order: { loginAt: 'DESC' },
       take: limit,
     });
+  }
+
+  /**
+   * Invalidate all outstanding tokens for a user by incrementing tokenVersion.
+   * Called on logout and forced session termination.
+   */
+  async invalidateUserTokens(userId: string): Promise<void> {
+    await this.userRepository.increment({ id: userId }, 'tokenVersion', 1);
+    // Bust the JWT validation cache so revocation takes effect immediately
+    await this.cacheService.del(`jwt:user:${userId}`);
+    this.logger.log(`Invalidated tokens for user ${userId}`);
   }
 
   private async recordLoginHistory(

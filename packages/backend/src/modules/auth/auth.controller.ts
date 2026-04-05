@@ -63,10 +63,15 @@ export class AuthController {
     const userAgent = req.headers['user-agent'] || undefined;
     const result = await this.authService.login(loginDto, ip, userAgent);
     // Reset rate limit on successful login
-    this.rateLimitGuard.resetAttempts(ip);
+    await this.rateLimitGuard.resetAttempts(ip);
     // Set httpOnly cookies so frontend never touches tokens
     this.setAuthCookies(res, result.accessToken, result.refreshToken, result.expiresIn);
-    return result;
+    // Return user info and expiry only — tokens are in httpOnly cookies, not in response body
+    return {
+      ...result,
+      accessToken: undefined,
+      refreshToken: undefined,
+    } as AuthResponseDto;
   }
 
   @Post('refresh')
@@ -111,7 +116,9 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Logout and clear auth cookies' })
   @ApiResponse({ status: 200, description: 'Logged out successfully' })
-  async logout(@Res({ passthrough: true }) res: Response) {
+  async logout(@CurrentUser('id') userId: string, @Res({ passthrough: true }) res: Response) {
+    // Invalidate all outstanding tokens by incrementing tokenVersion
+    await this.authService.invalidateUserTokens(userId);
     this.clearAuthCookies(res);
     return { message: 'Logged out successfully' };
   }

@@ -14,14 +14,10 @@ import { SecurityAuditInterceptor } from './common/interceptors/security-audit.i
 import { TenantInterceptor } from './common/interceptors/tenant.interceptor';
 import { ResponseTransformInterceptor } from './common/interceptors/response-transform.interceptor';
 import { correlationIdMiddleware } from './common/middleware/correlation-id.middleware';
-import { RateLimitGuard } from './modules/auth/guards/rate-limit.guard';
 import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
-
-  // Clear any rate limit entries from previous runs
-  RateLimitGuard.clearAllAttempts();
   
   // HTTPS configuration
   const sslKeyPath = join(__dirname, '..', 'ssl', 'server.key');
@@ -52,9 +48,22 @@ async function bootstrap() {
     }
   }
   const jwtSecret = configService.get<string>('JWT_SECRET', '');
-  if (configService.get('NODE_ENV') === 'production' && jwtSecret.length < 32) {
-    logger.error('JWT_SECRET must be at least 32 characters in production');
-    process.exit(1);
+  const isProduction = configService.get('NODE_ENV') === 'production';
+  if (isProduction) {
+    if (jwtSecret.length < 32) {
+      logger.error('JWT_SECRET must be at least 32 characters in production');
+      process.exit(1);
+    }
+    if (jwtSecret.includes('dev') || jwtSecret.includes('test') || jwtSecret.includes('xxx')) {
+      logger.error('JWT_SECRET appears to be a development value — use a cryptographically random secret in production');
+      process.exit(1);
+    }
+    if (!configService.get('MFA_ENCRYPTION_KEY')) {
+      logger.warn('MFA_ENCRYPTION_KEY not set — MFA features will be unavailable');
+    }
+    if (!configService.get('REDIS_PASSWORD')) {
+      logger.warn('REDIS_PASSWORD not set — Redis is unprotected');
+    }
   }
 
   // Security: Helmet HTTP headers
@@ -63,7 +72,7 @@ async function bootstrap() {
     contentSecurityPolicy: isDev ? false : {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", 'data:', 'blob:'],
         connectSrc: ["'self'"],
@@ -136,24 +145,26 @@ async function bootstrap() {
     exposedHeaders: ['X-Request-Id'],
   });
 
-  // Swagger Documentation (always available, but with auth in production)
-  const config = new DocumentBuilder()
-    .setTitle('Glide-HIMS API')
-    .setDescription('Enterprise HMIS/ERP for Uganda Healthcare - API Documentation')
-    .setVersion('0.1.0')
-    .addBearerAuth()
-    .addTag('authentication', 'Authentication & Authorization')
-    .addTag('users', 'User Management')
-    .addTag('facilities', 'Facility Management')
-    .addTag('patients', 'Patient Master Data')
-    .addTag('providers', 'Provider Master Data')
-    .addTag('tenants', 'Tenant Management')
-    .addTag('roles', 'Role & Permission Management')
-    .addTag('health', 'Health Checks')
-    .build();
+  // Swagger Documentation — only available in development
+  if (isDev) {
+    const config = new DocumentBuilder()
+      .setTitle('Glide-HIMS API')
+      .setDescription('Enterprise HMIS/ERP for Uganda Healthcare - API Documentation')
+      .setVersion('0.1.0')
+      .addBearerAuth()
+      .addTag('authentication', 'Authentication & Authorization')
+      .addTag('users', 'User Management')
+      .addTag('facilities', 'Facility Management')
+      .addTag('patients', 'Patient Master Data')
+      .addTag('providers', 'Provider Master Data')
+      .addTag('tenants', 'Tenant Management')
+      .addTag('roles', 'Role & Permission Management')
+      .addTag('health', 'Health Checks')
+      .build();
 
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api/docs', app, document);
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api/docs', app, document);
+  }
 
   const port = configService.get<number>('PORT', 3000);
   await app.listen(port);
