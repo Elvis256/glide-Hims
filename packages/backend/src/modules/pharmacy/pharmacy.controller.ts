@@ -6,7 +6,7 @@ import { PharmacyService } from './pharmacy.service';
 import { LabelService } from './label.service';
 import { TemperatureService } from './temperature.service';
 import { PharmacyDashboardService } from './pharmacy-dashboard.service';
-import { CreatePharmacySaleDto, CompleteSaleDto, AllocateFEFODto, ReceiveBatchDto, QuarantineItemDto, ProcessExpiredItemDto } from './pharmacy.dto';
+import { CreatePharmacySaleDto, CompleteSaleDto, AllocateFEFODto, ReceiveBatchDto, QuarantineItemDto, ProcessExpiredItemDto, CreateLabelTemplateDto, CreateDrugTranslationDto, RecordTemperatureReadingDto, CreateTemperatureSensorDto } from './pharmacy.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { SaleStatus } from '../../database/entities/pharmacy-sale.entity';
 
@@ -204,7 +204,7 @@ export class PharmacyController {
   @Post('labels/templates')
   @AuthWithPermissions('pharmacy.create')
   @ApiOperation({ summary: 'Create a drug label template' })
-  createTemplate(@Body() body: any, @Request() req: any) {
+  createTemplate(@Body() body: CreateLabelTemplateDto, @Request() req: any) {
     return this.labelService.createTemplate(body, req.user?.tenantId);
   }
 
@@ -221,7 +221,7 @@ export class PharmacyController {
   @Post('labels/translations')
   @AuthWithPermissions('pharmacy.create')
   @ApiOperation({ summary: 'Add a drug translation' })
-  createTranslation(@Body() body: any, @Request() req: any) {
+  createTranslation(@Body() body: CreateDrugTranslationDto, @Request() req: any) {
     return this.labelService.createTranslation(body, req.user?.tenantId);
   }
 
@@ -230,7 +230,7 @@ export class PharmacyController {
   @Post('temperature/readings')
   @AuthWithPermissions('pharmacy.create')
   @ApiOperation({ summary: 'Record a temperature reading (IoT or manual entry)' })
-  recordReading(@Body() body: any, @Request() req: any) {
+  recordReading(@Body() body: RecordTemperatureReadingDto, @Request() req: any) {
     const facilityId = body.facilityId || req.headers['x-facility-id'] || req.user?.facilityId;
     return this.temperatureService.recordReading(
       body.sensorId, body.temperature, body.humidity ?? null, req.user?.tenantId, facilityId,
@@ -278,7 +278,7 @@ export class PharmacyController {
   @Post('temperature/sensors')
   @AuthWithPermissions('pharmacy.create')
   @ApiOperation({ summary: 'Register a new temperature sensor' })
-  createSensor(@Body() body: any, @Request() req: any) {
-    return this.temperatureService.createSensor(body, req.user?.tenantId);
+  createSensor(@Body() body: CreateTemperatureSensorDto, @Request() req: any) {
+    return this.temperatureService.createSensor(body as any, req.user?.tenantId);
   }
 }

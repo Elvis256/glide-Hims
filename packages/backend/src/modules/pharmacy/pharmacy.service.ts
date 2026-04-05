@@ -5,6 +5,7 @@ import { PharmacySale, PharmacySaleItem, SaleStatus, SaleType } from '../../data
 import { Item, StockLedger, StockBalance, MovementType, ExpiryAlert, ExpiryAlertStatus } from '../../database/entities/inventory.entity';
 import { BatchStockBalance } from '../../database/entities/batch-stock.entity';
 import { Prescription, PrescriptionStatus } from '../../database/entities/prescription.entity';
+import { AuditLog } from '../../database/entities/audit-log.entity';
 import { CreatePharmacySaleDto, CompleteSaleDto, AllocateFEFODto, ReceiveBatchDto } from './pharmacy.dto';
 import { FinanceService } from '../finance/finance.service';
 
@@ -23,6 +24,7 @@ export class PharmacyService {
     @InjectRepository(Prescription) private prescriptionRepo: Repository<Prescription>,
     @InjectRepository(BatchStockBalance) private batchStockRepo: Repository<BatchStockBalance>,
     @InjectRepository(ExpiryAlert) private expiryAlertRepo: Repository<ExpiryAlert>,
+    @InjectRepository(AuditLog) private auditLogRepo: Repository<AuditLog>,
     private dataSource: DataSource,
   ) {}
 
@@ -289,6 +291,23 @@ export class PharmacyService {
             );
           }
 
+          // Persistent audit log for controlled substance dispensing (transactional)
+          const auditRepo = manager.getRepository(AuditLog);
+          await auditRepo.save(auditRepo.create({
+            action: 'CONTROLLED_SUBSTANCE_DISPENSED',
+            entityType: 'PharmacySale',
+            entityId: sale.id,
+            userId,
+            newValue: {
+              itemId: inventoryItem.id,
+              itemName: inventoryItem.name,
+              quantity: item.quantity,
+              saleNumber: sale.saleNumber,
+              prescriptionReference: (item as any).prescriptionReference || null,
+            },
+            tenantId,
+          }));
+
           this.logger.warn(
             `CONTROLLED SUBSTANCE DISPENSED: item=${inventoryItem.name}, qty=${item.quantity}, user=${userId}, sale=${sale.saleNumber}`,
           );
@@ -374,19 +393,23 @@ export class PharmacyService {
       }
       sale.status = SaleStatus.COMPLETED;
       await manager.getRepository(PharmacySale).save(sale);
-    });
 
-    // Auto-post GL entry: DR Cash/Bank, CR Pharmacy Revenue
-    const facilityIdForGL = sale.store?.facilityId;
-    if (facilityIdForGL) {
-      this.financeService.autoPostPharmacySaleJournal({
-        facilityId: facilityIdForGL,
-        saleNumber: sale.saleNumber,
-        totalAmount: Number(sale.totalAmount) || 0,
-        paymentMethod: dto.paymentMethod || sale.paymentMethod || 'cash',
-        userId,
-      }, tenantId).catch(err => this.logger.warn(`GL auto-post failed for sale ${sale.saleNumber}: ${err.message}`));
-    }
+      // Auto-post GL entry within the same transaction: DR Cash/Bank, CR Pharmacy Revenue
+      const facilityIdForGL = sale.store?.facilityId;
+      if (facilityIdForGL) {
+        try {
+          await this.financeService.autoPostPharmacySaleJournal({
+            facilityId: facilityIdForGL,
+            saleNumber: sale.saleNumber,
+            totalAmount: Number(sale.totalAmount) || 0,
+            paymentMethod: dto.paymentMethod || sale.paymentMethod || 'cash',
+            userId,
+          }, tenantId);
+        } catch (err) {
+          this.logger.error(`GL auto-post failed for sale ${sale.saleNumber}: ${err.message}`, err.stack);
+        }
+      }
+    });
 
     return this.findSale(id, tenantId);
   }

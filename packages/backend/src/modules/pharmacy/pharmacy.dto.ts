@@ -64,3 +64,37 @@ export class ReceiveBatchDto {
   @ApiProperty() @IsNumber() quantity: number;
   @ApiProperty({ required: false }) @IsOptional() @IsUUID() storeId?: string;
 }
+
+// Drug Label DTOs
+export class CreateLabelTemplateDto {
+  @ApiProperty() @IsString() name: string;
+  @ApiProperty() @IsString() content: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() language?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() format?: string;
+}
+
+export class CreateDrugTranslationDto {
+  @ApiProperty() @IsString() drugName: string;
+  @ApiProperty() @IsString() language: string;
+  @ApiProperty() @IsString() translatedName: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() directions?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() warnings?: string;
+}
+
+// Temperature Monitoring DTOs
+export class RecordTemperatureReadingDto {
+  @ApiProperty() @IsString() sensorId: string;
+  @ApiProperty() @IsNumber() temperature: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() humidity?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsUUID() facilityId?: string;
+}
+
+export class CreateTemperatureSensorDto {
+  @ApiProperty() @IsString() sensorId: string;
+  @ApiProperty() @IsString() name: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() location?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() storageType?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() minTemp?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() maxTemp?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsUUID() facilityId?: string;
+}
