@@ -57,7 +57,7 @@ export default function LoginPage() {
               const tenantData = res.data as TenantInfo;
               setTenant(tenantData);
             })
-            .catch(() => {});
+            .catch((err) => console.error('Failed to fetch tenant info:', err));
         }
       })
       .catch(() => setSetupStatus({ isSetupComplete: false, deploymentMode: 'on-premise' }))

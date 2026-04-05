@@ -191,15 +191,16 @@ export class BillingService {
       ...(tenantId ? { tenantId } : {}),
     });
 
-    const saved = await this.invoiceRepository.save(invoice);
+    // Wrap invoice save, GL posting, and encounter update in a single transaction
+    const saved = await this.dataSource.transaction(async (manager) => {
+      const savedInvoice = await manager.save(Invoice, invoice);
 
-    // Auto-post to General Ledger: DR Accounts Receivable, CR Revenue
-    if (dto.encounterId) {
-      const encounter = await this.encounterRepository.findOne({
-        where: { id: dto.encounterId, ...(tenantId ? { tenantId } : {}) },
-      });
-      if (encounter?.facilityId) {
-        try {
+      // Auto-post to General Ledger: DR Accounts Receivable, CR Revenue
+      if (dto.encounterId) {
+        const encounter = await manager.findOne(Encounter, {
+          where: { id: dto.encounterId, ...(tenantId ? { tenantId } : {}) },
+        });
+        if (encounter?.facilityId) {
           await this.financeService.autoPostInvoiceJournal({
             facilityId: encounter.facilityId,
             invoiceNumber: invoiceNumber,
@@ -207,16 +208,16 @@ export class BillingService {
             revenueCategory: dto.paymentType || 'consultation',
             userId,
           }, tenantId);
-        } catch (err) {
-          this.logger.error(`GL auto-post failed for ${invoiceNumber}: ${err.message}`, { invoiceNumber, totalAmount, error: err.stack });
+        }
+        // Update encounter status if linked
+        if (encounter && encounter.status === EncounterStatus.PENDING_PHARMACY) {
+          encounter.status = EncounterStatus.PENDING_PAYMENT;
+          await manager.save(Encounter, encounter);
         }
       }
-      // Update encounter status if linked
-      if (encounter && encounter.status === EncounterStatus.PENDING_PHARMACY) {
-        encounter.status = EncounterStatus.PENDING_PAYMENT;
-        await this.encounterRepository.save(encounter);
-      }
-    }
+
+      return savedInvoice;
+    });
 
     return this.findInvoice(saved.id, tenantId);
   }

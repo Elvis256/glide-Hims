@@ -282,7 +282,7 @@ export default function RegisterOrganizationPage() {
   const [businessType, setBusinessType] = useState('');
 
   useEffect(() => {
-    setupService.getPresets().then(setPresets).catch(() => {});
+    setupService.getPresets().then(setPresets).catch((err) => console.error('Failed to load presets:', err));
   }, []);
 
   const [formData, setFormData] = useState<InitializeSetupData>({
