@@ -20,7 +20,7 @@ class InvoiceItemDto {
 
   @Type(() => Number)
   @IsNumber()
-  @Min(0)
+  @Min(0.01)
   unitPrice: number;
 
   @Type(() => Number)
@@ -55,6 +55,10 @@ export class CreateInvoiceDto {
   @IsNumber()
   @IsOptional()
   taxPercent?: number;
+
+  @IsString()
+  @IsOptional()
+  taxExemptReason?: string;
 
   @Type(() => Number)
   @IsNumber()
@@ -97,7 +101,7 @@ export class AddInvoiceItemDto {
 
   @Type(() => Number)
   @IsNumber()
-  @Min(0)
+  @Min(0.01)
   unitPrice: number;
 }
 
