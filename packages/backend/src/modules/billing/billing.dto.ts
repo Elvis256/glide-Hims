@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsUUID, IsArray, ValidateNested, IsNumber, IsDateString, IsEnum, Min } from 'class-validator';
+import { IsString, IsOptional, IsUUID, IsArray, ValidateNested, IsNumber, IsDateString, IsEnum, Min, IsNotEmpty } from 'class-validator';
 import { Type } from 'class-transformer';
 import { InvoiceStatus, ChargeType, PaymentMethod, PaymentType } from '../../database/entities/invoice.entity';
 
@@ -118,8 +118,8 @@ export class CreatePaymentDto {
   method: PaymentMethod;
 
   @IsString()
-  @IsOptional()
-  transactionReference?: string;
+  @IsNotEmpty({ message: 'Transaction reference is required for non-cash payments' })
+  transactionReference: string;
 
   @IsString()
   @IsOptional()

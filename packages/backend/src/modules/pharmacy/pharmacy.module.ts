@@ -13,6 +13,7 @@ import { Patient } from '../../database/entities/patient.entity';
 import { Prescription, PrescriptionItem } from '../../database/entities/prescription.entity';
 import { DrugLabelTemplate, CommonDrugTranslation } from '../../database/entities/drug-label-template.entity';
 import { TemperatureLog, TemperatureSensor } from '../../database/entities/temperature-log.entity';
+import { AuditLog } from '../../database/entities/audit-log.entity';
 import { FinanceModule } from '../finance/finance.module';
 
 @Module({
@@ -22,7 +23,7 @@ import { FinanceModule } from '../finance/finance.module';
       PharmacySale, PharmacySaleItem, Store, Item, StockLedger, StockBalance,
       BatchStockBalance, ExpiryAlert, Patient, Prescription, PrescriptionItem,
       DrugLabelTemplate, CommonDrugTranslation,
-      TemperatureLog, TemperatureSensor,
+      TemperatureLog, TemperatureSensor, AuditLog,
     ]),
   ],
   controllers: [PharmacyController],
