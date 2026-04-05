@@ -81,13 +81,20 @@ const theatres: Array<{
 ];
 
 async function seed() {
+  const dbUsername = process.env.DB_USERNAME;
+  const dbPassword = process.env.DB_PASSWORD;
+  const dbName = process.env.DB_NAME;
+  if (!dbUsername || !dbPassword || !dbName) {
+    throw new Error('DB_USERNAME, DB_PASSWORD, and DB_NAME environment variables are required for seeding');
+  }
+
   const dataSource = new DataSource({
     type: 'postgres',
     host: process.env.DB_HOST || 'localhost',
     port: parseInt(process.env.DB_PORT || '5432'),
-    username: process.env.DB_USERNAME || 'glide_hims',
-    password: process.env.DB_PASSWORD || 'glide_hims_dev',
-    database: process.env.DB_NAME || 'glide_hims_dev',
+    username: dbUsername,
+    password: dbPassword,
+    database: dbName,
     entities: [__dirname + '/../entities/*.entity.{js,ts}'],
     synchronize: false,
   });

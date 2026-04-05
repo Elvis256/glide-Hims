@@ -15,8 +15,7 @@
     "db:migrate": "cd packages/backend && pnpm db:migrate",
     "db:seed": "cd packages/backend && pnpm db:seed",
     "db:setup": "sudo -u postgres psql -c \"CREATE USER glide_hims WITH PASSWORD 'glide_hims_dev';\" && sudo -u postgres psql -c \"CREATE DATABASE glide_hims_dev OWNER glide_hims;\"",
-    "docker:dev": "docker compose -f infrastructure/docker-compose.dev.yml up -d",
-    "docker:down": "docker compose -f infrastructure/docker-compose.dev.yml down"
+    "db:reset": "cd packages/backend && pnpm db:migrate && pnpm db:seed"
   },
   "engines": {
     "node": ">=20.0.0",
