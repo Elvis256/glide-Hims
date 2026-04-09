@@ -14,7 +14,7 @@ interface AuthActions {
   hasRole: (role: string) => boolean;
   hasModuleAccess: (moduleCode: string) => boolean;
   setAccessibleModules: (modules: string[]) => void;
-  updateFromMe: (data: { permissions?: string[]; roles?: string[]; accessibleModules?: string[] }) => void;
+  updateFromMe: (data: { permissions?: string[]; roles?: string[]; accessibleModules?: string[]; facilityMode?: string; businessType?: string }) => void;
 }
 
 export const useAuthStore = create<AuthState & AuthActions>()(
@@ -113,6 +113,8 @@ export const useAuthStore = create<AuthState & AuthActions>()(
               ...(data.permissions && { permissions: data.permissions }),
               ...(data.roles && { roles: data.roles }),
               ...(data.accessibleModules && { accessibleModules: data.accessibleModules }),
+              ...(data.facilityMode && { facilityMode: data.facilityMode }),
+              ...(data.businessType && { businessType: data.businessType }),
             },
           });
         }

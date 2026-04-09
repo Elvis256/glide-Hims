@@ -7,6 +7,7 @@ import { patientsService, type CreatePatientDto } from '../services/patients';
 import { queueService } from '../services/queue';
 import { fetchAllCountries } from '../services/countriesService';
 import { useUgandaLocation } from '../hooks/useUgandaLocation';
+import { useBusinessConfig } from '../hooks/useBusinessConfig';
 import SearchableSelect from '../components/SearchableSelect';
 import {
   UserPlus,
@@ -144,6 +145,9 @@ export default function PatientRegistrationPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const addPatient = usePatientStore((state) => state.addPatient);
+  const bizConfig = useBusinessConfig();
+  const entityName = bizConfig.entityName;
+  const regFields = bizConfig.registrationFields;
   const [showSuccess, setShowSuccess] = useState(false);
   const [createdPatient, setCreatedPatient] = useState<{ id: string; mrn: string; fullName: string } | null>(null);
   const [duplicates, setDuplicates] = useState<Array<{ 
@@ -593,12 +597,12 @@ export default function PatientRegistrationPage() {
           <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <CheckCircle className="w-10 h-10 text-green-600" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Patient Registered!</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">{entityName.singular} Registered!</h2>
           <p className="text-gray-500 mb-4">
             {createdPatient.fullName} has been registered successfully.
           </p>
           <div className="bg-blue-50 rounded-lg p-4 mb-6">
-            <p className="text-sm text-gray-600">Patient MRN</p>
+            <p className="text-sm text-gray-600">{entityName.singular} ID</p>
             <p className="text-2xl font-mono font-bold text-blue-700">{createdPatient.mrn}</p>
           </div>
           <div className="flex flex-col gap-3">
@@ -643,8 +647,8 @@ export default function PatientRegistrationPage() {
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
-            <h1 className="text-xl font-bold text-gray-900">Register New Patient</h1>
-            <p className="text-gray-500 text-sm">Enter patient details to create a new record</p>
+            <h1 className="text-xl font-bold text-gray-900">Register New {entityName.singular}</h1>
+            <p className="text-gray-500 text-sm">Enter {entityName.singular.toLowerCase()} details to create a new record</p>
           </div>
         </div>
         <button
@@ -838,6 +842,7 @@ export default function PatientRegistrationPage() {
                           className="text-sm"
                         />
                       </div>
+                      {regFields.religion && (
                       <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">Religion</label>
                         <select
@@ -851,8 +856,11 @@ export default function PatientRegistrationPage() {
                           ))}
                         </select>
                       </div>
+                      )}
                     </div>
+                    {(regFields.maritalStatus || regFields.bloodGroup) && (
                     <div className="grid grid-cols-2 gap-2">
+                      {regFields.maritalStatus && (
                       <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">Marital Status</label>
                         <select
@@ -867,6 +875,8 @@ export default function PatientRegistrationPage() {
                           <option value="widowed">Widowed</option>
                         </select>
                       </div>
+                      )}
+                      {regFields.bloodGroup && (
                       <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">Blood Group</label>
                         <select
@@ -885,7 +895,9 @@ export default function PatientRegistrationPage() {
                           <option value="O-">O-</option>
                         </select>
                       </div>
+                      )}
                     </div>
+                    )}
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">Occupation</label>
                       <input
@@ -1037,7 +1049,7 @@ export default function PatientRegistrationPage() {
           </div>
 
           {/* Column 3: Next of Kin */}
-          {!quickRegistration && (
+          {!quickRegistration && regFields.nextOfKin && (
             <div className="card p-4 flex flex-col">
               <div className="flex items-center gap-2 mb-3">
                 <Users className="w-4 h-4 text-blue-600" />
@@ -1106,7 +1118,7 @@ export default function PatientRegistrationPage() {
             ) : (
               <>
                 <UserPlus className="w-5 h-5" />
-                Register Patient
+                Register {entityName.singular}
               </>
             )}
           </button>

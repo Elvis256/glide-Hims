@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like, Between } from 'typeorm';
 import { Appointment, AppointmentStatus } from './entities/appointment.entity';
@@ -21,6 +21,32 @@ export class AppointmentsService {
   }
 
   async create(dto: CreateAppointmentDto, facilityId: string, userId: string, tenantId?: string): Promise<Appointment> {
+    // Check for double-booking: provider must not have an overlapping appointment
+    const conflictWhere: any = {
+      doctorId: dto.doctorId,
+      appointmentDate: dto.appointmentDate,
+      facilityId,
+    };
+    if (tenantId) conflictWhere.tenantId = tenantId;
+
+    const existingAppointments = await this.appointmentRepository.find({
+      where: conflictWhere,
+    });
+
+    const hasConflict = existingAppointments.some((existing) => {
+      if (existing.status === AppointmentStatus.CANCELLED || existing.status === AppointmentStatus.NO_SHOW) {
+        return false;
+      }
+      // Time range overlap: newStart < existingEnd AND newEnd > existingStart
+      return dto.startTime < existing.endTime && dto.endTime > existing.startTime;
+    });
+
+    if (hasConflict) {
+      throw new ConflictException(
+        'Provider already has an appointment at the requested date and time',
+      );
+    }
+
     const appointmentNumber = await this.generateAppointmentNumber(tenantId);
     
     const appointment = this.appointmentRepository.create({

@@ -16,6 +16,8 @@
  *   printService.printReceipt(header + bodyHtml);
  */
 
+import DOMPurify from 'dompurify';
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -92,7 +94,7 @@ function printViaIframe(html: string, opts: PrintOptions = {}): void {
   }
 
   doc.open();
-  doc.write(html);
+  doc.write(DOMPurify.sanitize(html, { WHOLE_DOCUMENT: true, ADD_TAGS: ['style', 'link', 'meta'], ADD_ATTR: ['target'] }));
   doc.close();
 
   // Wait for images/fonts to load, then print

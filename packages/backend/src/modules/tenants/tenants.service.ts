@@ -142,25 +142,42 @@ export class TenantsService implements OnModuleInit {
     return tenant;
   }
 
-  async findBySlug(slug: string): Promise<{ id: string; name: string; slug: string; isSetupComplete: boolean }> {
+  async findBySlug(slug: string): Promise<{ id: string; name: string; slug: string; businessType?: string; isSetupComplete: boolean }> {
     const tenant = await this.tenantRepository.findOne({
       where: { slug, status: 'active' },
       select: ['id', 'name', 'slug'],
     });
     if (!tenant) throw new NotFoundException('Organization not found');
 
-    // Check if setup is complete: either explicit flag OR tenant has both a facility and a user
+    // Check setup status and facility_mode in one query
     const setupCheck = await this.dataSource.query(
       `SELECT 
         EXISTS(SELECT 1 FROM system_settings WHERE tenant_id = $1 AND key = 'setup_complete' AND value = 'true') AS has_flag,
         EXISTS(SELECT 1 FROM facilities WHERE tenant_id = $1) AS has_facility,
-        EXISTS(SELECT 1 FROM users WHERE tenant_id = $1 AND deleted_at IS NULL) AS has_user`,
+        EXISTS(SELECT 1 FROM users WHERE tenant_id = $1 AND deleted_at IS NULL) AS has_user,
+        (SELECT value FROM system_settings WHERE tenant_id = $1 AND key = 'facility_mode' LIMIT 1) AS facility_mode`,
       [tenant.id],
     );
     const row = setupCheck[0];
     const isSetupComplete = row.has_flag || (row.has_facility && row.has_user);
 
-    return { id: tenant.id, name: tenant.name, slug: tenant.slug, isSetupComplete };
+    // Derive businessType from facility_mode
+    let businessType: string | undefined;
+    if (row.facility_mode) {
+      const mode = typeof row.facility_mode === 'string'
+        ? row.facility_mode.replace(/"/g, '')
+        : row.facility_mode;
+      const modeToBusinessType: Record<string, string> = {
+        single_user: 'hospital', clinic_opd: 'hospital', clinic_full: 'hospital',
+        multisite_opd: 'hospital', hospital: 'hospital',
+        pharmacy_retail: 'pharmacy', pharmacy_chain: 'pharmacy', pharmacy_wholesale: 'pharmacy',
+        dental_general: 'dental', dental_specialist: 'dental',
+        optical_center: 'optical', optical_chain: 'optical',
+      };
+      businessType = modeToBusinessType[mode] || 'hospital';
+    }
+
+    return { id: tenant.id, name: tenant.name, slug: tenant.slug, businessType, isSetupComplete };
   }
 
   async update(id: string, dto: UpdateTenantDto): Promise<Tenant> {

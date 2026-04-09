@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsBoolean, IsEnum, IsUUID, IsArray, IsNumber } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, IsEnum, IsUUID, IsArray, IsNumber, Min, Max } from 'class-validator';
 import { DrugSchedule, TherapeuticClass, DrugFormulation, DrugStorageCondition } from '../../database/entities/drug-classification.entity';
 
 export class CreateDrugClassificationDto {
@@ -53,10 +53,10 @@ export class CreateDrugClassificationDto {
   @IsOptional() @IsEnum(DrugStorageCondition)
   storageCondition?: DrugStorageCondition;
 
-  @IsOptional() @IsNumber()
+  @IsOptional() @IsNumber() @Min(0.001) @Max(50000)
   maxSingleDose?: number;
 
-  @IsOptional() @IsNumber()
+  @IsOptional() @IsNumber() @Min(0.001) @Max(100000)
   maxDailyDose?: number;
 
   @IsOptional() @IsString()

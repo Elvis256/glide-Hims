@@ -23,7 +23,7 @@ export default function PayrollPage() {
     queryKey: ['facilities'],
     queryFn: async () => {
       try { return await facilitiesService.list(); } 
-      catch { return []; }
+      catch (error) { console.error('Failed to load facilities:', error); toast.error('Failed to load facilities'); return []; }
     },
   });
   const facilityId = facilities[0]?.id;
@@ -35,7 +35,7 @@ export default function PayrollPage() {
       try {
         const res = await hrService.employees.list({ facilityId: facilityId! });
         return Array.isArray(res) ? res : (res as { data: Employee[] }).data || [];
-      } catch { return []; }
+      } catch (error) { console.error('Failed to load employees:', error); toast.error('Failed to load employee data'); return []; }
     },
     enabled: !!facilityId,
   });
@@ -50,7 +50,7 @@ export default function PayrollPage() {
           facilityId, 
           year: parseInt(selectedMonth.split('-')[0]) 
         });
-      } catch { return []; }
+      } catch (error) { console.error('Failed to load payroll runs:', error); toast.error('Failed to load payroll data'); return []; }
     },
     enabled: !!facilityId,
   });

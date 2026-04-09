@@ -20,6 +20,7 @@ import {
   CreateDeliveryDto,
   UpdateDeliveryStatusDto,
 } from './pos.dto';
+import { add, subtract, multiply, divide } from '../../common/utils/currency';
 
 @Injectable()
 export class PosService {
@@ -94,22 +95,30 @@ export class PosService {
   }
 
   async closeShift(dto: CloseShiftDto, cashierId: string, tenantId: string) {
-    const shift = await this.shiftRepo.findOne({
-      where: { cashierId, tenantId, status: 'open' },
+    return this.dataSource.transaction(async (manager) => {
+      const shift = await manager.findOne(PosShift, {
+        where: { cashierId, tenantId, status: 'open' },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!shift) throw new NotFoundException('No open shift found');
+
+      // Count ALL payment types for expected balance
+      const totalSales = add(
+        add(Number(shift.cashSales), Number(shift.mobileMoneySales)),
+        Number(shift.cardSales),
+      );
+      const expectedBalance = add(Number(shift.openingBalance), Number(shift.cashSales));
+      const cashDifference = subtract(dto.closingBalance, expectedBalance);
+
+      shift.closedAt = new Date();
+      shift.closingBalance = dto.closingBalance;
+      shift.expectedBalance = expectedBalance;
+      shift.cashDifference = cashDifference;
+      shift.notes = dto.notes || (null as any);
+      shift.status = 'closed';
+
+      return manager.save(PosShift, shift);
     });
-    if (!shift) throw new NotFoundException('No open shift found');
-
-    const expectedBalance = Number(shift.openingBalance) + Number(shift.cashSales);
-    const cashDifference = dto.closingBalance - expectedBalance;
-
-    shift.closedAt = new Date();
-    shift.closingBalance = dto.closingBalance;
-    shift.expectedBalance = expectedBalance;
-    shift.cashDifference = cashDifference;
-    shift.notes = dto.notes || (null as any);
-    shift.status = 'closed';
-
-    return this.shiftRepo.save(shift);
   }
 
   async getCurrentShift(cashierId: string, tenantId: string) {
@@ -167,30 +176,33 @@ export class PosService {
   }
 
   async recordSaleInShift(cashierId: string, tenantId: string, paymentMethod: string, amount: number) {
-    const shift = await this.shiftRepo.findOne({
-      where: { cashierId, tenantId, status: 'open' },
+    await this.dataSource.transaction(async (manager) => {
+      const shift = await manager.findOne(PosShift, {
+        where: { cashierId, tenantId, status: 'open' },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!shift) {
+        this.logger.warn(`No open shift for cashier ${cashierId} — sale not tracked in shift`);
+        return;
+      }
+
+      shift.transactionCount += 1;
+      switch (paymentMethod) {
+        case 'cash':
+          shift.cashSales = add(Number(shift.cashSales), amount);
+          break;
+        case 'mobile_money':
+          shift.mobileMoneySales = add(Number(shift.mobileMoneySales), amount);
+          break;
+        case 'card':
+          shift.cardSales = add(Number(shift.cardSales), amount);
+          break;
+        default:
+          shift.cashSales = add(Number(shift.cashSales), amount);
+      }
+
+      await manager.save(PosShift, shift);
     });
-    if (!shift) {
-      this.logger.warn(`No open shift for cashier ${cashierId} — sale not tracked in shift`);
-      return;
-    }
-
-    shift.transactionCount += 1;
-    switch (paymentMethod) {
-      case 'cash':
-        shift.cashSales = Number(shift.cashSales) + amount;
-        break;
-      case 'mobile_money':
-        shift.mobileMoneySales = Number(shift.mobileMoneySales) + amount;
-        break;
-      case 'card':
-        shift.cardSales = Number(shift.cardSales) + amount;
-        break;
-      default:
-        shift.cashSales = Number(shift.cashSales) + amount;
-    }
-
-    await this.shiftRepo.save(shift);
   }
 
   // ─── Wholesale Customers ──────────────────────────────────────────────────
@@ -246,7 +258,7 @@ export class PosService {
   }
 
   applyTierDiscount(unitPrice: number, discountPercent: number): number {
-    return +(unitPrice * (1 - discountPercent / 100)).toFixed(2);
+    return multiply(unitPrice, subtract(1, divide(discountPercent, 100)));
   }
 
   // ─── Deliveries ───────────────────────────────────────────────────────────

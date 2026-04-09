@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
+import DOMPurify from 'dompurify';
 import { useAuthStore } from '../../../store/auth';
 import {
   FileText,
@@ -703,7 +704,7 @@ export default function MedicalCertificatePage() {
             <div
               ref={certificateRef}
               className="bg-white rounded-xl shadow-lg border overflow-hidden"
-              dangerouslySetInnerHTML={{ __html: buildCertificateHtml() }}
+              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(buildCertificateHtml()) }}
             />
           </div>
         )}

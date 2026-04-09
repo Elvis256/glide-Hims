@@ -77,6 +77,10 @@ export function AdminRoute({ children }: { children: ReactNode }) {
   return <RoleRoute roles={[ROLES.ADMIN]}>{children}</RoleRoute>;
 }
 
+export function SystemAdminRoute({ children }: { children: ReactNode }) {
+  return <RoleRoute roles={[ROLES.SUPER_ADMIN]}>{children}</RoleRoute>;
+}
+
 export function FinanceRoute({ children }: { children: ReactNode }) {
   return <RoleRoute roles={[ROLES.ACCOUNTANT, ROLES.ADMIN]}>{children}</RoleRoute>;
 }

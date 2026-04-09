@@ -550,12 +550,14 @@ export class SetupService {
 
       // 8. Create system settings
       const facilityModeValue = dto.settings?.facilityMode || FACILITY_MODES.HOSPITAL;
+      const resolvedModules = this.resolveEnabledModules(dto);
       const settings = [
         { key: 'setup_complete', value: true, tenantId: tenant.id, description: 'Initial setup completed' },
         { key: 'setup_date', value: new Date().toISOString(), tenantId: tenant.id, description: 'Setup completion date' },
         { key: 'default_facility_id', value: facility.id, tenantId: tenant.id, description: 'Default facility ID' },
         { key: 'facility_mode', value: facilityModeValue, tenantId: tenant.id, description: 'Deployment mode preset' },
         { key: 'single_user_mode', value: isSingleUser, tenantId: tenant.id, description: 'Single-user clinic mode' },
+        { key: 'enabled_modules', value: JSON.stringify(resolvedModules), tenantId: tenant.id, description: 'Enabled navigation modules for this tenant' },
       ];
 
       for (const setting of settings) {
@@ -776,12 +778,14 @@ export class SetupService {
 
       // 8. Create tenant-scoped system settings
       const isSingleUser = (dto.settings?.facilityMode as FacilityMode) === FACILITY_MODES.SINGLE_USER;
+      const resolvedModules = this.resolveEnabledModules(dto);
       const settings = [
         { key: 'setup_complete', value: true, tenantId: tenant.id, description: 'Tenant setup completed' },
         { key: 'setup_date', value: new Date().toISOString(), tenantId: tenant.id, description: 'Setup completion date' },
         { key: 'default_facility_id', value: facility.id, tenantId: tenant.id, description: 'Default facility ID' },
         { key: 'facility_mode', value: dto.settings?.facilityMode || FACILITY_MODES.HOSPITAL, tenantId: tenant.id, description: 'Deployment mode preset' },
         { key: 'single_user_mode', value: isSingleUser, tenantId: tenant.id, description: 'Single-user clinic mode' },
+        { key: 'enabled_modules', value: JSON.stringify(resolvedModules), tenantId: tenant.id, description: 'Enabled navigation modules for this tenant' },
       ];
       for (const setting of settings) {
         const settingEntity = queryRunner.manager.create(SystemSetting, setting);
@@ -970,12 +974,14 @@ export class SetupService {
 
       // 7. Create system settings
       const isSingleUser = (dto.settings?.facilityMode as FacilityMode) === FACILITY_MODES.SINGLE_USER;
+      const resolvedModules = this.resolveEnabledModules(dto as unknown as InitializeSetupDto);
       const settings = [
         { key: 'setup_complete', value: true, tenantId: tenant.id, description: 'Initial setup completed' },
         { key: 'setup_date', value: new Date().toISOString(), tenantId: tenant.id, description: 'Setup completion date' },
         { key: 'default_facility_id', value: facility.id, tenantId: tenant.id, description: 'Default facility ID' },
         { key: 'facility_mode', value: dto.settings?.facilityMode || FACILITY_MODES.HOSPITAL, tenantId: tenant.id, description: 'Deployment mode preset' },
         { key: 'single_user_mode', value: isSingleUser, tenantId: tenant.id, description: 'Single-user clinic mode' },
+        { key: 'enabled_modules', value: JSON.stringify(resolvedModules), tenantId: tenant.id, description: 'Enabled navigation modules for this tenant' },
       ];
       for (const setting of settings) {
         const settingEntity = queryRunner.manager.create(SystemSetting, setting);

@@ -69,12 +69,10 @@ export class SystemSettingsController {
   @Get('public/:key')
   @Public()
   @ApiOperation({ summary: 'Get a public system setting by key (read-only)' })
-  @ApiQuery({ name: 'tenantId', required: false, description: 'Filter by tenant' })
   async findOnePublic(
     @Param('key') key: string,
-    @Query('tenantId') tenantId?: string,
   ) {
-    // Only allow explicitly public settings
+    // Only allow explicitly public settings — no tenant parameter to prevent cross-tenant leakage
     const publicKeys = [
       'facility_name', 'facility_logo', 'facility_address',
       'login_banner', 'setup_complete', 'deployment_mode',
@@ -83,7 +81,7 @@ export class SystemSettingsController {
     if (!publicKeys.includes(key)) {
       throw new ForbiddenException('This setting is not publicly accessible');
     }
-    return this.systemSettingsService.getByKey(key, tenantId);
+    return this.systemSettingsService.getByKey(key);
   }
 
   @Get(':key')

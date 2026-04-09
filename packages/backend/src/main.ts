@@ -103,7 +103,7 @@ async function bootstrap() {
 
   // Global tenant interceptor - sets tenantId from JWT on every request
   const dataSource = app.get(DataSource);
-  app.useGlobalInterceptors(new TenantInterceptor(dataSource));
+  app.useGlobalInterceptors(new TenantInterceptor(dataSource, reflector));
 
   // Global response transform interceptor - standardizes API response envelopes
   app.useGlobalInterceptors(new ResponseTransformInterceptor(reflector));

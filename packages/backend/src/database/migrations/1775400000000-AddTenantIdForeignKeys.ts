@@ -25,6 +25,7 @@ export class AddTenantIdForeignKeys1775400000000 implements MigrationInterface {
             AND col.table_schema = 'public'
             AND col.table_name != 'tenants'
             AND col.table_name != 'migrations'
+            AND col.data_type = 'uuid'
             AND NOT EXISTS (
               SELECT 1 FROM information_schema.table_constraints tc
               JOIN information_schema.key_column_usage kcu

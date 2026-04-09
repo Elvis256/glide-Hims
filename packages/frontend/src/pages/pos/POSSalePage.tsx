@@ -204,8 +204,9 @@ export default function POSSalePage() {
         } else {
           setInteractions([]);
         }
-      } catch {
-        // Silently ignore — interaction data may not be populated
+      } catch (error) {
+        console.error('Drug interaction check failed:', error);
+        toast.warning('⚠️ Drug interaction check unavailable — proceed with caution');
       }
     };
     checkInteractions();

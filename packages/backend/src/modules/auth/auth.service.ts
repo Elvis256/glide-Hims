@@ -28,6 +28,7 @@ import { LoginDto, AuthResponseDto, ChangePasswordDto, UpdateProfileDto } from '
 import { JwtPayload } from './strategies/jwt.strategy';
 import { getAccessibleModules } from '../../config/module-registry';
 import { isSuperAdmin } from '../../common/constants/roles.constants';
+import { getPreset, type FacilityMode } from '../../common/constants/facility-presets.constants';
 import { CacheService } from '../cache/cache.service';
 
 @Injectable()
@@ -698,7 +699,71 @@ export class AuthService {
     permissions = [...new Set([...permissions, ...directPermissions.map((up) => up.permission.code)])];
 
     const superAdmin = isSuperAdmin(roles);
-    const accessibleModules = getAccessibleModules(permissions, superAdmin);
+
+    // Resolve tenant's enabled modules to filter navigation by facility type
+    let tenantEnabledModules: string[] | null = null;
+    let facilityMode: string | null = null;
+    let businessType: string | null = null;
+    if (user.tenantId) {
+      // Priority 1: Check system_settings for enabled_modules (most reliable)
+      const enabledModulesSetting = await this.userRoleRepository.manager.query(
+        `SELECT value FROM system_settings WHERE tenant_id = $1 AND key = 'enabled_modules' LIMIT 1`,
+        [user.tenantId],
+      );
+      if (enabledModulesSetting?.length > 0) {
+        const val = enabledModulesSetting[0].value;
+        const parsed = typeof val === 'string' ? JSON.parse(val) : val;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          tenantEnabledModules = parsed;
+        }
+      }
+
+      // Priority 2: Check tenant.settings.enabledModules (JSONB column)
+      if (!tenantEnabledModules) {
+        const tenant = await this.tenantRepository.findOne({ where: { id: user.tenantId } });
+        if (tenant?.settings?.enabledModules && Array.isArray(tenant.settings.enabledModules)) {
+          tenantEnabledModules = tenant.settings.enabledModules;
+        }
+      }
+
+      // Priority 3: Derive from facility_mode preset
+      if (!tenantEnabledModules) {
+        const facilityModeSetting = await this.userRoleRepository.manager.query(
+          `SELECT value FROM system_settings WHERE tenant_id = $1 AND key = 'facility_mode' LIMIT 1`,
+          [user.tenantId],
+        );
+        if (facilityModeSetting?.length > 0) {
+          const mode = typeof facilityModeSetting[0].value === 'string'
+            ? facilityModeSetting[0].value.replace(/"/g, '')
+            : facilityModeSetting[0].value;
+          facilityMode = mode;
+          const preset = getPreset(mode as FacilityMode);
+          if (preset) {
+            tenantEnabledModules = preset.enabledModules;
+            businessType = preset.businessType;
+          }
+        }
+      }
+    }
+
+    // If we have enabled modules but didn't set facilityMode yet, look it up
+    if (!facilityMode && user.tenantId) {
+      const fmSetting = await this.userRoleRepository.manager.query(
+        `SELECT value FROM system_settings WHERE tenant_id = $1 AND key = 'facility_mode' LIMIT 1`,
+        [user.tenantId],
+      );
+      if (fmSetting?.length > 0) {
+        facilityMode = typeof fmSetting[0].value === 'string'
+          ? fmSetting[0].value.replace(/"/g, '')
+          : fmSetting[0].value;
+        if (!businessType) {
+          const preset = getPreset(facilityMode as FacilityMode);
+          if (preset) businessType = preset.businessType;
+        }
+      }
+    }
+
+    const accessibleModules = getAccessibleModules(permissions, superAdmin, tenantEnabledModules);
 
     return {
       id: user.id,
@@ -709,6 +774,8 @@ export class AuthService {
       roles,
       permissions,
       accessibleModules,
+      facilityMode,
+      businessType,
       facilityId: userRoles.find(ur => ur.facilityId)?.facilityId || user.facilityId,
       tenantId: user.tenantId,
     };

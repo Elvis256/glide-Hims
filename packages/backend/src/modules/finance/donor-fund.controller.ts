@@ -11,6 +11,13 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { DonorFundService } from './donor-fund.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import {
+  CreateDonorFundDto,
+  RecordDonorExpenseDto,
+  CreateInterFacilityTransactionDto,
+  ApproveInterFacilityDto,
+  SettleInterFacilityDto,
+} from './dto/finance.dto';
 
 @ApiTags('Donor Funds')
 @ApiBearerAuth()
@@ -23,7 +30,7 @@ export class DonorFundController {
   @Post()
   @AuthWithPermissions('finance.manage')
   @ApiOperation({ summary: 'Create a donor fund' })
-  async createDonorFund(@Body() body: any, @Request() req: any) {
+  async createDonorFund(@Body() body: CreateDonorFundDto, @Request() req: any) {
     return this.donorFundService.createDonorFund(body, req.user?.tenantId);
   }
 
@@ -53,7 +60,7 @@ export class DonorFundController {
   @ApiOperation({ summary: 'Record an expense against a donor fund' })
   async recordDonorExpense(
     @Param('id') id: string,
-    @Body() body: any,
+    @Body() body: RecordDonorExpenseDto,
     @Request() req: any,
   ) {
     return this.donorFundService.recordDonorExpense(
@@ -70,7 +77,7 @@ export class DonorFundController {
   @Post('inter-facility')
   @AuthWithPermissions('finance.manage')
   @ApiOperation({ summary: 'Create an inter-facility transaction' })
-  async createInterFacilityTransaction(@Body() body: any, @Request() req: any) {
+  async createInterFacilityTransaction(@Body() body: CreateInterFacilityTransactionDto, @Request() req: any) {
     return this.donorFundService.createInterFacilityTransaction(
       {
         fromFacilityId: body.fromFacilityId,
@@ -103,7 +110,7 @@ export class DonorFundController {
   @ApiOperation({ summary: 'Approve an inter-facility transaction' })
   async approveInterFacility(
     @Param('id') id: string,
-    @Body() body: any,
+    @Body() body: ApproveInterFacilityDto,
     @Request() req: any,
   ) {
     return this.donorFundService.approveInterFacility(
@@ -118,7 +125,7 @@ export class DonorFundController {
   @ApiOperation({ summary: 'Settle an inter-facility transaction' })
   async settleInterFacility(
     @Param('id') id: string,
-    @Body() body: any,
+    @Body() body: SettleInterFacilityDto,
     @Request() req: any,
   ) {
     return this.donorFundService.settleInterFacility(

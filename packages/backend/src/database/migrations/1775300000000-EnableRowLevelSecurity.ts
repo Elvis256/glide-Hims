@@ -32,12 +32,18 @@ export class EnableRowLevelSecurity1775300000000 implements MigrationInterface {
           -- Enable RLS on the table
           EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
 
-          -- Create policy: allow access when tenant_id matches session variable or is NULL
+          -- Skip if policy already exists
+          CONTINUE WHEN EXISTS (
+            SELECT 1 FROM pg_policies
+            WHERE tablename = t AND policyname = 'tenant_isolation_' || t
+          );
+
+          -- Create policy: cast both sides to text to support both uuid and varchar tenant_id columns
           EXECUTE format(
             'CREATE POLICY tenant_isolation_%s ON %I
-             USING (tenant_id = current_setting(''app.tenant_id'', true)::uuid
+             USING (tenant_id::text = current_setting(''app.tenant_id'', true)
                     OR tenant_id IS NULL)
-             WITH CHECK (tenant_id = current_setting(''app.tenant_id'', true)::uuid
+             WITH CHECK (tenant_id::text = current_setting(''app.tenant_id'', true)
                          OR tenant_id IS NULL)',
             t, t
           );

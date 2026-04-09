@@ -45,7 +45,7 @@ export class OwnershipGuard implements CanActivate {
 
       if (!entityMeta) {
         this.logger.warn(`Entity "${config.entity}" not found for ownership check`);
-        return true; // Don't block if entity not found
+        throw new ForbiddenException('Unable to verify resource ownership');
       }
 
       const tableName = entityMeta.tableName;
@@ -53,7 +53,7 @@ export class OwnershipGuard implements CanActivate {
       
       if (!ownerColumn) {
         this.logger.warn(`Owner field "${config.ownerField}" not found on ${config.entity}`);
-        return true;
+        throw new ForbiddenException('Unable to verify resource ownership');
       }
 
       // Build ownership query
@@ -105,7 +105,7 @@ export class OwnershipGuard implements CanActivate {
     } catch (error) {
       if (error instanceof ForbiddenException) throw error;
       this.logger.error(`Ownership check failed: ${error.message}`);
-      return true; // Don't block on errors, let service handle
+      throw new ForbiddenException('Unable to verify resource ownership');
     }
   }
 
@@ -114,7 +114,8 @@ export class OwnershipGuard implements CanActivate {
     const roles = Array.isArray(user.roles)
       ? user.roles.map((r: any) => (typeof r === 'string' ? r : r.name))
       : [];
-    return roles.some((r: string) => r.toLowerCase().includes('super admin'));
+    const SUPER_ADMIN_ROLES = ['super admin', 'superadmin'];
+    return roles.some((r: string) => SUPER_ADMIN_ROLES.includes(r.toLowerCase().trim()));
   }
 
   private resolveColumnName(entityMeta: any, propertyName: string): string | null {
