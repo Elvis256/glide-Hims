@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
+import DOMPurify from 'dompurify';
 import { useAuthStore } from '../../../store/auth';
 import {
   FileText,
@@ -25,6 +26,7 @@ import { patientsService } from '../../../services/patients';
 import { printService } from '../../../lib/print';
 import { useInstitutionInfo } from '../../../lib/useInstitutionInfo';
 import { useDoctorCertPrefs } from '../../../lib/useDoctorCertPrefs';
+import { escapeHtml } from '../../../lib/sanitize';
 
 interface Patient {
   id: string;
@@ -194,10 +196,10 @@ export default function MedicalCertificatePage() {
         <div style="text-align:center;border-bottom:3px double #1e40af;padding-bottom:16px;margin-bottom:20px;">
           ${logoHtml}
           <h1 style="font-size:22px;font-weight:bold;color:#1e3a5f;margin:0;letter-spacing:1px;">
-            ${inst.name || 'Medical Facility'}
+            ${escapeHtml(inst.name) || 'Medical Facility'}
           </h1>
-          ${inst.address ? `<p style="margin:4px 0 0;font-size:12px;color:#555;">${inst.address}</p>` : ''}
-          ${inst.phone || inst.email ? `<p style="margin:2px 0 0;font-size:12px;color:#555;">${[inst.phone, inst.email].filter(Boolean).join(' • ')}</p>` : ''}
+          ${inst.address ? `<p style="margin:4px 0 0;font-size:12px;color:#555;">${escapeHtml(inst.address)}</p>` : ''}
+          ${inst.phone || inst.email ? `<p style="margin:2px 0 0;font-size:12px;color:#555;">${[inst.phone, inst.email].filter(Boolean).map(v => escapeHtml(v)).join(' • ')}</p>` : ''}
         </div>
 
         <!-- Title -->
@@ -205,34 +207,34 @@ export default function MedicalCertificatePage() {
           <h2 style="font-size:20px;font-weight:bold;text-decoration:underline;color:#1e3a5f;margin:0;">
             MEDICAL CERTIFICATE
           </h2>
-          <p style="font-size:11px;color:#888;margin:6px 0 0;">Ref: ${certSerial}</p>
+          <p style="font-size:11px;color:#888;margin:6px 0 0;">Ref: ${escapeHtml(certSerial)}</p>
         </div>
 
         <!-- Patient & Exam Info -->
         <table style="width:100%;font-size:13px;margin-bottom:16px;border-collapse:collapse;">
           <tr>
             <td style="padding:4px 8px;font-weight:bold;width:140px;color:#333;">Patient Name:</td>
-            <td style="padding:4px 8px;border-bottom:1px dotted #999;">${selectedPatient?.name || '—'}</td>
+            <td style="padding:4px 8px;border-bottom:1px dotted #999;">${escapeHtml(selectedPatient?.name) || '—'}</td>
             <td style="padding:4px 8px;font-weight:bold;width:50px;color:#333;">MRN:</td>
-            <td style="padding:4px 8px;border-bottom:1px dotted #999;">${selectedPatient?.patientId || '—'}</td>
+            <td style="padding:4px 8px;border-bottom:1px dotted #999;">${escapeHtml(selectedPatient?.patientId) || '—'}</td>
           </tr>
           <tr>
             <td style="padding:4px 8px;font-weight:bold;color:#333;">Date of Birth:</td>
-            <td style="padding:4px 8px;border-bottom:1px dotted #999;">${selectedPatient?.dateOfBirth || '—'}</td>
+            <td style="padding:4px 8px;border-bottom:1px dotted #999;">${escapeHtml(selectedPatient?.dateOfBirth) || '—'}</td>
             <td style="padding:4px 8px;font-weight:bold;color:#333;">Age:</td>
-            <td style="padding:4px 8px;border-bottom:1px dotted #999;">${patientAge || '—'}</td>
+            <td style="padding:4px 8px;border-bottom:1px dotted #999;">${escapeHtml(patientAge) || '—'}</td>
           </tr>
           <tr>
             <td style="padding:4px 8px;font-weight:bold;color:#333;">Gender:</td>
-            <td style="padding:4px 8px;border-bottom:1px dotted #999;">${selectedPatient?.gender || '—'}</td>
+            <td style="padding:4px 8px;border-bottom:1px dotted #999;">${escapeHtml(selectedPatient?.gender) || '—'}</td>
             <td style="padding:4px 8px;font-weight:bold;color:#333;">Examined:</td>
-            <td style="padding:4px 8px;border-bottom:1px dotted #999;">${examinationDate}</td>
+            <td style="padding:4px 8px;border-bottom:1px dotted #999;">${escapeHtml(examinationDate)}</td>
           </tr>
         </table>
 
         <!-- Purpose -->
         <div style="background:#f0f4ff;border:1px solid #c7d2fe;border-radius:6px;padding:10px 14px;margin-bottom:16px;">
-          <strong style="color:#1e40af;">Purpose:</strong> ${purpose}
+          <strong style="color:#1e40af;">Purpose:</strong> ${escapeHtml(purpose)}
         </div>
 
         <!-- Findings -->
@@ -240,7 +242,7 @@ export default function MedicalCertificatePage() {
           <h3 style="font-size:14px;font-weight:bold;color:#1e3a5f;border-bottom:1px solid #ddd;padding-bottom:4px;margin:0 0 8px;">
             Medical Findings
           </h3>
-          <p style="font-size:13px;color:#333;line-height:1.6;margin:0;white-space:pre-wrap;">${findings || 'No findings recorded.'}</p>
+          <p style="font-size:13px;color:#333;line-height:1.6;margin:0;white-space:pre-wrap;">${escapeHtml(findings) || 'No findings recorded.'}</p>
         </div>
 
         <!-- Recommendations -->
@@ -248,26 +250,26 @@ export default function MedicalCertificatePage() {
           <h3 style="font-size:14px;font-weight:bold;color:#1e3a5f;border-bottom:1px solid #ddd;padding-bottom:4px;margin:0 0 8px;">
             Recommendations
           </h3>
-          <p style="font-size:13px;color:#333;line-height:1.6;margin:0;white-space:pre-wrap;">${recommendations || 'No recommendations.'}</p>
+          <p style="font-size:13px;color:#333;line-height:1.6;margin:0;white-space:pre-wrap;">${escapeHtml(recommendations) || 'No recommendations.'}</p>
         </div>
 
         <!-- Validity -->
         <div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:6px;padding:10px 14px;margin-bottom:24px;">
-          <strong style="color:#065f46;">Valid from:</strong> ${examinationDate}
-          &nbsp;&nbsp;<strong style="color:#065f46;">to:</strong> ${validUntil}
-          &nbsp;&nbsp;<span style="color:#666;">(${validityPeriod} days)</span>
+          <strong style="color:#065f46;">Valid from:</strong> ${escapeHtml(examinationDate)}
+          &nbsp;&nbsp;<strong style="color:#065f46;">to:</strong> ${escapeHtml(validUntil)}
+          &nbsp;&nbsp;<span style="color:#666;">(${escapeHtml(validityPeriod)} days)</span>
         </div>
 
         <!-- Signature -->
         <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:40px;padding-top:20px;border-top:1px solid #ddd;">
           <div>
-            <p style="font-size:12px;color:#666;margin:0;">Date: ${new Date().toLocaleDateString()}</p>
+            <p style="font-size:12px;color:#666;margin:0;">Date: ${escapeHtml(new Date().toLocaleDateString())}</p>
           </div>
           <div style="text-align:center;">
             <div style="width:200px;border-bottom:1px solid #333;margin-bottom:6px;">&nbsp;</div>
-            <p style="font-size:13px;font-weight:bold;margin:0;">${doctorName}</p>
-            ${doctorPrefs.qualification ? `<p style="font-size:11px;color:#555;margin:2px 0 0;">${doctorPrefs.qualification}</p>` : ''}
-            ${doctorPrefs.registrationNo ? `<p style="font-size:11px;color:#555;margin:2px 0 0;">Reg. No: ${doctorPrefs.registrationNo}</p>` : ''}
+            <p style="font-size:13px;font-weight:bold;margin:0;">${escapeHtml(doctorName)}</p>
+            ${doctorPrefs.qualification ? `<p style="font-size:11px;color:#555;margin:2px 0 0;">${escapeHtml(doctorPrefs.qualification)}</p>` : ''}
+            ${doctorPrefs.registrationNo ? `<p style="font-size:11px;color:#555;margin:2px 0 0;">Reg. No: ${escapeHtml(doctorPrefs.registrationNo)}</p>` : ''}
           </div>
         </div>
 
@@ -276,7 +278,7 @@ export default function MedicalCertificatePage() {
           <p style="font-size:10px;color:#999;margin:0;">
             This certificate is issued at the request of the patient and is valid for the period stated above.
           </p>
-          ${inst.taxId ? `<p style="font-size:10px;color:#999;margin:4px 0 0;">TIN: ${inst.taxId}</p>` : ''}
+          ${inst.taxId ? `<p style="font-size:10px;color:#999;margin:4px 0 0;">TIN: ${escapeHtml(inst.taxId)}</p>` : ''}
         </div>
       </div>
     `;
@@ -702,7 +704,7 @@ export default function MedicalCertificatePage() {
             <div
               ref={certificateRef}
               className="bg-white rounded-xl shadow-lg border overflow-hidden"
-              dangerouslySetInnerHTML={{ __html: buildCertificateHtml() }}
+              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(buildCertificateHtml()) }}
             />
           </div>
         )}

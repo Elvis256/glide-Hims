@@ -22,7 +22,7 @@ module.exports = {
     {
       name: 'glide-hims-frontend',
       script: 'node_modules/vite/bin/vite.js',
-      args: 'preview --port 5173 --host 0.0.0.0',
+      args: 'preview --port 5173 --host 127.0.0.1',
       cwd: '/home/bi/hims/glide-Hims/packages/frontend',
       watch: false,
       autorestart: true,

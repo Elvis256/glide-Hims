@@ -5,7 +5,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   ManyToOne,
-  JoinColumn,
+  JoinColumn, Index,
 } from 'typeorm';
 import { TrainingProgram } from './training-program.entity';
 import { Employee } from './employee.entity';
@@ -23,6 +23,10 @@ export enum EnrollmentStatus {
 export class TrainingEnrollment {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  @Column({ type: 'uuid', nullable: true, name: 'tenant_id' })
+  @Index()
+  tenantId?: string;
 
   @Column({ type: 'uuid', name: 'training_program_id' })
   trainingProgramId: string;

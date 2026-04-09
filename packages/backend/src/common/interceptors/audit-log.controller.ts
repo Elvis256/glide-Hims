@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Headers } from '@nestjs/common';
+import { Controller, Get, Query, Headers, Request } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AuthWithPermissions } from '../../modules/auth/decorators/auth.decorator';
 import { AuditLogService } from './audit-log.service';
@@ -23,6 +23,7 @@ export class AuditLogController {
     @Query('endDate') endDate?: string,
     @Query('search') search?: string,
     @Headers('x-facility-id') facilityId?: string,
+    @Request() req?: any,
   ) {
     return this.auditLogService.findAllPaginated({
       page: parseInt(page, 10),
@@ -34,13 +35,14 @@ export class AuditLogController {
       startDate,
       endDate,
       search,
+      tenantId: req?.user?.tenantId,
     });
   }
 
   @Get('stats')
   @AuthWithPermissions('admin.audit')
   @ApiOperation({ summary: 'Get audit log statistics' })
-  async getStats() {
-    return this.auditLogService.getStats();
+  async getStats(@Request() req?: any) {
+    return this.auditLogService.getStats(req?.user?.tenantId);
   }
 }

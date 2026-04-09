@@ -77,6 +77,10 @@ export function AdminRoute({ children }: { children: ReactNode }) {
   return <RoleRoute roles={[ROLES.ADMIN]}>{children}</RoleRoute>;
 }
 
+export function SystemAdminRoute({ children }: { children: ReactNode }) {
+  return <RoleRoute roles={[ROLES.SUPER_ADMIN]}>{children}</RoleRoute>;
+}
+
 export function FinanceRoute({ children }: { children: ReactNode }) {
   return <RoleRoute roles={[ROLES.ACCOUNTANT, ROLES.ADMIN]}>{children}</RoleRoute>;
 }
@@ -91,6 +95,14 @@ export function BillingRoute({ children }: { children: ReactNode }) {
 
 export function RadiologyRoute({ children }: { children: ReactNode }) {
   return <RoleRoute roles={[ROLES.RADIOLOGIST, ROLES.DOCTOR, ROLES.NURSE]}>{children}</RoleRoute>;
+}
+
+export function DentistRoute({ children }: { children: ReactNode }) {
+  return <RoleRoute roles={[ROLES.DOCTOR]}>{children}</RoleRoute>;
+}
+
+export function OptometristRoute({ children }: { children: ReactNode }) {
+  return <RoleRoute roles={[ROLES.DOCTOR]}>{children}</RoleRoute>;
 }
 
 export default RoleRoute;

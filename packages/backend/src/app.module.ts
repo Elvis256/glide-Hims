@@ -33,6 +33,7 @@ import { MembershipModule } from './modules/membership/membership.module';
 import { ServicesModule } from './modules/services/services.module';
 import { StoresModule } from './modules/stores/stores.module';
 import { PharmacyModule } from './modules/pharmacy/pharmacy.module';
+import { PosModule } from './modules/pos/pos.module';
 import { SuppliersModule } from './modules/suppliers/suppliers.module';
 import { ProcurementModule } from './modules/procurement/procurement.module';
 import { SyncModule } from './modules/sync/sync.module';
@@ -76,6 +77,9 @@ import { HealthModule } from './modules/health/health.module';
 import { TenantModule } from './common/middleware/tenant.module';
 import { AdherenceModule } from './modules/adherence/adherence.module';
 import { ScheduledTasksModule } from './modules/scheduled-tasks/scheduled-tasks.module';
+import { DentalModule } from './modules/dental/dental.module';
+import { OpticalModule } from './modules/optical/optical.module';
+import { SupportAccessModule } from './modules/support-access/support-access.module';
 
 @Module({
   imports: [
@@ -173,6 +177,7 @@ import { ScheduledTasksModule } from './modules/scheduled-tasks/scheduled-tasks.
     ServicesModule,
     StoresModule,
     PharmacyModule,
+    PosModule,
 
     // Phase 12: Supply Chain & Procurement
     SuppliersModule,
@@ -241,6 +246,15 @@ import { ScheduledTasksModule } from './modules/scheduled-tasks/scheduled-tasks.
     // Task Scheduling
     ScheduleModule.forRoot(),
     ScheduledTasksModule,
+
+    // Phase 23: Dental Vertical
+    DentalModule,
+
+    // Phase 24: Optical/Optometry Vertical
+    OpticalModule,
+
+    // Support Access (tiered system admin access)
+    SupportAccessModule,
   ],
   controllers: [AppController],
   providers: [

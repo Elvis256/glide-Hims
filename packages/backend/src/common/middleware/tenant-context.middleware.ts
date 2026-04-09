@@ -1,4 +1,4 @@
-import { Injectable, NestInterceptor, ExecutionContext, CallHandler, Logger } from '@nestjs/common';
+import { Injectable, NestInterceptor, ExecutionContext, CallHandler, Logger, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Observable } from 'rxjs';
@@ -36,10 +36,18 @@ export class TenantContextInterceptor implements NestInterceptor {
         });
 
         if (facility) {
-          request.tenantContext = {
-            tenantId: facility.tenantId,
-            facilityId: facility.id,
-          } as TenantContext;
+          // Validate the facility belongs to the user's tenant
+          if (user.tenantId && facility.tenantId !== user.tenantId) {
+            this.logger.warn(
+              `Tenant mismatch: user ${user.id} (tenant ${user.tenantId}) tried to access facility ${facilityId} (tenant ${facility.tenantId})`,
+            );
+            throw new ForbiddenException('Access denied: facility does not belong to your organization');
+          } else {
+            request.tenantContext = {
+              tenantId: facility.tenantId,
+              facilityId: facility.id,
+            } as TenantContext;
+          }
         } else {
           this.logger.warn(`Facility not found: ${facilityId}`);
           request.tenantContext = null;

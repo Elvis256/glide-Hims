@@ -1359,23 +1359,25 @@ export class QueueManagementService {
              COALESCE(SUM(CASE WHEN o.order_type = 'radiology' AND o.status = 'pending' THEN 1 ELSE 0 END), 0) as pending_imaging
            FROM encounters e
            LEFT JOIN orders o ON o.encounter_id = e.id AND o.status = 'pending'
-           WHERE e.id = ANY($1)
+           WHERE e.id = ANY($1) AND e.tenant_id = $2
            GROUP BY e.id`,
-          [encounterIds],
+          [encounterIds, tenantId],
         ),
         this.dataSource.query(
           `SELECT encounter_id, COUNT(*) as pending_count
            FROM prescriptions
            WHERE encounter_id = ANY($1) AND status IN ('pending', 'partially_dispensed')
+             AND tenant_id = $2
            GROUP BY encounter_id`,
-          [encounterIds],
+          [encounterIds, tenantId],
         ),
         this.dataSource.query(
           `SELECT encounter_id, COALESCE(SUM(balance_due), 0) as balance
            FROM invoices
            WHERE encounter_id = ANY($1) AND status NOT IN ('cancelled', 'refunded')
+             AND tenant_id = $2
            GROUP BY encounter_id`,
-          [encounterIds],
+          [encounterIds, tenantId],
         ),
       ]);
 

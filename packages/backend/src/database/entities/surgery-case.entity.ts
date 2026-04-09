@@ -5,7 +5,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   ManyToOne,
-  JoinColumn,
+  JoinColumn, Index,
 } from 'typeorm';
 import { Patient } from './patient.entity';
 import { Encounter } from './encounter.entity';
@@ -48,6 +48,10 @@ export enum AnesthesiaType {
 export class SurgeryCase {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  @Column({ type: 'uuid', nullable: true, name: 'tenant_id' })
+  @Index()
+  tenantId?: string;
 
   @Column({ length: 20, unique: true, name: 'case_number' })
   caseNumber: string;

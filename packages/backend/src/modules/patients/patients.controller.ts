@@ -1,15 +1,17 @@
 import { 
   Controller, Get, Post, Body, Patch, Param, Delete, Query, 
-  ParseUUIDPipe, UseInterceptors, UploadedFile, Res, Req 
+  ParseUUIDPipe, UseInterceptors, UploadedFile, Res, Req, BadRequestException 
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiQuery, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { Response, Request } from 'express';
-import { createReadStream, existsSync } from 'fs';
+import { createReadStream, existsSync, readFileSync } from 'fs';
+import { join, resolve } from 'path';
 import { PatientsService, UploadDocumentDto, CreateNoteDto } from './patients.service';
 import { CreatePatientDto, UpdatePatientDto, PatientSearchDto, MergePatientDto, LinkUserDto } from './dto/patient.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { DocumentCategory } from '../../database/entities/patient-document.entity';
+import { validateFileContent } from '../../common/file-validation';
 
 @ApiTags('patients')
 @Controller('patients')
@@ -91,6 +93,13 @@ export class PatientsController {
     
     if (!existsSync(document.filePath)) {
       return res.status(404).json({ message: 'File not found on server' });
+    }
+
+    // Path traversal protection: ensure file is within the uploads directory
+    const uploadsDir = resolve(join(__dirname, '..', '..', '..', 'uploads'));
+    const resolvedPath = resolve(document.filePath);
+    if (!resolvedPath.startsWith(uploadsDir)) {
+      return res.status(403).json({ message: 'Access denied: invalid file path' });
     }
 
     // Sanitize filename to prevent path traversal / header injection
@@ -194,6 +203,13 @@ export class PatientsController {
     @Body() dto: UploadDocumentDto,
     @Req() req: Request,
   ) {
+    // Validate file content matches declared MIME type (prevent disguised executables)
+    if (file?.path) {
+      const header = readFileSync(file.path, { flag: 'r' }).subarray(0, 16);
+      if (!validateFileContent(header, file.mimetype)) {
+        throw new BadRequestException('File content does not match declared type');
+      }
+    }
     const userId = (req as any).user?.id;
     const document = await this.patientsService.uploadDocument(patientId, file, dto, userId, (req as any).user?.tenantId);
     return { message: 'Document uploaded', data: document };

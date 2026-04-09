@@ -16,13 +16,18 @@ import {
   MapPin,
   Building,
   LogIn,
+  Pill,
+  Smile,
+  Glasses,
+  ShoppingBag,
 } from 'lucide-react';
 import { setupService, type InitializeSetupData, type FacilityPreset } from '../services/setup';
 import Logo from '../components/Logo';
 
-type Step = 'organization' | 'deployment' | 'facility' | 'admin' | 'settings' | 'review';
+type Step = 'business_type' | 'organization' | 'deployment' | 'facility' | 'admin' | 'settings' | 'review';
 
 const steps: { id: Step; title: string; icon: React.ReactNode }[] = [
+  { id: 'business_type', title: 'Business Type', icon: <Building2 className="w-5 h-5" /> },
   { id: 'organization', title: 'Organization', icon: <Building2 className="w-5 h-5" /> },
   { id: 'deployment', title: 'Deployment', icon: <Monitor className="w-5 h-5" /> },
   { id: 'facility', title: 'Facility', icon: <Hospital className="w-5 h-5" /> },
@@ -35,6 +40,8 @@ const facilityTypes = [
   { value: 'hospital', label: 'Hospital' },
   { value: 'clinic', label: 'Clinic' },
   { value: 'pharmacy', label: 'Pharmacy' },
+  { value: 'dental_clinic', label: 'Dental Clinic' },
+  { value: 'optical_center', label: 'Optical Center' },
   { value: 'laboratory', label: 'Laboratory' },
   { value: 'health_center', label: 'Health Center' },
 ];
@@ -48,6 +55,7 @@ const currencies = [
 ];
 
 const modules = [
+  // Core
   { id: 'patients', label: 'Patient Management', default: true },
   { id: 'encounters', label: 'Encounters/Visits', default: true },
   { id: 'lab', label: 'Laboratory', default: true },
@@ -64,13 +72,36 @@ const modules = [
   { id: 'appointments', label: 'Appointments & Queue', default: false },
   { id: 'finance', label: 'Finance & Accounting', default: false },
   { id: 'reports', label: 'Reports & Analytics', default: true },
+  // Pharmacy-specific
+  { id: 'pos', label: 'Point of Sale', default: false },
+  { id: 'drug_interactions', label: 'Drug Interaction Checks', default: false },
+  { id: 'controlled_substances', label: 'Controlled Substances', default: false },
+  { id: 'wholesale', label: 'Wholesale/Distribution', default: false },
+  { id: 'suppliers', label: 'Supplier Management', default: false },
+  // Dental-specific
+  { id: 'dental_charting', label: 'Dental Charting', default: false },
+  { id: 'dental_procedures', label: 'Dental Procedures & Treatment Plans', default: false },
+  { id: 'dental_imaging', label: 'Dental Imaging/X-Ray', default: false },
+  { id: 'dental_lab', label: 'Dental Lab Orders', default: false },
+  { id: 'orthodontics', label: 'Orthodontics', default: false },
+  { id: 'periodontics', label: 'Periodontics', default: false },
+  { id: 'insurance_preauth', label: 'Insurance Pre-Authorization', default: false },
+  // Optical-specific
+  { id: 'optical_exams', label: 'Eye Examinations', default: false },
+  { id: 'optical_rx', label: 'Optical Prescriptions', default: false },
+  { id: 'optical_inventory', label: 'Frame & Lens Inventory', default: false },
+  { id: 'contact_lenses', label: 'Contact Lens Fitting', default: false },
+  { id: 'optical_lab', label: 'Lens Cutting Lab', default: false },
+  { id: 'visual_field', label: 'Visual Field Testing', default: false },
 ];
 
 const BUILTIN_PRESETS: FacilityPreset[] = [
+  // Hospital & Clinic
   {
     mode: 'single_user',
+    businessType: 'hospital',
     name: 'Single-User Clinic',
-    description: 'Everything done by one person on one computer — registration, consultation, billing, and dispensing.',
+    description: 'Everything done by one person on one computer. Includes all core modules with simplified workflows.',
     icon: 'monitor',
     facilityType: 'clinic',
     supportsMultiSite: false,
@@ -81,18 +112,20 @@ const BUILTIN_PRESETS: FacilityPreset[] = [
   },
   {
     mode: 'clinic_opd',
+    businessType: 'hospital',
     name: 'Clinic – Outpatient Only',
-    description: 'A clinic with outpatient services only. No ward admissions.',
+    description: 'A clinic with only outpatient services. No ward admissions or inpatient care.',
     icon: 'stethoscope',
     facilityType: 'clinic',
     supportsMultiSite: false,
     singleUserMode: false,
     enabledModules: ['patients', 'encounters', 'vitals', 'lab', 'pharmacy', 'radiology', 'billing', 'inventory', 'insurance', 'reports', 'appointments'],
     recommendedRoles: ['Doctor', 'Nurse', 'Receptionist', 'Pharmacist', 'Lab Technician', 'Cashier'],
-    notes: ['OPD consultations, triage, vitals', 'No IPD, theatre, or maternity'],
+    notes: ['OPD consultations, triage, vitals recording', 'No IPD, theatre, or maternity'],
   },
   {
     mode: 'clinic_full',
+    businessType: 'hospital',
     name: 'Clinic – Inpatient & Outpatient',
     description: 'A clinic that handles both outpatient visits and inpatient admissions.',
     icon: 'bed',
@@ -105,6 +138,7 @@ const BUILTIN_PRESETS: FacilityPreset[] = [
   },
   {
     mode: 'multisite_opd',
+    businessType: 'hospital',
     name: 'Multi-Site OPD Network',
     description: 'Multiple outpatient-only locations under one organisation with centralised reporting.',
     icon: 'map-pin',
@@ -117,6 +151,7 @@ const BUILTIN_PRESETS: FacilityPreset[] = [
   },
   {
     mode: 'hospital',
+    businessType: 'hospital',
     name: 'Full Hospital',
     description: 'Complete hospital management: OPD, IPD, Emergency, Theatre, Maternity, HR, and Finance.',
     icon: 'building',
@@ -127,21 +162,131 @@ const BUILTIN_PRESETS: FacilityPreset[] = [
     recommendedRoles: ['Doctor', 'Nurse', 'Receptionist', 'Pharmacist', 'Lab Technician', 'Cashier', 'Store Keeper', 'HR Manager', 'Accountant', 'Radiologist'],
     notes: ['All modules enabled', 'Supports multiple wards, theatres, and departments'],
   },
+  // Pharmacy
+  {
+    mode: 'pharmacy_retail',
+    businessType: 'pharmacy',
+    name: 'Retail Pharmacy',
+    description: 'Single-location retail pharmacy with POS, dispensing, stock management, and controlled substance tracking.',
+    icon: 'pill',
+    facilityType: 'pharmacy',
+    supportsMultiSite: false,
+    singleUserMode: false,
+    enabledModules: ['patients', 'pharmacy', 'pos', 'billing', 'inventory', 'controlled_substances', 'drug_interactions', 'insurance', 'reports', 'suppliers'],
+    recommendedRoles: ['Pharmacist', 'Pharmacy Technician', 'Cashier', 'Store Keeper'],
+    notes: ['Full POS with barcode scanning and receipt printing', 'Controlled substance register with DEA compliance', 'Drug interaction checking on every sale', 'Supplier management and purchase orders'],
+  },
+  {
+    mode: 'pharmacy_chain',
+    businessType: 'pharmacy',
+    name: 'Pharmacy Chain',
+    description: 'Multi-branch pharmacy network with centralised purchasing, stock transfers, and consolidated reporting.',
+    icon: 'store',
+    facilityType: 'pharmacy',
+    supportsMultiSite: true,
+    singleUserMode: false,
+    enabledModules: ['patients', 'pharmacy', 'pos', 'billing', 'inventory', 'controlled_substances', 'drug_interactions', 'insurance', 'reports', 'suppliers', 'hr', 'finance'],
+    recommendedRoles: ['Pharmacist', 'Pharmacy Technician', 'Cashier', 'Store Keeper', 'Branch Manager', 'HR Manager', 'Accountant'],
+    notes: ['Central purchasing with branch-level stock transfers', 'Consolidated reporting across all branches', 'HR and finance modules for company management', 'Add branches after setup via Facilities > Add Branch'],
+  },
+  {
+    mode: 'pharmacy_wholesale',
+    businessType: 'pharmacy',
+    name: 'Wholesale / Distribution Pharmacy',
+    description: 'Wholesale pharmaceutical distributor with B2B sales, pricing tiers, delivery tracking, and full supply chain.',
+    icon: 'warehouse',
+    facilityType: 'pharmacy',
+    supportsMultiSite: true,
+    singleUserMode: false,
+    enabledModules: ['pharmacy', 'pos', 'billing', 'inventory', 'controlled_substances', 'drug_interactions', 'wholesale', 'reports', 'suppliers', 'hr', 'finance'],
+    recommendedRoles: ['Pharmacist', 'Sales Representative', 'Warehouse Manager', 'Store Keeper', 'Driver', 'HR Manager', 'Accountant'],
+    notes: ['B2B order management with customer accounts', 'Tiered pricing for different customer categories', 'Delivery tracking and route management', 'Full supply chain: procurement, warehousing, distribution'],
+  },
+  // Dental
+  {
+    mode: 'dental_general',
+    businessType: 'dental',
+    name: 'General Dental Practice',
+    description: 'General dentistry with charting, procedures, imaging, treatment plans, and dental-specific billing.',
+    icon: 'tooth',
+    facilityType: 'dental_clinic',
+    supportsMultiSite: false,
+    singleUserMode: false,
+    enabledModules: ['patients', 'encounters', 'dental_charting', 'dental_procedures', 'dental_imaging', 'dental_lab', 'billing', 'inventory', 'insurance', 'appointments', 'reports'],
+    recommendedRoles: ['Dentist', 'Dental Hygienist', 'Dental Assistant', 'Receptionist', 'Cashier'],
+    notes: ['Interactive dental chart with tooth-level tracking', 'CDT procedure codes for billing', 'Treatment plan builder with multi-visit scheduling', 'Dental lab order tracking (crowns, dentures, etc.)'],
+  },
+  {
+    mode: 'dental_specialist',
+    businessType: 'dental',
+    name: 'Specialist Dental Clinic',
+    description: 'Multi-specialty dental clinic with orthodontics, periodontics, oral surgery, insurance pre-auth, and multi-provider scheduling.',
+    icon: 'tooth-specialist',
+    facilityType: 'dental_clinic',
+    supportsMultiSite: false,
+    singleUserMode: false,
+    enabledModules: ['patients', 'encounters', 'dental_charting', 'dental_procedures', 'dental_imaging', 'dental_lab', 'orthodontics', 'periodontics', 'billing', 'inventory', 'insurance', 'insurance_preauth', 'appointments', 'reports', 'hr', 'finance'],
+    recommendedRoles: ['Dentist', 'Orthodontist', 'Periodontist', 'Oral Surgeon', 'Dental Hygienist', 'Dental Assistant', 'Receptionist', 'Cashier', 'HR Manager'],
+    notes: ['Orthodontic case tracking with adjustment logs', 'Periodontal charting (6 sites per tooth)', 'Insurance pre-authorization workflow', 'Multi-provider scheduling with chair management', 'HR and finance for larger practices'],
+  },
+  // Optical
+  {
+    mode: 'optical_center',
+    businessType: 'optical',
+    name: 'Optical Center',
+    description: 'Full-service optometry with eye exams, prescriptions, frame/lens inventory, contact lenses, and in-house lens lab.',
+    icon: 'glasses',
+    facilityType: 'optical_center',
+    supportsMultiSite: false,
+    singleUserMode: false,
+    enabledModules: ['patients', 'encounters', 'optical_exams', 'optical_rx', 'optical_inventory', 'contact_lenses', 'optical_lab', 'visual_field', 'pos', 'billing', 'inventory', 'insurance', 'appointments', 'reports'],
+    recommendedRoles: ['Optometrist', 'Optician', 'Lab Technician', 'Sales Associate', 'Receptionist', 'Cashier'],
+    notes: ['Structured eye exam forms (OD/OS)', 'Optical Rx management with history comparison', 'Frame & lens inventory with barcode scanning', 'Contact lens fitting and follow-up tracking', 'In-house lens cutting lab with order queue', 'Visual field testing and progression tracking'],
+  },
+  {
+    mode: 'optical_chain',
+    businessType: 'optical',
+    name: 'Optical Chain',
+    description: 'Multi-branch optical network with centralised inventory, lens lab orders, insurance billing, and consolidated reporting.',
+    icon: 'glasses-chain',
+    facilityType: 'optical_center',
+    supportsMultiSite: true,
+    singleUserMode: false,
+    enabledModules: ['patients', 'encounters', 'optical_exams', 'optical_rx', 'optical_inventory', 'contact_lenses', 'optical_lab', 'visual_field', 'pos', 'billing', 'inventory', 'insurance', 'appointments', 'reports', 'hr', 'finance'],
+    recommendedRoles: ['Optometrist', 'Optician', 'Lab Technician', 'Sales Associate', 'Receptionist', 'Cashier', 'Branch Manager', 'HR Manager', 'Accountant'],
+    notes: ['Multi-branch inventory with stock transfers', 'Centralised lens lab processing', 'HR and finance for company management', 'Consolidated reporting across all branches', 'Add branches after setup via Facilities > Add Branch'],
+  },
 ];
+
+const presetIcons: Record<string, React.ReactNode> = {
+  monitor: <Monitor className="w-6 h-6" />,
+  stethoscope: <Stethoscope className="w-6 h-6" />,
+  bed: <Bed className="w-6 h-6" />,
+  'map-pin': <MapPin className="w-6 h-6" />,
+  building: <Building className="w-6 h-6" />,
+  pill: <Pill className="w-6 h-6" />,
+  store: <ShoppingBag className="w-6 h-6" />,
+  warehouse: <Building className="w-6 h-6" />,
+  tooth: <Smile className="w-6 h-6" />,
+  'tooth-specialist': <Smile className="w-6 h-6" />,
+  glasses: <Glasses className="w-6 h-6" />,
+  'glasses-chain': <Glasses className="w-6 h-6" />,
+};
 
 export default function RegisterOrganizationPage() {
   const navigate = useNavigate();
-  const [currentStep, setCurrentStep] = useState<Step>('organization');
+  const [currentStep, setCurrentStep] = useState<Step>('business_type');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [presets, setPresets] = useState<FacilityPreset[]>([]);
   const [selectedPreset, setSelectedPreset] = useState<FacilityPreset | null>(null);
+  const [businessType, setBusinessType] = useState('');
 
   useEffect(() => {
-    setupService.getPresets().then(setPresets).catch(() => {});
+    setupService.getPresets().then(setPresets).catch((err) => console.error('Failed to load presets:', err));
   }, []);
 
   const [formData, setFormData] = useState<InitializeSetupData>({
-    organization: { name: '', type: 'hospital', country: 'Uganda' },
+    organization: { name: '', slug: '', type: 'hospital', country: 'Uganda' },
     facility: { name: '', type: 'hospital' },
     admin: { fullName: '', email: '', username: '', password: '' },
     settings: {
@@ -154,13 +299,57 @@ export default function RegisterOrganizationPage() {
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [slugChecking, setSlugChecking] = useState(false);
   const currentStepIndex = steps.findIndex(s => s.id === currentStep);
 
+  const checkSlugAvailability = async (slug: string) => {
+    if (!slug || slug.length < 3 || !/^[a-z0-9-]+$/.test(slug)) return;
+    setSlugChecking(true);
+    try {
+      await api.get(`/tenants/public/by-slug/${slug}`);
+      // If found, slug is taken
+      setErrors(prev => ({ ...prev, 'organization.slug': 'This organization code is already taken' }));
+    } catch {
+      // 404 = available
+      setErrors(prev => {
+        const next = { ...prev };
+        if (next['organization.slug'] === 'This organization code is already taken') delete next['organization.slug'];
+        return next;
+      });
+    } finally {
+      setSlugChecking(false);
+    }
+  };
+
   const updateFormData = (section: keyof InitializeSetupData, field: string, value: any) => {
-    setFormData(prev => ({
-      ...prev,
-      [section]: { ...prev[section], [field]: value },
-    }));
+    setFormData(prev => {
+      const updated = {
+        ...prev,
+        [section]: { ...prev[section], [field]: value },
+      };
+      // Auto-generate slug from organization name if user hasn't manually edited it
+      if (section === 'organization' && field === 'name') {
+        const autoSlug = value
+          .toLowerCase()
+          .trim()
+          .replace(/[^a-z0-9\s-]/g, '')
+          .replace(/\s+/g, '-')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '');
+        // Only auto-fill if slug is empty or matches what would be auto-generated from old name
+        const oldAutoSlug = (prev.organization.name || '')
+          .toLowerCase()
+          .trim()
+          .replace(/[^a-z0-9\s-]/g, '')
+          .replace(/\s+/g, '-')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '');
+        if (!prev.organization.slug || prev.organization.slug === oldAutoSlug) {
+          updated.organization = { ...updated.organization, slug: autoSlug };
+        }
+      }
+      return updated;
+    });
     setErrors(prev => ({ ...prev, [`${section}.${field}`]: '' }));
   };
 
@@ -185,13 +374,54 @@ export default function RegisterOrganizationPage() {
     }));
   };
 
+  const handleBusinessTypeSelect = (type: string) => {
+    setBusinessType(type);
+    setSelectedPreset(null);
+    switch (type) {
+      case 'pharmacy':
+        updateFormData('facility', 'type', 'pharmacy');
+        break;
+      case 'dental':
+        updateFormData('facility', 'type', 'dental_clinic');
+        break;
+      case 'optical':
+        updateFormData('facility', 'type', 'optical_center');
+        break;
+      default:
+        break;
+    }
+  };
+
+  const filteredPresets = businessType
+    ? (presets.length > 0 ? presets : BUILTIN_PRESETS).filter(p => p.businessType === businessType)
+    : (presets.length > 0 ? presets : BUILTIN_PRESETS);
+
+  const businessTypeOptions = [
+    { value: 'hospital', label: 'Hospital / Clinic', description: 'Hospitals, clinics, and health centers with OPD, IPD, lab, and pharmacy services.', icon: <Hospital className="w-10 h-10" /> },
+    { value: 'pharmacy', label: 'Pharmacy', description: 'Retail pharmacies, pharmacy chains, and wholesale distributors.', icon: <Pill className="w-10 h-10" /> },
+    { value: 'dental', label: 'Dental', description: 'General dentistry, specialist clinics, orthodontics, and periodontics.', icon: <Smile className="w-10 h-10" /> },
+    { value: 'optical', label: 'Optical', description: 'Optical centers, optometry practices, and optical retail chains.', icon: <Glasses className="w-10 h-10" /> },
+  ];
+
   const validateStep = (step: Step): boolean => {
     const newErrors: Record<string, string> = {};
 
     switch (step) {
+      case 'business_type':
+        if (!businessType) {
+          newErrors['businessType'] = 'Please select a business type';
+        }
+        break;
       case 'organization':
         if (!formData.organization.name.trim()) {
           newErrors['organization.name'] = 'Organization name is required';
+        }
+        if (!formData.organization.slug?.trim()) {
+          newErrors['organization.slug'] = 'Organization code is required';
+        } else if (!/^[a-z0-9-]+$/.test(formData.organization.slug)) {
+          newErrors['organization.slug'] = 'Only lowercase letters, numbers, and hyphens allowed';
+        } else if (formData.organization.slug.length < 3) {
+          newErrors['organization.slug'] = 'Organization code must be at least 3 characters';
         }
         break;
       case 'facility':
@@ -245,7 +475,8 @@ export default function RegisterOrganizationPage() {
     try {
       await setupService.registerTenant(formData);
       toast.success('Organization registered successfully! You can now sign in.');
-      navigate('/login?registered=true');
+      const slug = formData.organization.slug || formData.organization.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      navigate(`/login/${slug}?registered=true`);
     } catch (error: any) {
       toast.error(error.response?.data?.message || 'Registration failed. Please try again.');
     } finally {
@@ -255,6 +486,40 @@ export default function RegisterOrganizationPage() {
 
   const renderStepContent = () => {
     switch (currentStep) {
+      case 'business_type':
+        return (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">What type of business are you?</h2>
+              <p className="mt-1 text-gray-600">Select the category that best describes your facility.</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {businessTypeOptions.map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => handleBusinessTypeSelect(opt.value)}
+                  className={`p-6 rounded-xl border-2 text-left transition-all hover:shadow-md ${
+                    businessType === opt.value
+                      ? 'border-blue-600 bg-blue-50 ring-2 ring-blue-200'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="flex flex-col items-center text-center gap-3">
+                    <div className={`p-3 rounded-xl ${businessType === opt.value ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
+                      {opt.icon}
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900">{opt.label}</h4>
+                      <p className="text-sm text-gray-500 mt-1">{opt.description}</p>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+
       case 'organization':
         return (
           <div className="space-y-6">
@@ -273,6 +538,22 @@ export default function RegisterOrganizationPage() {
                   placeholder="e.g., Kampala Medical Center"
                 />
                 {errors['organization.name'] && <p className="mt-1 text-sm text-red-500">{errors['organization.name']}</p>}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Organization Code (Slug) *</label>
+                <input
+                  type="text"
+                  value={formData.organization.slug || ''}
+                  onChange={(e) => updateFormData('organization', 'slug', e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                  onBlur={(e) => checkSlugAvailability(e.target.value)}
+                  className={`mt-1 block w-full rounded-lg border ${errors['organization.slug'] ? 'border-red-500' : 'border-gray-300'} px-4 py-3 focus:border-blue-500 focus:ring-blue-500`}
+                  placeholder="e.g., kampala-medical"
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  This will be your login URL: <span className="font-mono text-blue-600">/login/{formData.organization.slug || 'your-code'}</span>
+                  {slugChecking && <span className="ml-2 text-blue-500">Checking availability...</span>}
+                </p>
+                {errors['organization.slug'] && <p className="mt-1 text-sm text-red-500">{errors['organization.slug']}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Organization Type</label>
@@ -311,7 +592,7 @@ export default function RegisterOrganizationPage() {
               </p>
             </div>
             <div className="grid gap-4">
-              {(presets.length > 0 ? presets : BUILTIN_PRESETS).map((preset) => {
+              {filteredPresets.map((preset) => {
                 const isSelected = selectedPreset?.mode === preset.mode ||
                   (!selectedPreset && preset.mode === formData.settings?.facilityMode);
                 return (
@@ -327,11 +608,7 @@ export default function RegisterOrganizationPage() {
                   >
                     <div className="flex items-start gap-3">
                       <div className={`mt-0.5 ${isSelected ? 'text-blue-600' : 'text-gray-400'}`}>
-                        {preset.icon === 'monitor' && <Monitor className="w-6 h-6" />}
-                        {preset.icon === 'stethoscope' && <Stethoscope className="w-6 h-6" />}
-                        {preset.icon === 'bed' && <Bed className="w-6 h-6" />}
-                        {preset.icon === 'map-pin' && <MapPin className="w-6 h-6" />}
-                        {preset.icon === 'building' && <Building className="w-6 h-6" />}
+                        {presetIcons[preset.icon] || <Monitor className="w-6 h-6" />}
                       </div>
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
@@ -582,6 +859,7 @@ export default function RegisterOrganizationPage() {
                 </h3>
                 <p className="mt-1 text-gray-700">{formData.organization.name}</p>
                 <p className="text-sm text-gray-500">{formData.organization.type} • {formData.organization.country}</p>
+                <p className="text-sm text-blue-600 font-mono mt-1">Login URL: /login/{formData.organization.slug}</p>
               </div>
               <div className="bg-blue-50 rounded-lg p-4">
                 <h3 className="font-semibold text-blue-900 flex items-center gap-2">

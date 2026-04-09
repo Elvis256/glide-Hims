@@ -20,7 +20,9 @@ export default function ProtectedRoute({
   const location = useLocation();
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
+    const tenantSlug = localStorage.getItem('glide_tenant_slug');
+    const loginPath = tenantSlug ? `/login/${tenantSlug}` : '/login';
+    return <Navigate to={loginPath} state={{ from: location }} replace />;
   }
 
   // Super Admin and Administrator bypass all permission checks

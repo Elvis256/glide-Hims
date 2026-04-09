@@ -150,7 +150,9 @@ export default function WritePrescriptionPage() {
     if (drugIds.length < 2) return [];
     try {
       return await pharmacyService.drugs.checkInteractions(drugIds);
-    } catch {
+    } catch (error) {
+      console.error('Drug interaction check failed:', error);
+      toast.warning('⚠️ Drug interaction check unavailable — proceed with caution');
       return [];
     }
   };

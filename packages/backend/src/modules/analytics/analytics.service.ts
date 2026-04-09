@@ -108,13 +108,11 @@ export class AnalyticsService {
   // Patient Analytics
   async getPatientAnalytics(facilityId: string, period: 'day' | 'week' | 'month' | 'year' = 'month', tenantId?: string) {
     const { startDate, groupBy } = this.getPeriodParams(period);
-    const validGroupBy = ['hour', 'day', 'week', 'month', 'year'].includes(groupBy) ? groupBy : 'day';
-
     // Registration trend
     const regParams: any[] = [startDate];
     let regSql = `
       SELECT 
-        DATE_TRUNC('${validGroupBy}', created_at) as period,
+        DATE_TRUNC('${groupBy}', created_at) as period,
         COUNT(*) as count
       FROM patients
       WHERE created_at >= $1`;
@@ -123,7 +121,7 @@ export class AnalyticsService {
       regParams.push(tenantId);
     }
     regSql += `
-      GROUP BY DATE_TRUNC('${validGroupBy}', created_at)
+      GROUP BY DATE_TRUNC('${groupBy}', created_at)
       ORDER BY period`;
     const registrationTrend = await this.patientRepo.query(regSql, regParams);
 
@@ -189,13 +187,12 @@ export class AnalyticsService {
   // Clinical Analytics
   async getClinicalAnalytics(facilityId: string, period: 'day' | 'week' | 'month' | 'year' = 'month', tenantId?: string) {
     const { startDate, groupBy } = this.getPeriodParams(period);
-    const validGroupBy = ['hour', 'day', 'week', 'month', 'year'].includes(groupBy) ? groupBy : 'day';
 
     // Encounter volume trend
     const encTrendParams: any[] = [facilityId, startDate];
     let encTrendSql = `
       SELECT 
-        DATE_TRUNC('${validGroupBy}', created_at) as period,
+        DATE_TRUNC('${groupBy}', created_at) as period,
         type as encounter_type,
         COUNT(*) as count
       FROM encounters
@@ -205,7 +202,7 @@ export class AnalyticsService {
       encTrendParams.push(tenantId);
     }
     encTrendSql += `
-      GROUP BY DATE_TRUNC('${validGroupBy}', created_at), type
+      GROUP BY DATE_TRUNC('${groupBy}', created_at), type
       ORDER BY period`;
     const encounterTrend = await this.encounterRepo.query(encTrendSql, encTrendParams);
 
@@ -255,13 +252,12 @@ export class AnalyticsService {
   // Financial Analytics
   async getFinancialAnalytics(facilityId: string, period: 'day' | 'week' | 'month' | 'year' = 'month', tenantId?: string) {
     const { startDate, groupBy } = this.getPeriodParams(period);
-    const validGroupBy = ['hour', 'day', 'week', 'month', 'year'].includes(groupBy) ? groupBy : 'day';
 
     // Revenue trend
     const revTrendParams: any[] = [facilityId, startDate];
     let revTrendSql = `
       SELECT 
-        DATE_TRUNC('${validGroupBy}', i.created_at) as period,
+        DATE_TRUNC('${groupBy}', i.created_at) as period,
         SUM(i.total_amount) as revenue,
         COUNT(*) as invoice_count
       FROM invoices i
@@ -273,7 +269,7 @@ export class AnalyticsService {
       revTrendParams.push(tenantId);
     }
     revTrendSql += `
-      GROUP BY DATE_TRUNC('${validGroupBy}', i.created_at)
+      GROUP BY DATE_TRUNC('${groupBy}', i.created_at)
       ORDER BY period`;
     const revenueTrend = await this.invoiceRepo.query(revTrendSql, revTrendParams).catch((err) => { this.logger.warn('Analytics query failed: ' + err.message); return []; });
 
@@ -281,7 +277,7 @@ export class AnalyticsService {
     const collTrendParams: any[] = [facilityId, startDate];
     let collTrendSql = `
       SELECT 
-        DATE_TRUNC('${validGroupBy}', p.created_at) as period,
+        DATE_TRUNC('${groupBy}', p.created_at) as period,
         SUM(p.amount) as collections,
         p.method as payment_method,
         COUNT(*) as payment_count
@@ -295,7 +291,7 @@ export class AnalyticsService {
       collTrendParams.push(tenantId);
     }
     collTrendSql += `
-      GROUP BY DATE_TRUNC('${validGroupBy}', p.created_at), p.method
+      GROUP BY DATE_TRUNC('${groupBy}', p.created_at), p.method
       ORDER BY period`;
     const collectionsTrend = await this.paymentRepo.query(collTrendSql, collTrendParams).catch((err) => { this.logger.warn('Analytics query failed: ' + err.message); return []; });
 
@@ -668,6 +664,15 @@ export class AnalyticsService {
     return parseFloat(result[0]?.outstanding || 0);
   }
 
+  // Safe mapping — only these values can appear in DATE_TRUNC SQL.
+  private static readonly SAFE_GROUP_BY: Record<string, string> = {
+    hour: 'hour',
+    day: 'day',
+    week: 'week',
+    month: 'month',
+    year: 'year',
+  };
+
   private getPeriodParams(period: 'day' | 'week' | 'month' | 'year') {
     const now = new Date();
     let startDate: Date;
@@ -692,7 +697,7 @@ export class AnalyticsService {
         break;
     }
 
-    return { startDate, groupBy };
+    return { startDate, groupBy: AnalyticsService.SAFE_GROUP_BY[groupBy] || 'day' };
   }
 
   // Recent Activity - fetch real activities from various sources

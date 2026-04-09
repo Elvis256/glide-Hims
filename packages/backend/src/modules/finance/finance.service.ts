@@ -1,4 +1,4 @@
-import { Injectable, Inject, forwardRef, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, Inject, forwardRef, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, LessThanOrEqual, MoreThanOrEqual, TreeRepository, DataSource } from 'typeorm';
 import { ChartOfAccount, AccountType, AccountCategory } from '../../database/entities/chart-of-account.entity';
@@ -216,6 +216,108 @@ export class FinanceService {
     return this.fiscalPeriodRepo.save(period);
   }
 
+  async openPeriod(id: string, tenantId?: string): Promise<FiscalPeriod> {
+    const period = await this.fiscalPeriodRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
+    if (!period) throw new NotFoundException('Fiscal period not found');
+
+    if (period.status === PeriodStatus.LOCKED) {
+      throw new BadRequestException('Locked periods cannot be re-opened. Only closed periods can be reopened.');
+    }
+    if (period.status === PeriodStatus.OPEN) {
+      throw new BadRequestException('Period is already open');
+    }
+
+    period.status = PeriodStatus.OPEN;
+    // Clear closure metadata — column is nullable in DB
+    (period as any).closedById = null;
+    (period as any).closedAt = null;
+
+    return this.fiscalPeriodRepo.save(period);
+  }
+
+  async lockPeriod(id: string, userId: string, tenantId?: string): Promise<FiscalPeriod> {
+    const period = await this.fiscalPeriodRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
+    if (!period) throw new NotFoundException('Fiscal period not found');
+
+    if (period.status === PeriodStatus.LOCKED) {
+      throw new BadRequestException('Period is already locked');
+    }
+    if (period.status === PeriodStatus.OPEN) {
+      throw new BadRequestException('Period must be closed before it can be locked');
+    }
+
+    period.status = PeriodStatus.LOCKED;
+    if (!period.closedById) {
+      period.closedById = userId;
+      period.closedAt = new Date();
+    }
+
+    return this.fiscalPeriodRepo.save(period);
+  }
+
+  async reverseJournalEntry(id: string, userId: string, reason: string, tenantId?: string): Promise<JournalEntry> {
+    const original = await this.journalRepo.findOne({
+      where: { id, ...(tenantId ? { tenantId } : {}) },
+      relations: ['lines', 'lines.account', 'fiscalPeriod'],
+    });
+    if (!original) throw new NotFoundException('Journal entry not found');
+
+    if (original.status !== JournalStatus.POSTED) {
+      throw new BadRequestException('Only posted journal entries can be reversed');
+    }
+    if (original.isReversed) {
+      throw new BadRequestException('This journal entry has already been reversed');
+    }
+
+    const reversalDate = new Date();
+    const fiscalPeriod = await this.getFiscalPeriodForDate(original.facilityId, reversalDate, tenantId);
+    const journalNumber = await this.generateJournalNumber(original.facilityId, tenantId);
+
+    let reversalId = '';
+
+    await this.dataSource.transaction(async (manager) => {
+      // Create the reversing journal entry (swap debits and credits)
+      const reversal = manager.create(JournalEntry, {
+        journalNumber,
+        facilityId: original.facilityId,
+        journalDate: reversalDate,
+        fiscalPeriodId: fiscalPeriod.id,
+        journalType: JournalType.GENERAL,
+        description: `REVERSAL of ${original.journalNumber}: ${reason}`,
+        reference: original.journalNumber,
+        totalDebit: original.totalCredit,
+        totalCredit: original.totalDebit,
+        status: JournalStatus.DRAFT,
+        createdById: userId,
+        isReversal: true,
+        reversalOfId: original.id,
+        ...(tenantId ? { tenantId } : {}),
+      });
+      const savedReversal = await manager.save(JournalEntry, reversal);
+      reversalId = savedReversal.id;
+
+      // Swap debit/credit on every line
+      for (let i = 0; i < original.lines.length; i++) {
+        const origLine = original.lines[i];
+        const line = manager.create(JournalEntryLine, {
+          journalEntryId: reversalId,
+          accountId: origLine.accountId,
+          description: `Reversal: ${origLine.description || ''}`.trim(),
+          debit: origLine.credit,
+          credit: origLine.debit,
+          lineNumber: i + 1,
+        });
+        await manager.save(JournalEntryLine, line);
+      }
+
+      // Mark the original as reversed
+      await manager.update(JournalEntry, { id: original.id }, { isReversed: true, reversedById: userId, reversedAt: reversalDate });
+    });
+
+    // Auto-post the reversal entry after the transaction commits
+    return this.postJournalEntry(reversalId, userId, tenantId, true);
+  }
+
   // ============ JOURNAL ENTRIES ============
 
   private async generateJournalNumber(facilityId: string, tenantId?: string): Promise<string> {
@@ -274,38 +376,40 @@ export class FinanceService {
 
     const journalNumber = await this.generateJournalNumber(dto.facilityId, tenantId);
 
-    const journal = this.journalRepo.create({
-      journalNumber,
-      facilityId: dto.facilityId,
-      journalDate,
-      fiscalPeriodId: fiscalPeriod.id,
-      journalType: dto.journalType || JournalType.GENERAL,
-      description: dto.description,
-      reference: dto.reference,
-      totalDebit,
-      totalCredit,
-      status: JournalStatus.DRAFT,
-      createdById: userId,
-      ...(tenantId ? { tenantId } : {}),
-    });
-
-    const savedJournal = await this.journalRepo.save(journal);
-
-    // Create lines
-    for (let i = 0; i < dto.lines.length; i++) {
-      const lineDto = dto.lines[i];
-      const line = this.journalLineRepo.create({
-        journalEntryId: savedJournal.id,
-        accountId: lineDto.accountId,
-        description: lineDto.description,
-        debit: lineDto.debit,
-        credit: lineDto.credit,
-        lineNumber: i + 1,
+    return this.dataSource.transaction(async (manager) => {
+      const journal = manager.create(JournalEntry, {
+        journalNumber,
+        facilityId: dto.facilityId,
+        journalDate,
+        fiscalPeriodId: fiscalPeriod.id,
+        journalType: dto.journalType || JournalType.GENERAL,
+        description: dto.description,
+        reference: dto.reference,
+        totalDebit,
+        totalCredit,
+        status: JournalStatus.DRAFT,
+        createdById: userId,
+        ...(tenantId ? { tenantId } : {}),
       });
-      await this.journalLineRepo.save(line);
-    }
 
-    return this.getJournalEntry(savedJournal.id, tenantId);
+      const savedJournal = await manager.save(JournalEntry, journal);
+
+      // Create lines within the same transaction
+      for (let i = 0; i < dto.lines.length; i++) {
+        const lineDto = dto.lines[i];
+        const line = manager.create(JournalEntryLine, {
+          journalEntryId: savedJournal.id,
+          accountId: lineDto.accountId,
+          description: lineDto.description,
+          debit: lineDto.debit,
+          credit: lineDto.credit,
+          lineNumber: i + 1,
+        });
+        await manager.save(JournalEntryLine, line);
+      }
+
+      return this.getJournalEntry(savedJournal.id, tenantId);
+    });
   }
 
   async getJournalEntry(id: string, tenantId?: string): Promise<JournalEntry> {
@@ -998,6 +1102,9 @@ export class FinanceService {
   }
 
   async getARAgingReport(facilityId: string, tenantId?: string) {
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context is required for AR aging report');
+    }
     // Use DataSource to run raw query for aging buckets
     const query = `
       SELECT 
@@ -1021,13 +1128,13 @@ export class FinanceService {
       WHERE i.status NOT IN ('cancelled', 'refunded', 'paid')
         AND (i.total_amount - COALESCE(i.paid_amount, 0)) > 0
         ${facilityId ? "AND i.facility_id = $1" : ""}
-        ${tenantId ? "AND i.tenant_id = $2" : ""}
+        AND i.tenant_id = $2
       ORDER BY (CURRENT_DATE - i.due_date::date) DESC
     `;
 
     const params: any[] = [];
     if (facilityId) params.push(facilityId);
-    if (tenantId) params.push(tenantId);
+    params.push(tenantId);
 
     const results = await this.accountRepo.manager.query(query, params);
 
@@ -1174,9 +1281,12 @@ export class FinanceService {
     endDate: string,
     tenantId?: string,
   ) {
-    // Use parameterized queries for tenant filtering to prevent SQL injection
-    const tenantFilter = tenantId ? `AND je.tenant_id = $4` : '';
-    const params = tenantId ? [facilityId, startDate, endDate, tenantId] : [facilityId, startDate, endDate];
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context is required for statutory reports');
+    }
+    // Always include tenant filter to enforce tenant isolation
+    const tenantFilter = 'AND je.tenant_id = $4';
+    const params = [facilityId, startDate, endDate, tenantId];
 
     if (type === 'vat') {
       const outputVat = await this.journalRepo.query(

@@ -51,9 +51,9 @@ export class PrescriptionsService {
     const result = await this.dataSource.query(
       `SELECT prescription_number FROM prescriptions 
        WHERE prescription_number LIKE $1 
-       ${tenantId ? 'AND tenant_id = $2' : ''}
+       AND tenant_id = $2
        ORDER BY prescription_number DESC LIMIT 1 FOR UPDATE`,
-      tenantId ? [`RX${datePrefix}%`, tenantId] : [`RX${datePrefix}%`],
+      [`RX${datePrefix}%`, tenantId],
     );
 
     let sequence = 1;
@@ -72,6 +72,20 @@ export class PrescriptionsService {
 
     if (!encounter) {
       throw new NotFoundException('Encounter not found');
+    }
+
+    // Only allow prescriptions on active encounters
+    const activeEncounterStatuses = [
+      EncounterStatus.IN_CONSULTATION,
+      EncounterStatus.RETURN_TO_DOCTOR,
+      EncounterStatus.PENDING_LAB,
+      EncounterStatus.PENDING_PHARMACY,
+      EncounterStatus.ADMITTED,
+    ];
+    if (!activeEncounterStatuses.includes(encounter.status)) {
+      throw new BadRequestException(
+        `Cannot create prescription for encounter in '${encounter.status}' status. Encounter must be active (in consultation, admitted, etc.).`,
+      );
     }
 
     const prescriptionNumber = await this.generatePrescriptionNumber(tenantId);
@@ -505,8 +519,8 @@ export class PrescriptionsService {
         if (itemDto.batchNumber && drugIdMap.has(item.id)) {
           const dbBatch = await manager.query(
             `SELECT expiry_date FROM batch_stock_balances 
-             WHERE item_id = $1 AND batch_number = $2 AND deleted_at IS NULL LIMIT 1`,
-            [drugIdMap.get(item.id), itemDto.batchNumber],
+             WHERE item_id = $1 AND batch_number = $2 AND deleted_at IS NULL AND tenant_id = $3 LIMIT 1`,
+            [drugIdMap.get(item.id), itemDto.batchNumber, tenantId],
           );
           if (dbBatch?.length > 0 && new Date(dbBatch[0].expiry_date) < new Date()) {
             throw new BadRequestException(
@@ -516,13 +530,23 @@ export class PrescriptionsService {
         }
 
         // FEFO enforcement: ensure earliest-expiring batch is used first
+        // Use the actual expiry date from the database, not the client-provided value
         if (itemDto.batchNumber && drugIdMap.has(item.id)) {
+          const selectedBatch = await manager.query(
+            `SELECT expiry_date FROM batch_stock_balances 
+             WHERE item_id = $1 AND batch_number = $2 AND deleted_at IS NULL LIMIT 1`,
+            [drugIdMap.get(item.id), itemDto.batchNumber],
+          );
+          const selectedBatchExpiry = selectedBatch?.length > 0
+            ? selectedBatch[0].expiry_date
+            : '9999-12-31';
+
           const earlierBatches = await manager.query(
             `SELECT batch_number, expiry_date FROM batch_stock_balances 
              WHERE item_id = $1 AND facility_id = $2 AND quantity > 0 AND status = 'active'
-               AND expiry_date < $3 AND deleted_at IS NULL
+               AND expiry_date < $3 AND deleted_at IS NULL AND batch_number != $4
              ORDER BY expiry_date ASC LIMIT 1`,
-            [drugIdMap.get(item.id), prescription.encounter?.facilityId, itemDto.expiryDate || '9999-12-31'],
+            [drugIdMap.get(item.id), prescription.encounter?.facilityId, selectedBatchExpiry, itemDto.batchNumber],
           );
           if (earlierBatches?.length > 0) {
             throw new BadRequestException(
@@ -537,8 +561,8 @@ export class PrescriptionsService {
           : null;
         if (drugInventoryItem) {
           const classification = await manager.query(
-            `SELECT max_single_dose, max_daily_dose, dose_unit FROM drug_classifications WHERE item_id = $1 AND deleted_at IS NULL LIMIT 1`,
-            [drugInventoryItem.id],
+            `SELECT max_single_dose, max_daily_dose, dose_unit FROM drug_classifications WHERE item_id = $1 AND deleted_at IS NULL AND tenant_id = $2 LIMIT 1`,
+            [drugInventoryItem.id, tenantId],
           );
           if (classification?.length > 0) {
             const { max_single_dose, max_daily_dose, dose_unit } = classification[0];
@@ -697,8 +721,8 @@ export class PrescriptionsService {
 
         if (inventoryItem) {
           const classification = await manager.query(
-            `SELECT schedule FROM drug_classifications WHERE item_id = $1 AND deleted_at IS NULL LIMIT 1`,
-            [inventoryItem.id],
+            `SELECT schedule FROM drug_classifications WHERE item_id = $1 AND deleted_at IS NULL AND tenant_id = $2 LIMIT 1`,
+            [inventoryItem.id, tenantId],
           );
 
           if (classification?.length > 0) {
@@ -712,35 +736,40 @@ export class PrescriptionsService {
                 );
               }
 
+              // Always log controlled substance dispensations — find the dispensation just created in this transaction
               const dispensation = await dispensationRepo.findOne({
                 where: { prescriptionItemId: item.id, dispensedById: userId },
                 order: { dispensedAt: 'DESC' },
               });
 
-              if (dispensation) {
-                const facilityId = prescription.encounter?.facilityId || null;
-                // Get running balance for this drug at this facility
-                const lastLog = await controlledLogRepo.findOne({
-                  where: {
-                    prescriptionItemId: item.id,
-                    ...(facilityId ? { facilityId } : {}),
-                    ...(tenantId ? { tenantId } : {}),
-                  },
-                  order: { createdAt: 'DESC' },
-                });
-                const previousBalance = lastLog ? Number(lastLog.runningBalance) : 0;
-
-                await controlledLogRepo.save(controlledLogRepo.create({
-                  prescriptionItemId: item.id,
-                  dispensationId: dispensation.id,
-                  drugSchedule: schedule,
-                  quantityDispensed: itemDto.quantity,
-                  runningBalance: previousBalance - itemDto.quantity,
-                  dispensedById: userId,
-                  facilityId: facilityId || undefined,
-                  ...(tenantId ? { tenantId } : {}),
-                }));
+              if (!dispensation) {
+                throw new BadRequestException(
+                  `Controlled substance logging failed for ${item.drugName}: dispensation record not found. Rolling back dispensation.`
+                );
               }
+
+              const facilityId = prescription.encounter?.facilityId || null;
+              // Get running balance for this drug at this facility
+              const lastLog = await controlledLogRepo.findOne({
+                where: {
+                  prescriptionItemId: item.id,
+                  ...(facilityId ? { facilityId } : {}),
+                  ...(tenantId ? { tenantId } : {}),
+                },
+                order: { createdAt: 'DESC' },
+              });
+              const previousBalance = lastLog ? Number(lastLog.runningBalance) : 0;
+
+              await controlledLogRepo.save(controlledLogRepo.create({
+                prescriptionItemId: item.id,
+                dispensationId: dispensation.id,
+                drugSchedule: schedule,
+                quantityDispensed: itemDto.quantity,
+                runningBalance: previousBalance - itemDto.quantity,
+                dispensedById: userId,
+                facilityId: facilityId || undefined,
+                ...(tenantId ? { tenantId } : {}),
+              }));
             }
           }
         }
@@ -824,18 +853,40 @@ export class PrescriptionsService {
 
   async updateStatus(id: string, dto: UpdateStatusDto, tenantId?: string): Promise<Prescription> {
     const prescription = await this.findOne(id, tenantId);
-    if (prescription.status === PrescriptionStatus.CANCELLED) {
-      throw new BadRequestException('Cannot update status of a cancelled prescription');
+
+    // State transition validation
+    const VALID_TRANSITIONS: Record<string, string[]> = {
+      'pending': ['dispensing', 'cancelled'],
+      'dispensing': ['ready', 'partially_dispensed', 'cancelled'],
+      'ready': ['collected', 'cancelled'],
+      'partially_dispensed': ['dispensing', 'ready', 'cancelled'],
+      'dispensed': ['collected'],
+      'collected': [],
+      'cancelled': [],
+    };
+
+    const currentStatus = prescription.status;
+    const allowedNextStatuses = VALID_TRANSITIONS[currentStatus];
+
+    if (!allowedNextStatuses || allowedNextStatuses.length === 0) {
+      throw new BadRequestException(
+        `Cannot update prescription in '${currentStatus}' status — it is a terminal state.`,
+      );
     }
-    if (prescription.status === PrescriptionStatus.DISPENSED && dto.status !== 'collected') {
-      throw new BadRequestException('Prescription already dispensed');
+
+    if (!allowedNextStatuses.includes(dto.status)) {
+      throw new BadRequestException(
+        `Invalid status transition from '${currentStatus}' to '${dto.status}'. Allowed transitions: ${allowedNextStatuses.join(', ')}`,
+      );
     }
+
     const allowed: Record<string, PrescriptionStatus> = {
       pending: PrescriptionStatus.PENDING,
       dispensing: PrescriptionStatus.DISPENSING,
       ready: PrescriptionStatus.READY,
       collected: PrescriptionStatus.COLLECTED,
       cancelled: PrescriptionStatus.CANCELLED,
+      partially_dispensed: PrescriptionStatus.PARTIALLY_DISPENSED,
     };
     if (!allowed[dto.status]) {
       throw new BadRequestException(`Invalid status: ${dto.status}`);

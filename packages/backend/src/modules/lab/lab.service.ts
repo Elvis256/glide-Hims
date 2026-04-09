@@ -104,24 +104,29 @@ export class LabService {
       throw new BadRequestException('Order has no test codes');
     }
 
-    // Start processing the order if still pending
+    // Start processing the order if still pending (within sample preparation context)
     if (order.status === OrderStatus.PENDING) {
       order.status = OrderStatus.IN_PROGRESS;
-      await this.orderRepo.save(order);
     }
 
     const preparedSamples: LabSample[] = [];
 
+    // Wrap order update + sample creation in a single transaction
+    await this.dataSource.transaction(async (manager) => {
+      if (order.status === OrderStatus.IN_PROGRESS) {
+        await manager.save(Order, order);
+      }
+
     for (const tc of testCodes) {
       // Resolve lab test by code, with keyword-based name fallback
-      let labTest = await this.labTestRepo.findOne({
+      let labTest = await manager.findOne(LabTest, {
         where: { code: tc.code, ...(tenantId ? { tenantId } : {}) },
       });
       if (!labTest && tc.name) {
         const stopWords = new Set(['test', 'tests', 'blood', 'screening', 'panel', 'complete', 'full', 'basic', 'the', 'a', 'of']);
         const keywords = tc.name.split(/\s+/).filter((w: string) => w.length > 1 && !stopWords.has(w.toLowerCase()));
         if (keywords.length > 0) {
-          const qb = this.labTestRepo.createQueryBuilder('t');
+          const qb = manager.createQueryBuilder(LabTest, 't');
           const orConds = keywords.map((_: string, i: number) => `t.name ILIKE :kw${i}`);
           qb.where(`(${orConds.join(' OR ')})`, keywords.reduce((p: any, kw: string, i: number) => ({ ...p, [`kw${i}`]: `%${kw}%` }), {}));
           if (tenantId) qb.andWhere('t.tenant_id = :tenantId', { tenantId });
@@ -134,7 +139,7 @@ export class LabService {
       }
 
       // Check if sample already exists for this order+test
-      let sample = await this.sampleRepo.findOne({
+      let sample = await manager.findOne(LabSample, {
         where: { orderId, labTestId: labTest.id },
         relations: ['patient', 'labTest', 'order', 'collectedBy'],
       });
@@ -146,14 +151,14 @@ export class LabService {
         const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
         const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
 
-        const countResult = await this.sampleRepo.query(
+        const countResult = await manager.query(
           `SELECT COUNT(*) as count FROM lab_samples WHERE created_at >= $1 AND created_at < $2${tenantId ? ' AND tenant_id = $3' : ''}`,
           tenantId ? [todayStart, todayEnd, tenantId] : [todayStart, todayEnd]
         );
         const count = parseInt(countResult[0]?.count || '0', 10);
         const sampleNumber = `LAB${dateStr}${(count + 1).toString().padStart(5, '0')}`;
 
-        sample = this.sampleRepo.create({
+        sample = manager.create(LabSample, {
           orderId,
           patientId,
           labTestId: labTest.id,
@@ -167,7 +172,7 @@ export class LabService {
           collectedById: userId,
           ...(tenantId ? { tenantId } : {}),
         });
-        sample = await this.sampleRepo.save(sample);
+        sample = await manager.save(LabSample, sample);
         this.logger.log(`Sample auto-collected: ${sampleNumber} for order ${orderId} by user ${userId}`);
       }
 
@@ -175,17 +180,18 @@ export class LabService {
       if (sample.status === SampleStatus.COLLECTED) {
         sample.status = SampleStatus.RECEIVED;
         sample.receivedTime = new Date();
-        sample = await this.sampleRepo.save(sample);
+        sample = await manager.save(LabSample, sample);
         this.logger.log(`Sample auto-received: ${sample.sampleNumber} for order ${orderId}`);
       }
 
       // Reload with full relations
-      sample = await this.sampleRepo.findOne({
+      sample = await manager.findOne(LabSample, {
         where: { id: sample.id },
         relations: ['patient', 'labTest', 'order', 'collectedBy'],
       })!;
       if (sample) preparedSamples.push(sample);
     }
+    }); // end transaction
 
     return preparedSamples;
   }
@@ -199,7 +205,7 @@ export class LabService {
       let labTest = await this.labTestRepo.findOne({ where: { code: dto.labTestCode, ...tenantWhere } });
       // Fallback: search by name keywords from the order's test entry
       if (!labTest) {
-        const order = await this.orderRepo.findOne({ where: { id: dto.orderId } });
+        const order = await this.orderRepo.findOne({ where: { id: dto.orderId, ...(tenantId ? { tenantId } : {}) } });
         const testEntry = (order?.testCodes as any[])?.find((t: any) => t.code === dto.labTestCode);
         if (testEntry?.name) {
           const stopWords = new Set(['test', 'tests', 'blood', 'screening', 'panel', 'complete', 'full', 'basic', 'the', 'a', 'of']);
@@ -392,6 +398,31 @@ export class LabService {
 
   async rejectSample(id: string, dto: RejectSampleDto, userId: string, tenantId?: string): Promise<LabSample> {
     const sample = await this.getSample(id, tenantId);
+
+    // Don't allow rejecting completed samples that have released results
+    if (sample.status === SampleStatus.COMPLETED) {
+      const releasedResults = await this.resultRepo.find({
+        where: { sampleId: id, status: ResultStatus.RELEASED, ...(tenantId ? { tenantId } : {}) },
+      });
+      if (releasedResults.length > 0) {
+        throw new BadRequestException(
+          'Cannot reject a completed sample with released results. Amend the results instead.',
+        );
+      }
+    }
+
+    // Valid transitions to REJECTED: PENDING_COLLECTION, COLLECTED, RECEIVED, PROCESSING
+    const rejectableStatuses = [
+      SampleStatus.PENDING_COLLECTION,
+      SampleStatus.COLLECTED,
+      SampleStatus.RECEIVED,
+      SampleStatus.PROCESSING,
+    ];
+    if (!rejectableStatuses.includes(sample.status as SampleStatus)) {
+      throw new BadRequestException(
+        `Cannot reject sample in '${sample.status}' status. Only pending, collected, received, or processing samples can be rejected.`,
+      );
+    }
     
     sample.status = SampleStatus.REJECTED;
     sample.rejectionReason = dto.rejectionReason;
@@ -401,24 +432,48 @@ export class LabService {
     return savedSample;
   }
 
+  // ========== LAB SAMPLE STATE MACHINE ==========
+  /** Valid status transitions for lab samples */
+  private static readonly VALID_SAMPLE_TRANSITIONS: Record<string, string[]> = {
+    [SampleStatus.PENDING_COLLECTION]: [SampleStatus.COLLECTED, SampleStatus.REJECTED],
+    [SampleStatus.COLLECTED]: [SampleStatus.RECEIVED, SampleStatus.REJECTED],
+    [SampleStatus.RECEIVED]: [SampleStatus.PROCESSING, SampleStatus.REJECTED],
+    [SampleStatus.PROCESSING]: [SampleStatus.COMPLETED, SampleStatus.REJECTED],
+    [SampleStatus.COMPLETED]: [],
+    [SampleStatus.REJECTED]: [],
+  };
+
+  private validateSampleTransition(from: string, to: string): void {
+    const allowed = LabService.VALID_SAMPLE_TRANSITIONS[from];
+    if (!allowed || !allowed.includes(to)) {
+      throw new BadRequestException(
+        `Invalid sample status transition: '${from}' → '${to}'. Allowed: ${(allowed || []).join(', ') || 'none'}`,
+      );
+    }
+  }
+
   // ========== RESULT MANAGEMENT ==========
   async enterResult(sampleId: string, dto: EnterResultDto, userId: string, tenantId?: string): Promise<LabResult> {
     const sample = await this.getSample(sampleId, tenantId);
 
-    // Auto-transition samples through the workflow if needed
-    if (sample.status === SampleStatus.COLLECTED) {
-      sample.status = SampleStatus.RECEIVED;
-      sample.receivedTime = new Date();
-      await this.sampleRepo.save(sample);
-      this.logger.log(`Sample auto-received: ${sample.sampleNumber} during result entry by user ${userId}`);
-    }
-    if (sample.status === SampleStatus.RECEIVED) {
-      sample.status = SampleStatus.PROCESSING;
-      sample.processedById = userId;
-      sample.processedTime = new Date();
-      await this.sampleRepo.save(sample);
-      this.logger.log(`Sample auto-processing started: ${sample.sampleNumber} during result entry by user ${userId}`);
-    }
+    // Wrap all status transitions and result save in a single transaction
+    return this.dataSource.transaction(async (manager) => {
+      // Auto-transition samples through the workflow if needed
+      if (sample.status === SampleStatus.COLLECTED) {
+        this.validateSampleTransition(sample.status, SampleStatus.RECEIVED);
+        sample.status = SampleStatus.RECEIVED;
+        sample.receivedTime = new Date();
+        await manager.save(LabSample, sample);
+        this.logger.log(`Sample auto-received: ${sample.sampleNumber} during result entry by user ${userId}`);
+      }
+      if (sample.status === SampleStatus.RECEIVED) {
+        this.validateSampleTransition(sample.status, SampleStatus.PROCESSING);
+        sample.status = SampleStatus.PROCESSING;
+        sample.processedById = userId;
+        sample.processedTime = new Date();
+        await manager.save(LabSample, sample);
+        this.logger.log(`Sample auto-processing started: ${sample.sampleNumber} during result entry by user ${userId}`);
+      }
 
     if ((sample.status as string) !== SampleStatus.RECEIVED && (sample.status as string) !== SampleStatus.PROCESSING && (sample.status as string) !== SampleStatus.COMPLETED) {
       throw new BadRequestException(
@@ -465,9 +520,10 @@ export class LabService {
       ...(tenantId ? { tenantId } : {}),
     });
 
-    const savedResult = await this.resultRepo.save(result);
+    const savedResult = await manager.save(LabResult, result);
     this.logger.log(`Lab result entered for sample ${sample.sampleNumber}: ${dto.parameter} by user ${userId}`);
     return savedResult;
+    }); // end transaction
   }
 
   async getResults(sampleId: string, tenantId?: string): Promise<LabResult[]> {

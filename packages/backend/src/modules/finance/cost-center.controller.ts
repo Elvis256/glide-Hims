@@ -12,6 +12,7 @@ import {
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { CostCenterService } from './cost-center.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { CreateCostCenterDto, UpdateCostCenterDto } from './dto/finance.dto';
 
 @ApiTags('Cost Centers')
 @Controller('finance/cost-centers')
@@ -21,7 +22,7 @@ export class CostCenterController {
   @Post()
   @AuthWithPermissions('finance.manage')
   @ApiOperation({ summary: 'Create a cost center' })
-  create(@Body() dto: any, @Request() req: any) {
+  create(@Body() dto: CreateCostCenterDto, @Request() req: any) {
     return this.costCenterService.create(dto, req.user?.tenantId);
   }
 
@@ -42,7 +43,7 @@ export class CostCenterController {
   @Patch(':id')
   @AuthWithPermissions('finance.manage')
   @ApiOperation({ summary: 'Update a cost center' })
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: any, @Request() req?: any) {
+  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateCostCenterDto, @Request() req?: any) {
     return this.costCenterService.update(id, dto, req?.user?.tenantId);
   }
 

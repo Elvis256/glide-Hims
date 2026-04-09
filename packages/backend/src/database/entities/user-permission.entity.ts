@@ -5,7 +5,7 @@ import {
   ManyToOne,
   JoinColumn,
   CreateDateColumn,
-  Unique,
+  Unique, Index,
 } from 'typeorm';
 import { User } from './user.entity';
 import { Permission } from './permission.entity';
@@ -15,6 +15,10 @@ import { Permission } from './permission.entity';
 export class UserPermission {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  @Column({ type: 'uuid', nullable: true, name: 'tenant_id' })
+  @Index()
+  tenantId?: string;
 
   @Column({ type: 'uuid', name: 'user_id' })
   userId: string;

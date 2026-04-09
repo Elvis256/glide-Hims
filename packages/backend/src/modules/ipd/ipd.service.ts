@@ -154,6 +154,30 @@ export class IpdService {
     return this.bedRepo.save(bed);
   }
 
+  async markBedAvailable(id: string, tenantId?: string): Promise<Bed> {
+    const bed = await this.bedRepo.findOne({
+      where: { id, ...(tenantId ? { tenantId } : {}) },
+      relations: ['ward'],
+    });
+    if (!bed) throw new NotFoundException('Bed not found');
+    if (bed.status !== BedStatus.CLEANING) {
+      throw new BadRequestException(
+        `Bed can only be marked available from 'cleaning' status, current status is '${bed.status}'`,
+      );
+    }
+
+    bed.status = BedStatus.AVAILABLE;
+    const saved = await this.bedRepo.save(bed);
+
+    // Update ward bed counts
+    if (bed.wardId) {
+      await this.updateWardBedCount(bed.wardId, tenantId);
+    }
+
+    this.logger.log(`Bed ${bed.bedNumber} marked as available after cleaning`);
+    return saved;
+  }
+
   private async updateWardBedCount(wardId: string, tenantId?: string): Promise<void> {
     const totalBeds = await this.bedRepo.count({ where: { wardId, ...(tenantId ? { tenantId } : {}) } });
     const occupiedBeds = await this.bedRepo.count({ where: { wardId, status: BedStatus.OCCUPIED, ...(tenantId ? { tenantId } : {}) } });
@@ -163,6 +187,20 @@ export class IpdService {
   // ========== ADMISSION MANAGEMENT ==========
   async createAdmission(dto: CreateAdmissionDto, userId: string, tenantId?: string): Promise<Admission> {
     return this.dataSource.transaction(async (manager) => {
+      // Check for duplicate admission — patient must not already be admitted
+      const existingAdmission = await manager.findOne(Admission, {
+        where: {
+          patientId: dto.patientId,
+          status: AdmissionStatus.ADMITTED,
+          ...(tenantId ? { tenantId } : {}),
+        },
+      });
+      if (existingAdmission) {
+        throw new BadRequestException(
+          `Patient is already admitted (admission ${existingAdmission.admissionNumber}). Discharge or transfer the existing admission first.`,
+        );
+      }
+
       // Verify bed is available with lock
       const bedQb = manager.createQueryBuilder(Bed, 'bed')
         .setLock('pessimistic_write')
@@ -335,17 +373,28 @@ export class IpdService {
   }
 
   async transferBed(id: string, dto: TransferBedDto, userId: string, tenantId?: string): Promise<Admission> {
-    const admission = await this.getAdmission(id, tenantId);
-    if (admission.status !== AdmissionStatus.ADMITTED) {
-      throw new BadRequestException('Patient is not currently admitted');
-    }
-
-    // Capture old bed/ward IDs before updating
-    const fromBedId = admission.bedId;
-    const fromWardId = admission.wardId;
-
-    // Verify new bed is available with lock to prevent race condition
     return this.dataSource.transaction(async (manager) => {
+      // Read admission inside transaction with pessimistic lock to prevent race conditions
+      const admissionQb = manager.createQueryBuilder(Admission, 'admission')
+        .setLock('pessimistic_write')
+        .leftJoinAndSelect('admission.patient', 'patient')
+        .leftJoinAndSelect('admission.ward', 'ward')
+        .leftJoinAndSelect('admission.bed', 'bed')
+        .leftJoinAndSelect('admission.encounter', 'encounter')
+        .leftJoinAndSelect('admission.attendingDoctor', 'doctor')
+        .where('admission.id = :id', { id });
+      if (tenantId) admissionQb.andWhere('admission.tenant_id = :tenantId', { tenantId });
+      const admission = await admissionQb.getOne();
+
+      if (!admission) throw new NotFoundException('Admission not found');
+      if (admission.status !== AdmissionStatus.ADMITTED) {
+        throw new BadRequestException('Patient is not currently admitted');
+      }
+
+      const fromBedId = admission.bedId;
+      const fromWardId = admission.wardId;
+
+      // Verify new bed is available with lock
       const newBedQb = manager.createQueryBuilder(Bed, 'bed')
         .setLock('pessimistic_write')
         .where('bed.id = :id', { id: dto.toBedId });

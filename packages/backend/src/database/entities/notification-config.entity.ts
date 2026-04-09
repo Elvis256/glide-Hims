@@ -6,6 +6,7 @@ export enum NotificationType {
   SMS = 'sms',
   WHATSAPP = 'whatsapp',
   BOTH = 'both',
+  TEMPLATE = 'template',
 }
 
 export enum NotificationProvider {

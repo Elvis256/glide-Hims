@@ -8,9 +8,8 @@ import {
   ExpiryAlertStatus,
   AlertLevel,
 } from '../../database/entities/inventory.entity';
-import { Appointment } from '../appointments/entities/appointment.entity';
-import { Provider } from '../../database/entities/provider.entity';
-import { User } from '../../database/entities/user.entity';
+import { Appointment, AppointmentStatus } from '../appointments/entities/appointment.entity';
+import { Provider } from '../../database/entities/provider.entity';import { User } from '../../database/entities/user.entity';
 import { InAppNotification, InAppNotificationType } from '../../database/entities/in-app-notification.entity';
 import { Facility } from '../../database/entities/facility.entity';
 import { ExpiryAlertConfig, ExpiryAlertHistory, AlertSeverity, AlertChannel } from '../../database/entities/expiry-alert.entity';
@@ -553,6 +552,131 @@ export class ScheduledTasksService {
     } catch (error) {
       this.logger.error(
         'Monthly leave accrual failed',
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
+  }
+
+  /**
+   * Send appointment reminders daily at 8 AM.
+   * Queries all SCHEDULED/CONFIRMED appointments for the next day across all facilities,
+   * sends in-app notifications to both patient (if they have a user account) and the
+   * assigned doctor, and attempts an SMS to the patient's phone number.
+   */
+  @Cron('0 8 * * *', { name: 'appointment-reminders' })
+  async sendAppointmentReminders() {
+    this.logger.log('Running appointment reminder job...');
+
+    try {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(0, 0, 0, 0);
+      const dayAfterTomorrow = new Date(tomorrow);
+      dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1);
+
+      const appointments = await this.appointmentRepo.find({
+        where: [
+          { status: AppointmentStatus.SCHEDULED, appointmentDate: Between(tomorrow, dayAfterTomorrow) },
+          { status: AppointmentStatus.CONFIRMED, appointmentDate: Between(tomorrow, dayAfterTomorrow) },
+        ],
+        relations: ['patient', 'doctor', 'facility'],
+      });
+
+      this.logger.log(`Found ${appointments.length} appointment(s) to remind for tomorrow`);
+
+      let inAppSent = 0;
+      let smsSent = 0;
+      let failed = 0;
+
+      for (const appt of appointments) {
+        try {
+          const dateStr = (appt.appointmentDate as unknown as string).toString().slice(0, 10);
+          const doctorName = appt.doctor
+            ? `Dr. ${appt.doctor.fullName || ''}`.trim()
+            : 'your doctor';
+          const facilityName = appt.facility?.name || 'the facility';
+
+          // Notify patient if they have a linked user account
+          const patientUserId = appt.patient?.userId;
+          if (patientUserId) {
+            const notification = this.notificationRepo.create({
+              targetUserId: patientUserId,
+              type: InAppNotificationType.GENERAL,
+              title: '📅 Appointment Reminder',
+              message: `You have an appointment with ${doctorName} at ${facilityName} tomorrow (${dateStr}) at ${appt.startTime}. Please arrive 15 minutes early.`,
+              metadata: {
+                appointmentId: appt.id,
+                appointmentDate: dateStr,
+                startTime: appt.startTime,
+                doctorId: appt.doctorId,
+              },
+              facilityId: appt.facilityId,
+              tenantId: (appt as any).tenantId,
+            });
+            await this.notificationRepo.save(notification);
+            inAppSent++;
+          }
+
+          // Notify the doctor
+          if (appt.doctorId) {
+            const patientName = appt.patient?.fullName || 'a patient';
+            const doctorNotification = this.notificationRepo.create({
+              targetUserId: appt.doctorId,
+              type: InAppNotificationType.GENERAL,
+              title: '📅 Upcoming Appointment',
+              message: `Reminder: you have an appointment with ${patientName} tomorrow (${dateStr}) at ${appt.startTime}.`,
+              metadata: {
+                appointmentId: appt.id,
+                appointmentDate: dateStr,
+                startTime: appt.startTime,
+                patientId: appt.patientId,
+              },
+              facilityId: appt.facilityId,
+              tenantId: (appt as any).tenantId,
+            });
+            await this.notificationRepo.save(doctorNotification);
+            inAppSent++;
+          }
+
+          // SMS to patient phone if available
+          const patientPhone = appt.patient?.phone;
+          if (patientPhone) {
+            try {
+              const smsConfigs = await this.notificationsService.getConfig(
+                appt.facilityId,
+                NotificationType.SMS,
+                (appt as any).tenantId,
+              );
+              const smsConfig = smsConfigs.find((c) => c.isEnabled);
+              if (smsConfig) {
+                const smsText =
+                  `Reminder: Your appointment with ${doctorName} at ${facilityName} is tomorrow ` +
+                  `(${dateStr}) at ${appt.startTime}. Please arrive 15 minutes early. ` +
+                  `Call us if you need to reschedule.`;
+                await this.notificationsService.sendSms(smsConfig, patientPhone, smsText);
+                smsSent++;
+              }
+            } catch (smsError) {
+              this.logger.warn(
+                `Failed to send appointment reminder SMS to ${patientPhone} for appointment ${appt.id}: ${(smsError as Error).message}`,
+              );
+            }
+          }
+        } catch (apptError) {
+          this.logger.warn(
+            `Failed to send reminders for appointment ${appt.id}: ${(apptError as Error).message}`,
+          );
+          failed++;
+        }
+      }
+
+      this.logger.log(
+        `Appointment reminders complete — ${appointments.length} appointments processed, ` +
+        `${inAppSent} in-app notifications sent, ${smsSent} SMS sent, ${failed} failed`,
+      );
+    } catch (error) {
+      this.logger.error(
+        'Appointment reminder job failed',
         error instanceof Error ? error.stack : String(error),
       );
     }

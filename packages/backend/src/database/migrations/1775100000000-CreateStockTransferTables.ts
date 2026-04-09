@@ -23,7 +23,7 @@ export class CreateStockTransferTables1775100000000 implements MigrationInterfac
 
     // Create stock_transfers table
     await queryRunner.query(`
-      CREATE TABLE "stock_transfers" (
+      CREATE TABLE IF NOT EXISTS "stock_transfers" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "tenant_id" uuid,
         "created_at" TIMESTAMP NOT NULL DEFAULT now(),
@@ -49,7 +49,7 @@ export class CreateStockTransferTables1775100000000 implements MigrationInterfac
 
     // Create stock_transfer_items table
     await queryRunner.query(`
-      CREATE TABLE "stock_transfer_items" (
+      CREATE TABLE IF NOT EXISTS "stock_transfer_items" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "tenant_id" uuid,
         "created_at" TIMESTAMP NOT NULL DEFAULT now(),
@@ -69,57 +69,57 @@ export class CreateStockTransferTables1775100000000 implements MigrationInterfac
     `);
 
     // Add indexes
-    await queryRunner.query(`CREATE INDEX "IDX_stock_transfers_tenant_id" ON "stock_transfers" ("tenant_id")`);
-    await queryRunner.query(`CREATE UNIQUE INDEX "IDX_stock_transfers_transfer_number" ON "stock_transfers" ("transfer_number")`);
-    await queryRunner.query(`CREATE INDEX "IDX_stock_transfers_from_facility_id" ON "stock_transfers" ("from_facility_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_stock_transfers_to_facility_id" ON "stock_transfers" ("to_facility_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_stock_transfers_status" ON "stock_transfers" ("status")`);
-    await queryRunner.query(`CREATE INDEX "IDX_stock_transfer_items_tenant_id" ON "stock_transfer_items" ("tenant_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_stock_transfer_items_transfer_id" ON "stock_transfer_items" ("transfer_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_stock_transfer_items_item_id" ON "stock_transfer_items" ("item_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_stock_transfers_tenant_id" ON "stock_transfers" ("tenant_id")`);
+    await queryRunner.query(`CREATE UNIQUE INDEX IF NOT EXISTS "IDX_stock_transfers_transfer_number" ON "stock_transfers" ("transfer_number")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_stock_transfers_from_facility_id" ON "stock_transfers" ("from_facility_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_stock_transfers_to_facility_id" ON "stock_transfers" ("to_facility_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_stock_transfers_status" ON "stock_transfers" ("status")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_stock_transfer_items_tenant_id" ON "stock_transfer_items" ("tenant_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_stock_transfer_items_transfer_id" ON "stock_transfer_items" ("transfer_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_stock_transfer_items_item_id" ON "stock_transfer_items" ("item_id")`);
 
-    // Add foreign keys
+    // Add foreign keys (safe — ignored if already exist)
     await queryRunner.query(`
       ALTER TABLE "stock_transfers"
       ADD CONSTRAINT "FK_stock_transfers_from_facility"
       FOREIGN KEY ("from_facility_id") REFERENCES "facilities"("id") ON DELETE RESTRICT
-    `);
+    `).catch(() => {/* already exists */});
 
     await queryRunner.query(`
       ALTER TABLE "stock_transfers"
       ADD CONSTRAINT "FK_stock_transfers_to_facility"
       FOREIGN KEY ("to_facility_id") REFERENCES "facilities"("id") ON DELETE RESTRICT
-    `);
+    `).catch(() => {/* already exists */});
 
     await queryRunner.query(`
       ALTER TABLE "stock_transfers"
       ADD CONSTRAINT "FK_stock_transfers_requested_by"
       FOREIGN KEY ("requested_by_id") REFERENCES "users"("id") ON DELETE RESTRICT
-    `);
+    `).catch(() => {/* already exists */});
 
     await queryRunner.query(`
       ALTER TABLE "stock_transfers"
       ADD CONSTRAINT "FK_stock_transfers_approved_by"
       FOREIGN KEY ("approved_by_id") REFERENCES "users"("id") ON DELETE SET NULL
-    `);
+    `).catch(() => {/* already exists */});
 
     await queryRunner.query(`
       ALTER TABLE "stock_transfers"
       ADD CONSTRAINT "FK_stock_transfers_received_by"
       FOREIGN KEY ("received_by_id") REFERENCES "users"("id") ON DELETE SET NULL
-    `);
+    `).catch(() => {/* already exists */});
 
     await queryRunner.query(`
       ALTER TABLE "stock_transfer_items"
       ADD CONSTRAINT "FK_stock_transfer_items_transfer"
       FOREIGN KEY ("transfer_id") REFERENCES "stock_transfers"("id") ON DELETE CASCADE
-    `);
+    `).catch(() => {/* already exists */});
 
     await queryRunner.query(`
       ALTER TABLE "stock_transfer_items"
       ADD CONSTRAINT "FK_stock_transfer_items_item"
       FOREIGN KEY ("item_id") REFERENCES "items"("id") ON DELETE RESTRICT
-    `);
+    `).catch(() => {/* already exists */});
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

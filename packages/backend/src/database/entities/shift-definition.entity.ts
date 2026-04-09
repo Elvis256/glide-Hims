@@ -5,7 +5,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   ManyToOne,
-  JoinColumn,
+  JoinColumn, Index,
 } from 'typeorm';
 import { Facility } from './facility.entity';
 import { Department } from './department.entity';
@@ -22,6 +22,10 @@ export enum ShiftType {
 export class ShiftDefinition {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  @Column({ type: 'uuid', nullable: true, name: 'tenant_id' })
+  @Index()
+  tenantId?: string;
 
   @Column({ type: 'uuid', name: 'facility_id' })
   facilityId: string;

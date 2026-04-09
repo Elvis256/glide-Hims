@@ -1,4 +1,4 @@
-import { IsString, IsEmail, IsOptional, IsObject, MinLength, IsArray, ValidateNested } from 'class-validator';
+import { IsString, IsEmail, IsOptional, IsObject, MinLength, IsArray, ValidateNested, IsIn } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -6,6 +6,11 @@ export class OrganizationDto {
   @ApiProperty({ description: 'Organization name', example: 'Kampala Medical Center' })
   @IsString()
   name: string;
+
+  @ApiPropertyOptional({ description: 'URL-friendly slug for login URL', example: 'kampala-medical' })
+  @IsString()
+  @IsOptional()
+  slug?: string;
 
   @ApiPropertyOptional({ description: 'Organization type', example: 'hospital_network' })
   @IsString()
@@ -92,9 +97,22 @@ export class SettingsDto {
   @ApiPropertyOptional({
     description: 'Deployment mode preset',
     example: 'clinic_opd',
-    enum: ['single_user', 'clinic_opd', 'clinic_full', 'multisite_opd', 'hospital'],
+    enum: [
+      'single_user', 'clinic_opd', 'clinic_full', 'multisite_opd', 'hospital',
+      'pharmacy_retail', 'pharmacy_chain', 'pharmacy_wholesale',
+      'dental_general', 'dental_specialist',
+      'optical_center', 'optical_chain',
+    ],
   })
   @IsString()
+  @IsIn([
+    'single_user', 'clinic_opd', 'clinic_full', 'multisite_opd', 'hospital',
+    'pharmacy_retail', 'pharmacy_chain', 'pharmacy_wholesale',
+    'dental_general', 'dental_specialist',
+    'optical_center', 'optical_chain',
+  ], {
+    message: 'facilityMode must be a valid deployment preset',
+  })
   @IsOptional()
   facilityMode?: string;
 
@@ -129,3 +147,21 @@ export class InitializeSetupDto {
 }
 
 export class RegisterTenantDto extends InitializeSetupDto {}
+
+export class InitializeTenantSetupDto {
+  @ApiProperty({ description: 'Main facility details' })
+  @ValidateNested()
+  @Type(() => FacilityDto)
+  facility: FacilityDto;
+
+  @ApiProperty({ description: 'Tenant admin user details' })
+  @ValidateNested()
+  @Type(() => AdminUserDto)
+  admin: AdminUserDto;
+
+  @ApiPropertyOptional({ description: 'System settings' })
+  @ValidateNested()
+  @Type(() => SettingsDto)
+  @IsOptional()
+  settings?: SettingsDto;
+}

@@ -5,7 +5,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   ManyToOne,
-  JoinColumn,
+  JoinColumn, Index,
 } from 'typeorm';
 import { AntenatalRegistration } from './antenatal-registration.entity';
 import { DeliveryOutcome } from './delivery-outcome.entity';
@@ -44,6 +44,10 @@ export enum MentalHealthRisk {
 export class PostnatalVisit {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  @Column({ type: 'uuid', nullable: true, name: 'tenant_id' })
+  @Index()
+  tenantId?: string;
 
   @Column({ type: 'uuid', name: 'facility_id' })
   facilityId: string;

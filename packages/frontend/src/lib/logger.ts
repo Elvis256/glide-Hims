@@ -165,8 +165,8 @@ export function installGlobalErrorHandlers() {
   logger.info('Error logging initialized', 'Logger');
 }
 
-// Expose to browser console for debugging: window.__logs
-if (typeof window !== 'undefined') {
+// Expose to browser console for debugging only in development
+if (typeof window !== 'undefined' && import.meta.env.DEV) {
   (window as any).__logs = {
     all: () => logger.getEntries(),
     errors: () => logger.getEntries('error'),

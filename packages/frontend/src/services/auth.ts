@@ -7,9 +7,17 @@ export const authService = {
     return response.data;
   },
 
-  refreshToken: async (refreshToken: string): Promise<LoginResponse> => {
-    const response = await api.post<LoginResponse>('/auth/refresh', { refreshToken });
+  refreshToken: async (): Promise<LoginResponse> => {
+    const response = await api.post<LoginResponse>('/auth/refresh', {});
     return response.data;
+  },
+
+  logout: async (): Promise<void> => {
+    try {
+      await api.post('/auth/logout');
+    } catch {
+      // Ignore errors — cookies will expire naturally
+    }
   },
 
   getProfile: async (): Promise<User> => {
@@ -17,7 +25,7 @@ export const authService = {
     return response.data;
   },
 
-  getMe: async (): Promise<{ accessibleModules: string[]; permissions: string[]; roles: string[] }> => {
+  getMe: async (): Promise<{ accessibleModules: string[]; permissions: string[]; roles: string[]; facilityMode?: string; businessType?: string }> => {
     const response = await api.get('/auth/me');
     return response.data;
   },

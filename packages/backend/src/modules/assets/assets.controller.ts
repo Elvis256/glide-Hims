@@ -4,7 +4,15 @@ import { AuthGuard } from '@nestjs/passport';
 import { AssetsService } from './assets.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { AssetStatus } from '../../database/entities/fixed-asset.entity';
-import { RunDepreciationDto, CompleteTransferDto } from './dto/assets.dto';
+import {
+  RunDepreciationDto,
+  CompleteTransferDto,
+  CreateAssetDto,
+  UpdateAssetDto,
+  RecordAssetMaintenanceDto,
+  InitiateTransferDto,
+  DisposeAssetDto,
+} from './dto/assets.dto';
 
 @ApiTags('Assets')
 @ApiBearerAuth()
@@ -18,7 +26,7 @@ export class AssetsController {
   @Post()
   @AuthWithPermissions('assets.create')
   @ApiOperation({ summary: 'Create a new fixed asset' })
-  async createAsset(@Body() data: any, @Request() req: any) {
+  async createAsset(@Body() data: CreateAssetDto, @Request() req: any) {
     return this.assetsService.createAsset(data, req.user?.tenantId);
   }
 
@@ -71,7 +79,7 @@ export class AssetsController {
   @Put(':id')
   @AuthWithPermissions('assets.update')
   @ApiOperation({ summary: 'Update an asset' })
-  async updateAsset(@Param('id') id: string, @Body() data: any, @Request() req: any) {
+  async updateAsset(@Param('id') id: string, @Body() data: UpdateAssetDto, @Request() req: any) {
     return this.assetsService.updateAsset(id, data, req.user?.tenantId);
   }
 
@@ -135,7 +143,7 @@ export class AssetsController {
   @Post(':id/maintenance')
   @AuthWithPermissions('assets.create')
   @ApiOperation({ summary: 'Record asset maintenance' })
-  async recordMaintenance(@Param('id') assetId: string, @Body() data: any, @Request() req: any) {
+  async recordMaintenance(@Param('id') assetId: string, @Body() data: RecordAssetMaintenanceDto, @Request() req: any) {
     return this.assetsService.recordMaintenance({ ...data, assetId }, req.user?.tenantId);
   }
 
@@ -151,7 +159,7 @@ export class AssetsController {
   @Post(':id/transfer')
   @AuthWithPermissions('assets.create')
   @ApiOperation({ summary: 'Initiate asset transfer' })
-  async initiateTransfer(@Param('id') assetId: string, @Body() data: any, @Request() req: any) {
+  async initiateTransfer(@Param('id') assetId: string, @Body() data: InitiateTransferDto, @Request() req: any) {
     return this.assetsService.initiateTransfer({ ...data, assetId }, req.user?.tenantId);
   }
 
@@ -178,7 +186,7 @@ export class AssetsController {
   @Post(':id/dispose')
   @AuthWithPermissions('assets.create')
   @ApiOperation({ summary: 'Dispose an asset' })
-  async disposeAsset(@Param('id') id: string, @Body() data: any, @Request() req: any) {
+  async disposeAsset(@Param('id') id: string, @Body() data: DisposeAssetDto, @Request() req: any) {
     return this.assetsService.disposeAsset(id, data, req.user?.tenantId);
   }
 }

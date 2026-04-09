@@ -10,7 +10,7 @@ export class LoginDto {
   @ApiProperty({ example: 'password123', description: 'User password' })
   @IsString()
   @IsNotEmpty()
-  @MinLength(6)
+  @MinLength(8)
   password: string;
 
   @ApiPropertyOptional({ description: 'Tenant ID for multi-tenant login' })
@@ -21,14 +21,15 @@ export class LoginDto {
   @ApiPropertyOptional({ example: '123456', description: 'MFA code if enabled' })
   @IsOptional()
   @IsString()
+  @Matches(/^\d{6}$/, { message: 'MFA code must be exactly 6 digits' })
   mfaCode?: string;
 }
 
 export class RefreshTokenDto {
-  @ApiProperty({ description: 'Refresh token' })
+  @ApiPropertyOptional({ description: 'Refresh token (optional if sent via cookie)' })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  refreshToken: string;
+  refreshToken?: string;
 }
 
 export class ChangePasswordDto {
@@ -68,6 +69,8 @@ export class AuthResponseDto {
     email: string;
     roles: string[];
     permissions: string[];
+    isSystemAdmin: boolean;
+    tenantId?: string;
     facilityId?: string;
     facility?: {
       id: string;

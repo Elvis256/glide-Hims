@@ -14,7 +14,7 @@ interface AuthActions {
   hasRole: (role: string) => boolean;
   hasModuleAccess: (moduleCode: string) => boolean;
   setAccessibleModules: (modules: string[]) => void;
-  updateFromMe: (data: { permissions?: string[]; roles?: string[]; accessibleModules?: string[] }) => void;
+  updateFromMe: (data: { permissions?: string[]; roles?: string[]; accessibleModules?: string[]; facilityMode?: string; businessType?: string }) => void;
 }
 
 export const useAuthStore = create<AuthState & AuthActions>()(
@@ -59,6 +59,7 @@ export const useAuthStore = create<AuthState & AuthActions>()(
 
       hasPermission: (permission: string) => {
         const { user } = get();
+        if (user?.isSystemAdmin) return true;
         if (!user?.permissions) return false;
         const matchRole = (r: string) => user.roles?.some((ur: any) => ur === r || ur?.role === r || ur?.name === r);
         if (matchRole('Super Admin')) return true;
@@ -67,6 +68,7 @@ export const useAuthStore = create<AuthState & AuthActions>()(
 
       hasAnyPermission: (permissions: string[]) => {
         const { user } = get();
+        if (user?.isSystemAdmin) return true;
         if (!user?.permissions) return false;
         const matchRole = (r: string) => user.roles?.some((ur: any) => ur === r || ur?.role === r || ur?.name === r);
         if (matchRole('Super Admin')) return true;
@@ -111,6 +113,8 @@ export const useAuthStore = create<AuthState & AuthActions>()(
               ...(data.permissions && { permissions: data.permissions }),
               ...(data.roles && { roles: data.roles }),
               ...(data.accessibleModules && { accessibleModules: data.accessibleModules }),
+              ...(data.facilityMode && { facilityMode: data.facilityMode }),
+              ...(data.businessType && { businessType: data.businessType }),
             },
           });
         }
@@ -120,8 +124,6 @@ export const useAuthStore = create<AuthState & AuthActions>()(
       name: 'glide-hims-auth',
       partialize: (state) => ({
         user: state.user,
-        accessToken: state.accessToken,
-        refreshToken: state.refreshToken,
         isAuthenticated: state.isAuthenticated,
       }),
     }

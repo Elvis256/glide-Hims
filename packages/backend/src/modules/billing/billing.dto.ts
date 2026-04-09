@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsUUID, IsArray, ValidateNested, IsNumber, IsDateString, IsEnum, Min } from 'class-validator';
+import { IsString, IsOptional, IsUUID, IsArray, ValidateNested, IsNumber, IsDateString, IsEnum, Min, IsNotEmpty } from 'class-validator';
 import { Type } from 'class-transformer';
 import { InvoiceStatus, ChargeType, PaymentMethod, PaymentType } from '../../database/entities/invoice.entity';
 
@@ -20,7 +20,7 @@ class InvoiceItemDto {
 
   @Type(() => Number)
   @IsNumber()
-  @Min(0)
+  @Min(0.01)
   unitPrice: number;
 
   @Type(() => Number)
@@ -55,6 +55,10 @@ export class CreateInvoiceDto {
   @IsNumber()
   @IsOptional()
   taxPercent?: number;
+
+  @IsString()
+  @IsOptional()
+  taxExemptReason?: string;
 
   @Type(() => Number)
   @IsNumber()
@@ -97,7 +101,7 @@ export class AddInvoiceItemDto {
 
   @Type(() => Number)
   @IsNumber()
-  @Min(0)
+  @Min(0.01)
   unitPrice: number;
 }
 
@@ -114,8 +118,8 @@ export class CreatePaymentDto {
   method: PaymentMethod;
 
   @IsString()
-  @IsOptional()
-  transactionReference?: string;
+  @IsNotEmpty({ message: 'Transaction reference is required for non-cash payments' })
+  transactionReference: string;
 
   @IsString()
   @IsOptional()

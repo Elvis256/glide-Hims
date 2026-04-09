@@ -19,10 +19,13 @@ import RoleRoute, {
   StoreKeeperRoute,
   AccountantRoute,
   AdminRoute,
+  SystemAdminRoute,
   FinanceRoute,
   HRRoute,
   BillingRoute,
   RadiologyRoute,
+  DentistRoute,
+  OptometristRoute,
   ROLES,
 } from './components/RoleRoute';
 import DashboardLayout from './components/DashboardLayout';
@@ -30,8 +33,15 @@ import { PageLoader } from './components/PageLoader';
 
 // Lazy-loaded page components (route-based code splitting)
 const LoginPage = lazy(() => import('./pages/LoginPage'));
+const SystemLoginPage = lazy(() => import('./pages/system/SystemLoginPage'));
+const SystemAdminLayout = lazy(() => import('./pages/system/SystemAdminLayout'));
+const SystemDashboardPage = lazy(() => import('./pages/system/SystemDashboardPage'));
+const SystemUsersPage = lazy(() => import('./pages/system/SystemUsersPage'));
+const PlatformSettingsPage = lazy(() => import('./pages/system/SystemSettingsPage'));
 const SetupWizardPage = lazy(() => import('./pages/SetupWizardPage'));
+const TenantSetupWizardPage = lazy(() => import('./pages/TenantSetupWizardPage'));
 const RegisterOrganizationPage = lazy(() => import('./pages/RegisterOrganizationPage'));
+const TenantManagementPage = lazy(() => import('./pages/admin/TenantManagementPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const SmartDashboardPage = lazy(() => import('./pages/SmartDashboardPage'));
 const UsersPage = lazy(() => import('./pages/UsersPage'));
@@ -245,6 +255,13 @@ const DURReportsPage = lazy(() => import('./pages/pharmacy/DURReportsPage'));
 const DrugDatabaseSyncPage = lazy(() => import('./pages/pharmacy/DrugDatabaseSyncPage'));
 const PrescriptionTemplatesPage = lazy(() => import('./pages/pharmacy/PrescriptionTemplatesPage'));
 const NotificationLogPage = lazy(() => import('./pages/pharmacy/NotificationLogPage'));
+const POSDashboardPage = lazy(() => import('./pages/pos/POSDashboardPage'));
+const POSSalePage = lazy(() => import('./pages/pos/POSSalePage'));
+const POSShiftPage = lazy(() => import('./pages/pos/POSShiftPage'));
+const POSReportsPage = lazy(() => import('./pages/pos/POSReportsPage'));
+const WholesaleCustomersPage = lazy(() => import('./pages/pos/WholesaleCustomersPage'));
+const PricingTiersPage = lazy(() => import('./pages/pos/PricingTiersPage'));
+const DeliveryTrackingPage = lazy(() => import('./pages/pos/DeliveryTrackingPage'));
 const AdmissionsPage = lazy(() => import('./pages/ipd/AdmissionsPage'));
 const WardsBedsPage = lazy(() => import('./pages/ipd/WardsBedsPage'));
 const BHTIssuePage = lazy(() => import('./pages/ipd/BHTIssuePage'));
@@ -380,6 +397,25 @@ const LabReferencePage = lazy(() => import('./pages/integrations/LabReferencePag
 const SMSNotificationsPage = lazy(() => import('./pages/integrations/SMSNotificationsPage'));
 const DHIS2SettingsPage = lazy(() => import('./pages/integrations/DHIS2SettingsPage'));
 
+// Dental Module
+const DentalDashboardPage = lazy(() => import('./pages/dental/DentalDashboardPage'));
+const DentalChartPage = lazy(() => import('./pages/dental/DentalChartPage'));
+const TreatmentPlanPage = lazy(() => import('./pages/dental/TreatmentPlanPage'));
+const DentalProceduresPage = lazy(() => import('./pages/dental/DentalProceduresPage'));
+const DentalImagingPage = lazy(() => import('./pages/dental/DentalImagingPage'));
+const DentalLabOrdersPage = lazy(() => import('./pages/dental/DentalLabOrdersPage'));
+const OrthodonticCasesPage = lazy(() => import('./pages/dental/OrthodonticCasesPage'));
+const PeriodontalChartPage = lazy(() => import('./pages/dental/PeriodontalChartPage'));
+
+// Optical Module
+const OpticalDashboardPage = lazy(() => import('./pages/optical/OpticalDashboardPage'));
+const EyeExamPage = lazy(() => import('./pages/optical/EyeExamPage'));
+const PrescriptionPage = lazy(() => import('./pages/optical/PrescriptionPage'));
+const FrameInventoryPage = lazy(() => import('./pages/optical/FrameInventoryPage'));
+const LensInventoryPage = lazy(() => import('./pages/optical/LensInventoryPage'));
+const SpectacleOrdersPage = lazy(() => import('./pages/optical/SpectacleOrdersPage'));
+const VisualFieldPage = lazy(() => import('./pages/optical/VisualFieldPage'));
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -420,7 +456,7 @@ function AppRoutes() {
   useEffect(() => {
     const checkSetup = async () => {
       // Skip check if on setup or register page
-      if (window.location.pathname === '/setup' || window.location.pathname === '/register') {
+      if (window.location.pathname.startsWith('/setup') || window.location.pathname === '/register') {
         setSetupChecked(true);
         return;
       }
@@ -503,18 +539,36 @@ function AppRoutes() {
     );
   }
 
-  // Redirect to setup if not complete
-  if (!isSetupComplete && window.location.pathname !== '/setup') {
+  // Redirect to setup if not complete (allow tenant setup wizard and system routes through)
+  if (!isSetupComplete && !window.location.pathname.startsWith('/setup') && !window.location.pathname.startsWith('/system')) {
     return <Navigate to="/setup" replace />;
   }
 
   return (
     <Suspense fallback={<PageLoader />}>
     <Routes>
-      <Route path="/setup" element={<SetupWizardPage />} />
-      <Route path="/register" element={<RegisterOrganizationPage />} />
+      <Route path="/setup" element={isSetupComplete ? <Navigate to="/" replace /> : <SetupWizardPage />} />
+      <Route path="/setup/:slug" element={isSetupComplete ? <Navigate to="/" replace /> : <TenantSetupWizardPage />} />
+      <Route path="/register" element={isAuthenticated ? <Navigate to="/" replace /> : <RegisterOrganizationPage />} />
       <Route
-        path="/login"
+        path="/system/login"
+        element={isAuthenticated ? <Navigate to="/system" replace /> : <SystemLoginPage />}
+      />
+      <Route
+        path="/system"
+        element={isAuthenticated ? <SystemAdminRoute><SystemAdminLayout /></SystemAdminRoute> : <Navigate to="/system/login" replace />}
+      >
+        <Route index element={<SystemDashboardPage />} />
+        <Route path="tenants" element={<TenantManagementPage />} />
+        <Route path="users" element={<SystemUsersPage />} />
+        <Route path="settings" element={<PlatformSettingsPage />} />
+      </Route>
+      <Route
+        path="/admin/tenants"
+        element={isAuthenticated ? <Navigate to="/system/tenants" replace /> : <Navigate to="/system/login" replace />}
+      />
+      <Route
+        path="/login/:slug?"
         element={isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />}
       />
       <Route
@@ -793,6 +847,15 @@ function AppRoutes() {
                 <Route path="/pharmacy/rx-templates" element={<PharmacistRoute><PrescriptionTemplatesPage /></PharmacistRoute>} />
                 <Route path="/pharmacy/notifications" element={<PharmacistRoute><NotificationLogPage /></PharmacistRoute>} />
                 
+                {/* POS Module */}
+                <Route path="/pharmacy/pos" element={<PharmacistRoute><POSDashboardPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/pos/sale" element={<PharmacistRoute><POSSalePage /></PharmacistRoute>} />
+                <Route path="/pharmacy/pos/shifts" element={<PharmacistRoute><POSShiftPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/pos/reports" element={<PharmacistRoute><POSReportsPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/pos/wholesale/customers" element={<PharmacistRoute><WholesaleCustomersPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/pos/wholesale/tiers" element={<PharmacistRoute><PricingTiersPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/pos/deliveries" element={<PharmacistRoute><DeliveryTrackingPage /></PharmacistRoute>} />
+                
                 {/* IPD Module */}
                 <Route path="/ipd/admissions" element={<ClinicalRoute><AdmissionsPage /></ClinicalRoute>} />
                 <Route path="/ipd/wards" element={<ClinicalRoute><WardsBedsPage /></ClinicalRoute>} />
@@ -996,6 +1059,25 @@ function AppRoutes() {
                 <Route path="/assets/disposal" element={<StoreKeeperRoute><AssetDisposalPage /></StoreKeeperRoute>} />
                 <Route path="/assets/categories" element={<AdminRoute><AssetCategoriesPage /></AdminRoute>} />
                 
+                {/* Dental Module */}
+                <Route path="/dental" element={<DentistRoute><DentalDashboardPage /></DentistRoute>} />
+                <Route path="/dental/chart" element={<DentistRoute><DentalChartPage /></DentistRoute>} />
+                <Route path="/dental/treatment-plans" element={<DentistRoute><TreatmentPlanPage /></DentistRoute>} />
+                <Route path="/dental/procedures" element={<DentistRoute><DentalProceduresPage /></DentistRoute>} />
+                <Route path="/dental/imaging" element={<DentistRoute><DentalImagingPage /></DentistRoute>} />
+                <Route path="/dental/lab-orders" element={<DentistRoute><DentalLabOrdersPage /></DentistRoute>} />
+                <Route path="/dental/ortho" element={<DentistRoute><OrthodonticCasesPage /></DentistRoute>} />
+                <Route path="/dental/perio" element={<DentistRoute><PeriodontalChartPage /></DentistRoute>} />
+
+                {/* Optical Module */}
+                <Route path="/optical" element={<OptometristRoute><OpticalDashboardPage /></OptometristRoute>} />
+                <Route path="/optical/exams" element={<OptometristRoute><EyeExamPage /></OptometristRoute>} />
+                <Route path="/optical/prescriptions" element={<OptometristRoute><PrescriptionPage /></OptometristRoute>} />
+                <Route path="/optical/frames" element={<OptometristRoute><FrameInventoryPage /></OptometristRoute>} />
+                <Route path="/optical/lenses" element={<OptometristRoute><LensInventoryPage /></OptometristRoute>} />
+                <Route path="/optical/orders" element={<OptometristRoute><SpectacleOrdersPage /></OptometristRoute>} />
+                <Route path="/optical/visual-field" element={<OptometristRoute><VisualFieldPage /></OptometristRoute>} />
+
                 {/* Chronic Care Module */}
                 <Route path="/chronic-care/dashboard" element={<ClinicalRoute><ChronicCareDashboardPage /></ClinicalRoute>} />
                 <Route path="/chronic-care/registry" element={<ClinicalRoute><ChronicRegistryPage /></ClinicalRoute>} />

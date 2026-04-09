@@ -5,7 +5,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   ManyToOne,
-  JoinColumn,
+  JoinColumn, Index,
 } from 'typeorm';
 import { AntenatalRegistration } from './antenatal-registration.entity';
 import { User } from './user.entity';
@@ -14,6 +14,10 @@ import { User } from './user.entity';
 export class AntenatalVisit {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  @Column({ type: 'uuid', nullable: true, name: 'tenant_id' })
+  @Index()
+  tenantId?: string;
 
   @Column({ type: 'uuid', name: 'registration_id' })
   registrationId: string;
