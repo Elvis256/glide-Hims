@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import { api } from '../../services/api';
 import { useFacilityId } from '../../lib/facility';
 import { asList } from '../../utils/unwrapResponse';
+import { useBusinessConfig } from '../../hooks/useBusinessConfig';
 
 interface LabOrderStats {
   total: number;
@@ -48,6 +49,15 @@ export default function DentalDashboardPage() {
   const navigate = useNavigate();
   const facilityId = useFacilityId();
   const [refreshKey, setRefreshKey] = useState(0);
+  const bizConfig = useBusinessConfig();
+
+  const hospitalName = (() => {
+    try {
+      const stored = localStorage.getItem('glide_hospital_settings');
+      if (stored) return JSON.parse(stored).name || '';
+    } catch { /* use default */ }
+    return '';
+  })();
 
   const { data: labStats, isLoading: statsLoading } = useQuery<LabOrderStats>({
     queryKey: ['dental-lab-stats', facilityId, refreshKey],
@@ -126,7 +136,12 @@ export default function DentalDashboardPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Dental Dashboard</h1>
+        <div>
+          <h1 className="text-2xl font-bold">
+            {hospitalName ? `${hospitalName}` : 'Dental Dashboard'}
+          </h1>
+          <p className="text-sm text-gray-500">{bizConfig.tagline} — Lab orders, orthodontics &amp; overview</p>
+        </div>
         <button
           onClick={handleRefresh}
           className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"

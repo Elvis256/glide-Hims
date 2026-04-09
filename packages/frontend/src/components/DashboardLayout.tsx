@@ -117,6 +117,31 @@ import Logo, { LogoIcon } from './Logo';
 import FacilitySwitcher from './FacilitySwitcher';
 import NotificationBell from './NotificationBell';
 import { useNotificationSocket } from '../lib/useNotificationSocket';
+import { useBusinessConfig, type BusinessType } from '../hooks/useBusinessConfig';
+
+// Business-type-specific section title overrides
+const sectionTitleOverrides: Record<string, Partial<Record<BusinessType, string>>> = {
+  'Registration': {
+    pharmacy: 'Customers',
+    optical: 'Clients',
+  },
+  'Doctors': {
+    dental: 'Dentists',
+    optical: 'Optometrists',
+  },
+  'Pharmacy': {
+    pharmacy: 'Dispensary',
+  },
+};
+
+// Sidebar section ordering priority per business type.
+// Sections listed here appear first (in this order); unlisted sections follow in their default order.
+const sidebarPriorityOrder: Record<BusinessType, string[]> = {
+  pharmacy: ['POS', 'Pharmacy', 'Registration', 'Billing', 'Stores', 'Reports', 'HR', 'Admin'],
+  dental:   ['Dental', 'Registration', 'Doctors', 'Billing', 'Reports', 'HR', 'Admin'],
+  optical:  ['Optical', 'Registration', 'POS', 'Billing', 'Stores', 'Reports', 'HR', 'Admin'],
+  hospital: [], // default order — no reordering
+};
 
 // Custom Bandage icon (not in lucide)
 const Bandage = ({ className }: { className?: string }) => (
@@ -1368,6 +1393,7 @@ export default function DashboardLayout({ children }: LayoutProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [hospitalName, setHospitalName] = useState('');
+  const bizConfig = useBusinessConfig();
 
   // Initialize notification WebSocket
   useNotificationSocket();
@@ -1444,15 +1470,13 @@ export default function DashboardLayout({ children }: LayoutProps) {
   
   const filteredNavigationSections = navigationSections
     .filter((section) => {
-      // Super Admin sees everything
-      if (isSuperAdmin) return true;
-      
-      // Primary: use backend-driven module access (if available)
-      if (section.moduleCode) {
-        if (user?.accessibleModules && user.accessibleModules.length > 0) {
-          return user.accessibleModules.includes(section.moduleCode);
-        }
+      // Primary: use backend-driven module access (if available) — applies to ALL users including Super Admin
+      if (section.moduleCode && user?.accessibleModules && user.accessibleModules.length > 0) {
+        return user.accessibleModules.includes(section.moduleCode);
       }
+      
+      // Super Admin without module restrictions sees everything
+      if (isSuperAdmin) return true;
       
       // Fallback: role-based filtering (for users who haven't fetched /auth/me yet)
       if (section.roles && section.roles.length > 0) {
@@ -1465,6 +1489,10 @@ export default function DashboardLayout({ children }: LayoutProps) {
     })
     .map(filterSectionItems)
     .filter((section) => {
+      // If we have module-level filtering, trust it; otherwise Super Admin sees all
+      if (user?.accessibleModules && user.accessibleModules.length > 0) {
+        return section.items.length > 0 || !section.moduleCode;
+      }
       if (isSuperAdmin) return true;
       
       // Section must have at least one visible item after filtering
@@ -1481,7 +1509,38 @@ export default function DashboardLayout({ children }: LayoutProps) {
       }
       
       return true;
+    })
+    // Apply business-type-specific title overrides
+    .map((section) => {
+      const overrides = sectionTitleOverrides[section.title];
+      if (overrides && bizConfig.type in overrides) {
+        return { ...section, title: overrides[bizConfig.type as BusinessType]! };
+      }
+      return section;
     });
+
+  // Phase 2: Reorder sidebar sections based on business type priority
+  const priorityOrder = sidebarPriorityOrder[bizConfig.type as BusinessType] || [];
+  const reorderedNavigationSections = priorityOrder.length > 0
+    ? (() => {
+        const prioritized: NavSection[] = [];
+        const remaining: NavSection[] = [];
+        // Use the original (pre-override) title for matching priority order
+        for (const section of filteredNavigationSections) {
+          // Match against both original title and overridden title
+          const originalTitle = navigationSections.find(
+            (ns) => ns.moduleCode === section.moduleCode
+          )?.title || section.title;
+          const idx = priorityOrder.indexOf(originalTitle);
+          if (idx !== -1) {
+            prioritized[idx] = section;
+          } else {
+            remaining.push(section);
+          }
+        }
+        return [...prioritized.filter(Boolean), ...remaining];
+      })()
+    : filteredNavigationSections;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -1510,7 +1569,7 @@ export default function DashboardLayout({ children }: LayoutProps) {
         </div>
 
         <nav className="overflow-y-auto h-[calc(100vh-72px)]">
-          {filteredNavigationSections.map((section) => (
+          {reorderedNavigationSections.map((section) => (
             <MobileNavSection 
               key={section.title} 
               section={section} 
@@ -1534,7 +1593,7 @@ export default function DashboardLayout({ children }: LayoutProps) {
             </button>
 
             {/* Logo */}
-            <Logo size="sm" variant="full" className="hidden sm:flex" />
+            <Logo size="sm" variant="full" className="hidden sm:flex" tagline={bizConfig.tagline} />
             <Logo size="xs" variant="icon" className="sm:hidden" />
           </div>
 
@@ -1597,7 +1656,7 @@ export default function DashboardLayout({ children }: LayoutProps) {
 
         {/* Navigation bar - visible on all screens */}
         <nav className="flex items-center gap-0.5 px-4 py-1.5 bg-gray-50 border-t border-gray-100 flex-wrap">
-          {filteredNavigationSections.map((section) => (
+          {reorderedNavigationSections.map((section) => (
             <NavDropdown key={section.title} section={section} />
           ))}
         </nav>
