@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, MoreThanOrEqual, LessThanOrEqual } from 'typeorm';
+import { Repository, Between, MoreThanOrEqual, LessThanOrEqual, DataSource } from 'typeorm';
 import { Theatre, TheatreStatus, TheatreType } from '../../database/entities/theatre.entity';
 import { SurgeryCase, SurgeryStatus, SurgeryPriority } from '../../database/entities/surgery-case.entity';
 import { SurgeryConsumable, ConsumableCategory } from '../../database/entities/surgery-consumable.entity';
@@ -32,6 +32,7 @@ export class SurgeryService {
     @InjectRepository(Item)
     private itemRepo: Repository<Item>,
     private inventoryService: InventoryService,
+    private dataSource: DataSource,
   ) {}
 
   // ============ THEATRE MANAGEMENT ============
@@ -96,48 +97,70 @@ export class SurgeryService {
   }
 
   async scheduleSurgery(dto: ScheduleSurgeryDto, userId: string, tenantId?: string): Promise<SurgeryCase> {
-    // Check theatre availability
-    const conflicts = await this.checkTheatreConflicts(
-      dto.theatreId,
-      dto.scheduledDate,
-      dto.scheduledTime,
-      dto.estimatedDurationMinutes,
-      undefined,
-      tenantId,
-    );
+    return this.dataSource.transaction(async (manager) => {
+      // Lock the theatre row to prevent concurrent scheduling race conditions
+      const theatreQb = manager.createQueryBuilder(Theatre, 'theatre')
+        .setLock('pessimistic_write')
+        .where('theatre.id = :id', { id: dto.theatreId });
+      if (tenantId) theatreQb.andWhere('theatre.tenant_id = :tenantId', { tenantId });
+      const theatre = await theatreQb.getOne();
 
-    if (conflicts.length > 0) {
-      throw new BadRequestException(
-        `Theatre has ${conflicts.length} conflicting surgery at the requested time`,
-      );
-    }
+      if (!theatre) {
+        throw new NotFoundException('Theatre not found');
+      }
 
-    const caseNumber = await this.generateCaseNumber(dto.facilityId, tenantId);
+      // Check theatre availability within the lock
+      const existingCases = await manager.find(SurgeryCase, {
+        where: {
+          theatreId: dto.theatreId,
+          scheduledDate: new Date(dto.scheduledDate),
+          status: SurgeryStatus.SCHEDULED,
+          ...(tenantId ? { tenantId } : {}),
+        },
+      });
 
-    const surgeryCase = this.surgeryCaseRepo.create({
-      caseNumber,
-      patientId: dto.patientId,
-      encounterId: dto.encounterId,
-      theatreId: dto.theatreId,
-      procedureName: dto.procedureName,
-      procedureCode: dto.procedureCode,
-      diagnosis: dto.diagnosis,
-      surgeryType: dto.surgeryType,
-      priority: dto.priority,
-      scheduledDate: dto.scheduledDate,
-      scheduledTime: dto.scheduledTime,
-      estimatedDurationMinutes: dto.estimatedDurationMinutes,
-      leadSurgeonId: dto.leadSurgeonId,
-      assistantSurgeonId: dto.assistantSurgeonId,
-      anesthesiologistId: dto.anesthesiologistId,
-      anesthesiaType: dto.anesthesiaType,
-      facilityId: dto.facilityId,
-      createdById: userId,
-      status: SurgeryStatus.SCHEDULED,
+      const requestedStart = this.timeToMinutes(dto.scheduledTime);
+      const requestedEnd = requestedStart + dto.estimatedDurationMinutes;
+
+      const conflicts = existingCases.filter((c) => {
+        const caseStart = this.timeToMinutes(c.scheduledTime);
+        const caseEnd = caseStart + c.estimatedDurationMinutes;
+        return requestedStart < caseEnd && requestedEnd > caseStart;
+      });
+
+      if (conflicts.length > 0) {
+        throw new BadRequestException(
+          `Theatre has ${conflicts.length} conflicting surgery at the requested time`,
+        );
+      }
+
+      const caseNumber = await this.generateCaseNumber(dto.facilityId, tenantId);
+
+      const surgeryCase = manager.create(SurgeryCase, {
+        caseNumber,
+        patientId: dto.patientId,
+        encounterId: dto.encounterId,
+        theatreId: dto.theatreId,
+        procedureName: dto.procedureName,
+        procedureCode: dto.procedureCode,
+        diagnosis: dto.diagnosis,
+        surgeryType: dto.surgeryType,
+        priority: dto.priority,
+        scheduledDate: dto.scheduledDate,
+        scheduledTime: dto.scheduledTime,
+        estimatedDurationMinutes: dto.estimatedDurationMinutes,
+        leadSurgeonId: dto.leadSurgeonId,
+        assistantSurgeonId: dto.assistantSurgeonId,
+        anesthesiologistId: dto.anesthesiologistId,
+        anesthesiaType: dto.anesthesiaType,
+        facilityId: dto.facilityId,
+        createdById: userId,
+        status: SurgeryStatus.SCHEDULED,
+      });
+      if (tenantId) (surgeryCase as any).tenantId = tenantId;
+
+      return manager.save(surgeryCase);
     });
-    if (tenantId) (surgeryCase as any).tenantId = tenantId;
-
-    return this.surgeryCaseRepo.save(surgeryCase);
   }
 
   async checkTheatreConflicts(
@@ -223,6 +246,17 @@ export class SurgeryService {
     // Check if consent is signed for elective surgeries
     if (surgeryCase.priority === SurgeryPriority.ELECTIVE && !surgeryCase.consentSigned) {
       throw new BadRequestException('Consent must be signed before starting elective surgery');
+    }
+
+    // Validate pre-op checklist is complete before allowing transition to IN_PROGRESS
+    if (!surgeryCase.preOpChecklist || surgeryCase.preOpChecklist.length === 0) {
+      throw new BadRequestException('Pre-operative checklist must be completed before starting surgery');
+    }
+    const uncheckedItems = surgeryCase.preOpChecklist.filter(item => !item.checked);
+    if (uncheckedItems.length > 0) {
+      throw new BadRequestException(
+        `Pre-operative checklist is incomplete. ${uncheckedItems.length} item(s) not checked: ${uncheckedItems.map(i => i.item).join(', ')}`,
+      );
     }
 
     surgeryCase.status = SurgeryStatus.IN_PROGRESS;

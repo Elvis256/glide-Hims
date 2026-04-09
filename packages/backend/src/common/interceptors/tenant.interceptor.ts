@@ -48,7 +48,7 @@ export class TenantInterceptor implements NestInterceptor {
       const queryRunner = this.dataSource.createQueryRunner();
       try {
         await queryRunner.connect();
-        await queryRunner.query(`SET LOCAL "app.tenant_id" = $1`, [tenantId]);
+        await queryRunner.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenantId]);
       } finally {
         await queryRunner.release();
       }

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThanOrEqual, In } from 'typeorm';
 import * as nodemailer from 'nodemailer';
@@ -362,23 +362,62 @@ export class NotificationsService {
       const shouldSendSms = (reminder.channel === ReminderChannel.SMS || reminder.channel === ReminderChannel.BOTH || reminder.channel === ReminderChannel.ALL);
       const shouldSendWhatsApp = (reminder.channel === ReminderChannel.WHATSAPP || reminder.channel === ReminderChannel.ALL);
 
+      let channelsAttempted = 0;
+      let channelsSucceeded = 0;
+      const channelErrors: string[] = [];
+
       // Send Email
       if (shouldSendEmail && emailConfig?.isEnabled && patient.email) {
-        await this.sendEmail(emailConfig, patient.email, reminder.subject, reminder.message);
+        channelsAttempted++;
+        try {
+          await this.sendEmail(emailConfig, patient.email, reminder.subject, reminder.message);
+          channelsSucceeded++;
+        } catch (e) {
+          channelErrors.push(`Email: ${e.message}`);
+          this.logger.warn(`Email channel failed for reminder ${reminder.id}: ${e.message}`);
+        }
       }
 
       // Send SMS
       if (shouldSendSms && smsConfig?.isEnabled && patient.phone) {
-        await this.sendSms(smsConfig, patient.phone, reminder.message);
+        channelsAttempted++;
+        try {
+          await this.sendSms(smsConfig, patient.phone, reminder.message);
+          channelsSucceeded++;
+        } catch (e) {
+          channelErrors.push(`SMS: ${e.message}`);
+          this.logger.warn(`SMS channel failed for reminder ${reminder.id}: ${e.message}`);
+        }
       }
 
       // Send WhatsApp
       if (shouldSendWhatsApp && whatsappConfig?.isEnabled && patient.phone) {
-        await this.sendWhatsApp(whatsappConfig, patient.phone, reminder.message);
+        channelsAttempted++;
+        try {
+          await this.sendWhatsApp(whatsappConfig, patient.phone, reminder.message);
+          channelsSucceeded++;
+        } catch (e) {
+          channelErrors.push(`WhatsApp: ${e.message}`);
+          this.logger.warn(`WhatsApp channel failed for reminder ${reminder.id}: ${e.message}`);
+        }
       }
 
-      reminder.status = ReminderStatus.SENT;
-      reminder.sentAt = new Date();
+      // Determine status based on channel results
+      if (channelsAttempted === 0) {
+        throw new Error('No notification channels were available or configured');
+      } else if (channelsSucceeded === channelsAttempted) {
+        reminder.status = ReminderStatus.SENT;
+        reminder.sentAt = new Date();
+      } else if (channelsSucceeded > 0) {
+        // Partial success: some channels succeeded, some failed
+        reminder.status = ReminderStatus.SENT;
+        reminder.sentAt = new Date();
+        reminder.errorMessage = `Partially sent (${channelsSucceeded}/${channelsAttempted}): ${channelErrors.join('; ')}`;
+        this.logger.warn(`Reminder ${reminder.id} partially sent: ${channelsSucceeded}/${channelsAttempted} channels succeeded`);
+      } else {
+        // All channels failed
+        throw new Error(`All channels failed: ${channelErrors.join('; ')}`);
+      }
     } catch (error) {
       reminder.status = ReminderStatus.FAILED;
       reminder.errorMessage = error.message;
@@ -514,55 +553,121 @@ export class NotificationsService {
     }
   }
 
-  // Template Management
-  async getTemplates(facilityId: string): Promise<any[]> {
-    // Return default templates for now (templates would be stored in DB)
-    return [
+  // Template Management — stored in a single notification_config with type TEMPLATE
+  // Templates are kept as an array in extraConfig.templates
+  async getTemplates(facilityId: string, tenantId?: string): Promise<any[]> {
+    const config = await this.configRepo.findOne({
+      where: { facilityId, type: NotificationType.TEMPLATE, ...(tenantId ? { tenantId } : {}) },
+    });
+
+    if (config?.extraConfig?.templates) {
+      return config.extraConfig.templates;
+    }
+
+    // Seed defaults on first access
+    const defaults = [
       {
-        id: 'default-appointment',
-        facilityId,
+        id: `tpl-${Date.now()}-1`,
         type: 'appointment',
         name: 'Appointment Reminder',
         smsTemplate: 'Dear {patientName}, this is a reminder for your appointment on {appointmentDate} at {appointmentTime}. - {hospitalName}',
         isActive: true,
       },
       {
-        id: 'default-lab_result',
-        facilityId,
+        id: `tpl-${Date.now()}-2`,
         type: 'lab_result',
         name: 'Lab Results Ready',
         smsTemplate: 'Dear {patientName}, your lab results are ready at {hospitalName}. Please visit to collect them.',
         isActive: true,
       },
       {
-        id: 'default-prescription',
-        facilityId,
+        id: `tpl-${Date.now()}-3`,
         type: 'prescription_ready',
         name: 'Prescription Ready',
         smsTemplate: 'Dear {patientName}, your prescription is ready for pickup at {hospitalName} pharmacy.',
         isActive: true,
       },
       {
-        id: 'default-thank_you',
-        facilityId,
+        id: `tpl-${Date.now()}-4`,
         type: 'thank_you',
         name: 'Thank You',
         smsTemplate: 'Thank you for visiting {hospitalName}, {patientName}. We wish you good health!',
         isActive: true,
       },
     ];
+
+    const newConfig = this.configRepo.create({
+      facilityId,
+      type: NotificationType.TEMPLATE,
+      isEnabled: true,
+      extraConfig: { templates: defaults },
+      ...(tenantId ? { tenantId } : {}),
+    } as any);
+    await this.configRepo.save(newConfig);
+
+    return defaults;
   }
 
-  async createTemplate(dto: any): Promise<any> {
-    // For now, return the template with a generated ID
-    return { ...dto, id: `template-${Date.now()}` };
+  async createTemplate(dto: any, tenantId?: string): Promise<any> {
+    const facilityId = dto.facilityId;
+    let config = await this.configRepo.findOne({
+      where: { facilityId, type: NotificationType.TEMPLATE, ...(tenantId ? { tenantId } : {}) },
+    });
+
+    const newTemplate = { ...dto, id: `tpl-${Date.now()}-${Math.random().toString(36).substr(2, 6)}` };
+    delete newTemplate.facilityId;
+
+    if (!config) {
+      config = this.configRepo.create({
+        facilityId,
+        type: NotificationType.TEMPLATE,
+        isEnabled: true,
+        extraConfig: { templates: [newTemplate] },
+        ...(tenantId ? { tenantId } : {}),
+      } as any);
+    } else {
+      const templates = config.extraConfig?.templates || [];
+      templates.push(newTemplate);
+      config.extraConfig = { ...config.extraConfig, templates };
+    }
+
+    await this.configRepo.save(config);
+    return newTemplate;
   }
 
-  async updateTemplate(id: string, dto: any): Promise<any> {
-    return { ...dto, id };
+  async updateTemplate(id: string, dto: any, tenantId?: string): Promise<any> {
+    const facilityId = dto.facilityId;
+    const config = await this.configRepo.findOne({
+      where: { facilityId, type: NotificationType.TEMPLATE, ...(tenantId ? { tenantId } : {}) },
+    });
+    if (!config?.extraConfig?.templates) throw new NotFoundException('Template not found');
+
+    const templates: any[] = config.extraConfig.templates;
+    const idx = templates.findIndex((t: any) => t.id === id);
+    if (idx === -1) throw new NotFoundException('Template not found');
+
+    templates[idx] = { ...templates[idx], ...dto, id };
+    config.extraConfig = { ...config.extraConfig, templates };
+    await this.configRepo.save(config);
+
+    return templates[idx];
   }
 
-  async deleteTemplate(id: string): Promise<{ success: boolean }> {
+  async deleteTemplate(id: string, facilityId?: string, tenantId?: string): Promise<{ success: boolean }> {
+    const where: any = { type: NotificationType.TEMPLATE, ...(tenantId ? { tenantId } : {}) };
+    if (facilityId) where.facilityId = facilityId;
+
+    const config = await this.configRepo.findOne({ where });
+    if (!config?.extraConfig?.templates) throw new NotFoundException('Template not found');
+
+    const templates: any[] = config.extraConfig.templates;
+    const idx = templates.findIndex((t: any) => t.id === id);
+    if (idx === -1) throw new NotFoundException('Template not found');
+
+    templates.splice(idx, 1);
+    config.extraConfig = { ...config.extraConfig, templates };
+    await this.configRepo.save(config);
+
     return { success: true };
   }
 

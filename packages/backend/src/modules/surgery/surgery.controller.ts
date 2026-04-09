@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Delete,
   Body,
   Param,
   Query,
@@ -21,6 +22,8 @@ import {
   CancelSurgeryDto,
   CreateTheatreDto,
   UpdateTheatreStatusDto,
+  RecordConsumableDto,
+  RecordMultipleConsumablesDto,
 } from './dto/surgery.dto';
 import { SurgeryStatus } from '../../database/entities/surgery-case.entity';
 
@@ -205,6 +208,81 @@ export class SurgeryController {
   ) {
     return this.surgeryService.getWeekSchedule(facilityId, startDate, req?.user?.tenantId);
   }
+
+  // ============ CONSUMABLES ============
+
+  @Post('cases/:id/consumables')
+  @AuthWithPermissions('surgery.update')
+  @ApiOperation({ summary: 'Record a single consumable used during surgery' })
+  recordConsumable(
+    @Param('id', ParseUUIDPipe) surgeryCaseId: string,
+    @Body() dto: RecordConsumableDto,
+    @Request() req: any,
+  ) {
+    return this.surgeryService.recordConsumable(
+      { ...dto, surgeryCaseId },
+      req.user.id,
+      req.user?.tenantId,
+    );
+  }
+
+  @Post('cases/:id/consumables/bulk')
+  @AuthWithPermissions('surgery.update')
+  @ApiOperation({ summary: 'Record multiple consumables at once for a surgery case' })
+  recordMultipleConsumables(
+    @Param('id', ParseUUIDPipe) surgeryCaseId: string,
+    @Body() dto: RecordMultipleConsumablesDto,
+    @Request() req: any,
+  ) {
+    return this.surgeryService.recordMultipleConsumables(
+      surgeryCaseId,
+      dto.items,
+      req.user.id,
+      req.user?.tenantId,
+    );
+  }
+
+  @Get('cases/:id/consumables')
+  @AuthWithPermissions('surgery.read')
+  @ApiOperation({ summary: 'Get all consumables for a surgery case with cost summary' })
+  getConsumables(@Param('id', ParseUUIDPipe) surgeryCaseId: string, @Request() req: any) {
+    return this.surgeryService.getConsumablesSummary(surgeryCaseId, req.user?.tenantId);
+  }
+
+  @Put('consumables/:id')
+  @AuthWithPermissions('surgery.update')
+  @ApiOperation({ summary: 'Update a consumable record (quantity, notes)' })
+  updateConsumable(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: Partial<RecordConsumableDto>,
+    @Request() req: any,
+  ) {
+    return this.surgeryService.updateConsumable(id, dto, req.user?.tenantId);
+  }
+
+  @Delete('consumables/:id')
+  @AuthWithPermissions('surgery.delete')
+  @ApiOperation({ summary: 'Delete a consumable record' })
+  deleteConsumable(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.surgeryService.deleteConsumable(id, req.user?.tenantId);
+  }
+
+  @Get('reports/consumables')
+  @AuthWithPermissions('surgery.read')
+  @ApiOperation({ summary: 'Get consumables usage report for a date range' })
+  @ApiQuery({ name: 'facilityId', required: true })
+  @ApiQuery({ name: 'startDate', required: true, description: 'YYYY-MM-DD' })
+  @ApiQuery({ name: 'endDate', required: true, description: 'YYYY-MM-DD' })
+  getConsumablesReport(
+    @Query('facilityId') facilityId: string,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @Request() req: any,
+  ) {
+    return this.surgeryService.getConsumablesReport(facilityId, startDate, endDate, req.user?.tenantId);
+  }
+
+  // ============ CONFLICT CHECK & SCHEDULE ============
 
   @Get('check-conflicts')
   @AuthWithPermissions('surgery.read')

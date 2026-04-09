@@ -277,6 +277,13 @@ export class PatientFinanceService {
       );
     }
 
+    // Validate approved amount does not exceed the originally requested amount
+    if (amount > Number(waiver.waiverAmount)) {
+      throw new BadRequestException(
+        `Approved waiver amount (${amount}) cannot exceed the requested amount (${waiver.waiverAmount})`,
+      );
+    }
+
     waiver.status = WaiverStatus.APPROVED;
     waiver.approvedBy = userId;
     waiver.waiverAmount = amount;

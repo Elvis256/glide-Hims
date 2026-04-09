@@ -20,6 +20,12 @@ import {
   UpdateAccountDto,
   CreateJournalEntryDto,
   CreateFiscalYearDto,
+  CreatePaymentMethodDto,
+  CreateCurrencyDto,
+  UpdateCurrencyDto,
+  CreateExchangeRateDto,
+  UpdateExchangeRateDto,
+  ReverseJournalEntryDto,
 } from './dto/finance.dto';
 import { AccountType } from '../../database/entities/chart-of-account.entity';
 import { JournalStatus } from '../../database/entities/journal-entry.entity';
@@ -119,6 +125,20 @@ export class FinanceController {
     return this.financeService.closePeriod(id, req.user.id, req.user?.tenantId);
   }
 
+  @Post('fiscal-periods/:id/open')
+  @AuthWithPermissions('finance.periods.close')
+  @ApiOperation({ summary: 'Re-open a closed fiscal period (not allowed for locked periods)' })
+  async openPeriod(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.financeService.openPeriod(id, req.user?.tenantId);
+  }
+
+  @Post('fiscal-periods/:id/lock')
+  @AuthWithPermissions('finance.periods.close')
+  @ApiOperation({ summary: 'Permanently lock a closed fiscal period' })
+  async lockPeriod(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.financeService.lockPeriod(id, req.user.id, req.user?.tenantId);
+  }
+
   // ============ JOURNAL ENTRIES ============
   @Post('journals')
   @AuthWithPermissions('finance.journals.create')
@@ -156,6 +176,17 @@ export class FinanceController {
   @ApiOperation({ summary: 'Post journal entry' })
   async postJournalEntry(@Param('id') id: string, @Request() req: any) {
     return this.financeService.postJournalEntry(id, req.user.id, req.user?.tenantId);
+  }
+
+  @Post('journals/:id/reverse')
+  @AuthWithPermissions('finance.journals.post')
+  @ApiOperation({ summary: 'Reverse a posted journal entry (creates offsetting entry and auto-posts it)' })
+  async reverseJournalEntry(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReverseJournalEntryDto,
+    @Request() req: any,
+  ) {
+    return this.financeService.reverseJournalEntry(id, req.user.id, dto.reason, req.user?.tenantId);
   }
 
   // ============ REPORTS ============
@@ -217,7 +248,7 @@ export class FinanceController {
   @Post('payment-methods')
   @AuthWithPermissions('finance.manage')
   @ApiOperation({ summary: 'Add a payment method' })
-  async createPaymentMethod(@Body() body: any, @Request() req: any) {
+  async createPaymentMethod(@Body() body: CreatePaymentMethodDto, @Request() req: any) {
     let methods: any[] = [];
     try {
       const setting = await this.settingsService.getByKey(PAYMENT_METHODS_KEY, req.user?.tenantId);
@@ -274,7 +305,7 @@ export class FinanceController {
   @Post('currencies')
   @AuthWithPermissions('finance.manage')
   @ApiOperation({ summary: 'Create currency' })
-  async createCurrency(@Body() dto: any, @Request() req: any) {
+  async createCurrency(@Body() dto: CreateCurrencyDto, @Request() req: any) {
     let currencies: any[] = [];
     try {
       const setting = await this.settingsService.getByKey(CURRENCIES_KEY, req.user?.tenantId);
@@ -289,7 +320,7 @@ export class FinanceController {
   @Patch('currencies/:id')
   @AuthWithPermissions('finance.manage')
   @ApiOperation({ summary: 'Update currency' })
-  async updateCurrency(@Param('id') id: string, @Body() dto: any, @Request() req: any) {
+  async updateCurrency(@Param('id') id: string, @Body() dto: UpdateCurrencyDto, @Request() req: any) {
     let currencies: any[] = [];
     try {
       const setting = await this.settingsService.getByKey(CURRENCIES_KEY, req.user?.tenantId);
@@ -379,7 +410,7 @@ export class FinanceController {
   @Post('exchange-rates')
   @AuthWithPermissions('finance.manage')
   @ApiOperation({ summary: 'Create exchange rate' })
-  async createExchangeRate(@Body() dto: any, @Request() req: any) {
+  async createExchangeRate(@Body() dto: CreateExchangeRateDto, @Request() req: any) {
     let rates: any[] = [];
     try {
       const setting = await this.settingsService.getByKey(EXCHANGE_RATES_KEY, req.user?.tenantId);
@@ -394,7 +425,7 @@ export class FinanceController {
   @Patch('exchange-rates/:id')
   @AuthWithPermissions('finance.manage')
   @ApiOperation({ summary: 'Update exchange rate' })
-  async updateExchangeRate(@Param('id') id: string, @Body() dto: any, @Request() req: any) {
+  async updateExchangeRate(@Param('id') id: string, @Body() dto: UpdateExchangeRateDto, @Request() req: any) {
     let rates: any[] = [];
     try {
       const setting = await this.settingsService.getByKey(EXCHANGE_RATES_KEY, req.user?.tenantId);

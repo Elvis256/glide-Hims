@@ -9,11 +9,13 @@ import { setupService, type SetupStatus } from '../services/setup';
 import api from '../services/api';
 import { Eye, EyeOff, Loader2, Clock, Building2, UserPlus, AlertCircle, Shield } from 'lucide-react';
 import Logo from '../components/Logo';
+import { getBusinessConfig } from '../hooks/useBusinessConfig';
 
 interface TenantInfo {
   id: string;
   name: string;
   slug: string;
+  businessType?: string;
   isSetupComplete?: boolean;
 }
 
@@ -136,10 +138,22 @@ export default function LoginPage() {
       const userWithModules = { ...response.user };
       login(userWithModules, response.accessToken, response.refreshToken);
 
-      // Fetch accessible modules (non-blocking)
+      // Fetch accessible modules, facility mode, and business type
       try {
         const meData = await authService.getMe();
         setAccessibleModules(meData.accessibleModules || []);
+        // Store facility context for business-type-specific UI
+        const { user: currentUser } = useAuthStore.getState();
+        if (currentUser) {
+          useAuthStore.setState({
+            user: {
+              ...currentUser,
+              accessibleModules: meData.accessibleModules || [],
+              facilityMode: meData.facilityMode,
+              businessType: meData.businessType,
+            },
+          });
+        }
       } catch {
         // Falls back to role-based filtering
       }
@@ -210,7 +224,7 @@ export default function LoginPage() {
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8">
           <div className="flex flex-col items-center mb-8">
-            <Logo size="lg" variant="full" showTagline />
+            <Logo size="lg" variant="full" showTagline tagline={getBusinessConfig(tenant?.businessType).tagline} />
           </div>
 
           {setupStatus?.organizationName && (
@@ -303,7 +317,7 @@ export default function LoginPage() {
           </form>
 
           <p className="text-center text-gray-500 text-sm mt-6">
-            Glide HIMS v1.0.0 • Healthcare Information Management
+            Glide HIMS v1.0.0 • {getBusinessConfig(tenant?.businessType).tagline}
           </p>
         </div>
       </div>
@@ -315,7 +329,7 @@ export default function LoginPage() {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8">
         <div className="flex flex-col items-center mb-8">
-          <Logo size="lg" variant="full" showTagline />
+          <Logo size="lg" variant="full" showTagline tagline={getBusinessConfig(tenant?.businessType).tagline} />
         </div>
 
         {/* Tenant info banner */}
@@ -436,7 +450,7 @@ export default function LoginPage() {
         </form>
 
         <p className="text-center text-gray-500 text-sm mt-6">
-          Glide HIMS v1.0.0 • Enterprise Healthcare Platform
+          Glide HIMS v1.0.0 • {getBusinessConfig(tenant?.businessType).tagline}
         </p>
       </div>
     </div>

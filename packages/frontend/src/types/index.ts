@@ -13,6 +13,8 @@ export interface User {
   roles?: string[];
   permissions?: string[];
   accessibleModules?: string[];
+  facilityMode?: string;
+  businessType?: string;
   createdAt: string;
   updatedAt: string;
 }

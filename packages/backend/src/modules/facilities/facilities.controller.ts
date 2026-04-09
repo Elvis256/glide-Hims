@@ -1,5 +1,5 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, ParseUUIDPipe, Request } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
+import { Controller, Get, Post, Body, Patch, Param, Delete, ParseUUIDPipe, Request } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { FacilitiesService, CreateUnitDto, UpdateUnitDto } from './facilities.service';
 import { CreateFacilityDto, UpdateFacilityDto, CreateDepartmentDto, UpdateDepartmentDto, UpdateFacilityModulesDto } from './dto/facility.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
@@ -14,19 +14,11 @@ export class FacilitiesController {
   @Get('public/info')
   @Public()
   @ApiOperation({ summary: 'Get basic facility info (public - for printing)' })
-  async getPublicInfo(@Query('facilityId') facilityId?: string) {
+  async getPublicInfo() {
+    // Only return the default/first facility — no arbitrary facilityId to prevent cross-tenant data exposure
     let facility;
-    if (facilityId) {
-      try {
-        facility = await this.facilitiesService.findOneFacility(facilityId);
-      } catch {
-        // fall through to default
-      }
-    }
-    if (!facility) {
-      const facilities = await this.facilitiesService.findAllFacilities();
-      facility = facilities[0];
-    }
+    const facilities = await this.facilitiesService.findAllFacilities();
+    facility = facilities[0];
     if (!facility) {
       return { name: 'Hospital', address: '', phone: '', email: '', logo: '', taxId: '' };
     }

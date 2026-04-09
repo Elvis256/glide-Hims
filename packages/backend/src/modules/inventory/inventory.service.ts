@@ -40,7 +40,7 @@ export class InventoryService {
     const prefix = isDrug ? 'DRG' : 'ITM';
     const qb = this.itemRepository.createQueryBuilder('item')
       .select('item.code', 'code')
-      .where(`item.code LIKE '${prefix}-%'`)
+      .where('item.code LIKE :codePrefix', { codePrefix: `${prefix}-%` })
       .orderBy('item.code', 'DESC')
       .limit(1);
     if (tenantId) {
@@ -177,9 +177,10 @@ export class InventoryService {
     const item = await this.findItemById(dto.itemId, tenantId);
 
     return this.dataSource.transaction(async (manager) => {
-      // Get current balance
+      // Get current balance with pessimistic lock
       let balance = await manager.findOne(StockBalance, {
         where: { itemId: dto.itemId, facilityId: dto.facilityId, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
       });
       const previousBalance = balance?.totalQuantity || 0;
       const newBalance = previousBalance + dto.quantity;
@@ -230,8 +231,8 @@ export class InventoryService {
     // Controlled substance protection: require detailed reason for scheduled drugs
     if (item.isDrug) {
       const classification = await this.dataSource.query(
-        `SELECT schedule FROM drug_classifications WHERE item_id = $1 AND deleted_at IS NULL LIMIT 1`,
-        [item.id],
+        `SELECT schedule FROM drug_classifications WHERE item_id = $1 AND deleted_at IS NULL AND tenant_id = $2 LIMIT 1`,
+        [item.id, tenantId],
       );
       if (classification?.length > 0) {
         const schedule = classification[0].schedule;
@@ -293,9 +294,10 @@ export class InventoryService {
 
   async transferStock(dto: StockTransferDto, userId: string, tenantId?: string): Promise<{ from: StockLedger; to: StockLedger }> {
     return this.dataSource.transaction(async (manager) => {
-      // Check source has enough stock
+      // Check source has enough stock — with pessimistic lock
       const fromBalance = await manager.findOne(StockBalance, {
         where: { itemId: dto.itemId, facilityId: dto.fromFacilityId, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
       });
       if (!fromBalance || fromBalance.availableQuantity < dto.quantity) {
         throw new BadRequestException('Insufficient stock for transfer');
@@ -322,9 +324,10 @@ export class InventoryService {
       fromBalance.lastMovementAt = new Date();
       await manager.save(StockBalance, fromBalance);
 
-      // Add to destination
+      // Add to destination — with pessimistic lock
       let toBalance = await manager.findOne(StockBalance, {
         where: { itemId: dto.itemId, facilityId: dto.toFacilityId, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
       });
       const toNewBalance = (toBalance?.totalQuantity || 0) + dto.quantity;
 

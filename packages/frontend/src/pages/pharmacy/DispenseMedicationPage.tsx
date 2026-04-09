@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
+import DOMPurify from 'dompurify';
 import {
   Search,
   Pill,
@@ -538,7 +539,7 @@ export default function DispenseMedicationPage() {
 
     const win = window.open('', '_blank', 'width=500,height=400');
     if (!win) return;
-    win.document.write(`
+    win.document.write(DOMPurify.sanitize(`
       <html><head><title>Medication Label — ${item.drugName}</title>
       <style>
         @page { size: 100mm 70mm; margin: 0; }
@@ -580,7 +581,7 @@ export default function DispenseMedicationPage() {
         Complete the full course of medication unless advised otherwise by your doctor.
       </div>
       </body></html>
-    `);
+    `, { WHOLE_DOCUMENT: true, ADD_TAGS: ['style'], ADD_ATTR: ['class'] }));
     win.document.close();
     win.print();
   };

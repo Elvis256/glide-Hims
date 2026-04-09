@@ -19,6 +19,7 @@ import RoleRoute, {
   StoreKeeperRoute,
   AccountantRoute,
   AdminRoute,
+  SystemAdminRoute,
   FinanceRoute,
   HRRoute,
   BillingRoute,
@@ -546,16 +547,16 @@ function AppRoutes() {
   return (
     <Suspense fallback={<PageLoader />}>
     <Routes>
-      <Route path="/setup" element={<SetupWizardPage />} />
-      <Route path="/setup/:slug" element={<TenantSetupWizardPage />} />
-      <Route path="/register" element={<RegisterOrganizationPage />} />
+      <Route path="/setup" element={isSetupComplete ? <Navigate to="/" replace /> : <SetupWizardPage />} />
+      <Route path="/setup/:slug" element={isSetupComplete ? <Navigate to="/" replace /> : <TenantSetupWizardPage />} />
+      <Route path="/register" element={isAuthenticated ? <Navigate to="/" replace /> : <RegisterOrganizationPage />} />
       <Route
         path="/system/login"
         element={isAuthenticated ? <Navigate to="/system" replace /> : <SystemLoginPage />}
       />
       <Route
         path="/system"
-        element={isAuthenticated ? <SystemAdminLayout /> : <Navigate to="/system/login" replace />}
+        element={isAuthenticated ? <SystemAdminRoute><SystemAdminLayout /></SystemAdminRoute> : <Navigate to="/system/login" replace />}
       >
         <Route index element={<SystemDashboardPage />} />
         <Route path="tenants" element={<TenantManagementPage />} />

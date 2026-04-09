@@ -136,7 +136,7 @@ export default function ReagentsInventoryPage() {
     queryFn: async () => {
       try {
         return await labSuppliesService.reagents.getExpiring(facilityId, 30) as unknown as Reagent[];
-      } catch { return []; }
+      } catch (error) { console.error('Failed to load expiring reagents:', error); toast.error('Failed to load expiring items'); return []; }
     },
   });
 
