@@ -180,6 +180,18 @@ export class EmergencyService {
     const emergencyCase = await this.caseRepo.findOne({ where });
     if (!emergencyCase) throw new NotFoundException('Emergency case not found');
 
+    // Only allow discharge of cases that have received treatment
+    const dischargeableStatuses = [
+      TriageStatus.IN_TREATMENT,
+      TriageStatus.ADMITTED,
+      TriageStatus.TRANSFERRED,
+    ];
+    if (!dischargeableStatuses.includes(emergencyCase.status as TriageStatus)) {
+      throw new BadRequestException(
+        `Cannot discharge case in '${emergencyCase.status}' status. Only cases that are in treatment, admitted, or transferred can be discharged.`,
+      );
+    }
+
     emergencyCase.status = TriageStatus.DISCHARGED;
     emergencyCase.dischargeTime = new Date();
     emergencyCase.primaryDiagnosis = dto.primaryDiagnosis;

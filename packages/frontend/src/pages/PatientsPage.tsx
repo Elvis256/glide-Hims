@@ -7,6 +7,7 @@ import { queueService } from '../services/queue';
 import type { Patient } from '../types';
 import { usePermissions } from '../components/PermissionGate';
 import { printService } from '../lib/print';
+import { useEntityName } from '../hooks/useBusinessConfig';
 import {
   Plus,
   Search,
@@ -115,6 +116,7 @@ export default function PatientsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { hasPermission } = usePermissions();
+  const entityName = useEntityName();
 
   // State
   const [search, setSearch] = useState('');
@@ -285,7 +287,7 @@ export default function PatientsPage() {
   const handlePrint = () => {
     const el = document.getElementById('patients-page-content');
     if (el) {
-      printService.printDocument(el.innerHTML, { title: 'Patient Registry' });
+      printService.printDocument(el.innerHTML, { title: `${entityName.singular} Registry` });
     }
     toast.success('Print dialog opened');
   };
@@ -320,15 +322,15 @@ export default function PatientsPage() {
       {/* Header with Stats */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Patient Registry</h1>
-          <p className="text-gray-500 mt-1">View and manage all registered patients</p>
+          <h1 className="text-2xl font-bold text-gray-900">{entityName.singular} Registry</h1>
+          <p className="text-gray-500 mt-1">View and manage all registered {entityName.plural.toLowerCase()}</p>
         </div>
         <button
           onClick={() => navigate('/patients/new')}
           className="btn-primary flex items-center gap-2"
         >
           <Plus className="w-5 h-5" />
-          Register Patient
+          Register {entityName.singular}
         </button>
       </div>
 
@@ -340,7 +342,7 @@ export default function PatientsPage() {
               <Users className="w-6 h-6 text-blue-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">Total Patients</p>
+              <p className="text-sm text-gray-500">Total {entityName.plural}</p>
               <p className="text-2xl font-bold text-gray-900">{stats.total.toLocaleString()}</p>
             </div>
           </div>
@@ -551,18 +553,18 @@ export default function PatientsPage() {
             <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
               <UserCircle className="w-12 h-12 text-gray-400" />
             </div>
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">No patients found</h3>
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">No {entityName.plural.toLowerCase()} found</h3>
             <p className="text-gray-500 mb-6 max-w-md mx-auto">
               {search || genderFilter || paymentTypeFilter
-                ? 'No patients match your search criteria. Try adjusting your filters.'
-                : 'Get started by registering your first patient.'}
+                ? `No ${entityName.plural.toLowerCase()} match your search criteria. Try adjusting your filters.`
+                : `Get started by registering your first ${entityName.singular.toLowerCase()}.`}
             </p>
             <button
               onClick={() => navigate('/patients/new')}
               className="btn-primary inline-flex items-center gap-2"
             >
               <UserPlus className="w-5 h-5" />
-              Register First Patient
+              Register First {entityName.singular}
             </button>
           </div>
         </div>

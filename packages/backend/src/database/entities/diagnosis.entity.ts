@@ -31,7 +31,7 @@ export enum ICDVersion {
 }
 
 @Entity('diagnoses')
-@Index(['icd10Code'], { unique: true, where: 'deleted_at IS NULL' })
+@Index(['icd10Code', 'tenantId'], { unique: true, where: 'deleted_at IS NULL' })
 export class Diagnosis extends BaseEntity {
   @Column({ type: 'varchar', length: 20, name: 'icd10_code' })
   icd10Code: string;

@@ -35,6 +35,10 @@ export class SyncConflict {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Column({ type: 'uuid', nullable: true, name: 'tenant_id' })
+  @Index()
+  tenantId?: string;
+
   @Column({ type: 'uuid', name: 'facility_id' })
   facilityId: string;
 

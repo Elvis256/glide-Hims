@@ -341,7 +341,9 @@ export class MaternityService {
       bcgGiven: dto.bcgGiven || false,
       abnormalities: dto.abnormalities,
       notes: dto.notes,
-      babyStatus: BabyStatus.ALIVE,
+      babyStatus: dto.outcome === 'stillbirth' || dto.outcome === 'neonatal_death'
+        ? BabyStatus.DECEASED
+        : BabyStatus.ALIVE,
     });
     if (tenantId) (outcome as any).tenantId = tenantId;
 

@@ -6,6 +6,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiQuery, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { Response, Request } from 'express';
 import { createReadStream, existsSync, readFileSync } from 'fs';
+import { join, resolve } from 'path';
 import { PatientsService, UploadDocumentDto, CreateNoteDto } from './patients.service';
 import { CreatePatientDto, UpdatePatientDto, PatientSearchDto, MergePatientDto, LinkUserDto } from './dto/patient.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
@@ -92,6 +93,13 @@ export class PatientsController {
     
     if (!existsSync(document.filePath)) {
       return res.status(404).json({ message: 'File not found on server' });
+    }
+
+    // Path traversal protection: ensure file is within the uploads directory
+    const uploadsDir = resolve(join(__dirname, '..', '..', '..', 'uploads'));
+    const resolvedPath = resolve(document.filePath);
+    if (!resolvedPath.startsWith(uploadsDir)) {
+      return res.status(403).json({ message: 'Access denied: invalid file path' });
     }
 
     // Sanitize filename to prevent path traversal / header injection

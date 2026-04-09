@@ -34,8 +34,13 @@ export function useSessionTimeout(options: UseSessionTimeoutOptions = {}) {
     if (onTimeout) {
       onTimeout();
     } else {
+      const tenantSlug = localStorage.getItem('glide_tenant_slug');
+      localStorage.removeItem('glide_tenant_slug');
+      localStorage.removeItem('glide_active_tenant_id');
+      sessionStorage.removeItem('glide_active_tenant_id');
+      sessionStorage.removeItem('glide_active_facility_id');
       logout();
-      // Redirect will happen via ProtectedRoute
+      window.location.href = tenantSlug ? `/login/${tenantSlug}?expired=true` : '/login?expired=true';
     }
   }, [logout, onTimeout]);
 

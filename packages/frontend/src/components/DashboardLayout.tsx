@@ -106,11 +106,42 @@ import {
   Coins,
   Send,
   MessageSquare,
+  ScanBarcode,
+  Eye,
+  Glasses,
+  Crosshair,
+  Focus,
+  CircleDot,
 } from 'lucide-react';
 import Logo, { LogoIcon } from './Logo';
 import FacilitySwitcher from './FacilitySwitcher';
 import NotificationBell from './NotificationBell';
 import { useNotificationSocket } from '../lib/useNotificationSocket';
+import { useBusinessConfig, type BusinessType } from '../hooks/useBusinessConfig';
+
+// Business-type-specific section title overrides
+const sectionTitleOverrides: Record<string, Partial<Record<BusinessType, string>>> = {
+  'Registration': {
+    pharmacy: 'Customers',
+    optical: 'Clients',
+  },
+  'Doctors': {
+    dental: 'Dentists',
+    optical: 'Optometrists',
+  },
+  'Pharmacy': {
+    pharmacy: 'Dispensary',
+  },
+};
+
+// Sidebar section ordering priority per business type.
+// Sections listed here appear first (in this order); unlisted sections follow in their default order.
+const sidebarPriorityOrder: Record<BusinessType, string[]> = {
+  pharmacy: ['POS', 'Pharmacy', 'Registration', 'Billing', 'Stores', 'Reports', 'HR', 'Admin'],
+  dental:   ['Dental', 'Registration', 'Doctors', 'Billing', 'Reports', 'HR', 'Admin'],
+  optical:  ['Optical', 'Registration', 'POS', 'Billing', 'Stores', 'Reports', 'HR', 'Admin'],
+  hospital: [], // default order — no reordering
+};
 
 // Custom Bandage icon (not in lucide)
 const Bandage = ({ className }: { className?: string }) => (
@@ -599,6 +630,69 @@ const navigationSections: NavSection[] = [
         ],
       },
       { name: 'Pharmacy Analytics', href: '/pharmacy/analytics', icon: PieChart, permissions: ['pharmacy.read', 'analytics.read'] },
+    ],
+  },
+  // 7a. POS - Point of Sale (Retail Pharmacy / Standalone)
+  {
+    title: 'POS',
+    icon: ScanBarcode,
+    moduleCode: 'pos',
+    roles: ['Pharmacist', 'Cashier'],
+    items: [
+      { name: 'POS Dashboard', href: '/pharmacy/pos', icon: LayoutDashboard, permissions: ['pos.shift'] },
+      { name: 'New Sale', href: '/pharmacy/pos/sale', icon: ShoppingCart, permissions: ['pos.shift'] },
+      { name: 'Shift Management', href: '/pharmacy/pos/shifts', icon: Clock, permissions: ['pos.shift'] },
+      { name: 'POS Reports', href: '/pharmacy/pos/reports', icon: BarChart3, permissions: ['pos.shift'] },
+      {
+        name: 'Wholesale',
+        icon: Boxes,
+        permissions: ['wholesale.manage'],
+        children: [
+          { name: 'Customers', href: '/pharmacy/pos/wholesale/customers', icon: Users, permissions: ['wholesale.manage'] },
+          { name: 'Pricing Tiers', href: '/pharmacy/pos/wholesale/tiers', icon: Layers, permissions: ['wholesale.manage'] },
+          { name: 'Deliveries', href: '/pharmacy/pos/deliveries', icon: Truck, permissions: ['wholesale.manage'] },
+        ],
+      },
+    ],
+  },
+  // 7b. Dental - Dental Clinics
+  {
+    title: 'Dental',
+    icon: CircleDot,
+    moduleCode: 'dental_charting',
+    roles: ['Dentist', 'Dental Hygienist', 'Dental Assistant'],
+    items: [
+      { name: 'Dental Dashboard', href: '/dental', icon: LayoutDashboard, permissions: ['dental.view'] },
+      { name: 'Dental Chart', href: '/dental/chart', icon: Crosshair, permissions: ['dental.view'] },
+      { name: 'Treatment Plans', href: '/dental/treatment-plans', icon: ClipboardList, permissions: ['dental.view'] },
+      { name: 'Procedures (CDT)', href: '/dental/procedures', icon: Scissors, permissions: ['dental.view'] },
+      { name: 'Dental Imaging', href: '/dental/imaging', icon: Scan, permissions: ['dental.view'] },
+      { name: 'Lab Orders', href: '/dental/lab-orders', icon: Package, permissions: ['dental.view'] },
+      { name: 'Orthodontics', href: '/dental/ortho', icon: Activity, permissions: ['dental.view'] },
+      { name: 'Periodontal Chart', href: '/dental/perio', icon: Focus, permissions: ['dental.view'] },
+    ],
+  },
+  // 7c. Optical - Optometry / Optical Centers
+  {
+    title: 'Optical',
+    icon: Eye,
+    moduleCode: 'optical_exams',
+    roles: ['Optometrist', 'Optician', 'Doctor'],
+    items: [
+      { name: 'Optical Dashboard', href: '/optical', icon: LayoutDashboard, permissions: ['optical.view'] },
+      { name: 'Eye Exams', href: '/optical/exams', icon: Eye, permissions: ['optical.manage'] },
+      { name: 'Prescriptions', href: '/optical/prescriptions', icon: FileText, permissions: ['optical.manage'] },
+      { name: 'Spectacle Orders', href: '/optical/orders', icon: Glasses, permissions: ['optical.view'] },
+      {
+        name: 'Inventory',
+        icon: Package,
+        permissions: ['optical.view'],
+        children: [
+          { name: 'Frames', href: '/optical/frames', icon: Glasses, permissions: ['optical.view'] },
+          { name: 'Lenses', href: '/optical/lenses', icon: CircleDot, permissions: ['optical.view'] },
+        ],
+      },
+      { name: 'Visual Field', href: '/optical/visual-field', icon: Crosshair, permissions: ['optical.manage'] },
     ],
   },
   // 7. IPD - Inpatient
@@ -1299,6 +1393,7 @@ export default function DashboardLayout({ children }: LayoutProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [hospitalName, setHospitalName] = useState('');
+  const bizConfig = useBusinessConfig();
 
   // Initialize notification WebSocket
   useNotificationSocket();
@@ -1375,15 +1470,13 @@ export default function DashboardLayout({ children }: LayoutProps) {
   
   const filteredNavigationSections = navigationSections
     .filter((section) => {
-      // Super Admin sees everything
-      if (isSuperAdmin) return true;
-      
-      // Primary: use backend-driven module access (if available)
-      if (section.moduleCode) {
-        if (user?.accessibleModules && user.accessibleModules.length > 0) {
-          return user.accessibleModules.includes(section.moduleCode);
-        }
+      // Primary: use backend-driven module access (if available) — applies to ALL users including Super Admin
+      if (section.moduleCode && user?.accessibleModules && user.accessibleModules.length > 0) {
+        return user.accessibleModules.includes(section.moduleCode);
       }
+      
+      // Super Admin without module restrictions sees everything
+      if (isSuperAdmin) return true;
       
       // Fallback: role-based filtering (for users who haven't fetched /auth/me yet)
       if (section.roles && section.roles.length > 0) {
@@ -1396,6 +1489,10 @@ export default function DashboardLayout({ children }: LayoutProps) {
     })
     .map(filterSectionItems)
     .filter((section) => {
+      // If we have module-level filtering, trust it; otherwise Super Admin sees all
+      if (user?.accessibleModules && user.accessibleModules.length > 0) {
+        return section.items.length > 0 || !section.moduleCode;
+      }
       if (isSuperAdmin) return true;
       
       // Section must have at least one visible item after filtering
@@ -1412,7 +1509,38 @@ export default function DashboardLayout({ children }: LayoutProps) {
       }
       
       return true;
+    })
+    // Apply business-type-specific title overrides
+    .map((section) => {
+      const overrides = sectionTitleOverrides[section.title];
+      if (overrides && bizConfig.type in overrides) {
+        return { ...section, title: overrides[bizConfig.type as BusinessType]! };
+      }
+      return section;
     });
+
+  // Phase 2: Reorder sidebar sections based on business type priority
+  const priorityOrder = sidebarPriorityOrder[bizConfig.type as BusinessType] || [];
+  const reorderedNavigationSections = priorityOrder.length > 0
+    ? (() => {
+        const prioritized: NavSection[] = [];
+        const remaining: NavSection[] = [];
+        // Use the original (pre-override) title for matching priority order
+        for (const section of filteredNavigationSections) {
+          // Match against both original title and overridden title
+          const originalTitle = navigationSections.find(
+            (ns) => ns.moduleCode === section.moduleCode
+          )?.title || section.title;
+          const idx = priorityOrder.indexOf(originalTitle);
+          if (idx !== -1) {
+            prioritized[idx] = section;
+          } else {
+            remaining.push(section);
+          }
+        }
+        return [...prioritized.filter(Boolean), ...remaining];
+      })()
+    : filteredNavigationSections;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -1441,7 +1569,7 @@ export default function DashboardLayout({ children }: LayoutProps) {
         </div>
 
         <nav className="overflow-y-auto h-[calc(100vh-72px)]">
-          {filteredNavigationSections.map((section) => (
+          {reorderedNavigationSections.map((section) => (
             <MobileNavSection 
               key={section.title} 
               section={section} 
@@ -1465,7 +1593,7 @@ export default function DashboardLayout({ children }: LayoutProps) {
             </button>
 
             {/* Logo */}
-            <Logo size="sm" variant="full" className="hidden sm:flex" />
+            <Logo size="sm" variant="full" className="hidden sm:flex" tagline={bizConfig.tagline} />
             <Logo size="xs" variant="icon" className="sm:hidden" />
           </div>
 
@@ -1528,7 +1656,7 @@ export default function DashboardLayout({ children }: LayoutProps) {
 
         {/* Navigation bar - visible on all screens */}
         <nav className="flex items-center gap-0.5 px-4 py-1.5 bg-gray-50 border-t border-gray-100 flex-wrap">
-          {filteredNavigationSections.map((section) => (
+          {reorderedNavigationSections.map((section) => (
             <NavDropdown key={section.title} section={section} />
           ))}
         </nav>

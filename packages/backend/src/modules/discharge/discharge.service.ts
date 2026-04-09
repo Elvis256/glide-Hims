@@ -1,9 +1,14 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between } from 'typeorm';
+import { Repository, Between, DataSource } from 'typeorm';
 import { DischargeSummary, DischargeType } from '../../database/entities/discharge-summary.entity';
 import { Encounter, EncounterStatus } from '../../database/entities/encounter.entity';
 import { CreateDischargeSummaryDto, DischargeSummaryFilterDto } from './dto/discharge.dto';
+
+const DISCHARGEABLE_STATUSES: EncounterStatus[] = [
+  EncounterStatus.ACTIVE,
+  EncounterStatus.IN_PROGRESS,
+];
 
 @Injectable()
 export class DischargeService {
@@ -12,43 +17,60 @@ export class DischargeService {
     private dischargeSummaryRepository: Repository<DischargeSummary>,
     @InjectRepository(Encounter)
     private encounterRepository: Repository<Encounter>,
+    private dataSource: DataSource,
   ) {}
 
   async create(dto: CreateDischargeSummaryDto, userId: string, facilityId: string, tenantId?: string): Promise<DischargeSummary> {
-    // Check if discharge summary already exists for this encounter
-    const existingWhere: any = { encounterId: dto.encounterId };
-    if (tenantId) existingWhere.tenantId = tenantId;
-    const existing = await this.dischargeSummaryRepository.findOne({
-      where: existingWhere,
+    return this.dataSource.transaction(async (manager) => {
+      // Validate encounter status — only ACTIVE/IN_PROGRESS encounters can be discharged
+      const encounterWhere: any = { id: dto.encounterId };
+      if (tenantId) encounterWhere.tenantId = tenantId;
+      const encounter = await manager.findOne(Encounter, { where: encounterWhere });
+      if (!encounter) {
+        throw new NotFoundException('Encounter not found');
+      }
+      if (!DISCHARGEABLE_STATUSES.includes(encounter.status)) {
+        throw new BadRequestException(
+          `Cannot discharge encounter with status '${encounter.status}'. Only ACTIVE or IN_PROGRESS encounters can be discharged.`,
+        );
+      }
+
+      // Check if discharge summary already exists for this encounter
+      const existingWhere: any = { encounterId: dto.encounterId };
+      if (tenantId) existingWhere.tenantId = tenantId;
+      const existing = await manager.findOne(DischargeSummary, {
+        where: existingWhere,
+      });
+
+      if (existing) {
+        throw new BadRequestException('Discharge summary already exists for this encounter');
+      }
+
+      const dischargeNumber = await this.generateDischargeNumber(tenantId);
+
+      const summary = manager.create(DischargeSummary, {
+        ...dto,
+        dischargeNumber,
+        dischargeDate: new Date(dto.dischargeDate),
+        facilityId,
+        dischargedById: userId,
+        ...(tenantId ? { tenantId } : {}),
+      });
+
+      const savedSummary = await manager.save(DischargeSummary, summary);
+
+      // Update encounter status within same transaction
+      await manager.update(
+        Encounter,
+        { id: dto.encounterId, ...(tenantId ? { tenantId } : {}) },
+        {
+          status: EncounterStatus.DISCHARGED,
+          endTime: new Date(dto.dischargeDate),
+        },
+      );
+
+      return savedSummary;
     });
-
-    if (existing) {
-      throw new BadRequestException('Discharge summary already exists for this encounter');
-    }
-
-    const dischargeNumber = await this.generateDischargeNumber(tenantId);
-
-    const summary = this.dischargeSummaryRepository.create({
-      ...dto,
-      dischargeNumber,
-      dischargeDate: new Date(dto.dischargeDate),
-      facilityId,
-      dischargedById: userId,
-      ...(tenantId ? { tenantId } : {}),
-    });
-
-    const savedSummary = await this.dischargeSummaryRepository.save(summary);
-
-    // Update encounter status
-    await this.encounterRepository.update(
-      { id: dto.encounterId, ...(tenantId ? { tenantId } : {}) },
-      {
-        status: EncounterStatus.DISCHARGED,
-        endTime: new Date(dto.dischargeDate),
-      },
-    );
-
-    return savedSummary;
   }
 
   async findAll(filter: DischargeSummaryFilterDto, facilityId: string, tenantId?: string): Promise<DischargeSummary[]> {

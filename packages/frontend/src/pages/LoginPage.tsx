@@ -1,17 +1,22 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { useNavigate, useSearchParams, useParams, Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useAuthStore } from '../store/auth';
 import { authService } from '../services/auth';
+import { setupService, type SetupStatus } from '../services/setup';
 import api from '../services/api';
-import { Eye, EyeOff, Loader2, Clock, Building2, ChevronDown, UserPlus } from 'lucide-react';
+import { Eye, EyeOff, Loader2, Clock, Building2, UserPlus, AlertCircle, Shield } from 'lucide-react';
 import Logo from '../components/Logo';
+import { getBusinessConfig } from '../hooks/useBusinessConfig';
 
-interface TenantOption {
+interface TenantInfo {
   id: string;
   name: string;
+  slug: string;
+  businessType?: string;
+  isSetupComplete?: boolean;
 }
 
 const loginSchema = z.object({
@@ -23,43 +28,72 @@ type LoginForm = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const { slug } = useParams<{ slug: string }>();
   const [searchParams] = useSearchParams();
   const { login, setAccessibleModules } = useAuthStore();
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
-
-  // Tenant selection
-  const [tenants, setTenants] = useState<TenantOption[]>([]);
-  const [selectedTenantId, setSelectedTenantId] = useState<string>('');
-  const [tenantsLoading, setTenantsLoading] = useState(true);
   const [justRegistered, setJustRegistered] = useState(false);
 
-  // Fetch tenants on mount
+  // Deployment mode from backend
+  const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null);
+  const [setupLoading, setSetupLoading] = useState(true);
+
+  // Tenant resolved from slug (SaaS mode)
+  const [tenant, setTenant] = useState<TenantInfo | null>(null);
+  const [tenantLoading, setTenantLoading] = useState(false);
+  const [tenantError, setTenantError] = useState<string | null>(null);
+
+  // Fetch deployment mode on mount
   useEffect(() => {
-    api.get<TenantOption[]>('/tenants/public/list')
-      .then(res => {
-        const list = Array.isArray(res.data) ? res.data : [];
-        setTenants(list);
-        if (list.length === 1) {
-          setSelectedTenantId(list[0].id);
+    setupService.getStatus()
+      .then(status => {
+        setSetupStatus(status);
+        // On-premise: auto-resolve the single tenant by slug if available
+        if (status.deploymentMode === 'on-premise' && status.tenantSlug && !slug) {
+          api.get(`/tenants/public/by-slug/${status.tenantSlug}`)
+            .then(res => {
+              // After Axios interceptor unwraps StandardResponse, res.data IS the tenant object
+              const tenantData = res.data as TenantInfo;
+              setTenant(tenantData);
+            })
+            .catch((err) => console.error('Failed to fetch tenant info:', err));
         }
       })
-      .catch(() => setTenants([]))
-      .finally(() => setTenantsLoading(false));
-  }, []);
+      .catch(() => setSetupStatus({ isSetupComplete: false, deploymentMode: 'on-premise' }))
+      .finally(() => setSetupLoading(false));
+  }, [slug]);
+
+  // Resolve tenant from URL slug (SaaS mode)
+  useEffect(() => {
+    if (!slug) return;
+    setTenantLoading(true);
+    setTenantError(null);
+    api.get<TenantInfo>(`/tenants/public/by-slug/${slug}`)
+      .then(res => {
+        const data = res.data;
+        if (data && data.isSetupComplete === false) {
+          navigate(`/setup/${slug}`, { replace: true });
+          return;
+        }
+        setTenant(data);
+      })
+      .catch(() => setTenantError('Organization not found. Please check the URL.'))
+      .finally(() => setTenantLoading(false));
+  }, [slug, navigate]);
 
   useEffect(() => {
     if (searchParams.get('expired') === 'true') {
       setSessionExpired(true);
-      window.history.replaceState({}, '', '/login');
+      window.history.replaceState({}, '', slug ? `/login/${slug}` : '/login');
     }
     if (searchParams.get('registered') === 'true') {
       setJustRegistered(true);
-      window.history.replaceState({}, '', '/login');
+      window.history.replaceState({}, '', slug ? `/login/${slug}` : '/login');
     }
-  }, [searchParams]);
+  }, [searchParams, slug]);
 
   const {
     register,
@@ -69,9 +103,16 @@ export default function LoginPage() {
     resolver: zodResolver(loginSchema),
   });
 
+  const isSaas = setupStatus?.deploymentMode === 'saas';
+  const isOnPremise = !isSaas;
+  const isMultiTenant = (setupStatus?.tenantCount || 0) > 1;
+  // No slug + multi-tenant → redirect to system admin login
+  const isSystemAdminLogin = !slug && (isSaas || isMultiTenant);
+
   const onSubmit = async (data: LoginForm) => {
-    if (!selectedTenantId) {
-      setError('Please select your organization');
+    // For tenant logins (on-premise or SaaS with slug), tenant must be resolved
+    if (!isSystemAdminLogin && !tenant) {
+      setError('Organization not resolved. Please check the URL.');
       return;
     }
 
@@ -80,24 +121,49 @@ export default function LoginPage() {
     setSessionExpired(false);
 
     try {
-      const response = await authService.login({ ...data, tenantId: selectedTenantId });
-      // Persist tenant context for API calls
-      sessionStorage.setItem('glide_active_tenant_id', selectedTenantId);
-      
-      // Store accessible modules in user object before login
+      const loginPayload: { username: string; password: string; tenantId?: string } = { ...data };
+      // System admin login (SaaS, no slug) → no tenantId
+      // Tenant login → include tenantId
+      if (tenant) {
+        loginPayload.tenantId = tenant.id;
+      }
+
+      const response = await authService.login(loginPayload);
+
+      if (tenant) {
+        localStorage.setItem('glide_active_tenant_id', tenant.id);
+        localStorage.setItem('glide_tenant_slug', tenant.slug);
+      }
+
       const userWithModules = { ...response.user };
-      
       login(userWithModules, response.accessToken, response.refreshToken);
-      
-      // Fetch accessible modules from /auth/me (non-blocking)
+
+      // Fetch accessible modules, facility mode, and business type
       try {
         const meData = await authService.getMe();
         setAccessibleModules(meData.accessibleModules || []);
+        // Store facility context for business-type-specific UI
+        const { user: currentUser } = useAuthStore.getState();
+        if (currentUser) {
+          useAuthStore.setState({
+            user: {
+              ...currentUser,
+              accessibleModules: meData.accessibleModules || [],
+              facilityMode: meData.facilityMode,
+              businessType: meData.businessType,
+            },
+          });
+        }
       } catch {
-        // If /auth/me fails, navigation will fall back to role-based filtering
+        // Falls back to role-based filtering
       }
-      
-      navigate('/');
+
+      // System admin → tenant management dashboard, tenant members → main dashboard
+      if (response.user.isSystemAdmin && isSaas) {
+        navigate('/admin/tenants');
+      } else {
+        navigate('/');
+      }
     } catch (err: unknown) {
       const error = err as { response?: { data?: { message?: string } } };
       setError(error.response?.data?.message || 'Login failed. Please try again.');
@@ -106,19 +172,201 @@ export default function LoginPage() {
     }
   };
 
+  if (setupLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
+  // ─── Multi-tenant / SaaS mode, no slug → Redirect to system admin login ───
+  if (isSystemAdminLogin) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8">
+          <div className="flex flex-col items-center mb-8">
+            <Logo size="lg" variant="full" showTagline />
+          </div>
+
+          <div className="text-center mb-6">
+            <div className="w-14 h-14 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3">
+              <Shield className="w-7 h-7 text-slate-700" />
+            </div>
+            <h2 className="text-xl font-bold text-gray-900">Access Required</h2>
+            <p className="text-gray-500 mt-2 text-sm">
+              Each organization has its own login link.<br />
+              Contact your administrator for your organization's link.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <Link
+              to="/system/login"
+              className="btn-primary w-full flex items-center justify-center gap-2"
+            >
+              <Shield className="w-4 h-4" />
+              System Admin Login
+            </Link>
+          </div>
+
+          <p className="text-center text-slate-400 text-xs mt-6">
+            Glide HIMS v1.0.0 • Enterprise Healthcare Platform
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── On-premise mode, no slug → Direct login (auto-resolved tenant) ───
+  if (isOnPremise && !slug) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8">
+          <div className="flex flex-col items-center mb-8">
+            <Logo size="lg" variant="full" showTagline tagline={getBusinessConfig(tenant?.businessType).tagline} />
+          </div>
+
+          {setupStatus?.organizationName && (
+            <div className="flex items-center gap-3 px-4 py-3 bg-blue-50 border border-blue-200 rounded-lg mb-6">
+              <Building2 className="w-5 h-5 text-blue-600 flex-shrink-0" />
+              <div>
+                <p className="font-medium text-blue-900">{setupStatus.organizationName}</p>
+                {setupStatus.facilityName && (
+                  <p className="text-xs text-blue-600">{setupStatus.facilityName}</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {sessionExpired && (
+            <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg mb-6 flex items-center gap-3">
+              <Clock className="w-5 h-5 flex-shrink-0" />
+              <div>
+                <p className="font-medium">Session Expired</p>
+                <p className="text-sm text-amber-700">Your session has expired. Please log in again.</p>
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+            <div>
+              <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-1">
+                Username
+              </label>
+              <input
+                {...register('username')}
+                type="text"
+                id="username"
+                className="input"
+                placeholder="Enter your username"
+                autoComplete="username"
+                autoFocus
+              />
+              {errors.username && (
+                <p className="text-red-500 text-sm mt-1">{errors.username.message}</p>
+              )}
+            </div>
+
+            <div>
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+                Password
+              </label>
+              <div className="relative">
+                <input
+                  {...register('password')}
+                  type={showPassword ? 'text' : 'password'}
+                  id="password"
+                  className="input pr-10"
+                  placeholder="Enter your password"
+                  autoComplete="current-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
+              </div>
+              {errors.password && (
+                <p className="text-red-500 text-sm mt-1">{errors.password.message}</p>
+              )}
+            </div>
+
+            <button
+              type="submit"
+              disabled={isLoading || !tenant}
+              className="btn-primary w-full flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  Signing in...
+                </>
+              ) : (
+                'Sign In'
+              )}
+            </button>
+          </form>
+
+          <p className="text-center text-gray-500 text-sm mt-6">
+            Glide HIMS v1.0.0 • {getBusinessConfig(tenant?.businessType).tagline}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── SaaS mode with slug → Tenant Member Login ───
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8">
         <div className="flex flex-col items-center mb-8">
-          <Logo size="lg" variant="full" showTagline />
+          <Logo size="lg" variant="full" showTagline tagline={getBusinessConfig(tenant?.businessType).tagline} />
         </div>
+
+        {/* Tenant info banner */}
+        {tenantLoading && (
+          <div className="flex items-center gap-2 px-4 py-3 bg-gray-50 rounded-lg mb-6 text-gray-500 text-sm">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Resolving organization...
+          </div>
+        )}
+
+        {tenantError && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6 flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 flex-shrink-0" />
+            <div>
+              <p className="font-medium">Organization Not Found</p>
+              <p className="text-sm">{tenantError}</p>
+              <p className="text-sm text-gray-500 mt-1">Please check the link with your administrator.</p>
+            </div>
+          </div>
+        )}
+
+        {tenant && (
+          <div className="flex items-center gap-3 px-4 py-3 bg-blue-50 border border-blue-200 rounded-lg mb-6">
+            <Building2 className="w-5 h-5 text-blue-600 flex-shrink-0" />
+            <div>
+              <p className="font-medium text-blue-900">{tenant.name}</p>
+              <p className="text-xs text-blue-600">Organization: {tenant.slug}</p>
+            </div>
+          </div>
+        )}
 
         {sessionExpired && (
           <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg mb-6 flex items-center gap-3">
             <Clock className="w-5 h-5 flex-shrink-0" />
             <div>
               <p className="font-medium">Session Expired</p>
-              <p className="text-sm text-amber-700">Your session has expired. Please log in again to continue.</p>
+              <p className="text-sm text-amber-700">Your session has expired. Please log in again.</p>
             </div>
           </div>
         )}
@@ -128,7 +376,7 @@ export default function LoginPage() {
             <UserPlus className="w-5 h-5 flex-shrink-0" />
             <div>
               <p className="font-medium">Organization Registered!</p>
-              <p className="text-sm text-green-700">Your organization has been created. Select it below and sign in with your admin credentials.</p>
+              <p className="text-sm text-green-700">Sign in with your admin credentials below.</p>
             </div>
           </div>
         )}
@@ -140,40 +388,6 @@ export default function LoginPage() {
         )}
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-          {/* Organization Picker */}
-          <div>
-            <label htmlFor="tenant" className="block text-sm font-medium text-gray-700 mb-1">
-              Organization
-            </label>
-            {tenantsLoading ? (
-              <div className="flex items-center gap-2 px-3 py-2.5 border border-gray-300 rounded-lg text-gray-400 text-sm">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Loading organizations...
-              </div>
-            ) : tenants.length === 1 ? (
-              <div className="flex items-center gap-2 px-3 py-2.5 border border-gray-200 rounded-lg bg-gray-50 text-sm text-gray-700">
-                <Building2 className="w-4 h-4 text-blue-500" />
-                {tenants[0].name}
-              </div>
-            ) : (
-              <div className="relative">
-                <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <select
-                  id="tenant"
-                  value={selectedTenantId}
-                  onChange={(e) => setSelectedTenantId(e.target.value)}
-                  className="input pl-9 pr-8 appearance-none cursor-pointer"
-                >
-                  <option value="">Select your organization</option>
-                  {tenants.map(t => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-              </div>
-            )}
-          </div>
-
           <div>
             <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-1">
               Username
@@ -185,6 +399,7 @@ export default function LoginPage() {
               className="input"
               placeholder="Enter your username"
               autoComplete="username"
+              disabled={!tenant}
             />
             {errors.username && (
               <p className="text-red-500 text-sm mt-1">{errors.username.message}</p>
@@ -203,6 +418,7 @@ export default function LoginPage() {
                 className="input pr-10"
                 placeholder="Enter your password"
                 autoComplete="current-password"
+                disabled={!tenant}
               />
               <button
                 type="button"
@@ -219,7 +435,7 @@ export default function LoginPage() {
 
           <button
             type="submit"
-            disabled={isLoading || !selectedTenantId}
+            disabled={isLoading || !tenant}
             className="btn-primary w-full flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isLoading ? (
@@ -233,18 +449,8 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <div className="mt-6 text-center">
-          <p className="text-sm text-gray-500">Don't have an organization yet?</p>
-          <Link
-            to="/register"
-            className="mt-1 inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-800"
-          >
-            <UserPlus className="w-4 h-4" /> Register New Organization
-          </Link>
-        </div>
-
         <p className="text-center text-gray-500 text-sm mt-6">
-          Glide HIMS v1.0.0 • Enterprise Healthcare Platform
+          Glide HIMS v1.0.0 • {getBusinessConfig(tenant?.businessType).tagline}
         </p>
       </div>
     </div>

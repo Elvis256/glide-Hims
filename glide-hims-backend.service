@@ -15,5 +15,16 @@ RestartSec=10
 StandardOutput=append:/var/log/glide-hims-backend.log
 StandardError=append:/var/log/glide-hims-backend.error.log
 
+# Security hardening
+ProtectSystem=strict
+ProtectHome=true
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths=/home/avis/Hospital/glide-Hims/uploads /home/avis/Hospital/glide-Hims/packages/backend/uploads
+
 [Install]
 WantedBy=multi-user.target

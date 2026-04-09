@@ -1,6 +1,7 @@
 import { usePermissions } from '../../../components/PermissionGate';
 import React, { useState, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
+import DOMPurify from 'dompurify';
 import { useAuthStore } from '../../../store/auth';
 import {
   Calendar,
@@ -388,7 +389,7 @@ export default function SickLeavePage() {
         ) : (
           /* Preview Mode */
           <div ref={certificateRef} className="max-w-3xl mx-auto bg-white rounded-xl shadow-lg border overflow-hidden"
-            dangerouslySetInnerHTML={{ __html: buildCertificateHtml() }}
+            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(buildCertificateHtml()) }}
           />
         )}
       </div>

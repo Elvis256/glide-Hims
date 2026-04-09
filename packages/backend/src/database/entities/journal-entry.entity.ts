@@ -94,6 +94,22 @@ export class JournalEntry {
   @Column({ type: 'timestamp', nullable: true, name: 'posted_at' })
   postedAt: Date;
 
+  // Reversal tracking
+  @Column({ type: 'boolean', default: false, name: 'is_reversal' })
+  isReversal: boolean;
+
+  @Column({ type: 'boolean', default: false, name: 'is_reversed' })
+  isReversed: boolean;
+
+  @Column({ type: 'uuid', nullable: true, name: 'reversal_of_id' })
+  reversalOfId: string;
+
+  @Column({ type: 'uuid', nullable: true, name: 'reversed_by_id' })
+  reversedById: string;
+
+  @Column({ type: 'timestamp', nullable: true, name: 'reversed_at' })
+  reversedAt: Date;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

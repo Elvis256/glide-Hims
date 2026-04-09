@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsUUID, IsArray, ValidateNested, IsNumber, IsDateString, IsEnum, IsIn, Min } from 'class-validator';
+import { IsString, IsOptional, IsUUID, IsArray, ValidateNested, IsNumber, IsDateString, IsEnum, IsIn, Min, Max, Matches } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PrescriptionStatus } from '../../database/entities/prescription.entity';
 
@@ -192,10 +192,26 @@ export class UpdatePrescriptionItemDto {
 }
 
 export class AdministerMedicationDto {
+  @IsDateString()
+  @IsOptional()
   administeredAt?: string;
+
+  @IsString()
+  @IsOptional()
   notes?: string;
+
+  @IsString()
+  @IsOptional()
   routeOfAdministration?: string;
+
+  @IsNumber()
+  @Min(0.001)
+  @Max(10000)
+  @IsOptional()
   doseGiven?: number;
+
+  @IsUUID()
+  @IsOptional()
   witnessId?: string;
 }
 

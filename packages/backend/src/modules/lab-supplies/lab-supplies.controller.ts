@@ -2,6 +2,18 @@ import { Controller, Get, Post, Put, Delete, Param, Body, Query, Request } from 
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { LabSuppliesService } from './lab-supplies.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import {
+  CreateReagentDto,
+  UpdateReagentDto,
+  ReceiveLotDto,
+  RecordConsumptionDto,
+  CreateEquipmentDto,
+  UpdateEquipmentDto,
+  RecordCalibrationDto,
+  RecordMaintenanceDto,
+  CreateQCMaterialDto,
+  RecordQCResultDto,
+} from './dto/lab-supplies.dto';
 
 @ApiTags('Lab Supplies')
 @ApiBearerAuth()
@@ -14,7 +26,7 @@ export class LabSuppliesController {
   @AuthWithPermissions('inventory.create')
   @Post('reagents')
   @ApiOperation({ summary: 'Create a new reagent' })
-  async createReagent(@Body() data: any, @Request() req: any) {
+  async createReagent(@Body() data: CreateReagentDto, @Request() req: any) {
     return this.labSuppliesService.createReagent(data, req.user?.tenantId);
   }
 
@@ -74,7 +86,7 @@ export class LabSuppliesController {
   @AuthWithPermissions('inventory.update')
   @Put('reagents/:id')
   @ApiOperation({ summary: 'Update reagent' })
-  async updateReagent(@Param('id') id: string, @Body() data: any, @Request() req: any) {
+  async updateReagent(@Param('id') id: string, @Body() data: UpdateReagentDto, @Request() req: any) {
     return this.labSuppliesService.updateReagent(id, data, req.user?.tenantId);
   }
 
@@ -83,7 +95,7 @@ export class LabSuppliesController {
   @AuthWithPermissions('inventory.create')
   @Post('reagents/:reagentId/lots')
   @ApiOperation({ summary: 'Receive a new reagent lot' })
-  async receiveLot(@Param('reagentId') reagentId: string, @Body() data: any, @Request() req: any) {
+  async receiveLot(@Param('reagentId') reagentId: string, @Body() data: ReceiveLotDto, @Request() req: any) {
     return this.labSuppliesService.receiveLot({ ...data, reagentId }, req.user?.tenantId);
   }
 
@@ -97,7 +109,7 @@ export class LabSuppliesController {
   @AuthWithPermissions('inventory.update')
   @Post('lots/:lotId/consume')
   @ApiOperation({ summary: 'Record reagent consumption' })
-  async recordConsumption(@Param('lotId') lotId: string, @Body() data: any, @Request() req: any) {
+  async recordConsumption(@Param('lotId') lotId: string, @Body() data: RecordConsumptionDto, @Request() req: any) {
     return this.labSuppliesService.recordConsumption({ ...data, lotId }, req.user?.tenantId);
   }
 
@@ -106,7 +118,7 @@ export class LabSuppliesController {
   @AuthWithPermissions('inventory.create')
   @Post('equipment')
   @ApiOperation({ summary: 'Create lab equipment' })
-  async createEquipment(@Body() data: any, @Request() req: any) {
+  async createEquipment(@Body() data: CreateEquipmentDto, @Request() req: any) {
     return this.labSuppliesService.createEquipment(data, req.user?.tenantId);
   }
 
@@ -142,21 +154,21 @@ export class LabSuppliesController {
   @AuthWithPermissions('inventory.update')
   @Put('equipment/:id')
   @ApiOperation({ summary: 'Update equipment' })
-  async updateEquipment(@Param('id') id: string, @Body() data: any, @Request() req: any) {
+  async updateEquipment(@Param('id') id: string, @Body() data: UpdateEquipmentDto, @Request() req: any) {
     return this.labSuppliesService.updateEquipment(id, data, req.user?.tenantId);
   }
 
   @AuthWithPermissions('inventory.update')
   @Post('equipment/:id/calibration')
   @ApiOperation({ summary: 'Record equipment calibration' })
-  async recordCalibration(@Param('id') equipmentId: string, @Body() data: any, @Request() req: any) {
+  async recordCalibration(@Param('id') equipmentId: string, @Body() data: RecordCalibrationDto, @Request() req: any) {
     return this.labSuppliesService.recordCalibration({ ...data, equipmentId }, req.user?.tenantId);
   }
 
   @AuthWithPermissions('inventory.update')
   @Post('equipment/:id/maintenance')
   @ApiOperation({ summary: 'Record equipment maintenance' })
-  async recordMaintenance(@Param('id') equipmentId: string, @Body() data: any, @Request() req: any) {
+  async recordMaintenance(@Param('id') equipmentId: string, @Body() data: RecordMaintenanceDto, @Request() req: any) {
     return this.labSuppliesService.recordEquipmentMaintenance({ ...data, equipmentId }, req.user?.tenantId);
   }
 
@@ -165,7 +177,7 @@ export class LabSuppliesController {
   @AuthWithPermissions('inventory.create')
   @Post('qc-materials')
   @ApiOperation({ summary: 'Create QC material' })
-  async createQCMaterial(@Body() data: any, @Request() req: any) {
+  async createQCMaterial(@Body() data: CreateQCMaterialDto, @Request() req: any) {
     return this.labSuppliesService.createQCMaterial(data, req.user?.tenantId);
   }
 
@@ -185,7 +197,7 @@ export class LabSuppliesController {
   @AuthWithPermissions('inventory.create')
   @Post('qc-results')
   @ApiOperation({ summary: 'Record QC result' })
-  async recordQCResult(@Body() data: any, @Request() req: any) {
+  async recordQCResult(@Body() data: RecordQCResultDto, @Request() req: any) {
     return this.labSuppliesService.recordQCResult(data, req.user?.tenantId);
   }
 

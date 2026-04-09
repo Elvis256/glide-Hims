@@ -406,7 +406,7 @@ export default function LabQCDashboardPage() {
   const { data: testsData = [] } = useQuery({
     queryKey: ['lab-tests'],
     queryFn: async () => {
-      try { return await labService.tests.list({ status: 'active' }); } catch { return []; }
+      try { return await labService.tests.list({ status: 'active' }); } catch (error) { console.error('Failed to load lab tests:', error); toast.error('Failed to load lab tests'); return []; }
     },
   });
 
@@ -414,7 +414,7 @@ export default function LabQCDashboardPage() {
   const { data: equipmentData = [] } = useQuery({
     queryKey: ['lab-equipment', facilityId],
     queryFn: async () => {
-      try { return await labSuppliesService.equipment.list(facilityId); } catch { return []; }
+      try { return await labSuppliesService.equipment.list(facilityId); } catch (error) { console.error('Failed to load equipment:', error); toast.error('Failed to load equipment list'); return []; }
     },
   });
 

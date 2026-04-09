@@ -2,12 +2,16 @@ import api from './api';
 
 export interface SetupStatus {
   isSetupComplete: boolean;
+  deploymentMode: 'on-premise' | 'saas';
   organizationName?: string;
   facilityName?: string;
+  tenantSlug?: string;
+  tenantCount?: number;
 }
 
 export interface OrganizationData {
   name: string;
+  slug?: string;
   type?: string;
   country?: string;
   logoUrl?: string;
@@ -39,6 +43,7 @@ export interface SettingsData {
 
 export interface FacilityPreset {
   mode: string;
+  businessType: string;
   name: string;
   description: string;
   icon: string;
@@ -65,6 +70,12 @@ export interface InitializeSetupResponse {
   userId: string;
 }
 
+export interface TenantSetupData {
+  facility: FacilityData;
+  admin: AdminUserData;
+  settings?: SettingsData;
+}
+
 export const setupService = {
   /**
    * Check if initial setup has been completed
@@ -87,6 +98,14 @@ export const setupService = {
    */
   registerTenant: async (data: InitializeSetupData): Promise<InitializeSetupResponse> => {
     const response = await api.post<InitializeSetupResponse>('/setup/register-tenant', data);
+    return response.data;
+  },
+
+  /**
+   * Initialize setup for an existing tenant (facility, admin, settings)
+   */
+  initializeTenant: async (slug: string, data: TenantSetupData): Promise<InitializeSetupResponse> => {
+    const response = await api.post<InitializeSetupResponse>(`/setup/initialize-tenant/${slug}`, data);
     return response.data;
   },
 

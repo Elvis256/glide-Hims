@@ -1,0 +1,145 @@
+import { useState } from 'react';
+import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
+import { useAuthStore } from '../../store/auth';
+import Logo from '../../components/Logo';
+import {
+  Building2,
+  Users,
+  LayoutDashboard,
+  Settings,
+  Shield,
+  LogOut,
+  Menu,
+  X,
+  ChevronRight,
+} from 'lucide-react';
+
+const sidebarItems = [
+  { name: 'Dashboard', href: '/system', icon: LayoutDashboard },
+  { name: 'Organizations', href: '/system/tenants', icon: Building2 },
+  { name: 'System Users', href: '/system/users', icon: Users },
+  { name: 'Settings', href: '/system/settings', icon: Settings },
+];
+
+export default function SystemAdminLayout() {
+  const { user, logout } = useAuthStore();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const handleLogout = () => {
+    logout();
+    navigate('/system/login');
+  };
+
+  const isActive = (href: string) => {
+    if (href === '/system') return location.pathname === '/system';
+    return location.pathname.startsWith(href);
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex">
+      {/* Mobile sidebar overlay */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* Sidebar */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 text-white transform transition-transform lg:translate-x-0 lg:static lg:z-auto ${
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        <div className="flex flex-col h-full">
+          {/* Logo */}
+          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
+                <Shield className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h1 className="text-sm font-bold">Glide HIMS</h1>
+                <p className="text-[10px] text-slate-400 uppercase tracking-wider">System Admin</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="lg:hidden text-slate-400 hover:text-white"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Nav links */}
+          <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
+            {sidebarItems.map((item) => {
+              const active = isActive(item.href);
+              return (
+                <Link
+                  key={item.href}
+                  to={item.href}
+                  onClick={() => setSidebarOpen(false)}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                    active
+                      ? 'bg-blue-600 text-white'
+                      : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
+                >
+                  <item.icon className="w-5 h-5 flex-shrink-0" />
+                  {item.name}
+                  {active && <ChevronRight className="w-4 h-4 ml-auto" />}
+                </Link>
+              );
+            })}
+          </nav>
+
+          {/* User section */}
+          <div className="border-t border-slate-700 p-4">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-8 h-8 bg-slate-700 rounded-full flex items-center justify-center text-sm font-bold uppercase">
+                {user?.fullName?.[0] || 'A'}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-white truncate">{user?.fullName || 'Admin'}</p>
+                <p className="text-xs text-slate-400 truncate">{user?.email || ''}</p>
+              </div>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-2 w-full px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+              Sign Out
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main content */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Top bar */}
+        <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-4 sticky top-0 z-30">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="lg:hidden text-gray-600 hover:text-gray-900"
+          >
+            <Menu className="w-6 h-6" />
+          </button>
+          <div className="flex-1" />
+          <div className="flex items-center gap-2 text-sm text-gray-500">
+            <Shield className="w-4 h-4" />
+            System Administrator
+          </div>
+        </header>
+
+        {/* Page content */}
+        <main className="flex-1 p-6 overflow-auto">
+          <Outlet />
+        </main>
+      </div>
+    </div>
+  );
+}

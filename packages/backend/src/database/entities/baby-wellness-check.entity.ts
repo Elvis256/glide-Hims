@@ -5,7 +5,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   ManyToOne,
-  JoinColumn,
+  JoinColumn, Index,
 } from 'typeorm';
 import { DeliveryOutcome } from './delivery-outcome.entity';
 import { PostnatalVisit } from './postnatal-visit.entity';
@@ -43,6 +43,10 @@ export enum BabyWellnessStatus {
 export class BabyWellnessCheck {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  @Column({ type: 'uuid', nullable: true, name: 'tenant_id' })
+  @Index()
+  tenantId?: string;
 
   @Column({ type: 'uuid', name: 'facility_id' })
   facilityId: string;

@@ -10,6 +10,7 @@ import {
   ParseUUIDPipe,
   Request,
   UseGuards,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
@@ -59,13 +60,13 @@ export class UsersController {
   @ApiResponse({ status: 200, description: 'List of system admin users' })
   async findSystemAdmins(@Query() query: UserListQueryDto, @Request() req: any) {
     if (!req.user?.isSystemAdmin) {
-      return { data: [], meta: { total: 0, page: 1, limit: 20, totalPages: 0 } };
+      throw new ForbiddenException('System admin access required');
     }
     return this.usersService.findSystemAdmins(query);
   }
 
   @Post('system-reset-password/:id')
-  @AuthWithPermissions('users.read')
+  @AuthWithPermissions('users.update')
   @UseGuards(RateLimitGuard)
   @ApiOperation({ summary: 'System admin: reset password for any user (system admin, tenant admin, etc.)' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
@@ -76,7 +77,7 @@ export class UsersController {
     @Request() req: any,
   ) {
     if (!req.user?.isSystemAdmin) {
-      return { message: 'Only system administrators can perform this action' };
+      throw new ForbiddenException('Only system administrators can perform this action');
     }
     const result = await this.authService.adminResetPassword(id, dto.newPassword, req.user.sub);
     return { message: 'Password reset successfully', data: result };
@@ -88,7 +89,7 @@ export class UsersController {
   @ApiResponse({ status: 200, description: 'List of tenant admin users' })
   async findTenantAdmins(@Request() req: any) {
     if (!req.user?.isSystemAdmin) {
-      return { data: [] };
+      throw new ForbiddenException('System admin access required');
     }
     const admins = await this.usersService.findTenantAdmins();
     return { data: admins };
@@ -99,7 +100,11 @@ export class UsersController {
   @ApiOperation({ summary: 'Get all users with pagination' })
   @ApiResponse({ status: 200, description: 'List of users' })
   async findAll(@Query() query: UserListQueryDto, @Request() req: any) {
-    return this.usersService.findAll(query, req.user?.tenantId);
+    const tenantId = req.user?.tenantId;
+    if (!tenantId && !req.user?.isSystemAdmin) {
+      throw new ForbiddenException('Tenant context required');
+    }
+    return this.usersService.findAll(query, tenantId);
   }
 
   @Get(':id')
@@ -109,7 +114,11 @@ export class UsersController {
   @ApiResponse({ status: 200, description: 'User details' })
   @ApiResponse({ status: 404, description: 'User not found' })
   async findOne(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
-    return this.usersService.findOneWithRoles(id, req.user?.tenantId);
+    const tenantId = req.user?.tenantId;
+    if (!tenantId && !req.user?.isSystemAdmin) {
+      throw new ForbiddenException('Tenant context required');
+    }
+    return this.usersService.findOneWithRoles(id, tenantId);
   }
 
   @Patch(':id')
@@ -136,7 +145,11 @@ export class UsersController {
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 200, description: 'User deleted successfully' })
   async remove(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
-    await this.usersService.remove(id, req.user?.tenantId);
+    const tenantId = req.user?.tenantId;
+    if (!tenantId && !req.user?.isSystemAdmin) {
+      throw new ForbiddenException('Tenant context required');
+    }
+    await this.usersService.remove(id, tenantId);
     return { message: 'User deleted successfully' };
   }
 
@@ -151,7 +164,11 @@ export class UsersController {
     @Body() assignRoleDto: AssignRoleDto,
     @Request() req: any,
   ) {
-    const userRole = await this.usersService.assignRole(id, assignRoleDto, req.user?.tenantId);
+    const tenantId = req.user?.tenantId;
+    if (!tenantId && !req.user?.isSystemAdmin) {
+      throw new ForbiddenException('Tenant context required');
+    }
+    const userRole = await this.usersService.assignRole(id, assignRoleDto, tenantId);
     return { message: 'Role assigned successfully', data: userRole };
   }
 
@@ -166,7 +183,11 @@ export class UsersController {
     @Param('roleId', ParseUUIDPipe) roleId: string,
     @Request() req: any,
   ) {
-    await this.usersService.removeRole(id, roleId, req.user?.tenantId);
+    const tenantId = req.user?.tenantId;
+    if (!tenantId && !req.user?.isSystemAdmin) {
+      throw new ForbiddenException('Tenant context required');
+    }
+    await this.usersService.removeRole(id, roleId, tenantId);
     return { message: 'Role removed successfully' };
   }
 
@@ -315,7 +336,7 @@ export class UsersController {
     @Body() dto: AdminResetPasswordDto,
     @Request() req: any,
   ) {
-    const result = await this.authService.adminResetPassword(id, dto.newPassword, req.user.sub);
+    const result = await this.authService.adminResetPassword(id, dto.newPassword, req.user.sub, req.user.tenantId);
     return { message: 'Password reset successfully', data: result };
   }
 

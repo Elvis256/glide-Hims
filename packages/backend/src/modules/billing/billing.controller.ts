@@ -186,7 +186,8 @@ export class BillingController {
     @Body('reason') reason: string,
     @Request() req: any,
   ) {
-    return this.billingService.writeOffInvoice(id, reason, req.user.id, req?.user?.tenantId);
+    const userRoles = req.user?.roles || [];
+    return this.billingService.writeOffInvoice(id, reason, req.user.id, req?.user?.tenantId, userRoles);
   }
 
   // ============ RECEIPT PRINTING ============

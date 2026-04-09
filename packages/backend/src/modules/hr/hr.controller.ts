@@ -55,6 +55,10 @@ import {
   GenerateRosterDto,
   DeactivateStaffDto,
   OffboardStaffDto,
+  CreateStaffDto,
+  UpdateStaffDto,
+  LeaveTypeConfigDto,
+  HolidayConfigDto,
 } from './dto/hr.dto';
 import { EmploymentStatus } from '../../database/entities/employee.entity';
 import { LeaveStatus } from '../../database/entities/leave-request.entity';
@@ -110,14 +114,14 @@ export class HrController {
   @Patch('staff/:id')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Update staff member HR details' })
-  async updateStaff(@Param('id') id: string, @Body() dto: any, @Request() req: any) {
+  async updateStaff(@Param('id') id: string, @Body() dto: UpdateStaffDto, @Request() req: any) {
     return this.hrService.updateStaff(id, dto, req.user?.tenantId);
   }
 
   @Post('staff')
   @AuthWithPermissions('hr.create')
   @ApiOperation({ summary: 'Create new staff member (user with HR profile)' })
-  async createStaff(@Body() dto: any, @Request() req: any) {
+  async createStaff(@Body() dto: CreateStaffDto, @Request() req: any) {
     return this.hrService.createStaff(dto, req.user?.tenantId);
   }
 
@@ -816,7 +820,7 @@ export class HrController {
   @Put('leave-types')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Save leave types configuration' })
-  async saveLeaveTypes(@Body() body: any[], @Request() req: any) {
+  async saveLeaveTypes(@Body() body: LeaveTypeConfigDto[], @Request() req: any) {
     await this.settingsService.upsert('hr_leave_types', body, req.user?.tenantId, 'HR leave types configuration');
     return body;
   }
@@ -836,7 +840,7 @@ export class HrController {
   @Put('holidays')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Save public holidays' })
-  async saveHolidays(@Body() body: any[], @Request() req: any) {
+  async saveHolidays(@Body() body: HolidayConfigDto[], @Request() req: any) {
     await this.settingsService.upsert('hr_holidays', body, req.user?.tenantId, 'Public holidays configuration');
     return body;
   }

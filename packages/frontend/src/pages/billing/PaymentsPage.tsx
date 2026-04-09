@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import DOMPurify from 'dompurify';
 import { useAuthStore } from '../../store/auth';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../lib/currency';
 import {
@@ -106,7 +107,7 @@ export default function PaymentsPage() {
     const invoice = (d as any).invoice;
     const win = window.open('', '_blank', 'width=480,height=640');
     if (!win) return;
-    win.document.write(`<html><head><title>Receipt ${d.receiptNumber || ''}</title>
+    win.document.write(DOMPurify.sanitize(`<html><head><title>Receipt ${d.receiptNumber || ''}</title>
     <style>body{font-family:monospace;padding:20px;font-size:12px} h2{font-size:16px;text-align:center} .center{text-align:center} hr{border-top:1px dashed #999} .row{display:flex;justify-content:space-between;margin:3px 0} .total{font-size:14px;font-weight:bold} .footer{font-size:10px;text-align:center;margin-top:10px} .logo{display:block;max-height:120px;margin:0 auto 6px}</style>
     </head><body>
     ${inst.logo ? `<img src="${inst.logo}" alt="logo" class="logo" />` : ''}
@@ -124,7 +125,7 @@ export default function PaymentsPage() {
     ${d.referenceNumber ? `<div class="row"><span>Ref:</span><span>${d.referenceNumber}</span></div>` : ''}
     <div class="row"><span>Cashier:</span><span>${d.receivedBy || '-'}</span></div>
     <hr/><p class="footer">Thank you for your payment.<br/>Keep this receipt for your records.</p>
-    </body></html>`);
+    </body></html>`, { WHOLE_DOCUMENT: true, ADD_TAGS: ['style'], ADD_ATTR: ['class'] }));
     win.document.close();
     win.print();
   };

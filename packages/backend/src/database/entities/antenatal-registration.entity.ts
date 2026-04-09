@@ -6,7 +6,7 @@ import {
   UpdateDateColumn,
   ManyToOne,
   JoinColumn,
-  OneToMany,
+  OneToMany, Index,
 } from 'typeorm';
 import { Patient } from './patient.entity';
 import { Facility } from './facility.entity';
@@ -31,6 +31,10 @@ export enum RiskLevel {
 export class AntenatalRegistration {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  @Column({ type: 'uuid', nullable: true, name: 'tenant_id' })
+  @Index()
+  tenantId?: string;
 
   @Column({ length: 20, unique: true, name: 'anc_number' })
   ancNumber: string;

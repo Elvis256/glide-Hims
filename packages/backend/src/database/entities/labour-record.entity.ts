@@ -6,7 +6,7 @@ import {
   UpdateDateColumn,
   ManyToOne,
   JoinColumn,
-  OneToMany,
+  OneToMany, Index,
 } from 'typeorm';
 import { AntenatalRegistration } from './antenatal-registration.entity';
 import { Facility } from './facility.entity';
@@ -39,6 +39,10 @@ export enum LabourOutcome {
 export class LabourRecord {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  @Column({ type: 'uuid', nullable: true, name: 'tenant_id' })
+  @Index()
+  tenantId?: string;
 
   @Column({ length: 20, unique: true, name: 'labour_number' })
   labourNumber: string;
