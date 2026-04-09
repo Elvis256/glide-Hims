@@ -56,7 +56,6 @@ status() {
     
     echo ""
     echo "📍 Login: http://localhost:5173/login"
-    echo "👤 Credentials: admin / Admin@123"
     echo ""
     echo "ℹ️  Services auto-restart on crash and start on login"
 }

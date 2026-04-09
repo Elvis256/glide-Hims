@@ -99,18 +99,33 @@ export default function QueueAnalyticsPage() {
     return 'bg-red-100 text-red-700';
   };
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
     setShowExportMenu(false);
     toast.success('PDF report generated', { description: 'Download will start shortly' });
-    // Mock PDF generation
-    const content = `Queue Analytics Report\n${getDateRangeLabel()}\n\nTotal Patients: ${kpiData.totalPatients}\nAvg Wait Time: ${kpiData.avgWaitTime} min\nNo-Show Rate: ${kpiData.noShowRate.toFixed(1)}%`;
-    const blob = new Blob([content], { type: 'application/pdf' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `queue-analytics-${format(new Date(), 'yyyy-MM-dd')}.pdf`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const { default: jsPDF } = await import('jspdf');
+    const doc = new jsPDF();
+    const title = `Queue Analytics Report — ${getDateRangeLabel()}`;
+    doc.setFontSize(16);
+    doc.text('Queue Analytics Report', 14, 20);
+    doc.setFontSize(11);
+    doc.text(getDateRangeLabel(), 14, 28);
+    doc.setFontSize(12);
+    let y = 42;
+    const rows = [
+      ['Total Patients', String(kpiData.totalPatients)],
+      ['Avg Wait Time', `${kpiData.avgWaitTime} min`],
+      ['Avg Service Time', `${kpiData.avgServiceTime} min`],
+      ['No-Show Rate', `${kpiData.noShowRate.toFixed(1)}%`],
+      ['No-Shows', String(kpiData.noShows)],
+      ['Peak Hour', kpiData.peakHour],
+    ];
+    rows.forEach(([label, value]) => {
+      doc.text(`${label}: ${value}`, 14, y);
+      y += 8;
+    });
+    doc.setFontSize(9);
+    doc.text(`Generated on ${format(new Date(), 'yyyy-MM-dd HH:mm')}`, 14, y + 10);
+    doc.save(`queue-analytics-${format(new Date(), 'yyyy-MM-dd')}.pdf`);
   };
 
   const handleExportExcel = () => {

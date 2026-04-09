@@ -1,6 +1,7 @@
 import { usePermissions } from '../../../components/PermissionGate';
 import React, { useState, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
+import DOMPurify from 'dompurify';
 import { useAuthStore } from '../../../store/auth';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -22,6 +23,7 @@ import { patientsService } from '../../../services/patients';
 import { printContent, printService } from '../../../lib/print';
 import { useInstitutionInfo } from '../../../lib/useInstitutionInfo';
 import { useDoctorCertPrefs } from '../../../lib/useDoctorCertPrefs';
+import { escapeHtml } from '../../../lib/sanitize';
 import { asList } from '../../../utils/unwrapResponse';
 
 interface Patient {
@@ -136,49 +138,49 @@ export default function FitnessCertificatePage() {
       <div style="font-family:'Times New Roman',Times,serif;max-width:700px;margin:0 auto;padding:24px;color:#111;">
         <div style="text-align:center;border-bottom:3px double #16a34a;padding-bottom:16px;margin-bottom:20px;">
           ${logoHtml}
-          <h1 style="font-size:22px;font-weight:bold;color:#15803d;margin:0;letter-spacing:1px;">${inst.name || 'Medical Facility'}</h1>
-          ${inst.address ? `<p style="margin:4px 0 0;font-size:12px;color:#555;">${inst.address}</p>` : ''}
-          ${inst.phone || inst.email ? `<p style="margin:2px 0 0;font-size:12px;color:#555;">${[inst.phone, inst.email].filter(Boolean).join(' • ')}</p>` : ''}
+          <h1 style="font-size:22px;font-weight:bold;color:#15803d;margin:0;letter-spacing:1px;">${escapeHtml(inst.name) || 'Medical Facility'}</h1>
+          ${inst.address ? `<p style="margin:4px 0 0;font-size:12px;color:#555;">${escapeHtml(inst.address)}</p>` : ''}
+          ${inst.phone || inst.email ? `<p style="margin:2px 0 0;font-size:12px;color:#555;">${[inst.phone, inst.email].filter(Boolean).map(v => escapeHtml(v)).join(' • ')}</p>` : ''}
         </div>
         <div style="text-align:center;margin-bottom:24px;">
           <h2 style="font-size:20px;font-weight:bold;text-decoration:underline;color:#15803d;margin:0;">FITNESS CERTIFICATE</h2>
-          <p style="font-size:13px;color:#555;margin:6px 0 0;">Type: ${fitnessType}</p>
+          <p style="font-size:13px;color:#555;margin:6px 0 0;">Type: ${escapeHtml(fitnessType)}</p>
         </div>
         <div style="font-size:13px;line-height:1.7;">
-          <p>This is to certify that <strong>${selectedPatient?.name || '________________'}</strong>, ${selectedPatient?.gender || 'Gender'}, Date of Birth: ${selectedPatient?.dateOfBirth || '________________'}, has been examined.</p>
+          <p>This is to certify that <strong>${escapeHtml(selectedPatient?.name) || '________________'}</strong>, ${escapeHtml(selectedPatient?.gender) || 'Gender'}, Date of Birth: ${escapeHtml(selectedPatient?.dateOfBirth) || '________________'}, has been examined.</p>
           <table style="width:100%;border-collapse:collapse;margin:16px 0;background:#f9fafb;border-radius:6px;">
             <tr>
               <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;font-weight:600;color:#374151;width:50%;">Vision</td>
-              <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;">L: ${visionLeft}, R: ${visionRight}${visionCorrected ? ' (corrected)' : ''}</td>
+              <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;">L: ${escapeHtml(visionLeft)}, R: ${escapeHtml(visionRight)}${visionCorrected ? ' (corrected)' : ''}</td>
             </tr>
             <tr>
               <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;font-weight:600;color:#374151;">Hearing</td>
-              <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;">L: ${hearingLeft}, R: ${hearingRight}</td>
+              <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;">L: ${escapeHtml(hearingLeft)}, R: ${escapeHtml(hearingRight)}</td>
             </tr>
             <tr>
               <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;font-weight:600;color:#374151;">Blood Pressure</td>
-              <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;">${systolicBP}/${diastolicBP} mmHg</td>
+              <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;">${escapeHtml(systolicBP)}/${escapeHtml(diastolicBP)} mmHg</td>
             </tr>
             <tr>
               <td style="padding:10px 14px;font-weight:600;color:#374151;">BMI</td>
-              <td style="padding:10px 14px;">${bmi || 'N/A'}${bmiCategory ? ` (${bmiCategory.label})` : ''}</td>
+              <td style="padding:10px 14px;">${escapeHtml(bmi) || 'N/A'}${bmiCategory ? ` (${escapeHtml(bmiCategory.label)})` : ''}</td>
             </tr>
           </table>
-          ${physicalFindings ? `<div style="margin:12px 0;"><p style="font-weight:600;color:#374151;margin:0 0 4px;">Physical Examination:</p><p style="margin:0;color:#555;">${physicalFindings}</p></div>` : ''}
+          ${physicalFindings ? `<div style="margin:12px 0;"><p style="font-weight:600;color:#374151;margin:0 0 4px;">Physical Examination:</p><p style="margin:0;color:#555;">${escapeHtml(physicalFindings)}</p></div>` : ''}
           <div style="padding:14px;border-radius:6px;margin:16px 0;${conclusionColors[conclusion] || ''}">
-            <p style="font-size:16px;font-weight:bold;margin:0;">${conclusion}</p>
-            ${conclusion === 'Fit with restrictions' && restrictions ? `<p style="margin:8px 0 0;font-size:13px;">${restrictions}</p>` : ''}
+            <p style="font-size:16px;font-weight:bold;margin:0;">${escapeHtml(conclusion)}</p>
+            ${conclusion === 'Fit with restrictions' && restrictions ? `<p style="margin:8px 0 0;font-size:13px;">${escapeHtml(restrictions)}</p>` : ''}
           </div>
           <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:12px;margin:12px 0;">
-            <p style="margin:0;color:#166534;"><strong>Valid until:</strong> ${validUntil}</p>
+            <p style="margin:0;color:#166534;"><strong>Valid until:</strong> ${escapeHtml(validUntil)}</p>
           </div>
           <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:40px;padding-top:20px;border-top:1px solid #ddd;">
-            <div><p style="font-size:12px;color:#666;margin:0;">Date: ${new Date().toLocaleDateString()}</p></div>
+            <div><p style="font-size:12px;color:#666;margin:0;">Date: ${escapeHtml(new Date().toLocaleDateString())}</p></div>
             <div style="text-align:center;">
               <div style="width:200px;border-bottom:1px solid #333;margin-bottom:6px;">&nbsp;</div>
-              <p style="font-size:13px;font-weight:bold;margin:0;">${doctorDetails.name}</p>
-              ${doctorDetails.qualification ? `<p style="font-size:11px;color:#555;margin:2px 0 0;">${doctorDetails.qualification}</p>` : ''}
-              ${doctorDetails.registrationNo ? `<p style="font-size:11px;color:#555;margin:2px 0 0;">Reg. No: ${doctorDetails.registrationNo}</p>` : ''}
+              <p style="font-size:13px;font-weight:bold;margin:0;">${escapeHtml(doctorDetails.name)}</p>
+              ${doctorDetails.qualification ? `<p style="font-size:11px;color:#555;margin:2px 0 0;">${escapeHtml(doctorDetails.qualification)}</p>` : ''}
+              ${doctorDetails.registrationNo ? `<p style="font-size:11px;color:#555;margin:2px 0 0;">Reg. No: ${escapeHtml(doctorDetails.registrationNo)}</p>` : ''}
             </div>
           </div>
         </div>
@@ -563,7 +565,7 @@ export default function FitnessCertificatePage() {
         ) : (
           /* Preview Mode */
           <div ref={certificateRef} className="max-w-3xl mx-auto bg-white rounded-xl shadow-lg border overflow-hidden"
-            dangerouslySetInnerHTML={{ __html: buildCertificateHtml() }}
+            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(buildCertificateHtml()) }}
           />
         )}
       </div>

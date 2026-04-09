@@ -19,28 +19,30 @@ export class AuditLogService {
     newValue?: Record<string, any>;
     ipAddress?: string;
     userAgent?: string;
+    tenantId?: string;
   }): Promise<AuditLog> {
     return this.auditLogRepository.save(this.auditLogRepository.create(data));
   }
 
-  async findByEntity(entityType: string, entityId: string) {
+  async findByEntity(entityType: string, entityId: string, tenantId?: string) {
     return this.auditLogRepository.find({
-      where: { entityType, entityId },
+      where: { entityType, entityId, ...(tenantId ? { tenantId } : {}) },
       order: { createdAt: 'DESC' },
       relations: ['user'],
     });
   }
 
-  async findByUser(userId: string, limit = 100) {
+  async findByUser(userId: string, limit = 100, tenantId?: string) {
     return this.auditLogRepository.find({
-      where: { userId },
+      where: { userId, ...(tenantId ? { tenantId } : {}) },
       order: { createdAt: 'DESC' },
       take: limit,
     });
   }
 
-  async findRecent(limit = 100) {
+  async findRecent(limit = 100, tenantId?: string) {
     return this.auditLogRepository.find({
+      where: { ...(tenantId ? { tenantId } : {}) },
       order: { createdAt: 'DESC' },
       take: limit,
       relations: ['user'],
@@ -57,12 +59,16 @@ export class AuditLogService {
     startDate?: string;
     endDate?: string;
     search?: string;
+    tenantId?: string;
   }) {
     const qb = this.auditLogRepository
       .createQueryBuilder('log')
       .leftJoinAndSelect('log.user', 'user')
       .orderBy('log.createdAt', 'DESC');
 
+    if (filters.tenantId) {
+      qb.andWhere('log.tenantId = :tenantId', { tenantId: filters.tenantId });
+    }
     if (filters.userId) {
       qb.andWhere('log.userId = :userId', { userId: filters.userId });
     }
@@ -101,31 +107,37 @@ export class AuditLogService {
     };
   }
 
-  async getStats() {
-    const total = await this.auditLogRepository.count();
+  async getStats(tenantId?: string) {
+    const where = tenantId ? { tenantId } : {};
+    const total = await this.auditLogRepository.count({ where });
 
-    const actionCounts = await this.auditLogRepository
+    const actionQb = this.auditLogRepository
       .createQueryBuilder('log')
       .select('log.action', 'action')
-      .addSelect('COUNT(*)', 'count')
+      .addSelect('COUNT(*)', 'count');
+    if (tenantId) actionQb.where('log.tenantId = :tenantId', { tenantId });
+    const actionCounts = await actionQb
       .groupBy('log.action')
       .orderBy('count', 'DESC')
       .limit(10)
       .getRawMany();
 
-    const entityCounts = await this.auditLogRepository
+    const entityQb = this.auditLogRepository
       .createQueryBuilder('log')
       .select('log.entityType', 'entityType')
-      .addSelect('COUNT(*)', 'count')
+      .addSelect('COUNT(*)', 'count');
+    if (tenantId) entityQb.where('log.tenantId = :tenantId', { tenantId });
+    const entityCounts = await entityQb
       .groupBy('log.entityType')
       .orderBy('count', 'DESC')
       .limit(10)
       .getRawMany();
 
-    const todayCount = await this.auditLogRepository
+    const todayQb = this.auditLogRepository
       .createQueryBuilder('log')
-      .where("log.createdAt >= CURRENT_DATE")
-      .getCount();
+      .where("log.createdAt >= CURRENT_DATE");
+    if (tenantId) todayQb.andWhere('log.tenantId = :tenantId', { tenantId });
+    const todayCount = await todayQb.getCount();
 
     return { total, todayCount, actionCounts, entityCounts };
   }

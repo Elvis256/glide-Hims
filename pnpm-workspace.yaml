@@ -5,3 +5,4 @@ onlyBuiltDependencies:
   - '@nestjs/core'
   - bcrypt
   - esbuild
+  - nestjs-pino

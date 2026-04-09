@@ -957,6 +957,118 @@ export class GenerateRosterDto {
 
 // ============ STAFF LIFECYCLE DTOs ============
 
+export class CreateStaffDto {
+  @IsNotEmpty()
+  @IsString()
+  username: string;
+
+  @IsNotEmpty()
+  @IsString()
+  fullName: string;
+
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @IsOptional()
+  @IsUUID()
+  facilityId?: string;
+
+  @IsOptional()
+  @IsString()
+  jobTitle?: string;
+
+  @IsOptional()
+  @IsString()
+  department?: string;
+
+  @IsOptional()
+  @IsArray()
+  roles?: string[];
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  basicSalary?: number;
+}
+
+export class UpdateStaffDto {
+  @IsOptional()
+  @IsString()
+  fullName?: string;
+
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @IsOptional()
+  @IsString()
+  jobTitle?: string;
+
+  @IsOptional()
+  @IsString()
+  department?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  basicSalary?: number;
+
+  @IsOptional()
+  @IsArray()
+  allowances?: { name: string; amount: number; taxable: boolean }[];
+
+  @IsOptional()
+  @IsArray()
+  deductions?: { name: string; amount: number; type: 'fixed' | 'percentage' }[];
+
+  @IsOptional()
+  @IsString()
+  bankName?: string;
+
+  @IsOptional()
+  @IsString()
+  bankAccountNumber?: string;
+}
+
+export class LeaveTypeConfigDto {
+  @IsString()
+  name: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  defaultDays?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isPaid?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  requiresApproval?: boolean;
+}
+
+export class HolidayConfigDto {
+  @IsString()
+  name: string;
+
+  @IsDateString()
+  date: string;
+
+  @IsOptional()
+  @IsBoolean()
+  recurring?: boolean;
+}
+
 export class DeactivateStaffDto {
   @IsOptional()
   @IsString()

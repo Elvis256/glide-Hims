@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Query, ParseIntPipe, DefaultValuePipe, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AnalyticsService } from './analytics.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
@@ -67,10 +67,15 @@ export class AnalyticsController {
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
   ) {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      throw new BadRequestException('Invalid date format for startDate or endDate');
+    }
     return this.analyticsService.getSummaryReport(
       user.facilityId,
-      new Date(startDate),
-      new Date(endDate),
+      start,
+      end,
       user.tenantId,
     );
   }
@@ -81,9 +86,10 @@ export class AnalyticsController {
   @ApiQuery({ name: 'limit', required: false })
   async getRecentActivity(
     @CurrentUser() user: any,
-    @Query('limit') limit?: number,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
   ) {
-    return this.analyticsService.getRecentActivity(user.facilityId, limit || 10, user.tenantId);
+    const safeLimit = Math.min(Math.max(limit, 1), 100);
+    return this.analyticsService.getRecentActivity(user.facilityId, safeLimit, user.tenantId);
   }
 
   @Get('alerts')
@@ -105,11 +111,16 @@ export class AnalyticsController {
     @Query('month') month?: string,
     @Query('year') year?: string,
   ) {
+    const m = parseInt(month || '0', 10);
+    const y = parseInt(year || '0', 10);
+    if (m < 1 || m > 12 || y < 2000 || y > 2100) {
+      throw new BadRequestException('month must be 1-12 and year must be 2000-2100');
+    }
     return this.analyticsService.getHMIS105Report(
       user.tenantId,
       facilityId || user.facilityId,
-      parseInt(month || '0', 10),
-      parseInt(year || '0', 10),
+      m,
+      y,
     );
   }
 }

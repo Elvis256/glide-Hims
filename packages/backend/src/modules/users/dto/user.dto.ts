@@ -141,6 +141,11 @@ export class CreateUserDto {
   @IsOptional()
   @IsUUID()
   employeeId?: string;
+
+  @ApiPropertyOptional({ description: 'Mark user as system administrator', default: false })
+  @IsOptional()
+  @IsBoolean()
+  isSystemAdmin?: boolean;
 }
 
 export class UpdateUserDto extends PartialType(CreateUserDto) {

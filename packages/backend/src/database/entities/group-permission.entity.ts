@@ -8,6 +8,10 @@ export class GroupPermission {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Column({ type: 'uuid', nullable: true, name: 'tenant_id' })
+  @Index()
+  tenantId?: string;
+
   @Column({ type: 'uuid', name: 'group_id' })
   groupId: string;
 

@@ -4,6 +4,7 @@ import {
   BadRequestException,
   NotFoundException,
   ConflictException,
+  ForbiddenException,
   Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -12,9 +13,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull, In, MoreThan } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
+import * as OTPAuth from 'otpauth';
 import { User } from '../../database/entities/user.entity';
 import { UserRole } from '../../database/entities/user-role.entity';
 import { Facility } from '../../database/entities/facility.entity';
+import { Tenant } from '../../database/entities/tenant.entity';
 import { PasswordPolicy, PasswordHistory } from '../../database/entities/password-policy.entity';
 import { RolePermission } from '../../database/entities/role-permission.entity';
 import { Permission } from '../../database/entities/permission.entity';
@@ -25,6 +28,8 @@ import { LoginDto, AuthResponseDto, ChangePasswordDto, UpdateProfileDto } from '
 import { JwtPayload } from './strategies/jwt.strategy';
 import { getAccessibleModules } from '../../config/module-registry';
 import { isSuperAdmin } from '../../common/constants/roles.constants';
+import { getPreset, type FacilityMode } from '../../common/constants/facility-presets.constants';
+import { CacheService } from '../cache/cache.service';
 
 @Injectable()
 export class AuthService {
@@ -37,6 +42,8 @@ export class AuthService {
     private userRoleRepository: Repository<UserRole>,
     @InjectRepository(Facility)
     private facilityRepository: Repository<Facility>,
+    @InjectRepository(Tenant)
+    private tenantRepository: Repository<Tenant>,
     @InjectRepository(PasswordPolicy)
     private passwordPolicyRepository: Repository<PasswordPolicy>,
     @InjectRepository(PasswordHistory)
@@ -53,6 +60,7 @@ export class AuthService {
     private auditLogRepository: Repository<AuditLog>,
     private jwtService: JwtService,
     private configService: ConfigService,
+    private cacheService: CacheService,
   ) {}
 
   async validateUser(username: string, password: string, tenantId?: string): Promise<User | null> {
@@ -85,7 +93,7 @@ export class AuthService {
 
     // Validate that passwordHash exists and is valid before comparing
     if (!user.passwordHash || !user.passwordHash.startsWith('$2')) {
-      this.logger.error(`User ${user.username} has invalid password hash format`);
+      this.logger.error(`User ${user.id} has invalid password hash format`);
       return null;
     }
 
@@ -93,7 +101,7 @@ export class AuthService {
     try {
       isPasswordValid = await bcrypt.compare(password, user.passwordHash);
     } catch (error) {
-      this.logger.error(`Password validation error for user ${user.username}: ${(error as Error).message}`);
+      this.logger.error(`Password validation error for user ${user.id}: ${(error as Error).message}`);
       throw error;
     }
 
@@ -121,6 +129,19 @@ export class AuthService {
   }
 
   async login(loginDto: LoginDto, ipAddress?: string, userAgent?: string): Promise<AuthResponseDto> {
+    const deploymentMode = this.configService.get<string>('DEPLOYMENT_MODE', 'on-premise');
+
+    // On-premise: auto-resolve the single tenant if no tenantId provided
+    if (!loginDto.tenantId && deploymentMode === 'on-premise') {
+      const singleTenant = await this.tenantRepository.findOne({
+        where: { status: 'active' },
+        order: { createdAt: 'ASC' },
+      });
+      if (singleTenant) {
+        loginDto.tenantId = singleTenant.id;
+      }
+    }
+
     let user: User | null;
     try {
       user = await this.validateUser(loginDto.username, loginDto.password, loginDto.tenantId);
@@ -134,7 +155,14 @@ export class AuthService {
 
     if (!user) {
       await this.recordLoginHistory(undefined, ipAddress, userAgent, false, 'Invalid credentials', loginDto.tenantId);
-      this.logger.warn(`Login failed for username: ${loginDto.username}`);
+      this.logger.warn(`Login failed for provided credentials`);
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    // Prevent cross-tenant login: non-system-admins must belong to the requested tenant
+    if (loginDto.tenantId && user.tenantId !== loginDto.tenantId && !user.isSystemAdmin) {
+      await this.recordLoginHistory(user.id, ipAddress, userAgent, false, 'Tenant mismatch', loginDto.tenantId);
+      this.logger.warn(`Cross-tenant login blocked: user ${user.id} (tenant ${user.tenantId}) attempted login to tenant ${loginDto.tenantId}`);
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -151,14 +179,22 @@ export class AuthService {
           mfaRequired: true,
         });
       }
-      const speakeasy = require('speakeasy');
-      const isValid = speakeasy.totp.verify({
-        secret: user.mfaSecret,
-        encoding: 'base32',
-        token: loginDto.mfaCode,
-        window: 1,
+      const totp = new OTPAuth.TOTP({
+        secret: OTPAuth.Secret.fromBase32(user.mfaSecret!),
+        algorithm: 'SHA1',
+        digits: 6,
+        period: 30,
       });
+      const delta = totp.validate({ token: loginDto.mfaCode!, window: 1 });
+      const isValid = delta !== null;
       if (!isValid) {
+        // Increment failed login attempts to prevent MFA brute force
+        user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
+        if (user.failedLoginAttempts >= 5) {
+          user.lockedUntil = new Date(Date.now() + 15 * 60 * 1000);
+          this.logger.warn(`Account ${user.id} locked after ${user.failedLoginAttempts} failed MFA attempts`);
+        }
+        await this.userRepository.save(user);
         await this.recordLoginHistory(user.id, ipAddress, userAgent, false, 'Invalid MFA code', user.tenantId);
         throw new UnauthorizedException('Invalid MFA code');
       }
@@ -292,6 +328,8 @@ export class AuthService {
         email: user.email,
         roles,
         permissions,
+        isSystemAdmin: user.isSystemAdmin || false,
+        tenantId: effectiveTenantId,
         facilityId,
         facility: facility ? {
           id: facility.id,
@@ -339,8 +377,16 @@ export class AuthService {
 
       // Verify tokenVersion for token revocation
       if (payload.tokenVersion !== undefined && payload.tokenVersion !== user.tokenVersion) {
+        // Possible token reuse attack — a previously-rotated token was replayed.
+        this.logger.warn(`Refresh token reuse detected for user ${user.id}. Revoking all sessions.`);
+        user.tokenVersion += 1;
+        await this.userRepository.save(user);
         throw new UnauthorizedException('Token has been revoked');
       }
+
+      // Rotate: bump tokenVersion so this refresh token cannot be used again
+      user.tokenVersion += 1;
+      await this.userRepository.save(user);
 
       // Get current roles
       const userRoles = await this.userRoleRepository.find({
@@ -410,6 +456,8 @@ export class AuthService {
           email: user.email,
           roles,
           permissions,
+          isSystemAdmin: user.isSystemAdmin || false,
+          tenantId: user.tenantId,
           facilityId,
           facility: facility ? {
             id: facility.id,
@@ -455,7 +503,7 @@ export class AuthService {
     // Check password history
     await this.checkPasswordHistory(userId, dto.newPassword);
 
-    const saltRounds = this.configService.get<number>('BCRYPT_ROUNDS', 12);
+    const saltRounds = parseInt(this.configService.get('BCRYPT_ROUNDS', '12'), 10) || 12;
     const newHash = await bcrypt.hash(dto.newPassword, saltRounds);
 
     // Save old password to history
@@ -651,7 +699,71 @@ export class AuthService {
     permissions = [...new Set([...permissions, ...directPermissions.map((up) => up.permission.code)])];
 
     const superAdmin = isSuperAdmin(roles);
-    const accessibleModules = getAccessibleModules(permissions, superAdmin);
+
+    // Resolve tenant's enabled modules to filter navigation by facility type
+    let tenantEnabledModules: string[] | null = null;
+    let facilityMode: string | null = null;
+    let businessType: string | null = null;
+    if (user.tenantId) {
+      // Priority 1: Check system_settings for enabled_modules (most reliable)
+      const enabledModulesSetting = await this.userRoleRepository.manager.query(
+        `SELECT value FROM system_settings WHERE tenant_id = $1 AND key = 'enabled_modules' LIMIT 1`,
+        [user.tenantId],
+      );
+      if (enabledModulesSetting?.length > 0) {
+        const val = enabledModulesSetting[0].value;
+        const parsed = typeof val === 'string' ? JSON.parse(val) : val;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          tenantEnabledModules = parsed;
+        }
+      }
+
+      // Priority 2: Check tenant.settings.enabledModules (JSONB column)
+      if (!tenantEnabledModules) {
+        const tenant = await this.tenantRepository.findOne({ where: { id: user.tenantId } });
+        if (tenant?.settings?.enabledModules && Array.isArray(tenant.settings.enabledModules)) {
+          tenantEnabledModules = tenant.settings.enabledModules;
+        }
+      }
+
+      // Priority 3: Derive from facility_mode preset
+      if (!tenantEnabledModules) {
+        const facilityModeSetting = await this.userRoleRepository.manager.query(
+          `SELECT value FROM system_settings WHERE tenant_id = $1 AND key = 'facility_mode' LIMIT 1`,
+          [user.tenantId],
+        );
+        if (facilityModeSetting?.length > 0) {
+          const mode = typeof facilityModeSetting[0].value === 'string'
+            ? facilityModeSetting[0].value.replace(/"/g, '')
+            : facilityModeSetting[0].value;
+          facilityMode = mode;
+          const preset = getPreset(mode as FacilityMode);
+          if (preset) {
+            tenantEnabledModules = preset.enabledModules;
+            businessType = preset.businessType;
+          }
+        }
+      }
+    }
+
+    // If we have enabled modules but didn't set facilityMode yet, look it up
+    if (!facilityMode && user.tenantId) {
+      const fmSetting = await this.userRoleRepository.manager.query(
+        `SELECT value FROM system_settings WHERE tenant_id = $1 AND key = 'facility_mode' LIMIT 1`,
+        [user.tenantId],
+      );
+      if (fmSetting?.length > 0) {
+        facilityMode = typeof fmSetting[0].value === 'string'
+          ? fmSetting[0].value.replace(/"/g, '')
+          : fmSetting[0].value;
+        if (!businessType) {
+          const preset = getPreset(facilityMode as FacilityMode);
+          if (preset) businessType = preset.businessType;
+        }
+      }
+    }
+
+    const accessibleModules = getAccessibleModules(permissions, superAdmin, tenantEnabledModules);
 
     return {
       id: user.id,
@@ -662,6 +774,8 @@ export class AuthService {
       roles,
       permissions,
       accessibleModules,
+      facilityMode,
+      businessType,
       facilityId: userRoles.find(ur => ur.facilityId)?.facilityId || user.facilityId,
       tenantId: user.tenantId,
     };
@@ -675,12 +789,15 @@ export class AuthService {
       throw new BadRequestException('MFA is already enabled');
     }
 
-    const speakeasy = require('speakeasy');
     const issuer = this.configService.get<string>('MFA_ISSUER', 'Glide-HIMS');
-    const secret = speakeasy.generateSecret({
-      name: `${issuer}:${user.username}`,
+    const secret = new OTPAuth.Secret({ size: 32 });
+    const totp = new OTPAuth.TOTP({
       issuer,
-      length: 32,
+      label: `${issuer}:${user.username}`,
+      secret,
+      algorithm: 'SHA1',
+      digits: 6,
+      period: 30,
     });
 
     // Store the secret temporarily (not yet enabled)
@@ -689,7 +806,7 @@ export class AuthService {
 
     return {
       secret: secret.base32,
-      otpauthUrl: secret.otpauth_url,
+      otpauthUrl: totp.toString(),
     };
   }
 
@@ -701,13 +818,14 @@ export class AuthService {
       throw new BadRequestException('MFA setup not initiated. Call /auth/mfa/setup first.');
     }
 
-    const speakeasy = require('speakeasy');
-    const isValid = speakeasy.totp.verify({
-      secret: user.mfaSecret,
-      encoding: 'base32',
-      token: code,
-      window: 1,
+    const totp = new OTPAuth.TOTP({
+      secret: OTPAuth.Secret.fromBase32(user.mfaSecret),
+      algorithm: 'SHA1',
+      digits: 6,
+      period: 30,
     });
+    const delta = totp.validate({ token: code, window: 1 });
+    const isValid = delta !== null;
 
     if (!isValid) {
       throw new BadRequestException('Invalid MFA code. Please try again.');
@@ -746,10 +864,16 @@ export class AuthService {
     targetUserId: string,
     newPassword: string | undefined,
     adminUserId: string,
+    callerTenantId?: string,
   ): Promise<{ temporaryPassword: string }> {
     const user = await this.userRepository.findOne({ where: { id: targetUserId } });
     if (!user) {
       throw new NotFoundException('User not found');
+    }
+
+    // Cross-tenant isolation — non-system-admins can only reset within their tenant
+    if (callerTenantId && user.tenantId !== callerTenantId) {
+      throw new ForbiddenException('Cannot reset password for users in another organization');
     }
 
     // Generate random password if not provided
@@ -758,7 +882,7 @@ export class AuthService {
     // Validate password policy
     await this.validatePasswordPolicy(temporaryPassword, targetUserId);
 
-    const saltRounds = this.configService.get<number>('BCRYPT_ROUNDS', 12);
+    const saltRounds = parseInt(this.configService.get('BCRYPT_ROUNDS', '12'), 10) || 12;
     const hashedPassword = await bcrypt.hash(temporaryPassword, saltRounds);
 
     user.passwordHash = hashedPassword;
@@ -835,6 +959,17 @@ export class AuthService {
       order: { loginAt: 'DESC' },
       take: limit,
     });
+  }
+
+  /**
+   * Invalidate all outstanding tokens for a user by incrementing tokenVersion.
+   * Called on logout and forced session termination.
+   */
+  async invalidateUserTokens(userId: string): Promise<void> {
+    await this.userRepository.increment({ id: userId }, 'tokenVersion', 1);
+    // Bust the JWT validation cache so revocation takes effect immediately
+    await this.cacheService.del(`jwt:user:${userId}`);
+    this.logger.log(`Invalidated tokens for user ${userId}`);
   }
 
   private async recordLoginHistory(

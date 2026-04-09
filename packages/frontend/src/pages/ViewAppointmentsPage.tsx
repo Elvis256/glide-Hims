@@ -213,6 +213,7 @@ export default function ViewAppointmentsPage() {
                   <div>{getStatusBadge(apt.status)}</div>
                   <div className="flex items-center gap-1">
                     <button
+                      onClick={() => navigate(`/appointments/manage?id=${apt.id}`)}
                       className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
                       title="View"
                     >

@@ -5,7 +5,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   ManyToOne,
-  JoinColumn,
+  JoinColumn, Index,
 } from 'typeorm';
 import { SurgeryCase } from './surgery-case.entity';
 import { Item } from './inventory.entity';
@@ -28,6 +28,10 @@ export enum ConsumableCategory {
 export class SurgeryConsumable {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  @Column({ type: 'uuid', nullable: true, name: 'tenant_id' })
+  @Index()
+  tenantId?: string;
 
   @Column({ type: 'uuid', name: 'surgery_case_id' })
   surgeryCaseId: string;

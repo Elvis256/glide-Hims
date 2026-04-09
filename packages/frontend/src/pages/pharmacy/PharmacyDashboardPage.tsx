@@ -21,6 +21,7 @@ import AccessDenied from '../../components/AccessDenied';
 import { pharmacyService } from '../../services/pharmacy';
 import type { DashboardKPIs } from '../../services/pharmacy';
 import { formatCurrency } from '../../lib/currency';
+import { useBusinessConfig } from '../../hooks/useBusinessConfig';
 
 function formatWaitTime(minutes: number): string {
   if (minutes < 60) return `${minutes}m`;
@@ -90,6 +91,15 @@ function QuickAction({
 
 export default function PharmacyDashboardPage() {
   const { hasPermission } = usePermissions();
+  const bizConfig = useBusinessConfig();
+
+  const hospitalName = (() => {
+    try {
+      const stored = localStorage.getItem('glide_hospital_settings');
+      if (stored) return JSON.parse(stored).name || '';
+    } catch { /* use default */ }
+    return '';
+  })();
 
   const { data: kpis, isLoading, error, dataUpdatedAt } = useQuery<DashboardKPIs>({
     queryKey: ['pharmacy-dashboard-kpis'],
@@ -110,8 +120,10 @@ export default function PharmacyDashboardPage() {
         <div className="flex items-center gap-3">
           <Activity className="w-7 h-7 text-blue-600" />
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Pharmacy Dashboard</h1>
-            <p className="text-sm text-gray-500">Real-time operational overview</p>
+            <h1 className="text-2xl font-bold text-gray-900">
+              {hospitalName ? `${hospitalName}` : 'Pharmacy Dashboard'}
+            </h1>
+            <p className="text-sm text-gray-500">{bizConfig.tagline} — Real-time operational overview</p>
           </div>
         </div>
         {lastUpdated && (
