@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { DoctorSchedule } from './entities/doctor-schedule.entity';
@@ -14,22 +14,30 @@ export class SchedulesService {
   ) {}
 
   async create(dto: CreateDoctorScheduleDto, facilityId: string, tenantId?: string): Promise<DoctorSchedule> {
-    // Check for overlapping schedule
-    const findWhere: any = {
-      doctorId: dto.doctorId,
-      dayOfWeek: dto.dayOfWeek,
-      facilityId,
-      isActive: true,
-    };
-    if (tenantId) findWhere.tenantId = tenantId;
+    // Validate startTime < endTime
+    if (dto.startTime >= dto.endTime) {
+      throw new BadRequestException('Start time must be before end time');
+    }
 
-    const existing = await this.scheduleRepository.findOne({
-      where: findWhere,
-    });
+    // Check for overlapping schedule (same doctor, same day, overlapping time range)
+    const qb = this.scheduleRepository
+      .createQueryBuilder('schedule')
+      .where('schedule.doctorId = :doctorId', { doctorId: dto.doctorId })
+      .andWhere('schedule.dayOfWeek = :dayOfWeek', { dayOfWeek: dto.dayOfWeek })
+      .andWhere('schedule.facilityId = :facilityId', { facilityId })
+      .andWhere('schedule.isActive = :isActive', { isActive: true })
+      .andWhere('schedule.startTime < :endTime', { endTime: dto.endTime })
+      .andWhere('schedule.endTime > :startTime', { startTime: dto.startTime });
+
+    if (tenantId) {
+      qb.andWhere('schedule.tenant_id = :tenantId', { tenantId });
+    }
+
+    const existing = await qb.getOne();
 
     if (existing) {
       throw new ConflictException(
-        `Doctor already has a schedule for ${this.getDayName(dto.dayOfWeek)}. Please edit the existing schedule.`,
+        `Doctor already has an overlapping schedule on ${this.getDayName(dto.dayOfWeek)} (${existing.startTime}–${existing.endTime}). Please edit the existing schedule or choose a non-overlapping time.`,
       );
     }
 

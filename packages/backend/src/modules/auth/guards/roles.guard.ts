@@ -32,6 +32,11 @@ export class RolesGuard implements CanActivate {
       return true;
     }
 
+    // System admins pass role guard — permissions guard enforces tiered access
+    if (user.isSystemAdmin) {
+      return true;
+    }
+
     return requiredRoles.some((role) => user.roles.includes(role));
   }
 

@@ -3,10 +3,15 @@ import { BaseEntity } from './base.entity';
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto';
 
 // Encrypt/decrypt MFA secrets at rest so a DB breach doesn't expose TOTP seeds.
-const MFA_ENC_KEY = process.env.MFA_ENCRYPTION_KEY || process.env.JWT_SECRET || 'fallback-dev-key-change-in-prod!!';
-const MFA_KEY = scryptSync(MFA_ENC_KEY, 'glide-hims-mfa-salt', 32);
+const MFA_ENC_KEY = process.env.MFA_ENCRYPTION_KEY;
+if (!MFA_ENC_KEY) {
+  console.warn('WARNING: MFA_ENCRYPTION_KEY not set — MFA features will be unavailable until configured');
+}
+const MFA_SALT = process.env.MFA_SALT || randomBytes(16).toString('hex');
+const MFA_KEY = MFA_ENC_KEY ? scryptSync(MFA_ENC_KEY, MFA_SALT, 32) : null;
 
 function encryptMfaSecret(plain: string): string {
+  if (!MFA_KEY) throw new Error('MFA_ENCRYPTION_KEY must be configured to enable MFA');
   const iv = randomBytes(16);
   const cipher = createCipheriv('aes-256-cbc', MFA_KEY, iv);
   const encrypted = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
@@ -14,6 +19,7 @@ function encryptMfaSecret(plain: string): string {
 }
 
 function decryptMfaSecret(data: string): string {
+  if (!MFA_KEY) throw new Error('MFA_ENCRYPTION_KEY must be configured to enable MFA');
   const [ivHex, encHex] = data.split(':');
   if (!ivHex || !encHex) return data; // plain-text legacy value
   try {

@@ -9,6 +9,7 @@ import sys
 import base64
 import json
 import logging
+import functools
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
@@ -17,14 +18,26 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-CORS(app, origins=[
-    'http://localhost:5173',
-    'http://localhost:3000',
-    'http://192.168.178.41:5173',
-    'http://192.168.1.9:4173',
-    'http://192.168.1.9:5173',
-    '*'  # Allow all origins for local development
-])
+
+# CORS: use env-configured origins, never wildcard in production
+CORS_ORIGINS = os.environ.get('CORS_ORIGINS', 'https://localhost:5173,https://localhost:3000').split(',')
+CORS(app, origins=[o.strip() for o in CORS_ORIGINS if o.strip()])
+
+# API key authentication for all sensitive endpoints
+API_KEY = os.environ.get('FINGERPRINT_API_KEY', '')
+
+def require_api_key(f):
+    """Decorator to require API key authentication on endpoints."""
+    @functools.wraps(f)
+    def decorated(*args, **kwargs):
+        if not API_KEY:
+            logger.error("FINGERPRINT_API_KEY not configured — rejecting request")
+            return jsonify({'success': False, 'error': 'Service not configured: API key missing'}), 503
+        provided_key = request.headers.get('X-API-Key', '')
+        if not provided_key or provided_key != API_KEY:
+            return jsonify({'success': False, 'error': 'Unauthorized: invalid API key'}), 401
+        return f(*args, **kwargs)
+    return decorated
 
 # Try to import SecuGen library
 SECUGEN_AVAILABLE = False
@@ -91,8 +104,9 @@ class MockScanner:
         }
     
     def match(self, template1, template2, security_level=5):
-        """Mock matching - always returns true for same template"""
-        return template1 == template2 or True  # For testing, always match
+        """Mock matching — returns false in mock mode for security"""
+        logger.warning("Mock scanner match called — no real hardware available, rejecting match")
+        return False
 
 
 class SecuGenScanner:
@@ -313,6 +327,7 @@ def device_info():
 
 
 @app.route('/capture', methods=['POST'])
+@require_api_key
 def capture():
     """Capture fingerprint and return template"""
     try:
@@ -328,6 +343,7 @@ def capture():
 
 
 @app.route('/verify', methods=['POST'])
+@require_api_key
 def verify():
     """Verify captured fingerprint against stored template"""
     try:
@@ -367,6 +383,7 @@ def verify():
 
 
 @app.route('/match', methods=['POST'])
+@require_api_key
 def match():
     """Match two templates directly"""
     try:
@@ -393,5 +410,6 @@ if __name__ == '__main__':
     logger.info(f"Starting Fingerprint Service on port {port}")
     logger.info(f"SecuGen SDK: {'Available' if SECUGEN_AVAILABLE else 'Not available (mock mode)'}")
     
-    # For development, use HTTP. For production with HTTPS, use gunicorn with SSL
-    app.run(host='0.0.0.0', port=port, debug=debug)
+    # Bind to localhost only — use a reverse proxy for external access
+    bind_host = os.environ.get('BIND_HOST', '127.0.0.1')
+    app.run(host=bind_host, port=port, debug=debug)

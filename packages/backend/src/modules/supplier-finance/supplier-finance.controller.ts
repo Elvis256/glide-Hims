@@ -5,7 +5,11 @@ import { PaymentVoucherStatus, PaymentMethod } from '../../database/entities/sup
 import { CreditNoteType, CreditNoteStatus } from '../../database/entities/supplier-credit-note.entity';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
-import { ApplyCreditNoteDto } from './dto/supplier-finance.dto';
+import {
+  ApplyCreditNoteDto,
+  CreatePaymentVoucherDto,
+  CreateSupplierCreditNoteDto,
+} from './dto/supplier-finance.dto';
 
 @ApiTags('Supplier Finance')
 @ApiBearerAuth()
@@ -18,7 +22,7 @@ export class SupplierFinanceController {
   @AuthWithPermissions('finance.manage')
   @Post('payments')
   @ApiOperation({ summary: 'Create payment voucher' })
-  async createPaymentVoucher(@Body() data: any, @CurrentUser() user: any, @Request() req: any) {
+  async createPaymentVoucher(@Body() data: CreatePaymentVoucherDto, @CurrentUser() user: any, @Request() req: any) {
     return this.supplierFinanceService.createPaymentVoucher(data, user.id, req.user?.tenantId);
   }
 
@@ -86,7 +90,7 @@ export class SupplierFinanceController {
   @AuthWithPermissions('finance.manage')
   @Post('credit-notes')
   @ApiOperation({ summary: 'Create credit/debit note' })
-  async createCreditNote(@Body() data: any, @CurrentUser() user: any, @Request() req: any) {
+  async createCreditNote(@Body() data: CreateSupplierCreditNoteDto, @CurrentUser() user: any, @Request() req: any) {
     return this.supplierFinanceService.createCreditNote(data, user.id, req.user?.tenantId);
   }
 

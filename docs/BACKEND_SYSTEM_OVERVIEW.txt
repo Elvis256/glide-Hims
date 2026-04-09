@@ -1,0 +1,451 @@
+╔═════════════════════════════════════════════════════════════════════════════════╗
+║                                                                                 ║
+║                     GLIDE-HIMS NESTJS BACKEND SYSTEM                            ║
+║                    Complete Architecture & Flow Analysis                        ║
+║                                                                                 ║
+╚═════════════════════════════════════════════════════════════════════════════════╝
+
+GENERATED DOCUMENTATION FILES
+═══════════════════════════════════════════════════════════════════════════════════
+
+📄 BACKEND_ANALYSIS.md (17KB)
+   → Comprehensive technical analysis of all 8 components
+   → Authentication flow with JWT, MFA, permissions
+   → Request lifecycle and interceptors
+   → Database schema with multi-tenancy
+   → Module structure (60+ modules)
+   → Scheduled tasks (cron jobs)
+   → API routes by category
+   → Standard response envelopes
+
+📄 QUICK_REFERENCE.txt (16KB)
+   → Bootstrap sequence checklist
+   → Guards, interceptors, pipes quick lookup
+   → Database entity relationships
+   → Multi-tenancy isolation layers
+   → Key routes summary
+   → Environment variables
+   → Common decorators
+   → Development commands
+
+═══════════════════════════════════════════════════════════════════════════════════
+
+QUICK ANSWERS TO 8 KEY QUESTIONS
+═══════════════════════════════════════════════════════════════════════════════════
+
+1. APPLICATION BOOTSTRAP (main.ts)
+   ────────────────────────────────────────────────────────────────────────────
+   ✓ Global Middleware: Helmet (security), correlationId (tracing), bodyParser
+   ✓ Global Guards: GlobalJwtAuthGuard (JWT required), ThrottlerGuard (rate limit)
+   ✓ Global Interceptors: SecurityAudit → Tenant → ResponseTransform → AuditLog
+   ✓ Global Pipes: ValidationPipe (DTO validation, whitelist)
+   ✓ Global Filters: GlobalExceptionFilter (standardized errors)
+   ✓ CORS: Enabled for http://localhost:5173
+   ✓ Swagger UI at /api/docs (with Bearer auth)
+   ✓ Listen: Port 3000 (HTTP or HTTPS if certs exist)
+
+
+2. AUTHENTICATION FLOW & GUARDS
+   ────────────────────────────────────────────────────────────────────────────
+   LOGIN (POST /auth/login)
+   ├─ Rate limit (10 req/s, 5 fails = 15 min IP lockout)
+   ├─ Bcrypt password validation
+   ├─ MFA verification (speakeasy TOTP if enabled)
+   ├─ Resolve permissions with inheritance (parentRoleId chain)
+   ├─ Create JWT { sub, username, email, tenantId, roles, facilityId }
+   └─ Sign accessToken (15m) + refreshToken (7d)
+
+   JWT STRATEGY
+   ├─ Extract from "Authorization: Bearer <token>"
+   ├─ Validate signature with JWT_SECRET
+   └─ Return decoded payload to request.user
+
+   GET /auth/me (CURRENT USER)
+   ├─ Returns user + all permissions (inherited + direct)
+   ├─ Returns accessibleModules (for frontend nav)
+   └─ Used by frontend to determine feature visibility
+
+   ROUTE GUARDS
+   ├─ GlobalJwtAuthGuard (JWT required by default)
+   ├─ @Public() (skip auth for login, health, swagger)
+   ├─ @Roles('Admin') (check role membership)
+   ├─ @Permissions('vitals.read') (check permission code)
+   ├─ @FacilityAccess() (validate facility access)
+   ├─ @ResourceOwnership() (validate resource owner)
+   └─ @SkipEmployeeCheck() (bypass employee link requirement)
+
+
+3. MODULE STRUCTURE (60+ MODULES)
+   ────────────────────────────────────────────────────────────────────────────
+   CORE MODULES (Phase 1-10)
+   ├─ AuthModule, UsersModule, TenantsModule, FacilitiesModule
+   ├─ RolesModule (with permission management)
+   ├─ PatientsModule, EncountersModule, VitalsModule
+   ├─ ClinicalNotesModule, PrescriptionsModule
+   ├─ BillingModule, InventoryModule, OrdersModule
+   ├─ IpdModule, LabModule, EmergencyModule, SurgeryModule
+   ├─ MaternityModule, HrModule, FinanceModule
+   ├─ RadiologyModule, InsuranceModule, AnalyticsModule
+
+   ADVANCED MODULES (Phase 11-22)
+   ├─ PharmacyModule, ProcurementModule, SyncModule
+   ├─ DrugManagementModule, ReferralsModule, TreatmentPlansModule
+   ├─ DischargeModule, AppointmentsModule, SchedulesModule
+   ├─ NotificationsModule, ChronicCareModule, IntegrationsModule
+   ├─ PricingEngineModule, BiometricsModule, AdherenceModule
+   ├─ SetupModule, SystemSettingsModule, HealthModule
+   └─ CacheModule, MdmModule, AssetsModule, etc.
+
+   EACH MODULE HAS
+   ├─ Controller (HTTP endpoints)
+   ├─ Service (business logic)
+   ├─ Entities (TypeORM models)
+   ├─ Repositories (@InjectRepository)
+   ├─ DTOs (validation decorators)
+   └─ Guards/Decorators (route protection)
+
+
+4. DATABASE CONFIGURATION
+   ────────────────────────────────────────────────────────────────────────────
+   ORM: TypeORM (NOT auto-sync! Migrations only)
+   Database: PostgreSQL (host: DB_HOST, port: 5432)
+   Connection: Node-Postgres pool
+
+   STRATEGY
+   ├─ synchronize: false (NEVER auto-sync)
+   ├─ migrations: Manual via typeorm CLI
+   ├─ All schema changes via migration files
+   └─ Reversible and tested
+
+   BASE ENTITY (all extend this)
+   ├─ id (UUID PRIMARY KEY)
+   ├─ tenantId (UUID, indexed) ← MULTI-TENANCY KEY
+   ├─ createdAt (auto-set on INSERT)
+   ├─ updatedAt (auto-set on UPDATE)
+   └─ deletedAt (NULL = active) ← SOFT DELETE
+
+   KEY ENTITIES
+   ├─ users (UNIQUE per tenant: email, username)
+   ├─ user_roles (1-to-Many, facility-scoped)
+   ├─ roles (with parentRoleId for inheritance)
+   ├─ permissions (codes: vitals.read, patients.create)
+   ├─ facilities (with wards, departments, beds)
+   ├─ patients (100+ clinical fields)
+   ├─ encounters (OPD/IPD/Emergency/Surgery)
+   ├─ vitals (temperature, HR, BP, RR, O2)
+   ├─ prescriptions (JSON items with drugs)
+   ├─ audit_log (immutable audit trail)
+   └─ (50+ more entities for clinical, financial, HR)
+
+
+5. REQUEST LIFECYCLE & INTERCEPTORS
+   ────────────────────────────────────────────────────────────────────────────
+   PROCESSING PIPELINE (sequential order)
+   1. correlationIdMiddleware    (add X-Request-Id for tracing)
+   2. GlobalJwtAuthGuard         (JWT validation unless @Public())
+   3. Route Guards               (@Roles, @Permissions, @FacilityAccess)
+   4. SecurityAuditInterceptor   (BEFORE handler: log request start)
+   5. TenantInterceptor          (BEFORE handler: extract tenantId)
+   6. ValidationPipe             (DTO transformation + validation)
+   7. CONTROLLER HANDLER         (business logic execution)
+   8. SERVICE LAYER              (TypeORM queries, database)
+   9. ResponseTransformInterceptor (AFTER handler: wrap envelope)
+   10. AuditLogInterceptor       (AFTER handler: log mutations async)
+   11. GlobalExceptionFilter     (catch errors, standardize response)
+
+   INTERCEPTOR RESPONSIBILITIES
+   ├─ SecurityAuditInterceptor: Logs user, action, IP, status, duration
+   ├─ TenantInterceptor: Propagates tenantId from JWT through request
+   ├─ ResponseTransformInterceptor: Wraps { statusCode, data, meta, timestamp }
+   └─ AuditLogInterceptor: Records CREATE/UPDATE/DELETE to audit_log (async)
+
+
+6. MULTI-TENANCY ISOLATION
+   ────────────────────────────────────────────────────────────────────────────
+   6-LAYER DEFENSE-IN-DEPTH
+   Layer 1: JWT contains tenantId
+   Layer 2: GlobalJwtAuthGuard extracts tenantId
+   Layer 3: TenantInterceptor propagates via request.tenantId
+   Layer 4: Database schema (UNIQUE(email, tenant_id), indexes)
+   Layer 5: Service layer MUST filter ALL queries: WHERE tenant_id = :tenantId
+   Layer 6: Future PostgreSQL RLS enforces at DB level
+
+   MULTI-FACILITY WITHIN TENANT
+   ├─ Tenant can have multiple facilities
+   ├─ User roles are facility-scoped:
+   │  └─ Dr. Smith = "Doctor" at Clinic A, "Consultant" at Hospital B
+   ├─ user_roles table: userId + roleId + facilityId (junction)
+   ├─ Frontend sends X-Facility-Id header
+   └─ Services filter by BOTH tenant_id AND facility_id
+
+   SYSTEM ADMIN (MULTI-TENANT)
+   ├─ isSystemAdmin = true
+   ├─ Can log into any tenant (specify tenantId in login)
+   ├─ JWT effective tenantId = requested tenantId
+   └─ Can manage all tenant users/roles/facilities
+
+
+7. SCHEDULED TASKS (CRON JOBS)
+   ────────────────────────────────────────────────────────────────────────────
+   SCHEDULER: ScheduleModule.forRoot() + @Cron() decorators
+
+   1. CHECK-MEDICATION-EXPIRY
+      Time: 0 7 * * * (7:00 AM UTC daily)
+      Action: Find batches expiring within 30 days
+      Create ExpiryAlert (ACTIVE if ≤7 days, NEAR_EXPIRY if >7 days)
+
+   2. CLEANUP-OLD-SYNC-RECORDS
+      Time: 0 2 * * 0 (2:00 AM UTC Sundays)
+      Action: DELETE sync_conflicts WHERE status='resolved' AND old (30+ days)
+
+   3. DAILY-HEALTH-SUMMARY
+      Time: 0 6 * * * (6:00 AM UTC daily)
+      Action: Log appointment count + active alerts (system health)
+
+   ERROR HANDLING
+   ├─ All jobs wrapped in try-catch
+   ├─ Errors logged but don't crash app
+   └─ Safe for production
+
+
+8. KEY API ROUTES
+   ────────────────────────────────────────────────────────────────────────────
+   AUTHENTICATION (public endpoints)
+   ├─ POST /auth/login (rate-limited)
+   ├─ POST /auth/refresh
+   ├─ GET /auth/me (user + permissions + modules)
+   ├─ GET /auth/profile (user profile)
+   ├─ POST /auth/change-password
+   ├─ POST /auth/mfa/setup, /mfa/verify, /mfa/disable
+
+   USERS & ACCESS CONTROL
+   ├─ POST/GET/PATCH/DELETE /users
+   ├─ POST/DELETE /users/:id/roles (facility-scoped)
+   ├─ GET/POST/DELETE /users/:id/permissions
+   ├─ POST /users/:id/{activate,deactivate}
+
+   CLINICAL (50+ routes)
+   ├─ Patients: POST/GET/PATCH/DELETE, documents, encounters
+   ├─ Encounters: Create/list/update/transfer/discharge
+   ├─ Vitals: Record, history, update
+   ├─ Prescriptions: Create/sign/dispense
+   ├─ Lab: Orders, results
+   ├─ Radiology: Orders, reports
+   ├─ Billing: Invoices, payments
+   ├─ Pharmacy: Inventory, dispense, expiry alerts
+
+   HEALTH (public endpoints)
+   ├─ GET / (API root)
+   ├─ GET /health (health check)
+   ├─ GET /api/docs (Swagger UI)
+
+═══════════════════════════════════════════════════════════════════════════════════
+
+REQUEST FLOW: CLIENT → NGINX → BACKEND → DATABASE → RESPONSE
+═══════════════════════════════════════════════════════════════════════════════════
+
+CLIENT (Browser/Mobile App)
+    ↓
+    POST /api/v1/patients
+    Authorization: Bearer <JWT_TOKEN>
+    X-Facility-Id: <FACILITY_UUID>
+    │
+    ▼
+NGINX REVERSE PROXY (Port 443)
+├─ HTTP 80 → HTTPS 301 redirect
+├─ SSL/TLS termination (TLSv1.2+, AES-256)
+├─ Security headers: HSTS, X-Frame-Options, CSP
+├─ Rate limiting: 10 req/s, burst 20
+├─ Gzip compression (level 6)
+└─ Forward to backend:3000 with X-Forwarded-* headers
+    │
+    ▼
+NestJS BACKEND (Port 3000)
+├─ 1. correlationIdMiddleware → Add X-Request-Id
+├─ 2. GlobalJwtAuthGuard → Validate JWT signature
+├─ 3. Route Guards → Check @Roles, @Permissions
+├─ 4. SecurityAuditInterceptor (BEFORE) → Log request
+├─ 5. TenantInterceptor → Extract tenantId from JWT
+├─ 6. ValidationPipe → Validate DTO
+├─ 7. PatientsController.create() → Business logic
+├─ 8. PatientsService.create() → TypeORM queries
+├─ 9. ResponseTransformInterceptor → Wrap envelope
+├─ 10. AuditLogInterceptor → Log mutation async
+└─ 11. GlobalExceptionFilter → Handle errors
+    │
+    ▼
+PostgreSQL DATABASE (Port 5432)
+├─ INSERT INTO patients (...)
+├─ Auto-populate tenantId via TypeORM Subscriber
+├─ Set createdAt = NOW()
+└─ Return generated UUID
+    │
+    ▼
+HTTP 201 RESPONSE
+{
+  "statusCode": 201,
+  "data": {
+    "id": "patient-uuid",
+    "name": "John Doe",
+    "email": "john@example.com",
+    "createdAt": "2025-03-16T12:34:56.789Z"
+  },
+  "timestamp": "2025-03-16T12:34:56.789Z"
+}
+    │
+    ▼
+NGINX (compress, send)
+    │
+    ▼
+CLIENT RECEIVES RESPONSE
+
+═══════════════════════════════════════════════════════════════════════════════════
+
+STANDARD RESPONSE ENVELOPE
+═══════════════════════════════════════════════════════════════════════════════════
+
+Success (200/201):
+{
+  "statusCode": 200,
+  "data": { /* actual payload */ },
+  "timestamp": "2025-03-16T12:34:56.789Z"
+}
+
+Paginated (200):
+{
+  "statusCode": 200,
+  "data": [ /* array */ ],
+  "meta": {
+    "total": 150,
+    "page": 1,
+    "limit": 20,
+    "totalPages": 8,
+    "hasMore": true
+  },
+  "timestamp": "..."
+}
+
+Validation Error (400):
+{
+  "statusCode": 400,
+  "error": "Bad Request",
+  "message": "Validation failed",
+  "details": [
+    { "field": "temperature", "errors": ["must not be less than 35"] }
+  ],
+  "path": "/api/v1/vitals",
+  "timestamp": "..."
+}
+
+Auth Error (401):
+{
+  "statusCode": 401,
+  "error": "Unauthorized",
+  "message": "Authentication required"
+}
+
+Permission Error (403):
+{
+  "statusCode": 403,
+  "error": "Forbidden",
+  "message": "Insufficient permissions"
+}
+
+Server Error (500):
+{
+  "statusCode": 500,
+  "error": "Internal Server Error",
+  "message": "An unexpected error occurred"
+}
+[Full stack trace logged server-side ONLY - not sent to client]
+
+═══════════════════════════════════════════════════════════════════════════════════
+
+KEY SECURITY FEATURES
+═══════════════════════════════════════════════════════════════════════════════════
+
+✓ JWT Authentication with HS256 (15m access, 7d refresh)
+✓ MFA Support (TOTP via speakeasy, 30-60s window)
+✓ Brute Force Protection (5 fails = 15 min IP lockout)
+✓ HTTPS/SSL/TLS 1.2+ at Nginx layer
+✓ HSTS Headers (force HTTPS)
+✓ CORS Whitelist (http://localhost:5173)
+✓ Rate Limiting (10 req/s, burst 20 at Nginx)
+✓ Password Hashing (bcrypt with salt)
+✓ Comprehensive Audit Logging (sensitive ops)
+✓ Soft Delete Pattern (data retention for audit)
+✓ Multi-Tenancy Isolation (6-layer defense)
+✓ Input Validation (class-validator, whitelist)
+✓ Error Handling (global filter, no info leakage)
+✓ Distributed Tracing (X-Request-Id)
+
+═══════════════════════════════════════════════════════════════════════════════════
+
+ENVIRONMENT VARIABLES (REQUIRED)
+═══════════════════════════════════════════════════════════════════════════════════
+
+DATABASE
+├─ DB_HOST (PostgreSQL hostname)
+├─ DB_PORT (default 5432)
+├─ DB_USERNAME
+├─ DB_PASSWORD
+└─ DB_NAME
+
+JWT
+├─ JWT_SECRET (32+ chars in production!)
+├─ JWT_REFRESH_SECRET
+├─ JWT_EXPIRES_IN (default 15m)
+└─ JWT_REFRESH_EXPIRES_IN (default 7d)
+
+APP
+├─ NODE_ENV (development/production)
+├─ CORS_ORIGINS (default http://localhost:5173)
+├─ API_PREFIX (default api/v1)
+├─ PORT (default 3000)
+└─ MFA_ISSUER (default Glide-HIMS)
+
+═══════════════════════════════════════════════════════════════════════════════════
+
+KEY FILES TO UNDERSTAND
+═══════════════════════════════════════════════════════════════════════════════════
+
+src/main.ts                              ← Bootstrap + middleware setup
+src/app.module.ts                        ← Module imports + TypeORM config
+src/modules/auth/auth.controller.ts      ← Login, refresh, me endpoints
+src/modules/auth/auth.service.ts         ← Authentication logic + JWT
+src/modules/auth/strategies/jwt.strategy.ts ← Passport JWT strategy
+src/modules/auth/guards/global-jwt.guard.ts ← Global JWT validation
+src/common/interceptors/                 ← Request/response processing
+src/common/filters/http-exception.filter.ts ← Global error handling
+src/database/entities/base.entity.ts     ← Multi-tenancy + soft delete base
+src/database/entities/user.entity.ts     ← User model with auth fields
+src/database/migrations/                 ← All database schema changes
+
+═══════════════════════════════════════════════════════════════════════════════════
+
+SUMMARY
+═══════════════════════════════════════════════════════════════════════════════════
+
+✓ Multi-tenant HIMS with 60+ clinical/business modules
+✓ JWT authentication with role inheritance + permission grouping
+✓ MFA support (TOTP 2FA)
+✓ Multi-facility management within single tenant
+✓ Brute-force protection + rate limiting
+✓ Comprehensive audit logging for compliance
+✓ TypeORM + PostgreSQL with migrations-only approach
+✓ Nginx reverse proxy with SSL/TLS, rate limiting, gzip
+✓ Scheduled tasks (cron jobs for medication expiry, cleanup)
+✓ Standardized API responses with error handling
+✓ Global interceptors for request/response processing
+✓ Defense-in-depth multi-tenancy isolation (6 layers)
+✓ Soft delete pattern for audit trail retention
+✓ Distributed tracing via X-Request-Id
+
+═══════════════════════════════════════════════════════════════════════════════════
+
+For detailed information, see:
+├─ BACKEND_ANALYSIS.md (comprehensive technical docs)
+├─ QUICK_REFERENCE.txt (cheat sheet for developers)
+└─ This file (overview)
+
+═══════════════════════════════════════════════════════════════════════════════════

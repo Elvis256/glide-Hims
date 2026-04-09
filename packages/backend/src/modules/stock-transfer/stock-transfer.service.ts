@@ -219,10 +219,78 @@ export class StockTransferService {
       );
     }
 
-    transfer.status = TransferStatus.IN_TRANSIT;
-    transfer.shippedAt = new Date();
+    return this.dataSource.transaction(async (manager) => {
+      // Deduct stock from source facility at ship time (reserve / remove from available)
+      for (const transferItem of transfer.items) {
+        const quantity = transferItem.approvedQuantity ?? transferItem.requestedQuantity;
+        if (quantity <= 0) continue;
 
-    return this.transferRepository.save(transfer);
+        // Update batch stock (source)
+        const sourceBatch = await manager.findOne(BatchStockBalance, {
+          where: {
+            itemId: transferItem.itemId,
+            facilityId: transfer.fromFacilityId,
+            batchNumber: transferItem.batchNumber,
+            ...(tenantId ? { tenantId } : {}),
+          },
+        });
+        if (sourceBatch) {
+          if (Number(sourceBatch.quantity) < quantity) {
+            throw new BadRequestException(
+              `Insufficient batch stock for item ${transferItem.itemId} batch ${transferItem.batchNumber}. Available: ${sourceBatch.quantity}, Required: ${quantity}`,
+            );
+          }
+          sourceBatch.quantity = Number(sourceBatch.quantity) - quantity;
+          await manager.save(BatchStockBalance, sourceBatch);
+        }
+
+        // Update stock balance (source) with pessimistic lock
+        const fromBalance = await manager.findOne(StockBalance, {
+          where: {
+            itemId: transferItem.itemId,
+            facilityId: transfer.fromFacilityId,
+            ...(tenantId ? { tenantId } : {}),
+          },
+          lock: { mode: 'pessimistic_write' },
+        });
+
+        if (fromBalance) {
+          if (Number(fromBalance.availableQuantity) < quantity) {
+            throw new BadRequestException(
+              `Insufficient available stock for item ${transferItem.itemId}. Available: ${fromBalance.availableQuantity}, Required: ${quantity}`,
+            );
+          }
+          const newTotal = Number(fromBalance.totalQuantity) - quantity;
+          fromBalance.totalQuantity = newTotal;
+          fromBalance.availableQuantity = newTotal - Number(fromBalance.reservedQuantity);
+          fromBalance.lastMovementAt = new Date();
+          await manager.save(StockBalance, fromBalance);
+
+          // Create stock ledger entry (transfer_out at ship time)
+          const ledgerEntry = manager.create(StockLedger, {
+            itemId: transferItem.itemId,
+            facilityId: transfer.fromFacilityId,
+            quantity: -quantity,
+            balanceAfter: newTotal,
+            movementType: MovementType.TRANSFER_OUT,
+            batchNumber: transferItem.batchNumber,
+            expiryDate: transferItem.expiryDate,
+            unitCost: transferItem.unitCost,
+            referenceType: 'stock_transfer',
+            referenceId: transfer.id,
+            notes: `Transfer ${transfer.transferNumber} shipped to ${transfer.toFacilityId}`,
+            createdById: userId,
+            ...(tenantId ? { tenantId } : {}),
+          });
+          await manager.save(StockLedger, ledgerEntry);
+        }
+      }
+
+      transfer.status = TransferStatus.IN_TRANSIT;
+      transfer.shippedAt = new Date();
+
+      return manager.save(StockTransfer, transfer);
+    });
   }
 
   // ============ RECEIVE ============
@@ -258,65 +326,12 @@ export class StockTransferService {
 
       await manager.save(StockTransferItem, transfer.items);
 
-      // Process each item: update batch stock balances, stock balances, and ledger
+      // Process each item: add to destination facility stock
+      // Source deduction already happened at ship time
       for (const transferItem of transfer.items) {
         if (transferItem.receivedQuantity <= 0) continue;
 
         const quantity = transferItem.receivedQuantity;
-
-        // === DEDUCT from source facility ===
-
-        // Update batch_stock_balances (source)
-        const sourceBatch = await manager.findOne(BatchStockBalance, {
-          where: {
-            itemId: transferItem.itemId,
-            facilityId: transfer.fromFacilityId,
-            batchNumber: transferItem.batchNumber,
-            ...(tenantId ? { tenantId } : {}),
-          },
-        });
-        if (sourceBatch) {
-          sourceBatch.quantity = Number(sourceBatch.quantity) - quantity;
-          await manager.save(BatchStockBalance, sourceBatch);
-        }
-
-        // Update stock_balances (source)
-        const fromBalance = await manager.findOne(StockBalance, {
-          where: {
-            itemId: transferItem.itemId,
-            facilityId: transfer.fromFacilityId,
-            ...(tenantId ? { tenantId } : {}),
-          },
-          lock: { mode: 'pessimistic_write' },
-        });
-
-        const fromPreviousTotal = fromBalance?.totalQuantity || 0;
-        const fromNewTotal = fromPreviousTotal - quantity;
-
-        if (fromBalance) {
-          fromBalance.totalQuantity = fromNewTotal;
-          fromBalance.availableQuantity = fromNewTotal - fromBalance.reservedQuantity;
-          fromBalance.lastMovementAt = new Date();
-          await manager.save(StockBalance, fromBalance);
-        }
-
-        // Create stock_ledger entry (transfer_out)
-        const fromLedger = manager.create(StockLedger, {
-          itemId: transferItem.itemId,
-          facilityId: transfer.fromFacilityId,
-          quantity: -quantity,
-          balanceAfter: fromNewTotal,
-          movementType: MovementType.TRANSFER_OUT,
-          batchNumber: transferItem.batchNumber,
-          expiryDate: transferItem.expiryDate,
-          unitCost: transferItem.unitCost,
-          referenceType: 'stock_transfer',
-          referenceId: transfer.id,
-          notes: `Transfer ${transfer.transferNumber} to ${transfer.toFacilityId}`,
-          createdById: userId,
-          ...(tenantId ? { tenantId } : {}),
-        });
-        await manager.save(StockLedger, fromLedger);
 
         // === ADD to destination facility ===
 
@@ -391,6 +406,28 @@ export class StockTransferService {
           ...(tenantId ? { tenantId } : {}),
         });
         await manager.save(StockLedger, toLedger);
+
+        // Handle discrepancy: if received < shipped, return difference to source
+        const shippedQuantity = transferItem.approvedQuantity ?? transferItem.requestedQuantity;
+        const discrepancy = shippedQuantity - quantity;
+        if (discrepancy > 0) {
+          // Return undelivered quantity back to source
+          const fromBalance = await manager.findOne(StockBalance, {
+            where: {
+              itemId: transferItem.itemId,
+              facilityId: transfer.fromFacilityId,
+              ...(tenantId ? { tenantId } : {}),
+            },
+            lock: { mode: 'pessimistic_write' },
+          });
+
+          if (fromBalance) {
+            fromBalance.totalQuantity = Number(fromBalance.totalQuantity) + discrepancy;
+            fromBalance.availableQuantity = Number(fromBalance.availableQuantity) + discrepancy;
+            fromBalance.lastMovementAt = new Date();
+            await manager.save(StockBalance, fromBalance);
+          }
+        }
       }
 
       // Update transfer status
@@ -420,11 +457,70 @@ export class StockTransferService {
 
     if (
       transfer.status !== TransferStatus.REQUESTED &&
-      transfer.status !== TransferStatus.APPROVED
+      transfer.status !== TransferStatus.APPROVED &&
+      transfer.status !== TransferStatus.IN_TRANSIT
     ) {
       throw new BadRequestException(
-        `Cannot cancel transfer in "${transfer.status}" status. Only requested or approved transfers can be cancelled.`,
+        `Cannot cancel transfer in "${transfer.status}" status. Only requested, approved, or in-transit transfers can be cancelled.`,
       );
+    }
+
+    // If in-transit, restore stock to source since it was deducted at ship time
+    if (transfer.status === TransferStatus.IN_TRANSIT) {
+      await this.dataSource.transaction(async (manager) => {
+        for (const transferItem of transfer.items) {
+          const quantity = transferItem.approvedQuantity ?? transferItem.requestedQuantity;
+          if (quantity <= 0) continue;
+
+          // Restore batch stock
+          const sourceBatch = await manager.findOne(BatchStockBalance, {
+            where: {
+              itemId: transferItem.itemId,
+              facilityId: transfer.fromFacilityId,
+              batchNumber: transferItem.batchNumber,
+              ...(tenantId ? { tenantId } : {}),
+            },
+          });
+          if (sourceBatch) {
+            sourceBatch.quantity = Number(sourceBatch.quantity) + quantity;
+            await manager.save(BatchStockBalance, sourceBatch);
+          }
+
+          // Restore stock balance
+          const fromBalance = await manager.findOne(StockBalance, {
+            where: {
+              itemId: transferItem.itemId,
+              facilityId: transfer.fromFacilityId,
+              ...(tenantId ? { tenantId } : {}),
+            },
+            lock: { mode: 'pessimistic_write' },
+          });
+          if (fromBalance) {
+            fromBalance.totalQuantity = Number(fromBalance.totalQuantity) + quantity;
+            fromBalance.availableQuantity = Number(fromBalance.availableQuantity) + quantity;
+            fromBalance.lastMovementAt = new Date();
+            await manager.save(StockBalance, fromBalance);
+
+            // Reversal ledger entry
+            const reversalLedger = manager.create(StockLedger, {
+              itemId: transferItem.itemId,
+              facilityId: transfer.fromFacilityId,
+              quantity,
+              balanceAfter: Number(fromBalance.totalQuantity),
+              movementType: MovementType.TRANSFER_IN,
+              batchNumber: transferItem.batchNumber,
+              expiryDate: transferItem.expiryDate,
+              unitCost: transferItem.unitCost,
+              referenceType: 'stock_transfer',
+              referenceId: transfer.id,
+              notes: `Transfer ${transfer.transferNumber} cancelled - stock restored`,
+              createdById: userId,
+              ...(tenantId ? { tenantId } : {}),
+            });
+            await manager.save(StockLedger, reversalLedger);
+          }
+        }
+      });
     }
 
     transfer.status = TransferStatus.CANCELLED;

@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 import {
@@ -77,7 +78,7 @@ export default function RadiologyAnalyticsPage() {
       try {
         const { startDate, endDate } = getPeriodDates();
         return await radiologyService.dashboard.getTurnaroundStats(facilityId, startDate, endDate);
-      } catch { return []; }
+      } catch (error) { console.error('Failed to load TAT stats:', error); toast.error('Failed to load turnaround statistics'); return []; }
     },
     staleTime: 30000,
   });

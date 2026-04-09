@@ -8,11 +8,21 @@ Type=simple
 User=avis
 WorkingDirectory=/home/avis/Hospital/glide-Hims/packages/frontend
 Environment=NODE_ENV=production
-ExecStart=/usr/bin/npm run preview -- --host 0.0.0.0 --port 4173
+ExecStart=/usr/bin/npm run preview -- --host 127.0.0.1 --port 4173
 Restart=always
 RestartSec=10
 StandardOutput=append:/var/log/glide-hims-frontend.log
 StandardError=append:/var/log/glide-hims-frontend.error.log
+
+# Security hardening
+ProtectSystem=strict
+ProtectHome=true
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
 
 [Install]
 WantedBy=multi-user.target

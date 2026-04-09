@@ -81,7 +81,7 @@ const UNITS = ['Tablet', 'Capsule', 'Bottle', 'Vial', 'Ampoule', 'Box', 'Pack', 
 
 function loadEntries(): PriceEntry[] {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
-  catch { return []; }
+  catch (error) { console.error('Failed to load price entries from storage:', error); return []; }
 }
 function saveEntries(entries: PriceEntry[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));

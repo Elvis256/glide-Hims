@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, LessThan, MoreThan, IsNull } from 'typeorm';
+import { Repository, Between, LessThan, MoreThan, IsNull, DataSource } from 'typeorm';
 import { FinanceService } from '../finance/finance.service';
 import { InsuranceProvider } from '../../database/entities/insurance-provider.entity';
 import { InsurancePolicy, PolicyStatus } from '../../database/entities/insurance-policy.entity';
@@ -41,6 +41,7 @@ export class InsuranceService {
     private invoiceRepo: Repository<Invoice>,
     @Inject(forwardRef(() => FinanceService))
     private financeService: FinanceService,
+    private dataSource: DataSource,
   ) {}
 
   // ============ DASHBOARD ============
@@ -320,54 +321,58 @@ export class InsuranceService {
     
     const claimNumber = await this.generateClaimNumber(dto.facilityId);
     
-    const claim = this.claimRepo.create({
-      ...dto,
-      claimNumber,
-      providerId: policy.providerId,
-      patientId: policy.patientId,
-      serviceDate: new Date(dto.serviceDate),
-      admissionDate: dto.admissionDate ? new Date(dto.admissionDate) : undefined,
-      dischargeDate: dto.dischargeDate ? new Date(dto.dischargeDate) : undefined,
-      totalClaimed: 0,
-      ...(tenantId ? { tenantId } : {}),
-    });
+    const savedClaim = await this.dataSource.transaction(async (manager) => {
+      const claim = manager.create(InsuranceClaim, {
+        ...dto,
+        claimNumber,
+        providerId: policy.providerId,
+        patientId: policy.patientId,
+        serviceDate: new Date(dto.serviceDate),
+        admissionDate: dto.admissionDate ? new Date(dto.admissionDate) : undefined,
+        dischargeDate: dto.dischargeDate ? new Date(dto.dischargeDate) : undefined,
+        totalClaimed: 0,
+        ...(tenantId ? { tenantId } : {}),
+      });
 
-    const savedClaim = await this.claimRepo.save(claim);
+      const saved = await manager.save(InsuranceClaim, claim);
 
-    // Create claim items if provided
-    if (dto.items?.length) {
-      // Validate claim items
-      const seenItems = new Set<string>();
-      let totalClaimed = 0;
-      for (const itemDto of dto.items) {
-        // Validate no negative amounts
-        if (itemDto.unitPrice < 0) {
-          throw new BadRequestException(`Claim item unit price cannot be negative: ${itemDto.description || itemDto.serviceCode}`);
-        }
-        if ((itemDto.quantity || 1) <= 0) {
-          throw new BadRequestException(`Claim item quantity must be positive: ${itemDto.description || itemDto.serviceCode}`);
-        }
-        // Check for duplicate items (same service code + same service date)
-        const itemKey = `${itemDto.serviceCode}-${itemDto.serviceDate}`;
-        if (seenItems.has(itemKey)) {
-          throw new BadRequestException(`Duplicate claim item detected: ${itemDto.serviceCode} on ${itemDto.serviceDate}. Each service should be claimed once.`);
-        }
-        seenItems.add(itemKey);
+      // Create claim items if provided
+      if (dto.items?.length) {
+        // Validate claim items
+        const seenItems = new Set<string>();
+        let totalClaimed = 0;
+        for (const itemDto of dto.items) {
+          // Validate no negative amounts
+          if (itemDto.unitPrice < 0) {
+            throw new BadRequestException(`Claim item unit price cannot be negative: ${itemDto.description || itemDto.serviceCode}`);
+          }
+          if ((itemDto.quantity || 1) <= 0) {
+            throw new BadRequestException(`Claim item quantity must be positive: ${itemDto.description || itemDto.serviceCode}`);
+          }
+          // Check for duplicate items (same service code + same service date)
+          const itemKey = `${itemDto.serviceCode}-${itemDto.serviceDate}`;
+          if (seenItems.has(itemKey)) {
+            throw new BadRequestException(`Duplicate claim item detected: ${itemDto.serviceCode} on ${itemDto.serviceDate}. Each service should be claimed once.`);
+          }
+          seenItems.add(itemKey);
 
-        const item = this.claimItemRepo.create({
-          claimId: savedClaim.id,
-          ...itemDto,
-          quantity: itemDto.quantity || 1,
-          claimedAmount: (itemDto.quantity || 1) * itemDto.unitPrice,
-          serviceDate: new Date(itemDto.serviceDate),
-          ...(tenantId ? { tenantId } : {}),
-        });
-        await this.claimItemRepo.save(item);
-        totalClaimed += item.claimedAmount;
+          const item = manager.create(ClaimItem, {
+            claimId: saved.id,
+            ...itemDto,
+            quantity: itemDto.quantity || 1,
+            claimedAmount: (itemDto.quantity || 1) * itemDto.unitPrice,
+            serviceDate: new Date(itemDto.serviceDate),
+            ...(tenantId ? { tenantId } : {}),
+          });
+          await manager.save(ClaimItem, item);
+          totalClaimed += item.claimedAmount;
+        }
+        saved.totalClaimed = totalClaimed;
+        await manager.save(InsuranceClaim, saved);
       }
-      savedClaim.totalClaimed = totalClaimed;
-      await this.claimRepo.save(savedClaim);
-    }
+
+      return saved;
+    });
 
     return this.getClaim(savedClaim.id, tenantId);
   }

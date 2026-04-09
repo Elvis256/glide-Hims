@@ -11,6 +11,15 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { PatientFinanceService } from './patient-finance.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import {
+  CreateCreditNoteDto,
+  ApplyCreditNoteToInvoiceDto,
+  CreateDepositDto,
+  ApplyDepositDto,
+  RequestWaiverDto,
+  ApproveWaiverDto,
+  RejectWaiverDto,
+} from './dto/finance.dto';
 
 @ApiTags('Patient Finance')
 @ApiBearerAuth()
@@ -23,7 +32,7 @@ export class PatientFinanceController {
   @Post('credit-notes')
   @AuthWithPermissions('finance.manage')
   @ApiOperation({ summary: 'Create a credit note' })
-  async createCreditNote(@Body() body: any, @Request() req: any) {
+  async createCreditNote(@Body() body: CreateCreditNoteDto, @Request() req: any) {
     return this.patientFinanceService.createCreditNote(
       {
         patientId: body.patientId,
@@ -60,7 +69,7 @@ export class PatientFinanceController {
   @ApiOperation({ summary: 'Apply a credit note to an invoice' })
   async applyCreditNote(
     @Param('id') id: string,
-    @Body() body: any,
+    @Body() body: ApplyCreditNoteToInvoiceDto,
     @Request() req: any,
   ) {
     return this.patientFinanceService.applyCreditNote(
@@ -76,7 +85,7 @@ export class PatientFinanceController {
   @Post('deposits')
   @AuthWithPermissions('finance.manage')
   @ApiOperation({ summary: 'Create a patient deposit' })
-  async createDeposit(@Body() body: any, @Request() req: any) {
+  async createDeposit(@Body() body: CreateDepositDto, @Request() req: any) {
     return this.patientFinanceService.createDeposit(
       {
         patientId: body.patientId,
@@ -109,7 +118,7 @@ export class PatientFinanceController {
   @ApiOperation({ summary: 'Apply a deposit to an invoice' })
   async applyDeposit(
     @Param('id') id: string,
-    @Body() body: any,
+    @Body() body: ApplyDepositDto,
     @Request() req: any,
   ) {
     return this.patientFinanceService.applyDeposit(
@@ -139,7 +148,7 @@ export class PatientFinanceController {
   @Post('waivers')
   @AuthWithPermissions('finance.manage')
   @ApiOperation({ summary: 'Request a waiver' })
-  async requestWaiver(@Body() body: any, @Request() req: any) {
+  async requestWaiver(@Body() body: RequestWaiverDto, @Request() req: any) {
     return this.patientFinanceService.requestWaiver(
       {
         invoiceId: body.invoiceId,
@@ -175,7 +184,7 @@ export class PatientFinanceController {
   @ApiOperation({ summary: 'Approve a waiver' })
   async approveWaiver(
     @Param('id') id: string,
-    @Body() body: any,
+    @Body() body: ApproveWaiverDto,
     @Request() req: any,
   ) {
     return this.patientFinanceService.approveWaiver(
@@ -192,7 +201,7 @@ export class PatientFinanceController {
   @ApiOperation({ summary: 'Reject a waiver' })
   async rejectWaiver(
     @Param('id') id: string,
-    @Body() body: any,
+    @Body() body: RejectWaiverDto,
     @Request() req: any,
   ) {
     return this.patientFinanceService.rejectWaiver(

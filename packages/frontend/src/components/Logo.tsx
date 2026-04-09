@@ -8,6 +8,7 @@ interface LogoProps {
   variant?: 'full' | 'icon' | 'compact';
   className?: string;
   showTagline?: boolean;
+  tagline?: string;
   theme?: 'light' | 'dark';
 }
 
@@ -88,11 +89,13 @@ export default function Logo({
   variant = 'full',
   className = '',
   showTagline = false,
+  tagline,
   theme = 'light',
 }: LogoProps) {
   const sizeConfig = sizes[size];
   const textColor = theme === 'dark' ? 'text-white' : 'text-gray-800';
   const taglineColor = theme === 'dark' ? 'text-gray-300' : 'text-gray-500';
+  const taglineText = tagline || 'Healthcare Information Management';
 
   if (variant === 'icon') {
     return <LogoIcon width={sizeConfig.icon} height={sizeConfig.iconHeight} className={className} />;
@@ -105,7 +108,7 @@ export default function Logo({
         <LogoIcon width={sizeConfig.icon} height={sizeConfig.iconHeight} />
         {showTagline && (
           <span className={`${taglineColor} ${sizeConfig.tagline} mt-1 text-center`}>
-            Healthcare Information Management
+            {taglineText}
           </span>
         )}
       </div>
@@ -122,7 +125,7 @@ export default function Logo({
         </span>
         {showTagline && (
           <span className={`leading-tight ${taglineColor} ${sizeConfig.tagline}`}>
-            Healthcare Information Management
+            {taglineText}
           </span>
         )}
       </div>

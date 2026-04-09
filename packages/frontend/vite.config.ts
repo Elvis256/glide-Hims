@@ -25,14 +25,12 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'https://localhost:3000',
+        target: 'http://localhost:3001',
         changeOrigin: true,
-        secure: false,
       },
       '/socket.io': {
-        target: 'https://localhost:3000',
+        target: 'http://localhost:3001',
         changeOrigin: true,
-        secure: false,
         ws: true,
       },
     },
@@ -43,6 +41,17 @@ export default defineConfig({
     https: {
       key: readFileSync(resolve(certsDir, 'key.pem')),
       cert: readFileSync(resolve(certsDir, 'cert.pem')),
+    },
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+      '/socket.io': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+        ws: true,
+      },
     },
   },
 })

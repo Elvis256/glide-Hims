@@ -17,6 +17,7 @@ import {
 import { Supplier, SupplierStatus } from '../../database/entities/supplier.entity';
 import { GoodsReceiptNote, GRNStatus } from '../../database/entities/goods-receipt.entity';
 import { FinanceService } from '../finance/finance.service';
+import { BudgetService } from '../finance/budget.service';
 
 @Injectable()
 export class SupplierFinanceService {
@@ -35,6 +36,7 @@ export class SupplierFinanceService {
     private grnRepo: Repository<GoodsReceiptNote>,
     @Inject(forwardRef(() => FinanceService))
     private financeService: FinanceService,
+    private budgetService: BudgetService,
   ) {}
 
   // ==================== SUPPLIER PAYMENTS ====================
@@ -169,6 +171,34 @@ export class SupplierFinanceService {
     if (payment.status !== PaymentVoucherStatus.PENDING_APPROVAL) {
       throw new BadRequestException('Only pending vouchers can be approved');
     }
+
+    // Segregation of duties: approver cannot be the same as preparer
+    if (payment.preparedBy === userId) {
+      throw new BadRequestException('Segregation of duties violation: the user who prepared the voucher cannot approve it');
+    }
+
+    // Budget enforcement: check spending limit before approval
+    const amount = Number(payment.grossAmount) || 0;
+    if (amount > 0) {
+      // Use Accounts Payable account for expense budget check
+      const budgetCheck = await this.budgetService.checkBudgetAvailability(
+        payment.facilityId,
+        payment.supplierId, // accountId placeholder — in practice map to expense GL account
+        amount,
+        tenantId,
+      );
+      if (budgetCheck && !budgetCheck.withinBudget) {
+        throw new BadRequestException(
+          `Budget exceeded for "${budgetCheck.budgetName}": ` +
+          `budgeted ${budgetCheck.budgetedAmount.toLocaleString()}, ` +
+          `spent ${budgetCheck.actualSpent.toLocaleString()}, ` +
+          `remaining ${budgetCheck.remainingBudget.toLocaleString()}, ` +
+          `requested ${budgetCheck.pendingAmount.toLocaleString()}. ` +
+          `Payment voucher ${payment.voucherNumber} cannot be approved.`,
+        );
+      }
+    }
+
     payment.status = PaymentVoucherStatus.APPROVED;
     payment.approvedBy = userId;
     payment.approvedAt = new Date();
@@ -182,6 +212,14 @@ export class SupplierFinanceService {
     const payment = await this.getPaymentVoucher(id, tenantId);
     if (payment.status !== PaymentVoucherStatus.APPROVED) {
       throw new BadRequestException('Only approved vouchers can be paid');
+    }
+
+    // Segregation of duties: payer cannot be the same as preparer or approver
+    if (payment.preparedBy === userId) {
+      throw new BadRequestException('Segregation of duties violation: the user who prepared the voucher cannot process the payment');
+    }
+    if (payment.approvedBy === userId) {
+      throw new BadRequestException('Segregation of duties violation: the user who approved the voucher cannot process the payment');
     }
 
     if (bankDetails?.chequeNumber) {

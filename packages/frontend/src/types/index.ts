@@ -6,12 +6,15 @@ export interface User {
   fullName: string;
   phone?: string;
   status: 'active' | 'inactive' | 'locked';
+  isSystemAdmin?: boolean;
   tenantId?: string;
   facilityId?: string;
   facility?: Facility;
   roles?: string[];
   permissions?: string[];
   accessibleModules?: string[];
+  facilityMode?: string;
+  businessType?: string;
   createdAt: string;
   updatedAt: string;
 }

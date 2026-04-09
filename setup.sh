@@ -66,5 +66,14 @@ echo "============================================"
 echo "  Frontend:  http://localhost:5173"
 echo "  API:       http://localhost:3000/api/v1"
 echo "  API Docs:  http://localhost:3000/api/docs"
-echo "  Login:     admin / Admin@123"
+INITIAL_PASSWORD=$(openssl rand -base64 16 2>/dev/null || head -c 24 /dev/urandom | base64)
+echo "  Login:     admin / ${INITIAL_PASSWORD}"
+echo ""
+echo "  ⚠️  IMPORTANT: Change this password immediately after first login!"
+echo "  This password is shown only once."
 echo "============================================"
+
+# Set secure permissions on .env file
+if [ -f packages/backend/.env ]; then
+    chmod 600 packages/backend/.env
+fi

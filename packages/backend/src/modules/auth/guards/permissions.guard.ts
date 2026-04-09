@@ -9,6 +9,7 @@ import { RolePermissionGroup } from '../../../database/entities/role-permission-
 import { GroupPermission } from '../../../database/entities/group-permission.entity';
 import { SYSTEM_ROLES, isSuperAdmin } from '../../../common/constants/roles.constants';
 import { CacheService } from '../../cache/cache.service';
+import { SupportAccessTier } from '../../../database/entities/support-access-grant.entity';
 
 export const PERMISSIONS_KEY = 'permissions';
 export const FACILITY_KEY = 'requireFacility';
@@ -39,9 +40,64 @@ export class PermissionsGuard implements CanActivate {
       return false;
     }
 
+    // Super Admin role (tenant-scoped) — full bypass within their tenant
     if (isSuperAdmin(user.roles)) {
       this.logSuperAdminAccess(request, requiredPermissions);
       return true;
+    }
+
+    // System admin — tiered access based on endpoint category
+    if (user.isSystemAdmin) {
+      const path = request.url || '';
+      // System management endpoints — always allowed for system admins
+      const isSystemEndpoint = /^\/(api\/v1\/)?(tenants|setup|settings|support-access|users\/(system-admins|tenant-admins|system-reset-password))/.test(path);
+      if (isSystemEndpoint) {
+        this.logSuperAdminAccess(request, requiredPermissions);
+        return true;
+      }
+
+      // Clinical/operational endpoints — require active support access grant
+      const tenantId = user.tenantId;
+      if (!tenantId) {
+        this.logAccessDenied(request, requiredPermissions, 'SYSTEM_ADMIN_NO_TENANT_CONTEXT');
+        return false;
+      }
+
+      const tier = await this.getActiveSupportTier(user.id, tenantId);
+      if (tier === SupportAccessTier.NONE) {
+        this.logAccessDenied(request, requiredPermissions, 'SYSTEM_ADMIN_NO_SUPPORT_GRANT');
+        return false;
+      }
+
+      // Tier 1 (metadata): only allow read operations on analytics/dashboard/facilities endpoints
+      if (tier === SupportAccessTier.METADATA) {
+        const isReadOnly = request.method === 'GET';
+        const isMetadataEndpoint = /^\/(api\/v1\/)?(analytics|dashboard|facilities)/.test(path);
+        if (isReadOnly && isMetadataEndpoint) {
+          this.logSuperAdminAccess(request, requiredPermissions);
+          return true;
+        }
+        this.logAccessDenied(request, requiredPermissions, 'SUPPORT_TIER_1_INSUFFICIENT');
+        return false;
+      }
+
+      // Tier 2 (clinical read): only GET on any endpoint
+      if (tier === SupportAccessTier.CLINICAL_READ) {
+        if (request.method === 'GET') {
+          this.logSuperAdminAccess(request, requiredPermissions);
+          return true;
+        }
+        this.logAccessDenied(request, requiredPermissions, 'SUPPORT_TIER_2_READ_ONLY');
+        return false;
+      }
+
+      // Tier 3 (full support): all methods allowed
+      if (tier === SupportAccessTier.FULL_SUPPORT) {
+        this.logSuperAdminAccess(request, requiredPermissions);
+        return true;
+      }
+
+      return false;
     }
 
     const targetFacilityId = this.extractFacilityId(request);
@@ -174,11 +230,15 @@ export class PermissionsGuard implements CanActivate {
   }
 
   private extractFacilityId(request: any): string | null {
-    const headerFacility = request.headers?.['x-facility-id'];
-    if (headerFacility) return headerFacility;
-    if (request.query?.facilityId) return request.query.facilityId;
-    if (request.body?.facilityId) return request.body.facilityId;
-    if (request.params?.facilityId) return request.params.facilityId;
+    // Always prefer JWT-authenticated facility ID
+    if (request.user?.facilityId) return request.user.facilityId;
+    // Only system admins may specify a different facility via header/query/params
+    if (request.user?.isSystemAdmin) {
+      const headerFacility = request.headers?.['x-facility-id'];
+      if (headerFacility) return headerFacility;
+      if (request.query?.facilityId) return request.query.facilityId;
+      if (request.params?.facilityId) return request.params.facilityId;
+    }
     return null;
   }
 
@@ -196,6 +256,18 @@ export class PermissionsGuard implements CanActivate {
       userAgent: request.headers?.['user-agent']?.substring(0, 100),
     };
     this.logger.warn(JSON.stringify(logEntry));
+  }
+
+  private async getActiveSupportTier(userId: string, tenantId: string): Promise<SupportAccessTier> {
+    const result = await this.dataSource.query(
+      `SELECT access_tier FROM support_access_grants
+       WHERE granted_to_id = $1 AND tenant_id = $2
+       AND revoked_at IS NULL AND expires_at > NOW()
+       AND deleted_at IS NULL
+       LIMIT 1`,
+      [userId, tenantId],
+    );
+    return result.length > 0 ? result[0].access_tier : SupportAccessTier.NONE;
   }
 
   private logAccessDenied(request: any, requiredPermissions: string[], reason: string): void {

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { formatCurrency } from '../../lib/currency';
 import { supplierFinanceService } from '../../services/supplier-finance';
 import { supplierService } from '../../services/suppliers';
@@ -67,7 +68,7 @@ export default function SupplierLedgerPage() {
       try {
         const res = await supplierService.list('', {});
         return res.data ?? [];
-      } catch { return []; }
+      } catch (error) { console.error('Failed to load suppliers:', error); return []; }
     },
   });
   const supplierNames = (supplierList as any[]).map((s: any) => s.name).filter(Boolean);

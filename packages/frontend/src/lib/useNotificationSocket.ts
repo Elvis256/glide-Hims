@@ -8,23 +8,23 @@ const SOCKET_URL = (import.meta.env.VITE_API_URL || '/api/v1').replace('/api/v1'
 
 export function useNotificationSocket() {
   const socketRef = useRef<Socket | null>(null);
-  const { accessToken, isAuthenticated } = useAuthStore();
+  const { isAuthenticated } = useAuthStore();
   const { addNotification, setNotifications, setUnreadCount } = useNotificationStore();
 
   useEffect(() => {
-    if (!isAuthenticated || !accessToken) return;
+    if (!isAuthenticated) return;
 
     // Fetch initial data
     getNotifications(50, 0)
       .then(setNotifications)
-      .catch(() => {});
+      .catch((err) => console.error('Failed to load notifications:', err));
     getUnreadCount()
       .then(setUnreadCount)
-      .catch(() => {});
+      .catch((err) => console.error('Failed to load unread count:', err));
 
-    // Connect socket
+    // Connect socket — rely on httpOnly cookies instead of sending token in auth payload
     const socket = io(`${SOCKET_URL}/notifications`, {
-      auth: { token: accessToken },
+      withCredentials: true,
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionDelay: 2000,
@@ -49,5 +49,5 @@ export function useNotificationSocket() {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [isAuthenticated, accessToken]);
+  }, [isAuthenticated]);
 }

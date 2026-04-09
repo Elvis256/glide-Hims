@@ -119,6 +119,7 @@ export class UsersService {
         passwordHash,
         status: userData.status || 'active',
         tenantId: tenantId || undefined,
+        isSystemAdmin: userData.isSystemAdmin || false,
         mustChangePassword: true,
       });
 
@@ -138,7 +139,8 @@ export class UsersService {
         employee = await queryRunner.manager.findOne(Employee, { where: { id: employeeId } }) ?? undefined;
       }
       // Create new employee profile (explicit or auto-generated)
-      else {
+      // Skip employee creation for system admin users (they don't need facility/employee records)
+      else if (!userData.isSystemAdmin) {
         const isSuperAdmin = roleName === 'Super Admin';
         const shouldCreateEmployee = employeeProfile || !isSuperAdmin;
 
@@ -206,9 +208,8 @@ export class UsersService {
     const queryBuilder = this.userRepository.createQueryBuilder('user');
 
     // Tenant filter MUST come first and use andWhere to never be overwritten
-    if (tenantId) {
-      queryBuilder.where('user.tenant_id = :tenantId', { tenantId });
-    }
+    // When tenantId is undefined, use a non-existent UUID to return empty results (failsafe)
+    queryBuilder.where('user.tenant_id = :tenantId', { tenantId: tenantId || '00000000-0000-0000-0000-000000000000' });
 
     if (search) {
       queryBuilder.andWhere(
@@ -239,6 +240,71 @@ export class UsersService {
         totalPages: Math.ceil(total / limit),
       },
     };
+  }
+
+  async findSystemAdmins(query: UserListQueryDto) {
+    const { page = 1, limit = 20, search, status } = query;
+    const skip = (page - 1) * limit;
+
+    const queryBuilder = this.userRepository.createQueryBuilder('user');
+    queryBuilder.where('user.isSystemAdmin = :isAdmin', { isAdmin: true });
+
+    if (search) {
+      queryBuilder.andWhere(
+        '(user.username ILIKE :search OR user.full_name ILIKE :search OR user.email ILIKE :search)',
+        { search: `%${search}%` },
+      );
+    }
+
+    if (status) {
+      queryBuilder.andWhere('user.status = :status', { status });
+    }
+
+    const [users, total] = await queryBuilder
+      .skip(skip)
+      .take(limit)
+      .orderBy('user.createdAt', 'DESC')
+      .getManyAndCount();
+
+    return {
+      data: users.map((u) => this.sanitizeUser(u)),
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
+  /**
+   * Find all tenant admins (users with Super Admin role) across all tenants.
+   * Used by system administrators to manage tenant admin passwords.
+   */
+  async findTenantAdmins() {
+    const rows = await this.dataSource.query(`
+      SELECT 
+        u.id, u.username, u.full_name AS "fullName", u.email, u.phone, u.status,
+        u.last_login_at AS "lastLoginAt", u.created_at AS "createdAt",
+        t.id AS "tenantId", t.name AS "tenantName", t.slug AS "tenantSlug",
+        r.name AS "roleName"
+      FROM users u
+      JOIN tenants t ON t.id = u.tenant_id
+      LEFT JOIN user_roles ur ON ur.user_id = u.id
+      LEFT JOIN roles r ON r.id = ur.role_id
+      WHERE u.deleted_at IS NULL
+        AND t.deleted_at IS NULL
+        AND r.name IN ('Super Admin', 'Tenant Admin', 'Admin')
+      ORDER BY t.name ASC, r.name ASC, u.username ASC
+    `);
+
+    // Deduplicate users who have multiple roles — prefer Super Admin > Tenant Admin > Admin
+    const rolePriority: Record<string, number> = { 'Super Admin': 3, 'Tenant Admin': 2, 'Admin': 1 };
+    const userMap = new Map<string, any>();
+    for (const row of rows) {
+      const existing = userMap.get(row.id);
+      const existingPriority = existing ? (rolePriority[existing.roleName] || 0) : -1;
+      const rowPriority = rolePriority[row.roleName] || 0;
+      if (!existing || rowPriority > existingPriority) {
+        userMap.set(row.id, row);
+      }
+    }
+    return Array.from(userMap.values());
   }
 
   async findOne(id: string, tenantId?: string): Promise<User> {

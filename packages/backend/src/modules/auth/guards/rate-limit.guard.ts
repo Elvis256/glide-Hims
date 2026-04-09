@@ -7,16 +7,14 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Request } from 'express';
-
-interface RateLimitEntry {
-  count: number;
-  firstAttempt: number;
-  blockedUntil?: number;
-}
+import { CacheService } from '../../cache/cache.service';
 
 /**
  * Rate Limiting Guard for Login Endpoint
  * Prevents brute force attacks by limiting login attempts
+ * 
+ * Uses CacheService (shared across instances) instead of in-memory Map
+ * so rate limits persist across restarts and work in load-balanced deployments.
  * 
  * Rules:
  * - Max 5 attempts per 15 minutes per IP
@@ -26,24 +24,20 @@ interface RateLimitEntry {
 @Injectable()
 export class RateLimitGuard implements CanActivate {
   private static readonly logger = new Logger(RateLimitGuard.name);
-  private static attempts: Map<string, RateLimitEntry> = new Map();
   private readonly MAX_ATTEMPTS = 5;
-  private readonly WINDOW_MS = 15 * 60 * 1000; // 15 minutes
-  private readonly BLOCK_DURATION_MS = 15 * 60 * 1000; // 15 minutes block
+  private readonly WINDOW_SECONDS = 15 * 60; // 15 minutes
+  private readonly BLOCK_DURATION_SECONDS = 15 * 60; // 15 minutes
 
-  canActivate(context: ExecutionContext): boolean {
+  constructor(private readonly cacheService: CacheService) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<Request>();
     const ip = this.getClientIp(request);
-    const now = Date.now();
 
-    // Clean up old entries periodically
-    this.cleanupOldEntries(now);
-
-    const entry = RateLimitGuard.attempts.get(ip);
-
-    // Check if IP is blocked
-    if (entry?.blockedUntil && now < entry.blockedUntil) {
-      const remainingSeconds = Math.ceil((entry.blockedUntil - now) / 1000);
+    // Check if IP is currently blocked
+    const blockedUntil = await this.cacheService.get<number>(`ratelimit:block:${ip}`);
+    if (blockedUntil && Date.now() < blockedUntil) {
+      const remainingSeconds = Math.ceil((blockedUntil - Date.now()) / 1000);
       throw new HttpException(
         {
           statusCode: HttpStatus.TOO_MANY_REQUESTS,
@@ -54,55 +48,41 @@ export class RateLimitGuard implements CanActivate {
       );
     }
 
-    // Check if window has expired, reset if so
-    if (entry && now - entry.firstAttempt > this.WINDOW_MS) {
-      RateLimitGuard.attempts.delete(ip);
-    }
+    const result = await this.cacheService.checkRateLimit(
+      `login:${ip}`,
+      this.MAX_ATTEMPTS,
+      this.WINDOW_SECONDS,
+    );
 
-    // Get or create entry
-    const currentEntry = RateLimitGuard.attempts.get(ip) || {
-      count: 0,
-      firstAttempt: now,
-    };
+    if (!result.allowed) {
+      // Block the IP
+      await this.cacheService.set(
+        `ratelimit:block:${ip}`,
+        Date.now() + this.BLOCK_DURATION_SECONDS * 1000,
+        this.BLOCK_DURATION_SECONDS,
+      );
 
-    // Increment attempt count
-    currentEntry.count++;
-
-    // Check if max attempts exceeded
-    if (currentEntry.count > this.MAX_ATTEMPTS) {
-      currentEntry.blockedUntil = now + this.BLOCK_DURATION_MS;
-      RateLimitGuard.attempts.set(ip, currentEntry);
-
-      // Log the block for security monitoring
       RateLimitGuard.logger.warn(`[SECURITY] IP ${ip} blocked due to too many login attempts`);
 
       throw new HttpException(
         {
           statusCode: HttpStatus.TOO_MANY_REQUESTS,
-          message: `Too many login attempts. Please try again in ${this.BLOCK_DURATION_MS / 1000 / 60} minutes.`,
-          retryAfter: this.BLOCK_DURATION_MS / 1000,
+          message: `Too many login attempts. Please try again in ${this.BLOCK_DURATION_SECONDS / 60} minutes.`,
+          retryAfter: this.BLOCK_DURATION_SECONDS,
         },
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
 
-    RateLimitGuard.attempts.set(ip, currentEntry);
     return true;
   }
 
   /**
    * Reset attempts for an IP after successful login
    */
-  resetAttempts(ip: string): void {
-    RateLimitGuard.attempts.delete(ip);
-  }
-
-  /**
-   * Clear all rate limit entries (for admin use)
-   */
-  static clearAllAttempts(): void {
-    RateLimitGuard.attempts.clear();
-    RateLimitGuard.logger.log('[SECURITY] All rate limit entries cleared');
+  async resetAttempts(ip: string): Promise<void> {
+    await this.cacheService.del(`ratelimit:login:${ip}`);
+    await this.cacheService.del(`ratelimit:block:${ip}`);
   }
 
   /**
@@ -111,20 +91,6 @@ export class RateLimitGuard implements CanActivate {
    * otherwise use the direct socket address to prevent IP spoofing.
    */
   private getClientIp(request: Request): string {
-    // request.ip already respects Express "trust proxy" setting,
-    // so it will use x-forwarded-for only when the proxy is trusted.
     return request.ip || request.socket?.remoteAddress || 'unknown';
-  }
-
-  /**
-   * Clean up entries older than the window
-   */
-  private cleanupOldEntries(now: number): void {
-    const maxAge = this.WINDOW_MS + this.BLOCK_DURATION_MS;
-    for (const [ip, entry] of RateLimitGuard.attempts.entries()) {
-      if (now - entry.firstAttempt > maxAge) {
-        RateLimitGuard.attempts.delete(ip);
-      }
-    }
   }
 }
