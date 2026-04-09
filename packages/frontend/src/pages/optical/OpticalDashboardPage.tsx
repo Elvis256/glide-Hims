@@ -20,6 +20,7 @@ import { api } from '../../services/api';
 import { useFacilityId } from '../../lib/facility';
 import { formatCurrency } from '../../lib/currency';
 import { asList } from '../../utils/unwrapResponse';
+import { useBusinessConfig } from '../../hooks/useBusinessConfig';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -127,6 +128,15 @@ export default function OpticalDashboardPage() {
   const navigate = useNavigate();
   const facilityId = useFacilityId();
   const [refreshKey, setRefreshKey] = useState(0);
+  const bizConfig = useBusinessConfig();
+
+  const hospitalName = (() => {
+    try {
+      const stored = localStorage.getItem('glide_hospital_settings');
+      if (stored) return JSON.parse(stored).name || '';
+    } catch { /* use default */ }
+    return '';
+  })();
 
   // ---- Queries ------------------------------------------------------------
 
@@ -195,8 +205,10 @@ export default function OpticalDashboardPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Optical Dashboard</h1>
-          <p className="text-gray-600">Overview of exams, prescriptions, orders &amp; inventory</p>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {hospitalName ? `${hospitalName}` : 'Optical Dashboard'}
+          </h1>
+          <p className="text-gray-600">{bizConfig.tagline} — Exams, prescriptions, orders &amp; inventory</p>
         </div>
         <button
           onClick={handleRefresh}
