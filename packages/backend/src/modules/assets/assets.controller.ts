@@ -27,7 +27,7 @@ export class AssetsController {
   @AuthWithPermissions('assets.create')
   @ApiOperation({ summary: 'Create a new fixed asset' })
   async createAsset(@Body() data: CreateAssetDto, @Request() req: any) {
-    return this.assetsService.createAsset(data, req.user?.tenantId);
+    return this.assetsService.createAsset(data as any, req.user?.tenantId);
   }
 
   @Get()
@@ -80,7 +80,7 @@ export class AssetsController {
   @AuthWithPermissions('assets.update')
   @ApiOperation({ summary: 'Update an asset' })
   async updateAsset(@Param('id') id: string, @Body() data: UpdateAssetDto, @Request() req: any) {
-    return this.assetsService.updateAsset(id, data, req.user?.tenantId);
+    return this.assetsService.updateAsset(id, data as any, req.user?.tenantId);
   }
 
   @Delete(':id')
@@ -144,7 +144,7 @@ export class AssetsController {
   @AuthWithPermissions('assets.create')
   @ApiOperation({ summary: 'Record asset maintenance' })
   async recordMaintenance(@Param('id') assetId: string, @Body() data: RecordAssetMaintenanceDto, @Request() req: any) {
-    return this.assetsService.recordMaintenance({ ...data, assetId }, req.user?.tenantId);
+    return this.assetsService.recordMaintenance({ ...data, assetId } as any, req.user?.tenantId);
   }
 
   @Get(':id/maintenance')
@@ -187,6 +187,6 @@ export class AssetsController {
   @AuthWithPermissions('assets.create')
   @ApiOperation({ summary: 'Dispose an asset' })
   async disposeAsset(@Param('id') id: string, @Body() data: DisposeAssetDto, @Request() req: any) {
-    return this.assetsService.disposeAsset(id, data, req.user?.tenantId);
+    return this.assetsService.disposeAsset(id, data as any, req.user?.tenantId);
   }
 }

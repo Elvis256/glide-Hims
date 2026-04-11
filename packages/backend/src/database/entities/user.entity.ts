@@ -1,4 +1,5 @@
 import { Entity, Column, ManyToOne, JoinColumn, Index, OneToMany, OneToOne } from 'typeorm';
+import { Exclude } from 'class-transformer';
 import { BaseEntity } from './base.entity';
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto';
 
@@ -78,6 +79,7 @@ export class User extends BaseEntity {
   @Column({ type: 'varchar', length: 100 })
   username: string;
 
+  @Exclude()
   @Column({ type: 'varchar', length: 255 })
   passwordHash: string;
 
@@ -99,6 +101,7 @@ export class User extends BaseEntity {
   @Column({ type: 'boolean', default: false, name: 'mfa_enabled' })
   mfaEnabled: boolean;
 
+  @Exclude()
   @Column({
     type: 'varchar',
     length: 255,
@@ -123,6 +126,7 @@ export class User extends BaseEntity {
   @Column({ type: 'boolean', default: false, name: 'must_change_password' })
   mustChangePassword: boolean;
 
+  @Exclude()
   @Column({ type: 'int', default: 0, name: 'token_version' })
   tokenVersion: number;
 

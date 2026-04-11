@@ -24,8 +24,6 @@ import RoleRoute, {
   HRRoute,
   BillingRoute,
   RadiologyRoute,
-  DentistRoute,
-  OptometristRoute,
   ROLES,
 } from './components/RoleRoute';
 import DashboardLayout from './components/DashboardLayout';
@@ -396,25 +394,6 @@ const DrugDatabasePage = lazy(() => import('./pages/integrations/DrugDatabasePag
 const LabReferencePage = lazy(() => import('./pages/integrations/LabReferencePage'));
 const SMSNotificationsPage = lazy(() => import('./pages/integrations/SMSNotificationsPage'));
 const DHIS2SettingsPage = lazy(() => import('./pages/integrations/DHIS2SettingsPage'));
-
-// Dental Module
-const DentalDashboardPage = lazy(() => import('./pages/dental/DentalDashboardPage'));
-const DentalChartPage = lazy(() => import('./pages/dental/DentalChartPage'));
-const TreatmentPlanPage = lazy(() => import('./pages/dental/TreatmentPlanPage'));
-const DentalProceduresPage = lazy(() => import('./pages/dental/DentalProceduresPage'));
-const DentalImagingPage = lazy(() => import('./pages/dental/DentalImagingPage'));
-const DentalLabOrdersPage = lazy(() => import('./pages/dental/DentalLabOrdersPage'));
-const OrthodonticCasesPage = lazy(() => import('./pages/dental/OrthodonticCasesPage'));
-const PeriodontalChartPage = lazy(() => import('./pages/dental/PeriodontalChartPage'));
-
-// Optical Module
-const OpticalDashboardPage = lazy(() => import('./pages/optical/OpticalDashboardPage'));
-const EyeExamPage = lazy(() => import('./pages/optical/EyeExamPage'));
-const PrescriptionPage = lazy(() => import('./pages/optical/PrescriptionPage'));
-const FrameInventoryPage = lazy(() => import('./pages/optical/FrameInventoryPage'));
-const LensInventoryPage = lazy(() => import('./pages/optical/LensInventoryPage'));
-const SpectacleOrdersPage = lazy(() => import('./pages/optical/SpectacleOrdersPage'));
-const VisualFieldPage = lazy(() => import('./pages/optical/VisualFieldPage'));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -1058,25 +1037,6 @@ function AppRoutes() {
                 <Route path="/assets/transfers" element={<StoreKeeperRoute><AssetTransfersPage /></StoreKeeperRoute>} />
                 <Route path="/assets/disposal" element={<StoreKeeperRoute><AssetDisposalPage /></StoreKeeperRoute>} />
                 <Route path="/assets/categories" element={<AdminRoute><AssetCategoriesPage /></AdminRoute>} />
-                
-                {/* Dental Module */}
-                <Route path="/dental" element={<DentistRoute><DentalDashboardPage /></DentistRoute>} />
-                <Route path="/dental/chart" element={<DentistRoute><DentalChartPage /></DentistRoute>} />
-                <Route path="/dental/treatment-plans" element={<DentistRoute><TreatmentPlanPage /></DentistRoute>} />
-                <Route path="/dental/procedures" element={<DentistRoute><DentalProceduresPage /></DentistRoute>} />
-                <Route path="/dental/imaging" element={<DentistRoute><DentalImagingPage /></DentistRoute>} />
-                <Route path="/dental/lab-orders" element={<DentistRoute><DentalLabOrdersPage /></DentistRoute>} />
-                <Route path="/dental/ortho" element={<DentistRoute><OrthodonticCasesPage /></DentistRoute>} />
-                <Route path="/dental/perio" element={<DentistRoute><PeriodontalChartPage /></DentistRoute>} />
-
-                {/* Optical Module */}
-                <Route path="/optical" element={<OptometristRoute><OpticalDashboardPage /></OptometristRoute>} />
-                <Route path="/optical/exams" element={<OptometristRoute><EyeExamPage /></OptometristRoute>} />
-                <Route path="/optical/prescriptions" element={<OptometristRoute><PrescriptionPage /></OptometristRoute>} />
-                <Route path="/optical/frames" element={<OptometristRoute><FrameInventoryPage /></OptometristRoute>} />
-                <Route path="/optical/lenses" element={<OptometristRoute><LensInventoryPage /></OptometristRoute>} />
-                <Route path="/optical/orders" element={<OptometristRoute><SpectacleOrdersPage /></OptometristRoute>} />
-                <Route path="/optical/visual-field" element={<OptometristRoute><VisualFieldPage /></OptometristRoute>} />
 
                 {/* Chronic Care Module */}
                 <Route path="/chronic-care/dashboard" element={<ClinicalRoute><ChronicCareDashboardPage /></ClinicalRoute>} />

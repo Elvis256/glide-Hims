@@ -1,5 +1,5 @@
 import { NestFactory, Reflector } from '@nestjs/core';
-import { ValidationPipe, BadRequestException, Logger } from '@nestjs/common';
+import { ValidationPipe, BadRequestException, Logger, ClassSerializerInterceptor } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
@@ -107,6 +107,9 @@ async function bootstrap() {
 
   // Global response transform interceptor - standardizes API response envelopes
   app.useGlobalInterceptors(new ResponseTransformInterceptor(reflector));
+
+  // ClassSerializerInterceptor - Strips @Exclude() fields (passwordHash, mfaSecret, etc.) from responses
+  app.useGlobalInterceptors(new ClassSerializerInterceptor(reflector));
 
   // Global validation pipe
   app.useGlobalPipes(

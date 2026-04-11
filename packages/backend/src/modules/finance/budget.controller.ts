@@ -27,7 +27,7 @@ export class BudgetController {
   @AuthWithPermissions('finance.manage')
   @ApiOperation({ summary: 'Create a budget' })
   create(@Body() dto: CreateBudgetDto, @Request() req: any) {
-    return this.budgetService.create(dto, req.user?.tenantId);
+    return this.budgetService.create(dto as any, req.user?.tenantId);
   }
 
   @Get()
@@ -48,14 +48,14 @@ export class BudgetController {
   @AuthWithPermissions('finance.manage')
   @ApiOperation({ summary: 'Add a line to a budget' })
   addLine(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CreateBudgetLineDto, @Request() req?: any) {
-    return this.budgetService.addLine(id, dto, req?.user?.tenantId);
+    return this.budgetService.addLine(id, dto as any, req?.user?.tenantId);
   }
 
   @Patch('lines/:lineId')
   @AuthWithPermissions('finance.manage')
   @ApiOperation({ summary: 'Update a budget line' })
   updateLine(@Param('lineId', ParseUUIDPipe) lineId: string, @Body() dto: UpdateBudgetLineDto, @Request() req?: any) {
-    return this.budgetService.updateLine(lineId, dto, req?.user?.tenantId);
+    return this.budgetService.updateLine(lineId, dto as any, req?.user?.tenantId);
   }
 
   @Patch(':id/approve')

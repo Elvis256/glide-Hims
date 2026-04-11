@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Feature Flags - Glide HIMS Documentation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #0d6efd;
+            --sidebar-bg: #1a1d21;
+            --sidebar-text: #8b949e;
+            --sidebar-active: #ffffff;
+        }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 280px;
+            height: 100vh;
+            background: var(--sidebar-bg);
+            padding: 1.5rem;
+            overflow-y: auto;
+            z-index: 1000;
+        }
+        .sidebar .logo {
+            color: white;
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .sidebar .nav-section {
+            margin-bottom: 1.5rem;
+        }
+        .sidebar .nav-section-title {
+            color: var(--sidebar-text);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+            padding-left: 0.75rem;
+        }
+        .sidebar .nav-link {
+            color: var(--sidebar-text);
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.375rem;
+            display: block;
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+        .sidebar .nav-link:hover, .sidebar .nav-link.active {
+            color: var(--sidebar-active);
+            background: rgba(255,255,255,0.1);
+        }
+        .main-content {
+            margin-left: 280px;
+            padding: 2rem 3rem;
+            max-width: 900px;
+        }
+        .page-header {
+            border-bottom: 1px solid #e5e7eb;
+            padding-bottom: 1rem;
+            margin-bottom: 2rem;
+        }
+        .page-header h1 {
+            font-size: 2.25rem;
+            font-weight: 700;
+            color: #111827;
+        }
+        .page-header .subtitle {
+            color: #6b7280;
+            font-size: 1.1rem;
+        }
+        pre[class*="language-"] {
+            border-radius: 0.5rem;
+            margin: 1rem 0;
+        }
+        .card {
+            border: 1px solid #e5e7eb;
+            border-radius: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+        .card-header {
+            background: #f9fafb;
+            border-bottom: 1px solid #e5e7eb;
+            font-weight: 600;
+        }
+        .flag-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+        .flag-enabled { background: #dcfce7; color: #166534; }
+        .flag-disabled { background: #fee2e2; color: #991b1b; }
+        .flag-beta { background: #fef3c7; color: #92400e; }
+        .feature-card {
+            border: 1px solid #e5e7eb;
+            border-radius: 0.75rem;
+            padding: 1.25rem;
+            margin-bottom: 1rem;
+            transition: all 0.2s;
+        }
+        .feature-card:hover {
+            border-color: var(--primary-color);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+        .feature-card h5 {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+        }
+        .feature-card .description {
+            color: #6b7280;
+            font-size: 0.9rem;
+            margin-bottom: 0.75rem;
+        }
+        .feature-card .meta {
+            font-size: 0.8rem;
+            color: #9ca3af;
+        }
+        .toggle-switch {
+            position: relative;
+            width: 48px;
+            height: 24px;
+            background: #e5e7eb;
+            border-radius: 9999px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .toggle-switch.active { background: #10b981; }
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 20px;
+            height: 20px;
+            background: white;
+            border-radius: 50%;
+            transition: all 0.3s;
+        }
+        .toggle-switch.active::after { left: 26px; }
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .main-content { margin-left: 0; padding: 1rem; }
+        }
+    </style>
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="logo">
+            <i class="bi bi-hospital"></i>
+            Glide HIMS
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Getting Started</div>
+            <a href="index.html" class="nav-link">Introduction</a>
+            <a href="quickstart.html" class="nav-link">Quick Start</a>
+            <a href="architecture.html" class="nav-link">Architecture</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Deployment</div>
+            <a href="deployment-onpremise.html" class="nav-link">On-Premise</a>
+            <a href="deployment-cloud.html" class="nav-link">Cloud Deployment</a>
+            <a href="docker.html" class="nav-link">Docker</a>
+            <a href="kubernetes.html" class="nav-link">Kubernetes</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Configuration</div>
+            <a href="licensing.html" class="nav-link">Licensing</a>
+            <a href="feature-flags.html" class="nav-link active">Feature Flags</a>
+            <a href="updates.html" class="nav-link">Updates</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">API Reference</div>
+            <a href="api-overview.html" class="nav-link">API Overview</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Support</div>
+            <a href="troubleshooting.html" class="nav-link">Troubleshooting</a>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <div class="page-header">
+            <h1><i class="bi bi-toggles me-2"></i>Feature Flags</h1>
+            <p class="subtitle">Control feature availability across tenants and deployments</p>
+        </div>
+
+        <div class="alert alert-info mb-4">
+            <i class="bi bi-info-circle me-2"></i>
+            <strong>Enterprise Feature:</strong> Feature flags require an active enterprise license. See <a href="licensing.html">Licensing</a> for details.
+        </div>
+
+        <!-- Overview -->
+        <section class="mb-5">
+            <h2>Overview</h2>
+            <p>Feature flags allow you to:</p>
+            <ul>
+                <li><strong>Enable/disable features</strong> without code deployment</li>
+                <li><strong>Roll out features gradually</strong> to specific tenants</li>
+                <li><strong>A/B test</strong> new functionality</li>
+                <li><strong>Control access</strong> based on license tier</li>
+                <li><strong>Emergency kill switches</strong> for problematic features</li>
+            </ul>
+        </section>
+
+        <!-- Available Features -->
+        <section class="mb-5">
+            <h2>Available Feature Flags</h2>
+            
+            <div class="feature-card">
+                <h5>
+                    <span><code>ADVANCED_BILLING</code></span>
+                    <span class="flag-badge flag-enabled"><i class="bi bi-check-circle"></i> Enabled</span>
+                </h5>
+                <p class="description">Insurance claims, batch billing, and advanced payment processing</p>
+                <div class="meta">
+                    <span class="me-3"><i class="bi bi-box me-1"></i> Billing Module</span>
+                    <span><i class="bi bi-shield me-1"></i> Enterprise License Required</span>
+                </div>
+            </div>
+
+            <div class="feature-card">
+                <h5>
+                    <span><code>MULTI_TENANT</code></span>
+                    <span class="flag-badge flag-enabled"><i class="bi bi-check-circle"></i> Enabled</span>
+                </h5>
+                <p class="description">Support for multiple clinics/hospitals in a single deployment</p>
+                <div class="meta">
+                    <span class="me-3"><i class="bi bi-box me-1"></i> Core Module</span>
+                    <span><i class="bi bi-shield me-1"></i> Enterprise License Required</span>
+                </div>
+            </div>
+
+            <div class="feature-card">
+                <h5>
+                    <span><code>PHARMACY_INTEGRATION</code></span>
+                    <span class="flag-badge flag-enabled"><i class="bi bi-check-circle"></i> Enabled</span>
+                </h5>
+                <p class="description">Pharmacy inventory, dispensing, and stock management</p>
+                <div class="meta">
+                    <span class="me-3"><i class="bi bi-box me-1"></i> Pharmacy Module</span>
+                    <span><i class="bi bi-shield me-1"></i> Standard License</span>
+                </div>
+            </div>
+
+            <div class="feature-card">
+                <h5>
+                    <span><code>LAB_INTEGRATION</code></span>
+                    <span class="flag-badge flag-enabled"><i class="bi bi-check-circle"></i> Enabled</span>
+                </h5>
+                <p class="description">Laboratory test management, results tracking, and equipment integration</p>
+                <div class="meta">
+                    <span class="me-3"><i class="bi bi-box me-1"></i> Laboratory Module</span>
+                    <span><i class="bi bi-shield me-1"></i> Standard License</span>
+                </div>
+            </div>
+
+            <div class="feature-card">
+                <h5>
+                    <span><code>RADIOLOGY_PACS</code></span>
+                    <span class="flag-badge flag-beta"><i class="bi bi-stars"></i> Beta</span>
+                </h5>
+                <p class="description">PACS integration for radiology imaging and DICOM support</p>
+                <div class="meta">
+                    <span class="me-3"><i class="bi bi-box me-1"></i> Radiology Module</span>
+                    <span><i class="bi bi-shield me-1"></i> Enterprise License Required</span>
+                </div>
+            </div>
+
+            <div class="feature-card">
+                <h5>
+                    <span><code>TELEMEDICINE</code></span>
+                    <span class="flag-badge flag-beta"><i class="bi bi-stars"></i> Beta</span>
+                </h5>
+                <p class="description">Video consultations, remote patient monitoring, and virtual visits</p>
+                <div class="meta">
+                    <span class="me-3"><i class="bi bi-box me-1"></i> Telehealth Module</span>
+                    <span><i class="bi bi-shield me-1"></i> Enterprise License Required</span>
+                </div>
+            </div>
+
+            <div class="feature-card">
+                <h5>
+                    <span><code>AUDIT_LOGGING</code></span>
+                    <span class="flag-badge flag-enabled"><i class="bi bi-check-circle"></i> Enabled</span>
+                </h5>
+                <p class="description">Comprehensive audit trails for compliance and security</p>
+                <div class="meta">
+                    <span class="me-3"><i class="bi bi-box me-1"></i> Security Module</span>
+                    <span><i class="bi bi-shield me-1"></i> All Licenses</span>
+                </div>
+            </div>
+
+            <div class="feature-card">
+                <h5>
+                    <span><code>CUSTOM_REPORTS</code></span>
+                    <span class="flag-badge flag-disabled"><i class="bi bi-x-circle"></i> Disabled</span>
+                </h5>
+                <p class="description">Custom report builder with drag-and-drop interface</p>
+                <div class="meta">
+                    <span class="me-3"><i class="bi bi-box me-1"></i> Reporting Module</span>
+                    <span><i class="bi bi-shield me-1"></i> Enterprise License Required</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- API Reference -->
+        <section class="mb-5">
+            <h2>API Reference</h2>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <span class="badge bg-success me-2">GET</span>
+                    <code>/api/v1/features</code>
+                </div>
+                <div class="card-body">
+                    <p>Get all feature flags for the current tenant</p>
+                    <pre><code class="language-bash"># Request
+curl -X GET https://your-domain.com/api/v1/features \
+  -H "Authorization: Bearer YOUR_TOKEN"
+
+# Response
+{
+  "success": true,
+  "data": {
+    "features": [
+      {
+        "key": "ADVANCED_BILLING",
+        "enabled": true,
+        "tier": "enterprise",
+        "description": "Insurance claims and advanced billing"
+      },
+      {
+        "key": "MULTI_TENANT",
+        "enabled": true,
+        "tier": "enterprise",
+        "description": "Multi-tenant support"
+      },
+      {
+        "key": "PHARMACY_INTEGRATION",
+        "enabled": true,
+        "tier": "standard",
+        "description": "Pharmacy module"
+      }
+    ],
+    "tenant": "amani-childrens-clinic",
+    "cachedAt": "2026-04-10T00:00:00.000Z"
+  }
+}</code></pre>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <span class="badge bg-success me-2">GET</span>
+                    <code>/api/v1/features/:featureKey</code>
+                </div>
+                <div class="card-body">
+                    <p>Check if a specific feature is enabled</p>
+                    <pre><code class="language-bash"># Request
+curl -X GET https://your-domain.com/api/v1/features/ADVANCED_BILLING \
+  -H "Authorization: Bearer YOUR_TOKEN"
+
+# Response (enabled)
+{
+  "success": true,
+  "data": {
+    "key": "ADVANCED_BILLING",
+    "enabled": true,
+    "tier": "enterprise",
+    "metadata": {
+      "maxClaims": 1000,
+      "insuranceProviders": ["nhif", "jubilee", "aar"]
+    }
+  }
+}
+
+# Response (disabled)
+{
+  "success": true,
+  "data": {
+    "key": "CUSTOM_REPORTS",
+    "enabled": false,
+    "reason": "Feature requires enterprise license"
+  }
+}</code></pre>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <span class="badge bg-warning text-dark me-2">PUT</span>
+                    <code>/api/v1/features/:featureKey</code>
+                    <span class="badge bg-secondary ms-2">Admin Only</span>
+                </div>
+                <div class="card-body">
+                    <p>Enable or disable a feature flag (requires admin privileges)</p>
+                    <pre><code class="language-bash"># Enable a feature
+curl -X PUT https://your-domain.com/api/v1/features/TELEMEDICINE \
+  -H "Authorization: Bearer ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "enabled": true,
+    "metadata": {
+      "maxConcurrentCalls": 10,
+      "recordingEnabled": true
+    }
+  }'
+
+# Disable a feature
+curl -X PUT https://your-domain.com/api/v1/features/CUSTOM_REPORTS \
+  -H "Authorization: Bearer ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "enabled": false,
+    "reason": "Under maintenance"
+  }'</code></pre>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="badge bg-success me-2">GET</span>
+                    <code>/api/v1/features/tenant/:tenantId</code>
+                    <span class="badge bg-secondary ms-2">Super Admin</span>
+                </div>
+                <div class="card-body">
+                    <p>Get feature flags for a specific tenant (super admin only)</p>
+                    <pre><code class="language-bash"># Request
+curl -X GET https://your-domain.com/api/v1/features/tenant/amani-childrens-clinic \
+  -H "Authorization: Bearer SUPER_ADMIN_TOKEN"
+
+# Response
+{
+  "success": true,
+  "data": {
+    "tenant": "amani-childrens-clinic",
+    "license": {
+      "tier": "enterprise",
+      "expiresAt": "2027-04-10T00:00:00.000Z"
+    },
+    "features": [...],
+    "overrides": [
+      {
+        "key": "TELEMEDICINE",
+        "enabled": true,
+        "reason": "Beta testing participant"
+      }
+    ]
+  }
+}</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Backend Usage -->
+        <section class="mb-5">
+            <h2>Backend Usage</h2>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-code-slash me-2"></i>Using Feature Flags in Controllers
+                </div>
+                <div class="card-body">
+                    <pre><code class="language-typescript">import { Controller, Get, UseGuards } from '@nestjs/common';
+import { FeatureFlagGuard, RequireFeature } from '../guards/feature-flag.guard';
+import { FeatureFlagsService } from '../services/feature-flags.service';
+
+@Controller('billing')
+export class BillingController {
+  constructor(private featureFlags: FeatureFlagsService) {}
+
+  // Method 1: Decorator-based guard
+  @Get('insurance-claims')
+  @UseGuards(FeatureFlagGuard)
+  @RequireFeature('ADVANCED_BILLING')
+  async getInsuranceClaims() {
+    // Only accessible if ADVANCED_BILLING is enabled
+    return this.billingService.getInsuranceClaims();
+  }
+
+  // Method 2: Programmatic check
+  @Get('reports')
+  async getReports(@CurrentTenant() tenant: string) {
+    const features = await this.featureFlags.getFeatures(tenant);
+    
+    if (features.isEnabled('CUSTOM_REPORTS')) {
+      return this.reportService.getCustomReports();
+    } else {
+      return this.reportService.getStandardReports();
+    }
+  }
+}</code></pre>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-code-slash me-2"></i>FeatureFlagsService
+                </div>
+                <div class="card-body">
+                    <pre><code class="language-typescript">import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { FeatureFlag } from '../entities/feature-flag.entity';
+
+@Injectable()
+export class FeatureFlagsService {
+  private cache = new Map&lt;string, { features: FeatureFlag[]; timestamp: number }&gt;();
+  private CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+  constructor(
+    @InjectRepository(FeatureFlag)
+    private featureFlagRepo: Repository&lt;FeatureFlag&gt;,
+  ) {}
+
+  async isEnabled(tenantId: string, featureKey: string): Promise&lt;boolean&gt; {
+    const features = await this.getFeatures(tenantId);
+    const feature = features.find(f => f.key === featureKey);
+    return feature?.enabled ?? false;
+  }
+
+  async getFeatures(tenantId: string): Promise&lt;FeatureFlag[]&gt; {
+    // Check cache first
+    const cached = this.cache.get(tenantId);
+    if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
+      return cached.features;
+    }
+
+    // Fetch from database
+    const features = await this.featureFlagRepo.find({
+      where: [
+        { tenantId, enabled: true },
+        { tenantId: 'global', enabled: true }
+      ]
+    });
+
+    // Update cache
+    this.cache.set(tenantId, { features, timestamp: Date.now() });
+    return features;
+  }
+
+  async setFeature(tenantId: string, key: string, enabled: boolean): Promise&lt;void&gt; {
+    await this.featureFlagRepo.upsert(
+      { tenantId, key, enabled, updatedAt: new Date() },
+      ['tenantId', 'key']
+    );
+    
+    // Invalidate cache
+    this.cache.delete(tenantId);
+  }
+}</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Frontend Usage -->
+        <section class="mb-5">
+            <h2>Frontend Usage</h2>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-code-slash me-2"></i>React Hook
+                </div>
+                <div class="card-body">
+                    <pre><code class="language-typescript">// hooks/useFeatureFlag.ts
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../lib/api';
+
+interface FeatureFlag {
+  key: string;
+  enabled: boolean;
+  tier: string;
+  metadata?: Record&lt;string, any&gt;;
+}
+
+export function useFeatureFlags() {
+  return useQuery({
+    queryKey: ['features'],
+    queryFn: async () => {
+      const response = await api.get('/features');
+      return response.data.data.features as FeatureFlag[];
+    },
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  });
+}
+
+export function useFeatureFlag(featureKey: string) {
+  const { data: features, isLoading } = useFeatureFlags();
+  
+  const feature = features?.find(f => f.key === featureKey);
+  
+  return {
+    isEnabled: feature?.enabled ?? false,
+    isLoading,
+    metadata: feature?.metadata,
+  };
+}</code></pre>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-code-slash me-2"></i>Component Usage
+                </div>
+                <div class="card-body">
+                    <pre><code class="language-tsx">// components/BillingDashboard.tsx
+import { useFeatureFlag } from '../hooks/useFeatureFlag';
+
+export function BillingDashboard() {
+  const { isEnabled: hasAdvancedBilling, isLoading } = useFeatureFlag('ADVANCED_BILLING');
+  const { isEnabled: hasCustomReports } = useFeatureFlag('CUSTOM_REPORTS');
+
+  if (isLoading) return &lt;Spinner /&gt;;
+
+  return (
+    &lt;div&gt;
+      &lt;h1&gt;Billing Dashboard&lt;/h1&gt;
+      
+      {/* Standard billing features always shown */}
+      &lt;InvoiceList /&gt;
+      &lt;PaymentHistory /&gt;
+      
+      {/* Advanced billing only for enterprise */}
+      {hasAdvancedBilling && (
+        &lt;&gt;
+          &lt;InsuranceClaims /&gt;
+          &lt;BatchBilling /&gt;
+          &lt;AdvancedReports /&gt;
+        &lt;/&gt;
+      )}
+
+      {/* Feature promotion for non-enterprise */}
+      {!hasAdvancedBilling && (
+        &lt;UpgradePrompt 
+          feature="Advanced Billing"
+          description="Get insurance claims, batch billing, and more"
+        /&gt;
+      )}
+
+      {/* Custom reports section */}
+      {hasCustomReports ? (
+        &lt;CustomReportBuilder /&gt;
+      ) : (
+        &lt;StandardReports /&gt;
+      )}
+    &lt;/div&gt;
+  );
+}</code></pre>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-code-slash me-2"></i>FeatureGate Component
+                </div>
+                <div class="card-body">
+                    <pre><code class="language-tsx">// components/FeatureGate.tsx
+import { useFeatureFlag } from '../hooks/useFeatureFlag';
+
+interface FeatureGateProps {
+  feature: string;
+  children: React.ReactNode;
+  fallback?: React.ReactNode;
+}
+
+export function FeatureGate({ feature, children, fallback = null }: FeatureGateProps) {
+  const { isEnabled, isLoading } = useFeatureFlag(feature);
+
+  if (isLoading) return null;
+  if (!isEnabled) return &lt;&gt;{fallback}&lt;/&gt;;
+  
+  return &lt;&gt;{children}&lt;/&gt;;
+}
+
+// Usage
+&lt;FeatureGate 
+  feature="TELEMEDICINE" 
+  fallback={&lt;ComingSoon feature="Telemedicine" /&gt;}
+&gt;
+  &lt;TelemedicineModule /&gt;
+&lt;/FeatureGate&gt;</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Database Schema -->
+        <section class="mb-5">
+            <h2>Database Schema</h2>
+            
+            <div class="card">
+                <div class="card-body">
+                    <pre><code class="language-sql">-- Feature flags table
+CREATE TABLE feature_flags (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id VARCHAR(100) NOT NULL,
+    key VARCHAR(100) NOT NULL,
+    enabled BOOLEAN DEFAULT false,
+    tier VARCHAR(50) DEFAULT 'standard',
+    description TEXT,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(tenant_id, key)
+);
+
+-- System features (global defaults)
+CREATE TABLE system_features (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    key VARCHAR(100) UNIQUE NOT NULL,
+    name VARCHAR(200) NOT NULL,
+    description TEXT,
+    tier VARCHAR(50) DEFAULT 'standard',
+    enabled_by_default BOOLEAN DEFAULT false,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Indexes for performance
+CREATE INDEX idx_feature_flags_tenant ON feature_flags(tenant_id);
+CREATE INDEX idx_feature_flags_key ON feature_flags(key);
+
+-- Insert default system features
+INSERT INTO system_features (key, name, description, tier, enabled_by_default) VALUES
+('ADVANCED_BILLING', 'Advanced Billing', 'Insurance claims and batch billing', 'enterprise', true),
+('MULTI_TENANT', 'Multi-Tenant', 'Multiple clinics support', 'enterprise', true),
+('PHARMACY_INTEGRATION', 'Pharmacy', 'Pharmacy module', 'standard', true),
+('LAB_INTEGRATION', 'Laboratory', 'Lab module', 'standard', true),
+('RADIOLOGY_PACS', 'Radiology PACS', 'PACS integration', 'enterprise', false),
+('TELEMEDICINE', 'Telemedicine', 'Video consultations', 'enterprise', false),
+('AUDIT_LOGGING', 'Audit Logging', 'Compliance audit trails', 'standard', true),
+('CUSTOM_REPORTS', 'Custom Reports', 'Report builder', 'enterprise', false);</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Environment Variables -->
+        <section class="mb-5">
+            <h2>Environment Variables</h2>
+            
+            <div class="card">
+                <div class="card-body">
+                    <pre><code class="language-bash"># Feature flag cache TTL (in seconds)
+FEATURE_FLAG_CACHE_TTL=300
+
+# Default features enabled for all tenants
+DEFAULT_FEATURES=AUDIT_LOGGING,PHARMACY_INTEGRATION,LAB_INTEGRATION
+
+# Enable beta features globally
+ENABLE_BETA_FEATURES=false
+
+# Feature flag sync interval (for distributed systems)
+FEATURE_SYNC_INTERVAL=60</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Best Practices -->
+        <section class="mb-5">
+            <h2>Best Practices</h2>
+            
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header text-success">
+                            <i class="bi bi-check-circle me-2"></i>Do
+                        </div>
+                        <div class="card-body">
+                            <ul class="mb-0">
+                                <li>Use descriptive, uppercase flag names</li>
+                                <li>Document each flag's purpose</li>
+                                <li>Set appropriate cache TTLs</li>
+                                <li>Clean up unused flags</li>
+                                <li>Test both enabled/disabled states</li>
+                                <li>Log flag evaluations for debugging</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header text-danger">
+                            <i class="bi bi-x-circle me-2"></i>Don't
+                        </div>
+                        <div class="card-body">
+                            <ul class="mb-0">
+                                <li>Use flags for permanent code branches</li>
+                                <li>Create too many granular flags</li>
+                                <li>Forget to remove deprecated flags</li>
+                                <li>Skip feature flag in tests</li>
+                                <li>Use flags for configuration values</li>
+                                <li>Create circular flag dependencies</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <div class="alert alert-success">
+            <i class="bi bi-check-circle me-2"></i>
+            <strong>Next:</strong> Learn about <a href="updates.html">automatic updates</a> to keep feature flags in sync with the latest releases.
+        </div>
+
+        <nav class="d-flex justify-content-between mt-5 pt-4 border-top">
+            <a href="licensing.html" class="btn btn-outline-primary">
+                <i class="bi bi-arrow-left me-2"></i>Licensing
+            </a>
+            <a href="updates.html" class="btn btn-primary">
+                Updates<i class="bi bi-arrow-right ms-2"></i>
+            </a>
+        </nav>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-bash.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-typescript.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-tsx.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-sql.min.js"></script>
+</body>
+</html>

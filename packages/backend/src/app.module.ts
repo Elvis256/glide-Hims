@@ -77,9 +77,10 @@ import { HealthModule } from './modules/health/health.module';
 import { TenantModule } from './common/middleware/tenant.module';
 import { AdherenceModule } from './modules/adherence/adherence.module';
 import { ScheduledTasksModule } from './modules/scheduled-tasks/scheduled-tasks.module';
-import { DentalModule } from './modules/dental/dental.module';
-import { OpticalModule } from './modules/optical/optical.module';
 import { SupportAccessModule } from './modules/support-access/support-access.module';
+import { LicensingModule } from './modules/licensing/licensing.module';
+import { FeatureFlagsModule } from './modules/feature-flags/feature-flags.module';
+import { UpdatesModule } from './modules/updates/updates.module';
 
 @Module({
   imports: [
@@ -247,14 +248,13 @@ import { SupportAccessModule } from './modules/support-access/support-access.mod
     ScheduleModule.forRoot(),
     ScheduledTasksModule,
 
-    // Phase 23: Dental Vertical
-    DentalModule,
-
-    // Phase 24: Optical/Optometry Vertical
-    OpticalModule,
-
     // Support Access (tiered system admin access)
     SupportAccessModule,
+
+    // Enterprise Deployment Features
+    LicensingModule,
+    FeatureFlagsModule,
+    UpdatesModule,
   ],
   controllers: [AppController],
   providers: [

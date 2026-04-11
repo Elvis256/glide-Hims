@@ -101,7 +101,7 @@ export class PermissionsController {
   @AuthWithPermissions('roles.read')
   @ApiOperation({ summary: 'List all permissions' })
   @ApiQuery({ name: 'module', required: false })
-  async findAllPermissions(@Query('module') module?: string, @Request() req?: any) {
-    return this.rolesService.findAllPermissions(module, req?.user?.tenantId);
+  async findAllPermissions(@Query('module') module?: string) {
+    return this.rolesService.findAllPermissions(module);
   }
 }

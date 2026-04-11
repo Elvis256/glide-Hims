@@ -1018,4 +1018,47 @@ export class AuthService {
     // Shuffle
     return password.split('').sort(() => crypto.randomInt(3) - 1).join('');
   }
+
+  /**
+   * Admin: Unlock a locked user account
+   */
+  async unlockAccount(userId: string, adminUserId: string): Promise<{ message: string }> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    user.failedLoginAttempts = 0;
+    user.lockedUntil = null as any;
+    await this.userRepository.save(user);
+
+    this.logger.log(`Account unlocked for user ${userId} by admin ${adminUserId}`);
+
+    return { message: 'Account unlocked successfully' };
+  }
+
+  /**
+   * Admin: Get account lockout status
+   */
+  async getAccountLockoutStatus(userId: string): Promise<{
+    isLocked: boolean;
+    failedAttempts: number;
+    lockedUntil: Date | null;
+    lockReason?: string;
+  }> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const now = new Date();
+    const isLocked = !!(user.lockedUntil && user.lockedUntil > now);
+
+    return {
+      isLocked,
+      failedAttempts: user.failedLoginAttempts,
+      lockedUntil: user.lockedUntil || null,
+      lockReason: isLocked ? 'Too many failed login attempts' : undefined,
+    };
+  }
 }

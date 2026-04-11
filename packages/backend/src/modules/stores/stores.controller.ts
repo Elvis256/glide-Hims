@@ -5,7 +5,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { StoresService } from './stores.service';
 import { CreateStoreDto, UpdateStoreDto, CreateTransferDto, ApproveTransferDto, ReceiveTransferDto, AdjustStockDto, TransferStockDto } from './stores.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
-import { TransferStatus } from '../../database/entities/store.entity';
+import { TransferStatus } from '../../database/entities/stock-transfer.entity';
 
 @ApiTags('Stores')
 @ApiBearerAuth()

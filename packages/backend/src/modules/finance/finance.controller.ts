@@ -254,7 +254,7 @@ export class FinanceController {
       const setting = await this.settingsService.getByKey(PAYMENT_METHODS_KEY, req.user?.tenantId);
       methods = (setting.value as any[]) ?? [];
     } catch { /* not found — start with empty */ }
-    const newMethod = { ...body, id: `pm_${Date.now()}`, isActive: body.isActive ?? true };
+    const newMethod = { ...body, id: `pm_${Date.now()}`, isActive: (body as any).isActive ?? true };
     methods.push(newMethod);
     await this.settingsService.upsert(PAYMENT_METHODS_KEY, methods, req.user?.tenantId, 'Configured payment methods');
     return newMethod;

@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Backup & Recovery - Glide HIMS Documentation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #0d6efd;
+            --sidebar-bg: #1a1d21;
+            --sidebar-text: #8b949e;
+            --sidebar-active: #ffffff;
+        }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 280px;
+            height: 100vh;
+            background: var(--sidebar-bg);
+            padding: 1.5rem;
+            overflow-y: auto;
+            z-index: 1000;
+        }
+        .sidebar .logo {
+            color: white;
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .sidebar .nav-section {
+            margin-bottom: 1.5rem;
+        }
+        .sidebar .nav-section-title {
+            color: var(--sidebar-text);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+            padding-left: 0.75rem;
+        }
+        .sidebar .nav-link {
+            color: var(--sidebar-text);
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.375rem;
+            display: block;
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+        .sidebar .nav-link:hover, .sidebar .nav-link.active {
+            color: var(--sidebar-active);
+            background: rgba(255,255,255,0.1);
+        }
+        .main-content {
+            margin-left: 280px;
+            padding: 2rem 3rem;
+            max-width: 900px;
+        }
+        .page-header {
+            border-bottom: 1px solid #e5e7eb;
+            padding-bottom: 1rem;
+            margin-bottom: 2rem;
+        }
+        .page-header h1 {
+            font-size: 2.25rem;
+            font-weight: 700;
+            color: #111827;
+        }
+        .page-header .subtitle {
+            color: #6b7280;
+            font-size: 1.1rem;
+        }
+        pre[class*="language-"] {
+            border-radius: 0.5rem;
+            margin: 1rem 0;
+        }
+        .card {
+            border: 1px solid #e5e7eb;
+            border-radius: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+        .card-header {
+            background: #f9fafb;
+            border-bottom: 1px solid #e5e7eb;
+            font-weight: 600;
+        }
+        .backup-type {
+            border: 2px solid #e5e7eb;
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            height: 100%;
+            transition: all 0.2s;
+        }
+        .backup-type:hover {
+            border-color: var(--primary-color);
+        }
+        .backup-type h5 {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.75rem;
+        }
+        .backup-type .icon {
+            width: 40px;
+            height: 40px;
+            background: #eff6ff;
+            border-radius: 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--primary-color);
+            font-size: 1.25rem;
+        }
+        .retention-badge {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            background: #dcfce7;
+            color: #166534;
+            border-radius: 0.25rem;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        .schedule-table td, .schedule-table th {
+            vertical-align: middle;
+        }
+        .step-card {
+            border-left: 4px solid var(--primary-color);
+            background: #f9fafb;
+            padding: 1rem 1.25rem;
+            margin-bottom: 1rem;
+            border-radius: 0 0.5rem 0.5rem 0;
+        }
+        .step-card h6 {
+            margin-bottom: 0.5rem;
+            color: var(--primary-color);
+        }
+        .warning-box {
+            background: #fef3c7;
+            border: 1px solid #fcd34d;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin: 1rem 0;
+        }
+        .warning-box i {
+            color: #b45309;
+        }
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .main-content { margin-left: 0; padding: 1rem; }
+        }
+    </style>
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="logo">
+            <i class="bi bi-hospital"></i>
+            Glide HIMS
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Getting Started</div>
+            <a href="index.html" class="nav-link">Introduction</a>
+            <a href="quickstart.html" class="nav-link">Quick Start</a>
+            <a href="architecture.html" class="nav-link">Architecture</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Deployment</div>
+            <a href="deployment-onpremise.html" class="nav-link">On-Premise</a>
+            <a href="deployment-cloud.html" class="nav-link">Cloud Deployment</a>
+            <a href="docker.html" class="nav-link">Docker</a>
+            <a href="kubernetes.html" class="nav-link">Kubernetes</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Operations</div>
+            <a href="monitoring.html" class="nav-link">Monitoring</a>
+            <a href="backup.html" class="nav-link active">Backup & Recovery</a>
+            <a href="updates.html" class="nav-link">Updates</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">API Reference</div>
+            <a href="api-overview.html" class="nav-link">API Overview</a>
+            <a href="api-auth.html" class="nav-link">Authentication</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Support</div>
+            <a href="troubleshooting.html" class="nav-link">Troubleshooting</a>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <div class="page-header">
+            <h1><i class="bi bi-cloud-arrow-up me-2"></i>Backup & Recovery</h1>
+            <p class="subtitle">Protect your healthcare data with robust backup strategies</p>
+        </div>
+
+        <div class="alert alert-danger mb-4">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            <strong>Critical:</strong> Healthcare data is sensitive and often legally protected. Ensure your backup strategy complies with local regulations (HIPAA, GDPR, etc.) and includes encryption.
+        </div>
+
+        <!-- Backup Overview -->
+        <section class="mb-5">
+            <h2>What to Backup</h2>
+            
+            <div class="row g-4">
+                <div class="col-md-4">
+                    <div class="backup-type">
+                        <h5>
+                            <span class="icon"><i class="bi bi-database"></i></span>
+                            Database
+                        </h5>
+                        <p class="text-muted mb-2">PostgreSQL database containing all patient records, appointments, billing data</p>
+                        <span class="retention-badge">Daily + Weekly</span>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="backup-type">
+                        <h5>
+                            <span class="icon"><i class="bi bi-folder"></i></span>
+                            File Uploads
+                        </h5>
+                        <p class="text-muted mb-2">Patient documents, lab reports, X-rays, prescriptions</p>
+                        <span class="retention-badge">Daily</span>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="backup-type">
+                        <h5>
+                            <span class="icon"><i class="bi bi-gear"></i></span>
+                            Configuration
+                        </h5>
+                        <p class="text-muted mb-2">Environment files, nginx config, SSL certificates</p>
+                        <span class="retention-badge">On Change</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Backup Schedule -->
+        <section class="mb-5">
+            <h2>Recommended Backup Schedule</h2>
+            
+            <div class="card">
+                <div class="card-body">
+                    <table class="table schedule-table mb-0">
+                        <thead>
+                            <tr>
+                                <th>Backup Type</th>
+                                <th>Frequency</th>
+                                <th>Retention</th>
+                                <th>Storage</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Database - Full</strong></td>
+                                <td>Daily at 2:00 AM</td>
+                                <td>30 days</td>
+                                <td>Off-site / Cloud</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Database - Incremental</strong></td>
+                                <td>Every 6 hours</td>
+                                <td>7 days</td>
+                                <td>Local + Off-site</td>
+                            </tr>
+                            <tr>
+                                <td><strong>File Uploads</strong></td>
+                                <td>Daily at 3:00 AM</td>
+                                <td>90 days</td>
+                                <td>Off-site / Cloud</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Configuration</strong></td>
+                                <td>On every change</td>
+                                <td>Forever (Git)</td>
+                                <td>Git repository</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Weekly Archive</strong></td>
+                                <td>Sunday at 1:00 AM</td>
+                                <td>1 year</td>
+                                <td>Cold storage</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- Database Backup -->
+        <section class="mb-5">
+            <h2>Database Backup</h2>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-terminal me-2"></i>Manual Database Backup
+                </div>
+                <div class="card-body">
+                    <pre><code class="language-bash"># Full database backup
+pg_dump -h localhost -U glide -d glide_hims -F c -f backup_$(date +%Y%m%d_%H%M%S).dump
+
+# With compression
+pg_dump -h localhost -U glide -d glide_hims | gzip > backup_$(date +%Y%m%d).sql.gz
+
+# Specific tables only (e.g., for testing)
+pg_dump -h localhost -U glide -d glide_hims -t patients -t appointments > partial_backup.sql
+
+# Schema only (no data)
+pg_dump -h localhost -U glide -d glide_hims --schema-only > schema_backup.sql</code></pre>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-file-code me-2"></i>Automated Backup Script
+                </div>
+                <div class="card-body">
+                    <pre><code class="language-bash">#!/bin/bash
+# /opt/glide-hims/scripts/backup-database.sh
+
+set -e
+
+# Configuration
+DB_HOST="localhost"
+DB_USER="glide"
+DB_NAME="glide_hims"
+BACKUP_DIR="/var/backups/glide-hims/database"
+S3_BUCKET="s3://your-backup-bucket/glide-hims/database"
+RETENTION_DAYS=30
+DATE=$(date +%Y%m%d_%H%M%S)
+BACKUP_FILE="glide_hims_${DATE}.dump"
+
+# Create backup directory
+mkdir -p $BACKUP_DIR
+
+# Create backup
+echo "[$(date)] Starting database backup..."
+pg_dump -h $DB_HOST -U $DB_USER -d $DB_NAME -F c -f "$BACKUP_DIR/$BACKUP_FILE"
+
+# Compress backup
+gzip "$BACKUP_DIR/$BACKUP_FILE"
+BACKUP_FILE="${BACKUP_FILE}.gz"
+
+# Calculate checksum
+sha256sum "$BACKUP_DIR/$BACKUP_FILE" > "$BACKUP_DIR/${BACKUP_FILE}.sha256"
+
+# Upload to S3 (optional)
+if command -v aws &> /dev/null; then
+    echo "[$(date)] Uploading to S3..."
+    aws s3 cp "$BACKUP_DIR/$BACKUP_FILE" "$S3_BUCKET/$BACKUP_FILE"
+    aws s3 cp "$BACKUP_DIR/${BACKUP_FILE}.sha256" "$S3_BUCKET/${BACKUP_FILE}.sha256"
+fi
+
+# Clean up old backups
+echo "[$(date)] Cleaning up old backups..."
+find $BACKUP_DIR -name "*.dump.gz" -mtime +$RETENTION_DAYS -delete
+find $BACKUP_DIR -name "*.sha256" -mtime +$RETENTION_DAYS -delete
+
+# Report
+BACKUP_SIZE=$(du -h "$BACKUP_DIR/$BACKUP_FILE" | cut -f1)
+echo "[$(date)] Backup completed: $BACKUP_FILE ($BACKUP_SIZE)"</code></pre>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-clock me-2"></i>Cron Schedule
+                </div>
+                <div class="card-body">
+                    <pre><code class="language-bash"># Edit crontab
+crontab -e
+
+# Add these lines:
+
+# Daily full backup at 2:00 AM
+0 2 * * * /opt/glide-hims/scripts/backup-database.sh >> /var/log/glide-hims/backup.log 2>&1
+
+# Incremental backup every 6 hours
+0 */6 * * * /opt/glide-hims/scripts/backup-incremental.sh >> /var/log/glide-hims/backup.log 2>&1
+
+# Weekly archive on Sunday at 1:00 AM
+0 1 * * 0 /opt/glide-hims/scripts/backup-weekly.sh >> /var/log/glide-hims/backup.log 2>&1</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- File Backup -->
+        <section class="mb-5">
+            <h2>File Uploads Backup</h2>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-file-code me-2"></i>File Backup Script
+                </div>
+                <div class="card-body">
+                    <pre><code class="language-bash">#!/bin/bash
+# /opt/glide-hims/scripts/backup-files.sh
+
+set -e
+
+# Configuration
+UPLOADS_DIR="/root/glide-Hims/packages/backend/uploads"
+BACKUP_DIR="/var/backups/glide-hims/files"
+S3_BUCKET="s3://your-backup-bucket/glide-hims/files"
+DATE=$(date +%Y%m%d)
+
+# Create backup directory
+mkdir -p $BACKUP_DIR
+
+echo "[$(date)] Starting file backup..."
+
+# Create incremental backup using rsync
+rsync -av --delete \
+    --backup --backup-dir="$BACKUP_DIR/incremental_$DATE" \
+    "$UPLOADS_DIR/" "$BACKUP_DIR/current/"
+
+# Create compressed archive weekly
+if [ "$(date +%u)" -eq 7 ]; then
+    echo "[$(date)] Creating weekly archive..."
+    tar -czf "$BACKUP_DIR/files_weekly_$DATE.tar.gz" -C "$BACKUP_DIR" current/
+    
+    # Upload to S3
+    if command -v aws &> /dev/null; then
+        aws s3 cp "$BACKUP_DIR/files_weekly_$DATE.tar.gz" "$S3_BUCKET/"
+    fi
+fi
+
+# Sync to S3 (daily)
+if command -v aws &> /dev/null; then
+    echo "[$(date)] Syncing to S3..."
+    aws s3 sync "$BACKUP_DIR/current/" "$S3_BUCKET/current/" --delete
+fi
+
+echo "[$(date)] File backup completed"</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Docker Backup -->
+        <section class="mb-5">
+            <h2>Docker Backup</h2>
+
+            <div class="card">
+                <div class="card-body">
+                    <pre><code class="language-bash">#!/bin/bash
+# Backup Docker volumes and database
+
+DATE=$(date +%Y%m%d_%H%M%S)
+BACKUP_DIR="/var/backups/glide-hims"
+
+# Stop services for consistent backup
+docker compose stop backend frontend
+
+# Backup PostgreSQL data volume
+docker run --rm \
+    -v glide-hims_postgres_data:/data \
+    -v $BACKUP_DIR:/backup \
+    alpine tar czf /backup/postgres_data_$DATE.tar.gz -C /data .
+
+# Backup Redis data volume
+docker run --rm \
+    -v glide-hims_redis_data:/data \
+    -v $BACKUP_DIR:/backup \
+    alpine tar czf /backup/redis_data_$DATE.tar.gz -C /data .
+
+# Backup uploads volume
+docker run --rm \
+    -v glide-hims_uploads:/data \
+    -v $BACKUP_DIR:/backup \
+    alpine tar czf /backup/uploads_$DATE.tar.gz -C /data .
+
+# Restart services
+docker compose start backend frontend
+
+# Alternative: Database dump while running
+docker compose exec -T postgres pg_dump -U glide glide_hims | gzip > $BACKUP_DIR/database_$DATE.sql.gz
+
+echo "Docker backup completed: $BACKUP_DIR"</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Cloud Backup -->
+        <section class="mb-5">
+            <h2>Cloud Provider Backups</h2>
+
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="card h-100">
+                        <div class="card-header">AWS RDS</div>
+                        <div class="card-body">
+                            <pre><code class="language-bash"># Enable automated backups
+aws rds modify-db-instance \
+  --db-instance-identifier glide-hims-db \
+  --backup-retention-period 30 \
+  --preferred-backup-window "02:00-03:00"
+
+# Create manual snapshot
+aws rds create-db-snapshot \
+  --db-instance-identifier glide-hims-db \
+  --db-snapshot-identifier glide-hims-$(date +%Y%m%d)</code></pre>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card h-100">
+                        <div class="card-header">Google Cloud SQL</div>
+                        <div class="card-body">
+                            <pre><code class="language-bash"># Enable automated backups
+gcloud sql instances patch glide-hims-db \
+  --backup-start-time=02:00 \
+  --retained-backups-count=30
+
+# Create on-demand backup
+gcloud sql backups create \
+  --instance=glide-hims-db \
+  --description="Manual backup"</code></pre>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card h-100">
+                        <div class="card-header">Azure Database</div>
+                        <div class="card-body">
+                            <pre><code class="language-bash"># Configure backup retention
+az postgres flexible-server update \
+  --resource-group glide-hims-rg \
+  --name glide-hims-db \
+  --backup-retention 30
+
+# Geo-redundant backup
+az postgres flexible-server update \
+  --name glide-hims-db \
+  --geo-redundant-backup Enabled</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Recovery Procedures -->
+        <section class="mb-5">
+            <h2>Recovery Procedures</h2>
+
+            <div class="warning-box">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                <strong>Warning:</strong> Always test recovery procedures in a non-production environment first. Restoring a backup will overwrite existing data.
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-arrow-counterclockwise me-2"></i>Database Recovery
+                </div>
+                <div class="card-body">
+                    <div class="step-card">
+                        <h6>Step 1: Stop the Application</h6>
+                        <pre><code class="language-bash"># PM2
+pm2 stop glide-hims-backend
+
+# Docker
+docker compose stop backend</code></pre>
+                    </div>
+
+                    <div class="step-card">
+                        <h6>Step 2: Download Backup (if from S3)</h6>
+                        <pre><code class="language-bash">aws s3 cp s3://your-backup-bucket/glide-hims/database/glide_hims_20260410.dump.gz /tmp/</code></pre>
+                    </div>
+
+                    <div class="step-card">
+                        <h6>Step 3: Restore Database</h6>
+                        <pre><code class="language-bash"># Decompress if needed
+gunzip /tmp/glide_hims_20260410.dump.gz
+
+# Drop existing database (CAUTION!)
+psql -U postgres -c "DROP DATABASE IF EXISTS glide_hims;"
+psql -U postgres -c "CREATE DATABASE glide_hims OWNER glide;"
+
+# Restore from dump
+pg_restore -h localhost -U glide -d glide_hims -F c /tmp/glide_hims_20260410.dump
+
+# Or from SQL file
+psql -h localhost -U glide -d glide_hims < /tmp/backup.sql</code></pre>
+                    </div>
+
+                    <div class="step-card">
+                        <h6>Step 4: Verify and Restart</h6>
+                        <pre><code class="language-bash"># Verify data
+psql -U glide -d glide_hims -c "SELECT COUNT(*) FROM patients;"
+
+# Restart application
+pm2 start glide-hims-backend
+
+# Check logs
+pm2 logs glide-hims-backend --lines 50</code></pre>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-arrow-counterclockwise me-2"></i>File Recovery
+                </div>
+                <div class="card-body">
+                    <pre><code class="language-bash"># Restore from S3
+aws s3 sync s3://your-backup-bucket/glide-hims/files/current/ /root/glide-Hims/packages/backend/uploads/
+
+# Restore from tar archive
+tar -xzf /var/backups/glide-hims/files/files_weekly_20260407.tar.gz -C /root/glide-Hims/packages/backend/
+
+# Restore specific directory
+tar -xzf backup.tar.gz -C /destination/path --strip-components=1 uploads/patients/</code></pre>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-arrow-counterclockwise me-2"></i>Point-in-Time Recovery (PITR)
+                </div>
+                <div class="card-body">
+                    <p>For critical production systems, enable PostgreSQL WAL archiving for point-in-time recovery:</p>
+                    <pre><code class="language-bash"># postgresql.conf
+wal_level = replica
+archive_mode = on
+archive_command = 'aws s3 cp %p s3://your-bucket/wal/%f'
+
+# Recover to specific time
+pg_restore --target-time="2026-04-10 14:30:00" ...</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Backup Verification -->
+        <section class="mb-5">
+            <h2>Backup Verification</h2>
+
+            <div class="card">
+                <div class="card-body">
+                    <pre><code class="language-bash">#!/bin/bash
+# /opt/glide-hims/scripts/verify-backup.sh
+
+set -e
+
+BACKUP_FILE=$1
+TEST_DB="glide_hims_test_restore"
+
+echo "[$(date)] Verifying backup: $BACKUP_FILE"
+
+# Create test database
+psql -U postgres -c "DROP DATABASE IF EXISTS $TEST_DB;"
+psql -U postgres -c "CREATE DATABASE $TEST_DB;"
+
+# Restore to test database
+if [[ $BACKUP_FILE == *.gz ]]; then
+    gunzip -c $BACKUP_FILE | pg_restore -U postgres -d $TEST_DB
+else
+    pg_restore -U postgres -d $TEST_DB $BACKUP_FILE
+fi
+
+# Run verification queries
+echo "Verifying data integrity..."
+PATIENT_COUNT=$(psql -U postgres -d $TEST_DB -t -c "SELECT COUNT(*) FROM patients;")
+APPOINTMENT_COUNT=$(psql -U postgres -d $TEST_DB -t -c "SELECT COUNT(*) FROM appointments;")
+
+echo "Patients: $PATIENT_COUNT"
+echo "Appointments: $APPOINTMENT_COUNT"
+
+# Check for recent data
+LATEST_RECORD=$(psql -U postgres -d $TEST_DB -t -c "SELECT MAX(created_at) FROM patients;")
+echo "Latest patient record: $LATEST_RECORD"
+
+# Cleanup
+psql -U postgres -c "DROP DATABASE $TEST_DB;"
+
+echo "[$(date)] Backup verification completed successfully"</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Disaster Recovery -->
+        <section class="mb-5">
+            <h2>Disaster Recovery Plan</h2>
+
+            <div class="card">
+                <div class="card-body">
+                    <h5>Recovery Time Objectives (RTO)</h5>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Scenario</th>
+                                <th>Target RTO</th>
+                                <th>Recovery Method</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Database corruption</td>
+                                <td>1 hour</td>
+                                <td>Restore from latest backup</td>
+                            </tr>
+                            <tr>
+                                <td>Server failure</td>
+                                <td>2 hours</td>
+                                <td>Deploy to new server + restore</td>
+                            </tr>
+                            <tr>
+                                <td>Data center outage</td>
+                                <td>4 hours</td>
+                                <td>Failover to secondary region</td>
+                            </tr>
+                            <tr>
+                                <td>Ransomware attack</td>
+                                <td>4-8 hours</td>
+                                <td>Clean server + restore from off-site</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <h5 class="mt-4">Recovery Checklist</h5>
+                    <ol>
+                        <li>Assess the situation and identify affected systems</li>
+                        <li>Notify stakeholders and users</li>
+                        <li>Provision new infrastructure (if needed)</li>
+                        <li>Restore database from latest verified backup</li>
+                        <li>Restore file uploads</li>
+                        <li>Restore application configuration</li>
+                        <li>Deploy and start application</li>
+                        <li>Verify system functionality</li>
+                        <li>Run data integrity checks</li>
+                        <li>Resume normal operations</li>
+                        <li>Document incident and update procedures</li>
+                    </ol>
+                </div>
+            </div>
+        </section>
+
+        <!-- Best Practices -->
+        <section class="mb-5">
+            <h2>Best Practices</h2>
+
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header text-success">
+                            <i class="bi bi-check-circle me-2"></i>Do
+                        </div>
+                        <div class="card-body">
+                            <ul class="mb-0">
+                                <li>Encrypt backups at rest and in transit</li>
+                                <li>Store backups in multiple locations</li>
+                                <li>Test restore procedures regularly</li>
+                                <li>Monitor backup job success/failure</li>
+                                <li>Document recovery procedures</li>
+                                <li>Use versioned storage (S3 versioning)</li>
+                                <li>Include backup verification in automation</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header text-danger">
+                            <i class="bi bi-x-circle me-2"></i>Don't
+                        </div>
+                        <div class="card-body">
+                            <ul class="mb-0">
+                                <li>Store backups only on the same server</li>
+                                <li>Skip backup verification</li>
+                                <li>Keep backups unencrypted</li>
+                                <li>Ignore backup failure alerts</li>
+                                <li>Assume backups work without testing</li>
+                                <li>Delete old backups without retention policy</li>
+                                <li>Share backup credentials widely</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <div class="alert alert-success">
+            <i class="bi bi-check-circle me-2"></i>
+            <strong>Next:</strong> Learn about <a href="updates.html">system updates</a> to keep your installation secure and up-to-date.
+        </div>
+
+        <nav class="d-flex justify-content-between mt-5 pt-4 border-top">
+            <a href="monitoring.html" class="btn btn-outline-primary">
+                <i class="bi bi-arrow-left me-2"></i>Monitoring
+            </a>
+            <a href="updates.html" class="btn btn-primary">
+                Updates<i class="bi bi-arrow-right ms-2"></i>
+            </a>
+        </nav>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-bash.min.js"></script>
+</body>
+</html>

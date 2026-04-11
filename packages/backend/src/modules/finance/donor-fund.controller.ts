@@ -31,7 +31,7 @@ export class DonorFundController {
   @AuthWithPermissions('finance.manage')
   @ApiOperation({ summary: 'Create a donor fund' })
   async createDonorFund(@Body() body: CreateDonorFundDto, @Request() req: any) {
-    return this.donorFundService.createDonorFund(body, req.user?.tenantId);
+    return this.donorFundService.createDonorFund(body as any, req.user?.tenantId);
   }
 
   @Get()
@@ -83,8 +83,8 @@ export class DonorFundController {
         fromFacilityId: body.fromFacilityId,
         toFacilityId: body.toFacilityId,
         amount: body.amount,
-        description: body.description,
-        referenceNumber: body.referenceNumber,
+        description: body.description ?? '',
+        referenceNumber: body.referenceNumber ?? '',
         initiatedById: body.initiatedById ?? req.user?.id,
       },
       req.user?.tenantId,

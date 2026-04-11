@@ -5,6 +5,7 @@ import {
   JoinColumn,
   OneToMany,
 } from 'typeorm';
+import { Exclude } from 'class-transformer';
 import { BaseEntity } from './base.entity';
 import { Facility } from './facility.entity';
 
@@ -57,6 +58,7 @@ export class InsuranceProvider extends BaseEntity {
   @Column({ name: 'api_endpoint', nullable: true })
   apiEndpoint?: string;
 
+  @Exclude()
   @Column({ name: 'api_key', nullable: true })
   apiKey?: string;
 

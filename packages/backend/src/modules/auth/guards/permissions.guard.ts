@@ -102,8 +102,9 @@ export class PermissionsGuard implements CanActivate {
 
     const targetFacilityId = this.extractFacilityId(request);
 
-    // Cache resolved permissions for 60s to avoid 5-7 DB queries per request
-    const cacheKey = `perms:${user.id}:${targetFacilityId || 'global'}`;
+    // SECURITY: Include tenantId in cache key to prevent cross-tenant permission leakage
+    const tenantId = user.tenantId || 'global';
+    const cacheKey = `perms:${tenantId}:${user.id}:${targetFacilityId || 'global'}`;
     const userPermissionCodes = await this.cacheService.getOrSet<string[]>(
       cacheKey,
       () => this.resolveUserPermissions(user.id, targetFacilityId),
