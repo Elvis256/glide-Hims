@@ -6,8 +6,8 @@ import { Encounter, EncounterStatus } from '../../database/entities/encounter.en
 import { CreateDischargeSummaryDto, DischargeSummaryFilterDto } from './dto/discharge.dto';
 
 const DISCHARGEABLE_STATUSES: EncounterStatus[] = [
-  EncounterStatus.ACTIVE,
-  EncounterStatus.IN_PROGRESS,
+  EncounterStatus.ADMITTED,
+  EncounterStatus.IN_CONSULTATION,
 ];
 
 @Injectable()

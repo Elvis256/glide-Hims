@@ -8,6 +8,7 @@ import {
 } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Facility } from './facility.entity';
+import { Store } from './store.entity';
 import { User } from './user.entity';
 import { StockTransferItem } from './stock-transfer-item.entity';
 
@@ -45,15 +46,29 @@ export class StockTransfer extends BaseEntity {
   @JoinColumn({ name: 'from_facility_id' })
   fromFacility: Facility;
 
-  @Column({ name: 'from_facility_id', type: 'uuid' })
+  @Column({ name: 'from_facility_id', type: 'uuid', nullable: true })
   fromFacilityId: string;
 
   @ManyToOne(() => Facility)
   @JoinColumn({ name: 'to_facility_id' })
   toFacility: Facility;
 
-  @Column({ name: 'to_facility_id', type: 'uuid' })
+  @Column({ name: 'to_facility_id', type: 'uuid', nullable: true })
   toFacilityId: string;
+
+  @ManyToOne(() => Store, { nullable: true })
+  @JoinColumn({ name: 'from_store_id' })
+  fromStore: Store;
+
+  @Column({ name: 'from_store_id', type: 'uuid', nullable: true })
+  fromStoreId: string;
+
+  @ManyToOne(() => Store, { nullable: true })
+  @JoinColumn({ name: 'to_store_id' })
+  toStore: Store;
+
+  @Column({ name: 'to_store_id', type: 'uuid', nullable: true })
+  toStoreId: string;
 
   @Column({
     type: 'enum',

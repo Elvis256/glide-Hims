@@ -178,21 +178,43 @@ export class Dispensation extends BaseEntity {
 @Index(['prescriptionItemId'])
 @Index(['administeredAt'])
 export class MedicationAdministration extends BaseEntity {
-  @Column({ name: 'prescription_id' })
+  @Column({ name: 'prescription_id', nullable: true })
   prescriptionId: string;
 
   @ManyToOne(() => Prescription)
   @JoinColumn({ name: 'prescription_id' })
   prescription: Prescription;
 
-  @Column({ name: 'prescription_item_id' })
+  @Column({ name: 'prescription_item_id', nullable: true })
   prescriptionItemId: string;
 
   @ManyToOne(() => PrescriptionItem)
   @JoinColumn({ name: 'prescription_item_id' })
   prescriptionItem: PrescriptionItem;
 
-  @Column({ name: 'administered_by_id' })
+  @Column({ name: 'admission_id', type: 'uuid', nullable: true })
+  admissionId: string;
+
+  @Column({ name: 'drug_name', nullable: true })
+  drugName: string;
+
+  @Column({ nullable: true })
+  dose: string;
+
+  @Column({ nullable: true })
+  route: string;
+
+  @Column({ name: 'scheduled_time', type: 'timestamptz', nullable: true })
+  scheduledTime: Date;
+
+  @Column({
+    type: 'varchar',
+    length: 20,
+    default: 'scheduled',
+  })
+  status: string;
+
+  @Column({ name: 'administered_by_id', nullable: true })
   administeredById: string;
 
   @ManyToOne(() => User)
@@ -202,7 +224,7 @@ export class MedicationAdministration extends BaseEntity {
   @Column({ name: 'witness_id', nullable: true })
   witnessId: string;
 
-  @Column({ name: 'administered_at', type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })
+  @Column({ name: 'administered_at', type: 'timestamptz', nullable: true })
   administeredAt: Date;
 
   @Column({ name: 'dose_given', type: 'decimal', precision: 10, scale: 4, nullable: true })
@@ -213,6 +235,12 @@ export class MedicationAdministration extends BaseEntity {
 
   @Column({ type: 'text', nullable: true })
   notes: string;
+
+  @Column({ name: 'batch_number', nullable: true })
+  batchNumber: string;
+
+  @Column({ type: 'text', nullable: true })
+  reason: string;
 
   @Column({ name: 'is_controlled_substance', default: false })
   isControlledSubstance: boolean;

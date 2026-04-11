@@ -624,14 +624,14 @@ export class NotificationsService {
         isEnabled: true,
         extraConfig: { templates: [newTemplate] },
         ...(tenantId ? { tenantId } : {}),
-      } as any);
+      } as Partial<NotificationConfig>);
     } else {
       const templates = config.extraConfig?.templates || [];
       templates.push(newTemplate);
       config.extraConfig = { ...config.extraConfig, templates };
     }
 
-    await this.configRepo.save(config);
+    await this.configRepo.save(config!);
     return newTemplate;
   }
 

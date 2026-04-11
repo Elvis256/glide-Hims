@@ -483,7 +483,12 @@ export class IpdService {
     }
 
     const med = this.medAdminRepo.create({
-      ...dto,
+      admissionId: dto.admissionId,
+      prescriptionItemId: dto.prescriptionItemId,
+      drugName: dto.drugName,
+      dose: dto.dose,
+      route: dto.route,
+      notes: dto.notes,
       scheduledTime: new Date(dto.scheduledTime),
       status: MedicationStatus.SCHEDULED,
       ...(tenantId ? { tenantId } : {}),
@@ -511,7 +516,7 @@ export class IpdService {
 
     med.status = dto.status;
     med.administeredById = userId;
-    med.administeredTime = new Date();
+    med.administeredAt = new Date();
     if (dto.batchNumber) med.batchNumber = dto.batchNumber;
     if (dto.notes) med.notes = dto.notes;
     if (dto.reason) med.reason = dto.reason;

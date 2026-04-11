@@ -1,7 +1,9 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike, DataSource } from 'typeorm';
-import { Store, StockTransfer, StockTransferItem, TransferStatus } from '../../database/entities/store.entity';
+import { Store } from '../../database/entities/store.entity';
+import { StockTransfer, TransferStatus, TransferReason } from '../../database/entities/stock-transfer.entity';
+import { StockTransferItem } from '../../database/entities/stock-transfer-item.entity';
 import { Item, StockBalance, StockLedger, MovementType } from '../../database/entities/inventory.entity';
 import { CreateStoreDto, UpdateStoreDto, CreateTransferDto, ApproveTransferDto, ReceiveTransferDto } from './stores.dto';
 
@@ -124,7 +126,7 @@ export class StoresService {
       transferNumber,
       fromStoreId: dto.fromStoreId,
       toStoreId: dto.toStoreId,
-      reason: dto.reason,
+      reason: dto.reason as TransferReason,
       status: TransferStatus.REQUESTED,
       requestedById: userId,
       ...(tenantId ? { tenantId } : {}),
@@ -189,7 +191,7 @@ export class StoresService {
       for (const item of dto.items) {
         await transferItemRepo.update(
           { transferId: id, itemId: item.itemId },
-          { quantityApproved: item.quantityApproved, quantityDispatched: item.quantityApproved },
+          { approvedQuantity: item.quantityApproved },
         );
 
         const qty = item.quantityApproved;
@@ -220,7 +222,7 @@ export class StoresService {
         }
 
         // Get transfer item for unit cost
-        const transferItem = transfer.items?.find(ti => ti.itemId === item.itemId);
+        const transferItem = transfer.items?.find((ti: StockTransferItem) => ti.itemId === item.itemId);
 
         // Ledger entry for transfer out
         await stockLedgerRepo.save(stockLedgerRepo.create({
@@ -243,7 +245,7 @@ export class StoresService {
         status: TransferStatus.IN_TRANSIT,
         approvedById: userId,
         approvedAt: new Date(),
-        dispatchedAt: new Date(),
+        shippedAt: new Date(),
       });
 
       return this.findTransfer(id, tenantId);
@@ -270,7 +272,7 @@ export class StoresService {
       for (const item of dto.items) {
         await transferItemRepo.update(
           { transferId: id, itemId: item.itemId },
-          { quantityReceived: item.quantityReceived, notes: item.notes },
+          { receivedQuantity: item.quantityReceived, notes: item.notes },
         );
 
         const qty = item.quantityReceived;
@@ -316,7 +318,7 @@ export class StoresService {
         }
 
         // Get transfer item for unit cost
-        const transferItem = transfer.items?.find(ti => ti.itemId === item.itemId);
+        const transferItem = transfer.items?.find((ti: StockTransferItem) => ti.itemId === item.itemId);
 
         // Ledger entry for transfer in
         await stockLedgerRepo.save(stockLedgerRepo.create({
@@ -364,7 +366,7 @@ export class StoresService {
         if (!fromStore) throw new NotFoundException('Source store not found');
 
         for (const item of transfer.items || []) {
-          const qty = item.quantityApproved || item.quantityRequested;
+          const qty = item.approvedQuantity || item.requestedQuantity;
           if (!qty || qty <= 0) continue;
 
           // Refund to source store balance
