@@ -39,8 +39,14 @@ export class LicenseService implements OnModuleInit {
     private readonly licenseRepository: Repository<License>,
     private readonly configService: ConfigService,
   ) {
-    this.secretKey = this.configService.get<string>('LICENSE_SECRET_KEY') || 
-      'glide-hims-license-secret-key-2024';
+    const secretKey = this.configService.get<string>('LICENSE_SECRET_KEY');
+    const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
+
+    if (isProduction && !secretKey) {
+      throw new Error('LICENSE_SECRET_KEY environment variable must be set in production');
+    }
+
+    this.secretKey = secretKey || 'dev-license-key-not-for-production';
   }
 
   async onModuleInit() {
@@ -143,7 +149,7 @@ export class LicenseService implements OnModuleInit {
   }
 
   /**
-   * Build validation result with warnings
+   * Build validation result with warnings (strips sensitive fields)
    */
   private buildValidationResult(license: License): LicenseValidationResult {
     const warnings: string[] = [];
@@ -157,9 +163,12 @@ export class LicenseService implements OnModuleInit {
       warnings.push('URGENT: License expiring soon!');
     }
 
+    // Strip sensitive fields before returning
+    const { signature, ...safeLicense } = license;
+
     return {
       valid: true,
-      license,
+      license: safeLicense as License,
       expiresIn: daysUntilExpiry,
       warnings: warnings.length > 0 ? warnings : undefined,
     };
@@ -175,14 +184,19 @@ export class LicenseService implements OnModuleInit {
   }
 
   /**
-   * List all licenses (admin only)
+   * List all licenses (admin only — always scoped by tenantId if provided)
    */
   async listLicenses(filters?: {
     status?: string;
     licenseType?: string;
-    tenantId: string;
+    tenantId?: string;
   }): Promise<License[]> {
     const query = this.licenseRepository.createQueryBuilder('license');
+
+    // Tenant filter is always applied when provided
+    if (filters?.tenantId) {
+      query.andWhere('license.tenant_id = :tenantId', { tenantId: filters.tenantId });
+    }
 
     if (filters?.status) {
       query.andWhere('license.status = :status', { status: filters.status });
@@ -190,10 +204,6 @@ export class LicenseService implements OnModuleInit {
 
     if (filters?.licenseType) {
       query.andWhere('license.license_type = :type', { type: filters.licenseType });
-    }
-
-    if (filters?.tenantId) {
-      query.andWhere('license.tenant_id = :tenantId', { tenantId: filters.tenantId });
     }
 
     return query.orderBy('license.created_at', 'DESC').getMany();

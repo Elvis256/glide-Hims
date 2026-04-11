@@ -8,6 +8,7 @@ import { User } from '../../database/entities/user.entity';
 import { Role } from '../../database/entities/role.entity';
 import { UserRole } from '../../database/entities/user-role.entity';
 import { SystemSetting } from '../../database/entities/system-setting.entity';
+import { SystemSettingsModule } from '../system-settings/system-settings.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { SystemSetting } from '../../database/entities/system-setting.entity';
       UserRole,
       SystemSetting,
     ]),
+    SystemSettingsModule,
   ],
   controllers: [SetupController],
   providers: [SetupService],

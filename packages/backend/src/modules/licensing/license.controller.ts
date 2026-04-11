@@ -6,13 +6,15 @@ import {
   Body,
   Param,
   Query,
-  UseGuards,
   HttpException,
   HttpStatus,
+  Request,
+  ForbiddenException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { LicenseService, GenerateLicenseDto } from './license.service';
-import { GlobalJwtAuthGuard } from '../auth/guards/global-jwt.guard';
+import { Auth } from '../auth/decorators/auth.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 
 @ApiTags('Licensing')
@@ -20,11 +22,18 @@ import { Public } from '../auth/decorators/public.decorator';
 export class LicenseController {
   constructor(private readonly licenseService: LicenseService) {}
 
+  private requireSystemAdmin(req: any) {
+    if (!req.user?.isSystemAdmin) {
+      throw new ForbiddenException('System admin access required');
+    }
+  }
+
   /**
    * Validate a license key (public endpoint for on-premise installations)
    */
   @Post('validate')
   @Public()
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @ApiOperation({ summary: 'Validate a license key' })
   async validateLicense(@Body() body: { licenseKey: string }) {
     const result = await this.licenseService.validateLicense(body.licenseKey);
@@ -49,14 +58,13 @@ export class LicenseController {
   }
 
   /**
-   * Generate a new license (admin only)
+   * Generate a new license (system admin only)
    */
   @Post('generate')
-  @UseGuards(GlobalJwtAuthGuard)
-  @ApiBearerAuth()
+  @Auth('Administrator')
   @ApiOperation({ summary: 'Generate a new license key' })
-  async generateLicense(@Body() dto: GenerateLicenseDto) {
-    // TODO: Add system admin check
+  async generateLicense(@Body() dto: GenerateLicenseDto, @Request() req: any) {
+    this.requireSystemAdmin(req);
     const license = await this.licenseService.generateLicense(dto);
 
     return {
@@ -72,13 +80,13 @@ export class LicenseController {
   }
 
   /**
-   * Get license details (admin only)
+   * Get license details (system admin only)
    */
   @Get(':licenseKey')
-  @UseGuards(GlobalJwtAuthGuard)
-  @ApiBearerAuth()
+  @Auth('Administrator')
   @ApiOperation({ summary: 'Get license details' })
-  async getLicense(@Param('licenseKey') licenseKey: string) {
+  async getLicense(@Param('licenseKey') licenseKey: string, @Request() req: any) {
+    this.requireSystemAdmin(req);
     const license = await this.licenseService.getLicense(licenseKey);
 
     if (!license) {
@@ -89,43 +97,45 @@ export class LicenseController {
   }
 
   /**
-   * List all licenses (admin only)
+   * List all licenses (system admin only)
    */
   @Get()
-  @UseGuards(GlobalJwtAuthGuard)
-  @ApiBearerAuth()
+  @Auth('Administrator')
   @ApiOperation({ summary: 'List all licenses' })
   async listLicenses(
+    @Request() req: any,
     @Query('status') status?: string,
     @Query('licenseType') licenseType?: string,
     @Query('tenantId') tenantId?: string,
   ) {
-    return this.licenseService.listLicenses({ status, licenseType, tenantId });
+    this.requireSystemAdmin(req);
+    return this.licenseService.listLicenses({ status, licenseType, tenantId: tenantId || req.user?.tenantId });
   }
 
   /**
-   * Revoke a license (admin only)
+   * Revoke a license (system admin only)
    */
   @Put(':licenseKey/revoke')
-  @UseGuards(GlobalJwtAuthGuard)
-  @ApiBearerAuth()
+  @Auth('Administrator')
   @ApiOperation({ summary: 'Revoke a license' })
-  async revokeLicense(@Param('licenseKey') licenseKey: string) {
+  async revokeLicense(@Param('licenseKey') licenseKey: string, @Request() req: any) {
+    this.requireSystemAdmin(req);
     const license = await this.licenseService.revokeLicense(licenseKey);
     return { message: 'License revoked', status: license.status };
   }
 
   /**
-   * Extend a license (admin only)
+   * Extend a license (system admin only)
    */
   @Put(':licenseKey/extend')
-  @UseGuards(GlobalJwtAuthGuard)
-  @ApiBearerAuth()
+  @Auth('Administrator')
   @ApiOperation({ summary: 'Extend license validity' })
   async extendLicense(
     @Param('licenseKey') licenseKey: string,
     @Body() body: { days: number },
+    @Request() req: any,
   ) {
+    this.requireSystemAdmin(req);
     const license = await this.licenseService.extendLicense(licenseKey, body.days);
     return { 
       message: 'License extended', 
@@ -134,15 +144,17 @@ export class LicenseController {
   }
 
   /**
-   * Bind license to hardware (on-premise)
+   * Bind license to hardware (requires authentication)
    */
   @Put(':licenseKey/bind-hardware')
-  @Public()
+  @Auth('Administrator')
   @ApiOperation({ summary: 'Bind license to hardware ID' })
   async bindToHardware(
     @Param('licenseKey') licenseKey: string,
     @Body() body: { hardwareId: string },
+    @Request() req: any,
   ) {
+    this.requireSystemAdmin(req);
     const license = await this.licenseService.bindToHardware(
       licenseKey,
       body.hardwareId,

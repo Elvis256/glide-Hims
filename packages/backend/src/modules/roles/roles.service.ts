@@ -87,7 +87,8 @@ export class RolesService {
         .andWhere('(role.tenant_id = :tenantId OR role.is_system_role = true)', { tenantId })
         .getOne();
     } else {
-      role = await this.roleRepository.findOne({ where: { id } });
+      // System admin context: still filter to system roles only for safety
+      role = await this.roleRepository.findOne({ where: [{ id, isSystemRole: true }] });
     }
     if (!role) throw new NotFoundException('Role not found');
     return role;

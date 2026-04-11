@@ -171,8 +171,6 @@ export class TenantsService implements OnModuleInit {
         single_user: 'hospital', clinic_opd: 'hospital', clinic_full: 'hospital',
         multisite_opd: 'hospital', hospital: 'hospital',
         pharmacy_retail: 'pharmacy', pharmacy_chain: 'pharmacy', pharmacy_wholesale: 'pharmacy',
-        dental_general: 'dental', dental_specialist: 'dental',
-        optical_center: 'optical', optical_chain: 'optical',
       };
       businessType = modeToBusinessType[mode] || 'hospital';
     }
