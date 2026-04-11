@@ -498,10 +498,10 @@ export class UsersService {
       role = await this.roleRepository
         .createQueryBuilder('role')
         .where('role.id = :id', { id: dto.roleId })
-        .andWhere('(role.tenant_id = :tenantId OR role.tenant_id IS NULL)', { tenantId })
+        .andWhere('(role.tenant_id = :tenantId OR role.is_system_role = true)', { tenantId })
         .getOne();
     } else {
-      role = await this.roleRepository.findOne({ where: { id: dto.roleId } });
+      role = await this.roleRepository.findOne({ where: [{ id: dto.roleId, isSystemRole: true }] });
     }
 
     if (!role) {

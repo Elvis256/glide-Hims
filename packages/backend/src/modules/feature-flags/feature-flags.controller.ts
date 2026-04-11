@@ -7,12 +7,11 @@ import {
   Body,
   Param,
   Query,
-  UseGuards,
   BadRequestException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { FeatureFlagsService } from './feature-flags.service';
-import { GlobalJwtAuthGuard } from '../auth/guards/global-jwt.guard';
+import { Auth } from '../auth/decorators/auth.decorator';
 
 @ApiTags('Feature Flags')
 @Controller('features')
@@ -56,8 +55,7 @@ export class FeatureFlagsController {
    * Get all feature flags for a tenant
    */
   @Get()
-  @UseGuards(GlobalJwtAuthGuard)
-  @ApiBearerAuth()
+  @Auth('Administrator')
   @ApiOperation({ summary: 'Get all feature flags' })
   async getFlags(@Query('tenantId') tenantId?: string) {
     const tid = this.requireTenantId(tenantId);
@@ -83,8 +81,7 @@ export class FeatureFlagsController {
    * Set a feature flag (admin only)
    */
   @Put(':featureKey')
-  @UseGuards(GlobalJwtAuthGuard)
-  @ApiBearerAuth()
+  @Auth('Administrator')
   @ApiOperation({ summary: 'Set a feature flag' })
   async setFlag(
     @Param('featureKey') featureKey: string,
@@ -108,8 +105,7 @@ export class FeatureFlagsController {
    * Delete a feature flag (admin only)
    */
   @Delete(':featureKey')
-  @UseGuards(GlobalJwtAuthGuard)
-  @ApiBearerAuth()
+  @Auth('Administrator')
   @ApiOperation({ summary: 'Delete a feature flag' })
   async deleteFlag(
     @Param('featureKey') featureKey: string,
@@ -124,8 +120,7 @@ export class FeatureFlagsController {
    * Get system feature definitions
    */
   @Get('system/definitions')
-  @UseGuards(GlobalJwtAuthGuard)
-  @ApiBearerAuth()
+  @Auth('Administrator')
   @ApiOperation({ summary: 'Get system feature definitions' })
   async getSystemFeatures() {
     return this.featureFlagsService.getSystemFeatures();
@@ -135,8 +130,7 @@ export class FeatureFlagsController {
    * Create/update system feature definition (admin only)
    */
   @Post('system/definitions')
-  @UseGuards(GlobalJwtAuthGuard)
-  @ApiBearerAuth()
+  @Auth('Administrator')
   @ApiOperation({ summary: 'Create or update system feature' })
   async upsertSystemFeature(
     @Body() body: {

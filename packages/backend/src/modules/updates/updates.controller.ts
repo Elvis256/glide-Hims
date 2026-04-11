@@ -6,13 +6,14 @@ import {
   Body,
   Param,
   Query,
-  UseGuards,
   Res,
+  Request,
+  ForbiddenException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Response } from 'express';
 import { UpdatesService } from './updates.service';
-import { GlobalJwtAuthGuard } from '../auth/guards/global-jwt.guard';
+import { Auth } from '../auth/decorators/auth.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -21,6 +22,12 @@ import * as path from 'path';
 @Controller('updates')
 export class UpdatesController {
   constructor(private readonly updatesService: UpdatesService) {}
+
+  private requireSystemAdmin(req: any) {
+    if (!req.user?.isSystemAdmin) {
+      throw new ForbiddenException('System admin access required');
+    }
+  }
 
   /**
    * Check for available updates (public endpoint for on-premise)
@@ -70,11 +77,10 @@ export class UpdatesController {
   }
 
   /**
-   * Create new version (admin only)
+   * Create new version (system admin only)
    */
   @Post('versions')
-  @UseGuards(GlobalJwtAuthGuard)
-  @ApiBearerAuth()
+  @Auth('Administrator')
   @ApiOperation({ summary: 'Create new version' })
   async createVersion(
     @Body() body: {
@@ -88,18 +94,23 @@ export class UpdatesController {
       checksum?: string;
       fileSize?: number;
     },
+    @Request() req: any,
   ) {
+    this.requireSystemAdmin(req);
     return this.updatesService.createVersion(body);
   }
 
   /**
-   * Set version as latest (admin only)
+   * Set version as latest (system admin only)
    */
   @Put('versions/:version/set-latest')
-  @UseGuards(GlobalJwtAuthGuard)
-  @ApiBearerAuth()
+  @Auth('Administrator')
   @ApiOperation({ summary: 'Set version as latest' })
-  async setLatestVersion(@Param('version') version: string) {
+  async setLatestVersion(
+    @Param('version') version: string,
+    @Request() req: any,
+  ) {
+    this.requireSystemAdmin(req);
     return this.updatesService.setLatestVersion(version);
   }
 
