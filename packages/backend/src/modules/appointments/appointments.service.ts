@@ -38,7 +38,7 @@ export class AppointmentsService {
         return false;
       }
       // Time range overlap: newStart < existingEnd AND newEnd > existingStart
-      return dto.startTime < existing.endTime && dto.endTime > existing.startTime;
+      return dto.startTime < existing.endTime && (dto.endTime ? dto.endTime > existing.startTime : true);
     });
 
     if (hasConflict) {
