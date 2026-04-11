@@ -68,7 +68,7 @@ export class InAppNotificationsService {
       });
 
     if (tenantId) {
-      roleQb.andWhere('(role.tenant_id = :tenantId OR role.tenant_id IS NULL)', { tenantId });
+      roleQb.andWhere('(role.tenant_id = :tenantId OR role.is_system_role = true)', { tenantId });
     }
 
     const roles = await roleQb.getMany();
@@ -85,7 +85,7 @@ export class InAppNotificationsService {
     }
 
     if (tenantId) {
-      qb.andWhere('(ur.tenantId = :tenantId OR ur.tenantId IS NULL)', { tenantId });
+      qb.andWhere('ur.tenantId = :tenantId', { tenantId });
     }
 
     const rows = await qb.getRawMany();

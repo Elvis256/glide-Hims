@@ -3,7 +3,6 @@ import { ValidationPipe, BadRequestException, Logger, ClassSerializerInterceptor
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
-import { DataSource } from 'typeorm';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import helmet from 'helmet';
@@ -102,8 +101,7 @@ async function bootstrap() {
   app.useGlobalInterceptors(new SecurityAuditInterceptor());
 
   // Global tenant interceptor - sets tenantId from JWT on every request
-  const dataSource = app.get(DataSource);
-  app.useGlobalInterceptors(new TenantInterceptor(dataSource, reflector));
+  app.useGlobalInterceptors(new TenantInterceptor(reflector));
 
   // Global response transform interceptor - standardizes API response envelopes
   app.useGlobalInterceptors(new ResponseTransformInterceptor(reflector));

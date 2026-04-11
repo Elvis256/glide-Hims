@@ -8,6 +8,7 @@ import {
   ManyToOne,
   JoinColumn,
 } from 'typeorm';
+import { Exclude } from 'class-transformer';
 import { Tenant } from './tenant.entity';
 
 /**
@@ -62,6 +63,7 @@ export class License {
   @Column({ type: 'int', default: 0, name: 'validation_failures' })
   validationFailures: number;
 
+  @Exclude()
   @Column({ type: 'text', nullable: true })
   signature: string;
 

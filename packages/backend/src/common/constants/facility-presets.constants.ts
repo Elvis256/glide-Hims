@@ -8,8 +8,6 @@
 export const BUSINESS_TYPES = {
   HOSPITAL: 'hospital',
   PHARMACY: 'pharmacy',
-  DENTAL: 'dental',
-  OPTICAL: 'optical',
 } as const;
 
 export type BusinessType = typeof BUSINESS_TYPES[keyof typeof BUSINESS_TYPES];
@@ -23,10 +21,6 @@ export const FACILITY_MODES = {
   PHARMACY_RETAIL: 'pharmacy_retail',
   PHARMACY_CHAIN: 'pharmacy_chain',
   PHARMACY_WHOLESALE: 'pharmacy_wholesale',
-  DENTAL_GENERAL: 'dental_general',
-  DENTAL_SPECIALIST: 'dental_specialist',
-  OPTICAL_CENTER: 'optical_center',
-  OPTICAL_CHAIN: 'optical_chain',
 } as const;
 
 export type FacilityMode = typeof FACILITY_MODES[keyof typeof FACILITY_MODES];
@@ -219,105 +213,6 @@ export const FACILITY_PRESETS: FacilityPreset[] = [
       'Tiered pricing for different customer categories',
       'Delivery tracking and route management',
       'Full supply chain: procurement, warehousing, distribution',
-    ],
-  },
-
-  // ─── Dental ───────────────────────────────────────────────────────
-  {
-    mode: FACILITY_MODES.DENTAL_GENERAL,
-    businessType: BUSINESS_TYPES.DENTAL,
-    name: 'General Dental Practice',
-    description: 'General dentistry with charting, procedures, imaging, treatment plans, and dental-specific billing.',
-    icon: 'tooth',
-    facilityType: 'dental_clinic',
-    supportsMultiSite: false,
-    singleUserMode: false,
-    enabledModules: [
-      'patients', 'encounters', 'dental_charting', 'dental_procedures',
-      'dental_imaging', 'dental_lab', 'billing', 'inventory',
-      'insurance', 'appointments', 'reports',
-    ],
-    recommendedRoles: ['Dentist', 'Dental Hygienist', 'Dental Assistant', 'Receptionist', 'Cashier'],
-    notes: [
-      'Interactive dental chart with tooth-level tracking',
-      'CDT procedure codes for billing',
-      'Treatment plan builder with multi-visit scheduling',
-      'Dental lab order tracking (crowns, dentures, etc.)',
-    ],
-  },
-  {
-    mode: FACILITY_MODES.DENTAL_SPECIALIST,
-    businessType: BUSINESS_TYPES.DENTAL,
-    name: 'Specialist Dental Clinic',
-    description: 'Multi-specialty dental clinic with orthodontics, periodontics, oral surgery, insurance pre-auth, and multi-provider scheduling.',
-    icon: 'tooth-specialist',
-    facilityType: 'dental_clinic',
-    supportsMultiSite: false,
-    singleUserMode: false,
-    enabledModules: [
-      'patients', 'encounters', 'dental_charting', 'dental_procedures',
-      'dental_imaging', 'dental_lab', 'orthodontics', 'periodontics',
-      'billing', 'inventory', 'insurance', 'insurance_preauth',
-      'appointments', 'reports', 'hr', 'finance',
-    ],
-    recommendedRoles: ['Dentist', 'Orthodontist', 'Periodontist', 'Oral Surgeon', 'Dental Hygienist', 'Dental Assistant', 'Receptionist', 'Cashier', 'HR Manager'],
-    notes: [
-      'Orthodontic case tracking with adjustment logs',
-      'Periodontal charting (6 sites per tooth)',
-      'Insurance pre-authorization workflow',
-      'Multi-provider scheduling with chair management',
-      'HR and finance for larger practices',
-    ],
-  },
-
-  // ─── Optical ──────────────────────────────────────────────────────
-  {
-    mode: FACILITY_MODES.OPTICAL_CENTER,
-    businessType: BUSINESS_TYPES.OPTICAL,
-    name: 'Optical Center',
-    description: 'Full-service optometry with eye exams, prescriptions, frame/lens inventory, contact lenses, and in-house lens lab.',
-    icon: 'glasses',
-    facilityType: 'optical_center',
-    supportsMultiSite: false,
-    singleUserMode: false,
-    enabledModules: [
-      'patients', 'encounters', 'optical_exams', 'optical_rx',
-      'optical_inventory', 'contact_lenses', 'optical_lab',
-      'visual_field', 'pos', 'billing', 'inventory',
-      'insurance', 'appointments', 'reports',
-    ],
-    recommendedRoles: ['Optometrist', 'Optician', 'Lab Technician', 'Sales Associate', 'Receptionist', 'Cashier'],
-    notes: [
-      'Structured eye exam forms (OD/OS)',
-      'Optical Rx management with history comparison',
-      'Frame & lens inventory with barcode scanning',
-      'Contact lens fitting and follow-up tracking',
-      'In-house lens cutting lab with order queue',
-      'Visual field testing and progression tracking',
-    ],
-  },
-  {
-    mode: FACILITY_MODES.OPTICAL_CHAIN,
-    businessType: BUSINESS_TYPES.OPTICAL,
-    name: 'Optical Chain',
-    description: 'Multi-branch optical network with centralised inventory, lens lab orders, insurance billing, and consolidated reporting.',
-    icon: 'glasses-chain',
-    facilityType: 'optical_center',
-    supportsMultiSite: true,
-    singleUserMode: false,
-    enabledModules: [
-      'patients', 'encounters', 'optical_exams', 'optical_rx',
-      'optical_inventory', 'contact_lenses', 'optical_lab',
-      'visual_field', 'pos', 'billing', 'inventory',
-      'insurance', 'appointments', 'reports', 'hr', 'finance',
-    ],
-    recommendedRoles: ['Optometrist', 'Optician', 'Lab Technician', 'Sales Associate', 'Receptionist', 'Cashier', 'Branch Manager', 'HR Manager', 'Accountant'],
-    notes: [
-      'Multi-branch inventory with stock transfers',
-      'Centralised lens lab processing',
-      'HR and finance for company management',
-      'Consolidated reporting across all branches',
-      'Add branches after setup via Facilities > Add Branch',
     ],
   },
 ];

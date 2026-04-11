@@ -3,12 +3,16 @@ import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { Public } from '../auth/decorators/public.decorator';
 import { SetupService } from './setup.service';
+import { SystemSettingsService } from '../system-settings/system-settings.service';
 import { InitializeSetupDto, RegisterTenantDto, InitializeTenantSetupDto } from './dto/setup.dto';
 
 @ApiTags('Setup')
 @Controller('setup')
 export class SetupController {
-  constructor(private readonly setupService: SetupService) {}
+  constructor(
+    private readonly setupService: SetupService,
+    private readonly systemSettingsService: SystemSettingsService,
+  ) {}
 
   @Get('status')
   @Public()
@@ -63,6 +67,17 @@ export class SetupController {
   @ApiResponse({ status: 201, description: 'Organization registered successfully' })
   @ApiResponse({ status: 400, description: 'Validation error or duplicate organization/user' })
   async registerTenant(@Body() dto: RegisterTenantDto) {
+    // Check if self-registration is allowed
+    try {
+      const setting = await this.systemSettingsService.getByKey('platform.allow_self_registration');
+      if (setting.value === false || setting.value === 'false') {
+        throw new ForbiddenException('Self-service registration is currently disabled');
+      }
+    } catch (err) {
+      // If the setting doesn't exist (NotFoundException), allow registration by default
+      if (err instanceof ForbiddenException) throw err;
+    }
+
     return this.setupService.registerTenant(dto);
   }
 
