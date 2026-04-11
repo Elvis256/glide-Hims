@@ -28,10 +28,11 @@ export class RolesService {
   async findAllRoles(tenantId?: string) {
     let roles: Role[];
     if (tenantId) {
+      // SECURITY: Include tenant-specific roles AND system roles (isSystemRole=true)
       roles = await this.roleRepository
         .createQueryBuilder('role')
         .leftJoinAndSelect('role.parentRole', 'parentRole')
-        .where('role.tenant_id = :tenantId OR role.tenant_id IS NULL', { tenantId })
+        .where('(role.tenant_id = :tenantId OR role.is_system_role = true)', { tenantId })
         .orderBy('role.name', 'ASC')
         .getMany();
     } else {
@@ -79,10 +80,11 @@ export class RolesService {
   async findOneRole(id: string, tenantId?: string) {
     let role: Role | null;
     if (tenantId) {
+      // SECURITY: Include tenant-specific roles AND system roles
       role = await this.roleRepository
         .createQueryBuilder('role')
         .where('role.id = :id', { id })
-        .andWhere('(role.tenant_id = :tenantId OR role.tenant_id IS NULL)', { tenantId })
+        .andWhere('(role.tenant_id = :tenantId OR role.is_system_role = true)', { tenantId })
         .getOne();
     } else {
       role = await this.roleRepository.findOne({ where: { id } });
@@ -97,7 +99,12 @@ export class RolesService {
     // Load parent role info
     let parentRole: Role | null = null;
     if (role.parentRoleId) {
-      parentRole = await this.roleRepository.findOne({ where: { id: role.parentRoleId, ...(tenantId ? { tenantId } : {}) } });
+      // SECURITY: Use proper tenant filtering for parent lookup
+      parentRole = await this.roleRepository.findOne({ 
+        where: tenantId 
+          ? [{ id: role.parentRoleId, tenantId }, { id: role.parentRoleId, isSystemRole: true }]
+          : { id: role.parentRoleId }
+      });
     }
 
     const { direct, inherited, all } = await this.resolveRolePermissions(id);

@@ -1,5 +1,5 @@
-import { Controller, Post, Body, Get, Patch, HttpCode, HttpStatus, UseGuards, Req, Res, Query } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
+import { Controller, Post, Body, Get, Patch, HttpCode, HttpStatus, UseGuards, Req, Res, Query, Param } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
@@ -71,7 +71,7 @@ export class AuthController {
       ...result,
       accessToken: undefined,
       refreshToken: undefined,
-    } as AuthResponseDto;
+    } as any as AuthResponseDto;
   }
 
   @Post('refresh')
@@ -194,5 +194,47 @@ export class AuthController {
 
   private getClientIp(request: Request): string {
     return request.ip || request.socket?.remoteAddress || 'unknown';
+  }
+
+  @Post('admin/unlock/:userId')
+  @Auth('Administrator')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Admin: Unlock a locked user account' })
+  @ApiParam({ name: 'userId', description: 'ID of the user to unlock' })
+  @ApiResponse({ status: 200, description: 'Account unlocked successfully' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiResponse({ status: 403, description: 'Admin role required' })
+  async unlockAccount(
+    @CurrentUser('id') adminUserId: string,
+    @Param('userId') userId: string,
+  ) {
+    return this.authService.unlockAccount(userId, adminUserId);
+  }
+
+  @Get('admin/lockout-status/:userId')
+  @Auth('Administrator')
+  @ApiOperation({ summary: 'Admin: Get account lockout status' })
+  @ApiParam({ name: 'userId', description: 'ID of the user to check' })
+  @ApiResponse({ status: 200, description: 'Account lockout status' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiResponse({ status: 403, description: 'Admin role required' })
+  async getAccountLockoutStatus(
+    @Param('userId') userId: string,
+  ) {
+    return this.authService.getAccountLockoutStatus(userId);
+  }
+
+  @Post('admin/unblock-ip')
+  @Auth('Administrator')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Admin: Unblock a rate-limited IP address' })
+  @ApiResponse({ status: 200, description: 'IP unblocked successfully' })
+  @ApiResponse({ status: 403, description: 'Admin role required' })
+  async unblockIp(
+    @CurrentUser('id') adminUserId: string,
+    @Body('ip') ip: string,
+  ) {
+    await this.rateLimitGuard.unblockIp(ip);
+    return { message: `IP ${ip} has been unblocked` };
   }
 }

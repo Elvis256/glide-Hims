@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Updates System - Glide HIMS Documentation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        :root { --primary-color: #0d6efd; --sidebar-bg: #1a1d21; --sidebar-text: #8b949e; --sidebar-active: #ffffff; --code-bg: #161b22; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 280px; height: 100vh; background: var(--sidebar-bg); padding: 1.5rem; overflow-y: auto; z-index: 1000; }
+        .sidebar .logo { color: #fff; font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem; }
+        .sidebar .version { color: var(--sidebar-text); font-size: 0.85rem; margin-bottom: 2rem; }
+        .sidebar .nav-section { margin-bottom: 1.5rem; }
+        .sidebar .nav-section-title { color: var(--sidebar-text); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.75rem; }
+        .sidebar .nav-link { color: var(--sidebar-text); padding: 0.5rem 0.75rem; border-radius: 6px; display: block; text-decoration: none; font-size: 0.9rem; }
+        .sidebar .nav-link:hover, .sidebar .nav-link.active { color: var(--sidebar-active); background: rgba(255,255,255,0.1); }
+        .sidebar .nav-link i { margin-right: 0.5rem; width: 18px; }
+        .main-content { margin-left: 280px; padding: 2rem 3rem; min-height: 100vh; background: #f8f9fa; }
+        .doc-header { border-bottom: 1px solid #dee2e6; padding-bottom: 1.5rem; margin-bottom: 2rem; }
+        .doc-header h1 { font-size: 2.5rem; font-weight: 700; color: #1a1d21; }
+        .card { border: none; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-radius: 12px; margin-bottom: 1.5rem; }
+        .card-header { background: #fff; border-bottom: 1px solid #e9ecef; font-weight: 600; padding: 1rem 1.5rem; }
+        .card-body { padding: 1.5rem; }
+        pre { background: var(--code-bg); border-radius: 8px; padding: 1rem; overflow-x: auto; color: #e6edf3; }
+        code { background: var(--code-bg); color: #e6edf3; padding: 0.2rem 0.4rem; border-radius: 4px; font-size: 0.85em; }
+        pre code { padding: 0; background: none; }
+        .api-method { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; margin-right: 0.5rem; }
+        .api-method.get { background: #dbeafe; color: #1e40af; }
+        .api-method.post { background: #d1fae5; color: #065f46; }
+        .api-method.put { background: #fef3c7; color: #92400e; }
+        .alert-tip { background: #d1fae5; border-left: 4px solid #10b981; color: #065f46; }
+        .alert-warning { background: #fef3c7; border-left: 4px solid #f59e0b; color: #92400e; }
+    </style>
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="logo"><i class="bi bi-heart-pulse"></i> Glide HIMS</div>
+        <div class="version">Enterprise Edition v1.0.0</div>
+        <div class="nav-section">
+            <div class="nav-section-title">Getting Started</div>
+            <a href="index.html" class="nav-link"><i class="bi bi-house"></i> Home</a>
+            <a href="quickstart.html" class="nav-link"><i class="bi bi-rocket-takeoff"></i> Quick Start</a>
+            <a href="architecture.html" class="nav-link"><i class="bi bi-diagram-3"></i> Architecture</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Deployment</div>
+            <a href="deployment-cloud.html" class="nav-link"><i class="bi bi-cloud"></i> Cloud Deployment</a>
+            <a href="deployment-onpremise.html" class="nav-link"><i class="bi bi-server"></i> On-Premise</a>
+            <a href="docker.html" class="nav-link"><i class="bi bi-box"></i> Docker Guide</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Enterprise Features</div>
+            <a href="licensing.html" class="nav-link"><i class="bi bi-key"></i> Licensing</a>
+            <a href="feature-flags.html" class="nav-link"><i class="bi bi-toggles"></i> Feature Flags</a>
+            <a href="phone-home.html" class="nav-link"><i class="bi bi-telephone"></i> Phone Home</a>
+            <a href="updates.html" class="nav-link active"><i class="bi bi-arrow-repeat"></i> Updates</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">API Reference</div>
+            <a href="api-overview.html" class="nav-link"><i class="bi bi-braces"></i> API Overview</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Operations</div>
+            <a href="troubleshooting.html" class="nav-link"><i class="bi bi-bug"></i> Troubleshooting</a>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <div class="doc-header">
+            <h1><i class="bi bi-arrow-repeat me-2"></i>Update System</h1>
+            <p class="lead text-muted">Managing system updates and version control</p>
+        </div>
+
+        <!-- Overview -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-info-circle me-2"></i>Overview</div>
+            <div class="card-body">
+                <p>Glide HIMS includes a built-in update management system that:</p>
+                <ul>
+                    <li>Checks for available updates from the central server</li>
+                    <li>Downloads and verifies update packages</li>
+                    <li>Provides release notes and changelogs</li>
+                    <li>Supports both automatic and manual update workflows</li>
+                    <li>Tracks mandatory security updates</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Checking for Updates -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-search me-2"></i>Checking for Updates</div>
+            <div class="card-body">
+                <h6>Via API</h6>
+                <pre><code class="language-bash"># Check if updates are available
+curl https://hmisdemo.itsolutionsuganda.com/api/v1/updates/check?version=1.0.0
+
+# Response when update available
+{
+  "statusCode": 200,
+  "data": {
+    "updateAvailable": true,
+    "currentVersion": "1.0.0",
+    "latestVersion": "1.1.0",
+    "isMandatory": false,
+    "releaseNotes": "Bug fixes and performance improvements"
+  }
+}
+
+# Response when up to date
+{
+  "statusCode": 200,
+  "data": {
+    "updateAvailable": false,
+    "currentVersion": "1.1.0"
+  }
+}</code></pre>
+
+                <h6 class="mt-4">Via Command Line</h6>
+                <pre><code class="language-bash"># Using the built-in update script
+cd /opt/glide-hims
+./scripts/check-updates.sh
+
+# Output:
+# Current version: 1.0.0
+# Latest version: 1.1.0
+# Update available: Yes
+# Mandatory: No</code></pre>
+            </div>
+        </div>
+
+        <!-- API Reference -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-braces me-2"></i>Updates API Reference</div>
+            <div class="card-body">
+                <table class="table">
+                    <thead>
+                        <tr><th>Endpoint</th><th>Description</th><th>Auth</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="api-method get">GET</span><code>/api/v1/updates/check</code></td>
+                            <td>Check for available updates</td>
+                            <td><span class="badge bg-secondary">Public</span></td>
+                        </tr>
+                        <tr>
+                            <td><span class="api-method get">GET</span><code>/api/v1/updates/latest</code></td>
+                            <td>Get latest version info</td>
+                            <td><span class="badge bg-secondary">Public</span></td>
+                        </tr>
+                        <tr>
+                            <td><span class="api-method get">GET</span><code>/api/v1/updates/versions</code></td>
+                            <td>List all versions</td>
+                            <td><span class="badge bg-secondary">Public</span></td>
+                        </tr>
+                        <tr>
+                            <td><span class="api-method get">GET</span><code>/api/v1/updates/versions/:version</code></td>
+                            <td>Get specific version details</td>
+                            <td><span class="badge bg-secondary">Public</span></td>
+                        </tr>
+                        <tr>
+                            <td><span class="api-method get">GET</span><code>/api/v1/updates/changelog</code></td>
+                            <td>Get changelog since a version</td>
+                            <td><span class="badge bg-secondary">Public</span></td>
+                        </tr>
+                        <tr>
+                            <td><span class="api-method get">GET</span><code>/api/v1/updates/download/:version</code></td>
+                            <td>Download update package</td>
+                            <td><span class="badge bg-secondary">Public</span></td>
+                        </tr>
+                        <tr>
+                            <td><span class="api-method post">POST</span><code>/api/v1/updates/versions</code></td>
+                            <td>Create new version (admin)</td>
+                            <td><span class="badge bg-primary">JWT + Admin</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h6 class="mt-4">Example: Get Changelog</h6>
+                <pre><code class="language-bash"># Get all changes since version 1.0.0
+curl "https://hmisdemo.itsolutionsuganda.com/api/v1/updates/changelog?since=1.0.0"
+
+# Response
+{
+  "statusCode": 200,
+  "data": [
+    {
+      "version": "1.1.0",
+      "releaseNotes": "- Added biometric authentication\n- Performance improvements\n- Bug fixes",
+      "releasedAt": "2026-04-15T00:00:00.000Z",
+      "isMandatory": false
+    },
+    {
+      "version": "1.0.1",
+      "releaseNotes": "- Security patch for CVE-2026-1234\n- Fixed login issue",
+      "releasedAt": "2026-04-05T00:00:00.000Z",
+      "isMandatory": true
+    }
+  ]
+}</code></pre>
+            </div>
+        </div>
+
+        <!-- Manual Update Process -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-wrench me-2"></i>Manual Update Process</div>
+            <div class="card-body">
+                <h6>Step 1: Backup Current Installation</h6>
+                <pre><code class="language-bash"># Create backup
+./backup.sh
+
+# Or manually
+pg_dump -U glide_admin glide_hims > backup_$(date +%Y%m%d).sql
+tar -czf app_backup_$(date +%Y%m%d).tar.gz /opt/glide-hims</code></pre>
+
+                <h6 class="mt-4">Step 2: Download Update</h6>
+                <pre><code class="language-bash"># Download from API
+curl -o glide-hims-1.1.0.tar.gz \
+  "https://hmisdemo.itsolutionsuganda.com/api/v1/updates/download/1.1.0"
+
+# Verify checksum (if provided)
+sha256sum glide-hims-1.1.0.tar.gz
+# Compare with checksum from version info</code></pre>
+
+                <h6 class="mt-4">Step 3: Stop Services</h6>
+                <pre><code class="language-bash"># Using PM2
+pm2 stop glide-hims-backend glide-hims-frontend
+
+# Or systemd
+sudo systemctl stop glide-hims-backend</code></pre>
+
+                <h6 class="mt-4">Step 4: Apply Update</h6>
+                <pre><code class="language-bash"># Extract update
+tar -xzf glide-hims-1.1.0.tar.gz -C /opt/glide-hims
+
+# Install new dependencies
+cd /opt/glide-hims
+pnpm install
+
+# Run database migrations
+cd packages/backend
+pnpm run migration:run
+
+# Build applications
+cd /opt/glide-hims
+pnpm run build</code></pre>
+
+                <h6 class="mt-4">Step 5: Restart Services</h6>
+                <pre><code class="language-bash"># Using PM2
+pm2 restart glide-hims-backend glide-hims-frontend
+
+# Verify
+pm2 status
+curl https://yourserver/api/v1/health</code></pre>
+
+                <div class="alert alert-tip mt-3">
+                    <strong><i class="bi bi-lightbulb me-2"></i>Tip:</strong>
+                    Always test updates in a staging environment before applying to production.
+                </div>
+            </div>
+        </div>
+
+        <!-- Update Script -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-terminal me-2"></i>Automated Update Script</div>
+            <div class="card-body">
+                <pre><code class="language-bash">#!/bin/bash
+# update-glide-hims.sh - Automated update script
+
+set -e
+
+INSTALL_DIR="/opt/glide-hims"
+BACKUP_DIR="/var/backups/glide-hims"
+UPDATE_URL="https://hmisdemo.itsolutionsuganda.com/api/v1/updates"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+echo -e "${GREEN}=== Glide HIMS Update Script ===${NC}"
+
+# Get current version
+CURRENT_VERSION=$(cat $INSTALL_DIR/package.json | grep '"version"' | head -1 | awk -F'"' '{print $4}')
+echo "Current version: $CURRENT_VERSION"
+
+# Check for updates
+echo "Checking for updates..."
+UPDATE_INFO=$(curl -s "$UPDATE_URL/check?version=$CURRENT_VERSION")
+UPDATE_AVAILABLE=$(echo $UPDATE_INFO | jq -r '.data.updateAvailable')
+
+if [ "$UPDATE_AVAILABLE" != "true" ]; then
+    echo -e "${GREEN}System is up to date!${NC}"
+    exit 0
+fi
+
+LATEST_VERSION=$(echo $UPDATE_INFO | jq -r '.data.latestVersion')
+IS_MANDATORY=$(echo $UPDATE_INFO | jq -r '.data.isMandatory')
+
+echo -e "${YELLOW}Update available: $CURRENT_VERSION -> $LATEST_VERSION${NC}"
+if [ "$IS_MANDATORY" == "true" ]; then
+    echo -e "${RED}This is a MANDATORY security update!${NC}"
+fi
+
+# Confirm update
+read -p "Do you want to proceed with the update? (y/n) " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "Update cancelled."
+    exit 0
+fi
+
+# Create backup
+echo "Creating backup..."
+mkdir -p $BACKUP_DIR
+BACKUP_FILE="$BACKUP_DIR/backup_$(date +%Y%m%d_%H%M%S).tar.gz"
+pg_dump -U glide_admin glide_hims | gzip > "$BACKUP_DIR/db_$(date +%Y%m%d_%H%M%S).sql.gz"
+tar -czf $BACKUP_FILE $INSTALL_DIR --exclude='node_modules'
+echo "Backup saved to: $BACKUP_FILE"
+
+# Stop services
+echo "Stopping services..."
+pm2 stop glide-hims-backend glide-hims-frontend
+
+# Download update
+echo "Downloading update..."
+curl -o /tmp/glide-hims-$LATEST_VERSION.tar.gz "$UPDATE_URL/download/$LATEST_VERSION"
+
+# Apply update
+echo "Applying update..."
+tar -xzf /tmp/glide-hims-$LATEST_VERSION.tar.gz -C $INSTALL_DIR
+
+# Install dependencies
+echo "Installing dependencies..."
+cd $INSTALL_DIR && pnpm install
+
+# Run migrations
+echo "Running database migrations..."
+cd $INSTALL_DIR/packages/backend && pnpm run migration:run
+
+# Build
+echo "Building applications..."
+cd $INSTALL_DIR && pnpm run build
+
+# Restart services
+echo "Restarting services..."
+pm2 restart glide-hims-backend glide-hims-frontend
+
+# Verify
+echo "Verifying update..."
+sleep 5
+HEALTH=$(curl -s http://localhost:3000/api/v1/health | jq -r '.status')
+if [ "$HEALTH" == "ok" ]; then
+    echo -e "${GREEN}Update successful! Now running version $LATEST_VERSION${NC}"
+else
+    echo -e "${RED}Health check failed. Rolling back...${NC}"
+    # Rollback logic here
+    exit 1
+fi
+
+# Cleanup
+rm /tmp/glide-hims-$LATEST_VERSION.tar.gz
+
+echo "Update complete!"</code></pre>
+            </div>
+        </div>
+
+        <!-- Version Information -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-tag me-2"></i>Version Information Structure</div>
+            <div class="card-body">
+                <pre><code class="language-json">// Version object structure
+{
+  "id": "uuid",
+  "version": "1.1.0",
+  "versionCode": "20260415",
+  "releaseNotes": "Full markdown release notes...",
+  "minUpgradeFrom": "1.0.0",      // Minimum version that can upgrade to this
+  "isMandatory": false,            // Required security update
+  "isLatest": true,                // Currently marked as latest stable
+  "downloadUrl": "https://...",    // External download URL (optional)
+  "checksum": "sha256:abc123...",  // SHA-256 checksum for verification
+  "fileSize": 52428800,            // Size in bytes
+  "releasedAt": "2026-04-15T00:00:00.000Z",
+  "endOfSupport": null             // When this version stops receiving updates
+}</code></pre>
+
+                <h6 class="mt-4">Version Numbering</h6>
+                <p>Glide HIMS follows <a href="https://semver.org" target="_blank">Semantic Versioning</a>:</p>
+                <ul>
+                    <li><strong>MAJOR</strong> (1.x.x) - Breaking changes, major new features</li>
+                    <li><strong>MINOR</strong> (x.1.x) - New features, backward compatible</li>
+                    <li><strong>PATCH</strong> (x.x.1) - Bug fixes, security patches</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Rollback -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-arrow-counterclockwise me-2"></i>Rollback Procedure</div>
+            <div class="card-body">
+                <p>If an update causes issues, you can rollback to the previous version:</p>
+                <pre><code class="language-bash"># Stop services
+pm2 stop all
+
+# Restore database
+gunzip -c /var/backups/glide-hims/db_YYYYMMDD.sql.gz | psql -U glide_admin glide_hims
+
+# Restore application files
+tar -xzf /var/backups/glide-hims/backup_YYYYMMDD.tar.gz -C /
+
+# Rebuild (in case node_modules changed)
+cd /opt/glide-hims
+pnpm install
+pnpm run build
+
+# Restart services
+pm2 restart all
+
+# Verify
+curl https://yourserver/api/v1/health</code></pre>
+
+                <div class="alert alert-warning mt-3">
+                    <strong><i class="bi bi-exclamation-triangle me-2"></i>Warning:</strong>
+                    Database rollback will lose any data created after the backup. 
+                    Consider the impact before rolling back.
+                </div>
+            </div>
+        </div>
+
+        <footer class="mt-5 pt-4 border-top text-muted">
+            <p class="small">© 2026 IT Solutions Uganda. Last updated: April 2026</p>
+        </footer>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-bash.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-json.min.js"></script>
+</body>
+</html>

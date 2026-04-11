@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kubernetes Deployment - Glide HIMS Documentation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #326ce5;
+            --sidebar-bg: #1a1d21;
+            --sidebar-text: #8b949e;
+            --sidebar-active: #ffffff;
+        }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 280px;
+            height: 100vh;
+            background: var(--sidebar-bg);
+            padding: 1.5rem;
+            overflow-y: auto;
+            z-index: 1000;
+        }
+        .sidebar .logo {
+            color: white;
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .sidebar .nav-section {
+            margin-bottom: 1.5rem;
+        }
+        .sidebar .nav-section-title {
+            color: var(--sidebar-text);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+            padding-left: 0.75rem;
+        }
+        .sidebar .nav-link {
+            color: var(--sidebar-text);
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.375rem;
+            display: block;
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+        .sidebar .nav-link:hover, .sidebar .nav-link.active {
+            color: var(--sidebar-active);
+            background: rgba(255,255,255,0.1);
+        }
+        .main-content {
+            margin-left: 280px;
+            padding: 2rem 3rem;
+            max-width: 900px;
+        }
+        .page-header {
+            border-bottom: 1px solid #e5e7eb;
+            padding-bottom: 1rem;
+            margin-bottom: 2rem;
+        }
+        .page-header h1 {
+            font-size: 2.25rem;
+            font-weight: 700;
+            color: #111827;
+        }
+        .page-header .subtitle {
+            color: #6b7280;
+            font-size: 1.1rem;
+        }
+        pre[class*="language-"] {
+            border-radius: 0.5rem;
+            margin: 1rem 0;
+        }
+        .card {
+            border: 1px solid #e5e7eb;
+            border-radius: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+        .card-header {
+            background: #f9fafb;
+            border-bottom: 1px solid #e5e7eb;
+            font-weight: 600;
+        }
+        .k8s-badge {
+            background: var(--primary-color);
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 0.25rem;
+            font-size: 0.875rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .resource-card {
+            border: 2px solid #e5e7eb;
+            border-radius: 0.75rem;
+            padding: 1.25rem;
+            height: 100%;
+            transition: all 0.2s;
+        }
+        .resource-card:hover {
+            border-color: var(--primary-color);
+        }
+        .resource-card h5 {
+            color: var(--primary-color);
+            margin-bottom: 0.5rem;
+        }
+        .resource-card p {
+            color: #6b7280;
+            font-size: 0.9rem;
+            margin-bottom: 0;
+        }
+        .file-indicator {
+            background: #1e1e1e;
+            color: #9cdcfe;
+            padding: 0.25rem 0.75rem;
+            border-radius: 0.25rem 0.25rem 0 0;
+            font-family: monospace;
+            font-size: 0.8rem;
+            display: inline-block;
+            margin-bottom: -1px;
+        }
+        .architecture-diagram {
+            background: #f9fafb;
+            border-radius: 0.75rem;
+            padding: 2rem;
+            text-align: center;
+            font-family: monospace;
+            font-size: 0.85rem;
+            line-height: 1.6;
+            overflow-x: auto;
+        }
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .main-content { margin-left: 0; padding: 1rem; }
+        }
+    </style>
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="logo">
+            <i class="bi bi-hospital"></i>
+            Glide HIMS
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Getting Started</div>
+            <a href="index.html" class="nav-link">Introduction</a>
+            <a href="quickstart.html" class="nav-link">Quick Start</a>
+            <a href="architecture.html" class="nav-link">Architecture</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Deployment</div>
+            <a href="deployment-onpremise.html" class="nav-link">On-Premise</a>
+            <a href="deployment-cloud.html" class="nav-link">Cloud Deployment</a>
+            <a href="docker.html" class="nav-link">Docker</a>
+            <a href="kubernetes.html" class="nav-link active">Kubernetes</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Operations</div>
+            <a href="monitoring.html" class="nav-link">Monitoring</a>
+            <a href="backup.html" class="nav-link">Backup & Recovery</a>
+            <a href="updates.html" class="nav-link">Updates</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">API Reference</div>
+            <a href="api-overview.html" class="nav-link">API Overview</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Support</div>
+            <a href="troubleshooting.html" class="nav-link">Troubleshooting</a>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <div class="page-header">
+            <h1><i class="bi bi-diagram-3 me-2" style="color: #326ce5;"></i>Kubernetes Deployment</h1>
+            <p class="subtitle">Production-grade orchestration with high availability and auto-scaling</p>
+        </div>
+
+        <div class="alert alert-info mb-4">
+            <i class="bi bi-info-circle me-2"></i>
+            <strong>Best for:</strong> Large deployments, high availability requirements, multi-region deployments, and organizations already using Kubernetes.
+        </div>
+
+        <!-- Prerequisites -->
+        <section class="mb-5">
+            <h2>Prerequisites</h2>
+            <div class="row g-4">
+                <div class="col-md-6">
+                    <div class="resource-card">
+                        <h5><i class="bi bi-gear me-2"></i>Required Tools</h5>
+                        <ul class="mb-0 mt-2">
+                            <li>kubectl v1.28+</li>
+                            <li>Helm v3.12+</li>
+                            <li>Kubernetes cluster v1.28+</li>
+                            <li>Container registry access</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="resource-card">
+                        <h5><i class="bi bi-hdd me-2"></i>Cluster Requirements</h5>
+                        <ul class="mb-0 mt-2">
+                            <li>Minimum 3 nodes (for HA)</li>
+                            <li>4 CPU, 8GB RAM per node</li>
+                            <li>Ingress controller (nginx/traefik)</li>
+                            <li>Storage class for PVCs</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Architecture -->
+        <section class="mb-5">
+            <h2>Architecture Overview</h2>
+            <div class="architecture-diagram">
+<pre>
+                              ┌─────────────────────────────────────────┐
+                              │            Ingress Controller           │
+                              │         (nginx / traefik / ALB)         │
+                              └────────────────┬────────────────────────┘
+                                               │
+                    ┌──────────────────────────┴──────────────────────────┐
+                    │                                                      │
+            ┌───────┴───────┐                                    ┌────────┴────────┐
+            │   Frontend    │                                    │     Backend     │
+            │   Service     │                                    │     Service     │
+            │  (ClusterIP)  │                                    │   (ClusterIP)   │
+            └───────┬───────┘                                    └────────┬────────┘
+                    │                                                      │
+         ┌──────────┴──────────┐                            ┌──────────────┴──────────────┐
+         │                     │                            │              │              │
+    ┌────┴────┐          ┌────┴────┐                  ┌────┴────┐   ┌────┴────┐   ┌────┴────┐
+    │Frontend │          │Frontend │                  │ Backend │   │ Backend │   │ Backend │
+    │ Pod 1   │          │ Pod 2   │                  │  Pod 1  │   │  Pod 2  │   │  Pod 3  │
+    └─────────┘          └─────────┘                  └────┬────┘   └────┬────┘   └────┬────┘
+                                                           │              │              │
+                                                           └──────────────┼──────────────┘
+                                                                          │
+                              ┌───────────────────────────────────────────┴───────────────────┐
+                              │                                                               │
+                    ┌─────────┴─────────┐                                       ┌─────────────┴─────────┐
+                    │    PostgreSQL     │                                       │        Redis          │
+                    │   (StatefulSet)   │                                       │    (StatefulSet)      │
+                    │   Primary + Read  │                                       │   Master + Replicas   │
+                    └───────────────────┘                                       └───────────────────────┘
+</pre>
+            </div>
+        </section>
+
+        <!-- Namespace & Secrets -->
+        <section class="mb-5">
+            <h2>Initial Setup</h2>
+
+            <div class="file-indicator">namespace.yaml</div>
+            <pre><code class="language-yaml">apiVersion: v1
+kind: Namespace
+metadata:
+  name: glide-hims
+  labels:
+    app.kubernetes.io/name: glide-hims
+    app.kubernetes.io/instance: production</code></pre>
+
+            <div class="file-indicator">secrets.yaml</div>
+            <pre><code class="language-yaml">apiVersion: v1
+kind: Secret
+metadata:
+  name: glide-hims-secrets
+  namespace: glide-hims
+type: Opaque
+stringData:
+  DATABASE_URL: "postgres://glide:your-password@postgres-primary:5432/glide_hims"
+  REDIS_URL: "redis://:redis-password@redis-master:6379"
+  JWT_SECRET: "your-jwt-secret-minimum-32-characters-long"
+  LICENSE_KEY: "XXXX-XXXX-XXXX-XXXX"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-credentials
+  namespace: glide-hims
+type: Opaque
+stringData:
+  postgres-password: "your-postgres-password"
+  replication-password: "your-replication-password"</code></pre>
+
+            <pre><code class="language-bash"># Apply initial setup
+kubectl apply -f namespace.yaml
+kubectl apply -f secrets.yaml
+
+# Or create secrets from command line
+kubectl create secret generic glide-hims-secrets \
+  --namespace glide-hims \
+  --from-literal=JWT_SECRET=$(openssl rand -hex 32) \
+  --from-literal=DATABASE_URL="postgres://..." \
+  --from-literal=REDIS_URL="redis://..."</code></pre>
+        </section>
+
+        <!-- ConfigMap -->
+        <section class="mb-5">
+            <h2>ConfigMap</h2>
+
+            <div class="file-indicator">configmap.yaml</div>
+            <pre><code class="language-yaml">apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: glide-hims-config
+  namespace: glide-hims
+data:
+  NODE_ENV: "production"
+  PORT: "3000"
+  LOG_LEVEL: "info"
+  LOG_FORMAT: "json"
+  ENABLE_METRICS: "true"
+  METRICS_PORT: "9090"
+  PHONE_HOME_URL: "https://hmisdemo.itsolutionsuganda.com"
+  FEATURE_FLAG_CACHE_TTL: "300"</code></pre>
+        </section>
+
+        <!-- Backend Deployment -->
+        <section class="mb-5">
+            <h2>Backend Deployment</h2>
+
+            <div class="file-indicator">backend-deployment.yaml</div>
+            <pre><code class="language-yaml">apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: glide-hims-backend
+  namespace: glide-hims
+  labels:
+    app: glide-hims
+    component: backend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: glide-hims
+      component: backend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: glide-hims
+        component: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: glide-hims
+      containers:
+        - name: backend
+          image: your-registry/glide-hims-backend:v1.0.0
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 3000
+            - name: metrics
+              containerPort: 9090
+          envFrom:
+            - configMapRef:
+                name: glide-hims-config
+            - secretRef:
+                name: glide-hims-secrets
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health/live
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health/ready
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          volumeMounts:
+            - name: uploads
+              mountPath: /app/uploads
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: glide-hims-uploads
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: glide-hims
+                    component: backend
+                topologyKey: kubernetes.io/hostname</code></pre>
+        </section>
+
+        <!-- Frontend Deployment -->
+        <section class="mb-5">
+            <h2>Frontend Deployment</h2>
+
+            <div class="file-indicator">frontend-deployment.yaml</div>
+            <pre><code class="language-yaml">apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: glide-hims-frontend
+  namespace: glide-hims
+  labels:
+    app: glide-hims
+    component: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: glide-hims
+      component: frontend
+  template:
+    metadata:
+      labels:
+        app: glide-hims
+        component: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: your-registry/glide-hims-frontend:v1.0.0
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 80
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5</code></pre>
+        </section>
+
+        <!-- Services -->
+        <section class="mb-5">
+            <h2>Services</h2>
+
+            <div class="file-indicator">services.yaml</div>
+            <pre><code class="language-yaml">apiVersion: v1
+kind: Service
+metadata:
+  name: glide-hims-backend
+  namespace: glide-hims
+  labels:
+    app: glide-hims
+    component: backend
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+  selector:
+    app: glide-hims
+    component: backend
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: glide-hims-frontend
+  namespace: glide-hims
+  labels:
+    app: glide-hims
+    component: frontend
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+  selector:
+    app: glide-hims
+    component: frontend</code></pre>
+        </section>
+
+        <!-- Ingress -->
+        <section class="mb-5">
+            <h2>Ingress</h2>
+
+            <div class="file-indicator">ingress.yaml</div>
+            <pre><code class="language-yaml">apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: glide-hims-ingress
+  namespace: glide-hims
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+spec:
+  tls:
+    - hosts:
+        - hims.your-domain.com
+      secretName: glide-hims-tls
+  rules:
+    - host: hims.your-domain.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: glide-hims-backend
+                port:
+                  number: 3000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: glide-hims-frontend
+                port:
+                  number: 80</code></pre>
+        </section>
+
+        <!-- HPA -->
+        <section class="mb-5">
+            <h2>Horizontal Pod Autoscaler</h2>
+
+            <div class="file-indicator">hpa.yaml</div>
+            <pre><code class="language-yaml">apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: glide-hims-backend-hpa
+  namespace: glide-hims
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: glide-hims-backend
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120</code></pre>
+        </section>
+
+        <!-- PVC -->
+        <section class="mb-5">
+            <h2>Persistent Volume Claims</h2>
+
+            <div class="file-indicator">pvc.yaml</div>
+            <pre><code class="language-yaml">apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: glide-hims-uploads
+  namespace: glide-hims
+spec:
+  accessModes:
+    - ReadWriteMany  # Use ReadWriteOnce if RWX not available
+  storageClassName: standard  # Change to your storage class
+  resources:
+    requests:
+      storage: 50Gi</code></pre>
+        </section>
+
+        <!-- PostgreSQL with Helm -->
+        <section class="mb-5">
+            <h2>PostgreSQL (Helm)</h2>
+
+            <div class="card">
+                <div class="card-body">
+                    <pre><code class="language-bash"># Add Bitnami repo
+helm repo add bitnami https://charts.bitnami.com/bitnami
+helm repo update
+
+# Install PostgreSQL with HA
+helm install postgres bitnami/postgresql \
+  --namespace glide-hims \
+  --set auth.postgresPassword=your-password \
+  --set auth.username=glide \
+  --set auth.password=your-password \
+  --set auth.database=glide_hims \
+  --set primary.persistence.size=50Gi \
+  --set readReplicas.replicaCount=2 \
+  --set readReplicas.persistence.size=50Gi \
+  --set metrics.enabled=true</code></pre>
+                </div>
+            </div>
+
+            <div class="file-indicator">postgres-values.yaml (Alternative)</div>
+            <pre><code class="language-yaml"># Custom values for PostgreSQL
+auth:
+  postgresPassword: your-secure-password
+  username: glide
+  password: your-secure-password
+  database: glide_hims
+
+primary:
+  persistence:
+    size: 50Gi
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+
+readReplicas:
+  replicaCount: 2
+  persistence:
+    size: 50Gi
+
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+
+backup:
+  enabled: true
+  cronjob:
+    schedule: "0 2 * * *"
+    storage:
+      size: 100Gi</code></pre>
+        </section>
+
+        <!-- Redis with Helm -->
+        <section class="mb-5">
+            <h2>Redis (Helm)</h2>
+
+            <div class="card">
+                <div class="card-body">
+                    <pre><code class="language-bash"># Install Redis with sentinel for HA
+helm install redis bitnami/redis \
+  --namespace glide-hims \
+  --set auth.password=your-redis-password \
+  --set architecture=replication \
+  --set replica.replicaCount=2 \
+  --set sentinel.enabled=true \
+  --set metrics.enabled=true</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Deployment Commands -->
+        <section class="mb-5">
+            <h2>Deployment Commands</h2>
+
+            <div class="card">
+                <div class="card-body">
+                    <pre><code class="language-bash"># Apply all manifests
+kubectl apply -f namespace.yaml
+kubectl apply -f secrets.yaml
+kubectl apply -f configmap.yaml
+kubectl apply -f pvc.yaml
+kubectl apply -f backend-deployment.yaml
+kubectl apply -f frontend-deployment.yaml
+kubectl apply -f services.yaml
+kubectl apply -f ingress.yaml
+kubectl apply -f hpa.yaml
+
+# Or use kustomize
+kubectl apply -k ./k8s/overlays/production
+
+# Check deployment status
+kubectl get pods -n glide-hims
+kubectl get services -n glide-hims
+kubectl get ingress -n glide-hims
+
+# View logs
+kubectl logs -f deployment/glide-hims-backend -n glide-hims
+
+# Scale manually
+kubectl scale deployment glide-hims-backend --replicas=5 -n glide-hims
+
+# Rolling update
+kubectl set image deployment/glide-hims-backend \
+  backend=your-registry/glide-hims-backend:v1.1.0 \
+  -n glide-hims
+
+# Rollback
+kubectl rollout undo deployment/glide-hims-backend -n glide-hims</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Helm Chart -->
+        <section class="mb-5">
+            <h2>Helm Chart (Recommended)</h2>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-box-seam me-2"></i>Install via Helm
+                </div>
+                <div class="card-body">
+                    <pre><code class="language-bash"># Add Glide HIMS Helm repo
+helm repo add glide-hims https://charts.glide-hims.com
+helm repo update
+
+# Install with custom values
+helm install glide-hims glide-hims/glide-hims \
+  --namespace glide-hims \
+  --create-namespace \
+  -f values.yaml
+
+# Upgrade
+helm upgrade glide-hims glide-hims/glide-hims \
+  --namespace glide-hims \
+  -f values.yaml</code></pre>
+                </div>
+            </div>
+
+            <div class="file-indicator">values.yaml</div>
+            <pre><code class="language-yaml"># Helm chart values
+replicaCount:
+  backend: 3
+  frontend: 2
+
+image:
+  backend:
+    repository: your-registry/glide-hims-backend
+    tag: v1.0.0
+  frontend:
+    repository: your-registry/glide-hims-frontend
+    tag: v1.0.0
+
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: hims.your-domain.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: glide-hims-tls
+      hosts:
+        - hims.your-domain.com
+
+postgresql:
+  enabled: true
+  auth:
+    username: glide
+    database: glide_hims
+    existingSecret: postgres-credentials
+
+redis:
+  enabled: true
+  architecture: replication
+  auth:
+    existingSecret: redis-credentials
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+resources:
+  backend:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+env:
+  NODE_ENV: production
+  LOG_LEVEL: info
+
+secrets:
+  existingSecret: glide-hims-secrets</code></pre>
+        </section>
+
+        <!-- Monitoring -->
+        <section class="mb-5">
+            <h2>Monitoring with Prometheus</h2>
+
+            <div class="file-indicator">servicemonitor.yaml</div>
+            <pre><code class="language-yaml">apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: glide-hims-backend
+  namespace: glide-hims
+  labels:
+    app: glide-hims
+spec:
+  selector:
+    matchLabels:
+      app: glide-hims
+      component: backend
+  endpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics</code></pre>
+        </section>
+
+        <!-- Troubleshooting -->
+        <section class="mb-5">
+            <h2>Troubleshooting</h2>
+
+            <div class="card">
+                <div class="card-body">
+                    <pre><code class="language-bash"># Check pod status
+kubectl get pods -n glide-hims -o wide
+
+# Describe pod for events
+kubectl describe pod glide-hims-backend-xxx -n glide-hims
+
+# View logs
+kubectl logs -f pod/glide-hims-backend-xxx -n glide-hims
+
+# Previous container logs (after crash)
+kubectl logs pod/glide-hims-backend-xxx -n glide-hims --previous
+
+# Execute into pod
+kubectl exec -it pod/glide-hims-backend-xxx -n glide-hims -- sh
+
+# Port forward for debugging
+kubectl port-forward svc/glide-hims-backend 3000:3000 -n glide-hims
+
+# Check resource usage
+kubectl top pods -n glide-hims
+
+# Check events
+kubectl get events -n glide-hims --sort-by='.lastTimestamp'
+
+# Check HPA status
+kubectl get hpa -n glide-hims</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <div class="alert alert-success">
+            <i class="bi bi-check-circle me-2"></i>
+            <strong>Next:</strong> Set up <a href="monitoring.html">monitoring</a> to track your Kubernetes deployment health.
+        </div>
+
+        <nav class="d-flex justify-content-between mt-5 pt-4 border-top">
+            <a href="docker.html" class="btn btn-outline-primary">
+                <i class="bi bi-arrow-left me-2"></i>Docker
+            </a>
+            <a href="monitoring.html" class="btn btn-primary">
+                Monitoring<i class="bi bi-arrow-right ms-2"></i>
+            </a>
+        </nav>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-yaml.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-bash.min.js"></script>
+</body>
+</html>

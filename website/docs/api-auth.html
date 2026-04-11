@@ -1,0 +1,940 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Authentication API - Glide HIMS Documentation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #0d6efd;
+            --sidebar-bg: #1a1d21;
+            --sidebar-text: #8b949e;
+            --sidebar-active: #ffffff;
+        }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 280px;
+            height: 100vh;
+            background: var(--sidebar-bg);
+            padding: 1.5rem;
+            overflow-y: auto;
+            z-index: 1000;
+        }
+        .sidebar .logo {
+            color: white;
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .sidebar .nav-section {
+            margin-bottom: 1.5rem;
+        }
+        .sidebar .nav-section-title {
+            color: var(--sidebar-text);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+            padding-left: 0.75rem;
+        }
+        .sidebar .nav-link {
+            color: var(--sidebar-text);
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.375rem;
+            display: block;
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+        .sidebar .nav-link:hover, .sidebar .nav-link.active {
+            color: var(--sidebar-active);
+            background: rgba(255,255,255,0.1);
+        }
+        .main-content {
+            margin-left: 280px;
+            padding: 2rem 3rem;
+            max-width: 900px;
+        }
+        .page-header {
+            border-bottom: 1px solid #e5e7eb;
+            padding-bottom: 1rem;
+            margin-bottom: 2rem;
+        }
+        .page-header h1 {
+            font-size: 2.25rem;
+            font-weight: 700;
+            color: #111827;
+        }
+        .page-header .subtitle {
+            color: #6b7280;
+            font-size: 1.1rem;
+        }
+        pre[class*="language-"] {
+            border-radius: 0.5rem;
+            margin: 1rem 0;
+        }
+        .card {
+            border: 1px solid #e5e7eb;
+            border-radius: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+        .card-header {
+            background: #f9fafb;
+            border-bottom: 1px solid #e5e7eb;
+            font-weight: 600;
+        }
+        .endpoint-card {
+            border: 1px solid #e5e7eb;
+            border-radius: 0.75rem;
+            margin-bottom: 1.5rem;
+            overflow: hidden;
+        }
+        .endpoint-header {
+            padding: 1rem 1.25rem;
+            background: #f9fafb;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        .endpoint-body {
+            padding: 1.25rem;
+        }
+        .method-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 0.25rem;
+            font-weight: 600;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+        }
+        .method-post { background: #fef3c7; color: #92400e; }
+        .method-get { background: #d1fae5; color: #065f46; }
+        .method-put { background: #dbeafe; color: #1e40af; }
+        .method-delete { background: #fee2e2; color: #991b1b; }
+        .param-table {
+            font-size: 0.9rem;
+        }
+        .param-table th {
+            background: #f9fafb;
+            font-weight: 600;
+        }
+        .param-required {
+            color: #dc2626;
+            font-size: 0.75rem;
+        }
+        .param-optional {
+            color: #6b7280;
+            font-size: 0.75rem;
+        }
+        .flow-diagram {
+            background: #f9fafb;
+            border-radius: 0.75rem;
+            padding: 2rem;
+            text-align: center;
+        }
+        .flow-step {
+            display: inline-block;
+            padding: 0.75rem 1.5rem;
+            background: white;
+            border: 2px solid #e5e7eb;
+            border-radius: 0.5rem;
+            margin: 0.5rem;
+        }
+        .flow-arrow {
+            color: var(--primary-color);
+            font-size: 1.5rem;
+            margin: 0 0.5rem;
+        }
+        .security-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.25rem 0.5rem;
+            background: #fef3c7;
+            color: #92400e;
+            border-radius: 0.25rem;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .main-content { margin-left: 0; padding: 1rem; }
+        }
+    </style>
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="logo">
+            <i class="bi bi-hospital"></i>
+            Glide HIMS
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Getting Started</div>
+            <a href="index.html" class="nav-link">Introduction</a>
+            <a href="quickstart.html" class="nav-link">Quick Start</a>
+            <a href="architecture.html" class="nav-link">Architecture</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Deployment</div>
+            <a href="deployment-onpremise.html" class="nav-link">On-Premise</a>
+            <a href="deployment-cloud.html" class="nav-link">Cloud Deployment</a>
+            <a href="docker.html" class="nav-link">Docker</a>
+            <a href="kubernetes.html" class="nav-link">Kubernetes</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Configuration</div>
+            <a href="licensing.html" class="nav-link">Licensing</a>
+            <a href="feature-flags.html" class="nav-link">Feature Flags</a>
+            <a href="updates.html" class="nav-link">Updates</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">API Reference</div>
+            <a href="api-overview.html" class="nav-link">API Overview</a>
+            <a href="api-auth.html" class="nav-link active">Authentication</a>
+            <a href="api-patients.html" class="nav-link">Patients</a>
+            <a href="api-billing.html" class="nav-link">Billing</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Support</div>
+            <a href="troubleshooting.html" class="nav-link">Troubleshooting</a>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <div class="page-header">
+            <h1><i class="bi bi-shield-lock me-2"></i>Authentication API</h1>
+            <p class="subtitle">JWT-based authentication with multi-tenant support</p>
+        </div>
+
+        <!-- Overview -->
+        <section class="mb-5">
+            <h2>Overview</h2>
+            <p>Glide HIMS uses JWT (JSON Web Tokens) for authentication. The system supports:</p>
+            <ul>
+                <li><strong>Multi-tenant authentication</strong> - Users belong to specific tenants (clinics/hospitals)</li>
+                <li><strong>Role-based access control (RBAC)</strong> - Permissions based on user roles</li>
+                <li><strong>Token refresh</strong> - Seamless session extension without re-login</li>
+                <li><strong>Secure password handling</strong> - bcrypt hashing with salt</li>
+            </ul>
+        </section>
+
+        <!-- Authentication Flow -->
+        <section class="mb-5">
+            <h2>Authentication Flow</h2>
+            <div class="flow-diagram mb-4">
+                <div class="flow-step">1. Login Request</div>
+                <span class="flow-arrow">→</span>
+                <div class="flow-step">2. Validate Credentials</div>
+                <span class="flow-arrow">→</span>
+                <div class="flow-step">3. Generate JWT</div>
+                <span class="flow-arrow">→</span>
+                <div class="flow-step">4. Return Tokens</div>
+            </div>
+            
+            <div class="card">
+                <div class="card-body">
+                    <h5>Token Types</h5>
+                    <table class="table mb-0">
+                        <thead>
+                            <tr>
+                                <th>Token</th>
+                                <th>Purpose</th>
+                                <th>Expiry</th>
+                                <th>Storage</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>accessToken</code></td>
+                                <td>API authentication</td>
+                                <td>15 minutes</td>
+                                <td>Memory / localStorage</td>
+                            </tr>
+                            <tr>
+                                <td><code>refreshToken</code></td>
+                                <td>Get new access token</td>
+                                <td>7 days</td>
+                                <td>HttpOnly cookie</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- Login Endpoint -->
+        <section class="mb-5">
+            <h2>Endpoints</h2>
+
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <span class="method-badge method-post">POST</span>
+                    <code>/api/v1/auth/login</code>
+                </div>
+                <div class="endpoint-body">
+                    <p>Authenticate user and receive JWT tokens.</p>
+                    
+                    <h6>Request Body</h6>
+                    <table class="table param-table">
+                        <thead>
+                            <tr>
+                                <th>Parameter</th>
+                                <th>Type</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>email</code> <span class="param-required">required</span></td>
+                                <td>string</td>
+                                <td>User's email address</td>
+                            </tr>
+                            <tr>
+                                <td><code>password</code> <span class="param-required">required</span></td>
+                                <td>string</td>
+                                <td>User's password</td>
+                            </tr>
+                            <tr>
+                                <td><code>tenantId</code> <span class="param-required">required</span></td>
+                                <td>string</td>
+                                <td>Tenant identifier (e.g., "amani-childrens-clinic")</td>
+                            </tr>
+                            <tr>
+                                <td><code>rememberMe</code> <span class="param-optional">optional</span></td>
+                                <td>boolean</td>
+                                <td>Extend refresh token expiry to 30 days</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <h6>Example Request</h6>
+                    <pre><code class="language-bash">curl -X POST https://your-domain.com/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "doctor@clinic.com",
+    "password": "securePassword123",
+    "tenantId": "amani-childrens-clinic"
+  }'</code></pre>
+
+                    <h6>Success Response (200 OK)</h6>
+                    <pre><code class="language-json">{
+  "success": true,
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "expiresIn": 900,
+    "tokenType": "Bearer",
+    "user": {
+      "id": "usr_abc123",
+      "email": "doctor@clinic.com",
+      "firstName": "John",
+      "lastName": "Doe",
+      "role": "doctor",
+      "permissions": ["patients:read", "patients:write", "appointments:read"],
+      "tenantId": "amani-childrens-clinic",
+      "tenantName": "Amani Children's Clinic"
+    }
+  }
+}</code></pre>
+
+                    <h6>Error Responses</h6>
+                    <pre><code class="language-json">// 401 Unauthorized - Invalid credentials
+{
+  "success": false,
+  "error": {
+    "code": "INVALID_CREDENTIALS",
+    "message": "Invalid email or password"
+  }
+}
+
+// 403 Forbidden - Account locked
+{
+  "success": false,
+  "error": {
+    "code": "ACCOUNT_LOCKED",
+    "message": "Account locked due to too many failed attempts. Try again in 15 minutes."
+  }
+}
+
+// 404 Not Found - Tenant not found
+{
+  "success": false,
+  "error": {
+    "code": "TENANT_NOT_FOUND",
+    "message": "Tenant 'invalid-clinic' not found"
+  }
+}</code></pre>
+                </div>
+            </div>
+
+            <!-- Register Endpoint -->
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <span class="method-badge method-post">POST</span>
+                    <code>/api/v1/auth/register</code>
+                    <span class="security-badge"><i class="bi bi-lock"></i> Admin Only</span>
+                </div>
+                <div class="endpoint-body">
+                    <p>Register a new user (admin permission required).</p>
+                    
+                    <h6>Request Body</h6>
+                    <table class="table param-table">
+                        <thead>
+                            <tr>
+                                <th>Parameter</th>
+                                <th>Type</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>email</code> <span class="param-required">required</span></td>
+                                <td>string</td>
+                                <td>User's email address</td>
+                            </tr>
+                            <tr>
+                                <td><code>password</code> <span class="param-required">required</span></td>
+                                <td>string</td>
+                                <td>Password (min 8 chars, must include number)</td>
+                            </tr>
+                            <tr>
+                                <td><code>firstName</code> <span class="param-required">required</span></td>
+                                <td>string</td>
+                                <td>User's first name</td>
+                            </tr>
+                            <tr>
+                                <td><code>lastName</code> <span class="param-required">required</span></td>
+                                <td>string</td>
+                                <td>User's last name</td>
+                            </tr>
+                            <tr>
+                                <td><code>role</code> <span class="param-required">required</span></td>
+                                <td>string</td>
+                                <td>User role: admin, doctor, nurse, receptionist, pharmacist, lab_tech, accountant</td>
+                            </tr>
+                            <tr>
+                                <td><code>tenantId</code> <span class="param-required">required</span></td>
+                                <td>string</td>
+                                <td>Tenant to assign user to</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <h6>Example Request</h6>
+                    <pre><code class="language-bash">curl -X POST https://your-domain.com/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ADMIN_TOKEN" \
+  -d '{
+    "email": "newdoctor@clinic.com",
+    "password": "SecurePass123!",
+    "firstName": "Jane",
+    "lastName": "Smith",
+    "role": "doctor",
+    "tenantId": "amani-childrens-clinic"
+  }'</code></pre>
+
+                    <h6>Success Response (201 Created)</h6>
+                    <pre><code class="language-json">{
+  "success": true,
+  "data": {
+    "user": {
+      "id": "usr_xyz789",
+      "email": "newdoctor@clinic.com",
+      "firstName": "Jane",
+      "lastName": "Smith",
+      "role": "doctor",
+      "tenantId": "amani-childrens-clinic",
+      "createdAt": "2026-04-10T00:00:00.000Z"
+    },
+    "message": "User registered successfully. Verification email sent."
+  }
+}</code></pre>
+                </div>
+            </div>
+
+            <!-- Refresh Token Endpoint -->
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <span class="method-badge method-post">POST</span>
+                    <code>/api/v1/auth/refresh</code>
+                </div>
+                <div class="endpoint-body">
+                    <p>Get a new access token using a valid refresh token.</p>
+                    
+                    <h6>Request Body</h6>
+                    <pre><code class="language-json">{
+  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}</code></pre>
+
+                    <h6>Example Request</h6>
+                    <pre><code class="language-bash">curl -X POST https://your-domain.com/api/v1/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  }'</code></pre>
+
+                    <h6>Success Response (200 OK)</h6>
+                    <pre><code class="language-json">{
+  "success": true,
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "expiresIn": 900,
+    "tokenType": "Bearer"
+  }
+}</code></pre>
+
+                    <h6>Error Response (401 Unauthorized)</h6>
+                    <pre><code class="language-json">{
+  "success": false,
+  "error": {
+    "code": "INVALID_REFRESH_TOKEN",
+    "message": "Refresh token is invalid or expired"
+  }
+}</code></pre>
+                </div>
+            </div>
+
+            <!-- Logout Endpoint -->
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <span class="method-badge method-post">POST</span>
+                    <code>/api/v1/auth/logout</code>
+                </div>
+                <div class="endpoint-body">
+                    <p>Invalidate current session and refresh token.</p>
+                    
+                    <h6>Example Request</h6>
+                    <pre><code class="language-bash">curl -X POST https://your-domain.com/api/v1/auth/logout \
+  -H "Authorization: Bearer ACCESS_TOKEN"</code></pre>
+
+                    <h6>Success Response (200 OK)</h6>
+                    <pre><code class="language-json">{
+  "success": true,
+  "message": "Logged out successfully"
+}</code></pre>
+                </div>
+            </div>
+
+            <!-- Password Reset Request -->
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <span class="method-badge method-post">POST</span>
+                    <code>/api/v1/auth/forgot-password</code>
+                </div>
+                <div class="endpoint-body">
+                    <p>Request a password reset email.</p>
+                    
+                    <h6>Request Body</h6>
+                    <pre><code class="language-json">{
+  "email": "user@clinic.com",
+  "tenantId": "amani-childrens-clinic"
+}</code></pre>
+
+                    <h6>Success Response (200 OK)</h6>
+                    <pre><code class="language-json">{
+  "success": true,
+  "message": "If the email exists, a password reset link has been sent."
+}</code></pre>
+                    
+                    <div class="alert alert-info mt-3 mb-0">
+                        <i class="bi bi-info-circle me-2"></i>
+                        For security, the response is the same whether the email exists or not.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Password Reset -->
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <span class="method-badge method-post">POST</span>
+                    <code>/api/v1/auth/reset-password</code>
+                </div>
+                <div class="endpoint-body">
+                    <p>Reset password using the token from email.</p>
+                    
+                    <h6>Request Body</h6>
+                    <pre><code class="language-json">{
+  "token": "reset_token_from_email",
+  "newPassword": "NewSecurePassword123!",
+  "confirmPassword": "NewSecurePassword123!"
+}</code></pre>
+
+                    <h6>Success Response (200 OK)</h6>
+                    <pre><code class="language-json">{
+  "success": true,
+  "message": "Password reset successfully. Please login with your new password."
+}</code></pre>
+                </div>
+            </div>
+
+            <!-- Change Password -->
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <span class="method-badge method-put">PUT</span>
+                    <code>/api/v1/auth/change-password</code>
+                </div>
+                <div class="endpoint-body">
+                    <p>Change password for authenticated user.</p>
+                    
+                    <h6>Request Body</h6>
+                    <pre><code class="language-json">{
+  "currentPassword": "OldPassword123",
+  "newPassword": "NewSecurePassword123!",
+  "confirmPassword": "NewSecurePassword123!"
+}</code></pre>
+
+                    <h6>Example Request</h6>
+                    <pre><code class="language-bash">curl -X PUT https://your-domain.com/api/v1/auth/change-password \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ACCESS_TOKEN" \
+  -d '{
+    "currentPassword": "OldPassword123",
+    "newPassword": "NewSecurePassword123!",
+    "confirmPassword": "NewSecurePassword123!"
+  }'</code></pre>
+
+                    <h6>Success Response (200 OK)</h6>
+                    <pre><code class="language-json">{
+  "success": true,
+  "message": "Password changed successfully"
+}</code></pre>
+                </div>
+            </div>
+
+            <!-- Get Current User -->
+            <div class="endpoint-card">
+                <div class="endpoint-header">
+                    <span class="method-badge method-get">GET</span>
+                    <code>/api/v1/auth/me</code>
+                </div>
+                <div class="endpoint-body">
+                    <p>Get current authenticated user details.</p>
+                    
+                    <h6>Example Request</h6>
+                    <pre><code class="language-bash">curl -X GET https://your-domain.com/api/v1/auth/me \
+  -H "Authorization: Bearer ACCESS_TOKEN"</code></pre>
+
+                    <h6>Success Response (200 OK)</h6>
+                    <pre><code class="language-json">{
+  "success": true,
+  "data": {
+    "id": "usr_abc123",
+    "email": "doctor@clinic.com",
+    "firstName": "John",
+    "lastName": "Doe",
+    "role": "doctor",
+    "permissions": [
+      "patients:read",
+      "patients:write",
+      "appointments:read",
+      "appointments:write",
+      "prescriptions:write"
+    ],
+    "tenant": {
+      "id": "amani-childrens-clinic",
+      "name": "Amani Children's Clinic",
+      "logo": "/uploads/tenants/amani-logo.png"
+    },
+    "preferences": {
+      "theme": "light",
+      "language": "en",
+      "timezone": "Africa/Kampala"
+    },
+    "lastLoginAt": "2026-04-09T23:45:00.000Z",
+    "createdAt": "2025-01-15T10:30:00.000Z"
+  }
+}</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Using Authentication -->
+        <section class="mb-5">
+            <h2>Using Authentication</h2>
+            
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-code-slash me-2"></i>Making Authenticated Requests
+                </div>
+                <div class="card-body">
+                    <p>Include the access token in the <code>Authorization</code> header:</p>
+                    <pre><code class="language-bash"># All API requests require the Bearer token
+curl -X GET https://your-domain.com/api/v1/patients \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."</code></pre>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-code-slash me-2"></i>Frontend Integration (React)
+                </div>
+                <div class="card-body">
+                    <pre><code class="language-typescript">// lib/auth.ts
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+import api from './api';
+
+interface AuthState {
+  user: User | null;
+  accessToken: string | null;
+  isAuthenticated: boolean;
+  login: (email: string, password: string, tenantId: string) => Promise&lt;void&gt;;
+  logout: () => Promise&lt;void&gt;;
+  refreshToken: () => Promise&lt;void&gt;;
+}
+
+export const useAuth = create&lt;AuthState&gt;()(
+  persist(
+    (set, get) => ({
+      user: null,
+      accessToken: null,
+      isAuthenticated: false,
+
+      login: async (email, password, tenantId) => {
+        const response = await api.post('/auth/login', {
+          email, password, tenantId
+        });
+        
+        const { accessToken, refreshToken, user } = response.data.data;
+        
+        // Store access token in memory/state
+        set({ user, accessToken, isAuthenticated: true });
+        
+        // Store refresh token securely (httpOnly cookie preferred)
+        localStorage.setItem('refreshToken', refreshToken);
+        
+        // Set up axios interceptor for authenticated requests
+        api.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`;
+      },
+
+      logout: async () => {
+        try {
+          await api.post('/auth/logout');
+        } finally {
+          set({ user: null, accessToken: null, isAuthenticated: false });
+          localStorage.removeItem('refreshToken');
+          delete api.defaults.headers.common['Authorization'];
+        }
+      },
+
+      refreshToken: async () => {
+        const refreshToken = localStorage.getItem('refreshToken');
+        if (!refreshToken) throw new Error('No refresh token');
+        
+        const response = await api.post('/auth/refresh', { refreshToken });
+        const { accessToken } = response.data.data;
+        
+        set({ accessToken });
+        api.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`;
+      }
+    }),
+    { name: 'auth-storage', partialize: (state) => ({ user: state.user }) }
+  )
+);</code></pre>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-code-slash me-2"></i>Auto Token Refresh (Axios Interceptor)
+                </div>
+                <div class="card-body">
+                    <pre><code class="language-typescript">// lib/api.ts
+import axios from 'axios';
+import { useAuth } from './auth';
+
+const api = axios.create({
+  baseURL: '/api/v1',
+  timeout: 10000,
+});
+
+// Response interceptor for token refresh
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+    
+    // If 401 and not already retrying
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+      
+      try {
+        await useAuth.getState().refreshToken();
+        
+        // Retry original request with new token
+        const token = useAuth.getState().accessToken;
+        originalRequest.headers['Authorization'] = `Bearer ${token}`;
+        return api(originalRequest);
+      } catch (refreshError) {
+        // Refresh failed, logout user
+        useAuth.getState().logout();
+        window.location.href = '/login';
+        return Promise.reject(refreshError);
+      }
+    }
+    
+    return Promise.reject(error);
+  }
+);
+
+export default api;</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Roles & Permissions -->
+        <section class="mb-5">
+            <h2>Roles & Permissions</h2>
+            
+            <div class="card">
+                <div class="card-body">
+                    <table class="table mb-0">
+                        <thead>
+                            <tr>
+                                <th>Role</th>
+                                <th>Description</th>
+                                <th>Key Permissions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>super_admin</code></td>
+                                <td>System administrator</td>
+                                <td>All permissions, manage tenants</td>
+                            </tr>
+                            <tr>
+                                <td><code>admin</code></td>
+                                <td>Tenant administrator</td>
+                                <td>Manage users, settings, all modules</td>
+                            </tr>
+                            <tr>
+                                <td><code>doctor</code></td>
+                                <td>Medical doctor</td>
+                                <td>Patients, appointments, prescriptions, lab orders</td>
+                            </tr>
+                            <tr>
+                                <td><code>nurse</code></td>
+                                <td>Nursing staff</td>
+                                <td>Patients (read), vitals, triage, appointments</td>
+                            </tr>
+                            <tr>
+                                <td><code>receptionist</code></td>
+                                <td>Front desk</td>
+                                <td>Patient registration, appointments, billing</td>
+                            </tr>
+                            <tr>
+                                <td><code>pharmacist</code></td>
+                                <td>Pharmacy staff</td>
+                                <td>Prescriptions, inventory, dispensing</td>
+                            </tr>
+                            <tr>
+                                <td><code>lab_tech</code></td>
+                                <td>Laboratory technician</td>
+                                <td>Lab orders, results, equipment</td>
+                            </tr>
+                            <tr>
+                                <td><code>accountant</code></td>
+                                <td>Finance staff</td>
+                                <td>Billing, payments, reports, insurance</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- JWT Structure -->
+        <section class="mb-5">
+            <h2>JWT Token Structure</h2>
+            
+            <div class="card">
+                <div class="card-header">Decoded Access Token Payload</div>
+                <div class="card-body">
+                    <pre><code class="language-json">{
+  "sub": "usr_abc123",
+  "email": "doctor@clinic.com",
+  "role": "doctor",
+  "tenantId": "amani-childrens-clinic",
+  "permissions": ["patients:read", "patients:write", "appointments:read"],
+  "iat": 1712707200,
+  "exp": 1712708100,
+  "iss": "glide-hims",
+  "aud": "glide-hims-api"
+}</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Security Best Practices -->
+        <section class="mb-5">
+            <h2>Security Best Practices</h2>
+            
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header text-success">
+                            <i class="bi bi-shield-check me-2"></i>Recommended
+                        </div>
+                        <div class="card-body">
+                            <ul class="mb-0">
+                                <li>Store refresh tokens in HttpOnly cookies</li>
+                                <li>Use short-lived access tokens (15 min)</li>
+                                <li>Implement rate limiting on auth endpoints</li>
+                                <li>Use HTTPS in production</li>
+                                <li>Rotate JWT secrets periodically</li>
+                                <li>Log all authentication events</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header text-danger">
+                            <i class="bi bi-shield-x me-2"></i>Avoid
+                        </div>
+                        <div class="card-body">
+                            <ul class="mb-0">
+                                <li>Storing tokens in localStorage (XSS vulnerable)</li>
+                                <li>Long-lived access tokens</li>
+                                <li>Exposing JWT secret in client code</li>
+                                <li>Ignoring token expiry</li>
+                                <li>Using weak passwords</li>
+                                <li>Skipping CSRF protection</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <div class="alert alert-success">
+            <i class="bi bi-check-circle me-2"></i>
+            <strong>Next:</strong> Learn about the <a href="api-patients.html">Patients API</a> for managing patient records.
+        </div>
+
+        <nav class="d-flex justify-content-between mt-5 pt-4 border-top">
+            <a href="api-overview.html" class="btn btn-outline-primary">
+                <i class="bi bi-arrow-left me-2"></i>API Overview
+            </a>
+            <a href="api-patients.html" class="btn btn-primary">
+                Patients API<i class="bi bi-arrow-right ms-2"></i>
+            </a>
+        </nav>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-bash.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-json.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-typescript.min.js"></script>
+</body>
+</html>

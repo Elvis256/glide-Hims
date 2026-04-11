@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitoring & Observability - Glide HIMS Documentation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #0d6efd;
+            --sidebar-bg: #1a1d21;
+            --sidebar-text: #8b949e;
+            --sidebar-active: #ffffff;
+        }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 280px;
+            height: 100vh;
+            background: var(--sidebar-bg);
+            padding: 1.5rem;
+            overflow-y: auto;
+            z-index: 1000;
+        }
+        .sidebar .logo {
+            color: white;
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .sidebar .nav-section {
+            margin-bottom: 1.5rem;
+        }
+        .sidebar .nav-section-title {
+            color: var(--sidebar-text);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+            padding-left: 0.75rem;
+        }
+        .sidebar .nav-link {
+            color: var(--sidebar-text);
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.375rem;
+            display: block;
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+        .sidebar .nav-link:hover, .sidebar .nav-link.active {
+            color: var(--sidebar-active);
+            background: rgba(255,255,255,0.1);
+        }
+        .main-content {
+            margin-left: 280px;
+            padding: 2rem 3rem;
+            max-width: 900px;
+        }
+        .page-header {
+            border-bottom: 1px solid #e5e7eb;
+            padding-bottom: 1rem;
+            margin-bottom: 2rem;
+        }
+        .page-header h1 {
+            font-size: 2.25rem;
+            font-weight: 700;
+            color: #111827;
+        }
+        .page-header .subtitle {
+            color: #6b7280;
+            font-size: 1.1rem;
+        }
+        pre[class*="language-"] {
+            border-radius: 0.5rem;
+            margin: 1rem 0;
+        }
+        .card {
+            border: 1px solid #e5e7eb;
+            border-radius: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+        .card-header {
+            background: #f9fafb;
+            border-bottom: 1px solid #e5e7eb;
+            font-weight: 600;
+        }
+        .metric-card {
+            border: 1px solid #e5e7eb;
+            border-radius: 0.75rem;
+            padding: 1.25rem;
+            text-align: center;
+            transition: all 0.2s;
+        }
+        .metric-card:hover {
+            border-color: var(--primary-color);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+        .metric-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--primary-color);
+        }
+        .metric-label {
+            color: #6b7280;
+            font-size: 0.875rem;
+        }
+        .status-healthy { color: #10b981; }
+        .status-warning { color: #f59e0b; }
+        .status-critical { color: #ef4444; }
+        .tool-card {
+            border: 2px solid #e5e7eb;
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            height: 100%;
+            transition: all 0.2s;
+        }
+        .tool-card:hover {
+            border-color: var(--primary-color);
+        }
+        .tool-card img {
+            height: 40px;
+            margin-bottom: 1rem;
+        }
+        .tool-card h5 {
+            margin-bottom: 0.5rem;
+        }
+        .tool-card p {
+            color: #6b7280;
+            font-size: 0.9rem;
+            margin-bottom: 0;
+        }
+        .alert-rule {
+            background: #f9fafb;
+            border-left: 4px solid #f59e0b;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-radius: 0 0.5rem 0.5rem 0;
+        }
+        .alert-rule.critical {
+            border-left-color: #ef4444;
+        }
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .main-content { margin-left: 0; padding: 1rem; }
+        }
+    </style>
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="logo">
+            <i class="bi bi-hospital"></i>
+            Glide HIMS
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Getting Started</div>
+            <a href="index.html" class="nav-link">Introduction</a>
+            <a href="quickstart.html" class="nav-link">Quick Start</a>
+            <a href="architecture.html" class="nav-link">Architecture</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Deployment</div>
+            <a href="deployment-onpremise.html" class="nav-link">On-Premise</a>
+            <a href="deployment-cloud.html" class="nav-link">Cloud Deployment</a>
+            <a href="docker.html" class="nav-link">Docker</a>
+            <a href="kubernetes.html" class="nav-link">Kubernetes</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Operations</div>
+            <a href="monitoring.html" class="nav-link active">Monitoring</a>
+            <a href="backup.html" class="nav-link">Backup & Recovery</a>
+            <a href="updates.html" class="nav-link">Updates</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">API Reference</div>
+            <a href="api-overview.html" class="nav-link">API Overview</a>
+            <a href="api-auth.html" class="nav-link">Authentication</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Support</div>
+            <a href="troubleshooting.html" class="nav-link">Troubleshooting</a>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <div class="page-header">
+            <h1><i class="bi bi-graph-up me-2"></i>Monitoring & Observability</h1>
+            <p class="subtitle">Track system health, performance, and usage metrics</p>
+        </div>
+
+        <!-- Overview -->
+        <section class="mb-5">
+            <h2>Overview</h2>
+            <p>Effective monitoring ensures your Glide HIMS deployment runs smoothly. This guide covers:</p>
+            <ul>
+                <li><strong>Health checks</strong> - Verify system components are operational</li>
+                <li><strong>Metrics</strong> - Track performance and resource usage</li>
+                <li><strong>Logging</strong> - Capture and analyze application logs</li>
+                <li><strong>Alerting</strong> - Get notified of issues before they impact users</li>
+            </ul>
+        </section>
+
+        <!-- Health Endpoints -->
+        <section class="mb-5">
+            <h2>Health Check Endpoints</h2>
+            
+            <div class="card mb-4">
+                <div class="card-header">
+                    <span class="badge bg-success me-2">GET</span>
+                    <code>/api/v1/health</code>
+                </div>
+                <div class="card-body">
+                    <p>Basic health check - returns system status and component health.</p>
+                    <pre><code class="language-bash"># Request
+curl https://your-domain.com/api/v1/health
+
+# Response (200 OK)
+{
+  "status": "healthy",
+  "timestamp": "2026-04-10T00:54:00.000Z",
+  "version": "1.0.0",
+  "uptime": 86400,
+  "components": {
+    "database": {
+      "status": "healthy",
+      "latency": 5
+    },
+    "redis": {
+      "status": "healthy",
+      "latency": 2
+    },
+    "storage": {
+      "status": "healthy",
+      "freeSpace": "45GB"
+    }
+  }
+}</code></pre>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <span class="badge bg-success me-2">GET</span>
+                    <code>/api/v1/health/live</code>
+                </div>
+                <div class="card-body">
+                    <p>Liveness probe - simple check if the application is running.</p>
+                    <pre><code class="language-bash"># Response (200 OK)
+{ "status": "ok" }
+
+# Response (503 Service Unavailable)
+{ "status": "error", "message": "Application not ready" }</code></pre>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="badge bg-success me-2">GET</span>
+                    <code>/api/v1/health/ready</code>
+                </div>
+                <div class="card-body">
+                    <p>Readiness probe - checks if the application can handle requests.</p>
+                    <pre><code class="language-bash"># Response (200 OK)
+{
+  "status": "ready",
+  "checks": {
+    "database": true,
+    "redis": true,
+    "migrations": true
+  }
+}</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Key Metrics -->
+        <section class="mb-5">
+            <h2>Key Metrics to Monitor</h2>
+            
+            <div class="row g-4 mb-4">
+                <div class="col-md-3">
+                    <div class="metric-card">
+                        <div class="metric-value status-healthy">99.9%</div>
+                        <div class="metric-label">Uptime</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="metric-card">
+                        <div class="metric-value">45ms</div>
+                        <div class="metric-label">Avg Response Time</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="metric-card">
+                        <div class="metric-value">1.2K</div>
+                        <div class="metric-label">Requests/min</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="metric-card">
+                        <div class="metric-value status-healthy">0</div>
+                        <div class="metric-label">Error Rate</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-body">
+                    <h5>Application Metrics</h5>
+                    <table class="table mb-4">
+                        <thead>
+                            <tr>
+                                <th>Metric</th>
+                                <th>Description</th>
+                                <th>Healthy Range</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>http_request_duration_seconds</code></td>
+                                <td>API response time</td>
+                                <td>&lt; 500ms (p95)</td>
+                            </tr>
+                            <tr>
+                                <td><code>http_requests_total</code></td>
+                                <td>Total HTTP requests</td>
+                                <td>-</td>
+                            </tr>
+                            <tr>
+                                <td><code>http_request_errors_total</code></td>
+                                <td>Failed requests (4xx, 5xx)</td>
+                                <td>&lt; 1%</td>
+                            </tr>
+                            <tr>
+                                <td><code>active_connections</code></td>
+                                <td>Current active connections</td>
+                                <td>&lt; 1000</td>
+                            </tr>
+                            <tr>
+                                <td><code>db_query_duration_seconds</code></td>
+                                <td>Database query time</td>
+                                <td>&lt; 100ms (p95)</td>
+                            </tr>
+                            <tr>
+                                <td><code>db_pool_connections</code></td>
+                                <td>Database connection pool</td>
+                                <td>&lt; 80% utilized</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <h5>System Metrics</h5>
+                    <table class="table mb-0">
+                        <thead>
+                            <tr>
+                                <th>Metric</th>
+                                <th>Description</th>
+                                <th>Healthy Range</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>cpu_usage_percent</code></td>
+                                <td>CPU utilization</td>
+                                <td>&lt; 80%</td>
+                            </tr>
+                            <tr>
+                                <td><code>memory_usage_percent</code></td>
+                                <td>Memory utilization</td>
+                                <td>&lt; 85%</td>
+                            </tr>
+                            <tr>
+                                <td><code>disk_usage_percent</code></td>
+                                <td>Disk space usage</td>
+                                <td>&lt; 80%</td>
+                            </tr>
+                            <tr>
+                                <td><code>network_io_bytes</code></td>
+                                <td>Network throughput</td>
+                                <td>-</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- Prometheus Setup -->
+        <section class="mb-5">
+            <h2>Prometheus Integration</h2>
+            
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-gear me-2"></i>Enable Metrics Endpoint
+                </div>
+                <div class="card-body">
+                    <pre><code class="language-bash"># Environment variables
+ENABLE_METRICS=true
+METRICS_PORT=9090
+METRICS_PATH=/metrics</code></pre>
+                    
+                    <p class="mt-3">The metrics endpoint exposes Prometheus-compatible metrics:</p>
+                    <pre><code class="language-bash">curl http://localhost:9090/metrics
+
+# Output (Prometheus format)
+# HELP http_request_duration_seconds HTTP request duration
+# TYPE http_request_duration_seconds histogram
+http_request_duration_seconds_bucket{method="GET",path="/api/v1/patients",le="0.1"} 1523
+http_request_duration_seconds_bucket{method="GET",path="/api/v1/patients",le="0.5"} 1687
+http_request_duration_seconds_sum{method="GET",path="/api/v1/patients"} 234.56
+http_request_duration_seconds_count{method="GET",path="/api/v1/patients"} 1700
+
+# HELP nodejs_heap_size_total_bytes Node.js heap size
+# TYPE nodejs_heap_size_total_bytes gauge
+nodejs_heap_size_total_bytes 125829120</code></pre>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-file-code me-2"></i>prometheus.yml Configuration
+                </div>
+                <div class="card-body">
+                    <pre><code class="language-yaml">global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'glide-hims-backend'
+    static_configs:
+      - targets: ['backend:9090']
+    metrics_path: /metrics
+    
+  - job_name: 'glide-hims-postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+    
+  - job_name: 'glide-hims-redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+    
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+rule_files:
+  - /etc/prometheus/rules/*.yml</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Grafana Dashboards -->
+        <section class="mb-5">
+            <h2>Grafana Dashboards</h2>
+            
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-grid me-2"></i>Pre-built Dashboards
+                </div>
+                <div class="card-body">
+                    <p>Import these dashboards into Grafana for instant visibility:</p>
+                    
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="tool-card">
+                                <h5><i class="bi bi-speedometer2 me-2"></i>Application Overview</h5>
+                                <p>Request rates, response times, error rates, and active users</p>
+                                <a href="#" class="btn btn-sm btn-outline-primary mt-2">Dashboard ID: 15001</a>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="tool-card">
+                                <h5><i class="bi bi-database me-2"></i>Database Performance</h5>
+                                <p>Query times, connections, locks, and replication lag</p>
+                                <a href="#" class="btn btn-sm btn-outline-primary mt-2">Dashboard ID: 9628</a>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="tool-card">
+                                <h5><i class="bi bi-hdd me-2"></i>System Resources</h5>
+                                <p>CPU, memory, disk, and network metrics</p>
+                                <a href="#" class="btn btn-sm btn-outline-primary mt-2">Dashboard ID: 1860</a>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="tool-card">
+                                <h5><i class="bi bi-box me-2"></i>Container Metrics</h5>
+                                <p>Docker/Kubernetes container stats and resource usage</p>
+                                <a href="#" class="btn btn-sm btn-outline-primary mt-2">Dashboard ID: 893</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-terminal me-2"></i>Docker Compose for Monitoring Stack
+                </div>
+                <div class="card-body">
+                    <pre><code class="language-yaml">version: '3.8'
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./alerts:/etc/prometheus/rules
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=30d'
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: alertmanager
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml
+    ports:
+      - "9093:9093"
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: postgres-exporter
+    environment:
+      DATA_SOURCE_NAME: "postgresql://glide:${DB_PASSWORD}@postgres:5432/glide_hims?sslmode=disable"
+    ports:
+      - "9187:9187"
+
+volumes:
+  prometheus_data:
+  grafana_data:</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Logging -->
+        <section class="mb-5">
+            <h2>Logging</h2>
+            
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-journal-text me-2"></i>Log Configuration
+                </div>
+                <div class="card-body">
+                    <pre><code class="language-bash"># Environment variables
+LOG_LEVEL=info          # debug, info, warn, error
+LOG_FORMAT=json         # json, pretty
+LOG_FILE=/var/log/glide-hims/app.log
+LOG_MAX_SIZE=100M       # Max size before rotation
+LOG_MAX_FILES=10        # Number of rotated files to keep</code></pre>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-file-text me-2"></i>Log Format (JSON)
+                </div>
+                <div class="card-body">
+                    <pre><code class="language-json">{
+  "timestamp": "2026-04-10T00:54:30.123Z",
+  "level": "info",
+  "message": "Patient record created",
+  "context": "PatientService",
+  "requestId": "req_abc123",
+  "userId": "usr_xyz789",
+  "tenantId": "amani-childrens-clinic",
+  "duration": 45,
+  "metadata": {
+    "patientId": "pat_123",
+    "action": "create"
+  }
+}</code></pre>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-terminal me-2"></i>Viewing Logs
+                </div>
+                <div class="card-body">
+                    <pre><code class="language-bash"># PM2 logs
+pm2 logs glide-hims-backend --lines 100
+
+# Docker logs
+docker compose logs -f backend --tail 100
+
+# System logs
+journalctl -u glide-hims-backend -f
+
+# Filter by log level
+cat /var/log/glide-hims/app.log | jq 'select(.level == "error")'
+
+# Search for specific request
+cat /var/log/glide-hims/app.log | jq 'select(.requestId == "req_abc123")'</code></pre>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-stack me-2"></i>ELK Stack Integration (Optional)
+                </div>
+                <div class="card-body">
+                    <p>For centralized log management, configure Filebeat to ship logs to Elasticsearch:</p>
+                    <pre><code class="language-yaml"># filebeat.yml
+filebeat.inputs:
+  - type: log
+    enabled: true
+    paths:
+      - /var/log/glide-hims/*.log
+    json.keys_under_root: true
+    json.add_error_key: true
+
+output.elasticsearch:
+  hosts: ["elasticsearch:9200"]
+  index: "glide-hims-%{+yyyy.MM.dd}"
+
+setup.kibana:
+  host: "kibana:5601"</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Alerting -->
+        <section class="mb-5">
+            <h2>Alerting Rules</h2>
+            
+            <div class="alert-rule critical">
+                <h6><i class="bi bi-exclamation-triangle me-2"></i>High Error Rate</h6>
+                <p class="mb-2">Trigger when error rate exceeds 5% for 5 minutes</p>
+                <pre class="mb-0"><code class="language-yaml">- alert: HighErrorRate
+  expr: rate(http_request_errors_total[5m]) / rate(http_requests_total[5m]) > 0.05
+  for: 5m
+  labels:
+    severity: critical
+  annotations:
+    summary: "High error rate detected"
+    description: "Error rate is {{ $value | humanizePercentage }}"</code></pre>
+            </div>
+
+            <div class="alert-rule critical">
+                <h6><i class="bi bi-exclamation-triangle me-2"></i>Database Connection Failure</h6>
+                <p class="mb-2">Trigger when database is unreachable</p>
+                <pre class="mb-0"><code class="language-yaml">- alert: DatabaseDown
+  expr: pg_up == 0
+  for: 1m
+  labels:
+    severity: critical
+  annotations:
+    summary: "PostgreSQL is down"
+    description: "Database connection failed for more than 1 minute"</code></pre>
+            </div>
+
+            <div class="alert-rule">
+                <h6><i class="bi bi-exclamation-circle me-2"></i>High Response Time</h6>
+                <p class="mb-2">Trigger when p95 response time exceeds 2 seconds</p>
+                <pre class="mb-0"><code class="language-yaml">- alert: HighResponseTime
+  expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+  for: 10m
+  labels:
+    severity: warning
+  annotations:
+    summary: "High API response time"
+    description: "95th percentile response time is {{ $value }}s"</code></pre>
+            </div>
+
+            <div class="alert-rule">
+                <h6><i class="bi bi-exclamation-circle me-2"></i>Disk Space Low</h6>
+                <p class="mb-2">Trigger when disk usage exceeds 80%</p>
+                <pre class="mb-0"><code class="language-yaml">- alert: DiskSpaceLow
+  expr: (node_filesystem_size_bytes - node_filesystem_free_bytes) / node_filesystem_size_bytes > 0.8
+  for: 15m
+  labels:
+    severity: warning
+  annotations:
+    summary: "Disk space running low"
+    description: "Disk usage is {{ $value | humanizePercentage }}"</code></pre>
+            </div>
+
+            <div class="card mt-4">
+                <div class="card-header">
+                    <i class="bi bi-bell me-2"></i>Alert Manager Configuration
+                </div>
+                <div class="card-body">
+                    <pre><code class="language-yaml"># alertmanager.yml
+global:
+  smtp_smarthost: 'smtp.gmail.com:587'
+  smtp_from: 'alerts@your-domain.com'
+  smtp_auth_username: 'alerts@your-domain.com'
+  smtp_auth_password: 'app-password'
+
+route:
+  group_by: ['alertname', 'severity']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  receiver: 'email-notifications'
+  routes:
+    - match:
+        severity: critical
+      receiver: 'pagerduty-critical'
+
+receivers:
+  - name: 'email-notifications'
+    email_configs:
+      - to: 'admin@your-domain.com'
+        send_resolved: true
+
+  - name: 'pagerduty-critical'
+    pagerduty_configs:
+      - service_key: 'your-pagerduty-key'
+        severity: critical
+
+  - name: 'slack-notifications'
+    slack_configs:
+      - api_url: 'https://hooks.slack.com/services/xxx'
+        channel: '#alerts'
+        send_resolved: true</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Quick Monitoring Script -->
+        <section class="mb-5">
+            <h2>Quick Health Check Script</h2>
+            
+            <div class="card">
+                <div class="card-body">
+                    <pre><code class="language-bash">#!/bin/bash
+# health-monitor.sh - Simple monitoring script
+
+DOMAIN="https://your-domain.com"
+ALERT_EMAIL="admin@your-domain.com"
+LOG_FILE="/var/log/glide-hims/health-check.log"
+
+check_health() {
+    local response=$(curl -s -o /dev/null -w "%{http_code}" "$DOMAIN/api/v1/health")
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    
+    if [ "$response" != "200" ]; then
+        echo "[$timestamp] CRITICAL: Health check failed (HTTP $response)" >> $LOG_FILE
+        echo "Glide HIMS health check failed at $timestamp (HTTP $response)" | \
+            mail -s "ALERT: Glide HIMS Down" $ALERT_EMAIL
+        return 1
+    else
+        echo "[$timestamp] OK: Health check passed" >> $LOG_FILE
+        return 0
+    fi
+}
+
+check_disk() {
+    local usage=$(df -h / | awk 'NR==2 {print $5}' | tr -d '%')
+    if [ "$usage" -gt 80 ]; then
+        echo "WARNING: Disk usage at ${usage}%" >> $LOG_FILE
+    fi
+}
+
+check_memory() {
+    local usage=$(free | awk '/Mem:/ {printf "%.0f", $3/$2 * 100}')
+    if [ "$usage" -gt 85 ]; then
+        echo "WARNING: Memory usage at ${usage}%" >> $LOG_FILE
+    fi
+}
+
+# Run checks
+check_health
+check_disk
+check_memory
+
+# Add to crontab for every 5 minutes:
+# */5 * * * * /path/to/health-monitor.sh</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Monitoring Tools -->
+        <section class="mb-5">
+            <h2>Recommended Tools</h2>
+            
+            <div class="row g-4">
+                <div class="col-md-4">
+                    <div class="tool-card">
+                        <h5><i class="bi bi-fire me-2 text-warning"></i>Prometheus</h5>
+                        <p>Time-series database for metrics collection and alerting</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="tool-card">
+                        <h5><i class="bi bi-bar-chart me-2 text-success"></i>Grafana</h5>
+                        <p>Visualization and dashboards for metrics and logs</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="tool-card">
+                        <h5><i class="bi bi-stack me-2 text-info"></i>ELK Stack</h5>
+                        <p>Centralized logging with Elasticsearch, Logstash, Kibana</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="tool-card">
+                        <h5><i class="bi bi-cpu me-2 text-primary"></i>PM2</h5>
+                        <p>Process manager with built-in monitoring for Node.js</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="tool-card">
+                        <h5><i class="bi bi-cloud me-2 text-secondary"></i>Uptime Robot</h5>
+                        <p>External uptime monitoring and status pages</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="tool-card">
+                        <h5><i class="bi bi-bug me-2 text-danger"></i>Sentry</h5>
+                        <p>Error tracking and performance monitoring</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <div class="alert alert-success">
+            <i class="bi bi-check-circle me-2"></i>
+            <strong>Next:</strong> Set up <a href="backup.html">backup and recovery</a> procedures to protect your data.
+        </div>
+
+        <nav class="d-flex justify-content-between mt-5 pt-4 border-top">
+            <a href="kubernetes.html" class="btn btn-outline-primary">
+                <i class="bi bi-arrow-left me-2"></i>Kubernetes
+            </a>
+            <a href="backup.html" class="btn btn-primary">
+                Backup & Recovery<i class="bi bi-arrow-right ms-2"></i>
+            </a>
+        </nav>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-bash.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-yaml.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-json.min.js"></script>
+</body>
+</html>

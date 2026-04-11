@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cloud Deployment - Glide HIMS Documentation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #0d6efd;
+            --sidebar-bg: #1a1d21;
+            --sidebar-text: #8b949e;
+            --sidebar-active: #ffffff;
+        }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 280px;
+            height: 100vh;
+            background: var(--sidebar-bg);
+            padding: 1.5rem;
+            overflow-y: auto;
+            z-index: 1000;
+        }
+        .sidebar .logo {
+            color: white;
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .sidebar .nav-section {
+            margin-bottom: 1.5rem;
+        }
+        .sidebar .nav-section-title {
+            color: var(--sidebar-text);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+            padding-left: 0.75rem;
+        }
+        .sidebar .nav-link {
+            color: var(--sidebar-text);
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.375rem;
+            display: block;
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+        .sidebar .nav-link:hover, .sidebar .nav-link.active {
+            color: var(--sidebar-active);
+            background: rgba(255,255,255,0.1);
+        }
+        .main-content {
+            margin-left: 280px;
+            padding: 2rem 3rem;
+            max-width: 900px;
+        }
+        .page-header {
+            border-bottom: 1px solid #e5e7eb;
+            padding-bottom: 1rem;
+            margin-bottom: 2rem;
+        }
+        .page-header h1 {
+            font-size: 2.25rem;
+            font-weight: 700;
+            color: #111827;
+        }
+        .page-header .subtitle {
+            color: #6b7280;
+            font-size: 1.1rem;
+        }
+        pre[class*="language-"] {
+            border-radius: 0.5rem;
+            margin: 1rem 0;
+        }
+        .card {
+            border: 1px solid #e5e7eb;
+            border-radius: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+        .card-header {
+            background: #f9fafb;
+            border-bottom: 1px solid #e5e7eb;
+            font-weight: 600;
+        }
+        .alert-info {
+            background: #eff6ff;
+            border-color: #bfdbfe;
+            color: #1e40af;
+        }
+        .provider-card {
+            border: 2px solid #e5e7eb;
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            text-align: center;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .provider-card:hover {
+            border-color: var(--primary-color);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .provider-card img {
+            height: 48px;
+            margin-bottom: 1rem;
+        }
+        .provider-card h5 {
+            margin-bottom: 0.5rem;
+        }
+        .provider-card p {
+            color: #6b7280;
+            font-size: 0.875rem;
+            margin: 0;
+        }
+        .step-number {
+            width: 32px;
+            height: 32px;
+            background: var(--primary-color);
+            color: white;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            margin-right: 0.75rem;
+        }
+        .comparison-table th {
+            background: #f9fafb;
+        }
+        .badge-recommended {
+            background: #10b981;
+            color: white;
+            font-size: 0.7rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            margin-left: 0.5rem;
+        }
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .main-content { margin-left: 0; padding: 1rem; }
+        }
+    </style>
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="logo">
+            <i class="bi bi-hospital"></i>
+            Glide HIMS
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Getting Started</div>
+            <a href="index.html" class="nav-link">Introduction</a>
+            <a href="quickstart.html" class="nav-link">Quick Start</a>
+            <a href="architecture.html" class="nav-link">Architecture</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Deployment</div>
+            <a href="deployment-onpremise.html" class="nav-link">On-Premise</a>
+            <a href="deployment-cloud.html" class="nav-link active">Cloud Deployment</a>
+            <a href="docker.html" class="nav-link">Docker</a>
+            <a href="kubernetes.html" class="nav-link">Kubernetes</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Configuration</div>
+            <a href="licensing.html" class="nav-link">Licensing</a>
+            <a href="updates.html" class="nav-link">Updates</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">API Reference</div>
+            <a href="api-overview.html" class="nav-link">API Overview</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Support</div>
+            <a href="troubleshooting.html" class="nav-link">Troubleshooting</a>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <div class="page-header">
+            <h1><i class="bi bi-cloud me-2"></i>Cloud Deployment</h1>
+            <p class="subtitle">Deploy Glide HIMS on major cloud providers with managed services</p>
+        </div>
+
+        <div class="alert alert-info mb-4">
+            <i class="bi bi-info-circle me-2"></i>
+            <strong>SaaS vs Self-Hosted:</strong> Cloud deployment gives you full control of your data while leveraging cloud infrastructure. For a fully managed solution, contact us about our SaaS offering.
+        </div>
+
+        <!-- Cloud Provider Selection -->
+        <section class="mb-5">
+            <h2>Choose Your Cloud Provider</h2>
+            <p>Glide HIMS can be deployed on any major cloud provider. Select your preferred platform:</p>
+            
+            <div class="row g-4 mt-3">
+                <div class="col-md-4">
+                    <div class="provider-card" onclick="showProvider('aws')">
+                        <img src="https://upload.wikimedia.org/wikipedia/commons/9/93/Amazon_Web_Services_Logo.svg" alt="AWS">
+                        <h5>Amazon Web Services</h5>
+                        <p>EC2, RDS, S3, CloudFront</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="provider-card" onclick="showProvider('gcp')">
+                        <img src="https://www.gstatic.com/devrel-devsite/prod/v0e0f589edd85502a40d78d7d0825db8ea5ef3b99ab4070381ee86977c9168730/cloud/images/cloud-logo.svg" alt="GCP">
+                        <h5>Google Cloud</h5>
+                        <p>Compute Engine, Cloud SQL</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="provider-card" onclick="showProvider('azure')">
+                        <img src="https://upload.wikimedia.org/wikipedia/commons/f/fa/Microsoft_Azure.svg" alt="Azure">
+                        <h5>Microsoft Azure</h5>
+                        <p>VMs, Azure Database, Blob</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Resource Requirements -->
+        <section class="mb-5">
+            <h2>Resource Requirements</h2>
+            
+            <table class="table comparison-table">
+                <thead>
+                    <tr>
+                        <th>Deployment Size</th>
+                        <th>Users</th>
+                        <th>CPU</th>
+                        <th>RAM</th>
+                        <th>Storage</th>
+                        <th>Est. Monthly Cost</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Small Clinic</strong></td>
+                        <td>1-10</td>
+                        <td>2 vCPU</td>
+                        <td>4 GB</td>
+                        <td>50 GB SSD</td>
+                        <td>$30-50</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Medium Facility</strong><span class="badge-recommended">Recommended</span></td>
+                        <td>10-50</td>
+                        <td>4 vCPU</td>
+                        <td>8 GB</td>
+                        <td>100 GB SSD</td>
+                        <td>$80-120</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Large Hospital</strong></td>
+                        <td>50-200</td>
+                        <td>8 vCPU</td>
+                        <td>16 GB</td>
+                        <td>500 GB SSD</td>
+                        <td>$200-350</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Enterprise</strong></td>
+                        <td>200+</td>
+                        <td>16+ vCPU</td>
+                        <td>32+ GB</td>
+                        <td>1+ TB SSD</td>
+                        <td>$500+</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <!-- AWS Deployment -->
+        <section class="mb-5" id="aws-section">
+            <h2><i class="bi bi-cloud me-2"></i>AWS Deployment</h2>
+            
+            <div class="card mb-4">
+                <div class="card-header">
+                    <span class="step-number">1</span>Launch EC2 Instance
+                </div>
+                <div class="card-body">
+                    <p>Create an EC2 instance with Ubuntu 22.04:</p>
+                    <pre><code class="language-bash"># Using AWS CLI
+aws ec2 run-instances \
+  --image-id ami-0c7217cdde317cfec \
+  --instance-type t3.medium \
+  --key-name your-key-pair \
+  --security-group-ids sg-xxxxxxxx \
+  --subnet-id subnet-xxxxxxxx \
+  --block-device-mappings '[{"DeviceName":"/dev/sda1","Ebs":{"VolumeSize":100,"VolumeType":"gp3"}}]' \
+  --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=glide-hims}]'</code></pre>
+                    
+                    <h6 class="mt-3">Security Group Rules:</h6>
+                    <ul>
+                        <li>SSH (22) - Your IP only</li>
+                        <li>HTTP (80) - 0.0.0.0/0</li>
+                        <li>HTTPS (443) - 0.0.0.0/0</li>
+                        <li>PostgreSQL (5432) - VPC CIDR only (if using external DB)</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <span class="step-number">2</span>Set Up RDS PostgreSQL (Recommended)
+                </div>
+                <div class="card-body">
+                    <pre><code class="language-bash"># Create RDS instance
+aws rds create-db-instance \
+  --db-instance-identifier glide-hims-db \
+  --db-instance-class db.t3.medium \
+  --engine postgres \
+  --engine-version 15.4 \
+  --master-username glide_admin \
+  --master-user-password "YourSecurePassword123!" \
+  --allocated-storage 100 \
+  --storage-type gp3 \
+  --vpc-security-group-ids sg-xxxxxxxx \
+  --db-subnet-group-name your-db-subnet-group \
+  --backup-retention-period 7 \
+  --multi-az \
+  --storage-encrypted</code></pre>
+                    
+                    <div class="alert alert-warning mt-3">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <strong>Production:</strong> Enable Multi-AZ for high availability and automatic failover.
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <span class="step-number">3</span>Configure S3 for File Storage
+                </div>
+                <div class="card-body">
+                    <pre><code class="language-bash"># Create S3 bucket for file uploads
+aws s3 mb s3://glide-hims-files-your-account
+
+# Enable versioning
+aws s3api put-bucket-versioning \
+  --bucket glide-hims-files-your-account \
+  --versioning-configuration Status=Enabled
+
+# Block public access
+aws s3api put-public-access-block \
+  --bucket glide-hims-files-your-account \
+  --public-access-block-configuration \
+    "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"</code></pre>
+                    
+                    <h6 class="mt-3">Environment Variables:</h6>
+                    <pre><code class="language-bash"># Add to .env
+AWS_REGION=us-east-1
+AWS_S3_BUCKET=glide-hims-files-your-account
+AWS_ACCESS_KEY_ID=AKIA...
+AWS_SECRET_ACCESS_KEY=...</code></pre>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <span class="step-number">4</span>Install Glide HIMS
+                </div>
+                <div class="card-body">
+                    <pre><code class="language-bash"># SSH into EC2 instance
+ssh -i your-key.pem ubuntu@ec2-xx-xx-xx-xx.compute-1.amazonaws.com
+
+# Install dependencies
+sudo apt update && sudo apt install -y nodejs npm postgresql-client nginx certbot
+
+# Clone and install
+git clone https://github.com/your-org/glide-hims.git
+cd glide-hims
+npm install -g pnpm pm2
+pnpm install
+
+# Configure environment
+cat > packages/backend/.env << 'EOF'
+NODE_ENV=production
+PORT=3000
+DATABASE_URL=postgres://glide_admin:YourPassword@your-rds-endpoint:5432/glide_hims
+JWT_SECRET=$(openssl rand -hex 32)
+AWS_REGION=us-east-1
+AWS_S3_BUCKET=glide-hims-files-your-account
+EOF
+
+# Build and start
+pnpm run build
+pm2 start ecosystem.config.js --env production
+pm2 save</code></pre>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="step-number">5</span>Set Up CloudFront CDN (Optional)
+                </div>
+                <div class="card-body">
+                    <p>For better performance, set up CloudFront to cache static assets:</p>
+                    <pre><code class="language-bash"># Create CloudFront distribution
+aws cloudfront create-distribution \
+  --origin-domain-name your-domain.com \
+  --default-root-object index.html</code></pre>
+                    
+                    <p class="mt-3">Configure cache behaviors:</p>
+                    <ul>
+                        <li><code>/assets/*</code> - Cache for 1 year (immutable)</li>
+                        <li><code>/api/*</code> - No cache, pass to origin</li>
+                        <li><code>/*</code> - Cache for 1 hour with invalidation</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- GCP Deployment -->
+        <section class="mb-5" id="gcp-section">
+            <h2><i class="bi bi-cloud me-2"></i>Google Cloud Deployment</h2>
+            
+            <div class="card mb-4">
+                <div class="card-header">
+                    <span class="step-number">1</span>Create Compute Engine VM
+                </div>
+                <div class="card-body">
+                    <pre><code class="language-bash"># Create VM instance
+gcloud compute instances create glide-hims \
+  --zone=us-central1-a \
+  --machine-type=e2-medium \
+  --image-family=ubuntu-2204-lts \
+  --image-project=ubuntu-os-cloud \
+  --boot-disk-size=100GB \
+  --boot-disk-type=pd-ssd \
+  --tags=http-server,https-server
+
+# Create firewall rules
+gcloud compute firewall-rules create allow-http \
+  --allow tcp:80 --target-tags http-server
+
+gcloud compute firewall-rules create allow-https \
+  --allow tcp:443 --target-tags https-server</code></pre>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <span class="step-number">2</span>Set Up Cloud SQL PostgreSQL
+                </div>
+                <div class="card-body">
+                    <pre><code class="language-bash"># Create Cloud SQL instance
+gcloud sql instances create glide-hims-db \
+  --database-version=POSTGRES_15 \
+  --tier=db-custom-2-4096 \
+  --region=us-central1 \
+  --storage-size=100GB \
+  --storage-type=SSD \
+  --backup-start-time=02:00 \
+  --availability-type=REGIONAL
+
+# Create database
+gcloud sql databases create glide_hims --instance=glide-hims-db
+
+# Create user
+gcloud sql users create glide_admin \
+  --instance=glide-hims-db \
+  --password=YourSecurePassword123!</code></pre>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="step-number">3</span>Configure Cloud Storage
+                </div>
+                <div class="card-body">
+                    <pre><code class="language-bash"># Create bucket
+gsutil mb -l us-central1 gs://glide-hims-files
+
+# Set lifecycle policy for old files
+cat > lifecycle.json << 'EOF'
+{
+  "rule": [{
+    "action": {"type": "SetStorageClass", "storageClass": "NEARLINE"},
+    "condition": {"age": 90}
+  }]
+}
+EOF
+gsutil lifecycle set lifecycle.json gs://glide-hims-files</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Azure Deployment -->
+        <section class="mb-5" id="azure-section">
+            <h2><i class="bi bi-cloud me-2"></i>Azure Deployment</h2>
+            
+            <div class="card mb-4">
+                <div class="card-header">
+                    <span class="step-number">1</span>Create Virtual Machine
+                </div>
+                <div class="card-body">
+                    <pre><code class="language-bash"># Create resource group
+az group create --name glide-hims-rg --location eastus
+
+# Create VM
+az vm create \
+  --resource-group glide-hims-rg \
+  --name glide-hims-vm \
+  --image Ubuntu2204 \
+  --size Standard_B2ms \
+  --admin-username azureuser \
+  --generate-ssh-keys \
+  --public-ip-sku Standard
+
+# Open ports
+az vm open-port --port 80 --resource-group glide-hims-rg --name glide-hims-vm
+az vm open-port --port 443 --resource-group glide-hims-rg --name glide-hims-vm --priority 1001</code></pre>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <span class="step-number">2</span>Create Azure Database for PostgreSQL
+                </div>
+                <div class="card-body">
+                    <pre><code class="language-bash"># Create PostgreSQL server
+az postgres flexible-server create \
+  --resource-group glide-hims-rg \
+  --name glide-hims-db \
+  --location eastus \
+  --admin-user glide_admin \
+  --admin-password YourSecurePassword123! \
+  --sku-name Standard_B2s \
+  --tier Burstable \
+  --storage-size 128 \
+  --version 15
+
+# Create database
+az postgres flexible-server db create \
+  --resource-group glide-hims-rg \
+  --server-name glide-hims-db \
+  --database-name glide_hims</code></pre>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="step-number">3</span>Configure Azure Blob Storage
+                </div>
+                <div class="card-body">
+                    <pre><code class="language-bash"># Create storage account
+az storage account create \
+  --name glidehimsfiles \
+  --resource-group glide-hims-rg \
+  --location eastus \
+  --sku Standard_LRS \
+  --kind StorageV2
+
+# Create container
+az storage container create \
+  --name uploads \
+  --account-name glidehimsfiles \
+  --public-access off</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- SSL/TLS Configuration -->
+        <section class="mb-5">
+            <h2><i class="bi bi-shield-lock me-2"></i>SSL/TLS Configuration</h2>
+            
+            <div class="card">
+                <div class="card-body">
+                    <h5>Using Let's Encrypt (Free)</h5>
+                    <pre><code class="language-bash"># Install certbot
+sudo apt install -y certbot python3-certbot-nginx
+
+# Obtain certificate
+sudo certbot --nginx -d your-domain.com -d www.your-domain.com
+
+# Auto-renewal is configured automatically
+# Verify with:
+sudo certbot renew --dry-run</code></pre>
+
+                    <h5 class="mt-4">Using AWS Certificate Manager</h5>
+                    <pre><code class="language-bash"># Request certificate (for use with ALB/CloudFront)
+aws acm request-certificate \
+  --domain-name your-domain.com \
+  --subject-alternative-names www.your-domain.com \
+  --validation-method DNS</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Monitoring & Logging -->
+        <section class="mb-5">
+            <h2><i class="bi bi-graph-up me-2"></i>Monitoring & Logging</h2>
+            
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header">AWS CloudWatch</div>
+                        <div class="card-body">
+                            <pre><code class="language-bash"># Install CloudWatch agent
+sudo apt install amazon-cloudwatch-agent
+
+# Configure agent
+cat > /opt/aws/amazon-cloudwatch-agent/etc/config.json << 'EOF'
+{
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [{
+          "file_path": "/root/.pm2/logs/*.log",
+          "log_group_name": "glide-hims",
+          "log_stream_name": "{instance_id}"
+        }]
+      }
+    }
+  }
+}
+EOF
+
+sudo systemctl start amazon-cloudwatch-agent</code></pre>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header">Health Check Endpoint</div>
+                        <div class="card-body">
+                            <p>Use the built-in health endpoint for load balancer health checks:</p>
+                            <pre><code class="language-bash"># Health check URL
+GET /api/v1/health
+
+# Expected response (200 OK)
+{
+  "status": "ok",
+  "timestamp": "2026-04-10T00:00:00.000Z",
+  "database": "connected",
+  "version": "1.0.0"
+}</code></pre>
+                            <p class="mt-2">Configure your load balancer to check this endpoint every 30 seconds.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Backup Strategy -->
+        <section class="mb-5">
+            <h2><i class="bi bi-cloud-arrow-up me-2"></i>Backup Strategy</h2>
+            
+            <div class="card">
+                <div class="card-body">
+                    <h5>Automated Database Backups</h5>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Provider</th>
+                                <th>Method</th>
+                                <th>Retention</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>AWS RDS</td>
+                                <td>Automated snapshots</td>
+                                <td>7-35 days</td>
+                            </tr>
+                            <tr>
+                                <td>GCP Cloud SQL</td>
+                                <td>Automated backups</td>
+                                <td>7-365 days</td>
+                            </tr>
+                            <tr>
+                                <td>Azure Database</td>
+                                <td>Geo-redundant backups</td>
+                                <td>7-35 days</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <h5 class="mt-4">Manual Backup Script</h5>
+                    <pre><code class="language-bash">#!/bin/bash
+# backup-to-s3.sh
+DATE=$(date +%Y%m%d_%H%M%S)
+BACKUP_FILE="glide_hims_$DATE.sql.gz"
+
+# Dump and compress
+pg_dump $DATABASE_URL | gzip > /tmp/$BACKUP_FILE
+
+# Upload to S3
+aws s3 cp /tmp/$BACKUP_FILE s3://glide-hims-backups/$BACKUP_FILE
+
+# Cleanup local
+rm /tmp/$BACKUP_FILE
+
+echo "Backup completed: $BACKUP_FILE"</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Cost Optimization -->
+        <section class="mb-5">
+            <h2><i class="bi bi-piggy-bank me-2"></i>Cost Optimization Tips</h2>
+            
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header">Compute Savings</div>
+                        <div class="card-body">
+                            <ul>
+                                <li><strong>Reserved Instances:</strong> Up to 72% savings with 1-3 year commitment</li>
+                                <li><strong>Spot Instances:</strong> Up to 90% savings for dev/test environments</li>
+                                <li><strong>Right-sizing:</strong> Monitor and adjust instance sizes based on actual usage</li>
+                                <li><strong>Auto-scaling:</strong> Scale down during off-hours</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-header">Storage Savings</div>
+                        <div class="card-body">
+                            <ul>
+                                <li><strong>S3 Intelligent-Tiering:</strong> Automatic cost optimization</li>
+                                <li><strong>Lifecycle Policies:</strong> Move old data to cheaper storage</li>
+                                <li><strong>Database Cleanup:</strong> Archive old audit logs</li>
+                                <li><strong>Compression:</strong> Enable gzip for backups</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <div class="alert alert-success">
+            <i class="bi bi-check-circle me-2"></i>
+            <strong>Next Steps:</strong> After deployment, configure <a href="licensing.html">licensing</a> and set up <a href="updates.html">automatic updates</a>.
+        </div>
+
+        <nav class="d-flex justify-content-between mt-5 pt-4 border-top">
+            <a href="deployment-onpremise.html" class="btn btn-outline-primary">
+                <i class="bi bi-arrow-left me-2"></i>On-Premise Deployment
+            </a>
+            <a href="docker.html" class="btn btn-primary">
+                Docker Deployment<i class="bi bi-arrow-right ms-2"></i>
+            </a>
+        </nav>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-bash.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-json.min.js"></script>
+    <script>
+        function showProvider(provider) {
+            // Scroll to provider section
+            document.getElementById(provider + '-section').scrollIntoView({ behavior: 'smooth' });
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quick Start - Glide HIMS Documentation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="docs-styles.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #0d6efd;
+            --sidebar-bg: #1a1d21;
+            --sidebar-text: #8b949e;
+            --sidebar-active: #ffffff;
+            --code-bg: #161b22;
+        }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        .sidebar {
+            position: fixed; top: 0; left: 0; width: 280px; height: 100vh;
+            background: var(--sidebar-bg); padding: 1.5rem; overflow-y: auto; z-index: 1000;
+        }
+        .sidebar .logo { color: #fff; font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem; }
+        .sidebar .version { color: var(--sidebar-text); font-size: 0.85rem; margin-bottom: 2rem; }
+        .sidebar .nav-section { margin-bottom: 1.5rem; }
+        .sidebar .nav-section-title { color: var(--sidebar-text); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.75rem; }
+        .sidebar .nav-link { color: var(--sidebar-text); padding: 0.5rem 0.75rem; border-radius: 6px; display: block; text-decoration: none; font-size: 0.9rem; }
+        .sidebar .nav-link:hover, .sidebar .nav-link.active { color: var(--sidebar-active); background: rgba(255,255,255,0.1); }
+        .sidebar .nav-link i { margin-right: 0.5rem; width: 18px; }
+        .main-content { margin-left: 280px; padding: 2rem 3rem; min-height: 100vh; background: #f8f9fa; }
+        .doc-header { border-bottom: 1px solid #dee2e6; padding-bottom: 1.5rem; margin-bottom: 2rem; }
+        .doc-header h1 { font-size: 2.5rem; font-weight: 700; color: #1a1d21; }
+        .card { border: none; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-radius: 12px; margin-bottom: 1.5rem; }
+        .card-header { background: #fff; border-bottom: 1px solid #e9ecef; font-weight: 600; padding: 1rem 1.5rem; }
+        .card-body { padding: 1.5rem; }
+        pre { background: var(--code-bg); border-radius: 8px; padding: 1rem; overflow-x: auto; color: #e6edf3; }
+        code { background: var(--code-bg); color: #e6edf3; padding: 0.2rem 0.4rem; border-radius: 4px; font-size: 0.85em; }
+        pre code { padding: 0; background: none; }
+        .step-number { width: 36px; height: 36px; background: var(--primary-color); color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 600; flex-shrink: 0; }
+        .step { display: flex; gap: 1rem; margin-bottom: 2rem; }
+        .step-content { flex: 1; }
+        .alert-tip { background: #d1fae5; border-left: 4px solid #10b981; color: #065f46; }
+        .alert-warning { background: #fef3c7; border-left: 4px solid #f59e0b; color: #92400e; }
+        .alert-info { background: #dbeafe; border-left: 4px solid #3b82f6; color: #1e40af; }
+    </style>
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="logo"><i class="bi bi-heart-pulse"></i> Glide HIMS</div>
+        <div class="version">Enterprise Edition v1.0.0</div>
+        <div class="nav-section">
+            <div class="nav-section-title">Getting Started</div>
+            <a href="index.html" class="nav-link"><i class="bi bi-house"></i> Home</a>
+            <a href="quickstart.html" class="nav-link active"><i class="bi bi-rocket-takeoff"></i> Quick Start</a>
+            <a href="architecture.html" class="nav-link"><i class="bi bi-diagram-3"></i> Architecture</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Deployment</div>
+            <a href="deployment-cloud.html" class="nav-link"><i class="bi bi-cloud"></i> Cloud Deployment</a>
+            <a href="deployment-onpremise.html" class="nav-link"><i class="bi bi-server"></i> On-Premise</a>
+            <a href="docker.html" class="nav-link"><i class="bi bi-box"></i> Docker Guide</a>
+            <a href="kubernetes.html" class="nav-link"><i class="bi bi-grid-3x3"></i> Kubernetes</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Enterprise Features</div>
+            <a href="licensing.html" class="nav-link"><i class="bi bi-key"></i> Licensing</a>
+            <a href="feature-flags.html" class="nav-link"><i class="bi bi-toggles"></i> Feature Flags</a>
+            <a href="phone-home.html" class="nav-link"><i class="bi bi-telephone"></i> Phone Home</a>
+            <a href="updates.html" class="nav-link"><i class="bi bi-arrow-repeat"></i> Updates</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">API Reference</div>
+            <a href="api-overview.html" class="nav-link"><i class="bi bi-braces"></i> API Overview</a>
+            <a href="api-auth.html" class="nav-link"><i class="bi bi-shield-lock"></i> Authentication</a>
+            <a href="api-patients.html" class="nav-link"><i class="bi bi-people"></i> Patients</a>
+            <a href="api-billing.html" class="nav-link"><i class="bi bi-receipt"></i> Billing</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Operations</div>
+            <a href="monitoring.html" class="nav-link"><i class="bi bi-activity"></i> Monitoring</a>
+            <a href="backup.html" class="nav-link"><i class="bi bi-database"></i> Backup & Recovery</a>
+            <a href="troubleshooting.html" class="nav-link"><i class="bi bi-bug"></i> Troubleshooting</a>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <div class="doc-header">
+            <h1><i class="bi bi-rocket-takeoff me-2"></i>Quick Start Guide</h1>
+            <p class="lead text-muted">Get Glide HIMS running in under 5 minutes</p>
+        </div>
+
+        <!-- Prerequisites -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-check-square me-2"></i>Prerequisites</div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Required Software</h6>
+                        <ul class="list-unstyled">
+                            <li><i class="bi bi-check text-success me-2"></i>Docker 20.10+ & Docker Compose</li>
+                            <li><i class="bi bi-check text-success me-2"></i>Node.js 18+ (for development)</li>
+                            <li><i class="bi bi-check text-success me-2"></i>pnpm 8+ (package manager)</li>
+                            <li><i class="bi bi-check text-success me-2"></i>Git</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>System Requirements</h6>
+                        <ul class="list-unstyled">
+                            <li><i class="bi bi-cpu me-2"></i>4+ CPU cores</li>
+                            <li><i class="bi bi-memory me-2"></i>8GB+ RAM</li>
+                            <li><i class="bi bi-hdd me-2"></i>50GB+ storage</li>
+                            <li><i class="bi bi-globe me-2"></i>Internet connection</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 1: Clone Repository -->
+        <div class="step">
+            <div class="step-number">1</div>
+            <div class="step-content">
+                <h5>Clone the Repository</h5>
+                <p class="text-muted">Get the latest source code from the repository.</p>
+                <pre><code class="language-bash"># Clone the repository
+git clone https://github.com/itsolutionsuganda/glide-hims.git
+cd glide-hims
+
+# Check out the latest stable release
+git checkout v1.0.0</code></pre>
+            </div>
+        </div>
+
+        <!-- Step 2: Environment Setup -->
+        <div class="step">
+            <div class="step-number">2</div>
+            <div class="step-content">
+                <h5>Configure Environment Variables</h5>
+                <p class="text-muted">Set up your environment configuration.</p>
+                <pre><code class="language-bash"># Copy the example environment file
+cp .env.example .env
+
+# Edit the configuration
+nano .env</code></pre>
+                
+                <div class="alert alert-info mt-3">
+                    <strong><i class="bi bi-info-circle me-2"></i>Essential Variables:</strong>
+                </div>
+                <pre><code class="language-bash"># Database Configuration
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=glide_hims
+DB_USER=glide_admin
+DB_PASSWORD=your_secure_password
+
+# JWT Secret (generate a strong random string)
+JWT_SECRET=your-256-bit-secret-key-here
+
+# License Key (obtain from IT Solutions Uganda)
+LICENSE_KEY=XXXX-XXXX-XXXX-XXXX
+
+# Phone Home URL (for on-premise)
+PHONE_HOME_URL=https://hmisdemo.itsolutionsuganda.com
+
+# Deployment Mode: cloud | on-premise | development
+DEPLOYMENT_MODE=development</code></pre>
+            </div>
+        </div>
+
+        <!-- Step 3: Docker Compose -->
+        <div class="step">
+            <div class="step-number">3</div>
+            <div class="step-content">
+                <h5>Start with Docker Compose</h5>
+                <p class="text-muted">Launch the complete stack with a single command.</p>
+                <pre><code class="language-bash"># Start all services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Check service status
+docker-compose ps</code></pre>
+                
+                <div class="alert alert-tip mt-3">
+                    <strong><i class="bi bi-lightbulb me-2"></i>Tip:</strong> 
+                    First startup may take 2-3 minutes as Docker downloads images and initializes the database.
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 4: Verify Installation -->
+        <div class="step">
+            <div class="step-number">4</div>
+            <div class="step-content">
+                <h5>Verify the Installation</h5>
+                <p class="text-muted">Ensure all services are running correctly.</p>
+                <pre><code class="language-bash"># Check API health
+curl http://localhost:3000/api/v1/health
+
+# Expected response:
+# {"status":"ok","info":{"database":{"status":"up"}}}
+
+# Check for updates
+curl http://localhost:3000/api/v1/updates/check?version=0.0.0
+
+# Validate license (if you have one)
+curl -X POST http://localhost:3000/api/v1/license/validate \
+  -H "Content-Type: application/json" \
+  -d '{"licenseKey":"YOUR-LICENSE-KEY"}'</code></pre>
+            </div>
+        </div>
+
+        <!-- Step 5: Access the Application -->
+        <div class="step">
+            <div class="step-number">5</div>
+            <div class="step-content">
+                <h5>Access the Application</h5>
+                <p class="text-muted">Open your browser and start using Glide HIMS.</p>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-body text-center">
+                                <i class="bi bi-window text-primary" style="font-size: 2rem;"></i>
+                                <h6 class="mt-2">Web Application</h6>
+                                <a href="http://localhost:5173" class="btn btn-primary btn-sm mt-2" target="_blank">
+                                    http://localhost:5173
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-body text-center">
+                                <i class="bi bi-file-code text-success" style="font-size: 2rem;"></i>
+                                <h6 class="mt-2">API Documentation</h6>
+                                <a href="http://localhost:3000/api" class="btn btn-success btn-sm mt-2" target="_blank">
+                                    http://localhost:3000/api
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="alert alert-warning mt-3">
+                    <strong><i class="bi bi-key me-2"></i>Default Credentials:</strong><br>
+                    Email: <code>admin@example.com</code><br>
+                    Password: <code>admin123</code><br>
+                    <small class="text-muted">Change these immediately after first login!</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Development Mode -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-code-slash me-2"></i>Development Mode (Without Docker)</div>
+            <div class="card-body">
+                <p>For active development, run services individually:</p>
+                <pre><code class="language-bash"># Install dependencies
+pnpm install
+
+# Start PostgreSQL (ensure it's running)
+# Option 1: Use Docker for just the database
+docker run -d --name postgres \
+  -e POSTGRES_DB=glide_hims \
+  -e POSTGRES_USER=glide_admin \
+  -e POSTGRES_PASSWORD=your_password \
+  -p 5432:5432 postgres:15
+
+# Run database migrations
+cd packages/backend
+pnpm run migration:run
+
+# Start backend (in one terminal)
+pnpm run start:dev
+
+# Start frontend (in another terminal)
+cd packages/frontend
+pnpm run dev</code></pre>
+            </div>
+        </div>
+
+        <!-- Docker Compose File Reference -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-file-earmark-code me-2"></i>Docker Compose Reference</div>
+            <div class="card-body">
+                <pre><code class="language-yaml"># docker-compose.yml
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: glide_hims
+      POSTGRES_USER: glide_admin
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U glide_admin"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  backend:
+    build:
+      context: .
+      dockerfile: packages/backend/Dockerfile
+    environment:
+      - DB_HOST=postgres
+      - REDIS_HOST=redis
+      - LICENSE_KEY=${LICENSE_KEY}
+      - PHONE_HOME_URL=${PHONE_HOME_URL}
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  frontend:
+    build:
+      context: .
+      dockerfile: packages/frontend/Dockerfile
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  redis_data:</code></pre>
+            </div>
+        </div>
+
+        <!-- Next Steps -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-arrow-right-circle me-2"></i>Next Steps</div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <h6><i class="bi bi-key text-primary me-2"></i>Activate License</h6>
+                        <p class="small text-muted">Set up your enterprise license for full functionality.</p>
+                        <a href="licensing.html" class="btn btn-outline-primary btn-sm">Learn More →</a>
+                    </div>
+                    <div class="col-md-4">
+                        <h6><i class="bi bi-shield-lock text-success me-2"></i>Configure Security</h6>
+                        <p class="small text-muted">Set up SSL, authentication, and access controls.</p>
+                        <a href="api-auth.html" class="btn btn-outline-success btn-sm">Learn More →</a>
+                    </div>
+                    <div class="col-md-4">
+                        <h6><i class="bi bi-server text-warning me-2"></i>Production Setup</h6>
+                        <p class="small text-muted">Deploy to production with full redundancy.</p>
+                        <a href="deployment-onpremise.html" class="btn btn-outline-warning btn-sm">Learn More →</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <footer class="mt-5 pt-4 border-top text-muted">
+            <p class="small">© 2026 IT Solutions Uganda. Last updated: April 2026</p>
+        </footer>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-bash.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-yaml.min.js"></script>
+</body>
+</html>

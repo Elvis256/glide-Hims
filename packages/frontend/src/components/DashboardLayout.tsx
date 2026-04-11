@@ -117,31 +117,10 @@ import Logo, { LogoIcon } from './Logo';
 import FacilitySwitcher from './FacilitySwitcher';
 import NotificationBell from './NotificationBell';
 import { useNotificationSocket } from '../lib/useNotificationSocket';
-import { useBusinessConfig, type BusinessType } from '../hooks/useBusinessConfig';
+import { useBusinessConfig } from '../hooks/useBusinessConfig';
 
-// Business-type-specific section title overrides
-const sectionTitleOverrides: Record<string, Partial<Record<BusinessType, string>>> = {
-  'Registration': {
-    pharmacy: 'Customers',
-    optical: 'Clients',
-  },
-  'Doctors': {
-    dental: 'Dentists',
-    optical: 'Optometrists',
-  },
-  'Pharmacy': {
-    pharmacy: 'Dispensary',
-  },
-};
-
-// Sidebar section ordering priority per business type.
-// Sections listed here appear first (in this order); unlisted sections follow in their default order.
-const sidebarPriorityOrder: Record<BusinessType, string[]> = {
-  pharmacy: ['POS', 'Pharmacy', 'Registration', 'Billing', 'Stores', 'Reports', 'HR', 'Admin'],
-  dental:   ['Dental', 'Registration', 'Doctors', 'Billing', 'Reports', 'HR', 'Admin'],
-  optical:  ['Optical', 'Registration', 'POS', 'Billing', 'Stores', 'Reports', 'HR', 'Admin'],
-  hospital: [], // default order — no reordering
-};
+// Hospital-only system - no business type variants needed
+const sectionTitleOverrides: Record<string, string> = {};
 
 // Custom Bandage icon (not in lucide)
 const Bandage = ({ className }: { className?: string }) => (
@@ -653,46 +632,6 @@ const navigationSections: NavSection[] = [
           { name: 'Deliveries', href: '/pharmacy/pos/deliveries', icon: Truck, permissions: ['wholesale.manage'] },
         ],
       },
-    ],
-  },
-  // 7b. Dental - Dental Clinics
-  {
-    title: 'Dental',
-    icon: CircleDot,
-    moduleCode: 'dental_charting',
-    roles: ['Dentist', 'Dental Hygienist', 'Dental Assistant'],
-    items: [
-      { name: 'Dental Dashboard', href: '/dental', icon: LayoutDashboard, permissions: ['dental.view'] },
-      { name: 'Dental Chart', href: '/dental/chart', icon: Crosshair, permissions: ['dental.view'] },
-      { name: 'Treatment Plans', href: '/dental/treatment-plans', icon: ClipboardList, permissions: ['dental.view'] },
-      { name: 'Procedures (CDT)', href: '/dental/procedures', icon: Scissors, permissions: ['dental.view'] },
-      { name: 'Dental Imaging', href: '/dental/imaging', icon: Scan, permissions: ['dental.view'] },
-      { name: 'Lab Orders', href: '/dental/lab-orders', icon: Package, permissions: ['dental.view'] },
-      { name: 'Orthodontics', href: '/dental/ortho', icon: Activity, permissions: ['dental.view'] },
-      { name: 'Periodontal Chart', href: '/dental/perio', icon: Focus, permissions: ['dental.view'] },
-    ],
-  },
-  // 7c. Optical - Optometry / Optical Centers
-  {
-    title: 'Optical',
-    icon: Eye,
-    moduleCode: 'optical_exams',
-    roles: ['Optometrist', 'Optician', 'Doctor'],
-    items: [
-      { name: 'Optical Dashboard', href: '/optical', icon: LayoutDashboard, permissions: ['optical.view'] },
-      { name: 'Eye Exams', href: '/optical/exams', icon: Eye, permissions: ['optical.manage'] },
-      { name: 'Prescriptions', href: '/optical/prescriptions', icon: FileText, permissions: ['optical.manage'] },
-      { name: 'Spectacle Orders', href: '/optical/orders', icon: Glasses, permissions: ['optical.view'] },
-      {
-        name: 'Inventory',
-        icon: Package,
-        permissions: ['optical.view'],
-        children: [
-          { name: 'Frames', href: '/optical/frames', icon: Glasses, permissions: ['optical.view'] },
-          { name: 'Lenses', href: '/optical/lenses', icon: CircleDot, permissions: ['optical.view'] },
-        ],
-      },
-      { name: 'Visual Field', href: '/optical/visual-field', icon: Crosshair, permissions: ['optical.manage'] },
     ],
   },
   // 7. IPD - Inpatient

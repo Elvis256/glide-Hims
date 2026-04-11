@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Licensing System - Glide HIMS Documentation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        :root { --primary-color: #0d6efd; --sidebar-bg: #1a1d21; --sidebar-text: #8b949e; --sidebar-active: #ffffff; --code-bg: #161b22; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 280px; height: 100vh; background: var(--sidebar-bg); padding: 1.5rem; overflow-y: auto; z-index: 1000; }
+        .sidebar .logo { color: #fff; font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem; }
+        .sidebar .version { color: var(--sidebar-text); font-size: 0.85rem; margin-bottom: 2rem; }
+        .sidebar .nav-section { margin-bottom: 1.5rem; }
+        .sidebar .nav-section-title { color: var(--sidebar-text); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.75rem; }
+        .sidebar .nav-link { color: var(--sidebar-text); padding: 0.5rem 0.75rem; border-radius: 6px; display: block; text-decoration: none; font-size: 0.9rem; }
+        .sidebar .nav-link:hover, .sidebar .nav-link.active { color: var(--sidebar-active); background: rgba(255,255,255,0.1); }
+        .sidebar .nav-link i { margin-right: 0.5rem; width: 18px; }
+        .main-content { margin-left: 280px; padding: 2rem 3rem; min-height: 100vh; background: #f8f9fa; }
+        .doc-header { border-bottom: 1px solid #dee2e6; padding-bottom: 1.5rem; margin-bottom: 2rem; }
+        .doc-header h1 { font-size: 2.5rem; font-weight: 700; color: #1a1d21; }
+        .card { border: none; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-radius: 12px; margin-bottom: 1.5rem; }
+        .card-header { background: #fff; border-bottom: 1px solid #e9ecef; font-weight: 600; padding: 1rem 1.5rem; }
+        .card-body { padding: 1.5rem; }
+        pre { background: var(--code-bg); border-radius: 8px; padding: 1rem; overflow-x: auto; color: #e6edf3; }
+        code { background: var(--code-bg); color: #e6edf3; padding: 0.2rem 0.4rem; border-radius: 4px; font-size: 0.85em; }
+        pre code { padding: 0; background: none; }
+        .api-method { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; margin-right: 0.5rem; }
+        .api-method.get { background: #dbeafe; color: #1e40af; }
+        .api-method.post { background: #d1fae5; color: #065f46; }
+        .api-method.put { background: #fef3c7; color: #92400e; }
+        .api-method.delete { background: #fee2e2; color: #991b1b; }
+        .endpoint-path { font-family: monospace; color: #6c757d; }
+        .alert-tip { background: #d1fae5; border-left: 4px solid #10b981; color: #065f46; }
+        .alert-warning { background: #fef3c7; border-left: 4px solid #f59e0b; color: #92400e; }
+        .alert-info { background: #dbeafe; border-left: 4px solid #3b82f6; color: #1e40af; }
+        .license-type { padding: 1rem; border-radius: 8px; margin-bottom: 1rem; }
+        .license-type.trial { background: #f3f4f6; border: 2px solid #d1d5db; }
+        .license-type.standard { background: #dbeafe; border: 2px solid #3b82f6; }
+        .license-type.enterprise { background: #fef3c7; border: 2px solid #f59e0b; }
+        .license-type.unlimited { background: #d1fae5; border: 2px solid #10b981; }
+    </style>
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="logo"><i class="bi bi-heart-pulse"></i> Glide HIMS</div>
+        <div class="version">Enterprise Edition v1.0.0</div>
+        <div class="nav-section">
+            <div class="nav-section-title">Getting Started</div>
+            <a href="index.html" class="nav-link"><i class="bi bi-house"></i> Home</a>
+            <a href="quickstart.html" class="nav-link"><i class="bi bi-rocket-takeoff"></i> Quick Start</a>
+            <a href="architecture.html" class="nav-link"><i class="bi bi-diagram-3"></i> Architecture</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Deployment</div>
+            <a href="deployment-cloud.html" class="nav-link"><i class="bi bi-cloud"></i> Cloud Deployment</a>
+            <a href="deployment-onpremise.html" class="nav-link"><i class="bi bi-server"></i> On-Premise</a>
+            <a href="docker.html" class="nav-link"><i class="bi bi-box"></i> Docker Guide</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Enterprise Features</div>
+            <a href="licensing.html" class="nav-link active"><i class="bi bi-key"></i> Licensing</a>
+            <a href="feature-flags.html" class="nav-link"><i class="bi bi-toggles"></i> Feature Flags</a>
+            <a href="phone-home.html" class="nav-link"><i class="bi bi-telephone"></i> Phone Home</a>
+            <a href="updates.html" class="nav-link"><i class="bi bi-arrow-repeat"></i> Updates</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">API Reference</div>
+            <a href="api-overview.html" class="nav-link"><i class="bi bi-braces"></i> API Overview</a>
+            <a href="api-auth.html" class="nav-link"><i class="bi bi-shield-lock"></i> Authentication</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Operations</div>
+            <a href="troubleshooting.html" class="nav-link"><i class="bi bi-bug"></i> Troubleshooting</a>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <div class="doc-header">
+            <h1><i class="bi bi-key me-2"></i>Licensing System</h1>
+            <p class="lead text-muted">Enterprise license management and validation</p>
+        </div>
+
+        <!-- Overview -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-info-circle me-2"></i>Overview</div>
+            <div class="card-body">
+                <p>Glide HIMS uses a cryptographically signed licensing system to manage enterprise deployments. Each license key encodes:</p>
+                <ul>
+                    <li><strong>Organization details</strong> - Company name and tenant ID</li>
+                    <li><strong>License type</strong> - Determines available features</li>
+                    <li><strong>User limits</strong> - Maximum concurrent users</li>
+                    <li><strong>Facility limits</strong> - Maximum hospitals/clinics</li>
+                    <li><strong>Enabled modules</strong> - Which system modules are active</li>
+                    <li><strong>Expiration date</strong> - License validity period</li>
+                    <li><strong>Hardware binding</strong> - Optional server fingerprint lock</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- License Types -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-tags me-2"></i>License Types</div>
+            <div class="card-body">
+                <div class="license-type trial">
+                    <h5><i class="bi bi-hourglass me-2"></i>Trial License</h5>
+                    <p class="mb-2">30-day evaluation license with limited features.</p>
+                    <ul class="mb-0">
+                        <li>Maximum 5 users</li>
+                        <li>Single facility</li>
+                        <li>Basic modules only (OPD, Patients, Billing)</li>
+                        <li>No phone-home requirement</li>
+                    </ul>
+                </div>
+
+                <div class="license-type standard">
+                    <h5><i class="bi bi-building me-2"></i>Standard License</h5>
+                    <p class="mb-2">Single-facility deployment for small clinics.</p>
+                    <ul class="mb-0">
+                        <li>Up to 50 users</li>
+                        <li>Single facility</li>
+                        <li>All core modules included</li>
+                        <li>Email support</li>
+                    </ul>
+                </div>
+
+                <div class="license-type enterprise">
+                    <h5><i class="bi bi-hospital me-2"></i>Enterprise License</h5>
+                    <p class="mb-2">Multi-facility deployment for hospital networks.</p>
+                    <ul class="mb-0">
+                        <li>Up to 500 users</li>
+                        <li>Up to 10 facilities</li>
+                        <li>All modules + advanced features</li>
+                        <li>Priority support</li>
+                        <li>Custom integrations</li>
+                    </ul>
+                </div>
+
+                <div class="license-type unlimited">
+                    <h5><i class="bi bi-infinity me-2"></i>Unlimited License</h5>
+                    <p class="mb-2">Unrestricted deployment for large organizations.</p>
+                    <ul class="mb-0">
+                        <li>Unlimited users</li>
+                        <li>Unlimited facilities</li>
+                        <li>All features unlocked</li>
+                        <li>24/7 dedicated support</li>
+                        <li>On-site training included</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- License Activation -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-check-circle me-2"></i>Activating Your License</div>
+            <div class="card-body">
+                <h6>Step 1: Set the License Key</h6>
+                <p>Add your license key to the environment configuration:</p>
+                <pre><code class="language-bash"># In your .env file
+LICENSE_KEY=GLIDE-XXXX-XXXX-XXXX-XXXX
+
+# Or set as environment variable
+export LICENSE_KEY="GLIDE-XXXX-XXXX-XXXX-XXXX"</code></pre>
+
+                <h6 class="mt-4">Step 2: Validate the License</h6>
+                <p>The system validates the license on startup, but you can also validate manually:</p>
+                <pre><code class="language-bash"># Validate license via API
+curl -X POST https://your-server/api/v1/license/validate \
+  -H "Content-Type: application/json" \
+  -d '{"licenseKey": "GLIDE-XXXX-XXXX-XXXX-XXXX"}'
+
+# Response (valid license)
+{
+  "valid": true,
+  "expiresAt": "2027-04-10T00:00:00.000Z",
+  "expiresIn": 365,
+  "licenseType": "enterprise",
+  "maxUsers": 500,
+  "maxFacilities": 10,
+  "enabledModules": ["patients", "billing", "pharmacy", "laboratory", "ipd", "hr"]
+}</code></pre>
+
+                <h6 class="mt-4">Step 3: Hardware Binding (Optional)</h6>
+                <p>For on-premise deployments, you can bind the license to specific hardware:</p>
+                <pre><code class="language-bash"># Get your server's hardware ID
+curl https://your-server/api/v1/phone-home/system-info \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+
+# Response
+{
+  "hardwareId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "systemInfo": {
+    "hostname": "hims-server-01",
+    "platform": "linux",
+    "cpus": 8,
+    "totalMemory": 17179869184
+  }
+}
+
+# Bind license to hardware
+curl -X PUT https://your-server/api/v1/license/GLIDE-XXXX/bind-hardware \
+  -H "Content-Type: application/json" \
+  -d '{"hardwareId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"}'</code></pre>
+            </div>
+        </div>
+
+        <!-- API Reference -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-braces me-2"></i>License API Reference</div>
+            <div class="card-body">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Endpoint</th>
+                            <th>Description</th>
+                            <th>Auth</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="api-method post">POST</span><code>/api/v1/license/validate</code></td>
+                            <td>Validate a license key</td>
+                            <td><span class="badge bg-secondary">Public</span></td>
+                        </tr>
+                        <tr>
+                            <td><span class="api-method post">POST</span><code>/api/v1/license/generate</code></td>
+                            <td>Generate a new license (admin only)</td>
+                            <td><span class="badge bg-primary">JWT + Admin</span></td>
+                        </tr>
+                        <tr>
+                            <td><span class="api-method get">GET</span><code>/api/v1/license/:key</code></td>
+                            <td>Get license details</td>
+                            <td><span class="badge bg-primary">JWT</span></td>
+                        </tr>
+                        <tr>
+                            <td><span class="api-method get">GET</span><code>/api/v1/license</code></td>
+                            <td>List all licenses</td>
+                            <td><span class="badge bg-primary">JWT + Admin</span></td>
+                        </tr>
+                        <tr>
+                            <td><span class="api-method put">PUT</span><code>/api/v1/license/:key/revoke</code></td>
+                            <td>Revoke a license</td>
+                            <td><span class="badge bg-primary">JWT + Admin</span></td>
+                        </tr>
+                        <tr>
+                            <td><span class="api-method put">PUT</span><code>/api/v1/license/:key/extend</code></td>
+                            <td>Extend license validity</td>
+                            <td><span class="badge bg-primary">JWT + Admin</span></td>
+                        </tr>
+                        <tr>
+                            <td><span class="api-method put">PUT</span><code>/api/v1/license/:key/bind-hardware</code></td>
+                            <td>Bind license to hardware ID</td>
+                            <td><span class="badge bg-secondary">Public</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h6 class="mt-4">Generate License Request Body</h6>
+                <pre><code class="language-json">{
+  "organizationName": "City Hospital",
+  "tenantId": "city-hospital",
+  "licenseType": "enterprise",
+  "maxUsers": 200,
+  "maxFacilities": 5,
+  "enabledModules": [
+    "patients", "billing", "pharmacy", 
+    "laboratory", "ipd", "radiology"
+  ],
+  "validityDays": 365,
+  "features": {
+    "mfa": true,
+    "audit_logs": true,
+    "api_access": true
+  }
+}</code></pre>
+            </div>
+        </div>
+
+        <!-- License Service Code -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-code-slash me-2"></i>How It Works (Code Reference)</div>
+            <div class="card-body">
+                <p>The licensing system uses HMAC-SHA256 signatures to ensure license integrity:</p>
+                <pre><code class="language-typescript">// License Service - Key Generation
+import * as crypto from 'crypto';
+
+export class LicenseService {
+  private readonly secretKey: string;
+
+  constructor() {
+    this.secretKey = process.env.LICENSE_SECRET_KEY || 'default-secret';
+  }
+
+  /**
+   * Generate a cryptographically signed license key
+   */
+  async generateLicense(dto: GenerateLicenseDto): Promise<License> {
+    // Create license data
+    const licenseData = {
+      org: dto.organizationName,
+      type: dto.licenseType,
+      users: dto.maxUsers,
+      facilities: dto.maxFacilities,
+      modules: dto.enabledModules,
+      exp: Date.now() + (dto.validityDays * 24 * 60 * 60 * 1000),
+    };
+
+    // Generate signature
+    const dataString = JSON.stringify(licenseData);
+    const signature = crypto
+      .createHmac('sha256', this.secretKey)
+      .update(dataString)
+      .digest('hex');
+
+    // Create license key format: PREFIX-DATA-SIGNATURE
+    const encoded = Buffer.from(dataString).toString('base64url');
+    const licenseKey = `GLIDE-${encoded}-${signature.substring(0, 16)}`;
+
+    // Store in database
+    const license = this.licenseRepository.create({
+      licenseKey,
+      organizationName: dto.organizationName,
+      licenseType: dto.licenseType,
+      maxUsers: dto.maxUsers,
+      signature,
+      // ... other fields
+    });
+
+    return this.licenseRepository.save(license);
+  }
+
+  /**
+   * Validate a license key
+   */
+  async validateLicense(licenseKey: string): Promise<ValidationResult> {
+    // Check cache first (24-hour TTL)
+    const cached = this.validationCache.get(licenseKey);
+    if (cached) return cached;
+
+    // Find license in database
+    const license = await this.licenseRepository.findOne({
+      where: { licenseKey },
+    });
+
+    if (!license) {
+      return { valid: false, error: 'License not found' };
+    }
+
+    // Check status
+    if (license.status === 'revoked') {
+      return { valid: false, error: 'License has been revoked' };
+    }
+
+    // Check expiration
+    if (new Date() > license.expiresAt) {
+      return { valid: false, error: 'License has expired' };
+    }
+
+    // Verify signature
+    const isSignatureValid = this.verifySignature(license);
+    if (!isSignatureValid) {
+      return { valid: false, error: 'Invalid license signature' };
+    }
+
+    // Check hardware binding
+    if (license.hardwareId) {
+      const currentHardwareId = this.getHardwareId();
+      if (license.hardwareId !== currentHardwareId) {
+        return { valid: false, error: 'Hardware mismatch' };
+      }
+    }
+
+    const result = {
+      valid: true,
+      license,
+      expiresIn: Math.ceil(
+        (license.expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+      ),
+    };
+
+    // Cache the result
+    this.validationCache.set(licenseKey, result, 24 * 60 * 60 * 1000);
+
+    return result;
+  }
+}</code></pre>
+            </div>
+        </div>
+
+        <!-- Troubleshooting -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-bug me-2"></i>Troubleshooting License Issues</div>
+            <div class="card-body">
+                <h6>Common Errors</h6>
+                <table class="table table-sm">
+                    <thead>
+                        <tr><th>Error</th><th>Cause</th><th>Solution</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>License not found</code></td>
+                            <td>Invalid or mistyped license key</td>
+                            <td>Verify the license key is correct. Check for typos.</td>
+                        </tr>
+                        <tr>
+                            <td><code>License has expired</code></td>
+                            <td>License validity period ended</td>
+                            <td>Contact IT Solutions Uganda to renew your license.</td>
+                        </tr>
+                        <tr>
+                            <td><code>License has been revoked</code></td>
+                            <td>License was manually revoked</td>
+                            <td>Contact support to understand why and get a new license.</td>
+                        </tr>
+                        <tr>
+                            <td><code>Hardware mismatch</code></td>
+                            <td>Server hardware changed</td>
+                            <td>Contact support to rebind the license to new hardware.</td>
+                        </tr>
+                        <tr>
+                            <td><code>Invalid license signature</code></td>
+                            <td>License data was tampered with</td>
+                            <td>Obtain a fresh license key from your account portal.</td>
+                        </tr>
+                        <tr>
+                            <td><code>User limit exceeded</code></td>
+                            <td>More users than license allows</td>
+                            <td>Upgrade your license or deactivate unused user accounts.</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div class="alert alert-info mt-3">
+                    <strong><i class="bi bi-headset me-2"></i>Need Help?</strong><br>
+                    Contact IT Solutions Uganda support:<br>
+                    Email: support@itsolutionsuganda.com<br>
+                    Phone: +256 XXX XXX XXX
+                </div>
+            </div>
+        </div>
+
+        <footer class="mt-5 pt-4 border-top text-muted">
+            <p class="small">© 2026 IT Solutions Uganda. Last updated: April 2026</p>
+        </footer>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-bash.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-typescript.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-json.min.js"></script>
+</body>
+</html>

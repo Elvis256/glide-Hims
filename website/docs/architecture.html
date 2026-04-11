@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Architecture - Glide HIMS Documentation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        :root { --primary-color: #0d6efd; --sidebar-bg: #1a1d21; --sidebar-text: #8b949e; --sidebar-active: #ffffff; --code-bg: #161b22; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 280px; height: 100vh; background: var(--sidebar-bg); padding: 1.5rem; overflow-y: auto; z-index: 1000; }
+        .sidebar .logo { color: #fff; font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem; }
+        .sidebar .version { color: var(--sidebar-text); font-size: 0.85rem; margin-bottom: 2rem; }
+        .sidebar .nav-section { margin-bottom: 1.5rem; }
+        .sidebar .nav-section-title { color: var(--sidebar-text); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.75rem; }
+        .sidebar .nav-link { color: var(--sidebar-text); padding: 0.5rem 0.75rem; border-radius: 6px; display: block; text-decoration: none; font-size: 0.9rem; }
+        .sidebar .nav-link:hover, .sidebar .nav-link.active { color: var(--sidebar-active); background: rgba(255,255,255,0.1); }
+        .sidebar .nav-link i { margin-right: 0.5rem; width: 18px; }
+        .main-content { margin-left: 280px; padding: 2rem 3rem; min-height: 100vh; background: #f8f9fa; }
+        .doc-header { border-bottom: 1px solid #dee2e6; padding-bottom: 1.5rem; margin-bottom: 2rem; }
+        .doc-header h1 { font-size: 2.5rem; font-weight: 700; color: #1a1d21; }
+        .card { border: none; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-radius: 12px; margin-bottom: 1.5rem; }
+        .card-header { background: #fff; border-bottom: 1px solid #e9ecef; font-weight: 600; padding: 1rem 1.5rem; }
+        .card-body { padding: 1.5rem; }
+        pre { background: var(--code-bg); border-radius: 8px; padding: 1rem; overflow-x: auto; color: #e6edf3; font-family: 'Monaco', 'Menlo', monospace; }
+        .arch-diagram { background: #1a1d21; color: #e6edf3; padding: 1.5rem; border-radius: 12px; font-family: 'Monaco', 'Menlo', monospace; font-size: 0.85rem; line-height: 1.4; overflow-x: auto; }
+        .tech-stack { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+        .tech-badge { display: inline-flex; align-items: center; padding: 0.5rem 1rem; background: #f0f0f0; border-radius: 8px; font-size: 0.85rem; }
+        .tech-badge i { margin-right: 0.5rem; font-size: 1.25rem; }
+        .module-card { border-left: 4px solid #0d6efd; }
+        .module-card.patients { border-left-color: #10b981; }
+        .module-card.billing { border-left-color: #f59e0b; }
+        .module-card.pharmacy { border-left-color: #3b82f6; }
+        .module-card.lab { border-left-color: #ef4444; }
+        .module-card.ipd { border-left-color: #8b5cf6; }
+        .module-card.hr { border-left-color: #ec4899; }
+    </style>
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="logo"><i class="bi bi-heart-pulse"></i> Glide HIMS</div>
+        <div class="version">Enterprise Edition v1.0.0</div>
+        <div class="nav-section">
+            <div class="nav-section-title">Getting Started</div>
+            <a href="index.html" class="nav-link"><i class="bi bi-house"></i> Home</a>
+            <a href="quickstart.html" class="nav-link"><i class="bi bi-rocket-takeoff"></i> Quick Start</a>
+            <a href="architecture.html" class="nav-link active"><i class="bi bi-diagram-3"></i> Architecture</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Deployment</div>
+            <a href="deployment-cloud.html" class="nav-link"><i class="bi bi-cloud"></i> Cloud Deployment</a>
+            <a href="deployment-onpremise.html" class="nav-link"><i class="bi bi-server"></i> On-Premise</a>
+            <a href="docker.html" class="nav-link"><i class="bi bi-box"></i> Docker Guide</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Enterprise Features</div>
+            <a href="licensing.html" class="nav-link"><i class="bi bi-key"></i> Licensing</a>
+            <a href="feature-flags.html" class="nav-link"><i class="bi bi-toggles"></i> Feature Flags</a>
+            <a href="phone-home.html" class="nav-link"><i class="bi bi-telephone"></i> Phone Home</a>
+            <a href="updates.html" class="nav-link"><i class="bi bi-arrow-repeat"></i> Updates</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">API Reference</div>
+            <a href="api-overview.html" class="nav-link"><i class="bi bi-braces"></i> API Overview</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Operations</div>
+            <a href="troubleshooting.html" class="nav-link"><i class="bi bi-bug"></i> Troubleshooting</a>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <div class="doc-header">
+            <h1><i class="bi bi-diagram-3 me-2"></i>System Architecture</h1>
+            <p class="lead text-muted">Technical overview of Glide HIMS architecture</p>
+        </div>
+
+        <!-- High-Level Architecture -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-layers me-2"></i>High-Level Architecture</div>
+            <div class="card-body">
+                <div class="arch-diagram">
+<pre>
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                              GLIDE HIMS ARCHITECTURE                                │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                     │
+│   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐        │
+│   │   Web App    │   │  Mobile App  │   │   Kiosk App  │   │  3rd Party   │        │
+│   │   (React)    │   │  (React N.)  │   │   (Electron) │   │    APIs      │        │
+│   └──────┬───────┘   └──────┬───────┘   └──────┬───────┘   └──────┬───────┘        │
+│          │                  │                   │                  │                │
+│          └─────────────┬────┴───────────────────┴───────┬──────────┘                │
+│                        │                                │                           │
+│                        ▼                                ▼                           │
+│            ┌───────────────────────┐       ┌───────────────────────┐               │
+│            │   NGINX / Load        │       │   WebSocket Server    │               │
+│            │   Balancer + SSL      │       │   (Real-time events)  │               │
+│            └───────────┬───────────┘       └───────────┬───────────┘               │
+│                        │                                │                           │
+│                        ▼                                ▼                           │
+│   ┌─────────────────────────────────────────────────────────────────────────┐      │
+│   │                         NestJS Backend Application                      │      │
+│   ├─────────────────────────────────────────────────────────────────────────┤      │
+│   │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐           │      │
+│   │  │  Auth   │ │Patients │ │ Billing │ │Pharmacy │ │   Lab   │           │      │
+│   │  │ Module  │ │ Module  │ │ Module  │ │ Module  │ │ Module  │           │      │
+│   │  └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘           │      │
+│   │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐           │      │
+│   │  │   IPD   │ │   HR    │ │ Assets  │ │ Reports │ │Settings │           │      │
+│   │  │ Module  │ │ Module  │ │ Module  │ │ Module  │ │ Module  │           │      │
+│   │  └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘           │      │
+│   │  ┌─────────────────────────────────────────────────────────────┐       │      │
+│   │  │            Enterprise Services (License, Updates, Flags)    │       │      │
+│   │  └─────────────────────────────────────────────────────────────┘       │      │
+│   └───────────────────────────────┬─────────────────────────────────────────┘      │
+│                                   │                                                 │
+│          ┌────────────────────────┼────────────────────────┐                       │
+│          ▼                        ▼                        ▼                       │
+│   ┌─────────────┐         ┌─────────────┐         ┌─────────────┐                  │
+│   │ PostgreSQL  │         │    Redis    │         │ File Store  │                  │
+│   │  Database   │         │   (Cache)   │         │  (S3/Local) │                  │
+│   └─────────────┘         └─────────────┘         └─────────────┘                  │
+│                                                                                     │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+</pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- Technology Stack -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-stack me-2"></i>Technology Stack</div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6 mb-4">
+                        <h6>Frontend</h6>
+                        <div class="tech-stack">
+                            <span class="tech-badge"><i class="bi bi-filetype-tsx text-primary"></i> React 18</span>
+                            <span class="tech-badge"><i class="bi bi-lightning text-warning"></i> Vite</span>
+                            <span class="tech-badge"><i class="bi bi-palette text-info"></i> Tailwind CSS</span>
+                            <span class="tech-badge"><i class="bi bi-box text-success"></i> Zustand</span>
+                            <span class="tech-badge"><i class="bi bi-arrow-repeat text-primary"></i> React Query</span>
+                            <span class="tech-badge"><i class="bi bi-signpost text-secondary"></i> React Router</span>
+                        </div>
+                    </div>
+                    <div class="col-md-6 mb-4">
+                        <h6>Backend</h6>
+                        <div class="tech-stack">
+                            <span class="tech-badge"><i class="bi bi-braces text-danger"></i> NestJS</span>
+                            <span class="tech-badge"><i class="bi bi-filetype-ts text-primary"></i> TypeScript</span>
+                            <span class="tech-badge"><i class="bi bi-database text-info"></i> TypeORM</span>
+                            <span class="tech-badge"><i class="bi bi-shield-lock text-success"></i> Passport.js</span>
+                            <span class="tech-badge"><i class="bi bi-file-code text-warning"></i> Swagger</span>
+                        </div>
+                    </div>
+                    <div class="col-md-6 mb-4">
+                        <h6>Database & Cache</h6>
+                        <div class="tech-stack">
+                            <span class="tech-badge"><i class="bi bi-database-fill text-primary"></i> PostgreSQL 15</span>
+                            <span class="tech-badge"><i class="bi bi-lightning-fill text-danger"></i> Redis 7</span>
+                        </div>
+                    </div>
+                    <div class="col-md-6 mb-4">
+                        <h6>Infrastructure</h6>
+                        <div class="tech-stack">
+                            <span class="tech-badge"><i class="bi bi-box-seam text-info"></i> Docker</span>
+                            <span class="tech-badge"><i class="bi bi-hdd-network text-success"></i> Nginx</span>
+                            <span class="tech-badge"><i class="bi bi-play-circle text-warning"></i> PM2</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Backend Module Structure -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-folder me-2"></i>Backend Module Structure</div>
+            <div class="card-body">
+                <pre style="background: #f8f9fa; color: #333; padding: 1rem; border-radius: 8px; font-size: 0.85rem;">
+packages/backend/src/
+├── main.ts                     # Application entry point
+├── app.module.ts               # Root module, imports all feature modules
+├── common/                     # Shared utilities, decorators, guards
+│   ├── decorators/
+│   ├── filters/
+│   ├── guards/
+│   ├── interceptors/
+│   └── pipes/
+├── config/                     # Configuration management
+├── database/
+│   ├── entities/              # TypeORM entities (data models)
+│   └── migrations/            # Database migrations
+└── modules/
+    ├── auth/                   # Authentication & authorization
+    │   ├── auth.controller.ts
+    │   ├── auth.service.ts
+    │   ├── auth.module.ts
+    │   ├── guards/
+    │   ├── strategies/        # JWT, Local, etc.
+    │   └── decorators/
+    ├── patients/              # Patient management
+    ├── appointments/          # Scheduling
+    ├── billing/               # Invoicing & payments
+    ├── finance/               # Financial management
+    ├── pharmacy/              # Drug inventory & dispensing
+    ├── laboratory/            # Lab tests & results
+    ├── ipd/                   # Inpatient management
+    ├── opd/                   # Outpatient management
+    ├── hr/                    # Human resources
+    ├── assets/                # Asset management
+    ├── notifications/         # Alerts & notifications
+    ├── reports/               # Report generation
+    ├── settings/              # System configuration
+    ├── licensing/             # Enterprise licensing
+    │   ├── license.service.ts
+    │   ├── license.controller.ts
+    │   └── phone-home.service.ts
+    ├── feature-flags/         # Feature flag management
+    └── updates/               # Version & update management
+                </pre>
+            </div>
+        </div>
+
+        <!-- Core Modules -->
+        <h4 class="mt-4 mb-3">Core System Modules</h4>
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card module-card patients">
+                    <div class="card-body">
+                        <h6><i class="bi bi-people text-success me-2"></i>Patient Management</h6>
+                        <ul class="small mb-0">
+                            <li>Patient registration with demographics</li>
+                            <li>Medical Record Number (MRN) generation</li>
+                            <li>Medical history tracking</li>
+                            <li>Biometric verification integration</li>
+                            <li>Insurance & membership management</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card module-card billing">
+                    <div class="card-body">
+                        <h6><i class="bi bi-receipt text-warning me-2"></i>Billing & Finance</h6>
+                        <ul class="small mb-0">
+                            <li>Invoice generation</li>
+                            <li>Payment processing (cash, card, mobile money)</li>
+                            <li>Insurance claim management</li>
+                            <li>Financial reporting</li>
+                            <li>Pricing management</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card module-card pharmacy">
+                    <div class="card-body">
+                        <h6><i class="bi bi-capsule text-primary me-2"></i>Pharmacy</h6>
+                        <ul class="small mb-0">
+                            <li>Drug inventory management</li>
+                            <li>Prescription processing</li>
+                            <li>Medication dispensing</li>
+                            <li>Stock alerts & reorder points</li>
+                            <li>Batch & expiry tracking</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card module-card lab">
+                    <div class="card-body">
+                        <h6><i class="bi bi-droplet text-danger me-2"></i>Laboratory</h6>
+                        <ul class="small mb-0">
+                            <li>Test catalog management</li>
+                            <li>Order creation & tracking</li>
+                            <li>Result entry & validation</li>
+                            <li>Equipment integration (HL7/FHIR)</li>
+                            <li>Quality control</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card module-card ipd">
+                    <div class="card-body">
+                        <h6><i class="bi bi-hospital text-purple me-2"></i>Inpatient (IPD)</h6>
+                        <ul class="small mb-0">
+                            <li>Admission management</li>
+                            <li>Bed/ward allocation</li>
+                            <li>Nursing notes & vitals</li>
+                            <li>Discharge planning</li>
+                            <li>Bed occupancy tracking</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card module-card hr">
+                    <div class="card-body">
+                        <h6><i class="bi bi-person-badge text-pink me-2"></i>Human Resources</h6>
+                        <ul class="small mb-0">
+                            <li>Employee management</li>
+                            <li>Attendance tracking</li>
+                            <li>Leave management</li>
+                            <li>Payroll integration</li>
+                            <li>Department management</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Data Flow -->
+        <div class="card mt-4">
+            <div class="card-header"><i class="bi bi-arrow-right-circle me-2"></i>Request Flow</div>
+            <div class="card-body">
+                <div class="arch-diagram">
+<pre>
+┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
+│  Client  │───▶│   Nginx  │───▶│  Guards  │───▶│Controller│───▶│ Service  │
+│ (Browser)│    │  (SSL)   │    │  (Auth)  │    │ (Route)  │    │ (Logic)  │
+└──────────┘    └──────────┘    └──────────┘    └──────────┘    └────┬─────┘
+                                                                     │
+                                                                     ▼
+┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
+│ Response │◀───│Interceptor◀───│ Service  │◀───│Repository│◀───│ Database │
+│  (JSON)  │    │(Transform)│    │ (Logic)  │    │ (ORM)    │    │  (PG)    │
+└──────────┘    └──────────┘    └──────────┘    └──────────┘    └──────────┘
+</pre>
+                </div>
+                <p class="mt-3 small text-muted">
+                    <strong>Flow explanation:</strong>
+                    1. Client sends request → 2. Nginx handles SSL termination and proxies to backend →
+                    3. Auth guards validate JWT token → 4. Controller handles route →
+                    5. Service contains business logic → 6. Repository interacts with database →
+                    7. Response transformed and returned to client
+                </p>
+            </div>
+        </div>
+
+        <!-- Database Schema -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-database me-2"></i>Database Schema Overview</div>
+            <div class="card-body">
+                <div class="arch-diagram">
+<pre>
+┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐
+│     tenants     │       │      users      │       │    employees    │
+├─────────────────┤       ├─────────────────┤       ├─────────────────┤
+│ id (PK)         │◀──┐   │ id (PK)         │       │ id (PK)         │
+│ name            │   │   │ tenant_id (FK) ─┼──────▶│ user_id (FK)   ─┼──▶ users
+│ subdomain       │   └───┤ email           │       │ tenant_id (FK)  │
+│ license_key     │       │ password_hash   │       │ department      │
+│ settings        │       │ role            │       │ position        │
+└─────────────────┘       └─────────────────┘       └─────────────────┘
+
+┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐
+│    patients     │       │   encounters    │       │    invoices     │
+├─────────────────┤       ├─────────────────┤       ├─────────────────┤
+│ id (PK)         │◀──────┤ patient_id (FK) │◀──────┤ encounter_id(FK)│
+│ tenant_id (FK)  │       │ tenant_id (FK)  │       │ tenant_id (FK)  │
+│ mrn             │       │ doctor_id (FK)  │       │ patient_id (FK) │
+│ full_name       │       │ facility_id     │       │ total_amount    │
+│ date_of_birth   │       │ type            │       │ paid_amount     │
+│ gender          │       │ status          │       │ status          │
+│ phone           │       │ diagnosis       │       │ items (JSONB)   │
+│ insurance_info  │       │ notes           │       │ created_at      │
+└─────────────────┘       └─────────────────┘       └─────────────────┘
+
+┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐
+│     licenses    │       │  feature_flags  │       │  app_versions   │
+├─────────────────┤       ├─────────────────┤       ├─────────────────┤
+│ id (PK)         │       │ id (PK)         │       │ id (PK)         │
+│ license_key     │       │ tenant_id (FK)  │       │ version         │
+│ organization    │       │ feature         │       │ release_notes   │
+│ license_type    │       │ is_enabled      │       │ is_mandatory    │
+│ max_users       │       │ config (JSONB)  │       │ is_latest       │
+│ expires_at      │       │ updated_at      │       │ released_at     │
+│ signature       │       └─────────────────┘       └─────────────────┘
+└─────────────────┘
+</pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- Security Architecture -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-shield-lock me-2"></i>Security Architecture</div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Authentication</h6>
+                        <ul class="small">
+                            <li>JWT-based authentication</li>
+                            <li>Access tokens (1 hour expiry)</li>
+                            <li>Refresh tokens (7 days expiry)</li>
+                            <li>Optional MFA (TOTP)</li>
+                            <li>Biometric authentication support</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Authorization</h6>
+                        <ul class="small">
+                            <li>Role-based access control (RBAC)</li>
+                            <li>Permission-based guards</li>
+                            <li>Tenant isolation (multi-tenant)</li>
+                            <li>Facility-level access control</li>
+                            <li>Resource ownership checks</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Data Protection</h6>
+                        <ul class="small">
+                            <li>TLS 1.3 for transport encryption</li>
+                            <li>Passwords hashed with bcrypt</li>
+                            <li>Sensitive data encryption at rest</li>
+                            <li>Audit logging for all changes</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>API Security</h6>
+                        <ul class="small">
+                            <li>Rate limiting (100 req/min default)</li>
+                            <li>CORS configuration</li>
+                            <li>Input validation (class-validator)</li>
+                            <li>SQL injection prevention (TypeORM)</li>
+                            <li>XSS protection headers</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <footer class="mt-5 pt-4 border-top text-muted">
+            <p class="small">© 2026 IT Solutions Uganda. Last updated: April 2026</p>
+        </footer>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

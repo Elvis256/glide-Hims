@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Troubleshooting - Glide HIMS Documentation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        :root { --primary-color: #0d6efd; --sidebar-bg: #1a1d21; --sidebar-text: #8b949e; --sidebar-active: #ffffff; --code-bg: #161b22; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 280px; height: 100vh; background: var(--sidebar-bg); padding: 1.5rem; overflow-y: auto; z-index: 1000; }
+        .sidebar .logo { color: #fff; font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem; }
+        .sidebar .version { color: var(--sidebar-text); font-size: 0.85rem; margin-bottom: 2rem; }
+        .sidebar .nav-section { margin-bottom: 1.5rem; }
+        .sidebar .nav-section-title { color: var(--sidebar-text); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.75rem; }
+        .sidebar .nav-link { color: var(--sidebar-text); padding: 0.5rem 0.75rem; border-radius: 6px; display: block; text-decoration: none; font-size: 0.9rem; }
+        .sidebar .nav-link:hover, .sidebar .nav-link.active { color: var(--sidebar-active); background: rgba(255,255,255,0.1); }
+        .sidebar .nav-link i { margin-right: 0.5rem; width: 18px; }
+        .main-content { margin-left: 280px; padding: 2rem 3rem; min-height: 100vh; background: #f8f9fa; }
+        .doc-header { border-bottom: 1px solid #dee2e6; padding-bottom: 1.5rem; margin-bottom: 2rem; }
+        .doc-header h1 { font-size: 2.5rem; font-weight: 700; color: #1a1d21; }
+        .card { border: none; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-radius: 12px; margin-bottom: 1.5rem; }
+        .card-header { background: #fff; border-bottom: 1px solid #e9ecef; font-weight: 600; padding: 1rem 1.5rem; }
+        .card-body { padding: 1.5rem; }
+        pre { background: var(--code-bg); border-radius: 8px; padding: 1rem; overflow-x: auto; color: #e6edf3; }
+        code { background: var(--code-bg); color: #e6edf3; padding: 0.2rem 0.4rem; border-radius: 4px; font-size: 0.85em; }
+        pre code { padding: 0; background: none; }
+        .issue-card { border-left: 4px solid #dc3545; margin-bottom: 1.5rem; }
+        .issue-card .card-header { background: #fff5f5; color: #dc3545; }
+        .solution-card { border-left: 4px solid #198754; margin-bottom: 1.5rem; }
+        .solution-card .card-header { background: #f0fff4; color: #198754; }
+        .accordion-button:not(.collapsed) { background-color: #e7f1ff; color: #0c63e4; }
+    </style>
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="logo"><i class="bi bi-heart-pulse"></i> Glide HIMS</div>
+        <div class="version">Enterprise Edition v1.0.0</div>
+        <div class="nav-section">
+            <div class="nav-section-title">Getting Started</div>
+            <a href="index.html" class="nav-link"><i class="bi bi-house"></i> Home</a>
+            <a href="quickstart.html" class="nav-link"><i class="bi bi-rocket-takeoff"></i> Quick Start</a>
+            <a href="architecture.html" class="nav-link"><i class="bi bi-diagram-3"></i> Architecture</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Deployment</div>
+            <a href="deployment-cloud.html" class="nav-link"><i class="bi bi-cloud"></i> Cloud Deployment</a>
+            <a href="deployment-onpremise.html" class="nav-link"><i class="bi bi-server"></i> On-Premise</a>
+            <a href="docker.html" class="nav-link"><i class="bi bi-box"></i> Docker Guide</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Enterprise Features</div>
+            <a href="licensing.html" class="nav-link"><i class="bi bi-key"></i> Licensing</a>
+            <a href="feature-flags.html" class="nav-link"><i class="bi bi-toggles"></i> Feature Flags</a>
+            <a href="phone-home.html" class="nav-link"><i class="bi bi-telephone"></i> Phone Home</a>
+            <a href="updates.html" class="nav-link"><i class="bi bi-arrow-repeat"></i> Updates</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">API Reference</div>
+            <a href="api-overview.html" class="nav-link"><i class="bi bi-braces"></i> API Overview</a>
+            <a href="api-auth.html" class="nav-link"><i class="bi bi-shield-lock"></i> Authentication</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Operations</div>
+            <a href="monitoring.html" class="nav-link"><i class="bi bi-activity"></i> Monitoring</a>
+            <a href="backup.html" class="nav-link"><i class="bi bi-database"></i> Backup & Recovery</a>
+            <a href="troubleshooting.html" class="nav-link active"><i class="bi bi-bug"></i> Troubleshooting</a>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <div class="doc-header">
+            <h1><i class="bi bi-bug me-2"></i>Troubleshooting Guide</h1>
+            <p class="lead text-muted">Common issues and their solutions</p>
+        </div>
+
+        <!-- Quick Diagnostics -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-speedometer me-2"></i>Quick Diagnostics</div>
+            <div class="card-body">
+                <p>Run these commands to quickly diagnose common issues:</p>
+                <pre><code class="language-bash"># Check if backend is running
+pm2 status glide-hims-backend
+
+# Check backend logs
+pm2 logs glide-hims-backend --lines 50
+
+# Check database connection
+psql -h localhost -U glide_admin -d glide_hims -c "SELECT 1;"
+
+# Test API health
+curl -k https://localhost:3000/api/v1/health
+
+# Check disk space
+df -h
+
+# Check memory usage
+free -m
+
+# Check port usage
+netstat -tlnp | grep -E "3000|5432|6379"</code></pre>
+            </div>
+        </div>
+
+        <!-- Common Issues Accordion -->
+        <h4 class="mb-3">Common Issues</h4>
+
+        <div class="accordion" id="issuesAccordion">
+            <!-- Issue 1: Backend Won't Start -->
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#issue1">
+                        <i class="bi bi-exclamation-triangle text-danger me-2"></i>
+                        Backend won't start / crashes immediately
+                    </button>
+                </h2>
+                <div id="issue1" class="accordion-collapse collapse show" data-bs-parent="#issuesAccordion">
+                    <div class="accordion-body">
+                        <h6>Symptoms:</h6>
+                        <ul>
+                            <li>PM2 shows backend status as "errored" or keeps restarting</li>
+                            <li>Error logs show "Cannot connect to database" or "ECONNREFUSED"</li>
+                        </ul>
+                        
+                        <h6>Possible Causes & Solutions:</h6>
+                        
+                        <div class="solution-card card">
+                            <div class="card-header"><i class="bi bi-check-circle me-2"></i>Database not running</div>
+                            <div class="card-body">
+                                <pre><code class="language-bash"># Check if PostgreSQL is running
+systemctl status postgresql
+
+# Start PostgreSQL
+sudo systemctl start postgresql
+
+# Or with Docker
+docker-compose up -d postgres</code></pre>
+                            </div>
+                        </div>
+
+                        <div class="solution-card card">
+                            <div class="card-header"><i class="bi bi-check-circle me-2"></i>Wrong database credentials</div>
+                            <div class="card-body">
+                                <pre><code class="language-bash"># Check your .env file
+cat .env | grep DB_
+
+# Test connection manually
+psql -h $DB_HOST -U $DB_USER -d $DB_NAME
+
+# If password is wrong, reset it
+sudo -u postgres psql -c "ALTER USER glide_admin WITH PASSWORD 'new_password';"</code></pre>
+                            </div>
+                        </div>
+
+                        <div class="solution-card card">
+                            <div class="card-header"><i class="bi bi-check-circle me-2"></i>Port already in use</div>
+                            <div class="card-body">
+                                <pre><code class="language-bash"># Find what's using port 3000
+lsof -i :3000
+
+# Kill the process (replace PID)
+kill -9 &lt;PID&gt;
+
+# Or change the port in .env
+PORT=3001</code></pre>
+                            </div>
+                        </div>
+
+                        <div class="solution-card card">
+                            <div class="card-header"><i class="bi bi-check-circle me-2"></i>Missing environment variables</div>
+                            <div class="card-body">
+                                <pre><code class="language-bash"># Check required variables are set
+node -e "console.log(require('dotenv').config().parsed)"
+
+# Minimum required variables:
+# DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
+# JWT_SECRET</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Issue 2: 401 Unauthorized -->
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#issue2">
+                        <i class="bi bi-shield-x text-danger me-2"></i>
+                        Getting 401 Unauthorized errors
+                    </button>
+                </h2>
+                <div id="issue2" class="accordion-collapse collapse" data-bs-parent="#issuesAccordion">
+                    <div class="accordion-body">
+                        <h6>Symptoms:</h6>
+                        <ul>
+                            <li>API returns <code>{"statusCode":401,"error":"Unauthorized"}</code></li>
+                            <li>Users can't log in</li>
+                            <li>Token refresh fails</li>
+                        </ul>
+
+                        <div class="solution-card card">
+                            <div class="card-header"><i class="bi bi-check-circle me-2"></i>Token expired</div>
+                            <div class="card-body">
+                                <p>Access tokens expire after 1 hour by default. Use the refresh token:</p>
+                                <pre><code class="language-bash">curl -X POST https://api.example.com/api/v1/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{"refreshToken": "your-refresh-token"}'</code></pre>
+                            </div>
+                        </div>
+
+                        <div class="solution-card card">
+                            <div class="card-header"><i class="bi bi-check-circle me-2"></i>JWT_SECRET changed</div>
+                            <div class="card-body">
+                                <p>If the JWT_SECRET was changed, all existing tokens are invalidated:</p>
+                                <pre><code class="language-bash"># Check JWT_SECRET is consistent across restarts
+echo $JWT_SECRET
+
+# Users need to log in again after secret change</code></pre>
+                            </div>
+                        </div>
+
+                        <div class="solution-card card">
+                            <div class="card-header"><i class="bi bi-check-circle me-2"></i>Missing Authorization header</div>
+                            <div class="card-body">
+                                <pre><code class="language-bash"># Correct format
+curl -H "Authorization: Bearer YOUR_TOKEN" https://api/endpoint
+
+# Common mistakes:
+# ❌ Authorization: YOUR_TOKEN (missing "Bearer")
+# ❌ Authentication: Bearer YOUR_TOKEN (wrong header name)
+# ❌ Bearer: YOUR_TOKEN (wrong format)</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Issue 3: Database Errors -->
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#issue3">
+                        <i class="bi bi-database-x text-danger me-2"></i>
+                        Database connection errors
+                    </button>
+                </h2>
+                <div id="issue3" class="accordion-collapse collapse" data-bs-parent="#issuesAccordion">
+                    <div class="accordion-body">
+                        <div class="solution-card card">
+                            <div class="card-header"><i class="bi bi-check-circle me-2"></i>Connection pool exhausted</div>
+                            <div class="card-body">
+                                <p>Too many connections. Check and adjust pool settings:</p>
+                                <pre><code class="language-bash"># Check current connections
+psql -c "SELECT count(*) FROM pg_stat_activity WHERE datname='glide_hims';"
+
+# Increase max connections in postgresql.conf
+# max_connections = 200
+
+# Or adjust TypeORM pool size in .env
+DB_POOL_SIZE=20</code></pre>
+                            </div>
+                        </div>
+
+                        <div class="solution-card card">
+                            <div class="card-header"><i class="bi bi-check-circle me-2"></i>Migration not run</div>
+                            <div class="card-body">
+                                <pre><code class="language-bash"># Run pending migrations
+cd packages/backend
+pnpm run migration:run
+
+# Or run manually
+psql -f src/database/migrations/*.sql</code></pre>
+                            </div>
+                        </div>
+
+                        <div class="solution-card card">
+                            <div class="card-header"><i class="bi bi-check-circle me-2"></i>Disk full</div>
+                            <div class="card-body">
+                                <pre><code class="language-bash"># Check disk space
+df -h
+
+# Clean old logs
+sudo journalctl --vacuum-time=7d
+
+# Clean Docker
+docker system prune -a</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Issue 4: Frontend Errors -->
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#issue4">
+                        <i class="bi bi-window-x text-danger me-2"></i>
+                        Frontend shows "Something went wrong"
+                    </button>
+                </h2>
+                <div id="issue4" class="accordion-collapse collapse" data-bs-parent="#issuesAccordion">
+                    <div class="accordion-body">
+                        <h6>Symptoms:</h6>
+                        <ul>
+                            <li>White screen or error boundary message</li>
+                            <li>Console shows JavaScript errors</li>
+                            <li>TypeError: Cannot read properties of undefined</li>
+                        </ul>
+
+                        <div class="solution-card card">
+                            <div class="card-header"><i class="bi bi-check-circle me-2"></i>Clear browser cache</div>
+                            <div class="card-body">
+                                <p>After updates, cached JavaScript may conflict:</p>
+                                <pre><code class="language-bash"># Hard refresh in browser
+Ctrl+Shift+R (Windows/Linux)
+Cmd+Shift+R (Mac)
+
+# Or clear all site data in DevTools
+Application > Storage > Clear site data</code></pre>
+                            </div>
+                        </div>
+
+                        <div class="solution-card card">
+                            <div class="card-header"><i class="bi bi-check-circle me-2"></i>Rebuild frontend</div>
+                            <div class="card-body">
+                                <pre><code class="language-bash">cd packages/frontend
+pnpm run build
+
+# Restart the server
+pm2 restart glide-hims-frontend</code></pre>
+                            </div>
+                        </div>
+
+                        <div class="solution-card card">
+                            <div class="card-header"><i class="bi bi-check-circle me-2"></i>Check API connectivity</div>
+                            <div class="card-body">
+                                <p>Frontend can't reach backend:</p>
+                                <pre><code class="language-bash"># Check VITE_API_URL in frontend .env
+echo $VITE_API_URL
+
+# Should match your backend URL
+VITE_API_URL=https://your-domain.com/api/v1</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Issue 5: License Issues -->
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#issue5">
+                        <i class="bi bi-key text-danger me-2"></i>
+                        License validation failing
+                    </button>
+                </h2>
+                <div id="issue5" class="accordion-collapse collapse" data-bs-parent="#issuesAccordion">
+                    <div class="accordion-body">
+                        <div class="solution-card card">
+                            <div class="card-header"><i class="bi bi-check-circle me-2"></i>License expired</div>
+                            <div class="card-body">
+                                <pre><code class="language-bash"># Check license status
+curl -X POST https://localhost:3000/api/v1/license/validate \
+  -H "Content-Type: application/json" \
+  -d '{"licenseKey": "YOUR-KEY"}'
+
+# Contact support to renew</code></pre>
+                            </div>
+                        </div>
+
+                        <div class="solution-card card">
+                            <div class="card-header"><i class="bi bi-check-circle me-2"></i>Hardware changed</div>
+                            <div class="card-body">
+                                <p>If the server hardware changed, the license binding is invalid:</p>
+                                <pre><code class="language-bash"># Get new hardware ID
+curl https://localhost:3000/api/v1/phone-home/system-info \
+  -H "Authorization: Bearer TOKEN"
+
+# Contact support with the new hardware ID to rebind</code></pre>
+                            </div>
+                        </div>
+
+                        <div class="solution-card card">
+                            <div class="card-header"><i class="bi bi-check-circle me-2"></i>Clock skew</div>
+                            <div class="card-body">
+                                <p>Server time must be accurate for license validation:</p>
+                                <pre><code class="language-bash"># Check server time
+date
+
+# Sync with NTP
+sudo timedatectl set-ntp true
+
+# Or manually set timezone
+sudo timedatectl set-timezone Africa/Kampala</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Issue 6: Performance Issues -->
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#issue6">
+                        <i class="bi bi-hourglass-split text-warning me-2"></i>
+                        Slow performance / timeouts
+                    </button>
+                </h2>
+                <div id="issue6" class="accordion-collapse collapse" data-bs-parent="#issuesAccordion">
+                    <div class="accordion-body">
+                        <div class="solution-card card">
+                            <div class="card-header"><i class="bi bi-check-circle me-2"></i>Check system resources</div>
+                            <div class="card-body">
+                                <pre><code class="language-bash"># CPU and memory
+htop
+
+# Disk I/O
+iotop
+
+# Network
+nethogs</code></pre>
+                            </div>
+                        </div>
+
+                        <div class="solution-card card">
+                            <div class="card-header"><i class="bi bi-check-circle me-2"></i>Database optimization</div>
+                            <div class="card-body">
+                                <pre><code class="language-bash"># Check slow queries
+psql -c "SELECT query, calls, mean_time FROM pg_stat_statements ORDER BY mean_time DESC LIMIT 10;"
+
+# Run VACUUM
+psql -c "VACUUM ANALYZE;"
+
+# Check table sizes
+psql -c "SELECT relname, pg_size_pretty(pg_total_relation_size(relid)) FROM pg_catalog.pg_statio_user_tables ORDER BY pg_total_relation_size(relid) DESC;"</code></pre>
+                            </div>
+                        </div>
+
+                        <div class="solution-card card">
+                            <div class="card-header"><i class="bi bi-check-circle me-2"></i>Enable caching</div>
+                            <div class="card-body">
+                                <pre><code class="language-bash"># Ensure Redis is running
+docker-compose up -d redis
+
+# Check Redis connection in .env
+REDIS_HOST=localhost
+REDIS_PORT=6379</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Log Locations -->
+        <div class="card mt-4">
+            <div class="card-header"><i class="bi bi-journal-text me-2"></i>Log Locations</div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <thead>
+                        <tr><th>Component</th><th>Log Location</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Backend (PM2)</td><td><code>~/.pm2/logs/glide-hims-backend-*.log</code></td></tr>
+                        <tr><td>Frontend (PM2)</td><td><code>~/.pm2/logs/glide-hims-frontend-*.log</code></td></tr>
+                        <tr><td>PostgreSQL</td><td><code>/var/log/postgresql/</code></td></tr>
+                        <tr><td>Nginx</td><td><code>/var/log/nginx/access.log</code> and <code>error.log</code></td></tr>
+                        <tr><td>System</td><td><code>journalctl -u glide-hims-backend</code></td></tr>
+                    </tbody>
+                </table>
+                <pre><code class="language-bash"># View real-time logs
+pm2 logs glide-hims-backend --lines 100
+
+# Search for errors
+grep -i "error" ~/.pm2/logs/glide-hims-backend-error.log | tail -50
+
+# View with timestamps
+pm2 logs --timestamp</code></pre>
+            </div>
+        </div>
+
+        <!-- Contact Support -->
+        <div class="card mt-4">
+            <div class="card-header"><i class="bi bi-headset me-2"></i>Still Need Help?</div>
+            <div class="card-body">
+                <p>If you can't resolve your issue, contact support with:</p>
+                <ol>
+                    <li>Description of the problem</li>
+                    <li>Steps to reproduce</li>
+                    <li>Error messages (from logs)</li>
+                    <li>System information (<code>uname -a</code>)</li>
+                    <li>Glide HIMS version</li>
+                </ol>
+                
+                <div class="row mt-3">
+                    <div class="col-md-4">
+                        <div class="card text-center">
+                            <div class="card-body">
+                                <i class="bi bi-envelope text-primary" style="font-size: 2rem;"></i>
+                                <h6 class="mt-2">Email</h6>
+                                <a href="mailto:support@itsolutionsuganda.com">support@itsolutionsuganda.com</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card text-center">
+                            <div class="card-body">
+                                <i class="bi bi-telephone text-success" style="font-size: 2rem;"></i>
+                                <h6 class="mt-2">Phone</h6>
+                                <p class="mb-0">+256 XXX XXX XXX</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card text-center">
+                            <div class="card-body">
+                                <i class="bi bi-github text-dark" style="font-size: 2rem;"></i>
+                                <h6 class="mt-2">GitHub Issues</h6>
+                                <a href="https://github.com/itsolutionsuganda/glide-hims/issues">Report a Bug</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <footer class="mt-5 pt-4 border-top text-muted">
+            <p class="small">© 2026 IT Solutions Uganda. Last updated: April 2026</p>
+        </footer>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-bash.min.js"></script>
+</body>
+</html>

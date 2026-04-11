@@ -69,12 +69,12 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
   },
   
   searchPatients: (term) => {
-    if (!term.trim() || term.length < 2) return [];
+    if (!term?.trim() || term.length < 2) return [];
     const lowerTerm = term.toLowerCase();
     return get().patients.filter(
       (p) =>
-        p.fullName.toLowerCase().includes(lowerTerm) ||
-        p.mrn.toLowerCase().includes(lowerTerm) ||
+        p.fullName?.toLowerCase().includes(lowerTerm) ||
+        p.mrn?.toLowerCase().includes(lowerTerm) ||
         p.phone?.includes(term) ||
         p.nationalId?.toLowerCase().includes(lowerTerm)
     );

@@ -1,5 +1,7 @@
 import { IsUUID, IsNumber, IsString, IsOptional, IsArray, ValidateNested, IsDateString, IsEnum, Min } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
+import { PaymentMethod } from '../../../database/entities/supplier-payment.entity';
+import { CreditNoteType, CreditNoteReason } from '../../../database/entities/supplier-credit-note.entity';
 
 export class ApplyCreditNoteDto {
   @IsUUID()
@@ -11,6 +13,28 @@ export class ApplyCreditNoteDto {
   amount: number;
 }
 
+export class PaymentVoucherItemDto {
+  @IsString()
+  description: string;
+
+  @IsOptional()
+  @IsString()
+  invoiceNumber?: string;
+
+  @IsOptional()
+  @Type(() => Date)
+  invoiceDate?: Date;
+
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  amount: number;
+
+  @IsOptional()
+  @IsUUID()
+  grnId?: string;
+}
+
 export class CreatePaymentVoucherDto {
   @IsUUID()
   facilityId: string;
@@ -19,34 +43,31 @@ export class CreatePaymentVoucherDto {
   supplierId: string;
 
   @IsOptional()
-  @IsString()
-  voucherNumber?: string;
+  @IsUUID()
+  purchaseOrderId?: string;
 
-  @IsOptional()
-  @IsString()
-  paymentMethod?: string;
+  @Type(() => Date)
+  paymentDate: Date;
+
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  grossAmount: number;
 
   @IsOptional()
   @IsNumber()
   @Min(0)
   @Type(() => Number)
-  amount?: number;
+  withholdingTax?: number;
 
   @IsOptional()
-  @IsString()
-  description?: string;
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  otherDeductions?: number;
 
-  @IsOptional()
-  @IsDateString()
-  dueDate?: string;
-
-  @IsOptional()
-  @IsArray()
-  invoiceIds?: string[];
-
-  @IsOptional()
-  @IsString()
-  bankAccount?: string;
+  @IsEnum(PaymentMethod)
+  paymentMethod: PaymentMethod;
 
   @IsOptional()
   @IsString()
@@ -54,40 +75,96 @@ export class CreatePaymentVoucherDto {
 
   @IsOptional()
   @IsString()
-  notes?: string;
-}
-
-export class CreateSupplierCreditNoteDto {
-  @IsUUID()
-  facilityId: string;
-
-  @IsUUID()
-  supplierId: string;
+  bankReference?: string;
 
   @IsOptional()
   @IsString()
-  noteNumber?: string;
+  bankName?: string;
 
+  @IsOptional()
   @IsString()
-  noteType: string;
-
-  @IsNumber()
-  @Min(0)
-  @Type(() => Number)
-  amount: number;
-
-  @IsString()
-  reason: string;
+  accountNumber?: string;
 
   @IsOptional()
   @IsString()
   description?: string;
 
   @IsOptional()
+  @IsString()
+  remarks?: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PaymentVoucherItemDto)
+  items: PaymentVoucherItemDto[];
+}
+
+export class CreditNoteItemDto {
+  @IsOptional()
   @IsUUID()
-  invoiceId?: string;
+  itemId?: string;
+
+  @IsString()
+  description: string;
+
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  quantity: number;
 
   @IsOptional()
-  @IsDateString()
-  noteDate?: string;
+  @IsString()
+  unit?: string;
+
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  unitPrice: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  taxRate?: number;
+
+  @IsOptional()
+  @IsString()
+  batchNumber?: string;
+}
+
+export class CreateSupplierCreditNoteDto {
+  @IsUUID()
+  facilityId: string;
+
+  @IsEnum(CreditNoteType)
+  noteType: CreditNoteType;
+
+  @IsUUID()
+  supplierId: string;
+
+  @Type(() => Date)
+  noteDate: Date;
+
+  @IsOptional()
+  @IsString()
+  supplierInvoiceNumber?: string;
+
+  @IsOptional()
+  @IsUUID()
+  grnId?: string;
+
+  @IsEnum(CreditNoteReason)
+  reason: CreditNoteReason;
+
+  @IsOptional()
+  @IsString()
+  reasonDetails?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreditNoteItemDto)
+  items: CreditNoteItemDto[];
 }

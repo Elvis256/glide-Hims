@@ -1,7 +1,8 @@
 import { IsString, IsOptional, IsEnum, IsUUID, IsBoolean, IsArray, ValidateNested, IsNumber, IsDateString, IsIn, IsNotEmpty } from 'class-validator';
 import { ApiProperty, PartialType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { StoreType, TransferStatus } from '../../database/entities/store.entity';
+import { StoreType } from '../../database/entities/store.entity';
+import { TransferStatus } from '../../database/entities/stock-transfer.entity';
 
 export class CreateStoreDto {
   @ApiProperty() @IsString() code: string;

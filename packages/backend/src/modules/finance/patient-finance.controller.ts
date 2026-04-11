@@ -37,11 +37,11 @@ export class PatientFinanceController {
       {
         patientId: body.patientId,
         invoiceId: body.invoiceId,
-        noteNumber: body.noteNumber,
+        noteNumber: body.noteNumber ?? '',
         amount: body.amount,
         reason: body.reason,
         issuedById: body.issuedById ?? req.user?.id,
-        facilityId: body.facilityId,
+        facilityId: body.facilityId ?? '',
       },
       req.user?.tenantId,
     );
@@ -89,10 +89,10 @@ export class PatientFinanceController {
     return this.patientFinanceService.createDeposit(
       {
         patientId: body.patientId,
-        depositNumber: body.depositNumber,
+        depositNumber: body.depositNumber ?? '',
         amount: body.amount,
-        paymentMethod: body.paymentMethod,
-        facilityId: body.facilityId,
+        paymentMethod: body.paymentMethod ?? '',
+        facilityId: body.facilityId ?? '',
         receivedById: body.receivedById ?? req.user?.id,
         notes: body.notes,
       },
@@ -156,7 +156,7 @@ export class PatientFinanceController {
         requestedAmount: body.requestedAmount,
         reason: body.reason,
         requestedById: body.requestedById ?? req.user?.id,
-        facilityId: body.facilityId,
+        facilityId: body.facilityId ?? '',
       },
       req.user?.tenantId,
     );
@@ -190,7 +190,7 @@ export class PatientFinanceController {
     return this.patientFinanceService.approveWaiver(
       id,
       body.userId ?? req.user?.id,
-      body.amount,
+      body.amount ?? 0,
       body.notes,
       req.user?.tenantId,
     );

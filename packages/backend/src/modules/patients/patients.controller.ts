@@ -277,7 +277,8 @@ export class PatientsController {
   ) {
     const userId = (req as any).user?.id;
     const tenantId = (req as any).user?.tenantId;
-    const result = await this.patientsService.mergePatients(primaryId, secondaryId, userId, body.reason, tenantId);
+    if (!tenantId) throw new BadRequestException('Tenant ID is required');
+    const result = await this.patientsService.mergePatients(primaryId, secondaryId, userId, tenantId, body.reason);
     return { message: 'Patients merged successfully', data: result };
   }
 
@@ -286,6 +287,7 @@ export class PatientsController {
   @ApiOperation({ summary: 'Get merge history' })
   async getMergeHistory(@Req() req: Request) {
     const tenantId = (req as any).user?.tenantId;
+    if (!tenantId) throw new BadRequestException('Tenant ID is required');
     return this.patientsService.getMergeHistory(tenantId);
   }
 

@@ -1,4 +1,5 @@
 import { Entity, Column, Index } from 'typeorm';
+import { Exclude } from 'class-transformer';
 import { BaseEntity } from './base.entity';
 
 export enum NotificationType {
@@ -53,6 +54,7 @@ export class NotificationConfig extends BaseEntity {
   @Column({ type: 'varchar', length: 255, nullable: true, name: 'smtp_user' })
   smtpUser?: string;
 
+  @Exclude()
   @Column({ type: 'varchar', length: 255, nullable: true, name: 'smtp_password' })
   smtpPassword?: string;
 
@@ -66,9 +68,11 @@ export class NotificationConfig extends BaseEntity {
   @Column({ type: 'varchar', length: 255, nullable: true, name: 'sms_api_url' })
   smsApiUrl?: string;
 
+  @Exclude()
   @Column({ type: 'varchar', length: 255, nullable: true, name: 'sms_api_key' })
   smsApiKey?: string;
 
+  @Exclude()
   @Column({ type: 'varchar', length: 255, nullable: true, name: 'sms_api_secret' })
   smsApiSecret?: string;
 
