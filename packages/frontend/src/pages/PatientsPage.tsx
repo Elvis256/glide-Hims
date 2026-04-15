@@ -8,6 +8,7 @@ import type { Patient } from '../types';
 import { usePermissions } from '../components/PermissionGate';
 import { printService } from '../lib/print';
 import { useEntityName } from '../hooks/useBusinessConfig';
+import ExportButton from '../components/ExportButton';
 import {
   Plus,
   Search,
@@ -433,9 +434,10 @@ export default function PatientsPage() {
               </button>
             </div>
 
+            <ExportButton entity="patients" label="Export" />
             <button onClick={handleExportCSV} className="btn-secondary flex items-center gap-2">
               <Download className="w-4 h-4" />
-              Export
+              Export CSV
             </button>
             <button onClick={handlePrint} className="btn-secondary flex items-center gap-2">
               <Printer className="w-4 h-4" />
