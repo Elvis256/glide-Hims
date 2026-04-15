@@ -81,6 +81,8 @@ import { SupportAccessModule } from './modules/support-access/support-access.mod
 import { LicensingModule } from './modules/licensing/licensing.module';
 import { FeatureFlagsModule } from './modules/feature-flags/feature-flags.module';
 import { UpdatesModule } from './modules/updates/updates.module';
+import { ExportModule } from './modules/export/export.module';
+import { BackupModule } from './modules/backup/backup.module';
 
 @Module({
   imports: [
@@ -255,6 +257,12 @@ import { UpdatesModule } from './modules/updates/updates.module';
     LicensingModule,
     FeatureFlagsModule,
     UpdatesModule,
+
+    // Data Export
+    ExportModule,
+
+    // Backup & Restore
+    BackupModule,
   ],
   controllers: [AppController],
   providers: [
