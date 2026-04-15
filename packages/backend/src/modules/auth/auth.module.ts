@@ -24,12 +24,16 @@ import { Employee } from '../../database/entities/employee.entity';
 import { Role } from '../../database/entities/role.entity';
 import { LoginHistory } from '../../database/entities/login-history.entity';
 import { AuditLog } from '../../database/entities/audit-log.entity';
+import { RefreshToken } from '../../database/entities/refresh-token.entity';
+import { Session } from '../../database/entities/session.entity';
+import { RefreshTokenService } from './refresh-token.service';
+import { SessionService } from './session.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, UserRole, Facility, Tenant, PasswordPolicy, PasswordHistory, RolePermission, Permission, UserPermission, Employee, Role, LoginHistory, AuditLog]),
+    TypeOrmModule.forFeature([User, UserRole, Facility, Tenant, PasswordPolicy, PasswordHistory, RolePermission, Permission, UserPermission, Employee, Role, LoginHistory, AuditLog, RefreshToken, Session]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -43,8 +47,8 @@ import { Repository } from 'typeorm';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, RolesGuard, PermissionsGuard, RateLimitGuard, EmployeeRequiredGuard, FacilityGuard, OwnershipGuard],
-  exports: [AuthService, JwtStrategy, RolesGuard, PermissionsGuard, RateLimitGuard, EmployeeRequiredGuard, FacilityGuard, OwnershipGuard],
+  providers: [AuthService, RefreshTokenService, SessionService, JwtStrategy, RolesGuard, PermissionsGuard, RateLimitGuard, EmployeeRequiredGuard, FacilityGuard, OwnershipGuard],
+  exports: [AuthService, RefreshTokenService, SessionService, JwtStrategy, RolesGuard, PermissionsGuard, RateLimitGuard, EmployeeRequiredGuard, FacilityGuard, OwnershipGuard],
 })
 export class AuthModule implements OnModuleInit {
   private readonly logger = new Logger('AuthModule');
