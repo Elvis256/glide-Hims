@@ -17,6 +17,7 @@ import {
   Shield,
 } from 'lucide-react';
 import UserPermissionsModal from '../components/UserPermissionsModal';
+import ExportButton from '../components/ExportButton';
 
 // Local User type that matches API response
 interface User {
@@ -111,16 +112,19 @@ export default function UsersPage() {
           <h1 className="text-2xl font-bold text-gray-900">Users</h1>
           <p className="text-gray-500 mt-1">Manage system users and their roles</p>
         </div>
-        <button
-          onClick={() => {
-            setEditingUser(null);
-            setShowModal(true);
-          }}
-          className="btn-primary flex items-center gap-2"
-        >
-          <Plus className="w-5 h-5" />
-          Add User
-        </button>
+        <div className="flex items-center gap-3">
+          <ExportButton entity="users" label="Export Users" />
+          <button
+            onClick={() => {
+              setEditingUser(null);
+              setShowModal(true);
+            }}
+            className="btn-primary flex items-center gap-2"
+          >
+            <Plus className="w-5 h-5" />
+            Add User
+          </button>
+        </div>
       </div>
 
       {/* Search */}
