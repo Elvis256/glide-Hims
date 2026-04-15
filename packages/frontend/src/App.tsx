@@ -40,6 +40,7 @@ const SetupWizardPage = lazy(() => import('./pages/SetupWizardPage'));
 const TenantSetupWizardPage = lazy(() => import('./pages/TenantSetupWizardPage'));
 const RegisterOrganizationPage = lazy(() => import('./pages/RegisterOrganizationPage'));
 const TenantManagementPage = lazy(() => import('./pages/admin/TenantManagementPage'));
+const BackupManagementPage = lazy(() => import('./pages/admin/BackupManagementPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const SmartDashboardPage = lazy(() => import('./pages/SmartDashboardPage'));
 const UsersPage = lazy(() => import('./pages/UsersPage'));
@@ -292,11 +293,13 @@ const StoresSupplierContractsPage = lazy(() => import('./pages/stores/StoresSupp
 const StoresPaymentsPage = lazy(() => import('./pages/stores/StoresPaymentsPage'));
 const StoresDisposalPage = lazy(() => import('./pages/stores/StoresDisposalPage'));
 const ItemClassificationsPage = lazy(() => import('./pages/settings/ItemClassificationsPage'));
+const AdminAnalyticsDashboardPage = lazy(() => import('./pages/admin/AdminAnalyticsDashboardPage'));
 const UserListPage = lazy(() => import('./pages/admin/users/UserListPage'));
 const RolePermissionsPage = lazy(() => import('./pages/admin/users/RolePermissionsPage'));
 const UserActivityLogPage = lazy(() => import('./pages/admin/users/UserActivityLogPage'));
 const DepartmentAccessPage = lazy(() => import('./pages/admin/users/DepartmentAccessPage'));
 const SessionManagementPage = lazy(() => import('./pages/admin/users/SessionManagementPage'));
+const BulkUserImportPage = lazy(() => import('./pages/admin/users/BulkUserImportPage'));
 const ServiceCatalogPage = lazy(() => import('./pages/admin/services/ServiceCatalogPage'));
 const PricingManagementPage = lazy(() => import('./pages/admin/services/PricingManagementPage'));
 const ServicePackagesPage = lazy(() => import('./pages/admin/services/ServicePackagesPage'));
@@ -926,12 +929,16 @@ function AppRoutes() {
                 <Route path="/facilities" element={<AdminRoute><FacilitiesPage /></AdminRoute>} />
                 <Route path="/roles" element={<AdminRoute><RolesPage /></AdminRoute>} />
                 
+                {/* Admin - Analytics */}
+                <Route path="/admin/analytics" element={<AdminRoute><AdminAnalyticsDashboardPage /></AdminRoute>} />
+
                 {/* Admin - User Management */}
                 <Route path="/admin/users" element={<AdminRoute><UserListPage /></AdminRoute>} />
                 <Route path="/admin/roles" element={<AdminRoute><RolePermissionsPage /></AdminRoute>} />
                 <Route path="/admin/users/activity" element={<AdminRoute><UserActivityLogPage /></AdminRoute>} />
                 <Route path="/admin/users/departments" element={<AdminRoute><DepartmentAccessPage /></AdminRoute>} />
                 <Route path="/admin/users/sessions" element={<AdminRoute><SessionManagementPage /></AdminRoute>} />
+                <Route path="/admin/users/bulk-import" element={<AdminRoute><BulkUserImportPage /></AdminRoute>} />
                 
                 {/* Admin - Services Management */}
                 <Route path="/admin/services" element={<AdminRoute><ServiceCatalogPage /></AdminRoute>} />
@@ -986,6 +993,9 @@ function AppRoutes() {
                 <Route path="/admin/site/buildings" element={<AdminRoute><BuildingsFloorsPage /></AdminRoute>} />
                 <Route path="/admin/site/settings" element={<AdminRoute><SystemSettingsPage /></AdminRoute>} />
                 <Route path="/admin/site/integrations" element={<AdminRoute><IntegrationsPage /></AdminRoute>} />
+                
+                {/* Admin - Backups */}
+                <Route path="/admin/backups" element={<AdminRoute><BackupManagementPage /></AdminRoute>} />
                 
                 {/* Admin - Membership */}
                 <Route path="/admin/membership/plans" element={<AdminRoute><MembershipPlansPage /></AdminRoute>} />

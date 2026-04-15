@@ -112,6 +112,7 @@ import {
   Crosshair,
   Focus,
   CircleDot,
+  HardDrive,
 } from 'lucide-react';
 import Logo, { LogoIcon } from './Logo';
 import FacilitySwitcher from './FacilitySwitcher';
@@ -120,7 +121,9 @@ import { useNotificationSocket } from '../lib/useNotificationSocket';
 import { useBusinessConfig } from '../hooks/useBusinessConfig';
 
 // Hospital-only system - no business type variants needed
-const sectionTitleOverrides: Record<string, string> = {};
+type BusinessType = string;
+const sectionTitleOverrides: Record<string, Record<BusinessType, string>> = {};
+const sidebarPriorityOrder: Record<string, string[]> = {};
 
 // Custom Bandage icon (not in lucide)
 const Bandage = ({ className }: { className?: string }) => (
@@ -888,6 +891,12 @@ const navigationSections: NavSection[] = [
     roles: ['Administrator'],
     items: [
       {
+        name: 'Analytics',
+        icon: BarChart3,
+        href: '/admin/analytics',
+        permissions: ['analytics.read'],
+      },
+      {
         name: 'Tenant Management',
         icon: TenantIcon,
         href: '/system/tenants',
@@ -904,6 +913,7 @@ const navigationSections: NavSection[] = [
           { name: 'Department Access', href: '/admin/users/departments', icon: Layers, permissions: ['users.read'] },
           { name: 'Activity Log', href: '/admin/users/activity', icon: ScrollText, permissions: ['admin.audit'] },
           { name: 'Active Sessions', href: '/admin/users/sessions', icon: MonitorSmartphone, permissions: ['users.read'] },
+          { name: 'Bulk Import', href: '/admin/users/bulk-import', icon: FileSpreadsheet, permissions: ['users.create'] },
         ],
       },
       {
@@ -1015,6 +1025,14 @@ const navigationSections: NavSection[] = [
           { name: 'Message Templates', href: '/notifications/templates', icon: FileText, permissions: ['settings.update'] },
           { name: 'Notification History', href: '/notifications/history', icon: ScrollText, permissions: ['settings.read'] },
           { name: 'Bulk Messaging', href: '/notifications/bulk', icon: Send, permissions: ['settings.update'] },
+        ],
+      },
+      {
+        name: 'Backups',
+        icon: HardDrive,
+        permissions: ['admin.backup'],
+        children: [
+          { name: 'Backup Management', href: '/admin/backups', icon: HardDrive, permissions: ['admin.backup'] },
         ],
       },
     ],
