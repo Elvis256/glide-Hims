@@ -1,9 +1,10 @@
-import { Controller, Post, Body, Get, Patch, HttpCode, HttpStatus, UseGuards, Req, Res, Query, Param } from '@nestjs/common';
+import { Controller, Post, Body, Get, Patch, Delete, HttpCode, HttpStatus, UseGuards, Req, Res, Query, Param, ParseUUIDPipe } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
+import { SessionService } from './session.service';
 import { LoginDto, RefreshTokenDto, AuthResponseDto, ChangePasswordDto, UpdateProfileDto } from './dto/auth.dto';
 import { Auth } from './decorators/auth.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -17,6 +18,7 @@ export class AuthController {
 
   constructor(
     private readonly authService: AuthService,
+    private readonly sessionService: SessionService,
     private readonly rateLimitGuard: RateLimitGuard,
     private readonly configService: ConfigService,
   ) {
@@ -84,7 +86,9 @@ export class AuthController {
   async refreshToken(@Body() dto: RefreshTokenDto, @Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<AuthResponseDto> {
     // Prefer cookie-based refresh token, fall back to body for backward compat
     const token = req.cookies?.refreshToken || dto.refreshToken;
-    const result = await this.authService.refreshToken(token);
+    const ipAddress = (req as any).ip || req.headers['x-forwarded-for']?.toString();
+    const userAgent = req.headers['user-agent'];
+    const result = await this.authService.refreshToken(token, ipAddress, userAgent);
     this.setAuthCookies(res, result.accessToken, result.refreshToken, result.expiresIn);
     return result;
   }
@@ -194,6 +198,39 @@ export class AuthController {
 
   private getClientIp(request: Request): string {
     return request.ip || request.socket?.remoteAddress || 'unknown';
+  }
+
+  @Get('sessions')
+  @Auth()
+  @ApiOperation({ summary: 'List active sessions for current user' })
+  @ApiResponse({ status: 200, description: 'Active sessions list' })
+  async listSessions(@CurrentUser() user: any) {
+    const sessions = await this.sessionService.getUserSessions(user.id, user.tenantId);
+    return { data: sessions };
+  }
+
+  @Delete('sessions/:id')
+  @Auth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Revoke a specific session' })
+  @ApiParam({ name: 'id', description: 'Session ID to revoke' })
+  @ApiResponse({ status: 200, description: 'Session revoked' })
+  async revokeSession(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    await this.sessionService.revokeSession(id, userId);
+    return { message: 'Session revoked' };
+  }
+
+  @Delete('sessions')
+  @Auth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Revoke all other sessions' })
+  @ApiResponse({ status: 200, description: 'All other sessions revoked' })
+  async revokeAllSessions(@CurrentUser('id') userId: string) {
+    await this.sessionService.revokeAllSessions(userId);
+    return { message: 'All other sessions revoked' };
   }
 
   @Post('admin/unlock/:userId')

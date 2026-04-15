@@ -10,7 +10,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull, In, MoreThan } from 'typeorm';
+import { Repository, DataSource, IsNull, In, MoreThan } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import * as OTPAuth from 'otpauth';
@@ -25,11 +25,14 @@ import { UserPermission } from '../../database/entities/user-permission.entity';
 import { LoginHistory } from '../../database/entities/login-history.entity';
 import { AuditLog } from '../../database/entities/audit-log.entity';
 import { LoginDto, AuthResponseDto, ChangePasswordDto, UpdateProfileDto } from './dto/auth.dto';
+import { RefreshTokenService } from './refresh-token.service';
 import { JwtPayload } from './strategies/jwt.strategy';
 import { getAccessibleModules } from '../../config/module-registry';
 import { isSuperAdmin } from '../../common/constants/roles.constants';
 import { getPreset, type FacilityMode } from '../../common/constants/facility-presets.constants';
 import { CacheService } from '../cache/cache.service';
+import { SessionService } from './session.service';
+import { SupportAccessTier } from '../../database/entities/support-access-grant.entity';
 
 @Injectable()
 export class AuthService {
@@ -61,25 +64,44 @@ export class AuthService {
     private jwtService: JwtService,
     private configService: ConfigService,
     private cacheService: CacheService,
+    private refreshTokenService: RefreshTokenService,
+    private sessionService: SessionService,
+    private dataSource: DataSource,
   ) {}
 
   async validateUser(username: string, password: string, tenantId?: string): Promise<User | null> {
-    const whereConditions: any[] = tenantId
-      ? [{ username, tenantId }, { email: username, tenantId }]
-      : [{ username }, { email: username }];
+    let user: User | null = null;
 
-    let user = await this.userRepository.findOne({
-      where: whereConditions,
-    });
+    if (tenantId) {
+      // Tenant-scoped login: find user within the specified tenant
+      user = await this.userRepository.findOne({
+        where: [{ username, tenantId }, { email: username, tenantId }],
+      });
 
-    // If not found under the selected tenant, check for system admin
-    if (!user && tenantId) {
+      // If not found under the selected tenant, check for system admin
+      if (!user) {
+        user = await this.userRepository.findOne({
+          where: [
+            { username, isSystemAdmin: true },
+            { email: username, isSystemAdmin: true },
+          ],
+        });
+      }
+    } else {
+      // No tenantId: system admin login — prioritize system admin users
       user = await this.userRepository.findOne({
         where: [
           { username, isSystemAdmin: true },
           { email: username, isSystemAdmin: true },
         ],
       });
+
+      // Fall back to any matching user (for on-premise single-tenant mode)
+      if (!user) {
+        user = await this.userRepository.findOne({
+          where: [{ username }, { email: username }],
+        });
+      }
     }
 
     if (!user) {
@@ -159,6 +181,13 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    // FIX #1: System admin login validation — reject non-system-admins on system login
+    if (!loginDto.tenantId && deploymentMode === 'multi-tenant' && !user.isSystemAdmin) {
+      await this.recordLoginHistory(user.id, ipAddress, userAgent, false, 'Non-system-admin attempted system login', undefined);
+      this.logger.warn(`System login rejected: user ${user.id} is not a system admin`);
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
     // Prevent cross-tenant login: non-system-admins must belong to the requested tenant
     if (loginDto.tenantId && user.tenantId !== loginDto.tenantId && !user.isSystemAdmin) {
       await this.recordLoginHistory(user.id, ipAddress, userAgent, false, 'Tenant mismatch', loginDto.tenantId);
@@ -214,8 +243,22 @@ export class AuthService {
     let facilityId = roleFacilityId || user.facilityId;
     let facility = roleFacility;
 
-    // System admin logging into a different tenant: resolve that tenant's facility
+    // System admin logging into a different tenant: verify support access tier
     if (user.isSystemAdmin && loginDto.tenantId && user.tenantId !== loginDto.tenantId) {
+      const tierResult = await this.dataSource.query(
+        `SELECT access_tier FROM support_access_grants
+         WHERE granted_to_id = $1 AND tenant_id = $2
+         AND revoked_at IS NULL AND expires_at > NOW()
+         AND deleted_at IS NULL
+         LIMIT 1`,
+        [user.id, loginDto.tenantId],
+      );
+      const tier = tierResult.length > 0 ? tierResult[0].access_tier : SupportAccessTier.NONE;
+      if (tier === SupportAccessTier.NONE) {
+        this.logger.warn(`System admin ${user.id} cross-tenant login to ${loginDto.tenantId} blocked — no active support access grant`);
+        throw new ForbiddenException('No active support access grant for this organization. Request access from the tenant administrator.');
+      }
+
       const tenantFacility = await this.facilityRepository.findOne({
         where: { tenantId: loginDto.tenantId },
       });
@@ -316,6 +359,16 @@ export class AuthService {
     // Record successful login
     await this.recordLoginHistory(user.id, ipAddress, userAgent, true, undefined, user.tenantId);
 
+    // Store refresh token for server-side tracking and revocation
+    await this.refreshTokenService.createRefreshToken(
+      user.id, effectiveTenantId, refreshToken, ipAddress, userAgent,
+    );
+
+    // Create server-side session record
+    await this.sessionService.createSession(
+      user.id, effectiveTenantId, refreshToken, ipAddress, userAgent,
+    );
+
     return {
       accessToken,
       refreshToken,
@@ -361,8 +414,14 @@ export class AuthService {
     }
   }
 
-  async refreshToken(refreshToken: string): Promise<AuthResponseDto> {
+  async refreshToken(refreshToken: string, ipAddress?: string, userAgent?: string): Promise<AuthResponseDto> {
     try {
+      // Server-side refresh token validation (checks revocation, expiry, reuse)
+      const storedToken = await this.refreshTokenService.validateRefreshToken(refreshToken);
+      if (!storedToken) {
+        throw new UnauthorizedException('Invalid refresh token');
+      }
+
       const payload = this.jwtService.verify<JwtPayload>(refreshToken, {
         secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
       });
@@ -377,10 +436,10 @@ export class AuthService {
 
       // Verify tokenVersion for token revocation
       if (payload.tokenVersion !== undefined && payload.tokenVersion !== user.tokenVersion) {
-        // Possible token reuse attack — a previously-rotated token was replayed.
         this.logger.warn(`Refresh token reuse detected for user ${user.id}. Revoking all sessions.`);
         user.tokenVersion += 1;
         await this.userRepository.save(user);
+        await this.refreshTokenService.revokeAllUserTokens(user.id);
         throw new UnauthorizedException('Token has been revoked');
       }
 
@@ -441,6 +500,14 @@ export class AuthService {
         expiresIn: this.configService.get<string>('JWT_REFRESH_EXPIRES_IN', '7d'),
       });
 
+      // Rotate server-side refresh token record
+      await this.refreshTokenService.rotateRefreshToken(
+        refreshToken, newRefreshToken, ipAddress, userAgent,
+      );
+
+      // Update session token hash after rotation
+      await this.sessionService.updateSessionToken(refreshToken, newRefreshToken);
+
       // Calculate expiresIn from JWT_EXPIRES_IN config
       const expiresInConfig = this.configService.get<string>('JWT_EXPIRES_IN', '8h');
       const expiresInSeconds = this.parseExpiryToSeconds(expiresInConfig);
@@ -468,7 +535,10 @@ export class AuthService {
           } : undefined,
         },
       };
-    } catch {
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
       throw new UnauthorizedException('Invalid refresh token');
     }
   }
@@ -969,6 +1039,10 @@ export class AuthService {
     await this.userRepository.increment({ id: userId }, 'tokenVersion', 1);
     // Bust the JWT validation cache so revocation takes effect immediately
     await this.cacheService.del(`jwt:user:${userId}`);
+    // Revoke all server-side refresh tokens
+    await this.refreshTokenService.revokeAllUserTokens(userId);
+    // Revoke all server-side sessions
+    await this.sessionService.revokeAllSessions(userId);
     this.logger.log(`Invalidated tokens for user ${userId}`);
   }
 
