@@ -29,6 +29,7 @@ yarn-error.log*
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # IDE
 .vscode/
@@ -61,3 +62,9 @@ volumes/
 
 # Backups
 backups/
+*.bak*
+
+# Binaries & uploads (should not be in source control)
+*.exe
+*.pdf
+packages/backend/uploads/
