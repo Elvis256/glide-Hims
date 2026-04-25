@@ -105,9 +105,8 @@ export default function LoginPage() {
 
   const isSaas = setupStatus?.deploymentMode === 'saas';
   const isOnPremise = !isSaas;
-  const isMultiTenant = (setupStatus?.tenantCount || 0) > 1;
-  // No slug + multi-tenant → redirect to system admin login
-  const isSystemAdminLogin = !slug && (isSaas || isMultiTenant);
+  // Only SaaS without slug should show system admin login flow
+  const isSystemAdminLogin = !slug && isSaas;
 
   const onSubmit = async (data: LoginForm) => {
     // For tenant logins (on-premise or SaaS with slug), tenant must be resolved
