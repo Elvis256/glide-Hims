@@ -4,29 +4,48 @@ import { BaseEntity } from './base.entity';
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto';
 
 // Encrypt/decrypt MFA secrets at rest so a DB breach doesn't expose TOTP seeds.
-const MFA_ENC_KEY = process.env.MFA_ENCRYPTION_KEY;
-if (!MFA_ENC_KEY) {
-  console.warn(
-    'WARNING: MFA_ENCRYPTION_KEY not set — MFA features will be unavailable until configured',
-  );
+//
+// Resolved lazily on first use. Reading process.env at module-import time would fire
+// before NestJS's ConfigModule has loaded .env into process.env, producing a spurious
+// "MFA_ENCRYPTION_KEY not set" warning even when the variable is configured. By the
+// time encrypt/decrypt are called, ConfigModule.forRoot() has populated process.env.
+let MFA_KEY_CACHE: Buffer | null | undefined; // undefined = not yet resolved
+let MFA_WARNING_EMITTED = false;
+
+function getMfaKey(): Buffer | null {
+  if (MFA_KEY_CACHE !== undefined) return MFA_KEY_CACHE;
+  const encKey = process.env.MFA_ENCRYPTION_KEY;
+  if (!encKey) {
+    if (!MFA_WARNING_EMITTED) {
+      console.warn(
+        'WARNING: MFA_ENCRYPTION_KEY not set — MFA features will be unavailable until configured',
+      );
+      MFA_WARNING_EMITTED = true;
+    }
+    MFA_KEY_CACHE = null;
+    return null;
+  }
+  const salt = process.env.MFA_SALT || randomBytes(16).toString('hex');
+  MFA_KEY_CACHE = scryptSync(encKey, salt, 32);
+  return MFA_KEY_CACHE;
 }
-const MFA_SALT = process.env.MFA_SALT || randomBytes(16).toString('hex');
-const MFA_KEY = MFA_ENC_KEY ? scryptSync(MFA_ENC_KEY, MFA_SALT, 32) : null;
 
 function encryptMfaSecret(plain: string): string {
-  if (!MFA_KEY) throw new Error('MFA_ENCRYPTION_KEY must be configured to enable MFA');
+  const key = getMfaKey();
+  if (!key) throw new Error('MFA_ENCRYPTION_KEY must be configured to enable MFA');
   const iv = randomBytes(16);
-  const cipher = createCipheriv('aes-256-cbc', MFA_KEY, iv);
+  const cipher = createCipheriv('aes-256-cbc', key, iv);
   const encrypted = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
   return iv.toString('hex') + ':' + encrypted.toString('hex');
 }
 
 function decryptMfaSecret(data: string): string {
-  if (!MFA_KEY) throw new Error('MFA_ENCRYPTION_KEY must be configured to enable MFA');
+  const key = getMfaKey();
+  if (!key) throw new Error('MFA_ENCRYPTION_KEY must be configured to enable MFA');
   const [ivHex, encHex] = data.split(':');
   if (!ivHex || !encHex) return data; // plain-text legacy value
   try {
-    const decipher = createDecipheriv('aes-256-cbc', MFA_KEY, Buffer.from(ivHex, 'hex'));
+    const decipher = createDecipheriv('aes-256-cbc', key, Buffer.from(ivHex, 'hex'));
     return Buffer.concat([decipher.update(Buffer.from(encHex, 'hex')), decipher.final()]).toString(
       'utf8',
     );

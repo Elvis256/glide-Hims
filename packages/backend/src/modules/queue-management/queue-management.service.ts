@@ -254,95 +254,151 @@ export class QueueManagementService {
     const validation = await this.validateQueueRequest(dto, facilityId, tenantId);
     const resolvedPriority = validation.resolvedPriority;
 
-    const ticketNumber = await this.generateTicketNumber(
-      facilityId,
-      dto.servicePoint as ServicePoint,
-      today,
-      tenantId,
-    );
-    const sequenceNumber = await this.getNextSequenceNumber(
-      facilityId,
-      dto.servicePoint as ServicePoint,
-      today,
-      tenantId,
-    );
-
     // Determine if payment is required before queueing
     const initialQueueStatus = validation.initialQueueStatus;
     const isEmergency =
       dto.visitType === 'emergency' || resolvedPriority === QueuePriority.EMERGENCY;
 
-    // Create encounter, invoice, and queue entry in a transaction
-    // so if queue creation fails, encounter is rolled back too
-    const { savedEncounter, savedInvoice, saved } = await this.dataSource.transaction(
-      async (manager) => {
-        const visitNumber = `VN-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Date.now().toString(36).toUpperCase()}`;
-        const encounter = this.encounterRepository.create({
-          visitNumber,
-          patientId: dto.patientId,
-          facilityId,
-          departmentId: dto.departmentId,
-          createdById: userId,
-          type: isEmergency ? EncounterType.EMERGENCY : EncounterType.OPD,
-          status: EncounterStatus.REGISTERED,
-          chiefComplaint: dto.chiefComplaintAtToken || 'OPD Visit',
-          queueNumber: sequenceNumber,
-          payerType: this.mapPaymentTypeToPayer(dto.paymentType),
-          ...(tenantId ? { tenantId } : {}),
-        });
-        const txEncounter = (await manager.save(encounter)) as Encounter;
+    const servicePointPrefix = this.getServicePointPrefix(dto.servicePoint as string);
+    const queueDateKey = today.toISOString().slice(0, 10);
 
-        // Auto-create consultation invoice (non-blocking within the transaction)
-        let txInvoice: Invoice | null = null;
-        try {
-          txInvoice = await this.createConsultationInvoice(
-            dto.patientId,
-            txEncounter.id,
+    // Ticket-number generation + queue insert is racy under concurrent requests:
+    // two writers can read the same MAX(ticket_number) and collide on the unique
+    // index IDX_queue_facility_ticket_date. Two layers of protection:
+    //   1) Inside the transaction, take a pg_advisory_xact_lock keyed by
+    //      (facility, servicePoint, date) so ticket generation is serialised.
+    //   2) Wrap the whole transaction in a retry on Postgres unique_violation
+    //      (SQLSTATE 23505) as defence-in-depth.
+    const maxTicketAttempts = 3;
+    let ticketAttempt = 0;
+    let txResult!: {
+      savedEncounter: Encounter;
+      savedInvoice: Invoice | null;
+      saved: Queue;
+      ticketNumber: string;
+    };
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      try {
+        txResult = await this.dataSource.transaction(async (manager) => {
+          await manager.query(
+            'SELECT pg_advisory_xact_lock(hashtext($1)::bigint, hashtext($2)::bigint)',
+            [`queue:${facilityId}:${servicePointPrefix}`, queueDateKey],
+          );
+
+          const ticketNumber = await this.generateTicketNumber(
             facilityId,
-            userId,
-            dto.paymentType,
-            dto.consultationFee,
-            dto.insurancePolicyId,
+            dto.servicePoint as ServicePoint,
+            today,
             tenantId,
             manager,
           );
-          this.logger.log(`Invoice ${txInvoice.invoiceNumber} created for token ${ticketNumber}`);
-        } catch (err) {
-          // Non-blocking: if invoice creation fails, still issue the token
-          this.logger.warn(
-            `Failed to auto-create invoice for token ${ticketNumber}: ${err.message}`,
+          const sequenceNumber = await this.getNextSequenceNumber(
+            facilityId,
+            dto.servicePoint as ServicePoint,
+            today,
+            tenantId,
+            manager,
           );
-        }
 
-        const queue = this.queueRepository.create({
-          ...dto,
-          servicePoint: dto.servicePoint as ServicePoint,
-          ticketNumber,
-          sequenceNumber,
-          queueDate: today,
-          facilityId,
-          createdById: userId,
-          encounterId: txEncounter.id,
-          status: initialQueueStatus,
-          priority: resolvedPriority,
-          visitType: dto.visitType,
-          chiefComplaintAtToken: dto.chiefComplaintAtToken,
-          patientConditionFlags: dto.patientConditionFlags,
-          ...(tenantId ? { tenantId } : {}),
+          const visitNumber = `VN-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Date.now().toString(36).toUpperCase()}`;
+          const encounter = this.encounterRepository.create({
+            visitNumber,
+            patientId: dto.patientId,
+            facilityId,
+            departmentId: dto.departmentId,
+            createdById: userId,
+            type: isEmergency ? EncounterType.EMERGENCY : EncounterType.OPD,
+            status: EncounterStatus.REGISTERED,
+            chiefComplaint: dto.chiefComplaintAtToken || 'OPD Visit',
+            queueNumber: sequenceNumber,
+            payerType: this.mapPaymentTypeToPayer(dto.paymentType),
+            ...(tenantId ? { tenantId } : {}),
+          });
+          const txEncounter = (await manager.save(encounter)) as Encounter;
+
+          // Auto-create consultation invoice (non-blocking within the transaction)
+          let txInvoice: Invoice | null = null;
+          try {
+            txInvoice = await this.createConsultationInvoice(
+              dto.patientId,
+              txEncounter.id,
+              facilityId,
+              userId,
+              dto.paymentType,
+              dto.consultationFee,
+              dto.insurancePolicyId,
+              tenantId,
+              manager,
+            );
+            this.logger.log(`Invoice ${txInvoice.invoiceNumber} created for token ${ticketNumber}`);
+          } catch (err) {
+            // Non-blocking: if invoice creation fails, still issue the token
+            this.logger.warn(
+              `Failed to auto-create invoice for token ${ticketNumber}: ${err.message}`,
+            );
+          }
+
+          const queue = this.queueRepository.create({
+            ...dto,
+            servicePoint: dto.servicePoint as ServicePoint,
+            ticketNumber,
+            sequenceNumber,
+            queueDate: today,
+            facilityId,
+            createdById: userId,
+            encounterId: txEncounter.id,
+            status: initialQueueStatus,
+            priority: resolvedPriority,
+            visitType: dto.visitType,
+            chiefComplaintAtToken: dto.chiefComplaintAtToken,
+            patientConditionFlags: dto.patientConditionFlags,
+            ...(tenantId ? { tenantId } : {}),
+          });
+
+          queue.estimatedWaitMinutes = await this.calculateSmartWaitTime(
+            facilityId,
+            dto.servicePoint as ServicePoint,
+            today,
+            tenantId,
+          );
+
+          const txSaved = await manager.save(queue);
+
+          return {
+            savedEncounter: txEncounter,
+            savedInvoice: txInvoice,
+            saved: txSaved,
+            ticketNumber,
+          };
         });
-
-        queue.estimatedWaitMinutes = await this.calculateSmartWaitTime(
-          facilityId,
-          dto.servicePoint as ServicePoint,
-          today,
-          tenantId,
+        break;
+      } catch (err: any) {
+        const code = (err && (err.code || (err.driverError && err.driverError.code))) as
+          | string
+          | undefined;
+        const constraint = (err &&
+          (err.constraint || (err.driverError && err.driverError.constraint))) as
+          | string
+          | undefined;
+        const detail = ((err && (err.detail || (err.driverError && err.driverError.detail))) ||
+          '') as string;
+        const isTicketConflict =
+          code === '23505' &&
+          ((constraint || '').includes('queue_facility_ticket_date') ||
+            detail.includes('ticket_number'));
+        if (!isTicketConflict || ticketAttempt >= maxTicketAttempts - 1) {
+          throw err;
+        }
+        ticketAttempt += 1;
+        this.logger.warn(
+          `Queue ticket race detected (attempt ${ticketAttempt}/${maxTicketAttempts}); retrying...`,
         );
+        await new Promise((r) => setTimeout(r, 25 + Math.floor(Math.random() * 50)));
+      }
+    }
 
-        const txSaved = await manager.save(queue);
-
-        return { savedEncounter: txEncounter, savedInvoice: txInvoice, saved: txSaved };
-      },
-    );
+    const { savedEncounter, savedInvoice, saved } = txResult;
 
     if (dto.assignedDoctorId) {
       await this.updateDoctorQueueCount(dto.assignedDoctorId, facilityId, tenantId);
@@ -1495,12 +1551,14 @@ export class QueueManagementService {
     servicePoint: string,
     date: Date,
     tenantId?: string,
+    manager?: EntityManager,
   ): Promise<string> {
     const prefix = this.getServicePointPrefix(servicePoint);
     const maxRetries = 5;
+    const repo = manager ? manager.getRepository(Queue) : this.queueRepository;
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
-      const last = await this.queueRepository
+      const last = await repo
         .createQueryBuilder('queue')
         .select('MAX(queue.ticketNumber)', 'maxTicket')
         .where('queue.facility_id = :facilityId', { facilityId })
@@ -1514,7 +1572,7 @@ export class QueueManagementService {
       const ticketNumber = `${prefix}${String(nextNum).padStart(3, '0')}`;
 
       // Check uniqueness before returning
-      const exists = await this.queueRepository.count({
+      const exists = await repo.count({
         where: { facilityId, ticketNumber, queueDate: date, ...(tenantId ? { tenantId } : {}) },
       });
       if (exists === 0) return ticketNumber;
@@ -1555,11 +1613,13 @@ export class QueueManagementService {
     servicePoint: string,
     date: Date,
     tenantId?: string,
+    manager?: EntityManager,
   ): Promise<number> {
     const maxRetries = 5;
+    const repo = manager ? manager.getRepository(Queue) : this.queueRepository;
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
-      const last = await this.queueRepository.findOne({
+      const last = await repo.findOne({
         where: {
           facilityId,
           servicePoint: servicePoint as ServicePoint,
@@ -1571,7 +1631,7 @@ export class QueueManagementService {
       const nextSeq = (last?.sequenceNumber || 0) + 1 + attempt;
 
       // Check uniqueness before returning
-      const exists = await this.queueRepository.count({
+      const exists = await repo.count({
         where: {
           facilityId,
           servicePoint: servicePoint as ServicePoint,
