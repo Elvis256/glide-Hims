@@ -9,10 +9,19 @@ import {
   AlertLevel,
 } from '../../database/entities/inventory.entity';
 import { Appointment, AppointmentStatus } from '../appointments/entities/appointment.entity';
-import { Provider } from '../../database/entities/provider.entity';import { User } from '../../database/entities/user.entity';
-import { InAppNotification, InAppNotificationType } from '../../database/entities/in-app-notification.entity';
+import { Provider } from '../../database/entities/provider.entity';
+import { User } from '../../database/entities/user.entity';
+import {
+  InAppNotification,
+  InAppNotificationType,
+} from '../../database/entities/in-app-notification.entity';
 import { Facility } from '../../database/entities/facility.entity';
-import { ExpiryAlertConfig, ExpiryAlertHistory, AlertSeverity, AlertChannel } from '../../database/entities/expiry-alert.entity';
+import {
+  ExpiryAlertConfig,
+  ExpiryAlertHistory,
+  AlertSeverity,
+  AlertChannel,
+} from '../../database/entities/expiry-alert.entity';
 import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../../database/entities/notification-config.entity';
@@ -82,7 +91,7 @@ export class ScheduledTasksService {
 
       this.logger.log(
         `Drug expiry check completed — Checked ${facilitiesChecked} facilities, ` +
-        `found ${totalExpiringItems} expiring items, sent ${totalAlertsSent} alerts`,
+          `found ${totalExpiringItems} expiring items, sent ${totalAlertsSent} alerts`,
       );
     } catch (error) {
       this.logger.error(
@@ -113,9 +122,9 @@ export class ScheduledTasksService {
 
     if (batches.length === 0) return { expiringItems: 0, alertsSent: 0 };
 
-    const urgentItems: BatchStockBalance[] = [];   // ≤30 days
-    const warningItems: BatchStockBalance[] = [];  // 31–60 days
-    const infoItems: BatchStockBalance[] = [];     // 61–90 days
+    const urgentItems: BatchStockBalance[] = []; // ≤30 days
+    const warningItems: BatchStockBalance[] = []; // 31–60 days
+    const infoItems: BatchStockBalance[] = []; // 61–90 days
 
     for (const batch of batches) {
       const daysUntilExpiry = Math.ceil(
@@ -127,9 +136,8 @@ export class ScheduledTasksService {
 
       if (daysUntilExpiry <= 30) {
         alertLevel = AlertLevel.URGENT;
-        expiryStatus = daysUntilExpiry <= 7
-          ? ExpiryAlertStatus.ACTIVE
-          : ExpiryAlertStatus.NEAR_EXPIRY;
+        expiryStatus =
+          daysUntilExpiry <= 7 ? ExpiryAlertStatus.ACTIVE : ExpiryAlertStatus.NEAR_EXPIRY;
         urgentItems.push(batch);
       } else if (daysUntilExpiry <= 60) {
         alertLevel = AlertLevel.WARNING;
@@ -179,14 +187,20 @@ export class ScheduledTasksService {
     // Send in-app notifications for urgent items (≤30 days)
     if (urgentItems.length > 0) {
       alertsSent += await this.sendExpiryInAppNotifications(
-        facility, urgentItems, AlertLevel.URGENT, 30,
+        facility,
+        urgentItems,
+        AlertLevel.URGENT,
+        30,
       );
     }
 
     // Send in-app notifications for warning items (31–60 days)
     if (warningItems.length > 0) {
       alertsSent += await this.sendExpiryInAppNotifications(
-        facility, warningItems, AlertLevel.WARNING, 60,
+        facility,
+        warningItems,
+        AlertLevel.WARNING,
+        60,
       );
     }
 
@@ -197,7 +211,11 @@ export class ScheduledTasksService {
 
     // Record history for the facility
     await this.recordAlertHistory(
-      facility, batches.length, urgentItems.length, warningItems.length, infoItems.length,
+      facility,
+      batches.length,
+      urgentItems.length,
+      warningItems.length,
+      infoItems.length,
     );
 
     return { expiringItems: batches.length, alertsSent };
@@ -382,9 +400,7 @@ export class ScheduledTasksService {
         [thirtyDaysAgo],
       );
 
-      this.logger.log(
-        `Sync record cleanup completed. Removed ${result?.[1] || 0} old records`,
-      );
+      this.logger.log(`Sync record cleanup completed. Removed ${result?.[1] || 0} old records`);
     } catch (error) {
       this.logger.error(
         'Sync record cleanup failed',
@@ -412,10 +428,7 @@ export class ScheduledTasksService {
       });
 
       const activeAlerts = await this.expiryAlertRepo.count({
-        where: [
-          { status: ExpiryAlertStatus.ACTIVE },
-          { status: ExpiryAlertStatus.NEAR_EXPIRY },
-        ],
+        where: [{ status: ExpiryAlertStatus.ACTIVE }, { status: ExpiryAlertStatus.NEAR_EXPIRY }],
       });
 
       this.logger.log(
@@ -467,7 +480,9 @@ export class ScheduledTasksService {
             .where('n.target_user_id = :userId', { userId: targetUserId })
             .andWhere('n.type = :type', { type: InAppNotificationType.GENERAL })
             .andWhere('n.title LIKE :title', { title: '%License Expiry%' })
-            .andWhere('n.created_at > :since', { since: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) })
+            .andWhere('n.created_at > :since', {
+              since: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000),
+            })
             .getOne();
 
           if (!existingNotification) {
@@ -488,7 +503,9 @@ export class ScheduledTasksService {
             await this.notificationRepo.save(notification);
           }
         } catch (e) {
-          this.logger.warn(`Failed to create license expiry notification for provider ${provider.id}: ${(e as Error).message}`);
+          this.logger.warn(
+            `Failed to create license expiry notification for provider ${provider.id}: ${(e as Error).message}`,
+          );
         }
       }
 
@@ -525,9 +542,9 @@ export class ScheduledTasksService {
       this.logger.log(`Processing leave accrual for ${users.length} eligible users`);
 
       const annualMonthlyAccrual = 21 / 12; // 1.75 days per month
-      const sickMonthlyAccrual = 10 / 12;   // ~0.83 days per month
-      const maxAnnualBalance = 42;           // 2 years cap
-      const maxSickBalance = 20;             // 2 years cap
+      const sickMonthlyAccrual = 10 / 12; // ~0.83 days per month
+      const maxAnnualBalance = 42; // 2 years cap
+      const maxSickBalance = 20; // 2 years cap
 
       let updatedCount = 0;
       for (const user of users) {
@@ -535,10 +552,7 @@ export class ScheduledTasksService {
           (user.annualLeaveBalance || 0) + annualMonthlyAccrual,
           maxAnnualBalance,
         );
-        const newSick = Math.min(
-          (user.sickLeaveBalance || 0) + sickMonthlyAccrual,
-          maxSickBalance,
-        );
+        const newSick = Math.min((user.sickLeaveBalance || 0) + sickMonthlyAccrual, maxSickBalance);
 
         if (newAnnual !== user.annualLeaveBalance || newSick !== user.sickLeaveBalance) {
           user.annualLeaveBalance = Math.round(newAnnual * 100) / 100;
@@ -576,8 +590,14 @@ export class ScheduledTasksService {
 
       const appointments = await this.appointmentRepo.find({
         where: [
-          { status: AppointmentStatus.SCHEDULED, appointmentDate: Between(tomorrow, dayAfterTomorrow) },
-          { status: AppointmentStatus.CONFIRMED, appointmentDate: Between(tomorrow, dayAfterTomorrow) },
+          {
+            status: AppointmentStatus.SCHEDULED,
+            appointmentDate: Between(tomorrow, dayAfterTomorrow),
+          },
+          {
+            status: AppointmentStatus.CONFIRMED,
+            appointmentDate: Between(tomorrow, dayAfterTomorrow),
+          },
         ],
         relations: ['patient', 'doctor', 'facility'],
       });
@@ -672,7 +692,7 @@ export class ScheduledTasksService {
 
       this.logger.log(
         `Appointment reminders complete — ${appointments.length} appointments processed, ` +
-        `${inAppSent} in-app notifications sent, ${smsSent} SMS sent, ${failed} failed`,
+          `${inAppSent} in-app notifications sent, ${smsSent} SMS sent, ${failed} failed`,
       );
     } catch (error) {
       this.logger.error(

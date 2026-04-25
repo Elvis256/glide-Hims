@@ -1,7 +1,12 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like, ILike, FindOptionsWhere, DataSource } from 'typeorm';
-import { Item, StockLedger, StockBalance, MovementType } from '../../database/entities/inventory.entity';
+import {
+  Item,
+  StockLedger,
+  StockBalance,
+  MovementType,
+} from '../../database/entities/inventory.entity';
 import {
   CreateItemDto,
   UpdateItemDto,
@@ -25,9 +30,11 @@ export class InventoryService {
   // ============ ITEM MANAGEMENT ============
 
   async createItem(dto: CreateItemDto, tenantId?: string): Promise<Item> {
-    const code = dto.code?.trim() || await this.generateItemCode(dto.isDrug, tenantId);
+    const code = dto.code?.trim() || (await this.generateItemCode(dto.isDrug, tenantId));
 
-    const existing = await this.itemRepository.findOne({ where: { code, ...(tenantId ? { tenantId } : {}) } });
+    const existing = await this.itemRepository.findOne({
+      where: { code, ...(tenantId ? { tenantId } : {}) },
+    });
     if (existing) {
       throw new BadRequestException(`Item with code ${code} already exists`);
     }
@@ -38,7 +45,8 @@ export class InventoryService {
 
   private async generateItemCode(isDrug?: boolean, tenantId?: string): Promise<string> {
     const prefix = isDrug ? 'DRG' : 'ITM';
-    const qb = this.itemRepository.createQueryBuilder('item')
+    const qb = this.itemRepository
+      .createQueryBuilder('item')
       .select('item.code', 'code')
       .where('item.code LIKE :codePrefix', { codePrefix: `${prefix}-%` })
       .orderBy('item.code', 'DESC')
@@ -95,7 +103,14 @@ export class InventoryService {
 
     const [data, total] = await this.itemRepository.findAndCount({
       where,
-      relations: ['itemCategory', 'subcategory', 'brand', 'itemUnit', 'formulation', 'storageCondition'],
+      relations: [
+        'itemCategory',
+        'subcategory',
+        'brand',
+        'itemUnit',
+        'formulation',
+        'storageCondition',
+      ],
       skip: (page - 1) * limit,
       take: limit,
       order: { name: 'ASC' },
@@ -105,9 +120,16 @@ export class InventoryService {
   }
 
   async findItemById(id: string, tenantId?: string): Promise<Item> {
-    const item = await this.itemRepository.findOne({ 
-      where: { id , ...(tenantId ? { tenantId } : {}) },
-      relations: ['itemCategory', 'subcategory', 'brand', 'itemUnit', 'formulation', 'storageCondition'],
+    const item = await this.itemRepository.findOne({
+      where: { id, ...(tenantId ? { tenantId } : {}) },
+      relations: [
+        'itemCategory',
+        'subcategory',
+        'brand',
+        'itemUnit',
+        'formulation',
+        'storageCondition',
+      ],
     });
     if (!item) {
       throw new NotFoundException('Item not found');
@@ -128,9 +150,13 @@ export class InventoryService {
 
   // ============ STOCK MANAGEMENT ============
 
-  async getStockBalance(itemId: string, facilityId: string, tenantId?: string): Promise<StockBalance | null> {
+  async getStockBalance(
+    itemId: string,
+    facilityId: string,
+    tenantId?: string,
+  ): Promise<StockBalance | null> {
     return this.stockBalanceRepository.findOne({
-      where: { itemId, facilityId , ...(tenantId ? { tenantId } : {}) },
+      where: { itemId, facilityId, ...(tenantId ? { tenantId } : {}) },
       relations: ['item'],
     });
   }
@@ -173,13 +199,21 @@ export class InventoryService {
     return { data, total, page, limit };
   }
 
-  async receiveStock(dto: StockReceiveDto, userId: string, tenantId?: string): Promise<StockLedger> {
+  async receiveStock(
+    dto: StockReceiveDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<StockLedger> {
     const item = await this.findItemById(dto.itemId, tenantId);
 
     return this.dataSource.transaction(async (manager) => {
       // Get current balance with pessimistic lock
       let balance = await manager.findOne(StockBalance, {
-        where: { itemId: dto.itemId, facilityId: dto.facilityId, ...(tenantId ? { tenantId } : {}) },
+        where: {
+          itemId: dto.itemId,
+          facilityId: dto.facilityId,
+          ...(tenantId ? { tenantId } : {}),
+        },
         lock: { mode: 'pessimistic_write' },
       });
       const previousBalance = balance?.totalQuantity || 0;
@@ -225,7 +259,11 @@ export class InventoryService {
     });
   }
 
-  async adjustStock(dto: StockAdjustmentDto, userId: string, tenantId?: string): Promise<StockLedger> {
+  async adjustStock(
+    dto: StockAdjustmentDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<StockLedger> {
     const item = await this.findItemById(dto.itemId, tenantId);
 
     // Controlled substance protection: require detailed reason for scheduled drugs
@@ -239,7 +277,7 @@ export class InventoryService {
         if (['schedule_1', 'schedule_2', 'schedule_3'].includes(schedule)) {
           if (!dto.reason || dto.reason.trim().length < 10) {
             throw new BadRequestException(
-              `Controlled substance (${schedule}): stock adjustments require a detailed reason (min 10 characters). Provide reason for audit trail.`
+              `Controlled substance (${schedule}): stock adjustments require a detailed reason (min 10 characters). Provide reason for audit trail.`,
             );
           }
         }
@@ -249,7 +287,11 @@ export class InventoryService {
     return this.dataSource.transaction(async (manager) => {
       // Pessimistic lock to prevent concurrent adjustment conflicts
       let balance = await manager.findOne(StockBalance, {
-        where: { itemId: dto.itemId, facilityId: dto.facilityId, ...(tenantId ? { tenantId } : {}) },
+        where: {
+          itemId: dto.itemId,
+          facilityId: dto.facilityId,
+          ...(tenantId ? { tenantId } : {}),
+        },
         lock: { mode: 'pessimistic_write' },
       });
       const previousBalance = balance?.totalQuantity || 0;
@@ -292,11 +334,19 @@ export class InventoryService {
     });
   }
 
-  async transferStock(dto: StockTransferDto, userId: string, tenantId?: string): Promise<{ from: StockLedger; to: StockLedger }> {
+  async transferStock(
+    dto: StockTransferDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<{ from: StockLedger; to: StockLedger }> {
     return this.dataSource.transaction(async (manager) => {
       // Check source has enough stock — with pessimistic lock
       const fromBalance = await manager.findOne(StockBalance, {
-        where: { itemId: dto.itemId, facilityId: dto.fromFacilityId, ...(tenantId ? { tenantId } : {}) },
+        where: {
+          itemId: dto.itemId,
+          facilityId: dto.fromFacilityId,
+          ...(tenantId ? { tenantId } : {}),
+        },
         lock: { mode: 'pessimistic_write' },
       });
       if (!fromBalance || fromBalance.availableQuantity < dto.quantity) {
@@ -326,7 +376,11 @@ export class InventoryService {
 
       // Add to destination — with pessimistic lock
       let toBalance = await manager.findOne(StockBalance, {
-        where: { itemId: dto.itemId, facilityId: dto.toFacilityId, ...(tenantId ? { tenantId } : {}) },
+        where: {
+          itemId: dto.itemId,
+          facilityId: dto.toFacilityId,
+          ...(tenantId ? { tenantId } : {}),
+        },
         lock: { mode: 'pessimistic_write' },
       });
       const toNewBalance = (toBalance?.totalQuantity || 0) + dto.quantity;
@@ -379,7 +433,16 @@ export class InventoryService {
     limit?: number;
     tenantId?: string;
   }) {
-    const { facilityId, itemId, startDate, endDate, movementType, page = 1, limit = 50, tenantId } = params;
+    const {
+      facilityId,
+      itemId,
+      startDate,
+      endDate,
+      movementType,
+      page = 1,
+      limit = 50,
+      tenantId,
+    } = params;
 
     const query = this.stockLedgerRepository
       .createQueryBuilder('sl')
@@ -477,17 +540,20 @@ export class InventoryService {
 
       const newBalance = balance.totalQuantity - quantity;
 
-      await manager.save(StockLedger, manager.create(StockLedger, {
-        itemId,
-        facilityId,
-        quantity: -quantity,
-        balanceAfter: newBalance,
-        movementType: MovementType.SALE,
-        referenceType,
-        referenceId,
-        createdById: userId,
-        ...(tenantId ? { tenantId } : {}),
-      }));
+      await manager.save(
+        StockLedger,
+        manager.create(StockLedger, {
+          itemId,
+          facilityId,
+          quantity: -quantity,
+          balanceAfter: newBalance,
+          movementType: MovementType.SALE,
+          referenceType,
+          referenceId,
+          createdById: userId,
+          ...(tenantId ? { tenantId } : {}),
+        }),
+      );
 
       balance.totalQuantity = newBalance;
       balance.availableQuantity = newBalance - balance.reservedQuantity;
@@ -521,10 +587,14 @@ export class InventoryService {
         break;
     }
 
-    const daysDiff = Math.max(1, Math.ceil((now.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)));
+    const daysDiff = Math.max(
+      1,
+      Math.ceil((now.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)),
+    );
 
     // Query outgoing stock movements (consumption)
-    const qb = this.stockLedgerRepository.createQueryBuilder('sl')
+    const qb = this.stockLedgerRepository
+      .createQueryBuilder('sl')
       .leftJoinAndSelect('sl.item', 'item')
       .leftJoinAndSelect('sl.store', 'store')
       .where('sl.movementType IN (:...types)', {
@@ -544,12 +614,15 @@ export class InventoryService {
     const movements = await qb.getMany();
 
     // Aggregate by item
-    const itemMap = new Map<string, {
-      name: string;
-      category: string;
-      totalQuantity: number;
-      totalValue: number;
-    }>();
+    const itemMap = new Map<
+      string,
+      {
+        name: string;
+        category: string;
+        totalQuantity: number;
+        totalValue: number;
+      }
+    >();
 
     let totalConsumption = 0;
     let totalValue = 0;
@@ -581,7 +654,7 @@ export class InventoryService {
     const topConsumedItems = Array.from(itemMap.values())
       .sort((a, b) => b.totalQuantity - a.totalQuantity)
       .slice(0, 20)
-      .map(item => ({
+      .map((item) => ({
         ...item,
         avgDailyConsumption: parseFloat((item.totalQuantity / daysDiff).toFixed(2)),
         trend: 'stable',
@@ -669,7 +742,7 @@ export class InventoryService {
     const movements = await qb.orderBy('sl.createdAt', 'DESC').getMany();
 
     // Group by reference to find affected patients/prescriptions
-    const affectedRecords = movements.map(m => ({
+    const affectedRecords = movements.map((m) => ({
       itemId: m.itemId,
       itemName: m.item?.name,
       quantity: Math.abs(m.quantity),
@@ -685,7 +758,10 @@ export class InventoryService {
       .createQueryBuilder('sl')
       .select('SUM(sl.quantity)', 'remaining')
       .where('sl.batchNumber = :batchNumber', { batchNumber })
-      .andWhere(facilityId ? 'sl.facilityId = :facilityId' : '1=1', facilityId ? { facilityId } : {})
+      .andWhere(
+        facilityId ? 'sl.facilityId = :facilityId' : '1=1',
+        facilityId ? { facilityId } : {},
+      )
       .getRawOne();
 
     return {

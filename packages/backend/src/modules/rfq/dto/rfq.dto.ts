@@ -1,4 +1,14 @@
-import { IsString, IsOptional, IsArray, IsUUID, IsDateString, IsNumber, IsEnum, ValidateNested, Min } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsArray,
+  IsUUID,
+  IsDateString,
+  IsNumber,
+  IsEnum,
+  ValidateNested,
+  Min,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { RFQStatus, QuotationStatus } from '../../../database/entities/rfq.entity';
 

@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
@@ -60,20 +55,14 @@ export class DonorFundService {
     return this.donorFundRepo.save(fund);
   }
 
-  async findAllDonorFunds(
-    facilityId?: string,
-    tenantId?: string,
-  ): Promise<DonorFund[]> {
+  async findAllDonorFunds(facilityId?: string, tenantId?: string): Promise<DonorFund[]> {
     const where: any = {};
     if (facilityId) where.facilityId = facilityId;
     if (tenantId) where.tenantId = tenantId;
     return this.donorFundRepo.find({ where, order: { createdAt: 'DESC' } });
   }
 
-  async findOneDonorFund(
-    id: string,
-    tenantId?: string,
-  ): Promise<DonorFund> {
+  async findOneDonorFund(id: string, tenantId?: string): Promise<DonorFund> {
     const where: any = { id };
     if (tenantId) where.tenantId = tenantId;
 

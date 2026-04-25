@@ -1,4 +1,13 @@
-import { IsString, IsNotEmpty, MinLength, IsOptional, IsUUID, Matches, IsEmail, IsBoolean } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  MinLength,
+  IsOptional,
+  IsUUID,
+  Matches,
+  IsEmail,
+  IsBoolean,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class LoginDto {
@@ -42,9 +51,13 @@ export class ChangePasswordDto {
   @IsString()
   @IsNotEmpty()
   @MinLength(8)
-  @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#^()_\-+=])[A-Za-z\d@$!%*?&#^()_\-+=]{8,}$/, {
-    message: 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character',
-  })
+  @Matches(
+    /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#^()_\-+=])[A-Za-z\d@$!%*?&#^()_\-+=]{8,}$/,
+    {
+      message:
+        'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character',
+    },
+  )
   newPassword: string;
 }
 
@@ -70,6 +83,7 @@ export class AuthResponseDto {
     roles: string[];
     permissions: string[];
     isSystemAdmin: boolean;
+    supportAccessTier?: number;
     tenantId?: string;
     facilityId?: string;
     facility?: {
@@ -83,7 +97,9 @@ export class AuthResponseDto {
 }
 
 export class AdminResetPasswordDto {
-  @ApiPropertyOptional({ description: 'New password. If not provided, a random 12-character password is generated.' })
+  @ApiPropertyOptional({
+    description: 'New password. If not provided, a random 12-character password is generated.',
+  })
   @IsOptional()
   @IsString()
   @MinLength(8)

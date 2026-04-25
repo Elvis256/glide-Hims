@@ -48,7 +48,7 @@ export class NursingNote extends BaseEntity {
   @Column({ type: 'uuid' })
   admissionId: string;
 
-  @ManyToOne(() => Admission, admission => admission.nursingNotes)
+  @ManyToOne(() => Admission, (admission) => admission.nursingNotes)
   @JoinColumn({ name: 'admissionId' })
   admission: Admission;
 

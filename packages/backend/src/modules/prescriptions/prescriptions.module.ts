@@ -7,7 +7,12 @@ import { DURReportsService } from './dur-reports.service';
 import { RxTemplateService } from './rx-template.service';
 import { RxNotificationService } from './rx-notification.service';
 import { RxTemplateNotificationController } from './rx-template-notification.controller';
-import { Prescription, PrescriptionItem, Dispensation, MedicationAdministration } from '../../database/entities/prescription.entity';
+import {
+  Prescription,
+  PrescriptionItem,
+  Dispensation,
+  MedicationAdministration,
+} from '../../database/entities/prescription.entity';
 import { PrescriptionTemplate } from '../../database/entities/rx-template.entity';
 import { RxNotificationLog } from '../../database/entities/rx-notification.entity';
 import { DrugClassification } from '../../database/entities/drug-classification.entity';
@@ -22,7 +27,20 @@ import { DrugManagementModule } from '../drug-management/drug-management.module'
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Prescription, PrescriptionItem, Dispensation, MedicationAdministration, ControlledSubstanceLog, Encounter, Item, StockBalance, StockLedger, DrugClassification, PrescriptionTemplate, RxNotificationLog]),
+    TypeOrmModule.forFeature([
+      Prescription,
+      PrescriptionItem,
+      Dispensation,
+      MedicationAdministration,
+      ControlledSubstanceLog,
+      Encounter,
+      Item,
+      StockBalance,
+      StockLedger,
+      DrugClassification,
+      PrescriptionTemplate,
+      RxNotificationLog,
+    ]),
     forwardRef(() => BillingModule),
     InAppNotificationsModule,
     QueueManagementModule,

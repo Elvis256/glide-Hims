@@ -9,7 +9,15 @@ import { GoodsReceiptNote, GoodsReceiptItem } from '../../database/entities/good
 import { InvoiceMatch } from '../../database/entities/invoice-match.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Supplier, PurchaseOrder, GoodsReceiptNote, GoodsReceiptItem, InvoiceMatch])],
+  imports: [
+    TypeOrmModule.forFeature([
+      Supplier,
+      PurchaseOrder,
+      GoodsReceiptNote,
+      GoodsReceiptItem,
+      InvoiceMatch,
+    ]),
+  ],
   controllers: [SuppliersController],
   providers: [SuppliersService, SupplierScoringService],
   exports: [SuppliersService, SupplierScoringService],

@@ -8,6 +8,7 @@ import {
   Query,
   Request,
   ParseUUIDPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
@@ -17,9 +18,13 @@ import {
   AddStatementItemsDto,
   ManualMatchDto,
 } from './dto/bank-reconciliation.dto';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('Bank Reconciliation')
 @ApiBearerAuth()
+@UseGuards(ModuleGuard)
+@RequireModule('finance')
 @Controller('finance/bank-reconciliation')
 export class BankReconciliationController {
   constructor(private readonly bankReconService: BankReconciliationService) {}

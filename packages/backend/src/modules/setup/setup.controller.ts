@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Body, Param, HttpCode, HttpStatus, ForbiddenException, BadRequestException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  HttpCode,
+  HttpStatus,
+  ForbiddenException,
+  BadRequestException,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { Public } from '../auth/decorators/public.decorator';
@@ -17,8 +27,8 @@ export class SetupController {
   @Get('status')
   @Public()
   @ApiOperation({ summary: 'Check if initial setup has been completed' })
-  @ApiResponse({ 
-    status: 200, 
+  @ApiResponse({
+    status: 200,
     description: 'Setup status',
     schema: {
       type: 'object',
@@ -28,8 +38,8 @@ export class SetupController {
         organizationName: { type: 'string' },
         facilityName: { type: 'string' },
         tenantSlug: { type: 'string' },
-      }
-    }
+      },
+    },
   })
   async getSetupStatus() {
     return this.setupService.getSetupStatus();
@@ -54,7 +64,9 @@ export class SetupController {
     // Double-check setup status before allowing initialization
     const status = await this.setupService.getSetupStatus();
     if (status.isSetupComplete) {
-      throw new ForbiddenException('System is already initialized. Re-initialization is not allowed.');
+      throw new ForbiddenException(
+        'System is already initialized. Re-initialization is not allowed.',
+      );
     }
     return this.setupService.initializeSetup(dto);
   }
@@ -88,10 +100,7 @@ export class SetupController {
   @ApiOperation({ summary: 'Initialize setup for an existing tenant (facility, admin, settings)' })
   @ApiResponse({ status: 201, description: 'Tenant setup completed successfully' })
   @ApiResponse({ status: 400, description: 'Setup already completed or validation error' })
-  async initializeTenantSetup(
-    @Param('slug') slug: string,
-    @Body() dto: InitializeTenantSetupDto,
-  ) {
+  async initializeTenantSetup(@Param('slug') slug: string, @Body() dto: InitializeTenantSetupDto) {
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) || slug.length < 3 || slug.length > 100) {
       throw new BadRequestException('Invalid organization code');
     }

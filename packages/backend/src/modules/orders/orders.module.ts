@@ -16,7 +16,16 @@ import { QueueManagementModule } from '../queue-management/queue-management.modu
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Order, Encounter, Service, LabTest, LabSample, LabResult, ImagingOrder, ImagingModality]),
+    TypeOrmModule.forFeature([
+      Order,
+      Encounter,
+      Service,
+      LabTest,
+      LabSample,
+      LabResult,
+      ImagingOrder,
+      ImagingModality,
+    ]),
     forwardRef(() => BillingModule),
     InAppNotificationsModule,
     QueueManagementModule,

@@ -1,7 +1,11 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull } from 'typeorm';
-import { Diagnosis, COMMON_DIAGNOSES, DiagnosisCategory } from '../../database/entities/diagnosis.entity';
+import {
+  Diagnosis,
+  COMMON_DIAGNOSES,
+  DiagnosisCategory,
+} from '../../database/entities/diagnosis.entity';
 import { CreateDiagnosisDto, UpdateDiagnosisDto, DiagnosisSearchDto } from './dto/diagnosis.dto';
 
 @Injectable()
@@ -27,7 +31,10 @@ export class DiagnosesService {
     return this.diagnosisRepository.save(diagnosis);
   }
 
-  async findAll(query: DiagnosisSearchDto, tenantId?: string): Promise<{ data: Diagnosis[]; total: number; page: number; limit: number }> {
+  async findAll(
+    query: DiagnosisSearchDto,
+    tenantId?: string,
+  ): Promise<{ data: Diagnosis[]; total: number; page: number; limit: number }> {
     const page = query.page ?? 1;
     const limit = Math.min(query.limit ?? 50, 200);
     const qb = this.diagnosisRepository.createQueryBuilder('diagnosis');

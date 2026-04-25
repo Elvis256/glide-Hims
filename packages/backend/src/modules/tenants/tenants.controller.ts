@@ -1,4 +1,16 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, ParseUUIDPipe, BadRequestException, Request, ForbiddenException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  ParseUUIDPipe,
+  BadRequestException,
+  Request,
+  ForbiddenException,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { TenantsService } from './tenants.service';
 import { CreateTenantDto, UpdateTenantDto } from './dto/tenant.dto';
@@ -71,7 +83,11 @@ export class TenantsController {
   @Patch(':id')
   @AuthWithPermissions('tenants.update')
   @ApiOperation({ summary: 'Update tenant' })
-  async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateTenantDto, @Request() req: any) {
+  async update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateTenantDto,
+    @Request() req: any,
+  ) {
     if (!req.user?.isSystemAdmin) {
       throw new ForbiddenException('System admin access required');
     }

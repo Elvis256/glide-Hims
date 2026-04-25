@@ -1,4 +1,16 @@
-import { IsString, IsNotEmpty, IsOptional, IsEmail, IsDateString, Matches, MaxLength, IsIn, IsObject, ValidateNested, IsArray } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsEmail,
+  IsDateString,
+  Matches,
+  MaxLength,
+  IsIn,
+  IsObject,
+  ValidateNested,
+  IsArray,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
@@ -61,7 +73,9 @@ export class CreatePatientDto {
   @ApiPropertyOptional({ example: '+256700000000' })
   @IsOptional()
   @IsString()
-  @Matches(/^\+?\d{7,15}$/, { message: 'Phone must be a valid phone number (7-15 digits, optional + prefix)' })
+  @Matches(/^\+?\d{7,15}$/, {
+    message: 'Phone must be a valid phone number (7-15 digits, optional + prefix)',
+  })
   phone?: string;
 
   @ApiPropertyOptional({ example: 'Kampala, Uganda' })
@@ -78,7 +92,9 @@ export class CreatePatientDto {
   @ApiPropertyOptional({ example: 'O+', enum: VALID_BLOOD_GROUPS })
   @IsOptional()
   @IsString()
-  @IsIn([...VALID_BLOOD_GROUPS], { message: 'Blood group must be one of: A+, A-, B+, B-, AB+, AB-, O+, O-' })
+  @IsIn([...VALID_BLOOD_GROUPS], {
+    message: 'Blood group must be one of: A+, A-, B+, B-, AB+, AB-, O+, O-',
+  })
   bloodGroup?: string;
 
   @ApiPropertyOptional({ description: 'Next of kin details' })

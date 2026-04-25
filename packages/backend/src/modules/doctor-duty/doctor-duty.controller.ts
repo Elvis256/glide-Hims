@@ -21,7 +21,11 @@ import {
   DoctorDutyFilterDto,
 } from './dto/doctor-duty.dto';
 import { DutyStatus } from '../../database/entities/doctor-duty.entity';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
+@UseGuards(ModuleGuard)
+@RequireModule('doctors')
 @Controller('doctor-duty')
 @UseGuards(AuthGuard('jwt'))
 export class DoctorDutyController {
@@ -36,7 +40,11 @@ export class DoctorDutyController {
 
   @Post(':id/check-out')
   @AuthWithPermissions('doctor-duty.update')
-  async checkOut(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CheckOutDto, @Request() req: any) {
+  async checkOut(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CheckOutDto,
+    @Request() req: any,
+  ) {
     return this.doctorDutyService.checkOut(id, dto.notes, req.user?.tenantId);
   }
 
@@ -86,7 +94,11 @@ export class DoctorDutyController {
 
   @Patch(':id')
   @AuthWithPermissions('doctor-duty.update')
-  async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateDoctorDutyDto, @Request() req: any) {
+  async update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateDoctorDutyDto,
+    @Request() req: any,
+  ) {
     return this.doctorDutyService.update(id, dto, req.user?.tenantId);
   }
 }

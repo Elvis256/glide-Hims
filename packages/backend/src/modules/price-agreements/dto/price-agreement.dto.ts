@@ -1,4 +1,13 @@
-import { IsString, IsOptional, IsUUID, IsDateString, IsNumber, IsEnum, Min, IsArray } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsUUID,
+  IsDateString,
+  IsNumber,
+  IsEnum,
+  Min,
+  IsArray,
+} from 'class-validator';
 import { PriceAgreementStatus } from '../../../database/entities/price-agreement.entity';
 
 export class VolumeDiscountDto {

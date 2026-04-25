@@ -1,10 +1,14 @@
-import { Controller, Get, Post, Param, Request } from '@nestjs/common';
+import { Controller, Get, Post, Param, Request, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { DrugDbSyncService } from './drug-db-sync.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('Drug Database Sync')
 @ApiBearerAuth()
+@UseGuards(ModuleGuard)
+@RequireModule('pharmacy')
 @Controller('drug-management/sync')
 export class DrugDbSyncController {
   constructor(private readonly syncService: DrugDbSyncService) {}

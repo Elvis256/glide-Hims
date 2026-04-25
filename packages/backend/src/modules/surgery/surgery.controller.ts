@@ -9,6 +9,7 @@ import {
   Query,
   Request,
   ParseUUIDPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
@@ -26,9 +27,13 @@ import {
   RecordMultipleConsumablesDto,
 } from './dto/surgery.dto';
 import { SurgeryStatus } from '../../database/entities/surgery-case.entity';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('Surgery / Theatre')
 @ApiBearerAuth()
+@UseGuards(ModuleGuard)
+@RequireModule('theatre')
 @Controller('surgery')
 export class SurgeryController {
   constructor(private readonly surgeryService: SurgeryService) {}
@@ -177,7 +182,7 @@ export class SurgeryController {
 
   @Get('schedule/today')
   @AuthWithPermissions('surgery.read')
-  @ApiOperation({ summary: 'Get today\'s surgery schedule' })
+  @ApiOperation({ summary: "Get today's surgery schedule" })
   @ApiQuery({ name: 'facilityId', required: true })
   getTodaySchedule(@Query('facilityId') facilityId: string, @Request() req: any) {
     return this.surgeryService.getTodaySchedule(facilityId, req.user?.tenantId);
@@ -279,7 +284,12 @@ export class SurgeryController {
     @Query('endDate') endDate: string,
     @Request() req: any,
   ) {
-    return this.surgeryService.getConsumablesReport(facilityId, startDate, endDate, req.user?.tenantId);
+    return this.surgeryService.getConsumablesReport(
+      facilityId,
+      startDate,
+      endDate,
+      req.user?.tenantId,
+    );
   }
 
   // ============ CONFLICT CHECK & SCHEDULE ============
@@ -300,6 +310,13 @@ export class SurgeryController {
     @Query('excludeCaseId') excludeCaseId?: string,
     @Request() req?: any,
   ) {
-    return this.surgeryService.checkTheatreConflicts(theatreId, date, time, duration, excludeCaseId, req?.user?.tenantId);
+    return this.surgeryService.checkTheatreConflicts(
+      theatreId,
+      date,
+      time,
+      duration,
+      excludeCaseId,
+      req?.user?.tenantId,
+    );
   }
 }

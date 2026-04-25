@@ -10,11 +10,11 @@ interface MagicSignature {
 
 const MAGIC_BYTES: Record<string, MagicSignature[]> = {
   'application/pdf': [{ bytes: [0x25, 0x50, 0x44, 0x46] }], // %PDF
-  'image/jpeg': [{ bytes: [0xFF, 0xD8, 0xFF] }],
-  'image/png': [{ bytes: [0x89, 0x50, 0x4E, 0x47] }],
-  'application/msword': [{ bytes: [0xD0, 0xCF, 0x11, 0xE0] }], // OLE2 compound
+  'image/jpeg': [{ bytes: [0xff, 0xd8, 0xff] }],
+  'image/png': [{ bytes: [0x89, 0x50, 0x4e, 0x47] }],
+  'application/msword': [{ bytes: [0xd0, 0xcf, 0x11, 0xe0] }], // OLE2 compound
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': [
-    { bytes: [0x50, 0x4B, 0x03, 0x04] }, // ZIP (OOXML)
+    { bytes: [0x50, 0x4b, 0x03, 0x04] }, // ZIP (OOXML)
   ],
 };
 

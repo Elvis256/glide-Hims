@@ -79,12 +79,7 @@ export class TemperatureService {
     };
   }
 
-  async getSensorReadings(
-    sensorId: string,
-    dateFrom?: string,
-    dateTo?: string,
-    tenantId?: string,
-  ) {
+  async getSensorReadings(sensorId: string, dateFrom?: string, dateTo?: string, tenantId?: string) {
     const where: Record<string, any> = { sensorId };
     if (tenantId) where.tenantId = tenantId;
 

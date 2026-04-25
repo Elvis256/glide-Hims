@@ -115,7 +115,7 @@ export class LabReagent extends BaseEntity {
   @Column({ type: 'text', nullable: true })
   notes?: string;
 
-  @OneToMany(() => ReagentLot, lot => lot.reagent)
+  @OneToMany(() => ReagentLot, (lot) => lot.reagent)
   lots: ReagentLot[];
 }
 
@@ -125,7 +125,7 @@ export class ReagentLot extends BaseEntity {
   @Column({ type: 'uuid', name: 'reagent_id' })
   reagentId: string;
 
-  @ManyToOne(() => LabReagent, reagent => reagent.lots)
+  @ManyToOne(() => LabReagent, (reagent) => reagent.lots)
   @JoinColumn({ name: 'reagent_id' })
   reagent: LabReagent;
 
@@ -171,7 +171,7 @@ export class ReagentLot extends BaseEntity {
   @Column({ type: 'text', nullable: true })
   notes?: string;
 
-  @OneToMany(() => ReagentConsumption, consumption => consumption.lot)
+  @OneToMany(() => ReagentConsumption, (consumption) => consumption.lot)
   consumptions: ReagentConsumption[];
 }
 
@@ -180,7 +180,7 @@ export class ReagentConsumption extends BaseEntity {
   @Column({ type: 'uuid', name: 'lot_id' })
   lotId: string;
 
-  @ManyToOne(() => ReagentLot, lot => lot.consumptions)
+  @ManyToOne(() => ReagentLot, (lot) => lot.consumptions)
   @JoinColumn({ name: 'lot_id' })
   lot: ReagentLot;
 

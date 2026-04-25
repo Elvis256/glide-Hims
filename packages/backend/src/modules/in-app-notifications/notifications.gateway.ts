@@ -11,7 +11,7 @@ import { Logger } from '@nestjs/common';
 
 @WebSocketGateway({
   cors: {
-    origin: (process.env.CORS_ORIGINS || 'http://localhost:5173').split(',').map(o => o.trim()),
+    origin: (process.env.CORS_ORIGINS || 'http://localhost:5173').split(',').map((o) => o.trim()),
     credentials: true,
   },
   namespace: '/notifications',
@@ -32,8 +32,7 @@ export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisco
   async handleConnection(client: Socket) {
     try {
       const token =
-        (client.handshake.auth?.token as string) ||
-        (client.handshake.query?.token as string);
+        (client.handshake.auth?.token as string) || (client.handshake.query?.token as string);
       if (!token) {
         client.disconnect();
         return;

@@ -7,10 +7,15 @@ export class CreateTenantDto {
   @IsNotEmpty()
   name: string;
 
-  @ApiPropertyOptional({ example: 'uganda-health-network', description: 'URL-friendly identifier. Auto-generated from name if not provided.' })
+  @ApiPropertyOptional({
+    example: 'uganda-health-network',
+    description: 'URL-friendly identifier. Auto-generated from name if not provided.',
+  })
   @IsOptional()
   @IsString()
-  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, { message: 'Slug must be lowercase letters, numbers, and hyphens only' })
+  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, {
+    message: 'Slug must be lowercase letters, numbers, and hyphens only',
+  })
   slug?: string;
 
   @ApiPropertyOptional()

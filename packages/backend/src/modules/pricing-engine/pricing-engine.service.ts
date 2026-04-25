@@ -2,7 +2,11 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, IsNull, LessThanOrEqual, MoreThanOrEqual, Or } from 'typeorm';
 import { InsurancePriceList } from '../../database/entities/insurance-price-list.entity';
-import { PricingRule, PricingRuleType, DiscountType } from '../../database/entities/pricing-rule.entity';
+import {
+  PricingRule,
+  PricingRuleType,
+  DiscountType,
+} from '../../database/entities/pricing-rule.entity';
 import { TaxRate } from '../../database/entities/tax-rate.entity';
 import { TaxExemption } from '../../database/entities/tax-exemption.entity';
 import { Service } from '../../database/entities/service-category.entity';
@@ -110,7 +114,7 @@ export class PricingEngineService {
     let finalPrice = basePrice;
     let insuranceAdjustment = 0;
     let membershipDiscount = 0;
-    let loyaltyDiscount = 0;
+    const loyaltyDiscount = 0;
     let otherDiscounts = 0;
 
     // 1. Check for insurance-specific price list
@@ -142,7 +146,7 @@ export class PricingEngineService {
       if (membership && membership.scheme?.discountPercent > 0) {
         const discountPercent = membership.scheme.discountPercent;
         const discountAmount = this.roundMoney((finalPrice * discountPercent) / 100);
-        
+
         // Check if membership discount can stack with insurance
         const canStack = await this.canDiscountStack('membership', appliedDiscounts);
         if (canStack || appliedDiscounts.length === 0) {
@@ -161,9 +165,15 @@ export class PricingEngineService {
     }
 
     // 3. Apply any active pricing rules
-    const rules = await this.getActivePricingRules(dto.serviceId ? 'services' : dto.labTestId ? 'lab' : 'pharmacy', tenantId);
+    const rules = await this.getActivePricingRules(
+      dto.serviceId ? 'services' : dto.labTestId ? 'lab' : 'pharmacy',
+      tenantId,
+    );
     for (const rule of rules) {
-      if (rule.ruleType === PricingRuleType.INSURANCE || rule.ruleType === PricingRuleType.MEMBERSHIP) {
+      if (
+        rule.ruleType === PricingRuleType.INSURANCE ||
+        rule.ruleType === PricingRuleType.MEMBERSHIP
+      ) {
         continue; // Already handled above
       }
 
@@ -236,7 +246,7 @@ export class PricingEngineService {
     itemId?: string | null,
   ): Promise<InsurancePriceList | null> {
     const today = new Date();
-    
+
     const whereCondition: any = {
       insuranceProviderId,
       isActive: true,
@@ -273,7 +283,10 @@ export class PricingEngineService {
   /**
    * Get active membership for a patient
    */
-  async getActiveMembership(patientId: string, tenantId?: string): Promise<PatientMembership | null> {
+  async getActiveMembership(
+    patientId: string,
+    tenantId?: string,
+  ): Promise<PatientMembership | null> {
     const today = new Date();
     const where: any = {
       patientId,
@@ -305,12 +318,20 @@ export class PricingEngineService {
   /**
    * Check if a discount type can stack with existing discounts
    */
-  async canDiscountStack(ruleType: string, existingDiscounts: AppliedDiscount[], tenantId?: string): Promise<boolean> {
+  async canDiscountStack(
+    ruleType: string,
+    existingDiscounts: AppliedDiscount[],
+    tenantId?: string,
+  ): Promise<boolean> {
     if (existingDiscounts.length === 0) return true;
 
     // Get the pricing rule for this type to check stacking rules
     const rule = await this.pricingRuleRepo.findOne({
-      where: { ruleType: ruleType as PricingRuleType, isActive: true , ...(tenantId ? { tenantId } : {}) },
+      where: {
+        ruleType: ruleType as PricingRuleType,
+        isActive: true,
+        ...(tenantId ? { tenantId } : {}),
+      },
     });
 
     if (!rule) return true;
@@ -318,8 +339,8 @@ export class PricingEngineService {
 
     // Check if it can stack with existing discount types
     if (rule.stackWithTypes) {
-      const allowedTypes = rule.stackWithTypes.split(',').map(t => t.trim());
-      return existingDiscounts.every(d => allowedTypes.includes(d.ruleType));
+      const allowedTypes = rule.stackWithTypes.split(',').map((t) => t.trim());
+      return existingDiscounts.every((d) => allowedTypes.includes(d.ruleType));
     }
 
     return false;
@@ -327,7 +348,11 @@ export class PricingEngineService {
 
   // ==================== INSURANCE PRICE LIST CRUD ====================
 
-  async createInsurancePriceList(dto: CreateInsurancePriceListDto, userId: string, tenantId?: string): Promise<InsurancePriceList> {
+  async createInsurancePriceList(
+    dto: CreateInsurancePriceListDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<InsurancePriceList> {
     const priceList = this.insurancePriceListRepo.create({
       ...dto,
       createdById: userId,
@@ -336,22 +361,32 @@ export class PricingEngineService {
     return this.insurancePriceListRepo.save(priceList);
   }
 
-  async bulkCreateInsurancePriceLists(dto: BulkCreateInsurancePriceListDto, userId: string, tenantId?: string): Promise<InsurancePriceList[]> {
-    const priceLists = dto.items.map(item => this.insurancePriceListRepo.create({
-      insuranceProviderId: dto.insuranceProviderId,
-      serviceId: item.serviceId,
-      labTestId: item.labTestId,
-      itemId: item.itemId,
-      agreedPrice: item.agreedPrice,
-      discountPercent: item.discountPercent || 0,
-      effectiveFrom: dto.effectiveFrom ? new Date(dto.effectiveFrom) : new Date(),
-      createdById: userId,
-      ...(tenantId ? { tenantId } : {}),
-    }));
+  async bulkCreateInsurancePriceLists(
+    dto: BulkCreateInsurancePriceListDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<InsurancePriceList[]> {
+    const priceLists = dto.items.map((item) =>
+      this.insurancePriceListRepo.create({
+        insuranceProviderId: dto.insuranceProviderId,
+        serviceId: item.serviceId,
+        labTestId: item.labTestId,
+        itemId: item.itemId,
+        agreedPrice: item.agreedPrice,
+        discountPercent: item.discountPercent || 0,
+        effectiveFrom: dto.effectiveFrom ? new Date(dto.effectiveFrom) : new Date(),
+        createdById: userId,
+        ...(tenantId ? { tenantId } : {}),
+      }),
+    );
     return this.insurancePriceListRepo.save(priceLists);
   }
 
-  async updateInsurancePriceList(id: string, dto: UpdateInsurancePriceListDto, tenantId?: string): Promise<InsurancePriceList> {
+  async updateInsurancePriceList(
+    id: string,
+    dto: UpdateInsurancePriceListDto,
+    tenantId?: string,
+  ): Promise<InsurancePriceList> {
     const where: any = { id };
     if (tenantId) where.tenantId = tenantId;
     const priceList = await this.insurancePriceListRepo.findOne({ where });
@@ -370,15 +405,21 @@ export class PricingEngineService {
     await this.insurancePriceListRepo.softDelete(id);
   }
 
-  async getInsurancePriceLists(query: PriceQueryDto, tenantId?: string): Promise<{ data: InsurancePriceList[]; total: number }> {
-    const qb = this.insurancePriceListRepo.createQueryBuilder('ipl')
+  async getInsurancePriceLists(
+    query: PriceQueryDto,
+    tenantId?: string,
+  ): Promise<{ data: InsurancePriceList[]; total: number }> {
+    const qb = this.insurancePriceListRepo
+      .createQueryBuilder('ipl')
       .leftJoinAndSelect('ipl.insuranceProvider', 'provider')
       .leftJoinAndSelect('ipl.service', 'service')
       .leftJoinAndSelect('ipl.labTest', 'labTest')
       .leftJoinAndSelect('ipl.item', 'item');
 
     if (query.insuranceProviderId) {
-      qb.andWhere('ipl.insurance_provider_id = :providerId', { providerId: query.insuranceProviderId });
+      qb.andWhere('ipl.insurance_provider_id = :providerId', {
+        providerId: query.insuranceProviderId,
+      });
     }
     if (query.serviceId) {
       qb.andWhere('ipl.service_id = :serviceId', { serviceId: query.serviceId });
@@ -393,7 +434,10 @@ export class PricingEngineService {
       qb.andWhere('ipl.is_active = :isActive', { isActive: query.isActive });
     }
     if (query.search) {
-      qb.andWhere('(service.name ILIKE :search OR labTest.name ILIKE :search OR item.name ILIKE :search)', { search: `%${query.search}%` });
+      qb.andWhere(
+        '(service.name ILIKE :search OR labTest.name ILIKE :search OR item.name ILIKE :search)',
+        { search: `%${query.search}%` },
+      );
     }
     if (tenantId) {
       qb.andWhere('ipl.tenant_id = :tenantId', { tenantId });
@@ -423,8 +467,13 @@ export class PricingEngineService {
   /**
    * Compare prices across different insurance providers
    */
-  async comparePrices(serviceId?: string, labTestId?: string, tenantId?: string): Promise<PriceComparisonItem[]> {
-    const qb = this.insurancePriceListRepo.createQueryBuilder('ipl')
+  async comparePrices(
+    serviceId?: string,
+    labTestId?: string,
+    tenantId?: string,
+  ): Promise<PriceComparisonItem[]> {
+    const qb = this.insurancePriceListRepo
+      .createQueryBuilder('ipl')
       .leftJoinAndSelect('ipl.insuranceProvider', 'provider')
       .where('ipl.is_active = true');
 
@@ -443,14 +492,18 @@ export class PricingEngineService {
     // Get base price for comparison
     let basePrice = 0;
     if (serviceId) {
-      const service = await this.serviceRepo.findOne({ where: { id: serviceId, ...(tenantId ? { tenantId } : {}) } });
+      const service = await this.serviceRepo.findOne({
+        where: { id: serviceId, ...(tenantId ? { tenantId } : {}) },
+      });
       basePrice = Number(service?.basePrice) || 0;
     } else if (labTestId) {
-      const labTest = await this.labTestRepo.findOne({ where: { id: labTestId, ...(tenantId ? { tenantId } : {}) } });
+      const labTest = await this.labTestRepo.findOne({
+        where: { id: labTestId, ...(tenantId ? { tenantId } : {}) },
+      });
       basePrice = Number(labTest?.price) || 0;
     }
 
-    return priceLists.map(pl => ({
+    return priceLists.map((pl) => ({
       providerId: pl.insuranceProviderId,
       providerName: pl.insuranceProvider?.name || 'Unknown',
       agreedPrice: Number(pl.agreedPrice),
@@ -462,7 +515,11 @@ export class PricingEngineService {
 
   // ==================== PRICING RULES CRUD ====================
 
-  async createPricingRule(dto: CreatePricingRuleDto, userId: string, tenantId?: string): Promise<PricingRule> {
+  async createPricingRule(
+    dto: CreatePricingRuleDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<PricingRule> {
     const rule = this.pricingRuleRepo.create({
       ...dto,
       createdById: userId,
@@ -471,7 +528,11 @@ export class PricingEngineService {
     return this.pricingRuleRepo.save(rule);
   }
 
-  async updatePricingRule(id: string, dto: UpdatePricingRuleDto, tenantId?: string): Promise<PricingRule> {
+  async updatePricingRule(
+    id: string,
+    dto: UpdatePricingRuleDto,
+    tenantId?: string,
+  ): Promise<PricingRule> {
     const where: any = { id };
     if (tenantId) where.tenantId = tenantId;
     const rule = await this.pricingRuleRepo.findOne({ where });

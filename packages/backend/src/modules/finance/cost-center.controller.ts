@@ -8,13 +8,18 @@ import {
   Query,
   Request,
   ParseUUIDPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { CostCenterService } from './cost-center.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { CreateCostCenterDto, UpdateCostCenterDto } from './dto/finance.dto';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('Cost Centers')
+@UseGuards(ModuleGuard)
+@RequireModule('finance')
 @Controller('finance/cost-centers')
 export class CostCenterController {
   constructor(private costCenterService: CostCenterService) {}
@@ -43,7 +48,11 @@ export class CostCenterController {
   @Patch(':id')
   @AuthWithPermissions('finance.manage')
   @ApiOperation({ summary: 'Update a cost center' })
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateCostCenterDto, @Request() req?: any) {
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateCostCenterDto,
+    @Request() req?: any,
+  ) {
     return this.costCenterService.update(id, dto, req?.user?.tenantId);
   }
 

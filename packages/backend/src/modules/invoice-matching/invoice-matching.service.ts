@@ -1,7 +1,11 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { InvoiceMatch, InvoiceMatchItem, InvoiceMatchStatus } from '../../database/entities/invoice-match.entity';
+import {
+  InvoiceMatch,
+  InvoiceMatchItem,
+  InvoiceMatchStatus,
+} from '../../database/entities/invoice-match.entity';
 import { PurchaseOrder } from '../../database/entities/purchase-order.entity';
 import { GoodsReceiptNote } from '../../database/entities/goods-receipt.entity';
 import { CreateInvoiceMatchDto, ApproveMatchDto } from './dto/invoice-match.dto';
@@ -18,25 +22,42 @@ export class InvoiceMatchingService {
   ) {}
 
   private async generateMatchNumber(facilityId: string, tenantId?: string): Promise<string> {
-    const count = await this.matchRepo.count({ where: { facilityId, ...(tenantId ? { tenantId } : {}) } });
+    const count = await this.matchRepo.count({
+      where: { facilityId, ...(tenantId ? { tenantId } : {}) },
+    });
     const date = new Date();
     return `INV${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(count + 1).padStart(5, '0')}`;
   }
 
-  async create(dto: CreateInvoiceMatchDto, userId: string, tenantId?: string): Promise<InvoiceMatch> {
+  async create(
+    dto: CreateInvoiceMatchDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<InvoiceMatch> {
     const matchNumber = await this.generateMatchNumber(dto.facilityId, tenantId);
 
-    const po = await this.poRepo.findOne({ where: { id: dto.purchaseOrderId, ...(tenantId ? { tenantId } : {}) }, relations: ['items', 'supplier'] });
+    const po = await this.poRepo.findOne({
+      where: { id: dto.purchaseOrderId, ...(tenantId ? { tenantId } : {}) },
+      relations: ['items', 'supplier'],
+    });
     if (!po) throw new NotFoundException('Purchase order not found');
 
     if (!dto.grnId) {
-      throw new BadRequestException('GRN ID is required for 3-way invoice matching. All supplier invoices must be matched against both PO and GRN.');
+      throw new BadRequestException(
+        'GRN ID is required for 3-way invoice matching. All supplier invoices must be matched against both PO and GRN.',
+      );
     }
-    const grn = await this.grnRepo.findOne({ where: { id: dto.grnId, ...(tenantId ? { tenantId } : {}) }, relations: ['items'] });
+    const grn = await this.grnRepo.findOne({
+      where: { id: dto.grnId, ...(tenantId ? { tenantId } : {}) },
+      relations: ['items'],
+    });
     if (!grn) throw new NotFoundException('Goods Receipt Note not found');
 
-    const poAmount = po.items?.reduce((sum, item) => sum + (item.quantityOrdered * Number(item.unitPrice)), 0) || 0;
-    const grnAmount = grn?.items?.reduce((sum, item) => sum + (item.quantityReceived * Number(item.unitCost)), 0) || 0;
+    const poAmount =
+      po.items?.reduce((sum, item) => sum + item.quantityOrdered * Number(item.unitPrice), 0) || 0;
+    const grnAmount =
+      grn?.items?.reduce((sum, item) => sum + item.quantityReceived * Number(item.unitCost), 0) ||
+      0;
 
     const match = this.matchRepo.create({
       matchNumber,
@@ -96,7 +117,11 @@ export class InvoiceMatchingService {
     return this.findOne(savedMatch.id, tenantId);
   }
 
-  async findAll(facilityId: string, options: { status?: InvoiceMatchStatus } = {}, tenantId?: string) {
+  async findAll(
+    facilityId: string,
+    options: { status?: InvoiceMatchStatus } = {},
+    tenantId?: string,
+  ) {
     const qb = this.matchRepo
       .createQueryBuilder('match')
       .leftJoinAndSelect('match.purchaseOrder', 'po')
@@ -126,13 +151,26 @@ export class InvoiceMatchingService {
   async findOne(id: string, tenantId?: string): Promise<InvoiceMatch> {
     const match = await this.matchRepo.findOne({
       where: { id, ...(tenantId ? { tenantId } : {}) },
-      relations: ['purchaseOrder', 'purchaseOrder.items', 'supplier', 'goodsReceipt', 'goodsReceipt.items', 'items', 'approvedBy'],
+      relations: [
+        'purchaseOrder',
+        'purchaseOrder.items',
+        'supplier',
+        'goodsReceipt',
+        'goodsReceipt.items',
+        'items',
+        'approvedBy',
+      ],
     });
     if (!match) throw new NotFoundException('Invoice match not found');
     return match;
   }
 
-  async resolveItem(matchItemId: string, resolution: { qtyMatch: boolean; priceMatch: boolean }, userId: string, tenantId?: string): Promise<InvoiceMatchItem> {
+  async resolveItem(
+    matchItemId: string,
+    resolution: { qtyMatch: boolean; priceMatch: boolean },
+    userId: string,
+    tenantId?: string,
+  ): Promise<InvoiceMatchItem> {
     const item = await this.matchItemRepo.findOne({
       where: { id: matchItemId, ...(tenantId ? { tenantId } : {}) },
       relations: ['match'],
@@ -144,7 +182,9 @@ export class InvoiceMatchingService {
     await this.matchItemRepo.save(item);
 
     // Check if all items are resolved
-    const allItems = await this.matchItemRepo.find({ where: { matchId: item.matchId, ...(tenantId ? { tenantId } : {}) } });
+    const allItems = await this.matchItemRepo.find({
+      where: { matchId: item.matchId, ...(tenantId ? { tenantId } : {}) },
+    });
     const allResolved = allItems.every((i) => i.qtyMatch && i.priceMatch);
 
     if (allResolved) {
@@ -156,7 +196,12 @@ export class InvoiceMatchingService {
     return item;
   }
 
-  async approve(id: string, dto: ApproveMatchDto, userId: string, tenantId?: string): Promise<InvoiceMatch> {
+  async approve(
+    id: string,
+    dto: ApproveMatchDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<InvoiceMatch> {
     const match = await this.findOne(id, tenantId);
     if (match.status !== InvoiceMatchStatus.MATCHED) {
       throw new BadRequestException('Only matched invoices can be approved');
@@ -197,7 +242,7 @@ export class InvoiceMatchingService {
   async getStats(facilityId: string, tenantId?: string) {
     const whereClause = facilityId && facilityId.trim() !== '' ? { facilityId } : {};
     if (tenantId) (whereClause as any).tenantId = tenantId;
-    
+
     const [pending, matched, mismatch, approved, paid, flagged] = await Promise.all([
       this.matchRepo.count({ where: { ...whereClause, status: InvoiceMatchStatus.PENDING } }),
       this.matchRepo.count({ where: { ...whereClause, status: InvoiceMatchStatus.MATCHED } }),
@@ -221,6 +266,14 @@ export class InvoiceMatchingService {
 
     const totalVariance = await qb.getRawOne();
 
-    return { pending, matched, mismatch, approved, paid, flagged, totalVarianceAmount: parseFloat(totalVariance?.sum || '0') };
+    return {
+      pending,
+      matched,
+      mismatch,
+      approved,
+      paid,
+      flagged,
+      totalVarianceAmount: parseFloat(totalVariance?.sum || '0'),
+    };
   }
 }

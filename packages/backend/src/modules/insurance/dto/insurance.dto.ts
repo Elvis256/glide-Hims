@@ -11,8 +11,15 @@ import {
   Min,
   ArrayNotEmpty,
 } from 'class-validator';
-import { ProviderType, ClaimSubmissionMethod } from '../../../database/entities/insurance-provider.entity';
-import { CoverageType, MemberType, PolicyStatus } from '../../../database/entities/insurance-policy.entity';
+import {
+  ProviderType,
+  ClaimSubmissionMethod,
+} from '../../../database/entities/insurance-provider.entity';
+import {
+  CoverageType,
+  MemberType,
+  PolicyStatus,
+} from '../../../database/entities/insurance-policy.entity';
 import { ClaimType } from '../../../database/entities/insurance-claim.entity';
 import { ClaimItemType } from '../../../database/entities/claim-item.entity';
 import { PreAuthType } from '../../../database/entities/pre-authorization.entity';

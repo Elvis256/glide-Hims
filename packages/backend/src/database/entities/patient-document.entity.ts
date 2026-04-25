@@ -13,21 +13,21 @@ export enum DocumentCategory {
   DISCHARGE_SUMMARY = 'discharge_summary',
   REFERRAL = 'referral',
   MEDICAL_HISTORY = 'medical_history',
-  
+
   // Identification - visible to registration, all staff
   IDENTIFICATION = 'identification',
   INSURANCE_CARD = 'insurance_card',
-  
+
   // Financial - visible to finance, cashiers, billing
   FINANCIAL = 'financial',
   RECEIPT = 'receipt',
   CLAIM = 'claim',
   PAYMENT_PROOF = 'payment_proof',
-  
+
   // Administrative - visible to registration, admin
   CONSENT = 'consent',
   REGISTRATION_FORM = 'registration_form',
-  
+
   // General - visible to all with patient access
   OTHER = 'other',
 }
@@ -41,8 +41,23 @@ export const DocumentCategoryAccess: Record<DocumentCategory, string[]> = {
   [DocumentCategory.DISCHARGE_SUMMARY]: ['doctor', 'nurse', 'admin'],
   [DocumentCategory.REFERRAL]: ['doctor', 'nurse', 'admin'],
   [DocumentCategory.MEDICAL_HISTORY]: ['doctor', 'nurse', 'admin'],
-  [DocumentCategory.IDENTIFICATION]: ['receptionist', 'registration', 'cashier', 'finance', 'admin', 'doctor', 'nurse'],
-  [DocumentCategory.INSURANCE_CARD]: ['receptionist', 'registration', 'cashier', 'finance', 'insurance', 'admin'],
+  [DocumentCategory.IDENTIFICATION]: [
+    'receptionist',
+    'registration',
+    'cashier',
+    'finance',
+    'admin',
+    'doctor',
+    'nurse',
+  ],
+  [DocumentCategory.INSURANCE_CARD]: [
+    'receptionist',
+    'registration',
+    'cashier',
+    'finance',
+    'insurance',
+    'admin',
+  ],
   [DocumentCategory.FINANCIAL]: ['cashier', 'finance', 'accountant', 'admin'],
   [DocumentCategory.RECEIPT]: ['cashier', 'finance', 'accountant', 'admin'],
   [DocumentCategory.CLAIM]: ['finance', 'insurance', 'admin'],

@@ -1,9 +1,25 @@
 import {
-  Controller, Get, Post, Patch, Delete, Body, Param, Query, ParseUUIDPipe, Request,
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  Query,
+  ParseUUIDPipe,
+  Request,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { ServicesService } from './services.service';
-import { CreateServiceCategoryDto, UpdateServiceCategoryDto, CreateServiceDto, UpdateServiceDto, CreateServicePriceDto, CreateServicePackageDto } from './services.dto';
+import {
+  CreateServiceCategoryDto,
+  UpdateServiceCategoryDto,
+  CreateServiceDto,
+  UpdateServiceDto,
+  CreateServicePriceDto,
+  CreateServicePackageDto,
+} from './services.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { ServiceTier } from '../../database/entities/service-category.entity';
 
@@ -31,7 +47,11 @@ export class ServicesController {
   @Patch('categories/:id')
   @AuthWithPermissions('services.update')
   @ApiOperation({ summary: 'Update service category' })
-  updateCategory(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateServiceCategoryDto, @Request() req: any) {
+  updateCategory(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateServiceCategoryDto,
+    @Request() req: any,
+  ) {
     return this.service.updateCategory(id, dto, req.user?.tenantId);
   }
 
@@ -60,7 +80,11 @@ export class ServicesController {
   @Patch('packages/:id')
   @AuthWithPermissions('services.update')
   @ApiOperation({ summary: 'Update service package' })
-  updatePackage(@Param('id', ParseUUIDPipe) id: string, @Body() dto: Partial<CreateServicePackageDto>, @Request() req: any) {
+  updatePackage(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: Partial<CreateServicePackageDto>,
+    @Request() req: any,
+  ) {
     return this.service.updatePackage(id, dto, req.user?.tenantId);
   }
 
@@ -96,7 +120,12 @@ export class ServicesController {
     @Query('includeInactive') includeInactive?: string,
     @Request() req?: any,
   ) {
-    return this.service.findAllServices(categoryId, tier, includeInactive === 'true', req?.user?.tenantId);
+    return this.service.findAllServices(
+      categoryId,
+      tier,
+      includeInactive === 'true',
+      req?.user?.tenantId,
+    );
   }
 
   @Get(':id')
@@ -109,7 +138,11 @@ export class ServicesController {
   @Patch(':id')
   @AuthWithPermissions('services.update')
   @ApiOperation({ summary: 'Update service' })
-  updateService(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateServiceDto, @Request() req: any) {
+  updateService(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateServiceDto,
+    @Request() req: any,
+  ) {
     return this.service.updateService(id, dto, req.user?.tenantId);
   }
 

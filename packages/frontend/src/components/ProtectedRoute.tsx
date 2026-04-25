@@ -25,9 +25,13 @@ export default function ProtectedRoute({
     return <Navigate to={loginPath} state={{ from: location }} replace />;
   }
 
-  // Super Admin and Administrator bypass all permission checks
+  // Super Admin bypasses all permission checks (Administrator still requires explicit permissions)
   const matchRole = (r: string) => user?.roles?.some((ur: any) => ur === r || ur?.role === r || ur?.name === r);
-  if (matchRole('Super Admin') || matchRole('Administrator')) {
+  // System admin: only bypass if NOT in a limited-tier tenant context
+  const isFullAccess = user?.isSystemAdmin
+    ? (user.supportAccessTier === undefined || user.supportAccessTier >= 3)
+    : false;
+  if (matchRole('Super Admin') || isFullAccess) {
     return <>{children}</>;
   }
 

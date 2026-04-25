@@ -3,7 +3,12 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { InventoryService } from '../inventory.service';
-import { Item, StockLedger, StockBalance, MovementType } from '../../../database/entities/inventory.entity';
+import {
+  Item,
+  StockLedger,
+  StockBalance,
+  MovementType,
+} from '../../../database/entities/inventory.entity';
 
 // Mock transaction manager factory
 function createMockManager(overrides: Record<string, jest.Mock> = {}) {
@@ -68,15 +73,17 @@ describe('InventoryService', () => {
       const result = await service.createItem(dto as any);
 
       expect(result).toEqual(expect.objectContaining({ code: 'MED-001' }));
-      expect(mockItemRepo.create).toHaveBeenCalledWith(expect.objectContaining({ code: 'MED-001' }));
+      expect(mockItemRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ code: 'MED-001' }),
+      );
     });
 
     it('should throw BadRequestException when item code already exists', async () => {
       mockItemRepo.findOne.mockResolvedValueOnce({ id: 'existing', code: 'MED-001' });
 
-      await expect(
-        service.createItem({ code: 'MED-001', name: 'Test' } as any),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.createItem({ code: 'MED-001', name: 'Test' } as any)).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('should include tenantId when provided', async () => {
@@ -86,9 +93,7 @@ describe('InventoryService', () => {
 
       await service.createItem({ code: 'X', name: 'Y' } as any, 't1');
 
-      expect(mockItemRepo.create).toHaveBeenCalledWith(
-        expect.objectContaining({ tenantId: 't1' }),
-      );
+      expect(mockItemRepo.create).toHaveBeenCalledWith(expect.objectContaining({ tenantId: 't1' }));
     });
   });
 
@@ -104,9 +109,7 @@ describe('InventoryService', () => {
     it('should throw NotFoundException when item not found', async () => {
       mockItemRepo.findOne.mockResolvedValueOnce(null);
 
-      await expect(service.findItemById('nonexistent')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.findItemById('nonexistent')).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -142,9 +145,7 @@ describe('InventoryService', () => {
       expect(result.movementType).toBe(MovementType.PURCHASE);
 
       // Verify balance was updated
-      const savedBalance = mockManager.save.mock.calls.find(
-        (c: any) => c[0] === StockBalance,
-      );
+      const savedBalance = mockManager.save.mock.calls.find((c: any) => c[0] === StockBalance);
       expect(savedBalance).toBeDefined();
       const balanceData = savedBalance![1];
       expect(balanceData.totalQuantity).toBe(150);
@@ -163,9 +164,7 @@ describe('InventoryService', () => {
       expect(result.balanceAfter).toBe(50); // 0 + 50
 
       // Verify new balance was created
-      const createCalls = mockManager.create.mock.calls.filter(
-        (c: any) => c[0] === StockBalance,
-      );
+      const createCalls = mockManager.create.mock.calls.filter((c: any) => c[0] === StockBalance);
       expect(createCalls.length).toBe(1);
       expect(createCalls[0][1]).toEqual(
         expect.objectContaining({
@@ -179,9 +178,9 @@ describe('InventoryService', () => {
     it('should throw NotFoundException when item does not exist', async () => {
       mockItemRepo.findOne.mockResolvedValueOnce(null);
 
-      await expect(
-        service.receiveStock(receiveDto as any, 'user-1'),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.receiveStock(receiveDto as any, 'user-1')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -214,9 +213,7 @@ describe('InventoryService', () => {
       expect(result.balanceAfter).toBe(80);
       expect(result.movementType).toBe(MovementType.ADJUSTMENT);
 
-      const savedBalance = mockManager.save.mock.calls.find(
-        (c: any) => c[0] === StockBalance,
-      );
+      const savedBalance = mockManager.save.mock.calls.find((c: any) => c[0] === StockBalance);
       expect(savedBalance![1].totalQuantity).toBe(80);
     });
 
@@ -235,10 +232,7 @@ describe('InventoryService', () => {
       mockManager.findOne.mockResolvedValueOnce(existingBalance);
       mockDataSource.transaction.mockImplementation(async (cb: any) => cb(mockManager));
 
-      const result = await service.adjustStock(
-        { ...adjustDto, newQuantity: 120 } as any,
-        'user-1',
-      );
+      const result = await service.adjustStock({ ...adjustDto, newQuantity: 120 } as any, 'user-1');
 
       expect(result.quantity).toBe(70); // 120 - 50
       expect(result.balanceAfter).toBe(120);
@@ -289,8 +283,8 @@ describe('InventoryService', () => {
 
       const mockManager = createMockManager();
       mockManager.findOne
-        .mockResolvedValueOnce(fromBalance)  // source balance
-        .mockResolvedValueOnce(toBalance);   // destination balance
+        .mockResolvedValueOnce(fromBalance) // source balance
+        .mockResolvedValueOnce(toBalance); // destination balance
       mockDataSource.transaction.mockImplementation(async (cb: any) => cb(mockManager));
 
       const result = await service.transferStock(transferDto as any, 'user-1');
@@ -322,9 +316,9 @@ describe('InventoryService', () => {
       mockManager.findOne.mockResolvedValueOnce(fromBalance);
       mockDataSource.transaction.mockImplementation(async (cb: any) => cb(mockManager));
 
-      await expect(
-        service.transferStock(transferDto as any, 'user-1'),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.transferStock(transferDto as any, 'user-1')).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('should throw BadRequestException when source has no balance', async () => {
@@ -332,9 +326,9 @@ describe('InventoryService', () => {
       mockManager.findOne.mockResolvedValueOnce(null);
       mockDataSource.transaction.mockImplementation(async (cb: any) => cb(mockManager));
 
-      await expect(
-        service.transferStock(transferDto as any, 'user-1'),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.transferStock(transferDto as any, 'user-1')).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('should create new balance at destination if none exists', async () => {
@@ -349,7 +343,7 @@ describe('InventoryService', () => {
       const mockManager = createMockManager();
       mockManager.findOne
         .mockResolvedValueOnce(fromBalance) // source balance
-        .mockResolvedValueOnce(null);       // no destination balance
+        .mockResolvedValueOnce(null); // no destination balance
       mockDataSource.transaction.mockImplementation(async (cb: any) => cb(mockManager));
 
       const result = await service.transferStock(transferDto as any, 'user-1');
@@ -357,9 +351,7 @@ describe('InventoryService', () => {
       expect(result.to.balanceAfter).toBe(20);
 
       // Verify new balance was created for destination
-      const createCalls = mockManager.create.mock.calls.filter(
-        (c: any) => c[0] === StockBalance,
-      );
+      const createCalls = mockManager.create.mock.calls.filter((c: any) => c[0] === StockBalance);
       expect(createCalls.length).toBe(1);
       expect(createCalls[0][1]).toEqual(
         expect.objectContaining({

@@ -108,12 +108,17 @@ describe('Auth Security', () => {
 
   describe('XSS Sanitization', () => {
     const escapeHtml = (str: string): string =>
-      str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-         .replace(/"/g, '&quot;').replace(/'/g, '&#x27;');
+      str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#x27;');
 
     it('should escape HTML entities', () => {
-      expect(escapeHtml('<script>alert("xss")</script>'))
-        .toBe('&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;');
+      expect(escapeHtml('<script>alert("xss")</script>')).toBe(
+        '&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;',
+      );
     });
 
     it('should handle safe strings unchanged', () => {
@@ -121,7 +126,7 @@ describe('Auth Security', () => {
     });
 
     it('should escape single quotes', () => {
-      expect(escapeHtml("O'Brien")).toBe("O&#x27;Brien");
+      expect(escapeHtml("O'Brien")).toBe('O&#x27;Brien');
     });
   });
 });

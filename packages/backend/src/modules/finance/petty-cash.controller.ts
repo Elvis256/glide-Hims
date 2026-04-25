@@ -7,6 +7,7 @@ import {
   Query,
   Request,
   ParseUUIDPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
@@ -17,9 +18,13 @@ import {
   ReplenishFundDto,
   FundStatementQueryDto,
 } from './dto/petty-cash.dto';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('Petty Cash')
 @ApiBearerAuth()
+@UseGuards(ModuleGuard)
+@RequireModule('finance')
 @Controller('finance/petty-cash')
 export class PettyCashController {
   constructor(private readonly pettyCashService: PettyCashService) {}

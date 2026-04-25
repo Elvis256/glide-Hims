@@ -1,8 +1,17 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan, In, DataSource } from 'typeorm';
-import { SyncQueue, SyncOperation, SyncStatus, SyncableEntity } from '../../database/entities/sync-queue.entity';
-import { SyncConflict, ConflictResolution, ConflictType } from '../../database/entities/sync-conflict.entity';
+import {
+  SyncQueue,
+  SyncOperation,
+  SyncStatus,
+  SyncableEntity,
+} from '../../database/entities/sync-queue.entity';
+import {
+  SyncConflict,
+  ConflictResolution,
+  ConflictType,
+} from '../../database/entities/sync-conflict.entity';
 import { PushChangesDto, SyncChangeDto, ResolveConflictDto } from './dto/sync.dto';
 
 @Injectable()
@@ -54,7 +63,11 @@ export class SyncService {
     return `"${columnName}"`;
   }
 
-  async pushChanges(dto: PushChangesDto, userId: string, tenantId?: string): Promise<{
+  async pushChanges(
+    dto: PushChangesDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<{
     synced: number;
     conflicts: number;
     failed: number;
@@ -69,7 +82,7 @@ export class SyncService {
       try {
         const result = await this.processSingleChange(dto, change, userId, tenantId);
         results.push(result);
-        
+
         if (result.status === 'synced') synced++;
         else if (result.status === 'conflict') conflicts++;
         else failed++;
@@ -114,7 +127,7 @@ export class SyncService {
       // Check for conflicts (for updates and deletes)
       if (change.operation !== SyncOperation.CREATE) {
         const conflict = await this.detectConflict(dto.facilityId, change, tenantId);
-        
+
         if (conflict) {
           queueEntry.status = SyncStatus.CONFLICT;
           queueEntry.conflictId = conflict.id;
@@ -213,7 +226,8 @@ export class SyncService {
           serverPayload: serverData,
           basePayload: change.previousPayload,
           conflictingFields,
-          suggestedMerge: this.attemptAutoMerge(change.payload, serverData, conflictingFields) || undefined,
+          suggestedMerge:
+            this.attemptAutoMerge(change.payload, serverData, conflictingFields) || undefined,
           resolution: ConflictResolution.PENDING,
           clientId: '',
           clientUserId: '',
@@ -276,7 +290,7 @@ export class SyncService {
       case SyncOperation.CREATE: {
         const insertPayload = { ...change.payload };
         if (tenantId) insertPayload.tenant_id = tenantId;
-        const columns = Object.keys(insertPayload).map(k => this.validateColumnName(k));
+        const columns = Object.keys(insertPayload).map((k) => this.validateColumnName(k));
         await this.dataSource.query(
           `INSERT INTO "${tableName}" (${columns.join(', ')}) VALUES (${columns.map((_, i) => `$${i + 1}`).join(', ')})`,
           Object.values(insertPayload),
@@ -285,11 +299,11 @@ export class SyncService {
       }
 
       case SyncOperation.UPDATE: {
-        const filteredKeys = Object.keys(change.payload).filter(k => !['id'].includes(k));
+        const filteredKeys = Object.keys(change.payload).filter((k) => !['id'].includes(k));
         const setClauses = filteredKeys
           .map((k, i) => `${this.validateColumnName(k)} = $${i + 2}`)
           .join(', ');
-        const updateValues = filteredKeys.map(k => change.payload[k]);
+        const updateValues = filteredKeys.map((k) => change.payload[k]);
         let updateSql = `UPDATE "${tableName}" SET ${setClauses}, "updated_at" = NOW() WHERE "id" = $1`;
         const updateParams: any[] = [change.entityId, ...updateValues];
         if (tenantId) {
@@ -376,7 +390,11 @@ export class SyncService {
     };
   }
 
-  async getConflicts(facilityId: string, clientId?: string, tenantId?: string): Promise<SyncConflict[]> {
+  async getConflicts(
+    facilityId: string,
+    clientId?: string,
+    tenantId?: string,
+  ): Promise<SyncConflict[]> {
     const where: any = { facilityId, resolution: ConflictResolution.PENDING };
     if (clientId) where.clientId = clientId;
     if (tenantId) where.tenantId = tenantId;
@@ -387,7 +405,12 @@ export class SyncService {
     });
   }
 
-  async resolveConflict(id: string, dto: ResolveConflictDto, userId: string, tenantId?: string): Promise<SyncConflict> {
+  async resolveConflict(
+    id: string,
+    dto: ResolveConflictDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<SyncConflict> {
     const conflictWhere: any = { id };
     if (tenantId) conflictWhere.tenantId = tenantId;
     const conflict = await this.conflictRepo.findOne({ where: conflictWhere });
@@ -416,7 +439,9 @@ export class SyncService {
         case ConflictResolution.MERGED:
         case ConflictResolution.MANUAL:
           if (!dto.resolvedPayload) {
-            throw new BadRequestException('Resolved payload required for MERGED or MANUAL resolution');
+            throw new BadRequestException(
+              'Resolved payload required for MERGED or MANUAL resolution',
+            );
           }
           payloadToApply = dto.resolvedPayload;
           conflict.resolvedPayload = dto.resolvedPayload;
@@ -424,26 +449,36 @@ export class SyncService {
       }
 
       if (payloadToApply) {
-        await this.applyChange({
-          entityType: conflict.entityType,
-          entityId: conflict.entityId,
-          operation: SyncOperation.UPDATE,
-          clientVersion: conflict.clientVersion,
-          clientTimestamp: conflict.clientTimestamp,
-          payload: payloadToApply,
-        }, tenantId);
+        await this.applyChange(
+          {
+            entityType: conflict.entityType,
+            entityId: conflict.entityId,
+            operation: SyncOperation.UPDATE,
+            clientVersion: conflict.clientVersion,
+            clientTimestamp: conflict.clientTimestamp,
+            payload: payloadToApply,
+          },
+          tenantId,
+        );
       }
 
       // Update related sync queue entry
       const queueWhere: any = { conflictId: id };
       if (tenantId) queueWhere.tenantId = tenantId;
-      await manager.update(SyncQueue, queueWhere, { status: SyncStatus.SYNCED, syncedAt: new Date() });
+      await manager.update(SyncQueue, queueWhere, {
+        status: SyncStatus.SYNCED,
+        syncedAt: new Date(),
+      });
 
       return manager.save(SyncConflict, conflict);
     });
   }
 
-  async getSyncStatus(facilityId: string, clientId: string, tenantId?: string): Promise<{
+  async getSyncStatus(
+    facilityId: string,
+    clientId: string,
+    tenantId?: string,
+  ): Promise<{
     pendingCount: number;
     conflictCount: number;
     lastSyncAt: Date | null;
@@ -481,10 +516,7 @@ export class SyncService {
   async retryFailed(facilityId: string, clientId: string, tenantId?: string): Promise<number> {
     const retryWhere: any = { facilityId, clientId, status: SyncStatus.FAILED };
     if (tenantId) retryWhere.tenantId = tenantId;
-    const result = await this.syncQueueRepo.update(
-      retryWhere,
-      { status: SyncStatus.PENDING },
-    );
+    const result = await this.syncQueueRepo.update(retryWhere, { status: SyncStatus.PENDING });
     return result.affected || 0;
   }
 }

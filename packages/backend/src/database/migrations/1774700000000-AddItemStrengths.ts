@@ -80,7 +80,7 @@ export class AddItemStrengths1774700000000 implements MigrationInterface {
     const facilities = await queryRunner.query(
       `SELECT DISTINCT f.id AS facility_id, f.tenant_id
        FROM facilities f
-       WHERE f.tenant_id IS NOT NULL`
+       WHERE f.tenant_id IS NOT NULL`,
     );
 
     for (const { facility_id, tenant_id } of facilities) {
@@ -89,7 +89,7 @@ export class AddItemStrengths1774700000000 implements MigrationInterface {
           `INSERT INTO item_strengths (code, name, value, unit, facility_id, tenant_id)
            VALUES ($1, $2, $3, $4, $5, $6)
            ON CONFLICT DO NOTHING`,
-          [code, name, value, unit, facility_id, tenant_id]
+          [code, name, value, unit, facility_id, tenant_id],
         );
       }
     }

@@ -1,6 +1,18 @@
-import { 
-  Controller, Get, Post, Body, Patch, Param, Delete, Query, 
-  ParseUUIDPipe, UseInterceptors, UploadedFile, Res, Req, BadRequestException 
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  Query,
+  ParseUUIDPipe,
+  UseInterceptors,
+  UploadedFile,
+  Res,
+  Req,
+  BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiQuery, ApiConsumes, ApiBody } from '@nestjs/swagger';
@@ -8,7 +20,13 @@ import { Response, Request } from 'express';
 import { createReadStream, existsSync, readFileSync } from 'fs';
 import { join, resolve } from 'path';
 import { PatientsService, UploadDocumentDto, CreateNoteDto } from './patients.service';
-import { CreatePatientDto, UpdatePatientDto, PatientSearchDto, MergePatientDto, LinkUserDto } from './dto/patient.dto';
+import {
+  CreatePatientDto,
+  UpdatePatientDto,
+  PatientSearchDto,
+  MergePatientDto,
+  LinkUserDto,
+} from './dto/patient.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { DocumentCategory } from '../../database/entities/patient-document.entity';
 import { validateFileContent } from '../../common/file-validation';
@@ -52,11 +70,11 @@ export class PatientsController {
   async getDocumentCategories(@Req() req: Request) {
     const userRoles = (req as any).user?.roles || [];
     const categories = this.patientsService.getAccessibleCategories(userRoles);
-    return { 
-      data: categories.map(cat => ({
+    return {
+      data: categories.map((cat) => ({
         value: cat,
-        label: cat.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
-      }))
+        label: cat.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+      })),
     };
   }
 
@@ -71,12 +89,13 @@ export class PatientsController {
   @Get('documents/:documentId')
   @AuthWithPermissions('patients.read')
   @ApiOperation({ summary: 'Get document metadata' })
-  async getDocument(
-    @Param('documentId', ParseUUIDPipe) documentId: string,
-    @Req() req: Request,
-  ) {
+  async getDocument(@Param('documentId', ParseUUIDPipe) documentId: string, @Req() req: Request) {
     const userRoles = (req as any).user?.roles || [];
-    const document = await this.patientsService.getDocument(documentId, userRoles, (req as any).user?.tenantId);
+    const document = await this.patientsService.getDocument(
+      documentId,
+      userRoles,
+      (req as any).user?.tenantId,
+    );
     return { data: document };
   }
 
@@ -89,8 +108,12 @@ export class PatientsController {
     @Res() res: Response,
   ) {
     const userRoles = (req as any).user?.roles || [];
-    const document = await this.patientsService.getDocument(documentId, userRoles, (req as any).user?.tenantId);
-    
+    const document = await this.patientsService.getDocument(
+      documentId,
+      userRoles,
+      (req as any).user?.tenantId,
+    );
+
     if (!existsSync(document.filePath)) {
       return res.status(404).json({ message: 'File not found on server' });
     }
@@ -105,14 +128,14 @@ export class PatientsController {
     // Sanitize filename to prevent path traversal / header injection
     const rawName = document.originalFilename || document.documentName || 'download';
     const safeName = rawName
-      .replace(/[/\\]/g, '_')          // strip path separators
-      .replace(/[^\w\s.\-()]/g, '_')   // keep only safe characters
-      .replace(/\.{2,}/g, '.')         // collapse consecutive dots
-      .slice(0, 200);                  // cap length
+      .replace(/[/\\]/g, '_') // strip path separators
+      .replace(/[^\w\s.\-()]/g, '_') // keep only safe characters
+      .replace(/\.{2,}/g, '.') // collapse consecutive dots
+      .slice(0, 200); // cap length
 
     res.setHeader('Content-Type', document.fileType || 'application/octet-stream');
     res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
-    
+
     const fileStream = createReadStream(document.filePath);
     fileStream.pipe(res);
   }
@@ -126,7 +149,12 @@ export class PatientsController {
   ) {
     const userId = (req as any).user?.id;
     const userRoles = (req as any).user?.roles || [];
-    await this.patientsService.deleteDocument(documentId, userId, userRoles, (req as any).user?.tenantId);
+    await this.patientsService.deleteDocument(
+      documentId,
+      userId,
+      userRoles,
+      (req as any).user?.tenantId,
+    );
     return { message: 'Document deleted' };
   }
 
@@ -143,10 +171,7 @@ export class PatientsController {
   @Delete('notes/:noteId')
   @AuthWithPermissions('patients.update')
   @ApiOperation({ summary: 'Delete patient note' })
-  async deleteNote(
-    @Param('noteId', ParseUUIDPipe) noteId: string,
-    @Req() req: Request,
-  ) {
+  async deleteNote(@Param('noteId', ParseUUIDPipe) noteId: string, @Req() req: Request) {
     const userId = (req as any).user?.id;
     const userRoles = (req as any).user?.roles || [];
     await this.patientsService.deleteNote(noteId, userId, userRoles, (req as any).user?.tenantId);
@@ -165,7 +190,11 @@ export class PatientsController {
   @Patch(':id')
   @AuthWithPermissions('patients.update')
   @ApiOperation({ summary: 'Update patient' })
-  async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdatePatientDto, @Req() req: Request) {
+  async update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdatePatientDto,
+    @Req() req: Request,
+  ) {
     const patient = await this.patientsService.update(id, dto, (req as any).user?.tenantId);
     return { message: 'Patient updated', data: patient };
   }
@@ -211,7 +240,13 @@ export class PatientsController {
       }
     }
     const userId = (req as any).user?.id;
-    const document = await this.patientsService.uploadDocument(patientId, file, dto, userId, (req as any).user?.tenantId);
+    const document = await this.patientsService.uploadDocument(
+      patientId,
+      file,
+      dto,
+      userId,
+      (req as any).user?.tenantId,
+    );
     return { message: 'Document uploaded', data: document };
   }
 
@@ -225,19 +260,25 @@ export class PatientsController {
     @Req() req: Request,
   ) {
     const userRoles = (req as any).user?.roles || [];
-    const documents = await this.patientsService.getDocuments(patientId, userRoles, category, (req as any).user?.tenantId);
+    const documents = await this.patientsService.getDocuments(
+      patientId,
+      userRoles,
+      category,
+      (req as any).user?.tenantId,
+    );
     return { data: documents };
   }
 
   @Get(':id/documents/stats')
   @AuthWithPermissions('patients.read')
   @ApiOperation({ summary: 'Get document statistics for patient' })
-  async getDocumentStats(
-    @Param('id', ParseUUIDPipe) patientId: string,
-    @Req() req: Request,
-  ) {
+  async getDocumentStats(@Param('id', ParseUUIDPipe) patientId: string, @Req() req: Request) {
     const userRoles = (req as any).user?.roles || [];
-    const stats = await this.patientsService.getDocumentStats(patientId, userRoles, (req as any).user?.tenantId);
+    const stats = await this.patientsService.getDocumentStats(
+      patientId,
+      userRoles,
+      (req as any).user?.tenantId,
+    );
     return { data: stats };
   }
 
@@ -252,7 +293,12 @@ export class PatientsController {
     @Req() req: Request,
   ) {
     const userId = (req as any).user?.id;
-    const note = await this.patientsService.createNote(patientId, dto, userId, (req as any).user?.tenantId);
+    const note = await this.patientsService.createNote(
+      patientId,
+      dto,
+      userId,
+      (req as any).user?.tenantId,
+    );
     return { message: 'Note created', data: note };
   }
 
@@ -278,7 +324,13 @@ export class PatientsController {
     const userId = (req as any).user?.id;
     const tenantId = (req as any).user?.tenantId;
     if (!tenantId) throw new BadRequestException('Tenant ID is required');
-    const result = await this.patientsService.mergePatients(primaryId, secondaryId, userId, tenantId, body.reason);
+    const result = await this.patientsService.mergePatients(
+      primaryId,
+      secondaryId,
+      userId,
+      tenantId,
+      body.reason,
+    );
     return { message: 'Patients merged successfully', data: result };
   }
 
@@ -301,7 +353,11 @@ export class PatientsController {
     @Body() body: LinkUserDto,
     @Req() req: Request,
   ) {
-    const patient = await this.patientsService.linkUser(patientId, body.userId, (req as any).user?.tenantId);
+    const patient = await this.patientsService.linkUser(
+      patientId,
+      body.userId,
+      (req as any).user?.tenantId,
+    );
     return { message: 'User linked to patient successfully', data: patient };
   }
 

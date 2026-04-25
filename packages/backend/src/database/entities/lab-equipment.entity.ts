@@ -171,10 +171,10 @@ export class LabEquipment extends BaseEntity {
   @Column({ type: 'text', nullable: true })
   notes?: string;
 
-  @OneToMany(() => EquipmentCalibration, cal => cal.equipment)
+  @OneToMany(() => EquipmentCalibration, (cal) => cal.equipment)
   calibrations: EquipmentCalibration[];
 
-  @OneToMany(() => EquipmentMaintenance, maint => maint.equipment)
+  @OneToMany(() => EquipmentMaintenance, (maint) => maint.equipment)
   maintenances: EquipmentMaintenance[];
 }
 
@@ -183,7 +183,7 @@ export class EquipmentCalibration extends BaseEntity {
   @Column({ type: 'uuid', name: 'equipment_id' })
   equipmentId: string;
 
-  @ManyToOne(() => LabEquipment, eq => eq.calibrations)
+  @ManyToOne(() => LabEquipment, (eq) => eq.calibrations)
   @JoinColumn({ name: 'equipment_id' })
   equipment: LabEquipment;
 
@@ -226,7 +226,7 @@ export class EquipmentMaintenance extends BaseEntity {
   @Column({ type: 'uuid', name: 'equipment_id' })
   equipmentId: string;
 
-  @ManyToOne(() => LabEquipment, eq => eq.maintenances)
+  @ManyToOne(() => LabEquipment, (eq) => eq.maintenances)
   @JoinColumn({ name: 'equipment_id' })
   equipment: LabEquipment;
 

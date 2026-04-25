@@ -29,7 +29,10 @@ export class AssetsService {
     const asset = this.assetRepo.create({
       ...data,
       totalCost: (Number(data.acquisitionCost) || 0) + (Number(data.installationCost) || 0),
-      bookValue: (Number(data.acquisitionCost) || 0) + (Number(data.installationCost) || 0) - (Number(data.salvageValue) || 0),
+      bookValue:
+        (Number(data.acquisitionCost) || 0) +
+        (Number(data.installationCost) || 0) -
+        (Number(data.salvageValue) || 0),
       accumulatedDepreciation: 0,
       ...(tenantId ? { tenantId } : {}),
     });
@@ -37,7 +40,9 @@ export class AssetsService {
   }
 
   async updateAsset(id: string, data: Partial<FixedAsset>, tenantId?: string): Promise<FixedAsset> {
-    const asset = await this.assetRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
+    const asset = await this.assetRepo.findOne({
+      where: { id, ...(tenantId ? { tenantId } : {}) },
+    });
     if (!asset) throw new NotFoundException('Asset not found');
     Object.assign(asset, data);
     return this.assetRepo.save(asset);
@@ -46,19 +51,30 @@ export class AssetsService {
   async getAsset(id: string, tenantId?: string): Promise<FixedAsset> {
     const asset = await this.assetRepo.findOne({
       where: { id, ...(tenantId ? { tenantId } : {}) },
-      relations: ['facility', 'department', 'custodian', 'depreciationRecords', 'maintenanceRecords'],
+      relations: [
+        'facility',
+        'department',
+        'custodian',
+        'depreciationRecords',
+        'maintenanceRecords',
+      ],
     });
     if (!asset) throw new NotFoundException('Asset not found');
     return asset;
   }
 
-  async listAssets(facilityId: string, filters?: {
-    category?: string;
-    status?: AssetStatus;
-    departmentId?: string;
-    search?: string;
-  }, tenantId?: string): Promise<FixedAsset[]> {
-    const qb = this.assetRepo.createQueryBuilder('asset')
+  async listAssets(
+    facilityId: string,
+    filters?: {
+      category?: string;
+      status?: AssetStatus;
+      departmentId?: string;
+      search?: string;
+    },
+    tenantId?: string,
+  ): Promise<FixedAsset[]> {
+    const qb = this.assetRepo
+      .createQueryBuilder('asset')
       .leftJoinAndSelect('asset.department', 'department')
       .leftJoinAndSelect('asset.custodian', 'custodian')
       .where('asset.facilityId = :facilityId', { facilityId });
@@ -73,8 +89,10 @@ export class AssetsService {
       qb.andWhere('asset.departmentId = :departmentId', { departmentId: filters.departmentId });
     }
     if (filters?.search) {
-      qb.andWhere('(asset.name ILIKE :search OR asset.assetCode ILIKE :search OR asset.serialNumber ILIKE :search)',
-        { search: `%${filters.search}%` });
+      qb.andWhere(
+        '(asset.name ILIKE :search OR asset.assetCode ILIKE :search OR asset.serialNumber ILIKE :search)',
+        { search: `%${filters.search}%` },
+      );
     }
 
     if (tenantId) {
@@ -85,7 +103,9 @@ export class AssetsService {
   }
 
   async deleteAsset(id: string, tenantId?: string): Promise<void> {
-    const asset = await this.assetRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
+    const asset = await this.assetRepo.findOne({
+      where: { id, ...(tenantId ? { tenantId } : {}) },
+    });
     if (!asset) throw new NotFoundException('Asset not found');
     await this.assetRepo.softDelete(id);
   }
@@ -94,26 +114,31 @@ export class AssetsService {
 
   calculateMonthlyDepreciation(asset: FixedAsset): number {
     const depreciableAmount = Number(asset.totalCost) - Number(asset.salvageValue);
-    
+
     switch (asset.depreciationMethod) {
       case DepreciationMethod.STRAIGHT_LINE:
         return depreciableAmount / asset.usefulLifeMonths;
 
       case DepreciationMethod.DECLINING_BALANCE:
-        const rate = asset.depreciationRate || (100 / asset.usefulLifeMonths * 12);
+        const rate = asset.depreciationRate || (100 / asset.usefulLifeMonths) * 12;
         const currentValue = Number(asset.bookValue);
-        return (currentValue * rate / 100) / 12;
+        return (currentValue * rate) / 100 / 12;
 
       case DepreciationMethod.DOUBLE_DECLINING:
-        const ddRate = (2 * 100 / (asset.usefulLifeMonths / 12)) / 12;
-        return (Number(asset.bookValue) * ddRate / 100);
+        const ddRate = (2 * 100) / (asset.usefulLifeMonths / 12) / 12;
+        return (Number(asset.bookValue) * ddRate) / 100;
 
       default:
         return depreciableAmount / asset.usefulLifeMonths;
     }
   }
 
-  async runDepreciation(facilityId: string, year: number, month: number, tenantId?: string): Promise<AssetDepreciation[]> {
+  async runDepreciation(
+    facilityId: string,
+    year: number,
+    month: number,
+    tenantId?: string,
+  ): Promise<AssetDepreciation[]> {
     const assets = await this.assetRepo.find({
       where: {
         facilityId,
@@ -146,7 +171,7 @@ export class AssetsService {
       if (Number(asset.bookValue) <= Number(asset.salvageValue)) continue;
 
       const monthlyDep = this.calculateMonthlyDepreciation(asset);
-      let depAmount = Math.min(monthlyDep, Number(asset.bookValue) - Number(asset.salvageValue));
+      const depAmount = Math.min(monthlyDep, Number(asset.bookValue) - Number(asset.salvageValue));
 
       const depRecord = this.depreciationRepo.create({
         assetId: asset.id,
@@ -179,13 +204,21 @@ export class AssetsService {
     });
   }
 
-  async getDepreciationReport(facilityId: string, year: number, month?: number, tenantId?: string): Promise<{
+  async getDepreciationReport(
+    facilityId: string,
+    year: number,
+    month?: number,
+    tenantId?: string,
+  ): Promise<{
     totalAssets: number;
     totalCost: number;
     totalAccumulatedDepreciation: number;
     totalBookValue: number;
     periodDepreciation: number;
-    byCategory: Record<string, { count: number; cost: number; accumulated: number; bookValue: number }>;
+    byCategory: Record<
+      string,
+      { count: number; cost: number; accumulated: number; bookValue: number }
+    >;
   }> {
     const assets = await this.assetRepo.find({
       where: { facilityId, status: AssetStatus.ACTIVE, ...(tenantId ? { tenantId } : {}) },
@@ -196,7 +229,10 @@ export class AssetsService {
 
     const periodDeps = await this.depreciationRepo.find({ where: depQuery });
 
-    const byCategory: Record<string, { count: number; cost: number; accumulated: number; bookValue: number }> = {};
+    const byCategory: Record<
+      string,
+      { count: number; cost: number; accumulated: number; bookValue: number }
+    > = {};
 
     for (const asset of assets) {
       if (!byCategory[asset.category]) {
@@ -211,7 +247,10 @@ export class AssetsService {
     return {
       totalAssets: assets.length,
       totalCost: assets.reduce((sum, a) => sum + Number(a.totalCost), 0),
-      totalAccumulatedDepreciation: assets.reduce((sum, a) => sum + Number(a.accumulatedDepreciation), 0),
+      totalAccumulatedDepreciation: assets.reduce(
+        (sum, a) => sum + Number(a.accumulatedDepreciation),
+        0,
+      ),
       totalBookValue: assets.reduce((sum, a) => sum + Number(a.bookValue), 0),
       periodDepreciation: periodDeps.reduce((sum, d) => sum + Number(d.depreciationAmount), 0),
       byCategory,
@@ -220,8 +259,13 @@ export class AssetsService {
 
   // ==================== MAINTENANCE ====================
 
-  async recordMaintenance(data: Partial<AssetMaintenance>, tenantId?: string): Promise<AssetMaintenance> {
-    const asset = await this.assetRepo.findOne({ where: { id: data.assetId, ...(tenantId ? { tenantId } : {}) } });
+  async recordMaintenance(
+    data: Partial<AssetMaintenance>,
+    tenantId?: string,
+  ): Promise<AssetMaintenance> {
+    const asset = await this.assetRepo.findOne({
+      where: { id: data.assetId, ...(tenantId ? { tenantId } : {}) },
+    });
     if (!asset) throw new NotFoundException('Asset not found');
 
     const maintenance = this.maintenanceRepo.create({ ...data, ...(tenantId ? { tenantId } : {}) });
@@ -243,7 +287,11 @@ export class AssetsService {
     });
   }
 
-  async getMaintenanceDue(facilityId: string, daysAhead = 30, tenantId?: string): Promise<FixedAsset[]> {
+  async getMaintenanceDue(
+    facilityId: string,
+    daysAhead = 30,
+    tenantId?: string,
+  ): Promise<FixedAsset[]> {
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + daysAhead);
 
@@ -261,7 +309,9 @@ export class AssetsService {
   // ==================== TRANSFERS ====================
 
   async initiateTransfer(data: Partial<AssetTransfer>, tenantId?: string): Promise<AssetTransfer> {
-    const asset = await this.assetRepo.findOne({ where: { id: data.assetId, ...(tenantId ? { tenantId } : {}) } });
+    const asset = await this.assetRepo.findOne({
+      where: { id: data.assetId, ...(tenantId ? { tenantId } : {}) },
+    });
     if (!asset) throw new NotFoundException('Asset not found');
 
     const transfer = this.transferRepo.create({
@@ -275,11 +325,19 @@ export class AssetsService {
     return this.transferRepo.save(transfer);
   }
 
-  async completeTransfer(transferId: string, receivedBy: string, tenantId?: string): Promise<AssetTransfer> {
-    const transfer = await this.transferRepo.findOne({ where: { id: transferId, ...(tenantId ? { tenantId } : {}) } });
+  async completeTransfer(
+    transferId: string,
+    receivedBy: string,
+    tenantId?: string,
+  ): Promise<AssetTransfer> {
+    const transfer = await this.transferRepo.findOne({
+      where: { id: transferId, ...(tenantId ? { tenantId } : {}) },
+    });
     if (!transfer) throw new NotFoundException('Transfer not found');
 
-    const asset = await this.assetRepo.findOne({ where: { id: transfer.assetId, ...(tenantId ? { tenantId } : {}) } });
+    const asset = await this.assetRepo.findOne({
+      where: { id: transfer.assetId, ...(tenantId ? { tenantId } : {}) },
+    });
     if (!asset) throw new NotFoundException('Asset not found');
 
     // Update asset location
@@ -303,13 +361,19 @@ export class AssetsService {
 
   // ==================== DISPOSAL ====================
 
-  async disposeAsset(id: string, data: {
-    disposalDate: Date;
-    disposalValue: number;
-    disposalReason: string;
-    status: AssetStatus;
-  }, tenantId?: string): Promise<FixedAsset> {
-    const asset = await this.assetRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
+  async disposeAsset(
+    id: string,
+    data: {
+      disposalDate: Date;
+      disposalValue: number;
+      disposalReason: string;
+      status: AssetStatus;
+    },
+    tenantId?: string,
+  ): Promise<FixedAsset> {
+    const asset = await this.assetRepo.findOne({
+      where: { id, ...(tenantId ? { tenantId } : {}) },
+    });
     if (!asset) throw new NotFoundException('Asset not found');
 
     asset.disposalDate = data.disposalDate;
@@ -330,7 +394,10 @@ export class AssetsService {
     });
   }
 
-  async getAssetValuation(facilityId: string, tenantId?: string): Promise<{
+  async getAssetValuation(
+    facilityId: string,
+    tenantId?: string,
+  ): Promise<{
     totalOriginalCost: number;
     totalAccumulatedDepreciation: number;
     totalNetBookValue: number;
@@ -343,14 +410,25 @@ export class AssetsService {
 
     return {
       totalOriginalCost: assets.reduce((sum, a) => sum + Number(a.totalCost), 0),
-      totalAccumulatedDepreciation: assets.reduce((sum, a) => sum + Number(a.accumulatedDepreciation), 0),
+      totalAccumulatedDepreciation: assets.reduce(
+        (sum, a) => sum + Number(a.accumulatedDepreciation),
+        0,
+      ),
       totalNetBookValue: assets.reduce((sum, a) => sum + Number(a.bookValue), 0),
-      totalMarketValue: assets.reduce((sum, a) => sum + Number(a.currentMarketValue || a.bookValue), 0),
+      totalMarketValue: assets.reduce(
+        (sum, a) => sum + Number(a.currentMarketValue || a.bookValue),
+        0,
+      ),
       assetCount: assets.length,
     };
   }
 
-  async getLossOnDisposalReport(facilityId: string, startDate: Date, endDate: Date, tenantId?: string): Promise<{
+  async getLossOnDisposalReport(
+    facilityId: string,
+    startDate: Date,
+    endDate: Date,
+    tenantId?: string,
+  ): Promise<{
     disposedAssets: FixedAsset[];
     totalBookValueAtDisposal: number;
     totalDisposalValue: number;

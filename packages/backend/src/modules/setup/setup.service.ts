@@ -1,4 +1,10 @@
-import { Injectable, BadRequestException, Logger, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  Logger,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { Repository, DataSource } from 'typeorm';
@@ -24,7 +30,7 @@ import {
 const DEFAULT_PERMISSIONS = [
   // Dashboard
   { code: 'dashboard.read', name: 'View Dashboard', module: 'dashboard' },
-  
+
   // Users & Access
   { code: 'users.read', name: 'View Users', module: 'users' },
   { code: 'users.create', name: 'Create Users', module: 'users' },
@@ -34,53 +40,53 @@ const DEFAULT_PERMISSIONS = [
   { code: 'roles.create', name: 'Create Roles', module: 'roles' },
   { code: 'roles.update', name: 'Update Roles', module: 'roles' },
   { code: 'roles.delete', name: 'Delete Roles', module: 'roles' },
-  
+
   // Patients
   { code: 'patients.read', name: 'View Patients', module: 'patients' },
   { code: 'patients.create', name: 'Register Patients', module: 'patients' },
   { code: 'patients.update', name: 'Update Patients', module: 'patients' },
   { code: 'patients.delete', name: 'Delete Patients', module: 'patients' },
-  
+
   // Encounters
   { code: 'encounters.read', name: 'View Encounters', module: 'encounters' },
   { code: 'encounters.create', name: 'Create Encounters', module: 'encounters' },
   { code: 'encounters.update', name: 'Update Encounters', module: 'encounters' },
   { code: 'encounters.delete', name: 'Delete Encounters', module: 'encounters' },
-  
+
   // Vitals
   { code: 'vitals.read', name: 'View Vitals', module: 'vitals' },
   { code: 'vitals.create', name: 'Record Vitals', module: 'vitals' },
   { code: 'vitals.update', name: 'Update Vitals', module: 'vitals' },
-  
+
   // Clinical Notes
   { code: 'clinical_notes.read', name: 'View Clinical Notes', module: 'clinical_notes' },
   { code: 'clinical_notes.create', name: 'Create Clinical Notes', module: 'clinical_notes' },
   { code: 'clinical_notes.update', name: 'Update Clinical Notes', module: 'clinical_notes' },
-  
+
   // Orders
   { code: 'orders.read', name: 'View Orders', module: 'orders' },
   { code: 'orders.create', name: 'Create Orders', module: 'orders' },
   { code: 'orders.update', name: 'Update Orders', module: 'orders' },
   { code: 'orders.delete', name: 'Cancel Orders', module: 'orders' },
-  
+
   // Lab
   { code: 'lab.read', name: 'View Lab', module: 'lab' },
   { code: 'lab.create', name: 'Create Lab Orders', module: 'lab' },
   { code: 'lab.update', name: 'Update Lab Results', module: 'lab' },
   { code: 'lab.delete', name: 'Cancel Lab Orders', module: 'lab' },
-  
+
   // Radiology
   { code: 'radiology.read', name: 'View Radiology', module: 'radiology' },
   { code: 'radiology.create', name: 'Create Radiology Orders', module: 'radiology' },
   { code: 'radiology.update', name: 'Update Radiology Results', module: 'radiology' },
   { code: 'radiology.delete', name: 'Cancel Radiology Orders', module: 'radiology' },
-  
+
   // Pharmacy
   { code: 'pharmacy.read', name: 'View Pharmacy', module: 'pharmacy' },
   { code: 'pharmacy.create', name: 'Create Prescriptions', module: 'pharmacy' },
   { code: 'pharmacy.update', name: 'Dispense Medications', module: 'pharmacy' },
   { code: 'pharmacy.delete', name: 'Cancel Prescriptions', module: 'pharmacy' },
-  
+
   // Billing
   { code: 'billing.read', name: 'View Billing', module: 'billing' },
   { code: 'billing.create', name: 'Create Invoices', module: 'billing' },
@@ -88,14 +94,14 @@ const DEFAULT_PERMISSIONS = [
   { code: 'billing.delete', name: 'Void Invoices', module: 'billing' },
   { code: 'billing.collect_payment', name: 'Collect Payments', module: 'billing' },
   { code: 'billing.refund', name: 'Process Refunds', module: 'billing' },
-  
+
   // Insurance
   { code: 'insurance.read', name: 'View Insurance', module: 'insurance' },
   { code: 'insurance.create', name: 'Add Insurance Policies', module: 'insurance' },
   { code: 'insurance.update', name: 'Update Insurance', module: 'insurance' },
   { code: 'insurance.verify', name: 'Verify Coverage', module: 'insurance' },
   { code: 'insurance.claims', name: 'Manage Claims', module: 'insurance' },
-  
+
   // Inventory/Stores
   { code: 'inventory.read', name: 'View Inventory', module: 'inventory' },
   { code: 'inventory.create', name: 'Add Stock', module: 'inventory' },
@@ -103,30 +109,30 @@ const DEFAULT_PERMISSIONS = [
   { code: 'inventory.delete', name: 'Remove Stock', module: 'inventory' },
   { code: 'inventory.transfer', name: 'Transfer Stock', module: 'inventory' },
   { code: 'inventory.adjust', name: 'Adjust Stock', module: 'inventory' },
-  
+
   // IPD/Wards
   { code: 'ipd.read', name: 'View IPD', module: 'ipd' },
   { code: 'ipd.create', name: 'Admit Patients', module: 'ipd' },
   { code: 'ipd.update', name: 'Update Admissions', module: 'ipd' },
   { code: 'ipd.discharge', name: 'Discharge Patients', module: 'ipd' },
   { code: 'ipd.transfer', name: 'Transfer Patients', module: 'ipd' },
-  
+
   // Emergency
   { code: 'emergency.read', name: 'View Emergency', module: 'emergency' },
   { code: 'emergency.create', name: 'Register Emergency', module: 'emergency' },
   { code: 'emergency.update', name: 'Update Emergency', module: 'emergency' },
   { code: 'emergency.triage', name: 'Triage Patients', module: 'emergency' },
-  
+
   // Theatre/Surgery
   { code: 'theatre.read', name: 'View Theatre', module: 'theatre' },
   { code: 'theatre.create', name: 'Schedule Surgery', module: 'theatre' },
   { code: 'theatre.update', name: 'Update Surgery', module: 'theatre' },
-  
+
   // Maternity
   { code: 'maternity.read', name: 'View Maternity', module: 'maternity' },
   { code: 'maternity.create', name: 'Register ANC', module: 'maternity' },
   { code: 'maternity.update', name: 'Update Maternity', module: 'maternity' },
-  
+
   // HR
   { code: 'hr.read', name: 'View HR', module: 'hr' },
   { code: 'hr.create', name: 'Add Employees', module: 'hr' },
@@ -134,11 +140,11 @@ const DEFAULT_PERMISSIONS = [
   { code: 'hr.delete', name: 'Remove Employees', module: 'hr' },
   { code: 'hr.payroll', name: 'Manage Payroll', module: 'hr' },
   { code: 'hr.leave', name: 'Manage Leave', module: 'hr' },
-  
+
   // Reports
   { code: 'reports.read', name: 'View Reports', module: 'reports' },
   { code: 'reports.export', name: 'Export Reports', module: 'reports' },
-  
+
   // Settings/Admin
   { code: 'settings.read', name: 'View Settings', module: 'settings' },
   { code: 'settings.update', name: 'Update Settings', module: 'settings' },
@@ -146,13 +152,13 @@ const DEFAULT_PERMISSIONS = [
   { code: 'facilities.create', name: 'Create Facilities', module: 'facilities' },
   { code: 'facilities.update', name: 'Update Facilities', module: 'facilities' },
   { code: 'facilities.delete', name: 'Delete Facilities', module: 'facilities' },
-  
+
   // Services & Pricing
   { code: 'services.read', name: 'View Services', module: 'services' },
   { code: 'services.create', name: 'Create Services', module: 'services' },
   { code: 'services.update', name: 'Update Services', module: 'services' },
   { code: 'services.delete', name: 'Delete Services', module: 'services' },
-  
+
   // Appointments/Queue
   { code: 'appointments.read', name: 'View Appointments', module: 'appointments' },
   { code: 'appointments.create', name: 'Book Appointments', module: 'appointments' },
@@ -168,108 +174,192 @@ const DEFAULT_ROLES = [
     name: 'Doctor',
     description: 'Medical doctors and consultants',
     permissions: [
-      'dashboard.read', 'patients.read', 'patients.update',
-      'encounters.read', 'encounters.create', 'encounters.update',
-      'vitals.read', 'clinical_notes.read', 'clinical_notes.create', 'clinical_notes.update',
-      'orders.read', 'orders.create', 'lab.read', 'lab.create',
-      'radiology.read', 'radiology.create', 'pharmacy.read', 'pharmacy.create',
-      'ipd.read', 'ipd.create', 'ipd.update', 'ipd.discharge',
-      'reports.read', 'appointments.read', 'queue.read'
-    ]
+      'dashboard.read',
+      'patients.read',
+      'patients.update',
+      'encounters.read',
+      'encounters.create',
+      'encounters.update',
+      'vitals.read',
+      'clinical_notes.read',
+      'clinical_notes.create',
+      'clinical_notes.update',
+      'orders.read',
+      'orders.create',
+      'lab.read',
+      'lab.create',
+      'radiology.read',
+      'radiology.create',
+      'pharmacy.read',
+      'pharmacy.create',
+      'ipd.read',
+      'ipd.create',
+      'ipd.update',
+      'ipd.discharge',
+      'reports.read',
+      'appointments.read',
+      'queue.read',
+    ],
   },
   {
     name: 'Nurse',
     description: 'Nursing staff',
     permissions: [
-      'dashboard.read', 'patients.read', 'patients.update',
-      'encounters.read', 'encounters.update',
-      'vitals.read', 'vitals.create', 'vitals.update',
-      'clinical_notes.read', 'clinical_notes.create',
-      'orders.read', 'lab.read', 'pharmacy.read',
-      'ipd.read', 'ipd.update', 'emergency.read', 'emergency.triage',
-      'queue.read', 'queue.manage'
-    ]
+      'dashboard.read',
+      'patients.read',
+      'patients.update',
+      'encounters.read',
+      'encounters.update',
+      'vitals.read',
+      'vitals.create',
+      'vitals.update',
+      'clinical_notes.read',
+      'clinical_notes.create',
+      'orders.read',
+      'lab.read',
+      'pharmacy.read',
+      'ipd.read',
+      'ipd.update',
+      'emergency.read',
+      'emergency.triage',
+      'queue.read',
+      'queue.manage',
+    ],
   },
   {
     name: 'Receptionist',
     description: 'Front desk and registration staff',
     permissions: [
-      'dashboard.read', 'patients.read', 'patients.create', 'patients.update',
-      'encounters.read', 'encounters.create',
-      'appointments.read', 'appointments.create', 'appointments.update', 'appointments.delete',
-      'queue.read', 'queue.manage', 'billing.read',
-      'insurance.read', 'insurance.verify'
-    ]
+      'dashboard.read',
+      'patients.read',
+      'patients.create',
+      'patients.update',
+      'encounters.read',
+      'encounters.create',
+      'appointments.read',
+      'appointments.create',
+      'appointments.update',
+      'appointments.delete',
+      'queue.read',
+      'queue.manage',
+      'billing.read',
+      'insurance.read',
+      'insurance.verify',
+    ],
   },
   {
     name: 'Lab Technician',
     description: 'Laboratory staff',
     permissions: [
-      'dashboard.read', 'patients.read',
-      'orders.read', 'lab.read', 'lab.create', 'lab.update',
-      'reports.read'
-    ]
+      'dashboard.read',
+      'patients.read',
+      'orders.read',
+      'lab.read',
+      'lab.create',
+      'lab.update',
+      'reports.read',
+    ],
   },
   {
     name: 'Pharmacist',
     description: 'Pharmacy staff',
     permissions: [
-      'dashboard.read', 'patients.read',
-      'orders.read', 'pharmacy.read', 'pharmacy.update',
-      'inventory.read', 'inventory.update',
-      'billing.read', 'billing.create', 'billing.collect_payment',
-      'reports.read'
-    ]
+      'dashboard.read',
+      'patients.read',
+      'orders.read',
+      'pharmacy.read',
+      'pharmacy.update',
+      'inventory.read',
+      'inventory.update',
+      'billing.read',
+      'billing.create',
+      'billing.collect_payment',
+      'reports.read',
+    ],
   },
   {
     name: 'Cashier',
     description: 'Billing and payment collection staff',
     permissions: [
-      'dashboard.read', 'patients.read',
-      'billing.read', 'billing.create', 'billing.update', 'billing.collect_payment',
-      'insurance.read', 'insurance.verify',
-      'reports.read'
-    ]
+      'dashboard.read',
+      'patients.read',
+      'billing.read',
+      'billing.create',
+      'billing.update',
+      'billing.collect_payment',
+      'insurance.read',
+      'insurance.verify',
+      'reports.read',
+    ],
   },
   {
     name: 'Radiologist',
     description: 'Radiology/Imaging staff',
     permissions: [
-      'dashboard.read', 'patients.read',
-      'orders.read', 'radiology.read', 'radiology.create', 'radiology.update',
-      'reports.read'
-    ]
+      'dashboard.read',
+      'patients.read',
+      'orders.read',
+      'radiology.read',
+      'radiology.create',
+      'radiology.update',
+      'reports.read',
+    ],
   },
   {
     name: 'Store Keeper',
     description: 'Inventory and stores management',
     permissions: [
       'dashboard.read',
-      'inventory.read', 'inventory.create', 'inventory.update', 'inventory.transfer', 'inventory.adjust',
-      'reports.read'
-    ]
+      'inventory.read',
+      'inventory.create',
+      'inventory.update',
+      'inventory.transfer',
+      'inventory.adjust',
+      'reports.read',
+    ],
   },
   {
     name: 'HR Manager',
     description: 'Human resources management',
     permissions: [
-      'dashboard.read', 'users.read',
-      'hr.read', 'hr.create', 'hr.update', 'hr.delete', 'hr.payroll', 'hr.leave',
-      'reports.read', 'reports.export'
-    ]
+      'dashboard.read',
+      'users.read',
+      'hr.read',
+      'hr.create',
+      'hr.update',
+      'hr.delete',
+      'hr.payroll',
+      'hr.leave',
+      'reports.read',
+      'reports.export',
+    ],
   },
   {
     name: 'Administrator',
     description: 'System administrator with full access to settings',
     permissions: [
       'dashboard.read',
-      'users.read', 'users.create', 'users.update', 'users.delete',
-      'roles.read', 'roles.create', 'roles.update', 'roles.delete',
-      'settings.read', 'settings.update',
-      'facilities.read', 'facilities.create', 'facilities.update', 'facilities.delete',
-      'services.read', 'services.create', 'services.update', 'services.delete',
-      'reports.read', 'reports.export'
-    ]
+      'users.read',
+      'users.create',
+      'users.update',
+      'users.delete',
+      'roles.read',
+      'roles.create',
+      'roles.update',
+      'roles.delete',
+      'settings.read',
+      'settings.update',
+      'facilities.read',
+      'facilities.create',
+      'facilities.update',
+      'facilities.delete',
+      'services.read',
+      'services.create',
+      'services.update',
+      'services.delete',
+      'reports.read',
+      'reports.export',
+    ],
   },
 ];
 
@@ -297,8 +387,8 @@ export class SetupService {
   /**
    * Check if initial setup has been completed
    */
-  async getSetupStatus(): Promise<{ 
-    isSetupComplete: boolean; 
+  async getSetupStatus(): Promise<{
+    isSetupComplete: boolean;
     deploymentMode: string;
     organizationName?: string;
     facilityName?: string;
@@ -311,11 +401,11 @@ export class SetupService {
       const tenantCount = await this.tenantRepo.count({ where: { status: 'active' } });
 
       // Check if any tenant exists
-      const tenant = await this.tenantRepo.findOne({ 
+      const tenant = await this.tenantRepo.findOne({
         where: { status: 'active' },
-        order: { createdAt: 'ASC' }
+        order: { createdAt: 'ASC' },
       });
-      
+
       if (!tenant) {
         return { isSetupComplete: false, deploymentMode, tenantCount: 0 };
       }
@@ -324,7 +414,7 @@ export class SetupService {
       let setupSetting = null;
       try {
         setupSetting = await this.settingRepo.findOne({
-          where: { key: 'setup_complete', tenantId: tenant.id }
+          where: { key: 'setup_complete', tenantId: tenant.id },
         });
       } catch (e) {
         // Table might not exist yet
@@ -334,7 +424,7 @@ export class SetupService {
       // Get main facility
       const facility = await this.facilityRepo.findOne({
         where: { tenantId: tenant.id, status: 'active' },
-        order: { createdAt: 'ASC' }
+        order: { createdAt: 'ASC' },
       });
 
       return {
@@ -355,8 +445,8 @@ export class SetupService {
   /**
    * Initialize the system with organization, facility, and admin user
    */
-  async initializeSetup(dto: InitializeSetupDto): Promise<{ 
-    success: boolean; 
+  async initializeSetup(dto: InitializeSetupDto): Promise<{
+    success: boolean;
     message: string;
     tenantId: string;
     facilityId: string;
@@ -365,7 +455,9 @@ export class SetupService {
     // Check if setup already completed
     const status = await this.getSetupStatus();
     if (status.isSetupComplete) {
-      throw new BadRequestException('Setup has already been completed. This action is not allowed.');
+      throw new BadRequestException(
+        'Setup has already been completed. This action is not allowed.',
+      );
     }
 
     // No global username/email check — uniqueness is per-tenant.
@@ -382,7 +474,10 @@ export class SetupService {
       // Ensure slug uniqueness using raw SQL (tenants table lacks tenant_id column)
       let finalSlug = slug;
       let suffix = 1;
-      while ((await queryRunner.query(`SELECT id FROM tenants WHERE slug = $1 LIMIT 1`, [finalSlug])).length > 0) {
+      while (
+        (await queryRunner.query(`SELECT id FROM tenants WHERE slug = $1 LIMIT 1`, [finalSlug]))
+          .length > 0
+      ) {
         finalSlug = `${slug}-${suffix++}`;
       }
       const tenant = queryRunner.manager.create(Tenant, {
@@ -430,9 +525,9 @@ export class SetupService {
       for (const perm of DEFAULT_PERMISSIONS) {
         // Check if permission already exists
         let permission = await queryRunner.manager.findOne(Permission, {
-          where: { code: perm.code }
+          where: { code: perm.code },
         });
-        
+
         // Create only if it doesn't exist
         if (!permission) {
           permission = queryRunner.manager.create(Permission, perm);
@@ -444,9 +539,9 @@ export class SetupService {
 
       // 4. Load or create Super Admin role with ALL permissions
       let superAdminRole = await queryRunner.manager.findOne(Role, {
-        where: { name: 'Super Admin' }
+        where: { name: 'Super Admin' },
       });
-      
+
       if (!superAdminRole) {
         superAdminRole = queryRunner.manager.create(Role, {
           name: 'Super Admin',
@@ -471,9 +566,9 @@ export class SetupService {
       this.logger.log('Loading default roles...');
       for (const roleData of DEFAULT_ROLES) {
         let role = await queryRunner.manager.findOne(Role, {
-          where: { name: roleData.name }
+          where: { name: roleData.name },
         });
-        
+
         if (!role) {
           role = queryRunner.manager.create(Role, {
             name: roleData.name,
@@ -497,14 +592,15 @@ export class SetupService {
       this.logger.log(`Created ${DEFAULT_ROLES.length} default roles`);
 
       // 5a. For single-user mode, create a special "Clinic Staff" role with all core permissions
-      const isSingleUser = (dto.settings?.facilityMode as FacilityMode) === FACILITY_MODES.SINGLE_USER;
+      const isSingleUser =
+        (dto.settings?.facilityMode as FacilityMode) === FACILITY_MODES.SINGLE_USER;
       if (isSingleUser) {
-        const clinicStaffPermissions = [...permissionMap.keys()].filter(code => {
+        const clinicStaffPermissions = [...permissionMap.keys()].filter((code) => {
           const [mod] = code.split('.');
           return !['roles', 'facilities', 'settings', 'hr'].includes(mod);
         });
         let clinicStaffRole = await queryRunner.manager.findOne(Role, {
-          where: { name: 'Clinic Staff' }
+          where: { name: 'Clinic Staff' },
         });
         if (!clinicStaffRole) {
           clinicStaffRole = queryRunner.manager.create(Role, {
@@ -552,12 +648,42 @@ export class SetupService {
       const facilityModeValue = dto.settings?.facilityMode || FACILITY_MODES.HOSPITAL;
       const resolvedModules = this.resolveEnabledModules(dto);
       const settings = [
-        { key: 'setup_complete', value: true, tenantId: tenant.id, description: 'Initial setup completed' },
-        { key: 'setup_date', value: new Date().toISOString(), tenantId: tenant.id, description: 'Setup completion date' },
-        { key: 'default_facility_id', value: facility.id, tenantId: tenant.id, description: 'Default facility ID' },
-        { key: 'facility_mode', value: facilityModeValue, tenantId: tenant.id, description: 'Deployment mode preset' },
-        { key: 'single_user_mode', value: isSingleUser, tenantId: tenant.id, description: 'Single-user clinic mode' },
-        { key: 'enabled_modules', value: JSON.stringify(resolvedModules), tenantId: tenant.id, description: 'Enabled navigation modules for this tenant' },
+        {
+          key: 'setup_complete',
+          value: true,
+          tenantId: tenant.id,
+          description: 'Initial setup completed',
+        },
+        {
+          key: 'setup_date',
+          value: new Date().toISOString(),
+          tenantId: tenant.id,
+          description: 'Setup completion date',
+        },
+        {
+          key: 'default_facility_id',
+          value: facility.id,
+          tenantId: tenant.id,
+          description: 'Default facility ID',
+        },
+        {
+          key: 'facility_mode',
+          value: facilityModeValue,
+          tenantId: tenant.id,
+          description: 'Deployment mode preset',
+        },
+        {
+          key: 'single_user_mode',
+          value: isSingleUser,
+          tenantId: tenant.id,
+          description: 'Single-user clinic mode',
+        },
+        {
+          key: 'enabled_modules',
+          value: JSON.stringify(resolvedModules),
+          tenantId: tenant.id,
+          description: 'Enabled navigation modules for this tenant',
+        },
       ];
 
       for (const setting of settings) {
@@ -567,7 +693,9 @@ export class SetupService {
 
       await queryRunner.commitTransaction();
 
-      this.logger.log(`System initialized successfully - Org: ${tenant.name}, Facility: ${facility.name}, Admin: ${user.username}`);
+      this.logger.log(
+        `System initialized successfully - Org: ${tenant.name}, Facility: ${facility.name}, Admin: ${user.username}`,
+      );
 
       return {
         success: true,
@@ -590,13 +718,16 @@ export class SetupService {
    */
   async getSettings(tenantId: string): Promise<Record<string, any>> {
     const settings = await this.settingRepo.find({
-      where: { tenantId }
+      where: { tenantId },
     });
-    
-    return settings.reduce((acc, setting) => {
-      acc[setting.key] = setting.value;
-      return acc;
-    }, {} as Record<string, any>);
+
+    return settings.reduce(
+      (acc, setting) => {
+        acc[setting.key] = setting.value;
+        return acc;
+      },
+      {} as Record<string, any>,
+    );
   }
 
   /**
@@ -621,7 +752,17 @@ export class SetupService {
       const preset = getPreset(mode);
       if (preset) return preset.enabledModules;
     }
-    return ['patients', 'encounters', 'lab', 'pharmacy', 'radiology', 'billing', 'inventory', 'hr', 'reports'];
+    return [
+      'patients',
+      'encounters',
+      'lab',
+      'pharmacy',
+      'radiology',
+      'billing',
+      'inventory',
+      'hr',
+      'reports',
+    ];
   }
 
   /**
@@ -655,7 +796,10 @@ export class SetupService {
       const regSlug = dto.organization.slug || TenantsService.generateSlug(dto.organization.name);
       let regFinalSlug = regSlug;
       let regSuffix = 1;
-      while ((await queryRunner.query(`SELECT id FROM tenants WHERE slug = $1 LIMIT 1`, [regFinalSlug])).length > 0) {
+      while (
+        (await queryRunner.query(`SELECT id FROM tenants WHERE slug = $1 LIMIT 1`, [regFinalSlug]))
+          .length > 0
+      ) {
         regFinalSlug = `${regSlug}-${regSuffix++}`;
       }
       const tenant = queryRunner.manager.create(Tenant, {
@@ -777,15 +921,46 @@ export class SetupService {
       await queryRunner.manager.save(userRole);
 
       // 8. Create tenant-scoped system settings
-      const isSingleUser = (dto.settings?.facilityMode as FacilityMode) === FACILITY_MODES.SINGLE_USER;
+      const isSingleUser =
+        (dto.settings?.facilityMode as FacilityMode) === FACILITY_MODES.SINGLE_USER;
       const resolvedModules = this.resolveEnabledModules(dto);
       const settings = [
-        { key: 'setup_complete', value: true, tenantId: tenant.id, description: 'Tenant setup completed' },
-        { key: 'setup_date', value: new Date().toISOString(), tenantId: tenant.id, description: 'Setup completion date' },
-        { key: 'default_facility_id', value: facility.id, tenantId: tenant.id, description: 'Default facility ID' },
-        { key: 'facility_mode', value: dto.settings?.facilityMode || FACILITY_MODES.HOSPITAL, tenantId: tenant.id, description: 'Deployment mode preset' },
-        { key: 'single_user_mode', value: isSingleUser, tenantId: tenant.id, description: 'Single-user clinic mode' },
-        { key: 'enabled_modules', value: JSON.stringify(resolvedModules), tenantId: tenant.id, description: 'Enabled navigation modules for this tenant' },
+        {
+          key: 'setup_complete',
+          value: true,
+          tenantId: tenant.id,
+          description: 'Tenant setup completed',
+        },
+        {
+          key: 'setup_date',
+          value: new Date().toISOString(),
+          tenantId: tenant.id,
+          description: 'Setup completion date',
+        },
+        {
+          key: 'default_facility_id',
+          value: facility.id,
+          tenantId: tenant.id,
+          description: 'Default facility ID',
+        },
+        {
+          key: 'facility_mode',
+          value: dto.settings?.facilityMode || FACILITY_MODES.HOSPITAL,
+          tenantId: tenant.id,
+          description: 'Deployment mode preset',
+        },
+        {
+          key: 'single_user_mode',
+          value: isSingleUser,
+          tenantId: tenant.id,
+          description: 'Single-user clinic mode',
+        },
+        {
+          key: 'enabled_modules',
+          value: JSON.stringify(resolvedModules),
+          tenantId: tenant.id,
+          description: 'Enabled navigation modules for this tenant',
+        },
       ];
       for (const setting of settings) {
         const settingEntity = queryRunner.manager.create(SystemSetting, setting);
@@ -794,7 +969,9 @@ export class SetupService {
 
       await queryRunner.commitTransaction();
 
-      this.logger.log(`New tenant registered - Org: ${tenant.name}, Facility: ${facility.name}, Admin: ${user.username}`);
+      this.logger.log(
+        `New tenant registered - Org: ${tenant.name}, Facility: ${facility.name}, Admin: ${user.username}`,
+      );
 
       return {
         success: true,
@@ -816,7 +993,10 @@ export class SetupService {
    * Initialize setup for an existing tenant (created by system admin).
    * Creates facility, permissions, roles, admin user, and marks setup complete.
    */
-  async initializeTenantSetup(slug: string, dto: InitializeTenantSetupDto): Promise<{
+  async initializeTenantSetup(
+    slug: string,
+    dto: InitializeTenantSetupDto,
+  ): Promise<{
     success: boolean;
     message: string;
     tenantId: string;
@@ -844,7 +1024,9 @@ export class SetupService {
       [dto.admin.username, tenant.id],
     );
     if (existingUser.length > 0) {
-      throw new BadRequestException(`Username "${dto.admin.username}" already exists in this organization`);
+      throw new BadRequestException(
+        `Username "${dto.admin.username}" already exists in this organization`,
+      );
     }
 
     // Check email uniqueness within this tenant
@@ -853,7 +1035,9 @@ export class SetupService {
       [dto.admin.email, tenant.id],
     );
     if (existingEmail.length > 0) {
-      throw new BadRequestException(`Email "${dto.admin.email}" is already in use in this organization`);
+      throw new BadRequestException(
+        `Email "${dto.admin.email}" is already in use in this organization`,
+      );
     }
 
     const queryRunner = this.dataSource.createQueryRunner();
@@ -912,7 +1096,9 @@ export class SetupService {
       // 2. Load or create permissions
       const permissionMap = new Map<string, Permission>();
       for (const perm of DEFAULT_PERMISSIONS) {
-        let permission = await queryRunner.manager.findOne(Permission, { where: { code: perm.code } });
+        let permission = await queryRunner.manager.findOne(Permission, {
+          where: { code: perm.code },
+        });
         if (!permission) {
           permission = queryRunner.manager.create(Permission, perm);
           await queryRunner.manager.save(permission);
@@ -921,7 +1107,9 @@ export class SetupService {
       }
 
       // 3. Load or create Super Admin role
-      let superAdminRole = await queryRunner.manager.findOne(Role, { where: { name: 'Super Admin' } });
+      let superAdminRole = await queryRunner.manager.findOne(Role, {
+        where: { name: 'Super Admin' },
+      });
       if (!superAdminRole) {
         superAdminRole = queryRunner.manager.create(Role, {
           name: 'Super Admin',
@@ -929,7 +1117,10 @@ export class SetupService {
         });
         await queryRunner.manager.save(superAdminRole);
         for (const [, permission] of permissionMap) {
-          const rp = queryRunner.manager.create(RolePermission, { roleId: superAdminRole.id, permissionId: permission.id });
+          const rp = queryRunner.manager.create(RolePermission, {
+            roleId: superAdminRole.id,
+            permissionId: permission.id,
+          });
           await queryRunner.manager.save(rp);
         }
       }
@@ -938,12 +1129,18 @@ export class SetupService {
       for (const roleData of DEFAULT_ROLES) {
         let role = await queryRunner.manager.findOne(Role, { where: { name: roleData.name } });
         if (!role) {
-          role = queryRunner.manager.create(Role, { name: roleData.name, description: roleData.description });
+          role = queryRunner.manager.create(Role, {
+            name: roleData.name,
+            description: roleData.description,
+          });
           await queryRunner.manager.save(role);
           for (const permCode of roleData.permissions) {
             const permission = permissionMap.get(permCode);
             if (permission) {
-              const rp = queryRunner.manager.create(RolePermission, { roleId: role.id, permissionId: permission.id });
+              const rp = queryRunner.manager.create(RolePermission, {
+                roleId: role.id,
+                permissionId: permission.id,
+              });
               await queryRunner.manager.save(rp);
             }
           }
@@ -973,15 +1170,46 @@ export class SetupService {
       await queryRunner.manager.save(userRole);
 
       // 7. Create system settings
-      const isSingleUser = (dto.settings?.facilityMode as FacilityMode) === FACILITY_MODES.SINGLE_USER;
+      const isSingleUser =
+        (dto.settings?.facilityMode as FacilityMode) === FACILITY_MODES.SINGLE_USER;
       const resolvedModules = this.resolveEnabledModules(dto as unknown as InitializeSetupDto);
       const settings = [
-        { key: 'setup_complete', value: true, tenantId: tenant.id, description: 'Initial setup completed' },
-        { key: 'setup_date', value: new Date().toISOString(), tenantId: tenant.id, description: 'Setup completion date' },
-        { key: 'default_facility_id', value: facility.id, tenantId: tenant.id, description: 'Default facility ID' },
-        { key: 'facility_mode', value: dto.settings?.facilityMode || FACILITY_MODES.HOSPITAL, tenantId: tenant.id, description: 'Deployment mode preset' },
-        { key: 'single_user_mode', value: isSingleUser, tenantId: tenant.id, description: 'Single-user clinic mode' },
-        { key: 'enabled_modules', value: JSON.stringify(resolvedModules), tenantId: tenant.id, description: 'Enabled navigation modules for this tenant' },
+        {
+          key: 'setup_complete',
+          value: true,
+          tenantId: tenant.id,
+          description: 'Initial setup completed',
+        },
+        {
+          key: 'setup_date',
+          value: new Date().toISOString(),
+          tenantId: tenant.id,
+          description: 'Setup completion date',
+        },
+        {
+          key: 'default_facility_id',
+          value: facility.id,
+          tenantId: tenant.id,
+          description: 'Default facility ID',
+        },
+        {
+          key: 'facility_mode',
+          value: dto.settings?.facilityMode || FACILITY_MODES.HOSPITAL,
+          tenantId: tenant.id,
+          description: 'Deployment mode preset',
+        },
+        {
+          key: 'single_user_mode',
+          value: isSingleUser,
+          tenantId: tenant.id,
+          description: 'Single-user clinic mode',
+        },
+        {
+          key: 'enabled_modules',
+          value: JSON.stringify(resolvedModules),
+          tenantId: tenant.id,
+          description: 'Enabled navigation modules for this tenant',
+        },
       ];
       for (const setting of settings) {
         const settingEntity = queryRunner.manager.create(SystemSetting, setting);
@@ -989,18 +1217,20 @@ export class SetupService {
       }
 
       // Update tenant settings
-      await queryRunner.query(
-        `UPDATE tenants SET settings = settings || $1::jsonb WHERE id = $2`,
-        [JSON.stringify({
+      await queryRunner.query(`UPDATE tenants SET settings = settings || $1::jsonb WHERE id = $2`, [
+        JSON.stringify({
           currency: dto.settings?.currency || 'UGX',
           timezone: dto.settings?.timezone || 'Africa/Kampala',
           dateFormat: dto.settings?.dateFormat || 'DD/MM/YYYY',
           facilityMode: dto.settings?.facilityMode || FACILITY_MODES.HOSPITAL,
-        }), tenant.id],
-      );
+        }),
+        tenant.id,
+      ]);
 
       await queryRunner.commitTransaction();
-      this.logger.log(`Tenant setup completed - Org: ${tenant.name}, Facility: ${dto.facility.name}, Admin: ${dto.admin.username}`);
+      this.logger.log(
+        `Tenant setup completed - Org: ${tenant.name}, Facility: ${dto.facility.name}, Admin: ${dto.admin.username}`,
+      );
 
       return {
         success: true,

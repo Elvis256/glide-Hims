@@ -22,7 +22,9 @@ export class AddItemIdToInsurancePriceList1774951000000 implements MigrationInte
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`DROP INDEX IF EXISTS idx_ipl_provider_item`);
-    await queryRunner.query(`ALTER TABLE insurance_price_lists DROP CONSTRAINT IF EXISTS fk_insurance_price_list_item`);
+    await queryRunner.query(
+      `ALTER TABLE insurance_price_lists DROP CONSTRAINT IF EXISTS fk_insurance_price_list_item`,
+    );
     await queryRunner.query(`ALTER TABLE insurance_price_lists DROP COLUMN IF EXISTS item_id`);
   }
 }

@@ -6,10 +6,7 @@ import { DisposalRecord } from '../../database/entities/disposal.entity';
 import { InventoryModule } from '../inventory/inventory.module';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([DisposalRecord]),
-    InventoryModule,
-  ],
+  imports: [TypeOrmModule.forFeature([DisposalRecord]), InventoryModule],
   controllers: [DisposalController],
   providers: [DisposalService],
   exports: [DisposalService],

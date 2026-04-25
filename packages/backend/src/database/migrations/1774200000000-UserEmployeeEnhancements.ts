@@ -38,9 +38,15 @@ export class UserEmployeeEnhancements1774200000000 implements MigrationInterface
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_login_history_user_id" ON "login_history" ("user_id")`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_login_history_login_at" ON "login_history" ("login_at")`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_login_history_tenant" ON "login_history" ("tenant_id")`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_login_history_user_id" ON "login_history" ("user_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_login_history_login_at" ON "login_history" ("login_at")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_login_history_tenant" ON "login_history" ("tenant_id")`,
+    );
 
     // --- 3. Create delegations table ---
     await queryRunner.query(`
@@ -64,9 +70,15 @@ export class UserEmployeeEnhancements1774200000000 implements MigrationInterface
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_delegations_delegate_status" ON "delegations" ("delegate_id", "status")`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_delegations_delegator" ON "delegations" ("delegator_id")`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_delegations_tenant" ON "delegations" ("tenant_id")`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_delegations_delegate_status" ON "delegations" ("delegate_id", "status")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_delegations_delegator" ON "delegations" ("delegator_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_delegations_tenant" ON "delegations" ("tenant_id")`,
+    );
 
     // --- 4. Create approval_requests table ---
     await queryRunner.query(`
@@ -89,9 +101,15 @@ export class UserEmployeeEnhancements1774200000000 implements MigrationInterface
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_approval_requests_tenant" ON "approval_requests" ("tenant_id")`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_approval_requests_status" ON "approval_requests" ("status")`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_approval_requests_requested_by" ON "approval_requests" ("requested_by_id")`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_approval_requests_tenant" ON "approval_requests" ("tenant_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_approval_requests_status" ON "approval_requests" ("status")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_approval_requests_requested_by" ON "approval_requests" ("requested_by_id")`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

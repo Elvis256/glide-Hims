@@ -1,91 +1,137 @@
-import { IsString, IsOptional, IsBoolean, IsEnum, IsUUID, IsArray, IsNumber, Min, Max } from 'class-validator';
-import { DrugSchedule, TherapeuticClass, DrugFormulation, DrugStorageCondition } from '../../database/entities/drug-classification.entity';
+import {
+  IsString,
+  IsOptional,
+  IsBoolean,
+  IsEnum,
+  IsUUID,
+  IsArray,
+  IsNumber,
+  Min,
+  Max,
+} from 'class-validator';
+import {
+  DrugSchedule,
+  TherapeuticClass,
+  DrugFormulation,
+  DrugStorageCondition,
+} from '../../database/entities/drug-classification.entity';
 
 export class CreateDrugClassificationDto {
   @IsUUID()
   itemId: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   atcCode?: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   atcDescription?: string;
 
-  @IsOptional() @IsEnum(DrugSchedule)
+  @IsOptional()
+  @IsEnum(DrugSchedule)
   schedule?: DrugSchedule;
 
-  @IsOptional() @IsEnum(TherapeuticClass)
+  @IsOptional()
+  @IsEnum(TherapeuticClass)
   therapeuticClass?: TherapeuticClass;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   therapeuticSubclass?: string;
 
-  @IsOptional() @IsEnum(DrugFormulation)
+  @IsOptional()
+  @IsEnum(DrugFormulation)
   formulation?: DrugFormulation;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   strength?: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   genericName?: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   brandName?: string;
 
-  @IsBoolean() @IsOptional()
+  @IsBoolean()
+  @IsOptional()
   isControlled?: boolean;
 
-  @IsBoolean() @IsOptional()
+  @IsBoolean()
+  @IsOptional()
   isNarcotic?: boolean;
 
-  @IsBoolean() @IsOptional()
+  @IsBoolean()
+  @IsOptional()
   isPsychotropic?: boolean;
 
-  @IsBoolean() @IsOptional()
+  @IsBoolean()
+  @IsOptional()
   requiresDoubleCheck?: boolean;
 
-  @IsBoolean() @IsOptional()
+  @IsBoolean()
+  @IsOptional()
   highAlert?: boolean;
 
-  @IsBoolean() @IsOptional()
+  @IsBoolean()
+  @IsOptional()
   lookAlikeSoundAlike?: boolean;
 
-  @IsOptional() @IsEnum(DrugStorageCondition)
+  @IsOptional()
+  @IsEnum(DrugStorageCondition)
   storageCondition?: DrugStorageCondition;
 
-  @IsOptional() @IsNumber() @Min(0.001) @Max(50000)
+  @IsOptional()
+  @IsNumber()
+  @Min(0.001)
+  @Max(50000)
   maxSingleDose?: number;
 
-  @IsOptional() @IsNumber() @Min(0.001) @Max(100000)
+  @IsOptional()
+  @IsNumber()
+  @Min(0.001)
+  @Max(100000)
   maxDailyDose?: number;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   doseUnit?: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   contraindications?: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   warnings?: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   pregnancyCategory?: string;
 
-  @IsOptional() @IsBoolean()
+  @IsOptional()
+  @IsBoolean()
   isOnFormulary?: boolean;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   formularyTier?: string;
 
-  @IsOptional() @IsBoolean()
+  @IsOptional()
+  @IsBoolean()
   requiresPriorAuth?: boolean;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   notes?: string;
 }
 
 export class UpdateDrugClassificationDto extends CreateDrugClassificationDto {
-  @IsOptional() @IsUUID()
+  @IsOptional()
+  @IsUUID()
   declare itemId: string;
 }
 
@@ -102,39 +148,50 @@ export class CreateDrugInteractionDto {
   @IsString()
   description: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   clinicalEffects?: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   mechanism?: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   management?: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   reference?: string;
 }
 
 export class UpdateDrugInteractionDto {
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   severity?: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   description?: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   clinicalEffects?: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   mechanism?: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   management?: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   reference?: string;
 
-  @IsOptional() @IsBoolean()
+  @IsOptional()
+  @IsBoolean()
   isActive?: boolean;
 }
 
@@ -148,13 +205,18 @@ export class CreateAllergyClassDto {
   @IsString()
   className: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   description?: string;
 
-  @IsOptional() @IsArray() @IsString({ each: true })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
   relatedDrugs?: string[];
 
-  @IsOptional() @IsArray() @IsString({ each: true })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
   crossReactiveClasses?: string[];
 }
 

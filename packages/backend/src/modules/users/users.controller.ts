@@ -10,12 +10,31 @@ import {
   ParseUUIDPipe,
   Request,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiParam,
+  ApiQuery,
+  ApiConsumes,
+} from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { UsersService } from './users.service';
-import { CreateUserDto, UpdateUserDto, AssignRoleDto, UserListQueryDto, LinkEmployeeDto, AssignPermissionDto, AssignMultiplePermissionsDto } from './dto/user.dto';
+import {
+  CreateUserDto,
+  UpdateUserDto,
+  AssignRoleDto,
+  UserListQueryDto,
+  LinkEmployeeDto,
+  AssignPermissionDto,
+  AssignMultiplePermissionsDto,
+} from './dto/user.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { AuthService } from '../auth/auth.service';
 import { AdminResetPasswordDto } from '../auth/dto/auth.dto';
@@ -29,13 +48,38 @@ export class UsersController {
     private readonly authService: AuthService,
   ) {}
 
+  @Post('bulk-import')
+  @AuthWithPermissions('users.create')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({ summary: 'Bulk import users from CSV/Excel file' })
+  @ApiConsumes('multipart/form-data')
+  @ApiResponse({ status: 201, description: 'Import completed with results' })
+  @ApiResponse({ status: 400, description: 'Invalid file or no file provided' })
+  async bulkImport(@UploadedFile() file: Express.Multer.File, @Request() req: any) {
+    if (!file) {
+      throw new BadRequestException('File is required');
+    }
+    const result = await this.usersService.bulkImport(
+      file,
+      req.user?.tenantId,
+      req.user?.facilityId,
+    );
+    return {
+      message: `Import complete: ${result.successful} succeeded, ${result.failed} failed out of ${result.total}`,
+      data: result,
+    };
+  }
+
   @Post('backfill-employees')
   @AuthWithPermissions('users.create')
   @ApiOperation({ summary: 'Backfill employee records for users without one' })
   @ApiResponse({ status: 201, description: 'Backfill completed' })
   async backfillEmployees(@Request() req: any) {
     const result = await this.usersService.backfillEmployees(req.user?.tenantId);
-    return { message: `Backfill complete: ${result.created} created, ${result.skipped} skipped`, data: result };
+    return {
+      message: `Backfill complete: ${result.created} created, ${result.skipped} skipped`,
+      data: result,
+    };
   }
 
   @Post()
@@ -68,7 +112,9 @@ export class UsersController {
   @Post('system-reset-password/:id')
   @AuthWithPermissions('users.update')
   @UseGuards(RateLimitGuard)
-  @ApiOperation({ summary: 'System admin: reset password for any user (system admin, tenant admin, etc.)' })
+  @ApiOperation({
+    summary: 'System admin: reset password for any user (system admin, tenant admin, etc.)',
+  })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 200, description: 'Password reset successfully' })
   async systemResetPassword(
@@ -233,7 +279,11 @@ export class UsersController {
     @Body() linkEmployeeDto: LinkEmployeeDto,
     @Request() req: any,
   ) {
-    const employee = await this.usersService.linkUserToEmployee(id, linkEmployeeDto.employeeId, req.user?.tenantId);
+    const employee = await this.usersService.linkUserToEmployee(
+      id,
+      linkEmployeeDto.employeeId,
+      req.user?.tenantId,
+    );
     return { message: 'User linked to employee successfully', data: employee };
   }
 
@@ -280,7 +330,12 @@ export class UsersController {
     @Body() dto: AssignPermissionDto,
     @Request() req: any,
   ) {
-    const permission = await this.usersService.assignPermission(id, dto, req.user.sub, req.user?.tenantId);
+    const permission = await this.usersService.assignPermission(
+      id,
+      dto,
+      req.user.sub,
+      req.user?.tenantId,
+    );
     return { message: 'Permission assigned successfully', data: permission };
   }
 
@@ -310,8 +365,16 @@ export class UsersController {
     @Body() dto: AssignMultiplePermissionsDto,
     @Request() req: any,
   ) {
-    const permissions = await this.usersService.assignMultiplePermissions(id, dto.permissionIds, req.user.sub, req.user?.tenantId);
-    return { message: `${permissions.length} permissions assigned successfully`, data: permissions };
+    const permissions = await this.usersService.assignMultiplePermissions(
+      id,
+      dto.permissionIds,
+      req.user.sub,
+      req.user?.tenantId,
+    );
+    return {
+      message: `${permissions.length} permissions assigned successfully`,
+      data: permissions,
+    };
   }
 
   @Delete(':id/permissions')
@@ -336,7 +399,12 @@ export class UsersController {
     @Body() dto: AdminResetPasswordDto,
     @Request() req: any,
   ) {
-    const result = await this.authService.adminResetPassword(id, dto.newPassword, req.user.sub, req.user.tenantId);
+    const result = await this.authService.adminResetPassword(
+      id,
+      dto.newPassword,
+      req.user.sub,
+      req.user.tenantId,
+    );
     return { message: 'Password reset successfully', data: result };
   }
 
@@ -346,10 +414,7 @@ export class UsersController {
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiQuery({ name: 'limit', required: false, description: 'Number of records (default 50)' })
   @ApiResponse({ status: 200, description: 'Login history' })
-  async getLoginHistory(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Query('limit') limit?: number,
-  ) {
+  async getLoginHistory(@Param('id', ParseUUIDPipe) id: string, @Query('limit') limit?: number) {
     const history = await this.authService.getLoginHistoryForUser(id, limit || 50);
     return { data: history };
   }

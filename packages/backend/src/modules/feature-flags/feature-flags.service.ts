@@ -42,7 +42,7 @@ export class FeatureFlagsService implements OnModuleInit {
    */
   async getValue<T = any>(featureKey: string, tenantId: string, defaultValue?: T): Promise<T> {
     const flag = await this.getFlag(featureKey, tenantId);
-    
+
     if (!flag || !flag.enabled) {
       return defaultValue as T;
     }
@@ -59,7 +59,7 @@ export class FeatureFlagsService implements OnModuleInit {
    */
   private async getFlag(featureKey: string, tenantId: string): Promise<FeatureFlagValue | null> {
     const cacheKey = tenantId || 'global';
-    
+
     // Check cache
     if (this.isCacheValid()) {
       const tenantCache = this.cache.get(cacheKey);
@@ -78,7 +78,7 @@ export class FeatureFlagsService implements OnModuleInit {
       const globalFlag = await this.featureFlagRepository.findOne({
         where: { featureKey, tenantId: undefined as any },
       });
-      
+
       if (globalFlag) {
         return this.cacheAndReturn(cacheKey, featureKey, {
           enabled: globalFlag.isEnabled,
@@ -131,10 +131,10 @@ export class FeatureFlagsService implements OnModuleInit {
     }
 
     const saved = await this.featureFlagRepository.save(flag);
-    
+
     // Invalidate cache
     this.invalidateCache(tenantId);
-    
+
     return saved;
   }
 
@@ -159,7 +159,7 @@ export class FeatureFlagsService implements OnModuleInit {
       featureKey,
       tenantId: tenantId || undefined,
     });
-    
+
     this.invalidateCache(tenantId);
   }
 
@@ -195,12 +195,9 @@ export class FeatureFlagsService implements OnModuleInit {
   /**
    * Check multiple features at once (batch operation)
    */
-  async checkFeatures(
-    featureKeys: string[],
-    tenantId: string,
-  ): Promise<Record<string, boolean>> {
+  async checkFeatures(featureKeys: string[], tenantId: string): Promise<Record<string, boolean>> {
     const result: Record<string, boolean> = {};
-    
+
     await Promise.all(
       featureKeys.map(async (key) => {
         result[key] = await this.isEnabled(key, tenantId);

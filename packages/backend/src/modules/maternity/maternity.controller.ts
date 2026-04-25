@@ -8,6 +8,7 @@ import {
   Query,
   Request,
   ParseUUIDPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
@@ -24,9 +25,13 @@ import {
   AdministerVaccineDto,
 } from './dto/maternity.dto';
 import { PregnancyStatus } from '../../database/entities/antenatal-registration.entity';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('Maternity / Antenatal')
 @ApiBearerAuth()
+@UseGuards(ModuleGuard)
+@RequireModule('maternity')
 @Controller('maternity')
 export class MaternityController {
   constructor(private readonly maternityService: MaternityService) {}
@@ -54,7 +59,11 @@ export class MaternityController {
     @Query('offset') offset?: number,
     @Request() req?: any,
   ) {
-    return this.maternityService.getRegistrations(facilityId, { status, limit, offset }, req?.user?.tenantId);
+    return this.maternityService.getRegistrations(
+      facilityId,
+      { status, limit, offset },
+      req?.user?.tenantId,
+    );
   }
 
   @Get('anc/registrations/:id')
@@ -207,7 +216,10 @@ export class MaternityController {
   @Get('baby/:deliveryOutcomeId/wellness')
   @AuthWithPermissions('maternity.read')
   @ApiOperation({ summary: 'Get baby wellness checks' })
-  getBabyWellnessChecks(@Param('deliveryOutcomeId', ParseUUIDPipe) deliveryOutcomeId: string, @Request() req: any) {
+  getBabyWellnessChecks(
+    @Param('deliveryOutcomeId', ParseUUIDPipe) deliveryOutcomeId: string,
+    @Request() req: any,
+  ) {
     return this.maternityService.getBabyWellnessChecks(deliveryOutcomeId, req.user?.tenantId);
   }
 
@@ -222,13 +234,20 @@ export class MaternityController {
     @Query('facilityId') facilityId: string,
     @Request() req: any,
   ) {
-    return this.maternityService.generateImmunizationSchedule(deliveryOutcomeId, facilityId, req.user?.tenantId);
+    return this.maternityService.generateImmunizationSchedule(
+      deliveryOutcomeId,
+      facilityId,
+      req.user?.tenantId,
+    );
   }
 
   @Get('immunization/schedule/:deliveryOutcomeId')
   @AuthWithPermissions('maternity.read')
   @ApiOperation({ summary: 'Get immunization schedule for a child' })
-  getImmunizationSchedule(@Param('deliveryOutcomeId', ParseUUIDPipe) deliveryOutcomeId: string, @Request() req: any) {
+  getImmunizationSchedule(
+    @Param('deliveryOutcomeId', ParseUUIDPipe) deliveryOutcomeId: string,
+    @Request() req: any,
+  ) {
     return this.maternityService.getImmunizationSchedule(deliveryOutcomeId, req.user?.tenantId);
   }
 
@@ -261,6 +280,10 @@ export class MaternityController {
     @Query('daysOverdue') daysOverdue?: number,
     @Request() req?: any,
   ) {
-    return this.maternityService.getImmunizationDefaulters(facilityId, daysOverdue || 14, req?.user?.tenantId);
+    return this.maternityService.getImmunizationDefaulters(
+      facilityId,
+      daysOverdue || 14,
+      req?.user?.tenantId,
+    );
   }
 }

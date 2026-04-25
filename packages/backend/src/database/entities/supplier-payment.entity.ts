@@ -125,7 +125,7 @@ export class SupplierPayment extends BaseEntity {
   @Column({ type: 'uuid', nullable: true, name: 'journal_entry_id' })
   journalEntryId?: string;
 
-  @OneToMany(() => SupplierPaymentItem, item => item.payment)
+  @OneToMany(() => SupplierPaymentItem, (item) => item.payment)
   items: SupplierPaymentItem[];
 }
 
@@ -134,7 +134,7 @@ export class SupplierPaymentItem extends BaseEntity {
   @Column({ type: 'uuid', name: 'payment_id' })
   paymentId: string;
 
-  @ManyToOne(() => SupplierPayment, payment => payment.items)
+  @ManyToOne(() => SupplierPayment, (payment) => payment.items)
   @JoinColumn({ name: 'payment_id' })
   payment: SupplierPayment;
 

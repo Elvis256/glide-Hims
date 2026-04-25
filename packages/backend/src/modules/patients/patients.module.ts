@@ -15,7 +15,14 @@ import { PatientsController } from './patients.controller';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Patient, PatientDocument, PatientNote, PatientMerge, AuditLog, SystemSetting]),
+    TypeOrmModule.forFeature([
+      Patient,
+      PatientDocument,
+      PatientNote,
+      PatientMerge,
+      AuditLog,
+      SystemSetting,
+    ]),
     MulterModule.register({
       storage: diskStorage({
         destination: './uploads/patient-documents',
@@ -26,8 +33,14 @@ import { PatientsController } from './patients.controller';
         },
       }),
       fileFilter: (req, file, callback) => {
-        const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg',
-          'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+        const allowedTypes = [
+          'application/pdf',
+          'image/jpeg',
+          'image/png',
+          'image/jpg',
+          'application/msword',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        ];
         if (allowedTypes.includes(file.mimetype)) {
           callback(null, true);
         } else {

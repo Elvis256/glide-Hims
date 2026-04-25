@@ -1,21 +1,70 @@
-import { Controller, Get, Put, Delete, Param, Body, Query, Request, ForbiddenException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Put,
+  Delete,
+  Param,
+  Body,
+  Query,
+  Request,
+  ForbiddenException,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { SystemSettingsService } from './system-settings.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { UpsertSystemSettingDto } from './dto/system-settings.dto';
+import { FACILITY_PRESETS } from '../../common/constants/facility-presets.constants';
+import { MODULE_REGISTRY, presetModulesToSidebarCodes } from '../../config/module-registry';
 
 @ApiTags('settings')
 @Controller('settings')
 export class SystemSettingsController {
   constructor(private readonly systemSettingsService: SystemSettingsService) {}
 
+  @Get('facility-presets')
+  @AuthWithPermissions('admin.settings.manage')
+  @ApiOperation({
+    summary: 'Get all facility presets with their enabled modules mapped to sidebar codes',
+  })
+  getFacilityPresets() {
+    return {
+      data: FACILITY_PRESETS.map((preset) => ({
+        mode: preset.mode,
+        businessType: preset.businessType,
+        name: preset.name,
+        description: preset.description,
+        icon: preset.icon,
+        facilityType: preset.facilityType,
+        supportsMultiSite: preset.supportsMultiSite,
+        singleUserMode: preset.singleUserMode,
+        enabledModules: preset.enabledModules,
+        sidebarModules: presetModulesToSidebarCodes(preset.enabledModules),
+        recommendedRoles: preset.recommendedRoles,
+        notes: preset.notes,
+      })),
+    };
+  }
+
+  @Get('module-registry')
+  @AuthWithPermissions('admin.settings.manage')
+  @ApiOperation({ summary: 'Get all available modules with permission requirements' })
+  getModuleRegistry() {
+    return {
+      data: MODULE_REGISTRY.map((mod) => ({
+        code: mod.code,
+        name: mod.name,
+        requiredPermissions: mod.requiredPermissions,
+      })),
+    };
+  }
+
   @Get('platform-overview')
   @AuthWithPermissions('admin.settings.manage')
   @ApiOperation({ summary: 'Get platform-wide overview stats (system admin only)' })
   async getPlatformOverview(@Request() req: any) {
     if (!req.user?.isSystemAdmin) {
-      return { data: null };
+      throw new ForbiddenException('Only system administrators can access platform overview');
     }
     return { data: await this.systemSettingsService.getPlatformOverview() };
   }
@@ -25,7 +74,7 @@ export class SystemSettingsController {
   @ApiOperation({ summary: 'Get platform-level settings (no tenantId)' })
   async getPlatformSettings(@Request() req: any) {
     if (!req.user?.isSystemAdmin) {
-      return { data: [] };
+      throw new ForbiddenException('Only system administrators can access platform settings');
     }
     return { data: await this.systemSettingsService.getPlatformSettings() };
   }
@@ -39,7 +88,7 @@ export class SystemSettingsController {
     @Request() req: any,
   ) {
     if (!req.user?.isSystemAdmin) {
-      return { message: 'Only system administrators can modify platform settings' };
+      throw new ForbiddenException('Only system administrators can modify platform settings');
     }
     const setting = await this.systemSettingsService.upsert(
       `platform.${key}`,
@@ -54,10 +103,7 @@ export class SystemSettingsController {
   @AuthWithPermissions('admin.settings.manage')
   @ApiOperation({ summary: 'List all system settings' })
   @ApiQuery({ name: 'prefix', required: false, description: 'Filter settings by key prefix' })
-  async findAll(
-    @Query('prefix') prefix?: string,
-    @Request() req?: any,
-  ) {
+  async findAll(@Query('prefix') prefix?: string, @Request() req?: any) {
     // Security: always scope to caller's tenant to prevent cross-tenant config access
     const tenantId = req?.user?.isSystemAdmin ? undefined : req?.user?.tenantId;
     if (prefix) {
@@ -69,14 +115,17 @@ export class SystemSettingsController {
   @Get('public/:key')
   @Public()
   @ApiOperation({ summary: 'Get a public system setting by key (read-only)' })
-  async findOnePublic(
-    @Param('key') key: string,
-  ) {
+  async findOnePublic(@Param('key') key: string) {
     // Only allow explicitly public settings — no tenant parameter to prevent cross-tenant leakage
     const publicKeys = [
-      'facility_name', 'facility_logo', 'facility_address',
-      'login_banner', 'setup_complete', 'deployment_mode',
-      'default_language', 'default_currency',
+      'facility_name',
+      'facility_logo',
+      'facility_address',
+      'login_banner',
+      'setup_complete',
+      'deployment_mode',
+      'default_language',
+      'default_currency',
     ];
     if (!publicKeys.includes(key)) {
       throw new ForbiddenException('This setting is not publicly accessible');

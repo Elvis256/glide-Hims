@@ -1,8 +1,17 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Logger,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
-import { RESOURCE_OWNERSHIP_KEY, ResourceOwnershipConfig } from '../decorators/resource-ownership.decorator';
+import {
+  RESOURCE_OWNERSHIP_KEY,
+  ResourceOwnershipConfig,
+} from '../decorators/resource-ownership.decorator';
 
 @Injectable()
 export class OwnershipGuard implements CanActivate {
@@ -50,7 +59,7 @@ export class OwnershipGuard implements CanActivate {
 
       const tableName = entityMeta.tableName;
       const ownerColumn = this.resolveColumnName(entityMeta, config.ownerField);
-      
+
       if (!ownerColumn) {
         this.logger.warn(`Owner field "${config.ownerField}" not found on ${config.entity}`);
         throw new ForbiddenException('Unable to verify resource ownership');

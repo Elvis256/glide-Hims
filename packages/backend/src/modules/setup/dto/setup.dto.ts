@@ -1,4 +1,14 @@
-import { IsString, IsEmail, IsOptional, IsObject, MinLength, IsArray, ValidateNested, IsIn, Matches } from 'class-validator';
+import {
+  IsString,
+  IsEmail,
+  IsOptional,
+  IsObject,
+  MinLength,
+  IsArray,
+  ValidateNested,
+  IsIn,
+  Matches,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -7,7 +17,10 @@ export class OrganizationDto {
   @IsString()
   name: string;
 
-  @ApiPropertyOptional({ description: 'URL-friendly slug for login URL', example: 'kampala-medical' })
+  @ApiPropertyOptional({
+    description: 'URL-friendly slug for login URL',
+    example: 'kampala-medical',
+  })
   @IsString()
   @IsOptional()
   slug?: string;
@@ -70,10 +83,10 @@ export class AdminUserDto {
   @ApiProperty({ description: 'Password', example: 'SecureP@ss123' })
   @IsString()
   @MinLength(8)
-  @Matches(
-    /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/,
-    { message: 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character' },
-  )
+  @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/, {
+    message:
+      'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character',
+  })
   password: string;
 
   @ApiPropertyOptional({ description: 'Phone number', example: '+256-700-123456' })
@@ -102,25 +115,47 @@ export class SettingsDto {
     description: 'Deployment mode preset',
     example: 'clinic_opd',
     enum: [
-      'single_user', 'clinic_opd', 'clinic_full', 'multisite_opd', 'hospital',
-      'pharmacy_retail', 'pharmacy_chain', 'pharmacy_wholesale',
-      'dental_general', 'dental_specialist',
-      'optical_center', 'optical_chain',
+      'single_user',
+      'clinic_opd',
+      'clinic_full',
+      'multisite_opd',
+      'hospital',
+      'pharmacy_retail',
+      'pharmacy_chain',
+      'pharmacy_wholesale',
+      'dental_general',
+      'dental_specialist',
+      'optical_center',
+      'optical_chain',
     ],
   })
   @IsString()
-  @IsIn([
-    'single_user', 'clinic_opd', 'clinic_full', 'multisite_opd', 'hospital',
-    'pharmacy_retail', 'pharmacy_chain', 'pharmacy_wholesale',
-    'dental_general', 'dental_specialist',
-    'optical_center', 'optical_chain',
-  ], {
-    message: 'facilityMode must be a valid deployment preset',
-  })
+  @IsIn(
+    [
+      'single_user',
+      'clinic_opd',
+      'clinic_full',
+      'multisite_opd',
+      'hospital',
+      'pharmacy_retail',
+      'pharmacy_chain',
+      'pharmacy_wholesale',
+      'dental_general',
+      'dental_specialist',
+      'optical_center',
+      'optical_chain',
+    ],
+    {
+      message: 'facilityMode must be a valid deployment preset',
+    },
+  )
   @IsOptional()
   facilityMode?: string;
 
-  @ApiPropertyOptional({ description: 'Enabled modules', example: ['lab', 'pharmacy', 'radiology'] })
+  @ApiPropertyOptional({
+    description: 'Enabled modules',
+    example: ['lab', 'pharmacy', 'radiology'],
+  })
   @IsArray()
   @IsString({ each: true })
   @IsOptional()

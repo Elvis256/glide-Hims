@@ -1,12 +1,4 @@
-import {
-  IsString,
-  IsOptional,
-  IsUUID,
-  IsNumber,
-  IsDateString,
-  IsIn,
-  Min,
-} from 'class-validator';
+import { IsString, IsOptional, IsUUID, IsNumber, IsDateString, IsIn, Min } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 // ─── Register DTOs ───────────────────────────────────────────────────────────
@@ -20,7 +12,10 @@ export class CreateRegisterDto {
 export class UpdateRegisterDto {
   @ApiProperty({ required: false }) @IsOptional() @IsString() name?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() location?: string;
-  @ApiProperty({ required: false }) @IsOptional() @IsIn(['active', 'inactive', 'maintenance']) status?: string;
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsIn(['active', 'inactive', 'maintenance'])
+  status?: string;
 }
 
 // ─── Shift DTOs ──────────────────────────────────────────────────────────────
@@ -45,7 +40,10 @@ export class CreateWholesaleCustomerDto {
   @ApiProperty({ required: false }) @IsOptional() @IsString() address?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() taxId?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsNumber() @Min(0) creditLimit?: number;
-  @ApiProperty({ required: false }) @IsOptional() @IsIn(['standard', 'silver', 'gold', 'platinum']) pricingTier?: string;
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsIn(['standard', 'silver', 'gold', 'platinum'])
+  pricingTier?: string;
 }
 
 export class UpdateWholesaleCustomerDto {
@@ -56,7 +54,10 @@ export class UpdateWholesaleCustomerDto {
   @ApiProperty({ required: false }) @IsOptional() @IsString() address?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() taxId?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsNumber() @Min(0) creditLimit?: number;
-  @ApiProperty({ required: false }) @IsOptional() @IsIn(['standard', 'silver', 'gold', 'platinum']) pricingTier?: string;
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsIn(['standard', 'silver', 'gold', 'platinum'])
+  pricingTier?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsIn(['active', 'inactive']) status?: string;
 }
 
@@ -82,6 +83,8 @@ export class CreateDeliveryDto {
 }
 
 export class UpdateDeliveryStatusDto {
-  @ApiProperty() @IsIn(['pending', 'dispatched', 'in_transit', 'delivered', 'failed']) status: string;
+  @ApiProperty()
+  @IsIn(['pending', 'dispatched', 'in_transit', 'delivered', 'failed'])
+  status: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() notes?: string;
 }

@@ -9,12 +9,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiParam,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { Response } from 'express';
 import * as fs from 'fs';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
@@ -55,11 +50,7 @@ export class BackupController {
   @ApiParam({ name: 'id', description: 'Backup ID' })
   @ApiResponse({ status: 200, description: 'Backup file stream' })
   @ApiResponse({ status: 404, description: 'Backup not found' })
-  async downloadBackup(
-    @Param('id') id: string,
-    @Request() req: any,
-    @Res() res: Response,
-  ) {
+  async downloadBackup(@Param('id') id: string, @Request() req: any, @Res() res: Response) {
     const tenantId = req.user?.tenantId;
     const backup = await this.backupService.downloadBackup(id, tenantId);
 
@@ -68,10 +59,7 @@ export class BackupController {
     }
 
     res.setHeader('Content-Type', 'application/json');
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="${backup.filename}"`,
-    );
+    res.setHeader('Content-Disposition', `attachment; filename="${backup.filename}"`);
     const stream = fs.createReadStream(backup.filePath);
     stream.pipe(res);
   }

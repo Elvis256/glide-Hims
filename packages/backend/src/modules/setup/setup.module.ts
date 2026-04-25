@@ -12,14 +12,7 @@ import { SystemSettingsModule } from '../system-settings/system-settings.module'
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([
-      Tenant,
-      Facility,
-      User,
-      Role,
-      UserRole,
-      SystemSetting,
-    ]),
+    TypeOrmModule.forFeature([Tenant, Facility, User, Role, UserRole, SystemSetting]),
     SystemSettingsModule,
   ],
   controllers: [SetupController],

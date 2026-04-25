@@ -46,6 +46,14 @@ export type VisitType =
   | 'referral'
   | 'review';
 
+export interface QueueValidationResult {
+  valid: boolean;
+  resolvedPriority: number;
+  requiresPayment: boolean;
+  initialQueueStatus: string;
+  servicePointCapacityLimit: number | null;
+}
+
 export interface CreateQueueEntryDto {
   patientId: string;
   servicePoint: string;
@@ -129,6 +137,11 @@ export function getPriorityFromFlags(flags: string[], config?: ServiceConfig): n
 }
 
 export const queueService = {
+  validateQueueRequest: async (data: CreateQueueEntryDto): Promise<QueueValidationResult> => {
+    const response = await api.post<QueueValidationResult>('/queue/validate', data);
+    return response.data;
+  },
+
   addToQueue: async (data: CreateQueueEntryDto): Promise<QueueEntry> => {
     const response = await api.post<QueueEntry>('/queue', data);
     return response.data;

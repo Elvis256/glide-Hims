@@ -1,11 +1,4 @@
-import {
-  Entity,
-  Column,
-  ManyToOne,
-  OneToMany,
-  JoinColumn,
-  Index,
-} from 'typeorm';
+import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Facility } from './facility.entity';
 import { ChartOfAccount } from './chart-of-account.entity';
@@ -196,7 +189,11 @@ export class BankReconciliationItem extends BaseEntity {
   @Column({ name: 'journal_entry_id', type: 'uuid', nullable: true })
   journalEntryId: string;
 
-  @Column({ type: 'enum', enum: ReconciliationItemStatus, default: ReconciliationItemStatus.UNMATCHED })
+  @Column({
+    type: 'enum',
+    enum: ReconciliationItemStatus,
+    default: ReconciliationItemStatus.UNMATCHED,
+  })
   status: ReconciliationItemStatus;
 
   @Column({ type: 'text', nullable: true })

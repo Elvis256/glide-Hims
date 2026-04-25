@@ -37,12 +37,9 @@ export class LicenseController {
   @ApiOperation({ summary: 'Validate a license key' })
   async validateLicense(@Body() body: { licenseKey: string }) {
     const result = await this.licenseService.validateLicense(body.licenseKey);
-    
+
     if (!result.valid) {
-      throw new HttpException(
-        { valid: false, error: result.error },
-        HttpStatus.UNAUTHORIZED,
-      );
+      throw new HttpException({ valid: false, error: result.error }, HttpStatus.UNAUTHORIZED);
     }
 
     return {
@@ -109,7 +106,11 @@ export class LicenseController {
     @Query('tenantId') tenantId?: string,
   ) {
     this.requireSystemAdmin(req);
-    return this.licenseService.listLicenses({ status, licenseType, tenantId: tenantId || req.user?.tenantId });
+    return this.licenseService.listLicenses({
+      status,
+      licenseType,
+      tenantId: tenantId || req.user?.tenantId,
+    });
   }
 
   /**
@@ -137,8 +138,8 @@ export class LicenseController {
   ) {
     this.requireSystemAdmin(req);
     const license = await this.licenseService.extendLicense(licenseKey, body.days);
-    return { 
-      message: 'License extended', 
+    return {
+      message: 'License extended',
       newExpiresAt: license.expiresAt,
     };
   }
@@ -155,10 +156,7 @@ export class LicenseController {
     @Request() req: any,
   ) {
     this.requireSystemAdmin(req);
-    const license = await this.licenseService.bindToHardware(
-      licenseKey,
-      body.hardwareId,
-    );
+    const license = await this.licenseService.bindToHardware(licenseKey, body.hardwareId);
     return { message: 'License bound to hardware', hardwareId: license.hardwareId };
   }
 }

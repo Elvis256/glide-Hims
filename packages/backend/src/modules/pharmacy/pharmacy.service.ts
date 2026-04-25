@@ -1,12 +1,36 @@
-import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Inject,
+  forwardRef,
+  Logger,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, In, DataSource, LessThanOrEqual } from 'typeorm';
-import { PharmacySale, PharmacySaleItem, SaleStatus, SaleType } from '../../database/entities/pharmacy-sale.entity';
-import { Item, StockLedger, StockBalance, MovementType, ExpiryAlert, ExpiryAlertStatus } from '../../database/entities/inventory.entity';
+import { Repository, Between, In, DataSource, LessThanOrEqual, EntityManager } from 'typeorm';
+import {
+  PharmacySale,
+  PharmacySaleItem,
+  SaleStatus,
+  SaleType,
+} from '../../database/entities/pharmacy-sale.entity';
+import {
+  Item,
+  StockLedger,
+  StockBalance,
+  MovementType,
+  ExpiryAlert,
+  ExpiryAlertStatus,
+} from '../../database/entities/inventory.entity';
 import { BatchStockBalance } from '../../database/entities/batch-stock.entity';
 import { Prescription, PrescriptionStatus } from '../../database/entities/prescription.entity';
 import { AuditLog } from '../../database/entities/audit-log.entity';
-import { CreatePharmacySaleDto, CompleteSaleDto, AllocateFEFODto, ReceiveBatchDto } from './pharmacy.dto';
+import {
+  CreatePharmacySaleDto,
+  CompleteSaleDto,
+  AllocateFEFODto,
+  ReceiveBatchDto,
+} from './pharmacy.dto';
 import { FinanceService } from '../finance/finance.service';
 
 @Injectable()
@@ -28,15 +52,46 @@ export class PharmacyService {
     private dataSource: DataSource,
   ) {}
 
-  async getQueueStats(facilityId?: string, tenantId?: string): Promise<{ pending: number; dispensed: number }> {
+  private async generateSaleNumber(manager: EntityManager, tenantId?: string): Promise<string> {
+    const today = new Date();
+    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+    const lockKey = `pharm_sale_num_${dateStr}_${tenantId || 'global'}`;
+
+    // Use advisory lock to prevent concurrent generation collisions
+    await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [lockKey]);
+
+    const lastSale = await manager
+      .getRepository(PharmacySale)
+      .createQueryBuilder('s')
+      .where('s.saleNumber LIKE :prefix', { prefix: `PHARM-${dateStr}-%` })
+      .andWhere(tenantId ? 's.tenant_id = :tenantId' : '1=1', { tenantId })
+      .orderBy('s.saleNumber', 'DESC')
+      .getOne();
+
+    let sequence = 1;
+    if (lastSale) {
+      const parts = lastSale.saleNumber.split('-');
+      const lastSeq = parseInt(parts[parts.length - 1], 10);
+      if (!isNaN(lastSeq)) {
+        sequence = lastSeq + 1;
+      }
+    }
+
+    return `PHARM-${dateStr}-${sequence.toString().padStart(4, '0')}`;
+  }
+
+  async getQueueStats(
+    facilityId?: string,
+    tenantId?: string,
+  ): Promise<{ pending: number; dispensed: number }> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     // Count pending prescriptions
     const pendingQuery = this.prescriptionRepo
       .createQueryBuilder('p')
-      .where('p.status IN (:...statuses)', { 
-        statuses: [PrescriptionStatus.PENDING, PrescriptionStatus.PARTIALLY_DISPENSED] 
+      .where('p.status IN (:...statuses)', {
+        statuses: [PrescriptionStatus.PENDING, PrescriptionStatus.PARTIALLY_DISPENSED],
       });
 
     if (tenantId) {
@@ -61,31 +116,23 @@ export class PharmacyService {
   }
 
   async createSale(dto: CreatePharmacySaleDto, userId: string, tenantId?: string) {
-    const saleNumber = `POS-${Date.now()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
-
-    // Prevent duplicate dispensing of the same prescription
-    if (dto.prescriptionId) {
-      const existingSale = await this.saleRepo.findOne({
-        where: { prescriptionId: dto.prescriptionId, status: SaleStatus.COMPLETED, ...(tenantId ? { tenantId } : {}) },
-      });
-      if (existingSale) {
-        throw new BadRequestException(
-          `Prescription ${dto.prescriptionId} has already been dispensed (Sale: ${existingSale.saleNumber})`,
-        );
-      }
-    }
-
-    // Validate all items have positive quantities and prices
+    // 1. Initial validation
     for (const item of dto.items) {
       if (item.quantity <= 0) {
-        throw new BadRequestException(`Item "${item.itemName || item.itemCode}" must have quantity > 0`);
+        throw new BadRequestException(
+          `Item "${item.itemName || item.itemCode}" must have quantity > 0`,
+        );
       }
       if (item.unitPrice < 0) {
-        throw new BadRequestException(`Item "${item.itemName || item.itemCode}" cannot have a negative unit price`);
+        throw new BadRequestException(
+          `Item "${item.itemName || item.itemCode}" cannot have a negative unit price`,
+        );
       }
       const discount = item.discountPercent || 0;
       if (discount < 0 || discount > 100) {
-        throw new BadRequestException(`Discount for "${item.itemName || item.itemCode}" must be between 0 and 100%`);
+        throw new BadRequestException(
+          `Discount for "${item.itemName || item.itemCode}" must be between 0 and 100%`,
+        );
       }
     }
 
@@ -95,76 +142,105 @@ export class PharmacyService {
       const amount = item.quantity * item.unitPrice * (1 - discount / 100);
       subtotal += amount;
     }
-    
+
     const discountAmount = dto.discountAmount || 0;
     const totalAmount = subtotal - discountAmount;
 
-    const sale = this.saleRepo.create({
-      saleNumber,
-      storeId: dto.storeId,
-      saleType: dto.saleType || SaleType.OTC,
-      patientId: dto.patientId,
-      customerName: dto.customerName,
-      customerPhone: dto.customerPhone,
-      prescriptionId: dto.prescriptionId,
-      paymentMethod: dto.paymentMethod || 'cash',
-      transactionReference: dto.transactionReference,
-      subtotal,
-      discountAmount,
-      totalAmount,
-      notes: dto.notes,
-      status: SaleStatus.PENDING,
-      soldById: userId,
-      ...(tenantId ? { tenantId } : {}),
-    });
-    const saved = await this.saleRepo.save(sale);
+    return this.dataSource
+      .transaction(async (manager) => {
+        const saleNumber = await this.generateSaleNumber(manager, tenantId);
 
-    // Validate items are active and not prescription-only for OTC sales
-    for (const item of dto.items) {
-      if (item.itemId) {
-        const drug = await this.inventoryRepo.findOne({ where: { id: item.itemId, ...(tenantId ? { tenantId } : {}) } });
-        if (drug && drug.status !== 'active') {
-          throw new BadRequestException(
-            `${item.itemName || drug.name} is ${drug.status} and cannot be sold`
-          );
-        }
-        if ((dto.saleType || SaleType.OTC) === SaleType.OTC && !dto.prescriptionId) {
-          if (drug && (drug as any).requiresPrescription) {
+        // Prevent duplicate dispensing of the same prescription
+        if (dto.prescriptionId) {
+          const existingSale = await manager.findOne(PharmacySale, {
+            where: {
+              prescriptionId: dto.prescriptionId,
+              status: SaleStatus.COMPLETED,
+              ...(tenantId ? { tenantId } : {}),
+            },
+          });
+          if (existingSale) {
             throw new BadRequestException(
-              `${item.itemName || drug.name} requires a prescription and cannot be sold over-the-counter without one`
+              `Prescription ${dto.prescriptionId} has already been dispensed (Sale: ${existingSale.saleNumber})`,
             );
           }
         }
-      }
-    }
 
-    for (const item of dto.items) {
-      const discount = item.discountPercent || 0;
-      const amount = item.quantity * item.unitPrice * (1 - discount / 100);
-      const saleItem = this.saleItemRepo.create({
-        saleId: saved.id,
-        itemId: item.itemId,
-        itemCode: item.itemCode,
-        itemName: item.itemName,
-        batchNumber: item.batchNumber || undefined,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        discountPercent: discount,
-        amount,
-        instructions: item.instructions,
-        ...(tenantId ? { tenantId } : {}),
-      });
-      if (item.expiryDate) {
-        saleItem.expiryDate = new Date(item.expiryDate);
-      }
-      await this.saleItemRepo.save(saleItem);
-    }
+        const sale = manager.create(PharmacySale, {
+          saleNumber,
+          storeId: dto.storeId,
+          saleType: dto.saleType || SaleType.OTC,
+          patientId: dto.patientId,
+          customerName: dto.customerName,
+          customerPhone: dto.customerPhone,
+          prescriptionId: dto.prescriptionId,
+          paymentMethod: dto.paymentMethod || 'cash',
+          transactionReference: dto.transactionReference,
+          subtotal,
+          discountAmount,
+          totalAmount,
+          notes: dto.notes,
+          status: SaleStatus.PENDING,
+          soldById: userId,
+          ...(tenantId ? { tenantId } : {}),
+        });
+        const saved = await manager.save(PharmacySale, sale);
 
-    return this.findSale(saved.id, tenantId);
+        // Validate items and create sale items
+        for (const item of dto.items) {
+          if (item.itemId) {
+            const drug = await manager.findOne(Item, {
+              where: { id: item.itemId, ...(tenantId ? { tenantId } : {}) },
+            });
+            if (drug && drug.status !== 'active') {
+              throw new BadRequestException(
+                `${item.itemName || drug.name} is ${drug.status} and cannot be sold`,
+              );
+            }
+            if ((dto.saleType || SaleType.OTC) === SaleType.OTC && !dto.prescriptionId) {
+              if (drug && drug.requiresPrescription) {
+                throw new BadRequestException(
+                  `${item.itemName || drug.name} requires a prescription and cannot be sold over-the-counter without one`,
+                );
+              }
+            }
+          }
+
+          const discount = item.discountPercent || 0;
+          const amount = item.quantity * item.unitPrice * (1 - discount / 100);
+          const saleItem = manager.create(PharmacySaleItem, {
+            saleId: saved.id,
+            itemId: item.itemId,
+            itemCode: item.itemCode,
+            itemName: item.itemName,
+            batchNumber: item.batchNumber || undefined,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            discountPercent: discount,
+            amount,
+            instructions: item.instructions,
+            ...(tenantId ? { tenantId } : {}),
+          });
+          if (item.expiryDate) {
+            saleItem.expiryDate = new Date(item.expiryDate);
+          }
+          await manager.save(PharmacySaleItem, saleItem);
+        }
+
+        return saved.id;
+      })
+      .then((id) => this.findSale(id, tenantId));
   }
 
-  async findAllSales(storeId?: string, status?: SaleStatus, date?: string, limit = 50, tenantId?: string) {
-    const query = this.saleRepo.createQueryBuilder('s')
+  async findAllSales(
+    storeId?: string,
+    status?: SaleStatus,
+    date?: string,
+    limit = 50,
+    tenantId?: string,
+  ) {
+    const query = this.saleRepo
+      .createQueryBuilder('s')
       .leftJoinAndSelect('s.store', 'st')
       .leftJoin('s.patient', 'p')
       .addSelect(['p.id', 'p.mrn', 'p.fullName']);
@@ -243,13 +319,14 @@ export class PharmacyService {
         }
         allStockBalances = await stockQuery.getMany();
       }
-      const stockMap = new Map(allStockBalances.map(sb => [sb.itemId, sb]));
+      const stockMap = new Map(allStockBalances.map((sb) => [sb.itemId, sb]));
 
       // Lock batch stock balances upfront for items with batch numbers
       const batchItems = sale.items.filter((i: any) => i.batchNumber);
       const batchStockMap = new Map<string, BatchStockBalance>();
       if (batchItems.length > 0) {
-        const batchQuery = batchStockRepo.createQueryBuilder('bs')
+        const batchQuery = batchStockRepo
+          .createQueryBuilder('bs')
           .setLock('pessimistic_write')
           .where('bs.facilityId = :facilityId', { facilityId })
           .orderBy('bs.itemId', 'ASC')
@@ -257,8 +334,9 @@ export class PharmacyService {
         if (tenantId) {
           batchQuery.andWhere('bs.tenantId = :tenantId', { tenantId });
         }
-        const orConditions = batchItems.map((_: any, idx: number) =>
-          `(bs.itemId = :bItemId${idx} AND bs.batchNumber = :bBatch${idx})`
+        const orConditions = batchItems.map(
+          (_: any, idx: number) =>
+            `(bs.itemId = :bItemId${idx} AND bs.batchNumber = :bBatch${idx})`,
         );
         const params: Record<string, string> = {};
         batchItems.forEach((item: any, idx: number) => {
@@ -293,20 +371,22 @@ export class PharmacyService {
 
           // Persistent audit log for controlled substance dispensing (transactional)
           const auditRepo = manager.getRepository(AuditLog);
-          await auditRepo.save(auditRepo.create({
-            action: 'CONTROLLED_SUBSTANCE_DISPENSED',
-            entityType: 'PharmacySale',
-            entityId: sale.id,
-            userId,
-            newValue: {
-              itemId: inventoryItem.id,
-              itemName: inventoryItem.name,
-              quantity: item.quantity,
-              saleNumber: sale.saleNumber,
-              prescriptionReference: (item as any).prescriptionReference || null,
-            },
-            tenantId,
-          }));
+          await auditRepo.save(
+            auditRepo.create({
+              action: 'CONTROLLED_SUBSTANCE_DISPENSED',
+              entityType: 'PharmacySale',
+              entityId: sale.id,
+              userId,
+              newValue: {
+                itemId: inventoryItem.id,
+                itemName: inventoryItem.name,
+                quantity: item.quantity,
+                saleNumber: sale.saleNumber,
+                prescriptionReference: (item as any).prescriptionReference || null,
+              },
+              tenantId,
+            }),
+          );
 
           this.logger.warn(
             `CONTROLLED SUBSTANCE DISPENSED: item=${inventoryItem.name}, qty=${item.quantity}, user=${userId}, sale=${sale.saleNumber}`,
@@ -318,7 +398,10 @@ export class PharmacyService {
         }
 
         // Dose/quantity safety limit
-        if (inventoryItem.maxDispenseQuantity && item.quantity > inventoryItem.maxDispenseQuantity) {
+        if (
+          inventoryItem.maxDispenseQuantity &&
+          item.quantity > inventoryItem.maxDispenseQuantity
+        ) {
           throw new BadRequestException(
             `Quantity ${item.quantity} exceeds max dispense limit of ${inventoryItem.maxDispenseQuantity} for "${inventoryItem.name}".`,
           );
@@ -327,7 +410,7 @@ export class PharmacyService {
         // Block dispensing of expired stock (DTO-provided expiry)
         if (item.expiryDate && new Date(item.expiryDate) < new Date()) {
           throw new BadRequestException(
-            `Item ${inventoryItem.name} batch ${item.batchNumber || 'N/A'} is expired. Expired stock cannot be sold.`
+            `Item ${inventoryItem.name} batch ${item.batchNumber || 'N/A'} is expired. Expired stock cannot be sold.`,
           );
         }
 
@@ -336,7 +419,7 @@ export class PharmacyService {
           const batchRecord = batchStockMap.get(`${item.itemId}:${item.batchNumber}`);
           if (batchRecord && new Date(batchRecord.expiryDate) < new Date()) {
             throw new BadRequestException(
-              `Item ${inventoryItem.name} batch ${item.batchNumber} is expired according to database records. Expired stock cannot be sold.`
+              `Item ${inventoryItem.name} batch ${item.batchNumber} is expired according to database records. Expired stock cannot be sold.`,
             );
           }
         }
@@ -346,7 +429,7 @@ export class PharmacyService {
 
         if (availableQty < item.quantity) {
           throw new BadRequestException(
-            `Insufficient stock for ${inventoryItem.name}. Available: ${availableQty}, Requested: ${item.quantity}`
+            `Insufficient stock for ${inventoryItem.name}. Available: ${availableQty}, Requested: ${item.quantity}`,
           );
         }
 
@@ -365,10 +448,11 @@ export class PharmacyService {
         if (item.batchNumber) {
           const batchBalance = batchStockMap.get(`${item.itemId}:${item.batchNumber}`);
           if (batchBalance) {
-            const batchAvailable = Number(batchBalance.quantity) - Number(batchBalance.reservedQuantity);
+            const batchAvailable =
+              Number(batchBalance.quantity) - Number(batchBalance.reservedQuantity);
             if (batchAvailable < item.quantity) {
               throw new BadRequestException(
-                `Insufficient batch stock for ${inventoryItem.name} batch ${item.batchNumber}. Available: ${batchAvailable}, Requested: ${item.quantity}`
+                `Insufficient batch stock for ${inventoryItem.name} batch ${item.batchNumber}. Available: ${batchAvailable}, Requested: ${item.quantity}`,
               );
             }
             batchBalance.quantity = Number(batchBalance.quantity) - item.quantity;
@@ -377,19 +461,21 @@ export class PharmacyService {
         }
 
         // Stock ledger entry in same transaction as balance updates
-        await stockLedgerRepo.save(stockLedgerRepo.create({
-          itemId: item.itemId,
-          movementType: MovementType.SALE,
-          quantity: -item.quantity,
-          balanceAfter: newBalance,
-          batchNumber: item.batchNumber,
-          referenceType: 'pharmacy_sale',
-          referenceId: sale.id,
-          notes: `POS Sale: ${sale.saleNumber}`,
-          createdById: userId,
-          facilityId: facilityId,
-          ...(tenantId ? { tenantId } : {}),
-        }));
+        await stockLedgerRepo.save(
+          stockLedgerRepo.create({
+            itemId: item.itemId,
+            movementType: MovementType.SALE,
+            quantity: -item.quantity,
+            balanceAfter: newBalance,
+            batchNumber: item.batchNumber,
+            referenceType: 'pharmacy_sale',
+            referenceId: sale.id,
+            notes: `POS Sale: ${sale.saleNumber}`,
+            createdById: userId,
+            facilityId: facilityId,
+            ...(tenantId ? { tenantId } : {}),
+          }),
+        );
       }
 
       // Sale status update in same transaction as stock updates
@@ -405,15 +491,21 @@ export class PharmacyService {
       const facilityIdForGL = sale.store?.facilityId;
       if (facilityIdForGL) {
         try {
-          await this.financeService.autoPostPharmacySaleJournal({
-            facilityId: facilityIdForGL,
-            saleNumber: sale.saleNumber,
-            totalAmount: Number(sale.totalAmount) || 0,
-            paymentMethod: dto.paymentMethod || sale.paymentMethod || 'cash',
-            userId,
-          }, tenantId);
+          await this.financeService.autoPostPharmacySaleJournal(
+            {
+              facilityId: facilityIdForGL,
+              saleNumber: sale.saleNumber,
+              totalAmount: Number(sale.totalAmount) || 0,
+              paymentMethod: dto.paymentMethod || sale.paymentMethod || 'cash',
+              userId,
+            },
+            tenantId,
+          );
         } catch (err) {
-          this.logger.error(`GL auto-post failed for sale ${sale.saleNumber}: ${err.message}`, err.stack);
+          this.logger.error(
+            `GL auto-post failed for sale ${sale.saleNumber}: ${err.message}`,
+            err.stack,
+          );
         }
       }
     });
@@ -437,19 +529,20 @@ export class PharmacyService {
     const end = new Date(start);
     end.setDate(end.getDate() + 1);
 
-    const qb = this.saleRepo.createQueryBuilder('s')
+    const qb = this.saleRepo
+      .createQueryBuilder('s')
       .leftJoin('s.store', 'store')
       .select([
         'COUNT(*) as "totalSales"',
         'COALESCE(SUM(s.totalAmount), 0) as "totalRevenue"',
         'COALESCE(SUM(s.discountAmount), 0) as "totalDiscounts"',
-        "COALESCE(SUM(CASE WHEN s.paymentMethod = 'cash' THEN s.amountPaid ELSE 0 END), 0) as \"cashTotal\"",
-        "COALESCE(SUM(CASE WHEN s.paymentMethod = 'mobile_money' THEN s.amountPaid ELSE 0 END), 0) as \"mobileTotal\"",
-        "COALESCE(SUM(CASE WHEN s.paymentMethod = 'card' THEN s.amountPaid ELSE 0 END), 0) as \"cardTotal\"",
-        "COALESCE(SUM(CASE WHEN s.paymentMethod = 'insurance' THEN s.amountPaid ELSE 0 END), 0) as \"insuranceTotal\"",
-        "COALESCE(SUM(CASE WHEN s.saleType = 'prescription' THEN s.totalAmount ELSE 0 END), 0) as \"prescriptionRevenue\"",
-        "COALESCE(SUM(CASE WHEN s.saleType = 'otc' THEN s.totalAmount ELSE 0 END), 0) as \"otcRevenue\"",
-        "COALESCE(SUM(CASE WHEN s.saleType = 'wholesale' THEN s.totalAmount ELSE 0 END), 0) as \"wholesaleRevenue\"",
+        'COALESCE(SUM(CASE WHEN s.paymentMethod = \'cash\' THEN s.amountPaid ELSE 0 END), 0) as "cashTotal"',
+        'COALESCE(SUM(CASE WHEN s.paymentMethod = \'mobile_money\' THEN s.amountPaid ELSE 0 END), 0) as "mobileTotal"',
+        'COALESCE(SUM(CASE WHEN s.paymentMethod = \'card\' THEN s.amountPaid ELSE 0 END), 0) as "cardTotal"',
+        'COALESCE(SUM(CASE WHEN s.paymentMethod = \'insurance\' THEN s.amountPaid ELSE 0 END), 0) as "insuranceTotal"',
+        'COALESCE(SUM(CASE WHEN s.saleType = \'prescription\' THEN s.totalAmount ELSE 0 END), 0) as "prescriptionRevenue"',
+        'COALESCE(SUM(CASE WHEN s.saleType = \'otc\' THEN s.totalAmount ELSE 0 END), 0) as "otcRevenue"',
+        'COALESCE(SUM(CASE WHEN s.saleType = \'wholesale\' THEN s.totalAmount ELSE 0 END), 0) as "wholesaleRevenue"',
       ])
       .where('s.status = :status', { status: SaleStatus.COMPLETED })
       .andWhere('s.createdAt BETWEEN :start AND :end', { start, end });
@@ -478,7 +571,8 @@ export class PharmacyService {
     const { storeId, facilityId, dateFrom, dateTo, tenantId } = params;
 
     // Base query: join sale items with inventory items to get unit cost
-    const qb = this.saleItemRepo.createQueryBuilder('si')
+    const qb = this.saleItemRepo
+      .createQueryBuilder('si')
       .innerJoin(PharmacySale, 's', 's.id = si.sale_id')
       .innerJoin(Item, 'item', 'item.id = si.item_id::uuid')
       .leftJoin('s.store', 'store')
@@ -504,7 +598,8 @@ export class PharmacyService {
     }
 
     // Summary metrics
-    const summaryQb = qb.clone()
+    const summaryQb = qb
+      .clone()
       .select([
         'COALESCE(SUM(si.quantity * si.unit_price), 0) as "totalRevenue"',
         'COALESCE(SUM(si.quantity * item.unit_cost), 0) as "totalCOGS"',
@@ -519,7 +614,8 @@ export class PharmacyService {
     const profitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
 
     // Per-item profit breakdown (top 20 by profit)
-    const itemProfitQb = qb.clone()
+    const itemProfitQb = qb
+      .clone()
       .select([
         'si.item_id as "itemId"',
         'si.item_name as "itemName"',
@@ -537,9 +633,10 @@ export class PharmacyService {
     const itemProfits = await itemProfitQb.getRawMany();
 
     // Daily profit trend
-    const dailyQb = qb.clone()
+    const dailyQb = qb
+      .clone()
       .select([
-        "TO_CHAR(s.created_at, 'YYYY-MM-DD') as \"date\"",
+        'TO_CHAR(s.created_at, \'YYYY-MM-DD\') as "date"',
         'COALESCE(SUM(si.quantity * si.unit_price), 0) as "revenue"',
         'COALESCE(SUM(si.quantity * item.unit_cost), 0) as "cogs"',
         'COALESCE(SUM(si.quantity * (si.unit_price - item.unit_cost)), 0) as "profit"',
@@ -556,7 +653,7 @@ export class PharmacyService {
         profitMargin: Number(profitMargin.toFixed(2)),
         totalTransactions: Number(summary?.totalTransactions || 0),
       },
-      itemProfits: itemProfits.map(ip => ({
+      itemProfits: itemProfits.map((ip) => ({
         itemId: ip.itemId,
         itemName: ip.itemName,
         quantitySold: Number(ip.quantitySold),
@@ -565,9 +662,12 @@ export class PharmacyService {
         revenue: Number(ip.revenue),
         cogs: Number(ip.cogs),
         profit: Number(ip.profit),
-        margin: Number(ip.revenue) > 0 ? Number(((Number(ip.profit) / Number(ip.revenue)) * 100).toFixed(2)) : 0,
+        margin:
+          Number(ip.revenue) > 0
+            ? Number(((Number(ip.profit) / Number(ip.revenue)) * 100).toFixed(2))
+            : 0,
       })),
-      dailyTrend: dailyTrend.map(d => ({
+      dailyTrend: dailyTrend.map((d) => ({
         date: d.date,
         revenue: Number(d.revenue),
         cogs: Number(d.cogs),
@@ -632,7 +732,12 @@ export class PharmacyService {
     });
 
     let remaining = quantity;
-    const allocations: { batchId: string; batchNumber: string; expiryDate: Date; allocatedQuantity: number }[] = [];
+    const allocations: {
+      batchId: string;
+      batchNumber: string;
+      expiryDate: Date;
+      allocatedQuantity: number;
+    }[] = [];
 
     for (const batch of batches) {
       if (remaining <= 0) break;
@@ -779,7 +884,9 @@ export class PharmacyService {
     const now = new Date();
     return results.map((r) => {
       const expiryDate = new Date(r.expiryDate);
-      const daysUntilExpiry = Math.ceil((expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      const daysUntilExpiry = Math.ceil(
+        (expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
+      );
       return {
         itemId: r.itemId,
         itemName: r.itemName,
@@ -793,7 +900,14 @@ export class PharmacyService {
     });
   }
 
-  async quarantineItem(itemId: string, batchNumber: string | undefined, tenantId: string, facilityId: string, userId: string, notes?: string) {
+  async quarantineItem(
+    itemId: string,
+    batchNumber: string | undefined,
+    tenantId: string,
+    facilityId: string,
+    userId: string,
+    notes?: string,
+  ) {
     // Check for existing active alert for same item+batch
     const where: any = { itemId, facilityId, tenantId, status: ExpiryAlertStatus.NEAR_EXPIRY };
     if (batchNumber) where.batchNumber = batchNumber;

@@ -15,13 +15,17 @@ export class ClinicalNotesService {
   ) {}
 
   private assertOwnerOrAdmin(note: ClinicalNote, userId: string, roles: string[] = []): void {
-    const isAdmin = roles.some(r => r.toLowerCase().includes('admin'));
+    const isAdmin = roles.some((r) => r.toLowerCase().includes('admin'));
     if (note.providerId !== userId && !isAdmin) {
       throw new ForbiddenException('Only the note author or an admin can modify this note');
     }
   }
 
-  async create(dto: CreateClinicalNoteDto, userId: string, tenantId?: string): Promise<ClinicalNote> {
+  async create(
+    dto: CreateClinicalNoteDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<ClinicalNote> {
     const encounter = await this.encounterRepository.findOne({
       where: { id: dto.encounterId, ...(tenantId ? { tenantId } : {}) },
     });
@@ -69,7 +73,13 @@ export class ClinicalNotesService {
     return note;
   }
 
-  async update(id: string, dto: UpdateClinicalNoteDto, userId: string, roles: string[] = [], tenantId?: string): Promise<ClinicalNote> {
+  async update(
+    id: string,
+    dto: UpdateClinicalNoteDto,
+    userId: string,
+    roles: string[] = [],
+    tenantId?: string,
+  ): Promise<ClinicalNote> {
     const note = await this.findOne(id, tenantId);
     this.assertOwnerOrAdmin(note, userId, roles);
 
@@ -101,7 +111,11 @@ export class ClinicalNotesService {
   }
 
   // Get patient's clinical history
-  async getPatientHistory(patientId: string, limit = 20, tenantId?: string): Promise<ClinicalNote[]> {
+  async getPatientHistory(
+    patientId: string,
+    limit = 20,
+    tenantId?: string,
+  ): Promise<ClinicalNote[]> {
     const qb = this.noteRepository
       .createQueryBuilder('note')
       .leftJoinAndSelect('note.encounter', 'encounter')
@@ -112,9 +126,6 @@ export class ClinicalNotesService {
       qb.andWhere('note.tenant_id = :tenantId', { tenantId });
     }
 
-    return qb
-      .orderBy('note.created_at', 'DESC')
-      .take(limit)
-      .getMany();
+    return qb.orderBy('note.created_at', 'DESC').take(limit).getMany();
   }
 }

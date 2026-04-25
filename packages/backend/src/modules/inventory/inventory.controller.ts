@@ -8,6 +8,7 @@ import {
   Param,
   Query,
   Request,
+  UseGuards,
 } from '@nestjs/common';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { InventoryService } from './inventory.service';
@@ -19,7 +20,11 @@ import {
   StockTransferDto,
 } from './dto/inventory.dto';
 import { MovementType } from '../../database/entities/inventory.entity';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
+@UseGuards(ModuleGuard)
+@RequireModule('stores')
 @Controller('inventory')
 export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
@@ -102,7 +107,11 @@ export class InventoryController {
     @Param('facilityId') facilityId: string,
     @Request() req: any,
   ) {
-    const balance = await this.inventoryService.getStockBalance(itemId, facilityId, req.user?.tenantId);
+    const balance = await this.inventoryService.getStockBalance(
+      itemId,
+      facilityId,
+      req.user?.tenantId,
+    );
     return balance || { totalQuantity: 0, availableQuantity: 0, reservedQuantity: 0 };
   }
 

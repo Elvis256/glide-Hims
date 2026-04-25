@@ -1,11 +1,4 @@
-import {
-  Entity,
-  Column,
-  ManyToOne,
-  OneToMany,
-  JoinColumn,
-  Index,
-} from 'typeorm';
+import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Facility } from './facility.entity';
 
@@ -50,10 +43,22 @@ export class ItemCategory extends BaseEntity {
   @Column({ name: 'is_active', default: true })
   isActive: boolean;
 
-  @Column({ name: 'default_retail_markup', type: 'decimal', precision: 5, scale: 2, nullable: true })
+  @Column({
+    name: 'default_retail_markup',
+    type: 'decimal',
+    precision: 5,
+    scale: 2,
+    nullable: true,
+  })
   defaultRetailMarkup: number;
 
-  @Column({ name: 'default_wholesale_markup', type: 'decimal', precision: 5, scale: 2, nullable: true })
+  @Column({
+    name: 'default_wholesale_markup',
+    type: 'decimal',
+    precision: 5,
+    scale: 2,
+    nullable: true,
+  })
   defaultWholesaleMarkup: number;
 
   // Relationships

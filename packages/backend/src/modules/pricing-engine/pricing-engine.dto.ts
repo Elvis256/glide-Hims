@@ -1,6 +1,20 @@
-import { IsUUID, IsOptional, IsNumber, IsBoolean, IsString, IsEnum, IsDateString, IsArray, ValidateNested } from 'class-validator';
+import {
+  IsUUID,
+  IsOptional,
+  IsNumber,
+  IsBoolean,
+  IsString,
+  IsEnum,
+  IsDateString,
+  IsArray,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
-import { PricingRuleType, DiscountType, AppliesTo } from '../../database/entities/pricing-rule.entity';
+import {
+  PricingRuleType,
+  DiscountType,
+  AppliesTo,
+} from '../../database/entities/pricing-rule.entity';
 
 // ========== Insurance Price List DTOs ==========
 

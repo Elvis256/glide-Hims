@@ -1,13 +1,36 @@
-import { Controller, Get, Post, Put, Patch, Body, Param, Query, Request, BadRequestException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Patch,
+  Body,
+  Param,
+  Query,
+  Request,
+  BadRequestException,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { IpdService } from './ipd.service';
 import {
-  CreateWardDto, UpdateWardDto, CreateBedDto, UpdateBedDto, BulkCreateBedsDto,
-  CreateAdmissionDto, DischargeAdmissionDto, TransferBedDto,
-  CreateNursingNoteDto, ScheduleMedicationDto, AdministerMedicationDto,
-  WardQueryDto, AdmissionQueryDto,
+  CreateWardDto,
+  UpdateWardDto,
+  CreateBedDto,
+  UpdateBedDto,
+  BulkCreateBedsDto,
+  CreateAdmissionDto,
+  DischargeAdmissionDto,
+  TransferBedDto,
+  CreateNursingNoteDto,
+  ScheduleMedicationDto,
+  AdministerMedicationDto,
+  WardQueryDto,
+  AdmissionQueryDto,
 } from './dto/ipd.dto';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -19,6 +42,8 @@ function validateUuid(id: string, fieldName = 'id'): void {
 
 @ApiTags('IPD/Ward Management')
 @ApiBearerAuth()
+@UseGuards(ModuleGuard)
+@RequireModule('ipd')
 @Controller('ipd')
 export class IpdController {
   constructor(private readonly ipdService: IpdService) {}
@@ -143,7 +168,11 @@ export class IpdController {
   @Post('admissions/:id/discharge')
   @AuthWithPermissions('ipd.update')
   @ApiOperation({ summary: 'Discharge a patient' })
-  dischargePatient(@Param('id') id: string, @Body() dto: DischargeAdmissionDto, @Request() req: any) {
+  dischargePatient(
+    @Param('id') id: string,
+    @Body() dto: DischargeAdmissionDto,
+    @Request() req: any,
+  ) {
     validateUuid(id);
     return this.ipdService.dischargePatient(id, dto, req.user.id, req.user?.tenantId);
   }
@@ -183,7 +212,11 @@ export class IpdController {
   @Get('admissions/:id/medications')
   @AuthWithPermissions('ipd.read')
   @ApiOperation({ summary: 'Get medication schedule for an admission' })
-  getMedicationSchedule(@Param('id') admissionId: string, @Query('date') date?: string, @Request() req?: any) {
+  getMedicationSchedule(
+    @Param('id') admissionId: string,
+    @Query('date') date?: string,
+    @Request() req?: any,
+  ) {
     validateUuid(admissionId);
     return this.ipdService.getMedicationSchedule(admissionId, date, req?.user?.tenantId);
   }
@@ -191,7 +224,11 @@ export class IpdController {
   @Put('medications/:id/administer')
   @AuthWithPermissions('ipd.update')
   @ApiOperation({ summary: 'Record medication administration' })
-  administerMedication(@Param('id') id: string, @Body() dto: AdministerMedicationDto, @Request() req: any) {
+  administerMedication(
+    @Param('id') id: string,
+    @Body() dto: AdministerMedicationDto,
+    @Request() req: any,
+  ) {
     validateUuid(id);
     return this.ipdService.administerMedication(id, dto, req.user.id, req.user?.tenantId);
   }

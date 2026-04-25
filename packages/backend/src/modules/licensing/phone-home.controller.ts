@@ -35,11 +35,8 @@ export class PhoneHomeController {
   @Public()
   @Throttle({ default: { ttl: 60000, limit: 5 } })
   @ApiOperation({ summary: 'Receive phone home heartbeat' })
-  async receiveHeartbeat(
-    @Body() payload: PhoneHomePayload,
-    @Req() req: ExpressRequest,
-  ) {
-    const ipAddress = 
+  async receiveHeartbeat(@Body() payload: PhoneHomePayload, @Req() req: ExpressRequest) {
+    const ipAddress =
       (req.headers['x-forwarded-for'] as string)?.split(',')[0] ||
       req.socket.remoteAddress ||
       'unknown';

@@ -2,9 +2,17 @@ import { Entity, Column, ManyToOne, JoinColumn, Index, Unique } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { User } from './user.entity';
 
-export type FingerIndex = 
-  | 'right_thumb' | 'right_index' | 'right_middle' | 'right_ring' | 'right_little'
-  | 'left_thumb' | 'left_index' | 'left_middle' | 'left_ring' | 'left_little';
+export type FingerIndex =
+  | 'right_thumb'
+  | 'right_index'
+  | 'right_middle'
+  | 'right_ring'
+  | 'right_little'
+  | 'left_thumb'
+  | 'left_index'
+  | 'left_middle'
+  | 'left_ring'
+  | 'left_little';
 
 @Entity('biometric_data')
 @Unique(['userId', 'fingerIndex'])

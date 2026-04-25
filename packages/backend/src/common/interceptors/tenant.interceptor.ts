@@ -23,14 +23,9 @@ import { IS_PUBLIC_KEY } from '../../modules/auth/decorators/public.decorator';
  */
 @Injectable()
 export class TenantInterceptor implements NestInterceptor {
-  constructor(
-    private readonly reflector: Reflector,
-  ) {}
+  constructor(private readonly reflector: Reflector) {}
 
-  async intercept(
-    context: ExecutionContext,
-    next: CallHandler,
-  ): Promise<Observable<any>> {
+  async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<any>> {
     const request = context.switchToHttp().getRequest();
     const tenantId = request.user?.tenantId;
 

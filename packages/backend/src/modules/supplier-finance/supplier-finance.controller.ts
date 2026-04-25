@@ -1,8 +1,14 @@
-import { Controller, Get, Post, Put, Param, Body, Query, Request } from '@nestjs/common';
+import { Controller, Get, Post, Put, Param, Body, Query, Request, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { SupplierFinanceService } from './supplier-finance.service';
-import { PaymentVoucherStatus, PaymentMethod } from '../../database/entities/supplier-payment.entity';
-import { CreditNoteType, CreditNoteStatus } from '../../database/entities/supplier-credit-note.entity';
+import {
+  PaymentVoucherStatus,
+  PaymentMethod,
+} from '../../database/entities/supplier-payment.entity';
+import {
+  CreditNoteType,
+  CreditNoteStatus,
+} from '../../database/entities/supplier-credit-note.entity';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import {
@@ -10,9 +16,13 @@ import {
   CreatePaymentVoucherDto,
   CreateSupplierCreditNoteDto,
 } from './dto/supplier-finance.dto';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('Supplier Finance')
 @ApiBearerAuth()
+@UseGuards(ModuleGuard)
+@RequireModule('finance')
 @Controller('supplier-finance')
 export class SupplierFinanceController {
   constructor(private readonly supplierFinanceService: SupplierFinanceService) {}
@@ -22,7 +32,11 @@ export class SupplierFinanceController {
   @AuthWithPermissions('finance.manage')
   @Post('payments')
   @ApiOperation({ summary: 'Create payment voucher' })
-  async createPaymentVoucher(@Body() data: CreatePaymentVoucherDto, @CurrentUser() user: any, @Request() req: any) {
+  async createPaymentVoucher(
+    @Body() data: CreatePaymentVoucherDto,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
     return this.supplierFinanceService.createPaymentVoucher(data, user.id, req.user?.tenantId);
   }
 
@@ -37,12 +51,16 @@ export class SupplierFinanceController {
     @Query('endDate') endDate?: string,
     @Request() req?: any,
   ) {
-    return this.supplierFinanceService.listPaymentVouchers(facilityId, {
-      status,
-      supplierId,
-      startDate: startDate ? new Date(startDate) : undefined,
-      endDate: endDate ? new Date(endDate) : undefined,
-    }, req?.user?.tenantId);
+    return this.supplierFinanceService.listPaymentVouchers(
+      facilityId,
+      {
+        status,
+        supplierId,
+        startDate: startDate ? new Date(startDate) : undefined,
+        endDate: endDate ? new Date(endDate) : undefined,
+      },
+      req?.user?.tenantId,
+    );
   }
 
   @AuthWithPermissions('finance.read')
@@ -62,7 +80,11 @@ export class SupplierFinanceController {
   @AuthWithPermissions('finance.manage')
   @Post('payments/:id/approve')
   @ApiOperation({ summary: 'Approve payment voucher' })
-  async approvePaymentVoucher(@Param('id') id: string, @CurrentUser() user: any, @Request() req: any) {
+  async approvePaymentVoucher(
+    @Param('id') id: string,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
     return this.supplierFinanceService.approvePaymentVoucher(id, user.id, req.user?.tenantId);
   }
 
@@ -90,7 +112,11 @@ export class SupplierFinanceController {
   @AuthWithPermissions('finance.manage')
   @Post('credit-notes')
   @ApiOperation({ summary: 'Create credit/debit note' })
-  async createCreditNote(@Body() data: CreateSupplierCreditNoteDto, @CurrentUser() user: any, @Request() req: any) {
+  async createCreditNote(
+    @Body() data: CreateSupplierCreditNoteDto,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
     return this.supplierFinanceService.createCreditNote(data, user.id, req.user?.tenantId);
   }
 
@@ -106,13 +132,17 @@ export class SupplierFinanceController {
     @Query('endDate') endDate?: string,
     @Request() req?: any,
   ) {
-    return this.supplierFinanceService.listCreditNotes(facilityId, {
-      noteType,
-      status,
-      supplierId,
-      startDate: startDate ? new Date(startDate) : undefined,
-      endDate: endDate ? new Date(endDate) : undefined,
-    }, req?.user?.tenantId);
+    return this.supplierFinanceService.listCreditNotes(
+      facilityId,
+      {
+        noteType,
+        status,
+        supplierId,
+        startDate: startDate ? new Date(startDate) : undefined,
+        endDate: endDate ? new Date(endDate) : undefined,
+      },
+      req?.user?.tenantId,
+    );
   }
 
   @AuthWithPermissions('finance.read')
@@ -137,7 +167,12 @@ export class SupplierFinanceController {
     @Body() data: ApplyCreditNoteDto,
     @Request() req: any,
   ) {
-    return this.supplierFinanceService.applyCreditNote(id, data.paymentVoucherId, data.amount, req.user?.tenantId);
+    return this.supplierFinanceService.applyCreditNote(
+      id,
+      data.paymentVoucherId,
+      data.amount,
+      req.user?.tenantId,
+    );
   }
 
   @AuthWithPermissions('finance.manage')

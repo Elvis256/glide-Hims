@@ -35,10 +35,7 @@ export class UpdatesController {
   @Get('check')
   @Public()
   @ApiOperation({ summary: 'Check for available updates' })
-  async checkForUpdates(
-    @Query('version') version: string,
-    @Query('license') license?: string,
-  ) {
+  async checkForUpdates(@Query('version') version: string, @Query('license') license?: string) {
     return this.updatesService.checkForUpdates(version || '0.0.0');
   }
 
@@ -83,7 +80,8 @@ export class UpdatesController {
   @Auth('Administrator')
   @ApiOperation({ summary: 'Create new version' })
   async createVersion(
-    @Body() body: {
+    @Body()
+    body: {
       version: string;
       versionCode: string;
       releaseNotes?: string;
@@ -106,10 +104,7 @@ export class UpdatesController {
   @Put('versions/:version/set-latest')
   @Auth('Administrator')
   @ApiOperation({ summary: 'Set version as latest' })
-  async setLatestVersion(
-    @Param('version') version: string,
-    @Request() req: any,
-  ) {
+  async setLatestVersion(@Param('version') version: string, @Request() req: any) {
     this.requireSystemAdmin(req);
     return this.updatesService.setLatestVersion(version);
   }
@@ -142,7 +137,7 @@ export class UpdatesController {
 
     res.setHeader('Content-Disposition', `attachment; filename=glide-hims-${version}.tar.gz`);
     res.setHeader('Content-Type', 'application/gzip');
-    
+
     if (appVersion.checksum) {
       res.setHeader('X-Checksum-SHA256', appVersion.checksum);
     }

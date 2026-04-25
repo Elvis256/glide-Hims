@@ -1,4 +1,13 @@
-import { IsUUID, IsOptional, IsString, IsEnum, IsInt, Min, Max, IsDateString } from 'class-validator';
+import {
+  IsUUID,
+  IsOptional,
+  IsString,
+  IsEnum,
+  IsInt,
+  Min,
+  Max,
+  IsDateString,
+} from 'class-validator';
 import { DutyStatus } from '../../../database/entities/doctor-duty.entity';
 
 export class CreateDoctorDutyDto {

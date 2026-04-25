@@ -7,6 +7,7 @@ import {
   Param,
   Query,
   Request,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
@@ -22,9 +23,13 @@ import {
   CreateDeliveryDto,
   UpdateDeliveryStatusDto,
 } from './pos.dto';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('POS')
 @ApiBearerAuth()
+@UseGuards(ModuleGuard)
+@RequireModule('pos')
 @Controller('pos')
 export class PosController {
   constructor(private readonly service: PosService) {}
@@ -115,7 +120,11 @@ export class PosController {
   @Patch('wholesale/customers/:id')
   @AuthWithPermissions('wholesale.manage')
   @ApiOperation({ summary: 'Update a wholesale customer' })
-  updateCustomer(@Param('id') id: string, @Body() dto: UpdateWholesaleCustomerDto, @Request() req: any) {
+  updateCustomer(
+    @Param('id') id: string,
+    @Body() dto: UpdateWholesaleCustomerDto,
+    @Request() req: any,
+  ) {
     return this.service.updateCustomer(id, dto, req.user?.tenantId);
   }
 
@@ -147,7 +156,11 @@ export class PosController {
   @Patch('deliveries/:id/status')
   @AuthWithPermissions('wholesale.manage')
   @ApiOperation({ summary: 'Update delivery status' })
-  updateDeliveryStatus(@Param('id') id: string, @Body() dto: UpdateDeliveryStatusDto, @Request() req: any) {
+  updateDeliveryStatus(
+    @Param('id') id: string,
+    @Body() dto: UpdateDeliveryStatusDto,
+    @Request() req: any,
+  ) {
     return this.service.updateDeliveryStatus(id, dto, req.user?.tenantId);
   }
 

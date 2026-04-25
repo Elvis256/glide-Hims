@@ -1,8 +1,17 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan } from 'typeorm';
-import { VendorContract, ContractAmendment, ContractStatus } from '../../database/entities/vendor-contract.entity';
-import { CreateVendorContractDto, UpdateVendorContractDto, CreateAmendmentDto, RenewContractDto } from './dto/vendor-contract.dto';
+import {
+  VendorContract,
+  ContractAmendment,
+  ContractStatus,
+} from '../../database/entities/vendor-contract.entity';
+import {
+  CreateVendorContractDto,
+  UpdateVendorContractDto,
+  CreateAmendmentDto,
+  RenewContractDto,
+} from './dto/vendor-contract.dto';
 
 @Injectable()
 export class VendorContractsService {
@@ -13,7 +22,11 @@ export class VendorContractsService {
     @InjectRepository(ContractAmendment) private amendmentRepo: Repository<ContractAmendment>,
   ) {}
 
-  async create(dto: CreateVendorContractDto, userId: string, tenantId?: string): Promise<VendorContract> {
+  async create(
+    dto: CreateVendorContractDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<VendorContract> {
     const contract = this.contractRepo.create({
       contractNumber: dto.contractNumber,
       supplierId: dto.supplierId,
@@ -34,7 +47,11 @@ export class VendorContractsService {
     return this.findOne(saved.id, tenantId);
   }
 
-  async findAll(facilityId: string, options: { status?: ContractStatus; supplierId?: string } = {}, tenantId?: string) {
+  async findAll(
+    facilityId: string,
+    options: { status?: ContractStatus; supplierId?: string } = {},
+    tenantId?: string,
+  ) {
     const qb = this.contractRepo
       .createQueryBuilder('contract')
       .leftJoinAndSelect('contract.supplier', 'supplier')
@@ -72,9 +89,13 @@ export class VendorContractsService {
     return contract;
   }
 
-  async update(id: string, dto: UpdateVendorContractDto, tenantId?: string): Promise<VendorContract> {
+  async update(
+    id: string,
+    dto: UpdateVendorContractDto,
+    tenantId?: string,
+  ): Promise<VendorContract> {
     const contract = await this.findOne(id, tenantId);
-    
+
     if (dto.value !== undefined) contract.value = dto.value;
     if (dto.terms !== undefined) contract.terms = dto.terms;
     if (dto.autoRenew !== undefined) contract.autoRenew = dto.autoRenew;
@@ -97,13 +118,17 @@ export class VendorContractsService {
     return this.findOne(id, tenantId);
   }
 
-  async addAmendment(dto: CreateAmendmentDto, userId: string, tenantId?: string): Promise<ContractAmendment> {
+  async addAmendment(
+    dto: CreateAmendmentDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<ContractAmendment> {
     const contract = await this.findOne(dto.contractId, tenantId);
-    
+
     const amendCountWhere1: any = { contractId: dto.contractId };
     if (tenantId) amendCountWhere1.tenantId = tenantId;
     const count = await this.amendmentRepo.count({ where: amendCountWhere1 });
-    
+
     const amendment = this.amendmentRepo.create({
       contractId: dto.contractId,
       amendmentNumber: count + 1,
@@ -125,16 +150,25 @@ export class VendorContractsService {
     return saved;
   }
 
-  async renew(id: string, dto: RenewContractDto, userId: string, tenantId?: string): Promise<VendorContract> {
+  async renew(
+    id: string,
+    dto: RenewContractDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<VendorContract> {
     const contract = await this.findOne(id, tenantId);
-    if (![ContractStatus.ACTIVE, ContractStatus.EXPIRING_SOON, ContractStatus.EXPIRED].includes(contract.status)) {
+    if (
+      ![ContractStatus.ACTIVE, ContractStatus.EXPIRING_SOON, ContractStatus.EXPIRED].includes(
+        contract.status,
+      )
+    ) {
       throw new BadRequestException('Only active/expiring/expired contracts can be renewed');
     }
 
     const amendCountWhere2: any = { contractId: id };
     if (tenantId) amendCountWhere2.tenantId = tenantId;
     const count = await this.amendmentRepo.count({ where: amendCountWhere2 });
-    
+
     const amendment = this.amendmentRepo.create({
       contractId: id,
       amendmentNumber: count + 1,
@@ -165,7 +199,11 @@ export class VendorContractsService {
     return this.findOne(id, tenantId);
   }
 
-  async checkExpiringContracts(facilityId: string, daysAhead: number = 30, tenantId?: string): Promise<VendorContract[]> {
+  async checkExpiringContracts(
+    facilityId: string,
+    daysAhead: number = 30,
+    tenantId?: string,
+  ): Promise<VendorContract[]> {
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + daysAhead);
 
@@ -183,11 +221,13 @@ export class VendorContractsService {
 
     // Update status to expiring_soon — transactional batch update
     if (contracts.length > 0) {
-      const activeIds = contracts.filter(c => c.status === ContractStatus.ACTIVE).map(c => c.id);
+      const activeIds = contracts
+        .filter((c) => c.status === ContractStatus.ACTIVE)
+        .map((c) => c.id);
       if (activeIds.length > 0) {
         await this.contractRepo.update(activeIds, { status: ContractStatus.EXPIRING_SOON });
         // Update in-memory objects to reflect the change
-        contracts.forEach(c => {
+        contracts.forEach((c) => {
           if (c.status === ContractStatus.ACTIVE) c.status = ContractStatus.EXPIRING_SOON;
         });
       }

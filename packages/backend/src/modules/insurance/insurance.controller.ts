@@ -7,6 +7,7 @@ import {
   Param,
   Query,
   Request,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { InsuranceService } from './insurance.service';
@@ -25,9 +26,13 @@ import {
 import { ClaimStatus } from '../../database/entities/insurance-claim.entity';
 import { PolicyStatus } from '../../database/entities/insurance-policy.entity';
 import { PreAuthStatus } from '../../database/entities/pre-authorization.entity';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('Insurance')
 @ApiBearerAuth()
+@UseGuards(ModuleGuard)
+@RequireModule('billing')
 @Controller('insurance')
 export class InsuranceController {
   constructor(private readonly insuranceService: InsuranceService) {}
@@ -72,7 +77,11 @@ export class InsuranceController {
   @Patch('providers/:id')
   @AuthWithPermissions('insurance.providers.update')
   @ApiOperation({ summary: 'Update provider' })
-  async updateProvider(@Param('id') id: string, @Body() dto: Partial<CreateProviderDto>, @Request() req: any) {
+  async updateProvider(
+    @Param('id') id: string,
+    @Body() dto: Partial<CreateProviderDto>,
+    @Request() req: any,
+  ) {
     return this.insuranceService.updateProvider(id, dto, req.user?.tenantId);
   }
 
@@ -96,7 +105,10 @@ export class InsuranceController {
     @Query('status') status?: PolicyStatus,
     @Request() req?: any,
   ) {
-    return this.insuranceService.getPolicies({ providerId, patientId, status }, req?.user?.tenantId);
+    return this.insuranceService.getPolicies(
+      { providerId, patientId, status },
+      req?.user?.tenantId,
+    );
   }
 
   @Get('policies/:id')
@@ -157,7 +169,11 @@ export class InsuranceController {
     @Query('endDate') endDate?: string,
     @Request() req?: any,
   ) {
-    return this.insuranceService.getClaims(facilityId, { status, providerId, patientId, startDate, endDate }, req?.user?.tenantId);
+    return this.insuranceService.getClaims(
+      facilityId,
+      { status, providerId, patientId, startDate, endDate },
+      req?.user?.tenantId,
+    );
   }
 
   @Get('claims/:id')
@@ -170,7 +186,11 @@ export class InsuranceController {
   @Post('claims/:id/items')
   @AuthWithPermissions('insurance.claims.update')
   @ApiOperation({ summary: 'Add item to claim' })
-  async addClaimItem(@Param('id') id: string, @Body() dto: CreateClaimItemDto, @Request() req: any) {
+  async addClaimItem(
+    @Param('id') id: string,
+    @Body() dto: CreateClaimItemDto,
+    @Request() req: any,
+  ) {
     return this.insuranceService.addClaimItem(id, dto, req.user?.tenantId);
   }
 
@@ -224,7 +244,11 @@ export class InsuranceController {
     @Query('policyId') policyId?: string,
     @Request() req?: any,
   ) {
-    return this.insuranceService.getPreAuths(facilityId, { status, patientId, policyId }, req?.user?.tenantId);
+    return this.insuranceService.getPreAuths(
+      facilityId,
+      { status, patientId, policyId },
+      req?.user?.tenantId,
+    );
   }
 
   @Get('pre-auth/:id')
@@ -244,7 +268,11 @@ export class InsuranceController {
   @Post('pre-auth/:id/approve')
   @AuthWithPermissions('insurance.preauth.process')
   @ApiOperation({ summary: 'Approve pre-authorization' })
-  async approvePreAuth(@Param('id') id: string, @Body() dto: ProcessPreAuthDto, @Request() req: any) {
+  async approvePreAuth(
+    @Param('id') id: string,
+    @Body() dto: ProcessPreAuthDto,
+    @Request() req: any,
+  ) {
     return this.insuranceService.processPreAuth(id, dto, true, req.user?.tenantId);
   }
 
@@ -268,7 +296,12 @@ export class InsuranceController {
     @Query('endDate') endDate: string,
     @Request() req?: any,
   ) {
-    return this.insuranceService.getDenialsAnalysis(facilityId, startDate, endDate, req?.user?.tenantId);
+    return this.insuranceService.getDenialsAnalysis(
+      facilityId,
+      startDate,
+      endDate,
+      req?.user?.tenantId,
+    );
   }
 
   @Get('reports/claim-status')
@@ -283,7 +316,12 @@ export class InsuranceController {
     @Query('endDate') endDate: string,
     @Request() req?: any,
   ) {
-    return this.insuranceService.getClaimStatusReport(facilityId, startDate, endDate, req?.user?.tenantId);
+    return this.insuranceService.getClaimStatusReport(
+      facilityId,
+      startDate,
+      endDate,
+      req?.user?.tenantId,
+    );
   }
 
   @Get('reports/denials')
@@ -298,7 +336,12 @@ export class InsuranceController {
     @Query('endDate') endDate: string,
     @Request() req?: any,
   ) {
-    return this.insuranceService.getDenialsAnalysis(facilityId, startDate, endDate, req?.user?.tenantId);
+    return this.insuranceService.getDenialsAnalysis(
+      facilityId,
+      startDate,
+      endDate,
+      req?.user?.tenantId,
+    );
   }
 
   @Get('reports/provider-performance')
@@ -313,7 +356,12 @@ export class InsuranceController {
     @Query('endDate') endDate: string,
     @Request() req?: any,
   ) {
-    return this.insuranceService.getProviderPerformance(facilityId, startDate, endDate, req?.user?.tenantId);
+    return this.insuranceService.getProviderPerformance(
+      facilityId,
+      startDate,
+      endDate,
+      req?.user?.tenantId,
+    );
   }
 
   // ============ BATCH OPERATIONS ============
@@ -349,11 +397,15 @@ export class InsuranceController {
     @Query('endDate') endDate?: string,
     @Request() req?: any,
   ) {
-    return this.insuranceService.getEncountersAwaitingClaims(facilityId, {
-      providerId,
-      startDate,
-      endDate,
-    }, req?.user?.tenantId);
+    return this.insuranceService.getEncountersAwaitingClaims(
+      facilityId,
+      {
+        providerId,
+        startDate,
+        endDate,
+      },
+      req?.user?.tenantId,
+    );
   }
 
   @Post('encounters/:encounterId/create-claim')
@@ -365,6 +417,10 @@ export class InsuranceController {
     @Query('facilityId') facilityId: string,
     @Request() req?: any,
   ) {
-    return this.insuranceService.createClaimFromEncounter(encounterId, facilityId, req?.user?.tenantId);
+    return this.insuranceService.createClaimFromEncounter(
+      encounterId,
+      facilityId,
+      req?.user?.tenantId,
+    );
   }
 }

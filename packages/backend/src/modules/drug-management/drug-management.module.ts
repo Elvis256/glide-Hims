@@ -14,12 +14,7 @@ import { IntegrationsModule } from '../integrations/integrations.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([
-      DrugClassification,
-      DrugInteraction,
-      DrugAllergyClass,
-      DrugSyncLog,
-    ]),
+    TypeOrmModule.forFeature([DrugClassification, DrugInteraction, DrugAllergyClass, DrugSyncLog]),
     IntegrationsModule,
   ],
   controllers: [DrugManagementController, DrugDbSyncController],

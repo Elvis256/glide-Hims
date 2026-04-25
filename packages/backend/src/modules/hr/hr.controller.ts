@@ -14,6 +14,7 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  UseGuards,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiConsumes } from '@nestjs/swagger';
@@ -65,9 +66,13 @@ import { LeaveStatus } from '../../database/entities/leave-request.entity';
 import { PayrollStatus } from '../../database/entities/payroll-run.entity';
 import { DocumentType, DocumentStatus } from '../../database/entities/staff-document.entity';
 import { SystemSettingsService } from '../system-settings/system-settings.service';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('HR & Payroll')
 @ApiBearerAuth()
+@UseGuards(ModuleGuard)
+@RequireModule('hr')
 @Controller('hr')
 export class HrController {
   constructor(
@@ -101,7 +106,11 @@ export class HrController {
     @Query('offset') offset?: number,
     @Request() req?: any,
   ) {
-    return this.hrService.getStaff(facilityId, { status, departmentId, limit, offset }, req?.user?.tenantId);
+    return this.hrService.getStaff(
+      facilityId,
+      { status, departmentId, limit, offset },
+      req?.user?.tenantId,
+    );
   }
 
   @Get('staff/:id')
@@ -128,7 +137,11 @@ export class HrController {
   @Post('staff/:id/deactivate')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Deactivate a staff member' })
-  async deactivateStaff(@Param('id') id: string, @Body() body: DeactivateStaffDto, @Request() req: any) {
+  async deactivateStaff(
+    @Param('id') id: string,
+    @Body() body: DeactivateStaffDto,
+    @Request() req: any,
+  ) {
     return this.hrService.deactivateStaff(id, body.reason, req.user?.tenantId);
   }
 
@@ -141,13 +154,16 @@ export class HrController {
 
   @Post('staff/:id/offboard')
   @AuthWithPermissions('hr.update')
-  @ApiOperation({ summary: 'Offboard a staff member (deactivate, revoke access, record termination)' })
-  async offboardStaff(
-    @Param('id') id: string,
-    @Body() dto: OffboardStaffDto,
-    @Request() req: any,
-  ) {
-    return this.hrService.offboardEmployee(id, dto, req.user?.sub || req.user?.id, req.user?.tenantId);
+  @ApiOperation({
+    summary: 'Offboard a staff member (deactivate, revoke access, record termination)',
+  })
+  async offboardStaff(@Param('id') id: string, @Body() dto: OffboardStaffDto, @Request() req: any) {
+    return this.hrService.offboardEmployee(
+      id,
+      dto,
+      req.user?.sub || req.user?.id,
+      req.user?.tenantId,
+    );
   }
 
   @Get('designations/stats')
@@ -170,7 +186,10 @@ export class HrController {
   @Header('Deprecation', 'true')
   @Header('Sunset', '2026-06-01')
   @Header('Link', '</api/v1/hr/staff>; rel="successor-version"')
-  @ApiOperation({ deprecated: true, summary: 'Create new employee (deprecated — use POST /hr/staff)' })
+  @ApiOperation({
+    deprecated: true,
+    summary: 'Create new employee (deprecated — use POST /hr/staff)',
+  })
   async createEmployee(@Body() dto: CreateEmployeeDto, @Request() req: any) {
     return this.hrService.createEmployee(dto, req.user?.tenantId);
   }
@@ -180,7 +199,10 @@ export class HrController {
   @Header('Deprecation', 'true')
   @Header('Sunset', '2026-06-01')
   @Header('Link', '</api/v1/hr/staff>; rel="successor-version"')
-  @ApiOperation({ deprecated: true, summary: 'Get employees list (deprecated — use GET /hr/staff)' })
+  @ApiOperation({
+    deprecated: true,
+    summary: 'Get employees list (deprecated — use GET /hr/staff)',
+  })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'status', required: false, enum: EmploymentStatus })
   @ApiQuery({ name: 'department', required: false })
@@ -194,7 +216,11 @@ export class HrController {
     @Query('offset') offset?: number,
     @Request() req?: any,
   ) {
-    return this.hrService.getEmployees(facilityId, { status, department, limit, offset }, req?.user?.tenantId);
+    return this.hrService.getEmployees(
+      facilityId,
+      { status, department, limit, offset },
+      req?.user?.tenantId,
+    );
   }
 
   @Get('employees/:id')
@@ -202,7 +228,10 @@ export class HrController {
   @Header('Deprecation', 'true')
   @Header('Sunset', '2026-06-01')
   @Header('Link', '</api/v1/hr/staff>; rel="successor-version"')
-  @ApiOperation({ deprecated: true, summary: 'Get employee by ID (deprecated — use GET /hr/staff/:id)' })
+  @ApiOperation({
+    deprecated: true,
+    summary: 'Get employee by ID (deprecated — use GET /hr/staff/:id)',
+  })
   async getEmployeeById(@Param('id') id: string, @Request() req: any) {
     return this.hrService.getEmployeeById(id, req.user?.tenantId);
   }
@@ -212,8 +241,15 @@ export class HrController {
   @Header('Deprecation', 'true')
   @Header('Sunset', '2026-06-01')
   @Header('Link', '</api/v1/hr/staff>; rel="successor-version"')
-  @ApiOperation({ deprecated: true, summary: 'Update employee (deprecated — use PATCH /hr/staff/:id)' })
-  async updateEmployee(@Param('id') id: string, @Body() dto: UpdateEmployeeDto, @Request() req: any) {
+  @ApiOperation({
+    deprecated: true,
+    summary: 'Update employee (deprecated — use PATCH /hr/staff/:id)',
+  })
+  async updateEmployee(
+    @Param('id') id: string,
+    @Body() dto: UpdateEmployeeDto,
+    @Request() req: any,
+  ) {
     return this.hrService.updateEmployee(id, dto, req.user?.tenantId);
   }
 
@@ -222,7 +258,10 @@ export class HrController {
   @Header('Deprecation', 'true')
   @Header('Sunset', '2026-06-01')
   @Header('Link', '</api/v1/hr/staff>; rel="successor-version"')
-  @ApiOperation({ deprecated: true, summary: 'Terminate employee (deprecated — use POST /hr/staff/:id/offboard)' })
+  @ApiOperation({
+    deprecated: true,
+    summary: 'Terminate employee (deprecated — use POST /hr/staff/:id/offboard)',
+  })
   async terminateEmployee(
     @Param('id') id: string,
     @Body('reason') reason: string,
@@ -279,7 +318,11 @@ export class HrController {
     @Query('endDate') endDate?: string,
     @Request() req?: any,
   ) {
-    return this.hrService.getAttendance(facilityId, { employeeId, startDate, endDate }, req?.user?.tenantId);
+    return this.hrService.getAttendance(
+      facilityId,
+      { employeeId, startDate, endDate },
+      req?.user?.tenantId,
+    );
   }
 
   // ============ LEAVE ============
@@ -293,11 +336,7 @@ export class HrController {
   @Patch('leave/:id/approve')
   @AuthWithPermissions('leave.approve')
   @ApiOperation({ summary: 'Approve or reject leave' })
-  async approveLeave(
-    @Param('id') id: string,
-    @Body() dto: ApproveLeaveDto,
-    @Request() req: any,
-  ) {
+  async approveLeave(@Param('id') id: string, @Body() dto: ApproveLeaveDto, @Request() req: any) {
     return this.hrService.approveLeave(id, dto, req.user.id, req.user?.tenantId);
   }
 
@@ -427,7 +466,11 @@ export class HrController {
   @Patch('recruitment/jobs/:id')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Update job posting' })
-  async updateJobPosting(@Param('id') id: string, @Body() dto: UpdateJobPostingDto, @Request() req: any) {
+  async updateJobPosting(
+    @Param('id') id: string,
+    @Body() dto: UpdateJobPostingDto,
+    @Request() req: any,
+  ) {
     return this.hrService.updateJobPosting(id, dto, req.user?.tenantId);
   }
 
@@ -469,7 +512,11 @@ export class HrController {
   @Patch('recruitment/applications/:id')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Update application status' })
-  async updateApplicationStatus(@Param('id') id: string, @Body() dto: UpdateApplicationStatusDto, @Request() req: any) {
+  async updateApplicationStatus(
+    @Param('id') id: string,
+    @Body() dto: UpdateApplicationStatusDto,
+    @Request() req: any,
+  ) {
     return this.hrService.updateApplicationStatus(id, dto, req.user?.tenantId);
   }
 
@@ -528,7 +575,11 @@ export class HrController {
     @Query('status') status?: string,
     @Request() req?: any,
   ) {
-    return this.hrService.getAppraisals(facilityId, { employeeId, year, status }, req?.user?.tenantId);
+    return this.hrService.getAppraisals(
+      facilityId,
+      { employeeId, year, status },
+      req?.user?.tenantId,
+    );
   }
 
   @Get('appraisals/:id')
@@ -541,7 +592,11 @@ export class HrController {
   @Patch('appraisals/:id')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Update appraisal' })
-  async updateAppraisal(@Param('id') id: string, @Body() dto: UpdateAppraisalDto, @Request() req: any) {
+  async updateAppraisal(
+    @Param('id') id: string,
+    @Body() dto: UpdateAppraisalDto,
+    @Request() req: any,
+  ) {
     return this.hrService.updateAppraisal(id, dto);
   }
 
@@ -555,14 +610,22 @@ export class HrController {
   @Post('appraisals/:id/submit-self-review')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Submit employee self-review' })
-  async submitSelfReview(@Param('id') id: string, @Body() dto: SubmitSelfReviewDto, @Request() req: any) {
+  async submitSelfReview(
+    @Param('id') id: string,
+    @Body() dto: SubmitSelfReviewDto,
+    @Request() req: any,
+  ) {
     return this.hrService.submitSelfReview(id, dto);
   }
 
   @Post('appraisals/:id/submit-manager-review')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Submit manager review and complete appraisal' })
-  async submitManagerReview(@Param('id') id: string, @Body() dto: SubmitManagerReviewDto, @Request() req: any) {
+  async submitManagerReview(
+    @Param('id') id: string,
+    @Body() dto: SubmitManagerReviewDto,
+    @Request() req: any,
+  ) {
     return this.hrService.submitManagerReview(id, dto);
   }
 
@@ -604,7 +667,11 @@ export class HrController {
   @Patch('training/programs/:id')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Update training program' })
-  async updateTrainingProgram(@Param('id') id: string, @Body() dto: UpdateTrainingProgramDto, @Request() req: any) {
+  async updateTrainingProgram(
+    @Param('id') id: string,
+    @Body() dto: UpdateTrainingProgramDto,
+    @Request() req: any,
+  ) {
     return this.hrService.updateTrainingProgram(id, dto, req.user?.tenantId);
   }
 
@@ -648,7 +715,11 @@ export class HrController {
   @Patch('training/enrollments/:id')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Update enrollment' })
-  async updateEnrollment(@Param('id') id: string, @Body() dto: UpdateEnrollmentDto, @Request() req: any) {
+  async updateEnrollment(
+    @Param('id') id: string,
+    @Body() dto: UpdateEnrollmentDto,
+    @Request() req: any,
+  ) {
     return this.hrService.updateEnrollment(id, dto, req.user?.tenantId);
   }
 
@@ -676,7 +747,8 @@ export class HrController {
   async uploadStaffDocument(
     @Param('userId') userId: string,
     @UploadedFile() file: any,
-    @Body() data: {
+    @Body()
+    data: {
       documentType: DocumentType;
       documentName: string;
       licenseNumber?: string;
@@ -735,7 +807,9 @@ export class HrController {
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ message: 'File not found' });
     }
-    const safeName = (document.documentName || 'document').replace(/[/\\]/g, '_').replace(/[^\w\s.\-()]/g, '_');
+    const safeName = (document.documentName || 'document')
+      .replace(/[/\\]/g, '_')
+      .replace(/[^\w\s.\-()]/g, '_');
     res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
     res.setHeader('Content-Type', document.fileType || 'application/octet-stream');
     return res.sendFile(filePath);
@@ -766,7 +840,11 @@ export class HrController {
   @Patch('shifts/:id')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Update shift definition' })
-  updateShift(@Param('id') id: string, @Body() dto: Partial<CreateShiftDefinitionDto>, @Request() req: any) {
+  updateShift(
+    @Param('id') id: string,
+    @Body() dto: Partial<CreateShiftDefinitionDto>,
+    @Request() req: any,
+  ) {
     return this.hrService.updateShiftDefinition(id, dto, req.user?.tenantId);
   }
 
@@ -793,7 +871,13 @@ export class HrController {
     @Query('departmentId') departmentId?: string,
     @Request() req?: any,
   ) {
-    return this.hrService.getRoster(facilityId, startDate, endDate, departmentId ? { departmentId } : undefined, req?.user?.tenantId);
+    return this.hrService.getRoster(
+      facilityId,
+      startDate,
+      endDate,
+      departmentId ? { departmentId } : undefined,
+      req?.user?.tenantId,
+    );
   }
 
   @Post('roster')
@@ -821,7 +905,12 @@ export class HrController {
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Save leave types configuration' })
   async saveLeaveTypes(@Body() body: LeaveTypeConfigDto[], @Request() req: any) {
-    await this.settingsService.upsert('hr_leave_types', body, req.user?.tenantId, 'HR leave types configuration');
+    await this.settingsService.upsert(
+      'hr_leave_types',
+      body,
+      req.user?.tenantId,
+      'HR leave types configuration',
+    );
     return body;
   }
 
@@ -841,7 +930,12 @@ export class HrController {
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Save public holidays' })
   async saveHolidays(@Body() body: HolidayConfigDto[], @Request() req: any) {
-    await this.settingsService.upsert('hr_holidays', body, req.user?.tenantId, 'Public holidays configuration');
+    await this.settingsService.upsert(
+      'hr_holidays',
+      body,
+      req.user?.tenantId,
+      'Public holidays configuration',
+    );
     return body;
   }
 
@@ -878,22 +972,14 @@ export class HrController {
   @Patch('shift-swaps/:id/respond')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Respond to a shift swap request (accept/decline)' })
-  respondToSwap(
-    @Param('id') id: string,
-    @Body('accepted') accepted: boolean,
-    @Request() req: any,
-  ) {
+  respondToSwap(@Param('id') id: string, @Body('accepted') accepted: boolean, @Request() req: any) {
     return this.hrService.respondToSwapRequest(id, accepted, req.user?.id, req.user?.tenantId);
   }
 
   @Patch('shift-swaps/:id/approve')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Manager approval of a shift swap' })
-  approveSwap(
-    @Param('id') id: string,
-    @Body() dto: ApproveSwapDto,
-    @Request() req: any,
-  ) {
+  approveSwap(@Param('id') id: string, @Body() dto: ApproveSwapDto, @Request() req: any) {
     return this.hrService.approveSwapRequest(id, dto, req.user?.id, req.user?.tenantId);
   }
 
@@ -901,7 +987,14 @@ export class HrController {
   @AuthWithPermissions('hr.create')
   @ApiOperation({ summary: 'Auto-generate weekly roster' })
   generateRoster(@Body() dto: GenerateRosterDto, @Request() req: any) {
-    return this.hrService.generateWeeklyRoster(dto.facilityId, dto.startDate, dto.employeeIds, dto.shiftPattern, req.user?.id, req.user?.tenantId);
+    return this.hrService.generateWeeklyRoster(
+      dto.facilityId,
+      dto.startDate,
+      dto.employeeIds,
+      dto.shiftPattern,
+      req.user?.id,
+      req.user?.tenantId,
+    );
   }
 
   @Patch('roster/:id/status')
@@ -973,7 +1066,11 @@ export class HrController {
   @Patch('disciplinary/:id')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Update disciplinary action' })
-  updateDisciplinary(@Param('id') id: string, @Body() dto: UpdateDisciplinaryDto, @Request() req: any) {
+  updateDisciplinary(
+    @Param('id') id: string,
+    @Body() dto: UpdateDisciplinaryDto,
+    @Request() req: any,
+  ) {
     return this.hrService.updateDisciplinaryAction(id, dto, req.user?.tenantId);
   }
 
@@ -1013,7 +1110,11 @@ export class HrController {
   @AuthWithPermissions('hr.create')
   @ApiOperation({ summary: 'Create onboarding tasks from default template' })
   createOnboardingFromTemplate(@Body() dto: CreateOnboardingFromTemplateDto, @Request() req: any) {
-    return this.hrService.createOnboardingFromTemplate(dto.employeeId, dto.facilityId, req.user?.tenantId);
+    return this.hrService.createOnboardingFromTemplate(
+      dto.employeeId,
+      dto.facilityId,
+      req.user?.tenantId,
+    );
   }
 
   @Get('onboarding/:employeeId')
@@ -1033,20 +1134,95 @@ export class HrController {
   @Patch('onboarding/tasks/:id')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Update an onboarding task' })
-  updateOnboardingTask(@Param('id') id: string, @Body() dto: UpdateOnboardingTaskDto, @Request() req: any) {
+  updateOnboardingTask(
+    @Param('id') id: string,
+    @Body() dto: UpdateOnboardingTaskDto,
+    @Request() req: any,
+  ) {
     return this.hrService.updateOnboardingTask(id, dto, req.user?.id, req.user?.tenantId);
   }
-
 }
 
 // Default leave types returned when settings not yet configured
 const DEFAULT_LEAVE_TYPES = [
-  { id: 'annual', name: 'Annual Leave', code: 'AL', defaultDays: 21, carryForward: true, maxCarryForward: 10, paidLeave: true, status: 'Active' },
-  { id: 'sick', name: 'Sick Leave', code: 'SL', defaultDays: 14, carryForward: false, maxCarryForward: 0, paidLeave: true, status: 'Active' },
-  { id: 'casual', name: 'Casual Leave', code: 'CL', defaultDays: 7, carryForward: false, maxCarryForward: 0, paidLeave: true, status: 'Active' },
-  { id: 'maternity', name: 'Maternity Leave', code: 'ML', defaultDays: 90, carryForward: false, maxCarryForward: 0, paidLeave: true, status: 'Active' },
-  { id: 'paternity', name: 'Paternity Leave', code: 'PL', defaultDays: 14, carryForward: false, maxCarryForward: 0, paidLeave: true, status: 'Active' },
-  { id: 'unpaid', name: 'Unpaid Leave', code: 'UL', defaultDays: 30, carryForward: false, maxCarryForward: 0, paidLeave: false, status: 'Active' },
-  { id: 'bereavement', name: 'Bereavement Leave', code: 'BL', defaultDays: 5, carryForward: false, maxCarryForward: 0, paidLeave: true, status: 'Active' },
-  { id: 'study', name: 'Study Leave', code: 'STL', defaultDays: 10, carryForward: false, maxCarryForward: 0, paidLeave: true, status: 'Active' },
+  {
+    id: 'annual',
+    name: 'Annual Leave',
+    code: 'AL',
+    defaultDays: 21,
+    carryForward: true,
+    maxCarryForward: 10,
+    paidLeave: true,
+    status: 'Active',
+  },
+  {
+    id: 'sick',
+    name: 'Sick Leave',
+    code: 'SL',
+    defaultDays: 14,
+    carryForward: false,
+    maxCarryForward: 0,
+    paidLeave: true,
+    status: 'Active',
+  },
+  {
+    id: 'casual',
+    name: 'Casual Leave',
+    code: 'CL',
+    defaultDays: 7,
+    carryForward: false,
+    maxCarryForward: 0,
+    paidLeave: true,
+    status: 'Active',
+  },
+  {
+    id: 'maternity',
+    name: 'Maternity Leave',
+    code: 'ML',
+    defaultDays: 90,
+    carryForward: false,
+    maxCarryForward: 0,
+    paidLeave: true,
+    status: 'Active',
+  },
+  {
+    id: 'paternity',
+    name: 'Paternity Leave',
+    code: 'PL',
+    defaultDays: 14,
+    carryForward: false,
+    maxCarryForward: 0,
+    paidLeave: true,
+    status: 'Active',
+  },
+  {
+    id: 'unpaid',
+    name: 'Unpaid Leave',
+    code: 'UL',
+    defaultDays: 30,
+    carryForward: false,
+    maxCarryForward: 0,
+    paidLeave: false,
+    status: 'Active',
+  },
+  {
+    id: 'bereavement',
+    name: 'Bereavement Leave',
+    code: 'BL',
+    defaultDays: 5,
+    carryForward: false,
+    maxCarryForward: 0,
+    paidLeave: true,
+    status: 'Active',
+  },
+  {
+    id: 'study',
+    name: 'Study Leave',
+    code: 'STL',
+    defaultDays: 10,
+    carryForward: false,
+    maxCarryForward: 0,
+    paidLeave: true,
+    status: 'Active',
+  },
 ];

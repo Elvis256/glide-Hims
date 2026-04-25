@@ -1,4 +1,15 @@
-import { Controller, Get, Post, Patch, Body, Param, Query, Request, BadRequestException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Body,
+  Param,
+  Query,
+  Request,
+  BadRequestException,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { SampleReferralService } from './sample-referral.service';
@@ -9,11 +20,15 @@ import {
   SampleReferralQueryDto,
   TATStatsQueryDto,
 } from './dto/sample-referral.dto';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 @ApiTags('Lab Sample Referrals')
 @ApiBearerAuth()
+@UseGuards(ModuleGuard)
+@RequireModule('diagnostics')
 @Controller('lab/sample-referrals')
 export class SampleReferralController {
   constructor(private readonly sampleReferralService: SampleReferralService) {}

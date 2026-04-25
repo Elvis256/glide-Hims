@@ -136,10 +136,20 @@ export class Employee {
   @Column({ length: 100, nullable: true })
   specialization: string;
 
-  @Column({ type: 'enum', enum: EmploymentType, default: EmploymentType.PERMANENT, name: 'employment_type' })
+  @Column({
+    type: 'enum',
+    enum: EmploymentType,
+    default: EmploymentType.PERMANENT,
+    name: 'employment_type',
+  })
   employmentType: EmploymentType;
 
-  @Column({ type: 'enum', enum: EmploymentStatus, default: EmploymentStatus.ACTIVE, name: 'status' })
+  @Column({
+    type: 'enum',
+    enum: EmploymentStatus,
+    default: EmploymentStatus.ACTIVE,
+    name: 'status',
+  })
   status: EmploymentStatus;
 
   @Column({ type: 'date', name: 'hire_date' })

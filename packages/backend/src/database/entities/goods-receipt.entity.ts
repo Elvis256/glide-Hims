@@ -1,11 +1,4 @@
-import {
-  Entity,
-  Column,
-  ManyToOne,
-  OneToMany,
-  JoinColumn,
-  Index,
-} from 'typeorm';
+import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Facility } from './facility.entity';
 import { User } from './user.entity';
@@ -17,7 +10,7 @@ export enum GRNStatus {
   PENDING_INSPECTION = 'pending_inspection',
   INSPECTED = 'inspected',
   APPROVED = 'approved',
-  POSTED = 'posted',  // Stock updated
+  POSTED = 'posted', // Stock updated
   CANCELLED = 'cancelled',
 }
 
@@ -114,7 +107,7 @@ export class GoodsReceiptNote extends BaseEntity {
   @Column({ name: 'posted_by_id', nullable: true })
   postedById: string;
 
-  @OneToMany(() => GoodsReceiptItem, item => item.goodsReceiptNote, { cascade: true })
+  @OneToMany(() => GoodsReceiptItem, (item) => item.goodsReceiptNote, { cascade: true })
   items: GoodsReceiptItem[];
 }
 
@@ -155,7 +148,7 @@ export class GoodsReceiptItem extends BaseEntity {
   notes: string;
 
   // Relationships
-  @ManyToOne(() => GoodsReceiptNote, grn => grn.items, { onDelete: 'CASCADE' })
+  @ManyToOne(() => GoodsReceiptNote, (grn) => grn.items, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'goods_receipt_note_id' })
   goodsReceiptNote: GoodsReceiptNote;
 

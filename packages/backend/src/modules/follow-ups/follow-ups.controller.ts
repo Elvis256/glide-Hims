@@ -12,8 +12,18 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { FollowUpsService } from './follow-ups.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
-import { CreateFollowUpDto, RescheduleFollowUpDto, CompleteFollowUpDto, CancelFollowUpDto, FollowUpFilterDto } from './dto/follow-up.dto';
+import {
+  CreateFollowUpDto,
+  RescheduleFollowUpDto,
+  CompleteFollowUpDto,
+  CancelFollowUpDto,
+  FollowUpFilterDto,
+} from './dto/follow-up.dto';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
+@UseGuards(ModuleGuard)
+@RequireModule('doctors')
 @Controller('follow-ups')
 @UseGuards(AuthGuard('jwt'))
 export class FollowUpsController {
@@ -37,12 +47,20 @@ export class FollowUpsController {
   @AuthWithPermissions('followups.read')
   async getTodaysAppointments(@Query('departmentId') departmentId: string, @Request() req: any) {
     const facilityId = req.user.facilityId || req.headers['x-facility-id'];
-    return this.followUpsService.getTodaysAppointments(facilityId, departmentId, req.user?.tenantId);
+    return this.followUpsService.getTodaysAppointments(
+      facilityId,
+      departmentId,
+      req.user?.tenantId,
+    );
   }
 
   @Get('stats')
   @AuthWithPermissions('followups.read')
-  async getStats(@Query('fromDate') fromDate: string, @Query('toDate') toDate: string, @Request() req: any) {
+  async getStats(
+    @Query('fromDate') fromDate: string,
+    @Query('toDate') toDate: string,
+    @Request() req: any,
+  ) {
     const facilityId = req.user.facilityId || req.headers['x-facility-id'];
     return this.followUpsService.getStats(
       facilityId,

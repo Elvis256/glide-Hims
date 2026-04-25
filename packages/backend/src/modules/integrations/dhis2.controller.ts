@@ -1,11 +1,15 @@
-import { Controller, Get, Post, Body, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { DHIS2Service } from './dhis2.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { SaveDhis2ConfigDto, PushHmis105Dto } from './dhis2.dto';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('integrations')
+@UseGuards(ModuleGuard)
+@RequireModule('integrations')
 @Controller('integrations/dhis2')
 export class DHIS2Controller {
   constructor(private readonly dhis2Service: DHIS2Service) {}
@@ -20,10 +24,7 @@ export class DHIS2Controller {
   @Post('config')
   @AuthWithPermissions('settings.manage')
   @ApiOperation({ summary: 'Save DHIS2 integration configuration' })
-  async saveConfig(
-    @CurrentUser() user: any,
-    @Body() body: SaveDhis2ConfigDto,
-  ) {
+  async saveConfig(@CurrentUser() user: any, @Body() body: SaveDhis2ConfigDto) {
     await this.dhis2Service.saveConfig(user.tenantId, body);
     return { message: 'DHIS2 configuration saved' };
   }
@@ -38,10 +39,7 @@ export class DHIS2Controller {
   @Post('push-hmis105')
   @AuthWithPermissions('analytics.read')
   @ApiOperation({ summary: 'Push HMIS 105 report data to DHIS2' })
-  async pushHMIS105(
-    @CurrentUser() user: any,
-    @Body() body: PushHmis105Dto,
-  ) {
+  async pushHMIS105(@CurrentUser() user: any, @Body() body: PushHmis105Dto) {
     const facilityId = body.facilityId || user.facilityId;
     return this.dhis2Service.pushHMIS105(user.tenantId, facilityId, body.month, body.year);
   }

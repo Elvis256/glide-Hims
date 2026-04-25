@@ -5,16 +5,16 @@ import { firstValueFrom } from 'rxjs';
 
 /**
  * Africa's Talking SMS Service
- * 
+ *
  * Provides SMS capabilities for patient communication in Uganda/Africa:
  * - Send appointment reminders
  * - Lab results notifications
  * - Medication reminders
  * - Bulk SMS campaigns
- * 
+ *
  * Setup: Register at https://africastalking.com/
  * Environment: Set AFRICASTALKING_API_KEY and AFRICASTALKING_USERNAME
- * 
+ *
  * Pricing: ~0.02 USD per SMS in Uganda
  */
 
@@ -83,15 +83,15 @@ export class AfricasTalkingService {
       const response = await firstValueFrom(
         this.httpService.post(url, formData.toString(), {
           headers: {
-            'apiKey': apiKey,
+            apiKey: apiKey,
             'Content-Type': 'application/x-www-form-urlencoded',
-            'Accept': 'application/json',
+            Accept: 'application/json',
           },
         }),
       );
 
       const recipient = response.data.SMSMessageData?.Recipients?.[0];
-      
+
       if (recipient) {
         return {
           success: recipient.status === 'Success',
@@ -125,7 +125,7 @@ export class AfricasTalkingService {
       return {
         sent: 0,
         failed: recipients.length,
-        results: recipients.map(r => ({
+        results: recipients.map((r) => ({
           success: false,
           status: 'Not configured',
           recipient: r,
@@ -139,7 +139,7 @@ export class AfricasTalkingService {
       const useSandbox = this.configService.get<string>('AFRICASTALKING_SANDBOX') === 'true';
 
       const url = useSandbox ? this.SANDBOX_URL : this.API_URL;
-      const formattedPhones = recipients.map(p => this.formatPhoneNumber(p)).join(',');
+      const formattedPhones = recipients.map((p) => this.formatPhoneNumber(p)).join(',');
 
       const formData = new URLSearchParams();
       formData.append('username', username);
@@ -152,9 +152,9 @@ export class AfricasTalkingService {
       const response = await firstValueFrom(
         this.httpService.post(url, formData.toString(), {
           headers: {
-            'apiKey': apiKey,
+            apiKey: apiKey,
             'Content-Type': 'application/x-www-form-urlencoded',
-            'Accept': 'application/json',
+            Accept: 'application/json',
           },
         }),
       );
@@ -169,8 +169,8 @@ export class AfricasTalkingService {
       }));
 
       return {
-        sent: results.filter(r => r.success).length,
-        failed: results.filter(r => !r.success).length,
+        sent: results.filter((r) => r.success).length,
+        failed: results.filter((r) => !r.success).length,
         results,
       };
     } catch (error: any) {
@@ -178,7 +178,7 @@ export class AfricasTalkingService {
       return {
         sent: 0,
         failed: recipients.length,
-        results: recipients.map(r => ({
+        results: recipients.map((r) => ({
           success: false,
           status: error.message,
           recipient: r,
@@ -201,7 +201,7 @@ export class AfricasTalkingService {
     const message = doctorName
       ? `Dear ${patientName}, this is a reminder for your appointment with Dr. ${doctorName} on ${appointmentDate} at ${appointmentTime}. Please arrive 15 mins early. - ${hospitalName}`
       : `Dear ${patientName}, this is a reminder for your appointment on ${appointmentDate} at ${appointmentTime}. Please arrive 15 mins early. - ${hospitalName}`;
-    
+
     return this.sendSMS(phone, message);
   }
 
@@ -269,15 +269,15 @@ export class AfricasTalkingService {
       const username = this.configService.get<string>('AFRICASTALKING_USERNAME')!;
       const useSandbox = this.configService.get<string>('AFRICASTALKING_SANDBOX') === 'true';
 
-      const baseUrl = useSandbox 
-        ? 'https://api.sandbox.africastalking.com' 
+      const baseUrl = useSandbox
+        ? 'https://api.sandbox.africastalking.com'
         : 'https://api.africastalking.com';
 
       const response = await firstValueFrom(
         this.httpService.get(`${baseUrl}/version1/user?username=${username}`, {
           headers: {
-            'apiKey': apiKey,
-            'Accept': 'application/json',
+            apiKey: apiKey,
+            Accept: 'application/json',
           },
         }),
       );
@@ -302,7 +302,7 @@ export class AfricasTalkingService {
   private formatPhoneNumber(phone: string): string {
     // Remove all non-digits
     let cleaned = phone.replace(/\D/g, '');
-    
+
     // Handle Uganda numbers
     if (cleaned.startsWith('0') && cleaned.length === 10) {
       // Local Uganda format: 0751234567 -> +256751234567
@@ -313,7 +313,7 @@ export class AfricasTalkingService {
       // Missing leading 0: 751234567 -> +256751234567
       cleaned = '256' + cleaned;
     }
-    
+
     return '+' + cleaned;
   }
 }

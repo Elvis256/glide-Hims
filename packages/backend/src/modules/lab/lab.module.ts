@@ -17,7 +17,15 @@ import { EncountersModule } from '../encounters/encounters.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([LabTest, LabSample, LabResult, Order, Patient, Facility, SampleReferral]),
+    TypeOrmModule.forFeature([
+      LabTest,
+      LabSample,
+      LabResult,
+      Order,
+      Patient,
+      Facility,
+      SampleReferral,
+    ]),
     forwardRef(() => BillingModule),
     forwardRef(() => EncountersModule),
     InAppNotificationsModule,

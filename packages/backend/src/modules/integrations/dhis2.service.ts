@@ -118,45 +118,78 @@ export class DHIS2Service {
   }
 
   /** Return config with the password masked. */
-  async getConfigMasked(tenantId?: string): Promise<DHIS2Config & { lastPush?: string; lastPushResult?: string }> {
+  async getConfigMasked(
+    tenantId?: string,
+  ): Promise<DHIS2Config & { lastPush?: string; lastPushResult?: string }> {
     const config = await this.getConfig(tenantId);
     const masked = { ...config, password: config.password ? '••••••••' : '' };
 
     try {
       const lp = await this.systemSettingsService.getByKey('dhis2.lastPush', tenantId);
       (masked as any).lastPush = lp.value;
-    } catch { /* not set yet */ }
+    } catch {
+      /* not set yet */
+    }
 
     try {
       const lr = await this.systemSettingsService.getByKey('dhis2.lastPushResult', tenantId);
       (masked as any).lastPushResult = lr.value;
-    } catch { /* not set yet */ }
+    } catch {
+      /* not set yet */
+    }
 
     return masked as any;
   }
 
   async saveConfig(tenantId: string | undefined, config: Partial<DHIS2Config>): Promise<void> {
     if (config.baseUrl !== undefined) {
-      await this.systemSettingsService.upsert('dhis2.baseUrl', config.baseUrl, tenantId, 'DHIS2 API base URL');
+      await this.systemSettingsService.upsert(
+        'dhis2.baseUrl',
+        config.baseUrl,
+        tenantId,
+        'DHIS2 API base URL',
+      );
     }
     if (config.username !== undefined) {
-      await this.systemSettingsService.upsert('dhis2.username', config.username, tenantId, 'DHIS2 API username');
+      await this.systemSettingsService.upsert(
+        'dhis2.username',
+        config.username,
+        tenantId,
+        'DHIS2 API username',
+      );
     }
     if (config.password !== undefined && config.password !== '••••••••') {
       // TODO: encrypt password before storing — system-settings doesn't have encryption yet
-      await this.systemSettingsService.upsert('dhis2.password', config.password, tenantId, 'DHIS2 API password (stored as-is)');
+      await this.systemSettingsService.upsert(
+        'dhis2.password',
+        config.password,
+        tenantId,
+        'DHIS2 API password (stored as-is)',
+      );
     }
     if (config.orgUnitId !== undefined) {
-      await this.systemSettingsService.upsert('dhis2.orgUnitId', config.orgUnitId, tenantId, 'DHIS2 organisation unit ID');
+      await this.systemSettingsService.upsert(
+        'dhis2.orgUnitId',
+        config.orgUnitId,
+        tenantId,
+        'DHIS2 organisation unit ID',
+      );
     }
     if (config.enabled !== undefined) {
-      await this.systemSettingsService.upsert('dhis2.enabled', config.enabled, tenantId, 'DHIS2 integration enabled');
+      await this.systemSettingsService.upsert(
+        'dhis2.enabled',
+        config.enabled,
+        tenantId,
+        'DHIS2 integration enabled',
+      );
     }
   }
 
   // ======================== Test Connection ========================
 
-  async testConnection(tenantId?: string): Promise<{ success: boolean; message: string; orgUnitName?: string }> {
+  async testConnection(
+    tenantId?: string,
+  ): Promise<{ success: boolean; message: string; orgUnitName?: string }> {
     const config = await this.getConfig(tenantId);
 
     if (!config.baseUrl || !config.username || !config.password) {
@@ -183,7 +216,9 @@ export class DHIS2Service {
             ),
           );
           orgUnitName = ouResp.data?.displayName;
-        } catch { /* org unit lookup failed — non-critical */ }
+        } catch {
+          /* org unit lookup failed — non-critical */
+        }
       }
 
       return {
@@ -197,7 +232,10 @@ export class DHIS2Service {
         return { success: false, message: 'Authentication failed — check username/password' };
       }
       if (status === 403) {
-        return { success: false, message: 'Access denied — user does not have required permissions' };
+        return {
+          success: false,
+          message: 'Access denied — user does not have required permissions',
+        };
       }
       this.logger.error('DHIS2 connection test failed', error.message);
       return { success: false, message: `Connection failed: ${error.message}` };
@@ -243,10 +281,22 @@ export class DHIS2Service {
     const config = await this.getConfig(tenantId);
 
     if (!config.enabled) {
-      return { success: false, imported: 0, updated: 0, ignored: 0, conflicts: ['DHIS2 integration is not enabled'] };
+      return {
+        success: false,
+        imported: 0,
+        updated: 0,
+        ignored: 0,
+        conflicts: ['DHIS2 integration is not enabled'],
+      };
     }
     if (!config.baseUrl || !config.username || !config.password || !config.orgUnitId) {
-      return { success: false, imported: 0, updated: 0, ignored: 0, conflicts: ['DHIS2 is not fully configured'] };
+      return {
+        success: false,
+        imported: 0,
+        updated: 0,
+        ignored: 0,
+        conflicts: ['DHIS2 is not fully configured'],
+      };
     }
 
     // 1. Fetch HMIS 105 data from analytics service
@@ -255,7 +305,13 @@ export class DHIS2Service {
       hmisData = await this.analyticsService.getHMIS105Report(tenantId, facilityId, month, year);
     } catch (error: any) {
       this.logger.error('Failed to generate HMIS 105 data', error.message);
-      return { success: false, imported: 0, updated: 0, ignored: 0, conflicts: [`Failed to generate HMIS 105: ${error.message}`] };
+      return {
+        success: false,
+        imported: 0,
+        updated: 0,
+        ignored: 0,
+        conflicts: [`Failed to generate HMIS 105: ${error.message}`],
+      };
     }
 
     // 2. Build DHIS2 dataValueSets payload
@@ -263,7 +319,13 @@ export class DHIS2Service {
     const dataValues = this.buildDataValues(hmisData, config.orgUnitId, period);
 
     if (dataValues.length === 0) {
-      return { success: false, imported: 0, updated: 0, ignored: 0, conflicts: ['No data values to push'] };
+      return {
+        success: false,
+        imported: 0,
+        updated: 0,
+        ignored: 0,
+        conflicts: ['No data values to push'],
+      };
     }
 
     const payload = {
@@ -284,8 +346,9 @@ export class DHIS2Service {
       );
 
       const summary = response.data?.importCount || response.data?.response?.importCount || {};
-      const conflicts = (response.data?.conflicts || response.data?.response?.conflicts || [])
-        .map((c: any) => c.value || c.object || JSON.stringify(c));
+      const conflicts = (response.data?.conflicts || response.data?.response?.conflicts || []).map(
+        (c: any) => c.value || c.object || JSON.stringify(c),
+      );
 
       const result: DHIS2PushResult = {
         success: (summary.imported || 0) + (summary.updated || 0) > 0 || conflicts.length === 0,
@@ -297,7 +360,12 @@ export class DHIS2Service {
 
       // Record last push metadata
       const now = new Date().toISOString();
-      await this.systemSettingsService.upsert('dhis2.lastPush', now, tenantId, 'Last DHIS2 push timestamp');
+      await this.systemSettingsService.upsert(
+        'dhis2.lastPush',
+        now,
+        tenantId,
+        'Last DHIS2 push timestamp',
+      );
       await this.systemSettingsService.upsert(
         'dhis2.lastPushResult',
         result.success ? 'success' : 'failed',
@@ -313,7 +381,13 @@ export class DHIS2Service {
       await this.systemSettingsService.upsert('dhis2.lastPushResult', 'failed', tenantId);
 
       const detail = error.response?.data?.message || error.message;
-      return { success: false, imported: 0, updated: 0, ignored: 0, conflicts: [`Push failed: ${detail}`] };
+      return {
+        success: false,
+        imported: 0,
+        updated: 0,
+        ignored: 0,
+        conflicts: [`Push failed: ${detail}`],
+      };
     }
   }
 
@@ -366,9 +440,7 @@ export class DHIS2Service {
 
     // OPD diagnosis chapters — dynamic elements
     const diagChapters =
-      hmisData?.sectionA?.diagnosisGroups ||
-      hmisData?.sections?.opdDiagnoses?.byChapter ||
-      [];
+      hmisData?.sectionA?.diagnosisGroups || hmisData?.sections?.opdDiagnoses?.byChapter || [];
     for (const ch of diagChapters) {
       const prefix = `OPD_${(ch.chapter || ch.chapterLetter || '').replace(/[^A-Z0-9]/gi, '_')}`;
       const fields = [
@@ -394,13 +466,14 @@ export class DHIS2Service {
 
     // Lab section — dynamic
     const labCats =
-      hmisData?.sectionB?.labCategories ||
-      hmisData?.sections?.laboratory?.byCategory ||
-      [];
+      hmisData?.sectionB?.labCategories || hmisData?.sections?.laboratory?.byCategory || [];
     for (const cat of labCats) {
       const key = (cat.category || '').replace(/[^A-Z0-9]/gi, '_').toUpperCase();
       values.push({ dataElement: `LAB_${key}_TESTS`, value: String(cat.totalTests ?? 0) });
-      values.push({ dataElement: `LAB_${key}_POSITIVE`, value: String(cat.positiveOrAbnormal ?? 0) });
+      values.push({
+        dataElement: `LAB_${key}_POSITIVE`,
+        value: String(cat.positiveOrAbnormal ?? 0),
+      });
     }
 
     return values;

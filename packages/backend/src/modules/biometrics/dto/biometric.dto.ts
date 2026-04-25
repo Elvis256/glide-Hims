@@ -1,12 +1,37 @@
-import { IsString, IsNotEmpty, IsOptional, IsNumber, IsUUID, IsIn, Min, Max } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsNumber,
+  IsUUID,
+  IsIn,
+  Min,
+  Max,
+} from 'class-validator';
 
-export type FingerIndex = 
-  | 'right_thumb' | 'right_index' | 'right_middle' | 'right_ring' | 'right_little'
-  | 'left_thumb' | 'left_index' | 'left_middle' | 'left_ring' | 'left_little';
+export type FingerIndex =
+  | 'right_thumb'
+  | 'right_index'
+  | 'right_middle'
+  | 'right_ring'
+  | 'right_little'
+  | 'left_thumb'
+  | 'left_index'
+  | 'left_middle'
+  | 'left_ring'
+  | 'left_little';
 
 const FINGER_INDEX_VALUES: FingerIndex[] = [
-  'right_thumb', 'right_index', 'right_middle', 'right_ring', 'right_little',
-  'left_thumb', 'left_index', 'left_middle', 'left_ring', 'left_little',
+  'right_thumb',
+  'right_index',
+  'right_middle',
+  'right_ring',
+  'right_little',
+  'left_thumb',
+  'left_index',
+  'left_middle',
+  'left_ring',
+  'left_little',
 ];
 
 export class RegisterBiometricDto {

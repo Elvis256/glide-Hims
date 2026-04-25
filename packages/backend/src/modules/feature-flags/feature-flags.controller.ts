@@ -44,9 +44,7 @@ export class FeatureFlagsController {
    */
   @Post('check-batch')
   @ApiOperation({ summary: 'Check multiple features at once' })
-  async checkFeatures(
-    @Body() body: { featureKeys: string[]; tenantId?: string },
-  ) {
+  async checkFeatures(@Body() body: { featureKeys: string[]; tenantId?: string }) {
     const tid = this.requireTenantId(body.tenantId);
     return this.featureFlagsService.checkFeatures(body.featureKeys, tid);
   }
@@ -85,7 +83,8 @@ export class FeatureFlagsController {
   @ApiOperation({ summary: 'Set a feature flag' })
   async setFlag(
     @Param('featureKey') featureKey: string,
-    @Body() body: {
+    @Body()
+    body: {
       tenantId?: string;
       enabled: boolean;
       value?: any;
@@ -107,10 +106,7 @@ export class FeatureFlagsController {
   @Delete(':featureKey')
   @Auth('Administrator')
   @ApiOperation({ summary: 'Delete a feature flag' })
-  async deleteFlag(
-    @Param('featureKey') featureKey: string,
-    @Query('tenantId') tenantId?: string,
-  ) {
+  async deleteFlag(@Param('featureKey') featureKey: string, @Query('tenantId') tenantId?: string) {
     const tid = this.requireTenantId(tenantId);
     await this.featureFlagsService.deleteFlag(featureKey, tid);
     return { message: 'Feature flag deleted' };
@@ -133,7 +129,8 @@ export class FeatureFlagsController {
   @Auth('Administrator')
   @ApiOperation({ summary: 'Create or update system feature' })
   async upsertSystemFeature(
-    @Body() body: {
+    @Body()
+    body: {
       featureKey: string;
       name: string;
       description?: string;

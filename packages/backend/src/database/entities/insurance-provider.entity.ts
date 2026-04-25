@@ -1,16 +1,10 @@
-import {
-  Entity,
-  Column,
-  ManyToOne,
-  JoinColumn,
-  OneToMany,
-} from 'typeorm';
+import { Entity, Column, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
 import { Exclude } from 'class-transformer';
 import { BaseEntity } from './base.entity';
 import { Facility } from './facility.entity';
 
 export enum ProviderType {
-  NHIS = 'nhis',          // National Health Insurance Scheme
+  NHIS = 'nhis', // National Health Insurance Scheme
   PRIVATE = 'private',
   CORPORATE = 'corporate',
   GOVERNMENT = 'government',
@@ -37,7 +31,12 @@ export class InsuranceProvider extends BaseEntity {
   @Column({ unique: true })
   code: string;
 
-  @Column({ name: 'provider_type', type: 'enum', enum: ProviderType, default: ProviderType.PRIVATE })
+  @Column({
+    name: 'provider_type',
+    type: 'enum',
+    enum: ProviderType,
+    default: ProviderType.PRIVATE,
+  })
   providerType: ProviderType;
 
   @Column({ name: 'contact_person', nullable: true })
@@ -52,7 +51,12 @@ export class InsuranceProvider extends BaseEntity {
   @Column({ nullable: true })
   address?: string;
 
-  @Column({ name: 'claim_submission_method', type: 'enum', enum: ClaimSubmissionMethod, default: ClaimSubmissionMethod.MANUAL })
+  @Column({
+    name: 'claim_submission_method',
+    type: 'enum',
+    enum: ClaimSubmissionMethod,
+    default: ClaimSubmissionMethod.MANUAL,
+  })
   claimSubmissionMethod: ClaimSubmissionMethod;
 
   @Column({ name: 'api_endpoint', nullable: true })

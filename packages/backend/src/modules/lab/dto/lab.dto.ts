@@ -1,6 +1,20 @@
-import { IsString, IsOptional, IsUUID, IsNumber, IsEnum, IsBoolean, IsArray, ValidateNested, IsDateString } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsUUID,
+  IsNumber,
+  IsEnum,
+  IsBoolean,
+  IsArray,
+  ValidateNested,
+  IsDateString,
+} from 'class-validator';
 import { Type } from 'class-transformer';
-import { LabTestCategory, LabTestStatus, SampleType } from '../../../database/entities/lab-test.entity';
+import {
+  LabTestCategory,
+  LabTestStatus,
+  SampleType,
+} from '../../../database/entities/lab-test.entity';
 import { SampleStatus, SamplePriority } from '../../../database/entities/lab-sample.entity';
 import { AbnormalFlag } from '../../../database/entities/lab-result.entity';
 

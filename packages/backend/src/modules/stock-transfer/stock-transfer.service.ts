@@ -151,9 +151,7 @@ export class StockTransferService {
     const transfer = await this.findOne(id, tenantId);
 
     if (transfer.status !== TransferStatus.REQUESTED) {
-      throw new BadRequestException(
-        `Cannot approve transfer in "${transfer.status}" status`,
-      );
+      throw new BadRequestException(`Cannot approve transfer in "${transfer.status}" status`);
     }
 
     // Apply approved quantities from DTO or default to requested quantities
@@ -195,9 +193,7 @@ export class StockTransferService {
     const transfer = await this.findOne(id, tenantId);
 
     if (transfer.status !== TransferStatus.REQUESTED) {
-      throw new BadRequestException(
-        `Cannot reject transfer in "${transfer.status}" status`,
-      );
+      throw new BadRequestException(`Cannot reject transfer in "${transfer.status}" status`);
     }
 
     transfer.status = TransferStatus.REJECTED;

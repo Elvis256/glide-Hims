@@ -1,10 +1,4 @@
-import {
-  Injectable,
-  NestInterceptor,
-  ExecutionContext,
-  CallHandler,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, NestInterceptor, ExecutionContext, CallHandler, Logger } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { tap, catchError } from 'rxjs/operators';
 import { Request, Response } from 'express';
@@ -81,7 +75,10 @@ export class SecurityAuditInterceptor implements NestInterceptor {
         logEntry.error = error.message;
 
         // Always log errors on sensitive routes
-        if (this.isSensitiveRoute(request.path) || (logEntry.statusCode && logEntry.statusCode >= 400)) {
+        if (
+          this.isSensitiveRoute(request.path) ||
+          (logEntry.statusCode && logEntry.statusCode >= 400)
+        ) {
           this.logSecurityEvent(logEntry, true);
         }
 

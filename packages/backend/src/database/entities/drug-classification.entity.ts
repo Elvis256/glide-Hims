@@ -2,22 +2,22 @@ import { Entity, Column, ManyToOne, JoinColumn, Index } from 'typeorm';
 import { BaseEntity } from './base.entity';
 
 export enum DrugSchedule {
-  SCHEDULE_I = 'schedule_1',    // No medical use, high abuse (e.g., heroin)
-  SCHEDULE_II = 'schedule_2',   // High abuse, severe dependence (e.g., morphine)
-  SCHEDULE_III = 'schedule_3',  // Moderate abuse potential (e.g., codeine)
-  SCHEDULE_IV = 'schedule_4',   // Low abuse potential (e.g., diazepam)
-  SCHEDULE_V = 'schedule_5',    // Lowest abuse potential
-  OTC = 'otc',                  // Over the counter
-  POM = 'pom',                  // Prescription only medicine
+  SCHEDULE_I = 'schedule_1', // No medical use, high abuse (e.g., heroin)
+  SCHEDULE_II = 'schedule_2', // High abuse, severe dependence (e.g., morphine)
+  SCHEDULE_III = 'schedule_3', // Moderate abuse potential (e.g., codeine)
+  SCHEDULE_IV = 'schedule_4', // Low abuse potential (e.g., diazepam)
+  SCHEDULE_V = 'schedule_5', // Lowest abuse potential
+  OTC = 'otc', // Over the counter
+  POM = 'pom', // Prescription only medicine
   UNSCHEDULED = 'unscheduled',
 }
 
 export enum DrugStorageCondition {
-  ROOM_TEMPERATURE = 'room_temperature',      // 15-25°C
-  REFRIGERATED = 'refrigerated',              // 2-8°C
-  FROZEN = 'frozen',                          // -20°C or below
-  CONTROLLED_ROOM = 'controlled_room',        // 20-25°C
-  COOL = 'cool',                              // 8-15°C
+  ROOM_TEMPERATURE = 'room_temperature', // 15-25°C
+  REFRIGERATED = 'refrigerated', // 2-8°C
+  FROZEN = 'frozen', // -20°C or below
+  CONTROLLED_ROOM = 'controlled_room', // 20-25°C
+  COOL = 'cool', // 8-15°C
   PROTECT_FROM_LIGHT = 'protect_from_light',
   DRY = 'dry',
 }
@@ -223,24 +223,135 @@ export class DrugAllergyClass extends BaseEntity {
 
 // Common Uganda Essential Medicines List classifications
 export const UGANDA_ESSENTIAL_MEDICINES = [
-  { genericName: 'Artemether-Lumefantrine', atcCode: 'P01BF01', schedule: DrugSchedule.POM, therapeuticClass: TherapeuticClass.ANTIMALARIALS },
-  { genericName: 'Amoxicillin', atcCode: 'J01CA04', schedule: DrugSchedule.POM, therapeuticClass: TherapeuticClass.ANTIBIOTICS },
-  { genericName: 'Metformin', atcCode: 'A10BA02', schedule: DrugSchedule.POM, therapeuticClass: TherapeuticClass.ANTIDIABETICS },
-  { genericName: 'Amlodipine', atcCode: 'C08CA01', schedule: DrugSchedule.POM, therapeuticClass: TherapeuticClass.ANTIHYPERTENSIVES },
-  { genericName: 'Omeprazole', atcCode: 'A02BC01', schedule: DrugSchedule.POM, therapeuticClass: TherapeuticClass.GASTROINTESTINAL },
-  { genericName: 'Paracetamol', atcCode: 'N02BE01', schedule: DrugSchedule.OTC, therapeuticClass: TherapeuticClass.ANALGESICS },
-  { genericName: 'Ibuprofen', atcCode: 'M01AE01', schedule: DrugSchedule.OTC, therapeuticClass: TherapeuticClass.ANALGESICS },
-  { genericName: 'Morphine', atcCode: 'N02AA01', schedule: DrugSchedule.SCHEDULE_II, therapeuticClass: TherapeuticClass.ANALGESICS, isControlled: true, isNarcotic: true },
-  { genericName: 'Diazepam', atcCode: 'N05BA01', schedule: DrugSchedule.SCHEDULE_IV, therapeuticClass: TherapeuticClass.CNS_AGENTS, isControlled: true, isPsychotropic: true },
-  { genericName: 'Cotrimoxazole', atcCode: 'J01EE01', schedule: DrugSchedule.POM, therapeuticClass: TherapeuticClass.ANTIBIOTICS },
-  { genericName: 'Tenofovir/Lamivudine/Dolutegravir', atcCode: 'J05AR25', schedule: DrugSchedule.POM, therapeuticClass: TherapeuticClass.ANTIRETROVIRALS },
-  { genericName: 'Rifampicin/Isoniazid/Pyrazinamide/Ethambutol', atcCode: 'J04AM06', schedule: DrugSchedule.POM, therapeuticClass: TherapeuticClass.ANTITUBERCULOSIS },
-  { genericName: 'Oxytocin', atcCode: 'H01BB02', schedule: DrugSchedule.POM, therapeuticClass: TherapeuticClass.HORMONES, highAlert: true },
-  { genericName: 'Insulin (Regular)', atcCode: 'A10AB01', schedule: DrugSchedule.POM, therapeuticClass: TherapeuticClass.ANTIDIABETICS, highAlert: true, storageCondition: DrugStorageCondition.REFRIGERATED },
-  { genericName: 'Heparin', atcCode: 'B01AB01', schedule: DrugSchedule.POM, therapeuticClass: TherapeuticClass.ANTICOAGULANTS, highAlert: true },
-  { genericName: 'Ketamine', atcCode: 'N01AX03', schedule: DrugSchedule.SCHEDULE_III, therapeuticClass: TherapeuticClass.ANAESTHETICS, isControlled: true },
-  { genericName: 'Pethidine', atcCode: 'N02AB02', schedule: DrugSchedule.SCHEDULE_II, therapeuticClass: TherapeuticClass.ANALGESICS, isControlled: true, isNarcotic: true },
-  { genericName: 'ORS (Oral Rehydration Salts)', atcCode: 'A07CA', schedule: DrugSchedule.OTC, therapeuticClass: TherapeuticClass.FLUIDS_ELECTROLYTES },
-  { genericName: 'Zinc Sulfate', atcCode: 'A12CB01', schedule: DrugSchedule.OTC, therapeuticClass: TherapeuticClass.MINERALS },
-  { genericName: 'Vitamin A', atcCode: 'A11CA01', schedule: DrugSchedule.OTC, therapeuticClass: TherapeuticClass.VITAMINS },
+  {
+    genericName: 'Artemether-Lumefantrine',
+    atcCode: 'P01BF01',
+    schedule: DrugSchedule.POM,
+    therapeuticClass: TherapeuticClass.ANTIMALARIALS,
+  },
+  {
+    genericName: 'Amoxicillin',
+    atcCode: 'J01CA04',
+    schedule: DrugSchedule.POM,
+    therapeuticClass: TherapeuticClass.ANTIBIOTICS,
+  },
+  {
+    genericName: 'Metformin',
+    atcCode: 'A10BA02',
+    schedule: DrugSchedule.POM,
+    therapeuticClass: TherapeuticClass.ANTIDIABETICS,
+  },
+  {
+    genericName: 'Amlodipine',
+    atcCode: 'C08CA01',
+    schedule: DrugSchedule.POM,
+    therapeuticClass: TherapeuticClass.ANTIHYPERTENSIVES,
+  },
+  {
+    genericName: 'Omeprazole',
+    atcCode: 'A02BC01',
+    schedule: DrugSchedule.POM,
+    therapeuticClass: TherapeuticClass.GASTROINTESTINAL,
+  },
+  {
+    genericName: 'Paracetamol',
+    atcCode: 'N02BE01',
+    schedule: DrugSchedule.OTC,
+    therapeuticClass: TherapeuticClass.ANALGESICS,
+  },
+  {
+    genericName: 'Ibuprofen',
+    atcCode: 'M01AE01',
+    schedule: DrugSchedule.OTC,
+    therapeuticClass: TherapeuticClass.ANALGESICS,
+  },
+  {
+    genericName: 'Morphine',
+    atcCode: 'N02AA01',
+    schedule: DrugSchedule.SCHEDULE_II,
+    therapeuticClass: TherapeuticClass.ANALGESICS,
+    isControlled: true,
+    isNarcotic: true,
+  },
+  {
+    genericName: 'Diazepam',
+    atcCode: 'N05BA01',
+    schedule: DrugSchedule.SCHEDULE_IV,
+    therapeuticClass: TherapeuticClass.CNS_AGENTS,
+    isControlled: true,
+    isPsychotropic: true,
+  },
+  {
+    genericName: 'Cotrimoxazole',
+    atcCode: 'J01EE01',
+    schedule: DrugSchedule.POM,
+    therapeuticClass: TherapeuticClass.ANTIBIOTICS,
+  },
+  {
+    genericName: 'Tenofovir/Lamivudine/Dolutegravir',
+    atcCode: 'J05AR25',
+    schedule: DrugSchedule.POM,
+    therapeuticClass: TherapeuticClass.ANTIRETROVIRALS,
+  },
+  {
+    genericName: 'Rifampicin/Isoniazid/Pyrazinamide/Ethambutol',
+    atcCode: 'J04AM06',
+    schedule: DrugSchedule.POM,
+    therapeuticClass: TherapeuticClass.ANTITUBERCULOSIS,
+  },
+  {
+    genericName: 'Oxytocin',
+    atcCode: 'H01BB02',
+    schedule: DrugSchedule.POM,
+    therapeuticClass: TherapeuticClass.HORMONES,
+    highAlert: true,
+  },
+  {
+    genericName: 'Insulin (Regular)',
+    atcCode: 'A10AB01',
+    schedule: DrugSchedule.POM,
+    therapeuticClass: TherapeuticClass.ANTIDIABETICS,
+    highAlert: true,
+    storageCondition: DrugStorageCondition.REFRIGERATED,
+  },
+  {
+    genericName: 'Heparin',
+    atcCode: 'B01AB01',
+    schedule: DrugSchedule.POM,
+    therapeuticClass: TherapeuticClass.ANTICOAGULANTS,
+    highAlert: true,
+  },
+  {
+    genericName: 'Ketamine',
+    atcCode: 'N01AX03',
+    schedule: DrugSchedule.SCHEDULE_III,
+    therapeuticClass: TherapeuticClass.ANAESTHETICS,
+    isControlled: true,
+  },
+  {
+    genericName: 'Pethidine',
+    atcCode: 'N02AB02',
+    schedule: DrugSchedule.SCHEDULE_II,
+    therapeuticClass: TherapeuticClass.ANALGESICS,
+    isControlled: true,
+    isNarcotic: true,
+  },
+  {
+    genericName: 'ORS (Oral Rehydration Salts)',
+    atcCode: 'A07CA',
+    schedule: DrugSchedule.OTC,
+    therapeuticClass: TherapeuticClass.FLUIDS_ELECTROLYTES,
+  },
+  {
+    genericName: 'Zinc Sulfate',
+    atcCode: 'A12CB01',
+    schedule: DrugSchedule.OTC,
+    therapeuticClass: TherapeuticClass.MINERALS,
+  },
+  {
+    genericName: 'Vitamin A',
+    atcCode: 'A11CA01',
+    schedule: DrugSchedule.OTC,
+    therapeuticClass: TherapeuticClass.VITAMINS,
+  },
 ];

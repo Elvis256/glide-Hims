@@ -6,10 +6,7 @@ import { SupplierReturn, SupplierReturnItem } from '../../database/entities/supp
 import { InventoryModule } from '../inventory/inventory.module';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([SupplierReturn, SupplierReturnItem]),
-    InventoryModule,
-  ],
+  imports: [TypeOrmModule.forFeature([SupplierReturn, SupplierReturnItem]), InventoryModule],
   controllers: [SupplierReturnsController],
   providers: [SupplierReturnsService],
   exports: [SupplierReturnsService],

@@ -26,22 +26,24 @@ export class PermissionGroupsService {
     }
     const groups = await qb.orderBy('g.name', 'ASC').getMany();
 
-    return Promise.all(groups.map(async (g) => {
-      const groupPerms = await this.groupPermRepository.find({
-        where: { groupId: g.id },
-        relations: ['permission'],
-      });
-      const roleGroups = await this.roleGroupRepository.find({
-        where: { groupId: g.id },
-        relations: ['role'],
-      });
-      return {
-        ...g,
-        permissions: groupPerms.map(gp => gp.permission),
-        permissionCount: groupPerms.length,
-        assignedRoles: roleGroups.map(rg => ({ id: rg.role?.id, name: rg.role?.name })),
-      };
-    }));
+    return Promise.all(
+      groups.map(async (g) => {
+        const groupPerms = await this.groupPermRepository.find({
+          where: { groupId: g.id },
+          relations: ['permission'],
+        });
+        const roleGroups = await this.roleGroupRepository.find({
+          where: { groupId: g.id },
+          relations: ['role'],
+        });
+        return {
+          ...g,
+          permissions: groupPerms.map((gp) => gp.permission),
+          permissionCount: groupPerms.length,
+          assignedRoles: roleGroups.map((rg) => ({ id: rg.role?.id, name: rg.role?.name })),
+        };
+      }),
+    );
   }
 
   async findOne(id: string, tenantId?: string): Promise<any> {
@@ -61,13 +63,18 @@ export class PermissionGroupsService {
 
     return {
       ...group,
-      permissions: groupPerms.map(gp => gp.permission),
-      assignedRoles: roleGroups.map(rg => ({ id: rg.role?.id, name: rg.role?.name })),
+      permissions: groupPerms.map((gp) => gp.permission),
+      assignedRoles: roleGroups.map((rg) => ({ id: rg.role?.id, name: rg.role?.name })),
     };
   }
 
-  async create(dto: { name: string; description?: string; permissionIds?: string[] }, tenantId?: string) {
-    const existing = await this.groupRepository.findOne({ where: { name: dto.name, ...(tenantId ? { tenantId } : {}) } });
+  async create(
+    dto: { name: string; description?: string; permissionIds?: string[] },
+    tenantId?: string,
+  ) {
+    const existing = await this.groupRepository.findOne({
+      where: { name: dto.name, ...(tenantId ? { tenantId } : {}) },
+    });
     if (existing) throw new ConflictException('Permission group name already exists');
 
     const group = this.groupRepository.create({
@@ -78,10 +85,12 @@ export class PermissionGroupsService {
     const saved = await this.groupRepository.save(group);
 
     if (dto.permissionIds?.length) {
-      const groupPerms = dto.permissionIds.map(pid => this.groupPermRepository.create({
-        groupId: saved.id,
-        permissionId: pid,
-      }));
+      const groupPerms = dto.permissionIds.map((pid) =>
+        this.groupPermRepository.create({
+          groupId: saved.id,
+          permissionId: pid,
+        }),
+      );
       await this.groupPermRepository.save(groupPerms);
     }
 
@@ -113,10 +122,12 @@ export class PermissionGroupsService {
     if (!group) throw new NotFoundException('Permission group not found');
     await this.groupPermRepository.delete({ groupId });
     if (permissionIds.length > 0) {
-      const groupPerms = permissionIds.map(pid => this.groupPermRepository.create({
-        groupId,
-        permissionId: pid,
-      }));
+      const groupPerms = permissionIds.map((pid) =>
+        this.groupPermRepository.create({
+          groupId,
+          permissionId: pid,
+        }),
+      );
       await this.groupPermRepository.save(groupPerms);
     }
     return this.findOne(groupId, tenantId);

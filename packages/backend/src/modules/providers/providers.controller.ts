@@ -1,4 +1,15 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, ParseUUIDPipe, Request } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  Query,
+  ParseUUIDPipe,
+  Request,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { ProvidersService } from './providers.service';
 import { CreateProviderDto, UpdateProviderDto, ProviderSearchDto } from './dto/provider.dto';
@@ -56,7 +67,10 @@ export class ProvidersController {
   @Get('prescribers/:facilityId')
   @AuthWithPermissions('providers.read')
   @ApiOperation({ summary: 'Get prescribers for facility' })
-  async getPrescribers(@Param('facilityId', ParseUUIDPipe) facilityId: string, @Request() req: any) {
+  async getPrescribers(
+    @Param('facilityId', ParseUUIDPipe) facilityId: string,
+    @Request() req: any,
+  ) {
     return this.providersService.getPrescribers(facilityId, req.user?.tenantId);
   }
 
@@ -85,7 +99,11 @@ export class ProvidersController {
   @Patch(':id')
   @AuthWithPermissions('providers.update')
   @ApiOperation({ summary: 'Update provider' })
-  async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateProviderDto, @Request() req: any) {
+  async update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateProviderDto,
+    @Request() req: any,
+  ) {
     const provider = await this.providersService.update(id, dto, req.user?.tenantId);
     return { message: 'Provider updated', data: provider };
   }

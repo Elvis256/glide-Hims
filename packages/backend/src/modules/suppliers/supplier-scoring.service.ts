@@ -75,14 +75,24 @@ export class SupplierScoringService {
     dateFrom?: string,
     dateTo?: string,
   ): Promise<{ scores: ScoreBreakdown; metrics: SupplierScorecard['metrics'] }> {
-    const deliveryResult = await this.calculateDeliveryScore(supplierId, tenantId, dateFrom, dateTo);
+    const deliveryResult = await this.calculateDeliveryScore(
+      supplierId,
+      tenantId,
+      dateFrom,
+      dateTo,
+    );
     const qualityResult = await this.calculateQualityScore(supplierId, tenantId, dateFrom, dateTo);
-    const invoiceResult = await this.calculateInvoiceAccuracyScore(supplierId, tenantId, dateFrom, dateTo);
+    const invoiceResult = await this.calculateInvoiceAccuracyScore(
+      supplierId,
+      tenantId,
+      dateFrom,
+      dateTo,
+    );
 
     const overall = Math.round(
       deliveryResult.score * DELIVERY_WEIGHT +
-      qualityResult.score * QUALITY_WEIGHT +
-      invoiceResult.score * INVOICE_WEIGHT,
+        qualityResult.score * QUALITY_WEIGHT +
+        invoiceResult.score * INVOICE_WEIGHT,
     );
 
     return {
@@ -110,11 +120,14 @@ export class SupplierScoringService {
     dateFrom?: string,
     dateTo?: string,
   ): Promise<SupplierScorecard> {
-    const supplier = await this.supplierRepo.findOneOrFail({ where: { id: supplierId, ...(tenantId ? { tenantId } : {}) } });
+    const supplier = await this.supplierRepo.findOneOrFail({
+      where: { id: supplierId, ...(tenantId ? { tenantId } : {}) },
+    });
     const { scores, metrics } = await this.calculateScore(supplierId, tenantId, dateFrom, dateTo);
 
     // Recent POs
-    const recentPOQuery = this.poRepo.createQueryBuilder('po')
+    const recentPOQuery = this.poRepo
+      .createQueryBuilder('po')
       .where('po.supplier_id = :supplierId', { supplierId })
       .orderBy('po.order_date', 'DESC')
       .limit(10);
@@ -133,7 +146,7 @@ export class SupplierScoringService {
       },
       scores,
       metrics,
-      recentPOs: recentPOs.map(po => ({
+      recentPOs: recentPOs.map((po) => ({
         id: po.id,
         orderNumber: po.orderNumber,
         orderDate: po.orderDate,
@@ -170,7 +183,9 @@ export class SupplierScoringService {
 
     // Sort by overall score descending, then assign ranks
     rankings.sort((a, b) => b.scores.overall - a.scores.overall);
-    rankings.forEach((r, i) => { r.rank = i + 1; });
+    rankings.forEach((r, i) => {
+      r.rank = i + 1;
+    });
 
     return rankings;
   }
@@ -184,7 +199,8 @@ export class SupplierScoringService {
     dateTo?: string,
   ): Promise<{ score: number; totalPOs: number; onTime: number }> {
     // Get POs that have at least been partially received and have an expectedDelivery date
-    const query = this.poRepo.createQueryBuilder('po')
+    const query = this.poRepo
+      .createQueryBuilder('po')
       .where('po.supplier_id = :supplierId', { supplierId })
       .andWhere('po.expected_delivery IS NOT NULL')
       .andWhere('po.status IN (:...statuses)', {
@@ -202,7 +218,8 @@ export class SupplierScoringService {
     let onTimeCount = 0;
     for (const po of pos) {
       // Find earliest GRN receivedAt for this PO
-      const grnQuery = this.grnRepo.createQueryBuilder('grn')
+      const grnQuery = this.grnRepo
+        .createQueryBuilder('grn')
         .where('grn.purchase_order_id = :poId', { poId: po.id })
         .andWhere('grn.status != :cancelled', { cancelled: 'cancelled' })
         .orderBy('grn.received_at', 'ASC')
@@ -235,7 +252,8 @@ export class SupplierScoringService {
     dateTo?: string,
   ): Promise<{ score: number; totalItems: number; accepted: number; rejected: number }> {
     // Get all GRNs for this supplier
-    const grnQuery = this.grnRepo.createQueryBuilder('grn')
+    const grnQuery = this.grnRepo
+      .createQueryBuilder('grn')
       .where('grn.supplier_id = :supplierId', { supplierId })
       .andWhere('grn.status != :cancelled', { cancelled: 'cancelled' });
 
@@ -246,10 +264,11 @@ export class SupplierScoringService {
     const grns = await grnQuery.getMany();
     if (grns.length === 0) return { score: 100, totalItems: 0, accepted: 0, rejected: 0 };
 
-    const grnIds = grns.map(g => g.id);
+    const grnIds = grns.map((g) => g.id);
 
     // Sum accepted and rejected across all GRN items
-    const result = await this.grnItemRepo.createQueryBuilder('gi')
+    const result = await this.grnItemRepo
+      .createQueryBuilder('gi')
       .select('COALESCE(SUM(gi.quantity_received), 0)', 'totalReceived')
       .addSelect('COALESCE(SUM(gi.quantity_accepted), 0)', 'totalAccepted')
       .addSelect('COALESCE(SUM(gi.quantity_rejected), 0)', 'totalRejected')
@@ -261,13 +280,19 @@ export class SupplierScoringService {
     const totalRejected = Number(result?.totalRejected) || 0;
 
     // If quantityAccepted is null, approximate from received - rejected
-    const effectiveAccepted = totalAccepted > 0 ? totalAccepted : Math.max(totalReceived - totalRejected, 0);
-    const effectiveTotal = totalAccepted > 0 ? (totalAccepted + totalRejected) : totalReceived;
+    const effectiveAccepted =
+      totalAccepted > 0 ? totalAccepted : Math.max(totalReceived - totalRejected, 0);
+    const effectiveTotal = totalAccepted > 0 ? totalAccepted + totalRejected : totalReceived;
 
     if (effectiveTotal === 0) return { score: 100, totalItems: 0, accepted: 0, rejected: 0 };
 
     const score = Math.round((effectiveAccepted / effectiveTotal) * 100);
-    return { score, totalItems: effectiveTotal, accepted: effectiveAccepted, rejected: totalRejected };
+    return {
+      score,
+      totalItems: effectiveTotal,
+      accepted: effectiveAccepted,
+      rejected: totalRejected,
+    };
   }
 
   // ── Invoice Accuracy: % of invoices matched without discrepancy ────────
@@ -278,7 +303,8 @@ export class SupplierScoringService {
     dateFrom?: string,
     dateTo?: string,
   ): Promise<{ score: number; totalInvoices: number; matched: number }> {
-    const query = this.invoiceMatchRepo.createQueryBuilder('im')
+    const query = this.invoiceMatchRepo
+      .createQueryBuilder('im')
       .where('im.supplier_id = :supplierId', { supplierId });
 
     if (tenantId) query.andWhere('im.tenant_id = :tenantId', { tenantId });
@@ -289,8 +315,8 @@ export class SupplierScoringService {
     if (invoices.length === 0) return { score: 100, totalInvoices: 0, matched: 0 };
 
     // "matched" = status is MATCHED, APPROVED, or PAID (no discrepancy)
-    const matchedCount = invoices.filter(
-      inv => ['matched', 'approved', 'paid'].includes(inv.status),
+    const matchedCount = invoices.filter((inv) =>
+      ['matched', 'approved', 'paid'].includes(inv.status),
     ).length;
 
     const score = Math.round((matchedCount / invoices.length) * 100);

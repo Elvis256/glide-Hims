@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  CanActivate,
-  ExecutionContext,
-  ForbiddenException,
-} from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -48,7 +43,7 @@ export class EmployeeRequiredGuard implements CanActivate {
 
     if (!employee) {
       throw new ForbiddenException(
-        'Your account is not linked to an employee profile. Please contact HR to complete your profile setup before accessing this module.'
+        'Your account is not linked to an employee profile. Please contact HR to complete your profile setup before accessing this module.',
       );
     }
 

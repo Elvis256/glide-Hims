@@ -1,7 +1,23 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, ParseUUIDPipe, Request } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  ParseUUIDPipe,
+  Request,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { FacilitiesService, CreateUnitDto, UpdateUnitDto } from './facilities.service';
-import { CreateFacilityDto, UpdateFacilityDto, CreateDepartmentDto, UpdateDepartmentDto, UpdateFacilityModulesDto } from './dto/facility.dto';
+import {
+  CreateFacilityDto,
+  UpdateFacilityDto,
+  CreateDepartmentDto,
+  UpdateDepartmentDto,
+  UpdateFacilityModulesDto,
+} from './dto/facility.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 
@@ -26,7 +42,9 @@ export class FacilitiesController {
     return {
       name: facility.name,
       address: settings.address
-        ? [settings.address.street, settings.address.city, settings.address.country].filter(Boolean).join(', ')
+        ? [settings.address.street, settings.address.city, settings.address.country]
+            .filter(Boolean)
+            .join(', ')
         : facility.location || '',
       phone: facility.contact?.phone || '',
       email: facility.contact?.email || '',
@@ -45,7 +63,7 @@ export class FacilitiesController {
 
   @Get()
   @AuthWithPermissions('facilities.read')
-  @ApiOperation({ summary: 'List facilities scoped to the current user\'s tenant' })
+  @ApiOperation({ summary: "List facilities scoped to the current user's tenant" })
   async findAllFacilities(@Request() req: any) {
     const facilityId = req.user?.facilityId;
     return this.facilitiesService.findFacilitiesForUser(facilityId, req.user?.tenantId);
@@ -84,7 +102,11 @@ export class FacilitiesController {
   @Patch(':id')
   @AuthWithPermissions('facilities.update')
   @ApiOperation({ summary: 'Update facility' })
-  async updateFacility(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateFacilityDto, @Request() req: any) {
+  async updateFacility(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateFacilityDto,
+    @Request() req: any,
+  ) {
     const facility = await this.facilitiesService.updateFacility(id, dto, req.user?.tenantId);
     return { message: 'Facility updated', data: facility };
   }
@@ -113,14 +135,21 @@ export class FacilitiesController {
   @Get(':facilityId/departments')
   @AuthWithPermissions('facilities.read')
   @ApiOperation({ summary: 'List departments for facility' })
-  async findAllDepartments(@Param('facilityId', ParseUUIDPipe) facilityId: string, @Request() req: any) {
+  async findAllDepartments(
+    @Param('facilityId', ParseUUIDPipe) facilityId: string,
+    @Request() req: any,
+  ) {
     return this.facilitiesService.findAllDepartments(facilityId, req.user?.tenantId);
   }
 
   @Patch('departments/:id')
   @AuthWithPermissions('facilities.update')
   @ApiOperation({ summary: 'Update department' })
-  async updateDepartment(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateDepartmentDto, @Request() req: any) {
+  async updateDepartment(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateDepartmentDto,
+    @Request() req: any,
+  ) {
     const department = await this.facilitiesService.updateDepartment(id, dto, req.user?.tenantId);
     return { message: 'Department updated', data: department };
   }
@@ -150,28 +179,41 @@ export class FacilitiesController {
   @Get('departments/:departmentId/staff')
   @AuthWithPermissions('facilities.read')
   @ApiOperation({ summary: 'Get staff assigned to department' })
-  async getDepartmentStaff(@Param('departmentId', ParseUUIDPipe) departmentId: string, @Request() req: any) {
+  async getDepartmentStaff(
+    @Param('departmentId', ParseUUIDPipe) departmentId: string,
+    @Request() req: any,
+  ) {
     return this.facilitiesService.getDepartmentStaff(departmentId, req.user?.tenantId);
   }
 
   @Get('departments/:departmentId/units')
   @AuthWithPermissions('facilities.read')
   @ApiOperation({ summary: 'List units for department' })
-  async findAllUnits(@Param('departmentId', ParseUUIDPipe) departmentId: string, @Request() req: any) {
+  async findAllUnits(
+    @Param('departmentId', ParseUUIDPipe) departmentId: string,
+    @Request() req: any,
+  ) {
     return this.facilitiesService.findAllUnits(departmentId, req.user?.tenantId);
   }
 
   @Get(':facilityId/units')
   @AuthWithPermissions('facilities.read')
   @ApiOperation({ summary: 'List all units for facility' })
-  async findUnitsByFacility(@Param('facilityId', ParseUUIDPipe) facilityId: string, @Request() req: any) {
+  async findUnitsByFacility(
+    @Param('facilityId', ParseUUIDPipe) facilityId: string,
+    @Request() req: any,
+  ) {
     return this.facilitiesService.findUnitsByFacility(facilityId, req.user?.tenantId);
   }
 
   @Patch('units/:id')
   @AuthWithPermissions('facilities.update')
   @ApiOperation({ summary: 'Update unit' })
-  async updateUnit(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateUnitDto, @Request() req: any) {
+  async updateUnit(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateUnitDto,
+    @Request() req: any,
+  ) {
     const unit = await this.facilitiesService.updateUnit(id, dto, req.user?.tenantId);
     return { message: 'Unit updated', data: unit };
   }
@@ -201,6 +243,11 @@ export class FacilitiesController {
     @Body() body: UpdateFacilityModulesDto,
     @Request() req: any,
   ) {
-    return this.facilitiesService.updateFacilityModules(id, body.enabledModules, body.sharedModules, req.user?.tenantId);
+    return this.facilitiesService.updateFacilityModules(
+      id,
+      body.enabledModules,
+      body.sharedModules,
+      req.user?.tenantId,
+    );
   }
 }

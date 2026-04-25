@@ -15,7 +15,12 @@
     "db:migrate": "cd packages/backend && pnpm db:migrate",
     "db:seed": "cd packages/backend && pnpm db:seed",
     "db:setup": "sudo -u postgres psql -c \"CREATE USER glide_hims WITH PASSWORD 'glide_hims_dev';\" && sudo -u postgres psql -c \"CREATE DATABASE glide_hims_dev OWNER glide_hims;\"",
-    "db:reset": "cd packages/backend && pnpm db:migrate && pnpm db:seed"
+    "db:reset": "cd packages/backend && pnpm db:migrate && pnpm db:seed",
+    "security:audit:root": "pnpm audit --prod --audit-level=high",
+    "security:audit:backend": "pnpm -C packages/backend audit --prod --audit-level=high",
+    "security:audit:frontend": "pnpm -C packages/frontend audit --prod --audit-level=high",
+    "security:scan": "pnpm security:audit:root && pnpm security:audit:backend && pnpm security:audit:frontend",
+    "compliance:evidence:init": "bash scripts/compliance/collect-evidence.sh"
   },
   "engines": {
     "node": ">=20.0.0",

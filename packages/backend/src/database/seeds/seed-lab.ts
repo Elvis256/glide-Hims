@@ -7,18 +7,18 @@ function mapSampleType(sample: string): SampleType {
   const mapping: Record<string, SampleType> = {
     'EDTA Blood': SampleType.BLOOD,
     'Citrate Blood': SampleType.BLOOD,
-    'Serum': SampleType.SERUM,
+    Serum: SampleType.SERUM,
     'Fasting Serum': SampleType.SERUM,
-    'Plasma': SampleType.PLASMA,
+    Plasma: SampleType.PLASMA,
     'EDTA Plasma': SampleType.PLASMA,
-    'Urine': SampleType.URINE,
-    'Stool': SampleType.STOOL,
-    'Sputum': SampleType.SPUTUM,
-    'Various': SampleType.OTHER,
+    Urine: SampleType.URINE,
+    Stool: SampleType.STOOL,
+    Sputum: SampleType.SPUTUM,
+    Various: SampleType.OTHER,
     'Capillary Blood': SampleType.BLOOD,
     'Fluoride Blood': SampleType.BLOOD,
-    'Aspirate': SampleType.OTHER,
-    'Tissue': SampleType.TISSUE,
+    Aspirate: SampleType.OTHER,
+    Tissue: SampleType.TISSUE,
     'Cervical Smear': SampleType.SWAB,
   };
   return mapping[sample] || SampleType.OTHER;
@@ -36,11 +36,46 @@ const labTests = [
     turnaroundMinutes: 60,
     price: 15000,
     referenceRanges: [
-      { parameter: 'Hemoglobin', unit: 'g/dL', normalMin: 12, normalMax: 17, criticalLow: 7, criticalHigh: 20 },
-      { parameter: 'WBC', unit: 'x10^9/L', normalMin: 4, normalMax: 11, criticalLow: 2, criticalHigh: 30 },
-      { parameter: 'Platelets', unit: 'x10^9/L', normalMin: 150, normalMax: 400, criticalLow: 50, criticalHigh: 1000 },
-      { parameter: 'RBC', unit: 'x10^12/L', normalMin: 4.0, normalMax: 5.5, criticalLow: 2.5, criticalHigh: 7 },
-      { parameter: 'Hematocrit', unit: '%', normalMin: 36, normalMax: 50, criticalLow: 20, criticalHigh: 60 },
+      {
+        parameter: 'Hemoglobin',
+        unit: 'g/dL',
+        normalMin: 12,
+        normalMax: 17,
+        criticalLow: 7,
+        criticalHigh: 20,
+      },
+      {
+        parameter: 'WBC',
+        unit: 'x10^9/L',
+        normalMin: 4,
+        normalMax: 11,
+        criticalLow: 2,
+        criticalHigh: 30,
+      },
+      {
+        parameter: 'Platelets',
+        unit: 'x10^9/L',
+        normalMin: 150,
+        normalMax: 400,
+        criticalLow: 50,
+        criticalHigh: 1000,
+      },
+      {
+        parameter: 'RBC',
+        unit: 'x10^12/L',
+        normalMin: 4.0,
+        normalMax: 5.5,
+        criticalLow: 2.5,
+        criticalHigh: 7,
+      },
+      {
+        parameter: 'Hematocrit',
+        unit: '%',
+        normalMin: 36,
+        normalMax: 50,
+        criticalLow: 20,
+        criticalHigh: 60,
+      },
     ],
   },
   {
@@ -52,7 +87,14 @@ const labTests = [
     turnaroundMinutes: 30,
     price: 5000,
     referenceRanges: [
-      { parameter: 'Hemoglobin', unit: 'g/dL', normalMin: 12, normalMax: 17, criticalLow: 7, criticalHigh: 20 },
+      {
+        parameter: 'Hemoglobin',
+        unit: 'g/dL',
+        normalMin: 12,
+        normalMax: 17,
+        criticalLow: 7,
+        criticalHigh: 20,
+      },
     ],
   },
   {
@@ -108,11 +150,39 @@ const labTests = [
     turnaroundMinutes: 120,
     price: 35000,
     referenceRanges: [
-      { parameter: 'Creatinine', unit: 'mg/dL', normalMin: 0.6, normalMax: 1.2, criticalLow: 0.3, criticalHigh: 10 },
+      {
+        parameter: 'Creatinine',
+        unit: 'mg/dL',
+        normalMin: 0.6,
+        normalMax: 1.2,
+        criticalLow: 0.3,
+        criticalHigh: 10,
+      },
       { parameter: 'BUN', unit: 'mg/dL', normalMin: 7, normalMax: 20, criticalHigh: 100 },
-      { parameter: 'Sodium', unit: 'mEq/L', normalMin: 136, normalMax: 145, criticalLow: 120, criticalHigh: 160 },
-      { parameter: 'Potassium', unit: 'mEq/L', normalMin: 3.5, normalMax: 5.0, criticalLow: 2.5, criticalHigh: 6.5 },
-      { parameter: 'Chloride', unit: 'mEq/L', normalMin: 98, normalMax: 106, criticalLow: 80, criticalHigh: 120 },
+      {
+        parameter: 'Sodium',
+        unit: 'mEq/L',
+        normalMin: 136,
+        normalMax: 145,
+        criticalLow: 120,
+        criticalHigh: 160,
+      },
+      {
+        parameter: 'Potassium',
+        unit: 'mEq/L',
+        normalMin: 3.5,
+        normalMax: 5.0,
+        criticalLow: 2.5,
+        criticalHigh: 6.5,
+      },
+      {
+        parameter: 'Chloride',
+        unit: 'mEq/L',
+        normalMin: 98,
+        normalMax: 106,
+        criticalLow: 80,
+        criticalHigh: 120,
+      },
     ],
   },
   {
@@ -127,7 +197,13 @@ const labTests = [
       { parameter: 'ALT', unit: 'U/L', normalMin: 7, normalMax: 56, criticalHigh: 1000 },
       { parameter: 'AST', unit: 'U/L', normalMin: 10, normalMax: 40, criticalHigh: 1000 },
       { parameter: 'ALP', unit: 'U/L', normalMin: 44, normalMax: 147 },
-      { parameter: 'Total Bilirubin', unit: 'mg/dL', normalMin: 0.1, normalMax: 1.2, criticalHigh: 15 },
+      {
+        parameter: 'Total Bilirubin',
+        unit: 'mg/dL',
+        normalMin: 0.1,
+        normalMax: 1.2,
+        criticalHigh: 15,
+      },
       { parameter: 'Direct Bilirubin', unit: 'mg/dL', normalMin: 0, normalMax: 0.3 },
       { parameter: 'Albumin', unit: 'g/dL', normalMin: 3.5, normalMax: 5.5, criticalLow: 2.0 },
     ],
@@ -141,10 +217,22 @@ const labTests = [
     turnaroundMinutes: 90,
     price: 30000,
     referenceRanges: [
-      { parameter: 'Total Cholesterol', unit: 'mg/dL', normalMin: 0, normalMax: 200, criticalHigh: 400 },
+      {
+        parameter: 'Total Cholesterol',
+        unit: 'mg/dL',
+        normalMin: 0,
+        normalMax: 200,
+        criticalHigh: 400,
+      },
       { parameter: 'HDL', unit: 'mg/dL', normalMin: 40, normalMax: 60 },
       { parameter: 'LDL', unit: 'mg/dL', normalMin: 0, normalMax: 100, criticalHigh: 250 },
-      { parameter: 'Triglycerides', unit: 'mg/dL', normalMin: 0, normalMax: 150, criticalHigh: 500 },
+      {
+        parameter: 'Triglycerides',
+        unit: 'mg/dL',
+        normalMin: 0,
+        normalMax: 150,
+        criticalHigh: 500,
+      },
     ],
   },
   {
@@ -156,7 +244,14 @@ const labTests = [
     turnaroundMinutes: 30,
     price: 5000,
     referenceRanges: [
-      { parameter: 'Glucose', unit: 'mg/dL', normalMin: 70, normalMax: 140, criticalLow: 40, criticalHigh: 500 },
+      {
+        parameter: 'Glucose',
+        unit: 'mg/dL',
+        normalMin: 70,
+        normalMax: 140,
+        criticalLow: 40,
+        criticalHigh: 500,
+      },
     ],
   },
   {
@@ -168,7 +263,14 @@ const labTests = [
     turnaroundMinutes: 30,
     price: 5000,
     referenceRanges: [
-      { parameter: 'Fasting Glucose', unit: 'mg/dL', normalMin: 70, normalMax: 100, criticalLow: 40, criticalHigh: 500 },
+      {
+        parameter: 'Fasting Glucose',
+        unit: 'mg/dL',
+        normalMin: 70,
+        normalMax: 100,
+        criticalLow: 40,
+        criticalHigh: 500,
+      },
     ],
   },
   {
@@ -193,9 +295,7 @@ const labTests = [
     sampleType: 'EDTA Blood',
     turnaroundMinutes: 30,
     price: 10000,
-    referenceRanges: [
-      { parameter: 'Malaria Parasites', unit: '', textNormal: 'Not Seen' },
-    ],
+    referenceRanges: [{ parameter: 'Malaria Parasites', unit: '', textNormal: 'Not Seen' }],
   },
   {
     code: 'MRDT',
@@ -205,9 +305,7 @@ const labTests = [
     sampleType: 'Capillary Blood',
     turnaroundMinutes: 15,
     price: 8000,
-    referenceRanges: [
-      { parameter: 'mRDT', unit: '', textNormal: 'Negative' },
-    ],
+    referenceRanges: [{ parameter: 'mRDT', unit: '', textNormal: 'Negative' }],
   },
   {
     code: 'URINE',
@@ -219,7 +317,7 @@ const labTests = [
     price: 10000,
     referenceRanges: [
       { parameter: 'pH', unit: '', normalMin: 4.5, normalMax: 8 },
-      { parameter: 'Specific Gravity', unit: '', normalMin: 1.005, normalMax: 1.030 },
+      { parameter: 'Specific Gravity', unit: '', normalMin: 1.005, normalMax: 1.03 },
       { parameter: 'Protein', unit: '', textNormal: 'Negative' },
       { parameter: 'Glucose', unit: '', textNormal: 'Negative' },
       { parameter: 'Blood', unit: '', textNormal: 'Negative' },
@@ -249,9 +347,7 @@ const labTests = [
     sampleType: 'Various',
     turnaroundMinutes: 4320, // 72 hours
     price: 50000,
-    referenceRanges: [
-      { parameter: 'Culture', unit: '', textNormal: 'No Growth' },
-    ],
+    referenceRanges: [{ parameter: 'Culture', unit: '', textNormal: 'No Growth' }],
   },
   {
     code: 'GRAMSTAIN',
@@ -261,9 +357,7 @@ const labTests = [
     sampleType: 'Various',
     turnaroundMinutes: 30,
     price: 8000,
-    referenceRanges: [
-      { parameter: 'Gram Stain', unit: '', textNormal: 'No organisms seen' },
-    ],
+    referenceRanges: [{ parameter: 'Gram Stain', unit: '', textNormal: 'No organisms seen' }],
   },
 
   // Serology/Immunology
@@ -275,9 +369,7 @@ const labTests = [
     sampleType: 'Serum',
     turnaroundMinutes: 30,
     price: 10000,
-    referenceRanges: [
-      { parameter: 'HIV 1/2 Ab', unit: '', textNormal: 'Non-Reactive' },
-    ],
+    referenceRanges: [{ parameter: 'HIV 1/2 Ab', unit: '', textNormal: 'Non-Reactive' }],
   },
   {
     code: 'VDRL',
@@ -287,9 +379,7 @@ const labTests = [
     sampleType: 'Serum',
     turnaroundMinutes: 30,
     price: 8000,
-    referenceRanges: [
-      { parameter: 'VDRL', unit: '', textNormal: 'Non-Reactive' },
-    ],
+    referenceRanges: [{ parameter: 'VDRL', unit: '', textNormal: 'Non-Reactive' }],
   },
   {
     code: 'HBSAG',
@@ -299,9 +389,7 @@ const labTests = [
     sampleType: 'Serum',
     turnaroundMinutes: 30,
     price: 15000,
-    referenceRanges: [
-      { parameter: 'HBsAg', unit: '', textNormal: 'Negative' },
-    ],
+    referenceRanges: [{ parameter: 'HBsAg', unit: '', textNormal: 'Negative' }],
   },
   {
     code: 'HCV',
@@ -311,9 +399,7 @@ const labTests = [
     sampleType: 'Serum',
     turnaroundMinutes: 30,
     price: 15000,
-    referenceRanges: [
-      { parameter: 'Anti-HCV', unit: '', textNormal: 'Negative' },
-    ],
+    referenceRanges: [{ parameter: 'Anti-HCV', unit: '', textNormal: 'Negative' }],
   },
   {
     code: 'WIDAL',
@@ -336,9 +422,7 @@ const labTests = [
     sampleType: 'Serum',
     turnaroundMinutes: 60,
     price: 15000,
-    referenceRanges: [
-      { parameter: 'Brucella Ab', unit: '', textNormal: 'Negative' },
-    ],
+    referenceRanges: [{ parameter: 'Brucella Ab', unit: '', textNormal: 'Negative' }],
   },
   {
     code: 'PREG',
@@ -348,9 +432,7 @@ const labTests = [
     sampleType: 'Serum',
     turnaroundMinutes: 30,
     price: 10000,
-    referenceRanges: [
-      { parameter: 'Beta-hCG', unit: '', textNormal: 'Negative' },
-    ],
+    referenceRanges: [{ parameter: 'Beta-hCG', unit: '', textNormal: 'Negative' }],
   },
   {
     code: 'UPREGTEST',
@@ -360,9 +442,7 @@ const labTests = [
     sampleType: 'Urine',
     turnaroundMinutes: 15,
     price: 5000,
-    referenceRanges: [
-      { parameter: 'Urine hCG', unit: '', textNormal: 'Negative' },
-    ],
+    referenceRanges: [{ parameter: 'Urine hCG', unit: '', textNormal: 'Negative' }],
   },
   {
     code: 'BHCG',
@@ -372,9 +452,7 @@ const labTests = [
     sampleType: 'Serum',
     turnaroundMinutes: 120,
     price: 25000,
-    referenceRanges: [
-      { parameter: 'Beta-hCG', unit: 'mIU/mL', normalMin: 0, normalMax: 5 },
-    ],
+    referenceRanges: [{ parameter: 'Beta-hCG', unit: 'mIU/mL', normalMin: 0, normalMax: 5 }],
   },
 
   // Other Common Tests
@@ -387,7 +465,13 @@ const labTests = [
     turnaroundMinutes: 240,
     price: 30000,
     referenceRanges: [
-      { parameter: 'CD4 Count', unit: 'cells/µL', normalMin: 500, normalMax: 1500, criticalLow: 200 },
+      {
+        parameter: 'CD4 Count',
+        unit: 'cells/µL',
+        normalMin: 500,
+        normalMax: 1500,
+        criticalLow: 200,
+      },
       { parameter: 'CD4 %', unit: '%', normalMin: 30, normalMax: 60, criticalLow: 14 },
     ],
   },
@@ -412,7 +496,14 @@ const labTests = [
     turnaroundMinutes: 180,
     price: 35000,
     referenceRanges: [
-      { parameter: 'TSH', unit: 'mIU/L', normalMin: 0.4, normalMax: 4.0, criticalLow: 0.1, criticalHigh: 10 },
+      {
+        parameter: 'TSH',
+        unit: 'mIU/L',
+        normalMin: 0.4,
+        normalMax: 4.0,
+        criticalLow: 0.1,
+        criticalHigh: 10,
+      },
     ],
   },
   {
@@ -424,7 +515,14 @@ const labTests = [
     turnaroundMinutes: 180,
     price: 60000,
     referenceRanges: [
-      { parameter: 'TSH', unit: 'mIU/L', normalMin: 0.4, normalMax: 4.0, criticalLow: 0.1, criticalHigh: 10 },
+      {
+        parameter: 'TSH',
+        unit: 'mIU/L',
+        normalMin: 0.4,
+        normalMax: 4.0,
+        criticalLow: 0.1,
+        criticalHigh: 10,
+      },
       { parameter: 'T3', unit: 'ng/dL', normalMin: 80, normalMax: 200 },
       { parameter: 'T4', unit: 'µg/dL', normalMin: 5, normalMax: 12 },
     ],
@@ -507,7 +605,9 @@ async function runLabSeed() {
   const dbPassword = process.env.DB_PASSWORD;
   const dbName = process.env.DB_NAME;
   if (!dbUsername || !dbPassword || !dbName) {
-    throw new Error('DB_USERNAME, DB_PASSWORD, and DB_NAME environment variables are required for seeding');
+    throw new Error(
+      'DB_USERNAME, DB_PASSWORD, and DB_NAME environment variables are required for seeding',
+    );
   }
 
   const dataSource = new DataSource({

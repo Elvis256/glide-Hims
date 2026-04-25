@@ -1,10 +1,4 @@
-import {
-  Entity,
-  Column,
-  ManyToOne,
-  JoinColumn,
-  Index,
-} from 'typeorm';
+import { Entity, Column, ManyToOne, JoinColumn, Index } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Patient } from './patient.entity';
 import { User } from './user.entity';
@@ -21,10 +15,10 @@ export class PatientNote extends BaseEntity {
   @JoinColumn({ name: 'patient_id' })
   patient: Patient;
 
-  @Column({ 
-    type: 'varchar', 
+  @Column({
+    type: 'varchar',
     length: 50,
-    default: 'administrative' 
+    default: 'administrative',
   })
   type: NoteType;
 

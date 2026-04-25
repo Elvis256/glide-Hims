@@ -1,10 +1,4 @@
-import {
-  Entity,
-  Column,
-  ManyToOne,
-  JoinColumn,
-  Index,
-} from 'typeorm';
+import { Entity, Column, ManyToOne, JoinColumn, Index } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Patient } from './patient.entity';
 import { Encounter } from './encounter.entity';
@@ -72,9 +66,26 @@ export enum VisitType {
 /** Valid queue status transitions - state machine */
 export const VALID_QUEUE_TRANSITIONS: Record<QueueStatus, QueueStatus[]> = {
   [QueueStatus.PENDING_PAYMENT]: [QueueStatus.WAITING, QueueStatus.CANCELLED],
-  [QueueStatus.WAITING]: [QueueStatus.CALLED, QueueStatus.IN_SERVICE, QueueStatus.TRANSFERRED, QueueStatus.SKIPPED, QueueStatus.CANCELLED],
-  [QueueStatus.CALLED]: [QueueStatus.IN_SERVICE, QueueStatus.NO_SHOW, QueueStatus.SKIPPED, QueueStatus.CANCELLED, QueueStatus.TRANSFERRED],
-  [QueueStatus.IN_SERVICE]: [QueueStatus.COMPLETED, QueueStatus.TRANSFERRED, QueueStatus.CANCELLED, QueueStatus.CALLED],
+  [QueueStatus.WAITING]: [
+    QueueStatus.CALLED,
+    QueueStatus.IN_SERVICE,
+    QueueStatus.TRANSFERRED,
+    QueueStatus.SKIPPED,
+    QueueStatus.CANCELLED,
+  ],
+  [QueueStatus.CALLED]: [
+    QueueStatus.IN_SERVICE,
+    QueueStatus.NO_SHOW,
+    QueueStatus.SKIPPED,
+    QueueStatus.CANCELLED,
+    QueueStatus.TRANSFERRED,
+  ],
+  [QueueStatus.IN_SERVICE]: [
+    QueueStatus.COMPLETED,
+    QueueStatus.TRANSFERRED,
+    QueueStatus.CANCELLED,
+    QueueStatus.CALLED,
+  ],
   [QueueStatus.COMPLETED]: [QueueStatus.CALLED],
   [QueueStatus.SKIPPED]: [QueueStatus.WAITING, QueueStatus.CANCELLED, QueueStatus.CALLED],
   [QueueStatus.NO_SHOW]: [QueueStatus.WAITING, QueueStatus.CANCELLED, QueueStatus.CALLED],

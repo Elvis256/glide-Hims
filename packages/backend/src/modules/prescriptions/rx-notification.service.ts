@@ -72,10 +72,7 @@ export class RxNotificationService {
     return this.notificationLogRepo.save(saved);
   }
 
-  async notifyRefillReminder(
-    prescriptionId: string,
-    tenantId: string,
-  ): Promise<RxNotificationLog> {
+  async notifyRefillReminder(prescriptionId: string, tenantId: string): Promise<RxNotificationLog> {
     const prescription = await this.prescriptionRepo.findOne({
       where: { id: prescriptionId, tenantId },
       relations: ['encounter', 'encounter.patient', 'encounter.facility'],
@@ -125,20 +122,14 @@ export class RxNotificationService {
     return this.notificationLogRepo.save(saved);
   }
 
-  async getNotificationLog(
-    prescriptionId: string,
-    tenantId: string,
-  ): Promise<RxNotificationLog[]> {
+  async getNotificationLog(prescriptionId: string, tenantId: string): Promise<RxNotificationLog[]> {
     return this.notificationLogRepo.find({
       where: { prescriptionId, tenantId },
       order: { createdAt: 'DESC' },
     });
   }
 
-  async getPatientNotifications(
-    patientId: string,
-    tenantId: string,
-  ): Promise<RxNotificationLog[]> {
+  async getPatientNotifications(patientId: string, tenantId: string): Promise<RxNotificationLog[]> {
     return this.notificationLogRepo.find({
       where: { patientId, tenantId },
       order: { createdAt: 'DESC' },
@@ -175,10 +166,7 @@ export class RxNotificationService {
     return qb.getMany();
   }
 
-  async resendNotification(
-    notificationId: string,
-    tenantId: string,
-  ): Promise<RxNotificationLog> {
+  async resendNotification(notificationId: string, tenantId: string): Promise<RxNotificationLog> {
     const existing = await this.notificationLogRepo.findOne({
       where: { id: notificationId, tenantId },
     });

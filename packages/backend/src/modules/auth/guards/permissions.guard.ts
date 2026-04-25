@@ -7,9 +7,9 @@ import { UserPermission } from '../../../database/entities/user-permission.entit
 import { Role } from '../../../database/entities/role.entity';
 import { RolePermissionGroup } from '../../../database/entities/role-permission-group.entity';
 import { GroupPermission } from '../../../database/entities/group-permission.entity';
-import { SYSTEM_ROLES, isSuperAdmin } from '../../../common/constants/roles.constants';
+import { isSuperAdmin } from '../../../common/constants/roles.constants';
 import { CacheService } from '../../cache/cache.service';
-import { SupportAccessTier } from '../../../database/entities/support-access-grant.entity';
+import { getActiveSupportTier, checkSystemAdminAccess } from './support-tier.util';
 
 export const PERMISSIONS_KEY = 'permissions';
 export const FACILITY_KEY = 'requireFacility';
@@ -49,55 +49,20 @@ export class PermissionsGuard implements CanActivate {
     // System admin — tiered access based on endpoint category
     if (user.isSystemAdmin) {
       const path = request.url || '';
-      // System management endpoints — always allowed for system admins
-      const isSystemEndpoint = /^\/(api\/v1\/)?(tenants|setup|settings|support-access|users\/(system-admins|tenant-admins|system-reset-password))/.test(path);
-      if (isSystemEndpoint) {
-        this.logSuperAdminAccess(request, requiredPermissions);
-        return true;
-      }
-
-      // Clinical/operational endpoints — require active support access grant
       const tenantId = user.tenantId;
       if (!tenantId) {
         this.logAccessDenied(request, requiredPermissions, 'SYSTEM_ADMIN_NO_TENANT_CONTEXT');
         return false;
       }
 
-      const tier = await this.getActiveSupportTier(user.id, tenantId);
-      if (tier === SupportAccessTier.NONE) {
-        this.logAccessDenied(request, requiredPermissions, 'SYSTEM_ADMIN_NO_SUPPORT_GRANT');
-        return false;
-      }
-
-      // Tier 1 (metadata): only allow read operations on analytics/dashboard/facilities endpoints
-      if (tier === SupportAccessTier.METADATA) {
-        const isReadOnly = request.method === 'GET';
-        const isMetadataEndpoint = /^\/(api\/v1\/)?(analytics|dashboard|facilities)/.test(path);
-        if (isReadOnly && isMetadataEndpoint) {
-          this.logSuperAdminAccess(request, requiredPermissions);
-          return true;
-        }
-        this.logAccessDenied(request, requiredPermissions, 'SUPPORT_TIER_1_INSUFFICIENT');
-        return false;
-      }
-
-      // Tier 2 (clinical read): only GET on any endpoint
-      if (tier === SupportAccessTier.CLINICAL_READ) {
-        if (request.method === 'GET') {
-          this.logSuperAdminAccess(request, requiredPermissions);
-          return true;
-        }
-        this.logAccessDenied(request, requiredPermissions, 'SUPPORT_TIER_2_READ_ONLY');
-        return false;
-      }
-
-      // Tier 3 (full support): all methods allowed
-      if (tier === SupportAccessTier.FULL_SUPPORT) {
+      const tier = await getActiveSupportTier(this.dataSource, user.id, tenantId);
+      const allowed = checkSystemAdminAccess(tier, path, request.method);
+      if (allowed) {
         this.logSuperAdminAccess(request, requiredPermissions);
-        return true;
+      } else {
+        this.logAccessDenied(request, requiredPermissions, 'SUPPORT_TIER_INSUFFICIENT');
       }
-
-      return false;
+      return allowed;
     }
 
     const targetFacilityId = this.extractFacilityId(request);
@@ -116,16 +81,21 @@ export class PermissionsGuard implements CanActivate {
       return false;
     }
 
-    const hasAllPermissions = requiredPermissions.every(perm => userPermissionCodes.includes(perm));
-    
+    const hasAllPermissions = requiredPermissions.every((perm) =>
+      userPermissionCodes.includes(perm),
+    );
+
     if (!hasAllPermissions) {
       this.logAccessDenied(request, requiredPermissions, 'MISSING_PERMISSIONS');
     }
-    
+
     return hasAllPermissions;
   }
 
-  private async resolveUserPermissions(userId: string, targetFacilityId: string | null): Promise<string[]> {
+  private async resolveUserPermissions(
+    userId: string,
+    targetFacilityId: string | null,
+  ): Promise<string[]> {
     const userRoleRepository = this.dataSource.getRepository(UserRole);
     const rolePermissionRepository = this.dataSource.getRepository(RolePermission);
     const userPermissionRepository = this.dataSource.getRepository(UserPermission);
@@ -135,27 +105,27 @@ export class PermissionsGuard implements CanActivate {
     let userRolesQuery = userRoleRepository
       .createQueryBuilder('ur')
       .where('ur.userId = :userId', { userId });
-    
+
     if (targetFacilityId) {
       userRolesQuery = userRolesQuery.andWhere(
         '(ur.facilityId = :facilityId OR ur.facilityId IS NULL)',
-        { facilityId: targetFacilityId }
+        { facilityId: targetFacilityId },
       );
     }
-    
+
     const userRoles = await userRolesQuery.getMany();
     const userPermissionCodes: string[] = [];
 
     if (userRoles.length > 0) {
-      const roleIds = userRoles.map(ur => ur.roleId);
-      
+      const roleIds = userRoles.map((ur) => ur.roleId);
+
       // Collect all role IDs including inherited parent roles
       const allRoleIds = new Set<string>(roleIds);
       for (const roleId of roleIds) {
         const parentIds = await this.getParentRoleIds(roleRepository, roleId);
-        parentIds.forEach(id => allRoleIds.add(id));
+        parentIds.forEach((id) => allRoleIds.add(id));
       }
-      
+
       const allRoleIdsArray = [...allRoleIds];
 
       // Get direct role permissions (including inherited roles)
@@ -166,27 +136,27 @@ export class PermissionsGuard implements CanActivate {
         .getMany();
 
       rolePermissions
-        .filter(rp => rp.permission)
-        .forEach(rp => userPermissionCodes.push(rp.permission.code));
+        .filter((rp) => rp.permission)
+        .forEach((rp) => userPermissionCodes.push(rp.permission.code));
 
       // Get permissions from permission groups assigned to these roles
       try {
         const rolePermGroupRepo = this.dataSource.getRepository(RolePermissionGroup);
         const groupPermRepo = this.dataSource.getRepository(GroupPermission);
-        
+
         const roleGroups = await rolePermGroupRepo.find({
           where: { roleId: In(allRoleIdsArray) },
         });
-        
+
         if (roleGroups.length > 0) {
-          const groupIds = roleGroups.map(rg => rg.groupId);
+          const groupIds = roleGroups.map((rg) => rg.groupId);
           const groupPerms = await groupPermRepo.find({
             where: { groupId: In(groupIds) },
             relations: ['permission'],
           });
           groupPerms
-            .filter(gp => gp.permission)
-            .forEach(gp => userPermissionCodes.push(gp.permission.code));
+            .filter((gp) => gp.permission)
+            .forEach((gp) => userPermissionCodes.push(gp.permission.code));
         }
       } catch {
         // Permission groups tables may not exist yet - gracefully skip
@@ -201,8 +171,8 @@ export class PermissionsGuard implements CanActivate {
       .getMany();
 
     directPermissions
-      .filter(up => up.permission)
-      .forEach(up => {
+      .filter((up) => up.permission)
+      .forEach((up) => {
         if (!userPermissionCodes.includes(up.permission.code)) {
           userPermissionCodes.push(up.permission.code);
         }
@@ -220,7 +190,10 @@ export class PermissionsGuard implements CanActivate {
     let currentId = roleId;
 
     for (let i = 0; i < maxDepth; i++) {
-      const role = await roleRepo.findOne({ where: { id: currentId }, select: ['id', 'parentRoleId'] });
+      const role = await roleRepo.findOne({
+        where: { id: currentId },
+        select: ['id', 'parentRoleId'],
+      });
       if (!role?.parentRoleId || visited.has(role.parentRoleId)) break;
       visited.add(role.parentRoleId);
       parentIds.push(role.parentRoleId);
@@ -257,18 +230,6 @@ export class PermissionsGuard implements CanActivate {
       userAgent: request.headers?.['user-agent']?.substring(0, 100),
     };
     this.logger.warn(JSON.stringify(logEntry));
-  }
-
-  private async getActiveSupportTier(userId: string, tenantId: string): Promise<SupportAccessTier> {
-    const result = await this.dataSource.query(
-      `SELECT access_tier FROM support_access_grants
-       WHERE granted_to_id = $1 AND tenant_id = $2
-       AND revoked_at IS NULL AND expires_at > NOW()
-       AND deleted_at IS NULL
-       LIMIT 1`,
-      [userId, tenantId],
-    );
-    return result.length > 0 ? result[0].access_tier : SupportAccessTier.NONE;
   }
 
   private logAccessDenied(request: any, requiredPermissions: string[], reason: string): void {

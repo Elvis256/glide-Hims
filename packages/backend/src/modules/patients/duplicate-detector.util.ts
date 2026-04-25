@@ -63,8 +63,9 @@ export function calculateDuplicateConfidence(
   const bestNameMatch = Math.max(nameRatio, partialRatio, tokenSortRatio);
 
   // Date of birth comparison
-  const dobMatch = newPatient.dateOfBirth.toISOString().split('T')[0] === 
-                   existingPatient.dateOfBirth.toISOString().split('T')[0];
+  const dobMatch =
+    newPatient.dateOfBirth.toISOString().split('T')[0] ===
+    existingPatient.dateOfBirth.toISOString().split('T')[0];
   const dobNearMatch = datesWithinDays(newPatient.dateOfBirth, existingPatient.dateOfBirth, 3);
 
   // Gender match

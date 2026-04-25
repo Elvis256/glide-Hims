@@ -20,7 +20,7 @@ export class JournalEntryLine {
   @Column({ type: 'uuid', nullable: true, name: 'tenant_id' })
   tenantId: string;
 
-  @ManyToOne(() => JournalEntry, je => je.lines, { onDelete: 'CASCADE' })
+  @ManyToOne(() => JournalEntry, (je) => je.lines, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'journal_entry_id' })
   journalEntry: JournalEntry;
 

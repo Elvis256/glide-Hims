@@ -1,5 +1,11 @@
 import { DataSource } from 'typeorm';
-import { Employee, Gender, MaritalStatus, EmploymentType, EmploymentStatus } from '../entities/employee.entity';
+import {
+  Employee,
+  Gender,
+  MaritalStatus,
+  EmploymentType,
+  EmploymentStatus,
+} from '../entities/employee.entity';
 import { Facility } from '../entities/facility.entity';
 import { Tenant } from '../entities/tenant.entity';
 import { User } from '../entities/user.entity';
@@ -11,7 +17,9 @@ async function seedEmployees() {
   const dbPassword = process.env.DB_PASSWORD;
   const dbName = process.env.DB_NAME;
   if (!dbUsername || !dbPassword || !dbName) {
-    throw new Error('DB_USERNAME, DB_PASSWORD, and DB_NAME environment variables are required for seeding');
+    throw new Error(
+      'DB_USERNAME, DB_PASSWORD, and DB_NAME environment variables are required for seeding',
+    );
   }
 
   const dataSource = new DataSource({
@@ -231,9 +239,7 @@ async function seedEmployees() {
       hireDate: new Date('2023-01-10'),
       salaryGrade: 'C4',
       basicSalary: 1400000,
-      allowances: [
-        { name: 'Transport', amount: 200000, taxable: false },
-      ],
+      allowances: [{ name: 'Transport', amount: 200000, taxable: false }],
       bankName: 'PostBank',
       bankAccountNumber: '4040034567890',
       annualLeaveBalance: 12,
@@ -316,9 +322,7 @@ async function seedEmployees() {
       hireDate: new Date('2022-03-01'),
       salaryGrade: 'S3',
       basicSalary: 800000,
-      allowances: [
-        { name: 'Transport', amount: 120000, taxable: false },
-      ],
+      allowances: [{ name: 'Transport', amount: 120000, taxable: false }],
       bankName: 'Centenary Bank',
       bankAccountNumber: '3120098765432',
       annualLeaveBalance: 14,
@@ -328,7 +332,9 @@ async function seedEmployees() {
 
   let created = 0;
   for (const empData of employees) {
-    const existing = await employeeRepo.findOne({ where: { employeeNumber: empData.employeeNumber } });
+    const existing = await employeeRepo.findOne({
+      where: { employeeNumber: empData.employeeNumber },
+    });
     if (!existing) {
       const employee = employeeRepo.create({
         ...empData,
@@ -337,7 +343,9 @@ async function seedEmployees() {
       });
       await employeeRepo.save(employee);
       created++;
-      console.log(`Created employee: ${empData.firstName} ${empData.lastName} (${empData.jobTitle})`);
+      console.log(
+        `Created employee: ${empData.firstName} ${empData.lastName} (${empData.jobTitle})`,
+      );
     }
   }
 

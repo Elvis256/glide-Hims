@@ -2,7 +2,11 @@ import { Injectable, NotFoundException, ConflictException } from '@nestjs/common
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like, Between } from 'typeorm';
 import { Appointment, AppointmentStatus } from './entities/appointment.entity';
-import { CreateAppointmentDto, UpdateAppointmentDto, AppointmentQueryDto } from './dto/appointment.dto';
+import {
+  CreateAppointmentDto,
+  UpdateAppointmentDto,
+  AppointmentQueryDto,
+} from './dto/appointment.dto';
 
 @Injectable()
 export class AppointmentsService {
@@ -20,7 +24,12 @@ export class AppointmentsService {
     return `APT${datePrefix}${String(count + 1).padStart(4, '0')}`;
   }
 
-  async create(dto: CreateAppointmentDto, facilityId: string, userId: string, tenantId?: string): Promise<Appointment> {
+  async create(
+    dto: CreateAppointmentDto,
+    facilityId: string,
+    userId: string,
+    tenantId?: string,
+  ): Promise<Appointment> {
     // Check for double-booking: provider must not have an overlapping appointment
     const conflictWhere: any = {
       doctorId: dto.doctorId,
@@ -34,11 +43,16 @@ export class AppointmentsService {
     });
 
     const hasConflict = existingAppointments.some((existing) => {
-      if (existing.status === AppointmentStatus.CANCELLED || existing.status === AppointmentStatus.NO_SHOW) {
+      if (
+        existing.status === AppointmentStatus.CANCELLED ||
+        existing.status === AppointmentStatus.NO_SHOW
+      ) {
         return false;
       }
       // Time range overlap: newStart < existingEnd AND newEnd > existingStart
-      return dto.startTime < existing.endTime && (dto.endTime ? dto.endTime > existing.startTime : true);
+      return (
+        dto.startTime < existing.endTime && (dto.endTime ? dto.endTime > existing.startTime : true)
+      );
     });
 
     if (hasConflict) {
@@ -48,7 +62,7 @@ export class AppointmentsService {
     }
 
     const appointmentNumber = await this.generateAppointmentNumber(tenantId);
-    
+
     const appointment = this.appointmentRepository.create({
       ...dto,
       appointmentNumber,
@@ -62,7 +76,7 @@ export class AppointmentsService {
 
   async findAll(query: AppointmentQueryDto, facilityId: string, tenantId?: string) {
     const { date, patientId, doctorId, status, type, search, page = 1, limit = 20 } = query;
-    
+
     const qb = this.appointmentRepository
       .createQueryBuilder('appointment')
       .leftJoinAndSelect('appointment.patient', 'patient')
@@ -133,13 +147,24 @@ export class AppointmentsService {
     return appointment;
   }
 
-  async update(id: string, dto: UpdateAppointmentDto, facilityId: string, tenantId?: string): Promise<Appointment> {
+  async update(
+    id: string,
+    dto: UpdateAppointmentDto,
+    facilityId: string,
+    tenantId?: string,
+  ): Promise<Appointment> {
     const appointment = await this.findOne(id, facilityId, tenantId);
     Object.assign(appointment, dto);
     return this.appointmentRepository.save(appointment);
   }
 
-  async updateStatus(id: string, status: AppointmentStatus, facilityId: string, cancellationReason?: string, tenantId?: string): Promise<Appointment> {
+  async updateStatus(
+    id: string,
+    status: AppointmentStatus,
+    facilityId: string,
+    cancellationReason?: string,
+    tenantId?: string,
+  ): Promise<Appointment> {
     const appointment = await this.findOne(id, facilityId, tenantId);
     appointment.status = status;
     if (cancellationReason) {
@@ -150,7 +175,7 @@ export class AppointmentsService {
 
   async getStats(facilityId: string, date?: string, tenantId?: string) {
     const targetDate = date || new Date().toISOString().slice(0, 10);
-    
+
     const qb = this.appointmentRepository
       .createQueryBuilder('appointment')
       .where('appointment.facilityId = :facilityId', { facilityId })
@@ -162,15 +187,18 @@ export class AppointmentsService {
 
     const total = await qb.getCount();
 
-    const scheduled = await qb.clone()
+    const scheduled = await qb
+      .clone()
       .andWhere('appointment.status = :status', { status: AppointmentStatus.SCHEDULED })
       .getCount();
 
-    const confirmed = await qb.clone()
+    const confirmed = await qb
+      .clone()
       .andWhere('appointment.status = :status', { status: AppointmentStatus.CONFIRMED })
       .getCount();
 
-    const completed = await qb.clone()
+    const completed = await qb
+      .clone()
       .andWhere('appointment.status = :status', { status: AppointmentStatus.COMPLETED })
       .getCount();
 

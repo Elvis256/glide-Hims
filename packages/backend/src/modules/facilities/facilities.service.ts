@@ -6,7 +6,12 @@ import { Department } from '../../database/entities/department.entity';
 import { Unit } from '../../database/entities/unit.entity';
 import { User } from '../../database/entities/user.entity';
 import { Employee } from '../../database/entities/employee.entity';
-import { CreateFacilityDto, UpdateFacilityDto, CreateDepartmentDto, UpdateDepartmentDto } from './dto/facility.dto';
+import {
+  CreateFacilityDto,
+  UpdateFacilityDto,
+  CreateDepartmentDto,
+  UpdateDepartmentDto,
+} from './dto/facility.dto';
 
 export interface CreateUnitDto {
   facilityId: string;
@@ -43,24 +48,31 @@ export class FacilitiesService {
 
   // Facility CRUD
   async createFacility(dto: CreateFacilityDto, tenantId?: string): Promise<Facility> {
-    const facility = this.facilityRepository.create({ ...dto, status: 'active', ...(tenantId ? { tenantId } : {}) });
+    const facility = this.facilityRepository.create({
+      ...dto,
+      status: 'active',
+      ...(tenantId ? { tenantId } : {}),
+    });
     return this.facilityRepository.save(facility);
   }
 
   async findAllFacilities(tenantId?: string) {
-    const query = this.facilityRepository.createQueryBuilder('facility')
+    const query = this.facilityRepository
+      .createQueryBuilder('facility')
       .leftJoinAndSelect('facility.parentFacility', 'parent');
-    
+
     if (tenantId) {
       query.where('facility.tenantId = :tenantId', { tenantId });
     }
-    
+
     return query.orderBy('facility.name', 'ASC').getMany();
   }
 
   async findFacilitiesForUser(userFacilityId?: string, tenantId?: string) {
     if (!userFacilityId) return [];
-    const userFacility = await this.facilityRepository.findOne({ where: { id: userFacilityId , ...(tenantId ? { tenantId } : {}) } });
+    const userFacility = await this.facilityRepository.findOne({
+      where: { id: userFacilityId, ...(tenantId ? { tenantId } : {}) },
+    });
     if (!userFacility) return [];
     return this.findAllFacilities(userFacility.tenantId);
   }
@@ -93,18 +105,29 @@ export class FacilitiesService {
     if (tenantId) codeWhere.tenantId = tenantId;
     const existing = await this.departmentRepository.findOne({ where: codeWhere });
     if (existing) throw new ConflictException('Department code already exists');
-    
-    const department = this.departmentRepository.create({ ...dto, status: 'active', ...(tenantId ? { tenantId } : {}) });
+
+    const department = this.departmentRepository.create({
+      ...dto,
+      status: 'active',
+      ...(tenantId ? { tenantId } : {}),
+    });
     return this.departmentRepository.save(department);
   }
 
   private sanitizeDepartments(departments: Department[], countMap: Map<string, number>) {
-    return departments.map(d => {
+    return departments.map((d) => {
       const { headUser, ...rest } = d as any;
       return {
         ...rest,
         staffCount: countMap.get(d.id) || 0,
-        headUser: headUser ? { id: headUser.id, fullName: headUser.fullName, username: headUser.username, email: headUser.email } : null,
+        headUser: headUser
+          ? {
+              id: headUser.id,
+              fullName: headUser.fullName,
+              username: headUser.username,
+              email: headUser.email,
+            }
+          : null,
       };
     });
   }
@@ -117,10 +140,10 @@ export class FacilitiesService {
       order: { name: 'ASC' },
       relations: ['children', 'headUser'],
     });
-    
+
     if (departments.length === 0) return [];
-    
-    const deptIds = departments.map(d => d.id);
+
+    const deptIds = departments.map((d) => d.id);
     const staffCounts = await this.userRepository
       .createQueryBuilder('user')
       .select('user.departmentId', 'departmentId')
@@ -128,9 +151,9 @@ export class FacilitiesService {
       .where('user.departmentId IN (:...deptIds)', { deptIds })
       .groupBy('user.departmentId')
       .getRawMany();
-    
-    const countMap = new Map(staffCounts.map(c => [c.departmentId, parseInt(c.count)]));
-    
+
+    const countMap = new Map(staffCounts.map((c) => [c.departmentId, parseInt(c.count)]));
+
     return this.sanitizeDepartments(departments, countMap);
   }
 
@@ -142,10 +165,10 @@ export class FacilitiesService {
       order: { name: 'ASC' },
       relations: ['facility', 'children', 'parent', 'headUser'],
     });
-    
+
     if (departments.length === 0) return [];
-    
-    const deptIds = departments.map(d => d.id);
+
+    const deptIds = departments.map((d) => d.id);
     const staffCounts = await this.userRepository
       .createQueryBuilder('user')
       .select('user.departmentId', 'departmentId')
@@ -153,31 +176,38 @@ export class FacilitiesService {
       .where('user.departmentId IN (:...deptIds)', { deptIds })
       .groupBy('user.departmentId')
       .getRawMany();
-    
-    const countMap = new Map(staffCounts.map(c => [c.departmentId, parseInt(c.count)]));
-    
+
+    const countMap = new Map(staffCounts.map((c) => [c.departmentId, parseInt(c.count)]));
+
     return this.sanitizeDepartments(departments, countMap);
   }
 
   async findOneDepartment(id: string, tenantId?: string): Promise<any> {
     const where: any = { id };
     if (tenantId) where.tenantId = tenantId;
-    const department = await this.departmentRepository.findOne({ 
+    const department = await this.departmentRepository.findOne({
       where,
       relations: ['children', 'facility', 'headUser'],
     });
     if (!department) throw new NotFoundException('Department not found');
-    
+
     // Get staff count
     const staffCountWhere: any = { departmentId: id };
     if (tenantId) staffCountWhere.tenantId = tenantId;
     const staffCount = await this.userRepository.count({ where: staffCountWhere });
-    
+
     const { headUser, ...rest } = department as any;
     return {
       ...rest,
       staffCount,
-      headUser: headUser ? { id: headUser.id, fullName: headUser.fullName, username: headUser.username, email: headUser.email } : null,
+      headUser: headUser
+        ? {
+            id: headUser.id,
+            fullName: headUser.fullName,
+            username: headUser.username,
+            email: headUser.email,
+          }
+        : null,
     };
   }
 
@@ -188,7 +218,7 @@ export class FacilitiesService {
       where,
       order: { fullName: 'ASC' },
     });
-    return users.map(u => ({
+    return users.map((u) => ({
       id: u.id,
       username: u.username,
       fullName: u.fullName,
@@ -228,7 +258,11 @@ export class FacilitiesService {
     });
     if (existing) throw new ConflictException('Unit code already exists in this department');
 
-    const unit = this.unitRepository.create({ ...dto, status: 'active', ...(tenantId ? { tenantId } : {}) });
+    const unit = this.unitRepository.create({
+      ...dto,
+      status: 'active',
+      ...(tenantId ? { tenantId } : {}),
+    });
     return this.unitRepository.save(unit);
   }
 
@@ -279,26 +313,41 @@ export class FacilitiesService {
    * All modules the platform supports. Used as the default "full" set.
    */
   private static readonly ALL_MODULES = [
-    'patients', 'encounters', 'vitals', 'lab', 'pharmacy', 'radiology',
-    'billing', 'inventory', 'insurance', 'reports', 'appointments',
-    'ipd', 'emergency', 'theatre', 'maternity', 'hr', 'finance',
+    'patients',
+    'encounters',
+    'vitals',
+    'lab',
+    'pharmacy',
+    'radiology',
+    'billing',
+    'inventory',
+    'insurance',
+    'reports',
+    'appointments',
+    'ipd',
+    'emergency',
+    'theatre',
+    'maternity',
+    'hr',
+    'finance',
   ];
 
   /**
    * Return the enabled modules for a facility.
    * Falls back to the tenant-level setting stored on the facility's settings JSON.
    */
-  async getFacilityModules(facilityId: string, tenantId?: string): Promise<{
+  async getFacilityModules(
+    facilityId: string,
+    tenantId?: string,
+  ): Promise<{
     enabledModules: string[];
     sharedModules: string[];
     allModules: string[];
   }> {
     const facility = await this.findOneFacility(facilityId, tenantId);
     const enabledModules: string[] =
-      (facility.settings?.enabledModules as string[]) ||
-      FacilitiesService.ALL_MODULES;
-    const sharedModules: string[] =
-      (facility.settings?.sharedModules as string[]) || [];
+      (facility.settings?.enabledModules as string[]) || FacilitiesService.ALL_MODULES;
+    const sharedModules: string[] = (facility.settings?.sharedModules as string[]) || [];
     return {
       enabledModules,
       sharedModules,
@@ -328,7 +377,10 @@ export class FacilitiesService {
   }
 
   // Improvement #4: Facility stats (employee count, bed count)
-  async getFacilityStats(facilityId: string, tenantId?: string): Promise<{ employeeCount: number; bedCount: number }> {
+  async getFacilityStats(
+    facilityId: string,
+    tenantId?: string,
+  ): Promise<{ employeeCount: number; bedCount: number }> {
     await this.findOneFacility(facilityId, tenantId);
 
     const employeeCount = await this.employeeRepository.count({

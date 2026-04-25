@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { OpenFDAService } from './openfda.service';
 import { AfricasTalkingService } from './africas-talking.service';
@@ -13,8 +13,12 @@ import {
   SendPrescriptionReadyDto,
   CheckLabValueDto,
 } from './integrations.dto';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('integrations')
+@UseGuards(ModuleGuard)
+@RequireModule('integrations')
 @Controller('integrations')
 export class IntegrationsController {
   constructor(
@@ -30,7 +34,7 @@ export class IntegrationsController {
   @ApiOperation({ summary: 'Get status of all external integrations' })
   async getStatus() {
     const smsBalance = await this.africasTalkingService.getBalance();
-    
+
     return {
       openFDA: {
         configured: true, // No API key required
@@ -55,10 +59,7 @@ export class IntegrationsController {
   @ApiOperation({ summary: 'Search FDA drug database' })
   @ApiQuery({ name: 'q', required: true })
   @ApiQuery({ name: 'limit', required: false })
-  async searchDrugs(
-    @Query('q') query: string,
-    @Query('limit') limit?: number,
-  ) {
+  async searchDrugs(@Query('q') query: string, @Query('limit') limit?: number) {
     if (!query || query.length < 2) {
       return { data: [], message: 'Query must be at least 2 characters' };
     }
@@ -79,7 +80,11 @@ export class IntegrationsController {
   @ApiOperation({ summary: 'Check drug interactions between medications' })
   async checkDrugInteractions(@Body() dto: CheckDrugInteractionsDto) {
     if (!dto.drugs || dto.drugs.length < 2) {
-      return { hasInteractions: false, interactions: [], message: 'Need at least 2 drugs to check' };
+      return {
+        hasInteractions: false,
+        interactions: [],
+        message: 'Need at least 2 drugs to check',
+      };
     }
     return this.openFDAService.checkDrugInteractions(dto.drugs);
   }
@@ -89,10 +94,7 @@ export class IntegrationsController {
   @ApiOperation({ summary: 'Get adverse events (side effects) for a drug' })
   @ApiQuery({ name: 'drug', required: true })
   @ApiQuery({ name: 'limit', required: false })
-  async getAdverseEvents(
-    @Query('drug') drugName: string,
-    @Query('limit') limit?: number,
-  ) {
+  async getAdverseEvents(@Query('drug') drugName: string, @Query('limit') limit?: number) {
     const events = await this.openFDAService.getAdverseEvents(drugName, limit || 20);
     return { data: events, count: events.length };
   }
@@ -111,10 +113,7 @@ export class IntegrationsController {
   @ApiOperation({ summary: 'Get recent drug recalls' })
   @ApiQuery({ name: 'q', required: false })
   @ApiQuery({ name: 'limit', required: false })
-  async getDrugRecalls(
-    @Query('q') query?: string,
-    @Query('limit') limit?: number,
-  ) {
+  async getDrugRecalls(@Query('q') query?: string, @Query('limit') limit?: number) {
     const recalls = await this.openFDAService.getDrugRecalls(query, limit || 20);
     return { data: recalls, count: recalls.length };
   }
@@ -142,7 +141,11 @@ export class IntegrationsController {
   @AuthWithPermissions('notifications.create')
   @ApiOperation({ summary: 'Send bulk SMS to multiple recipients' })
   async sendBulkSMS(@Body() dto: SendBulkSmsDto) {
-    const result = await this.africasTalkingService.sendBulkSMS(dto.recipients, dto.message, dto.from);
+    const result = await this.africasTalkingService.sendBulkSMS(
+      dto.recipients,
+      dto.message,
+      dto.from,
+    );
     return result;
   }
 
@@ -189,10 +192,7 @@ export class IntegrationsController {
   @ApiOperation({ summary: 'Search LOINC lab test codes' })
   @ApiQuery({ name: 'q', required: true })
   @ApiQuery({ name: 'limit', required: false })
-  async searchLOINC(
-    @Query('q') query: string,
-    @Query('limit') limit?: number,
-  ) {
+  async searchLOINC(@Query('q') query: string, @Query('limit') limit?: number) {
     if (!query || query.length < 2) {
       return { data: [], message: 'Query must be at least 2 characters' };
     }

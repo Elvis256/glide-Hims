@@ -1,20 +1,35 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  Request,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { ChronicCareService } from './chronic-care.service';
-import { 
-  RegisterChronicConditionDto, 
-  UpdateChronicConditionDto, 
+import {
+  RegisterChronicConditionDto,
+  UpdateChronicConditionDto,
   ChronicPatientsQueryDto,
-  SendBulkReminderDto 
+  SendBulkReminderDto,
 } from './dto/chronic-care.dto';
 import { ChronicStatus } from '../../database/entities/patient-chronic-condition.entity';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('Chronic Care')
 @ApiBearerAuth()
 @UseGuards(AuthGuard('jwt'))
+@UseGuards(ModuleGuard)
+@RequireModule('chronic-care')
 @Controller('chronic-care')
 export class ChronicCareController {
   constructor(private readonly chronicCareService: ChronicCareService) {}
@@ -138,7 +153,10 @@ export class ChronicCareController {
   @ApiOperation({ summary: 'Auto-schedule reminders for upcoming follow-ups' })
   @ApiQuery({ name: 'facilityId', required: true })
   async scheduleReminders(@Query('facilityId') facilityId: string, @Request() req: any) {
-    const count = await this.chronicCareService.scheduleUpcomingReminders(facilityId, req.user?.tenantId);
+    const count = await this.chronicCareService.scheduleUpcomingReminders(
+      facilityId,
+      req.user?.tenantId,
+    );
     return { scheduled: count };
   }
 }

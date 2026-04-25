@@ -13,10 +13,14 @@ import {
   CreateAllergyClassDto,
   CheckAllergyRiskDto,
 } from './drug-management.dto';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('Drug Management')
 @ApiBearerAuth()
 @UseGuards(AuthGuard('jwt'))
+@UseGuards(ModuleGuard)
+@RequireModule('pharmacy')
 @Controller('drug-management')
 export class DrugManagementController {
   constructor(private readonly drugService: DrugManagementService) {}
@@ -42,14 +46,17 @@ export class DrugManagementController {
     @Query('isOnFormulary') isOnFormulary?: boolean,
     @Request() req?: any,
   ) {
-    return this.drugService.listClassifications({
-      schedule,
-      therapeuticClass,
-      isControlled,
-      isNarcotic,
-      highAlert,
-      isOnFormulary,
-    }, req?.user?.tenantId);
+    return this.drugService.listClassifications(
+      {
+        schedule,
+        therapeuticClass,
+        isControlled,
+        isNarcotic,
+        highAlert,
+        isOnFormulary,
+      },
+      req?.user?.tenantId,
+    );
   }
 
   @Get('classifications/controlled')
@@ -90,7 +97,10 @@ export class DrugManagementController {
   @Get('classifications/by-therapeutic-class/:class')
   @AuthWithPermissions('pharmacy.read')
   @ApiOperation({ summary: 'Get drugs by therapeutic class' })
-  async getDrugsByTherapeuticClass(@Param('class') therapeuticClass: TherapeuticClass, @Request() req: any) {
+  async getDrugsByTherapeuticClass(
+    @Param('class') therapeuticClass: TherapeuticClass,
+    @Request() req: any,
+  ) {
     return this.drugService.getDrugsByTherapeuticClass(therapeuticClass, req.user?.tenantId);
   }
 
@@ -111,7 +121,11 @@ export class DrugManagementController {
   @Put('classifications/:id')
   @AuthWithPermissions('pharmacy.update')
   @ApiOperation({ summary: 'Update drug classification' })
-  async updateClassification(@Param('id') id: string, @Body() dto: UpdateDrugClassificationDto, @Request() req: any) {
+  async updateClassification(
+    @Param('id') id: string,
+    @Body() dto: UpdateDrugClassificationDto,
+    @Request() req: any,
+  ) {
     return this.drugService.updateClassification(id, dto, req.user?.tenantId);
   }
 
@@ -148,7 +162,11 @@ export class DrugManagementController {
   @Put('interactions/:id')
   @AuthWithPermissions('pharmacy.update')
   @ApiOperation({ summary: 'Update drug interaction' })
-  async updateInteraction(@Param('id') id: string, @Body() dto: UpdateDrugInteractionDto, @Request() req: any) {
+  async updateInteraction(
+    @Param('id') id: string,
+    @Body() dto: UpdateDrugInteractionDto,
+    @Request() req: any,
+  ) {
     return this.drugService.updateInteraction(id, dto, req.user?.tenantId);
   }
 

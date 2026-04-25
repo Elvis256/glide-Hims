@@ -1,9 +1,18 @@
-import { Controller, Get, Post, Body, Param, Query, Request } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, Request, UseGuards } from '@nestjs/common';
 import { InvoiceMatchingService } from './invoice-matching.service';
-import { CreateInvoiceMatchDto, ApproveMatchDto, ResolveItemDto, FlagMatchDto } from './dto/invoice-match.dto';
+import {
+  CreateInvoiceMatchDto,
+  ApproveMatchDto,
+  ResolveItemDto,
+  FlagMatchDto,
+} from './dto/invoice-match.dto';
 import { InvoiceMatchStatus } from '../../database/entities/invoice-match.entity';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
+@UseGuards(ModuleGuard)
+@RequireModule('finance')
 @Controller('invoice-matching')
 export class InvoiceMatchingController {
   constructor(private readonly service: InvoiceMatchingService) {}
@@ -16,7 +25,11 @@ export class InvoiceMatchingController {
 
   @AuthWithPermissions('procurement.read')
   @Get()
-  findAll(@Query('facilityId') facilityId: string, @Query('status') status?: InvoiceMatchStatus, @Request() req?: any) {
+  findAll(
+    @Query('facilityId') facilityId: string,
+    @Query('status') status?: InvoiceMatchStatus,
+    @Request() req?: any,
+  ) {
     return this.service.findAll(facilityId, { status }, req?.user?.tenantId);
   }
 

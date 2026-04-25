@@ -1,7 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { DrugLabelTemplate, CommonDrugTranslation, LabelType } from '../../database/entities/drug-label-template.entity';
+import {
+  DrugLabelTemplate,
+  CommonDrugTranslation,
+  LabelType,
+} from '../../database/entities/drug-label-template.entity';
 import { PrescriptionItem, Prescription } from '../../database/entities/prescription.entity';
 
 // Default Luganda translations for common directions
@@ -11,7 +15,7 @@ const DEFAULT_LUGANDA_DIRECTIONS: Record<string, string> = {
   'After meals': "Ng'omaze okulya",
   'At bedtime': "Ng'ogenda okwebaka",
   'Keep out of reach of children': 'Kuma abaana baleme okukituuka',
-  'Take with water': 'Mira n\'amazzi',
+  'Take with water': "Mira n'amazzi",
   'Do not crush or chew': 'Tosiimuula oba okukagga',
   'Shake well before use': 'Nyiga bulungi nga tonnakozesa',
 };
@@ -27,11 +31,7 @@ export class LabelService {
     private prescriptionItemRepo: Repository<PrescriptionItem>,
   ) {}
 
-  async generateLabel(
-    prescriptionItemId: string,
-    language: string = 'en',
-    tenantId?: string,
-  ) {
+  async generateLabel(prescriptionItemId: string, language: string = 'en', tenantId?: string) {
     const item = await this.prescriptionItemRepo.findOne({
       where: { id: prescriptionItemId, ...(tenantId ? { tenantId } : {}) },
       relations: ['prescription'],
@@ -71,7 +71,8 @@ export class LabelService {
       duration: item.duration,
       quantity: item.quantity,
       instructions: item.instructions,
-      translatedDirections: translation?.directions || this.getDefaultTranslation(item.instructions, language),
+      translatedDirections:
+        translation?.directions || this.getDefaultTranslation(item.instructions, language),
       translatedWarnings: translation?.warnings || '',
       prescriptionNumber: item.prescription?.prescriptionNumber || '',
       date: new Date().toISOString().split('T')[0],
@@ -97,12 +98,16 @@ export class LabelService {
         `Qty: ${labelData.quantity}`,
         labelData.instructions ? `Instructions: ${labelData.instructions}` : '',
         labelData.translatedDirections ? `(${labelData.translatedDirections})` : '',
-      ].filter(Boolean).join('\n'),
+      ]
+        .filter(Boolean)
+        .join('\n'),
       footer: [
         labelData.translatedWarnings || '',
         `Rx#: ${labelData.prescriptionNumber}`,
         `Date: ${labelData.date}`,
-      ].filter(Boolean).join('\n'),
+      ]
+        .filter(Boolean)
+        .join('\n'),
       raw: labelData,
       templateId: null,
     };

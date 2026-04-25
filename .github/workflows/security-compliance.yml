@@ -1,0 +1,80 @@
+name: Security and Compliance Gates
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    - cron: '0 2 * * 1'
+
+jobs:
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v3
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Production dependency audit (root)
+        run: pnpm security:audit:root
+      - name: Production dependency audit (backend)
+        run: pnpm security:audit:backend
+      - name: Production dependency audit (frontend)
+        run: pnpm security:audit:frontend
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Gitleaks secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v3
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Generate CycloneDX SBOMs
+        run: |
+          mkdir -p compliance/evidence/releases/sbom
+          npx -y @cyclonedx/cyclonedx-npm --output-file compliance/evidence/releases/sbom/root-bom.json
+          npx -y @cyclonedx/cyclonedx-npm --package-lock-only --ignore-npm-errors --output-file compliance/evidence/releases/sbom/lockfile-bom.json
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-artifacts
+          path: compliance/evidence/releases/sbom/*.json
+          retention-days: 90
+
+  compliance-evidence-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate required compliance docs and templates
+        run: |
+          test -f docs/compliance/SECURITY_ARCHITECTURE_AND_APP_CONTROLS.md
+          test -f docs/compliance/SECURE_SDLC_AND_CICD_CONTROLS.md
+          test -f docs/compliance/VULNERABILITY_MANAGEMENT_POLICY.md
+          test -f docs/compliance/MONITORING_AND_OPERATIONS_EVIDENCE.md
+          test -f docs/compliance/CUSTOMER_ASSURANCE_AND_SLA.md
+          test -f compliance/evidence/templates/vulnerability-register.csv
+          test -f compliance/evidence/templates/incident-log.csv
+          test -f compliance/evidence/templates/backup-restore-test-log.csv
+          test -f compliance/evidence/templates/access-review-log.csv
+          test -f compliance/evidence/templates/change-approval-log.csv
+          test -f compliance/evidence/templates/sla-monthly-report.csv

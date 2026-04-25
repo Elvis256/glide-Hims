@@ -5,11 +5,7 @@ import {
   DrugClassification,
   DrugInteraction,
 } from '../../database/entities/drug-classification.entity';
-import {
-  DrugSyncLog,
-  SyncType,
-  SyncStatus,
-} from '../../database/entities/drug-sync-log.entity';
+import { DrugSyncLog, SyncType, SyncStatus } from '../../database/entities/drug-sync-log.entity';
 import { OpenFDAService } from '../integrations/openfda.service';
 
 @Injectable()

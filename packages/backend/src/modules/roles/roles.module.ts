@@ -13,10 +13,17 @@ import { RolesController, PermissionsController } from './roles.controller';
 import { PermissionGroupsController } from './permission-groups.controller';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([
-    Role, Permission, RolePermission, UserRole,
-    PermissionGroup, GroupPermission, RolePermissionGroup,
-  ])],
+  imports: [
+    TypeOrmModule.forFeature([
+      Role,
+      Permission,
+      RolePermission,
+      UserRole,
+      PermissionGroup,
+      GroupPermission,
+      RolePermissionGroup,
+    ]),
+  ],
   controllers: [RolesController, PermissionsController, PermissionGroupsController],
   providers: [RolesService, PermissionGroupsService],
   exports: [RolesService, PermissionGroupsService],

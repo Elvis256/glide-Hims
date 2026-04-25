@@ -6,13 +6,7 @@ import { MedicationAdherenceRecord } from '../../database/entities/medication-ad
 import { Prescription, PrescriptionItem } from '../../database/entities/prescription.entity';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([
-      MedicationAdherenceRecord,
-      Prescription,
-      PrescriptionItem,
-    ]),
-  ],
+  imports: [TypeOrmModule.forFeature([MedicationAdherenceRecord, Prescription, PrescriptionItem])],
   controllers: [AdherenceController],
   providers: [AdherenceService],
   exports: [AdherenceService],

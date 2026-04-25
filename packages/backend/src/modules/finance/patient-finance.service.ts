@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import {
@@ -136,10 +131,7 @@ export class PatientFinanceService {
     return this.depositRepo.save(deposit);
   }
 
-  async getPatientDeposits(
-    patientId: string,
-    tenantId?: string,
-  ): Promise<PatientDeposit[]> {
+  async getPatientDeposits(patientId: string, tenantId?: string): Promise<PatientDeposit[]> {
     const where: any = { patientId };
     if (tenantId) where.tenantId = tenantId;
     return this.depositRepo.find({ where, order: { createdAt: 'DESC' } });
@@ -187,9 +179,7 @@ export class PatientFinanceService {
       const newBalance = currentBalance - amount;
       deposit.balance = newBalance;
       deposit.status =
-        newBalance <= 0
-          ? DepositStatus.FULLY_APPLIED
-          : DepositStatus.PARTIALLY_APPLIED;
+        newBalance <= 0 ? DepositStatus.FULLY_APPLIED : DepositStatus.PARTIALLY_APPLIED;
       await depositRepo.save(deposit);
 
       return savedApplication;
@@ -205,14 +195,8 @@ export class PatientFinanceService {
 
     const deposits = await this.depositRepo.find({ where });
 
-    const totalDeposits = deposits.reduce(
-      (sum, d) => sum + Number(d.amount),
-      0,
-    );
-    const availableBalance = deposits.reduce(
-      (sum, d) => sum + Number(d.balance),
-      0,
-    );
+    const totalDeposits = deposits.reduce((sum, d) => sum + Number(d.amount), 0);
+    const availableBalance = deposits.reduce((sum, d) => sum + Number(d.balance), 0);
     const totalApplied = totalDeposits - availableBalance;
 
     return { totalDeposits, totalApplied, availableBalance };
@@ -244,11 +228,7 @@ export class PatientFinanceService {
     return this.waiverRepo.save(waiver);
   }
 
-  async findAllWaivers(
-    facilityId?: string,
-    status?: string,
-    tenantId?: string,
-  ): Promise<Waiver[]> {
+  async findAllWaivers(facilityId?: string, status?: string, tenantId?: string): Promise<Waiver[]> {
     const where: any = {};
     if (facilityId) where.facilityId = facilityId;
     if (status) where.status = status;

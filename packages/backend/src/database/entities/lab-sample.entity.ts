@@ -78,7 +78,7 @@ export class LabSample extends BaseEntity {
   @Column({ type: 'uuid' })
   labTestId: string;
 
-  @ManyToOne(() => LabTest, test => test.samples)
+  @ManyToOne(() => LabTest, (test) => test.samples)
   @JoinColumn({ name: 'labTestId' })
   labTest: LabTest;
 

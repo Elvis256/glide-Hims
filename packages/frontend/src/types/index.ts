@@ -7,6 +7,7 @@ export interface User {
   phone?: string;
   status: 'active' | 'inactive' | 'locked';
   isSystemAdmin?: boolean;
+  supportAccessTier?: number; // 0=NONE, 1=METADATA, 2=CLINICAL_READ, 3=FULL_SUPPORT
   tenantId?: string;
   facilityId?: string;
   facility?: Facility;

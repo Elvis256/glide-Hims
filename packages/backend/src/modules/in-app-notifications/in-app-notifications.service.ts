@@ -1,7 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { InAppNotification, InAppNotificationType } from '../../database/entities/in-app-notification.entity';
+import {
+  InAppNotification,
+  InAppNotificationType,
+} from '../../database/entities/in-app-notification.entity';
 import { NotificationsGateway } from './notifications.gateway';
 import { UserRole } from '../../database/entities/user-role.entity';
 import { Role } from '../../database/entities/role.entity';
@@ -52,7 +55,11 @@ export class InAppNotificationsService {
   }
 
   /** Notify multiple users at once */
-  async notifyMany(userIds: string[], base: Omit<CreateNotificationDto, 'targetUserId'>, tenantId?: string): Promise<void> {
+  async notifyMany(
+    userIds: string[],
+    base: Omit<CreateNotificationDto, 'targetUserId'>,
+    tenantId?: string,
+  ): Promise<void> {
     const unique = [...new Set(userIds)];
     for (const targetUserId of unique) {
       await this.create({ ...base, targetUserId }, tenantId);
@@ -60,7 +67,11 @@ export class InAppNotificationsService {
   }
 
   /** Find users by role name(s) within a facility */
-  async getUserIdsByRole(roleNames: string[], facilityId?: string, tenantId?: string): Promise<string[]> {
+  async getUserIdsByRole(
+    roleNames: string[],
+    facilityId?: string,
+    tenantId?: string,
+  ): Promise<string[]> {
     const roleQb = this.roleRepo
       .createQueryBuilder('role')
       .where('LOWER(role.name) IN (:...names)', {
@@ -124,53 +135,100 @@ export class InAppNotificationsService {
 
   // ─── Convenience helpers for domain events ───────────────────────────
 
-  async notifyLabResultReady(orderedByUserId: string, patientName: string, testName: string, sampleId: string, facilityId?: string, tenantId?: string) {
-    await this.create({
-      targetUserId: orderedByUserId,
-      facilityId,
-      type: InAppNotificationType.LAB_RESULT_READY,
-      title: 'Lab Result Ready',
-      message: `Results for ${testName} are ready for patient ${patientName}`,
-      metadata: { referenceType: 'lab_sample', referenceId: sampleId },
-    }, tenantId);
+  async notifyLabResultReady(
+    orderedByUserId: string,
+    patientName: string,
+    testName: string,
+    sampleId: string,
+    facilityId?: string,
+    tenantId?: string,
+  ) {
+    await this.create(
+      {
+        targetUserId: orderedByUserId,
+        facilityId,
+        type: InAppNotificationType.LAB_RESULT_READY,
+        title: 'Lab Result Ready',
+        message: `Results for ${testName} are ready for patient ${patientName}`,
+        metadata: { referenceType: 'lab_sample', referenceId: sampleId },
+      },
+      tenantId,
+    );
   }
 
-  async notifyRadiologyResultReady(orderedByUserId: string, patientName: string, studyType: string, orderId: string, facilityId?: string, tenantId?: string) {
-    await this.create({
-      targetUserId: orderedByUserId,
-      facilityId,
-      type: InAppNotificationType.RADIOLOGY_RESULT_READY,
-      title: 'Radiology Report Ready',
-      message: `${studyType} report is ready for patient ${patientName}`,
-      metadata: { referenceType: 'imaging_order', referenceId: orderId },
-    }, tenantId);
+  async notifyRadiologyResultReady(
+    orderedByUserId: string,
+    patientName: string,
+    studyType: string,
+    orderId: string,
+    facilityId?: string,
+    tenantId?: string,
+  ) {
+    await this.create(
+      {
+        targetUserId: orderedByUserId,
+        facilityId,
+        type: InAppNotificationType.RADIOLOGY_RESULT_READY,
+        title: 'Radiology Report Ready',
+        message: `${studyType} report is ready for patient ${patientName}`,
+        metadata: { referenceType: 'imaging_order', referenceId: orderId },
+      },
+      tenantId,
+    );
   }
 
-  async notifyNewPrescription(patientName: string, prescriptionId: string, facilityId?: string, tenantId?: string) {
+  async notifyNewPrescription(
+    patientName: string,
+    prescriptionId: string,
+    facilityId?: string,
+    tenantId?: string,
+  ) {
     const pharmacistIds = await this.getUserIdsByRole(['pharmacist', 'pharmacy'], facilityId);
     if (pharmacistIds.length === 0) return;
-    await this.notifyMany(pharmacistIds, {
-      facilityId,
-      type: InAppNotificationType.PRESCRIPTION_CREATED,
-      title: 'New Prescription',
-      message: `New prescription for patient ${patientName}`,
-      metadata: { referenceType: 'prescription', referenceId: prescriptionId },
-    }, tenantId);
+    await this.notifyMany(
+      pharmacistIds,
+      {
+        facilityId,
+        type: InAppNotificationType.PRESCRIPTION_CREATED,
+        title: 'New Prescription',
+        message: `New prescription for patient ${patientName}`,
+        metadata: { referenceType: 'prescription', referenceId: prescriptionId },
+      },
+      tenantId,
+    );
   }
 
-  async notifyPrescriptionDispensed(patientName: string, prescriptionId: string, facilityId?: string, tenantId?: string) {
-    const cashierIds = await this.getUserIdsByRole(['cashier', 'billing', 'biller', 'receptionist'], facilityId);
+  async notifyPrescriptionDispensed(
+    patientName: string,
+    prescriptionId: string,
+    facilityId?: string,
+    tenantId?: string,
+  ) {
+    const cashierIds = await this.getUserIdsByRole(
+      ['cashier', 'billing', 'biller', 'receptionist'],
+      facilityId,
+    );
     if (cashierIds.length === 0) return;
-    await this.notifyMany(cashierIds, {
-      facilityId,
-      type: InAppNotificationType.PRESCRIPTION_DISPENSED,
-      title: 'Prescription Dispensed',
-      message: `Medications dispensed for patient ${patientName} — ready for billing`,
-      metadata: { referenceType: 'prescription', referenceId: prescriptionId },
-    }, tenantId);
+    await this.notifyMany(
+      cashierIds,
+      {
+        facilityId,
+        type: InAppNotificationType.PRESCRIPTION_DISPENSED,
+        title: 'Prescription Dispensed',
+        message: `Medications dispensed for patient ${patientName} — ready for billing`,
+        metadata: { referenceType: 'prescription', referenceId: prescriptionId },
+      },
+      tenantId,
+    );
   }
 
-  async notifyNewOrder(orderType: string, patientName: string, orderId: string, facilityId?: string, tenantId?: string) {
+  async notifyNewOrder(
+    orderType: string,
+    patientName: string,
+    orderId: string,
+    facilityId?: string,
+    tenantId?: string,
+  ) {
     let roleNames: string[];
     let type: InAppNotificationType;
     switch (orderType.toLowerCase()) {
@@ -191,23 +249,37 @@ export class InAppNotificationsService {
     }
     const userIds = await this.getUserIdsByRole(roleNames, facilityId);
     if (userIds.length === 0) return;
-    await this.notifyMany(userIds, {
-      facilityId,
-      type,
-      title: `New ${orderType} Order`,
-      message: `New ${orderType} order for patient ${patientName}`,
-      metadata: { referenceType: 'order', referenceId: orderId },
-    }, tenantId);
+    await this.notifyMany(
+      userIds,
+      {
+        facilityId,
+        type,
+        title: `New ${orderType} Order`,
+        message: `New ${orderType} order for patient ${patientName}`,
+        metadata: { referenceType: 'order', referenceId: orderId },
+      },
+      tenantId,
+    );
   }
 
-  async notifyBillReturned(doctorUserId: string, patientName: string, reason: string, encounterId: string, facilityId?: string, tenantId?: string) {
-    await this.create({
-      targetUserId: doctorUserId,
-      facilityId,
-      type: InAppNotificationType.ENCOUNTER_STATUS_CHANGED,
-      title: 'Bill Returned',
-      message: `Bill returned for patient ${patientName}: ${reason}`,
-      metadata: { referenceType: 'encounter', referenceId: encounterId },
-    }, tenantId);
+  async notifyBillReturned(
+    doctorUserId: string,
+    patientName: string,
+    reason: string,
+    encounterId: string,
+    facilityId?: string,
+    tenantId?: string,
+  ) {
+    await this.create(
+      {
+        targetUserId: doctorUserId,
+        facilityId,
+        type: InAppNotificationType.ENCOUNTER_STATUS_CHANGED,
+        title: 'Bill Returned',
+        message: `Bill returned for patient ${patientName}: ${reason}`,
+        metadata: { referenceType: 'encounter', referenceId: encounterId },
+      },
+      tenantId,
+    );
   }
 }

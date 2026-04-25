@@ -9,14 +9,30 @@ import {
   Query,
   Request,
   ParseUUIDPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { PrescriptionsService } from './prescriptions.service';
-import { CreatePrescriptionDto, DispenseItemDto, DispenseBatchDto, PrescriptionQueryDto, UpdateStatusDto, UpdatePrescriptionItemDto, AdministerMedicationDto, AddWitnessDto, DoubleCheckDto, NarcoticsRegisterQueryDto } from './prescriptions.dto';
+import {
+  CreatePrescriptionDto,
+  DispenseItemDto,
+  DispenseBatchDto,
+  PrescriptionQueryDto,
+  UpdateStatusDto,
+  UpdatePrescriptionItemDto,
+  AdministerMedicationDto,
+  AddWitnessDto,
+  DoubleCheckDto,
+  NarcoticsRegisterQueryDto,
+} from './prescriptions.dto';
 import { AuthWithPermissions, AuthWithOwnership } from '../auth/decorators/auth.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('Prescriptions')
 @ApiBearerAuth()
+@UseGuards(ModuleGuard)
+@RequireModule('pharmacy')
 @Controller('prescriptions')
 export class PrescriptionsController {
   constructor(private readonly prescriptionsService: PrescriptionsService) {}
@@ -52,7 +68,11 @@ export class PrescriptionsController {
   @Get('analytics/timing')
   @AuthWithPermissions('prescriptions.read')
   @ApiOperation({ summary: 'Get prescription dispensing time analytics' })
-  getTimingAnalytics(@Query('dateFrom') dateFrom?: string, @Query('dateTo') dateTo?: string, @Request() req?: any) {
+  getTimingAnalytics(
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+    @Request() req?: any,
+  ) {
     return this.prescriptionsService.getTimingAnalytics(dateFrom, dateTo, req?.user?.tenantId);
   }
 
@@ -111,7 +131,10 @@ export class PrescriptionsController {
   @AuthWithPermissions('prescriptions.read')
   @ApiOperation({ summary: 'Get all prescriptions for a patient' })
   findByPatient(@Param('patientId', ParseUUIDPipe) patientId: string, @Request() req: any) {
-    return this.prescriptionsService.findAll({ patientId, page: 1, limit: 100 } as PrescriptionQueryDto, req.user?.tenantId);
+    return this.prescriptionsService.findAll(
+      { patientId, page: 1, limit: 100 } as PrescriptionQueryDto,
+      req.user?.tenantId,
+    );
   }
 
   @Get(':id')
@@ -143,7 +166,11 @@ export class PrescriptionsController {
   @Patch(':id/status')
   @AuthWithPermissions('prescriptions.update')
   @ApiOperation({ summary: 'Update prescription workflow status (dispensing/ready/collected)' })
-  updateStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateStatusDto, @Request() req: any) {
+  updateStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateStatusDto,
+    @Request() req: any,
+  ) {
     return this.prescriptionsService.updateStatus(id, dto, req.user?.tenantId);
   }
 
@@ -155,7 +182,12 @@ export class PrescriptionsController {
     @Body() dto: AdministerMedicationDto,
     @Request() req: any,
   ) {
-    return this.prescriptionsService.administerMedication(prescriptionItemId, dto, req.user.id, req.user?.tenantId);
+    return this.prescriptionsService.administerMedication(
+      prescriptionItemId,
+      dto,
+      req.user.id,
+      req.user?.tenantId,
+    );
   }
 
   @Get(':id/administrations')

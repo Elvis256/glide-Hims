@@ -1,4 +1,14 @@
-import { IsString, IsOptional, IsUUID, IsDateString, IsNumber, IsEnum, Min, IsObject, IsBoolean } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsUUID,
+  IsDateString,
+  IsNumber,
+  IsEnum,
+  Min,
+  IsObject,
+  IsBoolean,
+} from 'class-validator';
 import { ContractStatus } from '../../../database/entities/vendor-contract.entity';
 
 export class CreateVendorContractDto {

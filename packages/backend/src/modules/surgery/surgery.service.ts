@@ -2,8 +2,15 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, MoreThanOrEqual, LessThanOrEqual, DataSource } from 'typeorm';
 import { Theatre, TheatreStatus, TheatreType } from '../../database/entities/theatre.entity';
-import { SurgeryCase, SurgeryStatus, SurgeryPriority } from '../../database/entities/surgery-case.entity';
-import { SurgeryConsumable, ConsumableCategory } from '../../database/entities/surgery-consumable.entity';
+import {
+  SurgeryCase,
+  SurgeryStatus,
+  SurgeryPriority,
+} from '../../database/entities/surgery-case.entity';
+import {
+  SurgeryConsumable,
+  ConsumableCategory,
+} from '../../database/entities/surgery-consumable.entity';
 import { Item, StockBalance } from '../../database/entities/inventory.entity';
 import {
   ScheduleSurgeryDto,
@@ -68,7 +75,11 @@ export class SurgeryService {
     return theatre;
   }
 
-  async updateTheatreStatus(id: string, dto: UpdateTheatreStatusDto, tenantId?: string): Promise<Theatre> {
+  async updateTheatreStatus(
+    id: string,
+    dto: UpdateTheatreStatusDto,
+    tenantId?: string,
+  ): Promise<Theatre> {
     const theatre = await this.getTheatreById(id, tenantId);
     theatre.status = dto.status as TheatreStatus;
     return this.theatreRepo.save(theatre);
@@ -79,7 +90,7 @@ export class SurgeryService {
   private async generateCaseNumber(facilityId: string, tenantId?: string): Promise<string> {
     const today = new Date();
     const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
-    
+
     const startOfDay = new Date(today);
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(today);
@@ -96,10 +107,15 @@ export class SurgeryService {
     return `SUR${dateStr}-${String(count + 1).padStart(4, '0')}`;
   }
 
-  async scheduleSurgery(dto: ScheduleSurgeryDto, userId: string, tenantId?: string): Promise<SurgeryCase> {
+  async scheduleSurgery(
+    dto: ScheduleSurgeryDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<SurgeryCase> {
     return this.dataSource.transaction(async (manager) => {
       // Lock the theatre row to prevent concurrent scheduling race conditions
-      const theatreQb = manager.createQueryBuilder(Theatre, 'theatre')
+      const theatreQb = manager
+        .createQueryBuilder(Theatre, 'theatre')
         .setLock('pessimistic_write')
         .where('theatre.id = :id', { id: dto.theatreId });
       if (tenantId) theatreQb.andWhere('theatre.tenant_id = :tenantId', { tenantId });
@@ -213,21 +229,28 @@ export class SurgeryService {
     return surgeryCase;
   }
 
-  async updatePreOpChecklist(id: string, dto: PreOpChecklistDto, tenantId?: string): Promise<SurgeryCase> {
+  async updatePreOpChecklist(
+    id: string,
+    dto: PreOpChecklistDto,
+    tenantId?: string,
+  ): Promise<SurgeryCase> {
     const surgeryCase = await this.getCaseById(id, tenantId);
 
-    if (surgeryCase.status !== SurgeryStatus.SCHEDULED && surgeryCase.status !== SurgeryStatus.PRE_OP) {
+    if (
+      surgeryCase.status !== SurgeryStatus.SCHEDULED &&
+      surgeryCase.status !== SurgeryStatus.PRE_OP
+    ) {
       throw new BadRequestException('Cannot update pre-op checklist at this stage');
     }
 
     surgeryCase.preOpChecklist = dto.checklist;
     surgeryCase.preOpNotes = dto.preOpNotes || surgeryCase.preOpNotes;
-    
+
     if (dto.consentSigned !== undefined) {
       surgeryCase.consentSigned = dto.consentSigned;
       if (dto.consentSigned) surgeryCase.consentSignedAt = new Date();
     }
-    
+
     if (dto.bloodAvailable !== undefined) surgeryCase.bloodAvailable = dto.bloodAvailable;
     if (dto.bloodGroup) surgeryCase.bloodGroup = dto.bloodGroup;
 
@@ -239,7 +262,10 @@ export class SurgeryService {
   async startSurgery(id: string, dto: StartSurgeryDto, tenantId?: string): Promise<SurgeryCase> {
     const surgeryCase = await this.getCaseById(id, tenantId);
 
-    if (surgeryCase.status !== SurgeryStatus.PRE_OP && surgeryCase.status !== SurgeryStatus.SCHEDULED) {
+    if (
+      surgeryCase.status !== SurgeryStatus.PRE_OP &&
+      surgeryCase.status !== SurgeryStatus.SCHEDULED
+    ) {
       throw new BadRequestException('Surgery cannot be started from current status');
     }
 
@@ -250,18 +276,20 @@ export class SurgeryService {
 
     // Validate pre-op checklist is complete before allowing transition to IN_PROGRESS
     if (!surgeryCase.preOpChecklist || surgeryCase.preOpChecklist.length === 0) {
-      throw new BadRequestException('Pre-operative checklist must be completed before starting surgery');
+      throw new BadRequestException(
+        'Pre-operative checklist must be completed before starting surgery',
+      );
     }
-    const uncheckedItems = surgeryCase.preOpChecklist.filter(item => !item.checked);
+    const uncheckedItems = surgeryCase.preOpChecklist.filter((item) => !item.checked);
     if (uncheckedItems.length > 0) {
       throw new BadRequestException(
-        `Pre-operative checklist is incomplete. ${uncheckedItems.length} item(s) not checked: ${uncheckedItems.map(i => i.item).join(', ')}`,
+        `Pre-operative checklist is incomplete. ${uncheckedItems.length} item(s) not checked: ${uncheckedItems.map((i) => i.item).join(', ')}`,
       );
     }
 
     surgeryCase.status = SurgeryStatus.IN_PROGRESS;
     surgeryCase.actualStartTime = new Date();
-    
+
     if (dto.anesthesiaNotes) surgeryCase.anesthesiaNotes = dto.anesthesiaNotes;
     if (dto.nursingTeam) surgeryCase.nursingTeam = dto.nursingTeam;
 
@@ -271,7 +299,11 @@ export class SurgeryService {
     return this.surgeryCaseRepo.save(surgeryCase);
   }
 
-  async updateIntraOpNotes(id: string, dto: IntraOpNotesDto, tenantId?: string): Promise<SurgeryCase> {
+  async updateIntraOpNotes(
+    id: string,
+    dto: IntraOpNotesDto,
+    tenantId?: string,
+  ): Promise<SurgeryCase> {
     const surgeryCase = await this.getCaseById(id, tenantId);
 
     if (surgeryCase.status !== SurgeryStatus.IN_PROGRESS) {
@@ -287,7 +319,11 @@ export class SurgeryService {
     return this.surgeryCaseRepo.save(surgeryCase);
   }
 
-  async completeSurgery(id: string, dto: CompleteSurgeryDto, tenantId?: string): Promise<SurgeryCase> {
+  async completeSurgery(
+    id: string,
+    dto: CompleteSurgeryDto,
+    tenantId?: string,
+  ): Promise<SurgeryCase> {
     const surgeryCase = await this.getCaseById(id, tenantId);
 
     if (surgeryCase.status !== SurgeryStatus.IN_PROGRESS) {
@@ -370,7 +406,11 @@ export class SurgeryService {
     });
   }
 
-  async getScheduleByDate(facilityId: string, date: string, tenantId?: string): Promise<SurgeryCase[]> {
+  async getScheduleByDate(
+    facilityId: string,
+    date: string,
+    tenantId?: string,
+  ): Promise<SurgeryCase[]> {
     const targetDate = new Date(date);
     targetDate.setHours(0, 0, 0, 0);
     const nextDay = new Date(targetDate);
@@ -389,7 +429,11 @@ export class SurgeryService {
     });
   }
 
-  async getWeekSchedule(facilityId: string, startDate?: string, tenantId?: string): Promise<SurgeryCase[]> {
+  async getWeekSchedule(
+    facilityId: string,
+    startDate?: string,
+    tenantId?: string,
+  ): Promise<SurgeryCase[]> {
     const start = startDate ? new Date(startDate) : new Date();
     start.setHours(0, 0, 0, 0);
     const end = new Date(start);
@@ -463,7 +507,11 @@ export class SurgeryService {
     };
   }
 
-  async getCases(facilityId: string, options: { status?: SurgeryStatus; limit?: number; offset?: number }, tenantId?: string) {
+  async getCases(
+    facilityId: string,
+    options: { status?: SurgeryStatus; limit?: number; offset?: number },
+    tenantId?: string,
+  ) {
     const where: any = { facilityId };
     if (options.status) where.status = options.status;
     if (tenantId) where.tenantId = tenantId;
@@ -481,9 +529,13 @@ export class SurgeryService {
 
   // ============ CONSUMABLES TRACKING ============
 
-  async recordConsumable(dto: RecordConsumableDto, userId: string, tenantId?: string): Promise<SurgeryConsumable> {
+  async recordConsumable(
+    dto: RecordConsumableDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<SurgeryConsumable> {
     const surgeryCase = await this.getCaseById(dto.surgeryCaseId, tenantId);
-    
+
     // Get item details
     const itemWhere: any = { id: dto.itemId };
     if (tenantId) itemWhere.tenantId = tenantId;
@@ -562,7 +614,10 @@ export class SurgeryService {
     });
   }
 
-  async getConsumablesSummary(surgeryCaseId: string, tenantId?: string): Promise<{
+  async getConsumablesSummary(
+    surgeryCaseId: string,
+    tenantId?: string,
+  ): Promise<{
     items: SurgeryConsumable[];
     totalCost: number;
     billableTotal: number;
@@ -587,7 +642,11 @@ export class SurgeryService {
     return { items, totalCost, billableTotal, byCategory, byPhase };
   }
 
-  async updateConsumable(id: string, updates: Partial<RecordConsumableDto>, tenantId?: string): Promise<SurgeryConsumable> {
+  async updateConsumable(
+    id: string,
+    updates: Partial<RecordConsumableDto>,
+    tenantId?: string,
+  ): Promise<SurgeryConsumable> {
     const where: any = { id };
     if (tenantId) where.tenantId = tenantId;
 
@@ -612,7 +671,12 @@ export class SurgeryService {
     await this.consumableRepo.softRemove(consumable);
   }
 
-  async getConsumablesReport(facilityId: string, startDate: string, endDate: string, tenantId?: string) {
+  async getConsumablesReport(
+    facilityId: string,
+    startDate: string,
+    endDate: string,
+    tenantId?: string,
+  ) {
     const where: any = {
       facilityId,
       actualStartTime: Between(new Date(startDate), new Date(endDate)),
@@ -623,7 +687,7 @@ export class SurgeryService {
       where,
     });
 
-    const caseIds = cases.map(c => c.id);
+    const caseIds = cases.map((c) => c.id);
     if (caseIds.length === 0) return { surgeries: 0, consumables: [], totalCost: 0 };
 
     const consumables = await this.consumableRepo

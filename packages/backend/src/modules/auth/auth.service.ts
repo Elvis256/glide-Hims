@@ -73,12 +73,15 @@ export class AuthService {
     let user: User | null = null;
 
     if (tenantId) {
-      // Tenant-scoped login: find user within the specified tenant
+      // Tenant-scoped login: find non-system-admin user within the specified tenant
       user = await this.userRepository.findOne({
-        where: [{ username, tenantId }, { email: username, tenantId }],
+        where: [
+          { username, tenantId, isSystemAdmin: false },
+          { email: username, tenantId, isSystemAdmin: false },
+        ],
       });
 
-      // If not found under the selected tenant, check for system admin
+      // If no tenant user found, check for system admin (cross-tenant support access)
       if (!user) {
         user = await this.userRepository.findOne({
           where: [
@@ -88,7 +91,7 @@ export class AuthService {
         });
       }
     } else {
-      // No tenantId: system admin login — prioritize system admin users
+      // No tenantId: system admin login — only match system admin users
       user = await this.userRepository.findOne({
         where: [
           { username, isSystemAdmin: true },
@@ -110,7 +113,7 @@ export class AuthService {
 
     // Check if account is locked
     if (user.lockedUntil && user.lockedUntil > new Date()) {
-      throw new UnauthorizedException('Account is temporarily locked. Please try again later.');
+      throw new ForbiddenException('Account is temporarily locked. Please try again later.');
     }
 
     // Validate that passwordHash exists and is valid before comparing
@@ -123,7 +126,9 @@ export class AuthService {
     try {
       isPasswordValid = await bcrypt.compare(password, user.passwordHash);
     } catch (error) {
-      this.logger.error(`Password validation error for user ${user.id}: ${(error as Error).message}`);
+      this.logger.error(
+        `Password validation error for user ${user.id}: ${(error as Error).message}`,
+      );
       throw error;
     }
 
@@ -150,7 +155,11 @@ export class AuthService {
     return user;
   }
 
-  async login(loginDto: LoginDto, ipAddress?: string, userAgent?: string): Promise<AuthResponseDto> {
+  async login(
+    loginDto: LoginDto,
+    ipAddress?: string,
+    userAgent?: string,
+  ): Promise<AuthResponseDto> {
     const deploymentMode = this.configService.get<string>('DEPLOYMENT_MODE', 'on-premise');
 
     // On-premise: auto-resolve the single tenant if no tenantId provided
@@ -170,33 +179,70 @@ export class AuthService {
     } catch (error) {
       // Record failed login attempt for locked accounts
       if (error instanceof UnauthorizedException) {
-        await this.recordLoginHistory(undefined, ipAddress, userAgent, false, error.message, loginDto.tenantId);
+        await this.recordLoginHistory(
+          undefined,
+          ipAddress,
+          userAgent,
+          false,
+          error.message,
+          loginDto.tenantId,
+        );
       }
       throw error;
     }
 
     if (!user) {
-      await this.recordLoginHistory(undefined, ipAddress, userAgent, false, 'Invalid credentials', loginDto.tenantId);
+      await this.recordLoginHistory(
+        undefined,
+        ipAddress,
+        userAgent,
+        false,
+        'Invalid credentials',
+        loginDto.tenantId,
+      );
       this.logger.warn(`Login failed for provided credentials`);
       throw new UnauthorizedException('Invalid credentials');
     }
 
     // FIX #1: System admin login validation — reject non-system-admins on system login
     if (!loginDto.tenantId && deploymentMode === 'multi-tenant' && !user.isSystemAdmin) {
-      await this.recordLoginHistory(user.id, ipAddress, userAgent, false, 'Non-system-admin attempted system login', undefined);
+      await this.recordLoginHistory(
+        user.id,
+        ipAddress,
+        userAgent,
+        false,
+        'Non-system-admin attempted system login',
+        undefined,
+      );
       this.logger.warn(`System login rejected: user ${user.id} is not a system admin`);
       throw new UnauthorizedException('Invalid credentials');
     }
 
     // Prevent cross-tenant login: non-system-admins must belong to the requested tenant
     if (loginDto.tenantId && user.tenantId !== loginDto.tenantId && !user.isSystemAdmin) {
-      await this.recordLoginHistory(user.id, ipAddress, userAgent, false, 'Tenant mismatch', loginDto.tenantId);
-      this.logger.warn(`Cross-tenant login blocked: user ${user.id} (tenant ${user.tenantId}) attempted login to tenant ${loginDto.tenantId}`);
+      await this.recordLoginHistory(
+        user.id,
+        ipAddress,
+        userAgent,
+        false,
+        'Tenant mismatch',
+        loginDto.tenantId,
+      );
+      this.logger.warn(
+        `Cross-tenant login blocked: user ${user.id} (tenant ${user.tenantId}) attempted login to tenant ${loginDto.tenantId}`,
+      );
       throw new UnauthorizedException('Invalid credentials');
     }
 
     if (user.status !== 'active') {
-      await this.recordLoginHistory(user.id, ipAddress, userAgent, false, 'Account not active', user.tenantId);
+      await this.recordLoginHistory(
+        user.id,
+        ipAddress,
+        userAgent,
+        false,
+        'Account not active',
+        user.tenantId,
+      );
       throw new UnauthorizedException('Account is not active');
     }
 
@@ -221,10 +267,19 @@ export class AuthService {
         user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
         if (user.failedLoginAttempts >= 5) {
           user.lockedUntil = new Date(Date.now() + 15 * 60 * 1000);
-          this.logger.warn(`Account ${user.id} locked after ${user.failedLoginAttempts} failed MFA attempts`);
+          this.logger.warn(
+            `Account ${user.id} locked after ${user.failedLoginAttempts} failed MFA attempts`,
+          );
         }
         await this.userRepository.save(user);
-        await this.recordLoginHistory(user.id, ipAddress, userAgent, false, 'Invalid MFA code', user.tenantId);
+        await this.recordLoginHistory(
+          user.id,
+          ipAddress,
+          userAgent,
+          false,
+          'Invalid MFA code',
+          user.tenantId,
+        );
         throw new UnauthorizedException('Invalid MFA code');
       }
     }
@@ -238,8 +293,8 @@ export class AuthService {
     const roles = userRoles.map((ur) => ur.role.name);
     const roleIds = userRoles.map((ur) => ur.roleId);
     // Get facility: prefer user_roles.facilityId, fall back to user.facilityId
-    let roleFacilityId = userRoles.find(ur => ur.facilityId)?.facilityId;
-    let roleFacility = userRoles.find(ur => ur.facility)?.facility;
+    const roleFacilityId = userRoles.find((ur) => ur.facilityId)?.facilityId;
+    const roleFacility = userRoles.find((ur) => ur.facility)?.facility;
     let facilityId = roleFacilityId || user.facilityId;
     let facility = roleFacility;
 
@@ -255,8 +310,12 @@ export class AuthService {
       );
       const tier = tierResult.length > 0 ? tierResult[0].access_tier : SupportAccessTier.NONE;
       if (tier === SupportAccessTier.NONE) {
-        this.logger.warn(`System admin ${user.id} cross-tenant login to ${loginDto.tenantId} blocked — no active support access grant`);
-        throw new ForbiddenException('No active support access grant for this organization. Request access from the tenant administrator.');
+        this.logger.warn(
+          `System admin ${user.id} cross-tenant login to ${loginDto.tenantId} blocked — no active support access grant`,
+        );
+        throw new ForbiddenException(
+          'No active support access grant for this organization. Request access from the tenant administrator.',
+        );
       }
 
       const tenantFacility = await this.facilityRepository.findOne({
@@ -267,11 +326,13 @@ export class AuthService {
         facility = tenantFacility;
       }
     } else if (!facility && user.facilityId) {
-      facility = (await this.facilityRepository.findOne({ where: { id: user.facilityId } })) ?? undefined;
+      facility =
+        (await this.facilityRepository.findOne({ where: { id: user.facilityId } })) ?? undefined;
     }
 
     if (!facility && facilityId) {
-      facility = (await this.facilityRepository.findOne({ where: { id: facilityId } })) ?? undefined;
+      facility =
+        (await this.facilityRepository.findOne({ where: { id: facilityId } })) ?? undefined;
     }
 
     // Get permissions for all user's roles (including inherited from parent roles)
@@ -302,13 +363,16 @@ export class AuthService {
 
       // Also include permissions from permission groups assigned to these roles
       try {
-        const groupResults = await this.userRoleRepository.manager.query(`
+        const groupResults = await this.userRoleRepository.manager.query(
+          `
           SELECT DISTINCT p.code FROM permission_groups pg
           JOIN role_permission_groups rpg ON rpg.group_id = pg.id
           JOIN group_permissions gp ON gp.group_id = pg.id
           JOIN permissions p ON p.id = gp.permission_id
           WHERE rpg.role_id = ANY($1)
-        `, [allRoleIdsArray]);
+        `,
+          [allRoleIdsArray],
+        );
         const groupPermCodes = groupResults.map((r: any) => r.code);
         permissions = [...new Set([...permissions, ...groupPermCodes])];
       } catch {
@@ -322,7 +386,7 @@ export class AuthService {
       relations: ['permission'],
     });
     const directPermissionCodes = directPermissions.map((up) => up.permission.code);
-    
+
     // Combine role permissions + direct permissions (remove duplicates)
     permissions = [...new Set([...permissions, ...directPermissionCodes])];
 
@@ -331,9 +395,8 @@ export class AuthService {
     await this.userRepository.save(user);
 
     // Resolve effective tenantId (system admin can log into other tenants)
-    const effectiveTenantId = (user.isSystemAdmin && loginDto.tenantId)
-      ? loginDto.tenantId
-      : user.tenantId;
+    const effectiveTenantId =
+      user.isSystemAdmin && loginDto.tenantId ? loginDto.tenantId : user.tenantId;
 
     // Generate tokens
     const payload: JwtPayload = {
@@ -361,12 +424,20 @@ export class AuthService {
 
     // Store refresh token for server-side tracking and revocation
     await this.refreshTokenService.createRefreshToken(
-      user.id, effectiveTenantId, refreshToken, ipAddress, userAgent,
+      user.id,
+      effectiveTenantId,
+      refreshToken,
+      ipAddress,
+      userAgent,
     );
 
     // Create server-side session record
     await this.sessionService.createSession(
-      user.id, effectiveTenantId, refreshToken, ipAddress, userAgent,
+      user.id,
+      effectiveTenantId,
+      refreshToken,
+      ipAddress,
+      userAgent,
     );
 
     return {
@@ -384,13 +455,15 @@ export class AuthService {
         isSystemAdmin: user.isSystemAdmin || false,
         tenantId: effectiveTenantId,
         facilityId,
-        facility: facility ? {
-          id: facility.id,
-          name: facility.name,
-          type: facility.type,
-          location: facility.location,
-          contact: facility.contact,
-        } : undefined,
+        facility: facility
+          ? {
+              id: facility.id,
+              name: facility.name,
+              type: facility.type,
+              location: facility.location,
+              contact: facility.contact,
+            }
+          : undefined,
       },
     };
   }
@@ -401,20 +474,29 @@ export class AuthService {
   private parseExpiryToSeconds(expiry: string): number {
     const match = expiry.match(/^(\d+)([smhd])$/);
     if (!match) return 28800; // default 8 hours
-    
+
     const value = parseInt(match[1], 10);
     const unit = match[2];
-    
+
     switch (unit) {
-      case 's': return value;
-      case 'm': return value * 60;
-      case 'h': return value * 3600;
-      case 'd': return value * 86400;
-      default: return 28800;
+      case 's':
+        return value;
+      case 'm':
+        return value * 60;
+      case 'h':
+        return value * 3600;
+      case 'd':
+        return value * 86400;
+      default:
+        return 28800;
     }
   }
 
-  async refreshToken(refreshToken: string, ipAddress?: string, userAgent?: string): Promise<AuthResponseDto> {
+  async refreshToken(
+    refreshToken: string,
+    ipAddress?: string,
+    userAgent?: string,
+  ): Promise<AuthResponseDto> {
     try {
       // Server-side refresh token validation (checks revocation, expiry, reuse)
       const storedToken = await this.refreshTokenService.validateRefreshToken(refreshToken);
@@ -436,7 +518,9 @@ export class AuthService {
 
       // Verify tokenVersion for token revocation
       if (payload.tokenVersion !== undefined && payload.tokenVersion !== user.tokenVersion) {
-        this.logger.warn(`Refresh token reuse detected for user ${user.id}. Revoking all sessions.`);
+        this.logger.warn(
+          `Refresh token reuse detected for user ${user.id}. Revoking all sessions.`,
+        );
         user.tokenVersion += 1;
         await this.userRepository.save(user);
         await this.refreshTokenService.revokeAllUserTokens(user.id);
@@ -456,12 +540,13 @@ export class AuthService {
       const roles = userRoles.map((ur) => ur.role.name);
       const roleIds = userRoles.map((ur) => ur.roleId);
       // Get facility: prefer user_roles.facilityId, fall back to user.facilityId
-      const roleFacilityId = userRoles.find(ur => ur.facilityId)?.facilityId;
-      const roleFacility = userRoles.find(ur => ur.facility)?.facility;
+      const roleFacilityId = userRoles.find((ur) => ur.facilityId)?.facilityId;
+      const roleFacility = userRoles.find((ur) => ur.facility)?.facility;
       const facilityId = roleFacilityId || user.facilityId;
       let facility = roleFacility;
       if (!facility && user.facilityId) {
-        facility = (await this.facilityRepository.findOne({ where: { id: user.facilityId } })) ?? undefined;
+        facility =
+          (await this.facilityRepository.findOne({ where: { id: user.facilityId } })) ?? undefined;
       }
 
       // Get permissions for all user's roles
@@ -502,7 +587,10 @@ export class AuthService {
 
       // Rotate server-side refresh token record
       await this.refreshTokenService.rotateRefreshToken(
-        refreshToken, newRefreshToken, ipAddress, userAgent,
+        refreshToken,
+        newRefreshToken,
+        ipAddress,
+        userAgent,
       );
 
       // Update session token hash after rotation
@@ -526,13 +614,15 @@ export class AuthService {
           isSystemAdmin: user.isSystemAdmin || false,
           tenantId: user.tenantId,
           facilityId,
-          facility: facility ? {
-            id: facility.id,
-            name: facility.name,
-            type: facility.type,
-            location: facility.location,
-            contact: facility.contact,
-          } : undefined,
+          facility: facility
+            ? {
+                id: facility.id,
+                name: facility.name,
+                type: facility.type,
+                location: facility.location,
+                contact: facility.contact,
+              }
+            : undefined,
         },
       };
     } catch (error) {
@@ -559,7 +649,9 @@ export class AuthService {
     try {
       isCurrentPasswordValid = await bcrypt.compare(dto.currentPassword, user.passwordHash);
     } catch (error) {
-      this.logger.error(`Password change validation error for user ${userId}: ${(error as Error).message}`);
+      this.logger.error(
+        `Password change validation error for user ${userId}: ${(error as Error).message}`,
+      );
       throw error;
     }
 
@@ -589,12 +681,16 @@ export class AuthService {
     await this.userRepository.save(user);
   }
 
-  async validatePasswordPolicy(password: string, userId?: string, facilityId?: string): Promise<{ valid: boolean; errors: string[] }> {
+  async validatePasswordPolicy(
+    password: string,
+    userId?: string,
+    facilityId?: string,
+  ): Promise<{ valid: boolean; errors: string[] }> {
     const errors: string[] = [];
-    
+
     // Get applicable policy
     const policy = await this.getPasswordPolicy(facilityId);
-    
+
     if (!policy) {
       // Default validation if no policy exists
       if (password.length < 8) errors.push('Password must be at least 8 characters');
@@ -628,7 +724,10 @@ export class AuthService {
     }
 
     // Common password check
-    if (policy.commonPasswordsBlacklist && policy.commonPasswordsBlacklist.includes(password.toLowerCase())) {
+    if (
+      policy.commonPasswordsBlacklist &&
+      policy.commonPasswordsBlacklist.includes(password.toLowerCase())
+    ) {
       errors.push('Password is too common. Please choose a stronger password');
     }
 
@@ -658,7 +757,7 @@ export class AuthService {
       const matches = await bcrypt.compare(newPassword, entry.passwordHash);
       if (matches) {
         throw new BadRequestException(
-          `Password was used recently. Please choose a different password.`
+          `Password was used recently. Please choose a different password.`,
         );
       }
     }
@@ -766,7 +865,9 @@ export class AuthService {
       where: { userId: user.id },
       relations: ['permission'],
     });
-    permissions = [...new Set([...permissions, ...directPermissions.map((up) => up.permission.code)])];
+    permissions = [
+      ...new Set([...permissions, ...directPermissions.map((up) => up.permission.code)]),
+    ];
 
     const superAdmin = isSuperAdmin(roles);
 
@@ -803,9 +904,10 @@ export class AuthService {
           [user.tenantId],
         );
         if (facilityModeSetting?.length > 0) {
-          const mode = typeof facilityModeSetting[0].value === 'string'
-            ? facilityModeSetting[0].value.replace(/"/g, '')
-            : facilityModeSetting[0].value;
+          const mode =
+            typeof facilityModeSetting[0].value === 'string'
+              ? facilityModeSetting[0].value.replace(/"/g, '')
+              : facilityModeSetting[0].value;
           facilityMode = mode;
           const preset = getPreset(mode as FacilityMode);
           if (preset) {
@@ -823,9 +925,10 @@ export class AuthService {
         [user.tenantId],
       );
       if (fmSetting?.length > 0) {
-        facilityMode = typeof fmSetting[0].value === 'string'
-          ? fmSetting[0].value.replace(/"/g, '')
-          : fmSetting[0].value;
+        facilityMode =
+          typeof fmSetting[0].value === 'string'
+            ? fmSetting[0].value.replace(/"/g, '')
+            : fmSetting[0].value;
         if (!businessType) {
           const preset = getPreset(facilityMode as FacilityMode);
           if (preset) businessType = preset.businessType;
@@ -846,7 +949,7 @@ export class AuthService {
       accessibleModules,
       facilityMode,
       businessType,
-      facilityId: userRoles.find(ur => ur.facilityId)?.facilityId || user.facilityId,
+      facilityId: userRoles.find((ur) => ur.facilityId)?.facilityId || user.facilityId,
       tenantId: user.tenantId,
     };
   }
@@ -1003,8 +1106,10 @@ export class AuthService {
 
     if (dto.phone !== undefined) user.phone = dto.phone;
     if (dto.address !== undefined) user.address = dto.address;
-    if (dto.emergencyContactName !== undefined) user.emergencyContactName = dto.emergencyContactName;
-    if (dto.emergencyContactPhone !== undefined) user.emergencyContactPhone = dto.emergencyContactPhone;
+    if (dto.emergencyContactName !== undefined)
+      user.emergencyContactName = dto.emergencyContactName;
+    if (dto.emergencyContactPhone !== undefined)
+      user.emergencyContactPhone = dto.emergencyContactPhone;
 
     return this.userRepository.save(user);
   }
@@ -1090,7 +1195,10 @@ export class AuthService {
     }
 
     // Shuffle
-    return password.split('').sort(() => crypto.randomInt(3) - 1).join('');
+    return password
+      .split('')
+      .sort(() => crypto.randomInt(3) - 1)
+      .join('');
   }
 
   /**
@@ -1133,6 +1241,184 @@ export class AuthService {
       failedAttempts: user.failedLoginAttempts,
       lockedUntil: user.lockedUntil || null,
       lockReason: isLocked ? 'Too many failed login attempts' : undefined,
+    };
+  }
+
+  /**
+   * Allow an authenticated system admin to switch into a target tenant context
+   * without re-entering credentials, returning new JWT tokens scoped to that tenant.
+   */
+  async enterTenant(
+    userId: string,
+    targetTenantId: string,
+    ipAddress: string,
+    userAgent?: string,
+  ): Promise<AuthResponseDto> {
+    // Fetch the user and verify system admin status
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (!user.isSystemAdmin) {
+      throw new ForbiddenException('Only system administrators can enter another tenant context');
+    }
+    if (user.status !== 'active') {
+      throw new UnauthorizedException('Account is not active');
+    }
+
+    // If targeting a different tenant, verify support access grant
+    let supportAccessTier = SupportAccessTier.FULL_SUPPORT; // own tenant default
+    if (user.tenantId !== targetTenantId) {
+      const tierResult = await this.dataSource.query(
+        `SELECT access_tier FROM support_access_grants
+         WHERE granted_to_id = $1 AND tenant_id = $2
+         AND revoked_at IS NULL AND expires_at > NOW()
+         AND deleted_at IS NULL
+         ORDER BY access_tier DESC
+         LIMIT 1`,
+        [user.id, targetTenantId],
+      );
+      supportAccessTier =
+        tierResult.length > 0 ? tierResult[0].access_tier : SupportAccessTier.NONE;
+      if (supportAccessTier === SupportAccessTier.NONE) {
+        this.logger.warn(
+          `System admin ${user.id} enter-tenant to ${targetTenantId} blocked — no active support access grant`,
+        );
+        throw new ForbiddenException(
+          'No active support access grant for this organization. Request access from the tenant administrator.',
+        );
+      }
+    }
+
+    // Get the target tenant's facility
+    const tenantFacility = await this.facilityRepository.findOne({
+      where: { tenantId: targetTenantId },
+    });
+    const facilityId = tenantFacility?.id || user.facilityId;
+
+    // Get user roles
+    const userRoles = await this.userRoleRepository.find({
+      where: { userId: user.id },
+      relations: ['role', 'facility'],
+    });
+    const roles = userRoles.map((ur) => ur.role.name);
+    const roleIds = userRoles.map((ur) => ur.roleId);
+
+    // Get permissions for all user's roles (including inherited from parent roles)
+    let permissions: string[] = [];
+    if (roleIds.length > 0) {
+      const allRoleIds = new Set<string>(roleIds);
+      for (const roleId of roleIds) {
+        let currentId = roleId;
+        const visited = new Set<string>([roleId]);
+        for (let depth = 0; depth < 10; depth++) {
+          const parentRole = await this.userRoleRepository.manager
+            .getRepository('Role')
+            .findOne({ where: { id: currentId }, select: ['id', 'parentRoleId'] });
+          if (!parentRole?.parentRoleId || visited.has(parentRole.parentRoleId)) break;
+          visited.add(parentRole.parentRoleId);
+          allRoleIds.add(parentRole.parentRoleId);
+          currentId = parentRole.parentRoleId;
+        }
+      }
+
+      const allRoleIdsArray = [...allRoleIds];
+      const rolePermissions = await this.rolePermissionRepository.find({
+        where: { roleId: In(allRoleIdsArray) },
+        relations: ['permission'],
+      });
+      permissions = [...new Set(rolePermissions.map((rp) => rp.permission.code))];
+
+      try {
+        const groupResults = await this.userRoleRepository.manager.query(
+          `
+          SELECT DISTINCT p.code FROM permission_groups pg
+          JOIN role_permission_groups rpg ON rpg.group_id = pg.id
+          JOIN group_permissions gp ON gp.group_id = pg.id
+          JOIN permissions p ON p.id = gp.permission_id
+          WHERE rpg.role_id = ANY($1)
+        `,
+          [allRoleIdsArray],
+        );
+        const groupPermCodes = groupResults.map((r: any) => r.code);
+        permissions = [...new Set([...permissions, ...groupPermCodes])];
+      } catch {
+        // Permission group tables may not exist yet - gracefully skip
+      }
+    }
+
+    // Get direct user permissions
+    const directPermissions = await this.userPermissionRepository.find({
+      where: { userId: user.id },
+      relations: ['permission'],
+    });
+    const directPermissionCodes = directPermissions.map((up) => up.permission.code);
+    permissions = [...new Set([...permissions, ...directPermissionCodes])];
+
+    // Generate tokens scoped to the target tenant
+    const payload: JwtPayload = {
+      sub: user.id,
+      username: user.username,
+      email: user.email,
+      tenantId: targetTenantId,
+      roles,
+      facilityId,
+      tokenVersion: user.tokenVersion,
+    };
+
+    const accessToken = this.jwtService.sign(payload);
+    const refreshToken = this.jwtService.sign(payload, {
+      secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
+      expiresIn: this.configService.get<string>('JWT_REFRESH_EXPIRES_IN', '7d'),
+    });
+
+    const expiresInConfig = this.configService.get<string>('JWT_EXPIRES_IN', '8h');
+    const expiresInSeconds = this.parseExpiryToSeconds(expiresInConfig);
+
+    // Record audit trail
+    await this.recordLoginHistory(user.id, ipAddress, userAgent, true, undefined, targetTenantId);
+
+    // Store refresh token and session
+    await this.refreshTokenService.createRefreshToken(
+      user.id,
+      targetTenantId,
+      refreshToken,
+      ipAddress,
+      userAgent,
+    );
+    await this.sessionService.createSession(
+      user.id,
+      targetTenantId,
+      refreshToken,
+      ipAddress,
+      userAgent,
+    );
+
+    return {
+      accessToken,
+      refreshToken,
+      expiresIn: expiresInSeconds,
+      user: {
+        id: user.id,
+        username: user.username,
+        fullName: user.fullName,
+        email: user.email,
+        roles,
+        permissions,
+        isSystemAdmin: user.isSystemAdmin || false,
+        supportAccessTier,
+        tenantId: targetTenantId,
+        facilityId,
+        facility: tenantFacility
+          ? {
+              id: tenantFacility.id,
+              name: tenantFacility.name,
+              type: tenantFacility.type,
+              location: tenantFacility.location,
+              contact: tenantFacility.contact,
+            }
+          : undefined,
+      },
     };
   }
 }

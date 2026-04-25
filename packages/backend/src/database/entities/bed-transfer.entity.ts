@@ -28,7 +28,7 @@ export class BedTransfer extends BaseEntity {
   @Column({ type: 'uuid' })
   admissionId: string;
 
-  @ManyToOne(() => Admission, admission => admission.bedTransfers)
+  @ManyToOne(() => Admission, (admission) => admission.bedTransfers)
   @JoinColumn({ name: 'admissionId' })
   admission: Admission;
 

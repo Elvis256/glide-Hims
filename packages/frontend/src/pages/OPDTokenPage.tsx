@@ -7,7 +7,8 @@ import { queueService, type QueueEntry, type CreateQueueEntryDto, type VisitType
 import { patientsService } from '../services/patients';
 import { doctorDutyService, type DoctorWithDutyStatus } from '../services/doctor-duty';
 import { biometricsService, type StaffCoverage } from '../services/biometrics';
-import api from '../services/api';
+import api, { getApiErrorMessage } from '../services/api';
+import { formatQueueIssueError } from './opdTokenError';
 import FingerprintScanner from '../components/FingerprintScanner';
 import { useInstitutionInfo } from '../lib/useInstitutionInfo';
 import { printService } from '../lib/print';
@@ -68,6 +69,7 @@ interface InsuranceProviderInfo {
   isActive: boolean;
 }
 
+
 // Enhanced payment types
 type PaymentType = 'cash' | 'mobile_money' | 'card' | 'membership' | 'insurance' | 'hospital_scheme' | 'staff';
 
@@ -105,6 +107,7 @@ export default function OPDTokenPage() {
   const [visitType, setVisitType] = useState<VisitType>('new_visit');
   const [chiefComplaint, setChiefComplaint] = useState('');
   const [conditionFlags, setConditionFlags] = useState<string[]>([]);
+  const [showQuickRegModal, setShowQuickRegModal] = useState(false);
 
   // Fetch consultation fee from services API
   const { data: consultationService } = useQuery({
@@ -255,24 +258,17 @@ export default function OPDTokenPage() {
       queryClient.invalidateQueries({ queryKey: ['queue-today'] });
       queryClient.invalidateQueries({ queryKey: ['queue-stats'] });
     },
-    onError: (err: Error & { response?: { data?: { message?: string | string[]; error?: string; statusCode?: number } } }) => {
+    onError: (err: Error & { response?: { data?: { message?: string | string[]; error?: string; statusCode?: number; requestId?: string } } }) => {
       console.error('Queue error:', err.response?.data || err.message);
       const data = err.response?.data;
-      let errorMessage = 'Failed to issue token. Please try again.';
-      
-      if (data?.message) {
-        errorMessage = Array.isArray(data.message) ? data.message.join(', ') : data.message;
-      } else if (data?.error) {
-        errorMessage = data.error;
-      } else if (err.message) {
-        errorMessage = err.message;
-      }
-      
+      const baseMessage = getApiErrorMessage(err, 'Failed to issue token. Please try again.');
+      let errorMessage = formatQueueIssueError(baseMessage, data?.requestId);
+
       // Handle specific error cases
       if (data?.statusCode === 401 || err.message?.includes('401')) {
         errorMessage = 'Session expired. Please login again.';
       }
-      
+
       setError(errorMessage);
     },
   });
@@ -294,46 +290,65 @@ export default function OPDTokenPage() {
     }
   };
 
-  const handleIssueToken = () => {
-    if (selectedPatient) {
-      // Check if biometric verification is required
-      if ((paymentType === 'hospital_scheme' || paymentType === 'staff') && !biometricVerified) {
-        toast.error('Biometric verification required for scheme/staff payments');
-        return;
-      }
+  const handleIssueToken = async () => {
+    if (!selectedPatient) return;
 
-      if (existingQueueEntry) {
-        setError(`Patient ${selectedPatient.fullName} is already in queue with token ${existingQueueEntry.ticketNumber}`);
-        return;
-      }
-      
-      setError(null);
-      
-      const selectedDeptName = departments?.find(d => d.id === selectedDepartment)?.name || '';
+    // Check if biometric verification is required
+    if ((paymentType === 'hospital_scheme' || paymentType === 'staff') && !biometricVerified) {
+      toast.error('Biometric verification required for scheme/staff payments');
+      return;
+    }
 
-      // Determine entry service point from visit type (configurable per facility)
-      const entryServicePoint = getEntryServicePoint(visitType, serviceConfig);
+    if (existingQueueEntry) {
+      setError(`Patient ${selectedPatient.fullName} is already in queue with token ${existingQueueEntry.ticketNumber}`);
+      return;
+    }
 
-      // Resolve priority from condition flags
-      const resolvedPriority = getPriorityFromFlags(conditionFlags, serviceConfig) as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 10;
+    if (!selectedDepartment) {
+      setError('Department is required. Please select a department.');
+      return;
+    }
 
-      const queueData: CreateQueueEntryDto = {
-        patientId: selectedPatient.id,
-        servicePoint: entryServicePoint,
-        priority: resolvedPriority,
-        priorityReason: conditionFlags.length > 0 ? conditionFlags.join(', ') : undefined,
-        departmentId: selectedDepartment || undefined,
-        visitType,
-        chiefComplaintAtToken: chiefComplaint.trim() || undefined,
-        patientConditionFlags: conditionFlags.length > 0 ? conditionFlags : undefined,
-        notes: selectedDoctor !== 'any' 
-          ? `Preferred doctor: ${availableDoctors.find(d => d.id === selectedDoctor)?.name || 'Assigned doctor'}. Department: ${selectedDeptName}`
-          : `Department: ${selectedDeptName}`,
-        assignedDoctorId: selectedDoctor !== 'any' ? selectedDoctor : undefined,
-        paymentType,
-        consultationFee: 50000,
-      };
+    if (!chiefComplaint.trim()) {
+      setError('Chief complaint is required before issuing token.');
+      return;
+    }
+
+    setError(null);
+
+    const selectedDeptName = departments?.find(d => d.id === selectedDepartment)?.name || '';
+
+    // Determine entry service point from visit type (configurable per facility)
+    const entryServicePoint = getEntryServicePoint(visitType, serviceConfig);
+
+    // Resolve priority from condition flags
+    const resolvedPriority = getPriorityFromFlags(conditionFlags, serviceConfig) as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 10;
+
+    const queueData: CreateQueueEntryDto = {
+      patientId: selectedPatient.id,
+      servicePoint: entryServicePoint,
+      priority: resolvedPriority,
+      priorityReason: conditionFlags.length > 0 ? conditionFlags.join(', ') : undefined,
+      departmentId: selectedDepartment || undefined,
+      visitType,
+      chiefComplaintAtToken: chiefComplaint.trim() || undefined,
+      patientConditionFlags: conditionFlags.length > 0 ? conditionFlags : undefined,
+      notes: selectedDoctor !== 'any'
+        ? `Preferred doctor: ${availableDoctors.find(d => d.id === selectedDoctor)?.name || 'Assigned doctor'}. Department: ${selectedDeptName}`
+        : `Department: ${selectedDeptName}`,
+      assignedDoctorId: selectedDoctor !== 'any' ? selectedDoctor : undefined,
+      paymentType,
+      consultationFee: Number(CONSULTATION_FEE),
+    };
+
+    try {
+      await queueService.validateQueueRequest(queueData);
       issueTokenMutation.mutate(queueData);
+    } catch (err: any) {
+      const requestId = err?.response?.data?.requestId;
+      const baseMessage = getApiErrorMessage(err, 'Failed to issue token. Please try again.');
+      const errorMessage = formatQueueIssueError(baseMessage, requestId);
+      setError(errorMessage);
     }
   };
   

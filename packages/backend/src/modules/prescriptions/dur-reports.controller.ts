@@ -1,10 +1,14 @@
-import { Controller, Get, Query, Request } from '@nestjs/common';
+import { Controller, Get, Query, Request, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { DURReportsService } from './dur-reports.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('DUR Reports')
 @ApiBearerAuth()
+@UseGuards(ModuleGuard)
+@RequireModule('pharmacy')
 @Controller('prescriptions/analytics/dur')
 export class DURReportsController {
   constructor(private readonly durService: DURReportsService) {}
@@ -69,11 +73,6 @@ export class DURReportsController {
     @Query('facilityId') facilityId?: string,
     @Request() req?: any,
   ) {
-    return this.durService.getDURSummary(
-      req?.user?.tenantId,
-      facilityId,
-      dateFrom,
-      dateTo,
-    );
+    return this.durService.getDURSummary(req?.user?.tenantId, facilityId, dateFrom, dateTo);
   }
 }

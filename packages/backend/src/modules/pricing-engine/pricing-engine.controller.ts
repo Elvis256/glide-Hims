@@ -9,6 +9,7 @@ import {
   Query,
   Request,
   ParseUUIDPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { PricingEngineService } from './pricing-engine.service';
@@ -22,9 +23,13 @@ import {
   PriceQueryDto,
 } from './pricing-engine.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('Pricing Engine')
 @ApiBearerAuth()
+@UseGuards(ModuleGuard)
+@RequireModule('billing')
 @Controller('pricing')
 export class PricingEngineController {
   constructor(private readonly pricingService: PricingEngineService) {}
@@ -185,7 +190,11 @@ export class PricingEngineController {
   @Patch('tax-exemptions/:id')
   @AuthWithPermissions('services.update')
   @ApiOperation({ summary: 'Update tax exemption' })
-  updateTaxExemption(@Param('id', ParseUUIDPipe) id: string, @Body() dto: any, @Request() req: any) {
+  updateTaxExemption(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: any,
+    @Request() req: any,
+  ) {
     return this.pricingService.updateTaxExemption(id, dto, req.user?.tenantId);
   }
 

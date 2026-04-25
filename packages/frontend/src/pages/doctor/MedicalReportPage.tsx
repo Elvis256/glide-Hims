@@ -1,6 +1,7 @@
 import React, { useRef, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { Encounter, Prescription, LabResult } from '../../types/clinical';
 import {
   Printer,
   FileText,
@@ -38,19 +39,19 @@ export default function MedicalReportPage() {
   const [additionalRecommendations, setAdditionalRecommendations] = useState('');
 
   // --- Data fetching ---
-  const { data: encounter, isLoading: loadingEnc } = useQuery({
+  const { data: encounter, isLoading: loadingEnc } = useQuery<Encounter>({
     queryKey: ['encounter', encounterId],
     queryFn: () => encountersService.getById(encounterId),
     enabled: !!encounterId,
   });
 
-  const { data: clinicalNotes = [] } = useQuery({
+  const { data: clinicalNotes = [] } = useQuery<Array<{ id: string; content: string; createdAt: string }>>({
     queryKey: ['clinical-notes', encounterId],
     queryFn: () => clinicalNotesService.getByEncounter(encounterId),
     enabled: !!encounterId,
   });
 
-  const { data: vitals = [] } = useQuery({
+  const { data: vitals = [] } = useQuery<Array<{ id: string; temp: number; bp: string }>>({
     queryKey: ['vitals-enc', encounterId],
     queryFn: () => vitalsService.getByEncounter(encounterId),
     enabled: !!encounterId,

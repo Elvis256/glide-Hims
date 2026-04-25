@@ -1,18 +1,17 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Param,
-  Body,
-  Query,
-  Request,
-} from '@nestjs/common';
+import { Controller, Get, Post, Put, Param, Body, Query, Request, UseGuards } from '@nestjs/common';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { SupplierReturnsService } from './supplier-returns.service';
-import { CreateSupplierReturnDto, UpdateSupplierReturnDto, SupplierReturnQueryDto } from './supplier-returns.dto';
+import {
+  CreateSupplierReturnDto,
+  UpdateSupplierReturnDto,
+  SupplierReturnQueryDto,
+} from './supplier-returns.dto';
 import { ReturnStatus } from '../../database/entities/supplier-return.entity';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
+@UseGuards(ModuleGuard)
+@RequireModule('stores')
 @Controller('supplier-returns')
 export class SupplierReturnsController {
   constructor(private readonly supplierReturnsService: SupplierReturnsService) {}

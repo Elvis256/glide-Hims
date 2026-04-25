@@ -8,6 +8,7 @@ import {
   Param,
   Query,
   Request,
+  UseGuards,
 } from '@nestjs/common';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { ItemClassificationsService } from './item-classifications.service';
@@ -29,7 +30,11 @@ import {
   CreateStorageConditionDto,
   UpdateStorageConditionDto,
 } from './item-classifications.dto';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
+@UseGuards(ModuleGuard)
+@RequireModule('stores')
 @Controller('item-classifications')
 export class ItemClassificationsController {
   constructor(private readonly service: ItemClassificationsService) {}
@@ -83,12 +88,20 @@ export class ItemClassificationsController {
     @Query('includeInactive') includeInactive?: string,
     @Request() req?: any,
   ) {
-    return this.service.getSubcategories(categoryId, includeInactive === 'true', req.user?.tenantId);
+    return this.service.getSubcategories(
+      categoryId,
+      includeInactive === 'true',
+      req.user?.tenantId,
+    );
   }
 
   @Put('subcategories/:id')
   @AuthWithPermissions('inventory.update')
-  updateSubcategory(@Param('id') id: string, @Body() dto: UpdateSubcategoryDto, @Request() req: any) {
+  updateSubcategory(
+    @Param('id') id: string,
+    @Body() dto: UpdateSubcategoryDto,
+    @Request() req: any,
+  ) {
     return this.service.updateSubcategory(id, dto, req.user?.tenantId);
   }
 
@@ -142,7 +155,12 @@ export class ItemClassificationsController {
     @Query('includeInactive') includeInactive?: string,
     @Request() req?: any,
   ) {
-    return this.service.getTags(facilityId, tagType, includeInactive === 'true', req.user?.tenantId);
+    return this.service.getTags(
+      facilityId,
+      tagType,
+      includeInactive === 'true',
+      req.user?.tenantId,
+    );
   }
 
   @Put('tags/:id')
@@ -205,7 +223,11 @@ export class ItemClassificationsController {
 
   @Put('formulations/:id')
   @AuthWithPermissions('inventory.update')
-  updateFormulation(@Param('id') id: string, @Body() dto: UpdateFormulationDto, @Request() req: any) {
+  updateFormulation(
+    @Param('id') id: string,
+    @Body() dto: UpdateFormulationDto,
+    @Request() req: any,
+  ) {
     return this.service.updateFormulation(id, dto, req.user?.tenantId);
   }
 
@@ -258,12 +280,20 @@ export class ItemClassificationsController {
     @Query('includeInactive') includeInactive?: string,
     @Request() req?: any,
   ) {
-    return this.service.getStorageConditions(facilityId, includeInactive === 'true', req.user?.tenantId);
+    return this.service.getStorageConditions(
+      facilityId,
+      includeInactive === 'true',
+      req.user?.tenantId,
+    );
   }
 
   @Put('storage-conditions/:id')
   @AuthWithPermissions('inventory.update')
-  updateStorageCondition(@Param('id') id: string, @Body() dto: UpdateStorageConditionDto, @Request() req: any) {
+  updateStorageCondition(
+    @Param('id') id: string,
+    @Body() dto: UpdateStorageConditionDto,
+    @Request() req: any,
+  ) {
     return this.service.updateStorageCondition(id, dto, req.user?.tenantId);
   }
 

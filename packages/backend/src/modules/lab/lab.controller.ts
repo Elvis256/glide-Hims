@@ -1,16 +1,40 @@
-import { Controller, Get, Post, Put, Patch, Body, Param, Query, Request, BadRequestException } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Patch,
+  Body,
+  Param,
+  Query,
+  Request,
+  BadRequestException,
+  UseGuards,
+} from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { LabService } from './lab.service';
 import {
-  CreateLabTestDto, UpdateLabTestDto, CollectSampleDto, ReceiveSampleDto,
-  RejectSampleDto, EnterResultDto, ValidateResultDto, AmendResultDto,
-  LabTestQueryDto, SampleQueryDto,
+  CreateLabTestDto,
+  UpdateLabTestDto,
+  CollectSampleDto,
+  ReceiveSampleDto,
+  RejectSampleDto,
+  EnterResultDto,
+  ValidateResultDto,
+  AmendResultDto,
+  LabTestQueryDto,
+  SampleQueryDto,
 } from './dto/lab.dto';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 @ApiTags('Laboratory')
 @ApiBearerAuth()
+@UseGuards(ModuleGuard)
+@RequireModule('diagnostics')
 @Controller('lab')
 export class LabController {
   constructor(private readonly labService: LabService) {}
@@ -101,7 +125,11 @@ export class LabController {
   @Post('samples/:sampleId/results')
   @AuthWithPermissions('lab.create')
   @ApiOperation({ summary: 'Enter result for a sample' })
-  enterResult(@Param('sampleId') sampleId: string, @Body() dto: EnterResultDto, @Request() req: any) {
+  enterResult(
+    @Param('sampleId') sampleId: string,
+    @Body() dto: EnterResultDto,
+    @Request() req: any,
+  ) {
     return this.labService.enterResult(sampleId, dto, req.user.id, req.user?.tenantId);
   }
 
@@ -166,7 +194,11 @@ export class LabController {
   @ApiOperation({ summary: 'Get turnaround time statistics' })
   @ApiQuery({ name: 'facilityId', required: true, description: 'Facility UUID' })
   @ApiQuery({ name: 'days', required: false, description: 'Number of days for stats (1-365)' })
-  getTurnaroundStats(@Query('facilityId') facilityId: string, @Query('days') days: number | undefined, @Request() req: any) {
+  getTurnaroundStats(
+    @Query('facilityId') facilityId: string,
+    @Query('days') days: number | undefined,
+    @Request() req: any,
+  ) {
     if (!facilityId || !UUID_REGEX.test(facilityId)) {
       throw new BadRequestException('Valid facilityId UUID is required');
     }

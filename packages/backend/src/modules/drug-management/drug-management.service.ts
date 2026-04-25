@@ -22,20 +22,27 @@ export class DrugManagementService {
 
   // ==================== DRUG CLASSIFICATION ====================
 
-  async createClassification(data: Partial<DrugClassification>, tenantId?: string): Promise<DrugClassification> {
+  async createClassification(
+    data: Partial<DrugClassification>,
+    tenantId?: string,
+  ): Promise<DrugClassification> {
     // Set derived flags
     if (data.schedule === DrugSchedule.SCHEDULE_I || data.schedule === DrugSchedule.SCHEDULE_II) {
       data.isControlled = true;
       data.requiresDoubleCheck = true;
     }
-    
+
     if (tenantId) data.tenantId = tenantId;
 
     const classification = this.classificationRepo.create(data);
     return this.classificationRepo.save(classification);
   }
 
-  async updateClassification(id: string, data: Partial<DrugClassification>, tenantId?: string): Promise<DrugClassification> {
+  async updateClassification(
+    id: string,
+    data: Partial<DrugClassification>,
+    tenantId?: string,
+  ): Promise<DrugClassification> {
     const where: any = { id };
     if (tenantId) where.tenantId = tenantId;
     const classification = await this.classificationRepo.findOne({ where });
@@ -58,14 +65,17 @@ export class DrugManagementService {
     return classification;
   }
 
-  async listClassifications(filters?: {
-    schedule?: DrugSchedule;
-    therapeuticClass?: TherapeuticClass;
-    isControlled?: boolean;
-    isNarcotic?: boolean;
-    highAlert?: boolean;
-    isOnFormulary?: boolean;
-  }, tenantId?: string): Promise<DrugClassification[]> {
+  async listClassifications(
+    filters?: {
+      schedule?: DrugSchedule;
+      therapeuticClass?: TherapeuticClass;
+      isControlled?: boolean;
+      isNarcotic?: boolean;
+      highAlert?: boolean;
+      isOnFormulary?: boolean;
+    },
+    tenantId?: string,
+  ): Promise<DrugClassification[]> {
     const qb = this.classificationRepo.createQueryBuilder('c');
 
     if (tenantId) {
@@ -76,7 +86,9 @@ export class DrugManagementService {
       qb.andWhere('c.schedule = :schedule', { schedule: filters.schedule });
     }
     if (filters?.therapeuticClass) {
-      qb.andWhere('c.therapeuticClass = :therapeuticClass', { therapeuticClass: filters.therapeuticClass });
+      qb.andWhere('c.therapeuticClass = :therapeuticClass', {
+        therapeuticClass: filters.therapeuticClass,
+      });
     }
     if (filters?.isControlled !== undefined) {
       qb.andWhere('c.isControlled = :isControlled', { isControlled: filters.isControlled });
@@ -130,7 +142,10 @@ export class DrugManagementService {
     });
   }
 
-  async getDrugsByTherapeuticClass(therapeuticClass: TherapeuticClass, tenantId?: string): Promise<DrugClassification[]> {
+  async getDrugsByTherapeuticClass(
+    therapeuticClass: TherapeuticClass,
+    tenantId?: string,
+  ): Promise<DrugClassification[]> {
     const where: any = { therapeuticClass };
     if (tenantId) where.tenantId = tenantId;
     return this.classificationRepo.find({
@@ -140,23 +155,25 @@ export class DrugManagementService {
   }
 
   async searchDrugs(query: string, tenantId?: string): Promise<DrugClassification[]> {
-    const qb = this.classificationRepo.createQueryBuilder('c')
-      .where('c.genericName ILIKE :query OR c.brandName ILIKE :query OR c.atcCode ILIKE :query', 
-        { query: `%${query}%` });
+    const qb = this.classificationRepo
+      .createQueryBuilder('c')
+      .where('c.genericName ILIKE :query OR c.brandName ILIKE :query OR c.atcCode ILIKE :query', {
+        query: `%${query}%`,
+      });
 
     if (tenantId) {
       qb.andWhere('c.tenant_id = :tenantId', { tenantId });
     }
 
-    return qb
-      .orderBy('c.genericName', 'ASC')
-      .take(50)
-      .getMany();
+    return qb.orderBy('c.genericName', 'ASC').take(50).getMany();
   }
 
   // ==================== DRUG INTERACTIONS ====================
 
-  async createInteraction(data: Partial<DrugInteraction>, tenantId?: string): Promise<DrugInteraction> {
+  async createInteraction(
+    data: Partial<DrugInteraction>,
+    tenantId?: string,
+  ): Promise<DrugInteraction> {
     // Check if interaction already exists (in either direction)
     const whereA: any = { drugAId: data.drugAId, drugBId: data.drugBId };
     const whereB: any = { drugAId: data.drugBId, drugBId: data.drugAId };
@@ -167,7 +184,7 @@ export class DrugManagementService {
     const existing = await this.interactionRepo.findOne({
       where: [whereA, whereB],
     });
-    
+
     if (existing) {
       throw new BadRequestException('Drug interaction already exists');
     }
@@ -178,7 +195,11 @@ export class DrugManagementService {
     return this.interactionRepo.save(interaction);
   }
 
-  async updateInteraction(id: string, data: Partial<DrugInteraction>, tenantId?: string): Promise<DrugInteraction> {
+  async updateInteraction(
+    id: string,
+    data: Partial<DrugInteraction>,
+    tenantId?: string,
+  ): Promise<DrugInteraction> {
     const where: any = { id };
     if (tenantId) where.tenantId = tenantId;
     const interaction = await this.interactionRepo.findOne({ where });
@@ -200,7 +221,10 @@ export class DrugManagementService {
     });
   }
 
-  async checkInteractions(drugIds: string[], tenantId?: string): Promise<{
+  async checkInteractions(
+    drugIds: string[],
+    tenantId?: string,
+  ): Promise<{
     hasInteractions: boolean;
     interactions: Array<{
       drug1Id: string;
@@ -268,7 +292,10 @@ export class DrugManagementService {
 
   // ==================== ALLERGY CLASSES ====================
 
-  async createAllergyClass(data: Partial<DrugAllergyClass>, tenantId?: string): Promise<DrugAllergyClass> {
+  async createAllergyClass(
+    data: Partial<DrugAllergyClass>,
+    tenantId?: string,
+  ): Promise<DrugAllergyClass> {
     if (tenantId) data.tenantId = tenantId;
     const allergyClass = this.allergyClassRepo.create(data);
     return this.allergyClassRepo.save(allergyClass);
@@ -280,7 +307,11 @@ export class DrugManagementService {
     return this.allergyClassRepo.find({ where, order: { className: 'ASC' } });
   }
 
-  async checkAllergyRisk(drugId: string, patientAllergies: string[], tenantId?: string): Promise<{
+  async checkAllergyRisk(
+    drugId: string,
+    patientAllergies: string[],
+    tenantId?: string,
+  ): Promise<{
     hasRisk: boolean;
     directMatch: boolean;
     crossReactiveRisk: boolean;
@@ -298,9 +329,11 @@ export class DrugManagementService {
     let crossReactiveRisk = false;
 
     // Check if drug itself is in allergies
-    if (patientAllergies.includes(drugId) || 
-        patientAllergies.includes(classification.genericName || '') ||
-        patientAllergies.includes(classification.brandName || '')) {
+    if (
+      patientAllergies.includes(drugId) ||
+      patientAllergies.includes(classification.genericName || '') ||
+      patientAllergies.includes(classification.brandName || '')
+    ) {
       directMatch = true;
     }
 
@@ -320,7 +353,9 @@ export class DrugManagementService {
       for (const patientAllergy of patientAllergies) {
         if (allergyClass.crossReactiveClasses?.includes(patientAllergy)) {
           if (allergyClass.relatedDrugs?.includes(drugId)) {
-            matchedClasses.push(`${allergyClass.className} (cross-reactive with ${patientAllergy})`);
+            matchedClasses.push(
+              `${allergyClass.className} (cross-reactive with ${patientAllergy})`,
+            );
             crossReactiveRisk = true;
           }
         }
@@ -352,7 +387,8 @@ export class DrugManagementService {
     for (const drug of controlled) {
       bySchedule[drug.schedule] = (bySchedule[drug.schedule] || 0) + 1;
       if (drug.therapeuticClass) {
-        byTherapeuticClass[drug.therapeuticClass] = (byTherapeuticClass[drug.therapeuticClass] || 0) + 1;
+        byTherapeuticClass[drug.therapeuticClass] =
+          (byTherapeuticClass[drug.therapeuticClass] || 0) + 1;
       }
     }
 

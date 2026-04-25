@@ -59,8 +59,13 @@ export const useAuthStore = create<AuthState & AuthActions>()(
 
       hasPermission: (permission: string) => {
         const { user } = get();
-        if (user?.isSystemAdmin) return true;
-        if (!user?.permissions) return false;
+        if (!user) return false;
+        // System admin in tenant context: only bypass for FULL_SUPPORT tier (3)
+        if (user.isSystemAdmin) {
+          if (user.supportAccessTier !== undefined && user.supportAccessTier < 3) return false;
+          return true;
+        }
+        if (!user.permissions) return false;
         const matchRole = (r: string) => user.roles?.some((ur: any) => ur === r || ur?.role === r || ur?.name === r);
         if (matchRole('Super Admin')) return true;
         return user.permissions.includes(permission);
@@ -68,8 +73,13 @@ export const useAuthStore = create<AuthState & AuthActions>()(
 
       hasAnyPermission: (permissions: string[]) => {
         const { user } = get();
-        if (user?.isSystemAdmin) return true;
-        if (!user?.permissions) return false;
+        if (!user) return false;
+        // System admin in tenant context: only bypass for FULL_SUPPORT tier (3)
+        if (user.isSystemAdmin) {
+          if (user.supportAccessTier !== undefined && user.supportAccessTier < 3) return false;
+          return true;
+        }
+        if (!user.permissions) return false;
         const matchRole = (r: string) => user.roles?.some((ur: any) => ur === r || ur?.role === r || ur?.name === r);
         if (matchRole('Super Admin')) return true;
         return permissions.some((p) => user.permissions?.includes(p));

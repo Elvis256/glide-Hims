@@ -5,7 +5,8 @@ import {
   ManyToOne,
   JoinColumn,
   CreateDateColumn,
-  Unique, Index,
+  Unique,
+  Index,
 } from 'typeorm';
 import { User } from './user.entity';
 import { Permission } from './permission.entity';

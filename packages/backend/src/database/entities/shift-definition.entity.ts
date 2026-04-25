@@ -5,7 +5,8 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   ManyToOne,
-  JoinColumn, Index,
+  JoinColumn,
+  Index,
 } from 'typeorm';
 import { Facility } from './facility.entity';
 import { Department } from './department.entity';

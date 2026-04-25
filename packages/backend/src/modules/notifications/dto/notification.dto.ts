@@ -1,6 +1,18 @@
-import { IsEnum, IsOptional, IsString, IsNumber, IsBoolean, IsUUID, IsArray, IsNotEmpty } from 'class-validator';
+import {
+  IsEnum,
+  IsOptional,
+  IsString,
+  IsNumber,
+  IsBoolean,
+  IsUUID,
+  IsArray,
+  IsNotEmpty,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { NotificationType, NotificationProvider } from '../../../database/entities/notification-config.entity';
+import {
+  NotificationType,
+  NotificationProvider,
+} from '../../../database/entities/notification-config.entity';
 import { ReminderType, ReminderChannel } from '../../../database/entities/patient-reminder.entity';
 
 export class CreateNotificationConfigDto {

@@ -1,4 +1,15 @@
-import { Controller, Get, Post, Put, Delete, Param, Body, Query, UseGuards, Request } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Param,
+  Body,
+  Query,
+  UseGuards,
+  Request,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { AssetsService } from './assets.service';
@@ -13,10 +24,14 @@ import {
   InitiateTransferDto,
   DisposeAssetDto,
 } from './dto/assets.dto';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('Assets')
 @ApiBearerAuth()
 @UseGuards(AuthGuard('jwt'))
+@UseGuards(ModuleGuard)
+@RequireModule('assets')
 @Controller('assets')
 export class AssetsController {
   constructor(private readonly assetsService: AssetsService) {}
@@ -41,7 +56,11 @@ export class AssetsController {
     @Query('search') search?: string,
     @Request() req?: any,
   ) {
-    return this.assetsService.listAssets(facilityId, { category, status, departmentId, search }, req.user?.tenantId);
+    return this.assetsService.listAssets(
+      facilityId,
+      { category, status, departmentId, search },
+      req.user?.tenantId,
+    );
   }
 
   @Get('register')
@@ -95,11 +114,13 @@ export class AssetsController {
   @Post('depreciation/run')
   @AuthWithPermissions('assets.create')
   @ApiOperation({ summary: 'Run monthly depreciation' })
-  async runDepreciation(
-    @Body() data: RunDepreciationDto,
-    @Request() req: any,
-  ) {
-    return this.assetsService.runDepreciation(data.facilityId, data.year, data.month, req.user?.tenantId);
+  async runDepreciation(@Body() data: RunDepreciationDto, @Request() req: any) {
+    return this.assetsService.runDepreciation(
+      data.facilityId,
+      data.year,
+      data.month,
+      req.user?.tenantId,
+    );
   }
 
   @Get(':id/depreciation')
@@ -143,7 +164,11 @@ export class AssetsController {
   @Post(':id/maintenance')
   @AuthWithPermissions('assets.create')
   @ApiOperation({ summary: 'Record asset maintenance' })
-  async recordMaintenance(@Param('id') assetId: string, @Body() data: RecordAssetMaintenanceDto, @Request() req: any) {
+  async recordMaintenance(
+    @Param('id') assetId: string,
+    @Body() data: RecordAssetMaintenanceDto,
+    @Request() req: any,
+  ) {
     return this.assetsService.recordMaintenance({ ...data, assetId } as any, req.user?.tenantId);
   }
 
@@ -159,7 +184,11 @@ export class AssetsController {
   @Post(':id/transfer')
   @AuthWithPermissions('assets.create')
   @ApiOperation({ summary: 'Initiate asset transfer' })
-  async initiateTransfer(@Param('id') assetId: string, @Body() data: InitiateTransferDto, @Request() req: any) {
+  async initiateTransfer(
+    @Param('id') assetId: string,
+    @Body() data: InitiateTransferDto,
+    @Request() req: any,
+  ) {
     return this.assetsService.initiateTransfer({ ...data, assetId }, req.user?.tenantId);
   }
 

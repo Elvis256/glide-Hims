@@ -5,7 +5,8 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   ManyToOne,
-  JoinColumn, Index,
+  JoinColumn,
+  Index,
 } from 'typeorm';
 import { Patient } from './patient.entity';
 import { DeliveryOutcome } from './delivery-outcome.entity';
@@ -146,7 +147,12 @@ export class ImmunizationSchedule {
   @Column({ type: 'boolean', default: false, name: 'adverse_reaction' })
   adverseReaction: boolean;
 
-  @Column({ type: 'enum', enum: AdverseReactionSeverity, default: AdverseReactionSeverity.NONE, name: 'reaction_severity' })
+  @Column({
+    type: 'enum',
+    enum: AdverseReactionSeverity,
+    default: AdverseReactionSeverity.NONE,
+    name: 'reaction_severity',
+  })
   reactionSeverity: AdverseReactionSeverity;
 
   @Column({ type: 'text', nullable: true, name: 'reaction_description' })

@@ -1,7 +1,22 @@
-import { IsNotEmpty, IsOptional, IsEnum, IsInt, Min, Max, IsString, IsNumber, IsDateString, IsUUID } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsOptional,
+  IsEnum,
+  IsInt,
+  Min,
+  Max,
+  IsString,
+  IsNumber,
+  IsDateString,
+  IsUUID,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { TriageLevel, TriageStatus, ArrivalMode } from '../../../database/entities/emergency-case.entity';
+import {
+  TriageLevel,
+  TriageStatus,
+  ArrivalMode,
+} from '../../../database/entities/emergency-case.entity';
 
 export class CreateEmergencyCaseDto {
   @ApiProperty({ description: 'Facility ID' })
@@ -51,7 +66,10 @@ export class CreateEmergencyCaseDto {
 }
 
 export class TriageDto {
-  @ApiProperty({ enum: TriageLevel, description: '1=Resuscitation, 2=Emergent, 3=Urgent, 4=Less Urgent, 5=Non-Urgent' })
+  @ApiProperty({
+    enum: TriageLevel,
+    description: '1=Resuscitation, 2=Emergent, 3=Urgent, 4=Less Urgent, 5=Non-Urgent',
+  })
   @IsEnum(TriageLevel)
   triageLevel: TriageLevel;
 

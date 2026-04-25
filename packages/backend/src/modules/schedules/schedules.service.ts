@@ -1,8 +1,18 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { DoctorSchedule } from './entities/doctor-schedule.entity';
-import { CreateDoctorScheduleDto, UpdateDoctorScheduleDto, ScheduleQueryDto } from './dto/schedule.dto';
+import {
+  CreateDoctorScheduleDto,
+  UpdateDoctorScheduleDto,
+  ScheduleQueryDto,
+} from './dto/schedule.dto';
 
 @Injectable()
 export class SchedulesService {
@@ -13,7 +23,11 @@ export class SchedulesService {
     private scheduleRepository: Repository<DoctorSchedule>,
   ) {}
 
-  async create(dto: CreateDoctorScheduleDto, facilityId: string, tenantId?: string): Promise<DoctorSchedule> {
+  async create(
+    dto: CreateDoctorScheduleDto,
+    facilityId: string,
+    tenantId?: string,
+  ): Promise<DoctorSchedule> {
     // Validate startTime < endTime
     if (dto.startTime >= dto.endTime) {
       throw new BadRequestException('Start time must be before end time');
@@ -79,23 +93,25 @@ export class SchedulesService {
         qb.andWhere('schedule.department = :department', { department });
       }
 
-      qb.orderBy('schedule.dayOfWeek', 'ASC')
-        .addOrderBy('schedule.startTime', 'ASC');
+      qb.orderBy('schedule.dayOfWeek', 'ASC').addOrderBy('schedule.startTime', 'ASC');
 
       const data = await qb.getMany();
 
       // Group by doctor for easier frontend rendering
-      const grouped = data.reduce((acc, schedule) => {
-        const docId = schedule.doctorId;
-        if (!acc[docId]) {
-          acc[docId] = {
-            doctor: schedule.doctor,
-            schedules: [],
-          };
-        }
-        acc[docId].schedules.push(schedule);
-        return acc;
-      }, {} as Record<string, { doctor: any; schedules: DoctorSchedule[] }>);
+      const grouped = data.reduce(
+        (acc, schedule) => {
+          const docId = schedule.doctorId;
+          if (!acc[docId]) {
+            acc[docId] = {
+              doctor: schedule.doctor,
+              schedules: [],
+            };
+          }
+          acc[docId].schedules.push(schedule);
+          return acc;
+        },
+        {} as Record<string, { doctor: any; schedules: DoctorSchedule[] }>,
+      );
 
       return {
         data,
@@ -126,7 +142,12 @@ export class SchedulesService {
     return schedule;
   }
 
-  async update(id: string, dto: UpdateDoctorScheduleDto, facilityId: string, tenantId?: string): Promise<DoctorSchedule> {
+  async update(
+    id: string,
+    dto: UpdateDoctorScheduleDto,
+    facilityId: string,
+    tenantId?: string,
+  ): Promise<DoctorSchedule> {
     const schedule = await this.findOne(id, facilityId, tenantId);
     Object.assign(schedule, dto);
     return this.scheduleRepository.save(schedule);

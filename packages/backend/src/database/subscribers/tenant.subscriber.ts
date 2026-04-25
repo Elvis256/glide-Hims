@@ -1,9 +1,4 @@
-import {
-  EventSubscriber,
-  EntitySubscriberInterface,
-  InsertEvent,
-  UpdateEvent,
-} from 'typeorm';
+import { EventSubscriber, EntitySubscriberInterface, InsertEvent, UpdateEvent } from 'typeorm';
 import { ForbiddenException } from '@nestjs/common';
 
 /**

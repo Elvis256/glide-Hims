@@ -116,7 +116,7 @@ export class SupplierCreditNote extends BaseEntity {
   @Column({ type: 'text', nullable: true })
   notes?: string;
 
-  @OneToMany(() => SupplierCreditNoteItem, item => item.creditNote)
+  @OneToMany(() => SupplierCreditNoteItem, (item) => item.creditNote)
   items: SupplierCreditNoteItem[];
 }
 
@@ -125,7 +125,7 @@ export class SupplierCreditNoteItem extends BaseEntity {
   @Column({ type: 'uuid', name: 'credit_note_id' })
   creditNoteId: string;
 
-  @ManyToOne(() => SupplierCreditNote, note => note.items)
+  @ManyToOne(() => SupplierCreditNote, (note) => note.items)
   @JoinColumn({ name: 'credit_note_id' })
   creditNote: SupplierCreditNote;
 

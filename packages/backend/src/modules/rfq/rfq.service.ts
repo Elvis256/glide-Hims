@@ -1,14 +1,32 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not } from 'typeorm';
-import { RFQ, RFQItem, RFQVendor, VendorQuotation, VendorQuotationItem, QuotationApproval, RFQStatus, QuotationStatus, ApprovalLevel, QuotationApprovalStatus } from '../../database/entities/rfq.entity';
+import {
+  RFQ,
+  RFQItem,
+  RFQVendor,
+  VendorQuotation,
+  VendorQuotationItem,
+  QuotationApproval,
+  RFQStatus,
+  QuotationStatus,
+  ApprovalLevel,
+  QuotationApprovalStatus,
+} from '../../database/entities/rfq.entity';
 import { Supplier } from '../../database/entities/supplier.entity';
 import { User } from '../../database/entities/user.entity';
-import { CreateRFQDto, UpdateRFQDto, AddVendorsDto, CreateQuotationDto, ApproveQuotationDto, RejectQuotationDto } from './dto/rfq.dto';
+import {
+  CreateRFQDto,
+  UpdateRFQDto,
+  AddVendorsDto,
+  CreateQuotationDto,
+  ApproveQuotationDto,
+  RejectQuotationDto,
+} from './dto/rfq.dto';
 
 // Approval thresholds (UGX)
-const THRESHOLD_SINGLE = 5_000_000;    // Below: 1 approval
-const THRESHOLD_DOUBLE = 20_000_000;   // Below: 2 approvals, Above: 3 approvals
+const THRESHOLD_SINGLE = 5_000_000; // Below: 1 approval
+const THRESHOLD_DOUBLE = 20_000_000; // Below: 2 approvals, Above: 3 approvals
 
 @Injectable()
 export class RFQService {
@@ -19,7 +37,8 @@ export class RFQService {
     @InjectRepository(RFQItem) private rfqItemRepo: Repository<RFQItem>,
     @InjectRepository(RFQVendor) private rfqVendorRepo: Repository<RFQVendor>,
     @InjectRepository(VendorQuotation) private quotationRepo: Repository<VendorQuotation>,
-    @InjectRepository(VendorQuotationItem) private quotationItemRepo: Repository<VendorQuotationItem>,
+    @InjectRepository(VendorQuotationItem)
+    private quotationItemRepo: Repository<VendorQuotationItem>,
     @InjectRepository(QuotationApproval) private approvalRepo: Repository<QuotationApproval>,
     @InjectRepository(Supplier) private supplierRepo: Repository<Supplier>,
     @InjectRepository(User) private userRepo: Repository<User>,
@@ -32,7 +51,9 @@ export class RFQService {
   }
 
   private async generateRFQNumber(facilityId: string, tenantId?: string): Promise<string> {
-    const count = await this.rfqRepo.count({ where: { facilityId, ...(tenantId ? { tenantId } : {}) } });
+    const count = await this.rfqRepo.count({
+      where: { facilityId, ...(tenantId ? { tenantId } : {}) },
+    });
     const date = new Date();
     return `RFQ${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(count + 1).padStart(5, '0')}`;
   }
@@ -65,7 +86,7 @@ export class RFQService {
         unit: item.unit || 'unit',
         specifications: item.specifications,
         ...(tenantId ? { tenantId } : {}),
-      })
+      }),
     );
     await this.rfqItemRepo.save(items);
 
@@ -110,7 +131,16 @@ export class RFQService {
   async findOne(id: string, tenantId?: string): Promise<RFQ> {
     const rfq = await this.rfqRepo.findOne({
       where: { id, ...(tenantId ? { tenantId } : {}) },
-      relations: ['items', 'vendors', 'vendors.supplier', 'quotations', 'quotations.items', 'quotations.supplier', 'purchaseRequest', 'createdBy'],
+      relations: [
+        'items',
+        'vendors',
+        'vendors.supplier',
+        'quotations',
+        'quotations.items',
+        'quotations.supplier',
+        'purchaseRequest',
+        'createdBy',
+      ],
     });
     if (!rfq) throw new NotFoundException('RFQ not found');
     return rfq;
@@ -135,12 +165,16 @@ export class RFQService {
 
     for (const vendorId of dto.vendorIds) {
       // Validate supplier is active before adding to RFQ
-      const supplier = await this.supplierRepo.findOne({ where: { id: vendorId, ...(tenantId ? { tenantId } : {}) } });
+      const supplier = await this.supplierRepo.findOne({
+        where: { id: vendorId, ...(tenantId ? { tenantId } : {}) },
+      });
       if (!supplier) {
         throw new NotFoundException(`Supplier ${vendorId} not found`);
       }
       if (supplier.status !== 'active') {
-        throw new BadRequestException(`Cannot add ${supplier.name || vendorId}: supplier status is ${supplier.status}. Only active suppliers can participate in RFQs.`);
+        throw new BadRequestException(
+          `Cannot add ${supplier.name || vendorId}: supplier status is ${supplier.status}. Only active suppliers can participate in RFQs.`,
+        );
       }
 
       const exists = await this.rfqVendorRepo.findOne({
@@ -165,7 +199,9 @@ export class RFQService {
       throw new BadRequestException('Only draft RFQs can be sent');
     }
     if (!rfq.vendors?.length || rfq.vendors.length < 3) {
-      throw new BadRequestException('RFQ must have at least 3 vendors for competitive bidding compliance');
+      throw new BadRequestException(
+        'RFQ must have at least 3 vendors for competitive bidding compliance',
+      );
     }
     if (!rfq.items?.length) {
       throw new BadRequestException('RFQ must have at least one item');
@@ -180,9 +216,17 @@ export class RFQService {
     return this.findOne(id, tenantId);
   }
 
-  async receiveQuotation(dto: CreateQuotationDto, userId: string, tenantId?: string): Promise<VendorQuotation> {
+  async receiveQuotation(
+    dto: CreateQuotationDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<VendorQuotation> {
     const rfq = await this.findOne(dto.rfqId, tenantId);
-    if (![RFQStatus.SENT, RFQStatus.PENDING_RESPONSES, RFQStatus.RESPONSES_RECEIVED].includes(rfq.status)) {
+    if (
+      ![RFQStatus.SENT, RFQStatus.PENDING_RESPONSES, RFQStatus.RESPONSES_RECEIVED].includes(
+        rfq.status,
+      )
+    ) {
       throw new BadRequestException('RFQ is not accepting quotations');
     }
 
@@ -230,18 +274,20 @@ export class RFQService {
         inStock: item.inStock ?? true,
         notes: item.notes,
         ...(tenantId ? { tenantId } : {}),
-      })
+      }),
     );
     await this.quotationItemRepo.save(items);
 
     // Update RFQ vendor response status
     await this.rfqVendorRepo.update(
       { rfqId: dto.rfqId, supplierId: dto.supplierId },
-      { hasResponded: true, responseDate: new Date() }
+      { hasResponded: true, responseDate: new Date() },
     );
 
     // Update RFQ status using targeted update to avoid cascade side-effects
-    const allResponded = rfq.vendors.every((v) => v.hasResponded || v.supplierId === dto.supplierId);
+    const allResponded = rfq.vendors.every(
+      (v) => v.hasResponded || v.supplierId === dto.supplierId,
+    );
     const newStatus = allResponded ? RFQStatus.RESPONSES_RECEIVED : RFQStatus.PENDING_RESPONSES;
     await this.rfqRepo.update(rfq.id, { status: newStatus });
 
@@ -265,23 +311,31 @@ export class RFQService {
     });
   }
 
-  async selectWinner(quotationId: string, userId: string, tenantId?: string): Promise<VendorQuotation> {
+  async selectWinner(
+    quotationId: string,
+    userId: string,
+    tenantId?: string,
+  ): Promise<VendorQuotation> {
     const quotation = await this.getQuotation(quotationId, tenantId);
 
     // Require minimum quotations for competitive bidding compliance
     const quotationCount = await this.quotationRepo.count({
-      where: { rfqId: quotation.rfqId, status: QuotationStatus.RECEIVED, ...(tenantId ? { tenantId } : {}) },
+      where: {
+        rfqId: quotation.rfqId,
+        status: QuotationStatus.RECEIVED,
+        ...(tenantId ? { tenantId } : {}),
+      },
     });
     if (quotationCount < 2) {
       throw new BadRequestException(
-        `Competitive bidding requires at least 2 quotations. Only ${quotationCount} received. Cannot select a winner yet.`
+        `Competitive bidding requires at least 2 quotations. Only ${quotationCount} received. Cannot select a winner yet.`,
       );
     }
 
     // Mark other quotations as rejected
     await this.quotationRepo.update(
       { rfqId: quotation.rfqId, id: Not(quotationId) },
-      { status: QuotationStatus.REJECTED }
+      { status: QuotationStatus.REJECTED },
     );
 
     // Mark selected quotation as under review
@@ -301,7 +355,9 @@ export class RFQService {
       await this.approvalRepo.save(approval);
     }
 
-    this.logger.log(`Quotation ${quotation.quotationNumber} selected as winner. Amount: ${quotation.totalAmount}, Approvals required: ${requiredApprovals}`);
+    this.logger.log(
+      `Quotation ${quotation.quotationNumber} selected as winner. Amount: ${quotation.totalAmount}, Approvals required: ${requiredApprovals}`,
+    );
 
     return this.getQuotation(quotationId, tenantId);
   }
@@ -326,7 +382,12 @@ export class RFQService {
     return qb.orderBy('quotation.receivedDate', 'ASC').getMany();
   }
 
-  async approveQuotation(approvalId: string, dto: ApproveQuotationDto, userId: string, tenantId?: string): Promise<QuotationApproval> {
+  async approveQuotation(
+    approvalId: string,
+    dto: ApproveQuotationDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<QuotationApproval> {
     const approval = await this.approvalRepo.findOne({
       where: { id: approvalId, ...(tenantId ? { tenantId } : {}) },
       relations: ['quotation', 'quotation.rfq'],
@@ -337,19 +398,26 @@ export class RFQService {
     }
 
     // Check sequential order: previous levels must be approved
-    const levelOrder = { [ApprovalLevel.APPROVAL_1]: 1, [ApprovalLevel.APPROVAL_2]: 2, [ApprovalLevel.APPROVAL_3]: 3 };
+    const levelOrder = {
+      [ApprovalLevel.APPROVAL_1]: 1,
+      [ApprovalLevel.APPROVAL_2]: 2,
+      [ApprovalLevel.APPROVAL_3]: 3,
+    };
     const allApprovals = await this.approvalRepo.find({
       where: { quotationId: approval.quotationId, ...(tenantId ? { tenantId } : {}) },
     });
     for (const prev of allApprovals) {
-      if (levelOrder[prev.level] < levelOrder[approval.level] && prev.status !== QuotationApprovalStatus.APPROVED) {
+      if (
+        levelOrder[prev.level] < levelOrder[approval.level] &&
+        prev.status !== QuotationApprovalStatus.APPROVED
+      ) {
         throw new BadRequestException(`Approval ${levelOrder[prev.level]} must be completed first`);
       }
     }
 
     // Separation of duties: check if this user already approved another level
     const userAlreadyApproved = allApprovals.find(
-      (a) => a.approverId === userId && a.status === QuotationApprovalStatus.APPROVED
+      (a) => a.approverId === userId && a.status === QuotationApprovalStatus.APPROVED,
     );
 
     let isSelfApproval = false;
@@ -371,19 +439,21 @@ export class RFQService {
 
       if (otherApprovers > 0) {
         throw new BadRequestException(
-          'Separation of duties: you have already approved this quotation. A different user must approve this level.'
+          'Separation of duties: you have already approved this quotation. A different user must approve this level.',
         );
       }
 
       // Self-approve fallback: no other approvers available
       if (!dto.justification?.trim()) {
         throw new BadRequestException(
-          'You are the only approver available. Please provide a justification for self-approval.'
+          'You are the only approver available. Please provide a justification for self-approval.',
         );
       }
 
       isSelfApproval = true;
-      this.logger.warn(`Self-approval by user ${userId} on quotation ${approval.quotationId} — no other approvers. Justification: ${dto.justification}`);
+      this.logger.warn(
+        `Self-approval by user ${userId} on quotation ${approval.quotationId} — no other approvers. Justification: ${dto.justification}`,
+      );
     }
 
     approval.status = QuotationApprovalStatus.APPROVED;
@@ -391,12 +461,16 @@ export class RFQService {
     approval.approvedAt = new Date();
     approval.comments = dto.comments || '';
     approval.selfApproved = isSelfApproval;
-    approval.justification = isSelfApproval ? (dto.justification || null) : null;
+    approval.justification = isSelfApproval ? dto.justification || null : null;
     await this.approvalRepo.save(approval);
 
     // Check if all approvals are complete
-    const updatedApprovals = await this.approvalRepo.find({ where: { quotationId: approval.quotationId, ...(tenantId ? { tenantId } : {}) } });
-    const allApproved = updatedApprovals.every((a) => a.status === QuotationApprovalStatus.APPROVED);
+    const updatedApprovals = await this.approvalRepo.find({
+      where: { quotationId: approval.quotationId, ...(tenantId ? { tenantId } : {}) },
+    });
+    const allApproved = updatedApprovals.every(
+      (a) => a.status === QuotationApprovalStatus.APPROVED,
+    );
 
     if (allApproved) {
       const quotation = await this.getQuotation(approval.quotationId, tenantId);
@@ -413,7 +487,12 @@ export class RFQService {
     return approval;
   }
 
-  async rejectQuotation(approvalId: string, dto: RejectQuotationDto, userId: string, tenantId?: string): Promise<QuotationApproval> {
+  async rejectQuotation(
+    approvalId: string,
+    dto: RejectQuotationDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<QuotationApproval> {
     const approval = await this.approvalRepo.findOne({
       where: { id: approvalId, ...(tenantId ? { tenantId } : {}) },
       relations: ['quotation'],

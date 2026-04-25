@@ -12,11 +12,7 @@ import {
   EquipmentCalibration,
   EquipmentMaintenance,
 } from '../../database/entities/lab-equipment.entity';
-import {
-  QCMaterial,
-  QCResult,
-  QCLeveyJenningsData,
-} from '../../database/entities/lab-qc.entity';
+import { QCMaterial, QCResult, QCLeveyJenningsData } from '../../database/entities/lab-qc.entity';
 
 @Module({
   imports: [

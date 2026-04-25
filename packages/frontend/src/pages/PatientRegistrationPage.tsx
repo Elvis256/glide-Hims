@@ -404,6 +404,11 @@ export default function PatientRegistrationPage() {
       });
       setShowSuccess(true);
       setShowDuplicateWarning(false);
+      
+      if (billImmediately) {
+          toast.success("Patient registered! Redirecting to Billing...");
+          navigate(`/billing/opd/new?patientId=${patient.id}`);
+      }
     },
   });
 
@@ -1106,8 +1111,23 @@ export default function PatientRegistrationPage() {
           >
             Cancel
           </button>
+          <div className="flex items-center space-x-2 my-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
+            <input
+              type="checkbox"
+              id="billImmediately"
+              checked={billImmediately}
+              onChange={(e) => setBillImmediately(e.target.checked)}
+              className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+            />
+            <label htmlFor="billImmediately" className="flex items-center text-sm font-medium text-gray-700">
+              <Wallet className="w-4 h-4 mr-2 text-blue-600" />
+              Proceed directly to Billing after registration
+            </label>
+          </div>
+
           <button
-            type="submit"
+              type="submit"
+
             disabled={createMutation.isPending || checkDuplicatesMutation.isPending || !isFormValid}
             className={`btn-primary flex-1 flex items-center justify-center gap-2 ${
               !isFormValid ? 'opacity-50 cursor-not-allowed' : ''

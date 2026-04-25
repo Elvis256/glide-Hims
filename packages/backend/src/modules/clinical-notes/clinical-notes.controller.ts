@@ -9,14 +9,19 @@ import {
   Query,
   Request,
   ParseUUIDPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { ClinicalNotesService } from './clinical-notes.service';
 import { CreateClinicalNoteDto, UpdateClinicalNoteDto } from './clinical-notes.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('Clinical Notes')
 @ApiBearerAuth()
+@UseGuards(ModuleGuard)
+@RequireModule('doctors')
 @Controller('clinical-notes')
 export class ClinicalNotesController {
   constructor(private readonly notesService: ClinicalNotesService) {}
@@ -61,7 +66,13 @@ export class ClinicalNotesController {
     @Body() dto: UpdateClinicalNoteDto,
     @Request() req: any,
   ) {
-    return this.notesService.update(id, dto, req.user.id, req.user?.roles || [], req.user?.tenantId);
+    return this.notesService.update(
+      id,
+      dto,
+      req.user.id,
+      req.user?.roles || [],
+      req.user?.tenantId,
+    );
   }
 
   @Delete(':id')

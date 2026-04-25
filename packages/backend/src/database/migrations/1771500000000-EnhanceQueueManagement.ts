@@ -6,23 +6,51 @@ export class EnhanceQueueManagement1771500000000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Extend service_point enum with new values (real enum name is queues_servicepoint_enum)
     await queryRunner.query(`ALTER TYPE "queues_servicepoint_enum" ADD VALUE IF NOT EXISTS 'ipd'`);
-    await queryRunner.query(`ALTER TYPE "queues_servicepoint_enum" ADD VALUE IF NOT EXISTS 'emergency'`);
-    await queryRunner.query(`ALTER TYPE "queues_servicepoint_enum" ADD VALUE IF NOT EXISTS 'theatre'`);
-    await queryRunner.query(`ALTER TYPE "queues_servicepoint_enum" ADD VALUE IF NOT EXISTS 'physiotherapy'`);
-    await queryRunner.query(`ALTER TYPE "queues_servicepoint_enum" ADD VALUE IF NOT EXISTS 'dental'`);
-    await queryRunner.query(`ALTER TYPE "queues_servicepoint_enum" ADD VALUE IF NOT EXISTS 'optical'`);
-    await queryRunner.query(`ALTER TYPE "queues_servicepoint_enum" ADD VALUE IF NOT EXISTS 'nutrition'`);
-    await queryRunner.query(`ALTER TYPE "queues_servicepoint_enum" ADD VALUE IF NOT EXISTS 'counselling'`);
+    await queryRunner.query(
+      `ALTER TYPE "queues_servicepoint_enum" ADD VALUE IF NOT EXISTS 'emergency'`,
+    );
+    await queryRunner.query(
+      `ALTER TYPE "queues_servicepoint_enum" ADD VALUE IF NOT EXISTS 'theatre'`,
+    );
+    await queryRunner.query(
+      `ALTER TYPE "queues_servicepoint_enum" ADD VALUE IF NOT EXISTS 'physiotherapy'`,
+    );
+    await queryRunner.query(
+      `ALTER TYPE "queues_servicepoint_enum" ADD VALUE IF NOT EXISTS 'dental'`,
+    );
+    await queryRunner.query(
+      `ALTER TYPE "queues_servicepoint_enum" ADD VALUE IF NOT EXISTS 'optical'`,
+    );
+    await queryRunner.query(
+      `ALTER TYPE "queues_servicepoint_enum" ADD VALUE IF NOT EXISTS 'nutrition'`,
+    );
+    await queryRunner.query(
+      `ALTER TYPE "queues_servicepoint_enum" ADD VALUE IF NOT EXISTS 'counselling'`,
+    );
 
     // Columns already added by TypeORM sync — add IF NOT EXISTS as safety
-    await queryRunner.query(`ALTER TABLE "queues" ADD COLUMN IF NOT EXISTS "next_service_point" varchar`);
-    await queryRunner.query(`ALTER TABLE "queues" ADD COLUMN IF NOT EXISTS "visit_type" varchar(50)`);
-    await queryRunner.query(`ALTER TABLE "queues" ADD COLUMN IF NOT EXISTS "chief_complaint_at_token" text`);
-    await queryRunner.query(`ALTER TABLE "queues" ADD COLUMN IF NOT EXISTS "patient_condition_flags" jsonb`);
-    await queryRunner.query(`ALTER TABLE "queues" ADD COLUMN IF NOT EXISTS "on_hold" boolean NOT NULL DEFAULT false`);
+    await queryRunner.query(
+      `ALTER TABLE "queues" ADD COLUMN IF NOT EXISTS "next_service_point" varchar`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "queues" ADD COLUMN IF NOT EXISTS "visit_type" varchar(50)`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "queues" ADD COLUMN IF NOT EXISTS "chief_complaint_at_token" text`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "queues" ADD COLUMN IF NOT EXISTS "patient_condition_flags" jsonb`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "queues" ADD COLUMN IF NOT EXISTS "on_hold" boolean NOT NULL DEFAULT false`,
+    );
     await queryRunner.query(`ALTER TABLE "queues" ADD COLUMN IF NOT EXISTS "hold_reason" text`);
-    await queryRunner.query(`ALTER TABLE "queues" ADD COLUMN IF NOT EXISTS "hold_started_at" timestamptz`);
-    await queryRunner.query(`ALTER TABLE "queues" ADD COLUMN IF NOT EXISTS "previous_service_point" varchar`);
+    await queryRunner.query(
+      `ALTER TABLE "queues" ADD COLUMN IF NOT EXISTS "hold_started_at" timestamptz`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "queues" ADD COLUMN IF NOT EXISTS "previous_service_point" varchar`,
+    );
 
     // Queue audit log table for regulatory compliance
     await queryRunner.query(`
@@ -39,8 +67,12 @@ export class EnhanceQueueManagement1771500000000 implements MigrationInterface {
         CONSTRAINT "PK_queue_audit_logs" PRIMARY KEY ("id")
       )
     `);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_queue_audit_queue_id" ON "queue_audit_logs" ("queue_id")`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_queue_audit_created_at" ON "queue_audit_logs" ("created_at")`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_queue_audit_queue_id" ON "queue_audit_logs" ("queue_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_queue_audit_created_at" ON "queue_audit_logs" ("created_at")`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
@@ -50,7 +82,9 @@ export class EnhanceQueueManagement1771500000000 implements MigrationInterface {
     await queryRunner.query(`ALTER TABLE "queues" DROP COLUMN IF EXISTS "hold_reason"`);
     await queryRunner.query(`ALTER TABLE "queues" DROP COLUMN IF EXISTS "on_hold"`);
     await queryRunner.query(`ALTER TABLE "queues" DROP COLUMN IF EXISTS "patient_condition_flags"`);
-    await queryRunner.query(`ALTER TABLE "queues" DROP COLUMN IF EXISTS "chief_complaint_at_token"`);
+    await queryRunner.query(
+      `ALTER TABLE "queues" DROP COLUMN IF EXISTS "chief_complaint_at_token"`,
+    );
     await queryRunner.query(`ALTER TABLE "queues" DROP COLUMN IF EXISTS "visit_type"`);
   }
 }

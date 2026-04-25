@@ -1,6 +1,23 @@
-import { IsString, IsOptional, IsEnum, IsUUID, IsDateString, IsNumber, Min, IsArray, ValidateNested, IsIn, IsNotEmpty, ArrayMinSize } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsEnum,
+  IsUUID,
+  IsDateString,
+  IsNumber,
+  Min,
+  IsArray,
+  ValidateNested,
+  IsIn,
+  IsNotEmpty,
+  ArrayMinSize,
+} from 'class-validator';
 import { Type } from 'class-transformer';
-import { EncounterType, EncounterStatus, PayerType } from '../../database/entities/encounter.entity';
+import {
+  EncounterType,
+  EncounterStatus,
+  PayerType,
+} from '../../database/entities/encounter.entity';
 
 export class CreateEncounterDto {
   @IsUUID()

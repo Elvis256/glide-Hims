@@ -83,10 +83,7 @@ export class UpdatesService {
   async createVersion(data: Partial<AppVersion>): Promise<AppVersion> {
     // Unset previous latest
     if (data.isLatest) {
-      await this.versionRepository.update(
-        { isLatest: true },
-        { isLatest: false },
-      );
+      await this.versionRepository.update({ isLatest: true }, { isLatest: false });
     }
 
     const version = this.versionRepository.create(data);
@@ -97,10 +94,7 @@ export class UpdatesService {
    * Set version as latest
    */
   async setLatestVersion(version: string): Promise<AppVersion> {
-    await this.versionRepository.update(
-      { isLatest: true },
-      { isLatest: false },
-    );
+    await this.versionRepository.update({ isLatest: true }, { isLatest: false });
 
     const appVersion = await this.versionRepository.findOne({
       where: { version },
@@ -122,9 +116,7 @@ export class UpdatesService {
       order: { releasedAt: 'ASC' },
     });
 
-    return versions.filter(
-      (v) => this.compareVersions(currentVersion, v.version) < 0,
-    );
+    return versions.filter((v) => this.compareVersions(currentVersion, v.version) < 0);
   }
 
   /**

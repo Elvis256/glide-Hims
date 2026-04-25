@@ -8,14 +8,19 @@ import {
   Query,
   Request,
   ParseUUIDPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AdherenceService } from './adherence.service';
 import { RecordAdherenceDto } from './dto/adherence.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('Adherence')
 @ApiBearerAuth()
+@UseGuards(ModuleGuard)
+@RequireModule('chronic-care')
 @Controller('adherence')
 export class AdherenceController {
   constructor(private readonly adherenceService: AdherenceService) {}

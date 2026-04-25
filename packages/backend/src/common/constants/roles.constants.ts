@@ -15,7 +15,7 @@ export const SYSTEM_ROLES = {
   ACCOUNTANT: 'Accountant',
 } as const;
 
-export type SystemRole = typeof SYSTEM_ROLES[keyof typeof SYSTEM_ROLES];
+export type SystemRole = (typeof SYSTEM_ROLES)[keyof typeof SYSTEM_ROLES];
 
 /**
  * Check if a role name is Super Admin
@@ -63,9 +63,6 @@ export const PERMISSION_ACTIONS = {
  * Build a permission code
  * @example buildPermission('patients', 'read') => 'patients.read'
  */
-export function buildPermission(
-  module: string,
-  action: string,
-): string {
+export function buildPermission(module: string, action: string): string {
   return `${module}.${action}`;
 }

@@ -15,17 +15,35 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
   {
     code: 'registration',
     name: 'Registration',
-    requiredPermissions: ['patients.read', 'patients.create', 'queue.read', 'queue.create', 'appointments.read'],
+    requiredPermissions: [
+      'patients.read',
+      'patients.create',
+      'queue.read',
+      'queue.create',
+      'appointments.read',
+    ],
   },
   {
     code: 'nursing',
     name: 'Nursing',
-    requiredPermissions: ['vitals.read', 'vitals.create', 'nursing.read', 'triage.read', 'encounters.create'],
+    requiredPermissions: [
+      'vitals.read',
+      'vitals.create',
+      'nursing.read',
+      'triage.read',
+      'encounters.create',
+    ],
   },
   {
     code: 'doctors',
     name: 'Doctors',
-    requiredPermissions: ['encounters.read', 'encounters.create', 'diagnoses.create', 'prescriptions.create', 'orders.create'],
+    requiredPermissions: [
+      'encounters.read',
+      'encounters.create',
+      'diagnoses.create',
+      'prescriptions.create',
+      'orders.create',
+    ],
   },
   {
     code: 'chronic-care',
@@ -45,7 +63,12 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
   {
     code: 'pharmacy',
     name: 'Pharmacy',
-    requiredPermissions: ['pharmacy.read', 'pharmacy.create', 'prescriptions.read', 'prescriptions.update'],
+    requiredPermissions: [
+      'pharmacy.read',
+      'pharmacy.create',
+      'prescriptions.read',
+      'prescriptions.update',
+    ],
   },
   {
     code: 'ipd',
@@ -70,7 +93,13 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
   {
     code: 'hr',
     name: 'HR',
-    requiredPermissions: ['hr.read', 'employees.read', 'leave.read', 'payroll.read', 'attendance.read'],
+    requiredPermissions: [
+      'hr.read',
+      'employees.read',
+      'leave.read',
+      'payroll.read',
+      'attendance.read',
+    ],
   },
   {
     code: 'assets',
@@ -115,7 +144,13 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
   {
     code: 'admin',
     name: 'Admin',
-    requiredPermissions: ['roles.read', 'users.read', 'settings.read', 'facilities.update', 'admin.read'],
+    requiredPermissions: [
+      'roles.read',
+      'users.read',
+      'settings.read',
+      'facilities.update',
+      'admin.read',
+    ],
   },
 ];
 
@@ -164,7 +199,7 @@ export function presetModulesToSidebarCodes(presetModules: string[]): string[] {
     const mapped = PRESET_TO_SIDEBAR_MAP[mod];
     if (mapped) {
       if (Array.isArray(mapped)) {
-        mapped.forEach(m => codes.add(m));
+        mapped.forEach((m) => codes.add(m));
       } else {
         codes.add(mapped);
       }
@@ -193,19 +228,17 @@ export function getAccessibleModules(
 
   let modules: string[];
   if (isSuperAdmin) {
-    modules = MODULE_REGISTRY.map(m => m.code);
+    modules = MODULE_REGISTRY.map((m) => m.code);
   } else {
-    modules = MODULE_REGISTRY
-      .filter(mod => mod.requiredPermissions.some(p => userPermissions.includes(p)))
-      .map(mod => mod.code);
+    modules = MODULE_REGISTRY.filter((mod) =>
+      mod.requiredPermissions.some((p) => userPermissions.includes(p)),
+    ).map((mod) => mod.code);
   }
 
   // Filter by tenant's enabled modules if available
   if (tenantEnabledModules && tenantEnabledModules.length > 0) {
     const allowedCodes = presetModulesToSidebarCodes(tenantEnabledModules);
-    modules = modules.filter(
-      m => alwaysAllowed.includes(m) || allowedCodes.includes(m),
-    );
+    modules = modules.filter((m) => alwaysAllowed.includes(m) || allowedCodes.includes(m));
   }
 
   return modules;

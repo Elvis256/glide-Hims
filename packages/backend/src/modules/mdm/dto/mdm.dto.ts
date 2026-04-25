@@ -1,5 +1,8 @@
 import { IsString, IsOptional, IsEnum, IsUUID } from 'class-validator';
-import { MasterDataEntityType, ApprovalStatus } from '../../../database/entities/master-data-version.entity';
+import {
+  MasterDataEntityType,
+  ApprovalStatus,
+} from '../../../database/entities/master-data-version.entity';
 
 export class MasterDataVersionQueryDto {
   @IsOptional()

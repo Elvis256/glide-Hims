@@ -7,9 +7,7 @@ import { EmergencyService } from './emergency.service';
 import { EmergencyController } from './emergency.controller';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([EmergencyCase, Encounter, Patient]),
-  ],
+  imports: [TypeOrmModule.forFeature([EmergencyCase, Encounter, Patient])],
   controllers: [EmergencyController],
   providers: [EmergencyService],
   exports: [EmergencyService],

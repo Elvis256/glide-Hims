@@ -1,5 +1,10 @@
 import { NestFactory, Reflector } from '@nestjs/core';
-import { ValidationPipe, BadRequestException, Logger, ClassSerializerInterceptor } from '@nestjs/common';
+import {
+  ValidationPipe,
+  BadRequestException,
+  Logger,
+  ClassSerializerInterceptor,
+} from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
@@ -17,17 +22,19 @@ import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
-  
+
   // HTTPS configuration
   const sslKeyPath = join(__dirname, '..', 'ssl', 'server.key');
   const sslCertPath = join(__dirname, '..', 'ssl', 'server.crt');
   const useHttps = existsSync(sslKeyPath) && existsSync(sslCertPath);
-  
-  const httpsOptions = useHttps ? {
-    key: readFileSync(sslKeyPath),
-    cert: readFileSync(sslCertPath),
-  } : undefined;
-  
+
+  const httpsOptions = useHttps
+    ? {
+        key: readFileSync(sslKeyPath),
+        cert: readFileSync(sslCertPath),
+      }
+    : undefined;
+
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     httpsOptions,
   });
@@ -39,12 +46,26 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
 
   // Validate critical environment variables
-  const requiredEnvVars = ['DB_HOST', 'DB_USERNAME', 'DB_PASSWORD', 'DB_NAME', 'JWT_SECRET', 'JWT_REFRESH_SECRET'];
+  const requiredEnvVars = [
+    'DB_HOST',
+    'DB_USERNAME',
+    'DB_PASSWORD',
+    'DB_NAME',
+    'JWT_SECRET',
+    'JWT_REFRESH_SECRET',
+  ];
   for (const envVar of requiredEnvVars) {
     if (!configService.get(envVar)) {
       logger.error(`Missing required environment variable: ${envVar}`);
       process.exit(1);
     }
+  }
+
+  // Warn if MFA encryption key is missing — MFA features will fail at runtime
+  if (!configService.get('MFA_ENCRYPTION_KEY')) {
+    logger.warn(
+      'MFA_ENCRYPTION_KEY is not set — MFA enrollment/verification will fail. Set this variable to enable MFA support.',
+    );
   }
   const jwtSecret = configService.get<string>('JWT_SECRET', '');
   const isProduction = configService.get('NODE_ENV') === 'production';
@@ -54,7 +75,9 @@ async function bootstrap() {
       process.exit(1);
     }
     if (jwtSecret.includes('dev') || jwtSecret.includes('test') || jwtSecret.includes('xxx')) {
-      logger.error('JWT_SECRET appears to be a development value — use a cryptographically random secret in production');
+      logger.error(
+        'JWT_SECRET appears to be a development value — use a cryptographically random secret in production',
+      );
       process.exit(1);
     }
     if (!configService.get('MFA_ENCRYPTION_KEY')) {
@@ -67,21 +90,25 @@ async function bootstrap() {
 
   // Security: Helmet HTTP headers
   const isDev = configService.get('NODE_ENV') !== 'production';
-  app.use(helmet({
-    contentSecurityPolicy: isDev ? false : {
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", 'data:', 'blob:'],
-        connectSrc: ["'self'"],
-        fontSrc: ["'self'", 'data:'],
-        objectSrc: ["'none'"],
-        frameAncestors: ["'none'"],
-      },
-    },
-    hsts: useHttps ? { maxAge: 31536000, includeSubDomains: true } : false,
-  }));
+  app.use(
+    helmet({
+      contentSecurityPolicy: isDev
+        ? false
+        : {
+            directives: {
+              defaultSrc: ["'self'"],
+              scriptSrc: ["'self'"],
+              styleSrc: ["'self'", "'unsafe-inline'"],
+              imgSrc: ["'self'", 'data:', 'blob:'],
+              connectSrc: ["'self'"],
+              fontSrc: ["'self'", 'data:'],
+              objectSrc: ["'none'"],
+              frameAncestors: ["'none'"],
+            },
+          },
+      hsts: useHttps ? { maxAge: 31536000, includeSubDomains: true } : false,
+    }),
+  );
 
   // Correlation ID middleware (request tracing)
   app.use(correlationIdMiddleware);
@@ -119,7 +146,7 @@ async function bootstrap() {
         enableImplicitConversion: true,
       },
       exceptionFactory: (errors) => {
-        const messages = errors.map(err => ({
+        const messages = errors.map((err) => ({
           field: err.property,
           errors: Object.values(err.constraints || {}),
         }));
@@ -139,10 +166,16 @@ async function bootstrap() {
   // CORS Configuration
   const corsOrigins = configService.get<string>('CORS_ORIGINS', 'http://localhost:5173');
   app.enableCors({
-    origin: corsOrigins.split(',').map(o => o.trim()),
+    origin: corsOrigins.split(',').map((o) => o.trim()),
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Facility-Id', 'X-Tenant-Id', 'X-Request-Id'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Facility-Id',
+      'X-Tenant-Id',
+      'X-Request-Id',
+    ],
     exposedHeaders: ['X-Request-Id'],
   });
 

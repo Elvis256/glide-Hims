@@ -13,7 +13,15 @@ import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, UserRole, Role, Employee, UserPermission, Permission, AuditLog]),
+    TypeOrmModule.forFeature([
+      User,
+      UserRole,
+      Role,
+      Employee,
+      UserPermission,
+      Permission,
+      AuditLog,
+    ]),
     forwardRef(() => AuthModule),
   ],
   controllers: [UsersController],

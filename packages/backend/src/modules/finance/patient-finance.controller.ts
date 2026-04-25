@@ -7,6 +7,7 @@ import {
   Param,
   Query,
   Request,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { PatientFinanceService } from './patient-finance.service';
@@ -20,9 +21,13 @@ import {
   ApproveWaiverDto,
   RejectWaiverDto,
 } from './dto/finance.dto';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('Patient Finance')
 @ApiBearerAuth()
+@UseGuards(ModuleGuard)
+@RequireModule('finance')
 @Controller('finance/patient')
 export class PatientFinanceController {
   constructor(private readonly patientFinanceService: PatientFinanceService) {}
@@ -103,24 +108,14 @@ export class PatientFinanceController {
   @Get(':patientId/deposits')
   @AuthWithPermissions('finance.read')
   @ApiOperation({ summary: 'Get deposits for a patient' })
-  async getPatientDeposits(
-    @Param('patientId') patientId: string,
-    @Request() req: any,
-  ) {
-    return this.patientFinanceService.getPatientDeposits(
-      patientId,
-      req.user?.tenantId,
-    );
+  async getPatientDeposits(@Param('patientId') patientId: string, @Request() req: any) {
+    return this.patientFinanceService.getPatientDeposits(patientId, req.user?.tenantId);
   }
 
   @Post('deposits/:id/apply')
   @AuthWithPermissions('finance.manage')
   @ApiOperation({ summary: 'Apply a deposit to an invoice' })
-  async applyDeposit(
-    @Param('id') id: string,
-    @Body() body: ApplyDepositDto,
-    @Request() req: any,
-  ) {
+  async applyDeposit(@Param('id') id: string, @Body() body: ApplyDepositDto, @Request() req: any) {
     return this.patientFinanceService.applyDeposit(
       id,
       body.invoiceId,
@@ -133,14 +128,8 @@ export class PatientFinanceController {
   @Get(':patientId/balance')
   @AuthWithPermissions('finance.read')
   @ApiOperation({ summary: 'Get patient deposit balance' })
-  async getPatientBalance(
-    @Param('patientId') patientId: string,
-    @Request() req: any,
-  ) {
-    return this.patientFinanceService.getPatientBalance(
-      patientId,
-      req.user?.tenantId,
-    );
+  async getPatientBalance(@Param('patientId') patientId: string, @Request() req: any) {
+    return this.patientFinanceService.getPatientBalance(patientId, req.user?.tenantId);
   }
 
   // ============ WAIVERS ============
@@ -172,11 +161,7 @@ export class PatientFinanceController {
     @Query('status') status?: string,
     @Request() req?: any,
   ) {
-    return this.patientFinanceService.findAllWaivers(
-      facilityId,
-      status,
-      req?.user?.tenantId,
-    );
+    return this.patientFinanceService.findAllWaivers(facilityId, status, req?.user?.tenantId);
   }
 
   @Patch('waivers/:id/approve')
@@ -199,11 +184,7 @@ export class PatientFinanceController {
   @Patch('waivers/:id/reject')
   @AuthWithPermissions('finance.manage')
   @ApiOperation({ summary: 'Reject a waiver' })
-  async rejectWaiver(
-    @Param('id') id: string,
-    @Body() body: RejectWaiverDto,
-    @Request() req: any,
-  ) {
+  async rejectWaiver(@Param('id') id: string, @Body() body: RejectWaiverDto, @Request() req: any) {
     return this.patientFinanceService.rejectWaiver(
       id,
       body.userId ?? req.user?.id,

@@ -10,7 +10,7 @@ export const BUSINESS_TYPES = {
   PHARMACY: 'pharmacy',
 } as const;
 
-export type BusinessType = typeof BUSINESS_TYPES[keyof typeof BUSINESS_TYPES];
+export type BusinessType = (typeof BUSINESS_TYPES)[keyof typeof BUSINESS_TYPES];
 
 export const FACILITY_MODES = {
   SINGLE_USER: 'single_user',
@@ -23,7 +23,7 @@ export const FACILITY_MODES = {
   PHARMACY_WHOLESALE: 'pharmacy_wholesale',
 } as const;
 
-export type FacilityMode = typeof FACILITY_MODES[keyof typeof FACILITY_MODES];
+export type FacilityMode = (typeof FACILITY_MODES)[keyof typeof FACILITY_MODES];
 
 export interface FacilityPreset {
   mode: FacilityMode;
@@ -45,14 +45,23 @@ export const FACILITY_PRESETS: FacilityPreset[] = [
     mode: FACILITY_MODES.SINGLE_USER,
     businessType: BUSINESS_TYPES.HOSPITAL,
     name: 'Single-User Clinic',
-    description: 'Everything done by one person on one computer. Includes all core modules with simplified workflows.',
+    description:
+      'Everything done by one person on one computer. Includes all core modules with simplified workflows.',
     icon: 'monitor',
     facilityType: 'clinic',
     supportsMultiSite: false,
     singleUserMode: true,
     enabledModules: [
-      'patients', 'encounters', 'vitals', 'lab', 'pharmacy',
-      'radiology', 'billing', 'inventory', 'insurance', 'reports',
+      'patients',
+      'encounters',
+      'vitals',
+      'lab',
+      'pharmacy',
+      'radiology',
+      'billing',
+      'inventory',
+      'insurance',
+      'reports',
     ],
     recommendedRoles: ['Clinic Staff'],
     notes: [
@@ -71,10 +80,26 @@ export const FACILITY_PRESETS: FacilityPreset[] = [
     supportsMultiSite: false,
     singleUserMode: false,
     enabledModules: [
-      'patients', 'encounters', 'vitals', 'lab', 'pharmacy',
-      'radiology', 'billing', 'inventory', 'insurance', 'reports', 'appointments',
+      'patients',
+      'encounters',
+      'vitals',
+      'lab',
+      'pharmacy',
+      'radiology',
+      'billing',
+      'inventory',
+      'insurance',
+      'reports',
+      'appointments',
     ],
-    recommendedRoles: ['Doctor', 'Nurse', 'Receptionist', 'Pharmacist', 'Lab Technician', 'Cashier'],
+    recommendedRoles: [
+      'Doctor',
+      'Nurse',
+      'Receptionist',
+      'Pharmacist',
+      'Lab Technician',
+      'Cashier',
+    ],
     notes: [
       'OPD consultations, triage, vitals recording',
       'Lab and pharmacy services included',
@@ -91,11 +116,28 @@ export const FACILITY_PRESETS: FacilityPreset[] = [
     supportsMultiSite: false,
     singleUserMode: false,
     enabledModules: [
-      'patients', 'encounters', 'vitals', 'lab', 'pharmacy',
-      'radiology', 'billing', 'inventory', 'insurance', 'reports',
-      'appointments', 'ipd',
+      'patients',
+      'encounters',
+      'vitals',
+      'lab',
+      'pharmacy',
+      'radiology',
+      'billing',
+      'inventory',
+      'insurance',
+      'reports',
+      'appointments',
+      'ipd',
     ],
-    recommendedRoles: ['Doctor', 'Nurse', 'Receptionist', 'Pharmacist', 'Lab Technician', 'Cashier', 'Store Keeper'],
+    recommendedRoles: [
+      'Doctor',
+      'Nurse',
+      'Receptionist',
+      'Pharmacist',
+      'Lab Technician',
+      'Cashier',
+      'Store Keeper',
+    ],
     notes: [
       'Supports ward admissions and discharges',
       'OPD and IPD billing integration',
@@ -106,16 +148,32 @@ export const FACILITY_PRESETS: FacilityPreset[] = [
     mode: FACILITY_MODES.MULTISITE_OPD,
     businessType: BUSINESS_TYPES.HOSPITAL,
     name: 'Multi-Site OPD Network',
-    description: 'Multiple outpatient-only locations under one organization. Each site operates independently with centralised reporting.',
+    description:
+      'Multiple outpatient-only locations under one organization. Each site operates independently with centralised reporting.',
     icon: 'map-pin',
     facilityType: 'clinic',
     supportsMultiSite: true,
     singleUserMode: false,
     enabledModules: [
-      'patients', 'encounters', 'vitals', 'lab', 'pharmacy',
-      'billing', 'inventory', 'insurance', 'reports', 'appointments',
+      'patients',
+      'encounters',
+      'vitals',
+      'lab',
+      'pharmacy',
+      'billing',
+      'inventory',
+      'insurance',
+      'reports',
+      'appointments',
     ],
-    recommendedRoles: ['Doctor', 'Nurse', 'Receptionist', 'Pharmacist', 'Lab Technician', 'Cashier'],
+    recommendedRoles: [
+      'Doctor',
+      'Nurse',
+      'Receptionist',
+      'Pharmacist',
+      'Lab Technician',
+      'Cashier',
+    ],
     notes: [
       'Add branch facilities after setup via Facilities > Add Branch',
       'Each branch has its own staff and patient queues',
@@ -127,19 +185,42 @@ export const FACILITY_PRESETS: FacilityPreset[] = [
     mode: FACILITY_MODES.HOSPITAL,
     businessType: BUSINESS_TYPES.HOSPITAL,
     name: 'Full Hospital',
-    description: 'Complete hospital management with all modules: OPD, IPD, Emergency, Theatre, Maternity, HR, and Finance.',
+    description:
+      'Complete hospital management with all modules: OPD, IPD, Emergency, Theatre, Maternity, HR, and Finance.',
     icon: 'building',
     facilityType: 'hospital',
     supportsMultiSite: true,
     singleUserMode: false,
     enabledModules: [
-      'patients', 'encounters', 'vitals', 'lab', 'pharmacy',
-      'radiology', 'billing', 'inventory', 'insurance', 'reports',
-      'appointments', 'ipd', 'emergency', 'theatre', 'maternity', 'hr', 'finance',
+      'patients',
+      'encounters',
+      'vitals',
+      'lab',
+      'pharmacy',
+      'radiology',
+      'billing',
+      'inventory',
+      'insurance',
+      'reports',
+      'appointments',
+      'ipd',
+      'emergency',
+      'theatre',
+      'maternity',
+      'hr',
+      'finance',
     ],
     recommendedRoles: [
-      'Doctor', 'Nurse', 'Receptionist', 'Pharmacist', 'Lab Technician',
-      'Cashier', 'Store Keeper', 'HR Manager', 'Accountant', 'Radiologist',
+      'Doctor',
+      'Nurse',
+      'Receptionist',
+      'Pharmacist',
+      'Lab Technician',
+      'Cashier',
+      'Store Keeper',
+      'HR Manager',
+      'Accountant',
+      'Radiologist',
     ],
     notes: [
       'All modules enabled including HR and Finance',
@@ -153,15 +234,23 @@ export const FACILITY_PRESETS: FacilityPreset[] = [
     mode: FACILITY_MODES.PHARMACY_RETAIL,
     businessType: BUSINESS_TYPES.PHARMACY,
     name: 'Retail Pharmacy',
-    description: 'Single-location retail pharmacy with POS, dispensing, stock management, and controlled substance tracking.',
+    description:
+      'Single-location retail pharmacy with POS, dispensing, stock management, and controlled substance tracking.',
     icon: 'pill',
     facilityType: 'pharmacy',
     supportsMultiSite: false,
     singleUserMode: false,
     enabledModules: [
-      'patients', 'pharmacy', 'pos', 'billing', 'inventory',
-      'controlled_substances', 'drug_interactions', 'insurance',
-      'reports', 'suppliers',
+      'patients',
+      'pharmacy',
+      'pos',
+      'billing',
+      'inventory',
+      'controlled_substances',
+      'drug_interactions',
+      'insurance',
+      'reports',
+      'suppliers',
     ],
     recommendedRoles: ['Pharmacist', 'Pharmacy Technician', 'Cashier', 'Store Keeper'],
     notes: [
@@ -175,17 +264,35 @@ export const FACILITY_PRESETS: FacilityPreset[] = [
     mode: FACILITY_MODES.PHARMACY_CHAIN,
     businessType: BUSINESS_TYPES.PHARMACY,
     name: 'Pharmacy Chain',
-    description: 'Multi-branch pharmacy network with centralised purchasing, stock transfers, and consolidated reporting.',
+    description:
+      'Multi-branch pharmacy network with centralised purchasing, stock transfers, and consolidated reporting.',
     icon: 'store',
     facilityType: 'pharmacy',
     supportsMultiSite: true,
     singleUserMode: false,
     enabledModules: [
-      'patients', 'pharmacy', 'pos', 'billing', 'inventory',
-      'controlled_substances', 'drug_interactions', 'insurance',
-      'reports', 'suppliers', 'hr', 'finance',
+      'patients',
+      'pharmacy',
+      'pos',
+      'billing',
+      'inventory',
+      'controlled_substances',
+      'drug_interactions',
+      'insurance',
+      'reports',
+      'suppliers',
+      'hr',
+      'finance',
     ],
-    recommendedRoles: ['Pharmacist', 'Pharmacy Technician', 'Cashier', 'Store Keeper', 'Branch Manager', 'HR Manager', 'Accountant'],
+    recommendedRoles: [
+      'Pharmacist',
+      'Pharmacy Technician',
+      'Cashier',
+      'Store Keeper',
+      'Branch Manager',
+      'HR Manager',
+      'Accountant',
+    ],
     notes: [
       'Central purchasing with branch-level stock transfers',
       'Consolidated reporting across all branches',
@@ -197,17 +304,34 @@ export const FACILITY_PRESETS: FacilityPreset[] = [
     mode: FACILITY_MODES.PHARMACY_WHOLESALE,
     businessType: BUSINESS_TYPES.PHARMACY,
     name: 'Wholesale / Distribution Pharmacy',
-    description: 'Wholesale pharmaceutical distributor with B2B sales, pricing tiers, delivery tracking, and full supply chain.',
+    description:
+      'Wholesale pharmaceutical distributor with B2B sales, pricing tiers, delivery tracking, and full supply chain.',
     icon: 'warehouse',
     facilityType: 'pharmacy',
     supportsMultiSite: true,
     singleUserMode: false,
     enabledModules: [
-      'pharmacy', 'pos', 'billing', 'inventory',
-      'controlled_substances', 'drug_interactions',
-      'wholesale', 'reports', 'suppliers', 'hr', 'finance',
+      'pharmacy',
+      'pos',
+      'billing',
+      'inventory',
+      'controlled_substances',
+      'drug_interactions',
+      'wholesale',
+      'reports',
+      'suppliers',
+      'hr',
+      'finance',
     ],
-    recommendedRoles: ['Pharmacist', 'Sales Representative', 'Warehouse Manager', 'Store Keeper', 'Driver', 'HR Manager', 'Accountant'],
+    recommendedRoles: [
+      'Pharmacist',
+      'Sales Representative',
+      'Warehouse Manager',
+      'Store Keeper',
+      'Driver',
+      'HR Manager',
+      'Accountant',
+    ],
     notes: [
       'B2B order management with customer accounts',
       'Tiered pricing for different customer categories',
@@ -221,12 +345,12 @@ export const FACILITY_PRESETS: FacilityPreset[] = [
  * Get a preset by mode code
  */
 export function getPreset(mode: FacilityMode): FacilityPreset | undefined {
-  return FACILITY_PRESETS.find(p => p.mode === mode);
+  return FACILITY_PRESETS.find((p) => p.mode === mode);
 }
 
 /**
  * Get all presets for a given business type
  */
 export function getPresetsByBusinessType(businessType: BusinessType): FacilityPreset[] {
-  return FACILITY_PRESETS.filter(p => p.businessType === businessType);
+  return FACILITY_PRESETS.filter((p) => p.businessType === businessType);
 }

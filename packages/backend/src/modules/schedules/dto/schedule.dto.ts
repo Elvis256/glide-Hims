@@ -1,4 +1,13 @@
-import { IsString, IsUUID, IsOptional, IsInt, Min, Max, IsBoolean, IsDateString } from 'class-validator';
+import {
+  IsString,
+  IsUUID,
+  IsOptional,
+  IsInt,
+  Min,
+  Max,
+  IsBoolean,
+  IsDateString,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 
 export class CreateDoctorScheduleDto {

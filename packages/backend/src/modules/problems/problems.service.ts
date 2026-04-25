@@ -3,7 +3,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike, In } from 'typeorm';
 import { PatientProblem, ProblemStatus } from '../../database/entities/patient-problem.entity';
 import { Diagnosis } from '../../database/entities/diagnosis.entity';
-import { CreateProblemDto, UpdateProblemDto, ProblemSearchDto, MarkResolvedDto } from './dto/problems.dto';
+import {
+  CreateProblemDto,
+  UpdateProblemDto,
+  ProblemSearchDto,
+  MarkResolvedDto,
+} from './dto/problems.dto';
 
 @Injectable()
 export class ProblemsService {
@@ -66,11 +71,13 @@ export class ProblemsService {
     const transformed = data.map((p) => ({
       id: p.id,
       patientId: p.patientId,
-      patient: p.patient ? {
-        id: p.patient.id,
-        fullName: p.patient.fullName,
-        mrn: p.patient.mrn,
-      } : null,
+      patient: p.patient
+        ? {
+            id: p.patient.id,
+            fullName: p.patient.fullName,
+            mrn: p.patient.mrn,
+          }
+        : null,
       diagnosisId: p.diagnosisId,
       diagnosis: p.diagnosis?.name || p.customDiagnosis,
       icdCode: p.diagnosis?.icd10Code || p.customIcdCode,
@@ -145,11 +152,13 @@ export class ProblemsService {
     return {
       id: problem.id,
       patientId: problem.patientId,
-      patient: problem.patient ? {
-        id: problem.patient.id,
-        fullName: problem.patient.fullName,
-        mrn: problem.patient.mrn,
-      } : null,
+      patient: problem.patient
+        ? {
+            id: problem.patient.id,
+            fullName: problem.patient.fullName,
+            mrn: problem.patient.mrn,
+          }
+        : null,
       diagnosisId: problem.diagnosisId,
       diagnosis: problem.diagnosis?.name || problem.customDiagnosis,
       icdCode: problem.diagnosis?.icd10Code || problem.customIcdCode,

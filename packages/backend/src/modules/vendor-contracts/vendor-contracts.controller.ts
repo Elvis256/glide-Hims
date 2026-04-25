@@ -1,9 +1,19 @@
-import { Controller, Get, Post, Put, Body, Param, Query, Request } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param, Query, Request, UseGuards } from '@nestjs/common';
 import { VendorContractsService } from './vendor-contracts.service';
-import { CreateVendorContractDto, UpdateVendorContractDto, CreateAmendmentDto, RenewContractDto, TerminateContractDto } from './dto/vendor-contract.dto';
+import {
+  CreateVendorContractDto,
+  UpdateVendorContractDto,
+  CreateAmendmentDto,
+  RenewContractDto,
+  TerminateContractDto,
+} from './dto/vendor-contract.dto';
 import { ContractStatus } from '../../database/entities/vendor-contract.entity';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
+@UseGuards(ModuleGuard)
+@RequireModule('stores')
 @Controller('vendor-contracts')
 export class VendorContractsController {
   constructor(private readonly service: VendorContractsService) {}
@@ -33,7 +43,11 @@ export class VendorContractsController {
 
   @AuthWithPermissions('procurement.read')
   @Get('expiring')
-  getExpiring(@Query('facilityId') facilityId: string, @Query('daysAhead') daysAhead?: number, @Request() req?: any) {
+  getExpiring(
+    @Query('facilityId') facilityId: string,
+    @Query('daysAhead') daysAhead?: number,
+    @Request() req?: any,
+  ) {
     return this.service.checkExpiringContracts(facilityId, daysAhead, req?.user?.tenantId);
   }
 

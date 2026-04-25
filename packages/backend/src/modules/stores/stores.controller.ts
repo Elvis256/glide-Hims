@@ -1,14 +1,36 @@
 import {
-  Controller, Get, Post, Patch, Body, Param, Query, Request, ParseUUIDPipe, BadRequestException,
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Body,
+  Param,
+  Query,
+  Request,
+  ParseUUIDPipe,
+  BadRequestException,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { StoresService } from './stores.service';
-import { CreateStoreDto, UpdateStoreDto, CreateTransferDto, ApproveTransferDto, ReceiveTransferDto, AdjustStockDto, TransferStockDto } from './stores.dto';
+import {
+  CreateStoreDto,
+  UpdateStoreDto,
+  CreateTransferDto,
+  ApproveTransferDto,
+  ReceiveTransferDto,
+  AdjustStockDto,
+  TransferStockDto,
+} from './stores.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { TransferStatus } from '../../database/entities/stock-transfer.entity';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('Stores')
 @ApiBearerAuth()
+@UseGuards(ModuleGuard)
+@RequireModule('stores')
 @Controller('stores')
 export class StoresController {
   constructor(private readonly service: StoresService) {}
@@ -26,14 +48,17 @@ export class StoresController {
     @Query('storeId') storeId?: string,
     @Request() req?: any,
   ) {
-    return this.service.getInventoryList({
-      category,
-      lowStock: lowStock === 'true',
-      search,
-      page: page ? Number(page) : 1,
-      limit: limit ? Number(limit) : 50,
-      storeId,
-    }, req?.user?.tenantId);
+    return this.service.getInventoryList(
+      {
+        category,
+        lowStock: lowStock === 'true',
+        search,
+        page: page ? Number(page) : 1,
+        limit: limit ? Number(limit) : 50,
+        storeId,
+      },
+      req?.user?.tenantId,
+    );
   }
 
   @Get('inventory/low-stock')
@@ -87,7 +112,8 @@ export class StoresController {
     @Body() dto: AdjustStockDto,
     @Request() req: any,
   ) {
-    const facilityId = req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
+    const facilityId =
+      req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
     if (!facilityId) {
       throw new BadRequestException('Facility ID is required for stock adjustment');
     }
@@ -148,7 +174,11 @@ export class StoresController {
   @Get()
   @AuthWithPermissions('stores.read')
   @ApiOperation({ summary: 'List all stores' })
-  findAllStores(@Query('facilityId') facilityId?: string, @Query('type') type?: string, @Request() req?: any) {
+  findAllStores(
+    @Query('facilityId') facilityId?: string,
+    @Query('type') type?: string,
+    @Request() req?: any,
+  ) {
     return this.service.findAllStores(facilityId, type, req?.user?.tenantId);
   }
 
@@ -162,7 +192,11 @@ export class StoresController {
   @Patch(':id')
   @AuthWithPermissions('stores.update')
   @ApiOperation({ summary: 'Update store' })
-  updateStore(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateStoreDto, @Request() req: any) {
+  updateStore(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateStoreDto,
+    @Request() req: any,
+  ) {
     return this.service.updateStore(id, dto, req.user?.tenantId);
   }
 
@@ -195,14 +229,22 @@ export class StoresController {
   @Post('transfers/:id/approve')
   @AuthWithPermissions('stores.update')
   @ApiOperation({ summary: 'Approve and dispatch transfer' })
-  approveTransfer(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ApproveTransferDto, @Request() req: any) {
+  approveTransfer(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ApproveTransferDto,
+    @Request() req: any,
+  ) {
     return this.service.approveTransfer(id, dto, req.user.id, req.user?.tenantId);
   }
 
   @Post('transfers/:id/receive')
   @AuthWithPermissions('stores.update')
   @ApiOperation({ summary: 'Receive stock transfer' })
-  receiveTransfer(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReceiveTransferDto, @Request() req: any) {
+  receiveTransfer(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReceiveTransferDto,
+    @Request() req: any,
+  ) {
     return this.service.receiveTransfer(id, dto, req.user.id, req.user?.tenantId);
   }
 

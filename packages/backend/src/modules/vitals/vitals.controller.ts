@@ -9,14 +9,19 @@ import {
   Query,
   Request,
   ParseUUIDPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { VitalsService } from './vitals.service';
 import { CreateVitalDto, UpdateVitalDto } from './vitals.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('Vitals')
 @ApiBearerAuth()
+@UseGuards(ModuleGuard)
+@RequireModule('nursing')
 @Controller('vitals')
 export class VitalsController {
   constructor(private readonly vitalsService: VitalsService) {}
@@ -38,7 +43,10 @@ export class VitalsController {
   @Get('encounter/:encounterId/latest')
   @AuthWithPermissions('vitals.read')
   @ApiOperation({ summary: 'Get latest vitals for an encounter' })
-  findLatestByEncounter(@Param('encounterId', ParseUUIDPipe) encounterId: string, @Request() req: any) {
+  findLatestByEncounter(
+    @Param('encounterId', ParseUUIDPipe) encounterId: string,
+    @Request() req: any,
+  ) {
     return this.vitalsService.findLatestByEncounter(encounterId, req.user?.tenantId);
   }
 
@@ -64,11 +72,7 @@ export class VitalsController {
   @Patch(':id')
   @AuthWithPermissions('vitals.update')
   @ApiOperation({ summary: 'Update vital record' })
-  update(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateVitalDto,
-    @Request() req: any,
-  ) {
+  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateVitalDto, @Request() req: any) {
     return this.vitalsService.update(id, dto, req.user?.tenantId);
   }
 

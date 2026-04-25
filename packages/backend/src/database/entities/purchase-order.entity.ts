@@ -1,11 +1,4 @@
-import {
-  Entity,
-  Column,
-  ManyToOne,
-  OneToMany,
-  JoinColumn,
-  Index,
-} from 'typeorm';
+import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Facility } from './facility.entity';
 import { User } from './user.entity';
@@ -130,7 +123,7 @@ export class PurchaseOrder extends BaseEntity {
   @Column({ name: 'approved_by_id', nullable: true })
   approvedById?: string;
 
-  @OneToMany(() => PurchaseOrderItem, item => item.purchaseOrder, { cascade: true })
+  @OneToMany(() => PurchaseOrderItem, (item) => item.purchaseOrder, { cascade: true })
   items: PurchaseOrderItem[];
 }
 
@@ -159,7 +152,7 @@ export class PurchaseOrderItem extends BaseEntity {
   notes: string;
 
   // Relationships
-  @ManyToOne(() => PurchaseOrder, po => po.items, { onDelete: 'CASCADE' })
+  @ManyToOne(() => PurchaseOrder, (po) => po.items, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'purchase_order_id' })
   purchaseOrder: PurchaseOrder;
 

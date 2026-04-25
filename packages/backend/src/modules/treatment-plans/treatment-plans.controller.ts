@@ -13,8 +13,18 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { TreatmentPlansService } from './treatment-plans.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
-import { CreateTreatmentPlanDto, UpdateTreatmentPlanDto, AddProgressNoteDto, RevisePlanDto, TreatmentPlanFilterDto } from './dto/treatment-plan.dto';
+import {
+  CreateTreatmentPlanDto,
+  UpdateTreatmentPlanDto,
+  AddProgressNoteDto,
+  RevisePlanDto,
+  TreatmentPlanFilterDto,
+} from './dto/treatment-plan.dto';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
+@UseGuards(ModuleGuard)
+@RequireModule('doctors')
 @Controller('treatment-plans')
 @UseGuards(AuthGuard('jwt'))
 export class TreatmentPlansController {
@@ -89,7 +99,13 @@ export class TreatmentPlansController {
     @Body() dto: AddProgressNoteDto,
     @Request() req: any,
   ) {
-    return this.treatmentPlansService.addProgressNote(id, dto, req.user.sub, req.user.fullName || 'Provider', req.user?.tenantId);
+    return this.treatmentPlansService.addProgressNote(
+      id,
+      dto,
+      req.user.sub,
+      req.user.fullName || 'Provider',
+      req.user?.tenantId,
+    );
   }
 
   @Post(':id/goals/:goalId/status')
