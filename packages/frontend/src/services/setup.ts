@@ -2,7 +2,7 @@ import api from './api';
 
 export interface SetupStatus {
   isSetupComplete: boolean;
-  deploymentMode: 'on-premise' | 'saas';
+  deploymentMode: 'on-premise' | 'saas' | 'multi-tenant' | 'standalone';
   organizationName?: string;
   facilityName?: string;
   tenantSlug?: string;

@@ -21,7 +21,18 @@ export default function ProtectedRoute({
 
   if (!isAuthenticated) {
     const tenantSlug = localStorage.getItem('glide_tenant_slug');
-    const loginPath = tenantSlug ? `/login/${tenantSlug}` : '/login';
+    const deploymentMode = localStorage.getItem('glide_deployment_mode');
+    let loginPath: string;
+    if (tenantSlug) {
+      // Returning tenant user → straight back to their tenant's login page.
+      loginPath = `/login/${tenantSlug}`;
+    } else if (deploymentMode === 'multi-tenant' || deploymentMode === 'saas') {
+      // Multi-tenant SaaS hub: anonymous traffic at "/" belongs at the system admin
+      // login, not the generic tenant login form.
+      loginPath = '/system/login';
+    } else {
+      loginPath = '/login';
+    }
     return <Navigate to={loginPath} state={{ from: location }} replace />;
   }
 

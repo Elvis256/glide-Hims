@@ -435,6 +435,16 @@ function LoginRouteGuard({ isAuthenticated }: { isAuthenticated: boolean }) {
   const { logout } = useAuthStore();
 
   if (!isAuthenticated) {
+    // On multi-tenant SaaS hubs, /login (no slug) is reserved for system admins.
+    // Send unauthenticated visitors with no tenant context to /system/login so the
+    // generic tenant login form is not shown publicly. Tenants always use /login/<slug>.
+    if (!slug) {
+      const mode = localStorage.getItem('glide_deployment_mode');
+      const cachedSlug = localStorage.getItem('glide_tenant_slug');
+      if ((mode === 'multi-tenant' || mode === 'saas') && !cachedSlug) {
+        return <Navigate to="/system/login" replace />;
+      }
+    }
     return <Suspense fallback={<PageLoader />}><LoginPage /></Suspense>;
   }
 
@@ -524,7 +534,16 @@ function AppRoutes() {
         const status = await import('./services/setup').then(m => m.setupService.getStatus());
         console.log('[App] Setup status:', status);
         setIsSetupComplete(status.isSetupComplete);
-        
+
+        // Cache deployment mode + canonical tenant slug for routing decisions.
+        // ProtectedRoute / LoginRouteGuard read these synchronously on every render.
+        if (status.deploymentMode) {
+          localStorage.setItem('glide_deployment_mode', status.deploymentMode);
+        }
+        if (status.tenantSlug && !localStorage.getItem('glide_tenant_slug')) {
+          localStorage.setItem('glide_default_tenant_slug', status.tenantSlug);
+        }
+
         // If setup not complete, clear any stale auth
         if (!status.isSetupComplete) {
           console.log('[App] Setup not complete, clearing auth');
