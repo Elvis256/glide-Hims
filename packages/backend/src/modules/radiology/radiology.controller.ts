@@ -8,6 +8,7 @@ import {
   Query,
   Request,
   BadRequestException,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { RadiologyService } from './radiology.service';
@@ -21,11 +22,15 @@ import {
 } from './dto/radiology.dto';
 import { ModalityType } from '../../database/entities/imaging-modality.entity';
 import { ImagingOrderStatus, ImagingPriority } from '../../database/entities/imaging-order.entity';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 @ApiTags('Radiology')
 @ApiBearerAuth()
+@UseGuards(ModuleGuard)
+@RequireModule('diagnostics')
 @Controller('radiology')
 export class RadiologyController {
   constructor(private readonly radiologyService: RadiologyService) {}
@@ -97,7 +102,11 @@ export class RadiologyController {
     if (!facilityId || !UUID_REGEX.test(facilityId)) {
       throw new BadRequestException('Valid facilityId UUID is required');
     }
-    return this.radiologyService.getOrders(facilityId, { status, modalityId, patientId, priority, date }, req?.user?.tenantId);
+    return this.radiologyService.getOrders(
+      facilityId,
+      { status, modalityId, patientId, priority, date },
+      req?.user?.tenantId,
+    );
   }
 
   @Get('worklist')
@@ -121,7 +130,11 @@ export class RadiologyController {
   @Patch('orders/:id/schedule')
   @AuthWithPermissions('radiology.orders.update')
   @ApiOperation({ summary: 'Schedule imaging' })
-  async scheduleOrder(@Param('id') id: string, @Body() dto: ScheduleImagingDto, @Request() req: any) {
+  async scheduleOrder(
+    @Param('id') id: string,
+    @Body() dto: ScheduleImagingDto,
+    @Request() req: any,
+  ) {
     return this.radiologyService.scheduleOrder(id, dto, req.user?.tenantId);
   }
 
@@ -192,6 +205,11 @@ export class RadiologyController {
     if (!facilityId || !UUID_REGEX.test(facilityId)) {
       throw new BadRequestException('Valid facilityId UUID is required');
     }
-    return this.radiologyService.getTurnaroundStats(facilityId, startDate, endDate, req?.user?.tenantId);
+    return this.radiologyService.getTurnaroundStats(
+      facilityId,
+      startDate,
+      endDate,
+      req?.user?.tenantId,
+    );
   }
 }

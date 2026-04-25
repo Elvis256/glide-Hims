@@ -23,22 +23,44 @@ import {
   Loader2,
   Info,
 } from 'lucide-react';
-import { usersService, type User as UserType } from '../../../services/users';
 import api from '../../../services/api';
-import { asList } from '../../../utils/unwrapResponse';
 
 interface Session {
   id: string;
   userId: string;
-  userName: string;
-  userRole: string;
-  deviceType: 'desktop' | 'mobile' | 'tablet';
-  browser: string;
   ipAddress: string;
-  location: string;
-  loginTime: string;
-  lastActivity: string;
-  status: 'active' | 'idle' | 'expired';
+  userAgent: string;
+  deviceInfo: string;
+  isActive: boolean;
+  lastActivityAt: string;
+  expiresAt: string;
+  createdAt: string;
+  tokenHash?: string;
+}
+
+type DeviceType = 'desktop' | 'mobile' | 'tablet';
+type SessionStatus = 'active' | 'idle' | 'expired';
+
+function parseUserAgent(ua: string): { browser: string; deviceType: DeviceType } {
+  let browser = 'Unknown';
+  if (/Edg\//i.test(ua)) browser = 'Edge';
+  else if (/Chrome\//i.test(ua)) browser = 'Chrome';
+  else if (/Firefox\//i.test(ua)) browser = 'Firefox';
+  else if (/Safari\//i.test(ua) && !/Chrome/i.test(ua)) browser = 'Safari';
+  else if (/MSIE|Trident/i.test(ua)) browser = 'IE';
+
+  let deviceType: DeviceType = 'desktop';
+  if (/mobile|android.*mobile|iphone/i.test(ua)) deviceType = 'mobile';
+  else if (/tablet|ipad/i.test(ua)) deviceType = 'tablet';
+
+  return { browser, deviceType };
+}
+
+function deriveStatus(session: Session): SessionStatus {
+  if (!session.isActive || new Date(session.expiresAt) < new Date()) return 'expired';
+  const idleThreshold = 30 * 60 * 1000; // 30 minutes
+  if (new Date().getTime() - new Date(session.lastActivityAt).getTime() > idleThreshold) return 'idle';
+  return 'active';
 }
 
 interface SessionSettings {
@@ -57,25 +79,6 @@ const defaultSettings: SessionSettings = {
   forceLogoutOnPasswordChange: true,
   rememberMeDuration: 7,
   enforceIPBinding: false,
-};
-
-// Convert users to session-like display (conceptual active sessions)
-const usersToSessions = (users: UserType[]): Session[] => {
-  return users
-    .filter(user => user.status === 'active' && user.lastLoginAt)
-    .map(user => ({
-      id: user.id,
-      userId: user.id,
-      userName: user.fullName,
-      userRole: user.roles?.[0]?.name || 'User',
-      deviceType: 'desktop' as const,
-      browser: 'Unknown',
-      ipAddress: '-',
-      location: '-',
-      loginTime: user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : '-',
-      lastActivity: user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : '-',
-      status: 'active' as const,
-    }));
 };
 
 export default function SessionManagementPage() {
@@ -120,20 +123,17 @@ export default function SessionManagementPage() {
     },
   });
 
-  // Fetch users as conceptual sessions (since dedicated sessions API doesn't exist yet)
-  const { data: usersData, isLoading, error, refetch } = useQuery({
-    queryKey: ['users-sessions'],
-    queryFn: () => usersService.list({ status: 'active' }),
+  // Fetch sessions from API
+  const { data: sessionsData, isLoading, error, refetch } = useQuery({
+    queryKey: ['sessions'],
+    queryFn: async () => {
+      const response = await api.get('/auth/sessions');
+      return response.data.data as Session[];
+    },
     staleTime: 30000,
   });
 
-  // Convert users to session-like data
-  const sessions = useMemo(() => {
-    if (asList(usersData)) {
-      return usersToSessions(asList(usersData));
-    }
-    return [];
-  }, [usersData]);
+  const sessions = sessionsData ?? [];
 
   const handleSaveSettings = () => {
     saveSettingsMutation.mutate(settings);
@@ -143,11 +143,14 @@ export default function SessionManagementPage() {
 
   const filteredSessions = useMemo(() => {
     return sessions.filter((session) => {
+      const { browser } = parseUserAgent(session.userAgent);
+      const status = deriveStatus(session);
       const matchesSearch =
-        session.userName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        session.userId.toLowerCase().includes(searchTerm.toLowerCase()) ||
         session.ipAddress.includes(searchTerm) ||
-        session.location.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStatus = selectedStatus === 'All Status' || session.status === selectedStatus;
+        browser.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (session.deviceInfo || '').toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesStatus = selectedStatus === 'All Status' || status === selectedStatus;
       return matchesSearch && matchesStatus;
     });
   }, [sessions, searchTerm, selectedStatus]);
@@ -155,14 +158,14 @@ export default function SessionManagementPage() {
   const sessionStats = useMemo(() => {
     return {
       total: sessions.length,
-      active: sessions.filter((s) => s.status === 'active').length,
-      idle: sessions.filter((s) => s.status === 'idle').length,
-      expired: sessions.filter((s) => s.status === 'expired').length,
+      active: sessions.filter((s) => deriveStatus(s) === 'active').length,
+      idle: sessions.filter((s) => deriveStatus(s) === 'idle').length,
+      expired: sessions.filter((s) => deriveStatus(s) === 'expired').length,
       uniqueUsers: new Set(sessions.map((s) => s.userId)).size,
     };
   }, [sessions]);
 
-  const getDeviceIcon = (deviceType: Session['deviceType']) => {
+  const getDeviceIcon = (deviceType: DeviceType) => {
     const icons = {
       desktop: <Laptop className="w-4 h-4" />,
       mobile: <Smartphone className="w-4 h-4" />,
@@ -171,7 +174,7 @@ export default function SessionManagementPage() {
     return icons[deviceType];
   };
 
-  const getStatusBadge = (status: Session['status']) => {
+  const getStatusBadge = (status: SessionStatus) => {
     const styles = {
       active: 'bg-green-100 text-green-700',
       idle: 'bg-yellow-100 text-yellow-700',
@@ -190,15 +193,44 @@ export default function SessionManagementPage() {
     );
   };
 
+  const revokeSessionMutation = useMutation({
+    mutationFn: async (sessionId: string) => {
+      await api.delete(`/auth/sessions/${sessionId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+      toast.success('Session revoked successfully');
+    },
+    onError: (error: Error & { response?: { data?: { message?: string } } }) => {
+      const msg = error.response?.data?.message || error.message || 'Failed to revoke session';
+      toast.error(msg);
+    },
+  });
+
+  const revokeAllMutation = useMutation({
+    mutationFn: async () => {
+      await api.delete('/auth/sessions');
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+      toast.success('All other sessions revoked');
+    },
+    onError: (error: Error & { response?: { data?: { message?: string } } }) => {
+      const msg = error.response?.data?.message || error.message || 'Failed to revoke sessions';
+      toast.error(msg);
+    },
+  });
+
   const handleForceLogout = (sessionId: string) => {
-    // Note: Force logout API not yet implemented
-    // For now, just show an alert indicating the limitation
-    toast.error('Session management API not yet configured. This feature will be available once the backend sessions API is implemented.');
+    revokeSessionMutation.mutate(sessionId);
   };
 
   const handleBulkLogout = () => {
-    // Note: Bulk logout API not yet implemented
-    toast.error('Session management API not yet configured. This feature will be available once the backend sessions API is implemented.');
+    if (selectedSessions.length === sessions.length) {
+      revokeAllMutation.mutate();
+    } else {
+      selectedSessions.forEach((id) => revokeSessionMutation.mutate(id));
+    }
     setSelectedSessions([]);
   };
 
@@ -341,9 +373,9 @@ export default function SessionManagementPage() {
             ) : error ? (
               <div className="flex flex-col items-center justify-center h-64 text-gray-500">
                 <AlertTriangle className="w-12 h-12 text-yellow-500 mb-4" />
-                <p className="text-lg font-medium">Session Monitoring API Not Configured</p>
+                <p className="text-lg font-medium">Failed to Load Sessions</p>
                 <p className="text-sm text-gray-400 mt-2">
-                  The sessions API endpoint is not yet available. Showing active users as sessions.
+                  An error occurred while fetching session data. Please try again.
                 </p>
               </div>
             ) : filteredSessions.length === 0 ? (
@@ -384,7 +416,10 @@ export default function SessionManagementPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filteredSessions.map((session) => (
+                {filteredSessions.map((session) => {
+                  const { browser, deviceType } = parseUserAgent(session.userAgent);
+                  const status = deriveStatus(session);
+                  return (
                   <tr key={session.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
                       <input
@@ -400,16 +435,16 @@ export default function SessionManagementPage() {
                           <User className="w-4 h-4 text-gray-500" />
                         </div>
                         <div>
-                          <p className="font-medium text-gray-900">{session.userName}</p>
-                          <p className="text-xs text-gray-500">{session.userRole}</p>
+                          <p className="font-medium text-gray-900">{session.userId}</p>
+                          <p className="text-xs text-gray-500">{session.deviceInfo || deviceType}</p>
                         </div>
                       </div>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        {getDeviceIcon(session.deviceType)}
+                        {getDeviceIcon(deviceType)}
                         <div>
-                          <p className="text-sm text-gray-900">{session.browser}</p>
+                          <p className="text-sm text-gray-900">{browser}</p>
                           <p className="text-xs text-gray-500 font-mono">{session.ipAddress}</p>
                         </div>
                       </div>
@@ -417,27 +452,29 @@ export default function SessionManagementPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <Globe className="w-4 h-4 text-gray-400" />
-                        <span className="text-sm text-gray-600">{session.location}</span>
+                        <span className="text-sm text-gray-600">{session.ipAddress}</span>
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="text-sm text-gray-600">{session.loginTime}</span>
+                      <span className="text-sm text-gray-600">{new Date(session.createdAt).toLocaleString()}</span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="text-sm text-gray-600">{session.lastActivity}</span>
+                      <span className="text-sm text-gray-600">{new Date(session.lastActivityAt).toLocaleString()}</span>
                     </td>
-                    <td className="px-4 py-3">{getStatusBadge(session.status)}</td>
+                    <td className="px-4 py-3">{getStatusBadge(status)}</td>
                     <td className="px-4 py-3">
                       <button
                         onClick={() => handleForceLogout(session.id)}
-                        className="flex items-center gap-1 px-3 py-1 text-sm text-red-600 hover:bg-red-50 rounded border border-red-200"
+                        disabled={revokeSessionMutation.isPending}
+                        className="flex items-center gap-1 px-3 py-1 text-sm text-red-600 hover:bg-red-50 rounded border border-red-200 disabled:opacity-50"
                       >
                         <LogOut className="w-3 h-3" />
                         Logout
                       </button>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
             )}

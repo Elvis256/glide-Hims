@@ -1,6 +1,13 @@
-import { Injectable, NotFoundException, BadRequestException, Logger, Inject, forwardRef } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Logger,
+  Inject,
+  forwardRef,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, Like, DataSource } from 'typeorm';
+import { Repository, Between, Like, DataSource, EntityManager, ILike } from 'typeorm';
 import { LabTest, LabTestStatus } from '../../database/entities/lab-test.entity';
 import { LabSample, SampleStatus } from '../../database/entities/lab-sample.entity';
 import { LabResult, ResultStatus, AbnormalFlag } from '../../database/entities/lab-result.entity';
@@ -8,9 +15,16 @@ import { Order, OrderStatus, OrderType } from '../../database/entities/order.ent
 import { Patient } from '../../database/entities/patient.entity';
 import { Facility } from '../../database/entities/facility.entity';
 import {
-  CreateLabTestDto, UpdateLabTestDto, CollectSampleDto, ReceiveSampleDto,
-  RejectSampleDto, EnterResultDto, ValidateResultDto, AmendResultDto,
-  LabTestQueryDto, SampleQueryDto,
+  CreateLabTestDto,
+  UpdateLabTestDto,
+  CollectSampleDto,
+  ReceiveSampleDto,
+  RejectSampleDto,
+  EnterResultDto,
+  ValidateResultDto,
+  AmendResultDto,
+  LabTestQueryDto,
+  SampleQueryDto,
 } from './dto/lab.dto';
 import { BillingService } from '../billing/billing.service';
 import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
@@ -36,11 +50,40 @@ export class LabService {
     private encountersService: EncountersService,
   ) {}
 
+  private async generateSampleNumber(manager: EntityManager, tenantId?: string): Promise<string> {
+    const today = new Date();
+    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+    const lockKey = `lab_sample_num_${dateStr}_${tenantId || 'global'}`;
+
+    // Use advisory lock to prevent concurrent generation collisions
+    await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [lockKey]);
+
+    const lastSample = await manager
+      .getRepository(LabSample)
+      .createQueryBuilder('s')
+      .where('s.sampleNumber LIKE :prefix', { prefix: `LAB${dateStr}%` })
+      .andWhere(tenantId ? 's.tenant_id = :tenantId' : '1=1', { tenantId })
+      .orderBy('s.sampleNumber', 'DESC')
+      .getOne();
+
+    let sequence = 1;
+    if (lastSample) {
+      const lastSeq = parseInt(lastSample.sampleNumber.slice(-5), 10);
+      if (!isNaN(lastSeq)) {
+        sequence = lastSeq + 1;
+      }
+    }
+
+    return `LAB${dateStr}${sequence.toString().padStart(5, '0')}`;
+  }
+
   // ========== LAB TEST CATALOG ==========
   async createLabTest(dto: CreateLabTestDto, tenantId?: string): Promise<LabTest> {
-    const existing = await this.labTestRepo.findOne({ where: { code: dto.code, ...(tenantId ? { tenantId } : {}) } });
+    const existing = await this.labTestRepo.findOne({
+      where: { code: dto.code, ...(tenantId ? { tenantId } : {}) },
+    });
     if (existing) throw new BadRequestException('Test code already exists');
-    
+
     const test = this.labTestRepo.create({ ...dto, ...(tenantId ? { tenantId } : {}) });
     return this.labTestRepo.save(test);
   }
@@ -52,8 +95,9 @@ export class LabService {
     if (query.category) qb.andWhere('test.category = :category', { category: query.category });
     if (query.status) qb.andWhere('test.status = :status', { status: query.status });
     if (query.search) {
-      qb.andWhere('(test.code ILIKE :search OR test.name ILIKE :search)', 
-        { search: `%${query.search}%` });
+      qb.andWhere('(test.code ILIKE :search OR test.name ILIKE :search)', {
+        search: `%${query.search}%`,
+      });
     }
 
     return qb.orderBy('test.name', 'ASC').getMany();
@@ -80,7 +124,11 @@ export class LabService {
    * For each test code in the order, creates a sample (if it doesn't already exist)
    * and auto-transitions it to RECEIVED status so results can be entered immediately.
    */
-  async prepareOrderSamples(orderId: string, userId: string, tenantId?: string): Promise<LabSample[]> {
+  async prepareOrderSamples(
+    orderId: string,
+    userId: string,
+    tenantId?: string,
+  ): Promise<LabSample[]> {
     const order = await this.orderRepo.findOne({
       where: { id: orderId, ...(tenantId ? { tenantId } : {}) },
       relations: ['encounter'],
@@ -117,103 +165,143 @@ export class LabService {
         await manager.save(Order, order);
       }
 
-    for (const tc of testCodes) {
-      // Resolve lab test by code, with keyword-based name fallback
-      let labTest = await manager.findOne(LabTest, {
-        where: { code: tc.code, ...(tenantId ? { tenantId } : {}) },
-      });
-      if (!labTest && tc.name) {
-        const stopWords = new Set(['test', 'tests', 'blood', 'screening', 'panel', 'complete', 'full', 'basic', 'the', 'a', 'of']);
-        const keywords = tc.name.split(/\s+/).filter((w: string) => w.length > 1 && !stopWords.has(w.toLowerCase()));
-        if (keywords.length > 0) {
-          const qb = manager.createQueryBuilder(LabTest, 't');
-          const orConds = keywords.map((_: string, i: number) => `t.name ILIKE :kw${i}`);
-          qb.where(`(${orConds.join(' OR ')})`, keywords.reduce((p: any, kw: string, i: number) => ({ ...p, [`kw${i}`]: `%${kw}%` }), {}));
-          if (tenantId) qb.andWhere('t.tenant_id = :tenantId', { tenantId });
-          labTest = await qb.limit(1).getOne();
-        }
-      }
-      if (!labTest) {
-        this.logger.warn(`Lab test not found for code: ${tc.code} (name: ${tc.name}), skipping`);
-        continue;
-      }
-
-      // Check if sample already exists for this order+test
-      let sample = await manager.findOne(LabSample, {
-        where: { orderId, labTestId: labTest.id },
-        relations: ['patient', 'labTest', 'order', 'collectedBy'],
-      });
-
-      if (!sample) {
-        // Auto-collect: create sample
-        const today = new Date();
-        const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
-        const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-        const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
-
-        const countResult = await manager.query(
-          `SELECT COUNT(*) as count FROM lab_samples WHERE created_at >= $1 AND created_at < $2${tenantId ? ' AND tenant_id = $3' : ''}`,
-          tenantId ? [todayStart, todayEnd, tenantId] : [todayStart, todayEnd]
-        );
-        const count = parseInt(countResult[0]?.count || '0', 10);
-        const sampleNumber = `LAB${dateStr}${(count + 1).toString().padStart(5, '0')}`;
-
-        sample = manager.create(LabSample, {
-          orderId,
-          patientId,
-          labTestId: labTest.id,
-          facilityId,
-          sampleType: labTest.sampleType || 'blood',
-          priority: order.priority as any || 'routine',
-          sampleNumber,
-          barcode: sampleNumber,
-          status: SampleStatus.COLLECTED,
-          collectionTime: new Date(),
-          collectedById: userId,
-          ...(tenantId ? { tenantId } : {}),
+      for (const tc of testCodes) {
+        // Resolve lab test by code, with keyword-based name fallback
+        let labTest = await manager.findOne(LabTest, {
+          where: { code: tc.code, ...(tenantId ? { tenantId } : {}) },
         });
-        sample = await manager.save(LabSample, sample);
-        this.logger.log(`Sample auto-collected: ${sampleNumber} for order ${orderId} by user ${userId}`);
-      }
+        if (!labTest && tc.name) {
+          const stopWords = new Set([
+            'test',
+            'tests',
+            'blood',
+            'screening',
+            'panel',
+            'complete',
+            'full',
+            'basic',
+            'the',
+            'a',
+            'of',
+          ]);
+          const keywords = tc.name
+            .split(/\s+/)
+            .filter((w: string) => w.length > 1 && !stopWords.has(w.toLowerCase()));
+          if (keywords.length > 0) {
+            const qb = manager.createQueryBuilder(LabTest, 't');
+            const orConds = keywords.map((_: string, i: number) => `t.name ILIKE :kw${i}`);
+            qb.where(
+              `(${orConds.join(' OR ')})`,
+              keywords.reduce(
+                (p: any, kw: string, i: number) => ({ ...p, [`kw${i}`]: `%${kw}%` }),
+                {},
+              ),
+            );
+            if (tenantId) qb.andWhere('t.tenant_id = :tenantId', { tenantId });
+            labTest = await qb.limit(1).getOne();
+          }
+        }
+        if (!labTest) {
+          this.logger.warn(`Lab test not found for code: ${tc.code} (name: ${tc.name}), skipping`);
+          continue;
+        }
 
-      // Auto-receive if still in collected status
-      if (sample.status === SampleStatus.COLLECTED) {
-        sample.status = SampleStatus.RECEIVED;
-        sample.receivedTime = new Date();
-        sample = await manager.save(LabSample, sample);
-        this.logger.log(`Sample auto-received: ${sample.sampleNumber} for order ${orderId}`);
-      }
+        // Check if sample already exists for this order+test
+        let sample = await manager.findOne(LabSample, {
+          where: { orderId, labTestId: labTest.id },
+          relations: ['patient', 'labTest', 'order', 'collectedBy'],
+        });
 
-      // Reload with full relations
-      sample = await manager.findOne(LabSample, {
-        where: { id: sample.id },
-        relations: ['patient', 'labTest', 'order', 'collectedBy'],
-      })!;
-      if (sample) preparedSamples.push(sample);
-    }
+        if (!sample) {
+          // Auto-collect: create sample
+          const sampleNumber = await this.generateSampleNumber(manager, tenantId);
+
+          sample = manager.create(LabSample, {
+            orderId,
+            patientId,
+            labTestId: labTest.id,
+            facilityId,
+            sampleType: labTest.sampleType || 'blood',
+            priority: (order.priority as any) || 'routine',
+            sampleNumber,
+            barcode: sampleNumber,
+            status: SampleStatus.COLLECTED,
+            collectionTime: new Date(),
+            collectedById: userId,
+            ...(tenantId ? { tenantId } : {}),
+          });
+          sample = await manager.save(LabSample, sample);
+          this.logger.log(
+            `Sample auto-collected: ${sampleNumber} for order ${orderId} by user ${userId}`,
+          );
+        }
+
+        // Auto-receive if still in collected status
+        if (sample.status === SampleStatus.COLLECTED) {
+          sample.status = SampleStatus.RECEIVED;
+          sample.receivedTime = new Date();
+          sample = await manager.save(LabSample, sample);
+          this.logger.log(`Sample auto-received: ${sample.sampleNumber} for order ${orderId}`);
+        }
+
+        // Reload with full relations
+        sample = await manager.findOne(LabSample, {
+          where: { id: sample.id },
+          relations: ['patient', 'labTest', 'order', 'collectedBy'],
+        })!;
+        if (sample) preparedSamples.push(sample);
+      }
     }); // end transaction
 
     return preparedSamples;
   }
 
-  async collectSample(dto: CollectSampleDto, userId: string, tenantId?: string): Promise<LabSample> {
+  async collectSample(
+    dto: CollectSampleDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<LabSample> {
     // Resolve labTestId from code if not provided
     let labTestId = dto.labTestId;
     if (!labTestId && dto.labTestCode) {
       const tenantWhere = tenantId ? { tenantId } : {};
       // Try exact code match first
-      let labTest = await this.labTestRepo.findOne({ where: { code: dto.labTestCode, ...tenantWhere } });
+      let labTest = await this.labTestRepo.findOne({
+        where: { code: dto.labTestCode, ...tenantWhere },
+      });
       // Fallback: search by name keywords from the order's test entry
       if (!labTest) {
-        const order = await this.orderRepo.findOne({ where: { id: dto.orderId, ...(tenantId ? { tenantId } : {}) } });
+        const order = await this.orderRepo.findOne({
+          where: { id: dto.orderId, ...(tenantId ? { tenantId } : {}) },
+        });
         const testEntry = (order?.testCodes as any[])?.find((t: any) => t.code === dto.labTestCode);
         if (testEntry?.name) {
-          const stopWords = new Set(['test', 'tests', 'blood', 'screening', 'panel', 'complete', 'full', 'basic', 'the', 'a', 'of']);
-          const keywords = testEntry.name.split(/\s+/).filter((w: string) => w.length > 1 && !stopWords.has(w.toLowerCase()));
+          const stopWords = new Set([
+            'test',
+            'tests',
+            'blood',
+            'screening',
+            'panel',
+            'complete',
+            'full',
+            'basic',
+            'the',
+            'a',
+            'of',
+          ]);
+          const keywords = testEntry.name
+            .split(/\s+/)
+            .filter((w: string) => w.length > 1 && !stopWords.has(w.toLowerCase()));
           if (keywords.length > 0) {
             const qb = this.labTestRepo.createQueryBuilder('t');
             const orConds = keywords.map((_: string, i: number) => `t.name ILIKE :kw${i}`);
-            qb.where(`(${orConds.join(' OR ')})`, keywords.reduce((p: any, kw: string, i: number) => ({ ...p, [`kw${i}`]: `%${kw}%` }), {}));
+            qb.where(
+              `(${orConds.join(' OR ')})`,
+              keywords.reduce(
+                (p: any, kw: string, i: number) => ({ ...p, [`kw${i}`]: `%${kw}%` }),
+                {},
+              ),
+            );
             if (tenantId) qb.andWhere('t.tenant_id = :tenantId', { tenantId });
             labTest = await qb.limit(1).getOne();
           }
@@ -234,7 +322,9 @@ export class LabService {
       this.orderRepo.findOne({ where: { id: dto.orderId, ...(tenantId ? { tenantId } : {}) } }),
       this.labTestRepo.findOne({ where: { id: labTestId, ...(tenantId ? { tenantId } : {}) } }),
       this.patientRepo.findOne({ where: { id: dto.patientId, ...(tenantId ? { tenantId } : {}) } }),
-      this.facilityRepo.findOne({ where: { id: dto.facilityId, ...(tenantId ? { tenantId } : {}) } }),
+      this.facilityRepo.findOne({
+        where: { id: dto.facilityId, ...(tenantId ? { tenantId } : {}) },
+      }),
     ]);
 
     if (!order) {
@@ -266,68 +356,49 @@ export class LabService {
     }
 
     return this.dataSource.transaction(async (manager) => {
-      const today = new Date();
-      const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
-      const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-      const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+      const sampleNumber = await this.generateSampleNumber(manager, tenantId);
 
-      const maxRetries = 3;
-      let savedSample: LabSample | undefined;
+      const sample = manager.create(LabSample, {
+        orderId: dto.orderId,
+        patientId: dto.patientId,
+        labTestId: labTestId,
+        facilityId: dto.facilityId,
+        sampleType: dto.sampleType,
+        priority: dto.priority,
+        collectionNotes: dto.collectionNotes,
+        sampleNumber,
+        barcode: sampleNumber,
+        status: SampleStatus.COLLECTED,
+        collectionTime: new Date(),
+        collectedById: userId,
+        ...(tenantId ? { tenantId } : {}),
+      });
 
-      for (let attempt = 0; attempt < maxRetries; attempt++) {
-        const countResult = await manager.query(
-          `SELECT COUNT(*) as count FROM lab_samples WHERE created_at >= $1 AND created_at < $2${tenantId ? ' AND tenant_id = $3' : ''}`,
-          tenantId ? [todayStart, todayEnd, tenantId] : [todayStart, todayEnd]
-        );
-        const count = parseInt(countResult[0]?.count || '0', 10) + attempt;
-
-        const sampleNumber = `LAB${dateStr}${(count + 1).toString().padStart(5, '0')}`;
-
-        const sample = manager.create(LabSample, {
-          orderId: dto.orderId,
-          patientId: dto.patientId,
-          labTestId: labTestId,
-          facilityId: dto.facilityId,
-          sampleType: dto.sampleType,
-          priority: dto.priority,
-          collectionNotes: dto.collectionNotes,
-          sampleNumber,
-          barcode: sampleNumber,
-          status: SampleStatus.COLLECTED,
-          collectionTime: new Date(),
-          collectedById: userId,
-          ...(tenantId ? { tenantId } : {}),
-        });
-
-        try {
-          savedSample = await manager.save(sample);
-          this.logger.log(`Sample collected: ${sampleNumber} for patient ${dto.patientId} by user ${userId}`);
-          break;
-        } catch (err: any) {
-          const isDuplicate = err.code === '23505' || err.message?.includes('duplicate');
-          if (!isDuplicate || attempt === maxRetries - 1) {
-            throw err;
-          }
-          this.logger.warn(`Sample number ${sampleNumber} collision, retrying (attempt ${attempt + 1}/${maxRetries})`);
-        }
-      }
-
-      return savedSample!;
+      const savedSample = await manager.save(sample);
+      this.logger.log(
+        `Sample collected: ${sampleNumber} for patient ${dto.patientId} by user ${userId}`,
+      );
+      return savedSample;
     });
   }
 
-  async getSamples(query: SampleQueryDto, tenantId?: string): Promise<{ data: LabSample[]; total: number }> {
-    const qb = this.sampleRepo.createQueryBuilder('sample')
+  async getSamples(
+    query: SampleQueryDto,
+    tenantId?: string,
+  ): Promise<{ data: LabSample[]; total: number }> {
+    const qb = this.sampleRepo
+      .createQueryBuilder('sample')
       .leftJoinAndSelect('sample.patient', 'patient')
       .leftJoinAndSelect('sample.labTest', 'labTest')
       .leftJoinAndSelect('sample.order', 'order')
       .leftJoinAndSelect('sample.collectedBy', 'collectedBy');
 
     if (tenantId) qb.andWhere('sample.tenant_id = :tenantId', { tenantId });
-    if (query.facilityId) qb.andWhere('sample.facilityId = :facilityId', { facilityId: query.facilityId });
+    if (query.facilityId)
+      qb.andWhere('sample.facilityId = :facilityId', { facilityId: query.facilityId });
     if (query.orderId) qb.andWhere('sample.orderId = :orderId', { orderId: query.orderId });
     if (query.statuses) {
-      const statusList = query.statuses.split(',').map(s => s.trim());
+      const statusList = query.statuses.split(',').map((s) => s.trim());
       qb.andWhere('sample.status IN (:...statusList)', { statusList });
     } else if (query.status) {
       qb.andWhere('sample.status = :status', { status: query.status });
@@ -340,9 +411,7 @@ export class LabService {
       });
     }
 
-    const [data, total] = await qb
-      .orderBy('sample.createdAt', 'DESC')
-      .getManyAndCount();
+    const [data, total] = await qb.orderBy('sample.createdAt', 'DESC').getManyAndCount();
 
     return { data, total };
   }
@@ -358,10 +427,19 @@ export class LabService {
     return sample;
   }
 
-  async receiveSample(id: string, dto: ReceiveSampleDto, userId: string, tenantId?: string): Promise<LabSample> {
+  async receiveSample(
+    id: string,
+    dto: ReceiveSampleDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<LabSample> {
     const sample = await this.getSample(id, tenantId);
     // Idempotent: if already past collected, return as-is
-    if ([SampleStatus.RECEIVED, SampleStatus.PROCESSING, SampleStatus.COMPLETED].includes(sample.status as SampleStatus)) {
+    if (
+      [SampleStatus.RECEIVED, SampleStatus.PROCESSING, SampleStatus.COMPLETED].includes(
+        sample.status as SampleStatus,
+      )
+    ) {
       return sample;
     }
     if (sample.status !== SampleStatus.COLLECTED) {
@@ -396,7 +474,12 @@ export class LabService {
     return savedSample;
   }
 
-  async rejectSample(id: string, dto: RejectSampleDto, userId: string, tenantId?: string): Promise<LabSample> {
+  async rejectSample(
+    id: string,
+    dto: RejectSampleDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<LabSample> {
     const sample = await this.getSample(id, tenantId);
 
     // Don't allow rejecting completed samples that have released results
@@ -423,12 +506,14 @@ export class LabService {
         `Cannot reject sample in '${sample.status}' status. Only pending, collected, received, or processing samples can be rejected.`,
       );
     }
-    
+
     sample.status = SampleStatus.REJECTED;
     sample.rejectionReason = dto.rejectionReason;
 
     const savedSample = await this.sampleRepo.save(sample);
-    this.logger.warn(`Sample rejected: ${sample.sampleNumber} by user ${userId}, reason: ${dto.rejectionReason}`);
+    this.logger.warn(
+      `Sample rejected: ${sample.sampleNumber} by user ${userId}, reason: ${dto.rejectionReason}`,
+    );
     return savedSample;
   }
 
@@ -453,7 +538,12 @@ export class LabService {
   }
 
   // ========== RESULT MANAGEMENT ==========
-  async enterResult(sampleId: string, dto: EnterResultDto, userId: string, tenantId?: string): Promise<LabResult> {
+  async enterResult(
+    sampleId: string,
+    dto: EnterResultDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<LabResult> {
     const sample = await this.getSample(sampleId, tenantId);
 
     // Wrap all status transitions and result save in a single transaction
@@ -464,7 +554,9 @@ export class LabService {
         sample.status = SampleStatus.RECEIVED;
         sample.receivedTime = new Date();
         await manager.save(LabSample, sample);
-        this.logger.log(`Sample auto-received: ${sample.sampleNumber} during result entry by user ${userId}`);
+        this.logger.log(
+          `Sample auto-received: ${sample.sampleNumber} during result entry by user ${userId}`,
+        );
       }
       if (sample.status === SampleStatus.RECEIVED) {
         this.validateSampleTransition(sample.status, SampleStatus.PROCESSING);
@@ -472,72 +564,94 @@ export class LabService {
         sample.processedById = userId;
         sample.processedTime = new Date();
         await manager.save(LabSample, sample);
-        this.logger.log(`Sample auto-processing started: ${sample.sampleNumber} during result entry by user ${userId}`);
-      }
-
-    if ((sample.status as string) !== SampleStatus.RECEIVED && (sample.status as string) !== SampleStatus.PROCESSING && (sample.status as string) !== SampleStatus.COMPLETED) {
-      throw new BadRequestException(
-        `Cannot enter results for sample in '${sample.status}' status. Sample must be in 'received', 'processing', or 'completed' state.`,
-      );
-    }
-
-    // Parse referenceMin/referenceMax from referenceRange string if not explicitly provided
-    let refMin = dto.referenceMin;
-    let refMax = dto.referenceMax;
-    if (refMin === undefined && refMax === undefined && dto.referenceRange) {
-      const match = dto.referenceRange.match(/^([\d.]+)\s*[-–]\s*([\d.]+)$/);
-      if (match) {
-        refMin = parseFloat(match[1]);
-        refMax = parseFloat(match[2]);
-      }
-    }
-
-    // Calculate abnormal flag if numeric value provided
-    let abnormalFlag = dto.abnormalFlag || AbnormalFlag.NORMAL;
-    if (dto.numericValue !== undefined && refMin !== undefined && refMax !== undefined) {
-      let critLow: number | undefined;
-      let critHigh: number | undefined;
-      if (sample.labTest?.referenceRanges && dto.parameter) {
-        const refRange = (sample.labTest.referenceRanges as any[]).find(
-          (r: any) => r.parameter === dto.parameter,
+        this.logger.log(
+          `Sample auto-processing started: ${sample.sampleNumber} during result entry by user ${userId}`,
         );
-        if (refRange) {
-          critLow = refRange.criticalLow !== undefined ? Number(refRange.criticalLow) : undefined;
-          critHigh = refRange.criticalHigh !== undefined ? Number(refRange.criticalHigh) : undefined;
+      }
+
+      if (
+        (sample.status as string) !== SampleStatus.RECEIVED &&
+        (sample.status as string) !== SampleStatus.PROCESSING &&
+        (sample.status as string) !== SampleStatus.COMPLETED
+      ) {
+        throw new BadRequestException(
+          `Cannot enter results for sample in '${sample.status}' status. Sample must be in 'received', 'processing', or 'completed' state.`,
+        );
+      }
+
+      // Parse referenceMin/referenceMax from referenceRange string if not explicitly provided
+      let refMin = dto.referenceMin;
+      let refMax = dto.referenceMax;
+      if (refMin === undefined && refMax === undefined && dto.referenceRange) {
+        const match = dto.referenceRange.match(/^([\d.]+)\s*[-–]\s*([\d.]+)$/);
+        if (match) {
+          refMin = parseFloat(match[1]);
+          refMax = parseFloat(match[2]);
         }
       }
-      abnormalFlag = this.calculateAbnormalFlag(dto.numericValue, refMin, refMax, critLow, critHigh);
-    }
 
-    const result = this.resultRepo.create({
-      ...dto,
-      sampleId,
-      referenceMin: refMin,
-      referenceMax: refMax,
-      abnormalFlag,
-      status: ResultStatus.ENTERED,
-      enteredById: userId,
-      ...(tenantId ? { tenantId } : {}),
-    });
+      // Calculate abnormal flag if numeric value provided
+      let abnormalFlag = dto.abnormalFlag || AbnormalFlag.NORMAL;
+      if (dto.numericValue !== undefined && refMin !== undefined && refMax !== undefined) {
+        let critLow: number | undefined;
+        let critHigh: number | undefined;
+        if (sample.labTest?.referenceRanges && dto.parameter) {
+          const refRange = (sample.labTest.referenceRanges as any[]).find(
+            (r: any) => r.parameter === dto.parameter,
+          );
+          if (refRange) {
+            critLow = refRange.criticalLow !== undefined ? Number(refRange.criticalLow) : undefined;
+            critHigh =
+              refRange.criticalHigh !== undefined ? Number(refRange.criticalHigh) : undefined;
+          }
+        }
+        abnormalFlag = this.calculateAbnormalFlag(
+          dto.numericValue,
+          refMin,
+          refMax,
+          critLow,
+          critHigh,
+        );
+      }
 
-    const savedResult = await manager.save(LabResult, result);
-    this.logger.log(`Lab result entered for sample ${sample.sampleNumber}: ${dto.parameter} by user ${userId}`);
-    return savedResult;
+      const result = this.resultRepo.create({
+        ...dto,
+        sampleId,
+        referenceMin: refMin,
+        referenceMax: refMax,
+        abnormalFlag,
+        status: ResultStatus.ENTERED,
+        enteredById: userId,
+        ...(tenantId ? { tenantId } : {}),
+      });
+
+      const savedResult = await manager.save(LabResult, result);
+      this.logger.log(
+        `Lab result entered for sample ${sample.sampleNumber}: ${dto.parameter} by user ${userId}`,
+      );
+      return savedResult;
     }); // end transaction
   }
 
   async getResults(sampleId: string, tenantId?: string): Promise<LabResult[]> {
     return this.resultRepo.find({
-      where: { sampleId , ...(tenantId ? { tenantId } : {}) },
+      where: { sampleId, ...(tenantId ? { tenantId } : {}) },
       relations: ['enteredBy', 'validatedBy', 'releasedBy'],
       order: { createdAt: 'ASC' },
     });
   }
 
-  async validateResult(id: string, dto: ValidateResultDto, userId: string, tenantId?: string): Promise<LabResult> {
-    const result = await this.resultRepo.findOne({ where: { id , ...(tenantId ? { tenantId } : {}) } });
+  async validateResult(
+    id: string,
+    dto: ValidateResultDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<LabResult> {
+    const result = await this.resultRepo.findOne({
+      where: { id, ...(tenantId ? { tenantId } : {}) },
+    });
     if (!result) throw new NotFoundException('Result not found');
-    
+
     if (result.status !== ResultStatus.ENTERED) {
       throw new BadRequestException('Result must be entered before validation');
     }
@@ -552,7 +666,10 @@ export class LabService {
 
     // Notify ordering doctor
     try {
-      const sample = await this.sampleRepo.findOne({ where: { id: savedResult.sampleId , ...(tenantId ? { tenantId } : {}) }, relations: ['order', 'order.encounter', 'order.encounter.patient'] });
+      const sample = await this.sampleRepo.findOne({
+        where: { id: savedResult.sampleId, ...(tenantId ? { tenantId } : {}) },
+        relations: ['order', 'order.encounter', 'order.encounter.patient'],
+      });
       if (sample?.order?.orderedById && sample.order.encounter?.patient) {
         await this.inAppNotificationsService.notifyLabResultReady(
           sample.order.orderedById,
@@ -563,15 +680,19 @@ export class LabService {
           tenantId,
         );
       }
-    } catch (e) { this.logger.warn(`Failed to send lab result notification: ${e.message}`); }
+    } catch (e) {
+      this.logger.warn(`Failed to send lab result notification: ${e.message}`);
+    }
 
     return savedResult;
   }
 
   async releaseResult(id: string, userId: string, tenantId?: string): Promise<LabResult> {
-    const result = await this.resultRepo.findOne({ where: { id , ...(tenantId ? { tenantId } : {}) } });
+    const result = await this.resultRepo.findOne({
+      where: { id, ...(tenantId ? { tenantId } : {}) },
+    });
     if (!result) throw new NotFoundException('Result not found');
-    
+
     if (result.status !== ResultStatus.VALIDATED) {
       throw new BadRequestException('Result must be validated before release');
     }
@@ -598,7 +719,9 @@ export class LabService {
       const allResults = await manager.find(LabResult, {
         where: { sampleId: result.sampleId, ...(tenantId ? { tenantId } : {}) },
       });
-      const allReleased = allResults.every(r => r.id === id || r.status === ResultStatus.RELEASED);
+      const allReleased = allResults.every(
+        (r) => r.id === id || r.status === ResultStatus.RELEASED,
+      );
 
       if (allReleased && lockedSample) {
         lockedSample.status = SampleStatus.COMPLETED;
@@ -620,7 +743,9 @@ export class LabService {
               'Lab results ready for review',
               userId,
             );
-            this.logger.log(`Encounter ${sample.order.encounterId} returned to doctor for lab results review`);
+            this.logger.log(
+              `Encounter ${sample.order.encounterId} returned to doctor for lab results review`,
+            );
           } catch (e) {
             this.logger.warn(`Failed to return encounter to doctor: ${e.message}`);
           }
@@ -632,8 +757,15 @@ export class LabService {
     });
   }
 
-  async amendResult(id: string, dto: AmendResultDto, userId: string, tenantId?: string): Promise<LabResult> {
-    const result = await this.resultRepo.findOne({ where: { id , ...(tenantId ? { tenantId } : {}) } });
+  async amendResult(
+    id: string,
+    dto: AmendResultDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<LabResult> {
+    const result = await this.resultRepo.findOne({
+      where: { id, ...(tenantId ? { tenantId } : {}) },
+    });
     if (!result) throw new NotFoundException('Result not found');
 
     // Store previous value
@@ -649,7 +781,11 @@ export class LabService {
     if (dto.numericValue !== undefined) result.numericValue = dto.numericValue;
 
     // Recalculate abnormal flag if numericValue changed
-    if (dto.numericValue !== undefined && result.referenceMin !== undefined && result.referenceMax !== undefined) {
+    if (
+      dto.numericValue !== undefined &&
+      result.referenceMin !== undefined &&
+      result.referenceMax !== undefined
+    ) {
       let critLow: number | undefined;
       let critHigh: number | undefined;
       const sample = await this.getSample(result.sampleId, tenantId);
@@ -659,10 +795,17 @@ export class LabService {
         );
         if (refRange) {
           critLow = refRange.criticalLow !== undefined ? Number(refRange.criticalLow) : undefined;
-          critHigh = refRange.criticalHigh !== undefined ? Number(refRange.criticalHigh) : undefined;
+          critHigh =
+            refRange.criticalHigh !== undefined ? Number(refRange.criticalHigh) : undefined;
         }
       }
-      result.abnormalFlag = this.calculateAbnormalFlag(dto.numericValue, result.referenceMin, result.referenceMax, critLow, critHigh);
+      result.abnormalFlag = this.calculateAbnormalFlag(
+        dto.numericValue,
+        result.referenceMin,
+        result.referenceMax,
+        critLow,
+        critHigh,
+      );
     }
 
     result.amendmentReason = dto.amendmentReason;
@@ -675,16 +818,19 @@ export class LabService {
   }
 
   // ========== LAB QUEUE & DASHBOARD ==========
-  async getQueueStats(facilityId?: string, tenantId?: string): Promise<{ pending: number; completed: number }> {
+  async getQueueStats(
+    facilityId?: string,
+    tenantId?: string,
+  ): Promise<{ pending: number; completed: number }> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     const pendingQuery = this.sampleRepo
       .createQueryBuilder('s')
-      .where('s.status IN (:...statuses)', { 
-        statuses: [SampleStatus.COLLECTED, SampleStatus.RECEIVED, SampleStatus.PROCESSING] 
+      .where('s.status IN (:...statuses)', {
+        statuses: [SampleStatus.COLLECTED, SampleStatus.RECEIVED, SampleStatus.PROCESSING],
       });
-    
+
     if (tenantId) {
       pendingQuery.andWhere('s.tenant_id = :tenantId', { tenantId });
     }
@@ -698,7 +844,7 @@ export class LabService {
       .createQueryBuilder('s')
       .where('s.status = :status', { status: SampleStatus.COMPLETED })
       .andWhere('s.completedTime >= :today', { today });
-    
+
     if (tenantId) {
       completedQuery.andWhere('s.tenant_id = :tenantId', { tenantId });
     }
@@ -745,7 +891,7 @@ export class LabService {
   async getTurnaroundStats(facilityId: string, days = 7, tenantId?: string): Promise<any[]> {
     // Validate days parameter to prevent injection and ensure reasonable bounds
     const safeDays = Math.min(Math.max(Math.floor(days), 1), 365);
-    
+
     const qb = this.sampleRepo
       .createQueryBuilder('s')
       .select('DATE(s.collectionTime)', 'date')
@@ -753,22 +899,27 @@ export class LabService {
       .addSelect('COUNT(*)', 'count')
       .where('s.facilityId = :facilityId', { facilityId })
       .andWhere('s.status = :status', { status: SampleStatus.COMPLETED })
-      .andWhere("s.collectionTime >= NOW() - CAST(:days || ' days' AS INTERVAL)", { days: safeDays });
+      .andWhere("s.collectionTime >= NOW() - CAST(:days || ' days' AS INTERVAL)", {
+        days: safeDays,
+      });
 
     if (tenantId) {
       qb.andWhere('s.tenant_id = :tenantId', { tenantId });
     }
 
-    const results = await qb
-      .groupBy('DATE(s.collectionTime)')
-      .orderBy('date', 'DESC')
-      .getRawMany();
+    const results = await qb.groupBy('DATE(s.collectionTime)').orderBy('date', 'DESC').getRawMany();
 
     return results;
   }
 
   // ========== HELPERS ==========
-  private calculateAbnormalFlag(value: number, min: number, max: number, critLow?: number, critHigh?: number): AbnormalFlag {
+  private calculateAbnormalFlag(
+    value: number,
+    min: number,
+    max: number,
+    critLow?: number,
+    critHigh?: number,
+  ): AbnormalFlag {
     if (critLow !== undefined && value < critLow) return AbnormalFlag.CRITICAL_LOW;
     if (critHigh !== undefined && value > critHigh) return AbnormalFlag.CRITICAL_HIGH;
     if (value < min) return AbnormalFlag.LOW;

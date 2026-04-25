@@ -1,8 +1,16 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, FindOptionsWhere } from 'typeorm';
-import { SupplierReturn, SupplierReturnItem, ReturnStatus } from '../../database/entities/supplier-return.entity';
-import { CreateSupplierReturnDto, UpdateSupplierReturnDto, SupplierReturnQueryDto } from './supplier-returns.dto';
+import {
+  SupplierReturn,
+  SupplierReturnItem,
+  ReturnStatus,
+} from '../../database/entities/supplier-return.entity';
+import {
+  CreateSupplierReturnDto,
+  UpdateSupplierReturnDto,
+  SupplierReturnQueryDto,
+} from './supplier-returns.dto';
 import { InventoryService } from '../inventory/inventory.service';
 
 @Injectable()
@@ -21,7 +29,11 @@ export class SupplierReturnsService {
     return `RET-${timestamp}-${random}`;
   }
 
-  async create(dto: CreateSupplierReturnDto, userId: string, tenantId?: string): Promise<SupplierReturn> {
+  async create(
+    dto: CreateSupplierReturnDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<SupplierReturn> {
     // Calculate total value
     let totalValue = 0;
     const itemsWithValue = dto.items.map((item) => {
@@ -108,13 +120,22 @@ export class SupplierReturnsService {
     return record;
   }
 
-  async update(id: string, dto: UpdateSupplierReturnDto, tenantId?: string): Promise<SupplierReturn> {
+  async update(
+    id: string,
+    dto: UpdateSupplierReturnDto,
+    tenantId?: string,
+  ): Promise<SupplierReturn> {
     const record = await this.findOne(id, tenantId);
     Object.assign(record, dto);
     return this.returnRepository.save(record);
   }
 
-  async updateStatus(id: string, status: ReturnStatus, userId: string, tenantId?: string): Promise<SupplierReturn> {
+  async updateStatus(
+    id: string,
+    status: ReturnStatus,
+    userId: string,
+    tenantId?: string,
+  ): Promise<SupplierReturn> {
     const record = await this.findOne(id, tenantId);
     const previousStatus = record.status;
     record.status = status;

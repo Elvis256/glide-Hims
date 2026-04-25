@@ -1,11 +1,4 @@
-import {
-  Entity,
-  Column,
-  Index,
-  CreateDateColumn,
-  UpdateDateColumn,
-  PrimaryColumn,
-} from 'typeorm';
+import { Entity, Column, Index, CreateDateColumn, UpdateDateColumn, PrimaryColumn } from 'typeorm';
 
 @Entity('icd10_codes')
 @Index(['code'], { unique: true })

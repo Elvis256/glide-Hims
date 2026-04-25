@@ -1,19 +1,18 @@
-import {
-  Injectable,
-  NestInterceptor,
-  ExecutionContext,
-  CallHandler,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, NestInterceptor, ExecutionContext, CallHandler, Logger } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
+import { DataSource } from 'typeorm';
 import { AuditLogService } from './audit-log.service';
+import { SupportAccessTier } from '../../database/entities/support-access-grant.entity';
 
 @Injectable()
 export class AuditLogInterceptor implements NestInterceptor {
   private readonly logger = new Logger(AuditLogInterceptor.name);
 
-  constructor(private auditLogService: AuditLogService) {}
+  constructor(
+    private auditLogService: AuditLogService,
+    private dataSource: DataSource,
+  ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
     const request = context.switchToHttp().getRequest();
@@ -38,6 +37,32 @@ export class AuditLogInterceptor implements NestInterceptor {
 
           // Only log if we have a user (authenticated request)
           if (user?.id) {
+            let actorType: string = 'tenant_user';
+            let supportAccessTier: number | undefined;
+
+            if (user.isSystemAdmin) {
+              const tenantId = user.tenantId;
+              if (tenantId) {
+                const tierResult = await this.dataSource.query(
+                  `SELECT access_tier FROM support_access_grants
+                   WHERE granted_to_id = $1 AND tenant_id = $2
+                   AND revoked_at IS NULL AND expires_at > NOW()
+                   AND deleted_at IS NULL
+                   ORDER BY access_tier DESC
+                   LIMIT 1`,
+                  [user.id, tenantId],
+                );
+                if (tierResult.length > 0 && tierResult[0].access_tier !== SupportAccessTier.NONE) {
+                  actorType = 'system_support';
+                  supportAccessTier = tierResult[0].access_tier;
+                } else {
+                  actorType = 'system_admin';
+                }
+              } else {
+                actorType = 'system_admin';
+              }
+            }
+
             await this.auditLogService.log({
               userId: user.id,
               action,
@@ -46,6 +71,8 @@ export class AuditLogInterceptor implements NestInterceptor {
               newValue: this.sanitizeBody(body),
               ipAddress: this.getClientIp(request),
               userAgent: request.headers['user-agent'],
+              actorType,
+              supportAccessTier,
             });
           }
         } catch (error) {
@@ -69,17 +96,16 @@ export class AuditLogInterceptor implements NestInterceptor {
   private parseUrl(url: string, response: any): { entityType: string; entityId?: string } {
     const parts = url.split('/').filter(Boolean);
     const apiIndex = parts.indexOf('v1');
-    
+
     if (apiIndex >= 0 && parts.length > apiIndex + 1) {
       const entityType = parts[apiIndex + 1];
       const potentialId = parts[apiIndex + 2];
-      
+
       // Check if potentialId is a valid UUID (not an action like 'check-duplicates')
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      const entityId = potentialId && uuidRegex.test(potentialId) 
-        ? potentialId 
-        : response?.data?.id;
-      
+      const entityId =
+        potentialId && uuidRegex.test(potentialId) ? potentialId : response?.data?.id;
+
       return { entityType, entityId };
     }
 

@@ -77,9 +77,10 @@ export class CoverageCheckService {
       }
 
       // Calculate copay
-      const copayAmount = Number(policy.copayPercentage) > 0
-        ? Number(policy.copayPercentage)
-        : Number(policy.copayAmount) || 0;
+      const copayAmount =
+        Number(policy.copayPercentage) > 0
+          ? Number(policy.copayPercentage)
+          : Number(policy.copayAmount) || 0;
 
       // High-quantity orders may require pre-authorization
       const requiresPreAuth = item.quantity > 90;

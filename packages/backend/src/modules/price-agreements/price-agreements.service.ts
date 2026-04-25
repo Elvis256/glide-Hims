@@ -1,9 +1,16 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan, MoreThan } from 'typeorm';
-import { PriceAgreement, PriceAgreementStatus } from '../../database/entities/price-agreement.entity';
+import {
+  PriceAgreement,
+  PriceAgreementStatus,
+} from '../../database/entities/price-agreement.entity';
 import { Supplier } from '../../database/entities/supplier.entity';
-import { CreatePriceAgreementDto, UpdatePriceAgreementDto, ComparePricesDto } from './dto/price-agreement.dto';
+import {
+  CreatePriceAgreementDto,
+  UpdatePriceAgreementDto,
+  ComparePricesDto,
+} from './dto/price-agreement.dto';
 
 @Injectable()
 export class PriceAgreementsService {
@@ -14,7 +21,11 @@ export class PriceAgreementsService {
     @InjectRepository(Supplier) private supplierRepo: Repository<Supplier>,
   ) {}
 
-  async create(dto: CreatePriceAgreementDto, userId: string, tenantId?: string): Promise<PriceAgreement> {
+  async create(
+    dto: CreatePriceAgreementDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<PriceAgreement> {
     const agreement = this.agreementRepo.create({
       supplierId: dto.supplierId,
       facilityId: dto.facilityId,
@@ -38,7 +49,11 @@ export class PriceAgreementsService {
     return this.findOne(saved.id, tenantId);
   }
 
-  async findAll(facilityId: string, options: { status?: PriceAgreementStatus; supplierId?: string; itemCode?: string } = {}, tenantId?: string) {
+  async findAll(
+    facilityId: string,
+    options: { status?: PriceAgreementStatus; supplierId?: string; itemCode?: string } = {},
+    tenantId?: string,
+  ) {
     const qb = this.agreementRepo
       .createQueryBuilder('agreement')
       .leftJoinAndSelect('agreement.supplier', 'supplier')
@@ -69,7 +84,11 @@ export class PriceAgreementsService {
     return agreement;
   }
 
-  async update(id: string, dto: UpdatePriceAgreementDto, tenantId?: string): Promise<PriceAgreement> {
+  async update(
+    id: string,
+    dto: UpdatePriceAgreementDto,
+    tenantId?: string,
+  ): Promise<PriceAgreement> {
     const agreement = await this.findOne(id, tenantId);
 
     if (dto.unitPrice !== undefined && dto.unitPrice !== Number(agreement.unitPrice)) {
@@ -87,7 +106,12 @@ export class PriceAgreementsService {
 
     if (dto.validFrom) agreement.validFrom = new Date(dto.validFrom);
     if (dto.validTo) agreement.validTo = new Date(dto.validTo);
-    if (dto.volumeDiscounts) agreement.volumeDiscounts = dto.volumeDiscounts as { minQuantity: number; maxQuantity: number | null; discountPercent: number }[];
+    if (dto.volumeDiscounts)
+      agreement.volumeDiscounts = dto.volumeDiscounts as {
+        minQuantity: number;
+        maxQuantity: number | null;
+        discountPercent: number;
+      }[];
     if (dto.notes !== undefined) agreement.notes = dto.notes;
     if (dto.status) agreement.status = dto.status;
 
@@ -97,7 +121,10 @@ export class PriceAgreementsService {
 
   async activate(id: string, userId: string, tenantId?: string): Promise<PriceAgreement> {
     const agreement = await this.findOne(id, tenantId);
-    if (agreement.status !== PriceAgreementStatus.PENDING && agreement.status !== PriceAgreementStatus.DRAFT) {
+    if (
+      agreement.status !== PriceAgreementStatus.PENDING &&
+      agreement.status !== PriceAgreementStatus.DRAFT
+    ) {
       throw new BadRequestException('Only pending/draft agreements can be activated');
     }
     agreement.status = PriceAgreementStatus.ACTIVE;
@@ -135,7 +162,10 @@ export class PriceAgreementsService {
 
       if (dto.quantity && a.volumeDiscounts) {
         for (const discount of a.volumeDiscounts) {
-          if (dto.quantity >= discount.minQuantity && (discount.maxQuantity === null || dto.quantity <= discount.maxQuantity)) {
+          if (
+            dto.quantity >= discount.minQuantity &&
+            (discount.maxQuantity === null || dto.quantity <= discount.maxQuantity)
+          ) {
             appliedDiscount = discount.discountPercent;
             effectivePrice = Number(a.unitPrice) * (1 - discount.discountPercent / 100);
             break;
@@ -162,7 +192,11 @@ export class PriceAgreementsService {
     return prices.length > 0 ? prices[0] : null;
   }
 
-  async checkExpiringAgreements(facilityId: string, daysAhead: number = 30, tenantId?: string): Promise<PriceAgreement[]> {
+  async checkExpiringAgreements(
+    facilityId: string,
+    daysAhead: number = 30,
+    tenantId?: string,
+  ): Promise<PriceAgreement[]> {
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + daysAhead);
 
@@ -179,9 +213,27 @@ export class PriceAgreementsService {
 
   async getStats(facilityId: string, tenantId?: string) {
     const [active, pending, expired, total] = await Promise.all([
-      this.agreementRepo.count({ where: { facilityId, status: PriceAgreementStatus.ACTIVE, ...(tenantId ? { tenantId } : {}) } }),
-      this.agreementRepo.count({ where: { facilityId, status: PriceAgreementStatus.PENDING, ...(tenantId ? { tenantId } : {}) } }),
-      this.agreementRepo.count({ where: { facilityId, status: PriceAgreementStatus.EXPIRED, ...(tenantId ? { tenantId } : {}) } }),
+      this.agreementRepo.count({
+        where: {
+          facilityId,
+          status: PriceAgreementStatus.ACTIVE,
+          ...(tenantId ? { tenantId } : {}),
+        },
+      }),
+      this.agreementRepo.count({
+        where: {
+          facilityId,
+          status: PriceAgreementStatus.PENDING,
+          ...(tenantId ? { tenantId } : {}),
+        },
+      }),
+      this.agreementRepo.count({
+        where: {
+          facilityId,
+          status: PriceAgreementStatus.EXPIRED,
+          ...(tenantId ? { tenantId } : {}),
+        },
+      }),
       this.agreementRepo.count({ where: { facilityId, ...(tenantId ? { tenantId } : {}) } }),
     ]);
 
@@ -195,6 +247,12 @@ export class PriceAgreementsService {
     }
     const uniqueResult = await uniqueItems.getRawOne();
 
-    return { active, pending, expired, total, uniqueItemsCovered: parseInt(uniqueResult?.count || '0') };
+    return {
+      active,
+      pending,
+      expired,
+      total,
+      uniqueItemsCovered: parseInt(uniqueResult?.count || '0'),
+    };
   }
 }

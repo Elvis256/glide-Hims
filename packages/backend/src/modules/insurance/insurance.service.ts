@@ -1,11 +1,22 @@
-import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Inject,
+  forwardRef,
+  Logger,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, LessThan, MoreThan, IsNull, DataSource } from 'typeorm';
 import { FinanceService } from '../finance/finance.service';
 import { InsuranceProvider } from '../../database/entities/insurance-provider.entity';
 import { InsurancePolicy, PolicyStatus } from '../../database/entities/insurance-policy.entity';
 import { InsuranceClaim, ClaimStatus } from '../../database/entities/insurance-claim.entity';
-import { ClaimItem, ClaimItemStatus, ClaimItemType } from '../../database/entities/claim-item.entity';
+import {
+  ClaimItem,
+  ClaimItemStatus,
+  ClaimItemType,
+} from '../../database/entities/claim-item.entity';
 import { PreAuthorization, PreAuthStatus } from '../../database/entities/pre-authorization.entity';
 import { Encounter, PayerType } from '../../database/entities/encounter.entity';
 import { Invoice } from '../../database/entities/invoice.entity';
@@ -64,10 +75,14 @@ export class InsuranceService {
     ] = await Promise.all([
       this.providerRepo.count({ where: { facilityId, isActive: true, ...tenantFilter } }),
       this.policyRepo.count({ where: { status: PolicyStatus.ACTIVE, ...tenantFilter } }),
-      this.claimRepo.count({ where: { facilityId, status: ClaimStatus.SUBMITTED, ...tenantFilter } }),
-      this.preAuthRepo.count({ where: { facilityId, status: PreAuthStatus.PENDING, ...tenantFilter } }),
-      this.claimRepo.count({ 
-        where: { facilityId, createdAt: MoreThan(startOfMonth), ...tenantFilter } 
+      this.claimRepo.count({
+        where: { facilityId, status: ClaimStatus.SUBMITTED, ...tenantFilter },
+      }),
+      this.preAuthRepo.count({
+        where: { facilityId, status: PreAuthStatus.PENDING, ...tenantFilter },
+      }),
+      this.claimRepo.count({
+        where: { facilityId, createdAt: MoreThan(startOfMonth), ...tenantFilter },
       }),
       this.claimRepo
         .createQueryBuilder('claim')
@@ -117,13 +132,20 @@ export class InsuranceService {
         .where('claim.facilityId = :facilityId', { facilityId })
         .andWhere('claim.status != :draft', { draft: ClaimStatus.DRAFT })
         .andWhere(tenantCond, tenantParams)
-        .setParameter('approvedStatuses', [ClaimStatus.APPROVED, ClaimStatus.PARTIALLY_APPROVED, ClaimStatus.PAID])
+        .setParameter('approvedStatuses', [
+          ClaimStatus.APPROVED,
+          ClaimStatus.PARTIALLY_APPROVED,
+          ClaimStatus.PAID,
+        ])
         .getRawOne(),
 
       // Average claim TAT (submission to payment) in days
       this.claimRepo
         .createQueryBuilder('claim')
-        .select('ROUND(AVG(EXTRACT(EPOCH FROM (claim.paidAt - claim.submittedAt)) / 86400), 1)', 'avgDays')
+        .select(
+          'ROUND(AVG(EXTRACT(EPOCH FROM (claim.paidAt - claim.submittedAt)) / 86400), 1)',
+          'avgDays',
+        )
         .where('claim.facilityId = :facilityId', { facilityId })
         .andWhere('claim.paidAt IS NOT NULL')
         .andWhere('claim.submittedAt IS NOT NULL')
@@ -146,7 +168,10 @@ export class InsuranceService {
         .createQueryBuilder('claim')
         .select("TO_CHAR(claim.createdAt, 'YYYY-MM')", 'month')
         .addSelect('COUNT(*)', 'submitted')
-        .addSelect(`SUM(CASE WHEN claim.status IN ('approved','partially_approved','paid') THEN 1 ELSE 0 END)`, 'approved')
+        .addSelect(
+          `SUM(CASE WHEN claim.status IN ('approved','partially_approved','paid') THEN 1 ELSE 0 END)`,
+          'approved',
+        )
         .addSelect(`SUM(CASE WHEN claim.status = 'rejected' THEN 1 ELSE 0 END)`, 'denied')
         .addSelect('COALESCE(SUM(claim.totalClaimed), 0)', 'claimedAmount')
         .addSelect('COALESCE(SUM(claim.totalApproved), 0)', 'approvedAmount')
@@ -209,7 +234,11 @@ export class InsuranceService {
     return this.providerRepo.save(provider);
   }
 
-  async getProviders(facilityId: string, filters?: { active?: boolean }, tenantId?: string): Promise<InsuranceProvider[]> {
+  async getProviders(
+    facilityId: string,
+    filters?: { active?: boolean },
+    tenantId?: string,
+  ): Promise<InsuranceProvider[]> {
     const where: any = { facilityId };
     if (filters?.active !== undefined) {
       where.isActive = filters.active;
@@ -226,7 +255,11 @@ export class InsuranceService {
     return provider;
   }
 
-  async updateProvider(id: string, dto: Partial<CreateProviderDto>, tenantId?: string): Promise<InsuranceProvider> {
+  async updateProvider(
+    id: string,
+    dto: Partial<CreateProviderDto>,
+    tenantId?: string,
+  ): Promise<InsuranceProvider> {
     const provider = await this.getProvider(id, tenantId);
     Object.assign(provider, dto);
     return this.providerRepo.save(provider);
@@ -243,13 +276,16 @@ export class InsuranceService {
     return this.policyRepo.save(policy);
   }
 
-  async getPolicies(filters: { providerId?: string; patientId?: string; status?: PolicyStatus }, tenantId?: string): Promise<InsurancePolicy[]> {
+  async getPolicies(
+    filters: { providerId?: string; patientId?: string; status?: PolicyStatus },
+    tenantId?: string,
+  ): Promise<InsurancePolicy[]> {
     const where: any = {};
     if (filters.providerId) where.providerId = filters.providerId;
     if (filters.patientId) where.patientId = filters.patientId;
     if (filters.status) where.status = filters.status;
     if (tenantId) where.tenantId = tenantId;
-    
+
     return this.policyRepo.find({
       where,
       relations: ['provider', 'patient'],
@@ -290,7 +326,11 @@ export class InsuranceService {
     return this.policyRepo.save(policy);
   }
 
-  async updatePolicyStatus(id: string, status: PolicyStatus, tenantId?: string): Promise<InsurancePolicy> {
+  async updatePolicyStatus(
+    id: string,
+    status: PolicyStatus,
+    tenantId?: string,
+  ): Promise<InsurancePolicy> {
     const policy = await this.getPolicy(id, tenantId);
     policy.status = status;
     return this.policyRepo.save(policy);
@@ -300,8 +340,8 @@ export class InsuranceService {
   private async generateClaimNumber(facilityId: string): Promise<string> {
     const today = new Date();
     const prefix = `CLM${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}`;
-    const count = await this.claimRepo.count({ 
-      where: { facilityId, claimNumber: Between(`${prefix}0001`, `${prefix}9999`) as any }
+    const count = await this.claimRepo.count({
+      where: { facilityId, claimNumber: Between(`${prefix}0001`, `${prefix}9999`) as any },
     });
     return `${prefix}${String(count + 1).padStart(4, '0')}`;
   }
@@ -311,16 +351,20 @@ export class InsuranceService {
 
     // Validate policy is active
     if (policy.status !== PolicyStatus.ACTIVE) {
-      throw new BadRequestException(`Policy ${policy.policyNumber} is ${policy.status}. Claims require an active policy.`);
+      throw new BadRequestException(
+        `Policy ${policy.policyNumber} is ${policy.status}. Claims require an active policy.`,
+      );
     }
 
     // Validate insurance provider is active
     if (policy.provider && (policy.provider as any).status === 'inactive') {
-      throw new BadRequestException(`Insurance provider "${policy.provider.name}" is inactive. Cannot create claims against inactive providers.`);
+      throw new BadRequestException(
+        `Insurance provider "${policy.provider.name}" is inactive. Cannot create claims against inactive providers.`,
+      );
     }
-    
+
     const claimNumber = await this.generateClaimNumber(dto.facilityId);
-    
+
     const savedClaim = await this.dataSource.transaction(async (manager) => {
       const claim = manager.create(InsuranceClaim, {
         ...dto,
@@ -344,15 +388,21 @@ export class InsuranceService {
         for (const itemDto of dto.items) {
           // Validate no negative amounts
           if (itemDto.unitPrice < 0) {
-            throw new BadRequestException(`Claim item unit price cannot be negative: ${itemDto.description || itemDto.serviceCode}`);
+            throw new BadRequestException(
+              `Claim item unit price cannot be negative: ${itemDto.description || itemDto.serviceCode}`,
+            );
           }
           if ((itemDto.quantity || 1) <= 0) {
-            throw new BadRequestException(`Claim item quantity must be positive: ${itemDto.description || itemDto.serviceCode}`);
+            throw new BadRequestException(
+              `Claim item quantity must be positive: ${itemDto.description || itemDto.serviceCode}`,
+            );
           }
           // Check for duplicate items (same service code + same service date)
           const itemKey = `${itemDto.serviceCode}-${itemDto.serviceDate}`;
           if (seenItems.has(itemKey)) {
-            throw new BadRequestException(`Duplicate claim item detected: ${itemDto.serviceCode} on ${itemDto.serviceDate}. Each service should be claimed once.`);
+            throw new BadRequestException(
+              `Duplicate claim item detected: ${itemDto.serviceCode} on ${itemDto.serviceDate}. Each service should be claimed once.`,
+            );
           }
           seenItems.add(itemKey);
 
@@ -377,9 +427,13 @@ export class InsuranceService {
     return this.getClaim(savedClaim.id, tenantId);
   }
 
-  async addClaimItem(claimId: string, dto: CreateClaimItemDto, tenantId?: string): Promise<ClaimItem> {
+  async addClaimItem(
+    claimId: string,
+    dto: CreateClaimItemDto,
+    tenantId?: string,
+  ): Promise<ClaimItem> {
     const claim = await this.getClaim(claimId, tenantId);
-    
+
     if (claim.status !== ClaimStatus.DRAFT) {
       throw new BadRequestException('Can only add items to draft claims');
     }
@@ -397,11 +451,15 @@ export class InsuranceService {
       where: { claimId, ...(tenantId ? { tenantId } : {}) },
     });
     const duplicateItem = existingItems.find(
-      (item) => item.serviceCode === dto.serviceCode && 
-                 new Date(item.serviceDate).toISOString().slice(0, 10) === new Date(dto.serviceDate).toISOString().slice(0, 10)
+      (item) =>
+        item.serviceCode === dto.serviceCode &&
+        new Date(item.serviceDate).toISOString().slice(0, 10) ===
+          new Date(dto.serviceDate).toISOString().slice(0, 10),
     );
     if (duplicateItem) {
-      throw new BadRequestException(`Duplicate claim item: ${dto.serviceCode} already exists for ${dto.serviceDate}`);
+      throw new BadRequestException(
+        `Duplicate claim item: ${dto.serviceCode} already exists for ${dto.serviceDate}`,
+      );
     }
 
     const item = this.claimItemRepo.create({
@@ -422,13 +480,17 @@ export class InsuranceService {
     return savedItem;
   }
 
-  async getClaims(facilityId: string, filters?: {
-    status?: ClaimStatus;
-    providerId?: string;
-    patientId?: string;
-    startDate?: string;
-    endDate?: string;
-  }, tenantId?: string): Promise<InsuranceClaim[]> {
+  async getClaims(
+    facilityId: string,
+    filters?: {
+      status?: ClaimStatus;
+      providerId?: string;
+      patientId?: string;
+      startDate?: string;
+      endDate?: string;
+    },
+    tenantId?: string,
+  ): Promise<InsuranceClaim[]> {
     const query = this.claimRepo
       .createQueryBuilder('claim')
       .leftJoinAndSelect('claim.provider', 'provider')
@@ -461,7 +523,7 @@ export class InsuranceService {
 
   async getClaim(id: string, tenantId?: string): Promise<InsuranceClaim> {
     const claim = await this.claimRepo.findOne({
-      where: { id , ...(tenantId ? { tenantId } : {}) },
+      where: { id, ...(tenantId ? { tenantId } : {}) },
       relations: ['provider', 'policy', 'patient', 'items', 'submittedBy', 'encounter'],
     });
     if (!claim) throw new NotFoundException('Claim not found');
@@ -470,7 +532,7 @@ export class InsuranceService {
 
   async submitClaim(id: string, userId: string, tenantId?: string): Promise<InsuranceClaim> {
     const claim = await this.getClaim(id, tenantId);
-    
+
     if (claim.status !== ClaimStatus.DRAFT) {
       throw new BadRequestException('Claim is not in draft status');
     }
@@ -486,7 +548,12 @@ export class InsuranceService {
     return this.claimRepo.save(claim);
   }
 
-  async processClaim(id: string, dto: ProcessClaimDto, approve: boolean, tenantId?: string): Promise<InsuranceClaim> {
+  async processClaim(
+    id: string,
+    dto: ProcessClaimDto,
+    approve: boolean,
+    tenantId?: string,
+  ): Promise<InsuranceClaim> {
     const claim = await this.getClaim(id, tenantId);
 
     if (claim.status !== ClaimStatus.SUBMITTED && claim.status !== ClaimStatus.IN_REVIEW) {
@@ -498,7 +565,7 @@ export class InsuranceService {
     if (approve) {
       claim.totalApproved = dto.approvedAmount;
       claim.patientResponsibility = Number(claim.totalClaimed) - dto.approvedAmount;
-      
+
       if (dto.approvedAmount >= Number(claim.totalClaimed)) {
         claim.status = ClaimStatus.APPROVED;
       } else if (dto.approvedAmount > 0) {
@@ -521,7 +588,11 @@ export class InsuranceService {
     return this.claimRepo.save(claim);
   }
 
-  async recordPayment(id: string, dto: RecordPaymentDto, tenantId?: string): Promise<InsuranceClaim> {
+  async recordPayment(
+    id: string,
+    dto: RecordPaymentDto,
+    tenantId?: string,
+  ): Promise<InsuranceClaim> {
     const claim = await this.getClaim(id, tenantId);
 
     if (claim.status !== ClaimStatus.APPROVED && claim.status !== ClaimStatus.PARTIALLY_APPROVED) {
@@ -542,15 +613,22 @@ export class InsuranceService {
 
     // Auto-post GL entry: DR Cash/Bank, CR Accounts Receivable
     if (claim.facilityId) {
-      this.financeService.autoPostInsurancePaymentJournal({
-        facilityId: claim.facilityId,
-        claimNumber: claim.claimNumber,
-        amount: dto.paidAmount,
-        paymentReference: dto.paymentReference,
-        userId: 'system',
-      }, tenantId).catch(err => {
-        this.logger.warn(`GL auto-post failed for insurance claim ${claim.claimNumber}: ${err.message}`);
-      });
+      this.financeService
+        .autoPostInsurancePaymentJournal(
+          {
+            facilityId: claim.facilityId,
+            claimNumber: claim.claimNumber,
+            amount: dto.paidAmount,
+            paymentReference: dto.paymentReference,
+            userId: 'system',
+          },
+          tenantId,
+        )
+        .catch((err) => {
+          this.logger.warn(
+            `GL auto-post failed for insurance claim ${claim.claimNumber}: ${err.message}`,
+          );
+        });
     }
 
     return saved;
@@ -560,13 +638,17 @@ export class InsuranceService {
   private async generatePreAuthNumber(facilityId: string): Promise<string> {
     const today = new Date();
     const prefix = `PA${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}`;
-    const count = await this.preAuthRepo.count({ 
-      where: { facilityId, authNumber: Between(`${prefix}0001`, `${prefix}9999`) as any }
+    const count = await this.preAuthRepo.count({
+      where: { facilityId, authNumber: Between(`${prefix}0001`, `${prefix}9999`) as any },
     });
     return `${prefix}${String(count + 1).padStart(4, '0')}`;
   }
 
-  async createPreAuth(dto: CreatePreAuthDto, userId: string, tenantId?: string): Promise<PreAuthorization> {
+  async createPreAuth(
+    dto: CreatePreAuthDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<PreAuthorization> {
     const policy = await this.getPolicy(dto.policyId, tenantId);
 
     // Validate estimated cost is positive
@@ -577,35 +659,45 @@ export class InsuranceService {
     // Validate against policy coverage limit
     if (policy.annualLimit && dto.estimatedCost > Number(policy.annualLimit)) {
       throw new BadRequestException(
-        `Estimated cost ${dto.estimatedCost} exceeds policy annual limit of ${policy.annualLimit}. Adjust the estimated cost or contact the insurer.`
+        `Estimated cost ${dto.estimatedCost} exceeds policy annual limit of ${policy.annualLimit}. Adjust the estimated cost or contact the insurer.`,
       );
     }
 
     // Validate policy is active
     if (policy.status !== PolicyStatus.ACTIVE) {
-      throw new BadRequestException(`Policy ${policy.policyNumber} is ${policy.status}. Pre-authorization requires an active policy.`);
+      throw new BadRequestException(
+        `Policy ${policy.policyNumber} is ${policy.status}. Pre-authorization requires an active policy.`,
+      );
     }
-    
+
     const authNumber = await this.generatePreAuthNumber(dto.facilityId);
-    
+
     const preAuth = this.preAuthRepo.create({
       ...dto,
       authNumber,
       patientId: policy.patientId,
       requestedById: userId,
-      expectedAdmissionDate: dto.expectedAdmissionDate ? new Date(dto.expectedAdmissionDate) : undefined,
-      expectedDischargeDate: dto.expectedDischargeDate ? new Date(dto.expectedDischargeDate) : undefined,
+      expectedAdmissionDate: dto.expectedAdmissionDate
+        ? new Date(dto.expectedAdmissionDate)
+        : undefined,
+      expectedDischargeDate: dto.expectedDischargeDate
+        ? new Date(dto.expectedDischargeDate)
+        : undefined,
       ...(tenantId ? { tenantId } : {}),
     });
 
     return this.preAuthRepo.save(preAuth);
   }
 
-  async getPreAuths(facilityId: string, filters?: {
-    status?: PreAuthStatus;
-    patientId?: string;
-    policyId?: string;
-  }, tenantId?: string): Promise<PreAuthorization[]> {
+  async getPreAuths(
+    facilityId: string,
+    filters?: {
+      status?: PreAuthStatus;
+      patientId?: string;
+      policyId?: string;
+    },
+    tenantId?: string,
+  ): Promise<PreAuthorization[]> {
     const where: any = { facilityId };
     if (tenantId) where.tenantId = tenantId;
     if (filters?.status) where.status = filters.status;
@@ -621,7 +713,7 @@ export class InsuranceService {
 
   async getPreAuth(id: string, tenantId?: string): Promise<PreAuthorization> {
     const preAuth = await this.preAuthRepo.findOne({
-      where: { id , ...(tenantId ? { tenantId } : {}) },
+      where: { id, ...(tenantId ? { tenantId } : {}) },
       relations: ['policy', 'policy.provider', 'patient', 'requestedBy'],
     });
     if (!preAuth) throw new NotFoundException('Pre-authorization not found');
@@ -630,7 +722,7 @@ export class InsuranceService {
 
   async submitPreAuth(id: string, tenantId?: string): Promise<PreAuthorization> {
     const preAuth = await this.getPreAuth(id, tenantId);
-    
+
     if (preAuth.status !== PreAuthStatus.PENDING) {
       throw new BadRequestException('Pre-authorization already submitted');
     }
@@ -639,7 +731,12 @@ export class InsuranceService {
     return this.preAuthRepo.save(preAuth);
   }
 
-  async processPreAuth(id: string, dto: ProcessPreAuthDto, approve: boolean, tenantId?: string): Promise<PreAuthorization> {
+  async processPreAuth(
+    id: string,
+    dto: ProcessPreAuthDto,
+    approve: boolean,
+    tenantId?: string,
+  ): Promise<PreAuthorization> {
     const preAuth = await this.getPreAuth(id, tenantId);
 
     if (preAuth.status !== PreAuthStatus.SUBMITTED && preAuth.status !== PreAuthStatus.PENDING) {
@@ -653,7 +750,7 @@ export class InsuranceService {
       if (dto.validFrom) preAuth.validFrom = new Date(dto.validFrom);
       if (dto.validUntil) preAuth.validUntil = new Date(dto.validUntil);
       if (dto.insurerReference) preAuth.insurerReference = dto.insurerReference;
-      
+
       if (dto.approvedAmount >= Number(preAuth.estimatedCost)) {
         preAuth.status = PreAuthStatus.APPROVED;
       } else if (dto.approvedAmount > 0) {
@@ -674,7 +771,12 @@ export class InsuranceService {
   }
 
   // ============ REPORTS ============
-  async getClaimStatusReport(facilityId: string, startDate: string, endDate: string, tenantId?: string) {
+  async getClaimStatusReport(
+    facilityId: string,
+    startDate: string,
+    endDate: string,
+    tenantId?: string,
+  ) {
     const qb = this.claimRepo
       .createQueryBuilder('claim')
       .select('claim.status', 'status')
@@ -693,7 +795,12 @@ export class InsuranceService {
     return claims;
   }
 
-  async getDenialsAnalysis(facilityId: string, startDate: string, endDate: string, tenantId?: string) {
+  async getDenialsAnalysis(
+    facilityId: string,
+    startDate: string,
+    endDate: string,
+    tenantId?: string,
+  ) {
     const tenantCond = tenantId ? 'claim.tenant_id = :tenantId' : '1=1';
     const tenantParams = tenantId ? { tenantId } : {};
     const dateRange = { startDate: new Date(startDate), endDate: new Date(endDate) };
@@ -710,7 +817,10 @@ export class InsuranceService {
       this.claimRepo
         .createQueryBuilder('claim')
         .select('SUM(CASE WHEN claim.status = :rejected THEN 1 ELSE 0 END)', 'totalDenied')
-        .addSelect('COALESCE(SUM(CASE WHEN claim.status = :rejected THEN claim.totalClaimed ELSE 0 END), 0)', 'totalDeniedValue')
+        .addSelect(
+          'COALESCE(SUM(CASE WHEN claim.status = :rejected THEN claim.totalClaimed ELSE 0 END), 0)',
+          'totalDeniedValue',
+        )
         .addSelect('COUNT(*)', 'totalSubmitted')
         .where('claim.facilityId = :facilityId', { facilityId })
         .andWhere('claim.status != :draft', { draft: ClaimStatus.DRAFT })
@@ -722,7 +832,7 @@ export class InsuranceService {
       // Top denial reasons
       this.claimRepo
         .createQueryBuilder('claim')
-        .select('COALESCE(claim.denialReason, \'Unspecified\')', 'reason')
+        .select("COALESCE(claim.denialReason, 'Unspecified')", 'reason')
         .addSelect('COUNT(*)', 'count')
         .addSelect('COALESCE(SUM(claim.totalClaimed), 0)', 'value')
         .where('claim.facilityId = :facilityId', { facilityId })
@@ -755,7 +865,10 @@ export class InsuranceService {
         .createQueryBuilder('claim')
         .select("TO_CHAR(claim.serviceDate, 'YYYY-MM')", 'month')
         .addSelect('SUM(CASE WHEN claim.status = :rejected THEN 1 ELSE 0 END)', 'denied')
-        .addSelect(`SUM(CASE WHEN claim.status IN ('approved','partially_approved','paid') THEN 1 ELSE 0 END)`, 'approved')
+        .addSelect(
+          `SUM(CASE WHEN claim.status IN ('approved','partially_approved','paid') THEN 1 ELSE 0 END)`,
+          'approved',
+        )
         .addSelect('COUNT(*)', 'total')
         .where('claim.facilityId = :facilityId', { facilityId })
         .andWhere('claim.status != :draft', { draft: ClaimStatus.DRAFT })
@@ -770,7 +883,10 @@ export class InsuranceService {
       this.claimRepo
         .createQueryBuilder('claim')
         .select('COUNT(*)', 'appealedTotal')
-        .addSelect(`SUM(CASE WHEN claim.status IN ('approved','partially_approved','paid') THEN 1 ELSE 0 END)`, 'appealedApproved')
+        .addSelect(
+          `SUM(CASE WHEN claim.status IN ('approved','partially_approved','paid') THEN 1 ELSE 0 END)`,
+          'appealedApproved',
+        )
         .where('claim.facilityId = :facilityId', { facilityId })
         .andWhere('claim.denialReason IS NOT NULL')
         .andWhere('claim.status != :rejected', { rejected: ClaimStatus.REJECTED })
@@ -781,7 +897,10 @@ export class InsuranceService {
       // Avg days to resolution (from submission to review for rejected claims)
       this.claimRepo
         .createQueryBuilder('claim')
-        .select('ROUND(AVG(EXTRACT(EPOCH FROM (claim.reviewedAt - claim.submittedAt)) / 86400), 1)', 'avgDays')
+        .select(
+          'ROUND(AVG(EXTRACT(EPOCH FROM (claim.reviewedAt - claim.submittedAt)) / 86400), 1)',
+          'avgDays',
+        )
         .where('claim.facilityId = :facilityId', { facilityId })
         .andWhere('claim.status = :status', { status: ClaimStatus.REJECTED })
         .andWhere('claim.reviewedAt IS NOT NULL')
@@ -836,7 +955,12 @@ export class InsuranceService {
     };
   }
 
-  async getProviderPerformance(facilityId: string, startDate: string, endDate: string, tenantId?: string) {
+  async getProviderPerformance(
+    facilityId: string,
+    startDate: string,
+    endDate: string,
+    tenantId?: string,
+  ) {
     const qb = this.claimRepo
       .createQueryBuilder('claim')
       .leftJoin('claim.provider', 'provider')
@@ -847,7 +971,10 @@ export class InsuranceService {
       .addSelect('SUM(CASE WHEN claim.status = :rejected THEN 1 ELSE 0 END)', 'rejectedClaims')
       .addSelect('SUM(claim.totalClaimed)', 'totalClaimed')
       .addSelect('SUM(claim.totalPaid)', 'totalPaid')
-      .addSelect('AVG(EXTRACT(EPOCH FROM (claim.paidAt - claim.submittedAt)) / 86400)', 'avgDaysToPayment')
+      .addSelect(
+        'AVG(EXTRACT(EPOCH FROM (claim.paidAt - claim.submittedAt)) / 86400)',
+        'avgDaysToPayment',
+      )
       .where('claim.facilityId = :facilityId', { facilityId })
       .andWhere('claim.serviceDate BETWEEN :startDate AND :endDate', {
         startDate: new Date(startDate),
@@ -873,11 +1000,15 @@ export class InsuranceService {
    * 2. Have an associated invoice with items
    * 3. No claim exists for this encounter yet
    */
-  async getEncountersAwaitingClaims(facilityId: string, filters?: {
-    providerId?: string;
-    startDate?: string;
-    endDate?: string;
-  }, tenantId?: string): Promise<any[]> {
+  async getEncountersAwaitingClaims(
+    facilityId: string,
+    filters?: {
+      providerId?: string;
+      startDate?: string;
+      endDate?: string;
+    },
+    tenantId?: string,
+  ): Promise<any[]> {
     const qb = this.encounterRepo
       .createQueryBuilder('encounter')
       .leftJoinAndSelect('encounter.patient', 'patient')
@@ -937,7 +1068,7 @@ export class InsuranceService {
     const rawResults = await qb.getRawMany();
 
     // Transform to a cleaner format
-    return rawResults.map(r => ({
+    return rawResults.map((r) => ({
       encounterId: r.encounter_id,
       visitNumber: r.encounter_visit_number,
       encounterType: r.encounter_type,
@@ -971,10 +1102,14 @@ export class InsuranceService {
   /**
    * Create a claim from an encounter with all its invoice items
    */
-  async createClaimFromEncounter(encounterId: string, facilityId: string, tenantId?: string): Promise<InsuranceClaim> {
+  async createClaimFromEncounter(
+    encounterId: string,
+    facilityId: string,
+    tenantId?: string,
+  ): Promise<InsuranceClaim> {
     // Get the encounter with policy
     const encounter = await this.encounterRepo.findOne({
-      where: { id: encounterId, facilityId , ...(tenantId ? { tenantId } : {}) },
+      where: { id: encounterId, facilityId, ...(tenantId ? { tenantId } : {}) },
       relations: ['insurancePolicy', 'patient'],
     });
 
@@ -992,7 +1127,7 @@ export class InsuranceService {
 
     // Check if claim already exists
     const existingClaim = await this.claimRepo.findOne({
-      where: { encounterId , ...(tenantId ? { tenantId } : {}) },
+      where: { encounterId, ...(tenantId ? { tenantId } : {}) },
     });
 
     if (existingClaim) {
@@ -1001,7 +1136,7 @@ export class InsuranceService {
 
     // Get the invoice for this encounter
     const invoice = await this.invoiceRepo.findOne({
-      where: { encounterId , ...(tenantId ? { tenantId } : {}) },
+      where: { encounterId, ...(tenantId ? { tenantId } : {}) },
       relations: ['items'],
     });
 
@@ -1013,13 +1148,13 @@ export class InsuranceService {
     const today = new Date();
     const prefix = `CLM${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}`;
     const count = await this.claimRepo.count({
-      where: { facilityId , ...(tenantId ? { tenantId } : {}) },
+      where: { facilityId, ...(tenantId ? { tenantId } : {}) },
     });
     const claimNumber = `${prefix}${String(count + 1).padStart(5, '0')}`;
 
     // Get the policy to get provider info
     const policy = await this.policyRepo.findOne({
-      where: { id: encounter.insurancePolicyId , ...(tenantId ? { tenantId } : {}) },
+      where: { id: encounter.insurancePolicyId, ...(tenantId ? { tenantId } : {}) },
     });
 
     if (!policy) {
@@ -1028,27 +1163,27 @@ export class InsuranceService {
 
     // Determine claim type from encounter type
     const claimTypeMap: Record<string, any> = {
-      'opd': 'outpatient',
-      'ipd': 'inpatient',
-      'emergency': 'emergency',
-      'surgical': 'surgical',
+      opd: 'outpatient',
+      ipd: 'inpatient',
+      emergency: 'emergency',
+      surgical: 'surgical',
     };
     const claimType = claimTypeMap[encounter.type] || 'outpatient';
 
     // Map ChargeType to ClaimItemType
     const chargeToClaimType: Record<string, ClaimItemType> = {
-      'consultation': ClaimItemType.CONSULTATION,
-      'procedure': ClaimItemType.PROCEDURE,
-      'lab': ClaimItemType.LABORATORY,
-      'radiology': ClaimItemType.RADIOLOGY,
-      'pharmacy': ClaimItemType.PHARMACY,
-      'bed': ClaimItemType.BED_CHARGES,
-      'nursing': ClaimItemType.NURSING,
-      'other': ClaimItemType.OTHER,
+      consultation: ClaimItemType.CONSULTATION,
+      procedure: ClaimItemType.PROCEDURE,
+      lab: ClaimItemType.LABORATORY,
+      radiology: ClaimItemType.RADIOLOGY,
+      pharmacy: ClaimItemType.PHARMACY,
+      bed: ClaimItemType.BED_CHARGES,
+      nursing: ClaimItemType.NURSING,
+      other: ClaimItemType.OTHER,
     };
 
     // Filter to only insurance-covered items and calculate claim total
-    const coveredItems = (invoice.items || []).filter(item => item.insuranceCovered !== false);
+    const coveredItems = (invoice.items || []).filter((item) => item.insuranceCovered !== false);
     const totalClaimed = coveredItems.reduce((sum, item) => {
       const insuranceAmt = Number(item.insuranceAmount || 0);
       return sum + (insuranceAmt > 0 ? insuranceAmt : Number(item.amount || 0));
@@ -1076,21 +1211,24 @@ export class InsuranceService {
 
     // Create claim items from insurance-covered invoice items
     if (coveredItems.length > 0) {
-      const claimItems = coveredItems.map(item => this.claimItemRepo.create({
-        claimId: savedClaim.id,
-        itemType: chargeToClaimType[item.chargeType] || ClaimItemType.OTHER,
-        serviceCode: item.serviceCode || 'SVC',
-        description: item.description,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        claimedAmount: Number(item.insuranceAmount || 0) > 0
-          ? Number(item.insuranceAmount)
-          : Number(item.amount),
-        serviceDate: encounter.startTime,
-        status: ClaimItemStatus.PENDING,
-        providerNotes: item.coverageNote || undefined,
-        ...(tenantId ? { tenantId } : {}),
-      }));
+      const claimItems = coveredItems.map((item) =>
+        this.claimItemRepo.create({
+          claimId: savedClaim.id,
+          itemType: chargeToClaimType[item.chargeType] || ClaimItemType.OTHER,
+          serviceCode: item.serviceCode || 'SVC',
+          description: item.description,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          claimedAmount:
+            Number(item.insuranceAmount || 0) > 0
+              ? Number(item.insuranceAmount)
+              : Number(item.amount),
+          serviceDate: encounter.startTime,
+          status: ClaimItemStatus.PENDING,
+          providerNotes: item.coverageNote || undefined,
+          ...(tenantId ? { tenantId } : {}),
+        }),
+      );
 
       await this.claimItemRepo.save(claimItems);
     }

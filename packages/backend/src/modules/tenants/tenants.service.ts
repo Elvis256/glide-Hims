@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException, ConflictException, OnModuleInit, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  OnModuleInit,
+  Logger,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { Tenant } from '../../database/entities/tenant.entity';
@@ -18,13 +24,19 @@ export class TenantsService implements OnModuleInit {
   async onModuleInit() {
     try {
       // Add slug column if it doesn't exist yet (production has synchronize off)
-      await this.dataSource.query(`
+      await this.dataSource
+        .query(
+          `
         ALTER TABLE tenants ADD COLUMN IF NOT EXISTS slug VARCHAR(100) UNIQUE
-      `).catch(() => { /* column may already exist */ });
+      `,
+        )
+        .catch(() => {
+          /* column may already exist */
+        });
 
       // Backfill slugs using raw SQL to avoid BaseEntity column issues
       const rows: { id: string; name: string }[] = await this.dataSource.query(
-        `SELECT id, name FROM tenants WHERE slug IS NULL`
+        `SELECT id, name FROM tenants WHERE slug IS NULL`,
       );
       for (const row of rows) {
         const baseSlug = TenantsService.generateSlug(row.name);
@@ -43,7 +55,8 @@ export class TenantsService implements OnModuleInit {
     let suffix = 1;
     while (true) {
       const [existing] = await this.dataSource.query(
-        `SELECT id FROM tenants WHERE slug = $1 AND id != $2 LIMIT 1`, [slug, excludeId]
+        `SELECT id FROM tenants WHERE slug = $1 AND id != $2 LIMIT 1`,
+        [slug, excludeId],
       );
       if (!existing) return slug;
       slug = `${baseSlug}-${suffix++}`;
@@ -142,7 +155,13 @@ export class TenantsService implements OnModuleInit {
     return tenant;
   }
 
-  async findBySlug(slug: string): Promise<{ id: string; name: string; slug: string; businessType?: string; isSetupComplete: boolean }> {
+  async findBySlug(slug: string): Promise<{
+    id: string;
+    name: string;
+    slug: string;
+    businessType?: string;
+    isSetupComplete: boolean;
+  }> {
     const tenant = await this.tenantRepository.findOne({
       where: { slug, status: 'active' },
       select: ['id', 'name', 'slug'],
@@ -164,13 +183,19 @@ export class TenantsService implements OnModuleInit {
     // Derive businessType from facility_mode
     let businessType: string | undefined;
     if (row.facility_mode) {
-      const mode = typeof row.facility_mode === 'string'
-        ? row.facility_mode.replace(/"/g, '')
-        : row.facility_mode;
+      const mode =
+        typeof row.facility_mode === 'string'
+          ? row.facility_mode.replace(/"/g, '')
+          : row.facility_mode;
       const modeToBusinessType: Record<string, string> = {
-        single_user: 'hospital', clinic_opd: 'hospital', clinic_full: 'hospital',
-        multisite_opd: 'hospital', hospital: 'hospital',
-        pharmacy_retail: 'pharmacy', pharmacy_chain: 'pharmacy', pharmacy_wholesale: 'pharmacy',
+        single_user: 'hospital',
+        clinic_opd: 'hospital',
+        clinic_full: 'hospital',
+        multisite_opd: 'hospital',
+        hospital: 'hospital',
+        pharmacy_retail: 'pharmacy',
+        pharmacy_chain: 'pharmacy',
+        pharmacy_wholesale: 'pharmacy',
       };
       businessType = modeToBusinessType[mode] || 'hospital';
     }

@@ -20,6 +20,8 @@ export class AuditLogService {
     ipAddress?: string;
     userAgent?: string;
     tenantId?: string;
+    actorType?: string;
+    supportAccessTier?: number;
   }): Promise<AuditLog> {
     return this.auditLogRepository.save(this.auditLogRepository.create(data));
   }
@@ -135,7 +137,7 @@ export class AuditLogService {
 
     const todayQb = this.auditLogRepository
       .createQueryBuilder('log')
-      .where("log.createdAt >= CURRENT_DATE");
+      .where('log.createdAt >= CURRENT_DATE');
     if (tenantId) todayQb.andWhere('log.tenantId = :tenantId', { tenantId });
     const todayCount = await todayQb.getCount();
 

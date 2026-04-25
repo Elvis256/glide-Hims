@@ -1,8 +1,19 @@
-import { Injectable, NotFoundException, BadRequestException, Logger, Inject, forwardRef } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Logger,
+  Inject,
+  forwardRef,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, In, DataSource } from 'typeorm';
 import { ImagingModality, ModalityType } from '../../database/entities/imaging-modality.entity';
-import { ImagingOrder, ImagingOrderStatus, ImagingPriority } from '../../database/entities/imaging-order.entity';
+import {
+  ImagingOrder,
+  ImagingOrderStatus,
+  ImagingPriority,
+} from '../../database/entities/imaging-order.entity';
 import { ImagingResult, FindingCategory } from '../../database/entities/imaging-result.entity';
 import {
   CreateModalityDto,
@@ -49,7 +60,11 @@ export class RadiologyService {
     return this.modalityRepo.save(modality);
   }
 
-  async getModalities(facilityId: string, options: { type?: ModalityType; active?: boolean }, tenantId?: string) {
+  async getModalities(
+    facilityId: string,
+    options: { type?: ModalityType; active?: boolean },
+    tenantId?: string,
+  ) {
     const where: any = { facilityId };
     if (options.type) where.modalityType = options.type;
     if (options.active !== undefined) where.isActive = options.active;
@@ -63,17 +78,22 @@ export class RadiologyService {
 
   // ============ ORDERS ============
 
-  async createOrder(dto: CreateImagingOrderDto, userId: string, tenantId?: string): Promise<ImagingOrder> {
+  async createOrder(
+    dto: CreateImagingOrderDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<ImagingOrder> {
     return this.dataSource.transaction(async (manager) => {
       // Generate order number with pessimistic lock
       const date = new Date();
       const yearMonth = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}`;
-      
+
       // Count this month's orders with lock to prevent race conditions
       const monthStart = new Date(date.getFullYear(), date.getMonth(), 1);
       const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 1);
-      
-      const count = await manager.createQueryBuilder(ImagingOrder, 'imgOrder')
+
+      const count = await manager
+        .createQueryBuilder(ImagingOrder, 'imgOrder')
         .setLock('pessimistic_write')
         .where('imgOrder.facilityId = :facilityId', { facilityId: dto.facilityId })
         .andWhere('imgOrder.createdAt >= :start AND imgOrder.createdAt < :end', {
@@ -81,7 +101,7 @@ export class RadiologyService {
           end: monthEnd,
         })
         .getCount();
-      
+
       const orderNumber = `IMG${yearMonth}${String(count + 1).padStart(5, '0')}`;
 
       const order = manager.create(ImagingOrder, {
@@ -102,9 +122,11 @@ export class RadiologyService {
       });
 
       const savedOrder = await manager.save(order);
-      
-      this.logger.log(`Imaging order created: ${orderNumber} for patient ${dto.patientId} by user ${userId}`);
-      
+
+      this.logger.log(
+        `Imaging order created: ${orderNumber} for patient ${dto.patientId} by user ${userId}`,
+      );
+
       return savedOrder;
     });
   }
@@ -120,14 +142,19 @@ export class RadiologyService {
     return order;
   }
 
-  async getOrders(facilityId: string, options: {
-    status?: ImagingOrderStatus;
-    modalityId?: string;
-    patientId?: string;
-    date?: string;
-    priority?: ImagingPriority;
-  }, tenantId?: string) {
-    const qb = this.orderRepo.createQueryBuilder('imgOrder')
+  async getOrders(
+    facilityId: string,
+    options: {
+      status?: ImagingOrderStatus;
+      modalityId?: string;
+      patientId?: string;
+      date?: string;
+      priority?: ImagingPriority;
+    },
+    tenantId?: string,
+  ) {
+    const qb = this.orderRepo
+      .createQueryBuilder('imgOrder')
       .leftJoinAndSelect('imgOrder.patient', 'patient')
       .leftJoinAndSelect('imgOrder.modality', 'modality')
       .leftJoinAndSelect('imgOrder.orderedBy', 'orderedBy')
@@ -163,7 +190,11 @@ export class RadiologyService {
   async getWorklist(facilityId: string, tenantId?: string): Promise<ImagingOrder[]> {
     const where: any = {
       facilityId,
-      status: In([ImagingOrderStatus.ORDERED, ImagingOrderStatus.SCHEDULED, ImagingOrderStatus.IN_PROGRESS]),
+      status: In([
+        ImagingOrderStatus.ORDERED,
+        ImagingOrderStatus.SCHEDULED,
+        ImagingOrderStatus.IN_PROGRESS,
+      ]),
     };
     if (tenantId) where.tenantId = tenantId;
     return this.orderRepo.find({
@@ -176,7 +207,11 @@ export class RadiologyService {
     });
   }
 
-  async scheduleOrder(id: string, dto: ScheduleImagingDto, tenantId?: string): Promise<ImagingOrder> {
+  async scheduleOrder(
+    id: string,
+    dto: ScheduleImagingDto,
+    tenantId?: string,
+  ): Promise<ImagingOrder> {
     const order = await this.getOrder(id, tenantId);
 
     if (order.status !== ImagingOrderStatus.ORDERED) {
@@ -204,7 +239,12 @@ export class RadiologyService {
     return savedOrder;
   }
 
-  async completeImaging(id: string, dto: PerformImagingDto, userId: string, tenantId?: string): Promise<ImagingOrder> {
+  async completeImaging(
+    id: string,
+    dto: PerformImagingDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<ImagingOrder> {
     const order = await this.getOrder(id, tenantId);
 
     if (order.status !== ImagingOrderStatus.IN_PROGRESS) {
@@ -219,7 +259,9 @@ export class RadiologyService {
     order.imageCount = dto.imageCount || 0;
 
     const savedOrder = await this.orderRepo.save(order);
-    this.logger.log(`Imaging completed: ${order.orderNumber} by user ${userId}, images: ${order.imageCount}`);
+    this.logger.log(
+      `Imaging completed: ${order.orderNumber} by user ${userId}, images: ${order.imageCount}`,
+    );
     return savedOrder;
   }
 
@@ -232,20 +274,28 @@ export class RadiologyService {
 
     order.status = ImagingOrderStatus.CANCELLED;
     const savedOrder = await this.orderRepo.save(order);
-    this.logger.warn(`Imaging order cancelled: ${order.orderNumber} by user ${userId || 'unknown'}`);
+    this.logger.warn(
+      `Imaging order cancelled: ${order.orderNumber} by user ${userId || 'unknown'}`,
+    );
     return savedOrder;
   }
 
   // ============ RESULTS ============
 
-  async createResult(dto: CreateImagingResultDto, userId: string, tenantId?: string): Promise<ImagingResult> {
+  async createResult(
+    dto: CreateImagingResultDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<ImagingResult> {
     const order = await this.getOrder(dto.imagingOrderId, tenantId);
 
     if (order.status !== ImagingOrderStatus.COMPLETED) {
       throw new BadRequestException('Order must be completed before reporting');
     }
 
-    const existing = await this.resultRepo.findOne({ where: { imagingOrderId: dto.imagingOrderId , ...(tenantId ? { tenantId } : {}) } });
+    const existing = await this.resultRepo.findOne({
+      where: { imagingOrderId: dto.imagingOrderId, ...(tenantId ? { tenantId } : {}) },
+    });
     if (existing) {
       throw new BadRequestException('Result already exists for this order');
     }
@@ -268,26 +318,40 @@ export class RadiologyService {
     order.status = ImagingOrderStatus.REPORTED;
     await this.orderRepo.save(order);
 
-    this.logger.log(`Imaging result created for order ${order.orderNumber} by user ${userId}${dto.isCritical ? ' [CRITICAL]' : ''}`);
+    this.logger.log(
+      `Imaging result created for order ${order.orderNumber} by user ${userId}${dto.isCritical ? ' [CRITICAL]' : ''}`,
+    );
 
     // Auto-post GL entry: DR Accounts Receivable, CR Radiology Revenue
     if (order.facilityId) {
       const amount = Number(order.price || 0);
       if (amount > 0) {
-        this.financeService.autoPostRadiologyJournal({
-          facilityId: order.facilityId,
-          orderNumber: order.orderNumber || order.id,
-          amount,
-          userId: 'system',
-        }, tenantId).catch(err => this.logger.warn(`GL auto-post failed for radiology ${order.id}: ${err.message}`));
+        this.financeService
+          .autoPostRadiologyJournal(
+            {
+              facilityId: order.facilityId,
+              orderNumber: order.orderNumber || order.id,
+              amount,
+              userId: 'system',
+            },
+            tenantId,
+          )
+          .catch((err) =>
+            this.logger.warn(`GL auto-post failed for radiology ${order.id}: ${err.message}`),
+          );
       } else {
-        this.logger.debug(`GL auto-post skipped for radiology order ${order.orderNumber}: no price set`);
+        this.logger.debug(
+          `GL auto-post skipped for radiology order ${order.orderNumber}: no price set`,
+        );
       }
     }
 
     // Notify ordering doctor
     try {
-      const fullOrder = await this.orderRepo.findOne({ where: { id: dto.imagingOrderId , ...(tenantId ? { tenantId } : {}) }, relations: ['patient'] });
+      const fullOrder = await this.orderRepo.findOne({
+        where: { id: dto.imagingOrderId, ...(tenantId ? { tenantId } : {}) },
+        relations: ['patient'],
+      });
       if (order.orderedById) {
         await this.inAppNotificationsService.notifyRadiologyResultReady(
           order.orderedById,
@@ -298,21 +362,27 @@ export class RadiologyService {
           tenantId,
         );
       }
-    } catch (e) { this.logger.warn(`Failed to send radiology notification: ${e.message}`); }
+    } catch (e) {
+      this.logger.warn(`Failed to send radiology notification: ${e.message}`);
+    }
 
     return result;
   }
 
   async getResult(orderId: string, tenantId?: string): Promise<ImagingResult | null> {
     return this.resultRepo.findOne({
-      where: { imagingOrderId: orderId , ...(tenantId ? { tenantId } : {}) },
+      where: { imagingOrderId: orderId, ...(tenantId ? { tenantId } : {}) },
       relations: ['reportedBy', 'verifiedBy'],
     });
   }
 
   async getResultsForReview(facilityId: string, tenantId?: string): Promise<ImagingOrder[]> {
     return this.orderRepo.find({
-      where: { facilityId, status: ImagingOrderStatus.COMPLETED , ...(tenantId ? { tenantId } : {}) },
+      where: {
+        facilityId,
+        status: ImagingOrderStatus.COMPLETED,
+        ...(tenantId ? { tenantId } : {}),
+      },
       relations: ['patient', 'modality', 'performedBy'],
       order: { performedAt: 'ASC' },
     });
@@ -328,40 +398,35 @@ export class RadiologyService {
 
     const tenantFilter = tenantId ? { tenantId } : {};
 
-    const [
-      totalModalities,
-      pendingOrders,
-      todayOrders,
-      completedPendingReport,
-      reportedToday,
-    ] = await Promise.all([
-      this.modalityRepo.count({ where: { facilityId, isActive: true, ...tenantFilter } }),
-      this.orderRepo.count({
-        where: {
-          facilityId,
-          status: In([ImagingOrderStatus.ORDERED, ImagingOrderStatus.SCHEDULED]),
-          ...tenantFilter,
-        },
-      }),
-      this.orderRepo.count({
-        where: {
-          facilityId,
-          orderedAt: Between(today, tomorrow),
-          ...tenantFilter,
-        },
-      }),
-      this.orderRepo.count({
-        where: { facilityId, status: ImagingOrderStatus.COMPLETED, ...tenantFilter },
-      }),
-      this.orderRepo.count({
-        where: {
-          facilityId,
-          status: ImagingOrderStatus.REPORTED,
-          orderedAt: Between(today, tomorrow),
-          ...tenantFilter,
-        },
-      }),
-    ]);
+    const [totalModalities, pendingOrders, todayOrders, completedPendingReport, reportedToday] =
+      await Promise.all([
+        this.modalityRepo.count({ where: { facilityId, isActive: true, ...tenantFilter } }),
+        this.orderRepo.count({
+          where: {
+            facilityId,
+            status: In([ImagingOrderStatus.ORDERED, ImagingOrderStatus.SCHEDULED]),
+            ...tenantFilter,
+          },
+        }),
+        this.orderRepo.count({
+          where: {
+            facilityId,
+            orderedAt: Between(today, tomorrow),
+            ...tenantFilter,
+          },
+        }),
+        this.orderRepo.count({
+          where: { facilityId, status: ImagingOrderStatus.COMPLETED, ...tenantFilter },
+        }),
+        this.orderRepo.count({
+          where: {
+            facilityId,
+            status: ImagingOrderStatus.REPORTED,
+            orderedAt: Between(today, tomorrow),
+            ...tenantFilter,
+          },
+        }),
+      ]);
 
     // Get orders by modality type
     const ordersByModalityQb = this.orderRepo
@@ -376,9 +441,7 @@ export class RadiologyService {
       ordersByModalityQb.andWhere('imgOrder.tenantId = :tenantId', { tenantId });
     }
 
-    const ordersByModality = await ordersByModalityQb
-      .groupBy('modality.modalityType')
-      .getRawMany();
+    const ordersByModality = await ordersByModalityQb.groupBy('modality.modalityType').getRawMany();
 
     return {
       totalModalities,
@@ -392,7 +455,12 @@ export class RadiologyService {
 
   // ============ TURNAROUND TIME ============
 
-  async getTurnaroundStats(facilityId: string, startDate: string, endDate: string, tenantId?: string) {
+  async getTurnaroundStats(
+    facilityId: string,
+    startDate: string,
+    endDate: string,
+    tenantId?: string,
+  ) {
     const orders = await this.orderRepo.find({
       where: {
         facilityId,
@@ -407,19 +475,21 @@ export class RadiologyService {
     }
 
     let totalOrderToComplete = 0;
-    let totalCompleteToReport = 0;
+    const totalCompleteToReport = 0;
     let countWithPerformed = 0;
 
     for (const order of orders) {
       if (order.performedAt) {
-        const orderToComplete = (order.performedAt.getTime() - order.orderedAt.getTime()) / (1000 * 60); // minutes
+        const orderToComplete =
+          (order.performedAt.getTime() - order.orderedAt.getTime()) / (1000 * 60); // minutes
         totalOrderToComplete += orderToComplete;
         countWithPerformed++;
       }
     }
 
     return {
-      avgOrderToComplete: countWithPerformed > 0 ? Math.round(totalOrderToComplete / countWithPerformed) : 0,
+      avgOrderToComplete:
+        countWithPerformed > 0 ? Math.round(totalOrderToComplete / countWithPerformed) : 0,
       totalOrders: orders.length,
     };
   }

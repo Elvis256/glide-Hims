@@ -15,8 +15,13 @@ export class VendorRatingsService {
     @InjectRepository(Supplier) private supplierRepo: Repository<Supplier>,
   ) {}
 
-  async create(dto: CreateVendorRatingDto, userId: string, tenantId?: string): Promise<VendorRating> {
-    const overall = (dto.deliveryTimeRating + dto.qualityRating + dto.priceRating + dto.serviceRating) / 4;
+  async create(
+    dto: CreateVendorRatingDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<VendorRating> {
+    const overall =
+      (dto.deliveryTimeRating + dto.qualityRating + dto.priceRating + dto.serviceRating) / 4;
 
     const rating = this.ratingRepo.create({
       supplierId: dto.supplierId,
@@ -68,19 +73,19 @@ export class VendorRatingsService {
 
   async update(id: string, dto: UpdateVendorRatingDto, tenantId?: string): Promise<VendorRating> {
     const rating = await this.findOne(id, tenantId);
-    
+
     if (dto.deliveryTimeRating !== undefined) rating.deliveryTimeRating = dto.deliveryTimeRating;
     if (dto.qualityRating !== undefined) rating.qualityRating = dto.qualityRating;
     if (dto.priceRating !== undefined) rating.priceRating = dto.priceRating;
     if (dto.serviceRating !== undefined) rating.serviceRating = dto.serviceRating;
     if (dto.comments !== undefined) rating.comments = dto.comments;
 
-    rating.overallRating = (
-      Number(rating.deliveryTimeRating) + 
-      Number(rating.qualityRating) + 
-      Number(rating.priceRating) + 
-      Number(rating.serviceRating)
-    ) / 4;
+    rating.overallRating =
+      (Number(rating.deliveryTimeRating) +
+        Number(rating.qualityRating) +
+        Number(rating.priceRating) +
+        Number(rating.serviceRating)) /
+      4;
 
     await this.ratingRepo.save(rating);
     await this.updateSummary(rating.supplierId, tenantId);
@@ -124,20 +129,27 @@ export class VendorRatingsService {
   }
 
   private async updateSummary(supplierId: string, tenantId?: string): Promise<void> {
-    const ratings = await this.ratingRepo.find({ where: { supplierId , ...(tenantId ? { tenantId } : {}) } });
+    const ratings = await this.ratingRepo.find({
+      where: { supplierId, ...(tenantId ? { tenantId } : {}) },
+    });
 
     if (ratings.length === 0) {
       await this.summaryRepo.softDelete({ supplierId, ...(tenantId ? { tenantId } : {}) });
       return;
     }
 
-    const avgDeliveryTime = ratings.reduce((sum, r) => sum + Number(r.deliveryTimeRating), 0) / ratings.length;
-    const avgQuality = ratings.reduce((sum, r) => sum + Number(r.qualityRating), 0) / ratings.length;
+    const avgDeliveryTime =
+      ratings.reduce((sum, r) => sum + Number(r.deliveryTimeRating), 0) / ratings.length;
+    const avgQuality =
+      ratings.reduce((sum, r) => sum + Number(r.qualityRating), 0) / ratings.length;
     const avgPrice = ratings.reduce((sum, r) => sum + Number(r.priceRating), 0) / ratings.length;
-    const avgService = ratings.reduce((sum, r) => sum + Number(r.serviceRating), 0) / ratings.length;
+    const avgService =
+      ratings.reduce((sum, r) => sum + Number(r.serviceRating), 0) / ratings.length;
     const avgOverall = (avgDeliveryTime + avgQuality + avgPrice + avgService) / 4;
 
-    let summary = await this.summaryRepo.findOne({ where: { supplierId , ...(tenantId ? { tenantId } : {}) } });
+    let summary = await this.summaryRepo.findOne({
+      where: { supplierId, ...(tenantId ? { tenantId } : {}) },
+    });
 
     // Determine trend
     let trend: 'up' | 'down' | 'stable' = 'stable';

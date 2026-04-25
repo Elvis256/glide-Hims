@@ -12,7 +12,7 @@ export class SuppliersService {
   ) {}
 
   async create(dto: CreateSupplierDto, tenantId?: string): Promise<Supplier> {
-    const code = dto.code?.trim() || await this.generateCode(tenantId);
+    const code = dto.code?.trim() || (await this.generateCode(tenantId));
 
     // Check for duplicate code
     const where: any = { code };
@@ -34,7 +34,8 @@ export class SuppliersService {
   }
 
   private async generateCode(tenantId?: string): Promise<string> {
-    const qb = this.supplierRepo.createQueryBuilder('s')
+    const qb = this.supplierRepo
+      .createQueryBuilder('s')
       .select('s.code', 'code')
       .where("s.code LIKE 'SUP-%'")
       .orderBy('s.code', 'DESC')
@@ -51,13 +52,17 @@ export class SuppliersService {
     return `SUP-${String(nextNum).padStart(4, '0')}`;
   }
 
-  async findAll(facilityId: string, options: {
-    type?: SupplierType;
-    status?: SupplierStatus;
-    search?: string;
-    page?: number;
-    limit?: number;
-  }, tenantId?: string) {
+  async findAll(
+    facilityId: string,
+    options: {
+      type?: SupplierType;
+      status?: SupplierStatus;
+      search?: string;
+      page?: number;
+      limit?: number;
+    },
+    tenantId?: string,
+  ) {
     const { type, status, search, page = 1, limit = 50 } = options;
 
     const qb = this.supplierRepo.createQueryBuilder('supplier');
@@ -80,7 +85,9 @@ export class SuppliersService {
       qb.andWhere('supplier.status = :status', { status });
     }
     if (search) {
-      qb.andWhere('(supplier.name ILIKE :search OR supplier.code ILIKE :search)', { search: `%${search}%` });
+      qb.andWhere('(supplier.name ILIKE :search OR supplier.code ILIKE :search)', {
+        search: `%${search}%`,
+      });
     }
 
     if (tenantId) {
@@ -140,15 +147,12 @@ export class SuppliersService {
     const whereClause: any = hasFacility ? { facilityId } : {};
     if (tenantId) whereClause.tenantId = tenantId;
 
-    const [
-      totalSuppliers,
-      activeSuppliers,
-      byType,
-    ] = await Promise.all([
+    const [totalSuppliers, activeSuppliers, byType] = await Promise.all([
       this.supplierRepo.count({ where: whereClause }),
       this.supplierRepo.count({ where: { ...whereClause, status: SupplierStatus.ACTIVE } }),
       (() => {
-        const qb = this.supplierRepo.createQueryBuilder('s')
+        const qb = this.supplierRepo
+          .createQueryBuilder('s')
           .select('s.type', 'type')
           .addSelect('COUNT(*)', 'count');
         if (hasFacility) {

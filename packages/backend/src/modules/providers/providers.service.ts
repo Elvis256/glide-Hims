@@ -28,7 +28,8 @@ export class ProvidersService {
   }
 
   async findAll(query: ProviderSearchDto, tenantId?: string) {
-    const qb = this.providerRepository.createQueryBuilder('provider')
+    const qb = this.providerRepository
+      .createQueryBuilder('provider')
       .leftJoinAndSelect('provider.facility', 'facility')
       .leftJoinAndSelect('provider.department', 'department')
       .leftJoinAndSelect('provider.user', 'user');
@@ -67,7 +68,9 @@ export class ProvidersService {
     }
 
     if (query.canPerformSurgery !== undefined) {
-      qb.andWhere('provider.canPerformSurgery = :canPerformSurgery', { canPerformSurgery: query.canPerformSurgery });
+      qb.andWhere('provider.canPerformSurgery = :canPerformSurgery', {
+        canPerformSurgery: query.canPerformSurgery,
+      });
     }
 
     if (tenantId) {
@@ -125,7 +128,8 @@ export class ProvidersService {
   }
 
   async getSpecialties(facilityId?: string, tenantId?: string): Promise<string[]> {
-    const qb = this.providerRepository.createQueryBuilder('provider')
+    const qb = this.providerRepository
+      .createQueryBuilder('provider')
       .select('DISTINCT provider.specialty', 'specialty')
       .where('provider.specialty IS NOT NULL');
 
@@ -138,13 +142,26 @@ export class ProvidersService {
     }
 
     const results = await qb.getRawMany();
-    return results.map(r => r.specialty).filter(Boolean);
+    return results.map((r) => r.specialty).filter(Boolean);
   }
 
-  async getAvailableProviders(facilityId: string, date: Date, tenantId?: string): Promise<Provider[]> {
-    const dayOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][date.getDay()];
-    
-    const qb = this.providerRepository.createQueryBuilder('provider')
+  async getAvailableProviders(
+    facilityId: string,
+    date: Date,
+    tenantId?: string,
+  ): Promise<Provider[]> {
+    const dayOfWeek = [
+      'sunday',
+      'monday',
+      'tuesday',
+      'wednesday',
+      'thursday',
+      'friday',
+      'saturday',
+    ][date.getDay()];
+
+    const qb = this.providerRepository
+      .createQueryBuilder('provider')
       .where('provider.facilityId = :facilityId', { facilityId })
       .andWhere('provider.status = :status', { status: ProviderStatus.ACTIVE })
       .andWhere('provider.availableDays @> :day', { day: JSON.stringify([dayOfWeek]) });
@@ -186,7 +203,8 @@ export class ProvidersService {
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + daysAhead);
 
-    const qb = this.providerRepository.createQueryBuilder('provider')
+    const qb = this.providerRepository
+      .createQueryBuilder('provider')
       .where('provider.licenseExpiry <= :futureDate', { futureDate })
       .andWhere('provider.licenseExpiry >= :today', { today: new Date() })
       .andWhere('provider.status = :status', { status: ProviderStatus.ACTIVE });

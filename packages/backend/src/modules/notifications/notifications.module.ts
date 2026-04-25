@@ -7,9 +7,7 @@ import { PatientReminder } from '../../database/entities/patient-reminder.entity
 import { Patient } from '../../database/entities/patient.entity';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([NotificationConfig, PatientReminder, Patient]),
-  ],
+  imports: [TypeOrmModule.forFeature([NotificationConfig, PatientReminder, Patient])],
   controllers: [NotificationsController],
   providers: [NotificationsService],
   exports: [NotificationsService],

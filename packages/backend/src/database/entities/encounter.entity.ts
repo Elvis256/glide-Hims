@@ -1,11 +1,4 @@
-import {
-  Entity,
-  Column,
-  ManyToOne,
-  OneToMany,
-  JoinColumn,
-  Index,
-} from 'typeorm';
+import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Patient } from './patient.entity';
 import { Facility } from './facility.entity';
@@ -17,10 +10,10 @@ export enum EncounterType {
   OPD = 'opd',
   IPD = 'ipd',
   EMERGENCY = 'emergency',
-  ANC = 'anc',           // Antenatal Care
-  PNC = 'pnc',           // Postnatal Care
-  ART = 'art',           // Antiretroviral Therapy
-  TB = 'tb',             // Tuberculosis
+  ANC = 'anc', // Antenatal Care
+  PNC = 'pnc', // Postnatal Care
+  ART = 'art', // Antiretroviral Therapy
+  TB = 'tb', // Tuberculosis
   DENTAL = 'dental',
   OPTICAL = 'optical',
   MENTAL_HEALTH = 'mental_health',

@@ -1,6 +1,22 @@
-import { Controller, Get, Post, Delete, Body, Param, HttpCode, HttpStatus, Request } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Delete,
+  Body,
+  Param,
+  HttpCode,
+  HttpStatus,
+  Request,
+} from '@nestjs/common';
 import { BiometricsService } from './biometrics.service';
-import { RegisterBiometricDto, UpdateStaffCoverageDto, FingerIndex, RecordVerificationDto } from './dto/biometric.dto';
+import {
+  RegisterBiometricDto,
+  UpdateStaffCoverageDto,
+  FingerIndex,
+  RecordVerificationDto,
+  VerifyBiometricDto,
+} from './dto/biometric.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 
 @Controller('biometrics')
@@ -36,12 +52,29 @@ export class BiometricsController {
   }
 
   /**
-   * Get fingerprint templates for verification (client-side matching)
+   * DEPRECATED: Get fingerprint templates for verification.
+   * SECURITY: This is now restricted to system admins only as we migrate to server-side matching.
+   * Use /biometrics/verify-proxy instead.
    */
   @Get('templates/:userId')
-  @AuthWithPermissions('users.read')
+  @AuthWithPermissions('system.admin')
   async getTemplates(@Param('userId') userId: string, @Request() req: any) {
-    const result = await this.biometricsService.getTemplatesForVerification(userId, req.user?.tenantId);
+    const result = await this.biometricsService.getTemplatesForVerification(
+      userId,
+      req.user?.tenantId,
+    );
+    return { data: result };
+  }
+
+  /**
+   * Secure server-side verification proxy.
+   * Captured template is sent to backend, which calls the fingerprint service.
+   */
+  @Post('verify-proxy')
+  @HttpCode(HttpStatus.OK)
+  @AuthWithPermissions('users.read')
+  async verifyProxy(@Body() dto: VerifyBiometricDto, @Request() req: any) {
+    const result = await this.biometricsService.verifyProxy(dto, req.user?.tenantId);
     return { data: result };
   }
 
@@ -62,7 +95,11 @@ export class BiometricsController {
   @HttpCode(HttpStatus.OK)
   @AuthWithPermissions('users.read')
   async recordVerification(@Body() body: RecordVerificationDto, @Request() req: any) {
-    await this.biometricsService.recordVerification(body.userId, body.fingerIndex, req.user?.tenantId);
+    await this.biometricsService.recordVerification(
+      body.userId,
+      body.fingerIndex,
+      req.user?.tenantId,
+    );
     return { message: 'Verification recorded' };
   }
 

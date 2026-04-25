@@ -1,10 +1,4 @@
-import {
-  Entity,
-  Column,
-  Index,
-  CreateDateColumn,
-  PrimaryGeneratedColumn,
-} from 'typeorm';
+import { Entity, Column, Index, CreateDateColumn, PrimaryGeneratedColumn } from 'typeorm';
 
 /**
  * System Feature - Global feature definitions (not tenant-specific)

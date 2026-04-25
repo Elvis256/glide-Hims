@@ -11,23 +11,23 @@ import { CacheService } from '../../cache/cache.service';
 
 /**
  * Balanced Rate Limiting Guard for Login Endpoint
- * 
+ *
  * Security vs Productivity Balance:
  * - Attempts 1-3: Normal login (no delay)
  * - Attempts 4-5: Warning + 2-second delay
  * - Attempts 6+: Block IP for 15 minutes
- * 
+ *
  * Uses CacheService for rate limit state.
  * Account-level lockout is handled separately in AuthService (database-backed).
  */
 @Injectable()
 export class RateLimitGuard implements CanActivate {
   private static readonly logger = new Logger(RateLimitGuard.name);
-  
+
   // Configuration
-  private readonly WARNING_THRESHOLD = 3;      // Warn after 3 attempts
-  private readonly MAX_ATTEMPTS = 6;           // Block after 6 attempts
-  private readonly WINDOW_SECONDS = 15 * 60;   // 15 minute window
+  private readonly WARNING_THRESHOLD = 3; // Warn after 3 attempts
+  private readonly MAX_ATTEMPTS = 6; // Block after 6 attempts
+  private readonly WINDOW_SECONDS = 15 * 60; // 15 minute window
   private readonly BLOCK_DURATION_SECONDS = 15 * 60; // 15 minute block
   private readonly PROGRESSIVE_DELAY_MS = 2000; // 2 second delay after warning threshold
 
@@ -55,19 +55,17 @@ export class RateLimitGuard implements CanActivate {
 
     // Get current attempt count
     const attemptKey = `ratelimit:login:${ip}`;
-    const currentAttempts = await this.cacheService.get<number>(attemptKey) || 0;
+    const currentAttempts = (await this.cacheService.get<number>(attemptKey)) || 0;
 
     // Check if max attempts exceeded
     if (currentAttempts >= this.MAX_ATTEMPTS) {
       // Block the IP
       const blockUntil = Date.now() + this.BLOCK_DURATION_SECONDS * 1000;
-      await this.cacheService.set(
-        `ratelimit:block:${ip}`,
-        blockUntil,
-        this.BLOCK_DURATION_SECONDS,
-      );
+      await this.cacheService.set(`ratelimit:block:${ip}`, blockUntil, this.BLOCK_DURATION_SECONDS);
 
-      RateLimitGuard.logger.warn(`[SECURITY] IP ${ip} blocked after ${currentAttempts} failed login attempts`);
+      RateLimitGuard.logger.warn(
+        `[SECURITY] IP ${ip} blocked after ${currentAttempts} failed login attempts`,
+      );
 
       throw new HttpException(
         {
@@ -82,11 +80,13 @@ export class RateLimitGuard implements CanActivate {
 
     // Progressive delay after warning threshold
     if (currentAttempts >= this.WARNING_THRESHOLD) {
-      RateLimitGuard.logger.warn(`[SECURITY] IP ${ip} approaching rate limit (${currentAttempts}/${this.MAX_ATTEMPTS} attempts)`);
-      
+      RateLimitGuard.logger.warn(
+        `[SECURITY] IP ${ip} approaching rate limit (${currentAttempts}/${this.MAX_ATTEMPTS} attempts)`,
+      );
+
       // Add progressive delay
       await this.delay(this.PROGRESSIVE_DELAY_MS);
-      
+
       // Attach warning info to request for the controller to include in response
       (request as any).rateLimitWarning = {
         attemptsRemaining: this.MAX_ATTEMPTS - currentAttempts,
@@ -113,7 +113,7 @@ export class RateLimitGuard implements CanActivate {
    * Get current attempt count for an IP (for admin monitoring)
    */
   async getAttemptCount(ip: string): Promise<number> {
-    return await this.cacheService.get<number>(`ratelimit:login:${ip}`) || 0;
+    return (await this.cacheService.get<number>(`ratelimit:login:${ip}`)) || 0;
   }
 
   /**
@@ -136,6 +136,6 @@ export class RateLimitGuard implements CanActivate {
    * Promise-based delay for progressive slowdown
    */
   private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

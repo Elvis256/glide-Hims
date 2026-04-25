@@ -7,6 +7,7 @@ import {
   Param,
   Query,
   Request,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { DonorFundService } from './donor-fund.service';
@@ -18,9 +19,13 @@ import {
   ApproveInterFacilityDto,
   SettleInterFacilityDto,
 } from './dto/finance.dto';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('Donor Funds')
 @ApiBearerAuth()
+@UseGuards(ModuleGuard)
+@RequireModule('finance')
 @Controller('finance/donor-funds')
 export class DonorFundController {
   constructor(private readonly donorFundService: DonorFundService) {}
@@ -38,14 +43,8 @@ export class DonorFundController {
   @AuthWithPermissions('finance.read')
   @ApiOperation({ summary: 'List donor funds' })
   @ApiQuery({ name: 'facilityId', required: false })
-  async findAllDonorFunds(
-    @Query('facilityId') facilityId?: string,
-    @Request() req?: any,
-  ) {
-    return this.donorFundService.findAllDonorFunds(
-      facilityId,
-      req?.user?.tenantId,
-    );
+  async findAllDonorFunds(@Query('facilityId') facilityId?: string, @Request() req?: any) {
+    return this.donorFundService.findAllDonorFunds(facilityId, req?.user?.tenantId);
   }
 
   @Get(':id')
@@ -77,7 +76,10 @@ export class DonorFundController {
   @Post('inter-facility')
   @AuthWithPermissions('finance.manage')
   @ApiOperation({ summary: 'Create an inter-facility transaction' })
-  async createInterFacilityTransaction(@Body() body: CreateInterFacilityTransactionDto, @Request() req: any) {
+  async createInterFacilityTransaction(
+    @Body() body: CreateInterFacilityTransactionDto,
+    @Request() req: any,
+  ) {
     return this.donorFundService.createInterFacilityTransaction(
       {
         fromFacilityId: body.fromFacilityId,
@@ -95,14 +97,8 @@ export class DonorFundController {
   @AuthWithPermissions('finance.read')
   @ApiOperation({ summary: 'List inter-facility transactions' })
   @ApiQuery({ name: 'facilityId', required: false })
-  async findAllInterFacility(
-    @Query('facilityId') facilityId?: string,
-    @Request() req?: any,
-  ) {
-    return this.donorFundService.findAllInterFacility(
-      facilityId,
-      req?.user?.tenantId,
-    );
+  async findAllInterFacility(@Query('facilityId') facilityId?: string, @Request() req?: any) {
+    return this.donorFundService.findAllInterFacility(facilityId, req?.user?.tenantId);
   }
 
   @Patch('inter-facility/:id/approve')

@@ -75,13 +75,27 @@ export class CreatePerformanceAppraisals1774500000000 implements MigrationInterf
     `);
 
     // Indexes
-    await queryRunner.query(`CREATE INDEX "IDX_perf_appraisals_facility" ON "performance_appraisals" ("facility_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_perf_appraisals_employee" ON "performance_appraisals" ("employee_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_perf_appraisals_reviewer" ON "performance_appraisals" ("reviewer_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_perf_appraisals_tenant" ON "performance_appraisals" ("tenant_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_perf_appraisals_status" ON "performance_appraisals" ("status")`);
-    await queryRunner.query(`CREATE INDEX "IDX_perf_appraisals_year" ON "performance_appraisals" ("year")`);
-    await queryRunner.query(`CREATE UNIQUE INDEX "IDX_perf_appraisals_unique" ON "performance_appraisals" ("employee_id", "appraisal_period", "year") WHERE "tenant_id" IS NULL`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_perf_appraisals_facility" ON "performance_appraisals" ("facility_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_perf_appraisals_employee" ON "performance_appraisals" ("employee_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_perf_appraisals_reviewer" ON "performance_appraisals" ("reviewer_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_perf_appraisals_tenant" ON "performance_appraisals" ("tenant_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_perf_appraisals_status" ON "performance_appraisals" ("status")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_perf_appraisals_year" ON "performance_appraisals" ("year")`,
+    );
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX "IDX_perf_appraisals_unique" ON "performance_appraisals" ("employee_id", "appraisal_period", "year") WHERE "tenant_id" IS NULL`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

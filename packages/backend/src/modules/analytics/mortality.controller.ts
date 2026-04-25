@@ -13,10 +13,7 @@ export class MortalityController {
   @AuthWithPermissions('analytics.read')
   @ApiOperation({ summary: 'Get mortality statistics' })
   @ApiQuery({ name: 'range', required: false, enum: ['week', 'month', 'quarter', 'year'] })
-  async getMortalityStatistics(
-    @Request() req: any,
-    @Query('range') range: string = 'month',
-  ) {
+  async getMortalityStatistics(@Request() req: any, @Query('range') range: string = 'month') {
     return this.analyticsService.getMortalityStatistics(req.user?.tenantId, range);
   }
 }

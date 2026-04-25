@@ -34,4 +34,10 @@ export class AuditLog extends BaseEntity {
 
   @Column({ type: 'text', nullable: true, name: 'user_agent' })
   userAgent?: string;
+
+  @Column({ name: 'actor_type', type: 'varchar', length: 50, nullable: true })
+  actorType?: string; // 'tenant_user' | 'system_admin' | 'system_support'
+
+  @Column({ name: 'support_access_tier', type: 'int', nullable: true })
+  supportAccessTier?: number;
 }

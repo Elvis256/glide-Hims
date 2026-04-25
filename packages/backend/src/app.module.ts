@@ -96,10 +96,12 @@ import { BackupModule } from './modules/backup/backup.module';
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
-        throttlers: [{
-          ttl: configService.get<number>('RATE_LIMIT_TTL', 60) * 1000,
-          limit: configService.get<number>('RATE_LIMIT_MAX', 100),
-        }],
+        throttlers: [
+          {
+            ttl: configService.get<number>('RATE_LIMIT_TTL', 60) * 1000,
+            limit: configService.get<number>('RATE_LIMIT_MAX', 100),
+          },
+        ],
       }),
       inject: [ConfigService],
     }),
@@ -232,11 +234,11 @@ import { BackupModule } from './modules/backup/backup.module';
 
     // Phase 21: Pricing Engine
     PricingEngineModule,
-    
+
     // Appointments
     AppointmentsModule,
     SchedulesModule,
-    
+
     // Biometrics (SecuGen fingerprint verification)
     BiometricsModule,
 

@@ -1,13 +1,33 @@
 import {
-  Controller, Get, Post, Patch, Body, Param, Query, ParseUUIDPipe, Request, NotFoundException,
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Body,
+  Param,
+  Query,
+  ParseUUIDPipe,
+  Request,
+  NotFoundException,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { MembershipService } from './membership.service';
-import { CreateMembershipSchemeDto, UpdateMembershipSchemeDto, CreatePatientMembershipDto, UpdatePatientMembershipDto, RenewMembershipDto } from './membership.dto';
+import {
+  CreateMembershipSchemeDto,
+  UpdateMembershipSchemeDto,
+  CreatePatientMembershipDto,
+  UpdatePatientMembershipDto,
+  RenewMembershipDto,
+} from './membership.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('Membership')
 @ApiBearerAuth()
+@UseGuards(ModuleGuard)
+@RequireModule('billing')
 @Controller('membership')
 export class MembershipController {
   constructor(private readonly service: MembershipService) {}
@@ -37,7 +57,11 @@ export class MembershipController {
   @Patch('plans/:id')
   @AuthWithPermissions('membership.update')
   @ApiOperation({ summary: 'Update membership plan/scheme' })
-  updatePlan(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateMembershipSchemeDto, @Request() req: any) {
+  updatePlan(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateMembershipSchemeDto,
+    @Request() req: any,
+  ) {
     return this.service.updateScheme(id, dto, req.user?.tenantId);
   }
 
@@ -75,7 +99,11 @@ export class MembershipController {
   @Patch('schemes/:id')
   @AuthWithPermissions('membership.update')
   @ApiOperation({ summary: 'Update membership scheme' })
-  updateScheme(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateMembershipSchemeDto, @Request() req: any) {
+  updateScheme(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateMembershipSchemeDto,
+    @Request() req: any,
+  ) {
     return this.service.updateScheme(id, dto, req.user?.tenantId);
   }
 
@@ -83,7 +111,11 @@ export class MembershipController {
   @Get('memberships')
   @AuthWithPermissions('membership.read')
   @ApiOperation({ summary: 'List all memberships' })
-  async findAllMemberships(@Query('planId') planId?: string, @Query('status') status?: string, @Request() req?: any) {
+  async findAllMemberships(
+    @Query('planId') planId?: string,
+    @Query('status') status?: string,
+    @Request() req?: any,
+  ) {
     return this.service.findAllMemberships(planId, status, req?.user?.tenantId);
   }
 
@@ -97,7 +129,11 @@ export class MembershipController {
   @Patch('memberships/:id')
   @AuthWithPermissions('membership.update')
   @ApiOperation({ summary: 'Update patient membership' })
-  updateMembership(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdatePatientMembershipDto, @Request() req: any) {
+  updateMembership(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdatePatientMembershipDto,
+    @Request() req: any,
+  ) {
     return this.service.updateMembership(id, dto, req.user?.tenantId);
   }
 
@@ -111,8 +147,16 @@ export class MembershipController {
   @Post('memberships/:id/renew')
   @AuthWithPermissions('membership.update')
   @ApiOperation({ summary: 'Renew patient membership' })
-  async renewMembership(@Param('id', ParseUUIDPipe) id: string, @Body() dto: RenewMembershipDto, @Request() req: any) {
-    return this.service.updateMembership(id, { endDate: dto.endDate, status: 'active' } as any, req.user?.tenantId);
+  async renewMembership(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RenewMembershipDto,
+    @Request() req: any,
+  ) {
+    return this.service.updateMembership(
+      id,
+      { endDate: dto.endDate, status: 'active' } as any,
+      req.user?.tenantId,
+    );
   }
 
   // ============ PATIENTS ============
@@ -126,7 +170,10 @@ export class MembershipController {
   @Get('patients/:patientId')
   @AuthWithPermissions('membership.read')
   @ApiOperation({ summary: 'Get patient memberships' })
-  findPatientMemberships(@Param('patientId', ParseUUIDPipe) patientId: string, @Request() req: any) {
+  findPatientMemberships(
+    @Param('patientId', ParseUUIDPipe) patientId: string,
+    @Request() req: any,
+  ) {
     return this.service.findPatientMemberships(patientId, req.user?.tenantId);
   }
 

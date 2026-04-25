@@ -1,7 +1,11 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, Between, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
-import { SampleReferral, ReferralStage, ReferralPriority } from '../../database/entities/sample-referral.entity';
+import {
+  SampleReferral,
+  ReferralStage,
+  ReferralPriority,
+} from '../../database/entities/sample-referral.entity';
 import { LabSample } from '../../database/entities/lab-sample.entity';
 import { Patient } from '../../database/entities/patient.entity';
 import { Facility } from '../../database/entities/facility.entity';
@@ -41,7 +45,11 @@ export class SampleReferralService {
     return `${prefix}-${seq}`;
   }
 
-  async create(dto: CreateSampleReferralDto, userId: string, tenantId?: string): Promise<SampleReferral> {
+  async create(
+    dto: CreateSampleReferralDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<SampleReferral> {
     const sample = await this.sampleRepo.findOne({
       where: { id: dto.sampleId, ...(tenantId ? { tenantId } : {}) },
       relations: ['patient'],
@@ -82,8 +90,13 @@ export class SampleReferralService {
     return this.referralRepo.save(referral);
   }
 
-  async findAll(tenantId?: string, facilityId?: string, query?: SampleReferralQueryDto): Promise<SampleReferral[]> {
-    const qb = this.referralRepo.createQueryBuilder('ref')
+  async findAll(
+    tenantId?: string,
+    facilityId?: string,
+    query?: SampleReferralQueryDto,
+  ): Promise<SampleReferral[]> {
+    const qb = this.referralRepo
+      .createQueryBuilder('ref')
       .leftJoinAndSelect('ref.sample', 'sample')
       .leftJoinAndSelect('ref.patient', 'patient')
       .leftJoinAndSelect('ref.fromFacility', 'fromFacility')
@@ -105,7 +118,9 @@ export class SampleReferralService {
     } else if (effectiveFacilityId && query?.direction === 'outgoing') {
       qb.andWhere('ref.fromFacilityId = :fid', { fid: effectiveFacilityId });
     } else if (effectiveFacilityId) {
-      qb.andWhere('(ref.fromFacilityId = :fid OR ref.toFacilityId = :fid)', { fid: effectiveFacilityId });
+      qb.andWhere('(ref.fromFacilityId = :fid OR ref.toFacilityId = :fid)', {
+        fid: effectiveFacilityId,
+      });
     }
 
     if (query?.fromDate) {
@@ -123,10 +138,7 @@ export class SampleReferralService {
     }
 
     // Sort STAT first, then URGENT, then ROUTINE; within each priority, oldest first
-    qb.addOrderBy(
-      `CASE ref.priority WHEN 'STAT' THEN 0 WHEN 'URGENT' THEN 1 ELSE 2 END`,
-      'ASC',
-    );
+    qb.addOrderBy(`CASE ref.priority WHEN 'STAT' THEN 0 WHEN 'URGENT' THEN 1 ELSE 2 END`, 'ASC');
     qb.addOrderBy('ref.created_at', 'ASC');
 
     return qb.getMany();
@@ -144,7 +156,12 @@ export class SampleReferralService {
     return referral;
   }
 
-  async updateStage(id: string, dto: UpdateStageDto, userId: string, tenantId?: string): Promise<SampleReferral> {
+  async updateStage(
+    id: string,
+    dto: UpdateStageDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<SampleReferral> {
     const referral = await this.findOne(id, tenantId);
 
     if (referral.stage === ReferralStage.REJECTED) {
@@ -181,16 +198,21 @@ export class SampleReferralService {
         referral.resultReadyAt = now;
         // Notify the originating facility
         try {
-          await this.inAppNotificationsService.create({
-            targetUserId: referral.collectedById || userId,
-            facilityId: referral.fromFacilityId,
-            type: InAppNotificationType.LAB_RESULT_READY,
-            title: 'Referral Result Ready',
-            message: `Result is ready for referral ${referral.referralNumber}. Patient: ${referral.patient?.fullName || ''}`,
-            metadata: { referralId: referral.id, referralNumber: referral.referralNumber },
-          }, tenantId);
+          await this.inAppNotificationsService.create(
+            {
+              targetUserId: referral.collectedById || userId,
+              facilityId: referral.fromFacilityId,
+              type: InAppNotificationType.LAB_RESULT_READY,
+              title: 'Referral Result Ready',
+              message: `Result is ready for referral ${referral.referralNumber}. Patient: ${referral.patient?.fullName || ''}`,
+              metadata: { referralId: referral.id, referralNumber: referral.referralNumber },
+            },
+            tenantId,
+          );
         } catch (err) {
-          this.logger.warn(`Failed to send result notification for ${referral.referralNumber}: ${err.message}`);
+          this.logger.warn(
+            `Failed to send result notification for ${referral.referralNumber}: ${err.message}`,
+          );
         }
         break;
       case ReferralStage.RESULT_DELIVERED:
@@ -207,7 +229,12 @@ export class SampleReferralService {
     return this.referralRepo.save(referral);
   }
 
-  async reject(id: string, dto: RejectReferralDto, userId: string, tenantId?: string): Promise<SampleReferral> {
+  async reject(
+    id: string,
+    dto: RejectReferralDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<SampleReferral> {
     const referral = await this.findOne(id, tenantId);
 
     if (referral.stage === ReferralStage.RESULT_DELIVERED) {
@@ -219,16 +246,21 @@ export class SampleReferralService {
     referral.rejectionReason = dto.rejectionReason;
 
     try {
-      await this.inAppNotificationsService.create({
-        targetUserId: referral.collectedById || userId,
-        facilityId: referral.fromFacilityId,
-        type: InAppNotificationType.LAB_RESULT_READY,
-        title: 'Sample Referral Rejected',
-        message: `Referral ${referral.referralNumber} was rejected: ${dto.rejectionReason}`,
-        metadata: { referralId: referral.id, referralNumber: referral.referralNumber },
-      }, tenantId);
+      await this.inAppNotificationsService.create(
+        {
+          targetUserId: referral.collectedById || userId,
+          facilityId: referral.fromFacilityId,
+          type: InAppNotificationType.LAB_RESULT_READY,
+          title: 'Sample Referral Rejected',
+          message: `Referral ${referral.referralNumber} was rejected: ${dto.rejectionReason}`,
+          metadata: { referralId: referral.id, referralNumber: referral.referralNumber },
+        },
+        tenantId,
+      );
     } catch (err) {
-      this.logger.warn(`Failed to send rejection notification for ${referral.referralNumber}: ${err.message}`);
+      this.logger.warn(
+        `Failed to send rejection notification for ${referral.referralNumber}: ${err.message}`,
+      );
     }
 
     return this.referralRepo.save(referral);
@@ -243,15 +275,15 @@ export class SampleReferralService {
 
     const all = await qb.getMany();
 
-    const inTransit = all.filter(r => r.stage === ReferralStage.IN_TRANSIT).length;
-    const pendingAtHub = all.filter(r =>
-      r.stage === ReferralStage.RECEIVED_AT_HUB || r.stage === ReferralStage.PROCESSING,
+    const inTransit = all.filter((r) => r.stage === ReferralStage.IN_TRANSIT).length;
+    const pendingAtHub = all.filter(
+      (r) => r.stage === ReferralStage.RECEIVED_AT_HUB || r.stage === ReferralStage.PROCESSING,
     ).length;
-    const resultsReady = all.filter(r => r.stage === ReferralStage.RESULT_READY).length;
-    const rejected = all.filter(r => r.stage === ReferralStage.REJECTED).length;
+    const resultsReady = all.filter((r) => r.stage === ReferralStage.RESULT_READY).length;
+    const rejected = all.filter((r) => r.stage === ReferralStage.REJECTED).length;
 
     // Calculate average TAT (collected → result_ready) in days for completed referrals
-    const completed = all.filter(r => r.collectedAt && r.resultReadyAt);
+    const completed = all.filter((r) => r.collectedAt && r.resultReadyAt);
     let avgTATDays = 0;
     if (completed.length > 0) {
       const totalMs = completed.reduce((sum, r) => {
@@ -261,11 +293,14 @@ export class SampleReferralService {
     }
 
     // % meeting 7-day target
-    const meeting7Day = completed.filter(r => {
-      const days = (new Date(r.resultReadyAt).getTime() - new Date(r.collectedAt).getTime()) / (1000 * 60 * 60 * 24);
+    const meeting7Day = completed.filter((r) => {
+      const days =
+        (new Date(r.resultReadyAt).getTime() - new Date(r.collectedAt).getTime()) /
+        (1000 * 60 * 60 * 24);
       return days <= 7;
     }).length;
-    const pctMeeting7Day = completed.length > 0 ? Math.round((meeting7Day / completed.length) * 100) : 0;
+    const pctMeeting7Day =
+      completed.length > 0 ? Math.round((meeting7Day / completed.length) * 100) : 0;
 
     return {
       total: all.length,
@@ -279,8 +314,13 @@ export class SampleReferralService {
     };
   }
 
-  async getTATStats(tenantId?: string, facilityId?: string, query?: TATStatsQueryDto): Promise<Record<string, any>> {
-    const qb = this.referralRepo.createQueryBuilder('ref')
+  async getTATStats(
+    tenantId?: string,
+    facilityId?: string,
+    query?: TATStatsQueryDto,
+  ): Promise<Record<string, any>> {
+    const qb = this.referralRepo
+      .createQueryBuilder('ref')
       .leftJoinAndSelect('ref.fromFacility', 'fromFacility')
       .leftJoinAndSelect('ref.toFacility', 'toFacility');
 
@@ -288,7 +328,9 @@ export class SampleReferralService {
 
     const effectiveFacilityId = query?.facilityId || facilityId;
     if (effectiveFacilityId) {
-      qb.andWhere('(ref.fromFacilityId = :fid OR ref.toFacilityId = :fid)', { fid: effectiveFacilityId });
+      qb.andWhere('(ref.fromFacilityId = :fid OR ref.toFacilityId = :fid)', {
+        fid: effectiveFacilityId,
+      });
     }
 
     if (query?.fromDate) qb.andWhere('ref.created_at >= :fromDate', { fromDate: query.fromDate });
@@ -336,23 +378,31 @@ export class SampleReferralService {
     }));
 
     // Bottleneck: stage with highest avg hours (with at least 1 sample)
-    const withData = stageAvgHours.filter(s => s.count > 0);
-    const bottleneck = withData.length > 0
-      ? withData.reduce((max, s) => (s.avgHours > max.avgHours ? s : max), withData[0])
-      : null;
+    const withData = stageAvgHours.filter((s) => s.count > 0);
+    const bottleneck =
+      withData.length > 0
+        ? withData.reduce((max, s) => (s.avgHours > max.avgHours ? s : max), withData[0])
+        : null;
 
     // 7-day compliance
-    const completed = all.filter(r => r.collectedAt && r.resultReadyAt);
-    const meeting7Day = completed.filter(r => {
-      const days = (new Date(r.resultReadyAt).getTime() - new Date(r.collectedAt).getTime()) / (1000 * 60 * 60 * 24);
+    const completed = all.filter((r) => r.collectedAt && r.resultReadyAt);
+    const meeting7Day = completed.filter((r) => {
+      const days =
+        (new Date(r.resultReadyAt).getTime() - new Date(r.collectedAt).getTime()) /
+        (1000 * 60 * 60 * 24);
       return days <= 7;
     }).length;
 
     // Breakdown by route
-    const routeMap = new Map<string, { count: number; totalHours: number; fromName: string; toName: string }>();
+    const routeMap = new Map<
+      string,
+      { count: number; totalHours: number; fromName: string; toName: string }
+    >();
     for (const r of completed) {
       const key = `${r.fromFacilityId}→${r.toFacilityId}`;
-      const hours = (new Date(r.resultReadyAt).getTime() - new Date(r.collectedAt).getTime()) / (1000 * 60 * 60);
+      const hours =
+        (new Date(r.resultReadyAt).getTime() - new Date(r.collectedAt).getTime()) /
+        (1000 * 60 * 60);
       const existing = routeMap.get(key);
       if (existing) {
         existing.count += 1;
@@ -366,7 +416,7 @@ export class SampleReferralService {
         });
       }
     }
-    const routeBreakdown = Array.from(routeMap.values()).map(v => ({
+    const routeBreakdown = Array.from(routeMap.values()).map((v) => ({
       from: v.fromName,
       to: v.toName,
       count: v.count,

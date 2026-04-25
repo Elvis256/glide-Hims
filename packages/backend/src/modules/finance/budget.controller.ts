@@ -8,17 +8,18 @@ import {
   Query,
   Request,
   ParseUUIDPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { BudgetService } from './budget.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
-import {
-  CreateBudgetDto,
-  CreateBudgetLineDto,
-  UpdateBudgetLineDto,
-} from './dto/finance.dto';
+import { CreateBudgetDto, CreateBudgetLineDto, UpdateBudgetLineDto } from './dto/finance.dto';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('Budgets')
+@UseGuards(ModuleGuard)
+@RequireModule('finance')
 @Controller('finance/budgets')
 export class BudgetController {
   constructor(private budgetService: BudgetService) {}
@@ -47,14 +48,22 @@ export class BudgetController {
   @Post(':id/lines')
   @AuthWithPermissions('finance.manage')
   @ApiOperation({ summary: 'Add a line to a budget' })
-  addLine(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CreateBudgetLineDto, @Request() req?: any) {
+  addLine(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateBudgetLineDto,
+    @Request() req?: any,
+  ) {
     return this.budgetService.addLine(id, dto as any, req?.user?.tenantId);
   }
 
   @Patch('lines/:lineId')
   @AuthWithPermissions('finance.manage')
   @ApiOperation({ summary: 'Update a budget line' })
-  updateLine(@Param('lineId', ParseUUIDPipe) lineId: string, @Body() dto: UpdateBudgetLineDto, @Request() req?: any) {
+  updateLine(
+    @Param('lineId', ParseUUIDPipe) lineId: string,
+    @Body() dto: UpdateBudgetLineDto,
+    @Request() req?: any,
+  ) {
     return this.budgetService.updateLine(lineId, dto as any, req?.user?.tenantId);
   }
 

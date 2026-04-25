@@ -8,13 +8,18 @@ import {
   Param,
   Query,
   Request,
+  UseGuards,
 } from '@nestjs/common';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { SuppliersService } from './suppliers.service';
 import { SupplierScoringService } from './supplier-scoring.service';
 import { CreateSupplierDto, UpdateSupplierDto } from './dto/suppliers.dto';
 import { SupplierType, SupplierStatus } from '../../database/entities/supplier.entity';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
+@UseGuards(ModuleGuard)
+@RequireModule('stores')
 @Controller('suppliers')
 export class SuppliersController {
   constructor(
@@ -39,26 +44,33 @@ export class SuppliersController {
     @Query('limit') limit?: string,
     @Request() req?: any,
   ) {
-    const result = await this.suppliersService.findAll(facilityId, {
-      type,
-      status,
-      search,
-      page: page ? parseInt(page, 10) : 1,
-      limit: limit ? parseInt(limit, 10) : 50,
-    }, req?.user?.tenantId);
+    const result = await this.suppliersService.findAll(
+      facilityId,
+      {
+        type,
+        status,
+        search,
+        page: page ? parseInt(page, 10) : 1,
+        limit: limit ? parseInt(limit, 10) : 50,
+      },
+      req?.user?.tenantId,
+    );
     const canViewFinancials = this.hasFinanceAccess(req?.user);
     return {
       ...result,
-      data: result.data.map(s => canViewFinancials ? s : this.redactFinancials(s)),
+      data: result.data.map((s) => (canViewFinancials ? s : this.redactFinancials(s))),
     };
   }
 
   @Get('active')
   @AuthWithPermissions('suppliers.read')
   async getActiveSuppliers(@Query('facilityId') facilityId: string, @Request() req: any) {
-    const suppliers = await this.suppliersService.getActiveSuppliers(facilityId, req.user?.tenantId);
+    const suppliers = await this.suppliersService.getActiveSuppliers(
+      facilityId,
+      req.user?.tenantId,
+    );
     const canViewFinancials = this.hasFinanceAccess(req?.user);
-    return canViewFinancials ? suppliers : suppliers.map(s => this.redactFinancials(s));
+    return canViewFinancials ? suppliers : suppliers.map((s) => this.redactFinancials(s));
   }
 
   @Get('dashboard')
@@ -105,9 +117,13 @@ export class SuppliersController {
   private hasFinanceAccess(user: any): boolean {
     const roles: string[] = user?.roles || [];
     const permissions: string[] = user?.permissions || [];
-    return roles.some(r => ['Super Admin', 'System Administrator', 'Finance', 'Accountant'].includes(r))
-      || permissions.includes('suppliers.update')
-      || permissions.includes('finance.read');
+    return (
+      roles.some((r) =>
+        ['Super Admin', 'System Administrator', 'Finance', 'Accountant'].includes(r),
+      ) ||
+      permissions.includes('suppliers.update') ||
+      permissions.includes('finance.read')
+    );
   }
 
   private redactFinancials(supplier: any): any {

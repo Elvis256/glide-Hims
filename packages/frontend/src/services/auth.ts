@@ -33,4 +33,9 @@ export const authService = {
   changePassword: async (currentPassword: string, newPassword: string): Promise<void> => {
     await api.post('/auth/change-password', { currentPassword, newPassword });
   },
+
+  enterTenant: async (tenantId: string): Promise<LoginResponse> => {
+    const response = await api.post<LoginResponse>('/auth/enter-tenant', { tenantId });
+    return response.data;
+  },
 };

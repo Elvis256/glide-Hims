@@ -10,6 +10,7 @@ import {
   Request,
   ParseUUIDPipe,
   NotFoundException,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { FinanceService } from './finance.service';
@@ -29,6 +30,8 @@ import {
 } from './dto/finance.dto';
 import { AccountType } from '../../database/entities/chart-of-account.entity';
 import { JournalStatus } from '../../database/entities/journal-entry.entity';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 const PAYMENT_METHODS_KEY = 'finance_payment_methods';
 const CURRENCIES_KEY = 'finance_currencies';
@@ -36,6 +39,8 @@ const EXCHANGE_RATES_KEY = 'finance_exchange_rates';
 
 @ApiTags('Finance & Accounting')
 @ApiBearerAuth()
+@UseGuards(ModuleGuard)
+@RequireModule('finance')
 @Controller('finance')
 export class FinanceController {
   constructor(
@@ -161,7 +166,11 @@ export class FinanceController {
     @Query('endDate') endDate?: string,
     @Request() req?: any,
   ) {
-    return this.financeService.getJournalEntries(facilityId, { status, startDate, endDate }, req?.user?.tenantId);
+    return this.financeService.getJournalEntries(
+      facilityId,
+      { status, startDate, endDate },
+      req?.user?.tenantId,
+    );
   }
 
   @Get('journals/:id')
@@ -180,7 +189,9 @@ export class FinanceController {
 
   @Post('journals/:id/reverse')
   @AuthWithPermissions('finance.journals.post')
-  @ApiOperation({ summary: 'Reverse a posted journal entry (creates offsetting entry and auto-posts it)' })
+  @ApiOperation({
+    summary: 'Reverse a posted journal entry (creates offsetting entry and auto-posts it)',
+  })
   async reverseJournalEntry(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ReverseJournalEntryDto,
@@ -215,7 +226,12 @@ export class FinanceController {
     @Query('endDate') endDate: string,
     @Request() req?: any,
   ) {
-    return this.financeService.getIncomeStatement(facilityId, startDate, endDate, req?.user?.tenantId);
+    return this.financeService.getIncomeStatement(
+      facilityId,
+      startDate,
+      endDate,
+      req?.user?.tenantId,
+    );
   }
 
   @Get('reports/balance-sheet')
@@ -253,10 +269,17 @@ export class FinanceController {
     try {
       const setting = await this.settingsService.getByKey(PAYMENT_METHODS_KEY, req.user?.tenantId);
       methods = (setting.value as any[]) ?? [];
-    } catch { /* not found — start with empty */ }
+    } catch {
+      /* not found — start with empty */
+    }
     const newMethod = { ...body, id: `pm_${Date.now()}`, isActive: (body as any).isActive ?? true };
     methods.push(newMethod);
-    await this.settingsService.upsert(PAYMENT_METHODS_KEY, methods, req.user?.tenantId, 'Configured payment methods');
+    await this.settingsService.upsert(
+      PAYMENT_METHODS_KEY,
+      methods,
+      req.user?.tenantId,
+      'Configured payment methods',
+    );
     return newMethod;
   }
 
@@ -268,7 +291,9 @@ export class FinanceController {
     try {
       const setting = await this.settingsService.getByKey(PAYMENT_METHODS_KEY, req.user?.tenantId);
       methods = (setting.value as any[]) ?? [];
-    } catch { /* not found — start with empty */ }
+    } catch {
+      /* not found — start with empty */
+    }
 
     const idx = methods.findIndex((m: any) => m.id === id);
     if (idx === -1) throw new NotFoundException(`Payment method ${id} not found`);
@@ -285,7 +310,9 @@ export class FinanceController {
     try {
       const setting = await this.settingsService.getByKey(CURRENCIES_KEY, req.user?.tenantId);
       return (setting.value as any[]) ?? [];
-    } catch { return []; }
+    } catch {
+      return [];
+    }
   }
 
   @Get('currencies/:id')
@@ -296,7 +323,9 @@ export class FinanceController {
     try {
       const setting = await this.settingsService.getByKey(CURRENCIES_KEY, req.user?.tenantId);
       currencies = (setting.value as any[]) ?? [];
-    } catch { /* empty */ }
+    } catch {
+      /* empty */
+    }
     const currency = currencies.find((c: any) => c.id === id);
     if (!currency) throw new NotFoundException(`Currency ${id} not found`);
     return currency;
@@ -310,22 +339,41 @@ export class FinanceController {
     try {
       const setting = await this.settingsService.getByKey(CURRENCIES_KEY, req.user?.tenantId);
       currencies = (setting.value as any[]) ?? [];
-    } catch { /* empty */ }
-    const newCurrency = { id: crypto.randomUUID(), ...dto, isActive: true, isDefault: false, createdAt: new Date().toISOString() };
+    } catch {
+      /* empty */
+    }
+    const newCurrency = {
+      id: crypto.randomUUID(),
+      ...dto,
+      isActive: true,
+      isDefault: false,
+      createdAt: new Date().toISOString(),
+    };
     currencies.push(newCurrency);
-    await this.settingsService.upsert(CURRENCIES_KEY, currencies, req.user?.tenantId, 'Configured currencies');
+    await this.settingsService.upsert(
+      CURRENCIES_KEY,
+      currencies,
+      req.user?.tenantId,
+      'Configured currencies',
+    );
     return newCurrency;
   }
 
   @Patch('currencies/:id')
   @AuthWithPermissions('finance.manage')
   @ApiOperation({ summary: 'Update currency' })
-  async updateCurrency(@Param('id') id: string, @Body() dto: UpdateCurrencyDto, @Request() req: any) {
+  async updateCurrency(
+    @Param('id') id: string,
+    @Body() dto: UpdateCurrencyDto,
+    @Request() req: any,
+  ) {
     let currencies: any[] = [];
     try {
       const setting = await this.settingsService.getByKey(CURRENCIES_KEY, req.user?.tenantId);
       currencies = (setting.value as any[]) ?? [];
-    } catch { /* empty */ }
+    } catch {
+      /* empty */
+    }
     const idx = currencies.findIndex((c: any) => c.id === id);
     if (idx === -1) throw new NotFoundException(`Currency ${id} not found`);
     currencies[idx] = { ...currencies[idx], ...dto };
@@ -341,7 +389,9 @@ export class FinanceController {
     try {
       const setting = await this.settingsService.getByKey(CURRENCIES_KEY, req.user?.tenantId);
       currencies = (setting.value as any[]) ?? [];
-    } catch { /* empty */ }
+    } catch {
+      /* empty */
+    }
     currencies = currencies.map((c: any) => ({ ...c, isDefault: c.id === id }));
     await this.settingsService.upsert(CURRENCIES_KEY, currencies, req.user?.tenantId);
     return currencies.find((c: any) => c.id === id);
@@ -355,7 +405,9 @@ export class FinanceController {
     try {
       const setting = await this.settingsService.getByKey(CURRENCIES_KEY, req.user?.tenantId);
       currencies = (setting.value as any[]) ?? [];
-    } catch { /* empty */ }
+    } catch {
+      /* empty */
+    }
     const idx = currencies.findIndex((c: any) => c.id === id);
     if (idx === -1) throw new NotFoundException(`Currency ${id} not found`);
     currencies[idx] = { ...currencies[idx], isActive: !currencies[idx].isActive };
@@ -371,7 +423,9 @@ export class FinanceController {
     try {
       const setting = await this.settingsService.getByKey(CURRENCIES_KEY, req.user?.tenantId);
       currencies = (setting.value as any[]) ?? [];
-    } catch { /* empty */ }
+    } catch {
+      /* empty */
+    }
     currencies = currencies.filter((c: any) => c.id !== id);
     await this.settingsService.upsert(CURRENCIES_KEY, currencies, req.user?.tenantId);
     return { deleted: true };
@@ -385,7 +439,9 @@ export class FinanceController {
     try {
       const setting = await this.settingsService.getByKey(EXCHANGE_RATES_KEY, req.user?.tenantId);
       return (setting.value as any[]) ?? [];
-    } catch { return []; }
+    } catch {
+      return [];
+    }
   }
 
   @Get('exchange-rates/current')
@@ -400,9 +456,11 @@ export class FinanceController {
     try {
       const setting = await this.settingsService.getByKey(EXCHANGE_RATES_KEY, req.user?.tenantId);
       rates = (setting.value as any[]) ?? [];
-    } catch { /* empty */ }
-    const rate = rates.find((r: any) =>
-      r.fromCurrencyId === from && r.toCurrencyId === to && r.isActive !== false,
+    } catch {
+      /* empty */
+    }
+    const rate = rates.find(
+      (r: any) => r.fromCurrencyId === from && r.toCurrencyId === to && r.isActive !== false,
     );
     return rate || null;
   }
@@ -415,22 +473,40 @@ export class FinanceController {
     try {
       const setting = await this.settingsService.getByKey(EXCHANGE_RATES_KEY, req.user?.tenantId);
       rates = (setting.value as any[]) ?? [];
-    } catch { /* empty */ }
-    const newRate = { id: crypto.randomUUID(), ...dto, isActive: true, createdAt: new Date().toISOString() };
+    } catch {
+      /* empty */
+    }
+    const newRate = {
+      id: crypto.randomUUID(),
+      ...dto,
+      isActive: true,
+      createdAt: new Date().toISOString(),
+    };
     rates.push(newRate);
-    await this.settingsService.upsert(EXCHANGE_RATES_KEY, rates, req.user?.tenantId, 'Configured exchange rates');
+    await this.settingsService.upsert(
+      EXCHANGE_RATES_KEY,
+      rates,
+      req.user?.tenantId,
+      'Configured exchange rates',
+    );
     return newRate;
   }
 
   @Patch('exchange-rates/:id')
   @AuthWithPermissions('finance.manage')
   @ApiOperation({ summary: 'Update exchange rate' })
-  async updateExchangeRate(@Param('id') id: string, @Body() dto: UpdateExchangeRateDto, @Request() req: any) {
+  async updateExchangeRate(
+    @Param('id') id: string,
+    @Body() dto: UpdateExchangeRateDto,
+    @Request() req: any,
+  ) {
     let rates: any[] = [];
     try {
       const setting = await this.settingsService.getByKey(EXCHANGE_RATES_KEY, req.user?.tenantId);
       rates = (setting.value as any[]) ?? [];
-    } catch { /* empty */ }
+    } catch {
+      /* empty */
+    }
     const idx = rates.findIndex((r: any) => r.id === id);
     if (idx === -1) throw new NotFoundException(`Exchange rate ${id} not found`);
     rates[idx] = { ...rates[idx], ...dto };
@@ -446,7 +522,9 @@ export class FinanceController {
     try {
       const setting = await this.settingsService.getByKey(EXCHANGE_RATES_KEY, req.user?.tenantId);
       rates = (setting.value as any[]) ?? [];
-    } catch { /* empty */ }
+    } catch {
+      /* empty */
+    }
     rates = rates.filter((r: any) => r.id !== id);
     await this.settingsService.upsert(EXCHANGE_RATES_KEY, rates, req.user?.tenantId);
     return { deleted: true };
@@ -468,7 +546,11 @@ export class FinanceController {
     @Query('limit') limit?: number,
     @Request() req?: any,
   ) {
-    return this.financeService.getAccountTransactions(id, { startDate, endDate, page, limit }, req?.user?.tenantId);
+    return this.financeService.getAccountTransactions(
+      id,
+      { startDate, endDate, page, limit },
+      req?.user?.tenantId,
+    );
   }
 
   // ============ AR AGING REPORT ============
@@ -493,7 +575,12 @@ export class FinanceController {
     @Query('endDate') endDate: string,
     @Request() req?: any,
   ) {
-    return this.financeService.getCashFlowStatement(facilityId, startDate, endDate, req?.user?.tenantId);
+    return this.financeService.getCashFlowStatement(
+      facilityId,
+      startDate,
+      endDate,
+      req?.user?.tenantId,
+    );
   }
 
   // ============ CLOSING ENTRIES ============
@@ -506,7 +593,12 @@ export class FinanceController {
     @Query('facilityId') facilityId: string,
     @Request() req: any,
   ) {
-    return this.financeService.generateClosingEntries(facilityId, periodId, req.user.id, req.user?.tenantId);
+    return this.financeService.generateClosingEntries(
+      facilityId,
+      periodId,
+      req.user.id,
+      req.user?.tenantId,
+    );
   }
 
   // ============ STATUTORY REPORTS (Uganda) ============
@@ -522,7 +614,13 @@ export class FinanceController {
     @Query('endDate') endDate: string,
     @Request() req?: any,
   ) {
-    return this.financeService.getStatutoryReport('vat', facilityId, startDate, endDate, req?.user?.tenantId);
+    return this.financeService.getStatutoryReport(
+      'vat',
+      facilityId,
+      startDate,
+      endDate,
+      req?.user?.tenantId,
+    );
   }
 
   @Get('reports/statutory/paye')
@@ -537,7 +635,13 @@ export class FinanceController {
     @Query('endDate') endDate: string,
     @Request() req?: any,
   ) {
-    return this.financeService.getStatutoryReport('paye', facilityId, startDate, endDate, req?.user?.tenantId);
+    return this.financeService.getStatutoryReport(
+      'paye',
+      facilityId,
+      startDate,
+      endDate,
+      req?.user?.tenantId,
+    );
   }
 
   @Get('reports/statutory/nssf')
@@ -552,6 +656,12 @@ export class FinanceController {
     @Query('endDate') endDate: string,
     @Request() req?: any,
   ) {
-    return this.financeService.getStatutoryReport('nssf', facilityId, startDate, endDate, req?.user?.tenantId);
+    return this.financeService.getStatutoryReport(
+      'nssf',
+      facilityId,
+      startDate,
+      endDate,
+      req?.user?.tenantId,
+    );
   }
 }

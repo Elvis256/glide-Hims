@@ -1,4 +1,16 @@
-import { IsString, IsOptional, IsEnum, IsUUID, IsBoolean, IsArray, ValidateNested, IsNumber, IsDateString, IsIn, IsNotEmpty } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsEnum,
+  IsUUID,
+  IsBoolean,
+  IsArray,
+  ValidateNested,
+  IsNumber,
+  IsDateString,
+  IsIn,
+  IsNotEmpty,
+} from 'class-validator';
 import { ApiProperty, PartialType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { StoreType } from '../../database/entities/store.entity';
@@ -35,12 +47,19 @@ export class CreateTransferDto {
   @ApiProperty() @IsUUID() fromStoreId: string;
   @ApiProperty() @IsUUID() toStoreId: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() reason?: string;
-  @ApiProperty({ type: [TransferItemDto] }) @IsArray() @ValidateNested({ each: true }) @Type(() => TransferItemDto) items: TransferItemDto[];
+  @ApiProperty({ type: [TransferItemDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TransferItemDto)
+  items: TransferItemDto[];
 }
 
 export class AdjustStockDto {
   @ApiProperty() @IsNumber() @Type(() => Number) quantity: number;
-  @ApiProperty({ enum: ['in', 'out', 'adjustment'] }) @IsIn(['in', 'out', 'adjustment']) type: 'in' | 'out' | 'adjustment';
+  @ApiProperty({ enum: ['in', 'out', 'adjustment'] }) @IsIn(['in', 'out', 'adjustment']) type:
+    | 'in'
+    | 'out'
+    | 'adjustment';
   @ApiProperty() @IsString() @IsNotEmpty() reason: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() batchNumber?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() expiryDate?: string;
@@ -60,5 +79,9 @@ export class ApproveTransferDto {
 }
 
 export class ReceiveTransferDto {
-  @ApiProperty({ type: [Object] }) @IsArray() items: { itemId: string; quantityReceived: number; notes?: string }[];
+  @ApiProperty({ type: [Object] }) @IsArray() items: {
+    itemId: string;
+    quantityReceived: number;
+    notes?: string;
+  }[];
 }

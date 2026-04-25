@@ -15,7 +15,9 @@ import {
   XCircle,
   Key,
   Shield,
+  Upload,
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import UserPermissionsModal from '../components/UserPermissionsModal';
 import ExportButton from '../components/ExportButton';
 
@@ -44,6 +46,7 @@ interface CreateUserData {
 
 export default function UsersPage() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -114,6 +117,13 @@ export default function UsersPage() {
         </div>
         <div className="flex items-center gap-3">
           <ExportButton entity="users" label="Export Users" />
+          <button
+            onClick={() => navigate('/admin/users/bulk-import')}
+            className="btn-secondary flex items-center gap-2"
+          >
+            <Upload className="w-5 h-5" />
+            Bulk Import
+          </button>
           <button
             onClick={() => {
               setEditingUser(null);

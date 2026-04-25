@@ -1,4 +1,14 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, DeleteDateColumn, ManyToOne, JoinColumn, Index } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  DeleteDateColumn,
+  ManyToOne,
+  JoinColumn,
+  Index,
+} from 'typeorm';
 import { User } from './user.entity';
 
 export enum InAppNotificationType {
@@ -14,6 +24,9 @@ export enum InAppNotificationType {
   PRESCRIPTION_DISPENSED = 'PRESCRIPTION_DISPENSED',
   INVOICE_CREATED = 'INVOICE_CREATED',
   ENCOUNTER_STATUS_CHANGED = 'ENCOUNTER_STATUS_CHANGED',
+  SUPPORT_ACCESS_REQUESTED = 'SUPPORT_ACCESS_REQUESTED',
+  SUPPORT_ACCESS_APPROVED = 'SUPPORT_ACCESS_APPROVED',
+  SUPPORT_ACCESS_DENIED = 'SUPPORT_ACCESS_DENIED',
   GENERAL = 'GENERAL',
 }
 

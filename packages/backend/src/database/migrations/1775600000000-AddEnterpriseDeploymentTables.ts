@@ -2,7 +2,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
 
 /**
  * Migration: Add Enterprise Deployment Tables
- * 
+ *
  * Creates tables for:
  * - License management (licenses)
  * - Phone home tracking (phone_home_records)
@@ -154,7 +154,7 @@ export class AddEnterpriseDeploymentTables1775600000000 implements MigrationInte
     `);
 
     // ============== SEED INITIAL DATA ==============
-    
+
     // Insert default system features
     await queryRunner.query(`
       INSERT INTO "system_features" ("feature_key", "name", "description", "category", "default_enabled", "min_license_type") 

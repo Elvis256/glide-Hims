@@ -1,13 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Body,
-  Param,
-  Query,
-  Request,
-} from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param, Query, Request, UseGuards } from '@nestjs/common';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { ProcurementService } from './procurement.service';
 import {
@@ -24,7 +15,11 @@ import {
 import { PRStatus, PRPriority } from '../../database/entities/purchase-request.entity';
 import { POStatus } from '../../database/entities/purchase-order.entity';
 import { GRNStatus } from '../../database/entities/goods-receipt.entity';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
+@UseGuards(ModuleGuard)
+@RequireModule('stores')
 @Controller('procurement')
 export class ProcurementController {
   constructor(private readonly procurementService: ProcurementService) {}
@@ -55,7 +50,11 @@ export class ProcurementController {
     @Query('endDate') endDate?: string,
     @Request() req?: any,
   ) {
-    return this.procurementService.getPurchaseRequests(facilityId, { status, priority, startDate, endDate }, req?.user?.tenantId);
+    return this.procurementService.getPurchaseRequests(
+      facilityId,
+      { status, priority, startDate, endDate },
+      req?.user?.tenantId,
+    );
   }
 
   @Get('purchase-requests/:id')
@@ -112,7 +111,11 @@ export class ProcurementController {
     @Query('endDate') endDate?: string,
     @Request() req?: any,
   ) {
-    return this.procurementService.getPurchaseOrders(facilityId, { status, supplierId, startDate, endDate }, req?.user?.tenantId);
+    return this.procurementService.getPurchaseOrders(
+      facilityId,
+      { status, supplierId, startDate, endDate },
+      req?.user?.tenantId,
+    );
   }
 
   @Get('purchase-orders/:id')
@@ -124,7 +127,12 @@ export class ProcurementController {
   @Put('purchase-orders/:id/approve')
   @AuthWithPermissions('procurement.approve')
   approvePurchaseOrder(@Param('id') id: string, @Request() req: any) {
-    return this.procurementService.approvePurchaseOrder(id, req.user.id, req.user?.tenantId, req.user?.roles);
+    return this.procurementService.approvePurchaseOrder(
+      id,
+      req.user.id,
+      req.user?.tenantId,
+      req.user?.roles,
+    );
   }
 
   @Put('purchase-orders/:id/send')
@@ -149,11 +157,13 @@ export class ProcurementController {
 
   @Post('goods-receipts/from-po')
   @AuthWithPermissions('procurement.create')
-  createGRNFromPO(
-    @Body() body: CreateGRNFromPODto,
-    @Request() req: any,
-  ) {
-    return this.procurementService.createGRNFromPO(body.purchaseOrderId, body.receivedItems, req.user.id, req.user?.tenantId);
+  createGRNFromPO(@Body() body: CreateGRNFromPODto, @Request() req: any) {
+    return this.procurementService.createGRNFromPO(
+      body.purchaseOrderId,
+      body.receivedItems,
+      req.user.id,
+      req.user?.tenantId,
+    );
   }
 
   @Get('goods-receipts')
@@ -166,7 +176,11 @@ export class ProcurementController {
     @Query('endDate') endDate?: string,
     @Request() req?: any,
   ) {
-    return this.procurementService.getGoodsReceipts(facilityId, { status, supplierId, startDate, endDate }, req?.user?.tenantId);
+    return this.procurementService.getGoodsReceipts(
+      facilityId,
+      { status, supplierId, startDate, endDate },
+      req?.user?.tenantId,
+    );
   }
 
   @Get('goods-receipts/:id')

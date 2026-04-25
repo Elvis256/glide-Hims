@@ -5,7 +5,8 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   ManyToOne,
-  JoinColumn, Index,
+  JoinColumn,
+  Index,
 } from 'typeorm';
 import { Patient } from './patient.entity';
 import { Encounter } from './encounter.entity';
@@ -92,7 +93,12 @@ export class SurgeryCase {
   @Column({ type: 'enum', enum: SurgeryType, default: SurgeryType.MAJOR, name: 'surgery_type' })
   surgeryType: SurgeryType;
 
-  @Column({ type: 'enum', enum: SurgeryPriority, default: SurgeryPriority.ELECTIVE, name: 'priority' })
+  @Column({
+    type: 'enum',
+    enum: SurgeryPriority,
+    default: SurgeryPriority.ELECTIVE,
+    name: 'priority',
+  })
   priority: SurgeryPriority;
 
   @Column({ type: 'enum', enum: SurgeryStatus, default: SurgeryStatus.SCHEDULED, name: 'status' })

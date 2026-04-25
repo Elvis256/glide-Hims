@@ -1,15 +1,44 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, In, Between, Like, EntityManager } from 'typeorm';
-import { Queue, QueueDisplay, QueueStatus, QueuePriority, ServicePoint, VALID_QUEUE_TRANSITIONS, QUEUE_TO_ENCOUNTER_STATUS } from '../../database/entities/queue.entity';
-import { Encounter, EncounterType, EncounterStatus, PayerType } from '../../database/entities/encounter.entity';
-import { Invoice, InvoiceItem, InvoiceStatus, ChargeType, PaymentType } from '../../database/entities/invoice.entity';
+import {
+  Queue,
+  QueueDisplay,
+  QueueStatus,
+  QueuePriority,
+  ServicePoint,
+  VALID_QUEUE_TRANSITIONS,
+  QUEUE_TO_ENCOUNTER_STATUS,
+} from '../../database/entities/queue.entity';
+import {
+  Encounter,
+  EncounterType,
+  EncounterStatus,
+  PayerType,
+} from '../../database/entities/encounter.entity';
+import {
+  Invoice,
+  InvoiceItem,
+  InvoiceStatus,
+  ChargeType,
+  PaymentType,
+} from '../../database/entities/invoice.entity';
 import { Service } from '../../database/entities/service-category.entity';
+import { Department } from '../../database/entities/department.entity';
 import { DoctorDuty } from '../../database/entities/doctor-duty.entity';
 import { AuditLog } from '../../database/entities/audit-log.entity';
 import { SystemSetting } from '../../database/entities/system-setting.entity';
 import { AfricasTalkingService } from '../integrations/africas-talking.service';
-import { CreateQueueDto, CallNextDto, TransferQueueDto, SkipQueueDto, HoldQueueDto, QueueFilterDto, CreateQueueDisplayDto, ServiceConfigDto } from './dto/queue.dto';
+import {
+  CreateQueueDto,
+  CallNextDto,
+  TransferQueueDto,
+  SkipQueueDto,
+  HoldQueueDto,
+  QueueFilterDto,
+  CreateQueueDisplayDto,
+  ServiceConfigDto,
+} from './dto/queue.dto';
 
 const SERVICE_CONFIG_KEY = 'queue.serviceConfig';
 
@@ -36,11 +65,120 @@ export class QueueManagementService {
     private invoiceItemRepository: Repository<InvoiceItem>,
     @InjectRepository(Service)
     private serviceRepository: Repository<Service>,
+    @InjectRepository(Department)
+    private departmentRepository: Repository<Department>,
     private readonly smsService: AfricasTalkingService,
     private dataSource: DataSource,
   ) {}
 
   // ─── Facility Service Config ──────────────────────────────────────────────
+
+  async validateQueueRequest(
+    dto: CreateQueueDto,
+    facilityId: string,
+    tenantId?: string,
+  ): Promise<{
+    valid: true;
+    resolvedPriority: QueuePriority;
+    requiresPayment: boolean;
+    initialQueueStatus: QueueStatus;
+    servicePointCapacityLimit: number | null;
+  }> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (dto.departmentId) {
+      const department = await this.departmentRepository.findOne({
+        where: {
+          id: dto.departmentId,
+          facilityId,
+          ...(tenantId ? { tenantId } : {}),
+        },
+      });
+
+      if (!department) {
+        throw new BadRequestException(
+          'Selected department is invalid for this facility. Please reselect department and try again.',
+        );
+      }
+
+      if (department.status !== 'active') {
+        throw new BadRequestException(
+          `Department ${department.name} is currently ${department.status}. Please select an active department.`,
+        );
+      }
+    }
+
+    if (dto.assignedDoctorId) {
+      const doctorDuty = await this.doctorDutyRepository.findOne({
+        where: {
+          doctorId: dto.assignedDoctorId,
+          facilityId,
+          ...(tenantId ? { tenantId } : {}),
+        },
+      });
+
+      if (!doctorDuty || doctorDuty.status === 'off_duty') {
+        throw new BadRequestException(
+          'Selected doctor is not currently checked in. Please choose another doctor or set Any Available Doctor.',
+        );
+      }
+    }
+
+    const existingQueue = await this.queueRepository.findOne({
+      where: {
+        patientId: dto.patientId,
+        facilityId,
+        status: In([QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE]),
+        ...(tenantId ? { tenantId } : {}),
+      },
+      relations: ['patient'],
+    });
+
+    if (existingQueue) {
+      throw new BadRequestException(
+        `Patient ${existingQueue.patient?.fullName || ''} is already in queue with token ${existingQueue.ticketNumber}`,
+      );
+    }
+
+    const config = await this.getServiceConfig(facilityId, tenantId);
+    const capacityLimits: Record<string, number> = config.capacityLimits || {};
+    const limit = capacityLimits[dto.servicePoint];
+
+    if (limit) {
+      const activeCount = await this.queueRepository.count({
+        where: {
+          facilityId,
+          servicePoint: dto.servicePoint as ServicePoint,
+          status: In([QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE]),
+          queueDate: today,
+          ...(tenantId ? { tenantId } : {}),
+        },
+      });
+
+      if (activeCount >= limit) {
+        throw new BadRequestException(
+          `Queue at ${dto.servicePoint} is at capacity (${limit} patients). Please try again later or redirect to another service point.`,
+        );
+      }
+    }
+
+    const resolvedPriority = this.resolvePriority(dto.priority, dto.patientConditionFlags, config);
+    const skipPaymentTypes = ['insurance', 'hospital_scheme', 'staff'];
+    const isEmergency =
+      dto.visitType === 'emergency' || resolvedPriority === QueuePriority.EMERGENCY;
+    const requiresPayment =
+      !!dto.paymentType && !skipPaymentTypes.includes(dto.paymentType) && !isEmergency;
+    const initialQueueStatus = requiresPayment ? QueueStatus.PENDING_PAYMENT : QueueStatus.WAITING;
+
+    return {
+      valid: true,
+      resolvedPriority,
+      requiresPayment,
+      initialQueueStatus,
+      servicePointCapacityLimit: limit || null,
+    };
+  }
 
   async getServiceConfig(facilityId: string, tenantId?: string): Promise<Record<string, any>> {
     const setting = await this.systemSettingRepository.findOne({
@@ -50,7 +188,11 @@ export class QueueManagementService {
     return setting.value;
   }
 
-  async upsertServiceConfig(facilityId: string, dto: ServiceConfigDto, tenantId?: string): Promise<Record<string, any>> {
+  async upsertServiceConfig(
+    facilityId: string,
+    dto: ServiceConfigDto,
+    tenantId?: string,
+  ): Promise<Record<string, any>> {
     const existing = await this.systemSettingRepository.findOne({
       where: { key: `${SERVICE_CONFIG_KEY}.${facilityId}` },
     });
@@ -84,7 +226,12 @@ export class QueueManagementService {
       ],
       triageDispositions: [
         { value: 'opd', label: 'OPD Consultation', servicePoint: ServicePoint.CONSULTATION },
-        { value: 'emergency', label: 'Emergency Ward', servicePoint: ServicePoint.EMERGENCY, priority: QueuePriority.URGENT },
+        {
+          value: 'emergency',
+          label: 'Emergency Ward',
+          servicePoint: ServicePoint.EMERGENCY,
+          priority: QueuePriority.URGENT,
+        },
         { value: 'direct-admit', label: 'Direct Admission (IPD)', servicePoint: ServicePoint.IPD },
         { value: 'observation', label: 'Observation', servicePoint: ServicePoint.CONSULTATION },
         { value: 'lab-only', label: 'Lab Only', servicePoint: ServicePoint.LABORATORY },
@@ -95,124 +242,107 @@ export class QueueManagementService {
 
   // ─── Add to Queue ─────────────────────────────────────────────────────────
 
-  async addToQueue(dto: CreateQueueDto, userId: string, facilityId: string, tenantId?: string): Promise<Queue> {
+  async addToQueue(
+    dto: CreateQueueDto,
+    userId: string,
+    facilityId: string,
+    tenantId?: string,
+  ): Promise<Queue> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Check if patient is already in an active queue (including overnight)
-    const existingQueue = await this.queueRepository.findOne({
-      where: {
-        patientId: dto.patientId,
-        facilityId,
-        status: In([QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE]),
-        ...(tenantId ? { tenantId } : {}),
-      },
-      relations: ['patient'],
-    });
+    const validation = await this.validateQueueRequest(dto, facilityId, tenantId);
+    const resolvedPriority = validation.resolvedPriority;
 
-    if (existingQueue) {
-      throw new BadRequestException(
-        `Patient ${existingQueue.patient?.fullName || ''} is already in queue with token ${existingQueue.ticketNumber}`,
-      );
-    }
-
-    // Enforce per-service-point capacity limits
-    const config = await this.getServiceConfig(facilityId);
-    const capacityLimits: Record<string, number> = config.capacityLimits || {};
-    const limit = capacityLimits[dto.servicePoint];
-    if (limit) {
-      const activeCount = await this.queueRepository.count({
-        where: {
-          facilityId,
-          servicePoint: dto.servicePoint as ServicePoint,
-          status: In([QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE]),
-          queueDate: today,
-          ...(tenantId ? { tenantId } : {}),
-        },
-      });
-      if (activeCount >= limit) {
-        throw new BadRequestException(
-          `Queue at ${dto.servicePoint} is at capacity (${limit} patients). Please try again later or redirect to another service point.`,
-        );
-      }
-    }
-
-    // Resolve priority from condition flags if not explicitly set
-    const resolvedPriority = this.resolvePriority(dto.priority, dto.patientConditionFlags, config);
-
-    const ticketNumber = await this.generateTicketNumber(facilityId, dto.servicePoint as ServicePoint, today, tenantId);
-    const sequenceNumber = await this.getNextSequenceNumber(facilityId, dto.servicePoint as ServicePoint, today, tenantId);
+    const ticketNumber = await this.generateTicketNumber(
+      facilityId,
+      dto.servicePoint as ServicePoint,
+      today,
+      tenantId,
+    );
+    const sequenceNumber = await this.getNextSequenceNumber(
+      facilityId,
+      dto.servicePoint as ServicePoint,
+      today,
+      tenantId,
+    );
 
     // Determine if payment is required before queueing
-    const skipPaymentTypes = ['insurance', 'hospital_scheme', 'staff'];
-    const isEmergency = dto.visitType === 'emergency' || dto.priority === QueuePriority.EMERGENCY;
-    const requiresPayment = dto.paymentType
-      && !skipPaymentTypes.includes(dto.paymentType)
-      && !isEmergency;
-    const initialQueueStatus = requiresPayment ? QueueStatus.PENDING_PAYMENT : QueueStatus.WAITING;
+    const initialQueueStatus = validation.initialQueueStatus;
+    const isEmergency =
+      dto.visitType === 'emergency' || resolvedPriority === QueuePriority.EMERGENCY;
 
     // Create encounter, invoice, and queue entry in a transaction
     // so if queue creation fails, encounter is rolled back too
-    const { savedEncounter, savedInvoice, saved } = await this.dataSource.transaction(async (manager) => {
-      const visitNumber = `VN-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Date.now().toString(36).toUpperCase()}`;
-      const encounter = this.encounterRepository.create({
-        visitNumber,
-        patientId: dto.patientId,
-        facilityId,
-        departmentId: dto.departmentId,
-        createdById: userId,
-        type: isEmergency ? EncounterType.EMERGENCY : EncounterType.OPD,
-        status: EncounterStatus.REGISTERED,
-        chiefComplaint: dto.chiefComplaintAtToken || 'OPD Visit',
-        queueNumber: sequenceNumber,
-        payerType: this.mapPaymentTypeToPayer(dto.paymentType),
-        ...(tenantId ? { tenantId } : {}),
-      });
-      const txEncounter = await manager.save(encounter) as Encounter;
-
-      // Auto-create consultation invoice (non-blocking within the transaction)
-      let txInvoice: Invoice | null = null;
-      try {
-        txInvoice = await this.createConsultationInvoice(
-          dto.patientId,
-          txEncounter.id,
+    const { savedEncounter, savedInvoice, saved } = await this.dataSource.transaction(
+      async (manager) => {
+        const visitNumber = `VN-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Date.now().toString(36).toUpperCase()}`;
+        const encounter = this.encounterRepository.create({
+          visitNumber,
+          patientId: dto.patientId,
           facilityId,
-          userId,
-          dto.paymentType,
-          dto.consultationFee,
-          dto.insurancePolicyId,
+          departmentId: dto.departmentId,
+          createdById: userId,
+          type: isEmergency ? EncounterType.EMERGENCY : EncounterType.OPD,
+          status: EncounterStatus.REGISTERED,
+          chiefComplaint: dto.chiefComplaintAtToken || 'OPD Visit',
+          queueNumber: sequenceNumber,
+          payerType: this.mapPaymentTypeToPayer(dto.paymentType),
+          ...(tenantId ? { tenantId } : {}),
+        });
+        const txEncounter = (await manager.save(encounter)) as Encounter;
+
+        // Auto-create consultation invoice (non-blocking within the transaction)
+        let txInvoice: Invoice | null = null;
+        try {
+          txInvoice = await this.createConsultationInvoice(
+            dto.patientId,
+            txEncounter.id,
+            facilityId,
+            userId,
+            dto.paymentType,
+            dto.consultationFee,
+            dto.insurancePolicyId,
+            tenantId,
+            manager,
+          );
+          this.logger.log(`Invoice ${txInvoice.invoiceNumber} created for token ${ticketNumber}`);
+        } catch (err) {
+          // Non-blocking: if invoice creation fails, still issue the token
+          this.logger.warn(
+            `Failed to auto-create invoice for token ${ticketNumber}: ${err.message}`,
+          );
+        }
+
+        const queue = this.queueRepository.create({
+          ...dto,
+          servicePoint: dto.servicePoint as ServicePoint,
+          ticketNumber,
+          sequenceNumber,
+          queueDate: today,
+          facilityId,
+          createdById: userId,
+          encounterId: txEncounter.id,
+          status: initialQueueStatus,
+          priority: resolvedPriority,
+          visitType: dto.visitType,
+          chiefComplaintAtToken: dto.chiefComplaintAtToken,
+          patientConditionFlags: dto.patientConditionFlags,
+          ...(tenantId ? { tenantId } : {}),
+        });
+
+        queue.estimatedWaitMinutes = await this.calculateSmartWaitTime(
+          facilityId,
+          dto.servicePoint as ServicePoint,
+          today,
           tenantId,
-          manager,
         );
-        this.logger.log(`Invoice ${txInvoice.invoiceNumber} created for token ${ticketNumber}`);
-      } catch (err) {
-        // Non-blocking: if invoice creation fails, still issue the token
-        this.logger.warn(`Failed to auto-create invoice for token ${ticketNumber}: ${err.message}`);
-      }
 
-      const queue = this.queueRepository.create({
-        ...dto,
-        servicePoint: dto.servicePoint as ServicePoint,
-        ticketNumber,
-        sequenceNumber,
-        queueDate: today,
-        facilityId,
-        createdById: userId,
-        encounterId: txEncounter.id,
-        status: initialQueueStatus,
-        priority: resolvedPriority,
-        visitType: dto.visitType,
-        chiefComplaintAtToken: dto.chiefComplaintAtToken,
-        patientConditionFlags: dto.patientConditionFlags,
-        ...(tenantId ? { tenantId } : {}),
-      });
+        const txSaved = await manager.save(queue);
 
-      queue.estimatedWaitMinutes = await this.calculateSmartWaitTime(facilityId, dto.servicePoint as ServicePoint, today, tenantId);
-
-      const txSaved = await manager.save(queue);
-
-      return { savedEncounter: txEncounter, savedInvoice: txInvoice, saved: txSaved };
-    });
+        return { savedEncounter: txEncounter, savedInvoice: txInvoice, saved: txSaved };
+      },
+    );
 
     if (dto.assignedDoctorId) {
       await this.updateDoctorQueueCount(dto.assignedDoctorId, facilityId, tenantId);
@@ -241,11 +371,14 @@ export class QueueManagementService {
   private mapPaymentTypeToPayer(paymentType?: string): PayerType {
     if (!paymentType) return PayerType.CASH;
     switch (paymentType) {
-      case 'insurance': return PayerType.INSURANCE;
+      case 'insurance':
+        return PayerType.INSURANCE;
       case 'hospital_scheme':
       case 'staff':
-      case 'membership': return PayerType.CORPORATE;
-      default: return PayerType.CASH;
+      case 'membership':
+        return PayerType.CORPORATE;
+      default:
+        return PayerType.CASH;
     }
   }
 
@@ -267,7 +400,12 @@ export class QueueManagementService {
     let fee = feeOverride;
     if (!fee || fee <= 0) {
       const consultService = await this.serviceRepository.findOne({
-        where: { code: 'OPD-CONSULT', facilityId, isActive: true, ...(tenantId ? { tenantId } : {}) },
+        where: {
+          code: 'OPD-CONSULT',
+          facilityId,
+          isActive: true,
+          ...(tenantId ? { tenantId } : {}),
+        },
       });
       if (!consultService) {
         // Try global fallback (no facility filter)
@@ -348,7 +486,12 @@ export class QueueManagementService {
       .where('queue.facility_id = :facilityId', { facilityId })
       .andWhere('(DATE(queue.queue_date) = DATE(:today) OR queue.status IN (:...activeStatuses))', {
         today,
-        activeStatuses: [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE, QueueStatus.PENDING_PAYMENT],
+        activeStatuses: [
+          QueueStatus.WAITING,
+          QueueStatus.CALLED,
+          QueueStatus.IN_SERVICE,
+          QueueStatus.PENDING_PAYMENT,
+        ],
       });
 
     if (tenantId) {
@@ -359,7 +502,7 @@ export class QueueManagementService {
       query.andWhere('queue.servicePoint = :servicePoint', { servicePoint: filter.servicePoint });
     }
     if (filter.status) {
-      const statuses = filter.status.split(',').map(s => s.trim());
+      const statuses = filter.status.split(',').map((s) => s.trim());
       if (statuses.length === 1) {
         query.andWhere('queue.status = :status', { status: statuses[0] });
       } else {
@@ -370,14 +513,20 @@ export class QueueManagementService {
       query.andWhere('queue.department_id = :departmentId', { departmentId: filter.departmentId });
     }
     if (filter.assignedDoctorId) {
-      query.andWhere('queue.assigned_doctor_id = :assignedDoctorId', { assignedDoctorId: filter.assignedDoctorId });
+      query.andWhere('queue.assigned_doctor_id = :assignedDoctorId', {
+        assignedDoctorId: filter.assignedDoctorId,
+      });
     }
 
     query.orderBy('queue.priority', 'ASC').addOrderBy('queue.sequence_number', 'ASC');
     return query.getMany();
   }
 
-  async getWaitingQueue(servicePoint: ServicePoint, facilityId: string, tenantId?: string): Promise<Queue[]> {
+  async getWaitingQueue(
+    servicePoint: ServicePoint,
+    facilityId: string,
+    tenantId?: string,
+  ): Promise<Queue[]> {
     const qb = this.queueRepository
       .createQueryBuilder('queue')
       .leftJoinAndSelect('queue.patient', 'patient')
@@ -395,17 +544,19 @@ export class QueueManagementService {
       qb.andWhere('queue.tenant_id = :tenantId', { tenantId });
     }
 
-    return qb
-      .orderBy('queue.priority', 'ASC')
-      .addOrderBy('queue.sequence_number', 'ASC')
-      .getMany();
+    return qb.orderBy('queue.priority', 'ASC').addOrderBy('queue.sequence_number', 'ASC').getMany();
   }
 
   /**
    * Get the doctor's queue: patients assigned to this doctor (any service point)
    * OR unassigned patients at the consultation service point.
    */
-  async getDoctorQueue(doctorId: string, facilityId: string, tenantId?: string, myOnly = false): Promise<Queue[]> {
+  async getDoctorQueue(
+    doctorId: string,
+    facilityId: string,
+    tenantId?: string,
+    myOnly = false,
+  ): Promise<Queue[]> {
     const qb = this.queueRepository
       .createQueryBuilder('queue')
       .leftJoinAndSelect('queue.patient', 'patient')
@@ -415,7 +566,12 @@ export class QueueManagementService {
       .where('queue.facility_id = :facilityId', { facilityId })
       .andWhere('queue.on_hold = false')
       .andWhere('queue.status IN (:...statuses)', {
-        statuses: [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE, QueueStatus.PENDING_PAYMENT],
+        statuses: [
+          QueueStatus.WAITING,
+          QueueStatus.CALLED,
+          QueueStatus.IN_SERVICE,
+          QueueStatus.PENDING_PAYMENT,
+        ],
       });
 
     if (tenantId) {
@@ -433,15 +589,17 @@ export class QueueManagementService {
       );
     }
 
-    return qb
-      .orderBy('queue.priority', 'ASC')
-      .addOrderBy('queue.sequence_number', 'ASC')
-      .getMany();
+    return qb.orderBy('queue.priority', 'ASC').addOrderBy('queue.sequence_number', 'ASC').getMany();
   }
 
   // ─── Call Next / Call ─────────────────────────────────────────────────────
 
-  async callNext(dto: CallNextDto, userId: string, facilityId: string, tenantId?: string): Promise<Queue | null> {
+  async callNext(
+    dto: CallNextDto,
+    userId: string,
+    facilityId: string,
+    tenantId?: string,
+  ): Promise<Queue | null> {
     // Prefer WAITING patients first, then fall back to CALLED (re-call) and PENDING_PAYMENT
     for (const statuses of [
       [QueueStatus.WAITING],
@@ -463,7 +621,14 @@ export class QueueManagementService {
         .getOne();
 
       if (result) {
-        return this.callPatient(result.id, userId, facilityId, dto.counterNumber, dto.roomNumber, tenantId);
+        return this.callPatient(
+          result.id,
+          userId,
+          facilityId,
+          dto.counterNumber,
+          dto.roomNumber,
+          tenantId,
+        );
       }
     }
 
@@ -532,7 +697,9 @@ export class QueueManagementService {
     await this.writeAuditLog(id, 'PATIENT_CALLED', userId, prevStatus, QueueStatus.CALLED);
 
     // SMS notification if patient has a phone number
-    this.sendCallNotification(queue).catch((e) => this.logger.warn('SMS notification failed: ' + e.message));
+    this.sendCallNotification(queue).catch((e) =>
+      this.logger.warn('SMS notification failed: ' + e.message),
+    );
 
     return saved;
   }
@@ -556,7 +723,9 @@ export class QueueManagementService {
     queue.servingUserId = userId;
     const saved = await this.queueRepository.save(queue);
     await this.writeAuditLog(id, 'PATIENT_RECALLED', userId, prevStatus, QueueStatus.CALLED);
-    this.sendCallNotification(queue).catch((e) => this.logger.warn('SMS notification failed: ' + e.message));
+    this.sendCallNotification(queue).catch((e) =>
+      this.logger.warn('SMS notification failed: ' + e.message),
+    );
     return saved;
   }
 
@@ -652,13 +821,17 @@ export class QueueManagementService {
     }
 
     const config = await this.getServiceConfig(queue.facilityId, tenantId);
-    const dispositions: Array<{ value: string; label: string; servicePoint: string; priority?: number }> =
-      config.triageDispositions || this.getDefaultServiceConfig().triageDispositions;
-    const disposition = dispositions.find(d => d.value === dispositionValue);
+    const dispositions: Array<{
+      value: string;
+      label: string;
+      servicePoint: string;
+      priority?: number;
+    }> = config.triageDispositions || this.getDefaultServiceConfig().triageDispositions;
+    const disposition = dispositions.find((d) => d.value === dispositionValue);
 
     if (!disposition) {
       throw new BadRequestException(
-        `Invalid triage disposition: ${dispositionValue}. Valid: ${dispositions.map(d => d.value).join(', ')}`,
+        `Invalid triage disposition: ${dispositionValue}. Valid: ${dispositions.map((d) => d.value).join(', ')}`,
       );
     }
 
@@ -687,7 +860,12 @@ export class QueueManagementService {
 
   // ─── Transfer ─────────────────────────────────────────────────────────────
 
-  async transferToNextService(id: string, dto: TransferQueueDto, userId: string, tenantId?: string): Promise<Queue> {
+  async transferToNextService(
+    id: string,
+    dto: TransferQueueDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<Queue> {
     const queue = await this.findOne(id, tenantId);
     this.assertValidTransition(queue.status, QueueStatus.TRANSFERRED);
 
@@ -720,9 +898,24 @@ export class QueueManagementService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     queue.queueDate = today;
-    queue.ticketNumber = await this.generateTicketNumber(queue.facilityId, dto.nextServicePoint as ServicePoint, today, tenantId);
-    queue.sequenceNumber = await this.getNextSequenceNumber(queue.facilityId, dto.nextServicePoint as ServicePoint, today, tenantId);
-    queue.estimatedWaitMinutes = await this.calculateSmartWaitTime(queue.facilityId, dto.nextServicePoint as ServicePoint, today, tenantId);
+    queue.ticketNumber = await this.generateTicketNumber(
+      queue.facilityId,
+      dto.nextServicePoint as ServicePoint,
+      today,
+      tenantId,
+    );
+    queue.sequenceNumber = await this.getNextSequenceNumber(
+      queue.facilityId,
+      dto.nextServicePoint as ServicePoint,
+      today,
+      tenantId,
+    );
+    queue.estimatedWaitMinutes = await this.calculateSmartWaitTime(
+      queue.facilityId,
+      dto.nextServicePoint as ServicePoint,
+      today,
+      tenantId,
+    );
 
     // Reset per-service-point fields; preserve cross-service context (use null, not undefined)
     queue.calledAt = null as any;
@@ -738,19 +931,43 @@ export class QueueManagementService {
       // Sync encounter to correct intermediate status based on destination
       const encounterStatus = this.mapServicePointToEncounterStatus(dto.nextServicePoint);
       await this.syncEncounterStatus(queue.encounterId, encounterStatus);
-      await this.writeAuditLog(id, `TRANSFERRED_${prevServicePoint.toUpperCase()}_TO_${dto.nextServicePoint.toUpperCase()}`, userId, prevStatus, QueueStatus.WAITING, dto.transferReason);
+      await this.writeAuditLog(
+        id,
+        `TRANSFERRED_${prevServicePoint.toUpperCase()}_TO_${dto.nextServicePoint.toUpperCase()}`,
+        userId,
+        prevStatus,
+        QueueStatus.WAITING,
+        dto.transferReason,
+      );
 
       return saved;
     } catch (error) {
       // Retry once on unique constraint violation (race condition on ticket number)
       if (error?.code === '23505' || error?.message?.includes('duplicate key')) {
         this.logger.warn(`Ticket collision during transfer for queue ${id}, retrying...`);
-        queue.ticketNumber = await this.generateTicketNumber(queue.facilityId, dto.nextServicePoint as ServicePoint, today, tenantId);
-        queue.sequenceNumber = await this.getNextSequenceNumber(queue.facilityId, dto.nextServicePoint as ServicePoint, today, tenantId);
+        queue.ticketNumber = await this.generateTicketNumber(
+          queue.facilityId,
+          dto.nextServicePoint as ServicePoint,
+          today,
+          tenantId,
+        );
+        queue.sequenceNumber = await this.getNextSequenceNumber(
+          queue.facilityId,
+          dto.nextServicePoint as ServicePoint,
+          today,
+          tenantId,
+        );
         const saved = await this.queueRepository.save(queue);
         const encounterStatus = this.mapServicePointToEncounterStatus(dto.nextServicePoint);
         await this.syncEncounterStatus(queue.encounterId, encounterStatus);
-        await this.writeAuditLog(id, `TRANSFERRED_${prevServicePoint.toUpperCase()}_TO_${dto.nextServicePoint.toUpperCase()}`, userId, prevStatus, QueueStatus.WAITING, dto.transferReason);
+        await this.writeAuditLog(
+          id,
+          `TRANSFERRED_${prevServicePoint.toUpperCase()}_TO_${dto.nextServicePoint.toUpperCase()}`,
+          userId,
+          prevStatus,
+          QueueStatus.WAITING,
+          dto.transferReason,
+        );
         return saved;
       }
       throw error;
@@ -759,7 +976,12 @@ export class QueueManagementService {
 
   // ─── System-driven service point move (no transition validation) ─────────
 
-  async moveToServicePoint(encounterId: string, servicePoint: string, reason?: string, tenantId?: string): Promise<Queue | null> {
+  async moveToServicePoint(
+    encounterId: string,
+    servicePoint: string,
+    reason?: string,
+    tenantId?: string,
+  ): Promise<Queue | null> {
     const queue = await this.queueRepository.findOne({
       where: {
         encounterId,
@@ -826,21 +1048,35 @@ export class QueueManagementService {
     const encounterStatus = this.mapServicePointToEncounterStatus(servicePoint);
     await this.syncEncounterStatus(encounterId, encounterStatus);
 
-    this.logger.log(`Created new queue entry ${ticketNumber} for encounter ${encounterId} at ${servicePoint}`);
+    this.logger.log(
+      `Created new queue entry ${ticketNumber} for encounter ${encounterId} at ${servicePoint}`,
+    );
 
     return saved;
   }
 
   // ─── Skip / No-Show / Cancel / Requeue ───────────────────────────────────
 
-  async skipPatient(id: string, dto: SkipQueueDto, userId: string, tenantId?: string): Promise<Queue> {
+  async skipPatient(
+    id: string,
+    dto: SkipQueueDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<Queue> {
     const queue = await this.findOne(id, tenantId);
     this.assertValidTransition(queue.status, QueueStatus.SKIPPED);
     const prevStatus = queue.status;
     queue.status = QueueStatus.SKIPPED;
     queue.skipReason = dto.skipReason;
     const saved = await this.queueRepository.save(queue);
-    await this.writeAuditLog(id, 'PATIENT_SKIPPED', userId, prevStatus, QueueStatus.SKIPPED, dto.skipReason);
+    await this.writeAuditLog(
+      id,
+      'PATIENT_SKIPPED',
+      userId,
+      prevStatus,
+      QueueStatus.SKIPPED,
+      dto.skipReason,
+    );
     return saved;
   }
 
@@ -854,7 +1090,12 @@ export class QueueManagementService {
     return saved;
   }
 
-  async cancelFromQueue(id: string, reason: string, userId: string, tenantId?: string): Promise<Queue> {
+  async cancelFromQueue(
+    id: string,
+    reason: string,
+    userId: string,
+    tenantId?: string,
+  ): Promise<Queue> {
     const queue = await this.findOne(id, tenantId);
     this.assertValidTransition(queue.status, QueueStatus.CANCELLED);
     const prevStatus = queue.status;
@@ -862,7 +1103,14 @@ export class QueueManagementService {
     queue.skipReason = reason;
     const saved = await this.queueRepository.save(queue);
     await this.syncEncounterStatus(queue.encounterId, EncounterStatus.CANCELLED);
-    await this.writeAuditLog(id, 'QUEUE_CANCELLED', userId, prevStatus, QueueStatus.CANCELLED, reason);
+    await this.writeAuditLog(
+      id,
+      'QUEUE_CANCELLED',
+      userId,
+      prevStatus,
+      QueueStatus.CANCELLED,
+      reason,
+    );
     return saved;
   }
 
@@ -895,7 +1143,12 @@ export class QueueManagementService {
 
     const prevStatus = queue.status;
     queue.status = QueueStatus.WAITING;
-    queue.sequenceNumber = await this.getNextSequenceNumber(queue.facilityId, queue.servicePoint, today, tenantId);
+    queue.sequenceNumber = await this.getNextSequenceNumber(
+      queue.facilityId,
+      queue.servicePoint,
+      today,
+      tenantId,
+    );
     queue.calledAt = undefined as any;
     queue.skipReason = undefined as any;
     const saved = await this.queueRepository.save(queue);
@@ -905,7 +1158,12 @@ export class QueueManagementService {
 
   // ─── Hold / Unhold ────────────────────────────────────────────────────────
 
-  async holdQueue(id: string, dto: HoldQueueDto, userId: string, tenantId?: string): Promise<Queue> {
+  async holdQueue(
+    id: string,
+    dto: HoldQueueDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<Queue> {
     const queue = await this.findOne(id, tenantId);
     if (queue.onHold) throw new BadRequestException('Queue entry is already on hold');
     if (queue.status === QueueStatus.COMPLETED || queue.status === QueueStatus.CANCELLED) {
@@ -941,7 +1199,11 @@ export class QueueManagementService {
     return queue;
   }
 
-  async getPatientQueueStatus(patientId: string, facilityId: string, tenantId?: string): Promise<Queue[]> {
+  async getPatientQueueStatus(
+    patientId: string,
+    facilityId: string,
+    tenantId?: string,
+  ): Promise<Queue[]> {
     const qb = this.queueRepository
       .createQueryBuilder('queue')
       .where('queue.patient_id = :patientId', { patientId })
@@ -961,10 +1223,18 @@ export class QueueManagementService {
       const qb = this.queueRepository
         .createQueryBuilder('queue')
         .where('queue.facility_id = :facilityId', { facilityId })
-        .andWhere('(DATE(queue.queue_date) = DATE(:today) OR queue.status IN (:...activeStatuses))', {
-          today,
-          activeStatuses: [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE, QueueStatus.PENDING_PAYMENT],
-        })
+        .andWhere(
+          '(DATE(queue.queue_date) = DATE(:today) OR queue.status IN (:...activeStatuses))',
+          {
+            today,
+            activeStatuses: [
+              QueueStatus.WAITING,
+              QueueStatus.CALLED,
+              QueueStatus.IN_SERVICE,
+              QueueStatus.PENDING_PAYMENT,
+            ],
+          },
+        )
         .andWhere('queue.status = :status', { status });
       if (tenantId) qb.andWhere('queue.tenant_id = :tenantId', { tenantId });
       if (servicePoint) qb.andWhere('queue.servicePoint = :servicePoint', { servicePoint });
@@ -987,7 +1257,12 @@ export class QueueManagementService {
       .where('queue.facility_id = :facilityId', { facilityId })
       .andWhere('(DATE(queue.queue_date) = DATE(:today) OR queue.status IN (:...activeStatuses))', {
         today,
-        activeStatuses: [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE, QueueStatus.PENDING_PAYMENT],
+        activeStatuses: [
+          QueueStatus.WAITING,
+          QueueStatus.CALLED,
+          QueueStatus.IN_SERVICE,
+          QueueStatus.PENDING_PAYMENT,
+        ],
       })
       .andWhere('queue.actual_wait_minutes IS NOT NULL');
     if (tenantId) avgWaitQuery.andWhere('queue.tenant_id = :tenantId', { tenantId });
@@ -1000,11 +1275,17 @@ export class QueueManagementService {
       .where('queue.facility_id = :facilityId', { facilityId })
       .andWhere('(DATE(queue.queue_date) = DATE(:today) OR queue.status IN (:...activeStatuses))', {
         today,
-        activeStatuses: [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE, QueueStatus.PENDING_PAYMENT],
+        activeStatuses: [
+          QueueStatus.WAITING,
+          QueueStatus.CALLED,
+          QueueStatus.IN_SERVICE,
+          QueueStatus.PENDING_PAYMENT,
+        ],
       })
       .andWhere('queue.service_duration_minutes IS NOT NULL');
     if (tenantId) avgServiceQuery.andWhere('queue.tenant_id = :tenantId', { tenantId });
-    if (servicePoint) avgServiceQuery.andWhere('queue.servicePoint = :servicePoint', { servicePoint });
+    if (servicePoint)
+      avgServiceQuery.andWhere('queue.servicePoint = :servicePoint', { servicePoint });
     const avgServiceResult = await avgServiceQuery.getRawOne();
 
     return {
@@ -1027,13 +1308,23 @@ export class QueueManagementService {
 
   // ─── Queue Display ────────────────────────────────────────────────────────
 
-  async createDisplay(dto: CreateQueueDisplayDto, facilityId: string, tenantId?: string): Promise<QueueDisplay> {
-    const display = this.queueDisplayRepository.create({ ...dto, facilityId, ...(tenantId ? { tenantId } : {}) } as any);
+  async createDisplay(
+    dto: CreateQueueDisplayDto,
+    facilityId: string,
+    tenantId?: string,
+  ): Promise<QueueDisplay> {
+    const display = this.queueDisplayRepository.create({
+      ...dto,
+      facilityId,
+      ...(tenantId ? { tenantId } : {}),
+    } as any);
     return this.queueDisplayRepository.save(display) as unknown as QueueDisplay;
   }
 
   async getDisplays(facilityId: string, tenantId?: string): Promise<QueueDisplay[]> {
-    return this.queueDisplayRepository.find({ where: { facilityId, isActive: true, ...(tenantId ? { tenantId } : {}) } });
+    return this.queueDisplayRepository.find({
+      where: { facilityId, isActive: true, ...(tenantId ? { tenantId } : {}) },
+    });
   }
 
   async getDisplayQueue(displayCode: string, tenantId?: string): Promise<Queue[]> {
@@ -1045,8 +1336,12 @@ export class QueueManagementService {
       .createQueryBuilder('queue')
       .leftJoinAndSelect('queue.patient', 'patient')
       .where('queue.facility_id = :facilityId', { facilityId: display.facilityId })
-      .andWhere('queue.servicePoint IN (:...servicePoints)', { servicePoints: display.servicePoints })
-      .andWhere('queue.status IN (:...statuses)', { statuses: [QueueStatus.CALLED, QueueStatus.IN_SERVICE] });
+      .andWhere('queue.servicePoint IN (:...servicePoints)', {
+        servicePoints: display.servicePoints,
+      })
+      .andWhere('queue.status IN (:...statuses)', {
+        statuses: [QueueStatus.CALLED, QueueStatus.IN_SERVICE],
+      });
     if (tenantId) displayQb.andWhere('queue.tenant_id = :tenantId', { tenantId });
     return displayQb
       .orderBy('queue.called_at', 'DESC')
@@ -1065,12 +1360,17 @@ export class QueueManagementService {
     }
   }
 
-  private async syncEncounterStatus(encounterId: string | undefined, status: EncounterStatus): Promise<void> {
+  private async syncEncounterStatus(
+    encounterId: string | undefined,
+    status: EncounterStatus,
+  ): Promise<void> {
     if (!encounterId) return;
     try {
       await this.encounterRepository.update({ id: encounterId }, { status });
     } catch (e) {
-      this.logger.error(`Failed to sync encounter ${encounterId} to status ${status}: ${e.message}`);
+      this.logger.error(
+        `Failed to sync encounter ${encounterId} to status ${status}: ${e.message}`,
+      );
     }
   }
 
@@ -1113,7 +1413,12 @@ export class QueueManagementService {
    * service_duration_minutes (consultation time only, which underestimates).
    * Rolling 7-day average for the service point, fallback to 15 min.
    */
-  private async calculateSmartWaitTime(facilityId: string, servicePoint: string, today: Date, tenantId?: string): Promise<number> {
+  private async calculateSmartWaitTime(
+    facilityId: string,
+    servicePoint: string,
+    today: Date,
+    tenantId?: string,
+  ): Promise<number> {
     const sevenDaysAgo = new Date(today);
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
@@ -1147,7 +1452,9 @@ export class QueueManagementService {
     if (tenantId) serviceQb.andWhere('queue.tenant_id = :tenantId', { tenantId });
     const serviceResult = await serviceQb.getRawOne();
 
-    const avgPerPatient = serviceResult?.avgService ? Math.ceil(Number(serviceResult.avgService)) + 5 : 15;
+    const avgPerPatient = serviceResult?.avgService
+      ? Math.ceil(Number(serviceResult.avgService)) + 5
+      : 15;
     return waitingCount * avgPerPatient;
   }
 
@@ -1183,7 +1490,12 @@ export class QueueManagementService {
     }
   }
 
-  private async generateTicketNumber(facilityId: string, servicePoint: string, date: Date, tenantId?: string): Promise<string> {
+  private async generateTicketNumber(
+    facilityId: string,
+    servicePoint: string,
+    date: Date,
+    tenantId?: string,
+  ): Promise<string> {
     const prefix = this.getServicePointPrefix(servicePoint);
     const maxRetries = 5;
 
@@ -1238,19 +1550,35 @@ export class QueueManagementService {
     return prefixes[servicePoint] || 'Q';
   }
 
-  private async getNextSequenceNumber(facilityId: string, servicePoint: string, date: Date, tenantId?: string): Promise<number> {
+  private async getNextSequenceNumber(
+    facilityId: string,
+    servicePoint: string,
+    date: Date,
+    tenantId?: string,
+  ): Promise<number> {
     const maxRetries = 5;
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       const last = await this.queueRepository.findOne({
-        where: { facilityId, servicePoint: servicePoint as ServicePoint, queueDate: date, ...(tenantId ? { tenantId } : {}) },
+        where: {
+          facilityId,
+          servicePoint: servicePoint as ServicePoint,
+          queueDate: date,
+          ...(tenantId ? { tenantId } : {}),
+        },
         order: { sequenceNumber: 'DESC' },
       });
       const nextSeq = (last?.sequenceNumber || 0) + 1 + attempt;
 
       // Check uniqueness before returning
       const exists = await this.queueRepository.count({
-        where: { facilityId, servicePoint: servicePoint as ServicePoint, queueDate: date, sequenceNumber: nextSeq, ...(tenantId ? { tenantId } : {}) },
+        where: {
+          facilityId,
+          servicePoint: servicePoint as ServicePoint,
+          queueDate: date,
+          sequenceNumber: nextSeq,
+          ...(tenantId ? { tenantId } : {}),
+        },
       });
       if (exists === 0) return nextSeq;
     }
@@ -1259,15 +1587,35 @@ export class QueueManagementService {
     return Math.floor(Date.now() / 1000) % 100000;
   }
 
-  private async getWaitingCount(facilityId: string, servicePoint: string, date: Date, tenantId?: string): Promise<number> {
+  private async getWaitingCount(
+    facilityId: string,
+    servicePoint: string,
+    date: Date,
+    tenantId?: string,
+  ): Promise<number> {
     return this.queueRepository.count({
-      where: { facilityId, servicePoint: servicePoint as ServicePoint, status: QueueStatus.WAITING, queueDate: date, ...(tenantId ? { tenantId } : {}) },
+      where: {
+        facilityId,
+        servicePoint: servicePoint as ServicePoint,
+        status: QueueStatus.WAITING,
+        queueDate: date,
+        ...(tenantId ? { tenantId } : {}),
+      },
     });
   }
 
-  private async updateDoctorQueueCount(doctorId: string, facilityId: string, tenantId?: string): Promise<void> {
+  private async updateDoctorQueueCount(
+    doctorId: string,
+    facilityId: string,
+    tenantId?: string,
+  ): Promise<void> {
     const waitingCount = await this.queueRepository.count({
-      where: { facilityId, assignedDoctorId: doctorId, status: QueueStatus.WAITING, ...(tenantId ? { tenantId } : {}) },
+      where: {
+        facilityId,
+        assignedDoctorId: doctorId,
+        status: QueueStatus.WAITING,
+        ...(tenantId ? { tenantId } : {}),
+      },
     });
     const todayStr = new Date().toISOString().split('T')[0];
     await this.doctorDutyRepository.update(
@@ -1288,18 +1636,15 @@ export class QueueManagementService {
       .leftJoinAndSelect('queue.patient', 'patient')
       .leftJoinAndSelect('queue.encounter', 'encounter')
       .where('queue.facility_id = :facilityId', { facilityId })
-      .andWhere(
-        '(DATE(queue.queue_date) = DATE(:today) OR queue.status IN (:...activeStatuses))',
-        {
-          today,
-          activeStatuses: [
-            QueueStatus.WAITING,
-            QueueStatus.CALLED,
-            QueueStatus.IN_SERVICE,
-            QueueStatus.PENDING_PAYMENT,
-          ],
-        },
-      );
+      .andWhere('(DATE(queue.queue_date) = DATE(:today) OR queue.status IN (:...activeStatuses))', {
+        today,
+        activeStatuses: [
+          QueueStatus.WAITING,
+          QueueStatus.CALLED,
+          QueueStatus.IN_SERVICE,
+          QueueStatus.PENDING_PAYMENT,
+        ],
+      });
     if (tenantId) qb.andWhere('queue.tenant_id = :tenantId', { tenantId });
     qb.orderBy('queue.created_at', 'ASC');
 
@@ -1308,12 +1653,15 @@ export class QueueManagementService {
     if (allEntries.length === 0) return [];
 
     // 2. Group by patient+encounter to build journeys
-    const journeyMap = new Map<string, {
-      patient: any;
-      encounter: any;
-      currentEntry: Queue;
-      entries: Queue[];
-    }>();
+    const journeyMap = new Map<
+      string,
+      {
+        patient: any;
+        encounter: any;
+        currentEntry: Queue;
+        entries: Queue[];
+      }
+    >();
 
     for (const entry of allEntries) {
       const key = `${entry.patientId}_${entry.encounterId || 'no-encounter'}`;
@@ -1328,7 +1676,12 @@ export class QueueManagementService {
       } else {
         existing.entries.push(entry);
         // The "current" entry is the most recent active one, or fallback to last entry
-        const activeStatuses = [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE, QueueStatus.PENDING_PAYMENT];
+        const activeStatuses = [
+          QueueStatus.WAITING,
+          QueueStatus.CALLED,
+          QueueStatus.IN_SERVICE,
+          QueueStatus.PENDING_PAYMENT,
+        ];
         if (activeStatuses.includes(entry.status)) {
           existing.currentEntry = entry;
         }
@@ -1336,19 +1689,13 @@ export class QueueManagementService {
     }
 
     // 3. Collect unique encounter IDs for batch queries
-    const encounterIds = [
-      ...new Set(
-        allEntries
-          .map((e) => e.encounterId)
-          .filter(Boolean),
-      ),
-    ];
+    const encounterIds = [...new Set(allEntries.map((e) => e.encounterId).filter(Boolean))];
 
     // 4. Batch-fetch pending orders, prescriptions, and invoice balances via raw SQL
-    let pendingLabMap = new Map<string, number>();
-    let pendingImagingMap = new Map<string, number>();
-    let pendingRxMap = new Map<string, number>();
-    let invoiceBalanceMap = new Map<string, number>();
+    const pendingLabMap = new Map<string, number>();
+    const pendingImagingMap = new Map<string, number>();
+    const pendingRxMap = new Map<string, number>();
+    const invoiceBalanceMap = new Map<string, number>();
 
     if (encounterIds.length > 0) {
       const [pendingCounts, pendingRx, invoiceBalances] = await Promise.all([
@@ -1405,13 +1752,14 @@ export class QueueManagementService {
             ? Math.round(
                 (new Date(e.serviceStartedAt).getTime() - new Date(e.calledAt).getTime()) / 60000,
               )
-            : e.actualWaitMinutes ?? undefined;
+            : (e.actualWaitMinutes ?? undefined);
         const serviceMinutes =
           e.serviceStartedAt && e.serviceEndedAt
             ? Math.round(
-                (new Date(e.serviceEndedAt).getTime() - new Date(e.serviceStartedAt).getTime()) / 60000,
+                (new Date(e.serviceEndedAt).getTime() - new Date(e.serviceStartedAt).getTime()) /
+                  60000,
               )
-            : e.serviceDurationMinutes ?? undefined;
+            : (e.serviceDurationMinutes ?? undefined);
 
         return {
           servicePoint: e.servicePoint,
@@ -1449,10 +1797,10 @@ export class QueueManagementService {
         priority: currentEntry.priority,
         priorityReason: currentEntry.priorityReason ?? undefined,
         visitType: currentEntry.visitType ?? encounter?.type ?? '',
-        chiefComplaint: currentEntry.chiefComplaintAtToken ?? encounter?.chiefComplaint ?? undefined,
+        chiefComplaint:
+          currentEntry.chiefComplaintAtToken ?? encounter?.chiefComplaint ?? undefined,
         registeredAt,
-        currentStepStartedAt:
-          currentEntry.calledAt ?? currentEntry.serviceStartedAt ?? undefined,
+        currentStepStartedAt: currentEntry.calledAt ?? currentEntry.serviceStartedAt ?? undefined,
         pendingLabOrders: encId ? (pendingLabMap.get(encId) ?? 0) : 0,
         pendingImagingOrders: encId ? (pendingImagingMap.get(encId) ?? 0) : 0,
         pendingPrescriptions: encId ? (pendingRxMap.get(encId) ?? 0) : 0,

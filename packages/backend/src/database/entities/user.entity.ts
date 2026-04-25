@@ -6,7 +6,9 @@ import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypt
 // Encrypt/decrypt MFA secrets at rest so a DB breach doesn't expose TOTP seeds.
 const MFA_ENC_KEY = process.env.MFA_ENCRYPTION_KEY;
 if (!MFA_ENC_KEY) {
-  console.warn('WARNING: MFA_ENCRYPTION_KEY not set — MFA features will be unavailable until configured');
+  console.warn(
+    'WARNING: MFA_ENCRYPTION_KEY not set — MFA features will be unavailable until configured',
+  );
 }
 const MFA_SALT = process.env.MFA_SALT || randomBytes(16).toString('hex');
 const MFA_KEY = MFA_ENC_KEY ? scryptSync(MFA_ENC_KEY, MFA_SALT, 32) : null;
@@ -25,7 +27,9 @@ function decryptMfaSecret(data: string): string {
   if (!ivHex || !encHex) return data; // plain-text legacy value
   try {
     const decipher = createDecipheriv('aes-256-cbc', MFA_KEY, Buffer.from(ivHex, 'hex'));
-    return Buffer.concat([decipher.update(Buffer.from(encHex, 'hex')), decipher.final()]).toString('utf8');
+    return Buffer.concat([decipher.update(Buffer.from(encHex, 'hex')), decipher.final()]).toString(
+      'utf8',
+    );
   } catch {
     return data; // plain-text legacy value
   }
@@ -74,7 +78,10 @@ export enum EmploymentType {
 @Entity('users')
 @Index(['email', 'tenantId'], { unique: true, where: 'deleted_at IS NULL' })
 @Index(['username', 'tenantId'], { unique: true, where: 'deleted_at IS NULL' })
-@Index(['employeeNumber', 'tenantId'], { unique: true, where: 'employee_number IS NOT NULL AND deleted_at IS NULL' })
+@Index(['employeeNumber', 'tenantId'], {
+  unique: true,
+  where: 'employee_number IS NOT NULL AND deleted_at IS NULL',
+})
 export class User extends BaseEntity {
   @Column({ type: 'varchar', length: 100 })
   username: string;
@@ -144,7 +151,7 @@ export class User extends BaseEntity {
   userRoles?: UserRole[];
 
   // ========== HR/Employee Fields ==========
-  
+
   @Column({ type: 'varchar', length: 20, nullable: true, name: 'employee_number' })
   employeeNumber?: string;
 

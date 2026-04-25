@@ -66,7 +66,9 @@ export class PosService {
       where: { cashierId, tenantId, status: 'open' },
     });
     if (existing) {
-      throw new BadRequestException('You already have an open shift. Close it before opening a new one.');
+      throw new BadRequestException(
+        'You already have an open shift. Close it before opening a new one.',
+      );
     }
 
     // Verify register exists and belongs to tenant
@@ -154,7 +156,8 @@ export class PosService {
       shift,
       paymentBreakdown: splits,
       summary: {
-        totalSales: Number(shift.cashSales) + Number(shift.mobileMoneySales) + Number(shift.cardSales),
+        totalSales:
+          Number(shift.cashSales) + Number(shift.mobileMoneySales) + Number(shift.cardSales),
         transactionCount: shift.transactionCount,
         cashDifference: shift.cashDifference,
       },
@@ -162,7 +165,8 @@ export class PosService {
   }
 
   async getShiftHistory(tenantId: string, registerId?: string) {
-    const qb = this.shiftRepo.createQueryBuilder('s')
+    const qb = this.shiftRepo
+      .createQueryBuilder('s')
       .leftJoinAndSelect('s.register', 'register')
       .leftJoinAndSelect('s.cashier', 'cashier')
       .where('s.tenant_id = :tenantId', { tenantId })
@@ -175,7 +179,12 @@ export class PosService {
     return qb.getMany();
   }
 
-  async recordSaleInShift(cashierId: string, tenantId: string, paymentMethod: string, amount: number) {
+  async recordSaleInShift(
+    cashierId: string,
+    tenantId: string,
+    paymentMethod: string,
+    amount: number,
+  ) {
     await this.dataSource.transaction(async (manager) => {
       const shift = await manager.findOne(PosShift, {
         where: { cashierId, tenantId, status: 'open' },

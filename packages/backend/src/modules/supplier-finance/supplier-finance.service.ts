@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Inject,
+  forwardRef,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, LessThanOrEqual } from 'typeorm';
 import {
@@ -47,29 +53,33 @@ export class SupplierFinanceService {
     return `PV${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(count + 1).padStart(5, '0')}`;
   }
 
-  async createPaymentVoucher(data: {
-    facilityId: string;
-    supplierId: string;
-    purchaseOrderId?: string;
-    paymentDate: Date;
-    grossAmount: number;
-    withholdingTax?: number;
-    otherDeductions?: number;
-    paymentMethod: PaymentMethod;
-    chequeNumber?: string;
-    bankReference?: string;
-    bankName?: string;
-    accountNumber?: string;
-    description?: string;
-    remarks?: string;
-    items: Array<{
-      description: string;
-      invoiceNumber?: string;
-      invoiceDate?: Date;
-      amount: number;
-      grnId?: string;
-    }>;
-  }, userId: string, tenantId?: string): Promise<SupplierPayment> {
+  async createPaymentVoucher(
+    data: {
+      facilityId: string;
+      supplierId: string;
+      purchaseOrderId?: string;
+      paymentDate: Date;
+      grossAmount: number;
+      withholdingTax?: number;
+      otherDeductions?: number;
+      paymentMethod: PaymentMethod;
+      chequeNumber?: string;
+      bankReference?: string;
+      bankName?: string;
+      accountNumber?: string;
+      description?: string;
+      remarks?: string;
+      items: Array<{
+        description: string;
+        invoiceNumber?: string;
+        invoiceDate?: Date;
+        amount: number;
+        grnId?: string;
+      }>;
+    },
+    userId: string,
+    tenantId?: string,
+  ): Promise<SupplierPayment> {
     const voucherNumber = await this.generateVoucherNumber(data.facilityId);
 
     const withholdingTax = data.withholdingTax || 0;
@@ -102,14 +112,16 @@ export class SupplierFinanceService {
 
     // Create items
     if (data.items?.length) {
-      const items = data.items.map(item => this.paymentItemRepo.create({
-        paymentId: (savedPayment as SupplierPayment).id,
-        description: item.description,
-        invoiceNumber: item.invoiceNumber,
-        invoiceDate: item.invoiceDate,
-        amount: item.amount,
-        grnId: item.grnId,
-      }));
+      const items = data.items.map((item) =>
+        this.paymentItemRepo.create({
+          paymentId: (savedPayment as SupplierPayment).id,
+          description: item.description,
+          invoiceNumber: item.invoiceNumber,
+          invoiceDate: item.invoiceDate,
+          amount: item.amount,
+          grnId: item.grnId,
+        }),
+      );
       await this.paymentItemRepo.save(items);
     }
 
@@ -121,19 +133,31 @@ export class SupplierFinanceService {
     if (tenantId) where.tenantId = tenantId;
     const payment = await this.paymentRepo.findOne({
       where,
-      relations: ['supplier', 'purchaseOrder', 'items', 'preparedByUser', 'approvedByUser', 'paidByUser'],
+      relations: [
+        'supplier',
+        'purchaseOrder',
+        'items',
+        'preparedByUser',
+        'approvedByUser',
+        'paidByUser',
+      ],
     });
     if (!payment) throw new NotFoundException('Payment voucher not found');
     return payment;
   }
 
-  async listPaymentVouchers(facilityId: string, filters?: {
-    status?: PaymentVoucherStatus;
-    supplierId?: string;
-    startDate?: Date;
-    endDate?: Date;
-  }, tenantId?: string): Promise<SupplierPayment[]> {
-    const qb = this.paymentRepo.createQueryBuilder('p')
+  async listPaymentVouchers(
+    facilityId: string,
+    filters?: {
+      status?: PaymentVoucherStatus;
+      supplierId?: string;
+      startDate?: Date;
+      endDate?: Date;
+    },
+    tenantId?: string,
+  ): Promise<SupplierPayment[]> {
+    const qb = this.paymentRepo
+      .createQueryBuilder('p')
       .leftJoinAndSelect('p.supplier', 'supplier')
       .leftJoinAndSelect('p.items', 'items')
       .where('p.facilityId = :facilityId', { facilityId });
@@ -166,7 +190,11 @@ export class SupplierFinanceService {
     return this.paymentRepo.save(payment);
   }
 
-  async approvePaymentVoucher(id: string, userId: string, tenantId?: string): Promise<SupplierPayment> {
+  async approvePaymentVoucher(
+    id: string,
+    userId: string,
+    tenantId?: string,
+  ): Promise<SupplierPayment> {
     const payment = await this.getPaymentVoucher(id, tenantId);
     if (payment.status !== PaymentVoucherStatus.PENDING_APPROVAL) {
       throw new BadRequestException('Only pending vouchers can be approved');
@@ -174,7 +202,9 @@ export class SupplierFinanceService {
 
     // Segregation of duties: approver cannot be the same as preparer
     if (payment.preparedBy === userId) {
-      throw new BadRequestException('Segregation of duties violation: the user who prepared the voucher cannot approve it');
+      throw new BadRequestException(
+        'Segregation of duties violation: the user who prepared the voucher cannot approve it',
+      );
     }
 
     // Budget enforcement: check spending limit before approval
@@ -190,11 +220,11 @@ export class SupplierFinanceService {
       if (budgetCheck && !budgetCheck.withinBudget) {
         throw new BadRequestException(
           `Budget exceeded for "${budgetCheck.budgetName}": ` +
-          `budgeted ${budgetCheck.budgetedAmount.toLocaleString()}, ` +
-          `spent ${budgetCheck.actualSpent.toLocaleString()}, ` +
-          `remaining ${budgetCheck.remainingBudget.toLocaleString()}, ` +
-          `requested ${budgetCheck.pendingAmount.toLocaleString()}. ` +
-          `Payment voucher ${payment.voucherNumber} cannot be approved.`,
+            `budgeted ${budgetCheck.budgetedAmount.toLocaleString()}, ` +
+            `spent ${budgetCheck.actualSpent.toLocaleString()}, ` +
+            `remaining ${budgetCheck.remainingBudget.toLocaleString()}, ` +
+            `requested ${budgetCheck.pendingAmount.toLocaleString()}. ` +
+            `Payment voucher ${payment.voucherNumber} cannot be approved.`,
         );
       }
     }
@@ -205,10 +235,15 @@ export class SupplierFinanceService {
     return this.paymentRepo.save(payment);
   }
 
-  async processPayment(id: string, userId: string, bankDetails?: {
-    chequeNumber?: string;
-    bankReference?: string;
-  }, tenantId?: string): Promise<SupplierPayment> {
+  async processPayment(
+    id: string,
+    userId: string,
+    bankDetails?: {
+      chequeNumber?: string;
+      bankReference?: string;
+    },
+    tenantId?: string,
+  ): Promise<SupplierPayment> {
     const payment = await this.getPaymentVoucher(id, tenantId);
     if (payment.status !== PaymentVoucherStatus.APPROVED) {
       throw new BadRequestException('Only approved vouchers can be paid');
@@ -216,10 +251,14 @@ export class SupplierFinanceService {
 
     // Segregation of duties: payer cannot be the same as preparer or approver
     if (payment.preparedBy === userId) {
-      throw new BadRequestException('Segregation of duties violation: the user who prepared the voucher cannot process the payment');
+      throw new BadRequestException(
+        'Segregation of duties violation: the user who prepared the voucher cannot process the payment',
+      );
     }
     if (payment.approvedBy === userId) {
-      throw new BadRequestException('Segregation of duties violation: the user who approved the voucher cannot process the payment');
+      throw new BadRequestException(
+        'Segregation of duties violation: the user who approved the voucher cannot process the payment',
+      );
     }
 
     if (bankDetails?.chequeNumber) {
@@ -263,36 +302,40 @@ export class SupplierFinanceService {
     return `${prefix}${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(count + 1).padStart(5, '0')}`;
   }
 
-  async createCreditNote(data: {
-    facilityId: string;
-    noteType: CreditNoteType;
-    supplierId: string;
-    noteDate: Date;
-    supplierInvoiceNumber?: string;
-    grnId?: string;
-    reason: CreditNoteReason;
-    reasonDetails?: string;
-    notes?: string;
-    items: Array<{
-      itemId?: string;
-      description: string;
-      quantity: number;
-      unit?: string;
-      unitPrice: number;
-      taxRate?: number;
-      batchNumber?: string;
-    }>;
-  }, userId: string, tenantId?: string): Promise<SupplierCreditNote> {
+  async createCreditNote(
+    data: {
+      facilityId: string;
+      noteType: CreditNoteType;
+      supplierId: string;
+      noteDate: Date;
+      supplierInvoiceNumber?: string;
+      grnId?: string;
+      reason: CreditNoteReason;
+      reasonDetails?: string;
+      notes?: string;
+      items: Array<{
+        itemId?: string;
+        description: string;
+        quantity: number;
+        unit?: string;
+        unitPrice: number;
+        taxRate?: number;
+        batchNumber?: string;
+      }>;
+    },
+    userId: string,
+    tenantId?: string,
+  ): Promise<SupplierCreditNote> {
     const noteNumber = await this.generateNoteNumber(data.facilityId, data.noteType);
 
     let subtotalAmount = 0;
     let taxAmount = 0;
 
-    const itemsWithTotals = data.items.map(item => {
+    const itemsWithTotals = data.items.map((item) => {
       const lineSubtotal = item.quantity * item.unitPrice;
-      const lineTax = lineSubtotal * (item.taxRate || 0) / 100;
+      const lineTax = (lineSubtotal * (item.taxRate || 0)) / 100;
       const lineTotal = lineSubtotal + lineTax;
-      
+
       subtotalAmount += lineSubtotal;
       taxAmount += lineTax;
 
@@ -329,18 +372,20 @@ export class SupplierFinanceService {
     const savedNote = await this.creditNoteRepo.save(creditNote);
 
     // Create items
-    const items = itemsWithTotals.map(item => this.creditNoteItemRepo.create({
-      creditNoteId: (savedNote as SupplierCreditNote).id,
-      itemId: item.itemId,
-      description: item.description,
-      quantity: item.quantity,
-      unit: item.unit,
-      unitPrice: item.unitPrice,
-      taxRate: item.taxRate || 0,
-      taxAmount: item.taxAmount,
-      totalAmount: item.totalAmount,
-      batchNumber: item.batchNumber,
-    }));
+    const items = itemsWithTotals.map((item) =>
+      this.creditNoteItemRepo.create({
+        creditNoteId: (savedNote as SupplierCreditNote).id,
+        itemId: item.itemId,
+        description: item.description,
+        quantity: item.quantity,
+        unit: item.unit,
+        unitPrice: item.unitPrice,
+        taxRate: item.taxRate || 0,
+        taxAmount: item.taxAmount,
+        totalAmount: item.totalAmount,
+        batchNumber: item.batchNumber,
+      }),
+    );
     await this.creditNoteItemRepo.save(items);
 
     return this.getCreditNote((savedNote as SupplierCreditNote).id, tenantId);
@@ -357,14 +402,19 @@ export class SupplierFinanceService {
     return note;
   }
 
-  async listCreditNotes(facilityId: string, filters?: {
-    noteType?: CreditNoteType;
-    status?: CreditNoteStatus;
-    supplierId?: string;
-    startDate?: Date;
-    endDate?: Date;
-  }, tenantId?: string): Promise<SupplierCreditNote[]> {
-    const qb = this.creditNoteRepo.createQueryBuilder('cn')
+  async listCreditNotes(
+    facilityId: string,
+    filters?: {
+      noteType?: CreditNoteType;
+      status?: CreditNoteStatus;
+      supplierId?: string;
+      startDate?: Date;
+      endDate?: Date;
+    },
+    tenantId?: string,
+  ): Promise<SupplierCreditNote[]> {
+    const qb = this.creditNoteRepo
+      .createQueryBuilder('cn')
       .leftJoinAndSelect('cn.supplier', 'supplier')
       .leftJoinAndSelect('cn.items', 'items')
       .where('cn.facilityId = :facilityId', { facilityId });
@@ -391,9 +441,16 @@ export class SupplierFinanceService {
     return qb.orderBy('cn.createdAt', 'DESC').getMany();
   }
 
-  async approveCreditNote(id: string, userId: string, tenantId?: string): Promise<SupplierCreditNote> {
+  async approveCreditNote(
+    id: string,
+    userId: string,
+    tenantId?: string,
+  ): Promise<SupplierCreditNote> {
     const note = await this.getCreditNote(id, tenantId);
-    if (note.status !== CreditNoteStatus.DRAFT && note.status !== CreditNoteStatus.PENDING_APPROVAL) {
+    if (
+      note.status !== CreditNoteStatus.DRAFT &&
+      note.status !== CreditNoteStatus.PENDING_APPROVAL
+    ) {
       throw new BadRequestException('Note cannot be approved from current status');
     }
     note.status = CreditNoteStatus.APPROVED;
@@ -402,7 +459,12 @@ export class SupplierFinanceService {
     return this.creditNoteRepo.save(note);
   }
 
-  async applyCreditNote(creditNoteId: string, paymentVoucherId: string, amount: number, tenantId?: string): Promise<SupplierCreditNote> {
+  async applyCreditNote(
+    creditNoteId: string,
+    paymentVoucherId: string,
+    amount: number,
+    tenantId?: string,
+  ): Promise<SupplierCreditNote> {
     const note = await this.getCreditNote(creditNoteId, tenantId);
     if (note.status !== CreditNoteStatus.APPROVED) {
       throw new BadRequestException('Only approved notes can be applied');
@@ -432,7 +494,12 @@ export class SupplierFinanceService {
 
   // ==================== REPORTS ====================
 
-  async getSupplierLedger(supplierId: string, startDate: Date, endDate: Date, tenantId?: string): Promise<{
+  async getSupplierLedger(
+    supplierId: string,
+    startDate: Date,
+    endDate: Date,
+    tenantId?: string,
+  ): Promise<{
     supplier: Supplier;
     openingBalance: number;
     transactions: Array<{
@@ -445,7 +512,9 @@ export class SupplierFinanceService {
     }>;
     closingBalance: number;
   }> {
-    const supplier = await this.supplierRepo.findOne({ where: { id: supplierId, ...(tenantId ? { tenantId } : {}) } });
+    const supplier = await this.supplierRepo.findOne({
+      where: { id: supplierId, ...(tenantId ? { tenantId } : {}) },
+    });
     if (!supplier) throw new NotFoundException('Supplier not found');
 
     const transactions: Array<{
@@ -564,7 +633,10 @@ export class SupplierFinanceService {
     };
   }
 
-  async getSupplierAgingReport(facilityId: string, tenantId?: string): Promise<{
+  async getSupplierAgingReport(
+    facilityId: string,
+    tenantId?: string,
+  ): Promise<{
     suppliers: Array<{
       supplierId: string;
       supplierName: string;
@@ -584,7 +656,9 @@ export class SupplierFinanceService {
       total: number;
     };
   }> {
-    const suppliers = await this.supplierRepo.find({ where: { status: SupplierStatus.ACTIVE, ...(tenantId ? { tenantId } : {}) } });
+    const suppliers = await this.supplierRepo.find({
+      where: { status: SupplierStatus.ACTIVE, ...(tenantId ? { tenantId } : {}) },
+    });
     const today = new Date();
 
     const agingData: Array<{
@@ -641,7 +715,9 @@ export class SupplierFinanceService {
 
       // Distribute outstanding based on GRN ages
       for (const grn of grns) {
-        const daysDiff = Math.floor((today.getTime() - grn.receivedAt.getTime()) / (1000 * 60 * 60 * 24));
+        const daysDiff = Math.floor(
+          (today.getTime() - grn.receivedAt.getTime()) / (1000 * 60 * 60 * 24),
+        );
         const grnAmount = Number(grn.totalValue);
 
         if (daysDiff <= 30) {
@@ -670,7 +746,12 @@ export class SupplierFinanceService {
     return { suppliers: agingData, totals };
   }
 
-  async getPaymentSummary(facilityId: string, startDate: Date, endDate: Date, tenantId?: string): Promise<{
+  async getPaymentSummary(
+    facilityId: string,
+    startDate: Date,
+    endDate: Date,
+    tenantId?: string,
+  ): Promise<{
     totalVouchers: number;
     totalPaid: number;
     totalPending: number;
@@ -693,12 +774,16 @@ export class SupplierFinanceService {
 
     for (const payment of payments) {
       const amount = Number(payment.netAmount);
-      
+
       if (payment.status === PaymentVoucherStatus.PAID) {
         totalPaid += amount;
-        byPaymentMethod[payment.paymentMethod] = (byPaymentMethod[payment.paymentMethod] || 0) + amount;
+        byPaymentMethod[payment.paymentMethod] =
+          (byPaymentMethod[payment.paymentMethod] || 0) + amount;
 
-        const existing = supplierMap.get(payment.supplierId) || { name: payment.supplier?.name || '', amount: 0 };
+        const existing = supplierMap.get(payment.supplierId) || {
+          name: payment.supplier?.name || '',
+          amount: 0,
+        };
         existing.amount += amount;
         supplierMap.set(payment.supplierId, existing);
       } else if (payment.status !== PaymentVoucherStatus.CANCELLED) {

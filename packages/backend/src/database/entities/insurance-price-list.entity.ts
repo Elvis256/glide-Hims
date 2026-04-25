@@ -1,10 +1,4 @@
-import {
-  Entity,
-  Column,
-  ManyToOne,
-  JoinColumn,
-  Index,
-} from 'typeorm';
+import { Entity, Column, ManyToOne, JoinColumn, Index } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { InsuranceProvider } from './insurance-provider.entity';
 import { Service } from './service-category.entity';
@@ -15,7 +9,10 @@ import { User } from './user.entity';
 @Entity('insurance_price_lists')
 @Index(['insuranceProviderId', 'serviceId'], { unique: true, where: '"service_id" IS NOT NULL' })
 @Index(['insuranceProviderId', 'labTestId'], { unique: true, where: '"lab_test_id" IS NOT NULL' })
-@Index(['insuranceProviderId', 'itemId'], { unique: true, where: '"item_id" IS NOT NULL AND "is_active" = true' })
+@Index(['insuranceProviderId', 'itemId'], {
+  unique: true,
+  where: '"item_id" IS NOT NULL AND "is_active" = true',
+})
 export class InsurancePriceList extends BaseEntity {
   @ManyToOne(() => InsuranceProvider, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'insurance_provider_id' })

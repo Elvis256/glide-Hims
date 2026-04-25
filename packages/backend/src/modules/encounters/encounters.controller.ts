@@ -9,14 +9,26 @@ import {
   Query,
   Request,
   ParseUUIDPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { EncountersService } from './encounters.service';
-import { CreateEncounterDto, UpdateEncounterDto, UpdateStatusDto, EncounterQueryDto, CompleteConsultationDto, ReturnReasonDto } from './encounters.dto';
+import {
+  CreateEncounterDto,
+  UpdateEncounterDto,
+  UpdateStatusDto,
+  EncounterQueryDto,
+  CompleteConsultationDto,
+  ReturnReasonDto,
+} from './encounters.dto';
 import { AuthWithPermissions, AuthWithOwnership } from '../auth/decorators/auth.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('Encounters')
 @ApiBearerAuth()
+@UseGuards(ModuleGuard)
+@RequireModule('doctors')
 @Controller('encounters')
 export class EncountersController {
   constructor(private readonly encountersService: EncountersService) {}
@@ -37,7 +49,7 @@ export class EncountersController {
 
   @Get('queue')
   @AuthWithPermissions('encounters.read')
-  @ApiOperation({ summary: 'Get today\'s patient queue' })
+  @ApiOperation({ summary: "Get today's patient queue" })
   getQueue(
     @Query('facilityId') facilityIdQuery: string,
     @Query('departmentId') departmentId: string,
@@ -52,7 +64,7 @@ export class EncountersController {
 
   @Get('stats/today')
   @AuthWithPermissions('encounters.read')
-  @ApiOperation({ summary: 'Get today\'s encounter statistics' })
+  @ApiOperation({ summary: "Get today's encounter statistics" })
   getTodayStats(@Query('facilityId') facilityId: string, @Request() req: any) {
     const effectiveFacilityId = facilityId || req.headers['x-facility-id'] || req.user?.facilityId;
     if (!effectiveFacilityId) {
@@ -104,7 +116,13 @@ export class EncountersController {
     @Body() dto: UpdateStatusDto,
     @Request() req: any,
   ) {
-    return this.encountersService.updateStatus(id, dto.status, dto.providerId || req.user.id, dto.reason, req.user?.tenantId);
+    return this.encountersService.updateStatus(
+      id,
+      dto.status,
+      dto.providerId || req.user.id,
+      dto.reason,
+      req.user?.tenantId,
+    );
   }
 
   @Patch(':id/return-to-doctor')

@@ -1,17 +1,36 @@
-import { Controller, Get, Post, Put, Body, Param, Query, Request, BadRequestException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Body,
+  Param,
+  Query,
+  Request,
+  BadRequestException,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { EmergencyService } from './emergency.service';
 import {
-  CreateEmergencyCaseDto, TriageDto, StartTreatmentDto,
-  DischargeEmergencyDto, AdmitFromEmergencyDto, EmergencyQueryDto
+  CreateEmergencyCaseDto,
+  TriageDto,
+  StartTreatmentDto,
+  DischargeEmergencyDto,
+  AdmitFromEmergencyDto,
+  EmergencyQueryDto,
 } from './dto/emergency.dto';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 // UUID regex for validation
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 @ApiTags('Emergency')
 @ApiBearerAuth()
+@UseGuards(ModuleGuard)
+@RequireModule('emergency')
 @Controller('emergency')
 export class EmergencyController {
   constructor(private readonly emergencyService: EmergencyService) {}

@@ -83,9 +83,7 @@ export class AdherenceService {
 
         for (const time of timeSlots) {
           const record = this.adherenceRepo.create({
-            patientId: prescription.encounter
-              ? (prescription.encounter as any).patientId
-              : '',
+            patientId: prescription.encounter ? (prescription.encounter as any).patientId : '',
             prescriptionItemId: item.id,
             scheduledDate,
             scheduledTime: time,
@@ -173,9 +171,8 @@ export class AdherenceService {
 
     // Adherence rate = taken / (taken + skipped + missed)
     const completedDoses = takenRecords + skippedRecords + missedRecords;
-    const adherenceRate = completedDoses > 0
-      ? Math.round((takenRecords / completedDoses) * 100)
-      : 0;
+    const adherenceRate =
+      completedDoses > 0 ? Math.round((takenRecords / completedDoses) * 100) : 0;
 
     // Get current medications (items with pending adherence records)
     const currentMedications = await this.adherenceRepo

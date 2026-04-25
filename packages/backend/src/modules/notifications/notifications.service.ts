@@ -2,10 +2,24 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThanOrEqual, In } from 'typeorm';
 import * as nodemailer from 'nodemailer';
-import { NotificationConfig, NotificationType, NotificationProvider } from '../../database/entities/notification-config.entity';
-import { PatientReminder, ReminderStatus, ReminderChannel, ReminderType } from '../../database/entities/patient-reminder.entity';
+import {
+  NotificationConfig,
+  NotificationType,
+  NotificationProvider,
+} from '../../database/entities/notification-config.entity';
+import {
+  PatientReminder,
+  ReminderStatus,
+  ReminderChannel,
+  ReminderType,
+} from '../../database/entities/patient-reminder.entity';
 import { Patient } from '../../database/entities/patient.entity';
-import { CreateNotificationConfigDto, SendReminderDto, ScheduleReminderDto, TestNotificationDto } from './dto/notification.dto';
+import {
+  CreateNotificationConfigDto,
+  SendReminderDto,
+  ScheduleReminderDto,
+  TestNotificationDto,
+} from './dto/notification.dto';
 
 @Injectable()
 export class NotificationsService {
@@ -21,13 +35,20 @@ export class NotificationsService {
   ) {}
 
   // Configuration Management
-  async getConfig(facilityId: string, type?: NotificationType, tenantId?: string): Promise<NotificationConfig[]> {
+  async getConfig(
+    facilityId: string,
+    type?: NotificationType,
+    tenantId?: string,
+  ): Promise<NotificationConfig[]> {
     const where: any = { facilityId, ...(tenantId ? { tenantId } : {}) };
     if (type) where.type = type;
     return this.configRepo.find({ where });
   }
 
-  async createOrUpdateConfig(dto: CreateNotificationConfigDto, tenantId?: string): Promise<NotificationConfig> {
+  async createOrUpdateConfig(
+    dto: CreateNotificationConfigDto,
+    tenantId?: string,
+  ): Promise<NotificationConfig> {
     let config = await this.configRepo.findOne({
       where: { facilityId: dto.facilityId, type: dto.type, ...(tenantId ? { tenantId } : {}) },
     });
@@ -41,7 +62,10 @@ export class NotificationsService {
     return this.configRepo.save(config);
   }
 
-  async testConfiguration(dto: TestNotificationDto, tenantId?: string): Promise<{ success: boolean; message: string }> {
+  async testConfiguration(
+    dto: TestNotificationDto,
+    tenantId?: string,
+  ): Promise<{ success: boolean; message: string }> {
     const configs = await this.getConfig(dto.facilityId, dto.type, tenantId);
     const config = configs[0];
 
@@ -52,7 +76,12 @@ export class NotificationsService {
     try {
       if (dto.type === NotificationType.EMAIL || dto.type === NotificationType.BOTH) {
         if (dto.testEmail) {
-          await this.sendEmail(config, dto.testEmail, 'Test Email', 'This is a test email from HIMS.');
+          await this.sendEmail(
+            config,
+            dto.testEmail,
+            'Test Email',
+            'This is a test email from HIMS.',
+          );
         }
       }
 
@@ -78,7 +107,12 @@ export class NotificationsService {
   }
 
   // Email Sending
-  async sendEmail(config: NotificationConfig, to: string, subject: string, body: string): Promise<void> {
+  async sendEmail(
+    config: NotificationConfig,
+    to: string,
+    subject: string,
+    body: string,
+  ): Promise<void> {
     if (!config.smtpHost || !config.smtpUser) {
       throw new Error('SMTP configuration incomplete');
     }
@@ -123,7 +157,12 @@ export class NotificationsService {
   }
 
   // WhatsApp Sending
-  async sendWhatsApp(config: NotificationConfig, phone: string, message: string, templateName?: string): Promise<void> {
+  async sendWhatsApp(
+    config: NotificationConfig,
+    phone: string,
+    message: string,
+    templateName?: string,
+  ): Promise<void> {
     if (!config.smsApiKey) {
       throw new Error('WhatsApp configuration incomplete');
     }
@@ -143,7 +182,12 @@ export class NotificationsService {
     }
   }
 
-  private async sendWhatsAppCloud(config: NotificationConfig, phone: string, message: string, templateName?: string): Promise<void> {
+  private async sendWhatsAppCloud(
+    config: NotificationConfig,
+    phone: string,
+    message: string,
+    templateName?: string,
+  ): Promise<void> {
     // Meta WhatsApp Cloud API
     const phoneNumberId = config.extraConfig?.phoneNumberId;
     const accessToken = config.smsApiKey;
@@ -174,7 +218,7 @@ export class NotificationsService {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${accessToken}`,
+        Authorization: `Bearer ${accessToken}`,
       },
       body: JSON.stringify(payload),
     });
@@ -187,15 +231,19 @@ export class NotificationsService {
     this.logger.log(`WhatsApp sent to ${phone} via Meta Cloud API`);
   }
 
-  private async sendWhatsAppBusiness(config: NotificationConfig, phone: string, message: string): Promise<void> {
+  private async sendWhatsAppBusiness(
+    config: NotificationConfig,
+    phone: string,
+    message: string,
+  ): Promise<void> {
     // WhatsApp Business API (on-premise or third-party)
     const apiUrl = config.smsApiUrl || 'https://api.whatsapp.com/v1/messages';
-    
+
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.smsApiKey}`,
+        Authorization: `Bearer ${config.smsApiKey}`,
       },
       body: JSON.stringify({
         to: phone,
@@ -211,23 +259,30 @@ export class NotificationsService {
     this.logger.log(`WhatsApp sent to ${phone} via Business API`);
   }
 
-  private async sendTwilioWhatsApp(config: NotificationConfig, phone: string, message: string): Promise<void> {
+  private async sendTwilioWhatsApp(
+    config: NotificationConfig,
+    phone: string,
+    message: string,
+  ): Promise<void> {
     const auth = Buffer.from(`${config.smsApiKey}:${config.smsApiSecret}`).toString('base64');
     const accountSid = config.extraConfig?.accountSid || config.smsUsername;
     const fromNumber = config.smsSenderId || '';
 
-    const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Authorization': `Basic ${auth}`,
+    const response = await fetch(
+      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Authorization: `Basic ${auth}`,
+        },
+        body: new URLSearchParams({
+          To: `whatsapp:${phone}`,
+          From: `whatsapp:${fromNumber}`,
+          Body: message,
+        }),
       },
-      body: new URLSearchParams({
-        To: `whatsapp:${phone}`,
-        From: `whatsapp:${fromNumber}`,
-        Body: message,
-      }),
-    });
+    );
 
     if (!response.ok) {
       throw new Error(`Twilio WhatsApp failed: ${response.statusText}`);
@@ -236,13 +291,17 @@ export class NotificationsService {
     this.logger.log(`WhatsApp sent to ${phone} via Twilio`);
   }
 
-  private async sendAfricasTalkingSms(config: NotificationConfig, phone: string, message: string): Promise<void> {
+  private async sendAfricasTalkingSms(
+    config: NotificationConfig,
+    phone: string,
+    message: string,
+  ): Promise<void> {
     const response = await fetch('https://api.africastalking.com/version1/messaging', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        'apiKey': config.smsApiKey!,
-        'Accept': 'application/json',
+        apiKey: config.smsApiKey!,
+        Accept: 'application/json',
       },
       body: new URLSearchParams({
         username: config.smsUsername || 'sandbox',
@@ -259,22 +318,29 @@ export class NotificationsService {
     this.logger.log(`SMS sent to ${phone} via Africa's Talking`);
   }
 
-  private async sendTwilioSms(config: NotificationConfig, phone: string, message: string): Promise<void> {
+  private async sendTwilioSms(
+    config: NotificationConfig,
+    phone: string,
+    message: string,
+  ): Promise<void> {
     const auth = Buffer.from(`${config.smsApiKey}:${config.smsApiSecret}`).toString('base64');
     const accountSid = config.extraConfig?.accountSid || config.smsUsername;
 
-    const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Authorization': `Basic ${auth}`,
+    const response = await fetch(
+      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Authorization: `Basic ${auth}`,
+        },
+        body: new URLSearchParams({
+          To: phone,
+          From: config.smsSenderId || '',
+          Body: message,
+        }),
       },
-      body: new URLSearchParams({
-        To: phone,
-        From: config.smsSenderId || '',
-        Body: message,
-      }),
-    });
+    );
 
     if (!response.ok) {
       throw new Error(`Twilio SMS failed: ${response.statusText}`);
@@ -283,13 +349,17 @@ export class NotificationsService {
     this.logger.log(`SMS sent to ${phone} via Twilio`);
   }
 
-  private async sendGenericSms(config: NotificationConfig, phone: string, message: string): Promise<void> {
+  private async sendGenericSms(
+    config: NotificationConfig,
+    phone: string,
+    message: string,
+  ): Promise<void> {
     // Generic SMS API - customize based on provider
     const response = await fetch(config.smsApiUrl!, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.smsApiKey}`,
+        Authorization: `Bearer ${config.smsApiKey}`,
       },
       body: JSON.stringify({
         to: phone,
@@ -307,8 +377,15 @@ export class NotificationsService {
   }
 
   // Reminder Management
-  async sendImmediateReminder(facilityId: string, dto: SendReminderDto, userId?: string, tenantId?: string): Promise<PatientReminder> {
-    const patient = await this.patientRepo.findOne({ where: { id: dto.patientId, ...(tenantId ? { tenantId } : {}) } });
+  async sendImmediateReminder(
+    facilityId: string,
+    dto: SendReminderDto,
+    userId?: string,
+    tenantId?: string,
+  ): Promise<PatientReminder> {
+    const patient = await this.patientRepo.findOne({
+      where: { id: dto.patientId, ...(tenantId ? { tenantId } : {}) },
+    });
     if (!patient) throw new Error('Patient not found');
 
     const reminder = this.reminderRepo.create({
@@ -333,7 +410,12 @@ export class NotificationsService {
     return reminder;
   }
 
-  async scheduleReminder(facilityId: string, dto: ScheduleReminderDto, userId?: string, tenantId?: string): Promise<PatientReminder> {
+  async scheduleReminder(
+    facilityId: string,
+    dto: ScheduleReminderDto,
+    userId?: string,
+    tenantId?: string,
+  ): Promise<PatientReminder> {
     const reminder = this.reminderRepo.create({
       facilityId,
       ...dto,
@@ -348,19 +430,34 @@ export class NotificationsService {
     try {
       const tenantId = (reminder as any).tenantId;
       const configs = await this.getConfig(reminder.facilityId, undefined, tenantId);
-      const patient = reminder.patient || await this.patientRepo.findOne({ where: { id: reminder.patientId, ...(tenantId ? { tenantId } : {}) } });
+      const patient =
+        reminder.patient ||
+        (await this.patientRepo.findOne({
+          where: { id: reminder.patientId, ...(tenantId ? { tenantId } : {}) },
+        }));
 
       if (!patient) {
         throw new Error('Patient not found');
       }
 
-      const emailConfig = configs.find(c => c.type === NotificationType.EMAIL || c.type === NotificationType.BOTH);
-      const smsConfig = configs.find(c => c.type === NotificationType.SMS || c.type === NotificationType.BOTH);
-      const whatsappConfig = configs.find(c => c.type === NotificationType.WHATSAPP);
+      const emailConfig = configs.find(
+        (c) => c.type === NotificationType.EMAIL || c.type === NotificationType.BOTH,
+      );
+      const smsConfig = configs.find(
+        (c) => c.type === NotificationType.SMS || c.type === NotificationType.BOTH,
+      );
+      const whatsappConfig = configs.find((c) => c.type === NotificationType.WHATSAPP);
 
-      const shouldSendEmail = (reminder.channel === ReminderChannel.EMAIL || reminder.channel === ReminderChannel.BOTH || reminder.channel === ReminderChannel.ALL);
-      const shouldSendSms = (reminder.channel === ReminderChannel.SMS || reminder.channel === ReminderChannel.BOTH || reminder.channel === ReminderChannel.ALL);
-      const shouldSendWhatsApp = (reminder.channel === ReminderChannel.WHATSAPP || reminder.channel === ReminderChannel.ALL);
+      const shouldSendEmail =
+        reminder.channel === ReminderChannel.EMAIL ||
+        reminder.channel === ReminderChannel.BOTH ||
+        reminder.channel === ReminderChannel.ALL;
+      const shouldSendSms =
+        reminder.channel === ReminderChannel.SMS ||
+        reminder.channel === ReminderChannel.BOTH ||
+        reminder.channel === ReminderChannel.ALL;
+      const shouldSendWhatsApp =
+        reminder.channel === ReminderChannel.WHATSAPP || reminder.channel === ReminderChannel.ALL;
 
       let channelsAttempted = 0;
       let channelsSucceeded = 0;
@@ -413,7 +510,9 @@ export class NotificationsService {
         reminder.status = ReminderStatus.SENT;
         reminder.sentAt = new Date();
         reminder.errorMessage = `Partially sent (${channelsSucceeded}/${channelsAttempted}): ${channelErrors.join('; ')}`;
-        this.logger.warn(`Reminder ${reminder.id} partially sent: ${channelsSucceeded}/${channelsAttempted} channels succeeded`);
+        this.logger.warn(
+          `Reminder ${reminder.id} partially sent: ${channelsSucceeded}/${channelsAttempted} channels succeeded`,
+        );
       } else {
         // All channels failed
         throw new Error(`All channels failed: ${channelErrors.join('; ')}`);
@@ -447,7 +546,12 @@ export class NotificationsService {
     return pendingReminders.length;
   }
 
-  async getReminderHistory(facilityId: string, patientId?: string, limit = 50, tenantId?: string): Promise<PatientReminder[]> {
+  async getReminderHistory(
+    facilityId: string,
+    patientId?: string,
+    limit = 50,
+    tenantId?: string,
+  ): Promise<PatientReminder[]> {
     const where: any = { facilityId, ...(tenantId ? { tenantId } : {}) };
     if (patientId) where.patientId = patientId;
 
@@ -459,9 +563,11 @@ export class NotificationsService {
   }
 
   async cancelReminder(id: string, tenantId?: string): Promise<PatientReminder> {
-    const reminder = await this.reminderRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
+    const reminder = await this.reminderRepo.findOne({
+      where: { id, ...(tenantId ? { tenantId } : {}) },
+    });
     if (!reminder) throw new Error('Reminder not found');
-    
+
     reminder.status = ReminderStatus.CANCELLED;
     return this.reminderRepo.save(reminder);
   }
@@ -475,19 +581,21 @@ export class NotificationsService {
     tenantId?: string,
   ): Promise<{ success: boolean; channel?: string; error?: string }> {
     try {
-      const patient = await this.patientRepo.findOne({ where: { id: patientId, ...(tenantId ? { tenantId } : {}) } });
+      const patient = await this.patientRepo.findOne({
+        where: { id: patientId, ...(tenantId ? { tenantId } : {}) },
+      });
       if (!patient) {
         return { success: false, error: 'Patient not found' };
       }
 
       const configs = await this.getConfig(facilityId, undefined, tenantId);
-      const smsConfig = configs.find(c => c.type === NotificationType.SMS && c.isEnabled);
-      const emailConfig = configs.find(c => c.type === NotificationType.EMAIL && c.isEnabled);
+      const smsConfig = configs.find((c) => c.type === NotificationType.SMS && c.isEnabled);
+      const emailConfig = configs.find((c) => c.type === NotificationType.EMAIL && c.isEnabled);
 
       // Construct thank you message
       const hospitalName = smsConfig?.fromName || emailConfig?.fromName || 'Our Hospital';
       const smsMessage = `Dear ${patientName}, thank you for visiting ${hospitalName}. We wish you good health! ${receiptNumber ? `Receipt: ${receiptNumber}` : ''}`;
-      
+
       const emailSubject = `Thank you for visiting ${hospitalName}`;
       const emailBody = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -534,7 +642,12 @@ export class NotificationsService {
         facilityId,
         patientId,
         type: ReminderType.THANK_YOU,
-        channel: channelUsed === 'both' ? ReminderChannel.BOTH : (channelUsed === 'sms' ? ReminderChannel.SMS : ReminderChannel.EMAIL),
+        channel:
+          channelUsed === 'both'
+            ? ReminderChannel.BOTH
+            : channelUsed === 'sms'
+              ? ReminderChannel.SMS
+              : ReminderChannel.EMAIL,
         subject: emailSubject,
         message: smsMessage,
         referenceType: 'payment',
@@ -570,28 +683,32 @@ export class NotificationsService {
         id: `tpl-${Date.now()}-1`,
         type: 'appointment',
         name: 'Appointment Reminder',
-        smsTemplate: 'Dear {patientName}, this is a reminder for your appointment on {appointmentDate} at {appointmentTime}. - {hospitalName}',
+        smsTemplate:
+          'Dear {patientName}, this is a reminder for your appointment on {appointmentDate} at {appointmentTime}. - {hospitalName}',
         isActive: true,
       },
       {
         id: `tpl-${Date.now()}-2`,
         type: 'lab_result',
         name: 'Lab Results Ready',
-        smsTemplate: 'Dear {patientName}, your lab results are ready at {hospitalName}. Please visit to collect them.',
+        smsTemplate:
+          'Dear {patientName}, your lab results are ready at {hospitalName}. Please visit to collect them.',
         isActive: true,
       },
       {
         id: `tpl-${Date.now()}-3`,
         type: 'prescription_ready',
         name: 'Prescription Ready',
-        smsTemplate: 'Dear {patientName}, your prescription is ready for pickup at {hospitalName} pharmacy.',
+        smsTemplate:
+          'Dear {patientName}, your prescription is ready for pickup at {hospitalName} pharmacy.',
         isActive: true,
       },
       {
         id: `tpl-${Date.now()}-4`,
         type: 'thank_you',
         name: 'Thank You',
-        smsTemplate: 'Thank you for visiting {hospitalName}, {patientName}. We wish you good health!',
+        smsTemplate:
+          'Thank you for visiting {hospitalName}, {patientName}. We wish you good health!',
         isActive: true,
       },
     ];
@@ -614,7 +731,10 @@ export class NotificationsService {
       where: { facilityId, type: NotificationType.TEMPLATE, ...(tenantId ? { tenantId } : {}) },
     });
 
-    const newTemplate = { ...dto, id: `tpl-${Date.now()}-${Math.random().toString(36).substr(2, 6)}` };
+    const newTemplate = {
+      ...dto,
+      id: `tpl-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+    };
     delete newTemplate.facilityId;
 
     if (!config) {
@@ -653,7 +773,11 @@ export class NotificationsService {
     return templates[idx];
   }
 
-  async deleteTemplate(id: string, facilityId?: string, tenantId?: string): Promise<{ success: boolean }> {
+  async deleteTemplate(
+    id: string,
+    facilityId?: string,
+    tenantId?: string,
+  ): Promise<{ success: boolean }> {
     const where: any = { type: NotificationType.TEMPLATE, ...(tenantId ? { tenantId } : {}) };
     if (facilityId) where.facilityId = facilityId;
 
@@ -673,7 +797,14 @@ export class NotificationsService {
 
   // Bulk Messaging
   async sendBulkMessages(
-    dto: { facilityId: string; patientIds: string[]; channel: string; subject?: string; message: string; type: string },
+    dto: {
+      facilityId: string;
+      patientIds: string[];
+      channel: string;
+      subject?: string;
+      message: string;
+      type: string;
+    },
     userId?: string,
     tenantId?: string,
   ): Promise<{ sent: number; failed: number; errors: string[] }> {
@@ -683,13 +814,15 @@ export class NotificationsService {
     const errors: string[] = [];
 
     const configs = await this.getConfig(facilityId, undefined, tenantId);
-    const smsConfig = configs.find(c => c.type === NotificationType.SMS && c.isEnabled);
-    const emailConfig = configs.find(c => c.type === NotificationType.EMAIL && c.isEnabled);
-    const whatsappConfig = configs.find(c => c.type === NotificationType.WHATSAPP && c.isEnabled);
+    const smsConfig = configs.find((c) => c.type === NotificationType.SMS && c.isEnabled);
+    const emailConfig = configs.find((c) => c.type === NotificationType.EMAIL && c.isEnabled);
+    const whatsappConfig = configs.find((c) => c.type === NotificationType.WHATSAPP && c.isEnabled);
 
     for (const patientId of patientIds) {
       try {
-        const patient = await this.patientRepo.findOne({ where: { id: patientId, ...(tenantId ? { tenantId } : {}) } });
+        const patient = await this.patientRepo.findOne({
+          where: { id: patientId, ...(tenantId ? { tenantId } : {}) },
+        });
         if (!patient) {
           errors.push(`Patient ${patientId} not found`);
           failed++;
@@ -721,7 +854,12 @@ export class NotificationsService {
         // Send Email
         if ((channel === 'email' || channel === 'all') && emailConfig && patient.email) {
           try {
-            await this.sendEmail(emailConfig, patient.email, subject || 'Message from Hospital', message);
+            await this.sendEmail(
+              emailConfig,
+              patient.email,
+              subject || 'Message from Hospital',
+              message,
+            );
             messageSent = true;
           } catch (e) {
             this.logger.warn(`Email failed for ${patient.email}: ${e.message}`);

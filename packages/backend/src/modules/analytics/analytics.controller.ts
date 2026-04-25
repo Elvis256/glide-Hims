@@ -1,4 +1,12 @@
-import { Controller, Get, Query, ParseIntPipe, DefaultValuePipe, BadRequestException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Query,
+  Request,
+  ParseIntPipe,
+  DefaultValuePipe,
+  BadRequestException,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AnalyticsService } from './analytics.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
@@ -9,6 +17,13 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 @Controller('analytics')
 export class AnalyticsController {
   constructor(private readonly analyticsService: AnalyticsService) {}
+
+  @Get('admin-dashboard')
+  @AuthWithPermissions('analytics.read')
+  @ApiOperation({ summary: 'Get admin dashboard analytics' })
+  async getAdminDashboard(@Request() req: any) {
+    return this.analyticsService.getAdminDashboard(req.user?.tenantId);
+  }
 
   @Get('dashboard')
   @AuthWithPermissions('analytics.read')
@@ -72,12 +87,7 @@ export class AnalyticsController {
     if (isNaN(start.getTime()) || isNaN(end.getTime())) {
       throw new BadRequestException('Invalid date format for startDate or endDate');
     }
-    return this.analyticsService.getSummaryReport(
-      user.facilityId,
-      start,
-      end,
-      user.tenantId,
-    );
+    return this.analyticsService.getSummaryReport(user.facilityId, start, end, user.tenantId);
   }
 
   @Get('recent-activity')
@@ -102,7 +112,11 @@ export class AnalyticsController {
   @Get('hmis-105')
   @AuthWithPermissions('analytics.read')
   @ApiOperation({ summary: 'HMIS 105 - Uganda Monthly OPD Summary Report' })
-  @ApiQuery({ name: 'facilityId', required: false, description: 'Facility UUID (defaults to user facility)' })
+  @ApiQuery({
+    name: 'facilityId',
+    required: false,
+    description: 'Facility UUID (defaults to user facility)',
+  })
   @ApiQuery({ name: 'month', required: true, description: 'Report month (1-12)' })
   @ApiQuery({ name: 'year', required: true, description: 'Report year' })
   async getHMIS105Report(

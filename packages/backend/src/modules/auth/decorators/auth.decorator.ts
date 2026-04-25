@@ -4,8 +4,10 @@ import { ApiBearerAuth, ApiUnauthorizedResponse, ApiForbiddenResponse } from '@n
 import { RolesGuard } from '../guards/roles.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { OwnershipGuard } from '../guards/ownership.guard';
+import { ModuleGuard } from '../guards/module.guard';
 import { Roles } from './roles.decorator';
 import { RequirePermissions } from './permissions.decorator';
+import { RequireModule } from './module.decorator';
 import { ResourceOwnership, ResourceOwnershipConfig } from './resource-ownership.decorator';
 
 /**
@@ -37,6 +39,28 @@ export function AuthWithPermissions(...permissions: string[]) {
     ApiBearerAuth(),
     ApiUnauthorizedResponse({ description: 'Unauthorized' }),
     ApiForbiddenResponse({ description: 'Insufficient permissions' }),
+  ];
+
+  if (permissions.length > 0) {
+    decorators.unshift(RequirePermissions(...permissions));
+  }
+
+  return applyDecorators(...decorators);
+}
+
+/**
+ * AuthWithModule — permissions + module enforcement.
+ * Checks the user has the required permission AND the module is enabled for the tenant.
+ * @param module - Module code (e.g., 'pharmacy', 'emergency', 'ipd')
+ * @param permissions - Permission codes
+ */
+export function AuthWithModule(module: string, ...permissions: string[]) {
+  const decorators = [
+    RequireModule(module),
+    UseGuards(AuthGuard('jwt'), PermissionsGuard, ModuleGuard),
+    ApiBearerAuth(),
+    ApiUnauthorizedResponse({ description: 'Unauthorized' }),
+    ApiForbiddenResponse({ description: 'Insufficient permissions or module not enabled' }),
   ];
 
   if (permissions.length > 0) {

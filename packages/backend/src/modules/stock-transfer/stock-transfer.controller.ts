@@ -7,6 +7,7 @@ import {
   Param,
   Query,
   Request,
+  UseGuards,
 } from '@nestjs/common';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { StockTransferService } from './stock-transfer.service';
@@ -18,7 +19,11 @@ import {
   CancelStockTransferDto,
 } from './dto/stock-transfer.dto';
 import { TransferStatus } from '../../database/entities/stock-transfer.entity';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
+@UseGuards(ModuleGuard)
+@RequireModule('stores')
 @Controller('stock-transfers')
 export class StockTransferController {
   constructor(private readonly stockTransferService: StockTransferService) {}
@@ -31,10 +36,7 @@ export class StockTransferController {
 
   @Get('dashboard')
   @AuthWithPermissions('stock-transfer.read')
-  async getDashboard(
-    @Query('facilityId') facilityId?: string,
-    @Request() req?: any,
-  ) {
+  async getDashboard(@Query('facilityId') facilityId?: string, @Request() req?: any) {
     return this.stockTransferService.getDashboard(req?.user?.tenantId, facilityId);
   }
 
@@ -74,11 +76,7 @@ export class StockTransferController {
 
   @Patch(':id/reject')
   @AuthWithPermissions('stock-transfer.approve')
-  async reject(
-    @Param('id') id: string,
-    @Body() dto: RejectStockTransferDto,
-    @Request() req: any,
-  ) {
+  async reject(@Param('id') id: string, @Body() dto: RejectStockTransferDto, @Request() req: any) {
     return this.stockTransferService.reject(id, req.user.id, req.user?.tenantId, dto);
   }
 
@@ -100,11 +98,7 @@ export class StockTransferController {
 
   @Patch(':id/cancel')
   @AuthWithPermissions('stock-transfer.create')
-  async cancel(
-    @Param('id') id: string,
-    @Body() dto: CancelStockTransferDto,
-    @Request() req: any,
-  ) {
+  async cancel(@Param('id') id: string, @Body() dto: CancelStockTransferDto, @Request() req: any) {
     return this.stockTransferService.cancel(id, req.user.id, req.user?.tenantId, dto);
   }
 }

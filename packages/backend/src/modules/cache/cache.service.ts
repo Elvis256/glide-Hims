@@ -11,15 +11,13 @@ export class CacheService implements OnModuleDestroy {
   private defaultTtl: number;
   private cleanupInterval: NodeJS.Timeout;
 
-  constructor(
-    @Inject('CACHE_OPTIONS') private options: CacheModuleOptions,
-  ) {
+  constructor(@Inject('CACHE_OPTIONS') private options: CacheModuleOptions) {
     this.keyPrefix = options.keyPrefix || 'glide-hims:';
     this.defaultTtl = options.ttl || 3600;
-    
+
     // Cleanup expired entries every minute
     this.cleanupInterval = setInterval(() => this.cleanup(), 60000);
-    
+
     this.logger.log('Cache service initialized (in-memory mode)');
   }
 
@@ -45,24 +43,24 @@ export class CacheService implements OnModuleDestroy {
   async get<T>(key: string): Promise<T | null> {
     const fullKey = this.getKey(key);
     const entry = this.cache.get(fullKey);
-    
+
     if (!entry) return null;
-    
+
     if (entry.expiresAt < Date.now()) {
       this.cache.delete(fullKey);
       return null;
     }
-    
+
     return entry.value as T;
   }
 
   async set<T>(key: string, value: T, ttlSeconds?: number): Promise<void> {
     const fullKey = this.getKey(key);
     const ttl = ttlSeconds || this.defaultTtl;
-    
+
     this.cache.set(fullKey, {
       value,
-      expiresAt: Date.now() + (ttl * 1000),
+      expiresAt: Date.now() + ttl * 1000,
     });
   }
 
@@ -74,14 +72,14 @@ export class CacheService implements OnModuleDestroy {
   async delByPattern(pattern: string): Promise<number> {
     const fullPattern = this.getKey(pattern).replace(/\*/g, '');
     let count = 0;
-    
+
     for (const key of this.cache.keys()) {
       if (key.startsWith(fullPattern)) {
         this.cache.delete(key);
         count++;
       }
     }
-    
+
     return count;
   }
 
@@ -90,11 +88,7 @@ export class CacheService implements OnModuleDestroy {
     return result !== null;
   }
 
-  async getOrSet<T>(
-    key: string,
-    factory: () => Promise<T>,
-    ttlSeconds?: number,
-  ): Promise<T> {
+  async getOrSet<T>(key: string, factory: () => Promise<T>, ttlSeconds?: number): Promise<T> {
     const cached = await this.get<T>(key);
     if (cached !== null) return cached;
 
@@ -106,17 +100,17 @@ export class CacheService implements OnModuleDestroy {
   async increment(key: string, by: number = 1): Promise<number> {
     const fullKey = this.getKey(key);
     const entry = this.cache.get(fullKey);
-    
+
     let value = by;
     if (entry && entry.expiresAt >= Date.now()) {
       value = (Number(entry.value) || 0) + by;
     }
-    
+
     this.cache.set(fullKey, {
       value,
-      expiresAt: Date.now() + (this.defaultTtl * 1000),
+      expiresAt: Date.now() + this.defaultTtl * 1000,
     });
-    
+
     return value;
   }
 
@@ -150,21 +144,21 @@ export class CacheService implements OnModuleDestroy {
     const key = `ratelimit:${identifier}`;
     const now = Date.now();
     const windowMs = windowSeconds * 1000;
-    
+
     const entry = this.cache.get(this.getKey(key));
-    
+
     if (!entry || entry.expiresAt < now) {
       await this.set(key, { count: 1, resetAt: now + windowMs }, windowSeconds);
       return { allowed: true, remaining: maxRequests - 1, resetAt: now + windowMs };
     }
-    
+
     const data = entry.value as { count: number; resetAt: number };
     data.count++;
-    
+
     if (data.count > maxRequests) {
       return { allowed: false, remaining: 0, resetAt: data.resetAt };
     }
-    
+
     return { allowed: true, remaining: maxRequests - data.count, resetAt: data.resetAt };
   }
 

@@ -1,8 +1,23 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, Request } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  Query,
+  Request,
+  UseGuards,
+} from '@nestjs/common';
 import { VendorRatingsService } from './vendor-ratings.service';
 import { CreateVendorRatingDto, UpdateVendorRatingDto } from './dto/vendor-rating.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
+@UseGuards(ModuleGuard)
+@RequireModule('stores')
 @Controller('vendor-ratings')
 export class VendorRatingsController {
   constructor(private readonly service: VendorRatingsService) {}
@@ -15,7 +30,11 @@ export class VendorRatingsController {
 
   @AuthWithPermissions('procurement.read')
   @Get()
-  findAll(@Query('facilityId') facilityId: string, @Query('supplierId') supplierId?: string, @Request() req?: any) {
+  findAll(
+    @Query('facilityId') facilityId: string,
+    @Query('supplierId') supplierId?: string,
+    @Request() req?: any,
+  ) {
     return this.service.findAll(facilityId, { supplierId }, req?.user?.tenantId);
   }
 

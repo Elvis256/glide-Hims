@@ -6,8 +6,9 @@ import {
   Building2, Plus, Copy, Check, Search, MoreVertical,
   Loader2, Power, PowerOff, Trash2, Pencil,
   Users, Calendar, Shield, Hospital, Activity, AlertTriangle,
-  CheckCircle2, Clock, Eye, RefreshCw, X, KeyRound, EyeOff
+  CheckCircle2, Clock, Eye, RefreshCw, X, KeyRound, EyeOff, LogIn
 } from 'lucide-react';
+import { authService } from '../../services/auth';
 import { toast } from 'sonner';
 
 interface Tenant {
@@ -33,6 +34,28 @@ interface CreateTenantForm {
   description?: string;
 }
 
+const FACILITY_MODE_DESCRIPTIONS: Record<string, string> = {
+  single_user: 'Single-user clinic — one person handles all tasks',
+  clinic_opd: 'Outpatient-only clinic — no ward admissions',
+  clinic_full: 'Clinic with inpatient & outpatient — includes IPD',
+  multisite_opd: 'Multi-site OPD network — centralized reporting',
+  hospital: 'Full hospital — all modules including Emergency, Theatre, HR, Finance',
+  pharmacy_retail: 'Retail pharmacy — POS, dispensing, stock management',
+  pharmacy_chain: 'Pharmacy chain — multi-branch with HR & Finance',
+  pharmacy_wholesale: 'Wholesale distributor — B2B sales & supply chain',
+};
+
+const FACILITY_MODE_MODULES: Record<string, string[]> = {
+  single_user: ['Registration', 'Doctors', 'Nursing', 'Diagnostics', 'Pharmacy', 'Billing', 'Stores', 'Reports'],
+  clinic_opd: ['Registration', 'Doctors', 'Nursing', 'Diagnostics', 'Pharmacy', 'Billing', 'Stores', 'Reports'],
+  clinic_full: ['Registration', 'Doctors', 'Nursing', 'Diagnostics', 'Pharmacy', 'IPD', 'Billing', 'Stores', 'Reports'],
+  multisite_opd: ['Registration', 'Doctors', 'Nursing', 'Diagnostics', 'Pharmacy', 'Billing', 'Stores', 'Reports'],
+  hospital: ['Registration', 'Doctors', 'Nursing', 'Diagnostics', 'Pharmacy', 'IPD', 'Emergency', 'Theatre', 'Maternity', 'HR', 'Finance', 'Billing', 'Stores', 'Reports'],
+  pharmacy_retail: ['Registration', 'Pharmacy', 'POS', 'Billing', 'Stores', 'Reports'],
+  pharmacy_chain: ['Registration', 'Pharmacy', 'POS', 'HR', 'Finance', 'Billing', 'Stores', 'Reports'],
+  pharmacy_wholesale: ['Pharmacy', 'POS', 'HR', 'Finance', 'Billing', 'Stores', 'Reports'],
+};
+
 export default function TenantManagementPage() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
@@ -48,6 +71,8 @@ export default function TenantManagementPage() {
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
   const [actionMenuId, setActionMenuId] = useState<string | null>(null);
   const [resetPasswordTenant, setResetPasswordTenant] = useState<Tenant | null>(null);
+  const [enterTenantTarget, setEnterTenantTarget] = useState<Tenant | null>(null);
+  const [enteringTenant, setEnteringTenant] = useState(false);
 
   useEffect(() => {
     if (user && !user.isSystemAdmin) {
@@ -116,6 +141,50 @@ export default function TenantManagementPage() {
       toast.error('Failed to delete organization');
     }
     setActionMenuId(null);
+  };
+
+  const handleEnterTenant = async (tenant: Tenant) => {
+    setEnteringTenant(true);
+    try {
+      const response = await authService.enterTenant(tenant.id);
+
+      // Store tenant context
+      localStorage.setItem('glide_active_tenant_id', tenant.id);
+      localStorage.setItem('glide_tenant_slug', tenant.slug);
+      localStorage.setItem('glide_system_admin_mode', 'true');
+
+      // Update auth store with new tokens and user
+      const { login: loginFn, setAccessibleModules } = useAuthStore.getState();
+      loginFn(response.user, response.accessToken, response.refreshToken);
+
+      // Fetch accessible modules for the tenant context
+      try {
+        const meData = await authService.getMe();
+        setAccessibleModules(meData.accessibleModules || []);
+        const { user: currentUser } = useAuthStore.getState();
+        if (currentUser) {
+          useAuthStore.setState({
+            user: {
+              ...currentUser,
+              accessibleModules: meData.accessibleModules || [],
+              facilityMode: meData.facilityMode,
+              businessType: meData.businessType,
+            },
+          });
+        }
+      } catch {
+        // Falls back to role-based filtering
+      }
+
+      toast.success(`Entered ${tenant.name}`);
+      setEnterTenantTarget(null);
+      navigate('/');
+    } catch (err: any) {
+      const message = err?.response?.data?.message || 'Failed to enter organization';
+      toast.error(message);
+    } finally {
+      setEnteringTenant(false);
+    }
   };
 
   const filteredTenants = tenants.filter(t => {
@@ -307,6 +376,7 @@ export default function TenantManagementPage() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Login Link</th>
                 <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Users</th>
                 <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Facilities</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Mode</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Setup</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Last Activity</th>
@@ -337,15 +407,13 @@ export default function TenantManagementPage() {
                   </td>
                   <td className="px-4 py-4">
                     <div className="flex items-center gap-1.5">
-                      <a
-                        href={getLoginUrl(tenant.slug)}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
+                        onClick={() => setEnterTenantTarget(tenant)}
                         className="text-xs bg-gray-100 px-2 py-1 rounded font-mono text-blue-700 hover:text-blue-900 hover:bg-blue-50 truncate max-w-[180px] transition-colors cursor-pointer"
-                        title={getLoginUrl(tenant.slug)}
+                        title={`Enter ${tenant.name}`}
                       >
                         /login/{tenant.slug}
-                      </a>
+                      </button>
                       <button
                         onClick={() => copyLoginUrl(tenant.slug)}
                         className="text-gray-400 hover:text-blue-600 transition-colors flex-shrink-0"
@@ -366,6 +434,15 @@ export default function TenantManagementPage() {
                       <Hospital className="w-3.5 h-3.5 text-gray-400" />
                       {tenant.facilityCount || 0}
                     </span>
+                  </td>
+                  <td className="px-4 py-4">
+                    {tenant.settings?.facilityMode ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-50 text-indigo-700 capitalize">
+                        {tenant.settings.facilityMode.replace(/_/g, ' ')}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-400 italic">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-4">
                     {setupBadge(tenant.isSetupComplete)}
@@ -417,6 +494,15 @@ export default function TenantManagementPage() {
                             className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
                           >
                             <Copy className="w-4 h-4" /> Copy Login Link
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEnterTenantTarget(tenant);
+                              setActionMenuId(null);
+                            }}
+                            className="w-full text-left px-4 py-2 text-sm text-indigo-700 hover:bg-indigo-50 flex items-center gap-2"
+                          >
+                            <LogIn className="w-4 h-4" /> Enter Organization
                           </button>
                           {tenant.adminUsername && (
                             <button
@@ -518,6 +604,67 @@ export default function TenantManagementPage() {
           tenant={resetPasswordTenant}
           onClose={() => setResetPasswordTenant(null)}
         />
+      )}
+
+      {/* Enter Organization Confirmation Dialog */}
+      {enterTenantTarget && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center">
+                <LogIn className="w-5 h-5 text-indigo-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Enter Organization</h3>
+                <p className="text-sm text-gray-500">Switch to hospital dashboard</p>
+              </div>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-4 mb-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Building2 className="w-4 h-4 text-gray-400" />
+                <span className="font-medium text-gray-900">{enterTenantTarget.name}</span>
+              </div>
+              <p className="text-sm text-gray-600">
+                You will be logged into this organization's HIMS dashboard as a system administrator. 
+                Your current system admin session will be replaced.
+              </p>
+            </div>
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-5">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-amber-800">
+                  To return to the System Admin panel, you'll need to log out and sign in again at the System Admin portal.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setEnterTenantTarget(null)}
+                disabled={enteringTenant}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleEnterTenant(enterTenantTarget)}
+                disabled={enteringTenant}
+                className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {enteringTenant ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Entering...
+                  </>
+                ) : (
+                  <>
+                    <LogIn className="w-4 h-4" />
+                    Enter Organization
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Close action menu on outside click */}
@@ -637,15 +784,38 @@ function TenantDetailModal({
                       <p className="font-medium text-gray-900">{tenant.settings.timezone}</p>
                     </div>
                   )}
-                  {tenant.settings.facilityMode && (
-                    <div>
-                      <p className="text-gray-500">Facility Mode</p>
-                      <p className="font-medium text-gray-900 capitalize">{tenant.settings.facilityMode.replace(/_/g, ' ')}</p>
-                    </div>
-                  )}
                 </>
               )}
             </div>
+          </div>
+
+          {/* Facility Mode & Modules */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">Facility Mode & Modules</h4>
+            {tenant.settings?.facilityMode ? (
+              <div className="bg-indigo-50 rounded-lg p-4 border border-indigo-200">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="font-semibold text-indigo-900 capitalize">
+                    {tenant.settings.facilityMode.replace(/_/g, ' ')}
+                  </p>
+                  <span className="text-xs text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded-full">
+                    {tenant.settings.facilityMode}
+                  </span>
+                </div>
+                <p className="text-xs text-indigo-700 mb-3">
+                  {FACILITY_MODE_DESCRIPTIONS[tenant.settings.facilityMode] || 'Custom facility configuration'}
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {(FACILITY_MODE_MODULES[tenant.settings.facilityMode] || []).map((mod: string) => (
+                    <span key={mod} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-white text-indigo-700 border border-indigo-200">
+                      {mod}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400 italic">Not configured — tenant may need to run setup wizard</p>
+            )}
           </div>
 
           {/* Login Link */}

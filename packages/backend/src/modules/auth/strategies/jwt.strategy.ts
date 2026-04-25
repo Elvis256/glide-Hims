@@ -45,15 +45,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Invalid token');
     }
 
-    // Cache user status/tokenVersion for 30s to avoid DB hit on every request
+    // Cache user status/tokenVersion for 5s to avoid DB hit on every request
     const cacheKey = `jwt:user:${payload.sub}`;
     const user = await this.cacheService.getOrSet(
       cacheKey,
-      () => this.userRepository.findOne({
-        where: { id: payload.sub },
-        select: ['id', 'tokenVersion', 'status', 'isSystemAdmin'],
-      }),
-      30,
+      () =>
+        this.userRepository.findOne({
+          where: { id: payload.sub },
+          select: ['id', 'tokenVersion', 'status', 'isSystemAdmin'],
+        }),
+      5,
     );
 
     if (!user) {
@@ -71,7 +72,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
 
     return {
-      sub: payload.sub,  // Keep sub for backward compatibility
+      sub: payload.sub, // Keep sub for backward compatibility
       id: payload.sub,
       username: payload.username,
       email: payload.email,

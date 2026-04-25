@@ -60,8 +60,12 @@ export class AddHrDisciplinarySalaryOnboarding1774500500000 implements Migration
         updated_at TIMESTAMP DEFAULT NOW()
       );
     `);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_disciplinary_employee ON disciplinary_actions(employee_id);`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_disciplinary_tenant ON disciplinary_actions(tenant_id);`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_disciplinary_employee ON disciplinary_actions(employee_id);`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_disciplinary_tenant ON disciplinary_actions(tenant_id);`,
+    );
 
     // Create salary_history table
     await queryRunner.query(`
@@ -84,8 +88,12 @@ export class AddHrDisciplinarySalaryOnboarding1774500500000 implements Migration
         created_at TIMESTAMP DEFAULT NOW()
       );
     `);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_salary_history_employee ON salary_history(employee_id);`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_salary_history_tenant ON salary_history(tenant_id);`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_salary_history_employee ON salary_history(employee_id);`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_salary_history_tenant ON salary_history(tenant_id);`,
+    );
 
     // Create onboarding_tasks table
     await queryRunner.query(`
@@ -108,8 +116,12 @@ export class AddHrDisciplinarySalaryOnboarding1774500500000 implements Migration
         updated_at TIMESTAMP DEFAULT NOW()
       );
     `);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_onboarding_employee ON onboarding_tasks(employee_id);`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_onboarding_tenant ON onboarding_tasks(tenant_id);`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_onboarding_employee ON onboarding_tasks(employee_id);`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_onboarding_tenant ON onboarding_tasks(tenant_id);`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

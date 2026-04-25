@@ -1,7 +1,20 @@
-import { Injectable, NotFoundException, Logger, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  Logger,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull, MoreThan } from 'typeorm';
-import { SupportAccessGrant, SupportAccessTier } from '../../database/entities/support-access-grant.entity';
+import { Repository, IsNull, MoreThan, DataSource } from 'typeorm';
+import {
+  SupportAccessGrant,
+  SupportAccessTier,
+} from '../../database/entities/support-access-grant.entity';
+import { SupportAccessRequest, SupportAccessRequestStatus } from './support-access-request.entity';
+import { User } from '../../database/entities/user.entity';
+import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
+import { InAppNotificationType } from '../../database/entities/in-app-notification.entity';
 
 @Injectable()
 export class SupportAccessService {
@@ -10,6 +23,10 @@ export class SupportAccessService {
   constructor(
     @InjectRepository(SupportAccessGrant)
     private readonly grantRepository: Repository<SupportAccessGrant>,
+    @InjectRepository(SupportAccessRequest)
+    private readonly requestRepository: Repository<SupportAccessRequest>,
+    private readonly dataSource: DataSource,
+    private readonly notificationsService: InAppNotificationsService,
   ) {}
 
   async grantAccess(dto: {
@@ -56,7 +73,11 @@ export class SupportAccessService {
     this.logger.warn(`Support access revoked: grant=${grantId} by=${revokedById}`);
   }
 
-  async revokeAllForUserTenant(userId: string, tenantId: string, revokedById: string): Promise<void> {
+  async revokeAllForUserTenant(
+    userId: string,
+    tenantId: string,
+    revokedById: string,
+  ): Promise<void> {
     const active = await this.grantRepository.find({
       where: {
         grantedToId: userId,
@@ -106,5 +127,151 @@ export class SupportAccessService {
       relations: ['tenant'],
       order: { expiresAt: 'ASC' },
     });
+  }
+
+  // ─── Support Access Request Flow ─────────────────────────────────────
+
+  async createRequest(dto: {
+    tenantId: string;
+    requestedById: string;
+    requestedTier: number;
+    requestedDurationHours: number;
+    reason: string;
+  }): Promise<SupportAccessRequest> {
+    const existing = await this.requestRepository.findOne({
+      where: {
+        tenantId: dto.tenantId,
+        status: SupportAccessRequestStatus.PENDING,
+      },
+    });
+    if (existing) {
+      throw new ConflictException(
+        'A pending support access request already exists for this tenant',
+      );
+    }
+
+    const request = this.requestRepository.create(dto);
+    const saved = await this.requestRepository.save(request);
+    this.logger.log(
+      `Support access requested: tenant=${dto.tenantId} tier=${dto.requestedTier} hours=${dto.requestedDurationHours} by=${dto.requestedById}`,
+    );
+
+    // Notify all system admins
+    const systemAdmins = await this.dataSource
+      .getRepository(User)
+      .find({ where: { isSystemAdmin: true } });
+    if (systemAdmins.length > 0) {
+      await this.notificationsService.notifyMany(
+        systemAdmins.map((u) => u.id),
+        {
+          type: InAppNotificationType.SUPPORT_ACCESS_REQUESTED,
+          title: 'Support Access Requested',
+          message: `A tenant has requested support access (Tier ${dto.requestedTier}, ${dto.requestedDurationHours}h): ${dto.reason}`,
+          metadata: { referenceType: 'support_access_request', referenceId: saved.id },
+        },
+      );
+    }
+
+    return saved;
+  }
+
+  async listRequestsForTenant(tenantId: string): Promise<SupportAccessRequest[]> {
+    return this.requestRepository.find({
+      where: { tenantId },
+      relations: ['requestedBy', 'reviewedBy'],
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  async listPendingRequests(): Promise<SupportAccessRequest[]> {
+    return this.requestRepository.find({
+      where: { status: SupportAccessRequestStatus.PENDING },
+      relations: ['requestedBy', 'reviewedBy'],
+      order: { createdAt: 'ASC' },
+    });
+  }
+
+  async approveRequest(requestId: string, reviewedById: string): Promise<SupportAccessGrant> {
+    const request = await this.requestRepository.findOne({
+      where: { id: requestId },
+      relations: ['requestedBy'],
+    });
+    if (!request) {
+      throw new NotFoundException('Support access request not found');
+    }
+    if (request.status !== SupportAccessRequestStatus.PENDING) {
+      throw new BadRequestException('Only pending requests can be approved');
+    }
+
+    request.status = SupportAccessRequestStatus.APPROVED;
+    request.reviewedById = reviewedById;
+    request.reviewedAt = new Date();
+    await this.requestRepository.save(request);
+
+    const grant = await this.grantAccess({
+      grantedToId: reviewedById,
+      tenantId: request.tenantId!,
+      accessTier: request.requestedTier as SupportAccessTier,
+      durationHours: request.requestedDurationHours,
+      reason: `Approved request: ${request.reason}`,
+      grantedById: reviewedById,
+    });
+
+    this.logger.warn(`Support access request approved: request=${requestId} by=${reviewedById}`);
+
+    // Notify the requester
+    await this.notificationsService.create(
+      {
+        targetUserId: request.requestedById,
+        type: InAppNotificationType.SUPPORT_ACCESS_APPROVED,
+        title: 'Support Access Approved',
+        message: `Your support access request (Tier ${request.requestedTier}, ${request.requestedDurationHours}h) has been approved.`,
+        metadata: { referenceType: 'support_access_request', referenceId: requestId },
+      },
+      request.tenantId,
+    );
+
+    return grant;
+  }
+
+  async denyRequest(
+    requestId: string,
+    reviewedById: string,
+    reviewNotes?: string,
+  ): Promise<SupportAccessRequest> {
+    const request = await this.requestRepository.findOne({
+      where: { id: requestId },
+      relations: ['requestedBy'],
+    });
+    if (!request) {
+      throw new NotFoundException('Support access request not found');
+    }
+    if (request.status !== SupportAccessRequestStatus.PENDING) {
+      throw new BadRequestException('Only pending requests can be denied');
+    }
+
+    request.status = SupportAccessRequestStatus.DENIED;
+    request.reviewedById = reviewedById;
+    request.reviewedAt = new Date();
+    request.reviewNotes = reviewNotes ?? null;
+    const saved = await this.requestRepository.save(request);
+
+    this.logger.warn(`Support access request denied: request=${requestId} by=${reviewedById}`);
+
+    // Notify the requester
+    await this.notificationsService.create(
+      {
+        targetUserId: request.requestedById,
+        type: InAppNotificationType.SUPPORT_ACCESS_DENIED,
+        title: 'Support Access Denied',
+        message: reviewNotes
+          ? `Your support access request was denied: ${reviewNotes}`
+          : 'Your support access request was denied.',
+        metadata: { referenceType: 'support_access_request', referenceId: requestId },
+      },
+      request.tenantId,
+    );
+
+    return saved;
   }
 }

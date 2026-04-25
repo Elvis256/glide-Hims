@@ -20,10 +20,10 @@ export class FeatureGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const requiredFeature = this.reflector.getAllAndOverride<string>(
-      REQUIRED_FEATURE_KEY,
-      [context.getHandler(), context.getClass()],
-    );
+    const requiredFeature = this.reflector.getAllAndOverride<string>(REQUIRED_FEATURE_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
 
     if (!requiredFeature) {
       return true;
@@ -32,10 +32,7 @@ export class FeatureGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const tenantId = request.user?.tenantId || request.headers['x-tenant-id'];
 
-    const isEnabled = await this.featureFlagsService.isEnabled(
-      requiredFeature,
-      tenantId,
-    );
+    const isEnabled = await this.featureFlagsService.isEnabled(requiredFeature, tenantId);
 
     if (!isEnabled) {
       throw new HttpException(

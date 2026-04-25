@@ -148,6 +148,15 @@ See [Deployment Guide](docs/deployment.md) for detailed instructions.
 - Role-based access control (RBAC)
 - Comprehensive audit logging
 - PHI data encryption
+
+### Compliance and Assurance
+
+- [Security Architecture and App Controls](docs/compliance/SECURITY_ARCHITECTURE_AND_APP_CONTROLS.md)
+- [Secure SDLC and CI/CD Controls](docs/compliance/SECURE_SDLC_AND_CICD_CONTROLS.md)
+- [Vulnerability Management Policy](docs/compliance/VULNERABILITY_MANAGEMENT_POLICY.md)
+- [Monitoring and Operations Evidence Standard](docs/compliance/MONITORING_AND_OPERATIONS_EVIDENCE.md)
+- [Customer Assurance and SLA Baseline](docs/compliance/CUSTOMER_ASSURANCE_AND_SLA.md)
+- [Compliance Evidence Repository](compliance/evidence/README.md)
 - TLS/HTTPS required for production
 
 ## 📊 Seed Data Included

@@ -9,14 +9,19 @@ import {
   Query,
   Request,
   ParseUUIDPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RxTemplateService, CreateTemplateDto, UpdateTemplateDto } from './rx-template.service';
 import { RxNotificationService } from './rx-notification.service';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('Prescription Templates & Notifications')
 @ApiBearerAuth()
+@UseGuards(ModuleGuard)
+@RequireModule('pharmacy')
 @Controller('prescriptions')
 export class RxTemplateNotificationController {
   constructor(
@@ -64,10 +69,7 @@ export class RxTemplateNotificationController {
   @Get('templates/:id')
   @AuthWithPermissions('prescriptions.read')
   @ApiOperation({ summary: 'Get a prescription template' })
-  getTemplate(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Request() req: any,
-  ) {
+  getTemplate(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     return this.templateService.getTemplate(id, req.user?.tenantId);
   }
 
@@ -92,20 +94,14 @@ export class RxTemplateNotificationController {
   @Delete('templates/:id')
   @AuthWithPermissions('prescriptions.delete')
   @ApiOperation({ summary: 'Delete a prescription template' })
-  deleteTemplate(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Request() req: any,
-  ) {
+  deleteTemplate(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     return this.templateService.deleteTemplate(id, req.user?.id, req.user?.tenantId);
   }
 
   @Post('templates/:id/apply')
   @AuthWithPermissions('prescriptions.read')
   @ApiOperation({ summary: 'Apply a template (get items + increment usage)' })
-  applyTemplate(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Request() req: any,
-  ) {
+  applyTemplate(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     return this.templateService.applyTemplate(id, req.user?.tenantId);
   }
 
@@ -114,30 +110,21 @@ export class RxTemplateNotificationController {
   @Post(':id/notify/ready')
   @AuthWithPermissions('prescriptions.update')
   @ApiOperation({ summary: 'Send prescription ready SMS notification' })
-  notifyReady(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Request() req: any,
-  ) {
+  notifyReady(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     return this.notificationService.notifyPrescriptionReady(id, req.user?.tenantId);
   }
 
   @Post(':id/notify/refill')
   @AuthWithPermissions('prescriptions.update')
   @ApiOperation({ summary: 'Send refill reminder SMS notification' })
-  notifyRefill(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Request() req: any,
-  ) {
+  notifyRefill(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     return this.notificationService.notifyRefillReminder(id, req.user?.tenantId);
   }
 
   @Get(':id/notifications')
   @AuthWithPermissions('prescriptions.read')
   @ApiOperation({ summary: 'Get notification log for a prescription' })
-  getNotificationLog(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Request() req: any,
-  ) {
+  getNotificationLog(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     return this.notificationService.getNotificationLog(id, req.user?.tenantId);
   }
 

@@ -20,7 +20,12 @@ export class DischargeService {
     private dataSource: DataSource,
   ) {}
 
-  async create(dto: CreateDischargeSummaryDto, userId: string, facilityId: string, tenantId?: string): Promise<DischargeSummary> {
+  async create(
+    dto: CreateDischargeSummaryDto,
+    userId: string,
+    facilityId: string,
+    tenantId?: string,
+  ): Promise<DischargeSummary> {
     return this.dataSource.transaction(async (manager) => {
       // Validate encounter status — only ACTIVE/IN_PROGRESS encounters can be discharged
       const encounterWhere: any = { id: dto.encounterId };
@@ -73,8 +78,13 @@ export class DischargeService {
     });
   }
 
-  async findAll(filter: DischargeSummaryFilterDto, facilityId: string, tenantId?: string): Promise<DischargeSummary[]> {
-    const query = this.dischargeSummaryRepository.createQueryBuilder('discharge')
+  async findAll(
+    filter: DischargeSummaryFilterDto,
+    facilityId: string,
+    tenantId?: string,
+  ): Promise<DischargeSummary[]> {
+    const query = this.dischargeSummaryRepository
+      .createQueryBuilder('discharge')
       .leftJoinAndSelect('discharge.patient', 'patient')
       .leftJoinAndSelect('discharge.encounter', 'encounter')
       .leftJoinAndSelect('discharge.dischargedBy', 'dischargedBy')
@@ -142,7 +152,11 @@ export class DischargeService {
     });
   }
 
-  async update(id: string, dto: Partial<CreateDischargeSummaryDto>, tenantId?: string): Promise<DischargeSummary> {
+  async update(
+    id: string,
+    dto: Partial<CreateDischargeSummaryDto>,
+    tenantId?: string,
+  ): Promise<DischargeSummary> {
     const summary = await this.findOne(id, tenantId);
     Object.assign(summary, dto);
     return this.dischargeSummaryRepository.save(summary);
@@ -169,9 +183,7 @@ export class DischargeService {
       byTypeQb.andWhere('discharge.tenant_id = :tenantId', { tenantId });
     }
 
-    const byType = await byTypeQb
-      .groupBy('discharge.type')
-      .getRawMany();
+    const byType = await byTypeQb.groupBy('discharge.type').getRawMany();
 
     const amaCount = await this.dischargeSummaryRepository.count({
       where: {
@@ -185,13 +197,13 @@ export class DischargeService {
     return {
       total,
       byType,
-      amaRate: total > 0 ? (amaCount / total * 100).toFixed(2) : 0,
+      amaRate: total > 0 ? ((amaCount / total) * 100).toFixed(2) : 0,
     };
   }
 
   async printDischargeSummary(id: string, tenantId?: string): Promise<any> {
     const summary = await this.findOne(id, tenantId);
-    
+
     // Return formatted data for PDF generation
     return {
       patientInfo: {
@@ -240,9 +252,7 @@ export class DischargeService {
       qb.andWhere('discharge.tenant_id = :tenantId', { tenantId });
     }
 
-    const lastSummary = await qb
-      .orderBy('discharge.discharge_number', 'DESC')
-      .getOne();
+    const lastSummary = await qb.orderBy('discharge.discharge_number', 'DESC').getOne();
 
     let sequence = 1;
     if (lastSummary) {

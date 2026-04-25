@@ -1,12 +1,34 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, ParseUUIDPipe, Request } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  Query,
+  ParseUUIDPipe,
+  Request,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { DiagnosesService } from './diagnoses.service';
 import { WHOICDService } from './who-icd.service';
-import { CreateDiagnosisDto, UpdateDiagnosisDto, DiagnosisSearchDto, ImportDiagnosisDto, BulkImportDiagnosisDto } from './dto/diagnosis.dto';
+import {
+  CreateDiagnosisDto,
+  UpdateDiagnosisDto,
+  DiagnosisSearchDto,
+  ImportDiagnosisDto,
+  BulkImportDiagnosisDto,
+} from './dto/diagnosis.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { DiagnosisCategory } from '../../database/entities/diagnosis.entity';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('diagnoses')
+@UseGuards(ModuleGuard)
+@RequireModule('doctors')
 @Controller('diagnoses')
 export class DiagnosesController {
   constructor(
@@ -92,7 +114,12 @@ export class DiagnosesController {
   @AuthWithPermissions('diagnoses.read')
   @ApiOperation({ summary: 'Search ICD codes (online first, fallback to local)' })
   @ApiQuery({ name: 'q', required: true, description: 'Search query' })
-  @ApiQuery({ name: 'version', required: false, enum: ['icd10', 'icd11', 'both'], description: 'ICD version to search' })
+  @ApiQuery({
+    name: 'version',
+    required: false,
+    enum: ['icd10', 'icd11', 'both'],
+    description: 'ICD version to search',
+  })
   @ApiQuery({ name: 'lang', required: false, description: 'Language code (default: en)' })
   async searchWHO(
     @Query('q') query: string,
@@ -105,9 +132,10 @@ export class DiagnosesController {
     }
 
     const results = await this.whoICDService.search(query, version, lang, req.user?.tenantId);
-    const source = results.length > 0 && results[0].source === 'online' ? 'WHO ICD API' : 'Local Database';
-    
-    return { 
+    const source =
+      results.length > 0 && results[0].source === 'online' ? 'WHO ICD API' : 'Local Database';
+
+    return {
       data: results,
       source,
       version,
@@ -119,7 +147,11 @@ export class DiagnosesController {
   @AuthWithPermissions('diagnoses.create')
   @ApiOperation({ summary: 'Import diagnosis from WHO to local database' })
   async importFromWHO(@Body() dto: ImportDiagnosisDto, @Request() req: any) {
-    const diagnosis = await this.whoICDService.importToLocal(dto.code, dto.version || 'ICD-10', req.user?.tenantId);
+    const diagnosis = await this.whoICDService.importToLocal(
+      dto.code,
+      dto.version || 'ICD-10',
+      req.user?.tenantId,
+    );
     if (!diagnosis) {
       return { success: false, message: `Code ${dto.code} not found in WHO API` };
     }
@@ -151,7 +183,11 @@ export class DiagnosesController {
   @Patch(':id')
   @AuthWithPermissions('diagnoses.update')
   @ApiOperation({ summary: 'Update diagnosis' })
-  async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateDiagnosisDto, @Request() req: any) {
+  async update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateDiagnosisDto,
+    @Request() req: any,
+  ) {
     const diagnosis = await this.diagnosesService.update(id, dto, req.user?.tenantId);
     return { message: 'Diagnosis updated', data: diagnosis };
   }

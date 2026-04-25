@@ -71,9 +71,7 @@ describe('GlobalExceptionFilter', () => {
 
     filter.catch(exception, mockHost);
 
-    expect(mockResponse.status).toHaveBeenCalledWith(
-      HttpStatus.INTERNAL_SERVER_ERROR,
-    );
+    expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.INTERNAL_SERVER_ERROR);
 
     const responseBody = mockResponse.json.mock.calls[0][0];
     expect(responseBody.statusCode).toBe(500);
@@ -87,9 +85,7 @@ describe('GlobalExceptionFilter', () => {
   it('should handle non-Error unknown exceptions', () => {
     filter.catch('string error', mockHost);
 
-    expect(mockResponse.status).toHaveBeenCalledWith(
-      HttpStatus.INTERNAL_SERVER_ERROR,
-    );
+    expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.INTERNAL_SERVER_ERROR);
     const responseBody = mockResponse.json.mock.calls[0][0];
     expect(responseBody.message).toBe('An unexpected error occurred');
   });
@@ -119,10 +115,7 @@ describe('GlobalExceptionFilter', () => {
 
     expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST);
     const responseBody = mockResponse.json.mock.calls[0][0];
-    expect(responseBody.message).toEqual([
-      'email must be an email',
-      'password is too short',
-    ]);
+    expect(responseBody.message).toEqual(['email must be an email', 'password is too short']);
   });
 
   it('should handle 401 Unauthorized', () => {

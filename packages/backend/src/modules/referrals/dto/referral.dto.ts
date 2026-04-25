@@ -1,6 +1,20 @@
-import { IsString, IsOptional, IsEnum, IsDateString, IsBoolean, IsArray, ValidateNested, IsUUID } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsEnum,
+  IsDateString,
+  IsBoolean,
+  IsArray,
+  ValidateNested,
+  IsUUID,
+} from 'class-validator';
 import { Type } from 'class-transformer';
-import { ReferralType, ReferralPriority, ReferralReason, ReferralStatus } from '../../../database/entities/referral.entity';
+import {
+  ReferralType,
+  ReferralPriority,
+  ReferralReason,
+  ReferralStatus,
+} from '../../../database/entities/referral.entity';
 
 class DiagnosisCodeDto {
   @IsString()

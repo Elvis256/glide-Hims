@@ -9,14 +9,25 @@ import {
   Query,
   Request,
   ParseUUIDPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { BillingService } from './billing.service';
-import { CreateInvoiceDto, AddInvoiceItemDto, CreatePaymentDto, InvoiceQueryDto, UpdateInvoiceItemDto } from './billing.dto';
+import {
+  CreateInvoiceDto,
+  AddInvoiceItemDto,
+  CreatePaymentDto,
+  InvoiceQueryDto,
+  UpdateInvoiceItemDto,
+} from './billing.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('Billing')
 @ApiBearerAuth()
+@UseGuards(ModuleGuard)
+@RequireModule('billing')
 @Controller('billing')
 export class BillingController {
   constructor(private readonly billingService: BillingService) {}
@@ -76,7 +87,13 @@ export class BillingController {
     @Body() dto: UpdateInvoiceItemDto,
     @Request() req?: any,
   ) {
-    return this.billingService.updateItemPrice(invoiceId, itemId, dto.unitPrice, req?.user?.id, req?.user?.tenantId);
+    return this.billingService.updateItemPrice(
+      invoiceId,
+      itemId,
+      dto.unitPrice,
+      req?.user?.id,
+      req?.user?.tenantId,
+    );
   }
 
   @Delete('invoices/:invoiceId/items/:itemId')
@@ -87,7 +104,12 @@ export class BillingController {
     @Param('itemId', ParseUUIDPipe) itemId: string,
     @Request() req?: any,
   ) {
-    return this.billingService.removeItemById(invoiceId, itemId, req?.user?.id, req?.user?.tenantId);
+    return this.billingService.removeItemById(
+      invoiceId,
+      itemId,
+      req?.user?.id,
+      req?.user?.tenantId,
+    );
   }
 
   @Patch('invoices/:id/cancel')
@@ -174,7 +196,11 @@ export class BillingController {
     @Query('period') period?: 'daily' | 'weekly' | 'monthly',
     @Request() req?: any,
   ) {
-    return this.billingService.getRevenueDashboard(facilityId, period || 'monthly', req?.user?.tenantId);
+    return this.billingService.getRevenueDashboard(
+      facilityId,
+      period || 'monthly',
+      req?.user?.tenantId,
+    );
   }
 
   // ============ WRITE-OFFS ============
@@ -187,17 +213,20 @@ export class BillingController {
     @Request() req: any,
   ) {
     const userRoles = req.user?.roles || [];
-    return this.billingService.writeOffInvoice(id, reason, req.user.id, req?.user?.tenantId, userRoles);
+    return this.billingService.writeOffInvoice(
+      id,
+      reason,
+      req.user.id,
+      req?.user?.tenantId,
+      userRoles,
+    );
   }
 
   // ============ RECEIPT PRINTING ============
   @Get('receipts/:paymentId/print')
   @AuthWithPermissions('billing.read')
   @ApiOperation({ summary: 'Get formatted receipt data for printing' })
-  getReceiptPrintData(
-    @Param('paymentId', ParseUUIDPipe) paymentId: string,
-    @Request() req: any,
-  ) {
+  getReceiptPrintData(@Param('paymentId', ParseUUIDPipe) paymentId: string, @Request() req: any) {
     return this.billingService.getReceiptPrintData(paymentId, req?.user?.tenantId);
   }
 }

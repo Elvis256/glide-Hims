@@ -1,9 +1,17 @@
-import { Controller, Get, Post, Put, Body, Param, Query, Request } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param, Query, Request, UseGuards } from '@nestjs/common';
 import { PriceAgreementsService } from './price-agreements.service';
-import { CreatePriceAgreementDto, UpdatePriceAgreementDto, ComparePricesDto } from './dto/price-agreement.dto';
+import {
+  CreatePriceAgreementDto,
+  UpdatePriceAgreementDto,
+  ComparePricesDto,
+} from './dto/price-agreement.dto';
 import { PriceAgreementStatus } from '../../database/entities/price-agreement.entity';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
+@UseGuards(ModuleGuard)
+@RequireModule('stores')
 @Controller('price-agreements')
 export class PriceAgreementsController {
   constructor(private readonly service: PriceAgreementsService) {}
@@ -34,13 +42,21 @@ export class PriceAgreementsController {
 
   @AuthWithPermissions('procurement.read')
   @Get('expiring')
-  getExpiring(@Query('facilityId') facilityId: string, @Query('daysAhead') daysAhead?: number, @Request() req?: any) {
+  getExpiring(
+    @Query('facilityId') facilityId: string,
+    @Query('daysAhead') daysAhead?: number,
+    @Request() req?: any,
+  ) {
     return this.service.checkExpiringAgreements(facilityId, daysAhead, req?.user?.tenantId);
   }
 
   @AuthWithPermissions('procurement.create')
   @Post('compare')
-  comparePrices(@Query('facilityId') facilityId: string, @Body() dto: ComparePricesDto, @Request() req: any) {
+  comparePrices(
+    @Query('facilityId') facilityId: string,
+    @Body() dto: ComparePricesDto,
+    @Request() req: any,
+  ) {
     return this.service.comparePrices(facilityId, dto, req.user?.tenantId);
   }
 

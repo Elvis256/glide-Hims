@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  NotFoundException,
-  NotImplementedException,
-} from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, NotImplementedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -86,9 +81,7 @@ export class BackupService {
       backup.status = 'completed';
       await this.backupRepository.save(backup);
 
-      this.logger.log(
-        `Backup completed: ${filename} (${stats.size} bytes) for tenant ${tenantId}`,
-      );
+      this.logger.log(`Backup completed: ${filename} (${stats.size} bytes) for tenant ${tenantId}`);
     } catch (err) {
       backup.status = 'failed';
       backup.notes = err.message;

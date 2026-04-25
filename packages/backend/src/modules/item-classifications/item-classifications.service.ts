@@ -67,9 +67,17 @@ export class ItemClassificationsService {
     return this.categoryRepo.save(category);
   }
 
-  private async generateCategoryCode(name: string, facilityId: string, tenantId?: string): Promise<string> {
+  private async generateCategoryCode(
+    name: string,
+    facilityId: string,
+    tenantId?: string,
+  ): Promise<string> {
     // Create code from first 3 chars of name uppercased, e.g. "Antibiotics" -> "ANT"
-    const prefix = name.replace(/[^a-zA-Z]/g, '').substring(0, 3).toUpperCase() || 'CAT';
+    const prefix =
+      name
+        .replace(/[^a-zA-Z]/g, '')
+        .substring(0, 3)
+        .toUpperCase() || 'CAT';
     let code = prefix;
     let counter = 1;
     while (true) {
@@ -107,7 +115,11 @@ export class ItemClassificationsService {
     return category;
   }
 
-  async updateCategory(id: string, dto: UpdateCategoryDto, tenantId?: string): Promise<ItemCategory> {
+  async updateCategory(
+    id: string,
+    dto: UpdateCategoryDto,
+    tenantId?: string,
+  ): Promise<ItemCategory> {
     const category = await this.getCategory(id, tenantId);
     Object.assign(category, dto);
     return this.categoryRepo.save(category);
@@ -141,15 +153,23 @@ export class ItemClassificationsService {
     });
   }
 
-  async updateSubcategory(id: string, dto: UpdateSubcategoryDto, tenantId?: string): Promise<ItemSubcategory> {
-    const subcategory = await this.subcategoryRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
+  async updateSubcategory(
+    id: string,
+    dto: UpdateSubcategoryDto,
+    tenantId?: string,
+  ): Promise<ItemSubcategory> {
+    const subcategory = await this.subcategoryRepo.findOne({
+      where: { id, ...(tenantId ? { tenantId } : {}) },
+    });
     if (!subcategory) throw new NotFoundException('Subcategory not found');
     Object.assign(subcategory, dto);
     return this.subcategoryRepo.save(subcategory);
   }
 
   async deleteSubcategory(id: string, tenantId?: string): Promise<void> {
-    const subcategory = await this.subcategoryRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
+    const subcategory = await this.subcategoryRepo.findOne({
+      where: { id, ...(tenantId ? { tenantId } : {}) },
+    });
     if (!subcategory) throw new NotFoundException('Subcategory not found');
     await this.subcategoryRepo.softRemove(subcategory);
   }
@@ -181,14 +201,18 @@ export class ItemClassificationsService {
   }
 
   async updateBrand(id: string, dto: UpdateBrandDto, tenantId?: string): Promise<ItemBrand> {
-    const brand = await this.brandRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
+    const brand = await this.brandRepo.findOne({
+      where: { id, ...(tenantId ? { tenantId } : {}) },
+    });
     if (!brand) throw new NotFoundException('Brand not found');
     Object.assign(brand, dto);
     return this.brandRepo.save(brand);
   }
 
   async deleteBrand(id: string, tenantId?: string): Promise<void> {
-    const brand = await this.brandRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
+    const brand = await this.brandRepo.findOne({
+      where: { id, ...(tenantId ? { tenantId } : {}) },
+    });
     if (!brand) throw new NotFoundException('Brand not found');
     await this.brandRepo.softRemove(brand);
   }
@@ -300,15 +324,23 @@ export class ItemClassificationsService {
     });
   }
 
-  async updateFormulation(id: string, dto: UpdateFormulationDto, tenantId?: string): Promise<ItemFormulation> {
-    const formulation = await this.formulationRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
+  async updateFormulation(
+    id: string,
+    dto: UpdateFormulationDto,
+    tenantId?: string,
+  ): Promise<ItemFormulation> {
+    const formulation = await this.formulationRepo.findOne({
+      where: { id, ...(tenantId ? { tenantId } : {}) },
+    });
     if (!formulation) throw new NotFoundException('Formulation not found');
     Object.assign(formulation, dto);
     return this.formulationRepo.save(formulation);
   }
 
   async deleteFormulation(id: string, tenantId?: string): Promise<void> {
-    const formulation = await this.formulationRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
+    const formulation = await this.formulationRepo.findOne({
+      where: { id, ...(tenantId ? { tenantId } : {}) },
+    });
     if (!formulation) throw new NotFoundException('Formulation not found');
     await this.formulationRepo.softRemove(formulation);
   }
@@ -339,25 +371,37 @@ export class ItemClassificationsService {
     });
   }
 
-  async updateStrength(id: string, dto: UpdateStrengthDto, tenantId?: string): Promise<ItemStrength> {
-    const strength = await this.strengthRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
+  async updateStrength(
+    id: string,
+    dto: UpdateStrengthDto,
+    tenantId?: string,
+  ): Promise<ItemStrength> {
+    const strength = await this.strengthRepo.findOne({
+      where: { id, ...(tenantId ? { tenantId } : {}) },
+    });
     if (!strength) throw new NotFoundException('Strength not found');
     Object.assign(strength, dto);
     return this.strengthRepo.save(strength);
   }
 
   async deleteStrength(id: string, tenantId?: string): Promise<void> {
-    const strength = await this.strengthRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
+    const strength = await this.strengthRepo.findOne({
+      where: { id, ...(tenantId ? { tenantId } : {}) },
+    });
     if (!strength) throw new NotFoundException('Strength not found');
     await this.strengthRepo.softRemove(strength);
   }
 
   // ============ STORAGE CONDITIONS ============
-  async createStorageCondition(dto: CreateStorageConditionDto, tenantId?: string): Promise<StorageCondition> {
+  async createStorageCondition(
+    dto: CreateStorageConditionDto,
+    tenantId?: string,
+  ): Promise<StorageCondition> {
     const existing = await this.storageRepo.findOne({
       where: { facilityId: dto.facilityId, code: dto.code, ...(tenantId ? { tenantId } : {}) },
     });
-    if (existing) throw new ConflictException(`Storage condition with code ${dto.code} already exists`);
+    if (existing)
+      throw new ConflictException(`Storage condition with code ${dto.code} already exists`);
 
     const storage = this.storageRepo.create({ ...dto, ...(tenantId ? { tenantId } : {}) });
     return this.storageRepo.save(storage);
@@ -378,15 +422,23 @@ export class ItemClassificationsService {
     });
   }
 
-  async updateStorageCondition(id: string, dto: UpdateStorageConditionDto, tenantId?: string): Promise<StorageCondition> {
-    const storage = await this.storageRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
+  async updateStorageCondition(
+    id: string,
+    dto: UpdateStorageConditionDto,
+    tenantId?: string,
+  ): Promise<StorageCondition> {
+    const storage = await this.storageRepo.findOne({
+      where: { id, ...(tenantId ? { tenantId } : {}) },
+    });
     if (!storage) throw new NotFoundException('Storage condition not found');
     Object.assign(storage, dto);
     return this.storageRepo.save(storage);
   }
 
   async deleteStorageCondition(id: string, tenantId?: string): Promise<void> {
-    const storage = await this.storageRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
+    const storage = await this.storageRepo.findOne({
+      where: { id, ...(tenantId ? { tenantId } : {}) },
+    });
     if (!storage) throw new NotFoundException('Storage condition not found');
     await this.storageRepo.softRemove(storage);
   }
@@ -400,9 +452,21 @@ export class ItemClassificationsService {
 
     // Seed default categories
     const defaultCategories = [
-      { code: 'MEDICATIONS', name: 'Medications', isDrugCategory: true, requiresPrescription: true, color: '#3B82F6' },
+      {
+        code: 'MEDICATIONS',
+        name: 'Medications',
+        isDrugCategory: true,
+        requiresPrescription: true,
+        color: '#3B82F6',
+      },
       { code: 'EQUIPMENT', name: 'Medical Equipment', isDrugCategory: false, color: '#10B981' },
-      { code: 'REAGENTS', name: 'Laboratory Reagents', isDrugCategory: false, requiresBatchTracking: true, color: '#8B5CF6' },
+      {
+        code: 'REAGENTS',
+        name: 'Laboratory Reagents',
+        isDrugCategory: false,
+        requiresBatchTracking: true,
+        color: '#8B5CF6',
+      },
       { code: 'SUPPLIES', name: 'Medical Supplies', isDrugCategory: false, color: '#F59E0B' },
       { code: 'CONSUMABLES', name: 'Consumables', isDrugCategory: false, color: '#EC4899' },
       { code: 'SURGICAL', name: 'Surgical Supplies', isDrugCategory: false, color: '#EF4444' },
@@ -442,11 +506,33 @@ export class ItemClassificationsService {
 
     // Seed default storage conditions
     const defaultStorage = [
-      { code: 'ROOM', name: 'Room Temperature', minTemp: 15, maxTemp: 25, description: 'Store at room temperature (15-25°C)' },
-      { code: 'REFRIG', name: 'Refrigerated', minTemp: 2, maxTemp: 8, description: 'Store in refrigerator (2-8°C)' },
+      {
+        code: 'ROOM',
+        name: 'Room Temperature',
+        minTemp: 15,
+        maxTemp: 25,
+        description: 'Store at room temperature (15-25°C)',
+      },
+      {
+        code: 'REFRIG',
+        name: 'Refrigerated',
+        minTemp: 2,
+        maxTemp: 8,
+        description: 'Store in refrigerator (2-8°C)',
+      },
       { code: 'FROZEN', name: 'Frozen', maxTemp: -15, description: 'Store frozen (below -15°C)' },
-      { code: 'COOL', name: 'Cool Place', minTemp: 8, maxTemp: 15, description: 'Store in a cool place (8-15°C)' },
-      { code: 'DRY', name: 'Dry Place', description: 'Store in a dry place, protected from moisture' },
+      {
+        code: 'COOL',
+        name: 'Cool Place',
+        minTemp: 8,
+        maxTemp: 15,
+        description: 'Store in a cool place (8-15°C)',
+      },
+      {
+        code: 'DRY',
+        name: 'Dry Place',
+        description: 'Store in a dry place, protected from moisture',
+      },
       { code: 'LIGHT', name: 'Protect from Light', description: 'Store protected from light' },
     ];
 
@@ -460,12 +546,42 @@ export class ItemClassificationsService {
 
     // Seed default tags
     const defaultTags = [
-      { code: 'HIGH_ALERT', name: 'High Alert', color: '#EF4444', tagType: 'safety', isWarning: true },
-      { code: 'CONTROLLED', name: 'Controlled Substance', color: '#F59E0B', tagType: 'regulatory', isWarning: true },
-      { code: 'NARCOTIC', name: 'Narcotic', color: '#DC2626', tagType: 'regulatory', isWarning: true },
-      { code: 'LASA', name: 'Look-Alike Sound-Alike', color: '#8B5CF6', tagType: 'safety', isWarning: true },
+      {
+        code: 'HIGH_ALERT',
+        name: 'High Alert',
+        color: '#EF4444',
+        tagType: 'safety',
+        isWarning: true,
+      },
+      {
+        code: 'CONTROLLED',
+        name: 'Controlled Substance',
+        color: '#F59E0B',
+        tagType: 'regulatory',
+        isWarning: true,
+      },
+      {
+        code: 'NARCOTIC',
+        name: 'Narcotic',
+        color: '#DC2626',
+        tagType: 'regulatory',
+        isWarning: true,
+      },
+      {
+        code: 'LASA',
+        name: 'Look-Alike Sound-Alike',
+        color: '#8B5CF6',
+        tagType: 'safety',
+        isWarning: true,
+      },
       { code: 'COLD_CHAIN', name: 'Cold Chain', color: '#06B6D4', tagType: 'storage' },
-      { code: 'HAZARDOUS', name: 'Hazardous Material', color: '#EF4444', tagType: 'safety', isWarning: true },
+      {
+        code: 'HAZARDOUS',
+        name: 'Hazardous Material',
+        color: '#EF4444',
+        tagType: 'safety',
+        isWarning: true,
+      },
       { code: 'ESSENTIAL', name: 'Essential Medicine', color: '#10B981', tagType: 'general' },
     ];
 

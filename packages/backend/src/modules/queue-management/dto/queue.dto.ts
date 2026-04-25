@@ -1,6 +1,22 @@
-import { IsString, IsOptional, IsEnum, IsDateString, IsUUID, IsNumber, IsArray, IsBoolean, Min, Max } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsEnum,
+  IsDateString,
+  IsUUID,
+  IsNumber,
+  IsArray,
+  IsBoolean,
+  Min,
+  Max,
+} from 'class-validator';
 import { Type } from 'class-transformer';
-import { ServicePoint, QueueStatus, QueuePriority, VisitType } from '../../../database/entities/queue.entity';
+import {
+  ServicePoint,
+  QueueStatus,
+  QueuePriority,
+  VisitType,
+} from '../../../database/entities/queue.entity';
 
 export class CreateQueueDto {
   @IsUUID()
@@ -184,4 +200,3 @@ export class ServiceConfigDto {
   @IsOptional()
   capacityLimits?: Record<string, number>;
 }
-

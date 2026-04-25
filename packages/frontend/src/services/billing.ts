@@ -100,9 +100,11 @@ export interface Payment {
   invoice?: Invoice;
   amount: number;
   paymentMethod: string;
+  method?: string; // Alternative name from backend
   reference?: string;
   referenceNumber?: string;
   receivedBy?: string;
+  receivedById?: string;
   patientName?: string;
   notes?: string;
   status?: 'completed' | 'voided' | 'pending';

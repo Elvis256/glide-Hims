@@ -16,6 +16,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
+    const requestId = (request.headers['x-request-id'] as string) || 'unknown';
 
     let status: number;
     let message: string | object;
@@ -51,13 +52,14 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       message,
       timestamp: new Date().toISOString(),
       path: request.url,
+      requestId,
     };
 
     // Don't log 401/403/404 as errors — they're expected
     if (status >= 500) {
-      this.logger.error(`${request.method} ${request.url} ${status}`, JSON.stringify(responseBody));
+      this.logger.error(`${request.method} ${request.url} ${status} [requestId=${requestId}]`, JSON.stringify(responseBody));
     } else if (status >= 400 && status !== 401 && status !== 403 && status !== 404) {
-      this.logger.warn(`${request.method} ${request.url} ${status}`, JSON.stringify(responseBody));
+      this.logger.warn(`${request.method} ${request.url} ${status} [requestId=${requestId}]`, JSON.stringify(responseBody));
     }
 
     response.status(status).json(responseBody);

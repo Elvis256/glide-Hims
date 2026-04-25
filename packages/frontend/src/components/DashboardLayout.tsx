@@ -113,6 +113,7 @@ import {
   Focus,
   CircleDot,
   HardDrive,
+  LifeBuoy,
 } from 'lucide-react';
 import Logo, { LogoIcon } from './Logo';
 import FacilitySwitcher from './FacilitySwitcher';
@@ -993,6 +994,7 @@ const navigationSections: NavSection[] = [
           { name: 'Branches', href: '/admin/site/branches', icon: GitBranch, permissions: ['facilities.read'] },
           { name: 'Buildings & Floors', href: '/admin/site/buildings', icon: Landmark, permissions: ['facilities.read'] },
           { name: 'System Settings', href: '/admin/site/settings', icon: Settings, permissions: ['settings.update'] },
+          { name: 'Facility & Modules', href: '/admin/site/facility-mode', icon: Layers, permissions: ['settings.update'] },
           { name: 'Integrations', href: '/admin/site/integrations', icon: Link2, permissions: ['settings.update'] },
         ],
       },
@@ -1034,6 +1036,12 @@ const navigationSections: NavSection[] = [
         children: [
           { name: 'Backup Management', href: '/admin/backups', icon: HardDrive, permissions: ['admin.backup'] },
         ],
+      },
+      {
+        name: 'Support Access',
+        icon: LifeBuoy,
+        href: '/admin/support-access',
+        permissions: ['admin.settings.manage'],
       },
     ],
   },

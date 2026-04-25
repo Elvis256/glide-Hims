@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { UnauthorizedException, BadRequestException } from '@nestjs/common';
+import { UnauthorizedException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { AuthService } from '../auth.service';
 import { User } from '../../../database/entities/user.entity';
@@ -12,6 +12,13 @@ import { PasswordPolicy, PasswordHistory } from '../../../database/entities/pass
 import { RolePermission } from '../../../database/entities/role-permission.entity';
 import { Permission } from '../../../database/entities/permission.entity';
 import { UserPermission } from '../../../database/entities/user-permission.entity';
+import { Tenant } from '../../../database/entities/tenant.entity';
+import { LoginHistory } from '../../../database/entities/login-history.entity';
+import { AuditLog } from '../../../database/entities/audit-log.entity';
+import { DataSource } from 'typeorm';
+import { CacheService } from '../../cache/cache.service';
+import { RefreshTokenService } from '../refresh-token.service';
+import { SessionService } from '../session.service';
 
 jest.mock('bcrypt');
 
@@ -54,6 +61,52 @@ const mockUserPermissionRepo = {
   find: jest.fn(),
 };
 
+const mockTenantRepo = {
+  findOne: jest.fn(),
+};
+
+const mockLoginHistoryRepo = {
+  create: jest.fn(),
+  save: jest.fn(),
+};
+
+const mockAuditLogRepo = {
+  create: jest.fn(),
+  save: jest.fn(),
+};
+
+const mockCacheService = {
+  get: jest.fn(),
+  set: jest.fn(),
+  del: jest.fn(),
+  delete: jest.fn(),
+  invalidatePattern: jest.fn(),
+};
+
+const mockRefreshTokenService = {
+  generateRefreshToken: jest.fn().mockResolvedValue('mock-refresh-token'),
+  createRefreshToken: jest.fn().mockResolvedValue('mock-refresh-token'),
+  saveRefreshToken: jest.fn().mockResolvedValue(undefined),
+  validateRefreshToken: jest.fn().mockResolvedValue({ token: 'valid' }),
+  rotateRefreshToken: jest.fn().mockResolvedValue(undefined),
+  revokeRefreshToken: jest.fn().mockResolvedValue(undefined),
+  revokeAllUserRefreshTokens: jest.fn().mockResolvedValue(undefined),
+  revokeAllUserTokens: jest.fn().mockResolvedValue(undefined),
+};
+
+const mockSessionService = {
+  createSession: jest.fn().mockResolvedValue({ id: 'session-1' }),
+  updateSessionActivity: jest.fn().mockResolvedValue(undefined),
+  updateSessionToken: jest.fn().mockResolvedValue(undefined),
+  revokeSession: jest.fn().mockResolvedValue(undefined),
+  revokeAllUserSessions: jest.fn().mockResolvedValue(undefined),
+};
+
+const mockDataSource = {
+  transaction: jest.fn(),
+  query: jest.fn(),
+};
+
 const mockJwtService = {
   sign: jest.fn().mockReturnValue('mock-token'),
   verify: jest.fn(),
@@ -79,7 +132,7 @@ describe('AuthService', () => {
     username: 'testuser',
     email: 'test@example.com',
     fullName: 'Test User',
-    passwordHash: '$2b$12$validhashstring',
+    passwordHash: '$2b$10$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36f9R1XHrp236UMtO4OkHfS',
     status: 'active',
     failedLoginAttempts: 0,
     lockedUntil: undefined as any,
@@ -97,13 +150,20 @@ describe('AuthService', () => {
         { provide: getRepositoryToken(User), useValue: mockUserRepo },
         { provide: getRepositoryToken(UserRole), useValue: mockUserRoleRepo },
         { provide: getRepositoryToken(Facility), useValue: mockFacilityRepo },
+        { provide: getRepositoryToken(Tenant), useValue: mockTenantRepo },
         { provide: getRepositoryToken(PasswordPolicy), useValue: mockPasswordPolicyRepo },
         { provide: getRepositoryToken(PasswordHistory), useValue: mockPasswordHistoryRepo },
         { provide: getRepositoryToken(RolePermission), useValue: mockRolePermissionRepo },
         { provide: getRepositoryToken(Permission), useValue: mockPermissionRepo },
         { provide: getRepositoryToken(UserPermission), useValue: mockUserPermissionRepo },
+        { provide: getRepositoryToken(LoginHistory), useValue: mockLoginHistoryRepo },
+        { provide: getRepositoryToken(AuditLog), useValue: mockAuditLogRepo },
         { provide: JwtService, useValue: mockJwtService },
         { provide: ConfigService, useValue: mockConfigService },
+        { provide: CacheService, useValue: mockCacheService },
+        { provide: RefreshTokenService, useValue: mockRefreshTokenService },
+        { provide: SessionService, useValue: mockSessionService },
+        { provide: DataSource, useValue: mockDataSource },
       ],
     }).compile();
 
@@ -172,16 +232,16 @@ describe('AuthService', () => {
       expect(savedUser.lockedUntil.getTime()).toBeGreaterThan(Date.now());
     });
 
-    it('should throw UnauthorizedException when account is locked', async () => {
+    it('should throw ForbiddenException when account is locked', async () => {
       const lockedUser = {
         ...mockUser,
         lockedUntil: new Date(Date.now() + 15 * 60 * 1000),
       };
       mockUserRepo.findOne.mockResolvedValueOnce(lockedUser);
 
-      await expect(
-        service.validateUser('testuser', 'password'),
-      ).rejects.toThrow(UnauthorizedException);
+      await expect(service.validateUser('testuser', 'password')).rejects.toThrow(
+        ForbiddenException,
+      );
     });
 
     it('should return null when passwordHash is missing', async () => {
@@ -245,7 +305,7 @@ describe('AuthService', () => {
     });
 
     it('should throw UnauthorizedException for invalid credentials', async () => {
-      mockUserRepo.findOne.mockResolvedValueOnce(null); // validateUser returns null
+      mockUserRepo.findOne.mockResolvedValue(null); // ensure all lookup paths fail
 
       await expect(service.login(loginDto)).rejects.toThrow(UnauthorizedException);
     });
@@ -324,27 +384,21 @@ describe('AuthService', () => {
         throw new Error('Invalid token');
       });
 
-      await expect(service.refreshToken('invalid-token')).rejects.toThrow(
-        UnauthorizedException,
-      );
+      await expect(service.refreshToken('invalid-token')).rejects.toThrow(UnauthorizedException);
     });
 
     it('should throw UnauthorizedException when user is inactive', async () => {
       mockJwtService.verify.mockReturnValueOnce({ sub: 'user-1' });
       mockUserRepo.findOne.mockResolvedValueOnce({ ...mockUser, status: 'inactive' });
 
-      await expect(service.refreshToken('valid-token')).rejects.toThrow(
-        UnauthorizedException,
-      );
+      await expect(service.refreshToken('valid-token')).rejects.toThrow(UnauthorizedException);
     });
 
     it('should throw UnauthorizedException when user not found', async () => {
       mockJwtService.verify.mockReturnValueOnce({ sub: 'nonexistent' });
       mockUserRepo.findOne.mockResolvedValueOnce(null);
 
-      await expect(service.refreshToken('valid-token')).rejects.toThrow(
-        UnauthorizedException,
-      );
+      await expect(service.refreshToken('valid-token')).rejects.toThrow(UnauthorizedException);
     });
   });
 
@@ -366,9 +420,7 @@ describe('AuthService', () => {
       mockPasswordHistoryRepo.save.mockResolvedValueOnce({});
       mockUserRepo.save.mockResolvedValueOnce({ ...user, passwordHash: '$2b$12$newhash' });
 
-      await expect(
-        service.changePassword('user-1', changePasswordDto),
-      ).resolves.toBeUndefined();
+      await expect(service.changePassword('user-1', changePasswordDto)).resolves.toBeUndefined();
 
       expect(bcrypt.hash).toHaveBeenCalledWith('NewPassword1!', 12);
       expect(mockPasswordHistoryRepo.save).toHaveBeenCalled();
@@ -379,26 +431,26 @@ describe('AuthService', () => {
       mockUserRepo.findOne.mockResolvedValueOnce({ ...mockUser });
       (bcrypt.compare as jest.Mock).mockResolvedValueOnce(false);
 
-      await expect(
-        service.changePassword('user-1', changePasswordDto),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.changePassword('user-1', changePasswordDto)).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('should throw UnauthorizedException when user not found', async () => {
       mockUserRepo.findOne.mockResolvedValueOnce(null);
 
-      await expect(
-        service.changePassword('nonexistent', changePasswordDto),
-      ).rejects.toThrow(UnauthorizedException);
+      await expect(service.changePassword('nonexistent', changePasswordDto)).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
 
     it('should throw BadRequestException when user has invalid password hash', async () => {
       const userBadHash = { ...mockUser, passwordHash: 'not-a-bcrypt-hash' };
       mockUserRepo.findOne.mockResolvedValueOnce(userBadHash);
 
-      await expect(
-        service.changePassword('user-1', changePasswordDto),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.changePassword('user-1', changePasswordDto)).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 });

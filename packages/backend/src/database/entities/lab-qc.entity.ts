@@ -4,9 +4,9 @@ import { Facility } from './facility.entity';
 import { User } from './user.entity';
 
 export enum QCLevel {
-  LEVEL_1 = 'level_1',  // Low
-  LEVEL_2 = 'level_2',  // Normal
-  LEVEL_3 = 'level_3',  // High
+  LEVEL_1 = 'level_1', // Low
+  LEVEL_2 = 'level_2', // Normal
+  LEVEL_3 = 'level_3', // High
 }
 
 export enum QCStatus {
@@ -17,12 +17,12 @@ export enum QCStatus {
 }
 
 export enum WestgardRule {
-  RULE_1_2S = '1:2s',     // Warning rule
-  RULE_1_3S = '1:3s',     // Reject
-  RULE_2_2S = '2:2s',     // Reject
-  RULE_R_4S = 'R:4s',     // Reject
-  RULE_4_1S = '4:1s',     // Reject
-  RULE_10X = '10x',       // Reject
+  RULE_1_2S = '1:2s', // Warning rule
+  RULE_1_3S = '1:3s', // Reject
+  RULE_2_2S = '2:2s', // Reject
+  RULE_R_4S = 'R:4s', // Reject
+  RULE_4_1S = '4:1s', // Reject
+  RULE_10X = '10x', // Reject
 }
 
 @Entity('qc_materials')
@@ -71,10 +71,22 @@ export class QCMaterial extends BaseEntity {
   @Column({ type: 'decimal', precision: 15, scale: 4, nullable: true, name: 'target_cv' })
   targetCv?: number;
 
-  @Column({ type: 'decimal', precision: 15, scale: 4, nullable: true, name: 'acceptable_range_low' })
+  @Column({
+    type: 'decimal',
+    precision: 15,
+    scale: 4,
+    nullable: true,
+    name: 'acceptable_range_low',
+  })
   acceptableRangeLow?: number;
 
-  @Column({ type: 'decimal', precision: 15, scale: 4, nullable: true, name: 'acceptable_range_high' })
+  @Column({
+    type: 'decimal',
+    precision: 15,
+    scale: 4,
+    nullable: true,
+    name: 'acceptable_range_high',
+  })
   acceptableRangeHigh?: number;
 
   @Column({ type: 'varchar', length: 50, nullable: true })
@@ -235,7 +247,7 @@ export function evaluateWestgardRules(
   currentValue: number,
   mean: number,
   sd: number,
-  previousResults: number[] = []
+  previousResults: number[] = [],
 ): { status: QCStatus; violatedRules: WestgardRule[] } {
   const zScore = (currentValue - mean) / sd;
   const violatedRules: WestgardRule[] = [];
@@ -272,11 +284,11 @@ export function evaluateWestgardRules(
   }
 
   if (previousResults.length >= 3) {
-    const recentZScores = [zScore, ...previousResults.slice(0, 3).map(v => (v - mean) / sd)];
+    const recentZScores = [zScore, ...previousResults.slice(0, 3).map((v) => (v - mean) / sd)];
 
     // 4:1s - Four consecutive results > 1SD on same side
-    const allPositive = recentZScores.every(z => z > 1);
-    const allNegative = recentZScores.every(z => z < -1);
+    const allPositive = recentZScores.every((z) => z > 1);
+    const allNegative = recentZScores.every((z) => z < -1);
     if (allPositive || allNegative) {
       violatedRules.push(WestgardRule.RULE_4_1S);
       status = QCStatus.OUT_OF_CONTROL;
@@ -284,11 +296,11 @@ export function evaluateWestgardRules(
   }
 
   if (previousResults.length >= 9) {
-    const recentZScores = [zScore, ...previousResults.slice(0, 9).map(v => (v - mean) / sd)];
+    const recentZScores = [zScore, ...previousResults.slice(0, 9).map((v) => (v - mean) / sd)];
 
     // 10x - Ten consecutive results on same side of mean
-    const allAboveMean = recentZScores.every(z => z > 0);
-    const allBelowMean = recentZScores.every(z => z < 0);
+    const allAboveMean = recentZScores.every((z) => z > 0);
+    const allBelowMean = recentZScores.every((z) => z < 0);
     if (allAboveMean || allBelowMean) {
       violatedRules.push(WestgardRule.RULE_10X);
       status = QCStatus.OUT_OF_CONTROL;

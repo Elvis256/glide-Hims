@@ -16,8 +16,16 @@ import { RiskLevel } from '../../../database/entities/antenatal-registration.ent
 import { DeliveryMode } from '../../../database/entities/labour-record.entity';
 import { LabourOutcome } from '../../../database/entities/labour-record.entity';
 import { BabySex } from '../../../database/entities/delivery-outcome.entity';
-import { PNCVisitNumber, LochiaType, BreastCondition } from '../../../database/entities/postnatal-visit.entity';
-import { FeedingType, CordStatus, JaundiceLevel } from '../../../database/entities/baby-wellness-check.entity';
+import {
+  PNCVisitNumber,
+  LochiaType,
+  BreastCondition,
+} from '../../../database/entities/postnatal-visit.entity';
+import {
+  FeedingType,
+  CordStatus,
+  JaundiceLevel,
+} from '../../../database/entities/baby-wellness-check.entity';
 import { AdverseReactionSeverity } from '../../../database/entities/immunization-schedule.entity';
 
 // ============ ANTENATAL REGISTRATION ============

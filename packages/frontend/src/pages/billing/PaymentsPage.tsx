@@ -104,7 +104,7 @@ export default function PaymentsPage() {
   const doPrint = () => {
     const d = receiptData;
     if (!d) return;
-    const invoice = (d as any).invoice;
+    const invoice = d.invoice;
     const win = window.open('', '_blank', 'width=480,height=640');
     if (!win) return;
     win.document.write(DOMPurify.sanitize(`<html><head><title>Receipt ${d.receiptNumber || ''}</title>
@@ -114,14 +114,14 @@ export default function PaymentsPage() {
     <h2>${inst.name}</h2><p class="center">PAYMENT RECEIPT</p><hr/>
     <div class="row"><span>Receipt #:</span><span>${d.receiptNumber || '-'}</span></div>
     <div class="row"><span>Date:</span><span>${new Date(d.paidAt || d.createdAt).toLocaleString()}</span></div>
-    <div class="row"><span>Patient:</span><span>${invoice?.patient?.fullName || (d as any).patientName || '-'}</span></div>
+    <div class="row"><span>Patient:</span><span>${invoice?.patient?.fullName || d.patientName || '-'}</span></div>
     <div class="row"><span>MRN:</span><span>${invoice?.patient?.mrn || '-'}</span></div>
     <div class="row"><span>Invoice #:</span><span>${invoice?.invoiceNumber || '-'}</span></div>
     <hr/>
-    ${(invoice?.items || []).map((item: any) => `<div class="row"><span>${item.description} x${item.quantity}</span><span>${item.amount || item.totalPrice || ''}</span></div>`).join('')}
+    ${(invoice?.items || []).map((item) => `<div class="row"><span>${item.description} x${item.quantity}</span><span>${item.totalPrice || ''}</span></div>`).join('')}
     <hr/>
     <div class="row total"><span>Amount Paid:</span><span>${d.amount}</span></div>
-    <div class="row"><span>Method:</span><span>${(d as any).method || d.paymentMethod || '-'}</span></div>
+    <div class="row"><span>Method:</span><span>${d.method || d.paymentMethod || '-'}</span></div>
     ${d.referenceNumber ? `<div class="row"><span>Ref:</span><span>${d.referenceNumber}</span></div>` : ''}
     <div class="row"><span>Cashier:</span><span>${d.receivedBy || '-'}</span></div>
     <hr/><p class="footer">Thank you for your payment.<br/>Keep this receipt for your records.</p>
@@ -193,21 +193,20 @@ export default function PaymentsPage() {
   const payments = paymentsData || [];
 
   const filteredPayments = useMemo(() => {
-    return payments.filter((payment) => {
-      const search = searchQuery.toLowerCase();
-      const pMethod = (payment as any).method || payment.paymentMethod || '';
-      const pName = payment.patientName || (payment as any).invoice?.patient?.fullName || '';
-      const invNum = (payment as any).invoice?.invoiceNumber || '';
-      const matchesSearch = !searchQuery ||
-        payment.receiptNumber?.toLowerCase().includes(search) ||
-        invNum.toLowerCase().includes(search) ||
-        pName.toLowerCase().includes(search);
-      const matchesMethod = methodFilter === 'all' || pMethod === methodFilter;
-      const matchesCashier = cashierFilter === 'All Cashiers' || payment.receivedBy === cashierFilter;
-      return matchesSearch && matchesMethod && matchesCashier;
-    });
+   return payments.filter((payment) => {
+     const search = searchQuery.toLowerCase();
+     const pMethod = payment.method || payment.paymentMethod || '';
+     const pName = payment.patientName || payment.invoice?.patient?.fullName || '';
+     const invNum = payment.invoice?.invoiceNumber || '';
+     const matchesSearch = !searchQuery ||
+       payment.receiptNumber?.toLowerCase().includes(search) ||
+       invNum.toLowerCase().includes(search) ||
+       pName.toLowerCase().includes(search);
+     const matchesMethod = methodFilter === 'all' || pMethod === methodFilter;
+     const matchesCashier = cashierFilter === 'All Cashiers' || payment.receivedBy === cashierFilter;
+     return matchesSearch && matchesMethod && matchesCashier;
+   });
   }, [searchQuery, methodFilter, cashierFilter, payments]);
-
   const todaySummary = useMemo(() => {
     const todayPayments = payments.filter((p) => p.status === 'completed');
     const getAmt = (p: Payment) => Number(p.amount) || 0;
@@ -462,16 +461,17 @@ export default function PaymentsPage() {
                 </tr>
               )}
               {!isLoading && filteredPayments.map((payment) => {
-                const method = ((payment as any).method || payment.paymentMethod || 'cash') as PaymentMethod;
-                const MethodIcon = methodConfig[method]?.icon || Banknote;
-                const methodColor = methodConfig[method]?.color || 'bg-gray-100 text-gray-700';
-                const methodLabel = methodConfig[method]?.label || method;
-                const paymentTime = (payment.paidAt || payment.createdAt) ? new Date(payment.paidAt || payment.createdAt).toLocaleTimeString('en-UG', { hour: '2-digit', minute: '2-digit' }) : '';
-                const paymentDate = (payment.paidAt || payment.createdAt) ? new Date(payment.paidAt || payment.createdAt).toLocaleDateString('en-UG', { day: '2-digit', month: 'short' }) : '';
-                const invoiceNumber = (payment as any).invoice?.invoiceNumber || payment.invoiceId?.substring(0, 8) || '-';
-                const patientName = payment.patientName || (payment as any).invoice?.patient?.fullName || '-';
-                const patientMrn = (payment as any).invoice?.patient?.mrn || '';
-                const cashierName = payment.receivedBy || (payment as any).receivedById?.substring(0, 8) || '-';
+               const method = (payment.method || payment.paymentMethod || 'cash') as PaymentMethod;
+               const MethodIcon = methodConfig[method]?.icon || Banknote;
+               const methodColor = methodConfig[method]?.color || 'bg-gray-100 text-gray-700';
+               const methodLabel = methodConfig[method]?.label || method;
+               const paymentTime = (payment.paidAt || payment.createdAt) ? new Date(payment.paidAt || payment.createdAt).toLocaleTimeString('en-UG', { hour: '2-digit', minute: '2-digit' }) : '';
+               const paymentDate = (payment.paidAt || payment.createdAt) ? new Date(payment.paidAt || payment.createdAt).toLocaleDateString('en-UG', { day: '2-digit', month: 'short' }) : '';
+               const invoiceNumber = payment.invoice?.invoiceNumber || payment.invoiceId?.substring(0, 8) || '-';
+               const patientName = payment.patientName || payment.invoice?.patient?.fullName || '-';
+               const patientMrn = payment.invoice?.patient?.mrn || '';
+               const cashierName = payment.receivedBy || payment.receivedById?.substring(0, 8) || '-';
+
                 const amt = Number(payment.amount) || 0;
                 return (
                   <tr key={payment.id} className={`hover:bg-gray-50 transition-colors ${payment.status === 'voided' ? 'bg-red-50/50 line-through opacity-60' : ''}`}>
@@ -577,9 +577,10 @@ export default function PaymentsPage() {
                     <p className="font-medium text-lg">{formatCurrency(voidingPayment.amount || 0)}</p>
                   </div>
                   <div>
-                    <p className="text-gray-500">Invoice</p>
-                    <p className="font-medium">{(voidingPayment as any).invoice?.invoiceNumber || voidingPayment.invoiceId?.substring(0, 8) || '-'}</p>
+                   <p className="text-gray-500">Invoice</p>
+                   <p className="font-medium">{voidingPayment.invoice?.invoiceNumber || voidingPayment.invoiceId?.substring(0, 8) || '-'}</p>
                   </div>
+
                   <div>
                     <p className="text-gray-500">Method</p>
                     <p className="font-medium">{methodConfig[(voidingPayment.paymentMethod || 'cash') as PaymentMethod]?.label || voidingPayment.paymentMethod}</p>

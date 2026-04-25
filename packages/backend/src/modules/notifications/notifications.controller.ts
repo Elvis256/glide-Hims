@@ -1,12 +1,23 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  Request,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { NotificationsService } from './notifications.service';
-import { 
-  CreateNotificationConfigDto, 
-  SendReminderDto, 
+import {
+  CreateNotificationConfigDto,
+  SendReminderDto,
   ScheduleReminderDto,
   TestNotificationDto,
   SendBulkNotificationDto,
@@ -56,7 +67,12 @@ export class NotificationsController {
     @CurrentUser() user: any,
     @Request() req: any,
   ) {
-    return this.notificationsService.sendImmediateReminder(facilityId, dto, user?.id, req.user?.tenantId);
+    return this.notificationsService.sendImmediateReminder(
+      facilityId,
+      dto,
+      user?.id,
+      req.user?.tenantId,
+    );
   }
 
   @Post('schedule')
@@ -68,7 +84,12 @@ export class NotificationsController {
     @CurrentUser() user: any,
     @Request() req: any,
   ) {
-    return this.notificationsService.scheduleReminder(facilityId, dto, user?.id, req.user?.tenantId);
+    return this.notificationsService.scheduleReminder(
+      facilityId,
+      dto,
+      user?.id,
+      req.user?.tenantId,
+    );
   }
 
   @Get('history')
@@ -83,7 +104,12 @@ export class NotificationsController {
     @Query('limit') limit?: number,
     @Request() req?: any,
   ) {
-    return this.notificationsService.getReminderHistory(facilityId, patientId, limit, req?.user?.tenantId);
+    return this.notificationsService.getReminderHistory(
+      facilityId,
+      patientId,
+      limit,
+      req?.user?.tenantId,
+    );
   }
 
   @Put(':id/cancel')

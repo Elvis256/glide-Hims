@@ -1,5 +1,17 @@
-import { IsString, IsOptional, IsEnum, IsDateString, IsBoolean, IsUUID, IsNumber } from 'class-validator';
-import { FollowUpType, FollowUpStatus, FollowUpPriority } from '../../../database/entities/follow-up.entity';
+import {
+  IsString,
+  IsOptional,
+  IsEnum,
+  IsDateString,
+  IsBoolean,
+  IsUUID,
+  IsNumber,
+} from 'class-validator';
+import {
+  FollowUpType,
+  FollowUpStatus,
+  FollowUpPriority,
+} from '../../../database/entities/follow-up.entity';
 
 export class CreateFollowUpDto {
   @IsUUID()

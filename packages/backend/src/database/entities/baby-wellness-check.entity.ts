@@ -5,7 +5,8 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   ManyToOne,
-  JoinColumn, Index,
+  JoinColumn,
+  Index,
 } from 'typeorm';
 import { DeliveryOutcome } from './delivery-outcome.entity';
 import { PostnatalVisit } from './postnatal-visit.entity';
@@ -148,7 +149,13 @@ export class BabyWellnessCheck {
   @Column({ type: 'varchar', length: 50, nullable: true, name: 'weight_for_age' })
   weightForAge: string; // Normal, Underweight, Severely Underweight
 
-  @Column({ type: 'decimal', precision: 5, scale: 2, nullable: true, name: 'weight_change_percent' })
+  @Column({
+    type: 'decimal',
+    precision: 5,
+    scale: 2,
+    nullable: true,
+    name: 'weight_change_percent',
+  })
   weightChangePercent: number;
 
   // Status & Outcome

@@ -60,7 +60,7 @@ import { FinanceModule } from '../finance/finance.module';
       storage: diskStorage({
         destination: './uploads/staff-documents',
         filename: (req: any, file: any, cb: any) => {
-          const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+          const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
           cb(null, `${uniqueSuffix}${extname(file.originalname)}`);
         },
       }),

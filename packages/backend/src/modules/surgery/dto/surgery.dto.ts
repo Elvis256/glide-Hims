@@ -251,7 +251,9 @@ export class CreateTheatreDto {
   @IsString()
   code: string;
 
-  @ApiProperty({ enum: ['general', 'orthopedic', 'cardiac', 'neuro', 'obstetric', 'ophthalmic', 'ent', 'minor'] })
+  @ApiProperty({
+    enum: ['general', 'orthopedic', 'cardiac', 'neuro', 'obstetric', 'ophthalmic', 'ent', 'minor'],
+  })
   @IsString()
   type: string;
 

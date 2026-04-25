@@ -2,9 +2,18 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Prescription, PrescriptionStatus } from '../../database/entities/prescription.entity';
-import { StockBalance, Item, ExpiryAlert, ExpiryAlertStatus } from '../../database/entities/inventory.entity';
+import {
+  StockBalance,
+  Item,
+  ExpiryAlert,
+  ExpiryAlertStatus,
+} from '../../database/entities/inventory.entity';
 import { BatchStockBalance } from '../../database/entities/batch-stock.entity';
-import { PharmacySale, PharmacySaleItem, SaleStatus } from '../../database/entities/pharmacy-sale.entity';
+import {
+  PharmacySale,
+  PharmacySaleItem,
+  SaleStatus,
+} from '../../database/entities/pharmacy-sale.entity';
 
 export interface DashboardKPIs {
   queue: {
@@ -59,11 +68,26 @@ export class PharmacyDashboardService {
     };
 
     const [queue, stockAlerts, revenue, dispensing, recentActivity] = await Promise.all([
-      this.getQueueKPIs(tenantId, facilityId).catch((e) => { this.logger.warn('Queue KPI error: ' + e.message); return defaults.queue; }),
-      this.getStockAlertKPIs(tenantId, facilityId).catch((e) => { this.logger.warn('Stock alert KPI error: ' + e.message); return defaults.stockAlerts; }),
-      this.getRevenueKPIs(tenantId, facilityId).catch((e) => { this.logger.warn('Revenue KPI error: ' + e.message); return defaults.revenue; }),
-      this.getDispensingKPIs(tenantId, facilityId).catch((e) => { this.logger.warn('Dispensing KPI error: ' + e.message); return defaults.dispensing; }),
-      this.getRecentActivity(tenantId, facilityId).catch((e) => { this.logger.warn('Recent activity error: ' + e.message); return defaults.recentActivity; }),
+      this.getQueueKPIs(tenantId, facilityId).catch((e) => {
+        this.logger.warn('Queue KPI error: ' + e.message);
+        return defaults.queue;
+      }),
+      this.getStockAlertKPIs(tenantId, facilityId).catch((e) => {
+        this.logger.warn('Stock alert KPI error: ' + e.message);
+        return defaults.stockAlerts;
+      }),
+      this.getRevenueKPIs(tenantId, facilityId).catch((e) => {
+        this.logger.warn('Revenue KPI error: ' + e.message);
+        return defaults.revenue;
+      }),
+      this.getDispensingKPIs(tenantId, facilityId).catch((e) => {
+        this.logger.warn('Dispensing KPI error: ' + e.message);
+        return defaults.dispensing;
+      }),
+      this.getRecentActivity(tenantId, facilityId).catch((e) => {
+        this.logger.warn('Recent activity error: ' + e.message);
+        return defaults.recentActivity;
+      }),
     ]);
 
     return { queue, stockAlerts, revenue, dispensing, recentActivity };
@@ -71,13 +95,21 @@ export class PharmacyDashboardService {
 
   // ── Queue Stats ─────────────────────────────────────────────────────────
 
-  private async getQueueKPIs(tenantId?: string, facilityId?: string): Promise<DashboardKPIs['queue']> {
+  private async getQueueKPIs(
+    tenantId?: string,
+    facilityId?: string,
+  ): Promise<DashboardKPIs['queue']> {
     const cutoff48h = new Date(Date.now() - 48 * 60 * 60 * 1000);
 
     // Pending prescriptions — only count those from last 48 hours as active queue
-    const pendingQuery = this.prescriptionRepo.createQueryBuilder('p')
+    const pendingQuery = this.prescriptionRepo
+      .createQueryBuilder('p')
       .where('p.status IN (:...statuses)', {
-        statuses: [PrescriptionStatus.PENDING, PrescriptionStatus.DISPENSING, PrescriptionStatus.PARTIALLY_DISPENSED],
+        statuses: [
+          PrescriptionStatus.PENDING,
+          PrescriptionStatus.DISPENSING,
+          PrescriptionStatus.PARTIALLY_DISPENSED,
+        ],
       })
       .andWhere('p.created_at >= :cutoff', { cutoff: cutoff48h.toISOString() });
 
@@ -86,10 +118,18 @@ export class PharmacyDashboardService {
     const pendingCount = await pendingQuery.getCount();
 
     // Average wait time — only for recent prescriptions to avoid stale data skewing
-    const waitQuery = this.prescriptionRepo.createQueryBuilder('p')
-      .select('AVG(EXTRACT(EPOCH FROM (COALESCE(p.dispensing_started_at, NOW()) - p.created_at)) / 60)', 'avgWait')
+    const waitQuery = this.prescriptionRepo
+      .createQueryBuilder('p')
+      .select(
+        'AVG(EXTRACT(EPOCH FROM (COALESCE(p.dispensing_started_at, NOW()) - p.created_at)) / 60)',
+        'avgWait',
+      )
       .where('p.status IN (:...statuses)', {
-        statuses: [PrescriptionStatus.PENDING, PrescriptionStatus.DISPENSING, PrescriptionStatus.PARTIALLY_DISPENSED],
+        statuses: [
+          PrescriptionStatus.PENDING,
+          PrescriptionStatus.DISPENSING,
+          PrescriptionStatus.PARTIALLY_DISPENSED,
+        ],
       })
       .andWhere('p.created_at >= :cutoff', { cutoff: cutoff48h.toISOString() });
 
@@ -103,9 +143,13 @@ export class PharmacyDashboardService {
 
   // ── Stock Alert KPIs ────────────────────────────────────────────────────
 
-  private async getStockAlertKPIs(tenantId?: string, facilityId?: string): Promise<DashboardKPIs['stockAlerts']> {
+  private async getStockAlertKPIs(
+    tenantId?: string,
+    facilityId?: string,
+  ): Promise<DashboardKPIs['stockAlerts']> {
     // Low stock: items where totalQuantity <= reorderLevel and reorderLevel > 0
-    const lowStockQuery = this.stockBalanceRepo.createQueryBuilder('sb')
+    const lowStockQuery = this.stockBalanceRepo
+      .createQueryBuilder('sb')
       .innerJoin(Item, 'i', 'i.id = sb.item_id')
       .where('sb.total_quantity <= i.reorder_level')
       .andWhere('sb.total_quantity > 0')
@@ -117,7 +161,8 @@ export class PharmacyDashboardService {
     const lowStockCount = await lowStockQuery.getCount();
 
     // Out of stock
-    const outOfStockQuery = this.stockBalanceRepo.createQueryBuilder('sb')
+    const outOfStockQuery = this.stockBalanceRepo
+      .createQueryBuilder('sb')
       .where('sb.total_quantity <= 0');
 
     if (tenantId) outOfStockQuery.andWhere('sb.tenant_id = :tenantId', { tenantId });
@@ -131,7 +176,8 @@ export class PharmacyDashboardService {
 
     let expiringSoonCount = 0;
     try {
-      const expiringSoonQuery = this.expiryAlertRepo.createQueryBuilder('ea')
+      const expiringSoonQuery = this.expiryAlertRepo
+        .createQueryBuilder('ea')
         .where('ea.status IN (:...statuses)', {
           statuses: [ExpiryAlertStatus.ACTIVE, ExpiryAlertStatus.NEAR_EXPIRY],
         })
@@ -149,7 +195,8 @@ export class PharmacyDashboardService {
     // If no expiry alerts, query batch_stock_balances directly
     if (expiringSoonCount === 0) {
       try {
-        const batchExpiryQuery = this.batchStockRepo.createQueryBuilder('bs')
+        const batchExpiryQuery = this.batchStockRepo
+          .createQueryBuilder('bs')
           .where('bs.expiryDate <= :threshold', { threshold: threshold90d })
           .andWhere('bs.expiryDate > :now', { now })
           .andWhere('bs.quantity > 0')
@@ -169,14 +216,18 @@ export class PharmacyDashboardService {
 
   // ── Revenue KPIs ────────────────────────────────────────────────────────
 
-  private async getRevenueKPIs(tenantId?: string, facilityId?: string): Promise<DashboardKPIs['revenue']> {
+  private async getRevenueKPIs(
+    tenantId?: string,
+    facilityId?: string,
+  ): Promise<DashboardKPIs['revenue']> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
     // Today's sales
-    const todayQuery = this.saleRepo.createQueryBuilder('s')
+    const todayQuery = this.saleRepo
+      .createQueryBuilder('s')
       .select('COALESCE(SUM(s.total_amount), 0)', 'total')
       .addSelect('COUNT(s.id)', 'count')
       .where('s.status = :status', { status: SaleStatus.COMPLETED })
@@ -191,7 +242,8 @@ export class PharmacyDashboardService {
 
     // This month's sales
     const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-    const monthQuery = this.saleRepo.createQueryBuilder('s')
+    const monthQuery = this.saleRepo
+      .createQueryBuilder('s')
       .select('COALESCE(SUM(s.total_amount), 0)', 'total')
       .addSelect('COUNT(s.id)', 'count')
       .where('s.status = :status', { status: SaleStatus.COMPLETED })
@@ -203,19 +255,24 @@ export class PharmacyDashboardService {
     const monthTotal = Number(monthResult?.total) || 0;
     const monthCount = Number(monthResult?.count) || 0;
 
-    const avgTransactionValue = monthCount > 0 ? Math.round((monthTotal / monthCount) * 100) / 100 : 0;
+    const avgTransactionValue =
+      monthCount > 0 ? Math.round((monthTotal / monthCount) * 100) / 100 : 0;
 
     return { todayTotal, monthTotal, avgTransactionValue };
   }
 
   // ── Dispensing KPIs ─────────────────────────────────────────────────────
 
-  private async getDispensingKPIs(tenantId?: string, facilityId?: string): Promise<DashboardKPIs['dispensing']> {
+  private async getDispensingKPIs(
+    tenantId?: string,
+    facilityId?: string,
+  ): Promise<DashboardKPIs['dispensing']> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     // Total dispensed today
-    const dispensedQuery = this.prescriptionRepo.createQueryBuilder('p')
+    const dispensedQuery = this.prescriptionRepo
+      .createQueryBuilder('p')
       .where('p.status = :status', { status: PrescriptionStatus.DISPENSED })
       .andWhere('p.dispensed_at >= :today', { today: today.toISOString() });
 
@@ -225,7 +282,8 @@ export class PharmacyDashboardService {
 
     // Controlled substances dispensed today: count completed sale items
     // where the item is marked as controlled
-    const controlledQuery = this.saleItemRepo.createQueryBuilder('si')
+    const controlledQuery = this.saleItemRepo
+      .createQueryBuilder('si')
       .innerJoin(PharmacySale, 's', 's.id = si.sale_id')
       .innerJoin(Item, 'i', 'i.id = si.item_id::uuid')
       .where('s.status = :status', { status: SaleStatus.COMPLETED })
@@ -246,7 +304,8 @@ export class PharmacyDashboardService {
     facilityId?: string,
   ): Promise<DashboardKPIs['recentActivity']> {
     // Recent completed sales
-    const salesQuery = this.saleRepo.createQueryBuilder('s')
+    const salesQuery = this.saleRepo
+      .createQueryBuilder('s')
       .where('s.status = :status', { status: SaleStatus.COMPLETED })
       .orderBy('s.created_at', 'DESC')
       .limit(10);
@@ -255,7 +314,7 @@ export class PharmacyDashboardService {
 
     const recentSales = await salesQuery.getMany();
 
-    return recentSales.map(sale => ({
+    return recentSales.map((sale) => ({
       id: sale.id,
       type: 'sale' as const,
       reference: sale.saleNumber,

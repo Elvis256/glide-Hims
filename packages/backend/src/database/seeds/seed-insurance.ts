@@ -148,7 +148,9 @@ async function seedProviders() {
   const dbPassword = process.env.DB_PASSWORD;
   const dbName = process.env.DB_NAME || process.env.DB_DATABASE;
   if (!dbUsername || !dbPassword || !dbName) {
-    throw new Error('DB_USERNAME, DB_PASSWORD, and DB_NAME environment variables are required for seeding');
+    throw new Error(
+      'DB_USERNAME, DB_PASSWORD, and DB_NAME environment variables are required for seeding',
+    );
   }
 
   const dataSource = new DataSource({
@@ -165,10 +167,9 @@ async function seedProviders() {
   console.log('Connected to database');
 
   for (const provider of insuranceProviders) {
-    const exists = await dataSource.query(
-      'SELECT id FROM insurance_providers WHERE code = $1',
-      [provider.code]
-    );
+    const exists = await dataSource.query('SELECT id FROM insurance_providers WHERE code = $1', [
+      provider.code,
+    ]);
 
     if (exists.length === 0) {
       await dataSource.query(
@@ -189,7 +190,7 @@ async function seedProviders() {
           provider.address,
           provider.claimSubmissionMethod,
           provider.paymentTermsDays,
-        ]
+        ],
       );
       console.log(`Created provider: ${provider.name} (${provider.code})`);
     } else {

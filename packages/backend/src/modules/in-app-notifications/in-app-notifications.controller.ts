@@ -17,7 +17,12 @@ export class InAppNotificationsController {
     @Query('limit') limit?: string,
   ) {
     const userId = req.user?.id || req.user?.sub;
-    return this.service.getForUser(userId, Number(page) || 1, Number(limit) || 30, req.user?.tenantId);
+    return this.service.getForUser(
+      userId,
+      Number(page) || 1,
+      Number(limit) || 30,
+      req.user?.tenantId,
+    );
   }
 
   @Get('unread-count')

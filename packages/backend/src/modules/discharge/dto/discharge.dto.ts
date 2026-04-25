@@ -1,6 +1,18 @@
-import { IsString, IsOptional, IsEnum, IsDateString, IsBoolean, IsArray, ValidateNested, IsUUID } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsEnum,
+  IsDateString,
+  IsBoolean,
+  IsArray,
+  ValidateNested,
+  IsUUID,
+} from 'class-validator';
 import { Type } from 'class-transformer';
-import { DischargeType, DischargeDestination } from '../../../database/entities/discharge-summary.entity';
+import {
+  DischargeType,
+  DischargeDestination,
+} from '../../../database/entities/discharge-summary.entity';
 
 class ProcedureDto {
   @IsString()

@@ -5,11 +5,11 @@ import { User } from './user.entity';
 import { Facility } from './facility.entity';
 
 export enum TriageLevel {
-  RESUSCITATION = 1,  // Immediate - life threatening
-  EMERGENT = 2,       // < 10 min - potentially life threatening
-  URGENT = 3,         // < 30 min - could deteriorate
-  LESS_URGENT = 4,    // < 60 min - stable
-  NON_URGENT = 5,     // < 120 min - minor issues
+  RESUSCITATION = 1, // Immediate - life threatening
+  EMERGENT = 2, // < 10 min - potentially life threatening
+  URGENT = 3, // < 30 min - could deteriorate
+  LESS_URGENT = 4, // < 60 min - stable
+  NON_URGENT = 5, // < 120 min - minor issues
 }
 
 export enum TriageStatus {
@@ -19,7 +19,7 @@ export enum TriageStatus {
   TRANSFERRED = 'transferred',
   ADMITTED = 'admitted',
   DISCHARGED = 'discharged',
-  LEFT_AMA = 'left_ama',      // Left against medical advice
+  LEFT_AMA = 'left_ama', // Left against medical advice
   DECEASED = 'deceased',
 }
 
@@ -67,7 +67,7 @@ export class EmergencyCase extends BaseEntity {
   presentingSymptoms: string;
 
   @Column({ name: 'mechanism_of_injury', type: 'text', nullable: true })
-  mechanismOfInjury: string;  // For trauma cases
+  mechanismOfInjury: string; // For trauma cases
 
   // Triage vitals (captured at triage)
   @Column({ name: 'blood_pressure_systolic', type: 'int', nullable: true })
@@ -88,10 +88,10 @@ export class EmergencyCase extends BaseEntity {
   @Column({ name: 'oxygen_saturation', type: 'int', nullable: true })
   oxygenSaturation: number;
 
-  @Column({ name: 'gcs_score', type: 'int', nullable: true })  // Glasgow Coma Scale
+  @Column({ name: 'gcs_score', type: 'int', nullable: true }) // Glasgow Coma Scale
   gcsScore: number;
 
-  @Column({ name: 'pain_score', type: 'int', nullable: true })  // 0-10
+  @Column({ name: 'pain_score', type: 'int', nullable: true }) // 0-10
   painScore: number;
 
   @Column({ name: 'blood_glucose', type: 'decimal', precision: 5, scale: 1, nullable: true })

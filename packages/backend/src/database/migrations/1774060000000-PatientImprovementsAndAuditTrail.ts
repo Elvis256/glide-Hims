@@ -50,17 +50,27 @@ export class PatientImprovementsAndAuditTrail1774060000000 implements MigrationI
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_patient_merges_primary" ON "patient_merges" ("primary_patient_id")`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_patient_merges_secondary" ON "patient_merges" ("secondary_patient_id")`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_patient_merges_tenant" ON "patient_merges" ("tenant_id")`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_patient_merges_primary" ON "patient_merges" ("primary_patient_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_patient_merges_secondary" ON "patient_merges" ("secondary_patient_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_patient_merges_tenant" ON "patient_merges" ("tenant_id")`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`DROP TABLE IF EXISTS "patient_merges"`);
 
-    await queryRunner.query(`ALTER TABLE "clinical_notes" DROP CONSTRAINT IF EXISTS "FK_clinical_notes_last_edited_by"`);
+    await queryRunner.query(
+      `ALTER TABLE "clinical_notes" DROP CONSTRAINT IF EXISTS "FK_clinical_notes_last_edited_by"`,
+    );
     await queryRunner.query(`ALTER TABLE "clinical_notes" DROP COLUMN IF EXISTS "edit_history"`);
-    await queryRunner.query(`ALTER TABLE "clinical_notes" DROP COLUMN IF EXISTS "last_edited_by_id"`);
+    await queryRunner.query(
+      `ALTER TABLE "clinical_notes" DROP COLUMN IF EXISTS "last_edited_by_id"`,
+    );
     await queryRunner.query(`ALTER TABLE "clinical_notes" DROP COLUMN IF EXISTS "last_edited_at"`);
 
     await queryRunner.query(`ALTER TABLE "patients" DROP COLUMN IF EXISTS "allergies"`);

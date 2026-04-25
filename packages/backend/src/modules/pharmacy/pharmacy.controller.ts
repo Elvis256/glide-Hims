@@ -1,17 +1,40 @@
 import {
-  Controller, Get, Post, Body, Param, Query, Request, ParseUUIDPipe,
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Query,
+  Request,
+  ParseUUIDPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { PharmacyService } from './pharmacy.service';
 import { LabelService } from './label.service';
 import { TemperatureService } from './temperature.service';
 import { PharmacyDashboardService } from './pharmacy-dashboard.service';
-import { CreatePharmacySaleDto, CompleteSaleDto, AllocateFEFODto, ReceiveBatchDto, QuarantineItemDto, ProcessExpiredItemDto, CreateLabelTemplateDto, CreateDrugTranslationDto, RecordTemperatureReadingDto, CreateTemperatureSensorDto } from './pharmacy.dto';
+import {
+  CreatePharmacySaleDto,
+  CompleteSaleDto,
+  AllocateFEFODto,
+  ReceiveBatchDto,
+  QuarantineItemDto,
+  ProcessExpiredItemDto,
+  CreateLabelTemplateDto,
+  CreateDrugTranslationDto,
+  RecordTemperatureReadingDto,
+  CreateTemperatureSensorDto,
+} from './pharmacy.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { SaleStatus } from '../../database/entities/pharmacy-sale.entity';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('Pharmacy POS')
 @ApiBearerAuth()
+@UseGuards(ModuleGuard)
+@RequireModule('pharmacy')
 @Controller('pharmacy')
 export class PharmacyController {
   constructor(
@@ -68,7 +91,11 @@ export class PharmacyController {
   @Post('sales/:id/complete')
   @AuthWithPermissions('pharmacy.update')
   @ApiOperation({ summary: 'Complete sale with payment' })
-  completeSale(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CompleteSaleDto, @Request() req: any) {
+  completeSale(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CompleteSaleDto,
+    @Request() req: any,
+  ) {
     return this.service.completeSale(id, dto, req.user.id, req.user?.tenantId);
   }
 
@@ -93,7 +120,9 @@ export class PharmacyController {
 
   @Get('analytics/profit')
   @AuthWithPermissions('pharmacy.read')
-  @ApiOperation({ summary: 'Get profit analytics with revenue, COGS, margins, and per-item breakdown' })
+  @ApiOperation({
+    summary: 'Get profit analytics with revenue, COGS, margins, and per-item breakdown',
+  })
   getProfitAnalytics(
     @Query('storeId') storeId?: string,
     @Query('facilityId') facilityId?: string,
@@ -101,7 +130,13 @@ export class PharmacyController {
     @Query('dateTo') dateTo?: string,
     @Request() req?: any,
   ) {
-    return this.service.getProfitAnalytics({ storeId, facilityId, dateFrom, dateTo, tenantId: req?.user?.tenantId });
+    return this.service.getProfitAnalytics({
+      storeId,
+      facilityId,
+      dateFrom,
+      dateTo,
+      tenantId: req?.user?.tenantId,
+    });
   }
 
   // ── Batch Stock (FEFO) Endpoints ──────────────────────────────────────
@@ -109,17 +144,16 @@ export class PharmacyController {
   @Get('batch-stock/:itemId')
   @AuthWithPermissions('pharmacy.read')
   @ApiOperation({ summary: 'Get batch-level stock breakdown for an item (FEFO ordered)' })
-  getBatchStock(
-    @Param('itemId', ParseUUIDPipe) itemId: string,
-    @Request() req: any,
-  ) {
+  getBatchStock(@Param('itemId', ParseUUIDPipe) itemId: string, @Request() req: any) {
     const facilityId = req.headers['x-facility-id'] || req.user?.facilityId;
     return this.service.getBatchStock(itemId, facilityId, req.user?.tenantId);
   }
 
   @Post('batch-stock/allocate')
   @AuthWithPermissions('pharmacy.create')
-  @ApiOperation({ summary: 'FEFO allocation preview — allocate stock from earliest-expiry batches' })
+  @ApiOperation({
+    summary: 'FEFO allocation preview — allocate stock from earliest-expiry batches',
+  })
   allocateFEFO(@Body() dto: AllocateFEFODto, @Request() req: any) {
     return this.service.allocateFEFO(dto, req.user?.tenantId);
   }
@@ -146,12 +180,13 @@ export class PharmacyController {
   @Get('expiry/alerts')
   @AuthWithPermissions('pharmacy.read')
   @ApiOperation({ summary: 'Get items expiring within a given threshold (default 90 days)' })
-  getExpiringItems(
-    @Query('daysThreshold') daysThreshold?: number,
-    @Request() req?: any,
-  ) {
+  getExpiringItems(@Query('daysThreshold') daysThreshold?: number, @Request() req?: any) {
     const facilityId = req.headers['x-facility-id'] || req.user?.facilityId;
-    return this.service.checkExpiringItems(req.user?.tenantId, facilityId, daysThreshold ? Number(daysThreshold) : 90);
+    return this.service.checkExpiringItems(
+      req.user?.tenantId,
+      facilityId,
+      daysThreshold ? Number(daysThreshold) : 90,
+    );
   }
 
   @Post('expiry/quarantine')
@@ -159,7 +194,14 @@ export class PharmacyController {
   @ApiOperation({ summary: 'Quarantine a near-expiry or expired item batch' })
   quarantineItem(@Body() dto: QuarantineItemDto, @Request() req: any) {
     const facilityId = req.headers['x-facility-id'] || req.user?.facilityId;
-    return this.service.quarantineItem(dto.itemId, dto.batchNumber, req.user?.tenantId, facilityId, req.user.id, dto.notes);
+    return this.service.quarantineItem(
+      dto.itemId,
+      dto.batchNumber,
+      req.user?.tenantId,
+      facilityId,
+      req.user.id,
+      dto.notes,
+    );
   }
 
   @Post('expiry/process')
@@ -167,12 +209,22 @@ export class PharmacyController {
   @ApiOperation({ summary: 'Process a quarantined item — dispose or return to supplier' })
   processExpiredItem(@Body() dto: ProcessExpiredItemDto, @Request() req: any) {
     const facilityId = req.headers['x-facility-id'] || req.user?.facilityId;
-    return this.service.processExpiredItem(dto.itemId, dto.action, req.user?.tenantId, facilityId, req.user.id, dto.batchNumber, dto.notes);
+    return this.service.processExpiredItem(
+      dto.itemId,
+      dto.action,
+      req.user?.tenantId,
+      facilityId,
+      req.user.id,
+      dto.batchNumber,
+      dto.notes,
+    );
   }
 
   @Get('expiry/report')
   @AuthWithPermissions('pharmacy.read')
-  @ApiOperation({ summary: 'Get expiry management report — near-expiry, quarantined, disposed, returned summary' })
+  @ApiOperation({
+    summary: 'Get expiry management report — near-expiry, quarantined, disposed, returned summary',
+  })
   getExpiryReport(@Request() req: any) {
     const facilityId = req.headers['x-facility-id'] || req.user?.facilityId;
     return this.service.getExpiryReport(req.user?.tenantId, facilityId);
@@ -188,16 +240,17 @@ export class PharmacyController {
     @Query('language') language: string,
     @Request() req: any,
   ) {
-    return this.labelService.generateLabel(prescriptionItemId, language || 'en', req.user?.tenantId);
+    return this.labelService.generateLabel(
+      prescriptionItemId,
+      language || 'en',
+      req.user?.tenantId,
+    );
   }
 
   @Get('labels/templates')
   @AuthWithPermissions('pharmacy.read')
   @ApiOperation({ summary: 'List drug label templates' })
-  getTemplates(
-    @Query('language') language?: string,
-    @Request() req?: any,
-  ) {
+  getTemplates(@Query('language') language?: string, @Request() req?: any) {
     return this.labelService.getTemplates(req?.user?.tenantId, language);
   }
 
@@ -211,10 +264,7 @@ export class PharmacyController {
   @Get('labels/translations')
   @AuthWithPermissions('pharmacy.read')
   @ApiOperation({ summary: 'List drug translations' })
-  getTranslations(
-    @Query('language') language?: string,
-    @Request() req?: any,
-  ) {
+  getTranslations(@Query('language') language?: string, @Request() req?: any) {
     return this.labelService.getTranslations(req?.user?.tenantId, language);
   }
 
@@ -233,7 +283,11 @@ export class PharmacyController {
   recordReading(@Body() body: RecordTemperatureReadingDto, @Request() req: any) {
     const facilityId = body.facilityId || req.headers['x-facility-id'] || req.user?.facilityId;
     return this.temperatureService.recordReading(
-      body.sensorId, body.temperature, body.humidity ?? null, req.user?.tenantId, facilityId,
+      body.sensorId,
+      body.temperature,
+      body.humidity ?? null,
+      req.user?.tenantId,
+      facilityId,
     );
   }
 
@@ -246,7 +300,12 @@ export class PharmacyController {
     @Query('dateTo') dateTo?: string,
     @Request() req?: any,
   ) {
-    return this.temperatureService.getSensorReadings(sensorId, dateFrom, dateTo, req?.user?.tenantId);
+    return this.temperatureService.getSensorReadings(
+      sensorId,
+      dateFrom,
+      dateTo,
+      req?.user?.tenantId,
+    );
   }
 
   @Get('temperature/alerts')
@@ -260,10 +319,7 @@ export class PharmacyController {
   @Post('temperature/alerts/:id/acknowledge')
   @AuthWithPermissions('pharmacy.update')
   @ApiOperation({ summary: 'Acknowledge a temperature alert' })
-  acknowledgeAlert(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Request() req: any,
-  ) {
+  acknowledgeAlert(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     return this.temperatureService.acknowledgeAlert(id, req.user?.id, req.user?.tenantId);
   }
 

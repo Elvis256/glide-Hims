@@ -10,11 +10,7 @@ import { FinanceModule } from '../finance/finance.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([
-      ImagingModality,
-      ImagingOrder,
-      ImagingResult,
-    ]),
+    TypeOrmModule.forFeature([ImagingModality, ImagingOrder, ImagingResult]),
     InAppNotificationsModule,
     forwardRef(() => FinanceModule),
   ],

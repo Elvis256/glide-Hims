@@ -20,19 +20,14 @@ export interface StandardResponse<T> {
 }
 
 @Injectable()
-export class ResponseTransformInterceptor<T>
-  implements NestInterceptor<T, StandardResponse<T>>
-{
+export class ResponseTransformInterceptor<T> implements NestInterceptor<T, StandardResponse<T>> {
   constructor(private reflector: Reflector) {}
 
-  intercept(
-    context: ExecutionContext,
-    next: CallHandler,
-  ): Observable<StandardResponse<T>> {
-    const skipTransform = this.reflector.getAllAndOverride<boolean>(
-      SKIP_TRANSFORM_KEY,
-      [context.getHandler(), context.getClass()],
-    );
+  intercept(context: ExecutionContext, next: CallHandler): Observable<StandardResponse<T>> {
+    const skipTransform = this.reflector.getAllAndOverride<boolean>(SKIP_TRANSFORM_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
 
     if (skipTransform) {
       return next.handle();
@@ -43,12 +38,7 @@ export class ResponseTransformInterceptor<T>
     return next.handle().pipe(
       map((data) => {
         // If the response already has our envelope shape, pass through
-        if (
-          data &&
-          typeof data === 'object' &&
-          'statusCode' in data &&
-          'data' in data
-        ) {
+        if (data && typeof data === 'object' && 'statusCode' in data && 'data' in data) {
           return data;
         }
 

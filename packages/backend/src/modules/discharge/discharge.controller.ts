@@ -14,7 +14,11 @@ import { AuthGuard } from '@nestjs/passport';
 import { DischargeService } from './discharge.service';
 import { CreateDischargeSummaryDto, DischargeSummaryFilterDto } from './dto/discharge.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
+@UseGuards(ModuleGuard)
+@RequireModule('ipd')
 @Controller('discharge')
 @UseGuards(AuthGuard('jwt'))
 export class DischargeController {
@@ -23,21 +27,28 @@ export class DischargeController {
   @Post()
   @AuthWithPermissions('discharge.create')
   async create(@Body() dto: CreateDischargeSummaryDto, @Request() req: any) {
-    const facilityId = req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
+    const facilityId =
+      req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
     return this.dischargeService.create(dto, req.user.sub, facilityId, req.user?.tenantId);
   }
 
   @Get()
   @AuthWithPermissions('discharge.read')
   async findAll(@Query() filter: DischargeSummaryFilterDto, @Request() req: any) {
-    const facilityId = req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
+    const facilityId =
+      req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
     return this.dischargeService.findAll(filter, facilityId, req.user?.tenantId);
   }
 
   @Get('stats')
   @AuthWithPermissions('discharge.read')
-  async getStats(@Query('fromDate') fromDate: string, @Query('toDate') toDate: string, @Request() req: any) {
-    const facilityId = req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
+  async getStats(
+    @Query('fromDate') fromDate: string,
+    @Query('toDate') toDate: string,
+    @Request() req: any,
+  ) {
+    const facilityId =
+      req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
     return this.dischargeService.getStats(
       facilityId,
       new Date(fromDate || new Date().setMonth(new Date().getMonth() - 1)),
@@ -54,7 +65,10 @@ export class DischargeController {
 
   @Get('encounter/:encounterId')
   @AuthWithPermissions('discharge.read')
-  async findByEncounter(@Param('encounterId', ParseUUIDPipe) encounterId: string, @Request() req: any) {
+  async findByEncounter(
+    @Param('encounterId', ParseUUIDPipe) encounterId: string,
+    @Request() req: any,
+  ) {
     return this.dischargeService.findByEncounter(encounterId, req.user?.tenantId);
   }
 

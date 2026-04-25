@@ -61,20 +61,44 @@ export class VitalsService {
       const label = PARAMETER_LABELS[param] || param;
 
       if (value <= thresholds.criticalLow) {
-        alerts.push({ parameter: param, value, severity: 'critical', message: `${label} critically low: ${value}` });
+        alerts.push({
+          parameter: param,
+          value,
+          severity: 'critical',
+          message: `${label} critically low: ${value}`,
+        });
       } else if (value <= thresholds.warningLow) {
-        alerts.push({ parameter: param, value, severity: 'warning', message: `${label} below normal: ${value}` });
+        alerts.push({
+          parameter: param,
+          value,
+          severity: 'warning',
+          message: `${label} below normal: ${value}`,
+        });
       } else if (value >= thresholds.criticalHigh) {
-        alerts.push({ parameter: param, value, severity: 'critical', message: `${label} critically high: ${value}` });
+        alerts.push({
+          parameter: param,
+          value,
+          severity: 'critical',
+          message: `${label} critically high: ${value}`,
+        });
       } else if (value >= thresholds.warningHigh) {
-        alerts.push({ parameter: param, value, severity: 'warning', message: `${label} above normal: ${value}` });
+        alerts.push({
+          parameter: param,
+          value,
+          severity: 'warning',
+          message: `${label} above normal: ${value}`,
+        });
       }
     }
 
     return alerts;
   }
 
-  async create(dto: CreateVitalDto, userId: string, tenantId?: string): Promise<Vital & { alerts?: VitalAlert[] }> {
+  async create(
+    dto: CreateVitalDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<Vital & { alerts?: VitalAlert[] }> {
     // Verify encounter exists
     const encounterWhere: any = { id: dto.encounterId };
     if (tenantId) encounterWhere.tenantId = tenantId;
@@ -104,10 +128,10 @@ export class VitalsService {
     // Check for abnormal vitals and generate alerts
     const alerts = this.checkVitalAlerts(savedVital);
     if (alerts.length > 0) {
-      const criticals = alerts.filter(a => a.severity === 'critical');
+      const criticals = alerts.filter((a) => a.severity === 'critical');
       if (criticals.length > 0) {
         this.logger.warn(
-          `CRITICAL VITAL ALERTS for encounter ${dto.encounterId}: ${criticals.map(a => a.message).join('; ')}`,
+          `CRITICAL VITAL ALERTS for encounter ${dto.encounterId}: ${criticals.map((a) => a.message).join('; ')}`,
         );
       }
     }
@@ -184,9 +208,6 @@ export class VitalsService {
       qb.andWhere('vital.tenant_id = :tenantId', { tenantId });
     }
 
-    return qb
-      .orderBy('vital.recordedAt', 'DESC')
-      .take(limit)
-      .getMany();
+    return qb.orderBy('vital.recordedAt', 'DESC').take(limit).getMany();
   }
 }

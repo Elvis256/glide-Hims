@@ -1,5 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import axios from 'axios';
 import { Toaster, toast } from 'sonner';
@@ -8,6 +8,7 @@ import { useSessionTimeout } from './hooks/useSessionTimeout';
 import { getApiErrorMessage, SESSION_EXPIRED_EVENT } from './services/api';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import ProtectedRoute from './components/ProtectedRoute';
+import ModuleRoute from './components/ModuleRoute';
 import RoleRoute, {
   DoctorRoute,
   NurseRoute,
@@ -36,6 +37,9 @@ const SystemAdminLayout = lazy(() => import('./pages/system/SystemAdminLayout'))
 const SystemDashboardPage = lazy(() => import('./pages/system/SystemDashboardPage'));
 const SystemUsersPage = lazy(() => import('./pages/system/SystemUsersPage'));
 const PlatformSettingsPage = lazy(() => import('./pages/system/SystemSettingsPage'));
+const SystemSupportRequestsPage = lazy(() => import('./pages/system/SystemSupportRequestsPage'));
+const SystemComplianceCenterPage = lazy(() => import('./pages/system/SystemComplianceCenterPage'));
+const SupportAccessPage = lazy(() => import('./pages/admin/SupportAccessPage'));
 const SetupWizardPage = lazy(() => import('./pages/SetupWizardPage'));
 const TenantSetupWizardPage = lazy(() => import('./pages/TenantSetupWizardPage'));
 const RegisterOrganizationPage = lazy(() => import('./pages/RegisterOrganizationPage'));
@@ -342,6 +346,7 @@ const BranchesPage = lazy(() => import('./pages/admin/site/BranchesPage'));
 const BuildingsFloorsPage = lazy(() => import('./pages/admin/site/BuildingsFloorsPage'));
 const SystemSettingsPage = lazy(() => import('./pages/admin/site/SystemSettingsPage'));
 const IntegrationsPage = lazy(() => import('./pages/admin/site/IntegrationsPage'));
+const FacilityModePage = lazy(() => import('./pages/admin/site/FacilityModePage'));
 const MembershipPlansPage = lazy(() => import('./pages/admin/membership/MembershipPlansPage'));
 const MembershipBenefitsPage = lazy(() => import('./pages/admin/membership/MembershipBenefitsPage'));
 const CorporatePlansPage = lazy(() => import('./pages/admin/membership/CorporatePlansPage'));
@@ -418,6 +423,32 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+/**
+ * Guard for /login/:slug route.
+ * If authenticated and the slug matches the current tenant, redirect to dashboard.
+ * If authenticated but slug is for a DIFFERENT tenant, log out first so they can log into the correct org.
+ * If not authenticated, show the login page.
+ */
+function LoginRouteGuard({ isAuthenticated }: { isAuthenticated: boolean }) {
+  const { slug } = useParams<{ slug: string }>();
+  const { logout } = useAuthStore();
+
+  if (!isAuthenticated) {
+    return <Suspense fallback={<PageLoader />}><LoginPage /></Suspense>;
+  }
+
+  const currentSlug = localStorage.getItem('glide_tenant_slug');
+
+  // No slug in URL or slug matches current tenant → go to dashboard
+  if (!slug || slug === currentSlug) {
+    return <Navigate to="/" replace />;
+  }
+
+  // Different slug → log out so they can authenticate to the correct org
+  logout();
+  return <Suspense fallback={<PageLoader />}><LoginPage /></Suspense>;
+}
 
 function AppRoutes() {
   const { isAuthenticated, logout, accessToken, refreshToken, setTokens } = useAuthStore();
@@ -544,6 +575,8 @@ function AppRoutes() {
         <Route path="tenants" element={<TenantManagementPage />} />
         <Route path="users" element={<SystemUsersPage />} />
         <Route path="settings" element={<PlatformSettingsPage />} />
+        <Route path="support-requests" element={<SystemSupportRequestsPage />} />
+        <Route path="compliance" element={<SystemComplianceCenterPage />} />
       </Route>
       <Route
         path="/admin/tenants"
@@ -551,7 +584,7 @@ function AppRoutes() {
       />
       <Route
         path="/login/:slug?"
-        element={isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />}
+        element={<LoginRouteGuard isAuthenticated={isAuthenticated} />}
       />
       <Route
         path="/*"
@@ -590,341 +623,341 @@ function AppRoutes() {
                 <Route path="/appointments/manage" element={<ReceptionistRoute><ManageAppointmentsPage /></ReceptionistRoute>} />
                 
                 {/* Registration - Reception Billing */}
-                <Route path="/billing/reception/new" element={<CashierRoute><NewBillPage /></CashierRoute>} />
-                <Route path="/billing/reception/payment" element={<CashierRoute><CollectPaymentPage /></CashierRoute>} />
-                <Route path="/billing/reception/receipt" element={<CashierRoute><PrintReceiptPage /></CashierRoute>} />
-                <Route path="/billing/reception/pending" element={<CashierRoute><PendingPaymentsPage /></CashierRoute>} />
-                <Route path="/billing/reception/refunds" element={<CashierRoute><RefundsPage /></CashierRoute>} />
+                <Route path="/billing/reception/new" element={<ModuleRoute module="billing"><CashierRoute><NewBillPage /></CashierRoute></ModuleRoute>} />
+                <Route path="/billing/reception/payment" element={<ModuleRoute module="billing"><CashierRoute><CollectPaymentPage /></CashierRoute></ModuleRoute>} />
+                <Route path="/billing/reception/receipt" element={<ModuleRoute module="billing"><CashierRoute><PrintReceiptPage /></CashierRoute></ModuleRoute>} />
+                <Route path="/billing/reception/pending" element={<ModuleRoute module="billing"><CashierRoute><PendingPaymentsPage /></CashierRoute></ModuleRoute>} />
+                <Route path="/billing/reception/refunds" element={<ModuleRoute module="billing"><CashierRoute><RefundsPage /></CashierRoute></ModuleRoute>} />
                 
                 {/* Registration - Insurance Desk */}
-                <Route path="/insurance/verify" element={<ReceptionistRoute><VerifyCoveragePage /></ReceptionistRoute>} />
-                <Route path="/insurance/preauth" element={<ReceptionistRoute><PreAuthorizationPage /></ReceptionistRoute>} />
-                <Route path="/insurance/submit" element={<ReceptionistRoute><ClaimSubmissionPage /></ReceptionistRoute>} />
-                <Route path="/insurance/cards" element={<ReceptionistRoute><InsuranceCardsPage /></ReceptionistRoute>} />
+                <Route path="/insurance/verify" element={<ModuleRoute module="billing"><ReceptionistRoute><VerifyCoveragePage /></ReceptionistRoute></ModuleRoute>} />
+                <Route path="/insurance/preauth" element={<ModuleRoute module="billing"><ReceptionistRoute><PreAuthorizationPage /></ReceptionistRoute></ModuleRoute>} />
+                <Route path="/insurance/submit" element={<ModuleRoute module="billing"><ReceptionistRoute><ClaimSubmissionPage /></ReceptionistRoute></ModuleRoute>} />
+                <Route path="/insurance/cards" element={<ModuleRoute module="billing"><ReceptionistRoute><InsuranceCardsPage /></ReceptionistRoute></ModuleRoute>} />
                 
                 {/* Registration - Reports */}
-                <Route path="/reports/registration/daily" element={<ReceptionistRoute><RegistrationDailySummaryPage /></ReceptionistRoute>} />
-                <Route path="/reports/registration/patients" element={<ReceptionistRoute><PatientStatisticsPage /></ReceptionistRoute>} />
-                <Route path="/reports/registration/revenue" element={<ReceptionistRoute><RegistrationRevenuePage /></ReceptionistRoute>} />
-                <Route path="/reports/registration/queue" element={<ReceptionistRoute><QueuePerformancePage /></ReceptionistRoute>} />
+                <Route path="/reports/registration/daily" element={<ModuleRoute module="reports"><ReceptionistRoute><RegistrationDailySummaryPage /></ReceptionistRoute></ModuleRoute>} />
+                <Route path="/reports/registration/patients" element={<ModuleRoute module="reports"><ReceptionistRoute><PatientStatisticsPage /></ReceptionistRoute></ModuleRoute>} />
+                <Route path="/reports/registration/revenue" element={<ModuleRoute module="reports"><ReceptionistRoute><RegistrationRevenuePage /></ReceptionistRoute></ModuleRoute>} />
+                <Route path="/reports/registration/queue" element={<ModuleRoute module="reports"><ReceptionistRoute><QueuePerformancePage /></ReceptionistRoute></ModuleRoute>} />
                 
                 {/* Nursing - Patient Vitals */}
-                <Route path="/nursing/vitals/new" element={<NurseRoute><RecordVitalsPage /></NurseRoute>} />
-                <Route path="/nursing/vitals/history" element={<NurseRoute><VitalsHistoryPage /></NurseRoute>} />
-                <Route path="/nursing/vitals/trends" element={<NurseRoute><VitalTrendsPage /></NurseRoute>} />
-                <Route path="/nursing/vitals/alerts" element={<NurseRoute><AbnormalAlertsPage /></NurseRoute>} />
+                <Route path="/nursing/vitals/new" element={<ModuleRoute module="nursing"><NurseRoute><RecordVitalsPage /></NurseRoute></ModuleRoute>} />
+                <Route path="/nursing/vitals/history" element={<ModuleRoute module="nursing"><NurseRoute><VitalsHistoryPage /></NurseRoute></ModuleRoute>} />
+                <Route path="/nursing/vitals/trends" element={<ModuleRoute module="nursing"><NurseRoute><VitalTrendsPage /></NurseRoute></ModuleRoute>} />
+                <Route path="/nursing/vitals/alerts" element={<ModuleRoute module="nursing"><NurseRoute><AbnormalAlertsPage /></NurseRoute></ModuleRoute>} />
                 
                 {/* Nursing - Triage & Assessment */}
-                <Route path="/nursing/triage" element={<NurseRoute><TriageQueuePage /></NurseRoute>} />
-                <Route path="/nursing/assessment" element={<NurseRoute><NursingAssessmentPage /></NurseRoute>} />
-                <Route path="/nursing/pain" element={<NurseRoute><PainAssessmentPage /></NurseRoute>} />
-                <Route path="/nursing/fall-risk" element={<NurseRoute><FallRiskPage /></NurseRoute>} />
+                <Route path="/nursing/triage" element={<ModuleRoute module="nursing"><NurseRoute><TriageQueuePage /></NurseRoute></ModuleRoute>} />
+                <Route path="/nursing/assessment" element={<ModuleRoute module="nursing"><NurseRoute><NursingAssessmentPage /></NurseRoute></ModuleRoute>} />
+                <Route path="/nursing/pain" element={<ModuleRoute module="nursing"><NurseRoute><PainAssessmentPage /></NurseRoute></ModuleRoute>} />
+                <Route path="/nursing/fall-risk" element={<ModuleRoute module="nursing"><NurseRoute><FallRiskPage /></NurseRoute></ModuleRoute>} />
                 
                 {/* Nursing - Medication */}
-                <Route path="/nursing/meds/schedule" element={<NurseRoute><MedicationSchedulePage /></NurseRoute>} />
-                <Route path="/nursing/meds/administer" element={<NurseRoute><AdministerMedsPage /></NurseRoute>} />
-                <Route path="/nursing/meds/chart" element={<NurseRoute><MedicationChartPage /></NurseRoute>} />
-                <Route path="/nursing/meds/allergies" element={<NurseRoute><DrugAllergiesPage /></NurseRoute>} />
+                <Route path="/nursing/meds/schedule" element={<ModuleRoute module="nursing"><NurseRoute><MedicationSchedulePage /></NurseRoute></ModuleRoute>} />
+                <Route path="/nursing/meds/administer" element={<ModuleRoute module="nursing"><NurseRoute><AdministerMedsPage /></NurseRoute></ModuleRoute>} />
+                <Route path="/nursing/meds/chart" element={<ModuleRoute module="nursing"><NurseRoute><MedicationChartPage /></NurseRoute></ModuleRoute>} />
+                <Route path="/nursing/meds/allergies" element={<ModuleRoute module="nursing"><NurseRoute><DrugAllergiesPage /></NurseRoute></ModuleRoute>} />
                 
                 {/* Nursing - Wound Care */}
-                <Route path="/nursing/wounds/assess" element={<NurseRoute><WoundAssessmentPage /></NurseRoute>} />
-                <Route path="/nursing/wounds/dressing" element={<NurseRoute><DressingLogPage /></NurseRoute>} />
-                <Route path="/nursing/wounds/progress" element={<NurseRoute><WoundProgressPage /></NurseRoute>} />
+                <Route path="/nursing/wounds/assess" element={<ModuleRoute module="nursing"><NurseRoute><WoundAssessmentPage /></NurseRoute></ModuleRoute>} />
+                <Route path="/nursing/wounds/dressing" element={<ModuleRoute module="nursing"><NurseRoute><DressingLogPage /></NurseRoute></ModuleRoute>} />
+                <Route path="/nursing/wounds/progress" element={<ModuleRoute module="nursing"><NurseRoute><WoundProgressPage /></NurseRoute></ModuleRoute>} />
                 
                 {/* Nursing - Patient Care */}
-                <Route path="/nursing/care-plans" element={<NurseRoute><CarePlansPage /></NurseRoute>} />
-                <Route path="/nursing/notes" element={<NurseRoute><NursingNotesPage /></NurseRoute>} />
-                <Route path="/nursing/handover" element={<NurseRoute><ShiftHandoverPage /></NurseRoute>} />
-                <Route path="/nursing/education" element={<NurseRoute><PatientEducationPage /></NurseRoute>} />
+                <Route path="/nursing/care-plans" element={<ModuleRoute module="nursing"><NurseRoute><CarePlansPage /></NurseRoute></ModuleRoute>} />
+                <Route path="/nursing/notes" element={<ModuleRoute module="nursing"><NurseRoute><NursingNotesPage /></NurseRoute></ModuleRoute>} />
+                <Route path="/nursing/handover" element={<ModuleRoute module="nursing"><NurseRoute><ShiftHandoverPage /></NurseRoute></ModuleRoute>} />
+                <Route path="/nursing/education" element={<ModuleRoute module="nursing"><NurseRoute><PatientEducationPage /></NurseRoute></ModuleRoute>} />
                 
                 {/* Nursing - Procedures */}
-                <Route path="/nursing/procedures/iv" element={<NurseRoute><IVCannulationPage /></NurseRoute>} />
-                <Route path="/nursing/procedures/catheter" element={<NurseRoute><CatheterizationPage /></NurseRoute>} />
-                <Route path="/nursing/procedures/specimen" element={<NurseRoute><SpecimenCollectionPage /></NurseRoute>} />
-                <Route path="/nursing/procedures/log" element={<NurseRoute><ProcedureLogPage /></NurseRoute>} />
+                <Route path="/nursing/procedures/iv" element={<ModuleRoute module="nursing"><NurseRoute><IVCannulationPage /></NurseRoute></ModuleRoute>} />
+                <Route path="/nursing/procedures/catheter" element={<ModuleRoute module="nursing"><NurseRoute><CatheterizationPage /></NurseRoute></ModuleRoute>} />
+                <Route path="/nursing/procedures/specimen" element={<ModuleRoute module="nursing"><NurseRoute><SpecimenCollectionPage /></NurseRoute></ModuleRoute>} />
+                <Route path="/nursing/procedures/log" element={<ModuleRoute module="nursing"><NurseRoute><ProcedureLogPage /></NurseRoute></ModuleRoute>} />
                 
                 {/* Nursing - Monitoring */}
-                <Route path="/nursing/monitor" element={<NurseRoute><PatientMonitorPage /></NurseRoute>} />
-                <Route path="/nursing/io" element={<NurseRoute><IntakeOutputPage /></NurseRoute>} />
-                <Route path="/nursing/glucose" element={<NurseRoute><BloodSugarPage /></NurseRoute>} />
-                <Route path="/nursing/observations" element={<NurseRoute><ObservationChartPage /></NurseRoute>} />
+                <Route path="/nursing/monitor" element={<ModuleRoute module="nursing"><NurseRoute><PatientMonitorPage /></NurseRoute></ModuleRoute>} />
+                <Route path="/nursing/io" element={<ModuleRoute module="nursing"><NurseRoute><IntakeOutputPage /></NurseRoute></ModuleRoute>} />
+                <Route path="/nursing/glucose" element={<ModuleRoute module="nursing"><NurseRoute><BloodSugarPage /></NurseRoute></ModuleRoute>} />
+                <Route path="/nursing/observations" element={<ModuleRoute module="nursing"><NurseRoute><ObservationChartPage /></NurseRoute></ModuleRoute>} />
                 
                 {/* Nursing - Reports */}
-                <Route path="/nursing/reports/daily" element={<NurseRoute><NursingDailyReportPage /></NurseRoute>} />
-                <Route path="/nursing/reports/shift" element={<NurseRoute><ShiftSummaryPage /></NurseRoute>} />
-                <Route path="/nursing/reports/incident" element={<NurseRoute><IncidentReportPage /></NurseRoute>} />
-                <Route path="/nursing/reports/workload" element={<NurseRoute><WorkloadStatsPage /></NurseRoute>} />
+                <Route path="/nursing/reports/daily" element={<ModuleRoute module="nursing"><NurseRoute><NursingDailyReportPage /></NurseRoute></ModuleRoute>} />
+                <Route path="/nursing/reports/shift" element={<ModuleRoute module="nursing"><NurseRoute><ShiftSummaryPage /></NurseRoute></ModuleRoute>} />
+                <Route path="/nursing/reports/incident" element={<ModuleRoute module="nursing"><NurseRoute><IncidentReportPage /></NurseRoute></ModuleRoute>} />
+                <Route path="/nursing/reports/workload" element={<ModuleRoute module="nursing"><NurseRoute><WorkloadStatsPage /></NurseRoute></ModuleRoute>} />
                 
                 {/* Doctors - Dashboard & Queue */}
-                <Route path="/doctor" element={<DoctorRoute><DoctorDashboardPage /></DoctorRoute>} />
-                <Route path="/doctor/consult" element={<DoctorRoute><NewConsultationPage /></DoctorRoute>} />
-                <Route path="/doctor/queue" element={<DoctorRoute><WaitingPatientsPage /></DoctorRoute>} />
-                <Route path="/doctor/queue/call" element={<DoctorRoute><CallNextPage /></DoctorRoute>} />
-                <Route path="/doctor/schedule" element={<DoctorRoute><TodaySchedulePage /></DoctorRoute>} />
-                <Route path="/doctor/pending" element={<DoctorRoute><PendingReviewsPage /></DoctorRoute>} />
+                <Route path="/doctor" element={<ModuleRoute module="doctors"><DoctorRoute><DoctorDashboardPage /></DoctorRoute></ModuleRoute>} />
+                <Route path="/doctor/consult" element={<ModuleRoute module="doctors"><DoctorRoute><NewConsultationPage /></DoctorRoute></ModuleRoute>} />
+                <Route path="/doctor/queue" element={<ModuleRoute module="doctors"><DoctorRoute><WaitingPatientsPage /></DoctorRoute></ModuleRoute>} />
+                <Route path="/doctor/queue/call" element={<ModuleRoute module="doctors"><DoctorRoute><CallNextPage /></DoctorRoute></ModuleRoute>} />
+                <Route path="/doctor/schedule" element={<ModuleRoute module="doctors"><DoctorRoute><TodaySchedulePage /></DoctorRoute></ModuleRoute>} />
+                <Route path="/doctor/pending" element={<ModuleRoute module="doctors"><DoctorRoute><PendingReviewsPage /></DoctorRoute></ModuleRoute>} />
                 
                 {/* Doctors - Consultation (legacy routes redirect) */}
-                <Route path="/encounters/new" element={<RoleRoute roles={[ROLES.DOCTOR, ROLES.NURSE, ROLES.RECEPTIONIST]}><NewConsultationPage /></RoleRoute>} />
-                <Route path="/doctor/consultation/new" element={<Navigate to="/doctor/consult" replace />} />
-                <Route path="/doctor/soap" element={<DoctorRoute><SOAPNotesPage /></DoctorRoute>} />
-                <Route path="/doctor/notes" element={<DoctorRoute><ClinicalNotesPage /></DoctorRoute>} />
-                <Route path="/encounters" element={<ClinicalRoute><EncountersPage /></ClinicalRoute>} />
+                <Route path="/encounters/new" element={<ModuleRoute module="doctors"><RoleRoute roles={[ROLES.DOCTOR, ROLES.NURSE, ROLES.RECEPTIONIST]}><NewConsultationPage /></RoleRoute></ModuleRoute>} />
+                <Route path="/doctor/consultation/new" element={<ModuleRoute module="doctors"><Navigate to="/doctor/consult" replace /></ModuleRoute>} />
+                <Route path="/doctor/soap" element={<ModuleRoute module="doctors"><DoctorRoute><SOAPNotesPage /></DoctorRoute></ModuleRoute>} />
+                <Route path="/doctor/notes" element={<ModuleRoute module="doctors"><DoctorRoute><ClinicalNotesPage /></DoctorRoute></ModuleRoute>} />
+                <Route path="/encounters" element={<ModuleRoute module="doctors"><ClinicalRoute><EncountersPage /></ClinicalRoute></ModuleRoute>} />
                 
                 {/* Doctors - Diagnosis */}
-                <Route path="/doctor/diagnosis/icd" element={<DoctorRoute><ICD10CodingPage /></DoctorRoute>} />
-                <Route path="/doctor/diagnosis/differential" element={<DoctorRoute><DifferentialDxPage /></DoctorRoute>} />
-                <Route path="/doctor/diagnosis/problems" element={<DoctorRoute><ProblemListPage /></DoctorRoute>} />
+                <Route path="/doctor/diagnosis/icd" element={<ModuleRoute module="doctors"><DoctorRoute><ICD10CodingPage /></DoctorRoute></ModuleRoute>} />
+                <Route path="/doctor/diagnosis/differential" element={<ModuleRoute module="doctors"><DoctorRoute><DifferentialDxPage /></DoctorRoute></ModuleRoute>} />
+                <Route path="/doctor/diagnosis/problems" element={<ModuleRoute module="doctors"><DoctorRoute><ProblemListPage /></DoctorRoute></ModuleRoute>} />
                 
                 {/* Doctors - Prescriptions */}
-                <Route path="/doctor/prescriptions/new" element={<DoctorRoute><WritePrescriptionPage /></DoctorRoute>} />
-                <Route path="/doctor/prescriptions" element={<DoctorRoute><PrescriptionHistoryPage /></DoctorRoute>} />
-                <Route path="/doctor/prescriptions/interactions" element={<DoctorRoute><DrugInteractionsPage /></DoctorRoute>} />
-                <Route path="/doctor/prescriptions/favorites" element={<DoctorRoute><FavoriteRxPage /></DoctorRoute>} />
+                <Route path="/doctor/prescriptions/new" element={<ModuleRoute module="doctors"><DoctorRoute><WritePrescriptionPage /></DoctorRoute></ModuleRoute>} />
+                <Route path="/doctor/prescriptions" element={<ModuleRoute module="doctors"><DoctorRoute><PrescriptionHistoryPage /></DoctorRoute></ModuleRoute>} />
+                <Route path="/doctor/prescriptions/interactions" element={<ModuleRoute module="doctors"><DoctorRoute><DrugInteractionsPage /></DoctorRoute></ModuleRoute>} />
+                <Route path="/doctor/prescriptions/favorites" element={<ModuleRoute module="doctors"><DoctorRoute><FavoriteRxPage /></DoctorRoute></ModuleRoute>} />
                 
                 {/* Doctors - Orders */}
-                <Route path="/doctor/orders/lab" element={<DoctorRoute><LabOrdersPage /></DoctorRoute>} />
-                <Route path="/doctor/orders/radiology" element={<DoctorRoute><RadiologyOrdersPage /></DoctorRoute>} />
-                <Route path="/doctor/orders/procedures" element={<DoctorRoute><ProcedureOrdersPage /></DoctorRoute>} />
-                <Route path="/doctor/orders/sets" element={<DoctorRoute><OrderSetsPage /></DoctorRoute>} />
+                <Route path="/doctor/orders/lab" element={<ModuleRoute module="doctors"><DoctorRoute><LabOrdersPage /></DoctorRoute></ModuleRoute>} />
+                <Route path="/doctor/orders/radiology" element={<ModuleRoute module="doctors"><DoctorRoute><RadiologyOrdersPage /></DoctorRoute></ModuleRoute>} />
+                <Route path="/doctor/orders/procedures" element={<ModuleRoute module="doctors"><DoctorRoute><ProcedureOrdersPage /></DoctorRoute></ModuleRoute>} />
+                <Route path="/doctor/orders/sets" element={<ModuleRoute module="doctors"><DoctorRoute><OrderSetsPage /></DoctorRoute></ModuleRoute>} />
                 
                 {/* Doctors - Results Review */}
-                <Route path="/doctor/results/lab" element={<DoctorRoute><LabResultsPage /></DoctorRoute>} />
-                <Route path="/doctor/results/imaging" element={<DoctorRoute><ImagingResultsPage /></DoctorRoute>} />
-                <Route path="/doctor/results/critical" element={<DoctorRoute><CriticalValuesPage /></DoctorRoute>} />
+                <Route path="/doctor/results/lab" element={<ModuleRoute module="doctors"><DoctorRoute><LabResultsPage /></DoctorRoute></ModuleRoute>} />
+                <Route path="/doctor/results/imaging" element={<ModuleRoute module="doctors"><DoctorRoute><ImagingResultsPage /></DoctorRoute></ModuleRoute>} />
+                <Route path="/doctor/results/critical" element={<ModuleRoute module="doctors"><DoctorRoute><CriticalValuesPage /></DoctorRoute></ModuleRoute>} />
                 
                 {/* Doctors - Referrals */}
-                <Route path="/referrals/new" element={<DoctorRoute><NewReferralPage /></DoctorRoute>} />
-                <Route path="/referrals/sent" element={<DoctorRoute><SentReferralsPage /></DoctorRoute>} />
-                <Route path="/referrals/received" element={<DoctorRoute><ReferralsPage /></DoctorRoute>} />
+                <Route path="/referrals/new" element={<ModuleRoute module="doctors"><DoctorRoute><NewReferralPage /></DoctorRoute></ModuleRoute>} />
+                <Route path="/referrals/sent" element={<ModuleRoute module="doctors"><DoctorRoute><SentReferralsPage /></DoctorRoute></ModuleRoute>} />
+                <Route path="/referrals/received" element={<ModuleRoute module="doctors"><DoctorRoute><ReferralsPage /></DoctorRoute></ModuleRoute>} />
                 
                 {/* Doctors - Certificates */}
-                <Route path="/doctor/certificates/medical" element={<DoctorRoute><MedicalCertificatePage /></DoctorRoute>} />
-                <Route path="/doctor/certificates/sick-leave" element={<DoctorRoute><SickLeavePage /></DoctorRoute>} />
-                <Route path="/doctor/certificates/fitness" element={<DoctorRoute><FitnessCertificatePage /></DoctorRoute>} />
-                <Route path="/doctor/certificates/death" element={<DoctorRoute><DeathCertificatePage /></DoctorRoute>} />
+                <Route path="/doctor/certificates/medical" element={<ModuleRoute module="doctors"><DoctorRoute><MedicalCertificatePage /></DoctorRoute></ModuleRoute>} />
+                <Route path="/doctor/certificates/sick-leave" element={<ModuleRoute module="doctors"><DoctorRoute><SickLeavePage /></DoctorRoute></ModuleRoute>} />
+                <Route path="/doctor/certificates/fitness" element={<ModuleRoute module="doctors"><DoctorRoute><FitnessCertificatePage /></DoctorRoute></ModuleRoute>} />
+                <Route path="/doctor/certificates/death" element={<ModuleRoute module="doctors"><DoctorRoute><DeathCertificatePage /></DoctorRoute></ModuleRoute>} />
                 
                 {/* Doctors - Medical Report */}
-                <Route path="/doctor/report" element={<DoctorRoute><MedicalReportPage /></DoctorRoute>} />
-                <Route path="/doctor/report/insurance" element={<DoctorRoute><InsuranceReportPage /></DoctorRoute>} />
+                <Route path="/doctor/report" element={<ModuleRoute module="doctors"><DoctorRoute><MedicalReportPage /></DoctorRoute></ModuleRoute>} />
+                <Route path="/doctor/report/insurance" element={<ModuleRoute module="doctors"><DoctorRoute><InsuranceReportPage /></DoctorRoute></ModuleRoute>} />
                 
                 {/* Doctors - Follow-up */}
-                <Route path="/follow-ups/new" element={<DoctorRoute><ScheduleFollowUpPage /></DoctorRoute>} />
-                <Route path="/follow-ups" element={<DoctorRoute><FollowUpsPage /></DoctorRoute>} />
-                <Route path="/follow-ups/overdue" element={<DoctorRoute><OverdueFollowUpsPage /></DoctorRoute>} />
+                <Route path="/follow-ups/new" element={<ModuleRoute module="doctors"><DoctorRoute><ScheduleFollowUpPage /></DoctorRoute></ModuleRoute>} />
+                <Route path="/follow-ups" element={<ModuleRoute module="doctors"><DoctorRoute><FollowUpsPage /></DoctorRoute></ModuleRoute>} />
+                <Route path="/follow-ups/overdue" element={<ModuleRoute module="doctors"><DoctorRoute><OverdueFollowUpsPage /></DoctorRoute></ModuleRoute>} />
                 
                 {/* Billing - OPD */}
-                <Route path="/billing/opd/new" element={<BillingRoute><NewOPDBillPage /></BillingRoute>} />
-                <Route path="/billing/opd/orders" element={<BillingRoute><OPDOrderingPage /></BillingRoute>} />
-                <Route path="/billing/opd/packages" element={<BillingRoute><PackageBillingPage /></BillingRoute>} />
-                <Route path="/billing/opd/search" element={<BillingRoute><SearchBillsPage /></BillingRoute>} />
+                <Route path="/billing/opd/new" element={<ModuleRoute module="billing"><BillingRoute><NewOPDBillPage /></BillingRoute></ModuleRoute>} />
+                <Route path="/billing/opd/orders" element={<ModuleRoute module="billing"><BillingRoute><OPDOrderingPage /></BillingRoute></ModuleRoute>} />
+                <Route path="/billing/opd/packages" element={<ModuleRoute module="billing"><BillingRoute><PackageBillingPage /></BillingRoute></ModuleRoute>} />
+                <Route path="/billing/opd/search" element={<ModuleRoute module="billing"><BillingRoute><SearchBillsPage /></BillingRoute></ModuleRoute>} />
                 
                 {/* Billing - Core */}
-                <Route path="/billing/invoices" element={<BillingRoute><InvoicesPage /></BillingRoute>} />
-                <Route path="/billing/invoices/:invoiceId" element={<BillingRoute><InvoicesPage /></BillingRoute>} />
-                <Route path="/billing/payments" element={<BillingRoute><PaymentsPage /></BillingRoute>} />
+                <Route path="/billing/invoices" element={<ModuleRoute module="billing"><BillingRoute><InvoicesPage /></BillingRoute></ModuleRoute>} />
+                <Route path="/billing/invoices/:invoiceId" element={<ModuleRoute module="billing"><BillingRoute><InvoicesPage /></BillingRoute></ModuleRoute>} />
+                <Route path="/billing/payments" element={<ModuleRoute module="billing"><BillingRoute><PaymentsPage /></BillingRoute></ModuleRoute>} />
                 
                 {/* Billing - Insurance */}
-                <Route path="/insurance/claims" element={<BillingRoute><ClaimsPage /></BillingRoute>} />
-                <Route path="/insurance/providers" element={<BillingRoute><InsuranceProvidersPage /></BillingRoute>} />
+                <Route path="/insurance/claims" element={<ModuleRoute module="billing"><BillingRoute><ClaimsPage /></BillingRoute></ModuleRoute>} />
+                <Route path="/insurance/providers" element={<ModuleRoute module="billing"><BillingRoute><InsuranceProvidersPage /></BillingRoute></ModuleRoute>} />
                 
                 {/* Billing - Procurement */}
-                <Route path="/procurement/requisitions" element={<StoreKeeperRoute><RequisitionsPage /></StoreKeeperRoute>} />
-                <Route path="/procurement/rfq" element={<StoreKeeperRoute><RFQPage /></StoreKeeperRoute>} />
-                <Route path="/procurement/quotes/compare" element={<StoreKeeperRoute><CompareQuotesPage /></StoreKeeperRoute>} />
-                <Route path="/procurement/quotes/approve" element={<AdminRoute><ApproveQuotationsPage /></AdminRoute>} />
-                <Route path="/procurement/orders" element={<StoreKeeperRoute><PurchaseOrdersPage /></StoreKeeperRoute>} />
-                <Route path="/procurement/grn" element={<StoreKeeperRoute><GoodsReceivedPage /></StoreKeeperRoute>} />
-                <Route path="/procurement/invoices/match" element={<AccountantRoute><InvoiceMatchingPage /></AccountantRoute>} />
+                <Route path="/procurement/requisitions" element={<ModuleRoute module="stores"><StoreKeeperRoute><RequisitionsPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/procurement/rfq" element={<ModuleRoute module="stores"><StoreKeeperRoute><RFQPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/procurement/quotes/compare" element={<ModuleRoute module="stores"><StoreKeeperRoute><CompareQuotesPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/procurement/quotes/approve" element={<ModuleRoute module="stores"><AdminRoute><ApproveQuotationsPage /></AdminRoute></ModuleRoute>} />
+                <Route path="/procurement/orders" element={<ModuleRoute module="stores"><StoreKeeperRoute><PurchaseOrdersPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/procurement/grn" element={<ModuleRoute module="stores"><StoreKeeperRoute><GoodsReceivedPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/procurement/invoices/match" element={<ModuleRoute module="stores"><AccountantRoute><InvoiceMatchingPage /></AccountantRoute></ModuleRoute>} />
                 
                 {/* Billing - Vendors */}
-                <Route path="/procurement/vendors" element={<StoreKeeperRoute><VendorListPage /></StoreKeeperRoute>} />
-                <Route path="/procurement/vendors/contracts" element={<StoreKeeperRoute><VendorContractsPage /></StoreKeeperRoute>} />
-                <Route path="/procurement/vendors/ratings" element={<StoreKeeperRoute><VendorRatingsPage /></StoreKeeperRoute>} />
-                <Route path="/procurement/vendors/prices" element={<StoreKeeperRoute><PriceAgreementsPage /></StoreKeeperRoute>} />
-                <Route path="/procurement/vendors/payments" element={<AccountantRoute><VendorPaymentsPage /></AccountantRoute>} />
+                <Route path="/procurement/vendors" element={<ModuleRoute module="stores"><StoreKeeperRoute><VendorListPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/procurement/vendors/contracts" element={<ModuleRoute module="stores"><StoreKeeperRoute><VendorContractsPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/procurement/vendors/ratings" element={<ModuleRoute module="stores"><StoreKeeperRoute><VendorRatingsPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/procurement/vendors/prices" element={<ModuleRoute module="stores"><StoreKeeperRoute><PriceAgreementsPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/procurement/vendors/payments" element={<ModuleRoute module="stores"><AccountantRoute><VendorPaymentsPage /></AccountantRoute></ModuleRoute>} />
                 
                 {/* Billing - Finance */}
-                <Route path="/finance/accounts" element={<FinanceRoute><AccountsPage /></FinanceRoute>} />
-                <Route path="/finance/journals" element={<FinanceRoute><JournalEntriesPage /></FinanceRoute>} />
-                <Route path="/finance/expenses" element={<FinanceRoute><ExpensesPage /></FinanceRoute>} />
-                <Route path="/finance/revenue" element={<FinanceRoute><RevenuePage /></FinanceRoute>} />
-                <Route path="/finance/reports" element={<FinanceRoute><FinancialReportsPage /></FinanceRoute>} />
-                <Route path="/finance/cost-centers" element={<FinanceRoute><CostCentersPage /></FinanceRoute>} />
-                <Route path="/finance/budgets" element={<FinanceRoute><BudgetPage /></FinanceRoute>} />
-                <Route path="/finance/bank-reconciliation" element={<FinanceRoute><BankReconciliationPage /></FinanceRoute>} />
-                <Route path="/finance/patient-finance" element={<FinanceRoute><PatientFinancePage /></FinanceRoute>} />
-                <Route path="/finance/petty-cash" element={<FinanceRoute><PettyCashPage /></FinanceRoute>} />
-                <Route path="/finance/donor-funds" element={<FinanceRoute><DonorFundsPage /></FinanceRoute>} />
+                <Route path="/finance/accounts" element={<ModuleRoute module="finance"><FinanceRoute><AccountsPage /></FinanceRoute></ModuleRoute>} />
+                <Route path="/finance/journals" element={<ModuleRoute module="finance"><FinanceRoute><JournalEntriesPage /></FinanceRoute></ModuleRoute>} />
+                <Route path="/finance/expenses" element={<ModuleRoute module="finance"><FinanceRoute><ExpensesPage /></FinanceRoute></ModuleRoute>} />
+                <Route path="/finance/revenue" element={<ModuleRoute module="finance"><FinanceRoute><RevenuePage /></FinanceRoute></ModuleRoute>} />
+                <Route path="/finance/reports" element={<ModuleRoute module="finance"><FinanceRoute><FinancialReportsPage /></FinanceRoute></ModuleRoute>} />
+                <Route path="/finance/cost-centers" element={<ModuleRoute module="finance"><FinanceRoute><CostCentersPage /></FinanceRoute></ModuleRoute>} />
+                <Route path="/finance/budgets" element={<ModuleRoute module="finance"><FinanceRoute><BudgetPage /></FinanceRoute></ModuleRoute>} />
+                <Route path="/finance/bank-reconciliation" element={<ModuleRoute module="finance"><FinanceRoute><BankReconciliationPage /></FinanceRoute></ModuleRoute>} />
+                <Route path="/finance/patient-finance" element={<ModuleRoute module="finance"><FinanceRoute><PatientFinancePage /></FinanceRoute></ModuleRoute>} />
+                <Route path="/finance/petty-cash" element={<ModuleRoute module="finance"><FinanceRoute><PettyCashPage /></FinanceRoute></ModuleRoute>} />
+                <Route path="/finance/donor-funds" element={<ModuleRoute module="finance"><FinanceRoute><DonorFundsPage /></FinanceRoute></ModuleRoute>} />
                 
                 {/* Emergency Module */}
-                <Route path="/emergency/queue" element={<ClinicalRoute><EmergencyQueuePage /></ClinicalRoute>} />
-                <Route path="/emergency/ambulance" element={<ClinicalRoute><AmbulanceTrackingPage /></ClinicalRoute>} />
-                <Route path="/emergency/triage" element={<ClinicalRoute><EmergencyTriagePage /></ClinicalRoute>} />
-                <Route path="/emergency/billing" element={<BillingRoute><EmergencyBillingPage /></BillingRoute>} />
+                <Route path="/emergency/queue" element={<ModuleRoute module="emergency"><ClinicalRoute><EmergencyQueuePage /></ClinicalRoute></ModuleRoute>} />
+                <Route path="/emergency/ambulance" element={<ModuleRoute module="emergency"><ClinicalRoute><AmbulanceTrackingPage /></ClinicalRoute></ModuleRoute>} />
+                <Route path="/emergency/triage" element={<ModuleRoute module="emergency"><ClinicalRoute><EmergencyTriagePage /></ClinicalRoute></ModuleRoute>} />
+                <Route path="/emergency/billing" element={<ModuleRoute module="emergency"><BillingRoute><EmergencyBillingPage /></BillingRoute></ModuleRoute>} />
                 
                 {/* Laboratory Module */}
-                <Route path="/lab/queue" element={<LabTechRoute><LabQueuePage /></LabTechRoute>} />
-                <Route path="/lab/samples" element={<LabTechRoute><SampleCollectionPage /></LabTechRoute>} />
-                <Route path="/lab/results" element={<LabTechRoute><ResultsEntryPage /></LabTechRoute>} />
-                <Route path="/lab/reports" element={<LabTechRoute><LabReportsPage /></LabTechRoute>} />
-                <Route path="/lab/analytics" element={<LabTechRoute><LabAnalyticsPage /></LabTechRoute>} />
-                <Route path="/lab/sample-referrals" element={<LabTechRoute><SampleReferralPage /></LabTechRoute>} />
+                <Route path="/lab/queue" element={<ModuleRoute module="diagnostics"><LabTechRoute><LabQueuePage /></LabTechRoute></ModuleRoute>} />
+                <Route path="/lab/samples" element={<ModuleRoute module="diagnostics"><LabTechRoute><SampleCollectionPage /></LabTechRoute></ModuleRoute>} />
+                <Route path="/lab/results" element={<ModuleRoute module="diagnostics"><LabTechRoute><ResultsEntryPage /></LabTechRoute></ModuleRoute>} />
+                <Route path="/lab/reports" element={<ModuleRoute module="diagnostics"><LabTechRoute><LabReportsPage /></LabTechRoute></ModuleRoute>} />
+                <Route path="/lab/analytics" element={<ModuleRoute module="diagnostics"><LabTechRoute><LabAnalyticsPage /></LabTechRoute></ModuleRoute>} />
+                <Route path="/lab/sample-referrals" element={<ModuleRoute module="diagnostics"><LabTechRoute><SampleReferralPage /></LabTechRoute></ModuleRoute>} />
                 
                 {/* Radiology Module */}
-                <Route path="/radiology/queue" element={<RadiologyRoute><RadiologyQueuePage /></RadiologyRoute>} />
-                <Route path="/radiology/orders" element={<RadiologyRoute><ImagingOrdersPage /></RadiologyRoute>} />
-                <Route path="/radiology/results" element={<RadiologyRoute><RadiologyResultsPage /></RadiologyRoute>} />
-                <Route path="/radiology/analytics" element={<RadiologyRoute><RadiologyAnalyticsPage /></RadiologyRoute>} />
+                <Route path="/radiology/queue" element={<ModuleRoute module="diagnostics"><RadiologyRoute><RadiologyQueuePage /></RadiologyRoute></ModuleRoute>} />
+                <Route path="/radiology/orders" element={<ModuleRoute module="diagnostics"><RadiologyRoute><ImagingOrdersPage /></RadiologyRoute></ModuleRoute>} />
+                <Route path="/radiology/results" element={<ModuleRoute module="diagnostics"><RadiologyRoute><RadiologyResultsPage /></RadiologyRoute></ModuleRoute>} />
+                <Route path="/radiology/analytics" element={<ModuleRoute module="diagnostics"><RadiologyRoute><RadiologyAnalyticsPage /></RadiologyRoute></ModuleRoute>} />
                 
                 {/* Pharmacy - Core */}
-                <Route path="/pharmacy/dashboard" element={<PharmacistRoute><PharmacyDashboardPage /></PharmacistRoute>} />
-                <Route path="/pharmacy/dispense" element={<PharmacistRoute><DispenseMedicationPage /></PharmacistRoute>} />
-                <Route path="/pharmacy/queue" element={<PharmacistRoute><PharmacyQueuePage /></PharmacistRoute>} />
-                <Route path="/pharmacy/stock" element={<PharmacistRoute><PharmacyStockPage /></PharmacistRoute>} />
-                <Route path="/pharmacy/returns" element={<PharmacistRoute><PharmacyReturnsPage /></PharmacistRoute>} />
-                <Route path="/pharmacy/adjustments" element={<PharmacistRoute><PharmacyAdjustmentsPage /></PharmacistRoute>} />
-                <Route path="/pharmacy/transfers" element={<PharmacistRoute><PharmacyTransfersPage /></PharmacistRoute>} />
-                <Route path="/pharmacy/analytics" element={<PharmacistRoute><PharmacyAnalyticsPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/dashboard" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyDashboardPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/dispense" element={<ModuleRoute module="pharmacy"><PharmacistRoute><DispenseMedicationPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/queue" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyQueuePage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/stock" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyStockPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/returns" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyReturnsPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/adjustments" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyAdjustmentsPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/transfers" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyTransfersPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/analytics" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyAnalyticsPage /></PharmacistRoute></ModuleRoute>} />
                 
                 {/* Pharmacy - Transactions */}
-                <Route path="/pharmacy/retail" element={<PharmacistRoute><RetailSalesPage /></PharmacistRoute>} />
-                <Route path="/pharmacy/wholesale" element={<PharmacistRoute><WholesalePage /></PharmacistRoute>} />
-                <Route path="/pharmacy/inpatient" element={<PharmacistRoute><InpatientMedsPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/retail" element={<ModuleRoute module="pharmacy"><PharmacistRoute><RetailSalesPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/wholesale" element={<ModuleRoute module="pharmacy"><PharmacistRoute><WholesalePage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/inpatient" element={<ModuleRoute module="pharmacy"><PharmacistRoute><InpatientMedsPage /></PharmacistRoute></ModuleRoute>} />
                 
                 {/* Pharmacy - Expiry Management */}
-                <Route path="/pharmacy/expiry/soon" element={<PharmacistRoute><ExpiringSoonPage /></PharmacistRoute>} />
-                <Route path="/pharmacy/expiry/expired" element={<PharmacistRoute><ExpiredItemsPage /></PharmacistRoute>} />
-                <Route path="/pharmacy/expiry/alerts" element={<PharmacistRoute><ExpiryAlertsPage /></PharmacistRoute>} />
-                <Route path="/pharmacy/expiry/disposal" element={<PharmacistRoute><DisposalLogPage /></PharmacistRoute>} />
-                <Route path="/pharmacy/expiry/return" element={<PharmacistRoute><ReturnToSupplierPage /></PharmacistRoute>} />
-                <Route path="/pharmacy/expiry/management" element={<PharmacistRoute><ExpiryManagementPage /></PharmacistRoute>} />
-                <Route path="/pharmacy/controlled-register" element={<PharmacistRoute><ControlledSubstancesRegisterPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/expiry/soon" element={<ModuleRoute module="pharmacy"><PharmacistRoute><ExpiringSoonPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/expiry/expired" element={<ModuleRoute module="pharmacy"><PharmacistRoute><ExpiredItemsPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/expiry/alerts" element={<ModuleRoute module="pharmacy"><PharmacistRoute><ExpiryAlertsPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/expiry/disposal" element={<ModuleRoute module="pharmacy"><PharmacistRoute><DisposalLogPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/expiry/return" element={<ModuleRoute module="pharmacy"><PharmacistRoute><ReturnToSupplierPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/expiry/management" element={<ModuleRoute module="pharmacy"><PharmacistRoute><ExpiryManagementPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/controlled-register" element={<ModuleRoute module="pharmacy"><PharmacistRoute><ControlledSubstancesRegisterPage /></PharmacistRoute></ModuleRoute>} />
                 
                 {/* Pharmacy - Procurement */}
-                <Route path="/pharmacy/requisitions" element={<PharmacistRoute><PharmacyRequisitionsPage /></PharmacistRoute>} />
-                <Route path="/pharmacy/rfq" element={<PharmacistRoute><PharmacyRFQPage /></PharmacistRoute>} />
-                <Route path="/pharmacy/quotes/compare" element={<PharmacistRoute><PharmacyCompareQuotesPage /></PharmacistRoute>} />
-                <Route path="/pharmacy/po" element={<PharmacistRoute><PharmacyPOPage /></PharmacistRoute>} />
-                <Route path="/pharmacy/grn" element={<PharmacistRoute><PharmacyGRNPage /></PharmacistRoute>} />
-                <Route path="/pharmacy/invoices/match" element={<PharmacistRoute><PharmacyInvoiceMatchPage /></PharmacistRoute>} />
-                <Route path="/pharmacy/supplier-payments" element={<PharmacistRoute><PharmacySupplierPaymentsPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/requisitions" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyRequisitionsPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/rfq" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyRFQPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/quotes/compare" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyCompareQuotesPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/po" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyPOPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/grn" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyGRNPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/invoices/match" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyInvoiceMatchPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/supplier-payments" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacySupplierPaymentsPage /></PharmacistRoute></ModuleRoute>} />
                 
                 {/* Pharmacy - Suppliers */}
-                <Route path="/pharmacy/suppliers" element={<PharmacistRoute><PharmacySupplierListPage /></PharmacistRoute>} />
-                <Route path="/pharmacy/suppliers/contracts" element={<PharmacistRoute><PharmacyContractsPage /></PharmacistRoute>} />
-                <Route path="/pharmacy/suppliers/ratings" element={<PharmacistRoute><PharmacySupplierRatingsPage /></PharmacistRoute>} />
-                <Route path="/pharmacy/suppliers/prices" element={<PharmacistRoute><PharmacyPriceListsPage /></PharmacistRoute>} />
-                <Route path="/pharmacy/supplier-rankings" element={<PharmacistRoute><SupplierRankingsPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/suppliers" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacySupplierListPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/suppliers/contracts" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyContractsPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/suppliers/ratings" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacySupplierRatingsPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/suppliers/prices" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyPriceListsPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/supplier-rankings" element={<ModuleRoute module="pharmacy"><PharmacistRoute><SupplierRankingsPage /></PharmacistRoute></ModuleRoute>} />
                 
                 {/* Pharmacy - Medication Adherence */}
-                <Route path="/pharmacy/adherence" element={<PharmacistRoute><MedicationAdherencePage /></PharmacistRoute>} />
+                <Route path="/pharmacy/adherence" element={<ModuleRoute module="pharmacy"><PharmacistRoute><MedicationAdherencePage /></PharmacistRoute></ModuleRoute>} />
                 
                 {/* Pharmacy - Drug Labels & Temperature Monitoring */}
-                <Route path="/pharmacy/labels" element={<PharmacistRoute><LabelManagementPage /></PharmacistRoute>} />
-                <Route path="/pharmacy/temperature" element={<PharmacistRoute><TemperatureMonitoringPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/labels" element={<ModuleRoute module="pharmacy"><PharmacistRoute><LabelManagementPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/temperature" element={<ModuleRoute module="pharmacy"><PharmacistRoute><TemperatureMonitoringPage /></PharmacistRoute></ModuleRoute>} />
                 
                 {/* Pharmacy - DUR Reports & Drug DB Sync */}
-                <Route path="/pharmacy/dur-reports" element={<PharmacistRoute><DURReportsPage /></PharmacistRoute>} />
-                <Route path="/pharmacy/drug-db-sync" element={<PharmacistRoute><DrugDatabaseSyncPage /></PharmacistRoute>} />
-                <Route path="/pharmacy/rx-templates" element={<PharmacistRoute><PrescriptionTemplatesPage /></PharmacistRoute>} />
-                <Route path="/pharmacy/notifications" element={<PharmacistRoute><NotificationLogPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/dur-reports" element={<ModuleRoute module="pharmacy"><PharmacistRoute><DURReportsPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/drug-db-sync" element={<ModuleRoute module="pharmacy"><PharmacistRoute><DrugDatabaseSyncPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/rx-templates" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PrescriptionTemplatesPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/notifications" element={<ModuleRoute module="pharmacy"><PharmacistRoute><NotificationLogPage /></PharmacistRoute></ModuleRoute>} />
                 
                 {/* POS Module */}
-                <Route path="/pharmacy/pos" element={<PharmacistRoute><POSDashboardPage /></PharmacistRoute>} />
-                <Route path="/pharmacy/pos/sale" element={<PharmacistRoute><POSSalePage /></PharmacistRoute>} />
-                <Route path="/pharmacy/pos/shifts" element={<PharmacistRoute><POSShiftPage /></PharmacistRoute>} />
-                <Route path="/pharmacy/pos/reports" element={<PharmacistRoute><POSReportsPage /></PharmacistRoute>} />
-                <Route path="/pharmacy/pos/wholesale/customers" element={<PharmacistRoute><WholesaleCustomersPage /></PharmacistRoute>} />
-                <Route path="/pharmacy/pos/wholesale/tiers" element={<PharmacistRoute><PricingTiersPage /></PharmacistRoute>} />
-                <Route path="/pharmacy/pos/deliveries" element={<PharmacistRoute><DeliveryTrackingPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/pos" element={<ModuleRoute module="pharmacy"><PharmacistRoute><POSDashboardPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/pos/sale" element={<ModuleRoute module="pharmacy"><PharmacistRoute><POSSalePage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/pos/shifts" element={<ModuleRoute module="pharmacy"><PharmacistRoute><POSShiftPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/pos/reports" element={<ModuleRoute module="pharmacy"><PharmacistRoute><POSReportsPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/pos/wholesale/customers" element={<ModuleRoute module="pharmacy"><PharmacistRoute><WholesaleCustomersPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/pos/wholesale/tiers" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PricingTiersPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/pos/deliveries" element={<ModuleRoute module="pharmacy"><PharmacistRoute><DeliveryTrackingPage /></PharmacistRoute></ModuleRoute>} />
                 
                 {/* IPD Module */}
-                <Route path="/ipd/admissions" element={<ClinicalRoute><AdmissionsPage /></ClinicalRoute>} />
-                <Route path="/ipd/wards" element={<ClinicalRoute><WardsBedsPage /></ClinicalRoute>} />
-                <Route path="/ipd/bht" element={<ClinicalRoute><BHTIssuePage /></ClinicalRoute>} />
-                <Route path="/ipd/billing" element={<BillingRoute><InpatientBillingPage /></BillingRoute>} />
-                <Route path="/ipd/nursing" element={<NurseRoute><IPDNursingNotesPage /></NurseRoute>} />
-                <Route path="/ipd/theatre" element={<DoctorRoute><IPDTheatrePage /></DoctorRoute>} />
-                <Route path="/ipd/maternity" element={<ClinicalRoute><IPDMaternityPage /></ClinicalRoute>} />
-                <Route path="/ipd/discharge" element={<DoctorRoute><IPDDischargePage /></DoctorRoute>} />
-                <Route path="/ipd/analytics" element={<ClinicalRoute><IPDAnalyticsPage /></ClinicalRoute>} />
+                <Route path="/ipd/admissions" element={<ModuleRoute module="ipd"><ClinicalRoute><AdmissionsPage /></ClinicalRoute></ModuleRoute>} />
+                <Route path="/ipd/wards" element={<ModuleRoute module="ipd"><ClinicalRoute><WardsBedsPage /></ClinicalRoute></ModuleRoute>} />
+                <Route path="/ipd/bht" element={<ModuleRoute module="ipd"><ClinicalRoute><BHTIssuePage /></ClinicalRoute></ModuleRoute>} />
+                <Route path="/ipd/billing" element={<ModuleRoute module="ipd"><BillingRoute><InpatientBillingPage /></BillingRoute></ModuleRoute>} />
+                <Route path="/ipd/nursing" element={<ModuleRoute module="ipd"><NurseRoute><IPDNursingNotesPage /></NurseRoute></ModuleRoute>} />
+                <Route path="/ipd/theatre" element={<ModuleRoute module="ipd"><DoctorRoute><IPDTheatrePage /></DoctorRoute></ModuleRoute>} />
+                <Route path="/ipd/maternity" element={<ModuleRoute module="ipd"><ClinicalRoute><IPDMaternityPage /></ClinicalRoute></ModuleRoute>} />
+                <Route path="/ipd/discharge" element={<ModuleRoute module="ipd"><DoctorRoute><IPDDischargePage /></DoctorRoute></ModuleRoute>} />
+                <Route path="/ipd/analytics" element={<ModuleRoute module="ipd"><ClinicalRoute><IPDAnalyticsPage /></ClinicalRoute></ModuleRoute>} />
                 
                 {/* Stores Module */}
-                <Route path="/stores/main" element={<StoreKeeperRoute><MainInventoryPage /></StoreKeeperRoute>} />
-                <Route path="/stores/issue" element={<StoreKeeperRoute><UnitIssuePage /></StoreKeeperRoute>} />
-                <Route path="/stores/transfers" element={<StoreKeeperRoute><StoreTransfersPage /></StoreKeeperRoute>} />
-                <Route path="/inventory/transfers" element={<StoreKeeperRoute><StockTransferPage /></StoreKeeperRoute>} />
-                <Route path="/stores/procurement" element={<StoreKeeperRoute><StoresProcurementPage /></StoreKeeperRoute>} />
-                <Route path="/stores/suppliers" element={<StoreKeeperRoute><StoresSupplierPage /></StoreKeeperRoute>} />
-                <Route path="/stores/expiry" element={<StoreKeeperRoute><StoresExpiryPage /></StoreKeeperRoute>} />
-                <Route path="/stores/adjustments" element={<StoreKeeperRoute><StockAdjustmentsPage /></StoreKeeperRoute>} />
-                <Route path="/stores/stock-take" element={<StoreKeeperRoute><StockTakePage /></StoreKeeperRoute>} />
-                <Route path="/stores/assets" element={<StoreKeeperRoute><StoresAssetRegisterPage /></StoreKeeperRoute>} />
-                <Route path="/stores/maintenance" element={<StoreKeeperRoute><MaintenanceSchedulePage /></StoreKeeperRoute>} />
-                <Route path="/stores/consumption" element={<StoreKeeperRoute><ConsumptionReportsPage /></StoreKeeperRoute>} />
-                <Route path="/stores/analytics" element={<StoreKeeperRoute><StoresAnalyticsPage /></StoreKeeperRoute>} />
-                <Route path="/stores/requisitions" element={<StoreKeeperRoute><StoresRequisitionsPage /></StoreKeeperRoute>} />
-                <Route path="/stores/rfq" element={<StoreKeeperRoute><StoresRFQPage /></StoreKeeperRoute>} />
-                <Route path="/stores/quotes/compare" element={<StoreKeeperRoute><StoresCompareQuotesPage /></StoreKeeperRoute>} />
-                <Route path="/stores/po" element={<StoreKeeperRoute><StoresPOPage /></StoreKeeperRoute>} />
-                <Route path="/stores/grn" element={<StoreKeeperRoute><StoresGRNPage /></StoreKeeperRoute>} />
-                <Route path="/stores/invoices/match" element={<StoreKeeperRoute><StoresInvoiceMatchPage /></StoreKeeperRoute>} />
-                <Route path="/stores/suppliers/contracts" element={<StoreKeeperRoute><StoresSupplierContractsPage /></StoreKeeperRoute>} />
-                <Route path="/stores/payments" element={<StoreKeeperRoute><StoresPaymentsPage /></StoreKeeperRoute>} />
-                <Route path="/stores/disposal" element={<StoreKeeperRoute><StoresDisposalPage /></StoreKeeperRoute>} />
-                <Route path="/stores/expiry/soon" element={<StoreKeeperRoute><StoresExpiryPage /></StoreKeeperRoute>} />
-                <Route path="/stores/expiry/expired" element={<StoreKeeperRoute><StoresExpiryPage /></StoreKeeperRoute>} />
-                <Route path="/settings/classifications" element={<AdminRoute><ItemClassificationsPage /></AdminRoute>} />
+                <Route path="/stores/main" element={<ModuleRoute module="stores"><StoreKeeperRoute><MainInventoryPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/stores/issue" element={<ModuleRoute module="stores"><StoreKeeperRoute><UnitIssuePage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/stores/transfers" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoreTransfersPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/inventory/transfers" element={<ModuleRoute module="stores"><StoreKeeperRoute><StockTransferPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/stores/procurement" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresProcurementPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/stores/suppliers" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresSupplierPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/stores/expiry" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresExpiryPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/stores/adjustments" element={<ModuleRoute module="stores"><StoreKeeperRoute><StockAdjustmentsPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/stores/stock-take" element={<ModuleRoute module="stores"><StoreKeeperRoute><StockTakePage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/stores/assets" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresAssetRegisterPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/stores/maintenance" element={<ModuleRoute module="stores"><StoreKeeperRoute><MaintenanceSchedulePage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/stores/consumption" element={<ModuleRoute module="stores"><StoreKeeperRoute><ConsumptionReportsPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/stores/analytics" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresAnalyticsPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/stores/requisitions" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresRequisitionsPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/stores/rfq" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresRFQPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/stores/quotes/compare" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresCompareQuotesPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/stores/po" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresPOPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/stores/grn" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresGRNPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/stores/invoices/match" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresInvoiceMatchPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/stores/suppliers/contracts" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresSupplierContractsPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/stores/payments" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresPaymentsPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/stores/disposal" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresDisposalPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/stores/expiry/soon" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresExpiryPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/stores/expiry/expired" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresExpiryPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/settings/classifications" element={<ModuleRoute module="stores"><AdminRoute><ItemClassificationsPage /></AdminRoute></ModuleRoute>} />
                 
                 {/* OPD */}
-                <Route path="/encounters/:id" element={<ClinicalRoute><EncounterDetailPage /></ClinicalRoute>} />
+                <Route path="/encounters/:id" element={<ModuleRoute module="doctors"><ClinicalRoute><EncounterDetailPage /></ClinicalRoute></ModuleRoute>} />
                 {/* Clinical */}
-                <Route path="/pharmacy" element={<PharmacistRoute><PharmacyPage /></PharmacistRoute>} />
-                <Route path="/cashier" element={<CashierRoute><CashierPage /></CashierRoute>} />
-                <Route path="/inventory" element={<StoreKeeperRoute><InventoryPage /></StoreKeeperRoute>} />
-                <Route path="/lab" element={<LabTechRoute><LabPage /></LabTechRoute>} />
-                <Route path="/radiology" element={<RadiologyRoute><RadiologyPage /></RadiologyRoute>} />
-                <Route path="/wards" element={<ClinicalRoute><WardManagementPage /></ClinicalRoute>} />
-                <Route path="/emergency" element={<ClinicalRoute><EmergencyPage /></ClinicalRoute>} />
-                <Route path="/theatre" element={<DoctorRoute><IPDTheatrePage /></DoctorRoute>} />
-                <Route path="/maternity" element={<ClinicalRoute><IPDMaternityPage /></ClinicalRoute>} />
+                <Route path="/pharmacy" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/cashier" element={<ModuleRoute module="billing"><CashierRoute><CashierPage /></CashierRoute></ModuleRoute>} />
+                <Route path="/inventory" element={<ModuleRoute module="stores"><StoreKeeperRoute><InventoryPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/lab" element={<ModuleRoute module="diagnostics"><LabTechRoute><LabPage /></LabTechRoute></ModuleRoute>} />
+                <Route path="/radiology" element={<ModuleRoute module="diagnostics"><RadiologyRoute><RadiologyPage /></RadiologyRoute></ModuleRoute>} />
+                <Route path="/wards" element={<ModuleRoute module="ipd"><ClinicalRoute><WardManagementPage /></ClinicalRoute></ModuleRoute>} />
+                <Route path="/emergency" element={<ModuleRoute module="emergency"><ClinicalRoute><EmergencyPage /></ClinicalRoute></ModuleRoute>} />
+                <Route path="/theatre" element={<ModuleRoute module="ipd"><DoctorRoute><IPDTheatrePage /></DoctorRoute></ModuleRoute>} />
+                <Route path="/maternity" element={<ModuleRoute module="ipd"><ClinicalRoute><IPDMaternityPage /></ClinicalRoute></ModuleRoute>} />
                 {/* Admin & Finance */}
-                <Route path="/hr" element={<HRRoute><HRPage /></HRRoute>} />
-                <Route path="/hr/staff" element={<HRRoute><StaffDirectoryPage /></HRRoute>} />
-                <Route path="/hr/departments" element={<HRRoute><AdminDepartmentsPage /></HRRoute>} />
-                <Route path="/hr/designations" element={<HRRoute><DesignationsPage /></HRRoute>} />
-                <Route path="/hr/shifts" element={<HRRoute><ShiftManagementPage /></HRRoute>} />
-                <Route path="/hr/leave" element={<HRRoute><LeaveManagementPage /></HRRoute>} />
-                <Route path="/hr/credentials" element={<HRRoute><CredentialsPage /></HRRoute>} />
-                <Route path="/hr/attendance" element={<HRRoute><AttendancePage /></HRRoute>} />
-                <Route path="/hr/payroll" element={<HRRoute><PayrollPage /></HRRoute>} />
-                <Route path="/hr/recruitment" element={<HRRoute><RecruitmentPage /></HRRoute>} />
-                <Route path="/hr/appraisals" element={<HRRoute><AppraisalsPage /></HRRoute>} />
-                <Route path="/hr/appraisals/:id" element={<HRRoute><AppraisalDetailPage /></HRRoute>} />
-                <Route path="/hr/training" element={<HRRoute><TrainingPage /></HRRoute>} />
-                <Route path="/hr/analytics" element={<HRRoute><HRAnalyticsPage /></HRRoute>} />
-                <Route path="/hr/letters" element={<HRRoute><HRLettersPage /></HRRoute>} />
-                <Route path="/hr/disciplinary" element={<HRRoute><DisciplinaryPage /></HRRoute>} />
-                <Route path="/hr/onboarding" element={<HRRoute><OnboardingPage /></HRRoute>} />
-                <Route path="/hr/payroll-reports" element={<HRRoute><PayrollReportsPage /></HRRoute>} />
-                <Route path="/hr/my-payslips" element={<ProtectedRoute><MyPayslipsPage /></ProtectedRoute>} />
-                <Route path="/hr/my-leave" element={<ProtectedRoute><MyLeavePage /></ProtectedRoute>} />
-                <Route path="/hr/my-attendance" element={<ProtectedRoute><MyAttendancePage /></ProtectedRoute>} />
-                <Route path="/hr/my-appraisals" element={<ProtectedRoute><MyAppraisalsPage /></ProtectedRoute>} />
-                <Route path="/finance" element={<FinanceRoute><FinancePage /></FinanceRoute>} />
-                <Route path="/insurance/dashboard" element={<BillingRoute><InsuranceDashboardPage /></BillingRoute>} />
-                <Route path="/insurance" element={<BillingRoute><InsurancePage /></BillingRoute>} />
+                <Route path="/hr" element={<ModuleRoute module="hr"><HRRoute><HRPage /></HRRoute></ModuleRoute>} />
+                <Route path="/hr/staff" element={<ModuleRoute module="hr"><HRRoute><StaffDirectoryPage /></HRRoute></ModuleRoute>} />
+                <Route path="/hr/departments" element={<ModuleRoute module="hr"><HRRoute><AdminDepartmentsPage /></HRRoute></ModuleRoute>} />
+                <Route path="/hr/designations" element={<ModuleRoute module="hr"><HRRoute><DesignationsPage /></HRRoute></ModuleRoute>} />
+                <Route path="/hr/shifts" element={<ModuleRoute module="hr"><HRRoute><ShiftManagementPage /></HRRoute></ModuleRoute>} />
+                <Route path="/hr/leave" element={<ModuleRoute module="hr"><HRRoute><LeaveManagementPage /></HRRoute></ModuleRoute>} />
+                <Route path="/hr/credentials" element={<ModuleRoute module="hr"><HRRoute><CredentialsPage /></HRRoute></ModuleRoute>} />
+                <Route path="/hr/attendance" element={<ModuleRoute module="hr"><HRRoute><AttendancePage /></HRRoute></ModuleRoute>} />
+                <Route path="/hr/payroll" element={<ModuleRoute module="hr"><HRRoute><PayrollPage /></HRRoute></ModuleRoute>} />
+                <Route path="/hr/recruitment" element={<ModuleRoute module="hr"><HRRoute><RecruitmentPage /></HRRoute></ModuleRoute>} />
+                <Route path="/hr/appraisals" element={<ModuleRoute module="hr"><HRRoute><AppraisalsPage /></HRRoute></ModuleRoute>} />
+                <Route path="/hr/appraisals/:id" element={<ModuleRoute module="hr"><HRRoute><AppraisalDetailPage /></HRRoute></ModuleRoute>} />
+                <Route path="/hr/training" element={<ModuleRoute module="hr"><HRRoute><TrainingPage /></HRRoute></ModuleRoute>} />
+                <Route path="/hr/analytics" element={<ModuleRoute module="hr"><HRRoute><HRAnalyticsPage /></HRRoute></ModuleRoute>} />
+                <Route path="/hr/letters" element={<ModuleRoute module="hr"><HRRoute><HRLettersPage /></HRRoute></ModuleRoute>} />
+                <Route path="/hr/disciplinary" element={<ModuleRoute module="hr"><HRRoute><DisciplinaryPage /></HRRoute></ModuleRoute>} />
+                <Route path="/hr/onboarding" element={<ModuleRoute module="hr"><HRRoute><OnboardingPage /></HRRoute></ModuleRoute>} />
+                <Route path="/hr/payroll-reports" element={<ModuleRoute module="hr"><HRRoute><PayrollReportsPage /></HRRoute></ModuleRoute>} />
+                <Route path="/hr/my-payslips" element={<ModuleRoute module="hr"><ProtectedRoute><MyPayslipsPage /></ProtectedRoute></ModuleRoute>} />
+                <Route path="/hr/my-leave" element={<ModuleRoute module="hr"><ProtectedRoute><MyLeavePage /></ProtectedRoute></ModuleRoute>} />
+                <Route path="/hr/my-attendance" element={<ModuleRoute module="hr"><ProtectedRoute><MyAttendancePage /></ProtectedRoute></ModuleRoute>} />
+                <Route path="/hr/my-appraisals" element={<ModuleRoute module="hr"><ProtectedRoute><MyAppraisalsPage /></ProtectedRoute></ModuleRoute>} />
+                <Route path="/finance" element={<ModuleRoute module="finance"><FinanceRoute><FinancePage /></FinanceRoute></ModuleRoute>} />
+                <Route path="/insurance/dashboard" element={<ModuleRoute module="billing"><BillingRoute><InsuranceDashboardPage /></BillingRoute></ModuleRoute>} />
+                <Route path="/insurance" element={<ModuleRoute module="billing"><BillingRoute><InsurancePage /></BillingRoute></ModuleRoute>} />
                 <Route path="/analytics" element={<AdminRoute><AnalyticsPage /></AdminRoute>} />
-                <Route path="/membership" element={<AdminRoute><MembershipPage /></AdminRoute>} />
+                <Route path="/membership" element={<ModuleRoute module="billing"><AdminRoute><MembershipPage /></AdminRoute></ModuleRoute>} />
                 <Route path="/services" element={<AdminRoute><ServicesPage /></AdminRoute>} />
-                <Route path="/stores" element={<StoreKeeperRoute><MainInventoryPage /></StoreKeeperRoute>} />
-                <Route path="/orders" element={<DoctorRoute><OrdersPage /></DoctorRoute>} />
+                <Route path="/stores" element={<ModuleRoute module="stores"><StoreKeeperRoute><MainInventoryPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/orders" element={<ModuleRoute module="doctors"><DoctorRoute><OrdersPage /></DoctorRoute></ModuleRoute>} />
                 <Route path="/tenants" element={<AdminRoute><TenantsPage /></AdminRoute>} />
-                <Route path="/vitals" element={<ClinicalRoute><VitalsPage /></ClinicalRoute>} />
-                <Route path="/clinical-notes" element={<DoctorRoute><ClinicalNotesPage /></DoctorRoute>} />
-                <Route path="/referrals" element={<DoctorRoute><ReferralsPage /></DoctorRoute>} />
-                <Route path="/treatment-plans" element={<DoctorRoute><TreatmentPlansPage /></DoctorRoute>} />
-                <Route path="/discharge" element={<DoctorRoute><IPDDischargePage /></DoctorRoute>} />
+                <Route path="/vitals" element={<ModuleRoute module="nursing"><ClinicalRoute><VitalsPage /></ClinicalRoute></ModuleRoute>} />
+                <Route path="/clinical-notes" element={<ModuleRoute module="doctors"><DoctorRoute><ClinicalNotesPage /></DoctorRoute></ModuleRoute>} />
+                <Route path="/referrals" element={<ModuleRoute module="doctors"><DoctorRoute><ReferralsPage /></DoctorRoute></ModuleRoute>} />
+                <Route path="/treatment-plans" element={<ModuleRoute module="doctors"><DoctorRoute><TreatmentPlansPage /></DoctorRoute></ModuleRoute>} />
+                <Route path="/discharge" element={<ModuleRoute module="ipd"><DoctorRoute><IPDDischargePage /></DoctorRoute></ModuleRoute>} />
                 <Route path="/users" element={<AdminRoute><UsersPage /></AdminRoute>} />
                 <Route path="/facilities" element={<AdminRoute><FacilitiesPage /></AdminRoute>} />
                 <Route path="/roles" element={<AdminRoute><RolesPage /></AdminRoute>} />
@@ -992,10 +1025,12 @@ function AppRoutes() {
                 <Route path="/admin/site/branches" element={<AdminRoute><BranchesPage /></AdminRoute>} />
                 <Route path="/admin/site/buildings" element={<AdminRoute><BuildingsFloorsPage /></AdminRoute>} />
                 <Route path="/admin/site/settings" element={<AdminRoute><SystemSettingsPage /></AdminRoute>} />
+                <Route path="/admin/site/facility-mode" element={<AdminRoute><FacilityModePage /></AdminRoute>} />
                 <Route path="/admin/site/integrations" element={<AdminRoute><IntegrationsPage /></AdminRoute>} />
                 
                 {/* Admin - Backups */}
                 <Route path="/admin/backups" element={<AdminRoute><BackupManagementPage /></AdminRoute>} />
+                <Route path="/admin/support-access" element={<AdminRoute><SupportAccessPage /></AdminRoute>} />
                 
                 {/* Admin - Membership */}
                 <Route path="/admin/membership/plans" element={<AdminRoute><MembershipPlansPage /></AdminRoute>} />
@@ -1018,14 +1053,14 @@ function AppRoutes() {
                 <Route path="/providers/credentials" element={<AdminRoute><ProviderCredentialsPage /></AdminRoute>} />
                 
                 {/* Drug Management */}
-                <Route path="/drug-management/classifications" element={<PharmacistRoute><DrugClassificationsPage /></PharmacistRoute>} />
-                <Route path="/drug-management/interactions" element={<PharmacistRoute><DrugInteractionsDatabasePage /></PharmacistRoute>} />
-                <Route path="/drug-management/allergy-classes" element={<PharmacistRoute><AllergyClassesPage /></PharmacistRoute>} />
+                <Route path="/drug-management/classifications" element={<ModuleRoute module="pharmacy"><PharmacistRoute><DrugClassificationsPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/drug-management/interactions" element={<ModuleRoute module="pharmacy"><PharmacistRoute><DrugInteractionsDatabasePage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/drug-management/allergy-classes" element={<ModuleRoute module="pharmacy"><PharmacistRoute><AllergyClassesPage /></PharmacistRoute></ModuleRoute>} />
                 
                 {/* Supplier Finance */}
-                <Route path="/supplier-finance/payment-vouchers" element={<FinanceRoute><SupplierPaymentVouchersPage /></FinanceRoute>} />
-                <Route path="/supplier-finance/credit-notes" element={<FinanceRoute><SupplierCreditNotesPage /></FinanceRoute>} />
-                <Route path="/supplier-finance/ledger" element={<FinanceRoute><SupplierLedgerPage /></FinanceRoute>} />
+                <Route path="/supplier-finance/payment-vouchers" element={<ModuleRoute module="finance"><FinanceRoute><SupplierPaymentVouchersPage /></FinanceRoute></ModuleRoute>} />
+                <Route path="/supplier-finance/credit-notes" element={<ModuleRoute module="finance"><FinanceRoute><SupplierCreditNotesPage /></FinanceRoute></ModuleRoute>} />
+                <Route path="/supplier-finance/ledger" element={<ModuleRoute module="finance"><FinanceRoute><SupplierLedgerPage /></FinanceRoute></ModuleRoute>} />
                 
                 {/* MDM (Master Data Management) */}
                 <Route path="/mdm/versions" element={<AdminRoute><MasterDataVersionsPage /></AdminRoute>} />
@@ -1033,32 +1068,32 @@ function AppRoutes() {
                 <Route path="/mdm/rules" element={<AdminRoute><ApprovalRulesPage /></AdminRoute>} />
                 
                 {/* Lab QC */}
-                <Route path="/lab-qc/dashboard" element={<LabTechRoute><LabQCDashboardPage /></LabTechRoute>} />
-                <Route path="/lab-qc/consumables" element={<LabTechRoute><LabConsumablesPage /></LabTechRoute>} />
+                <Route path="/lab-qc/dashboard" element={<ModuleRoute module="diagnostics"><LabTechRoute><LabQCDashboardPage /></LabTechRoute></ModuleRoute>} />
+                <Route path="/lab-qc/consumables" element={<ModuleRoute module="diagnostics"><LabTechRoute><LabConsumablesPage /></LabTechRoute></ModuleRoute>} />
                 
                 {/* Assets Module */}
-                <Route path="/assets" element={<StoreKeeperRoute><AssetRegisterPage /></StoreKeeperRoute>} />
-                <Route path="/assets/register" element={<StoreKeeperRoute><AssetRegisterPage /></StoreKeeperRoute>} />
-                <Route path="/assets/allocation" element={<StoreKeeperRoute><AssetAllocationPage /></StoreKeeperRoute>} />
-                <Route path="/assets/tracking" element={<StoreKeeperRoute><AssetTrackingPage /></StoreKeeperRoute>} />
-                <Route path="/assets/maintenance" element={<StoreKeeperRoute><AssetMaintenancePage /></StoreKeeperRoute>} />
-                <Route path="/assets/depreciation" element={<FinanceRoute><AssetDepreciationPage /></FinanceRoute>} />
-                <Route path="/assets/reports" element={<FinanceRoute><AssetReportsPage /></FinanceRoute>} />
-                <Route path="/assets/transfers" element={<StoreKeeperRoute><AssetTransfersPage /></StoreKeeperRoute>} />
-                <Route path="/assets/disposal" element={<StoreKeeperRoute><AssetDisposalPage /></StoreKeeperRoute>} />
-                <Route path="/assets/categories" element={<AdminRoute><AssetCategoriesPage /></AdminRoute>} />
+                <Route path="/assets" element={<ModuleRoute module="assets"><StoreKeeperRoute><AssetRegisterPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/assets/register" element={<ModuleRoute module="assets"><StoreKeeperRoute><AssetRegisterPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/assets/allocation" element={<ModuleRoute module="assets"><StoreKeeperRoute><AssetAllocationPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/assets/tracking" element={<ModuleRoute module="assets"><StoreKeeperRoute><AssetTrackingPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/assets/maintenance" element={<ModuleRoute module="assets"><StoreKeeperRoute><AssetMaintenancePage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/assets/depreciation" element={<ModuleRoute module="assets"><FinanceRoute><AssetDepreciationPage /></FinanceRoute></ModuleRoute>} />
+                <Route path="/assets/reports" element={<ModuleRoute module="assets"><FinanceRoute><AssetReportsPage /></FinanceRoute></ModuleRoute>} />
+                <Route path="/assets/transfers" element={<ModuleRoute module="assets"><StoreKeeperRoute><AssetTransfersPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/assets/disposal" element={<ModuleRoute module="assets"><StoreKeeperRoute><AssetDisposalPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/assets/categories" element={<ModuleRoute module="assets"><AdminRoute><AssetCategoriesPage /></AdminRoute></ModuleRoute>} />
 
                 {/* Chronic Care Module */}
-                <Route path="/chronic-care/dashboard" element={<ClinicalRoute><ChronicCareDashboardPage /></ClinicalRoute>} />
-                <Route path="/chronic-care/registry" element={<ClinicalRoute><ChronicRegistryPage /></ClinicalRoute>} />
-                <Route path="/chronic-care/reminders" element={<ClinicalRoute><ChronicRemindersPage /></ClinicalRoute>} />
-                <Route path="/chronic-care/notifications" element={<AdminRoute><NotificationSettingsPage /></AdminRoute>} />
+                <Route path="/chronic-care/dashboard" element={<ModuleRoute module="chronic-care"><ClinicalRoute><ChronicCareDashboardPage /></ClinicalRoute></ModuleRoute>} />
+                <Route path="/chronic-care/registry" element={<ModuleRoute module="chronic-care"><ClinicalRoute><ChronicRegistryPage /></ClinicalRoute></ModuleRoute>} />
+                <Route path="/chronic-care/reminders" element={<ModuleRoute module="chronic-care"><ClinicalRoute><ChronicRemindersPage /></ClinicalRoute></ModuleRoute>} />
+                <Route path="/chronic-care/notifications" element={<ModuleRoute module="chronic-care"><AdminRoute><NotificationSettingsPage /></AdminRoute></ModuleRoute>} />
 
                 {/* Integrations Module */}
-                <Route path="/integrations/drugs" element={<PharmacistRoute><DrugDatabasePage /></PharmacistRoute>} />
-                <Route path="/integrations/lab-reference" element={<LabTechRoute><LabReferencePage /></LabTechRoute>} />
-                <Route path="/integrations/sms" element={<AdminRoute><SMSNotificationsPage /></AdminRoute>} />
-                <Route path="/integrations/dhis2" element={<AdminRoute><DHIS2SettingsPage /></AdminRoute>} />
+                <Route path="/integrations/drugs" element={<ModuleRoute module="integrations"><PharmacistRoute><DrugDatabasePage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/integrations/lab-reference" element={<ModuleRoute module="integrations"><LabTechRoute><LabReferencePage /></LabTechRoute></ModuleRoute>} />
+                <Route path="/integrations/sms" element={<ModuleRoute module="integrations"><AdminRoute><SMSNotificationsPage /></AdminRoute></ModuleRoute>} />
+                <Route path="/integrations/dhis2" element={<ModuleRoute module="integrations"><AdminRoute><DHIS2SettingsPage /></AdminRoute></ModuleRoute>} />
 
                 {/* Notifications Module */}
                 <Route path="/notifications/settings" element={<AdminRoute><NotificationSettingsPage /></AdminRoute>} />
@@ -1067,18 +1102,18 @@ function AppRoutes() {
                 <Route path="/notifications/bulk" element={<AdminRoute><BulkSmsPage /></AdminRoute>} />
 
                 {/* Reports Module — restricted by role */}
-                <Route path="/reports" element={<AdminRoute><ReportsDashboardPage /></AdminRoute>} />
-                <Route path="/reports/patients" element={<ClinicalRoute><PatientStatisticsReportPage /></ClinicalRoute>} />
-                <Route path="/reports/visits" element={<ClinicalRoute><VisitReportsPage /></ClinicalRoute>} />
-                <Route path="/reports/diseases" element={<ClinicalRoute><DiseaseStatisticsPage /></ClinicalRoute>} />
-                <Route path="/reports/mortality" element={<ClinicalRoute><MortalityReportsPage /></ClinicalRoute>} />
-                <Route path="/reports/revenue" element={<FinanceRoute><RevenueReportsPage /></FinanceRoute>} />
-                <Route path="/reports/collections" element={<FinanceRoute><CollectionReportsPage /></FinanceRoute>} />
-                <Route path="/reports/outstanding" element={<FinanceRoute><OutstandingReportsPage /></FinanceRoute>} />
-                <Route path="/reports/stock" element={<StoreKeeperRoute><StockReportsPage /></StoreKeeperRoute>} />
-                <Route path="/reports/expiry" element={<StoreKeeperRoute><ExpiryReportsPage /></StoreKeeperRoute>} />
-                <Route path="/reports/consumption" element={<StoreKeeperRoute><InventoryConsumptionReportsPage /></StoreKeeperRoute>} />
-                <Route path="/reports/hmis-105" element={<AdminRoute><HMIS105ReportPage /></AdminRoute>} />
+                <Route path="/reports" element={<ModuleRoute module="reports"><AdminRoute><ReportsDashboardPage /></AdminRoute></ModuleRoute>} />
+                <Route path="/reports/patients" element={<ModuleRoute module="reports"><ClinicalRoute><PatientStatisticsReportPage /></ClinicalRoute></ModuleRoute>} />
+                <Route path="/reports/visits" element={<ModuleRoute module="reports"><ClinicalRoute><VisitReportsPage /></ClinicalRoute></ModuleRoute>} />
+                <Route path="/reports/diseases" element={<ModuleRoute module="reports"><ClinicalRoute><DiseaseStatisticsPage /></ClinicalRoute></ModuleRoute>} />
+                <Route path="/reports/mortality" element={<ModuleRoute module="reports"><ClinicalRoute><MortalityReportsPage /></ClinicalRoute></ModuleRoute>} />
+                <Route path="/reports/revenue" element={<ModuleRoute module="reports"><FinanceRoute><RevenueReportsPage /></FinanceRoute></ModuleRoute>} />
+                <Route path="/reports/collections" element={<ModuleRoute module="reports"><FinanceRoute><CollectionReportsPage /></FinanceRoute></ModuleRoute>} />
+                <Route path="/reports/outstanding" element={<ModuleRoute module="reports"><FinanceRoute><OutstandingReportsPage /></FinanceRoute></ModuleRoute>} />
+                <Route path="/reports/stock" element={<ModuleRoute module="reports"><StoreKeeperRoute><StockReportsPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/reports/expiry" element={<ModuleRoute module="reports"><StoreKeeperRoute><ExpiryReportsPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/reports/consumption" element={<ModuleRoute module="reports"><StoreKeeperRoute><InventoryConsumptionReportsPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/reports/hmis-105" element={<ModuleRoute module="reports"><AdminRoute><HMIS105ReportPage /></AdminRoute></ModuleRoute>} />
                 
                 {/* 404 Catch-all */}
                 <Route path="*" element={<NotFoundPage />} />

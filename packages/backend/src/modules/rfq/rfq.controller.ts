@@ -1,9 +1,32 @@
-import { Controller, Get, Post, Put, Patch, Body, Param, Query, Request, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Patch,
+  Body,
+  Param,
+  Query,
+  Request,
+  UseGuards,
+} from '@nestjs/common';
 import { RFQService } from './rfq.service';
-import { CreateRFQDto, UpdateRFQDto, AddVendorsDto, CreateQuotationDto, ApproveQuotationDto, RejectQuotationDto, SelectWinnerDto } from './dto/rfq.dto';
+import {
+  CreateRFQDto,
+  UpdateRFQDto,
+  AddVendorsDto,
+  CreateQuotationDto,
+  ApproveQuotationDto,
+  RejectQuotationDto,
+  SelectWinnerDto,
+} from './dto/rfq.dto';
 import { RFQStatus, ApprovalLevel } from '../../database/entities/rfq.entity';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
+@UseGuards(ModuleGuard)
+@RequireModule('stores')
 @Controller('rfq')
 export class RFQController {
   constructor(private readonly rfqService: RFQService) {}
@@ -18,7 +41,11 @@ export class RFQController {
 
   @AuthWithPermissions('procurement.read')
   @Get()
-  findAll(@Query('facilityId') facilityId: string, @Query('status') status?: RFQStatus, @Request() req?: any) {
+  findAll(
+    @Query('facilityId') facilityId: string,
+    @Query('status') status?: RFQStatus,
+    @Request() req?: any,
+  ) {
     return this.rfqService.findAll(facilityId, { status }, req?.user?.tenantId);
   }
 
@@ -44,7 +71,11 @@ export class RFQController {
   // Approvals (literal paths before :id)
   @AuthWithPermissions('procurement.read')
   @Get('approvals/pending')
-  getPendingApprovals(@Query('facilityId') facilityId: string, @Query('level') level?: ApprovalLevel, @Request() req?: any) {
+  getPendingApprovals(
+    @Query('facilityId') facilityId: string,
+    @Query('level') level?: ApprovalLevel,
+    @Request() req?: any,
+  ) {
     return this.rfqService.getPendingApprovals(facilityId, level, req?.user?.tenantId);
   }
 

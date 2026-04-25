@@ -38,7 +38,7 @@ export class Bed extends BaseEntity {
   @Column({ type: 'uuid' })
   wardId: string;
 
-  @ManyToOne(() => Ward, ward => ward.beds)
+  @ManyToOne(() => Ward, (ward) => ward.beds)
   @JoinColumn({ name: 'wardId' })
   ward: Ward;
 

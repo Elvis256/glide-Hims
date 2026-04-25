@@ -1,4 +1,15 @@
-import { IsString, IsOptional, IsEnum, IsUUID, IsNumber, IsArray, ValidateNested, IsDateString, IsInt, Min } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsEnum,
+  IsUUID,
+  IsNumber,
+  IsArray,
+  ValidateNested,
+  IsDateString,
+  IsInt,
+  Min,
+} from 'class-validator';
 import { ApiProperty, PartialType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { SaleType } from '../../database/entities/pharmacy-sale.entity';
@@ -17,7 +28,10 @@ export class SaleItemDto {
 
 export class CreatePharmacySaleDto {
   @ApiProperty() @IsUUID() storeId: string;
-  @ApiProperty({ enum: SaleType, default: SaleType.OTC }) @IsOptional() @IsEnum(SaleType) saleType?: SaleType;
+  @ApiProperty({ enum: SaleType, default: SaleType.OTC })
+  @IsOptional()
+  @IsEnum(SaleType)
+  saleType?: SaleType;
   @ApiProperty({ required: false }) @IsOptional() @IsUUID() patientId?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() customerName?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() customerPhone?: string;
@@ -26,7 +40,11 @@ export class CreatePharmacySaleDto {
   @ApiProperty({ required: false }) @IsOptional() @IsString() transactionReference?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsNumber() discountAmount?: number;
   @ApiProperty({ required: false }) @IsOptional() @IsString() notes?: string;
-  @ApiProperty({ type: [SaleItemDto] }) @IsArray() @ValidateNested({ each: true }) @Type(() => SaleItemDto) items: SaleItemDto[];
+  @ApiProperty({ type: [SaleItemDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SaleItemDto)
+  items: SaleItemDto[];
 }
 
 export class CompleteSaleDto {
@@ -43,7 +61,9 @@ export class QuarantineItemDto {
 
 export class ProcessExpiredItemDto {
   @ApiProperty() @IsUUID() itemId: string;
-  @ApiProperty({ enum: ['dispose', 'return'] }) @IsEnum(['dispose', 'return'] as const) action: 'dispose' | 'return';
+  @ApiProperty({ enum: ['dispose', 'return'] }) @IsEnum(['dispose', 'return'] as const) action:
+    | 'dispose'
+    | 'return';
   @ApiProperty({ required: false }) @IsOptional() @IsString() batchNumber?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() notes?: string;
 }

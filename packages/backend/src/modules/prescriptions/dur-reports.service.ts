@@ -1,11 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between } from 'typeorm';
+import { Prescription, PrescriptionItem } from '../../database/entities/prescription.entity';
 import {
-  Prescription,
-  PrescriptionItem,
-} from '../../database/entities/prescription.entity';
-import { DrugClassification, TherapeuticClass } from '../../database/entities/drug-classification.entity';
+  DrugClassification,
+  TherapeuticClass,
+} from '../../database/entities/drug-classification.entity';
 
 @Injectable()
 export class DURReportsService {
@@ -75,7 +75,12 @@ export class DURReportsService {
     const classQb = this.prescriptionItemRepo
       .createQueryBuilder('pi')
       .innerJoin('pi.prescription', 'p')
-      .leftJoin(DrugClassification, 'dc', 'dc.genericName = pi.drugName AND dc.tenantId = :tenantId', { tenantId })
+      .leftJoin(
+        DrugClassification,
+        'dc',
+        'dc.genericName = pi.drugName AND dc.tenantId = :tenantId',
+        { tenantId },
+      )
       .select('COALESCE(dc.therapeuticClass, :other)', 'therapeuticClass')
       .setParameter('other', 'other')
       .addSelect('COUNT(pi.id)', 'totalItems')
@@ -89,9 +94,7 @@ export class DURReportsService {
       classQb.andWhere('p.createdAt <= :dateTo', { dateTo });
     }
 
-    classQb
-      .groupBy('dc.therapeuticClass')
-      .orderBy('"totalItems"', 'DESC');
+    classQb.groupBy('dc.therapeuticClass').orderBy('"totalItems"', 'DESC');
 
     const classTotals = await classQb.getRawMany();
 
@@ -99,7 +102,12 @@ export class DURReportsService {
     const trendQb = this.prescriptionItemRepo
       .createQueryBuilder('pi')
       .innerJoin('pi.prescription', 'p')
-      .leftJoin(DrugClassification, 'dc', 'dc.genericName = pi.drugName AND dc.tenantId = :tenantId', { tenantId })
+      .leftJoin(
+        DrugClassification,
+        'dc',
+        'dc.genericName = pi.drugName AND dc.tenantId = :tenantId',
+        { tenantId },
+      )
       .select('COALESCE(dc.therapeuticClass, :other)', 'therapeuticClass')
       .setParameter('other', 'other')
       .addSelect("TO_CHAR(p.createdAt, 'YYYY-MM')", 'month')
@@ -151,7 +159,10 @@ export class DURReportsService {
       .addSelect("COALESCE(CONCAT(u.firstName, ' ', u.lastName), 'Unknown')", 'prescriberName')
       .addSelect('COUNT(DISTINCT p.id)', 'totalPrescriptions')
       .addSelect('COUNT(pi.id)', 'totalItems')
-      .addSelect('ROUND(COUNT(pi.id)::numeric / NULLIF(COUNT(DISTINCT p.id), 0), 2)', 'avgItemsPerRx')
+      .addSelect(
+        'ROUND(COUNT(pi.id)::numeric / NULLIF(COUNT(DISTINCT p.id), 0), 2)',
+        'avgItemsPerRx',
+      )
       .where('p.tenantId = :tenantId', { tenantId });
 
     if (dateFrom) {
@@ -189,20 +200,20 @@ export class DURReportsService {
         topDrugsQb.andWhere('p.createdAt <= :dateTo', { dateTo });
       }
 
-      topDrugsQb
-        .groupBy('p.prescribedById')
-        .addGroupBy('pi.drugName')
-        .orderBy('"cnt"', 'DESC');
+      topDrugsQb.groupBy('p.prescribedById').addGroupBy('pi.drugName').orderBy('"cnt"', 'DESC');
 
       const topDrugs = await topDrugsQb.getRawMany();
 
-      topDrugsMap = topDrugs.reduce((acc, r) => {
-        if (!acc[r.prescriberId]) acc[r.prescriberId] = [];
-        if (acc[r.prescriberId].length < 5) {
-          acc[r.prescriberId].push(r.drugName);
-        }
-        return acc;
-      }, {} as Record<string, string[]>);
+      topDrugsMap = topDrugs.reduce(
+        (acc, r) => {
+          if (!acc[r.prescriberId]) acc[r.prescriberId] = [];
+          if (acc[r.prescriberId].length < 5) {
+            acc[r.prescriberId].push(r.drugName);
+          }
+          return acc;
+        },
+        {} as Record<string, string[]>,
+      );
     }
 
     return results.map((r) => ({
@@ -218,12 +229,7 @@ export class DURReportsService {
   /**
    * Combined DUR summary with key metrics
    */
-  async getDURSummary(
-    tenantId: string,
-    facilityId?: string,
-    dateFrom?: string,
-    dateTo?: string,
-  ) {
+  async getDURSummary(tenantId: string, facilityId?: string, dateFrom?: string, dateTo?: string) {
     const baseQb = this.prescriptionRepo
       .createQueryBuilder('p')
       .where('p.tenantId = :tenantId', { tenantId });
@@ -279,7 +285,12 @@ export class DURReportsService {
     const topClassQb = this.prescriptionItemRepo
       .createQueryBuilder('pi')
       .innerJoin('pi.prescription', 'p')
-      .leftJoin(DrugClassification, 'dc', 'dc.genericName = pi.drugName AND dc.tenantId = :tenantId', { tenantId })
+      .leftJoin(
+        DrugClassification,
+        'dc',
+        'dc.genericName = pi.drugName AND dc.tenantId = :tenantId',
+        { tenantId },
+      )
       .select('COALESCE(dc.therapeuticClass, :other)', 'therapeuticClass')
       .setParameter('other', 'other')
       .addSelect('COUNT(pi.id)', 'count')
@@ -292,10 +303,7 @@ export class DURReportsService {
       topClassQb.andWhere('p.createdAt <= :dateTo', { dateTo });
     }
 
-    topClassQb
-      .groupBy('dc.therapeuticClass')
-      .orderBy('"count"', 'DESC')
-      .limit(1);
+    topClassQb.groupBy('dc.therapeuticClass').orderBy('"count"', 'DESC').limit(1);
 
     const topClass = await topClassQb.getRawOne();
 

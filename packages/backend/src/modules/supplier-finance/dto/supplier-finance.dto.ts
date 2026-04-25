@@ -1,7 +1,20 @@
-import { IsUUID, IsNumber, IsString, IsOptional, IsArray, ValidateNested, IsDateString, IsEnum, Min } from 'class-validator';
+import {
+  IsUUID,
+  IsNumber,
+  IsString,
+  IsOptional,
+  IsArray,
+  ValidateNested,
+  IsDateString,
+  IsEnum,
+  Min,
+} from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { PaymentMethod } from '../../../database/entities/supplier-payment.entity';
-import { CreditNoteType, CreditNoteReason } from '../../../database/entities/supplier-credit-note.entity';
+import {
+  CreditNoteType,
+  CreditNoteReason,
+} from '../../../database/entities/supplier-credit-note.entity';
 
 export class ApplyCreditNoteDto {
   @IsUUID()

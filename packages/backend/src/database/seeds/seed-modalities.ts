@@ -11,7 +11,9 @@ async function seedModalities() {
   const dbPassword = process.env.DB_PASSWORD;
   const dbName = process.env.DB_NAME;
   if (!dbUsername || !dbPassword || !dbName) {
-    throw new Error('DB_USERNAME, DB_PASSWORD, and DB_NAME environment variables are required for seeding');
+    throw new Error(
+      'DB_USERNAME, DB_PASSWORD, and DB_NAME environment variables are required for seeding',
+    );
   }
 
   const dataSource = new DataSource({

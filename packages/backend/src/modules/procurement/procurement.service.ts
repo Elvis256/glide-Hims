@@ -1,13 +1,44 @@
-import { Injectable, NotFoundException, BadRequestException, Logger, Inject, forwardRef } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Logger,
+  Inject,
+  forwardRef,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, Between, DataSource } from 'typeorm';
-import { PurchaseRequest, PurchaseRequestItem, PRStatus, PRPriority } from '../../database/entities/purchase-request.entity';
-import { PurchaseOrder, PurchaseOrderItem, POStatus } from '../../database/entities/purchase-order.entity';
-import { GoodsReceiptNote, GoodsReceiptItem, GRNStatus } from '../../database/entities/goods-receipt.entity';
-import { StockLedger, StockBalance, MovementType, Item } from '../../database/entities/inventory.entity';
+import {
+  PurchaseRequest,
+  PurchaseRequestItem,
+  PRStatus,
+  PRPriority,
+} from '../../database/entities/purchase-request.entity';
+import {
+  PurchaseOrder,
+  PurchaseOrderItem,
+  POStatus,
+} from '../../database/entities/purchase-order.entity';
+import {
+  GoodsReceiptNote,
+  GoodsReceiptItem,
+  GRNStatus,
+} from '../../database/entities/goods-receipt.entity';
+import {
+  StockLedger,
+  StockBalance,
+  MovementType,
+  Item,
+} from '../../database/entities/inventory.entity';
 import { ItemCategory } from '../../database/entities/item-classification.entity';
 import { Supplier, SupplierStatus } from '../../database/entities/supplier.entity';
-import { VendorQuotation, VendorQuotationItem, QuotationStatus, RFQ, RFQItem } from '../../database/entities/rfq.entity';
+import {
+  VendorQuotation,
+  VendorQuotationItem,
+  QuotationStatus,
+  RFQ,
+  RFQItem,
+} from '../../database/entities/rfq.entity';
 import {
   CreatePurchaseRequestDto,
   ApprovePRDto,
@@ -54,22 +85,32 @@ export class ProcurementService {
   // ============ PURCHASE REQUEST ============
 
   private async generatePRNumber(facilityId: string, tenantId?: string): Promise<string> {
-    const count = await this.prRepo.count({ where: { facilityId, ...(tenantId ? { tenantId } : {}) } });
+    const count = await this.prRepo.count({
+      where: { facilityId, ...(tenantId ? { tenantId } : {}) },
+    });
     const date = new Date();
     return `PR${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(count + 1).padStart(5, '0')}`;
   }
 
-  async createPurchaseRequest(dto: CreatePurchaseRequestDto, userId: string, tenantId?: string): Promise<PurchaseRequest> {
+  async createPurchaseRequest(
+    dto: CreatePurchaseRequestDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<PurchaseRequest> {
     try {
       this.logger.log(`Creating PR for facility ${dto.facilityId} with ${dto.items.length} items`);
 
       // Validate all items have positive quantities
       for (const item of dto.items) {
         if (!item.quantityRequested || item.quantityRequested <= 0) {
-          throw new BadRequestException(`Item "${item.itemName || item.itemCode}" must have quantity > 0`);
+          throw new BadRequestException(
+            `Item "${item.itemName || item.itemCode}" must have quantity > 0`,
+          );
         }
         if (item.unitPriceEstimated !== undefined && item.unitPriceEstimated < 0) {
-          throw new BadRequestException(`Item "${item.itemName || item.itemCode}" cannot have a negative estimated price`);
+          throw new BadRequestException(
+            `Item "${item.itemName || item.itemCode}" cannot have a negative estimated price`,
+          );
         }
       }
 
@@ -77,7 +118,7 @@ export class ProcurementService {
 
       // Calculate total estimated
       const totalEstimated = dto.items.reduce((sum, item) => {
-        return sum + (item.quantityRequested * (item.unitPriceEstimated || 0));
+        return sum + item.quantityRequested * (item.unitPriceEstimated || 0);
       }, 0);
 
       const pr = this.prRepo.create({
@@ -98,17 +139,19 @@ export class ProcurementService {
       this.logger.log(`Created PR ${(savedPR as PurchaseRequest).requestNumber}`);
 
       // Create items
-      const items = dto.items.map(item => this.prItemRepo.create({
-        purchaseRequestId: (savedPR as PurchaseRequest).id,
-        itemId: item.itemId,
-        itemCode: item.itemCode,
-        itemName: item.itemName,
-        itemUnit: item.itemUnit || 'unit',
-        quantityRequested: item.quantityRequested,
-        unitPriceEstimated: item.unitPriceEstimated || 0,
-        specifications: item.specifications,
-        notes: item.notes,
-      }));
+      const items = dto.items.map((item) =>
+        this.prItemRepo.create({
+          purchaseRequestId: (savedPR as PurchaseRequest).id,
+          itemId: item.itemId,
+          itemCode: item.itemCode,
+          itemName: item.itemName,
+          itemUnit: item.itemUnit || 'unit',
+          quantityRequested: item.quantityRequested,
+          unitPriceEstimated: item.unitPriceEstimated || 0,
+          specifications: item.specifications,
+          notes: item.notes,
+        }),
+      );
 
       await this.prItemRepo.save(items);
 
@@ -130,13 +173,18 @@ export class ProcurementService {
     return pr;
   }
 
-  async getPurchaseRequests(facilityId: string, options: {
-    status?: PRStatus;
-    priority?: PRPriority;
-    startDate?: string;
-    endDate?: string;
-  }, tenantId?: string) {
-    const qb = this.prRepo.createQueryBuilder('pr')
+  async getPurchaseRequests(
+    facilityId: string,
+    options: {
+      status?: PRStatus;
+      priority?: PRPriority;
+      startDate?: string;
+      endDate?: string;
+    },
+    tenantId?: string,
+  ) {
+    const qb = this.prRepo
+      .createQueryBuilder('pr')
       .leftJoinAndSelect('pr.items', 'items')
       .leftJoinAndSelect('pr.department', 'department')
       .leftJoinAndSelect('pr.requestedBy', 'requestedBy');
@@ -184,7 +232,12 @@ export class ProcurementService {
     return this.prRepo.save(pr);
   }
 
-  async approvePurchaseRequest(id: string, dto: ApprovePRDto, userId: string, tenantId?: string): Promise<PurchaseRequest> {
+  async approvePurchaseRequest(
+    id: string,
+    dto: ApprovePRDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<PurchaseRequest> {
     const pr = await this.getPurchaseRequest(id, tenantId);
     if (pr.status !== PRStatus.PENDING_APPROVAL) {
       throw new BadRequestException('PR must be pending approval');
@@ -192,13 +245,15 @@ export class ProcurementService {
 
     // Segregation of duties: requester cannot approve their own PR
     if (pr.requestedById === userId) {
-      throw new BadRequestException('Segregation of duties violation: the requester cannot approve their own purchase request');
+      throw new BadRequestException(
+        'Segregation of duties violation: the requester cannot approve their own purchase request',
+      );
     }
 
     // Update approved quantities if provided
     if (dto.approvedItems) {
       for (const approved of dto.approvedItems) {
-        const item = pr.items.find(i => i.itemId === approved.itemId);
+        const item = pr.items.find((i) => i.itemId === approved.itemId);
         if (item) {
           item.quantityApproved = approved.quantityApproved;
           await this.prItemRepo.save(item);
@@ -218,7 +273,12 @@ export class ProcurementService {
     return this.prRepo.save(pr);
   }
 
-  async rejectPurchaseRequest(id: string, dto: RejectPRDto, userId: string, tenantId?: string): Promise<PurchaseRequest> {
+  async rejectPurchaseRequest(
+    id: string,
+    dto: RejectPRDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<PurchaseRequest> {
     const pr = await this.getPurchaseRequest(id, tenantId);
     if (pr.status !== PRStatus.PENDING_APPROVAL) {
       throw new BadRequestException('PR must be pending approval');
@@ -233,19 +293,27 @@ export class ProcurementService {
   // ============ PURCHASE ORDER ============
 
   private async generatePONumber(facilityId: string, tenantId?: string): Promise<string> {
-    const count = await this.poRepo.count({ where: { facilityId, ...(tenantId ? { tenantId } : {}) } });
+    const count = await this.poRepo.count({
+      where: { facilityId, ...(tenantId ? { tenantId } : {}) },
+    });
     const date = new Date();
     return `PO${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(count + 1).padStart(5, '0')}`;
   }
 
-  async createPurchaseOrder(dto: CreatePurchaseOrderDto, userId: string, tenantId?: string): Promise<PurchaseOrder> {
+  async createPurchaseOrder(
+    dto: CreatePurchaseOrderDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<PurchaseOrder> {
     // Verify supplier is active before creating PO
     const supplier = await this.supplierRepo.findOne({
       where: { id: dto.supplierId, ...(tenantId ? { tenantId } : {}) },
     });
     if (!supplier) throw new NotFoundException('Supplier not found');
     if (supplier.status !== SupplierStatus.ACTIVE) {
-      throw new BadRequestException(`Cannot create PO for ${supplier.status} supplier. Only active suppliers are allowed.`);
+      throw new BadRequestException(
+        `Cannot create PO for ${supplier.status} supplier. Only active suppliers are allowed.`,
+      );
     }
 
     const orderNumber = await this.generatePONumber(dto.facilityId, tenantId);
@@ -255,11 +323,11 @@ export class ProcurementService {
     let taxAmount = 0;
     let discountAmount = 0;
 
-    const itemsWithTotals = dto.items.map(item => {
+    const itemsWithTotals = dto.items.map((item) => {
       const lineGross = item.quantityOrdered * item.unitPrice;
-      const lineDiscount = lineGross * (item.discountPercent || 0) / 100;
+      const lineDiscount = (lineGross * (item.discountPercent || 0)) / 100;
       const lineNet = lineGross - lineDiscount;
-      const lineTax = lineNet * (item.taxRate || 0) / 100;
+      const lineTax = (lineNet * (item.taxRate || 0)) / 100;
       const lineTotal = lineNet + lineTax;
 
       subtotal += lineNet;
@@ -292,39 +360,49 @@ export class ProcurementService {
     const savedPO = await this.poRepo.save(po);
 
     // Create items
-    const items = itemsWithTotals.map(item => this.poItemRepo.create({
-      purchaseOrderId: (savedPO as PurchaseOrder).id,
-      itemId: item.itemId,
-      itemCode: item.itemCode,
-      itemName: item.itemName,
-      itemUnit: item.itemUnit || 'unit',
-      quantityOrdered: item.quantityOrdered,
-      unitPrice: item.unitPrice,
-      taxRate: item.taxRate || 0,
-      discountPercent: item.discountPercent || 0,
-      lineTotal: item.lineTotal,
-      notes: item.notes,
-    }));
+    const items = itemsWithTotals.map((item) =>
+      this.poItemRepo.create({
+        purchaseOrderId: (savedPO as PurchaseOrder).id,
+        itemId: item.itemId,
+        itemCode: item.itemCode,
+        itemName: item.itemName,
+        itemUnit: item.itemUnit || 'unit',
+        quantityOrdered: item.quantityOrdered,
+        unitPrice: item.unitPrice,
+        taxRate: item.taxRate || 0,
+        discountPercent: item.discountPercent || 0,
+        lineTotal: item.lineTotal,
+        notes: item.notes,
+      }),
+    );
 
     await this.poItemRepo.save(items);
 
     return this.getPurchaseOrder((savedPO as PurchaseOrder).id);
   }
 
-  async createPOFromPR(dto: CreatePOFromPRDto, userId: string, tenantId?: string): Promise<PurchaseOrder> {
+  async createPOFromPR(
+    dto: CreatePOFromPRDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<PurchaseOrder> {
     const pr = await this.getPurchaseRequest(dto.purchaseRequestId, tenantId);
     if (pr.status !== PRStatus.APPROVED) {
       throw new BadRequestException('PR must be approved to create PO');
     }
 
-    const supplier = await this.supplierRepo.findOne({ where: { id: dto.supplierId, ...(tenantId ? { tenantId } : {}) } });
+    const supplier = await this.supplierRepo.findOne({
+      where: { id: dto.supplierId, ...(tenantId ? { tenantId } : {}) },
+    });
     if (!supplier) throw new NotFoundException('Supplier not found');
     if (supplier.status !== SupplierStatus.ACTIVE) {
-      throw new BadRequestException(`Cannot create PO for ${supplier.status} supplier. Only active suppliers are allowed.`);
+      throw new BadRequestException(
+        `Cannot create PO for ${supplier.status} supplier. Only active suppliers are allowed.`,
+      );
     }
 
     // Map prices
-    const priceMap = new Map(dto.itemPrices?.map(p => [p.itemId, p.unitPrice]) || []);
+    const priceMap = new Map(dto.itemPrices?.map((p) => [p.itemId, p.unitPrice]) || []);
 
     const poDto: CreatePurchaseOrderDto = {
       facilityId: pr.facilityId,
@@ -333,8 +411,12 @@ export class ProcurementService {
       expectedDelivery: dto.expectedDelivery,
       paymentTerms: dto.paymentTerms || supplier.paymentTerms,
       items: pr.items
-        .filter(item => (item.quantityApproved || item.quantityRequested) >= item.quantityOrdered && (item.quantityApproved || item.quantityRequested) - item.quantityOrdered > 0)
-        .map(item => ({
+        .filter(
+          (item) =>
+            (item.quantityApproved || item.quantityRequested) >= item.quantityOrdered &&
+            (item.quantityApproved || item.quantityRequested) - item.quantityOrdered > 0,
+        )
+        .map((item) => ({
           itemId: item.itemId,
           itemCode: item.itemCode,
           itemName: item.itemName,
@@ -352,7 +434,7 @@ export class ProcurementService {
 
     // Update PR items with ordered quantities
     for (const poItem of po.items) {
-      const prItem = pr.items.find(i => i.itemId === poItem.itemId);
+      const prItem = pr.items.find((i) => i.itemId === poItem.itemId);
       if (prItem) {
         prItem.quantityOrdered += poItem.quantityOrdered;
         await this.prItemRepo.save(prItem);
@@ -360,7 +442,9 @@ export class ProcurementService {
     }
 
     // Update PR status
-    const allOrdered = pr.items.every(i => i.quantityOrdered >= (i.quantityApproved || i.quantityRequested));
+    const allOrdered = pr.items.every(
+      (i) => i.quantityOrdered >= (i.quantityApproved || i.quantityRequested),
+    );
     pr.status = allOrdered ? PRStatus.FULLY_ORDERED : PRStatus.PARTIALLY_ORDERED;
     await this.prRepo.save(pr);
 
@@ -378,13 +462,18 @@ export class ProcurementService {
     return po;
   }
 
-  async getPurchaseOrders(facilityId: string, options: {
-    status?: POStatus;
-    supplierId?: string;
-    startDate?: string;
-    endDate?: string;
-  }, tenantId?: string) {
-    const qb = this.poRepo.createQueryBuilder('po')
+  async getPurchaseOrders(
+    facilityId: string,
+    options: {
+      status?: POStatus;
+      supplierId?: string;
+      startDate?: string;
+      endDate?: string;
+    },
+    tenantId?: string,
+  ) {
+    const qb = this.poRepo
+      .createQueryBuilder('po')
       .leftJoinAndSelect('po.items', 'items')
       .leftJoinAndSelect('po.supplier', 'supplier')
       .leftJoinAndSelect('po.createdBy', 'createdBy')
@@ -421,7 +510,11 @@ export class ProcurementService {
     return qb.orderBy('po.createdAt', 'DESC').getMany();
   }
 
-  async createPOFromQuotation(dto: CreatePOFromQuotationDto, userId: string, tenantId?: string): Promise<PurchaseOrder> {
+  async createPOFromQuotation(
+    dto: CreatePOFromQuotationDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<PurchaseOrder> {
     const quotation = await this.quotationRepo.findOne({
       where: { id: dto.quotationId, ...(tenantId ? { tenantId } : {}) },
       relations: ['items', 'supplier', 'rfq'],
@@ -457,7 +550,7 @@ export class ProcurementService {
     const rfqItems = await this.dataSource.getRepository(RFQItem).find({
       where: { rfqId: rfq.id },
     });
-    const rfqItemMap = new Map(rfqItems.map(ri => [ri.id, ri]));
+    const rfqItemMap = new Map(rfqItems.map((ri) => [ri.id, ri]));
 
     const poDto: CreatePurchaseOrderDto = {
       facilityId: rfq.facilityId,
@@ -465,8 +558,9 @@ export class ProcurementService {
       expectedDelivery: dto.expectedDelivery,
       paymentTerms: dto.paymentTerms || quotation.paymentTerms || supplier.paymentTerms,
       deliveryAddress: dto.deliveryAddress,
-      notes: dto.notes || `Created from RFQ ${rfq.rfqNumber}, Quotation ${quotation.quotationNumber}`,
-      items: quotation.items.map(qi => {
+      notes:
+        dto.notes || `Created from RFQ ${rfq.rfqNumber}, Quotation ${quotation.quotationNumber}`,
+      items: quotation.items.map((qi) => {
         const rfqItem = rfqItemMap.get(qi.rfqItemId);
         return {
           itemId: rfqItem?.itemCode || qi.rfqItemId,
@@ -506,7 +600,12 @@ export class ProcurementService {
     return this.getPurchaseOrder(po.id, tenantId);
   }
 
-  async approvePurchaseOrder(id: string, userId: string, tenantId?: string, userRoles?: string[]): Promise<PurchaseOrder> {
+  async approvePurchaseOrder(
+    id: string,
+    userId: string,
+    tenantId?: string,
+    userRoles?: string[],
+  ): Promise<PurchaseOrder> {
     const po = await this.getPurchaseOrder(id, tenantId);
     if (po.status !== POStatus.DRAFT && po.status !== POStatus.PENDING_APPROVAL) {
       throw new BadRequestException('PO cannot be approved from current status');
@@ -514,7 +613,7 @@ export class ProcurementService {
 
     // Segregation of duties: PO creator cannot approve their own PO
     // Super Admin bypasses this check (logged for audit)
-    const isSuperAdminUser = userRoles?.some(r => r.toLowerCase() === 'super admin');
+    const isSuperAdminUser = userRoles?.some((r) => r.toLowerCase() === 'super admin');
     if (po.createdById === userId && !isSuperAdminUser) {
       const otherApprovers = await this.dataSource
         .createQueryBuilder()
@@ -526,26 +625,37 @@ export class ProcurementService {
         .where('u.id != :userId', { userId })
         .andWhere('u.status = :status', { status: 'active' })
         .andWhere('perm.code LIKE :permCode', { permCode: '%procurement%approve%' })
-        .andWhere(po.facilityId ? 'u.facility_id = :facilityId' : '1=1', { facilityId: po.facilityId })
+        .andWhere(po.facilityId ? 'u.facility_id = :facilityId' : '1=1', {
+          facilityId: po.facilityId,
+        })
         .getCount();
 
       if (otherApprovers > 0) {
-        throw new BadRequestException('Segregation of duties: the PO creator cannot approve their own purchase order. Another approver is available.');
+        throw new BadRequestException(
+          'Segregation of duties: the PO creator cannot approve their own purchase order. Another approver is available.',
+        );
       }
-      this.logger.warn(`Self-approval: user ${userId} approving own PO ${po.orderNumber} — no other approvers available`);
+      this.logger.warn(
+        `Self-approval: user ${userId} approving own PO ${po.orderNumber} — no other approvers available`,
+      );
     }
 
     if (po.createdById === userId && isSuperAdminUser) {
-      this.logger.warn(`Super Admin self-approval: user ${userId} approving own PO ${po.orderNumber}`);
+      this.logger.warn(
+        `Super Admin self-approval: user ${userId} approving own PO ${po.orderNumber}`,
+      );
     }
 
     // Spending threshold enforcement for high-value POs
     const totalAmount = Number(po.totalAmount) || 0;
     if (totalAmount > 50000000) {
-      this.logger.warn(`HIGH-VALUE PO ${po.orderNumber}: ${totalAmount.toLocaleString()} UGX requires director-level approval. Approved by ${userId}`);
+      this.logger.warn(
+        `HIGH-VALUE PO ${po.orderNumber}: ${totalAmount.toLocaleString()} UGX requires director-level approval. Approved by ${userId}`,
+      );
       if (!po.notes?.includes('[DIRECTOR_APPROVED]')) {
         po.status = POStatus.PENDING_APPROVAL;
-        po.notes = `${po.notes || ''}\n[HIGH_VALUE] Amount ${totalAmount.toLocaleString()} UGX exceeds 50M threshold. Director approval required.`.trim();
+        po.notes =
+          `${po.notes || ''}\n[HIGH_VALUE] Amount ${totalAmount.toLocaleString()} UGX exceeds 50M threshold. Director approval required.`.trim();
         return this.poRepo.save(po);
       }
     }
@@ -578,12 +688,18 @@ export class ProcurementService {
   // ============ GOODS RECEIPT NOTE ============
 
   private async generateGRNNumber(facilityId: string, tenantId?: string): Promise<string> {
-    const count = await this.grnRepo.count({ where: { facilityId, ...(tenantId ? { tenantId } : {}) } });
+    const count = await this.grnRepo.count({
+      where: { facilityId, ...(tenantId ? { tenantId } : {}) },
+    });
     const date = new Date();
     return `GRN${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(count + 1).padStart(5, '0')}`;
   }
 
-  async createGoodsReceipt(dto: CreateGoodsReceiptDto, userId: string, tenantId?: string): Promise<GoodsReceiptNote> {
+  async createGoodsReceipt(
+    dto: CreateGoodsReceiptDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<GoodsReceiptNote> {
     // Validate PO status — prevent receiving on fully received/closed/cancelled POs
     if (dto.purchaseOrderId) {
       const po = await this.poRepo.findOne({
@@ -608,7 +724,7 @@ export class ProcurementService {
     let totalQuantityReceived = 0;
     let totalValue = 0;
 
-    const itemsWithTotals = dto.items.map(item => {
+    const itemsWithTotals = dto.items.map((item) => {
       const lineTotal = item.quantityReceived * item.unitCost;
       totalQuantityReceived += item.quantityReceived;
       totalValue += lineTotal;
@@ -619,7 +735,7 @@ export class ProcurementService {
     for (const item of itemsWithTotals) {
       if (item.expiryDate && new Date(item.expiryDate) < new Date()) {
         throw new BadRequestException(
-          `Cannot receive item ${item.itemName || item.itemCode || item.itemId} with past expiry date: ${item.expiryDate}. Reject expired goods at receiving dock.`
+          `Cannot receive item ${item.itemName || item.itemCode || item.itemId} with past expiry date: ${item.expiryDate}. Reject expired goods at receiving dock.`,
         );
       }
     }
@@ -645,43 +761,55 @@ export class ProcurementService {
     const savedGRN = await this.grnRepo.save(grn);
 
     // Create items
-    const items = itemsWithTotals.map(item => this.grnItemRepo.create({
-      goodsReceiptNoteId: (savedGRN as GoodsReceiptNote).id,
-      itemId: item.itemId,
-      itemCode: item.itemCode,
-      itemName: item.itemName,
-      itemUnit: item.itemUnit || 'unit',
-      quantityExpected: item.quantityExpected,
-      quantityReceived: item.quantityReceived,
-      unitCost: item.unitCost,
-      lineTotal: item.lineTotal,
-      batchNumber: item.batchNumber,
-      expiryDate: item.expiryDate ? new Date(item.expiryDate) : undefined,
-      manufactureDate: item.manufactureDate ? new Date(item.manufactureDate) : undefined,
-      purchaseOrderItemId: item.purchaseOrderItemId,
-      notes: item.notes,
-    }));
+    const items = itemsWithTotals.map((item) =>
+      this.grnItemRepo.create({
+        goodsReceiptNoteId: (savedGRN as GoodsReceiptNote).id,
+        itemId: item.itemId,
+        itemCode: item.itemCode,
+        itemName: item.itemName,
+        itemUnit: item.itemUnit || 'unit',
+        quantityExpected: item.quantityExpected,
+        quantityReceived: item.quantityReceived,
+        unitCost: item.unitCost,
+        lineTotal: item.lineTotal,
+        batchNumber: item.batchNumber,
+        expiryDate: item.expiryDate ? new Date(item.expiryDate) : undefined,
+        manufactureDate: item.manufactureDate ? new Date(item.manufactureDate) : undefined,
+        purchaseOrderItemId: item.purchaseOrderItemId,
+        notes: item.notes,
+      }),
+    );
 
     await this.grnItemRepo.save(items);
 
     return this.getGoodsReceipt((savedGRN as GoodsReceiptNote).id);
   }
 
-  async createGRNFromPO(purchaseOrderId: string, receivedItems: { itemId: string; quantityReceived: number; batchNumber?: string; expiryDate?: string }[], userId: string, tenantId?: string): Promise<GoodsReceiptNote> {
+  async createGRNFromPO(
+    purchaseOrderId: string,
+    receivedItems: {
+      itemId: string;
+      quantityReceived: number;
+      batchNumber?: string;
+      expiryDate?: string;
+    }[],
+    userId: string,
+    tenantId?: string,
+  ): Promise<GoodsReceiptNote> {
     const po = await this.getPurchaseOrder(purchaseOrderId, tenantId);
     if (![POStatus.SENT, POStatus.PARTIALLY_RECEIVED].includes(po.status)) {
       throw new BadRequestException('PO must be sent or partially received to create GRN');
     }
 
-    const receivedMap = new Map(receivedItems.map(r => [r.itemId, r]));
+    const receivedMap = new Map(receivedItems.map((r) => [r.itemId, r]));
 
     const grnDto: CreateGoodsReceiptDto = {
       facilityId: po.facilityId,
       supplierId: po.supplierId,
       purchaseOrderId: po.id,
       items: po.items
-        .filter(item => receivedMap.has(item.itemId))
-        .map(item => {
+        .filter((item) => receivedMap.has(item.itemId))
+        .map((item) => {
           const received = receivedMap.get(item.itemId)!;
           return {
             itemId: item.itemId,
@@ -706,19 +834,32 @@ export class ProcurementService {
     if (tenantId) where.tenantId = tenantId;
     const grn = await this.grnRepo.findOne({
       where,
-      relations: ['items', 'supplier', 'purchaseOrder', 'receivedBy', 'inspectedBy', 'postedBy', 'facility'],
+      relations: [
+        'items',
+        'supplier',
+        'purchaseOrder',
+        'receivedBy',
+        'inspectedBy',
+        'postedBy',
+        'facility',
+      ],
     });
     if (!grn) throw new NotFoundException('Goods receipt not found');
     return grn;
   }
 
-  async getGoodsReceipts(facilityId: string, options: {
-    status?: GRNStatus;
-    supplierId?: string;
-    startDate?: string;
-    endDate?: string;
-  }, tenantId?: string) {
-    const qb = this.grnRepo.createQueryBuilder('grn')
+  async getGoodsReceipts(
+    facilityId: string,
+    options: {
+      status?: GRNStatus;
+      supplierId?: string;
+      startDate?: string;
+      endDate?: string;
+    },
+    tenantId?: string,
+  ) {
+    const qb = this.grnRepo
+      .createQueryBuilder('grn')
       .leftJoinAndSelect('grn.items', 'items')
       .leftJoinAndSelect('grn.supplier', 'supplier')
       .leftJoinAndSelect('grn.purchaseOrder', 'purchaseOrder')
@@ -755,7 +896,12 @@ export class ProcurementService {
     return qb.orderBy('grn.receivedAt', 'DESC').getMany();
   }
 
-  async inspectGoodsReceipt(id: string, dto: InspectGRNDto, userId: string, tenantId?: string): Promise<GoodsReceiptNote> {
+  async inspectGoodsReceipt(
+    id: string,
+    dto: InspectGRNDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<GoodsReceiptNote> {
     const grn = await this.getGoodsReceipt(id, tenantId);
     if (grn.status !== GRNStatus.DRAFT && grn.status !== GRNStatus.PENDING_INSPECTION) {
       throw new BadRequestException('GRN is not available for inspection');
@@ -763,7 +909,7 @@ export class ProcurementService {
 
     // Update items with inspection results
     for (const inspected of dto.inspectedItems) {
-      const item = grn.items.find(i => i.itemId === inspected.itemId);
+      const item = grn.items.find((i) => i.itemId === inspected.itemId);
       if (item) {
         item.quantityAccepted = inspected.quantityAccepted;
         item.quantityRejected = inspected.quantityRejected;
@@ -784,12 +930,18 @@ export class ProcurementService {
     return this.grnRepo.save(grn);
   }
 
-  async approveGoodsReceipt(id: string, userId: string, tenantId?: string): Promise<GoodsReceiptNote> {
+  async approveGoodsReceipt(
+    id: string,
+    userId: string,
+    tenantId?: string,
+  ): Promise<GoodsReceiptNote> {
     const grn = await this.getGoodsReceipt(id, tenantId);
 
     // Mandatory inspection before approval
     if (grn.status !== GRNStatus.INSPECTED) {
-      throw new BadRequestException('GRN must be inspected before approval. Current status: ' + grn.status);
+      throw new BadRequestException(
+        'GRN must be inspected before approval. Current status: ' + grn.status,
+      );
     }
 
     grn.status = GRNStatus.APPROVED;
@@ -826,7 +978,11 @@ export class ProcurementService {
 
         // Pessimistic lock on stock balance to prevent concurrent updates
         let stockBalance = await stockBalanceRepo.findOne({
-          where: { itemId: item.itemId, facilityId: grn.facilityId, ...(tenantId ? { tenantId } : {}) },
+          where: {
+            itemId: item.itemId,
+            facilityId: grn.facilityId,
+            ...(tenantId ? { tenantId } : {}),
+          },
           lock: { mode: 'pessimistic_write' },
         });
 
@@ -896,10 +1052,14 @@ export class ProcurementService {
             });
             if (category) {
               if (!retailPrice && category.defaultRetailMarkup) {
-                retailPrice = Math.round(unitCost * (1 + Number(category.defaultRetailMarkup) / 100) * 100) / 100;
+                retailPrice =
+                  Math.round(unitCost * (1 + Number(category.defaultRetailMarkup) / 100) * 100) /
+                  100;
               }
               if (!wholesalePrice && category.defaultWholesaleMarkup) {
-                wholesalePrice = Math.round(unitCost * (1 + Number(category.defaultWholesaleMarkup) / 100) * 100) / 100;
+                wholesalePrice =
+                  Math.round(unitCost * (1 + Number(category.defaultWholesaleMarkup) / 100) * 100) /
+                  100;
               }
             }
           }
@@ -928,7 +1088,7 @@ export class ProcurementService {
         if (po) {
           for (const grnItem of grn.items) {
             if (grnItem.purchaseOrderItemId) {
-              const poItem = po.items.find(i => i.id === grnItem.purchaseOrderItemId);
+              const poItem = po.items.find((i) => i.id === grnItem.purchaseOrderItemId);
               if (poItem) {
                 poItem.quantityReceived += grnItem.quantityAccepted ?? grnItem.quantityReceived;
                 await poItemRepo.save(poItem);
@@ -937,7 +1097,7 @@ export class ProcurementService {
           }
 
           // Update PO status
-          const allReceived = po.items.every(i => i.quantityReceived >= i.quantityOrdered);
+          const allReceived = po.items.every((i) => i.quantityReceived >= i.quantityOrdered);
           po.status = allReceived ? POStatus.FULLY_RECEIVED : POStatus.PARTIALLY_RECEIVED;
           await poRepo.save(po);
         }
@@ -950,13 +1110,20 @@ export class ProcurementService {
       const saved = await grnRepo.save(grn);
 
       // Auto-post journal entry: Inventory DR, AP CR (outside transaction is fine — non-critical)
-      this.financeService.autoPostGRNJournal({
-        facilityId: grn.facilityId,
-        grnNumber: grn.grnNumber,
-        totalValue: Number(grn.totalValue) || 0,
-        supplierId: grn.supplierId,
-        userId,
-      }, tenantId).catch(err => this.logger.warn(`GL auto-post failed for GRN ${grn.grnNumber}: ${err.message}`));
+      this.financeService
+        .autoPostGRNJournal(
+          {
+            facilityId: grn.facilityId,
+            grnNumber: grn.grnNumber,
+            totalValue: Number(grn.totalValue) || 0,
+            supplierId: grn.supplierId,
+            userId,
+          },
+          tenantId,
+        )
+        .catch((err) =>
+          this.logger.warn(`GL auto-post failed for GRN ${grn.grnNumber}: ${err.message}`),
+        );
 
       return saved;
     });
@@ -977,31 +1144,38 @@ export class ProcurementService {
     const grnWhere: any = { facilityId };
     if (tenantId) grnWhere.tenantId = tenantId;
 
-    const [
-      pendingPRs,
-      approvedPRs,
-      pendingPOs,
-      sentPOs,
-      pendingGRNs,
-      totalValueToday,
-    ] = await Promise.all([
-      this.prRepo.count({ where: { ...prWhere, status: PRStatus.PENDING_APPROVAL } }),
-      this.prRepo.count({ where: { ...prWhere, status: PRStatus.APPROVED } }),
-      this.poRepo.count({ where: { ...poWhere, status: In([POStatus.DRAFT, POStatus.PENDING_APPROVAL]) } }),
-      this.poRepo.count({ where: { ...poWhere, status: POStatus.SENT } }),
-      this.grnRepo.count({ where: { ...grnWhere, status: In([GRNStatus.DRAFT, GRNStatus.PENDING_INSPECTION, GRNStatus.INSPECTED, GRNStatus.APPROVED]) } }),
-      (() => {
-        const qb = this.grnRepo.createQueryBuilder('grn')
-          .select('SUM(grn.totalValue)', 'total')
-          .where('grn.facilityId = :facilityId', { facilityId })
-          .andWhere('grn.status = :status', { status: GRNStatus.POSTED })
-          .andWhere('grn.postedAt BETWEEN :today AND :tomorrow', { today, tomorrow });
-        if (tenantId) {
-          qb.andWhere('grn.tenant_id = :tenantId', { tenantId });
-        }
-        return qb.getRawOne();
-      })(),
-    ]);
+    const [pendingPRs, approvedPRs, pendingPOs, sentPOs, pendingGRNs, totalValueToday] =
+      await Promise.all([
+        this.prRepo.count({ where: { ...prWhere, status: PRStatus.PENDING_APPROVAL } }),
+        this.prRepo.count({ where: { ...prWhere, status: PRStatus.APPROVED } }),
+        this.poRepo.count({
+          where: { ...poWhere, status: In([POStatus.DRAFT, POStatus.PENDING_APPROVAL]) },
+        }),
+        this.poRepo.count({ where: { ...poWhere, status: POStatus.SENT } }),
+        this.grnRepo.count({
+          where: {
+            ...grnWhere,
+            status: In([
+              GRNStatus.DRAFT,
+              GRNStatus.PENDING_INSPECTION,
+              GRNStatus.INSPECTED,
+              GRNStatus.APPROVED,
+            ]),
+          },
+        }),
+        (() => {
+          const qb = this.grnRepo
+            .createQueryBuilder('grn')
+            .select('SUM(grn.totalValue)', 'total')
+            .where('grn.facilityId = :facilityId', { facilityId })
+            .andWhere('grn.status = :status', { status: GRNStatus.POSTED })
+            .andWhere('grn.postedAt BETWEEN :today AND :tomorrow', { today, tomorrow });
+          if (tenantId) {
+            qb.andWhere('grn.tenant_id = :tenantId', { tenantId });
+          }
+          return qb.getRawOne();
+        })(),
+      ]);
 
     return {
       pendingPRs,

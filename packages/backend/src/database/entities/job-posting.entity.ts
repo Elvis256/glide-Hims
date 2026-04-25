@@ -56,7 +56,12 @@ export class JobPosting {
   @Column({ type: 'text', nullable: true })
   responsibilities: string;
 
-  @Column({ type: 'enum', enum: EmploymentType, default: EmploymentType.FULL_TIME, name: 'employment_type' })
+  @Column({
+    type: 'enum',
+    enum: EmploymentType,
+    default: EmploymentType.FULL_TIME,
+    name: 'employment_type',
+  })
   employmentType: EmploymentType;
 
   @Column({ type: 'decimal', precision: 12, scale: 2, nullable: true, name: 'salary_min' })

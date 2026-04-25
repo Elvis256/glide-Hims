@@ -30,8 +30,14 @@ export enum ProviderStatus {
 }
 
 @Entity('providers')
-@Index(['licenseNumber'], { unique: true, where: 'deleted_at IS NULL AND license_number IS NOT NULL' })
-@Index(['registrationNumber'], { unique: true, where: 'deleted_at IS NULL AND registration_number IS NOT NULL' })
+@Index(['licenseNumber'], {
+  unique: true,
+  where: 'deleted_at IS NULL AND license_number IS NOT NULL',
+})
+@Index(['registrationNumber'], {
+  unique: true,
+  where: 'deleted_at IS NULL AND registration_number IS NOT NULL',
+})
 export class Provider extends BaseEntity {
   @Column({ type: 'uuid', nullable: true, name: 'user_id' })
   userId?: string;

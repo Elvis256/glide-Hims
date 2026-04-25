@@ -5,13 +5,13 @@ import { AxiosResponse } from 'axios';
 
 /**
  * openFDA API Service
- * 
+ *
  * Provides access to US FDA drug database for:
  * - Drug labels (dosage, warnings, contraindications)
  * - Adverse events (reported side effects)
  * - Drug recalls
  * - Drug interactions checking
- * 
+ *
  * API Documentation: https://open.fda.gov/apis/
  * Rate Limit: 240 requests/minute without API key, 120,000/day with key
  */
@@ -141,7 +141,7 @@ export class OpenFDAService {
         const labels = await this.searchDrugs(drug, 1);
         if (labels.length > 0 && labels[0].drugInteractions) {
           const interactionText = labels[0].drugInteractions.toLowerCase();
-          
+
           for (const otherDrug of drugNames) {
             if (otherDrug !== drug && interactionText.includes(otherDrug.toLowerCase())) {
               interactions.push({
@@ -185,11 +185,21 @@ export class OpenFDAService {
         seriousnessHospitalization: r.seriousnesshospitalization === '1',
         seriousnessDeath: r.seriousnessdeath === '1',
         patientAge: r.patient?.patientonsetage,
-        patientSex: r.patient?.patientsex === '1' ? 'Male' : r.patient?.patientsex === '2' ? 'Female' : undefined,
+        patientSex:
+          r.patient?.patientsex === '1'
+            ? 'Male'
+            : r.patient?.patientsex === '2'
+              ? 'Female'
+              : undefined,
         reactions: (r.patient?.reaction || []).map((rx: any) => rx.reactionmeddrapt),
         drugs: (r.patient?.drug || []).map((d: any) => ({
           name: d.medicinalproduct,
-          role: d.drugcharacterization === '1' ? 'Suspect' : d.drugcharacterization === '2' ? 'Concomitant' : 'Unknown',
+          role:
+            d.drugcharacterization === '1'
+              ? 'Suspect'
+              : d.drugcharacterization === '2'
+                ? 'Concomitant'
+                : 'Unknown',
         })),
       }));
     } catch (error: any) {
@@ -279,18 +289,30 @@ export class OpenFDAService {
 
   private cleanText(text?: string): string {
     if (!text) return '';
-    return text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().substring(0, 2000);
+    return text
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .substring(0, 2000);
   }
 
   private estimateSeverity(text: string, drug: string): 'low' | 'moderate' | 'high' {
     const lowerText = text.toLowerCase();
     const drugLower = drug.toLowerCase();
-    
+
     // Look for severity indicators near the drug mention
     const idx = lowerText.indexOf(drugLower);
-    const context = lowerText.substring(Math.max(0, idx - 200), Math.min(lowerText.length, idx + 200));
-    
-    if (context.includes('contraindicated') || context.includes('fatal') || context.includes('death') || context.includes('serious')) {
+    const context = lowerText.substring(
+      Math.max(0, idx - 200),
+      Math.min(lowerText.length, idx + 200),
+    );
+
+    if (
+      context.includes('contraindicated') ||
+      context.includes('fatal') ||
+      context.includes('death') ||
+      context.includes('serious')
+    ) {
       return 'high';
     }
     if (context.includes('caution') || context.includes('monitor') || context.includes('adjust')) {

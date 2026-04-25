@@ -3,11 +3,18 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { BillingService } from '../billing.service';
-import { Invoice, InvoiceItem, Payment, InvoiceStatus } from '../../../database/entities/invoice.entity';
+import {
+  Invoice,
+  InvoiceItem,
+  Payment,
+  InvoiceStatus,
+} from '../../../database/entities/invoice.entity';
 import { Encounter } from '../../../database/entities/encounter.entity';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { SystemSettingsService } from '../../system-settings/system-settings.service';
 import { FinanceService } from '../../finance/finance.service';
+import { PricingEngineService } from '../../pricing-engine/pricing-engine.service';
+import { CoverageCheckService } from '../../insurance/coverage-check.service';
 
 // Helper to create a mock QueryBuilder
 function createMockQueryBuilder(result: any = null) {
@@ -27,11 +34,19 @@ function createMockQueryBuilder(result: any = null) {
 
 // Mock transaction manager
 function createMockManager(overrides: Record<string, jest.Mock> = {}) {
+  const repo = { createQueryBuilder: jest.fn(() => createMockQueryBuilder(null)) };
   return {
     findOne: jest.fn(),
+    find: jest.fn().mockResolvedValue([]),
     create: jest.fn((entity: any, data: any) => ({ ...data })),
-    save: jest.fn((entity: any, data: any) => Promise.resolve({ id: 'new-id', ...data })),
+    save: jest.fn((entityOrData: any, maybeData?: any) => {
+      const data = maybeData === undefined ? entityOrData : maybeData;
+      return Promise.resolve({ id: data?.id || 'new-id', ...data });
+    }),
     update: jest.fn().mockResolvedValue({}),
+    query: jest.fn().mockResolvedValue([]),
+    createQueryBuilder: jest.fn(() => createMockQueryBuilder(null)),
+    getRepository: jest.fn(() => repo),
     ...overrides,
   };
 }
@@ -73,6 +88,14 @@ const mockFinanceService = {
   autoPostPatientPaymentJournal: jest.fn().mockResolvedValue({}),
 };
 
+const mockPricingEngineService = {
+  calculatePricing: jest.fn(),
+};
+
+const mockCoverageCheckService = {
+  checkCoverage: jest.fn(),
+};
+
 const mockDataSource = {
   transaction: jest.fn(),
 };
@@ -92,11 +115,14 @@ describe('BillingService', () => {
         { provide: NotificationsService, useValue: mockNotificationsService },
         { provide: SystemSettingsService, useValue: mockSettingsService },
         { provide: FinanceService, useValue: mockFinanceService },
+        { provide: PricingEngineService, useValue: mockPricingEngineService },
+        { provide: CoverageCheckService, useValue: mockCoverageCheckService },
       ],
     }).compile();
 
     service = module.get<BillingService>(BillingService);
     jest.clearAllMocks();
+    mockDataSource.transaction.mockImplementation(async (cb: any) => cb(createMockManager()));
   });
 
   describe('createInvoice', () => {
@@ -121,7 +147,9 @@ describe('BillingService', () => {
       const qb = createMockQueryBuilder(null);
       mockInvoiceRepo.createQueryBuilder.mockReturnValue(qb);
       mockInvoiceRepo.create.mockImplementation((data: any) => ({ id: 'inv-1', ...data }));
-      mockInvoiceRepo.save.mockImplementation((data: any) => Promise.resolve({ id: 'inv-1', ...data }));
+      mockInvoiceRepo.save.mockImplementation((data: any) =>
+        Promise.resolve({ id: 'inv-1', ...data }),
+      );
       mockInvoiceRepo.findOne.mockResolvedValue({
         id: 'inv-1',
         invoiceNumber: 'INV202401010001',
@@ -164,7 +192,9 @@ describe('BillingService', () => {
       const qb = createMockQueryBuilder(null);
       mockInvoiceRepo.createQueryBuilder.mockReturnValue(qb);
       mockInvoiceRepo.create.mockImplementation((data: any) => ({ id: 'inv-2', ...data }));
-      mockInvoiceRepo.save.mockImplementation((data: any) => Promise.resolve({ id: 'inv-2', ...data }));
+      mockInvoiceRepo.save.mockImplementation((data: any) =>
+        Promise.resolve({ id: 'inv-2', ...data }),
+      );
       mockInvoiceRepo.findOne.mockResolvedValue({
         id: 'inv-2',
         subtotal: 300,
@@ -199,9 +229,13 @@ describe('BillingService', () => {
 
       mockManager.findOne
         .mockResolvedValueOnce(invoice) // Lock invoice
-        .mockResolvedValueOnce(null)    // Queue lookup
-        .mockResolvedValueOnce(null)    // Encounter lookup
-        .mockResolvedValueOnce({ ...invoice, patient: { fullName: 'Test' }, encounter: { facilityId: 'f1' } }); // Full invoice
+        .mockResolvedValueOnce(null) // Queue lookup
+        .mockResolvedValueOnce(null) // Encounter lookup
+        .mockResolvedValueOnce({
+          ...invoice,
+          patient: { fullName: 'Test' },
+          encounter: { facilityId: 'f1' },
+        }); // Full invoice
 
       const qb = createMockQueryBuilder(null);
       mockPaymentRepo.createQueryBuilder.mockReturnValue(qb);
@@ -213,9 +247,7 @@ describe('BillingService', () => {
 
       expect(result).toBeDefined();
       // Verify the invoice was updated to PAID
-      const updateCall = mockManager.update.mock.calls.find(
-        (c: any) => c[0] === Invoice,
-      );
+      const updateCall = mockManager.update.mock.calls.find((c: any) => c[0] === Invoice);
       expect(updateCall).toBeDefined();
       expect(updateCall![2].status).toBe(InvoiceStatus.PAID);
       expect(updateCall![2].balanceDue).toBe(0);
@@ -244,9 +276,7 @@ describe('BillingService', () => {
       const dto = { invoiceId: 'inv-1', amount: 80, method: 'cash' };
       await service.recordPayment(dto as any, 'user-1');
 
-      const updateCall = mockManager.update.mock.calls.find(
-        (c: any) => c[0] === Invoice,
-      );
+      const updateCall = mockManager.update.mock.calls.find((c: any) => c[0] === Invoice);
       expect(updateCall).toBeDefined();
       expect(updateCall![2].status).toBe(InvoiceStatus.PARTIALLY_PAID);
       expect(updateCall![2].amountPaid).toBe(80);
@@ -268,9 +298,9 @@ describe('BillingService', () => {
 
       const dto = { invoiceId: 'inv-1', amount: 75, method: 'cash' };
 
-      await expect(
-        service.recordPayment(dto as any, 'user-1'),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.recordPayment(dto as any, 'user-1')).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('should throw NotFoundException when invoice not found', async () => {
@@ -280,9 +310,7 @@ describe('BillingService', () => {
 
       const dto = { invoiceId: 'nonexistent', amount: 100, method: 'cash' };
 
-      await expect(
-        service.recordPayment(dto as any, 'user-1'),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.recordPayment(dto as any, 'user-1')).rejects.toThrow(NotFoundException);
     });
 
     it('should throw BadRequestException when invoice is already fully paid', async () => {
@@ -300,9 +328,9 @@ describe('BillingService', () => {
 
       const dto = { invoiceId: 'inv-1', amount: 10, method: 'cash' };
 
-      await expect(
-        service.recordPayment(dto as any, 'user-1'),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.recordPayment(dto as any, 'user-1')).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 
@@ -319,9 +347,7 @@ describe('BillingService', () => {
     it('should throw NotFoundException when invoice not found', async () => {
       mockInvoiceRepo.findOne.mockResolvedValueOnce(null);
 
-      await expect(service.findInvoice('nonexistent')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.findInvoice('nonexistent')).rejects.toThrow(NotFoundException);
     });
   });
 });

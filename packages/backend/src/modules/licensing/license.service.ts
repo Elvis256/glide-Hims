@@ -51,7 +51,7 @@ export class LicenseService implements OnModuleInit {
 
   async onModuleInit() {
     const deploymentMode = this.configService.get<string>('DEPLOYMENT_MODE');
-    
+
     if (deploymentMode === 'on-premise') {
       const licenseKey = this.configService.get<string>('LICENSE_KEY');
       if (licenseKey) {
@@ -104,8 +104,10 @@ export class LicenseService implements OnModuleInit {
     // Check cache first
     if (this.cachedLicense && this.lastValidation) {
       const hoursSinceValidation = (Date.now() - this.lastValidation.getTime()) / (1000 * 60 * 60);
-      if (hoursSinceValidation < this.VALIDATION_CACHE_HOURS && 
-          this.cachedLicense.licenseKey === licenseKey) {
+      if (
+        hoursSinceValidation < this.VALIDATION_CACHE_HOURS &&
+        this.cachedLicense.licenseKey === licenseKey
+      ) {
         return this.buildValidationResult(this.cachedLicense);
       }
     }
@@ -153,7 +155,9 @@ export class LicenseService implements OnModuleInit {
    */
   private buildValidationResult(license: License): LicenseValidationResult {
     const warnings: string[] = [];
-    const daysUntilExpiry = Math.ceil((license.expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    const daysUntilExpiry = Math.ceil(
+      (license.expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24),
+    );
 
     if (daysUntilExpiry <= 30) {
       warnings.push(`License expires in ${daysUntilExpiry} days`);
@@ -305,11 +309,11 @@ export class LicenseService implements OnModuleInit {
 
     this.logger.log('Running periodic license check...');
     const result = await this.validateLicense(licenseKey);
-    
+
     if (!result.valid) {
       this.logger.error(`License validation failed: ${result.error}`);
     } else if (result.warnings) {
-      result.warnings.forEach(w => this.logger.warn(w));
+      result.warnings.forEach((w) => this.logger.warn(w));
     }
   }
 
@@ -319,7 +323,7 @@ export class LicenseService implements OnModuleInit {
     const timestamp = Date.now().toString(36);
     const random = crypto.randomBytes(16).toString('hex');
     const typeCode = dto.licenseType[0].toUpperCase();
-    
+
     // Format: GLIDE-XXXX-XXXX-XXXX-TYPE
     const raw = `${timestamp}${random}`.toUpperCase();
     const parts = [
@@ -342,10 +346,7 @@ export class LicenseService implements OnModuleInit {
       facilities: dto.maxFacilities,
     });
 
-    return crypto
-      .createHmac('sha256', this.secretKey)
-      .update(payload)
-      .digest('hex');
+    return crypto.createHmac('sha256', this.secretKey).update(payload).digest('hex');
   }
 
   private verifySignature(license: License): boolean {
@@ -364,15 +365,12 @@ export class LicenseService implements OnModuleInit {
       .update(payload)
       .digest('hex');
 
-    return crypto.timingSafeEqual(
-      Buffer.from(license.signature),
-      Buffer.from(expectedSignature),
-    );
+    return crypto.timingSafeEqual(Buffer.from(license.signature), Buffer.from(expectedSignature));
   }
 
   private async recordValidationFailure(license: License) {
     license.validationFailures++;
-    
+
     // Auto-suspend after 10 failures
     if (license.validationFailures >= 10) {
       license.status = 'suspended';
@@ -384,7 +382,7 @@ export class LicenseService implements OnModuleInit {
 
   private getDefaultModules(licenseType: string): string[] {
     const base = ['patients', 'encounters', 'billing', 'reports'];
-    
+
     switch (licenseType) {
       case 'trial':
         return base;
@@ -393,8 +391,19 @@ export class LicenseService implements OnModuleInit {
       case 'professional':
         return [...base, 'pharmacy', 'lab', 'inventory', 'radiology', 'ipd', 'surgery'];
       case 'enterprise':
-        return [...base, 'pharmacy', 'lab', 'inventory', 'radiology', 'ipd', 'surgery', 
-                'hr', 'finance', 'analytics', 'integrations'];
+        return [
+          ...base,
+          'pharmacy',
+          'lab',
+          'inventory',
+          'radiology',
+          'ipd',
+          'surgery',
+          'hr',
+          'finance',
+          'analytics',
+          'integrations',
+        ];
       default:
         return base;
     }
@@ -413,12 +422,25 @@ export class LicenseService implements OnModuleInit {
       case 'standard':
         return { ...base, custom_reports: true, sms_notifications: true };
       case 'professional':
-        return { ...base, custom_reports: true, sms_notifications: true, 
-                 api_access: true, multi_facility: true };
+        return {
+          ...base,
+          custom_reports: true,
+          sms_notifications: true,
+          api_access: true,
+          multi_facility: true,
+        };
       case 'enterprise':
-        return { ...base, custom_reports: true, sms_notifications: true,
-                 api_access: true, multi_facility: true, white_label: true,
-                 sso: true, audit_logs: true, priority_support: true };
+        return {
+          ...base,
+          custom_reports: true,
+          sms_notifications: true,
+          api_access: true,
+          multi_facility: true,
+          white_label: true,
+          sso: true,
+          audit_logs: true,
+          priority_support: true,
+        };
       default:
         return base;
     }

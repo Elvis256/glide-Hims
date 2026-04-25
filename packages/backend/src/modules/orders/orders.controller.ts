@@ -1,18 +1,18 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Body,
-  Param,
-  Query,
-  Request,
-} from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param, Query, Request, UseGuards } from '@nestjs/common';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { OrdersService } from './orders.service';
-import { CreateOrderDto, UpdateOrderStatusDto, SubmitLabResultsDto, SubmitRadiologyReportDto } from './dto/orders.dto';
+import {
+  CreateOrderDto,
+  UpdateOrderStatusDto,
+  SubmitLabResultsDto,
+  SubmitRadiologyReportDto,
+} from './dto/orders.dto';
 import { OrderType, OrderStatus, OrderPriority } from '../../database/entities/order.entity';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
+@UseGuards(ModuleGuard)
+@RequireModule('doctors')
 @Controller('orders')
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
@@ -105,30 +105,19 @@ export class OrdersController {
 
   @Post(':id/complete')
   @AuthWithPermissions('orders.update')
-  async completeOrder(
-    @Param('id') id: string,
-    @Body() resultData: any,
-    @Request() req: any,
-  ) {
+  async completeOrder(@Param('id') id: string, @Body() resultData: any, @Request() req: any) {
     return this.ordersService.completeOrder(id, resultData, req.user.id, req.user?.tenantId);
   }
 
   @Post(':id/cancel')
   @AuthWithPermissions('orders.update')
-  async cancelOrder(
-    @Param('id') id: string,
-    @Body('reason') reason: string,
-    @Request() req: any,
-  ) {
+  async cancelOrder(@Param('id') id: string, @Body('reason') reason: string, @Request() req: any) {
     return this.ordersService.cancelOrder(id, reason, req.user.id, req.user?.tenantId);
   }
 
   @Post(':id/review')
   @AuthWithPermissions('orders.read')
-  async reviewOrder(
-    @Param('id') id: string,
-    @Request() req: any,
-  ) {
+  async reviewOrder(@Param('id') id: string, @Request() req: any) {
     return this.ordersService.reviewOrder(id, req.user.id, req.user?.tenantId);
   }
 

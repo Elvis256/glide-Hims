@@ -48,7 +48,10 @@ export enum AssetCondition {
 
 @Entity('fixed_assets')
 @Index(['assetCode'], { unique: true, where: 'deleted_at IS NULL' })
-@Index(['serialNumber'], { unique: true, where: 'deleted_at IS NULL AND serial_number IS NOT NULL' })
+@Index(['serialNumber'], {
+  unique: true,
+  where: 'deleted_at IS NULL AND serial_number IS NOT NULL',
+})
 export class FixedAsset extends BaseEntity {
   @Column({ type: 'uuid', name: 'facility_id' })
   facilityId: string;
@@ -129,13 +132,25 @@ export class FixedAsset extends BaseEntity {
   @Column({ type: 'date', name: 'depreciation_start_date' })
   depreciationStartDate: Date;
 
-  @Column({ type: 'decimal', precision: 15, scale: 2, default: 0, name: 'accumulated_depreciation' })
+  @Column({
+    type: 'decimal',
+    precision: 15,
+    scale: 2,
+    default: 0,
+    name: 'accumulated_depreciation',
+  })
   accumulatedDepreciation: number;
 
   @Column({ type: 'decimal', precision: 15, scale: 2, name: 'book_value' })
   bookValue: number;
 
-  @Column({ type: 'decimal', precision: 15, scale: 2, nullable: true, name: 'current_market_value' })
+  @Column({
+    type: 'decimal',
+    precision: 15,
+    scale: 2,
+    nullable: true,
+    name: 'current_market_value',
+  })
   currentMarketValue?: number;
 
   @Column({ type: 'date', nullable: true, name: 'last_valuation_date' })
@@ -207,13 +222,13 @@ export class FixedAsset extends BaseEntity {
   @Column({ type: 'text', nullable: true })
   notes?: string;
 
-  @OneToMany(() => AssetDepreciation, dep => dep.asset)
+  @OneToMany(() => AssetDepreciation, (dep) => dep.asset)
   depreciationRecords: AssetDepreciation[];
 
-  @OneToMany(() => AssetMaintenance, maint => maint.asset)
+  @OneToMany(() => AssetMaintenance, (maint) => maint.asset)
   maintenanceRecords: AssetMaintenance[];
 
-  @OneToMany(() => AssetTransfer, transfer => transfer.asset)
+  @OneToMany(() => AssetTransfer, (transfer) => transfer.asset)
   transferHistory: AssetTransfer[];
 }
 
@@ -223,7 +238,7 @@ export class AssetDepreciation extends BaseEntity {
   @Column({ type: 'uuid', name: 'asset_id' })
   assetId: string;
 
-  @ManyToOne(() => FixedAsset, asset => asset.depreciationRecords)
+  @ManyToOne(() => FixedAsset, (asset) => asset.depreciationRecords)
   @JoinColumn({ name: 'asset_id' })
   asset: FixedAsset;
 
@@ -263,7 +278,7 @@ export class AssetMaintenance extends BaseEntity {
   @Column({ type: 'uuid', name: 'asset_id' })
   assetId: string;
 
-  @ManyToOne(() => FixedAsset, asset => asset.maintenanceRecords)
+  @ManyToOne(() => FixedAsset, (asset) => asset.maintenanceRecords)
   @JoinColumn({ name: 'asset_id' })
   asset: FixedAsset;
 
@@ -306,7 +321,7 @@ export class AssetTransfer extends BaseEntity {
   @Column({ type: 'uuid', name: 'asset_id' })
   assetId: string;
 
-  @ManyToOne(() => FixedAsset, asset => asset.transferHistory)
+  @ManyToOne(() => FixedAsset, (asset) => asset.transferHistory)
   @JoinColumn({ name: 'asset_id' })
   asset: FixedAsset;
 

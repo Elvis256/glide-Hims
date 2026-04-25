@@ -1,10 +1,4 @@
-import {
-  Entity,
-  Column,
-  ManyToOne,
-  JoinColumn,
-  Index,
-} from 'typeorm';
+import { Entity, Column, ManyToOne, JoinColumn, Index } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Patient } from './patient.entity';
 import { Facility } from './facility.entity';
@@ -12,10 +6,10 @@ import { User } from './user.entity';
 import { Encounter } from './encounter.entity';
 
 export enum ReferralType {
-  INTERNAL = 'internal',      // Within same facility
-  EXTERNAL = 'external',      // To another facility
-  SELF = 'self',              // Patient self-referred
-  COMMUNITY = 'community',    // From VHT/community health worker
+  INTERNAL = 'internal', // Within same facility
+  EXTERNAL = 'external', // To another facility
+  SELF = 'self', // Patient self-referred
+  COMMUNITY = 'community', // From VHT/community health worker
 }
 
 export enum ReferralStatus {

@@ -1,11 +1,32 @@
-import { Controller, Post, Body, Get, Patch, Delete, HttpCode, HttpStatus, UseGuards, Req, Res, Query, Param, ParseUUIDPipe } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  Get,
+  Patch,
+  Delete,
+  HttpCode,
+  HttpStatus,
+  UseGuards,
+  Req,
+  Res,
+  Query,
+  Param,
+  ParseUUIDPipe,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { SessionService } from './session.service';
-import { LoginDto, RefreshTokenDto, AuthResponseDto, ChangePasswordDto, UpdateProfileDto } from './dto/auth.dto';
+import {
+  LoginDto,
+  RefreshTokenDto,
+  AuthResponseDto,
+  ChangePasswordDto,
+  UpdateProfileDto,
+} from './dto/auth.dto';
 import { Auth } from './decorators/auth.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { Public } from './decorators/public.decorator';
@@ -25,7 +46,12 @@ export class AuthController {
     this.isProduction = configService.get('NODE_ENV') === 'production';
   }
 
-  private setAuthCookies(res: Response, accessToken: string, refreshToken: string, expiresIn: number) {
+  private setAuthCookies(
+    res: Response,
+    accessToken: string,
+    refreshToken: string,
+    expiresIn: number,
+  ) {
     const cookieOptions = {
       httpOnly: true,
       secure: this.isProduction,
@@ -60,7 +86,11 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Login successful', type: AuthResponseDto })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   @ApiResponse({ status: 429, description: 'Too many login attempts' })
-  async login(@Body() loginDto: LoginDto, @Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<AuthResponseDto> {
+  async login(
+    @Body() loginDto: LoginDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AuthResponseDto> {
     const ip = this.getClientIp(req);
     const userAgent = req.headers['user-agent'] || undefined;
     const result = await this.authService.login(loginDto, ip, userAgent);
@@ -83,7 +113,11 @@ export class AuthController {
   @ApiOperation({ summary: 'Refresh access token' })
   @ApiResponse({ status: 200, description: 'Token refreshed', type: AuthResponseDto })
   @ApiResponse({ status: 401, description: 'Invalid refresh token' })
-  async refreshToken(@Body() dto: RefreshTokenDto, @Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<AuthResponseDto> {
+  async refreshToken(
+    @Body() dto: RefreshTokenDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AuthResponseDto> {
     // Prefer cookie-based refresh token, fall back to body for backward compat
     const token = req.cookies?.refreshToken || dto.refreshToken;
     const ipAddress = (req as any).ip || req.headers['x-forwarded-for']?.toString();
@@ -139,23 +173,31 @@ export class AuthController {
   @Auth()
   @ApiOperation({ summary: 'Update current user profile (self-service)' })
   @ApiResponse({ status: 200, description: 'Profile updated successfully' })
-  async updateProfile(
-    @CurrentUser('id') userId: string,
-    @Body() dto: UpdateProfileDto,
-  ) {
+  async updateProfile(@CurrentUser('id') userId: string, @Body() dto: UpdateProfileDto) {
     const user = await this.authService.updateProfile(userId, dto);
-    return { message: 'Profile updated successfully', data: { id: user.id, email: user.email, phone: user.phone, address: user.address, emergencyContactName: user.emergencyContactName, emergencyContactPhone: user.emergencyContactPhone } };
+    return {
+      message: 'Profile updated successfully',
+      data: {
+        id: user.id,
+        email: user.email,
+        phone: user.phone,
+        address: user.address,
+        emergencyContactName: user.emergencyContactName,
+        emergencyContactPhone: user.emergencyContactPhone,
+      },
+    };
   }
 
   @Get('login-history')
   @Auth()
   @ApiOperation({ summary: 'Get own login history' })
   @ApiResponse({ status: 200, description: 'Login history' })
-  @ApiQuery({ name: 'limit', required: false, description: 'Number of records to return (default 50)' })
-  async getLoginHistory(
-    @CurrentUser('id') userId: string,
-    @Query('limit') limit?: number,
-  ) {
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    description: 'Number of records to return (default 50)',
+  })
+  async getLoginHistory(@CurrentUser('id') userId: string, @Query('limit') limit?: number) {
     const history = await this.authService.getLoginHistory(userId, limit || 50);
     return { data: history };
   }
@@ -176,10 +218,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Verify MFA code and enable MFA' })
   @ApiResponse({ status: 200, description: 'MFA enabled successfully' })
-  async verifyMfa(
-    @CurrentUser('id') userId: string,
-    @Body('code') code: string,
-  ) {
+  async verifyMfa(@CurrentUser('id') userId: string, @Body('code') code: string) {
     return this.authService.verifyAndEnableMfa(userId, code);
   }
 
@@ -189,10 +228,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Disable MFA for current user' })
   @ApiResponse({ status: 200, description: 'MFA disabled successfully' })
-  async disableMfa(
-    @CurrentUser('id') userId: string,
-    @Body('password') password: string,
-  ) {
+  async disableMfa(@CurrentUser('id') userId: string, @Body('password') password: string) {
     return this.authService.disableMfa(userId, password);
   }
 
@@ -215,10 +251,7 @@ export class AuthController {
   @ApiOperation({ summary: 'Revoke a specific session' })
   @ApiParam({ name: 'id', description: 'Session ID to revoke' })
   @ApiResponse({ status: 200, description: 'Session revoked' })
-  async revokeSession(
-    @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser('id') userId: string,
-  ) {
+  async revokeSession(@Param('id', ParseUUIDPipe) id: string, @CurrentUser('id') userId: string) {
     await this.sessionService.revokeSession(id, userId);
     return { message: 'Session revoked' };
   }
@@ -233,6 +266,33 @@ export class AuthController {
     return { message: 'All other sessions revoked' };
   }
 
+  @Post('enter-tenant')
+  @Auth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'System admin: enter a tenant organization context' })
+  @ApiResponse({
+    status: 200,
+    description: 'Tenant context entered successfully',
+    type: AuthResponseDto,
+  })
+  @ApiResponse({ status: 403, description: 'Not a system admin or no access grant' })
+  async enterTenant(
+    @Body('tenantId', ParseUUIDPipe) tenantId: string,
+    @CurrentUser() user: any,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AuthResponseDto> {
+    const ip = this.getClientIp(req);
+    const userAgent = req.headers['user-agent'] || undefined;
+    const result = await this.authService.enterTenant(user.id, tenantId, ip, userAgent);
+    this.setAuthCookies(res, result.accessToken, result.refreshToken, result.expiresIn);
+    return {
+      ...result,
+      accessToken: undefined,
+      refreshToken: undefined,
+    } as any as AuthResponseDto;
+  }
+
   @Post('admin/unlock/:userId')
   @Auth('Administrator')
   @HttpCode(HttpStatus.OK)
@@ -241,10 +301,7 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Account unlocked successfully' })
   @ApiResponse({ status: 404, description: 'User not found' })
   @ApiResponse({ status: 403, description: 'Admin role required' })
-  async unlockAccount(
-    @CurrentUser('id') adminUserId: string,
-    @Param('userId') userId: string,
-  ) {
+  async unlockAccount(@CurrentUser('id') adminUserId: string, @Param('userId') userId: string) {
     return this.authService.unlockAccount(userId, adminUserId);
   }
 
@@ -255,9 +312,7 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Account lockout status' })
   @ApiResponse({ status: 404, description: 'User not found' })
   @ApiResponse({ status: 403, description: 'Admin role required' })
-  async getAccountLockoutStatus(
-    @Param('userId') userId: string,
-  ) {
+  async getAccountLockoutStatus(@Param('userId') userId: string) {
     return this.authService.getAccountLockoutStatus(userId);
   }
 
@@ -267,10 +322,7 @@ export class AuthController {
   @ApiOperation({ summary: 'Admin: Unblock a rate-limited IP address' })
   @ApiResponse({ status: 200, description: 'IP unblocked successfully' })
   @ApiResponse({ status: 403, description: 'Admin role required' })
-  async unblockIp(
-    @CurrentUser('id') adminUserId: string,
-    @Body('ip') ip: string,
-  ) {
+  async unblockIp(@CurrentUser('id') adminUserId: string, @Body('ip') ip: string) {
     await this.rateLimitGuard.unblockIp(ip);
     return { message: `IP ${ip} has been unblocked` };
   }

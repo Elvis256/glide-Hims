@@ -12,12 +12,16 @@ import {
   Menu,
   X,
   ChevronRight,
+  LifeBuoy,
+  ClipboardCheck,
 } from 'lucide-react';
 
 const sidebarItems = [
   { name: 'Dashboard', href: '/system', icon: LayoutDashboard },
   { name: 'Organizations', href: '/system/tenants', icon: Building2 },
   { name: 'System Users', href: '/system/users', icon: Users },
+  { name: 'Support Requests', href: '/system/support-requests', icon: LifeBuoy },
+  { name: 'Compliance Center', href: '/system/compliance', icon: ClipboardCheck },
   { name: 'Settings', href: '/system/settings', icon: Settings },
 ];
 

@@ -6,7 +6,8 @@ import {
   UpdateDateColumn,
   ManyToOne,
   JoinColumn,
-  OneToMany, Index,
+  OneToMany,
+  Index,
 } from 'typeorm';
 import { AntenatalRegistration } from './antenatal-registration.entity';
 import { Facility } from './facility.entity';

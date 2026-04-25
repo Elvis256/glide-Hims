@@ -48,7 +48,8 @@ export class PhoneHomeService {
     private readonly versionRepository: Repository<AppVersion>,
     private readonly configService: ConfigService,
   ) {
-    this.phoneHomeUrl = this.configService.get<string>('PHONE_HOME_URL') || 
+    this.phoneHomeUrl =
+      this.configService.get<string>('PHONE_HOME_URL') ||
       'https://hmisdemo.itsolutionsuganda.com/api/phone-home';
     this.enabled = this.configService.get<string>('PHONE_HOME_ENABLED') !== 'false';
   }
@@ -75,9 +76,9 @@ export class PhoneHomeService {
     } catch (error) {
       this.logger.warn(`Phone home failed: ${error.message}`);
       // Graceful degradation - don't fail if phone home is unreachable
-      return { 
-        status: 'warning', 
-        licenseValid: true, 
+      return {
+        status: 'warning',
+        licenseValid: true,
         message: 'Phone home server unreachable',
       };
     }
@@ -126,13 +127,13 @@ export class PhoneHomeService {
 
     // Check for updates
     const latestVersion = await this.getLatestVersion();
-    const updateAvailable = latestVersion 
+    const updateAvailable = latestVersion
       ? this.compareVersions(payload.appVersion, latestVersion.version) < 0
       : false;
 
     // Calculate expiry warning
     const daysUntilExpiry = Math.ceil(
-      (license.expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+      (license.expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24),
     );
 
     const response: PhoneHomeResponse = {
@@ -203,8 +204,8 @@ export class PhoneHomeService {
       this.licenseRepository
         .createQueryBuilder('l')
         .where('l.status = :status', { status: 'active' })
-        .andWhere('l.expires_at <= :date', { 
-          date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) 
+        .andWhere('l.expires_at <= :date', {
+          date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         })
         .getCount(),
     ]);
@@ -253,7 +254,7 @@ export class PhoneHomeService {
     };
 
     const response = await this.sendHeartbeat(payload);
-    
+
     if (response.updateAvailable) {
       this.logger.log(`Update available: ${response.latestVersion}`);
     }

@@ -1,4 +1,16 @@
-import { IsString, IsOptional, IsUUID, IsNumber, IsEnum, IsDateString, IsObject, Min, Max, ValidateNested, IsArray } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsUUID,
+  IsNumber,
+  IsEnum,
+  IsDateString,
+  IsObject,
+  Min,
+  Max,
+  ValidateNested,
+  IsArray,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { WardType, WardStatus } from '../../../database/entities/ward.entity';
 import { BedType, BedStatus } from '../../../database/entities/bed.entity';

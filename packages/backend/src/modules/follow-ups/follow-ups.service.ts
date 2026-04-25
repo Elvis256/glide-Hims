@@ -1,8 +1,18 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, LessThan, MoreThanOrEqual } from 'typeorm';
-import { FollowUp, FollowUpStatus, FollowUpPriority } from '../../database/entities/follow-up.entity';
-import { CreateFollowUpDto, RescheduleFollowUpDto, CompleteFollowUpDto, CancelFollowUpDto, FollowUpFilterDto } from './dto/follow-up.dto';
+import {
+  FollowUp,
+  FollowUpStatus,
+  FollowUpPriority,
+} from '../../database/entities/follow-up.entity';
+import {
+  CreateFollowUpDto,
+  RescheduleFollowUpDto,
+  CompleteFollowUpDto,
+  CancelFollowUpDto,
+  FollowUpFilterDto,
+} from './dto/follow-up.dto';
 
 @Injectable()
 export class FollowUpsService {
@@ -11,7 +21,12 @@ export class FollowUpsService {
     private followUpRepository: Repository<FollowUp>,
   ) {}
 
-  async create(dto: CreateFollowUpDto, userId: string, facilityId: string, tenantId?: string): Promise<FollowUp> {
+  async create(
+    dto: CreateFollowUpDto,
+    userId: string,
+    facilityId: string,
+    tenantId?: string,
+  ): Promise<FollowUp> {
     const appointmentNumber = await this.generateAppointmentNumber(tenantId);
 
     const followUp = this.followUpRepository.create({
@@ -29,8 +44,13 @@ export class FollowUpsService {
     return this.followUpRepository.save(followUp);
   }
 
-  async findAll(filter: FollowUpFilterDto, facilityId: string, tenantId?: string): Promise<FollowUp[]> {
-    const query = this.followUpRepository.createQueryBuilder('followUp')
+  async findAll(
+    filter: FollowUpFilterDto,
+    facilityId: string,
+    tenantId?: string,
+  ): Promise<FollowUp[]> {
+    const query = this.followUpRepository
+      .createQueryBuilder('followUp')
       .leftJoinAndSelect('followUp.patient', 'patient')
       .leftJoinAndSelect('followUp.provider', 'provider')
       .leftJoinAndSelect('followUp.department', 'department')
@@ -69,7 +89,15 @@ export class FollowUpsService {
     if (tenantId) where.tenantId = tenantId;
     const followUp = await this.followUpRepository.findOne({
       where,
-      relations: ['patient', 'provider', 'department', 'facility', 'scheduledBy', 'sourceEncounter', 'followUpEncounter'],
+      relations: [
+        'patient',
+        'provider',
+        'department',
+        'facility',
+        'scheduledBy',
+        'sourceEncounter',
+        'followUpEncounter',
+      ],
     });
 
     if (!followUp) {
@@ -107,17 +135,25 @@ export class FollowUpsService {
     });
   }
 
-  async getTodaysAppointments(facilityId: string, departmentId?: string, tenantId?: string): Promise<FollowUp[]> {
+  async getTodaysAppointments(
+    facilityId: string,
+    departmentId?: string,
+    tenantId?: string,
+  ): Promise<FollowUp[]> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    const query = this.followUpRepository.createQueryBuilder('followUp')
+    const query = this.followUpRepository
+      .createQueryBuilder('followUp')
       .leftJoinAndSelect('followUp.patient', 'patient')
       .leftJoinAndSelect('followUp.provider', 'provider')
       .where('followUp.facility_id = :facilityId', { facilityId })
-      .andWhere('followUp.scheduled_date >= :today AND followUp.scheduled_date < :tomorrow', { today, tomorrow });
+      .andWhere('followUp.scheduled_date >= :today AND followUp.scheduled_date < :tomorrow', {
+        today,
+        tomorrow,
+      });
 
     if (tenantId) {
       query.andWhere('followUp.tenant_id = :tenantId', { tenantId });
@@ -158,7 +194,12 @@ export class FollowUpsService {
     return this.followUpRepository.save(followUp);
   }
 
-  async complete(id: string, dto: CompleteFollowUpDto, userId: string, tenantId?: string): Promise<FollowUp> {
+  async complete(
+    id: string,
+    dto: CompleteFollowUpDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<FollowUp> {
     const followUp = await this.findOne(id, tenantId);
 
     if (followUp.status !== FollowUpStatus.CHECKED_IN) {
@@ -179,7 +220,12 @@ export class FollowUpsService {
     return this.followUpRepository.save(followUp);
   }
 
-  async reschedule(id: string, dto: RescheduleFollowUpDto, userId: string, tenantId?: string): Promise<FollowUp> {
+  async reschedule(
+    id: string,
+    dto: RescheduleFollowUpDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<FollowUp> {
     const followUp = await this.findOne(id, tenantId);
 
     if ([FollowUpStatus.COMPLETED, FollowUpStatus.CANCELLED].includes(followUp.status)) {
@@ -238,7 +284,7 @@ export class FollowUpsService {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     tomorrow.setHours(0, 0, 0, 0);
-    
+
     const dayAfter = new Date(tomorrow);
     dayAfter.setDate(dayAfter.getDate() + 1);
 
@@ -301,8 +347,8 @@ export class FollowUpsService {
       completed,
       missed,
       cancelled,
-      completionRate: total > 0 ? (completed / total * 100).toFixed(2) : 0,
-      noShowRate: total > 0 ? (missed / total * 100).toFixed(2) : 0,
+      completionRate: total > 0 ? ((completed / total) * 100).toFixed(2) : 0,
+      noShowRate: total > 0 ? ((missed / total) * 100).toFixed(2) : 0,
     };
   }
 
@@ -317,9 +363,7 @@ export class FollowUpsService {
       .createQueryBuilder('followUp')
       .where('followUp.appointment_number LIKE :prefix', { prefix: `${prefix}%` });
     if (tenantId) qb.andWhere('followUp.tenant_id = :tenantId', { tenantId });
-    const lastAppointment = await qb
-      .orderBy('followUp.appointment_number', 'DESC')
-      .getOne();
+    const lastAppointment = await qb.orderBy('followUp.appointment_number', 'DESC').getOne();
 
     let sequence = 1;
     if (lastAppointment) {

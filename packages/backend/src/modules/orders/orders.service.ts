@@ -1,4 +1,11 @@
-import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Inject,
+  forwardRef,
+  Logger,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, FindOptionsWhere, In, DataSource } from 'typeorm';
 import { Order, OrderType, OrderStatus, OrderPriority } from '../../database/entities/order.entity';
@@ -9,7 +16,11 @@ import { LabSample } from '../../database/entities/lab-sample.entity';
 import { LabResult, ResultStatus } from '../../database/entities/lab-result.entity';
 import { CreateOrderDto, UpdateOrderStatusDto } from './dto/orders.dto';
 import { BillingService } from '../billing/billing.service';
-import { ImagingOrder, ImagingOrderStatus, ImagingPriority } from '../../database/entities/imaging-order.entity';
+import {
+  ImagingOrder,
+  ImagingOrderStatus,
+  ImagingPriority,
+} from '../../database/entities/imaging-order.entity';
 import { ImagingModality } from '../../database/entities/imaging-modality.entity';
 import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
 import { QueueManagementService } from '../queue-management/queue-management.service';
@@ -44,12 +55,17 @@ export class OrdersService {
   ) {}
 
   private async generateOrderNumber(orderType: OrderType): Promise<string> {
-    const prefix = orderType === OrderType.LAB ? 'LAB' : 
-                   orderType === OrderType.RADIOLOGY ? 'RAD' :
-                   orderType === OrderType.PHARMACY ? 'PHM' : 'PRC';
+    const prefix =
+      orderType === OrderType.LAB
+        ? 'LAB'
+        : orderType === OrderType.RADIOLOGY
+          ? 'RAD'
+          : orderType === OrderType.PHARMACY
+            ? 'PHM'
+            : 'PRC';
     const date = new Date();
     const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
-    
+
     // Count orders of this type created today using LIKE pattern match
     const count = await this.orderRepository
       .createQueryBuilder('order')
@@ -92,9 +108,14 @@ export class OrdersService {
     // Auto-bill: Look up service prices and add to invoice
     if (dto.testCodes && dto.testCodes.length > 0) {
       try {
-        const chargeType = dto.orderType === OrderType.LAB ? 'lab'
-          : dto.orderType === OrderType.RADIOLOGY ? 'radiology'
-          : dto.orderType === OrderType.PHARMACY ? 'pharmacy' : 'other';
+        const chargeType =
+          dto.orderType === OrderType.LAB
+            ? 'lab'
+            : dto.orderType === OrderType.RADIOLOGY
+              ? 'radiology'
+              : dto.orderType === OrderType.PHARMACY
+                ? 'pharmacy'
+                : 'other';
 
         for (const testCode of dto.testCodes) {
           // Find service by code to get price, fall back to lab_tests price
@@ -115,19 +136,23 @@ export class OrdersService {
             }
           }
 
-          await this.billingService.addBillableItem({
-            encounterId: dto.encounterId,
-            patientId: encounter.patientId,
-            serviceCode: testCode.code,
-            description: testCode.name,
-            quantity: 1,
-            unitPrice,
-            chargeType,
-            referenceType: 'order',
-            referenceId: savedOrder.id,
-            serviceId: service?.id,
-            labTestId,
-          }, userId, tenantId);
+          await this.billingService.addBillableItem(
+            {
+              encounterId: dto.encounterId,
+              patientId: encounter.patientId,
+              serviceCode: testCode.code,
+              description: testCode.name,
+              quantity: 1,
+              unitPrice,
+              chargeType,
+              referenceType: 'order',
+              referenceId: savedOrder.id,
+              serviceId: service?.id,
+              labTestId,
+            },
+            userId,
+            tenantId,
+          );
         }
       } catch (err) {
         this.logger.warn(`Failed to auto-bill order ${savedOrder.orderNumber}: ${err.message}`);
@@ -143,7 +168,9 @@ export class OrdersService {
         savedOrder.id,
         encounter.facilityId,
       );
-    } catch { /* non-critical */ }
+    } catch {
+      /* non-critical */
+    }
 
     // Move queue to the appropriate service point
     try {
@@ -161,7 +188,9 @@ export class OrdersService {
           tenantId,
         );
       }
-    } catch { /* non-critical */ }
+    } catch {
+      /* non-critical */
+    }
 
     return savedOrder;
   }
@@ -237,8 +266,8 @@ export class OrdersService {
 
     // For lab orders, fetch associated samples and results
     if (orderType === OrderType.LAB && data.length > 0) {
-      const orderIds = data.map(o => o.id);
-      
+      const orderIds = data.map((o) => o.id);
+
       // Fetch samples with results for these orders
       const rawParams: any[] = [orderIds];
       let rawSql = `
@@ -320,13 +349,18 @@ export class OrdersService {
 
   async findByEncounter(encounterId: string, tenantId?: string): Promise<Order[]> {
     return this.orderRepository.find({
-      where: { encounterId , ...(tenantId ? { tenantId } : {}) },
+      where: { encounterId, ...(tenantId ? { tenantId } : {}) },
       relations: ['orderedBy', 'completedBy'],
       order: { createdAt: 'DESC' },
     });
   }
 
-  async updateStatus(id: string, dto: UpdateOrderStatusDto, userId: string, tenantId?: string): Promise<Order> {
+  async updateStatus(
+    id: string,
+    dto: UpdateOrderStatusDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<Order> {
     const order = await this.findById(id, tenantId);
 
     // Use update() to only modify specific fields, avoiding issues with null relations
@@ -364,7 +398,7 @@ export class OrdersService {
 
   async startProcessing(id: string, userId: string, tenantId?: string): Promise<Order> {
     const order = await this.findById(id, tenantId);
-    
+
     if (order.status !== OrderStatus.PENDING) {
       throw new BadRequestException('Order is not in pending status');
     }
@@ -373,7 +407,12 @@ export class OrdersService {
     return this.orderRepository.save(order);
   }
 
-  async completeOrder(id: string, resultData: any, userId: string, tenantId?: string): Promise<Order> {
+  async completeOrder(
+    id: string,
+    resultData: any,
+    userId: string,
+    tenantId?: string,
+  ): Promise<Order> {
     const order = await this.findById(id, tenantId);
 
     if (order.status === OrderStatus.COMPLETED) {
@@ -391,9 +430,8 @@ export class OrdersService {
 
     // Store results in clinical notes or a dedicated field
     if (resultData) {
-      const resultSummary = typeof resultData === 'string' 
-        ? resultData 
-        : JSON.stringify(resultData, null, 2);
+      const resultSummary =
+        typeof resultData === 'string' ? resultData : JSON.stringify(resultData, null, 2);
       order.clinicalNotes = order.clinicalNotes
         ? `${order.clinicalNotes}\n\n[Results]:\n${resultSummary}`
         : `[Results]:\n${resultSummary}`;
@@ -404,21 +442,23 @@ export class OrdersService {
 
   private async assertLabResultsReleased(orderId: string, tenantId?: string): Promise<void> {
     const samples = await this.labSampleRepository.find({
-      where: { orderId , ...(tenantId ? { tenantId } : {}) },
+      where: { orderId, ...(tenantId ? { tenantId } : {}) },
     });
     if (samples.length === 0) {
       throw new BadRequestException('Cannot complete lab order — no samples found');
     }
-    const sampleIds = samples.map(s => s.id);
+    const sampleIds = samples.map((s) => s.id);
     const results = await this.labResultRepository.find({
-      where: { sampleId: In(sampleIds) , ...(tenantId ? { tenantId } : {}) },
+      where: { sampleId: In(sampleIds), ...(tenantId ? { tenantId } : {}) },
     });
     if (results.length === 0) {
       throw new BadRequestException('Cannot complete lab order — no results have been entered');
     }
-    const unreleased = results.filter(r => r.status !== ResultStatus.RELEASED);
+    const unreleased = results.filter((r) => r.status !== ResultStatus.RELEASED);
     if (unreleased.length > 0) {
-      throw new BadRequestException('Cannot complete lab order — all results must be released first');
+      throw new BadRequestException(
+        'Cannot complete lab order — all results must be released first',
+      );
     }
   }
 
@@ -497,25 +537,30 @@ export class OrdersService {
       baseQuery.andWhere('order.orderType = :orderType', { orderType });
     }
 
-    const pending = await baseQuery.clone()
+    const pending = await baseQuery
+      .clone()
       .andWhere('order.status = :status', { status: OrderStatus.PENDING })
       .getCount();
 
-    const inProgress = await baseQuery.clone()
+    const inProgress = await baseQuery
+      .clone()
       .andWhere('order.status = :status', { status: OrderStatus.IN_PROGRESS })
       .getCount();
 
-    const completedToday = await baseQuery.clone()
+    const completedToday = await baseQuery
+      .clone()
       .andWhere('order.status = :status', { status: OrderStatus.COMPLETED })
       .andWhere('DATE(order.completedAt) = :today', { today })
       .getCount();
 
-    const urgent = await baseQuery.clone()
+    const urgent = await baseQuery
+      .clone()
       .andWhere('order.priority = :priority', { priority: OrderPriority.URGENT })
       .andWhere('order.status != :completed', { completed: OrderStatus.COMPLETED })
       .getCount();
 
-    const stat = await baseQuery.clone()
+    const stat = await baseQuery
+      .clone()
       .andWhere('order.priority = :priority', { priority: OrderPriority.STAT })
       .andWhere('order.status != :completed', { completed: OrderStatus.COMPLETED })
       .getCount();
@@ -541,7 +586,11 @@ export class OrdersService {
     'IMG-EC': 'echocardiogram',
   };
 
-  private async createImagingOrderFromGenericOrder(order: Order, encounter: Encounter, tenantId?: string): Promise<void> {
+  private async createImagingOrderFromGenericOrder(
+    order: Order,
+    encounter: Encounter,
+    tenantId?: string,
+  ): Promise<void> {
     try {
       const testCodes: Array<{ code: string; name: string }> = order.testCodes || [];
       if (!testCodes.length) return;
@@ -554,11 +603,17 @@ export class OrdersService {
         // Find an available modality of this type for the facility
         // ImagingModality is shared reference data without tenantId — no tenant filter needed
         const modality = await this.imagingModalityRepository.findOne({
-          where: { facilityId: encounter.facilityId, modalityType: modalityType as any, isActive: true },
+          where: {
+            facilityId: encounter.facilityId,
+            modalityType: modalityType as any,
+            isActive: true,
+          },
         });
 
         if (!modality) {
-          this.logger.warn(`No active ${modalityType} modality found for facility ${encounter.facilityId}`);
+          this.logger.warn(
+            `No active ${modalityType} modality found for facility ${encounter.facilityId}`,
+          );
           continue;
         }
 
@@ -575,7 +630,11 @@ export class OrdersService {
           studyType: test.name || 'General Study',
           bodyPart,
           clinicalIndication: undefined, // Don't copy triage notes; radiologist fills in
-          priority: (order.priority === 'stat' ? 'stat' : order.priority === 'urgent' ? 'urgent' : 'routine') as ImagingPriority,
+          priority: (order.priority === 'stat'
+            ? 'stat'
+            : order.priority === 'urgent'
+              ? 'urgent'
+              : 'routine') as ImagingPriority,
           status: ImagingOrderStatus.ORDERED,
           orderedById: order.orderedById,
           orderedAt: order.createdAt || new Date(),

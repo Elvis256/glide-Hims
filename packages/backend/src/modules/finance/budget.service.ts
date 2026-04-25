@@ -50,15 +50,29 @@ export class BudgetService {
 
   async addLine(
     budgetId: string,
-    dto: { accountId: string; costCenterId?: string; period: number; budgetedAmount: number; notes?: string },
+    dto: {
+      accountId: string;
+      costCenterId?: string;
+      period: number;
+      budgetedAmount: number;
+      notes?: string;
+    },
     tenantId?: string,
   ): Promise<BudgetLine> {
     await this.findOne(budgetId, tenantId);
-    const line = this.budgetLineRepo.create({ ...dto, budgetId, ...(tenantId ? { tenantId } : {}) });
+    const line = this.budgetLineRepo.create({
+      ...dto,
+      budgetId,
+      ...(tenantId ? { tenantId } : {}),
+    });
     return this.budgetLineRepo.save(line);
   }
 
-  async updateLine(lineId: string, dto: Partial<BudgetLine>, tenantId?: string): Promise<BudgetLine> {
+  async updateLine(
+    lineId: string,
+    dto: Partial<BudgetLine>,
+    tenantId?: string,
+  ): Promise<BudgetLine> {
     const line = await this.budgetLineRepo.findOne({
       where: { id: lineId, ...(tenantId ? { tenantId } : {}) },
     });
@@ -100,7 +114,8 @@ export class BudgetService {
         budgetAmount: budgetedAmt,
         actualAmount,
         variance: budgetedAmt - actualAmount,
-        variancePercent: budgetedAmt > 0 ? (((budgetedAmt - actualAmount) / budgetedAmt) * 100).toFixed(1) : 0,
+        variancePercent:
+          budgetedAmt > 0 ? (((budgetedAmt - actualAmount) / budgetedAmt) * 100).toFixed(1) : 0,
       });
     }
     return { budget: { id: budget.id, name: budget.name, status: budget.status }, lines: result };
@@ -156,9 +171,7 @@ export class BudgetService {
     period: number,
     tenantId?: string,
   ): Promise<BudgetCheckResult | null> {
-    const line = (budget.lines || []).find(
-      (l) => l.accountId === accountId && l.period === period,
-    );
+    const line = (budget.lines || []).find((l) => l.accountId === accountId && l.period === period);
     if (!line) return null; // No budget line for this account/period
 
     const actual = await this.budgetLineRepo.query(
@@ -200,17 +213,19 @@ export class BudgetService {
   ): Promise<void> {
     const check = await this.checkBudgetAvailability(facilityId, accountId, amount, tenantId);
     if (!check) {
-      this.logger.warn(`No budget line found for account ${accountId} in facility ${facilityId} — skipping enforcement`);
+      this.logger.warn(
+        `No budget line found for account ${accountId} in facility ${facilityId} — skipping enforcement`,
+      );
       return;
     }
     if (!check.withinBudget) {
       throw new BadRequestException(
         `Budget exceeded for "${check.budgetName}": ` +
-        `budgeted ${check.budgetedAmount.toLocaleString()}, ` +
-        `spent ${check.actualSpent.toLocaleString()}, ` +
-        `remaining ${check.remainingBudget.toLocaleString()}, ` +
-        `requested ${check.pendingAmount.toLocaleString()}. ` +
-        `Please request a budget amendment or reduce the amount.`,
+          `budgeted ${check.budgetedAmount.toLocaleString()}, ` +
+          `spent ${check.actualSpent.toLocaleString()}, ` +
+          `remaining ${check.remainingBudget.toLocaleString()}, ` +
+          `requested ${check.pendingAmount.toLocaleString()}. ` +
+          `Please request a budget amendment or reduce the amount.`,
       );
     }
   }

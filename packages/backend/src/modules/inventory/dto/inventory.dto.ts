@@ -1,4 +1,13 @@
-import { IsString, IsOptional, IsNumber, IsBoolean, IsEnum, Min, IsUUID, IsDateString } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsNumber,
+  IsBoolean,
+  IsEnum,
+  Min,
+  IsUUID,
+  IsDateString,
+} from 'class-validator';
 import { MovementType } from '../../../database/entities/inventory.entity';
 
 export class CreateItemDto {

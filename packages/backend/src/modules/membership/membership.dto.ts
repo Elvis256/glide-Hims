@@ -1,4 +1,13 @@
-import { IsString, IsOptional, IsNumber, IsBoolean, IsEnum, IsUUID, IsDateString, IsObject } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsNumber,
+  IsBoolean,
+  IsEnum,
+  IsUUID,
+  IsDateString,
+  IsObject,
+} from 'class-validator';
 import { ApiProperty, PartialType } from '@nestjs/swagger';
 import { MembershipType } from '../../database/entities/membership.entity';
 

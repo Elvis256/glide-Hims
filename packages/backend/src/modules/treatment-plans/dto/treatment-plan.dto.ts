@@ -1,6 +1,20 @@
-import { IsString, IsOptional, IsEnum, IsDateString, IsBoolean, IsArray, ValidateNested, IsUUID, IsNumber } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsEnum,
+  IsDateString,
+  IsBoolean,
+  IsArray,
+  ValidateNested,
+  IsUUID,
+  IsNumber,
+} from 'class-validator';
 import { Type } from 'class-transformer';
-import { TreatmentPlanType, TreatmentPlanStatus, TreatmentGoalStatus } from '../../../database/entities/treatment-plan.entity';
+import {
+  TreatmentPlanType,
+  TreatmentPlanStatus,
+  TreatmentGoalStatus,
+} from '../../../database/entities/treatment-plan.entity';
 
 class GoalDto {
   @IsString()

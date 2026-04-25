@@ -1,11 +1,32 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, ParseUUIDPipe, Request } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  Query,
+  ParseUUIDPipe,
+  Request,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { ProblemsService } from './problems.service';
-import { CreateProblemDto, UpdateProblemDto, ProblemSearchDto, MarkResolvedDto } from './dto/problems.dto';
+import {
+  CreateProblemDto,
+  UpdateProblemDto,
+  ProblemSearchDto,
+  MarkResolvedDto,
+} from './dto/problems.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { ProblemStatus } from '../../database/entities/patient-problem.entity';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('problems')
+@UseGuards(ModuleGuard)
+@RequireModule('doctors')
 @Controller('problems')
 export class ProblemsController {
   constructor(private readonly problemsService: ProblemsService) {}
@@ -13,8 +34,17 @@ export class ProblemsController {
   @Post()
   @AuthWithPermissions('problems.create')
   @ApiOperation({ summary: 'Create patient problem' })
-  async create(@Query('facilityId', ParseUUIDPipe) facilityId: string, @Body() dto: CreateProblemDto, @Request() req: any) {
-    const problem = await this.problemsService.create(facilityId, dto, req.user?.id, req.user?.tenantId);
+  async create(
+    @Query('facilityId', ParseUUIDPipe) facilityId: string,
+    @Body() dto: CreateProblemDto,
+    @Request() req: any,
+  ) {
+    const problem = await this.problemsService.create(
+      facilityId,
+      dto,
+      req.user?.id,
+      req.user?.tenantId,
+    );
     return { message: 'Problem created', data: problem };
   }
 
@@ -25,7 +55,11 @@ export class ProblemsController {
   @ApiQuery({ name: 'patientId', required: false })
   @ApiQuery({ name: 'status', required: false, enum: ProblemStatus })
   @ApiQuery({ name: 'search', required: false })
-  async findAll(@Query('facilityId', ParseUUIDPipe) facilityId: string, @Query() query: ProblemSearchDto, @Request() req: any) {
+  async findAll(
+    @Query('facilityId', ParseUUIDPipe) facilityId: string,
+    @Query() query: ProblemSearchDto,
+    @Request() req: any,
+  ) {
     return this.problemsService.findAll(facilityId, query, req.user?.tenantId);
   }
 
@@ -33,7 +67,11 @@ export class ProblemsController {
   @AuthWithPermissions('problems.read')
   @ApiOperation({ summary: 'Get patient problems' })
   @ApiQuery({ name: 'status', required: false, enum: ProblemStatus })
-  async findByPatient(@Param('patientId', ParseUUIDPipe) patientId: string, @Query('status') status?: ProblemStatus, @Request() req?: any) {
+  async findByPatient(
+    @Param('patientId', ParseUUIDPipe) patientId: string,
+    @Query('status') status?: ProblemStatus,
+    @Request() req?: any,
+  ) {
     return this.problemsService.findByPatient(patientId, status, req?.user?.tenantId);
   }
 
@@ -54,7 +92,11 @@ export class ProblemsController {
   @Patch(':id')
   @AuthWithPermissions('problems.update')
   @ApiOperation({ summary: 'Update problem' })
-  async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateProblemDto, @Request() req: any) {
+  async update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateProblemDto,
+    @Request() req: any,
+  ) {
     const problem = await this.problemsService.update(id, dto, req.user?.id, req.user?.tenantId);
     return { message: 'Problem updated', data: problem };
   }
@@ -62,8 +104,17 @@ export class ProblemsController {
   @Patch(':id/resolve')
   @AuthWithPermissions('problems.update')
   @ApiOperation({ summary: 'Mark problem as resolved' })
-  async markResolved(@Param('id', ParseUUIDPipe) id: string, @Body() dto: MarkResolvedDto, @Request() req: any) {
-    const problem = await this.problemsService.markResolved(id, dto, req.user?.id, req.user?.tenantId);
+  async markResolved(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: MarkResolvedDto,
+    @Request() req: any,
+  ) {
+    const problem = await this.problemsService.markResolved(
+      id,
+      dto,
+      req.user?.id,
+      req.user?.tenantId,
+    );
     return { message: 'Problem marked as resolved', data: problem };
   }
 

@@ -76,14 +76,14 @@ export class Admission extends BaseEntity {
   @Column({ type: 'uuid' })
   wardId: string;
 
-  @ManyToOne(() => Ward, ward => ward.admissions)
+  @ManyToOne(() => Ward, (ward) => ward.admissions)
   @JoinColumn({ name: 'wardId' })
   ward: Ward;
 
   @Column({ type: 'uuid' })
   bedId: string;
 
-  @ManyToOne(() => Bed, bed => bed.admissions)
+  @ManyToOne(() => Bed, (bed) => bed.admissions)
   @JoinColumn({ name: 'bedId' })
   bed: Bed;
 

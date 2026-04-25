@@ -5,9 +5,7 @@ export class AddRoleInheritanceAndPermissionGroups1773700000000 implements Migra
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Phase 1: Role Inheritance - add parent_role_id to roles (idempotent)
-    await queryRunner.query(
-      `ALTER TABLE "roles" ADD COLUMN IF NOT EXISTS "parent_role_id" uuid`,
-    );
+    await queryRunner.query(`ALTER TABLE "roles" ADD COLUMN IF NOT EXISTS "parent_role_id" uuid`);
 
     // Add FK only if it doesn't exist
     const fkExists = await queryRunner.query(`
@@ -69,11 +67,21 @@ export class AddRoleInheritanceAndPermissionGroups1773700000000 implements Migra
     `);
 
     // Create indexes
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_roles_parent_role_id" ON "roles" ("parent_role_id")`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_group_permissions_group_id" ON "group_permissions" ("group_id")`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_group_permissions_permission_id" ON "group_permissions" ("permission_id")`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_role_permission_groups_role_id" ON "role_permission_groups" ("role_id")`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_role_permission_groups_group_id" ON "role_permission_groups" ("group_id")`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_roles_parent_role_id" ON "roles" ("parent_role_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_group_permissions_group_id" ON "group_permissions" ("group_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_group_permissions_permission_id" ON "group_permissions" ("permission_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_role_permission_groups_role_id" ON "role_permission_groups" ("role_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_role_permission_groups_group_id" ON "role_permission_groups" ("group_id")`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

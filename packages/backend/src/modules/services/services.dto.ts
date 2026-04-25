@@ -1,4 +1,13 @@
-import { IsString, IsOptional, IsNumber, IsBoolean, IsEnum, IsUUID, IsDateString, IsArray } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsNumber,
+  IsBoolean,
+  IsEnum,
+  IsUUID,
+  IsDateString,
+  IsArray,
+} from 'class-validator';
 import { ApiProperty, PartialType } from '@nestjs/swagger';
 import { ServiceTier } from '../../database/entities/service-category.entity';
 
@@ -16,7 +25,10 @@ export class CreateServiceDto {
   @ApiProperty() @IsString() code: string;
   @ApiProperty() @IsString() name: string;
   @ApiProperty() @IsUUID() categoryId: string;
-  @ApiProperty({ enum: ServiceTier, required: false }) @IsOptional() @IsEnum(ServiceTier) tier?: ServiceTier;
+  @ApiProperty({ enum: ServiceTier, required: false })
+  @IsOptional()
+  @IsEnum(ServiceTier)
+  tier?: ServiceTier;
   @ApiProperty() @IsNumber() basePrice: number;
   @ApiProperty({ required: false }) @IsOptional() @IsString() description?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() department?: string;

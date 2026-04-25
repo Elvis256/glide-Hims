@@ -2,7 +2,13 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, LessThanOrEqual } from 'typeorm';
 import { Referral, ReferralStatus } from '../../database/entities/referral.entity';
-import { CreateReferralDto, AcceptReferralDto, RejectReferralDto, CompleteReferralDto, ReferralFilterDto } from './dto/referral.dto';
+import {
+  CreateReferralDto,
+  AcceptReferralDto,
+  RejectReferralDto,
+  CompleteReferralDto,
+  ReferralFilterDto,
+} from './dto/referral.dto';
 
 @Injectable()
 export class ReferralsService {
@@ -11,9 +17,14 @@ export class ReferralsService {
     private referralRepository: Repository<Referral>,
   ) {}
 
-  async create(dto: CreateReferralDto, userId: string, facilityId: string, tenantId?: string): Promise<Referral> {
+  async create(
+    dto: CreateReferralDto,
+    userId: string,
+    facilityId: string,
+    tenantId?: string,
+  ): Promise<Referral> {
     const referralNumber = await this.generateReferralNumber(facilityId);
-    
+
     // Calculate expiry date (default 30 days)
     const expiryDate = new Date();
     expiryDate.setDate(expiryDate.getDate() + 30);
@@ -31,15 +42,23 @@ export class ReferralsService {
     return this.referralRepository.save(referral);
   }
 
-  async findAll(filter: ReferralFilterDto, facilityId: string, tenantId?: string): Promise<Referral[]> {
-    const query = this.referralRepository.createQueryBuilder('referral')
+  async findAll(
+    filter: ReferralFilterDto,
+    facilityId: string,
+    tenantId?: string,
+  ): Promise<Referral[]> {
+    const query = this.referralRepository
+      .createQueryBuilder('referral')
       .leftJoinAndSelect('referral.patient', 'patient')
       .leftJoinAndSelect('referral.fromFacility', 'fromFacility')
       .leftJoinAndSelect('referral.toFacility', 'toFacility')
       .leftJoinAndSelect('referral.referredBy', 'referredBy');
 
     // Filter by facility (either from or to)
-    query.andWhere('(referral.from_facility_id = :facilityId OR referral.to_facility_id = :facilityId)', { facilityId });
+    query.andWhere(
+      '(referral.from_facility_id = :facilityId OR referral.to_facility_id = :facilityId)',
+      { facilityId },
+    );
 
     if (tenantId) {
       query.andWhere('referral.tenant_id = :tenantId', { tenantId });
@@ -75,7 +94,15 @@ export class ReferralsService {
 
     const referral = await this.referralRepository.findOne({
       where,
-      relations: ['patient', 'fromFacility', 'toFacility', 'referredBy', 'acceptedBy', 'sourceEncounter', 'destinationEncounter'],
+      relations: [
+        'patient',
+        'fromFacility',
+        'toFacility',
+        'referredBy',
+        'acceptedBy',
+        'sourceEncounter',
+        'destinationEncounter',
+      ],
     });
 
     if (!referral) {
@@ -118,7 +145,12 @@ export class ReferralsService {
     });
   }
 
-  async accept(id: string, dto: AcceptReferralDto, userId: string, tenantId?: string): Promise<Referral> {
+  async accept(
+    id: string,
+    dto: AcceptReferralDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<Referral> {
     const referral = await this.findOne(id, tenantId);
 
     if (referral.status !== ReferralStatus.PENDING) {
@@ -128,7 +160,7 @@ export class ReferralsService {
     referral.status = ReferralStatus.ACCEPTED;
     referral.acceptedById = userId;
     referral.acceptedAt = new Date();
-    
+
     if (dto.appointmentDate) {
       referral.appointmentDate = new Date(dto.appointmentDate);
     }
@@ -142,7 +174,12 @@ export class ReferralsService {
     return this.referralRepository.save(referral);
   }
 
-  async reject(id: string, dto: RejectReferralDto, userId: string, tenantId?: string): Promise<Referral> {
+  async reject(
+    id: string,
+    dto: RejectReferralDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<Referral> {
     const referral = await this.findOne(id, tenantId);
 
     if (referral.status !== ReferralStatus.PENDING) {
@@ -164,7 +201,7 @@ export class ReferralsService {
 
     referral.status = ReferralStatus.COMPLETED;
     referral.completedAt = new Date();
-    
+
     if (dto.destinationEncounterId) {
       referral.destinationEncounterId = dto.destinationEncounterId;
     }
@@ -195,10 +232,7 @@ export class ReferralsService {
       expiryDate: LessThanOrEqual(now),
     };
     if (tenantId) where.tenantId = tenantId;
-    const result = await this.referralRepository.update(
-      where,
-      { status: ReferralStatus.EXPIRED },
-    );
+    const result = await this.referralRepository.update(where, { status: ReferralStatus.EXPIRED });
 
     return result.affected || 0;
   }

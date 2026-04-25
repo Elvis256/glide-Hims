@@ -1,18 +1,35 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  Logger,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { ConfigService } from '@nestjs/config';
+import { HttpService } from '@nestjs/axios';
 import { Repository, DataSource, IsNull } from 'typeorm';
+import { firstValueFrom } from 'rxjs';
 import { BiometricData } from '../../database/entities/biometric-data.entity';
 import { User } from '../../database/entities/user.entity';
-import { RegisterBiometricDto, UpdateStaffCoverageDto, FingerIndex } from './dto/biometric.dto';
+import {
+  RegisterBiometricDto,
+  UpdateStaffCoverageDto,
+  FingerIndex,
+  VerifyBiometricDto,
+} from './dto/biometric.dto';
 
 @Injectable()
 export class BiometricsService {
+  private readonly logger = new Logger(BiometricsService.name);
+
   constructor(
     @InjectRepository(BiometricData)
     private biometricRepository: Repository<BiometricData>,
     @InjectRepository(User)
     private userRepository: Repository<User>,
     private dataSource: DataSource,
+    private readonly httpService: HttpService,
+    private readonly configService: ConfigService,
   ) {}
 
   /**
@@ -20,14 +37,21 @@ export class BiometricsService {
    */
   async register(dto: RegisterBiometricDto, tenantId?: string): Promise<BiometricData> {
     // Verify user exists
-    const user = await this.userRepository.findOne({ where: { id: dto.userId, ...(tenantId ? { tenantId } : {}) } });
+    const user = await this.userRepository.findOne({
+      where: { id: dto.userId, ...(tenantId ? { tenantId } : {}) },
+    });
     if (!user) {
       throw new NotFoundException('User not found');
     }
 
     // Check if this finger is already registered
     const existing = await this.biometricRepository.findOne({
-      where: { userId: dto.userId, fingerIndex: dto.fingerIndex, deletedAt: IsNull(), ...(tenantId ? { tenantId } : {}) },
+      where: {
+        userId: dto.userId,
+        fingerIndex: dto.fingerIndex,
+        deletedAt: IsNull(),
+        ...(tenantId ? { tenantId } : {}),
+      },
     });
 
     if (existing) {
@@ -54,7 +78,10 @@ export class BiometricsService {
   /**
    * Check if a user has registered fingerprints
    */
-  async checkEnrollment(userId: string, tenantId?: string): Promise<{ enrolled: boolean; fingers: FingerIndex[] }> {
+  async checkEnrollment(
+    userId: string,
+    tenantId?: string,
+  ): Promise<{ enrolled: boolean; fingers: FingerIndex[] }> {
     const records = await this.biometricRepository.find({
       where: { userId, deletedAt: IsNull(), ...(tenantId ? { tenantId } : {}) },
       select: ['fingerIndex'],
@@ -62,7 +89,7 @@ export class BiometricsService {
 
     return {
       enrolled: records.length > 0,
-      fingers: records.map(r => r.fingerIndex),
+      fingers: records.map((r) => r.fingerIndex),
     };
   }
 
@@ -81,7 +108,10 @@ export class BiometricsService {
    * Note: Actual matching is done client-side with SecuGen SDK
    * This endpoint just returns the stored templates for comparison
    */
-  async getTemplatesForVerification(userId: string, tenantId?: string): Promise<{ templates: { fingerIndex: FingerIndex; templateData: string }[] }> {
+  async getTemplatesForVerification(
+    userId: string,
+    tenantId?: string,
+  ): Promise<{ templates: { fingerIndex: FingerIndex; templateData: string }[] }> {
     const records = await this.biometricRepository.find({
       where: { userId, deletedAt: IsNull(), ...(tenantId ? { tenantId } : {}) },
       select: ['fingerIndex', 'templateData'],
@@ -92,7 +122,7 @@ export class BiometricsService {
     }
 
     return {
-      templates: records.map(r => ({
+      templates: records.map((r) => ({
         fingerIndex: r.fingerIndex,
         templateData: r.templateData,
       })),
@@ -100,9 +130,77 @@ export class BiometricsService {
   }
 
   /**
+   * Verify a fingerprint captured by the client against stored templates on the server.
+   * This prevents raw templates from being sent to the client.
+   */
+  async verifyProxy(
+    dto: VerifyBiometricDto,
+    tenantId?: string,
+  ): Promise<{ matched: boolean; fingerIndex?: FingerIndex }> {
+    const stored = await this.biometricRepository.find({
+      where: { userId: dto.userId, deletedAt: IsNull(), ...(tenantId ? { tenantId } : {}) },
+      select: ['fingerIndex', 'templateData'],
+    });
+
+    if (stored.length === 0) {
+      throw new NotFoundException('No fingerprints registered for this user');
+    }
+
+    const fingerprintServiceUrl = this.configService.get<string>(
+      'FINGERPRINT_SERVICE_URL',
+      'http://localhost:8444',
+    );
+    const fingerprintApiKey = this.configService.get<string>('FINGERPRINT_API_KEY');
+
+    if (!fingerprintApiKey) {
+      this.logger.error('FINGERPRINT_API_KEY is not configured in backend');
+      throw new InternalServerErrorException('Biometric service configuration error');
+    }
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post(
+          `${fingerprintServiceUrl}/verify`,
+          {
+            capturedTemplate: dto.templateData,
+            storedTemplates: stored.map((s) => ({
+              fingerIndex: s.fingerIndex,
+              templateData: s.templateData,
+            })),
+          },
+          {
+            headers: {
+              'X-API-Key': fingerprintApiKey,
+              'Content-Type': 'application/json',
+            },
+          },
+        ),
+      );
+
+      if (response.data?.success && response.data?.matched) {
+        // Record successful verification
+        await this.recordVerification(dto.userId, response.data.fingerIndex, tenantId);
+        return {
+          matched: true,
+          fingerIndex: response.data.fingerIndex,
+        };
+      }
+
+      return { matched: false };
+    } catch (error) {
+      this.logger.error(`Biometric verification failed: ${error.message}`);
+      throw new InternalServerErrorException('Failed to communicate with biometric service');
+    }
+  }
+
+  /**
    * Record a successful verification
    */
-  async recordVerification(userId: string, fingerIndex: FingerIndex, tenantId?: string): Promise<void> {
+  async recordVerification(
+    userId: string,
+    fingerIndex: FingerIndex,
+    tenantId?: string,
+  ): Promise<void> {
     await this.biometricRepository.update(
       { userId, fingerIndex, deletedAt: IsNull(), ...(tenantId ? { tenantId } : {}) },
       { lastVerifiedAt: new Date() },
@@ -112,8 +210,16 @@ export class BiometricsService {
   /**
    * Delete a fingerprint record
    */
-  async deleteFingerprint(userId: string, fingerIndex: FingerIndex, tenantId?: string): Promise<void> {
-    const result = await this.biometricRepository.softDelete({ userId, fingerIndex, ...(tenantId ? { tenantId } : {}) });
+  async deleteFingerprint(
+    userId: string,
+    fingerIndex: FingerIndex,
+    tenantId?: string,
+  ): Promise<void> {
+    const result = await this.biometricRepository.softDelete({
+      userId,
+      fingerIndex,
+      ...(tenantId ? { tenantId } : {}),
+    });
     if (result.affected === 0) {
       throw new NotFoundException('Fingerprint record not found');
     }
@@ -122,7 +228,10 @@ export class BiometricsService {
   /**
    * Check staff insurance coverage
    */
-  async checkStaffCoverage(userId: string, tenantId?: string): Promise<{
+  async checkStaffCoverage(
+    userId: string,
+    tenantId?: string,
+  ): Promise<{
     hasEmployee: boolean;
     coverage: {
       enabled: boolean;
@@ -134,18 +243,21 @@ export class BiometricsService {
       remainingAmount?: number;
     } | null;
   }> {
-    const result = await this.dataSource.query(`
+    const result = await this.dataSource.query(
+      `
       SELECT e.insurance_coverage
       FROM employees e
       WHERE e.user_id = $1${tenantId ? ' AND e.tenant_id = $2' : ''}
-    `, tenantId ? [userId, tenantId] : [userId]);
+    `,
+      tenantId ? [userId, tenantId] : [userId],
+    );
 
     if (result.length === 0) {
       return { hasEmployee: false, coverage: null };
     }
 
     const coverage = result[0].insurance_coverage || { enabled: false };
-    
+
     // Calculate remaining amount if applicable
     if (coverage.coverageLimit && coverage.usedAmount !== undefined) {
       coverage.remainingAmount = coverage.coverageLimit - coverage.usedAmount;
@@ -166,12 +278,19 @@ export class BiometricsService {
   /**
    * Update staff insurance coverage
    */
-  async updateStaffCoverage(userId: string, dto: UpdateStaffCoverageDto, tenantId?: string): Promise<void> {
-    const result = await this.dataSource.query(`
+  async updateStaffCoverage(
+    userId: string,
+    dto: UpdateStaffCoverageDto,
+    tenantId?: string,
+  ): Promise<void> {
+    const result = await this.dataSource.query(
+      `
       UPDATE employees
       SET insurance_coverage = $1
       WHERE user_id = $2${tenantId ? ' AND tenant_id = $3' : ''}
-    `, tenantId ? [JSON.stringify(dto), userId, tenantId] : [JSON.stringify(dto), userId]);
+    `,
+      tenantId ? [JSON.stringify(dto), userId, tenantId] : [JSON.stringify(dto), userId],
+    );
 
     if (result[1] === 0) {
       throw new NotFoundException('Employee record not found for this user');

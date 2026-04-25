@@ -1,4 +1,12 @@
-import { IsString, IsOptional, IsBoolean, IsEnum, IsArray, IsNumber, ValidateNested } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsBoolean,
+  IsEnum,
+  IsArray,
+  IsNumber,
+  ValidateNested,
+} from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { DiagnosisCategory } from '../../../database/entities/diagnosis.entity';
 
@@ -134,15 +142,21 @@ export class DiagnosisSearchDto {
   category?: DiagnosisCategory;
 
   @IsOptional()
-  @Transform(({ value }) => value === 'true' || value === true || value === undefined ? value : false)
+  @Transform(({ value }) =>
+    value === 'true' || value === true || value === undefined ? value : false,
+  )
   isNotifiable?: boolean;
 
   @IsOptional()
-  @Transform(({ value }) => value === 'true' || value === true || value === undefined ? value : false)
+  @Transform(({ value }) =>
+    value === 'true' || value === true || value === undefined ? value : false,
+  )
   isChronic?: boolean;
 
   @IsOptional()
-  @Transform(({ value }) => value === 'true' || value === true || value === undefined ? value : false)
+  @Transform(({ value }) =>
+    value === 'true' || value === true || value === undefined ? value : false,
+  )
   isActive?: boolean;
 
   @IsOptional()

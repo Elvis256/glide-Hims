@@ -2,10 +2,25 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike, DataSource } from 'typeorm';
 import { Store } from '../../database/entities/store.entity';
-import { StockTransfer, TransferStatus, TransferReason } from '../../database/entities/stock-transfer.entity';
+import {
+  StockTransfer,
+  TransferStatus,
+  TransferReason,
+} from '../../database/entities/stock-transfer.entity';
 import { StockTransferItem } from '../../database/entities/stock-transfer-item.entity';
-import { Item, StockBalance, StockLedger, MovementType } from '../../database/entities/inventory.entity';
-import { CreateStoreDto, UpdateStoreDto, CreateTransferDto, ApproveTransferDto, ReceiveTransferDto } from './stores.dto';
+import {
+  Item,
+  StockBalance,
+  StockLedger,
+  MovementType,
+} from '../../database/entities/inventory.entity';
+import {
+  CreateStoreDto,
+  UpdateStoreDto,
+  CreateTransferDto,
+  ApproveTransferDto,
+  ReceiveTransferDto,
+} from './stores.dto';
 
 @Injectable()
 export class StoresService {
@@ -20,35 +35,38 @@ export class StoresService {
   ) {}
 
   // Items (Drugs)
-  async searchItems(query?: string, isDrug?: boolean, limit = 50, storeId?: string, tenantId?: string) {
+  async searchItems(
+    query?: string,
+    isDrug?: boolean,
+    limit = 50,
+    storeId?: string,
+    tenantId?: string,
+  ) {
     const stockJoin = storeId
       ? 'sb.itemId = item.id AND sb.storeId = :storeId'
       : 'sb.itemId = item.id AND sb.storeId IS NULL';
-    const qb = this.itemRepo.createQueryBuilder('item')
+    const qb = this.itemRepo
+      .createQueryBuilder('item')
       .leftJoin(StockBalance, 'sb', stockJoin, storeId ? { storeId } : {})
       .addSelect('COALESCE(sb.availableQuantity, 0)', 'availableStock')
       .where('item.status = :status', { status: 'active' });
-    
+
     if (isDrug !== undefined) {
       qb.andWhere('item.isDrug = :isDrug', { isDrug });
     }
-    
+
     if (query) {
-      qb.andWhere(
-        '(item.name ILIKE :q OR item.genericName ILIKE :q OR item.code ILIKE :q)',
-        { q: `%${query}%` }
-      );
+      qb.andWhere('(item.name ILIKE :q OR item.genericName ILIKE :q OR item.code ILIKE :q)', {
+        q: `%${query}%`,
+      });
     }
 
     if (tenantId) {
       qb.andWhere('item.tenant_id = :tenantId', { tenantId });
     }
 
-    const rawItems = await qb
-      .orderBy('item.name', 'ASC')
-      .take(limit)
-      .getRawAndEntities();
-    
+    const rawItems = await qb.orderBy('item.name', 'ASC').take(limit).getRawAndEntities();
+
     // Merge stock info into each item
     return rawItems.entities.map((item, i) => ({
       ...item,
@@ -66,10 +84,12 @@ export class StoresService {
 
   // Stores
   async createStore(dto: CreateStoreDto, tenantId?: string) {
-    return this.storeRepo.save(this.storeRepo.create({
-      ...dto,
-      ...(tenantId ? { tenantId } : {}),
-    }));
+    return this.storeRepo.save(
+      this.storeRepo.create({
+        ...dto,
+        ...(tenantId ? { tenantId } : {}),
+      }),
+    );
   }
 
   async findAllStores(facilityId?: string, type?: string, tenantId?: string) {
@@ -121,7 +141,7 @@ export class StoresService {
     if (!toStore.isActive) {
       throw new BadRequestException(`Destination store "${toStore.name}" is inactive`);
     }
-    
+
     const transfer = this.transferRepo.create({
       transferNumber,
       fromStoreId: dto.fromStoreId,
@@ -134,19 +154,23 @@ export class StoresService {
     const saved = await this.transferRepo.save(transfer);
 
     for (const item of dto.items) {
-      await this.transferItemRepo.save(this.transferItemRepo.create({
-        transferId: saved.id,
-        ...item,
-      }));
+      await this.transferItemRepo.save(
+        this.transferItemRepo.create({
+          transferId: saved.id,
+          ...item,
+        }),
+      );
     }
     return this.findTransfer(saved.id, tenantId);
   }
 
   async findAllTransfers(storeId?: string, status?: TransferStatus, limit = 50, tenantId?: string) {
-    const query = this.transferRepo.createQueryBuilder('t')
+    const query = this.transferRepo
+      .createQueryBuilder('t')
       .leftJoinAndSelect('t.fromStore', 'fs')
       .leftJoinAndSelect('t.toStore', 'ts');
-    if (storeId) query.andWhere('(t.fromStoreId = :storeId OR t.toStoreId = :storeId)', { storeId });
+    if (storeId)
+      query.andWhere('(t.fromStoreId = :storeId OR t.toStoreId = :storeId)', { storeId });
     if (status) query.andWhere('t.status = :status', { status });
     if (tenantId) {
       query.andWhere('t.tenant_id = :tenantId', { tenantId });
@@ -174,7 +198,9 @@ export class StoresService {
 
     // Segregation of duties: requester cannot approve their own transfer
     if (transfer.requestedById === userId) {
-      throw new BadRequestException('Segregation of duties violation: the requester cannot approve their own transfer');
+      throw new BadRequestException(
+        'Segregation of duties violation: the requester cannot approve their own transfer',
+      );
     }
 
     return this.dataSource.transaction(async (manager) => {
@@ -198,11 +224,18 @@ export class StoresService {
 
         // Pessimistic lock on stock balance to prevent concurrent deductions
         const balance = await stockBalanceRepo.findOne({
-          where: { itemId: item.itemId, facilityId: fromStore.facilityId, storeId: transfer.fromStoreId, ...(tenantId ? { tenantId } : {}) },
+          where: {
+            itemId: item.itemId,
+            facilityId: fromStore.facilityId,
+            storeId: transfer.fromStoreId,
+            ...(tenantId ? { tenantId } : {}),
+          },
           lock: { mode: 'pessimistic_write' },
         });
         if (!balance || balance.availableQuantity < qty) {
-          throw new BadRequestException(`Insufficient stock in source store for item ${item.itemId}. Available: ${balance?.availableQuantity || 0}`);
+          throw new BadRequestException(
+            `Insufficient stock in source store for item ${item.itemId}. Available: ${balance?.availableQuantity || 0}`,
+          );
         }
         balance.totalQuantity -= qty;
         balance.availableQuantity -= qty;
@@ -211,7 +244,12 @@ export class StoresService {
 
         // Also deduct from facility-level balance
         const facilityBalance = await stockBalanceRepo.findOne({
-          where: { itemId: item.itemId, facilityId: fromStore.facilityId, storeId: null as any, ...(tenantId ? { tenantId } : {}) },
+          where: {
+            itemId: item.itemId,
+            facilityId: fromStore.facilityId,
+            storeId: null as any,
+            ...(tenantId ? { tenantId } : {}),
+          },
           lock: { mode: 'pessimistic_write' },
         });
         if (facilityBalance) {
@@ -222,23 +260,27 @@ export class StoresService {
         }
 
         // Get transfer item for unit cost
-        const transferItem = transfer.items?.find((ti: StockTransferItem) => ti.itemId === item.itemId);
+        const transferItem = transfer.items?.find(
+          (ti: StockTransferItem) => ti.itemId === item.itemId,
+        );
 
         // Ledger entry for transfer out
-        await stockLedgerRepo.save(stockLedgerRepo.create({
-          itemId: item.itemId,
-          facilityId: fromStore.facilityId,
-          storeId: transfer.fromStoreId,
-          quantity: -qty,
-          balanceAfter: balance.totalQuantity,
-          movementType: MovementType.TRANSFER_OUT,
-          unitCost: Number(transferItem?.unitCost) || 0,
-          referenceType: 'stock_transfer',
-          referenceId: id,
-          notes: `Transfer to ${transfer.toStore?.name || transfer.toStoreId}`,
-          createdById: userId,
-          ...(tenantId ? { tenantId } : {}),
-        }));
+        await stockLedgerRepo.save(
+          stockLedgerRepo.create({
+            itemId: item.itemId,
+            facilityId: fromStore.facilityId,
+            storeId: transfer.fromStoreId,
+            quantity: -qty,
+            balanceAfter: balance.totalQuantity,
+            movementType: MovementType.TRANSFER_OUT,
+            unitCost: Number(transferItem?.unitCost) || 0,
+            referenceType: 'stock_transfer',
+            referenceId: id,
+            notes: `Transfer to ${transfer.toStore?.name || transfer.toStoreId}`,
+            createdById: userId,
+            ...(tenantId ? { tenantId } : {}),
+          }),
+        );
       }
 
       await transferRepo.update(id, {
@@ -279,7 +321,12 @@ export class StoresService {
 
         // Pessimistic lock on destination store balance
         let balance = await stockBalanceRepo.findOne({
-          where: { itemId: item.itemId, facilityId: toStore.facilityId, storeId: transfer.toStoreId, ...(tenantId ? { tenantId } : {}) },
+          where: {
+            itemId: item.itemId,
+            facilityId: toStore.facilityId,
+            storeId: transfer.toStoreId,
+            ...(tenantId ? { tenantId } : {}),
+          },
           lock: { mode: 'pessimistic_write' },
         });
         if (!balance) {
@@ -301,13 +348,21 @@ export class StoresService {
         // Also add to facility-level balance if cross-facility (same facility = net zero)
         if (toStore.facilityId !== transfer.fromStore?.facilityId) {
           let facilityBalance = await stockBalanceRepo.findOne({
-            where: { itemId: item.itemId, facilityId: toStore.facilityId, storeId: null as any, ...(tenantId ? { tenantId } : {}) },
+            where: {
+              itemId: item.itemId,
+              facilityId: toStore.facilityId,
+              storeId: null as any,
+              ...(tenantId ? { tenantId } : {}),
+            },
             lock: { mode: 'pessimistic_write' },
           });
           if (!facilityBalance) {
             facilityBalance = stockBalanceRepo.create({
-              itemId: item.itemId, facilityId: toStore.facilityId,
-              totalQuantity: 0, reservedQuantity: 0, availableQuantity: 0,
+              itemId: item.itemId,
+              facilityId: toStore.facilityId,
+              totalQuantity: 0,
+              reservedQuantity: 0,
+              availableQuantity: 0,
               ...(tenantId ? { tenantId } : {}),
             });
           }
@@ -318,23 +373,27 @@ export class StoresService {
         }
 
         // Get transfer item for unit cost
-        const transferItem = transfer.items?.find((ti: StockTransferItem) => ti.itemId === item.itemId);
+        const transferItem = transfer.items?.find(
+          (ti: StockTransferItem) => ti.itemId === item.itemId,
+        );
 
         // Ledger entry for transfer in
-        await stockLedgerRepo.save(stockLedgerRepo.create({
-          itemId: item.itemId,
-          facilityId: toStore.facilityId,
-          storeId: transfer.toStoreId,
-          quantity: qty,
-          balanceAfter: balance.totalQuantity,
-          movementType: MovementType.TRANSFER_IN,
-          unitCost: Number(transferItem?.unitCost) || 0,
-          referenceType: 'stock_transfer',
-          referenceId: id,
-          notes: `Transfer from ${transfer.fromStore?.name || transfer.fromStoreId}`,
-          createdById: userId,
-          ...(tenantId ? { tenantId } : {}),
-        }));
+        await stockLedgerRepo.save(
+          stockLedgerRepo.create({
+            itemId: item.itemId,
+            facilityId: toStore.facilityId,
+            storeId: transfer.toStoreId,
+            quantity: qty,
+            balanceAfter: balance.totalQuantity,
+            movementType: MovementType.TRANSFER_IN,
+            unitCost: Number(transferItem?.unitCost) || 0,
+            referenceType: 'stock_transfer',
+            referenceId: id,
+            notes: `Transfer from ${transfer.fromStore?.name || transfer.fromStoreId}`,
+            createdById: userId,
+            ...(tenantId ? { tenantId } : {}),
+          }),
+        );
       }
 
       await transferRepo.update(id, {
@@ -371,7 +430,12 @@ export class StoresService {
 
           // Refund to source store balance
           const balance = await stockBalanceRepo.findOne({
-            where: { itemId: item.itemId, facilityId: fromStore.facilityId, storeId: transfer.fromStoreId, ...(tenantId ? { tenantId } : {}) },
+            where: {
+              itemId: item.itemId,
+              facilityId: fromStore.facilityId,
+              storeId: transfer.fromStoreId,
+              ...(tenantId ? { tenantId } : {}),
+            },
             lock: { mode: 'pessimistic_write' },
           });
           if (balance) {
@@ -383,7 +447,12 @@ export class StoresService {
 
           // Refund to facility-level balance
           const facilityBalance = await stockBalanceRepo.findOne({
-            where: { itemId: item.itemId, facilityId: fromStore.facilityId, storeId: null as any, ...(tenantId ? { tenantId } : {}) },
+            where: {
+              itemId: item.itemId,
+              facilityId: fromStore.facilityId,
+              storeId: null as any,
+              ...(tenantId ? { tenantId } : {}),
+            },
             lock: { mode: 'pessimistic_write' },
           });
           if (facilityBalance) {
@@ -394,19 +463,21 @@ export class StoresService {
           }
 
           // Ledger entry for cancellation refund
-          await stockLedgerRepo.save(stockLedgerRepo.create({
-            itemId: item.itemId,
-            facilityId: fromStore.facilityId,
-            storeId: transfer.fromStoreId,
-            quantity: qty,
-            balanceAfter: balance ? balance.totalQuantity : qty,
-            movementType: MovementType.ADJUSTMENT,
-            referenceType: 'stock_transfer_cancel',
-            referenceId: id,
-            notes: `Transfer cancelled – stock returned from ${transfer.toStore?.name || transfer.toStoreId}`,
-            createdById: userId,
-            ...(tenantId ? { tenantId } : {}),
-          }));
+          await stockLedgerRepo.save(
+            stockLedgerRepo.create({
+              itemId: item.itemId,
+              facilityId: fromStore.facilityId,
+              storeId: transfer.fromStoreId,
+              quantity: qty,
+              balanceAfter: balance ? balance.totalQuantity : qty,
+              movementType: MovementType.ADJUSTMENT,
+              referenceType: 'stock_transfer_cancel',
+              referenceId: id,
+              notes: `Transfer cancelled – stock returned from ${transfer.toStore?.name || transfer.toStoreId}`,
+              createdById: userId,
+              ...(tenantId ? { tenantId } : {}),
+            }),
+          );
         }
 
         await transferRepo.update(id, {
@@ -423,17 +494,21 @@ export class StoresService {
   }
 
   // Inventory methods
-  async getInventoryList(params: {
-    category?: string;
-    lowStock?: boolean;
-    search?: string;
-    page?: number;
-    limit?: number;
-    storeId?: string;
-  }, tenantId?: string) {
+  async getInventoryList(
+    params: {
+      category?: string;
+      lowStock?: boolean;
+      search?: string;
+      page?: number;
+      limit?: number;
+      storeId?: string;
+    },
+    tenantId?: string,
+  ) {
     const { category, lowStock, search, page = 1, limit = 50, storeId } = params;
 
-    const qb = this.itemRepo.createQueryBuilder('item')
+    const qb = this.itemRepo
+      .createQueryBuilder('item')
       .leftJoinAndSelect('item.itemCategory', 'itemCategory')
       .leftJoinAndSelect('item.brand', 'brand')
       .where('item.status = :status', { status: 'active' });
@@ -442,11 +517,16 @@ export class StoresService {
     qb.andWhere('item.isDrug = :isDrug', { isDrug: true });
 
     if (category) {
-      qb.andWhere('(item.category ILIKE :category OR itemCategory.name ILIKE :category)', { category: `%${category}%` });
+      qb.andWhere('(item.category ILIKE :category OR itemCategory.name ILIKE :category)', {
+        category: `%${category}%`,
+      });
     }
 
     if (search) {
-      qb.andWhere('(item.name ILIKE :search OR item.genericName ILIKE :search OR item.code ILIKE :search)', { search: `%${search}%` });
+      qb.andWhere(
+        '(item.name ILIKE :search OR item.genericName ILIKE :search OR item.code ILIKE :search)',
+        { search: `%${search}%` },
+      );
     }
 
     if (lowStock) {
@@ -464,11 +544,12 @@ export class StoresService {
       .getManyAndCount();
 
     // Get stock balances for these items (filtered by store if specified)
-    const itemIds = items.map(i => i.id);
-    let stockMap = new Map<string, StockBalance>();
-    
+    const itemIds = items.map((i) => i.id);
+    const stockMap = new Map<string, StockBalance>();
+
     if (itemIds.length > 0) {
-      const balanceQb = this.stockBalanceRepo.createQueryBuilder('sb')
+      const balanceQb = this.stockBalanceRepo
+        .createQueryBuilder('sb')
         .where('sb.itemId IN (:...itemIds)', { itemIds });
       if (storeId) {
         balanceQb.andWhere('sb.storeId = :storeId', { storeId });
@@ -476,11 +557,11 @@ export class StoresService {
         balanceQb.andWhere('sb.storeId IS NULL');
       }
       const balances = await balanceQb.getMany();
-      balances.forEach(b => stockMap.set(b.itemId, b));
+      balances.forEach((b) => stockMap.set(b.itemId, b));
     }
 
     // Transform to inventory response
-    const data = items.map(item => {
+    const data = items.map((item) => {
       const balance = stockMap.get(item.id);
       return {
         id: item.id,
@@ -496,64 +577,70 @@ export class StoresService {
         unit: item.unit,
         unitCost: Number(item.unitCost) || 0,
         sellingPrice: Number(item.sellingPrice) || 0,
-        lastUpdated: balance?.lastMovementAt?.toISOString() || item.updatedAt?.toISOString() || new Date().toISOString(),
+        lastUpdated:
+          balance?.lastMovementAt?.toISOString() ||
+          item.updatedAt?.toISOString() ||
+          new Date().toISOString(),
         isLowStock: (balance?.totalQuantity || 0) <= (item.reorderLevel || 0),
       };
     });
 
     // Get batch/expiry info for items with stock
-    const itemIdsWithStock = data.filter(d => d.currentStock > 0).map(d => d.id);
-    let batchMap = new Map<string, { batchNumber: string; expiryDate: string | null }>();
-    
+    const itemIdsWithStock = data.filter((d) => d.currentStock > 0).map((d) => d.id);
+    const batchMap = new Map<string, { batchNumber: string; expiryDate: string | null }>();
+
     if (itemIdsWithStock.length > 0) {
       // Get the latest batch info for each item
-      const batches = await this.stockLedgerRepo.createQueryBuilder('sl')
+      const batches = await this.stockLedgerRepo
+        .createQueryBuilder('sl')
         .select(['sl.itemId', 'sl.batchNumber', 'sl.expiryDate'])
         .where('sl.itemId IN (:...itemIds)', { itemIds: itemIdsWithStock })
         .andWhere('sl.quantity > 0')
         .orderBy('sl.createdAt', 'DESC')
         .getMany();
-      
-      batches.forEach(b => {
+
+      batches.forEach((b) => {
         if (!batchMap.has(b.itemId)) {
           // expiryDate may already be a string from the query
-          const expiryStr = b.expiryDate 
-            ? (typeof b.expiryDate === 'string' ? b.expiryDate : b.expiryDate.toISOString())
+          const expiryStr = b.expiryDate
+            ? typeof b.expiryDate === 'string'
+              ? b.expiryDate
+              : b.expiryDate.toISOString()
             : null;
-          batchMap.set(b.itemId, { 
-            batchNumber: b.batchNumber, 
-            expiryDate: expiryStr 
+          batchMap.set(b.itemId, {
+            batchNumber: b.batchNumber,
+            expiryDate: expiryStr,
           });
         }
       });
     }
 
     // Add batch info to data
-    const enrichedData = data.map(item => ({
+    const enrichedData = data.map((item) => ({
       ...item,
       batchNumber: batchMap.get(item.id)?.batchNumber || null,
       expiryDate: batchMap.get(item.id)?.expiryDate || null,
     }));
 
     // Calculate stats
-    const lowStockCount = enrichedData.filter(d => d.isLowStock && d.currentStock > 0).length;
+    const lowStockCount = enrichedData.filter((d) => d.isLowStock && d.currentStock > 0).length;
     const today = new Date();
     const thirtyDaysLater = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
-    const expiringCount = enrichedData.filter(d => {
+    const expiringCount = enrichedData.filter((d) => {
       if (!d.expiryDate) return false;
       const expiry = new Date(d.expiryDate);
       return expiry <= thirtyDaysLater && expiry >= today;
     }).length;
-    const expiredCount = enrichedData.filter(d => {
+    const expiredCount = enrichedData.filter((d) => {
       if (!d.expiryDate) return false;
       return new Date(d.expiryDate) < today;
     }).length;
-    const totalValue = enrichedData.reduce((sum, d) => sum + (d.currentStock * d.sellingPrice), 0);
+    const totalValue = enrichedData.reduce((sum, d) => sum + d.currentStock * d.sellingPrice, 0);
 
-    return { 
-      data: enrichedData, 
-      total, 
-      page, 
+    return {
+      data: enrichedData,
+      total,
+      page,
       limit,
       stats: {
         totalItems: total,
@@ -561,20 +648,26 @@ export class StoresService {
         expiringCount,
         expiredCount,
         totalValue,
-      }
+      },
     };
   }
 
   // Stock adjustment
-  async adjustStock(itemId: string, dto: {
-    quantity: number;
-    type: 'in' | 'out' | 'adjustment';
-    reason: string;
-    batchNumber?: string;
-    expiryDate?: string;
-    reference?: string;
-    storeId?: string;
-  }, userId: string, facilityId: string, tenantId?: string) {
+  async adjustStock(
+    itemId: string,
+    dto: {
+      quantity: number;
+      type: 'in' | 'out' | 'adjustment';
+      reason: string;
+      batchNumber?: string;
+      expiryDate?: string;
+      reference?: string;
+      storeId?: string;
+    },
+    userId: string,
+    facilityId: string,
+    tenantId?: string,
+  ) {
     const where: any = { id: itemId };
     if (tenantId) where.tenantId = tenantId;
     const item = await this.itemRepo.findOne({ where });
@@ -617,7 +710,8 @@ export class StoresService {
     await this.stockBalanceRepo.save(balance);
 
     // Create ledger entry
-    const movementType = dto.type === 'in' ? 'purchase' : dto.type === 'out' ? 'sale' : 'adjustment';
+    const movementType =
+      dto.type === 'in' ? 'purchase' : dto.type === 'out' ? 'sale' : 'adjustment';
     const ledger = this.stockLedgerRepo.create({
       itemId,
       facilityId,
@@ -636,8 +730,8 @@ export class StoresService {
     });
     await this.stockLedgerRepo.save(ledger);
 
-    return { 
-      success: true, 
+    return {
+      success: true,
       newBalance,
       movement: ledger,
     };
@@ -664,7 +758,9 @@ export class StoresService {
     });
     if (!item) throw new NotFoundException('Item not found');
 
-    const balance = await this.stockBalanceRepo.findOne({ where: { itemId: id, ...(tenantId ? { tenantId } : {}) } });
+    const balance = await this.stockBalanceRepo.findOne({
+      where: { itemId: id, ...(tenantId ? { tenantId } : {}) },
+    });
 
     return {
       ...item,
@@ -675,7 +771,8 @@ export class StoresService {
 
   async getLowStockItems(tenantId?: string) {
     // Get items where current stock is at or below reorder level
-    const qb = this.itemRepo.createQueryBuilder('item')
+    const qb = this.itemRepo
+      .createQueryBuilder('item')
       .leftJoin(StockBalance, 'sb', 'sb.itemId = item.id')
       .where('item.status = :status', { status: 'active' })
       .andWhere('item.isDrug = :isDrug', { isDrug: true })
@@ -695,11 +792,14 @@ export class StoresService {
     cutoff.setDate(cutoff.getDate() + daysAhead);
 
     try {
-      const qb = this.itemRepo.createQueryBuilder('item')
+      const qb = this.itemRepo
+        .createQueryBuilder('item')
         .leftJoin(StockBalance, 'sb', 'sb.itemId = item.id')
         .leftJoin('item.itemCategory', 'cat')
         .select([
-          'item.id', 'item.name', 'item.code',
+          'item.id',
+          'item.name',
+          'item.code',
           'item.category',
           'COALESCE(sb.totalQuantity, 0) as "currentStock"',
           'COALESCE(sb.availableQuantity, 0) as "availableStock"',
@@ -716,7 +816,7 @@ export class StoresService {
 
       const rows = await qb.orderBy('item.name', 'ASC').getRawMany();
 
-      return rows.map(r => ({
+      return rows.map((r) => ({
         id: r.item_id,
         name: r.item_name,
         code: r.item_code,
@@ -732,14 +832,23 @@ export class StoresService {
   }
 
   // Helper: get or create a store-level stock balance
-  private async getOrCreateStoreBalance(itemId: string, facilityId: string, storeId: string, tenantId?: string): Promise<StockBalance> {
+  private async getOrCreateStoreBalance(
+    itemId: string,
+    facilityId: string,
+    storeId: string,
+    tenantId?: string,
+  ): Promise<StockBalance> {
     let balance = await this.stockBalanceRepo.findOne({
-      where: { itemId, facilityId, storeId , ...(tenantId ? { tenantId } : {}) },
+      where: { itemId, facilityId, storeId, ...(tenantId ? { tenantId } : {}) },
     });
     if (!balance) {
       balance = this.stockBalanceRepo.create({
-        itemId, facilityId, storeId,
-        totalQuantity: 0, reservedQuantity: 0, availableQuantity: 0,
+        itemId,
+        facilityId,
+        storeId,
+        totalQuantity: 0,
+        reservedQuantity: 0,
+        availableQuantity: 0,
         ...(tenantId ? { tenantId } : {}),
       });
     }
@@ -747,7 +856,8 @@ export class StoresService {
   }
 
   async listMovements(itemId?: string, limit = 50, tenantId?: string) {
-    const qb = this.stockLedgerRepo.createQueryBuilder('sl')
+    const qb = this.stockLedgerRepo
+      .createQueryBuilder('sl')
       .leftJoinAndSelect('sl.item', 'item')
       .leftJoinAndSelect('sl.store', 'store')
       .orderBy('sl.createdAt', 'DESC')
@@ -775,18 +885,21 @@ export class StoresService {
       fromStoreId: dto.fromStoreId,
       toStoreId: dto.toStoreId,
       reason: dto.reason,
-      items: [{
-        itemId,
-        itemCode: item.code || '',
-        itemName: item.name || '',
-        quantityRequested: dto.quantity,
-      }],
+      items: [
+        {
+          itemId,
+          itemCode: item.code || '',
+          itemName: item.name || '',
+          quantityRequested: dto.quantity,
+        },
+      ],
     };
     return this.createTransfer(transferDto, userId, tenantId);
   }
 
   async getCategorySummary(tenantId?: string) {
-    const qb = this.stockBalanceRepo.createQueryBuilder('sb')
+    const qb = this.stockBalanceRepo
+      .createQueryBuilder('sb')
       .leftJoinAndSelect('sb.item', 'item')
       .select('item.category', 'category')
       .addSelect('COUNT(DISTINCT sb.item_id)', 'itemCount')

@@ -12,8 +12,18 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { ReferralsService } from './referrals.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
-import { CreateReferralDto, AcceptReferralDto, RejectReferralDto, CompleteReferralDto, ReferralFilterDto } from './dto/referral.dto';
+import {
+  CreateReferralDto,
+  AcceptReferralDto,
+  RejectReferralDto,
+  CompleteReferralDto,
+  ReferralFilterDto,
+} from './dto/referral.dto';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
+@UseGuards(ModuleGuard)
+@RequireModule('doctors')
 @Controller('referrals')
 @UseGuards(AuthGuard('jwt'))
 export class ReferralsController {
@@ -49,7 +59,11 @@ export class ReferralsController {
 
   @Get('stats')
   @AuthWithPermissions('referrals.read')
-  async getStats(@Query('fromDate') fromDate: string, @Query('toDate') toDate: string, @Request() req: any) {
+  async getStats(
+    @Query('fromDate') fromDate: string,
+    @Query('toDate') toDate: string,
+    @Request() req: any,
+  ) {
     const facilityId = req.user.facilityId || req.headers['x-facility-id'];
     return this.referralsService.getReferralStats(
       facilityId,

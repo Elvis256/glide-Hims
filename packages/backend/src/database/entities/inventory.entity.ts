@@ -1,15 +1,17 @@
-import {
-  Entity,
-  Column,
-  ManyToOne,
-  JoinColumn,
-  Index,
-} from 'typeorm';
+import { Entity, Column, ManyToOne, JoinColumn, Index } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Facility } from './facility.entity';
 import { Store } from './store.entity';
 import { User } from './user.entity';
-import { ItemCategory, ItemSubcategory, ItemBrand, ItemFormulation, ItemUnit, ItemStrength, StorageCondition } from './item-classification.entity';
+import {
+  ItemCategory,
+  ItemSubcategory,
+  ItemBrand,
+  ItemFormulation,
+  ItemUnit,
+  ItemStrength,
+  StorageCondition,
+} from './item-classification.entity';
 
 export enum ExpiryAlertStatus {
   ACTIVE = 'active',

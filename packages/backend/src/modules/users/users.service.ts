@@ -12,26 +12,39 @@ import * as bcrypt from 'bcrypt';
 import { User } from '../../database/entities/user.entity';
 import { UserRole } from '../../database/entities/user-role.entity';
 import { Role } from '../../database/entities/role.entity';
-import { Employee, StaffCategory, EmploymentType, Gender } from '../../database/entities/employee.entity';
+import {
+  Employee,
+  StaffCategory,
+  EmploymentType,
+  Gender,
+} from '../../database/entities/employee.entity';
 import { UserPermission } from '../../database/entities/user-permission.entity';
 import { Permission } from '../../database/entities/permission.entity';
 import { AuditLog } from '../../database/entities/audit-log.entity';
-import { CreateUserDto, UpdateUserDto, AssignRoleDto, UserListQueryDto, AssignPermissionDto } from './dto/user.dto';
+import {
+  CreateUserDto,
+  UpdateUserDto,
+  AssignRoleDto,
+  UserListQueryDto,
+  AssignPermissionDto,
+} from './dto/user.dto';
+import { BulkImportResult, BulkImportRowError } from './dto/bulk-import.dto';
+import * as XLSX from 'xlsx';
 
 // Improvement #6: Role → StaffCategory mapping utility
 const ROLE_CATEGORY_MAP: Record<string, StaffCategory> = {
-  'Doctor': StaffCategory.DOCTOR,
-  'Nurse': StaffCategory.NURSE,
-  'Clinician': StaffCategory.CONSULTANT,
-  'Pharmacist': StaffCategory.PHARMACIST,
+  Doctor: StaffCategory.DOCTOR,
+  Nurse: StaffCategory.NURSE,
+  Clinician: StaffCategory.CONSULTANT,
+  Pharmacist: StaffCategory.PHARMACIST,
   'Lab Technician': StaffCategory.LAB_TECHNICIAN,
-  'Radiologist': StaffCategory.RADIOLOGIST,
-  'Receptionist': StaffCategory.RECEPTIONIST,
-  'Cashier': StaffCategory.CASHIER,
+  Radiologist: StaffCategory.RADIOLOGIST,
+  Receptionist: StaffCategory.RECEPTIONIST,
+  Cashier: StaffCategory.CASHIER,
   'Store Keeper': StaffCategory.STORE_KEEPER,
   'HR Manager': StaffCategory.ADMINISTRATOR,
-  'Administrator': StaffCategory.ADMINISTRATOR,
-  'Staff': StaffCategory.OTHER,
+  Administrator: StaffCategory.ADMINISTRATOR,
+  Staff: StaffCategory.OTHER,
 };
 
 export function mapRoleToStaffCategory(roleName: string): StaffCategory {
@@ -61,15 +74,21 @@ export class UsersService {
     private dataSource: DataSource,
   ) {}
 
-  async create(createUserDto: CreateUserDto, tenantId?: string): Promise<User & { employee?: Employee }> {
+  async create(
+    createUserDto: CreateUserDto,
+    tenantId?: string,
+  ): Promise<User & { employee?: Employee }> {
     const { employeeProfile, employeeId, roleId, facilityId, ...userData } = createUserDto;
 
     // NOTE: Employee link is optional. Required for staff users, but patient users
     // (e.g., for hospital insurance biometric verification) don't need employee records.
-    
+
     // Check for duplicate username or email within the same tenant
     const whereConditions: any[] = tenantId
-      ? [{ username: userData.username, tenantId }, { email: userData.email, tenantId }]
+      ? [
+          { username: userData.username, tenantId },
+          { email: userData.email, tenantId },
+        ]
       : [{ username: userData.username }, { email: userData.email }];
     const existingUser = await this.userRepository.findOne({
       where: whereConditions,
@@ -83,7 +102,10 @@ export class UsersService {
     if (roleId) {
       const role = await this.roleRepository.findOne({
         where: tenantId
-          ? [{ id: roleId, tenantId }, { id: roleId, tenantId: IsNull() }]
+          ? [
+              { id: roleId, tenantId },
+              { id: roleId, tenantId: IsNull() },
+            ]
           : { id: roleId },
       });
       if (!role) {
@@ -140,7 +162,8 @@ export class UsersService {
       // Link to existing employee
       if (employeeId) {
         await queryRunner.manager.update(Employee, employeeId, { userId: savedUser.id });
-        employee = await queryRunner.manager.findOne(Employee, { where: { id: employeeId } }) ?? undefined;
+        employee =
+          (await queryRunner.manager.findOne(Employee, { where: { id: employeeId } })) ?? undefined;
       }
       // Create new employee profile (explicit or auto-generated)
       // Skip employee creation for system admin users (they don't need facility/employee records)
@@ -157,7 +180,9 @@ export class UsersService {
           const employeeCount = await queryRunner.manager.count(Employee);
           const employeeNumber = `EMP${String(employeeCount + 1).padStart(5, '0')}`;
 
-          const autoStaffCategory = roleName ? mapRoleToStaffCategory(roleName) : StaffCategory.OTHER;
+          const autoStaffCategory = roleName
+            ? mapRoleToStaffCategory(roleName)
+            : StaffCategory.OTHER;
 
           employee = this.employeeRepository.create({
             employeeNumber,
@@ -166,7 +191,9 @@ export class UsersService {
             lastName,
             email: userData.email,
             phone: userData.phone,
-            dateOfBirth: employeeProfile?.dateOfBirth ? new Date(employeeProfile.dateOfBirth) : new Date('1990-01-01'),
+            dateOfBirth: employeeProfile?.dateOfBirth
+              ? new Date(employeeProfile.dateOfBirth)
+              : new Date('1990-01-01'),
             gender: employeeProfile?.gender || Gender.OTHER,
             jobTitle: employeeProfile?.jobTitle || roleName || 'Staff',
             department: employeeProfile?.department,
@@ -213,7 +240,9 @@ export class UsersService {
 
     // Tenant filter MUST come first and use andWhere to never be overwritten
     // When tenantId is undefined, use a non-existent UUID to return empty results (failsafe)
-    queryBuilder.where('user.tenant_id = :tenantId', { tenantId: tenantId || '00000000-0000-0000-0000-000000000000' });
+    queryBuilder.where('user.tenant_id = :tenantId', {
+      tenantId: tenantId || '00000000-0000-0000-0000-000000000000',
+    });
 
     if (search) {
       queryBuilder.andWhere(
@@ -298,11 +327,11 @@ export class UsersService {
     `);
 
     // Deduplicate users who have multiple roles — prefer Super Admin > Tenant Admin > Admin
-    const rolePriority: Record<string, number> = { 'Super Admin': 3, 'Tenant Admin': 2, 'Admin': 1 };
+    const rolePriority: Record<string, number> = { 'Super Admin': 3, 'Tenant Admin': 2, Admin: 1 };
     const userMap = new Map<string, any>();
     for (const row of rows) {
       const existing = userMap.get(row.id);
-      const existingPriority = existing ? (rolePriority[existing.roleName] || 0) : -1;
+      const existingPriority = existing ? rolePriority[existing.roleName] || 0 : -1;
       const rowPriority = rolePriority[row.roleName] || 0;
       if (!existing || rowPriority > existingPriority) {
         userMap.set(row.id, row);
@@ -312,7 +341,9 @@ export class UsersService {
   }
 
   async findOne(id: string, tenantId?: string): Promise<User> {
-    const user = await this.userRepository.findOne({ where: { id , ...(tenantId ? { tenantId } : {}) } });
+    const user = await this.userRepository.findOne({
+      where: { id, ...(tenantId ? { tenantId } : {}) },
+    });
 
     if (!user) {
       throw new NotFoundException('User not found');
@@ -325,13 +356,13 @@ export class UsersService {
     const user = await this.findOne(id, tenantId);
 
     const userRoles = await this.userRoleRepository.find({
-      where: { userId: id , ...(tenantId ? { tenantId } : {}) },
+      where: { userId: id, ...(tenantId ? { tenantId } : {}) },
       relations: ['role', 'facility', 'department'],
     });
 
     // Get employee profile if linked
     const employee = await this.employeeRepository.findOne({
-      where: { userId: id , ...(tenantId ? { tenantId } : {}) },
+      where: { userId: id, ...(tenantId ? { tenantId } : {}) },
       relations: ['facility'],
     });
 
@@ -343,26 +374,34 @@ export class UsersService {
         facility: ur.facility ? { id: ur.facility.id, name: ur.facility.name } : null,
         department: ur.department ? { id: ur.department.id, name: ur.department.name } : null,
       })),
-      employee: employee ? {
-        id: employee.id,
-        employeeNumber: employee.employeeNumber,
-        jobTitle: employee.jobTitle,
-        department: employee.department,
-        staffCategory: employee.staffCategory,
-        licenseNumber: employee.licenseNumber,
-        specialization: employee.specialization,
-        employmentType: employee.employmentType,
-        status: employee.status,
-        facility: employee.facility ? { id: employee.facility.id, name: employee.facility.name } : null,
-      } : null,
+      employee: employee
+        ? {
+            id: employee.id,
+            employeeNumber: employee.employeeNumber,
+            jobTitle: employee.jobTitle,
+            department: employee.department,
+            staffCategory: employee.staffCategory,
+            licenseNumber: employee.licenseNumber,
+            specialization: employee.specialization,
+            employmentType: employee.employmentType,
+            status: employee.status,
+            facility: employee.facility
+              ? { id: employee.facility.id, name: employee.facility.name }
+              : null,
+          }
+        : null,
     };
   }
 
-  async linkUserToEmployee(userId: string, employeeId: string, tenantId?: string): Promise<Employee> {
+  async linkUserToEmployee(
+    userId: string,
+    employeeId: string,
+    tenantId?: string,
+  ): Promise<Employee> {
     const user = await this.findOne(userId, tenantId);
-    
+
     const employee = await this.employeeRepository.findOne({
-      where: { id: employeeId , ...(tenantId ? { tenantId } : {}) },
+      where: { id: employeeId, ...(tenantId ? { tenantId } : {}) },
     });
 
     if (!employee) {
@@ -375,7 +414,7 @@ export class UsersService {
 
     // Check if user is already linked to another employee
     const existingLink = await this.employeeRepository.findOne({
-      where: { userId , ...(tenantId ? { tenantId } : {}) },
+      where: { userId, ...(tenantId ? { tenantId } : {}) },
     });
 
     if (existingLink && existingLink.id !== employeeId) {
@@ -388,7 +427,7 @@ export class UsersService {
 
   async unlinkUserFromEmployee(userId: string, tenantId?: string): Promise<void> {
     const employee = await this.employeeRepository.findOne({
-      where: { userId , ...(tenantId ? { tenantId } : {}) },
+      where: { userId, ...(tenantId ? { tenantId } : {}) },
     });
 
     if (!employee) {
@@ -401,7 +440,7 @@ export class UsersService {
 
   async getEmployeeByUserId(userId: string, tenantId?: string): Promise<Employee | null> {
     return this.employeeRepository.findOne({
-      where: { userId , ...(tenantId ? { tenantId } : {}) },
+      where: { userId, ...(tenantId ? { tenantId } : {}) },
       relations: ['facility'],
     });
   }
@@ -445,8 +484,10 @@ export class UsersService {
     if (updateUserDto.email) user.email = updateUserDto.email;
     if (updateUserDto.phone !== undefined) user.phone = updateUserDto.phone;
     if (updateUserDto.status) user.status = updateUserDto.status;
-    if (updateUserDto.facilityId !== undefined) user.facilityId = updateUserDto.facilityId || undefined;
-    if (updateUserDto.departmentId !== undefined) user.departmentId = updateUserDto.departmentId || undefined;
+    if (updateUserDto.facilityId !== undefined)
+      user.facilityId = updateUserDto.facilityId || undefined;
+    if (updateUserDto.departmentId !== undefined)
+      user.departmentId = updateUserDto.departmentId || undefined;
 
     const savedUser = await this.userRepository.save(user);
 
@@ -553,7 +594,7 @@ export class UsersService {
   async removeRole(userId: string, roleId: string, tenantId?: string): Promise<void> {
     const where: any = { userId, roleId };
     // user_role records may have NULL tenant_id (assigned before multi-tenant)
-    let userRole = await this.userRoleRepository.findOne({ where, relations: ['role'] });
+    const userRole = await this.userRoleRepository.findOne({ where, relations: ['role'] });
 
     if (!userRole) {
       throw new NotFoundException('User role not found');
@@ -585,7 +626,7 @@ export class UsersService {
       where,
       relations: ['role', 'facility'],
     });
-    return userRoles.map(ur => ({
+    return userRoles.map((ur) => ({
       id: ur.role.id,
       name: ur.role.name,
       description: ur.role.description,
@@ -612,16 +653,21 @@ export class UsersService {
   async getUserPermissions(userId: string, tenantId?: string): Promise<UserPermission[]> {
     await this.findOne(userId, tenantId);
     return this.userPermissionRepository.find({
-      where: { userId , ...(tenantId ? { tenantId } : {}) },
+      where: { userId, ...(tenantId ? { tenantId } : {}) },
       relations: ['permission'],
     });
   }
 
-  async assignPermission(userId: string, dto: AssignPermissionDto, grantedBy: string, tenantId?: string): Promise<UserPermission> {
+  async assignPermission(
+    userId: string,
+    dto: AssignPermissionDto,
+    grantedBy: string,
+    tenantId?: string,
+  ): Promise<UserPermission> {
     await this.findOne(userId, tenantId);
 
     const permission = await this.permissionRepository.findOne({
-      where: { id: dto.permissionId , ...(tenantId ? { tenantId } : {}) },
+      where: { id: dto.permissionId, ...(tenantId ? { tenantId } : {}) },
     });
     if (!permission) {
       throw new NotFoundException('Permission not found');
@@ -629,7 +675,7 @@ export class UsersService {
 
     // Check if already assigned
     const existing = await this.userPermissionRepository.findOne({
-      where: { userId, permissionId: dto.permissionId , ...(tenantId ? { tenantId } : {}) },
+      where: { userId, permissionId: dto.permissionId, ...(tenantId ? { tenantId } : {}) },
     });
     if (existing) {
       throw new ConflictException('Permission already assigned to this user');
@@ -657,7 +703,9 @@ export class UsersService {
         }),
       );
     } catch (e) {
-      this.logger.warn(`Failed to create audit log for permission assignment: ${(e as Error).message}`);
+      this.logger.warn(
+        `Failed to create audit log for permission assignment: ${(e as Error).message}`,
+      );
     }
 
     return savedPermission;
@@ -665,7 +713,7 @@ export class UsersService {
 
   async removePermission(userId: string, permissionId: string, tenantId?: string): Promise<void> {
     const userPermission = await this.userPermissionRepository.findOne({
-      where: { userId, permissionId , ...(tenantId ? { tenantId } : {}) },
+      where: { userId, permissionId, ...(tenantId ? { tenantId } : {}) },
       relations: ['permission'],
     });
     if (!userPermission) {
@@ -687,11 +735,18 @@ export class UsersService {
         }),
       );
     } catch (e) {
-      this.logger.warn(`Failed to create audit log for permission removal: ${(e as Error).message}`);
+      this.logger.warn(
+        `Failed to create audit log for permission removal: ${(e as Error).message}`,
+      );
     }
   }
 
-  async assignMultiplePermissions(userId: string, permissionIds: string[], grantedBy: string, tenantId?: string): Promise<UserPermission[]> {
+  async assignMultiplePermissions(
+    userId: string,
+    permissionIds: string[],
+    grantedBy: string,
+    tenantId?: string,
+  ): Promise<UserPermission[]> {
     await this.findOne(userId, tenantId);
 
     const results: UserPermission[] = [];
@@ -721,7 +776,7 @@ export class UsersService {
    */
   async hasEmployeeRecord(userId: string, tenantId?: string): Promise<boolean> {
     const employee = await this.employeeRepository.findOne({
-      where: { userId , ...(tenantId ? { tenantId } : {}) },
+      where: { userId, ...(tenantId ? { tenantId } : {}) },
     });
     return !!employee;
   }
@@ -731,7 +786,7 @@ export class UsersService {
    */
   async getEmployeeForUser(userId: string, tenantId?: string): Promise<Employee | null> {
     return this.employeeRepository.findOne({
-      where: { userId , ...(tenantId ? { tenantId } : {}) },
+      where: { userId, ...(tenantId ? { tenantId } : {}) },
       relations: ['facility'],
     });
   }
@@ -741,12 +796,12 @@ export class UsersService {
    */
   async validateUserHasEmployee(userId: string, tenantId?: string): Promise<Employee> {
     const employee = await this.employeeRepository.findOne({
-      where: { userId , ...(tenantId ? { tenantId } : {}) },
+      where: { userId, ...(tenantId ? { tenantId } : {}) },
       relations: ['facility'],
     });
     if (!employee) {
       throw new BadRequestException(
-        'Your account is not linked to an employee profile. Please contact HR to complete your profile setup.'
+        'Your account is not linked to an employee profile. Please contact HR to complete your profile setup.',
       );
     }
     return employee;
@@ -756,7 +811,8 @@ export class UsersService {
    * Improvement #3: Backfill employees for users that don't have one
    */
   async backfillEmployees(tenantId?: string): Promise<{ created: number; skipped: number }> {
-    const qb = this.userRepository.createQueryBuilder('user')
+    const qb = this.userRepository
+      .createQueryBuilder('user')
       .leftJoin(Employee, 'emp', 'emp.user_id = user.id')
       .where('emp.id IS NULL');
     if (tenantId) {
@@ -794,7 +850,9 @@ export class UsersService {
         // Determine facility from user's role assignment or user's facilityId
         const facilityId = userRole?.facilityId || user.facilityId;
         if (!facilityId) {
-          this.logger.warn(`Skipping backfill for user ${user.id} (${user.username}) — no facility`);
+          this.logger.warn(
+            `Skipping backfill for user ${user.id} (${user.username}) — no facility`,
+          );
           skipped++;
           continue;
         }
@@ -820,7 +878,9 @@ export class UsersService {
         await this.employeeRepository.save(employee);
         created++;
       } catch (e) {
-        this.logger.warn(`Failed to backfill employee for user ${user.id}: ${(e as Error).message}`);
+        this.logger.warn(
+          `Failed to backfill employee for user ${user.id}: ${(e as Error).message}`,
+        );
         skipped++;
       }
     }
@@ -832,10 +892,240 @@ export class UsersService {
     const { passwordHash, mfaSecret, userRoles, ...sanitized } = user;
     return {
       ...sanitized,
-      roles: userRoles?.map((ur: UserRole) => ({
-        id: ur.role?.id,
-        name: ur.role?.name,
-      })) || [],
+      roles:
+        userRoles?.map((ur: UserRole) => ({
+          id: ur.role?.id,
+          name: ur.role?.name,
+        })) || [],
     };
+  }
+
+  async bulkImport(
+    file: Express.Multer.File,
+    tenantId?: string,
+    facilityId?: string,
+  ): Promise<BulkImportResult> {
+    const rows = this.parseImportFile(file);
+    const errors: BulkImportRowError[] = [];
+    let successful = 0;
+
+    // Pre-fetch all roles for this tenant for name matching
+    const roles = await this.roleRepository.find({
+      where: tenantId ? [{ tenantId }, { tenantId: IsNull() }] : undefined,
+    });
+    const rolesByName = new Map(roles.map((r) => [r.name.toLowerCase(), r]));
+
+    // Pre-fetch existing usernames in this tenant
+    const existingUsers = await this.userRepository.find({
+      where: tenantId ? { tenantId } : undefined,
+      select: ['username'],
+    });
+    const existingUsernames = new Set(existingUsers.map((u) => u.username.toLowerCase()));
+
+    // Validate all rows first
+    const validatedRows: { index: number; data: Record<string, string>; role?: Role }[] = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const rowNum = i + 2; // +2 for 1-based index + header row
+      let hasError = false;
+
+      const username = (row['username'] || '').trim();
+      const email = (row['email'] || '').trim();
+      const fullName = (row['full_name'] || '').trim();
+      const roleName = (row['role'] || '').trim();
+
+      if (!username) {
+        errors.push({ row: rowNum, field: 'username', message: 'Username is required' });
+        hasError = true;
+      } else if (/\s/.test(username)) {
+        errors.push({
+          row: rowNum,
+          field: 'username',
+          message: 'Username must not contain spaces',
+        });
+        hasError = true;
+      } else if (existingUsernames.has(username.toLowerCase())) {
+        errors.push({
+          row: rowNum,
+          field: 'username',
+          message: `Username "${username}" already exists`,
+        });
+        hasError = true;
+      }
+
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        errors.push({ row: rowNum, field: 'email', message: 'Invalid email format' });
+        hasError = true;
+      }
+
+      if (!fullName) {
+        errors.push({ row: rowNum, field: 'full_name', message: 'Full name is required' });
+        hasError = true;
+      }
+
+      let matchedRole: Role | undefined;
+      if (roleName) {
+        matchedRole = rolesByName.get(roleName.toLowerCase());
+        if (!matchedRole) {
+          errors.push({ row: rowNum, field: 'role', message: `Role "${roleName}" not found` });
+          hasError = true;
+        }
+      }
+
+      if (!hasError) {
+        existingUsernames.add(username.toLowerCase());
+        validatedRows.push({ index: rowNum, data: row, role: matchedRole });
+      }
+    }
+
+    // Process valid rows in a transaction
+    if (validatedRows.length > 0) {
+      const queryRunner = this.dataSource.createQueryRunner();
+      await queryRunner.connect();
+      await queryRunner.startTransaction();
+
+      try {
+        const saltRoundsConfig = this.configService.get<string>('BCRYPT_ROUNDS', '12');
+        const saltRounds = parseInt(saltRoundsConfig, 10) || 12;
+        const tempPassword = 'TempPass123!';
+        const passwordHash = await bcrypt.hash(tempPassword, saltRounds);
+
+        for (const { index: rowNum, data: row, role } of validatedRows) {
+          try {
+            const username = row['username'].trim();
+            const email = (row['email'] || '').trim();
+            const fullName = row['full_name'].trim();
+            const phone = (row['phone'] || '').trim() || undefined;
+            const department = (row['department'] || '').trim() || undefined;
+            const jobTitle = (row['job_title'] || '').trim() || undefined;
+
+            const user = this.userRepository.create({
+              username,
+              email: email || `${username}@import.local`,
+              fullName,
+              phone,
+              passwordHash,
+              status: 'active',
+              tenantId: tenantId || undefined,
+              facilityId: facilityId || undefined,
+              jobTitle,
+              mustChangePassword: true,
+            });
+
+            const savedUser = await queryRunner.manager.save(user);
+
+            // Create employee record (same pattern as create method)
+            const nameParts = fullName.split(' ');
+            const firstName = nameParts[0];
+            const lastName = nameParts.slice(1).join(' ') || firstName;
+            const employeeCount = await queryRunner.manager.count(Employee);
+            const employeeNumber = `EMP${String(employeeCount + 1).padStart(5, '0')}`;
+            const autoStaffCategory = role
+              ? mapRoleToStaffCategory(role.name)
+              : StaffCategory.OTHER;
+
+            const employee = this.employeeRepository.create({
+              employeeNumber,
+              userId: savedUser.id,
+              firstName,
+              lastName,
+              email: savedUser.email,
+              phone,
+              dateOfBirth: new Date('1990-01-01'),
+              gender: Gender.OTHER,
+              jobTitle: jobTitle || role?.name || 'Staff',
+              department,
+              staffCategory: autoStaffCategory,
+              employmentType: EmploymentType.PERMANENT,
+              hireDate: new Date(),
+              basicSalary: 0,
+              facilityId: facilityId || undefined,
+              tenantId: tenantId || undefined,
+            });
+
+            await queryRunner.manager.save(employee);
+
+            // Assign role if matched
+            if (role) {
+              const userRole = this.userRoleRepository.create({
+                userId: savedUser.id,
+                roleId: role.id,
+                facilityId: facilityId || undefined,
+              });
+              await queryRunner.manager.save(userRole);
+            }
+
+            successful++;
+          } catch (err) {
+            errors.push({
+              row: rowNum,
+              field: 'general',
+              message: err instanceof Error ? err.message : 'Unknown error creating user',
+            });
+          }
+        }
+
+        if (successful > 0) {
+          await queryRunner.commitTransaction();
+        } else {
+          await queryRunner.rollbackTransaction();
+        }
+      } catch (error) {
+        await queryRunner.rollbackTransaction();
+        throw error;
+      } finally {
+        await queryRunner.release();
+      }
+    }
+
+    return {
+      total: rows.length,
+      successful,
+      failed: rows.length - successful,
+      errors,
+    };
+  }
+
+  private parseImportFile(file: Express.Multer.File): Record<string, string>[] {
+    const isExcel =
+      file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      file.mimetype === 'application/vnd.ms-excel' ||
+      file.originalname?.endsWith('.xlsx') ||
+      file.originalname?.endsWith('.xls');
+
+    if (isExcel) {
+      const workbook = XLSX.read(file.buffer, { type: 'buffer' });
+      const sheetName = workbook.SheetNames[0];
+      if (!sheetName) {
+        throw new BadRequestException('Excel file has no sheets');
+      }
+      const rows = XLSX.utils.sheet_to_json<Record<string, string>>(workbook.Sheets[sheetName], {
+        defval: '',
+        raw: false,
+      });
+      return rows;
+    }
+
+    // CSV parsing
+    const content = file.buffer.toString('utf-8');
+    const lines = content.split(/\r?\n/).filter((line) => line.trim());
+    if (lines.length < 2) {
+      throw new BadRequestException('CSV file must have a header row and at least one data row');
+    }
+
+    const headers = lines[0].split(',').map((h) => h.trim().toLowerCase());
+    const rows: Record<string, string>[] = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const values = lines[i].split(',').map((v) => v.trim());
+      const row: Record<string, string> = {};
+      headers.forEach((header, idx) => {
+        row[header] = values[idx] || '';
+      });
+      rows.push(row);
+    }
+
+    return rows;
   }
 }

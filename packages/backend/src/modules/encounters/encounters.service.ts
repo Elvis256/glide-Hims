@@ -1,13 +1,30 @@
-import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Inject,
+  forwardRef,
+  Logger,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, Between, ILike, In, DataSource } from 'typeorm';
-import { Encounter, EncounterStatus, EncounterType, PayerType } from '../../database/entities/encounter.entity';
+import { Repository, Like, Between, ILike, In, DataSource, EntityManager } from 'typeorm';
+import {
+  Encounter,
+  EncounterStatus,
+  EncounterType,
+  PayerType,
+} from '../../database/entities/encounter.entity';
 import { InsurancePolicy } from '../../database/entities/insurance-policy.entity';
 import { Invoice } from '../../database/entities/invoice.entity';
 import { Patient } from '../../database/entities/patient.entity';
 import { Service } from '../../database/entities/service-category.entity';
 import { ClinicalNote } from '../../database/entities/clinical-note.entity';
-import { CreateEncounterDto, UpdateEncounterDto, EncounterQueryDto, CompleteConsultationDto } from './encounters.dto';
+import {
+  CreateEncounterDto,
+  UpdateEncounterDto,
+  EncounterQueryDto,
+  CompleteConsultationDto,
+} from './encounters.dto';
 import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
 import { BillingService } from '../billing/billing.service';
 import { QueueManagementService } from '../queue-management/queue-management.service';
@@ -39,50 +56,44 @@ export class EncountersService {
     private auditLogService: AuditLogService,
   ) {}
 
-  private async generateVisitNumber(tenantId?: string): Promise<string> {
+  private async generateVisitNumber(manager: EntityManager, tenantId?: string): Promise<string> {
     const today = new Date();
     const datePrefix = today.toISOString().slice(0, 10).replace(/-/g, '');
+    const lockKey = `visit_num_${datePrefix}_${tenantId || 'global'}`;
 
-    for (let attempt = 0; attempt < 5; attempt++) {
-      const qb = this.encounterRepository
-        .createQueryBuilder('encounter')
-        .where('encounter.visit_number LIKE :prefix', { prefix: `V${datePrefix}%` });
+    // Use advisory lock to prevent concurrent generation collisions
+    await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [lockKey]);
 
-      if (tenantId) {
-        qb.andWhere('encounter.tenant_id = :tenantId', { tenantId });
-      }
+    const lastEncounter = await manager
+      .getRepository(Encounter)
+      .createQueryBuilder('encounter')
+      .where('encounter.visit_number LIKE :prefix', { prefix: `V${datePrefix}%` })
+      .andWhere(tenantId ? 'encounter.tenant_id = :tenantId' : '1=1', { tenantId })
+      .orderBy('encounter.visit_number', 'DESC')
+      .getOne();
 
-      const lastEncounter = await qb
-        .orderBy('encounter.visit_number', 'DESC')
-        .getOne();
-
-      let sequence = 1;
-      if (lastEncounter) {
-        const lastSeq = parseInt(lastEncounter.visitNumber.slice(-4), 10);
+    let sequence = 1;
+    if (lastEncounter) {
+      const lastSeq = parseInt(lastEncounter.visitNumber.slice(-4), 10);
+      if (!isNaN(lastSeq)) {
         sequence = lastSeq + 1;
       }
-
-      const visitNumber = `V${datePrefix}${sequence.toString().padStart(4, '0')}`;
-
-      // Check uniqueness before returning (handles race conditions)
-      const existing = await this.encounterRepository.findOne({
-        where: { visitNumber },
-      });
-      if (!existing) {
-        return visitNumber;
-      }
-      // Collision detected — retry
     }
-    // Fallback with random suffix
-    const randomSuffix = Math.floor(Math.random() * 9000 + 1000);
-    return `V${datePrefix}${randomSuffix}`;
+
+    return `V${datePrefix}${sequence.toString().padStart(4, '0')}`;
   }
 
-  private async getNextQueueNumber(facilityId: string, departmentId?: string, tenantId?: string): Promise<number> {
+  private async getNextQueueNumber(
+    manager: EntityManager,
+    facilityId: string,
+    departmentId?: string,
+    tenantId?: string,
+  ): Promise<number> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const query = this.encounterRepository
+    const query = manager
+      .getRepository(Encounter)
       .createQueryBuilder('encounter')
       .where('encounter.facility_id = :facilityId', { facilityId })
       .andWhere('encounter.created_at >= :today', { today });
@@ -156,69 +167,94 @@ export class EncountersService {
       });
     }
 
-    const visitNumber = await this.generateVisitNumber(tenantId);
-    const queueNumber = await this.getNextQueueNumber(dto.facilityId, dto.departmentId, tenantId);
+    return this.dataSource.transaction(async (manager) => {
+      const visitNumber = await this.generateVisitNumber(manager, tenantId);
+      const queueNumber = await this.getNextQueueNumber(
+        manager,
+        dto.facilityId,
+        dto.departmentId,
+        tenantId,
+      );
 
-    const encounter = this.encounterRepository.create({
-      ...dto,
-      visitNumber,
-      queueNumber,
-      createdById: userId,
-      status: EncounterStatus.REGISTERED,
-      tenantId: tenantId || undefined,
-    });
+      const encounter = manager.create(Encounter, {
+        ...dto,
+        visitNumber,
+        queueNumber,
+        createdById: userId,
+        status: EncounterStatus.REGISTERED,
+        tenantId: tenantId || undefined,
+      });
 
-    const saved = await this.encounterRepository.save(encounter);
+      const saved = await manager.save(Encounter, encounter);
 
-    // Auto-bill consultation fee for OPD encounters
-    if (dto.type === EncounterType.OPD) {
-      try {
-        const consultServiceQb = this.serviceRepository
-          .createQueryBuilder('service')
-          .where([
-            { code: 'CON-OPD' },
-            { code: 'CONSULTATION' },
-            { code: 'OPD' },
-            { code: 'OPD-CONSULT' },
-            { name: ILike('%opd consultation%') },
-          ]);
-        if (tenantId) consultServiceQb.andWhere('(service.tenant_id = :tenantId OR service.tenant_id IS NULL)', { tenantId });
-        const consultService = await consultServiceQb.getOne();
-        const unitPrice = consultService?.basePrice ? Number(consultService.basePrice) : 0;
-        await this.billingService.addBillableItem({
-          encounterId: saved.id,
-          patientId: dto.patientId,
-          serviceCode: consultService?.code || 'CON-OPD',
-          description: consultService?.name || 'OPD Consultation',
-          quantity: 1,
-          unitPrice,
-          chargeType: 'consultation',
-          referenceType: 'encounter',
-          referenceId: saved.id,
-          insurancePolicyId: dto.insurancePolicyId,
-          paymentType: dto.payerType,
-          serviceId: consultService?.id,
-        }, userId, tenantId);
-      } catch (err) {
-        this.logger.warn(`Failed to auto-bill consultation fee: ${err.message}`);
+      // Auto-bill consultation fee for OPD encounters
+      if (dto.type === EncounterType.OPD) {
+        try {
+          const consultServiceQb = manager
+            .getRepository(Service)
+            .createQueryBuilder('service')
+            .where([
+              { code: 'CON-OPD' },
+              { code: 'CONSULTATION' },
+              { code: 'OPD' },
+              { code: 'OPD-CONSULT' },
+              { name: ILike('%opd consultation%') },
+            ]);
+          if (tenantId)
+            consultServiceQb.andWhere(
+              '(service.tenant_id = :tenantId OR service.tenant_id IS NULL)',
+              { tenantId },
+            );
+          const consultService = await consultServiceQb.getOne();
+          const unitPrice = consultService?.basePrice ? Number(consultService.basePrice) : 0;
+
+          await this.billingService.addBillableItem(
+            {
+              encounterId: saved.id,
+              patientId: dto.patientId,
+              serviceCode: consultService?.code || 'CON-OPD',
+              description: consultService?.name || 'OPD Consultation',
+              quantity: 1,
+              unitPrice,
+              chargeType: 'consultation',
+              referenceType: 'encounter',
+              referenceId: saved.id,
+              insurancePolicyId: dto.insurancePolicyId,
+              paymentType: dto.payerType,
+              serviceId: consultService?.id,
+            },
+            userId,
+            tenantId,
+          );
+        } catch (err) {
+          this.logger.warn(
+            `Failed to auto-bill consultation fee for encounter ${saved.id}: ${err.message}`,
+          );
+          // We don't throw here to avoid rolling back the encounter registration if billing fails
+          // but in a strict system we might want to. Given it's a try-catch, I'll keep the existing logic
+          // but log it properly.
+        }
       }
-    }
 
-    return saved;
+      return saved;
+    });
   }
 
-  async findAll(query: EncounterQueryDto, tenantId?: string): Promise<{ data: Encounter[]; total: number }> {
-    const { 
-      search, 
-      status, 
-      type, 
-      facilityId, 
+  async findAll(
+    query: EncounterQueryDto,
+    tenantId?: string,
+  ): Promise<{ data: Encounter[]; total: number }> {
+    const {
+      search,
+      status,
+      type,
+      facilityId,
       departmentId,
       patientId,
       dateFrom,
       dateTo,
-      page = 1, 
-      limit = 20 
+      page = 1,
+      limit = 20,
     } = query;
 
     const qb = this.encounterRepository
@@ -234,7 +270,7 @@ export class EncountersService {
     if (search) {
       qb.andWhere(
         '(encounter.visit_number ILIKE :search OR patient.full_name ILIKE :search OR patient.mrn ILIKE :search)',
-        { search: `%${search}%` }
+        { search: `%${search}%` },
       );
     }
 
@@ -266,7 +302,9 @@ export class EncountersService {
       // Add 1 day so '2026-03-21' covers the entire day (up to 2026-03-22 00:00:00)
       const endOfDay = new Date(dateTo);
       endOfDay.setDate(endOfDay.getDate() + 1);
-      qb.andWhere('encounter.created_at < :dateTo', { dateTo: endOfDay.toISOString().slice(0, 10) });
+      qb.andWhere('encounter.created_at < :dateTo', {
+        dateTo: endOfDay.toISOString().slice(0, 10),
+      });
     }
 
     qb.orderBy('encounter.createdAt', 'DESC')
@@ -294,7 +332,7 @@ export class EncountersService {
 
   async findByVisitNumber(visitNumber: string, tenantId?: string): Promise<Encounter> {
     const encounter = await this.encounterRepository.findOne({
-      where: { visitNumber , ...(tenantId ? { tenantId } : {}) },
+      where: { visitNumber, ...(tenantId ? { tenantId } : {}) },
       relations: ['patient', 'facility', 'department', 'attendingProvider'],
     });
 
@@ -315,9 +353,7 @@ export class EncountersService {
     const encounter = await this.findOne(id, tenantId);
 
     if (EncountersService.TERMINAL_STATUSES.includes(encounter.status)) {
-      throw new BadRequestException(
-        `Cannot edit encounter in '${encounter.status}' status`,
-      );
+      throw new BadRequestException(`Cannot edit encounter in '${encounter.status}' status`);
     }
 
     Object.assign(encounter, dto);
@@ -326,16 +362,62 @@ export class EncountersService {
 
   // Valid status transitions
   private static readonly VALID_TRANSITIONS: Partial<Record<EncounterStatus, EncounterStatus[]>> = {
-    [EncounterStatus.REGISTERED]: [EncounterStatus.TRIAGE, EncounterStatus.WAITING, EncounterStatus.IN_CONSULTATION, EncounterStatus.CANCELLED],
-    [EncounterStatus.TRIAGE]: [EncounterStatus.WAITING, EncounterStatus.IN_CONSULTATION, EncounterStatus.CANCELLED],
+    [EncounterStatus.REGISTERED]: [
+      EncounterStatus.TRIAGE,
+      EncounterStatus.WAITING,
+      EncounterStatus.IN_CONSULTATION,
+      EncounterStatus.CANCELLED,
+    ],
+    [EncounterStatus.TRIAGE]: [
+      EncounterStatus.WAITING,
+      EncounterStatus.IN_CONSULTATION,
+      EncounterStatus.CANCELLED,
+    ],
     [EncounterStatus.WAITING]: [EncounterStatus.IN_CONSULTATION, EncounterStatus.CANCELLED],
-    [EncounterStatus.IN_CONSULTATION]: [EncounterStatus.PENDING_LAB, EncounterStatus.PENDING_PHARMACY, EncounterStatus.PENDING_PAYMENT, EncounterStatus.COMPLETED, EncounterStatus.RETURN_TO_PHARMACY, EncounterStatus.ADMITTED, EncounterStatus.CANCELLED],
-    [EncounterStatus.PENDING_LAB]: [EncounterStatus.IN_CONSULTATION, EncounterStatus.RETURN_TO_DOCTOR, EncounterStatus.PENDING_PAYMENT, EncounterStatus.COMPLETED, EncounterStatus.CANCELLED],
-    [EncounterStatus.PENDING_PHARMACY]: [EncounterStatus.IN_CONSULTATION, EncounterStatus.RETURN_TO_DOCTOR, EncounterStatus.PENDING_PAYMENT, EncounterStatus.COMPLETED, EncounterStatus.CANCELLED],
-    [EncounterStatus.PENDING_PAYMENT]: [EncounterStatus.RETURN_TO_DOCTOR, EncounterStatus.RETURN_TO_PHARMACY, EncounterStatus.RETURN_TO_LAB, EncounterStatus.COMPLETED, EncounterStatus.CANCELLED],
-    [EncounterStatus.RETURN_TO_DOCTOR]: [EncounterStatus.IN_CONSULTATION, EncounterStatus.CANCELLED],
-    [EncounterStatus.RETURN_TO_PHARMACY]: [EncounterStatus.IN_CONSULTATION, EncounterStatus.PENDING_PHARMACY, EncounterStatus.CANCELLED],
-    [EncounterStatus.RETURN_TO_LAB]: [EncounterStatus.PENDING_LAB, EncounterStatus.IN_CONSULTATION, EncounterStatus.CANCELLED],
+    [EncounterStatus.IN_CONSULTATION]: [
+      EncounterStatus.PENDING_LAB,
+      EncounterStatus.PENDING_PHARMACY,
+      EncounterStatus.PENDING_PAYMENT,
+      EncounterStatus.COMPLETED,
+      EncounterStatus.RETURN_TO_PHARMACY,
+      EncounterStatus.ADMITTED,
+      EncounterStatus.CANCELLED,
+    ],
+    [EncounterStatus.PENDING_LAB]: [
+      EncounterStatus.IN_CONSULTATION,
+      EncounterStatus.RETURN_TO_DOCTOR,
+      EncounterStatus.PENDING_PAYMENT,
+      EncounterStatus.COMPLETED,
+      EncounterStatus.CANCELLED,
+    ],
+    [EncounterStatus.PENDING_PHARMACY]: [
+      EncounterStatus.IN_CONSULTATION,
+      EncounterStatus.RETURN_TO_DOCTOR,
+      EncounterStatus.PENDING_PAYMENT,
+      EncounterStatus.COMPLETED,
+      EncounterStatus.CANCELLED,
+    ],
+    [EncounterStatus.PENDING_PAYMENT]: [
+      EncounterStatus.RETURN_TO_DOCTOR,
+      EncounterStatus.RETURN_TO_PHARMACY,
+      EncounterStatus.RETURN_TO_LAB,
+      EncounterStatus.COMPLETED,
+      EncounterStatus.CANCELLED,
+    ],
+    [EncounterStatus.RETURN_TO_DOCTOR]: [
+      EncounterStatus.IN_CONSULTATION,
+      EncounterStatus.CANCELLED,
+    ],
+    [EncounterStatus.RETURN_TO_PHARMACY]: [
+      EncounterStatus.IN_CONSULTATION,
+      EncounterStatus.PENDING_PHARMACY,
+      EncounterStatus.CANCELLED,
+    ],
+    [EncounterStatus.RETURN_TO_LAB]: [
+      EncounterStatus.PENDING_LAB,
+      EncounterStatus.IN_CONSULTATION,
+      EncounterStatus.CANCELLED,
+    ],
     [EncounterStatus.ADMITTED]: [EncounterStatus.DISCHARGED, EncounterStatus.CANCELLED],
     // Terminal states: COMPLETED, DISCHARGED, CANCELLED — no transitions allowed
   };
@@ -344,13 +426,17 @@ export class EncountersService {
     if (current === target) return; // Self-transition is a no-op, not an error
     const allowed = EncountersService.VALID_TRANSITIONS[current];
     if (!allowed || !allowed.includes(target)) {
-      throw new BadRequestException(
-        `Cannot transition encounter from '${current}' to '${target}'`,
-      );
+      throw new BadRequestException(`Cannot transition encounter from '${current}' to '${target}'`);
     }
   }
 
-  async updateStatus(id: string, status: EncounterStatus, providerId?: string, reason?: string, tenantId?: string): Promise<Encounter> {
+  async updateStatus(
+    id: string,
+    status: EncounterStatus,
+    providerId?: string,
+    reason?: string,
+    tenantId?: string,
+  ): Promise<Encounter> {
     const saved = await this.dataSource.transaction(async (manager) => {
       // Lock row first without relations (FOR UPDATE can't apply to outer joins)
       const encounter = await manager.findOne(Encounter, {
@@ -392,22 +478,28 @@ export class EncountersService {
 
       const result = await manager.save(Encounter, encounter);
 
-      this.auditLogService.log({
-        userId: providerId || 'system',
-        action: 'STATUS_CHANGE',
-        entityType: 'encounter',
-        entityId: id,
-        oldValue: { status: oldStatus },
-        newValue: { status, reason },
-      }).catch(err => this.logger.warn(`Audit log failed: ${err.message}`));
+      this.auditLogService
+        .log({
+          userId: providerId || 'system',
+          action: 'STATUS_CHANGE',
+          entityType: 'encounter',
+          entityId: id,
+          oldValue: { status: oldStatus },
+          newValue: { status, reason },
+        })
+        .catch((err) => this.logger.warn(`Audit log failed: ${err.message}`));
 
       return result;
     });
 
     // Auto-generate insurance claim when encounter completes/discharges (non-blocking)
-    if ([EncounterStatus.COMPLETED, EncounterStatus.DISCHARGED].includes(status) && saved.payerType === PayerType.INSURANCE) {
-      this.autoGenerateInsuranceClaim(saved.id, saved.facilityId, saved.tenantId)
-        .catch(err => this.logger.warn(`Auto-claim generation failed for encounter ${id}: ${err.message}`));
+    if (
+      [EncounterStatus.COMPLETED, EncounterStatus.DISCHARGED].includes(status) &&
+      saved.payerType === PayerType.INSURANCE
+    ) {
+      this.autoGenerateInsuranceClaim(saved.id, saved.facilityId, saved.tenantId).catch((err) =>
+        this.logger.warn(`Auto-claim generation failed for encounter ${id}: ${err.message}`),
+      );
     }
 
     return saved;
@@ -415,7 +507,12 @@ export class EncountersService {
 
   private static readonly MAX_BOUNCE_COUNT = 5;
 
-  async returnToDoctor(id: string, reason: string, userId: string, tenantId?: string): Promise<Encounter> {
+  async returnToDoctor(
+    id: string,
+    reason: string,
+    userId: string,
+    tenantId?: string,
+  ): Promise<Encounter> {
     const saved = await this.dataSource.transaction(async (manager) => {
       // Lock row first without relations (FOR UPDATE can't apply to outer joins)
       const encounter = await manager.findOne(Encounter, {
@@ -457,14 +554,16 @@ export class EncountersService {
       return result;
     });
 
-    this.auditLogService.log({
-      userId,
-      action: 'RETURN_TO_DOCTOR',
-      entityType: 'encounter',
-      entityId: id,
-      oldValue: { status: saved.metadata?.previousStatus },
-      newValue: { status: EncounterStatus.RETURN_TO_DOCTOR, reason },
-    }).catch(err => this.logger.warn(`Audit log failed: ${err.message}`));
+    this.auditLogService
+      .log({
+        userId,
+        action: 'RETURN_TO_DOCTOR',
+        entityType: 'encounter',
+        entityId: id,
+        oldValue: { status: saved.metadata?.previousStatus },
+        newValue: { status: EncounterStatus.RETURN_TO_DOCTOR, reason },
+      })
+      .catch((err) => this.logger.warn(`Audit log failed: ${err.message}`));
 
     // Notify the attending doctor
     try {
@@ -485,7 +584,12 @@ export class EncountersService {
     return saved;
   }
 
-  async returnToPharmacy(id: string, reason: string, userId: string, tenantId?: string): Promise<Encounter> {
+  async returnToPharmacy(
+    id: string,
+    reason: string,
+    userId: string,
+    tenantId?: string,
+  ): Promise<Encounter> {
     const saved = await this.dataSource.transaction(async (manager) => {
       const encounter = await manager.findOne(Encounter, {
         where: { id, ...(tenantId ? { tenantId } : {}) },
@@ -518,19 +622,26 @@ export class EncountersService {
       return manager.save(Encounter, encounter);
     });
 
-    this.auditLogService.log({
-      userId,
-      action: 'RETURN_TO_PHARMACY',
-      entityType: 'encounter',
-      entityId: id,
-      oldValue: { status: saved.metadata?.previousStatus },
-      newValue: { status: EncounterStatus.RETURN_TO_PHARMACY, reason },
-    }).catch(err => this.logger.warn(`Audit log failed: ${err.message}`));
+    this.auditLogService
+      .log({
+        userId,
+        action: 'RETURN_TO_PHARMACY',
+        entityType: 'encounter',
+        entityId: id,
+        oldValue: { status: saved.metadata?.previousStatus },
+        newValue: { status: EncounterStatus.RETURN_TO_PHARMACY, reason },
+      })
+      .catch((err) => this.logger.warn(`Audit log failed: ${err.message}`));
 
     return saved;
   }
 
-  async returnToLab(id: string, reason: string, userId: string, tenantId?: string): Promise<Encounter> {
+  async returnToLab(
+    id: string,
+    reason: string,
+    userId: string,
+    tenantId?: string,
+  ): Promise<Encounter> {
     const saved = await this.dataSource.transaction(async (manager) => {
       const encounter = await manager.findOne(Encounter, {
         where: { id, ...(tenantId ? { tenantId } : {}) },
@@ -563,19 +674,25 @@ export class EncountersService {
       return manager.save(Encounter, encounter);
     });
 
-    this.auditLogService.log({
-      userId,
-      action: 'RETURN_TO_LAB',
-      entityType: 'encounter',
-      entityId: id,
-      oldValue: { status: saved.metadata?.previousStatus },
-      newValue: { status: EncounterStatus.RETURN_TO_LAB, reason },
-    }).catch(err => this.logger.warn(`Audit log failed: ${err.message}`));
+    this.auditLogService
+      .log({
+        userId,
+        action: 'RETURN_TO_LAB',
+        entityType: 'encounter',
+        entityId: id,
+        oldValue: { status: saved.metadata?.previousStatus },
+        newValue: { status: EncounterStatus.RETURN_TO_LAB, reason },
+      })
+      .catch((err) => this.logger.warn(`Audit log failed: ${err.message}`));
 
     return saved;
   }
 
-  async getQueue(facilityId: string, departmentId?: string, tenantId?: string): Promise<Encounter[]> {
+  async getQueue(
+    facilityId: string,
+    departmentId?: string,
+    tenantId?: string,
+  ): Promise<Encounter[]> {
     const qb = this.encounterRepository
       .createQueryBuilder('encounter')
       .leftJoinAndSelect('encounter.patient', 'patient')
@@ -598,13 +715,18 @@ export class EncountersService {
     }
 
     // Priority: RETURN_TO_DOCTOR patients first, then by queue number
-    qb.orderBy(`CASE WHEN encounter.status = 'return_to_doctor' THEN 0 ELSE 1 END`, 'ASC')
-      .addOrderBy('encounter.queue_number', 'ASC');
+    qb.orderBy(
+      `CASE WHEN encounter.status = 'return_to_doctor' THEN 0 ELSE 1 END`,
+      'ASC',
+    ).addOrderBy('encounter.queue_number', 'ASC');
 
     return qb.getMany();
   }
 
-  async getTodayStats(facilityId: string, tenantId?: string): Promise<{
+  async getTodayStats(
+    facilityId: string,
+    tenantId?: string,
+  ): Promise<{
     total: number;
     waiting: number;
     inConsultation: number;
@@ -649,13 +771,15 @@ export class EncountersService {
     const encounter = await this.findOne(id, tenantId);
     await this.encounterRepository.softRemove(encounter);
 
-    this.auditLogService.log({
-      userId,
-      action: 'DELETE',
-      entityType: 'encounter',
-      entityId: id,
-      oldValue: { status: encounter.status, patientId: encounter.patientId },
-    }).catch(err => this.logger.warn(`Audit log failed: ${err.message}`));
+    this.auditLogService
+      .log({
+        userId,
+        action: 'DELETE',
+        entityType: 'encounter',
+        entityId: id,
+        oldValue: { status: encounter.status, patientId: encounter.patientId },
+      })
+      .catch((err) => this.logger.warn(`Audit log failed: ${err.message}`));
   }
 
   /**
@@ -684,7 +808,9 @@ export class EncountersService {
 
       // Load patient separately (needed for notifications)
       if (encounter.patientId) {
-        encounter.patient = await manager.findOne(Patient, { where: { id: encounter.patientId } }) as Patient;
+        encounter.patient = (await manager.findOne(Patient, {
+          where: { id: encounter.patientId },
+        })) as Patient;
       }
 
       const oldStatus = encounter.status;
@@ -740,18 +866,20 @@ export class EncountersService {
       return { encounter: savedEncounter, clinicalNoteId: savedNote.id, oldStatus };
     });
 
-    this.auditLogService.log({
-      userId,
-      action: 'COMPLETE_CONSULTATION',
-      entityType: 'encounter',
-      entityId: encounterId,
-      oldValue: { status: result.oldStatus },
-      newValue: {
-        status: EncounterStatus.COMPLETED,
-        clinicalNoteId: result.clinicalNoteId,
-        diagnoses: dto.diagnoses?.map(d => d.code),
-      },
-    }).catch(err => this.logger.warn(`Audit log failed: ${err.message}`));
+    this.auditLogService
+      .log({
+        userId,
+        action: 'COMPLETE_CONSULTATION',
+        entityType: 'encounter',
+        entityId: encounterId,
+        oldValue: { status: result.oldStatus },
+        newValue: {
+          status: EncounterStatus.COMPLETED,
+          clinicalNoteId: result.clinicalNoteId,
+          diagnoses: dto.diagnoses?.map((d) => d.code),
+        },
+      })
+      .catch((err) => this.logger.warn(`Audit log failed: ${err.message}`));
 
     // Auto-complete the associated queue entry (non-blocking)
     try {
@@ -761,13 +889,19 @@ export class EncountersService {
         this.logger.log(`Queue ${queue.id} auto-completed for encounter ${encounterId}`);
       }
     } catch (err) {
-      this.logger.warn(`Failed to auto-complete queue for encounter ${encounterId}: ${err.message}`);
+      this.logger.warn(
+        `Failed to auto-complete queue for encounter ${encounterId}: ${err.message}`,
+      );
     }
 
     // Auto-generate insurance claim if this is an insurance encounter (non-blocking)
     if (result.encounter.payerType === PayerType.INSURANCE) {
-      this.autoGenerateInsuranceClaim(encounterId, result.encounter.facilityId, tenantId)
-        .catch(err => this.logger.warn(`Auto-claim generation failed for encounter ${encounterId}: ${err.message}`));
+      this.autoGenerateInsuranceClaim(encounterId, result.encounter.facilityId, tenantId).catch(
+        (err) =>
+          this.logger.warn(
+            `Auto-claim generation failed for encounter ${encounterId}: ${err.message}`,
+          ),
+      );
     }
 
     return { encounter: result.encounter, clinicalNoteId: result.clinicalNoteId };
@@ -777,13 +911,25 @@ export class EncountersService {
    * Auto-generate an insurance claim from a completed/discharged encounter.
    * Called non-blocking after encounter status transitions.
    */
-  private async autoGenerateInsuranceClaim(encounterId: string, facilityId: string, tenantId?: string): Promise<void> {
+  private async autoGenerateInsuranceClaim(
+    encounterId: string,
+    facilityId: string,
+    tenantId?: string,
+  ): Promise<void> {
     try {
-      const claim = await this.insuranceService.createClaimFromEncounter(encounterId, facilityId, tenantId);
-      this.logger.log(`Auto-generated insurance claim ${claim.claimNumber} for encounter ${encounterId}`);
+      const claim = await this.insuranceService.createClaimFromEncounter(
+        encounterId,
+        facilityId,
+        tenantId,
+      );
+      this.logger.log(
+        `Auto-generated insurance claim ${claim.claimNumber} for encounter ${encounterId}`,
+      );
     } catch (err) {
       // Don't rethrow — claim generation should never block encounter completion
-      this.logger.warn(`Insurance claim generation failed for encounter ${encounterId}: ${err.message}`);
+      this.logger.warn(
+        `Insurance claim generation failed for encounter ${encounterId}: ${err.message}`,
+      );
     }
   }
 }

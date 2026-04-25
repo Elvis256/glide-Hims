@@ -1,7 +1,26 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, ParseUUIDPipe, Put, Request } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  Query,
+  ParseUUIDPipe,
+  Put,
+  Request,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { RolesService } from './roles.service';
-import { CreateRoleDto, UpdateRoleDto, CreatePermissionDto, AssignPermissionDto, BulkUpdatePermissionsDto, SetParentRoleDto } from './dto/role.dto';
+import {
+  CreateRoleDto,
+  UpdateRoleDto,
+  CreatePermissionDto,
+  AssignPermissionDto,
+  BulkUpdatePermissionsDto,
+  SetParentRoleDto,
+} from './dto/role.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 
 @ApiTags('roles')
@@ -34,7 +53,11 @@ export class RolesController {
   @Patch(':id')
   @AuthWithPermissions('roles.update')
   @ApiOperation({ summary: 'Update role' })
-  async updateRole(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateRoleDto, @Request() req: any) {
+  async updateRole(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateRoleDto,
+    @Request() req: any,
+  ) {
     const role = await this.rolesService.updateRole(id, dto, req.user?.tenantId);
     return { message: 'Role updated', data: role };
   }
@@ -50,7 +73,11 @@ export class RolesController {
   @Post(':id/permissions')
   @AuthWithPermissions('roles.update')
   @ApiOperation({ summary: 'Assign permission to role' })
-  async assignPermission(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AssignPermissionDto, @Request() req: any) {
+  async assignPermission(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AssignPermissionDto,
+    @Request() req: any,
+  ) {
     await this.rolesService.assignPermission(id, dto, req.user?.tenantId);
     return { message: 'Permission assigned' };
   }
@@ -58,7 +85,11 @@ export class RolesController {
   @Put(':id/permissions')
   @AuthWithPermissions('roles.update')
   @ApiOperation({ summary: 'Bulk update role permissions' })
-  async bulkUpdatePermissions(@Param('id', ParseUUIDPipe) id: string, @Body() dto: BulkUpdatePermissionsDto, @Request() req: any) {
+  async bulkUpdatePermissions(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: BulkUpdatePermissionsDto,
+    @Request() req: any,
+  ) {
     await this.rolesService.bulkUpdatePermissions(id, dto.permissions, req.user?.tenantId);
     return { message: 'Permissions updated' };
   }
@@ -66,7 +97,11 @@ export class RolesController {
   @Patch(':id/parent')
   @AuthWithPermissions('roles.update')
   @ApiOperation({ summary: 'Set parent role for inheritance' })
-  async setParentRole(@Param('id', ParseUUIDPipe) id: string, @Body() body: SetParentRoleDto, @Request() req: any) {
+  async setParentRole(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: SetParentRoleDto,
+    @Request() req: any,
+  ) {
     const role = await this.rolesService.setParentRole(id, body.parentRoleId, req.user?.tenantId);
     return { message: 'Parent role updated', data: role };
   }

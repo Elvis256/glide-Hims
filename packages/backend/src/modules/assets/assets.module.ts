@@ -11,12 +11,7 @@ import {
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([
-      FixedAsset,
-      AssetDepreciation,
-      AssetMaintenance,
-      AssetTransfer,
-    ]),
+    TypeOrmModule.forFeature([FixedAsset, AssetDepreciation, AssetMaintenance, AssetTransfer]),
   ],
   controllers: [AssetsController],
   providers: [AssetsService],

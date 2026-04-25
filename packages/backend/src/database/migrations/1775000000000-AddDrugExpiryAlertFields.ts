@@ -11,13 +11,23 @@ export class AddDrugExpiryAlertFields1775000000000 implements MigrationInterface
     `);
 
     // Add new columns to expiry_alerts
-    await queryRunner.query(`ALTER TABLE "expiry_alerts" ADD COLUMN IF NOT EXISTS "days_until_expiry" integer`);
-    await queryRunner.query(`ALTER TABLE "expiry_alerts" ADD COLUMN IF NOT EXISTS "alert_level" "expiry_alerts_alert_level_enum"`);
-    await queryRunner.query(`ALTER TABLE "expiry_alerts" ADD COLUMN IF NOT EXISTS "sms_sent" boolean NOT NULL DEFAULT false`);
-    await queryRunner.query(`ALTER TABLE "expiry_alerts" ADD COLUMN IF NOT EXISTS "in_app_sent" boolean NOT NULL DEFAULT false`);
+    await queryRunner.query(
+      `ALTER TABLE "expiry_alerts" ADD COLUMN IF NOT EXISTS "days_until_expiry" integer`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "expiry_alerts" ADD COLUMN IF NOT EXISTS "alert_level" "expiry_alerts_alert_level_enum"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "expiry_alerts" ADD COLUMN IF NOT EXISTS "sms_sent" boolean NOT NULL DEFAULT false`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "expiry_alerts" ADD COLUMN IF NOT EXISTS "in_app_sent" boolean NOT NULL DEFAULT false`,
+    );
 
     // Add index on alert_level for efficient querying
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_expiry_alerts_alert_level" ON "expiry_alerts" ("alert_level")`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_expiry_alerts_alert_level" ON "expiry_alerts" ("alert_level")`,
+    );
 
     // Create expiry_alert_configs table if not exists
     await queryRunner.query(`
@@ -52,8 +62,12 @@ export class AddDrugExpiryAlertFields1775000000000 implements MigrationInterface
         CONSTRAINT "PK_expiry_alert_configs" PRIMARY KEY ("id")
       )
     `);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_expiry_alert_configs_facility" ON "expiry_alert_configs" ("facility_id")`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_expiry_alert_configs_tenant" ON "expiry_alert_configs" ("tenant_id")`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_expiry_alert_configs_facility" ON "expiry_alert_configs" ("facility_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_expiry_alert_configs_tenant" ON "expiry_alert_configs" ("tenant_id")`,
+    );
 
     // Create expiry_alert_history table if not exists
     await queryRunner.query(`
@@ -77,9 +91,15 @@ export class AddDrugExpiryAlertFields1775000000000 implements MigrationInterface
         CONSTRAINT "PK_expiry_alert_history" PRIMARY KEY ("id")
       )
     `);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_expiry_alert_history_facility_created" ON "expiry_alert_history" ("facility_id", "created_at")`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_expiry_alert_history_acknowledged" ON "expiry_alert_history" ("acknowledged")`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_expiry_alert_history_tenant" ON "expiry_alert_history" ("tenant_id")`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_expiry_alert_history_facility_created" ON "expiry_alert_history" ("facility_id", "created_at")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_expiry_alert_history_acknowledged" ON "expiry_alert_history" ("acknowledged")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_expiry_alert_history_tenant" ON "expiry_alert_history" ("tenant_id")`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
@@ -94,7 +114,9 @@ export class AddDrugExpiryAlertFields1775000000000 implements MigrationInterface
     await queryRunner.query(`ALTER TABLE "expiry_alerts" DROP COLUMN IF EXISTS "in_app_sent"`);
     await queryRunner.query(`ALTER TABLE "expiry_alerts" DROP COLUMN IF EXISTS "sms_sent"`);
     await queryRunner.query(`ALTER TABLE "expiry_alerts" DROP COLUMN IF EXISTS "alert_level"`);
-    await queryRunner.query(`ALTER TABLE "expiry_alerts" DROP COLUMN IF EXISTS "days_until_expiry"`);
+    await queryRunner.query(
+      `ALTER TABLE "expiry_alerts" DROP COLUMN IF EXISTS "days_until_expiry"`,
+    );
 
     // Drop enum types
     await queryRunner.query(`DROP TYPE IF EXISTS "expiry_alert_history_channel_enum"`);

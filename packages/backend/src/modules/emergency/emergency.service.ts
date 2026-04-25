@@ -1,12 +1,25 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, LessThanOrEqual, MoreThanOrEqual, DataSource } from 'typeorm';
-import { EmergencyCase, TriageLevel, TriageStatus, ArrivalMode } from '../../database/entities/emergency-case.entity';
-import { Encounter, EncounterType, EncounterStatus } from '../../database/entities/encounter.entity';
+import {
+  EmergencyCase,
+  TriageLevel,
+  TriageStatus,
+  ArrivalMode,
+} from '../../database/entities/emergency-case.entity';
+import {
+  Encounter,
+  EncounterType,
+  EncounterStatus,
+} from '../../database/entities/encounter.entity';
 import { Patient } from '../../database/entities/patient.entity';
 import {
-  CreateEmergencyCaseDto, TriageDto, StartTreatmentDto,
-  DischargeEmergencyDto, AdmitFromEmergencyDto, EmergencyQueryDto
+  CreateEmergencyCaseDto,
+  TriageDto,
+  StartTreatmentDto,
+  DischargeEmergencyDto,
+  AdmitFromEmergencyDto,
+  EmergencyQueryDto,
 } from './dto/emergency.dto';
 
 @Injectable()
@@ -23,12 +36,12 @@ export class EmergencyService {
   private async generateCaseNumber(tenantId?: string): Promise<string> {
     const now = new Date();
     const prefix = `EM${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-    
+
     // Use a transaction with pessimistic locking to prevent race conditions
     const result = await this.dataSource.transaction(async (manager) => {
       const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
       const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-      
+
       // Lock the table for counting to prevent race conditions
       const qb = manager
         .createQueryBuilder(EmergencyCase, 'ec')
@@ -40,15 +53,20 @@ export class EmergencyService {
       }
 
       const count = await qb.getCount();
-      
+
       return `${prefix}-${String(count + 1).padStart(4, '0')}`;
     });
-    
+
     return result;
   }
 
   // ========== CASE REGISTRATION ==========
-  async registerCase(dto: CreateEmergencyCaseDto, facilityId: string, userId: string, tenantId?: string): Promise<EmergencyCase> {
+  async registerCase(
+    dto: CreateEmergencyCaseDto,
+    facilityId: string,
+    userId: string,
+    tenantId?: string,
+  ): Promise<EmergencyCase> {
     const patientWhere: any = { id: dto.patientId };
     if (tenantId) patientWhere.tenantId = tenantId;
     const patient = await this.patientRepo.findOne({ where: patientWhere });
@@ -89,19 +107,26 @@ export class EmergencyService {
     });
 
     const savedCase = await this.caseRepo.save(emergencyCase);
-    
-    this.logger.log(`[AUDIT] Emergency case registered: ${caseNumber}, patientId: ${dto.patientId}, userId: ${userId}, facilityId: ${facilityId}`);
-    
+
+    this.logger.log(
+      `[AUDIT] Emergency case registered: ${caseNumber}, patientId: ${dto.patientId}, userId: ${userId}, facilityId: ${facilityId}`,
+    );
+
     return savedCase;
   }
 
   // ========== TRIAGE ==========
-  async triageCase(id: string, dto: TriageDto, nurseId: string, tenantId?: string): Promise<EmergencyCase> {
+  async triageCase(
+    id: string,
+    dto: TriageDto,
+    nurseId: string,
+    tenantId?: string,
+  ): Promise<EmergencyCase> {
     const where: any = { id };
     if (tenantId) where.tenantId = tenantId;
     const emergencyCase = await this.caseRepo.findOne({ where });
     if (!emergencyCase) throw new NotFoundException('Emergency case not found');
-    
+
     if (emergencyCase.status !== TriageStatus.PENDING) {
       throw new BadRequestException('Case has already been triaged');
     }
@@ -132,14 +157,21 @@ export class EmergencyService {
     }
 
     const savedCase = await this.caseRepo.save(emergencyCase);
-    
-    this.logger.log(`[AUDIT] Emergency case triaged: ${emergencyCase.caseNumber}, level: ${dto.triageLevel}, nurseId: ${nurseId}`);
-    
+
+    this.logger.log(
+      `[AUDIT] Emergency case triaged: ${emergencyCase.caseNumber}, level: ${dto.triageLevel}, nurseId: ${nurseId}`,
+    );
+
     return savedCase;
   }
 
   // ========== START TREATMENT ==========
-  async startTreatment(id: string, dto: StartTreatmentDto, doctorId?: string, tenantId?: string): Promise<EmergencyCase> {
+  async startTreatment(
+    id: string,
+    dto: StartTreatmentDto,
+    doctorId?: string,
+    tenantId?: string,
+  ): Promise<EmergencyCase> {
     const where: any = { id };
     if (tenantId) where.tenantId = tenantId;
     const emergencyCase = await this.caseRepo.findOne({ where });
@@ -167,14 +199,20 @@ export class EmergencyService {
     }
 
     const savedCase = await this.caseRepo.save(emergencyCase);
-    
-    this.logger.log(`[AUDIT] Treatment started: ${emergencyCase.caseNumber}, doctorId: ${emergencyCase.attendingDoctorId}`);
-    
+
+    this.logger.log(
+      `[AUDIT] Treatment started: ${emergencyCase.caseNumber}, doctorId: ${emergencyCase.attendingDoctorId}`,
+    );
+
     return savedCase;
   }
 
   // ========== DISCHARGE ==========
-  async dischargeCase(id: string, dto: DischargeEmergencyDto, tenantId?: string): Promise<EmergencyCase> {
+  async dischargeCase(
+    id: string,
+    dto: DischargeEmergencyDto,
+    tenantId?: string,
+  ): Promise<EmergencyCase> {
     const where: any = { id };
     if (tenantId) where.tenantId = tenantId;
     const emergencyCase = await this.caseRepo.findOne({ where });
@@ -196,7 +234,9 @@ export class EmergencyService {
     emergencyCase.dischargeTime = new Date();
     emergencyCase.primaryDiagnosis = dto.primaryDiagnosis;
     if (dto.dispositionNotes) emergencyCase.dispositionNotes = dto.dispositionNotes;
-    if (dto.treatmentNotes) emergencyCase.treatmentNotes = (emergencyCase.treatmentNotes || '') + '\n' + dto.treatmentNotes;
+    if (dto.treatmentNotes)
+      emergencyCase.treatmentNotes =
+        (emergencyCase.treatmentNotes || '') + '\n' + dto.treatmentNotes;
 
     // Update encounter
     if (emergencyCase.encounterId) {
@@ -210,14 +250,20 @@ export class EmergencyService {
     }
 
     const savedCase = await this.caseRepo.save(emergencyCase);
-    
-    this.logger.log(`[AUDIT] Emergency case discharged: ${emergencyCase.caseNumber}, diagnosis: ${dto.primaryDiagnosis}`);
-    
+
+    this.logger.log(
+      `[AUDIT] Emergency case discharged: ${emergencyCase.caseNumber}, diagnosis: ${dto.primaryDiagnosis}`,
+    );
+
     return savedCase;
   }
 
   // ========== ADMIT TO IPD ==========
-  async admitToWard(id: string, dto: AdmitFromEmergencyDto, tenantId?: string): Promise<EmergencyCase> {
+  async admitToWard(
+    id: string,
+    dto: AdmitFromEmergencyDto,
+    tenantId?: string,
+  ): Promise<EmergencyCase> {
     const where: any = { id };
     if (tenantId) where.tenantId = tenantId;
     const emergencyCase = await this.caseRepo.findOne({ where, relations: ['encounter'] });
@@ -238,17 +284,23 @@ export class EmergencyService {
     // Note: IPD admission should be created via IPD module
     // This just marks the emergency case as admitted
     const savedCase = await this.caseRepo.save(emergencyCase);
-    
-    this.logger.log(`[AUDIT] Emergency case admitted to IPD: ${emergencyCase.caseNumber}, wardId: ${dto.wardId}, diagnosis: ${dto.primaryDiagnosis}`);
-    
+
+    this.logger.log(
+      `[AUDIT] Emergency case admitted to IPD: ${emergencyCase.caseNumber}, wardId: ${dto.wardId}, diagnosis: ${dto.primaryDiagnosis}`,
+    );
+
     return savedCase;
   }
 
   // ========== QUERIES ==========
-  async getCases(query: EmergencyQueryDto, tenantId?: string): Promise<{ data: EmergencyCase[]; meta: any }> {
+  async getCases(
+    query: EmergencyQueryDto,
+    tenantId?: string,
+  ): Promise<{ data: EmergencyCase[]; meta: any }> {
     const { status, triageLevel, facilityId, fromDate, toDate, limit = 50, offset = 0 } = query;
 
-    const qb = this.caseRepo.createQueryBuilder('ec')
+    const qb = this.caseRepo
+      .createQueryBuilder('ec')
       .leftJoinAndSelect('ec.encounter', 'enc')
       .leftJoinAndSelect('enc.patient', 'patient')
       .leftJoinAndSelect('ec.triageNurse', 'nurse')
@@ -289,17 +341,20 @@ export class EmergencyService {
       .select('ec.triageLevel', 'level')
       .addSelect('COUNT(*)', 'count')
       .where('ec.facilityId = :facilityId', { facilityId })
-      .andWhere('ec.status NOT IN (:...completed)', { 
-        completed: [TriageStatus.DISCHARGED, TriageStatus.ADMITTED, TriageStatus.LEFT_AMA, TriageStatus.DECEASED] 
+      .andWhere('ec.status NOT IN (:...completed)', {
+        completed: [
+          TriageStatus.DISCHARGED,
+          TriageStatus.ADMITTED,
+          TriageStatus.LEFT_AMA,
+          TriageStatus.DECEASED,
+        ],
       });
 
     if (tenantId) {
       byTriageLevelQb.andWhere('ec.tenant_id = :tenantId', { tenantId });
     }
 
-    const byTriageLevel = await byTriageLevelQb
-      .groupBy('ec.triageLevel')
-      .getRawMany();
+    const byTriageLevel = await byTriageLevelQb.groupBy('ec.triageLevel').getRawMany();
 
     // Count by status
     const byStatusQb = this.caseRepo
@@ -313,9 +368,7 @@ export class EmergencyService {
       byStatusQb.andWhere('ec.tenant_id = :tenantId', { tenantId });
     }
 
-    const byStatus = await byStatusQb
-      .groupBy('ec.status')
-      .getRawMany();
+    const byStatus = await byStatusQb.groupBy('ec.status').getRawMany();
 
     // Total today
     const todayTotalWhere: any = {
@@ -331,8 +384,14 @@ export class EmergencyService {
     // Average wait times
     const avgWaitQb = this.caseRepo
       .createQueryBuilder('ec')
-      .select('AVG(EXTRACT(EPOCH FROM (ec.triageTime - ec.arrivalTime))/60)', 'avgTriageWaitMinutes')
-      .addSelect('AVG(EXTRACT(EPOCH FROM (ec.treatmentStartTime - ec.triageTime))/60)', 'avgTreatmentWaitMinutes')
+      .select(
+        'AVG(EXTRACT(EPOCH FROM (ec.triageTime - ec.arrivalTime))/60)',
+        'avgTriageWaitMinutes',
+      )
+      .addSelect(
+        'AVG(EXTRACT(EPOCH FROM (ec.treatmentStartTime - ec.triageTime))/60)',
+        'avgTreatmentWaitMinutes',
+      )
       .where('ec.facilityId = :facilityId', { facilityId })
       .andWhere('ec.arrivalTime >= :today', { today })
       .andWhere('ec.triageTime IS NOT NULL');
@@ -345,8 +404,18 @@ export class EmergencyService {
 
     // Critical cases (Level 1 & 2)
     const criticalWhere: any[] = [
-      { facilityId, triageLevel: TriageLevel.RESUSCITATION, status: TriageStatus.IN_TREATMENT, ...(tenantId ? { tenantId } : {}) },
-      { facilityId, triageLevel: TriageLevel.EMERGENT, status: TriageStatus.IN_TREATMENT, ...(tenantId ? { tenantId } : {}) },
+      {
+        facilityId,
+        triageLevel: TriageLevel.RESUSCITATION,
+        status: TriageStatus.IN_TREATMENT,
+        ...(tenantId ? { tenantId } : {}),
+      },
+      {
+        facilityId,
+        triageLevel: TriageLevel.EMERGENT,
+        status: TriageStatus.IN_TREATMENT,
+        ...(tenantId ? { tenantId } : {}),
+      },
     ];
 
     const criticalCases = await this.caseRepo.count({
@@ -374,10 +443,11 @@ export class EmergencyService {
   // ========== QUEUE - sorted by triage priority ==========
   async getTriageQueue(facilityId: string, tenantId?: string): Promise<EmergencyCase[]> {
     return this.caseRepo.find({
-      where: { 
-        facilityId, 
-        status: TriageStatus.PENDING 
-      , ...(tenantId ? { tenantId } : {}) },
+      where: {
+        facilityId,
+        status: TriageStatus.PENDING,
+        ...(tenantId ? { tenantId } : {}),
+      },
       relations: ['encounter', 'encounter.patient'],
       order: { arrivalTime: 'ASC' },
     });
@@ -385,12 +455,13 @@ export class EmergencyService {
 
   async getTreatmentQueue(facilityId: string, tenantId?: string): Promise<EmergencyCase[]> {
     return this.caseRepo.find({
-      where: { 
-        facilityId, 
-        status: TriageStatus.TRIAGED 
-      , ...(tenantId ? { tenantId } : {}) },
+      where: {
+        facilityId,
+        status: TriageStatus.TRIAGED,
+        ...(tenantId ? { tenantId } : {}),
+      },
       relations: ['encounter', 'encounter.patient', 'triageNurse'],
-      order: { triageLevel: 'ASC', triageTime: 'ASC' },  // Critical first
+      order: { triageLevel: 'ASC', triageTime: 'ASC' }, // Critical first
     });
   }
 }

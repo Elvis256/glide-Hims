@@ -155,7 +155,10 @@ export class PettyCashService {
     startDate?: string,
     endDate?: string,
     tenantId?: string,
-  ): Promise<{ fund: PettyCashFund; transactions: (PettyCashTransaction & { runningBalance?: number })[] }> {
+  ): Promise<{
+    fund: PettyCashFund;
+    transactions: (PettyCashTransaction & { runningBalance?: number })[];
+  }> {
     const fund = await this.findFund(fundId, tenantId);
 
     const where: any = { fundId };

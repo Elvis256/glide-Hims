@@ -1,17 +1,12 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Param,
-  Body,
-  Query,
-  Request,
-} from '@nestjs/common';
+import { Controller, Get, Post, Put, Param, Body, Query, Request, UseGuards } from '@nestjs/common';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { DisposalService } from './disposal.service';
 import { CreateDisposalDto, UpdateDisposalDto, DisposalQueryDto } from './disposal.dto';
+import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
+@UseGuards(ModuleGuard)
+@RequireModule('stores')
 @Controller('disposal')
 export class DisposalController {
   constructor(private readonly disposalService: DisposalService) {}

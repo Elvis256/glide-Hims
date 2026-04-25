@@ -39,17 +39,17 @@ export class WHOICDService {
   private tokenExpiry: Date | null = null;
   private isOnline: boolean = true;
   private lastOnlineCheck: Date = new Date();
-  
+
   // Timeout for API requests (10 seconds for initial calls, cache locally after)
   private readonly API_TIMEOUT_MS = 10000;
-  
+
   // WHO API (for ICD-11)
   private readonly TOKEN_URL = 'https://icdaccessmanagement.who.int/connect/token';
   private readonly ICD11_API_URL = 'https://id.who.int/icd/release/11/2024-01/mms';
-  
+
   // NIH API for ICD-10-CM (free, no auth required)
   private readonly ICD10_API_URL = 'https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search';
-  
+
   constructor(
     private readonly configService: ConfigService,
     private readonly httpService: HttpService,
@@ -73,22 +73,24 @@ export class WHOICDService {
 
     try {
       const response: AxiosResponse<WHOTokenResponse> = await firstValueFrom(
-        this.httpService.post<WHOTokenResponse>(
-          this.TOKEN_URL,
-          new URLSearchParams({
-            client_id: clientId,
-            client_secret: clientSecret,
-            scope: 'icdapi_access',
-            grant_type: 'client_credentials',
-          }).toString(),
-          { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
-        ).pipe(
-          timeout(this.API_TIMEOUT_MS),
-          catchError((err) => {
-            this.markOffline();
-            throw err;
-          }),
-        ),
+        this.httpService
+          .post<WHOTokenResponse>(
+            this.TOKEN_URL,
+            new URLSearchParams({
+              client_id: clientId,
+              client_secret: clientSecret,
+              scope: 'icdapi_access',
+              grant_type: 'client_credentials',
+            }).toString(),
+            { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
+          )
+          .pipe(
+            timeout(this.API_TIMEOUT_MS),
+            catchError((err) => {
+              this.markOffline();
+              throw err;
+            }),
+          ),
       );
 
       this.accessToken = response.data.access_token;
@@ -128,7 +130,12 @@ export class WHOICDService {
   /**
    * Main search method - tries online first, falls back to local
    */
-  async search(query: string, version: 'icd10' | 'icd11' | 'both' = 'icd10', language = 'en', tenantId?: string) {
+  async search(
+    query: string,
+    version: 'icd10' | 'icd11' | 'both' = 'icd10',
+    language = 'en',
+    tenantId?: string,
+  ) {
     const results: Array<{
       code: string;
       title: string;
@@ -138,7 +145,9 @@ export class WHOICDService {
       source: 'online' | 'local';
     }> = [];
 
-    this.logger.log(`Search request: query="${query}", shouldTryOnline=${this.shouldTryOnline()}, isConfigured=${this.isConfigured()}, isOnline=${this.isOnline}`);
+    this.logger.log(
+      `Search request: query="${query}", shouldTryOnline=${this.shouldTryOnline()}, isConfigured=${this.isConfigured()}, isOnline=${this.isOnline}`,
+    );
 
     // Try online first if we should
     if (this.shouldTryOnline() && this.isConfigured()) {
@@ -149,7 +158,7 @@ export class WHOICDService {
         if (onlineResults.length > 0) {
           // Cache results to local database
           await this.cacheResults(onlineResults, tenantId);
-          return onlineResults.map(r => ({ ...r, source: 'online' as const }));
+          return onlineResults.map((r) => ({ ...r, source: 'online' as const }));
         }
       } catch (error) {
         this.logger.warn(`Online search failed: ${error.message}, falling back to local database`);
@@ -160,7 +169,7 @@ export class WHOICDService {
     const localResults = await this.searchLocal(query, 50, tenantId);
     if (localResults.length > 0) {
       this.logger.log(`Returning ${localResults.length} results from local database`);
-      return localResults.map(r => ({ ...r, source: 'local' as const }));
+      return localResults.map((r) => ({ ...r, source: 'local' as const }));
     }
 
     return results;
@@ -211,15 +220,21 @@ export class WHOICDService {
   /**
    * Search local ICD-10 codes database
    */
-  async searchLocal(query: string, limit = 50, tenantId?: string): Promise<Array<{
-    code: string;
-    title: string;
-    version: 'ICD-10' | 'ICD-11';
-    chapter?: string;
-    score: number;
-  }>> {
+  async searchLocal(
+    query: string,
+    limit = 50,
+    tenantId?: string,
+  ): Promise<
+    Array<{
+      code: string;
+      title: string;
+      version: 'ICD-10' | 'ICD-11';
+      chapter?: string;
+      score: number;
+    }>
+  > {
     const searchTerm = `%${query.toLowerCase()}%`;
-    
+
     // ICD10Code is global reference data — no tenant filtering needed
     const results = await this.icd10CodeRepo
       .createQueryBuilder('icd')
@@ -243,20 +258,23 @@ export class WHOICDService {
   /**
    * Cache online results to local database
    */
-  private async cacheResults(results: Array<{
-    code: string;
-    title: string;
-    version: 'ICD-10' | 'ICD-11';
-    chapter?: string;
-    score: number;
-  }>, tenantId?: string) {
+  private async cacheResults(
+    results: Array<{
+      code: string;
+      title: string;
+      version: 'ICD-10' | 'ICD-11';
+      chapter?: string;
+      score: number;
+    }>,
+    tenantId?: string,
+  ) {
     for (const result of results) {
       if (result.version !== 'ICD-10') continue; // Only cache ICD-10 for now
-      
+
       try {
         // ICD10Code is global reference data — no tenant filtering
         const existing = await this.icd10CodeRepo.findOne({ where: { code: result.code } });
-        
+
         if (existing) {
           // Update use count
           existing.useCount++;
@@ -264,14 +282,16 @@ export class WHOICDService {
           await this.icd10CodeRepo.save(existing);
         } else {
           // Insert new code
-          await this.icd10CodeRepo.save(this.icd10CodeRepo.create({
-            code: result.code,
-            description: result.title,
-            chapterDescription: result.chapter,
-            source: 'who_api',
-            useCount: 1,
-            lastUsedAt: new Date(),
-          }));
+          await this.icd10CodeRepo.save(
+            this.icd10CodeRepo.create({
+              code: result.code,
+              description: result.title,
+              chapterDescription: result.chapter,
+              source: 'who_api',
+              useCount: 1,
+              lastUsedAt: new Date(),
+            }),
+          );
         }
       } catch (error) {
         // Ignore duplicate key errors
@@ -291,7 +311,7 @@ export class WHOICDService {
       await this.icd10CodeRepo
         .createQueryBuilder()
         .update()
-        .set({ 
+        .set({
           useCount: () => 'use_count + 1',
           lastUsedAt: new Date(),
         })
@@ -316,14 +336,16 @@ export class WHOICDService {
 
   // ==================== WHO API METHODS ====================
 
-  async searchICD11(query: string, language = 'en'): Promise<ICDSearchResult['destinationEntities']> {
+  async searchICD11(
+    query: string,
+    language = 'en',
+  ): Promise<ICDSearchResult['destinationEntities']> {
     try {
       const token = await this.getAccessToken();
-      
+
       const response: AxiosResponse<ICDSearchResult> = await firstValueFrom(
-        this.httpService.get<ICDSearchResult>(
-          `${this.ICD11_API_URL}/search`,
-          {
+        this.httpService
+          .get<ICDSearchResult>(`${this.ICD11_API_URL}/search`, {
             params: {
               q: query,
               useFlexisearch: true,
@@ -335,14 +357,14 @@ export class WHOICDService {
               'Accept-Language': language,
               'API-Version': 'v2',
             },
-          },
-        ).pipe(
-          timeout(this.API_TIMEOUT_MS),
-          catchError((err) => {
-            this.markOffline();
-            throw err;
-          }),
-        ),
+          })
+          .pipe(
+            timeout(this.API_TIMEOUT_MS),
+            catchError((err) => {
+              this.markOffline();
+              throw err;
+            }),
+          ),
       );
 
       this.markOnline();
@@ -362,15 +384,17 @@ export class WHOICDService {
   /**
    * Search ICD-10 codes using NIH Clinical Tables API (free, no auth)
    */
-  async searchICD10(query: string, language = 'en'): Promise<ICDSearchResult['destinationEntities']> {
+  async searchICD10(
+    query: string,
+    language = 'en',
+  ): Promise<ICDSearchResult['destinationEntities']> {
     try {
       this.logger.log(`Searching ICD-10 for: ${query}`);
-      
+
       const response = await firstValueFrom(
-        this.httpService.get<[number, string[], null, [string, string][]]>(
-          this.ICD10_API_URL,
-          {
-            params: { 
+        this.httpService
+          .get<[number, string[], null, [string, string][]]>(this.ICD10_API_URL, {
+            params: {
               terms: query,
               sf: 'code,name',
               maxList: 50,
@@ -378,23 +402,25 @@ export class WHOICDService {
             headers: {
               Accept: 'application/json',
             },
-          },
-        ).pipe(
-          timeout(this.API_TIMEOUT_MS),
-          catchError((err) => {
-            this.markOffline();
-            throw err;
-          }),
-        ),
+          })
+          .pipe(
+            timeout(this.API_TIMEOUT_MS),
+            catchError((err) => {
+              this.markOffline();
+              throw err;
+            }),
+          ),
       );
 
       this.markOnline();
-      
+
       // NIH API returns [totalCount, codes[], null, [[code, name], ...]]
       const [count, codes, _, results] = response.data;
-      
-      this.logger.log(`NIH ICD-10 API returned ${count} total results, ${results?.length || 0} in this batch`);
-      
+
+      this.logger.log(
+        `NIH ICD-10 API returned ${count} total results, ${results?.length || 0} in this batch`,
+      );
+
       if (!results || results.length === 0) {
         return [];
       }
@@ -413,18 +439,21 @@ export class WHOICDService {
     }
   }
 
-  async importToLocal(code: string, version: 'ICD-10' | 'ICD-11' = 'ICD-10', tenantId?: string): Promise<Diagnosis | null> {
+  async importToLocal(
+    code: string,
+    version: 'ICD-10' | 'ICD-11' = 'ICD-10',
+    tenantId?: string,
+  ): Promise<Diagnosis | null> {
     const findWhere: any = { icd10Code: code, deletedAt: IsNull() };
     if (tenantId) findWhere.tenantId = tenantId;
-    const existing = await this.diagnosisRepo.findOne({ 
-      where: findWhere 
+    const existing = await this.diagnosisRepo.findOne({
+      where: findWhere,
     });
     if (existing) return existing;
 
-    const results = version === 'ICD-10' 
-      ? await this.searchICD10(code) 
-      : await this.searchICD11(code);
-    
+    const results =
+      version === 'ICD-10' ? await this.searchICD10(code) : await this.searchICD11(code);
+
     const match = results.find((r) => r.theCode === code);
     if (!match) return null;
 
@@ -441,17 +470,20 @@ export class WHOICDService {
     return this.diagnosisRepo.save(diagnosis);
   }
 
-  async bulkImport(codes: Array<{ code: string; title: string; chapter?: string }>, tenantId?: string): Promise<number> {
+  async bulkImport(
+    codes: Array<{ code: string; title: string; chapter?: string }>,
+    tenantId?: string,
+  ): Promise<number> {
     let imported = 0;
 
     for (const item of codes) {
       try {
         const findWhere: any = { icd10Code: item.code, deletedAt: IsNull() };
         if (tenantId) findWhere.tenantId = tenantId;
-        const existing = await this.diagnosisRepo.findOne({ 
-          where: findWhere 
+        const existing = await this.diagnosisRepo.findOne({
+          where: findWhere,
         });
-        
+
         if (!existing) {
           await this.diagnosisRepo.save(
             this.diagnosisRepo.create({
@@ -478,39 +510,107 @@ export class WHOICDService {
    */
   async seedCommonCodes(tenantId?: string): Promise<number> {
     const commonCodes = [
-      { code: 'A09', description: 'Infectious gastroenteritis and colitis, unspecified', chapter: 'Infectious diseases' },
-      { code: 'B34.9', description: 'Viral infection, unspecified', chapter: 'Infectious diseases' },
-      { code: 'E11.9', description: 'Type 2 diabetes mellitus without complications', chapter: 'Endocrine diseases' },
+      {
+        code: 'A09',
+        description: 'Infectious gastroenteritis and colitis, unspecified',
+        chapter: 'Infectious diseases',
+      },
+      {
+        code: 'B34.9',
+        description: 'Viral infection, unspecified',
+        chapter: 'Infectious diseases',
+      },
+      {
+        code: 'E11.9',
+        description: 'Type 2 diabetes mellitus without complications',
+        chapter: 'Endocrine diseases',
+      },
       { code: 'E78.5', description: 'Hyperlipidemia, unspecified', chapter: 'Endocrine diseases' },
-      { code: 'I10', description: 'Essential (primary) hypertension', chapter: 'Circulatory system' },
-      { code: 'I25.9', description: 'Chronic ischaemic heart disease, unspecified', chapter: 'Circulatory system' },
-      { code: 'J00', description: 'Acute nasopharyngitis (common cold)', chapter: 'Respiratory system' },
-      { code: 'J06.9', description: 'Acute upper respiratory infection, unspecified', chapter: 'Respiratory system' },
-      { code: 'J18.9', description: 'Pneumonia, unspecified organism', chapter: 'Respiratory system' },
+      {
+        code: 'I10',
+        description: 'Essential (primary) hypertension',
+        chapter: 'Circulatory system',
+      },
+      {
+        code: 'I25.9',
+        description: 'Chronic ischaemic heart disease, unspecified',
+        chapter: 'Circulatory system',
+      },
+      {
+        code: 'J00',
+        description: 'Acute nasopharyngitis (common cold)',
+        chapter: 'Respiratory system',
+      },
+      {
+        code: 'J06.9',
+        description: 'Acute upper respiratory infection, unspecified',
+        chapter: 'Respiratory system',
+      },
+      {
+        code: 'J18.9',
+        description: 'Pneumonia, unspecified organism',
+        chapter: 'Respiratory system',
+      },
       { code: 'J45.9', description: 'Asthma, unspecified', chapter: 'Respiratory system' },
       { code: 'K29.7', description: 'Gastritis, unspecified', chapter: 'Digestive system' },
       { code: 'K30', description: 'Functional dyspepsia', chapter: 'Digestive system' },
       { code: 'K59.0', description: 'Constipation', chapter: 'Digestive system' },
       { code: 'M54.5', description: 'Low back pain', chapter: 'Musculoskeletal system' },
-      { code: 'M79.3', description: 'Panniculitis, unspecified', chapter: 'Musculoskeletal system' },
-      { code: 'N39.0', description: 'Urinary tract infection, site not specified', chapter: 'Genitourinary system' },
+      {
+        code: 'M79.3',
+        description: 'Panniculitis, unspecified',
+        chapter: 'Musculoskeletal system',
+      },
+      {
+        code: 'N39.0',
+        description: 'Urinary tract infection, site not specified',
+        chapter: 'Genitourinary system',
+      },
       { code: 'R05', description: 'Cough', chapter: 'Symptoms and signs' },
-      { code: 'R10.4', description: 'Other and unspecified abdominal pain', chapter: 'Symptoms and signs' },
+      {
+        code: 'R10.4',
+        description: 'Other and unspecified abdominal pain',
+        chapter: 'Symptoms and signs',
+      },
       { code: 'R50.9', description: 'Fever, unspecified', chapter: 'Symptoms and signs' },
       { code: 'R51', description: 'Headache', chapter: 'Symptoms and signs' },
-      { code: 'Z00.0', description: 'Encounter for general adult medical examination', chapter: 'Factors influencing health' },
-      { code: 'B50.9', description: 'Plasmodium falciparum malaria, unspecified', chapter: 'Infectious diseases' },
+      {
+        code: 'Z00.0',
+        description: 'Encounter for general adult medical examination',
+        chapter: 'Factors influencing health',
+      },
+      {
+        code: 'B50.9',
+        description: 'Plasmodium falciparum malaria, unspecified',
+        chapter: 'Infectious diseases',
+      },
       { code: 'A01.0', description: 'Typhoid fever', chapter: 'Infectious diseases' },
       { code: 'A06.0', description: 'Acute amoebic dysentery', chapter: 'Infectious diseases' },
-      { code: 'B15.9', description: 'Hepatitis A without hepatic coma', chapter: 'Infectious diseases' },
-      { code: 'D50.9', description: 'Iron deficiency anaemia, unspecified', chapter: 'Blood diseases' },
+      {
+        code: 'B15.9',
+        description: 'Hepatitis A without hepatic coma',
+        chapter: 'Infectious diseases',
+      },
+      {
+        code: 'D50.9',
+        description: 'Iron deficiency anaemia, unspecified',
+        chapter: 'Blood diseases',
+      },
       { code: 'E66.9', description: 'Obesity, unspecified', chapter: 'Endocrine diseases' },
-      { code: 'F32.9', description: 'Depressive episode, unspecified', chapter: 'Mental disorders' },
+      {
+        code: 'F32.9',
+        description: 'Depressive episode, unspecified',
+        chapter: 'Mental disorders',
+      },
       { code: 'G43.9', description: 'Migraine, unspecified', chapter: 'Nervous system' },
       { code: 'H10.9', description: 'Conjunctivitis, unspecified', chapter: 'Eye diseases' },
       { code: 'H66.9', description: 'Otitis media, unspecified', chapter: 'Ear diseases' },
       { code: 'L30.9', description: 'Dermatitis, unspecified', chapter: 'Skin diseases' },
-      { code: 'O80', description: 'Encounter for full-term uncomplicated delivery', chapter: 'Pregnancy' },
+      {
+        code: 'O80',
+        description: 'Encounter for full-term uncomplicated delivery',
+        chapter: 'Pregnancy',
+      },
       { code: 'S06.0', description: 'Concussion', chapter: 'Injuries' },
       { code: 'T78.4', description: 'Allergy, unspecified', chapter: 'Injuries' },
     ];
@@ -521,20 +621,22 @@ export class WHOICDService {
         // ICD10Code is global reference data — no tenant filtering
         const existing = await this.icd10CodeRepo.findOne({ where: { code: item.code } });
         if (!existing) {
-          await this.icd10CodeRepo.save(this.icd10CodeRepo.create({
-            code: item.code,
-            description: item.description,
-            chapterDescription: item.chapter,
-            source: 'seed',
-            useCount: 10, // Give seeded codes a base popularity
-          }));
+          await this.icd10CodeRepo.save(
+            this.icd10CodeRepo.create({
+              code: item.code,
+              description: item.description,
+              chapterDescription: item.chapter,
+              source: 'seed',
+              useCount: 10, // Give seeded codes a base popularity
+            }),
+          );
           seeded++;
         }
       } catch (error) {
         // Ignore duplicate errors
       }
     }
-    
+
     this.logger.log(`Seeded ${seeded} common ICD-10 codes`);
     return seeded;
   }
@@ -560,9 +662,9 @@ export class WHOICDService {
 
   private mapChapterToCategory(chapter?: string): DiagnosisCategory {
     if (!chapter) return DiagnosisCategory.OTHER;
-    
+
     const c = chapter.toLowerCase();
-    
+
     if (c.includes('infectious')) return DiagnosisCategory.INFECTIOUS;
     if (c.includes('neoplasm')) return DiagnosisCategory.NEOPLASMS;
     if (c.includes('blood')) return DiagnosisCategory.BLOOD;
@@ -583,7 +685,7 @@ export class WHOICDService {
     if (c.includes('symptoms')) return DiagnosisCategory.SYMPTOMS;
     if (c.includes('injury')) return DiagnosisCategory.INJURY;
     if (c.includes('external')) return DiagnosisCategory.EXTERNAL;
-    
+
     return DiagnosisCategory.OTHER;
   }
 }

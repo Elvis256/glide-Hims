@@ -2,7 +2,13 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { TreatmentPlan, TreatmentPlanStatus } from '../../database/entities/treatment-plan.entity';
-import { CreateTreatmentPlanDto, UpdateTreatmentPlanDto, AddProgressNoteDto, RevisePlanDto, TreatmentPlanFilterDto } from './dto/treatment-plan.dto';
+import {
+  CreateTreatmentPlanDto,
+  UpdateTreatmentPlanDto,
+  AddProgressNoteDto,
+  RevisePlanDto,
+  TreatmentPlanFilterDto,
+} from './dto/treatment-plan.dto';
 import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
@@ -12,7 +18,11 @@ export class TreatmentPlansService {
     private treatmentPlanRepository: Repository<TreatmentPlan>,
   ) {}
 
-  async create(dto: CreateTreatmentPlanDto, userId: string, tenantId?: string): Promise<TreatmentPlan> {
+  async create(
+    dto: CreateTreatmentPlanDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<TreatmentPlan> {
     const planNumber = await this.generatePlanNumber(tenantId);
 
     const plan = this.treatmentPlanRepository.create({
@@ -30,7 +40,8 @@ export class TreatmentPlansService {
   }
 
   async findAll(filter: TreatmentPlanFilterDto, tenantId?: string): Promise<TreatmentPlan[]> {
-    const query = this.treatmentPlanRepository.createQueryBuilder('plan')
+    const query = this.treatmentPlanRepository
+      .createQueryBuilder('plan')
       .leftJoinAndSelect('plan.patient', 'patient')
       .leftJoinAndSelect('plan.primaryProvider', 'primaryProvider')
       .leftJoinAndSelect('plan.createdBy', 'createdBy');
@@ -100,9 +111,9 @@ export class TreatmentPlansService {
 
   async update(id: string, dto: UpdateTreatmentPlanDto, tenantId?: string): Promise<TreatmentPlan> {
     const plan = await this.findOne(id, tenantId);
-    
+
     Object.assign(plan, dto);
-    
+
     return this.treatmentPlanRepository.save(plan);
   }
 
@@ -138,7 +149,7 @@ export class TreatmentPlansService {
 
     plan.status = TreatmentPlanStatus.DISCONTINUED;
     plan.actualEndDate = new Date();
-    
+
     // Add discontinuation note
     const progressNotes = plan.progressNotes || [];
     progressNotes.push({
@@ -151,7 +162,13 @@ export class TreatmentPlansService {
     return this.treatmentPlanRepository.save(plan);
   }
 
-  async addProgressNote(id: string, dto: AddProgressNoteDto, userId: string, providerName: string, tenantId?: string): Promise<TreatmentPlan> {
+  async addProgressNote(
+    id: string,
+    dto: AddProgressNoteDto,
+    userId: string,
+    providerName: string,
+    tenantId?: string,
+  ): Promise<TreatmentPlan> {
     const plan = await this.findOne(id, tenantId);
 
     const progressNotes = plan.progressNotes || [];
@@ -165,14 +182,19 @@ export class TreatmentPlansService {
     return this.treatmentPlanRepository.save(plan);
   }
 
-  async updateGoalStatus(id: string, goalId: string, status: string, tenantId?: string): Promise<TreatmentPlan> {
+  async updateGoalStatus(
+    id: string,
+    goalId: string,
+    status: string,
+    tenantId?: string,
+  ): Promise<TreatmentPlan> {
     const plan = await this.findOne(id, tenantId);
 
     if (!plan.goals) {
       throw new BadRequestException('No goals found in this plan');
     }
 
-    const goalIndex = plan.goals.findIndex(g => g.id === goalId);
+    const goalIndex = plan.goals.findIndex((g) => g.id === goalId);
     if (goalIndex === -1) {
       throw new NotFoundException('Goal not found');
     }
@@ -181,7 +203,12 @@ export class TreatmentPlansService {
     return this.treatmentPlanRepository.save(plan);
   }
 
-  async revisePlan(id: string, dto: RevisePlanDto, userId: string, tenantId?: string): Promise<TreatmentPlan> {
+  async revisePlan(
+    id: string,
+    dto: RevisePlanDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<TreatmentPlan> {
     const oldPlan = await this.findOne(id, tenantId);
 
     // Mark old plan as revised
@@ -225,9 +252,7 @@ export class TreatmentPlansService {
       .createQueryBuilder('plan')
       .where('plan.plan_number LIKE :prefix', { prefix: `${prefix}%` });
     if (tenantId) qb.andWhere('plan.tenant_id = :tenantId', { tenantId });
-    const lastPlan = await qb
-      .orderBy('plan.plan_number', 'DESC')
-      .getOne();
+    const lastPlan = await qb.orderBy('plan.plan_number', 'DESC').getOne();
 
     let sequence = 1;
     if (lastPlan) {

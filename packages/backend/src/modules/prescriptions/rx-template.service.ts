@@ -71,9 +71,7 @@ export class RxTemplateService {
     if (facilityId) {
       qb.andWhere(
         new Brackets((sub) => {
-          sub
-            .where('t.facility_id = :facilityId', { facilityId })
-            .orWhere('t.facility_id IS NULL');
+          sub.where('t.facility_id = :facilityId', { facilityId }).orWhere('t.facility_id IS NULL');
         }),
       );
     }
@@ -123,11 +121,7 @@ export class RxTemplateService {
     return this.templateRepo.save(template);
   }
 
-  async deleteTemplate(
-    id: string,
-    userId: string,
-    tenantId: string,
-  ): Promise<void> {
+  async deleteTemplate(id: string, userId: string, tenantId: string): Promise<void> {
     const template = await this.getTemplate(id, tenantId);
 
     if (template.createdById !== userId) {
@@ -137,10 +131,7 @@ export class RxTemplateService {
     await this.templateRepo.softDelete(id);
   }
 
-  async applyTemplate(
-    templateId: string,
-    tenantId: string,
-  ): Promise<{ items: RxTemplateItem[] }> {
+  async applyTemplate(templateId: string, tenantId: string): Promise<{ items: RxTemplateItem[] }> {
     const template = await this.getTemplate(templateId, tenantId);
 
     await this.templateRepo.increment({ id: templateId }, 'usageCount', 1);
@@ -162,9 +153,7 @@ export class RxTemplateService {
     if (facilityId) {
       qb.andWhere(
         new Brackets((sub) => {
-          sub
-            .where('t.facility_id = :facilityId', { facilityId })
-            .orWhere('t.facility_id IS NULL');
+          sub.where('t.facility_id = :facilityId', { facilityId }).orWhere('t.facility_id IS NULL');
         }),
       );
     }

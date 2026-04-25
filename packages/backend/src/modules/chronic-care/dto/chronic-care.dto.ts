@@ -1,4 +1,13 @@
-import { IsEnum, IsOptional, IsString, IsNumber, IsBoolean, IsUUID, IsDate, IsArray } from 'class-validator';
+import {
+  IsEnum,
+  IsOptional,
+  IsString,
+  IsNumber,
+  IsBoolean,
+  IsUUID,
+  IsDate,
+  IsArray,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import { ChronicStatus } from '../../../database/entities/patient-chronic-condition.entity';

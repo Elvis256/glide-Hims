@@ -86,6 +86,11 @@ api.interceptors.request.use(
     if (tenantId && config.headers) {
       config.headers['x-tenant-id'] = tenantId;
     }
+
+    if (config.headers && !config.headers['x-request-id']) {
+      config.headers['x-request-id'] = createRequestId();
+    }
+
     return config;
   },
   (error) => Promise.reject(error)

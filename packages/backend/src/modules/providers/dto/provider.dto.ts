@@ -1,4 +1,12 @@
-import { IsString, IsOptional, IsBoolean, IsEnum, IsUUID, IsNumber, IsArray } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsBoolean,
+  IsEnum,
+  IsUUID,
+  IsNumber,
+  IsArray,
+} from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ProviderType, ProviderStatus } from '../../../database/entities/provider.entity';
 

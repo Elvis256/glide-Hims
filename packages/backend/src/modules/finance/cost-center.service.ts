@@ -23,7 +23,9 @@ export class CostCenterService {
   }
 
   async findOne(id: string, tenantId?: string): Promise<CostCenter> {
-    const cc = await this.costCenterRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
+    const cc = await this.costCenterRepo.findOne({
+      where: { id, ...(tenantId ? { tenantId } : {}) },
+    });
     if (!cc) throw new NotFoundException('Cost center not found');
     return cc;
   }

@@ -2,7 +2,12 @@ import { Injectable, NotFoundException, ConflictException } from '@nestjs/common
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { MembershipScheme, PatientMembership } from '../../database/entities/membership.entity';
-import { CreateMembershipSchemeDto, UpdateMembershipSchemeDto, CreatePatientMembershipDto, UpdatePatientMembershipDto } from './membership.dto';
+import {
+  CreateMembershipSchemeDto,
+  UpdateMembershipSchemeDto,
+  CreatePatientMembershipDto,
+  UpdatePatientMembershipDto,
+} from './membership.dto';
 
 @Injectable()
 export class MembershipService {
@@ -28,7 +33,8 @@ export class MembershipService {
 
   async findAllSchemes(facilityId?: string, tenantId?: string) {
     const query = this.schemeRepo.createQueryBuilder('s').where('s.isActive = true');
-    if (facilityId) query.andWhere('(s.facilityId = :facilityId OR s.facilityId IS NULL)', { facilityId });
+    if (facilityId)
+      query.andWhere('(s.facilityId = :facilityId OR s.facilityId IS NULL)', { facilityId });
     if (tenantId) {
       query.andWhere('s.tenant_id = :tenantId', { tenantId });
     }
@@ -53,8 +59,10 @@ export class MembershipService {
   async createMembership(dto: CreatePatientMembershipDto, tenantId?: string) {
     const scheme = await this.findScheme(dto.schemeId, tenantId);
     const membershipNumber = `MEM-${Date.now()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
-    const endDate = dto.endDate || new Date(new Date(dto.startDate).getTime() + scheme.validDays * 24 * 60 * 60 * 1000);
-    
+    const endDate =
+      dto.endDate ||
+      new Date(new Date(dto.startDate).getTime() + scheme.validDays * 24 * 60 * 60 * 1000);
+
     const membership = this.membershipRepo.create({
       ...dto,
       membershipNumber,
@@ -100,8 +108,7 @@ export class MembershipService {
   }
 
   async findAllMemberships(planId?: string, status?: string, tenantId?: string) {
-    const qb = this.membershipRepo.createQueryBuilder('m')
-      .orderBy('m.createdAt', 'DESC');
+    const qb = this.membershipRepo.createQueryBuilder('m').orderBy('m.createdAt', 'DESC');
     if (planId) qb.andWhere('m.schemeId = :planId', { planId });
     if (status) qb.andWhere('m.status = :status', { status });
     if (tenantId) qb.andWhere('m.tenant_id = :tenantId', { tenantId });

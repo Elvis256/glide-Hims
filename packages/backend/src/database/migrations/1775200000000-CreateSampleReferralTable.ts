@@ -59,13 +59,27 @@ export class CreateSampleReferralTable1775200000000 implements MigrationInterfac
     `);
 
     // Add indexes
-    await queryRunner.query(`CREATE UNIQUE INDEX "IDX_sample_referrals_referral_number" ON "sample_referrals" ("referralNumber")`);
-    await queryRunner.query(`CREATE INDEX "IDX_sample_referrals_tenant_id" ON "sample_referrals" ("tenant_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_sample_referrals_stage_created" ON "sample_referrals" ("stage", "created_at")`);
-    await queryRunner.query(`CREATE INDEX "IDX_sample_referrals_from_facility" ON "sample_referrals" ("fromFacilityId", "stage")`);
-    await queryRunner.query(`CREATE INDEX "IDX_sample_referrals_to_facility" ON "sample_referrals" ("toFacilityId", "stage")`);
-    await queryRunner.query(`CREATE INDEX "IDX_sample_referrals_sample_id" ON "sample_referrals" ("sampleId")`);
-    await queryRunner.query(`CREATE INDEX "IDX_sample_referrals_patient_id" ON "sample_referrals" ("patientId")`);
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX "IDX_sample_referrals_referral_number" ON "sample_referrals" ("referralNumber")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_sample_referrals_tenant_id" ON "sample_referrals" ("tenant_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_sample_referrals_stage_created" ON "sample_referrals" ("stage", "created_at")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_sample_referrals_from_facility" ON "sample_referrals" ("fromFacilityId", "stage")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_sample_referrals_to_facility" ON "sample_referrals" ("toFacilityId", "stage")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_sample_referrals_sample_id" ON "sample_referrals" ("sampleId")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_sample_referrals_patient_id" ON "sample_referrals" ("patientId")`,
+    );
 
     // Add foreign keys
     await queryRunner.query(`
