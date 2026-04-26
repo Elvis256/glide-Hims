@@ -68,8 +68,8 @@ export abstract class TenantAwareRepository<T extends BaseEntity> extends Reposi
   findOneByIdForTenant(id: string, options?: FindOneOptions<T>): Promise<T | null> {
     const qb = this.createTenantAwareQueryBuilder();
     qb.andWhere(`${this.metadata.tableName}.id = :id`, { id });
-    if (options?.relations) {
-      options.relations.forEach((relation) => {
+    if (options?.relations && Array.isArray(options.relations)) {
+      (options.relations as string[]).forEach((relation: string) => {
         qb.leftJoinAndSelect(`${this.metadata.tableName}.${relation}`, relation);
       });
     }

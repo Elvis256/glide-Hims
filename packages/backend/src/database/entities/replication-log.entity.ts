@@ -100,8 +100,11 @@ export class ReplicationLog {
   @Column({ type: 'integer', default: 0 })
   retryCount: number;
 
-  @Column({ type: 'integer', default: 3 })
+  @Column({ type: 'integer', default: 0 })
   maxRetries: number;
+
+  @Column({ type: 'integer', nullable: true })
+  changesetCount: number;
 
   @Column({ type: 'timestamp', nullable: true })
   sentAt: Date;
