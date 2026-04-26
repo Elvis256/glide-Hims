@@ -66,6 +66,12 @@ export class ChangeSet {
     newData?: Record<string, any>;
   }>;
 
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  entity: string;
+
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  operation: string;
+
   @Column({ type: 'text', nullable: true })
   description: string;
 

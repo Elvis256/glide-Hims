@@ -94,6 +94,9 @@ export class UpdateRollout {
   @Column({ type: 'jsonb', nullable: true })
   rollbackReason: Record<string, any>;
 
+  @Column({ type: 'jsonb', nullable: true })
+  metadata: Record<string, any>;
+
   @Column({ type: 'timestamp', nullable: true })
   rolledBackAt: Date;
 
