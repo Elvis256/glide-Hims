@@ -1,0 +1,97 @@
+{
+  "hash": "d2e282e2",
+  "configHash": "d7b25544",
+  "lockfileHash": "9337fde6",
+  "browserHash": "26957211",
+  "optimized": {
+    "react/jsx-dev-runtime": {
+      "src": "../../../../node_modules/.pnpm/react@19.2.3/node_modules/react/jsx-dev-runtime.js",
+      "file": "react_jsx-dev-runtime.js",
+      "fileHash": "ecfbddc3",
+      "needsInterop": true
+    },
+    "react": {
+      "src": "../../../../node_modules/.pnpm/react@19.2.3/node_modules/react/index.js",
+      "file": "react.js",
+      "fileHash": "43fedf8a",
+      "needsInterop": true
+    },
+    "react-dom/client": {
+      "src": "../../../../node_modules/.pnpm/react-dom@19.2.3_react@19.2.3/node_modules/react-dom/client.js",
+      "file": "react-dom_client.js",
+      "fileHash": "5a363477",
+      "needsInterop": true
+    },
+    "react-router-dom": {
+      "src": "../../../../node_modules/.pnpm/react-router-dom@6.30.3_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/react-router-dom/dist/index.js",
+      "file": "react-router-dom.js",
+      "fileHash": "f8d345b8",
+      "needsInterop": false
+    },
+    "@tanstack/react-query": {
+      "src": "../../../../node_modules/.pnpm/@tanstack+react-query@5.90.20_react@19.2.3/node_modules/@tanstack/react-query/build/modern/index.js",
+      "file": "@tanstack_react-query.js",
+      "fileHash": "d25b7112",
+      "needsInterop": false
+    },
+    "axios": {
+      "src": "../../../../node_modules/.pnpm/axios@1.13.6/node_modules/axios/index.js",
+      "file": "axios.js",
+      "fileHash": "3f1335cb",
+      "needsInterop": false
+    },
+    "sonner": {
+      "src": "../../../../node_modules/.pnpm/sonner@2.0.7_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/sonner/dist/index.mjs",
+      "file": "sonner.js",
+      "fileHash": "e2c41d89",
+      "needsInterop": false
+    },
+    "lucide-react": {
+      "src": "../../../../node_modules/.pnpm/lucide-react@0.563.0_react@19.2.3/node_modules/lucide-react/dist/esm/lucide-react.js",
+      "file": "lucide-react.js",
+      "fileHash": "9f38a31b",
+      "needsInterop": false
+    },
+    "zustand": {
+      "src": "../../../../node_modules/.pnpm/zustand@5.0.10_@types+react@19.2.9_immer@11.1.3_react@19.2.3_use-sync-external-store@1.6.0_react@19.2.3_/node_modules/zustand/esm/index.mjs",
+      "file": "zustand.js",
+      "fileHash": "df8d56bb",
+      "needsInterop": false
+    },
+    "zustand/middleware": {
+      "src": "../../../../node_modules/.pnpm/zustand@5.0.10_@types+react@19.2.9_immer@11.1.3_react@19.2.3_use-sync-external-store@1.6.0_react@19.2.3_/node_modules/zustand/esm/middleware.mjs",
+      "file": "zustand_middleware.js",
+      "fileHash": "07d76698",
+      "needsInterop": false
+    },
+    "socket.io-client": {
+      "src": "../../../../node_modules/.pnpm/socket.io-client@4.8.3/node_modules/socket.io-client/build/esm/index.js",
+      "file": "socket__io-client.js",
+      "fileHash": "b52db472",
+      "needsInterop": false
+    },
+    "dexie": {
+      "src": "../../../../node_modules/.pnpm/dexie@4.2.1/node_modules/dexie/import-wrapper.mjs",
+      "file": "dexie.js",
+      "fileHash": "1a2a4fef",
+      "needsInterop": false
+    },
+    "uuid": {
+      "src": "../../../../node_modules/.pnpm/uuid@9.0.1/node_modules/uuid/dist/esm-browser/index.js",
+      "file": "uuid.js",
+      "fileHash": "38c8815c",
+      "needsInterop": false
+    }
+  },
+  "chunks": {
+    "chunk-7VFBONXM": {
+      "file": "chunk-7VFBONXM.js"
+    },
+    "chunk-DRUGE5NK": {
+      "file": "chunk-DRUGE5NK.js"
+    },
+    "chunk-4MBMRILA": {
+      "file": "chunk-4MBMRILA.js"
+    }
+  }
+}

@@ -83,6 +83,7 @@ import { FeatureFlagsModule } from './modules/feature-flags/feature-flags.module
 import { UpdatesModule } from './modules/updates/updates.module';
 import { ExportModule } from './modules/export/export.module';
 import { BackupModule } from './modules/backup/backup.module';
+import { DeploymentsModule } from './modules/deployments/deployment.module';
 
 @Module({
   imports: [
@@ -265,6 +266,9 @@ import { BackupModule } from './modules/backup/backup.module';
 
     // Backup & Restore
     BackupModule,
+
+    // Multi-Tenant SaaS Super Server
+    DeploymentsModule,
   ],
   controllers: [AppController],
   providers: [
