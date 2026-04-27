@@ -906,6 +906,12 @@ const navigationSections: NavSection[] = [
         systemAdminOnly: true,
       },
       {
+        name: 'Software Updates',
+        icon: Settings,
+        href: '/downloads',
+        permissions: [],
+      },
+      {
         name: 'Users & Access',
         icon: Lock,
         permissions: ['users.read', 'users.create', 'roles.read'],

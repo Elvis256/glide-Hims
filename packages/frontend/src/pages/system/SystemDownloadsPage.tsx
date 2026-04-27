@@ -17,6 +17,16 @@ interface Installer {
   releasedAt: string;
 }
 
+interface AuditEntry {
+  id: string;
+  installerId: string;
+  username: string | null;
+  ipAddress: string | null;
+  bytesServed: string | null;
+  success: boolean;
+  createdAt: string;
+}
+
 const CHANNEL_BADGE: Record<string, string> = {
   stable: 'bg-emerald-100 text-emerald-700',
   beta: 'bg-amber-100 text-amber-700',
@@ -34,6 +44,8 @@ function fmtSize(bytes: string) {
 
 export default function SystemDownloadsPage() {
   const [items, setItems] = useState<Installer[]>([]);
+  const [audit, setAudit] = useState<AuditEntry[]>([]);
+  const [showAudit, setShowAudit] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,6 +60,7 @@ export default function SystemDownloadsPage() {
     sha256: '',
     releaseNotes: '',
     isPublished: true,
+    minLicenseTier: '',
   });
 
   async function load() {
@@ -64,13 +77,24 @@ export default function SystemDownloadsPage() {
 
   useEffect(() => { load(); }, []);
 
+  async function loadAudit() {
+    try {
+      const r = await api.get('/downloads/audit');
+      setAudit(r.data?.data ?? r.data ?? []);
+    } catch (e: any) {
+      setError(e?.response?.data?.message ?? 'Failed to load audit log');
+    }
+  }
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     try {
-      await api.post('/downloads', form);
+      const payload: any = { ...form };
+      if (!payload.minLicenseTier) delete payload.minLicenseTier;
+      await api.post('/downloads', payload);
       setShowForm(false);
-      setForm({ ...form, version: '', filename: '', sizeBytes: '', sha256: '', releaseNotes: '' });
+      setForm({ ...form, version: '', filename: '', sizeBytes: '', sha256: '', releaseNotes: '', minLicenseTier: '' });
       load();
     } catch (e: any) {
       setError(e?.response?.data?.message ?? 'Failed to register installer');
@@ -103,6 +127,9 @@ export default function SystemDownloadsPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <button onClick={() => { const next = !showAudit; setShowAudit(next); if (next) loadAudit(); }} className="px-3 py-2 text-sm border rounded-lg hover:bg-gray-50">
+            {showAudit ? 'Hide audit' : 'Audit log'}
+          </button>
           <button onClick={load} className="px-3 py-2 text-sm border rounded-lg hover:bg-gray-50 flex items-center gap-2">
             <RefreshCw className="w-4 h-4" /> Refresh
           </button>
@@ -228,6 +255,15 @@ export default function SystemDownloadsPage() {
                 <input type="checkbox" checked={form.isPublished} onChange={(e) => setForm({ ...form, isPublished: e.target.checked })} />
                 Publish immediately (visible to all authenticated users)
               </label>
+              <div className="col-span-2">
+                <label className="text-xs font-medium text-gray-700">Minimum license tier (gating)</label>
+                <select value={form.minLicenseTier} onChange={(e) => setForm({ ...form, minLicenseTier: e.target.value })} className="mt-1 w-full border rounded-lg px-3 py-2 text-sm">
+                  <option value="">No restriction (all tenants)</option>
+                  <option value="standard">Standard or higher</option>
+                  <option value="professional">Professional or higher</option>
+                  <option value="enterprise">Enterprise only</option>
+                </select>
+              </div>
               <div className="col-span-2 flex justify-end gap-2 pt-2 border-t">
                 <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-sm border rounded-lg">Cancel</button>
                 <button type="submit" className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Register</button>
@@ -238,8 +274,49 @@ export default function SystemDownloadsPage() {
       )}
 
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-900">
-        <strong>How it works:</strong> Copy your installer to <code>/var/lib/glide-hims/installers/&lt;filename&gt;</code> on the server, then register the metadata here. Authenticated users hit <code>/api/v1/downloads/:id/file</code> which streams the file with the SHA-256 in <code>X-SHA256</code> header.
+        <strong>How it works:</strong> Run <code>./scripts/build-installer.sh 1.0.0</code> on the server to create a tarball of this repo at <code>/var/lib/glide-hims/installers/</code>, then register the metadata here. Authenticated users hit <code>/api/v1/downloads/:id/file</code>.
       </div>
+
+      {showAudit && (
+        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+          <div className="px-4 py-3 border-b font-medium text-sm">Recent download activity</div>
+          {audit.length === 0 ? (
+            <div className="p-8 text-center text-gray-500 text-sm">No download activity yet.</div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-xs uppercase text-gray-500 border-b">
+                <tr>
+                  <th className="text-left px-4 py-2">When</th>
+                  <th className="text-left px-4 py-2">User</th>
+                  <th className="text-left px-4 py-2">IP</th>
+                  <th className="text-left px-4 py-2">Installer</th>
+                  <th className="text-left px-4 py-2">Bytes</th>
+                  <th className="text-left px-4 py-2">Result</th>
+                </tr>
+              </thead>
+              <tbody>
+                {audit.map((a) => {
+                  const inst = items.find((i) => i.id === a.installerId);
+                  return (
+                    <tr key={a.id} className="border-b last:border-0">
+                      <td className="px-4 py-2 text-xs text-gray-600">{new Date(a.createdAt).toLocaleString()}</td>
+                      <td className="px-4 py-2">{a.username || '—'}</td>
+                      <td className="px-4 py-2 font-mono text-xs">{a.ipAddress || '—'}</td>
+                      <td className="px-4 py-2 text-xs text-gray-600">{inst ? `${inst.name} v${inst.version}` : a.installerId.slice(0, 8)}…</td>
+                      <td className="px-4 py-2 text-xs">{a.bytesServed || '—'}</td>
+                      <td className="px-4 py-2">
+                        <span className={`text-xs px-2 py-0.5 rounded ${a.success ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                          {a.success ? 'OK' : 'denied'}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
     </div>
   );
 }
