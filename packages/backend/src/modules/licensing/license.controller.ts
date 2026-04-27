@@ -58,7 +58,7 @@ export class LicenseController {
    * Generate a new license (system admin only)
    */
   @Post('generate')
-  @Auth('Administrator')
+  @Auth()
   @ApiOperation({ summary: 'Generate a new license key' })
   async generateLicense(@Body() dto: GenerateLicenseDto, @Request() req: any) {
     this.requireSystemAdmin(req);
@@ -80,7 +80,7 @@ export class LicenseController {
    * Get license details (system admin only)
    */
   @Get(':licenseKey')
-  @Auth('Administrator')
+  @Auth()
   @ApiOperation({ summary: 'Get license details' })
   async getLicense(@Param('licenseKey') licenseKey: string, @Request() req: any) {
     this.requireSystemAdmin(req);
@@ -97,7 +97,7 @@ export class LicenseController {
    * List all licenses (system admin only)
    */
   @Get()
-  @Auth('Administrator')
+  @Auth()
   @ApiOperation({ summary: 'List all licenses' })
   async listLicenses(
     @Request() req: any,
@@ -117,7 +117,7 @@ export class LicenseController {
    * Revoke a license (system admin only)
    */
   @Put(':licenseKey/revoke')
-  @Auth('Administrator')
+  @Auth()
   @ApiOperation({ summary: 'Revoke a license' })
   async revokeLicense(@Param('licenseKey') licenseKey: string, @Request() req: any) {
     this.requireSystemAdmin(req);
@@ -129,7 +129,7 @@ export class LicenseController {
    * Extend a license (system admin only)
    */
   @Put(':licenseKey/extend')
-  @Auth('Administrator')
+  @Auth()
   @ApiOperation({ summary: 'Extend license validity' })
   async extendLicense(
     @Param('licenseKey') licenseKey: string,
@@ -148,7 +148,7 @@ export class LicenseController {
    * Bind license to hardware (requires authentication)
    */
   @Put(':licenseKey/bind-hardware')
-  @Auth('Administrator')
+  @Auth()
   @ApiOperation({ summary: 'Bind license to hardware ID' })
   async bindToHardware(
     @Param('licenseKey') licenseKey: string,

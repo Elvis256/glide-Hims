@@ -17,6 +17,7 @@ import { Response } from 'express';
 import * as fs from 'fs';
 import { DownloadsService } from './downloads.service';
 import { CreateInstallerDto, UpdateInstallerDto } from './installer.dto';
+import { meetsTier } from '../../common/constants/license-tiers.constants';
 
 @ApiTags('Downloads')
 @Controller('downloads')
@@ -31,11 +32,7 @@ export class DownloadsController {
     const tier = await this.svc.tierForTenant(req.user?.tenantId);
     // filter out installers gated above the caller's tier and annotate
     return items
-      .filter((i) => {
-        if (!i.minLicenseTier) return true;
-        const TIER_RANK: Record<string, number> = { trial: 0, free: 0, standard: 1, basic: 1, professional: 2, pro: 2, enterprise: 3 };
-        return (TIER_RANK[tier.toLowerCase()] ?? 0) >= (TIER_RANK[i.minLicenseTier.toLowerCase()] ?? 0);
-      });
+      .filter((i) => meetsTier(tier, i.minLicenseTier));
   }
 
   @Get('audit')

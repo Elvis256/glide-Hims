@@ -42,6 +42,7 @@ const SystemComplianceCenterPage = lazy(() => import('./pages/system/SystemCompl
 const SystemDeploymentsPage = lazy(() => import('./pages/system/SystemDeploymentsPage'));
 const SystemLeadsPage = lazy(() => import('./pages/system/SystemLeadsPage'));
 const SystemDownloadsPage = lazy(() => import('./pages/system/SystemDownloadsPage'));
+const SystemLicensesPage = lazy(() => import('./pages/system/SystemLicensesPage'));
 const DownloadsPage = lazy(() => import('./pages/DownloadsPage'));
 const SupportAccessPage = lazy(() => import('./pages/admin/SupportAccessPage'));
 const SetupWizardPage = lazy(() => import('./pages/SetupWizardPage'));
@@ -591,6 +592,7 @@ function AppRoutes() {
         <Route path="support-requests" element={<SystemSupportRequestsPage />} />
         <Route path="leads" element={<SystemLeadsPage />} />
         <Route path="downloads" element={<SystemDownloadsPage />} />
+        <Route path="licenses" element={<SystemLicensesPage />} />
         <Route path="compliance" element={<SystemComplianceCenterPage />} />
       </Route>
       <Route

@@ -4,11 +4,15 @@ import {
   ConflictException,
   OnModuleInit,
   Logger,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { Tenant } from '../../database/entities/tenant.entity';
 import { CreateTenantDto, UpdateTenantDto } from './dto/tenant.dto';
+import { LicenseService } from '../licensing/license.service';
+import { getPreset } from '../../common/constants/facility-presets.constants';
 
 @Injectable()
 export class TenantsService implements OnModuleInit {
@@ -18,6 +22,8 @@ export class TenantsService implements OnModuleInit {
     @InjectRepository(Tenant)
     private tenantRepository: Repository<Tenant>,
     private dataSource: DataSource,
+    @Inject(forwardRef(() => LicenseService))
+    private licenseService: LicenseService,
   ) {}
 
   /** Ensure slug column exists and backfill slugs for existing tenants */
@@ -94,7 +100,29 @@ export class TenantsService implements OnModuleInit {
     const baseSlug = dto.slug || TenantsService.generateSlug(dto.name);
     const slug = await this.ensureUniqueSlug(baseSlug);
     const tenant = this.tenantRepository.create({ ...dto, slug, status: 'active' });
-    return this.tenantRepository.save(tenant);
+    const saved = await this.tenantRepository.save(tenant);
+
+    // Auto-issue 30-day trial license bound to this tenant.
+    // Modules come from the hospital preset (safe default for new orgs).
+    try {
+      const preset = getPreset('hospital' as any);
+      const enabledModules = preset?.enabledModules || ['patients', 'encounters', 'billing', 'reports'];
+      await this.licenseService.generateLicense({
+        organizationName: saved.name,
+        email: (dto as any).email || `admin@${saved.slug}.local`,
+        licenseType: 'trial',
+        maxUsers: 25,
+        maxFacilities: 1,
+        enabledModules,
+        validityDays: 30,
+        tenantId: saved.id,
+      });
+      this.logger.log(`Issued 30-day trial license for tenant ${saved.slug}`);
+    } catch (err: any) {
+      this.logger.warn(`Failed to auto-issue trial license for ${saved.slug}: ${err?.message || err}`);
+    }
+
+    return saved;
   }
 
   async findAll() {
