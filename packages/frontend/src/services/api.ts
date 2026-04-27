@@ -59,6 +59,17 @@ export const api = axios.create({
   },
 });
 
+function createRequestId(): string {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+  } catch {
+    // fall through to fallback
+  }
+  return `req-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 // Custom event for session expiry notification
 export const SESSION_EXPIRED_EVENT = 'session-expired';
 
