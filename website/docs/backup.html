@@ -200,6 +200,14 @@
             <p class="subtitle">Protect your healthcare data with robust backup strategies</p>
         </div>
 
+        <div class="alert alert-success border-0 shadow-sm" style="background:#ecfdf5;border-left:4px solid #10b981;">
+            <strong>✓ Verified in v1.0</strong> — production deployments ship with
+            <code>scripts/backup.sh</code> running nightly via cron (encrypted PostgreSQL dump + uploads
+            tarball). Restore is performed with <code>scripts/restore.sh &lt;archive&gt;</code>. The
+            Compliance Centre at <code>/system/compliance</code> tracks Backup/Restore evidence per
+            environment for auditor sign-off.
+        </div>
+
         <div class="alert alert-danger mb-4">
             <i class="bi bi-exclamation-triangle me-2"></i>
             <strong>Critical:</strong> Healthcare data is sensitive and often legally protected. Ensure your backup strategy complies with local regulations (HIPAA, GDPR, etc.) and includes encryption.

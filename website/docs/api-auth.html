@@ -215,6 +215,17 @@
             <p class="subtitle">JWT-based authentication with multi-tenant support</p>
         </div>
 
+        <div class="alert alert-success border-0 shadow-sm" style="background:#ecfdf5;border-left:4px solid #10b981;">
+            <strong>✓ Verified in v1.0</strong> — tokens are issued as <strong>HttpOnly cookies</strong>
+            (not in JSON), so XSS cannot exfiltrate them. <code>accessToken</code> is scoped to <code>/</code>
+            (15 min); <code>refreshToken</code> is scoped to <code>/api/v1/auth/refresh</code> (7 days).
+            The frontend writes a non-sensitive <code>glide_login_kind=system|tenant</code> flag in
+            localStorage to route 401 redirects to the correct login page (<code>/system/login</code> vs
+            <code>/login/{tenant-slug}</code>). System administrators authenticate via the same
+            <code>POST /api/v1/auth/login</code> endpoint and are identified by
+            <code>user.isSystemAdmin === true</code>.
+        </div>
+
         <!-- Overview -->
         <section class="mb-5">
             <h2>Overview</h2>

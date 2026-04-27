@@ -195,6 +195,14 @@
             <p class="subtitle">Track system health, performance, and usage metrics</p>
         </div>
 
+        <div class="alert alert-success border-0 shadow-sm" style="background:#ecfdf5;border-left:4px solid #10b981!important;">
+            <strong>✓ Verified in v1.0 (Phase 4)</strong> — the platform ships with:
+            a deep <code>/health</code> endpoint that probes PostgreSQL (<code>SELECT 1</code>) and the Redis cache (set/get round-trip);
+            <code>HealthMetricsCollectorService</code> for real-time metric collection with anomaly detection; and an
+            <code>AlertingService</code> with email, SMS, Slack, PagerDuty, and webhook channels. See
+            <a href="https://hmisdemo.itsolutionsuganda.com/api/v1/health" target="_blank">live /health on the demo</a>.
+        </div>
+
         <!-- Overview -->
         <section class="mb-5">
             <h2>Overview</h2>
