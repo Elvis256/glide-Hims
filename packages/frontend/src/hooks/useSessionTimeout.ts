@@ -34,13 +34,18 @@ export function useSessionTimeout(options: UseSessionTimeoutOptions = {}) {
     if (onTimeout) {
       onTimeout();
     } else {
+      const kind = localStorage.getItem('glide_login_kind');
       const tenantSlug = localStorage.getItem('glide_tenant_slug');
       localStorage.removeItem('glide_tenant_slug');
       localStorage.removeItem('glide_active_tenant_id');
       sessionStorage.removeItem('glide_active_tenant_id');
       sessionStorage.removeItem('glide_active_facility_id');
       logout();
-      window.location.href = tenantSlug ? `/login/${tenantSlug}?expired=true` : '/login?expired=true';
+      if (kind === 'system') {
+        window.location.href = '/system/login?expired=true';
+      } else {
+        window.location.href = tenantSlug ? `/login/${tenantSlug}?expired=true` : '/login?expired=true';
+      }
     }
   }, [logout, onTimeout]);
 

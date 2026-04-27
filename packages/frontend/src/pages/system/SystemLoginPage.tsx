@@ -47,6 +47,9 @@ export default function SystemLoginPage() {
       }
 
       login(response.user, response.accessToken, response.refreshToken);
+      // Mark this session as a system-admin one so /login fall-throughs go to /system/login
+      localStorage.setItem('glide_login_kind', 'system');
+      localStorage.removeItem('glide_tenant_slug');
       if (response.mustChangePassword) {
         navigate('/change-password', { state: { forced: true } });
         return;

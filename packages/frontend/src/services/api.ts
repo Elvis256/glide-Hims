@@ -206,20 +206,30 @@ api.interceptors.response.use(
           // Token refresh failed - session expired
           dispatchSessionExpired();
           useAuthStore.getState().logout();
+          const kind = localStorage.getItem('glide_login_kind');
           const slug = localStorage.getItem('glide_tenant_slug');
           localStorage.removeItem('glide_tenant_slug');
           localStorage.removeItem('glide_active_tenant_id');
-          window.location.href = slug ? `/login/${slug}?expired=true` : '/login?expired=true';
+          if (kind === 'system') {
+            window.location.href = '/system/login?expired=true';
+          } else {
+            window.location.href = slug ? `/login/${slug}?expired=true` : '/login?expired=true';
+          }
           
           return Promise.reject(refreshError);
         }
       } else {
         // Not authenticated - redirect to login
         useAuthStore.getState().logout();
+        const kind = localStorage.getItem('glide_login_kind');
         const slug = localStorage.getItem('glide_tenant_slug');
         localStorage.removeItem('glide_tenant_slug');
         localStorage.removeItem('glide_active_tenant_id');
-        window.location.href = slug ? `/login/${slug}` : '/login';
+        if (kind === 'system') {
+          window.location.href = '/system/login';
+        } else {
+          window.location.href = slug ? `/login/${slug}` : '/login';
+        }
       }
     }
 
