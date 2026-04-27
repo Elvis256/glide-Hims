@@ -4,7 +4,8 @@ import { Repository } from 'typeorm';
 import { Deployment, DeploymentType, DeploymentStatus } from '../../database/entities/deployment.entity';
 import { DeploymentVersion } from '../../database/entities/deployment-version.entity';
 import { DeploymentConfig } from '../../database/entities/deployment-config.entity';
-import { CreateDeploymentDto, UpdateDeploymentDto, DeploymentResponseDto } from './deployment.dto';
+import { CreateDeploymentDto, UpdateDeploymentDto, DeploymentResponseDto, ProvisionDeploymentDto } from './deployment.dto';
+import { TenantsService } from '../tenants/tenants.service';
 
 @Injectable()
 export class DeploymentService {
@@ -15,7 +16,69 @@ export class DeploymentService {
     private versionRepository: Repository<DeploymentVersion>,
     @InjectRepository(DeploymentConfig)
     private configRepository: Repository<DeploymentConfig>,
+    private tenantsService: TenantsService,
   ) {}
+
+  async provisionDeployment(dto: ProvisionDeploymentDto): Promise<DeploymentResponseDto> {
+    const orgName = dto.organizationName?.trim();
+    if (!orgName) throw new BadRequestException('Organization name is required');
+
+    const slug = TenantsService['generateSlug'](orgName);
+    let tenant: any = await this.tenantsService.findBySlug(slug).catch(() => null);
+    if (!tenant) {
+      tenant = await this.tenantsService.create({
+        name: orgName,
+        description: `Auto-created from deployment provisioning${dto.tier ? ' (' + dto.tier + ')' : ''}`,
+      } as any);
+    }
+
+    const dbType = dto.type === 'standalone' ? DeploymentType.ONPREMISE : DeploymentType.HYBRID;
+    const apiEndpoint = dto.domain?.trim() ? `https://${dto.domain.trim()}` : '';
+
+    const deployment = this.deploymentRepository.create({
+      tenantId: tenant.id,
+      name: orgName,
+      deploymentType: dbType,
+      status: DeploymentStatus.ACTIVE,
+      apiEndpoint,
+      currentVersion: '1.0.0',
+      notes: dto.notes,
+      config: {
+        userFacingType: dto.type,
+        tier: dto.tier || 'professional',
+        domain: dto.domain || null,
+        maxUsers: dto.maxUsers ?? 50,
+      },
+    });
+
+    const saved = await this.deploymentRepository.save(deployment);
+    return { ...this.mapToResponse(saved), organizationName: orgName, tenantSlug: tenant.slug } as any;
+  }
+
+  async listAllDeployments(): Promise<any[]> {
+    const rows = await this.deploymentRepository
+      .createQueryBuilder('d')
+      .leftJoin('tenants', 't', 't.id = d.tenantId')
+      .select(['d.*', 't.name AS organization_name', 't.slug AS tenant_slug'])
+      .orderBy('d.createdAt', 'DESC')
+      .getRawMany();
+    return rows.map((r: any) => ({
+      id: r.id,
+      tenantId: r.tenant_id,
+      organizationName: r.organization_name,
+      tenantSlug: r.tenant_slug,
+      name: r.name,
+      type: r.config?.userFacingType || (r.deployment_type === 'onpremise' ? 'standalone' : 'hybrid'),
+      deploymentType: r.deployment_type,
+      status: r.status,
+      apiEndpoint: r.api_endpoint,
+      currentVersion: r.current_version,
+      config: r.config,
+      notes: r.notes,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+    }));
+  }
 
   async createDeployment(
     tenantId: string,
