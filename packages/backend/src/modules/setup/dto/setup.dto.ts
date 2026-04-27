@@ -160,6 +160,15 @@ export class SettingsDto {
   @IsString({ each: true })
   @IsOptional()
   enabledModules?: string[];
+
+  @ApiPropertyOptional({
+    description: 'Workflow mode: "simple" (single shared queue) or "departmental" (per-department queues)',
+    example: 'simple',
+    enum: ['simple', 'departmental'],
+  })
+  @IsIn(['simple', 'departmental'], { message: 'workflowMode must be "simple" or "departmental"' })
+  @IsOptional()
+  workflowMode?: 'simple' | 'departmental';
 }
 
 export class InitializeSetupDto {

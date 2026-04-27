@@ -3,6 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { facilitiesService } from '../../../services/facilities';
 import type { Facility } from '../../../services/facilities';
 import { useFacilityId } from '../../../lib/facility';
+import { api } from '../../../services/api';
+import { useAuthStore } from '../../../store/auth';
 import {
   Building2,
   MapPin,
@@ -272,6 +274,22 @@ export default function InstitutionProfilePage() {
   });
 
   const isSaving = updateMutation.isPending;
+
+  // Workflow mode (simple vs departmental) — stored as a tenant-level system_setting
+  const { user, updateFromMe } = useAuthStore();
+  const [workflowMode, setWorkflowMode] = useState<'simple' | 'departmental'>(
+    (user?.workflowMode as 'simple' | 'departmental') || 'simple',
+  );
+  const [workflowSaved, setWorkflowSaved] = useState(false);
+  const workflowMutation = useMutation({
+    mutationFn: (mode: 'simple' | 'departmental') =>
+      api.put('/system-settings/workflow_mode', { value: mode }),
+    onSuccess: (_data, mode) => {
+      updateFromMe({ workflowMode: mode });
+      setWorkflowSaved(true);
+      setTimeout(() => setWorkflowSaved(false), 2500);
+    },
+  });
 
   const handleSave = () => {
     if (!profile) return;
@@ -567,7 +585,42 @@ export default function InstitutionProfilePage() {
                 </div>
               </Section>
 
-              {/* Contact Information */}
+              {/* Workflow Mode */}
+              <Section title="Workflow Mode" icon={<Users className="w-5 h-5" />}>
+                <p className="text-xs text-gray-500 mb-3">
+                  Controls whether OPD/queue uses a single shared workflow or separate per-department workflows.
+                  Switching is safe — existing data is preserved.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {([
+                    { id: 'simple', title: 'Simple workflow', desc: 'One shared queue, one duty roster, facility-wide reports. Recommended for most facilities.' },
+                    { id: 'departmental', title: 'Departmental workflow', desc: 'Separate queues, doctors and reports per department.' },
+                  ] as const).map(opt => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => { setWorkflowMode(opt.id); workflowMutation.mutate(opt.id); }}
+                      disabled={workflowMutation.isPending}
+                      className={`text-left p-3 rounded-lg border-2 transition-colors ${
+                        workflowMode === opt.id
+                          ? 'border-blue-600 bg-blue-50'
+                          : 'border-gray-200 hover:bg-gray-50'
+                      } ${workflowMutation.isPending ? 'opacity-60 cursor-wait' : ''}`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className={`w-3 h-3 rounded-full border-2 ${workflowMode === opt.id ? 'border-blue-600 bg-blue-600' : 'border-gray-300'}`} />
+                        <span className="font-medium text-sm text-gray-900">{opt.title}</span>
+                      </div>
+                      <div className="text-xs text-gray-600 mt-1 ml-5">{opt.desc}</div>
+                    </button>
+                  ))}
+                </div>
+                {workflowSaved && (
+                  <div className="mt-2 text-xs text-green-700 flex items-center gap-1">
+                    <Check className="w-3 h-3" /> Saved
+                  </div>
+                )}
+              </Section>
               <Section title="Contact Information" icon={<Phone className="w-5 h-5" />}>
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">

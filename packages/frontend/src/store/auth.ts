@@ -14,7 +14,7 @@ interface AuthActions {
   hasRole: (role: string) => boolean;
   hasModuleAccess: (moduleCode: string) => boolean;
   setAccessibleModules: (modules: string[]) => void;
-  updateFromMe: (data: { permissions?: string[]; roles?: string[]; accessibleModules?: string[]; facilityMode?: string; businessType?: string }) => void;
+  updateFromMe: (data: { permissions?: string[]; roles?: string[]; accessibleModules?: string[]; facilityMode?: string; businessType?: string; workflowMode?: 'simple' | 'departmental' }) => void;
 }
 
 export const useAuthStore = create<AuthState & AuthActions>()(
@@ -127,6 +127,7 @@ export const useAuthStore = create<AuthState & AuthActions>()(
               ...(data.accessibleModules && { accessibleModules: data.accessibleModules }),
               ...(data.facilityMode && { facilityMode: data.facilityMode }),
               ...(data.businessType && { businessType: data.businessType }),
+              ...(data.workflowMode && { workflowMode: data.workflowMode }),
             },
           });
         }

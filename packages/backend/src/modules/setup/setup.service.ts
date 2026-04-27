@@ -17,6 +17,7 @@ import { UserRole } from '../../database/entities/user-role.entity';
 import { SystemSetting } from '../../database/entities/system-setting.entity';
 import { Permission } from '../../database/entities/permission.entity';
 import { RolePermission } from '../../database/entities/role-permission.entity';
+import { Department } from '../../database/entities/department.entity';
 import { InitializeSetupDto, RegisterTenantDto, InitializeTenantSetupDto } from './dto/setup.dto';
 import { TenantsService } from '../tenants/tenants.service';
 import {
@@ -684,12 +685,22 @@ export class SetupService {
           tenantId: tenant.id,
           description: 'Enabled navigation modules for this tenant',
         },
+        {
+          key: 'workflow_mode',
+          value: dto.settings?.workflowMode || 'simple',
+          tenantId: tenant.id,
+          description: 'Workflow mode: "simple" (single shared queue) or "departmental" (per-department queues)',
+        },
       ];
 
       for (const setting of settings) {
         const settingEntity = queryRunner.manager.create(SystemSetting, setting);
         await queryRunner.manager.save(settingEntity);
       }
+
+      // Auto-seed a default "General" department so OPD/queue pages
+      // are usable on day one. Departmental tenants can rename/extend it.
+      await this.seedDefaultDepartment(queryRunner.manager, facility.id, tenant.id);
 
       await queryRunner.commitTransaction();
 
@@ -763,6 +774,49 @@ export class SetupService {
       'hr',
       'reports',
     ];
+  }
+
+  /**
+   * Seed a default "General" department on a newly created facility.
+   *
+   * Why: pages like /opd/token require a department to be selected before a
+   * token can be issued. Without seeding, a freshly created tenant cannot use
+   * the queue at all and sees "No departments configured". This helper
+   * guarantees there's always at least one usable department.
+   *
+   * - In **simple** workflow mode this department stays hidden in the UI but
+   *   provides the FK target every encounter/queue record needs.
+   * - In **departmental** mode, admins can rename it and add siblings.
+   *
+   * Department codes are unique scoped by tenant, so we suffix with the first
+   * 8 chars of the facility id to avoid collisions on multi-facility tenants.
+   */
+  private async seedDefaultDepartment(
+    manager: import('typeorm').EntityManager,
+    facilityId: string,
+    tenantId: string,
+  ): Promise<void> {
+    try {
+      const codeSuffix = facilityId.replace(/-/g, '').slice(0, 8).toUpperCase();
+      const code = `GEN-${codeSuffix}`;
+      const existing = await manager.findOne(Department, {
+        where: { code, ...(tenantId ? { tenantId } : {}) } as any,
+      });
+      if (existing) return;
+      const dept = manager.create(Department, {
+        facilityId,
+        tenantId,
+        name: 'General',
+        code,
+        description: 'Default general department (auto-created)',
+        status: 'active',
+      } as any);
+      await manager.save(dept);
+    } catch (err) {
+      // Non-fatal: tenant setup should not roll back if seeding fails for
+      // an exotic reason. Log and continue.
+      this.logger.warn(`Failed to seed default department for facility ${facilityId}: ${err.message}`);
+    }
   }
 
   /**
@@ -961,11 +1015,20 @@ export class SetupService {
           tenantId: tenant.id,
           description: 'Enabled navigation modules for this tenant',
         },
+        {
+          key: 'workflow_mode',
+          value: dto.settings?.workflowMode || 'simple',
+          tenantId: tenant.id,
+          description: 'Workflow mode: "simple" (single shared queue) or "departmental" (per-department queues)',
+        },
       ];
       for (const setting of settings) {
         const settingEntity = queryRunner.manager.create(SystemSetting, setting);
         await queryRunner.manager.save(settingEntity);
       }
+
+      // Auto-seed a default "General" department for OPD/queue usability.
+      await this.seedDefaultDepartment(queryRunner.manager, facility.id, tenant.id);
 
       await queryRunner.commitTransaction();
 
@@ -1210,11 +1273,20 @@ export class SetupService {
           tenantId: tenant.id,
           description: 'Enabled navigation modules for this tenant',
         },
+        {
+          key: 'workflow_mode',
+          value: dto.settings?.workflowMode || 'simple',
+          tenantId: tenant.id,
+          description: 'Workflow mode: "simple" (single shared queue) or "departmental" (per-department queues)',
+        },
       ];
       for (const setting of settings) {
         const settingEntity = queryRunner.manager.create(SystemSetting, setting);
         await queryRunner.manager.save(settingEntity);
       }
+
+      // Auto-seed a default "General" department for OPD/queue usability.
+      await this.seedDefaultDepartment(queryRunner.manager, facility.id, tenant.id);
 
       // Update tenant settings
       await queryRunner.query(`UPDATE tenants SET settings = settings || $1::jsonb WHERE id = $2`, [

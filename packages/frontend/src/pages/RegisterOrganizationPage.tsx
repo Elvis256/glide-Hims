@@ -303,6 +303,7 @@ export default function RegisterOrganizationPage() {
       dateFormat: 'DD/MM/YYYY',
       facilityMode: 'hospital',
       enabledModules: modules.filter(m => m.default).map(m => m.id),
+      workflowMode: 'simple',
     },
   });
 
@@ -832,6 +833,43 @@ export default function RegisterOrganizationPage() {
                   <option value="MM/DD/YYYY">MM/DD/YYYY (12/31/2024)</option>
                   <option value="YYYY-MM-DD">YYYY-MM-DD (2024-12-31)</option>
                 </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">How is your facility organised?</label>
+                <p className="text-xs text-gray-500 mb-3">
+                  Choose Simple if your team shares one queue and doctors rotate across all patients (most clinics, mid-size hospitals, mission hospitals). Choose Departmental if you have dedicated teams per specialty with separate queues, doctors, and reports (large hospitals).
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <label className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-colors ${formData.settings?.workflowMode === 'simple' ? 'border-blue-600 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}>
+                    <input
+                      type="radio"
+                      name="workflowMode"
+                      value="simple"
+                      checked={formData.settings?.workflowMode === 'simple'}
+                      onChange={() => updateFormData('settings', 'workflowMode', 'simple')}
+                      className="mt-1 w-4 h-4 text-blue-600 focus:ring-blue-500"
+                    />
+                    <div>
+                      <div className="font-medium text-gray-900">Simple workflow</div>
+                      <div className="text-xs text-gray-600 mt-1">One shared queue, one duty roster, facility-wide reports. Recommended for most facilities.</div>
+                    </div>
+                  </label>
+                  <label className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-colors ${formData.settings?.workflowMode === 'departmental' ? 'border-blue-600 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}>
+                    <input
+                      type="radio"
+                      name="workflowMode"
+                      value="departmental"
+                      checked={formData.settings?.workflowMode === 'departmental'}
+                      onChange={() => updateFormData('settings', 'workflowMode', 'departmental')}
+                      className="mt-1 w-4 h-4 text-blue-600 focus:ring-blue-500"
+                    />
+                    <div>
+                      <div className="font-medium text-gray-900">Departmental workflow</div>
+                      <div className="text-xs text-gray-600 mt-1">Separate queues, doctors and reports per department (Pediatrics, Maternity, Surgery, etc.).</div>
+                    </div>
+                  </label>
+                </div>
+                <p className="text-xs text-gray-400 mt-2">You can change this later under Settings → Facility.</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-3">Enabled Modules</label>

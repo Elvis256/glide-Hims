@@ -944,6 +944,23 @@ export class AuthService {
 
     const accessibleModules = getAccessibleModules(permissions, superAdmin, tenantEnabledModules);
 
+    // Resolve workflow_mode (simple = single shared queue, departmental = per-dept queues).
+    // Defaults to 'simple' so newly registered tenants behave as a clinic until they explicitly opt-in.
+    let workflowMode: 'simple' | 'departmental' = 'simple';
+    if (user.tenantId) {
+      const wfRow = await this.userRoleRepository.manager.query(
+        `SELECT value FROM system_settings WHERE tenant_id = $1 AND key = 'workflow_mode' LIMIT 1`,
+        [user.tenantId],
+      );
+      if (wfRow?.length > 0) {
+        const raw =
+          typeof wfRow[0].value === 'string'
+            ? wfRow[0].value.replace(/"/g, '')
+            : wfRow[0].value;
+        if (raw === 'departmental' || raw === 'simple') workflowMode = raw;
+      }
+    }
+
     return {
       id: user.id,
       username: user.username,
@@ -955,6 +972,7 @@ export class AuthService {
       accessibleModules,
       facilityMode,
       businessType,
+      workflowMode,
       facilityId: userRoles.find((ur) => ur.facilityId)?.facilityId || user.facilityId,
       tenantId: user.tenantId,
     };
