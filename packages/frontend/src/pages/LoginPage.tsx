@@ -452,7 +452,12 @@ export default function LoginPage() {
         </form>
 
         <p className="text-center text-gray-500 text-sm mt-6">
-          Glide HIMS v1.0.0 • {getBusinessConfig(tenant?.businessType).tagline}
+          Glide HIMS v{__APP_VERSION__} • {getBusinessConfig(tenant?.businessType).tagline}
+        </p>
+        <p className="text-center text-gray-400 text-xs mt-2">
+          <a href="https://hmis.itsolutionsuganda.com" target="_blank" rel="noopener noreferrer" className="hover:text-gray-600">About Glide HIMS</a>
+          {' · '}
+          <a href="https://hmis.itsolutionsuganda.com/contact.html" target="_blank" rel="noopener noreferrer" className="hover:text-gray-600">Contact support</a>
         </p>
       </div>
     </div>

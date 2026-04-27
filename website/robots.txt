@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /docs/api-auth.html
+
+Sitemap: https://hmis.itsolutionsuganda.com/sitemap.xml

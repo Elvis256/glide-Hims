@@ -86,8 +86,17 @@ const PublicLandingPage: React.FC = () => {
         </div>
       </section>
 
-      <footer className="bg-gray-900 text-white px-8 py-8 text-center">
+      <footer className="bg-gray-900 text-white px-8 py-8 text-center text-sm">
         <p>&copy; 2026 Glide HIMS. All rights reserved.</p>
+        <p className="mt-2 text-white/70">
+          <a href="https://hmis.itsolutionsuganda.com" className="hover:text-white">Marketing site</a>
+          {' · '}
+          <a href="https://hmis.itsolutionsuganda.com/pricing.html" className="hover:text-white">Pricing</a>
+          {' · '}
+          <a href="https://hmis.itsolutionsuganda.com/contact.html" className="hover:text-white">Contact sales</a>
+          {' · '}
+          <a href="https://hmis.itsolutionsuganda.com/docs/" className="hover:text-white">Documentation</a>
+        </p>
       </footer>
     </div>
   );
