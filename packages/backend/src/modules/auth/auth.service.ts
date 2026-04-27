@@ -410,10 +410,13 @@ export class AuthService {
     };
 
     const accessToken = this.jwtService.sign(payload);
-    const refreshToken = this.jwtService.sign(payload, {
-      secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
-      expiresIn: this.configService.get<string>('JWT_REFRESH_EXPIRES_IN', '7d'),
-    });
+    const refreshToken = this.jwtService.sign(
+      { ...payload, jti: crypto.randomUUID() },
+      {
+        secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
+        expiresIn: this.configService.get<string>('JWT_REFRESH_EXPIRES_IN', '7d'),
+      },
+    );
 
     // Calculate expiresIn from JWT_EXPIRES_IN config
     const expiresInConfig = this.configService.get<string>('JWT_EXPIRES_IN', '8h');
@@ -580,10 +583,13 @@ export class AuthService {
       };
 
       const accessToken = this.jwtService.sign(newPayload);
-      const newRefreshToken = this.jwtService.sign(newPayload, {
-        secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
-        expiresIn: this.configService.get<string>('JWT_REFRESH_EXPIRES_IN', '7d'),
-      });
+      const newRefreshToken = this.jwtService.sign(
+        { ...newPayload, jti: crypto.randomUUID() },
+        {
+          secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
+          expiresIn: this.configService.get<string>('JWT_REFRESH_EXPIRES_IN', '7d'),
+        },
+      );
 
       // Rotate server-side refresh token record
       await this.refreshTokenService.rotateRefreshToken(
@@ -1367,10 +1373,13 @@ export class AuthService {
     };
 
     const accessToken = this.jwtService.sign(payload);
-    const refreshToken = this.jwtService.sign(payload, {
-      secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
-      expiresIn: this.configService.get<string>('JWT_REFRESH_EXPIRES_IN', '7d'),
-    });
+    const refreshToken = this.jwtService.sign(
+      { ...payload, jti: crypto.randomUUID() },
+      {
+        secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
+        expiresIn: this.configService.get<string>('JWT_REFRESH_EXPIRES_IN', '7d'),
+      },
+    );
 
     const expiresInConfig = this.configService.get<string>('JWT_EXPIRES_IN', '8h');
     const expiresInSeconds = this.parseExpiryToSeconds(expiresInConfig);
