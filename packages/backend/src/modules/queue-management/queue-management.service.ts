@@ -282,8 +282,8 @@ export class QueueManagementService {
       try {
         txResult = await this.dataSource.transaction(async (manager) => {
           await manager.query(
-            'SELECT pg_advisory_xact_lock(hashtext($1)::bigint, hashtext($2)::bigint)',
-            [`queue:${facilityId}:${servicePointPrefix}`, queueDateKey],
+            'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+            [`queue:${facilityId}:${servicePointPrefix}:${queueDateKey}`],
           );
 
           const ticketNumber = await this.generateTicketNumber(
