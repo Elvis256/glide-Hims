@@ -167,8 +167,19 @@ export class QueueManagementService {
     const skipPaymentTypes = ['insurance', 'hospital_scheme', 'staff'];
     const isEmergency =
       dto.visitType === 'emergency' || resolvedPriority === QueuePriority.EMERGENCY;
+
+    // Resolve billing mode: per-visit override > tenant default > 'post_pay'
+    const billingDefaults = await this.getBillingDefaults(tenantId);
+    const billingMode = dto.billingMode || billingDefaults.mode;
+
+    // Pre-pay: patient must settle consultation at billing counter before being seen.
+    // Post-pay: patient is seen first; consultation is added to running tab and settled at checkout.
+    // Emergencies and covered payment types always skip billing-first regardless of mode.
     const requiresPayment =
-      !!dto.paymentType && !skipPaymentTypes.includes(dto.paymentType) && !isEmergency;
+      billingMode === 'pre_pay' &&
+      !!dto.paymentType &&
+      !skipPaymentTypes.includes(dto.paymentType) &&
+      !isEmergency;
     const initialQueueStatus = requiresPayment ? QueueStatus.PENDING_PAYMENT : QueueStatus.WAITING;
 
     return {
@@ -186,6 +197,29 @@ export class QueueManagementService {
     });
     if (!setting) return this.getDefaultServiceConfig();
     return setting.value;
+  }
+
+  /**
+   * Read tenant-level billing defaults from system_settings.
+   *   billing.mode             -> 'pre_pay' | 'post_pay'  (default: 'post_pay')
+   *   billing.consultationFee  -> number                  (default: null = use service catalog)
+   * These values can be set per-tenant in Admin → System Settings.
+   */
+  async getBillingDefaults(
+    tenantId?: string,
+  ): Promise<{ mode: 'pre_pay' | 'post_pay'; consultationFee: number | null }> {
+    const where = tenantId
+      ? { tenantId, key: In(['billing.mode', 'billing.consultationFee']) }
+      : { key: In(['billing.mode', 'billing.consultationFee']) };
+    const rows = await this.systemSettingRepository.find({ where: where as any });
+    const map = new Map<string, any>();
+    for (const r of rows) map.set(r.key, r.value);
+    const rawMode = map.get('billing.mode');
+    const mode: 'pre_pay' | 'post_pay' =
+      rawMode === 'pre_pay' || rawMode === 'post_pay' ? rawMode : 'post_pay';
+    const rawFee = map.get('billing.consultationFee');
+    const fee = rawFee != null && !isNaN(Number(rawFee)) ? Number(rawFee) : null;
+    return { mode, consultationFee: fee };
   }
 
   async upsertServiceConfig(
@@ -468,7 +502,20 @@ export class QueueManagementService {
         const globalService = await this.serviceRepository.findOne({
           where: { code: 'OPD-CONSULT', isActive: true },
         });
-        fee = globalService ? Number(globalService.basePrice) : 50000;
+        if (globalService) {
+          fee = Number(globalService.basePrice);
+        } else {
+          // Final fallback: tenant system_setting `billing.consultationFee`.
+          // If still unset, skip invoice creation entirely so the token can be issued
+          // without an arbitrary hardcoded charge.
+          const billingDefaults = await this.getBillingDefaults(tenantId);
+          if (billingDefaults.consultationFee == null) {
+            throw new BadRequestException(
+              'Consultation fee is not configured. Set service "OPD-CONSULT" in the catalog or system_setting `billing.consultationFee`.',
+            );
+          }
+          fee = billingDefaults.consultationFee;
+        }
       } else {
         fee = Number(consultService.basePrice);
       }

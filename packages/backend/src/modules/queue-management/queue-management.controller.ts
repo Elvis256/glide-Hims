@@ -101,6 +101,12 @@ export class QueueManagementController {
     return this.queueService.getServiceConfig(facilityId, req.user?.tenantId);
   }
 
+  @Get('billing-config')
+  @AuthWithPermissions('queue.read')
+  async getBillingConfig(@Request() req: any) {
+    return this.queueService.getBillingDefaults(req.user?.tenantId);
+  }
+
   @Put('service-config')
   @AuthWithPermissions('queue.create')
   async upsertServiceConfig(@Body() dto: ServiceConfigDto, @Request() req: any) {
