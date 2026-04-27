@@ -5,7 +5,7 @@ import { UpdateManagementService } from './update-management.service';
 import { FeatureFlagService } from './feature-flag.service';
 import { ReplicationService } from './replication.service';
 import { MonitoringService } from './monitoring.service';
-import { CreateDeploymentDto, UpdateDeploymentDto, ToggleFeatureFlagDto } from './deployment.dto';
+import { CreateDeploymentDto, UpdateDeploymentDto, ToggleFeatureFlagDto, ProvisionDeploymentDto } from './deployment.dto';
 
 @Controller('deployments')
 export class DeploymentController {
@@ -21,16 +21,34 @@ export class DeploymentController {
     return (req.user as any)?.tenantId || req.headers['x-tenant-id'] as string;
   }
 
+  private isSystemAdmin(req: Request): boolean {
+    return !!(req.user as any)?.isSystemAdmin;
+  }
+
   // ============ DEPLOYMENT MANAGEMENT ============
 
   @Post()
-  async createDeployment(@Req() req: Request, @Body() dto: CreateDeploymentDto) {
+  async createDeployment(@Req() req: Request, @Body() dto: any) {
+    if (this.isSystemAdmin(req) && dto?.organizationName && !dto?.tenantId) {
+      const provisionDto: ProvisionDeploymentDto = {
+        organizationName: dto.organizationName,
+        type: dto.type,
+        tier: dto.tier,
+        domain: dto.domain,
+        maxUsers: typeof dto.maxUsers === 'string' ? parseInt(dto.maxUsers, 10) : dto.maxUsers,
+        notes: dto.notes,
+      };
+      return this.deploymentService.provisionDeployment(provisionDto);
+    }
     const tenantId = this.getTenantId(req);
-    return this.deploymentService.createDeployment(tenantId, dto);
+    return this.deploymentService.createDeployment(tenantId, dto as CreateDeploymentDto);
   }
 
   @Get()
   async listDeployments(@Req() req: Request) {
+    if (this.isSystemAdmin(req)) {
+      return this.deploymentService.listAllDeployments();
+    }
     const tenantId = this.getTenantId(req);
     return this.deploymentService.listDeployments(tenantId);
   }

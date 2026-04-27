@@ -1,5 +1,31 @@
-import { IsString, IsUUID, IsOptional, IsEnum, IsObject, IsArray } from 'class-validator';
+import { IsString, IsUUID, IsOptional, IsEnum, IsObject, IsArray, IsInt, Min, Max } from 'class-validator';
 import { DeploymentType, DeploymentStatus } from '../../database/entities/deployment.entity';
+
+export class ProvisionDeploymentDto {
+  @IsString()
+  organizationName: string;
+
+  @IsEnum(['hybrid', 'standalone'])
+  type: 'hybrid' | 'standalone';
+
+  @IsOptional()
+  @IsString()
+  tier?: string;
+
+  @IsOptional()
+  @IsString()
+  domain?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100000)
+  maxUsers?: number;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
 
 export class CreateDeploymentDto {
   @IsUUID()

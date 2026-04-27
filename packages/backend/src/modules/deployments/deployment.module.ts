@@ -12,6 +12,7 @@ import { MasterDataSyncService } from './master-data-sync.service';
 import { ConflictResolutionEngine } from './conflict-resolution.service';
 import { HealthMetricsCollectorService } from './health-metrics-collector.service';
 import { AlertingService } from './alerting.service';
+import { TenantsModule } from '../tenants/tenants.module';
 import { Deployment } from '../../database/entities/deployment.entity';
 import { DeploymentVersion } from '../../database/entities/deployment-version.entity';
 import { DeploymentConfig } from '../../database/entities/deployment-config.entity';
@@ -35,6 +36,7 @@ import { DeploymentAlert } from '../../database/entities/deployment-alert.entity
       DeploymentHealth,
       DeploymentAlert,
     ]),
+    TenantsModule,
   ],
   controllers: [DeploymentController],
   providers: [
