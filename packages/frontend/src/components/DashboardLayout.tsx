@@ -1387,14 +1387,20 @@ export default function DashboardLayout({ children }: LayoutProps) {
   }, []);
 
   const handleLogout = async () => {
+    const kind = localStorage.getItem('glide_login_kind');
     const tenantSlug = localStorage.getItem('glide_tenant_slug');
     sessionStorage.removeItem('glide_active_tenant_id');
     sessionStorage.removeItem('glide_active_facility_id');
     localStorage.removeItem('glide_active_tenant_id');
     localStorage.removeItem('glide_tenant_slug');
+    localStorage.removeItem('glide_login_kind');
     await authService.logout();
     logout();
-    navigate(tenantSlug ? `/login/${tenantSlug}` : '/login');
+    if (kind === 'system') {
+      navigate('/system/login');
+    } else {
+      navigate(tenantSlug ? `/login/${tenantSlug}` : '/login');
+    }
   };
 
   // Filter navigation sections based on user roles/permissions

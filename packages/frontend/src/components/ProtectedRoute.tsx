@@ -20,6 +20,10 @@ export default function ProtectedRoute({
   const location = useLocation();
 
   if (!isAuthenticated) {
+    const loginKind = localStorage.getItem('glide_login_kind');
+    if (loginKind === 'system') {
+      return <Navigate to="/system/login" state={{ from: location }} replace />;
+    }
     const tenantSlug = localStorage.getItem('glide_tenant_slug');
     const loginPath = tenantSlug ? `/login/${tenantSlug}` : '/login';
     return <Navigate to={loginPath} state={{ from: location }} replace />;

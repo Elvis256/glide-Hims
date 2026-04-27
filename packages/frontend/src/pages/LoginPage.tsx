@@ -133,6 +133,7 @@ export default function LoginPage() {
         localStorage.setItem('glide_active_tenant_id', tenant.id);
         localStorage.setItem('glide_tenant_slug', tenant.slug);
       }
+      localStorage.setItem('glide_login_kind', 'tenant');
 
       const userWithModules = { ...response.user };
       login(userWithModules, response.accessToken, response.refreshToken);
