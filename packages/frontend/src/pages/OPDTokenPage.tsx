@@ -304,7 +304,7 @@ export default function OPDTokenPage() {
       return;
     }
 
-    if (!selectedDepartment) {
+    if (!selectedDepartment && user?.workflowMode !== 'simple') {
       setError('Department is required. Please select a department.');
       return;
     }
@@ -700,7 +700,8 @@ export default function OPDTokenPage() {
             )}
           </div>
 
-          {/* Department Selection */}
+          {/* Department Selection (hidden in simple workflow mode — auto-uses default department) */}
+          {user?.workflowMode !== 'simple' && (
           <div className="card p-4 flex-1 min-h-0 flex flex-col">
             <h2 className="text-sm font-semibold mb-2 flex-shrink-0">2. Select Department</h2>
             <div className="grid grid-cols-2 gap-1.5 flex-1 overflow-y-auto content-start">
@@ -722,6 +723,7 @@ export default function OPDTokenPage() {
               )}
             </div>
           </div>
+          )}
         </div>
 
         {/* Column 2: Doctor Selection */}

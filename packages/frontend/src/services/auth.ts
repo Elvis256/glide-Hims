@@ -25,7 +25,7 @@ export const authService = {
     return response.data;
   },
 
-  getMe: async (): Promise<{ accessibleModules: string[]; permissions: string[]; roles: string[]; facilityMode?: string; businessType?: string }> => {
+  getMe: async (): Promise<{ accessibleModules: string[]; permissions: string[]; roles: string[]; facilityMode?: string; businessType?: string; workflowMode?: 'simple' | 'departmental' }> => {
     const response = await api.get('/auth/me');
     return response.data;
   },

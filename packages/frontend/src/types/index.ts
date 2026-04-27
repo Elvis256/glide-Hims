@@ -16,6 +16,7 @@ export interface User {
   accessibleModules?: string[];
   facilityMode?: string;
   businessType?: string;
+  workflowMode?: 'simple' | 'departmental';
   createdAt: string;
   updatedAt: string;
 }

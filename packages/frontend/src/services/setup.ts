@@ -39,6 +39,7 @@ export interface SettingsData {
   dateFormat?: string;
   facilityMode?: string;
   enabledModules?: string[];
+  workflowMode?: 'simple' | 'departmental';
 }
 
 export interface FacilityPreset {
