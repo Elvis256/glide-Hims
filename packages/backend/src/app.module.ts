@@ -75,6 +75,7 @@ import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor
 import { InAppNotificationsModule } from './modules/in-app-notifications/in-app-notifications.module';
 import { HealthModule } from './modules/health/health.module';
 import { TenantModule } from './common/middleware/tenant.module';
+import { AdminModule } from './modules/admin/admin.module';
 import { AdherenceModule } from './modules/adherence/adherence.module';
 import { ScheduledTasksModule } from './modules/scheduled-tasks/scheduled-tasks.module';
 import { SupportAccessModule } from './modules/support-access/support-access.module';
@@ -135,6 +136,7 @@ import { DeploymentsModule } from './modules/deployments/deployment.module';
     AuthModule,
     UsersModule,
     TenantsModule,
+    AdminModule,
     FacilitiesModule,
     RolesModule,
     PatientsModule,

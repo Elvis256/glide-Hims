@@ -7,7 +7,7 @@ import { ReplicationService } from './replication.service';
 import { MonitoringService } from './monitoring.service';
 import { CreateDeploymentDto, UpdateDeploymentDto, ToggleFeatureFlagDto } from './deployment.dto';
 
-@Controller('api/deployments')
+@Controller('deployments')
 export class DeploymentController {
   constructor(
     private deploymentService: DeploymentService,

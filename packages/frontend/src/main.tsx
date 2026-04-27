@@ -1,3 +1,4 @@
+if (typeof window !== 'undefined') { (window as any).__BUILD__ = '1777278313'; }
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'

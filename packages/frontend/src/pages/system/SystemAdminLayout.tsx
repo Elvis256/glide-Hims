@@ -14,11 +14,13 @@ import {
   ChevronRight,
   LifeBuoy,
   ClipboardCheck,
+  Server,
 } from 'lucide-react';
 
 const sidebarItems = [
   { name: 'Dashboard', href: '/system', icon: LayoutDashboard },
-  { name: 'Organizations', href: '/system/tenants', icon: Building2 },
+  { name: 'SaaS Organizations', href: '/system/tenants', icon: Building2 },
+  { name: 'Deployments', href: '/system/deployments', icon: Server },
   { name: 'System Users', href: '/system/users', icon: Users },
   { name: 'Support Requests', href: '/system/support-requests', icon: LifeBuoy },
   { name: 'Compliance Center', href: '/system/compliance', icon: ClipboardCheck },

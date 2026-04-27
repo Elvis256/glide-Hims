@@ -1,10 +1,13 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Inject, Optional } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Public } from './modules/auth/decorators/public.decorator';
+import { TenantService } from './modules/tenants/services';
 
 @ApiTags('Health')
 @Controller()
 export class AppController {
+  constructor(@Optional() @Inject(TenantService) private tenantService?: TenantService) {}
+
   @Get()
   @Public()
   @ApiOperation({ summary: 'API root - returns basic info' })
@@ -32,10 +35,28 @@ export class AppController {
     };
   }
 
-  @Get('api/v1/health')
+  @Get('system/initialized')
   @Public()
-  @ApiOperation({ summary: 'Health check endpoint (versioned)' })
-  getHealthV1() {
-    return this.getHealth();
+  @ApiOperation({ summary: 'Check if system is initialized (has any tenants)' })
+  async getSystemInitialized() {
+    try {
+      if (!this.tenantService) {
+        return {
+          initialized: false,
+          tenant_count: 0,
+        };
+      }
+      const [tenants] = await this.tenantService.getAllTenants(1);
+      return {
+        initialized: tenants && tenants.length > 0,
+        tenant_count: tenants ? tenants.length : 0,
+      };
+    } catch (error) {
+      return {
+        initialized: false,
+        tenant_count: 0,
+        error: 'Could not check system status',
+      };
+    }
   }
 }

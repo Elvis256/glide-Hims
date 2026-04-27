@@ -50,6 +50,25 @@ export class PermissionsGuard implements CanActivate {
     if (user.isSystemAdmin) {
       const path = request.url || '';
       const tenantId = user.tenantId;
+
+      // System-level endpoints (no tenant context required): tenants/deployments/system management.
+      // System admins always need access to these regardless of tenant context.
+      const isSystemLevelEndpoint =
+        path.startsWith('/api/v1/tenants') ||
+        path.startsWith('/api/v1/deployments') ||
+        path.startsWith('/api/v1/system') ||
+        path.startsWith('/api/v1/licenses') ||
+        path.startsWith('/api/v1/updates') ||
+        path.includes('/users/system-admins') ||
+        path.includes('/system-reset-password') ||
+        path.includes('/system-create-admin');
+
+      if (isSystemLevelEndpoint) {
+        this.logSuperAdminAccess(request, requiredPermissions);
+        return true;
+      }
+
+      // For tenant-scoped endpoints, system admin must have entered a tenant context first
       if (!tenantId) {
         this.logAccessDenied(request, requiredPermissions, 'SYSTEM_ADMIN_NO_TENANT_CONTEXT');
         return false;

@@ -1,0 +1,669 @@
+openapi: 3.0.0
+info:
+  title: glide-Hims Deployment Management API
+  description: |
+    Comprehensive API for managing multi-tenant healthcare deployment systems with advanced features including:
+    - Distributed update rollout with phased deployment
+    - Real-time health monitoring and metrics collection
+    - Multi-channel alerting (Email, SMS, Slack, PagerDuty, Webhooks)
+    - Intelligent conflict resolution and data synchronization
+    - Deployment orchestration and lifecycle management
+  version: 1.0.0
+  contact:
+    name: glide-Hims Support
+    email: support@glide-hims.example.com
+  license:
+    name: Apache 2.0
+
+servers:
+  - url: https://hmisdemo.itsolutionsuganda.com/api/v1
+    description: Production Server
+  - url: http://localhost:3000/api/v1
+    description: Development Server
+
+tags:
+  - name: Deployments
+    description: Deployment management operations
+  - name: Updates
+    description: Update distribution and rollout management
+  - name: Health
+    description: Health monitoring and metrics
+  - name: Alerts
+    description: Alert management and notifications
+  - name: Sync
+    description: Data synchronization operations
+  - name: Conflicts
+    description: Conflict detection and resolution
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  schemas:
+    Deployment:
+      type: object
+      required:
+        - tenantId
+        - name
+        - type
+        - apiUrl
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 3
+          maxLength: 100
+        type:
+          type: string
+          enum: [CLOUD, ON_PREMISES, HYBRID, EDGE]
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE, MAINTENANCE, DEGRADED]
+        apiUrl:
+          type: string
+          format: uri
+        currentVersion:
+          type: string
+          pattern: '^\d+\.\d+\.\d+$'
+        lastHealthCheck:
+          type: string
+          format: date-time
+        lastSync:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    UpdateRollout:
+      type: object
+      required:
+        - deploymentId
+        - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        deploymentId:
+          type: string
+          format: uuid
+        version:
+          type: string
+          pattern: '^\d+\.\d+\.\d+$'
+        status:
+          type: string
+          enum: [INITIATED, PHASE1_RUNNING, PHASE2_RUNNING, PHASE3_RUNNING, COMPLETED, ROLLED_BACK, FAILED]
+        phases:
+          type: array
+          items:
+            type: object
+            properties:
+              phase:
+                type: integer
+              percentage:
+                type: integer
+                minimum: 1
+                maximum: 100
+              deploymentCount:
+                type: integer
+              duration:
+                type: integer
+                description: Duration in seconds
+        successfulDeployments:
+          type: integer
+        failedDeployments:
+          type: integer
+        totalDeployments:
+          type: integer
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+
+    DeploymentHealth:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        deploymentId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [HEALTHY, DEGRADED, CRITICAL]
+        healthScore:
+          type: number
+          minimum: 0
+          maximum: 100
+        cpuUsage:
+          type: number
+          minimum: 0
+          maximum: 100
+        memoryUsage:
+          type: number
+          minimum: 0
+          maximum: 100
+        errorRate:
+          type: number
+          minimum: 0
+          maximum: 1
+        responseTime:
+          type: integer
+          description: Average response time in milliseconds
+        uptime:
+          type: number
+          description: Uptime percentage
+        lastCheck:
+          type: string
+          format: date-time
+
+    Alert:
+      type: object
+      required:
+        - severity
+        - title
+        - channel
+      properties:
+        id:
+          type: string
+          format: uuid
+        deploymentId:
+          type: string
+          format: uuid
+        severity:
+          type: string
+          enum: [INFO, WARNING, CRITICAL]
+        title:
+          type: string
+        message:
+          type: string
+        channel:
+          type: string
+          enum: [EMAIL, SMS, SLACK, PAGERDUTY, WEBHOOK]
+        status:
+          type: string
+          enum: [OPEN, ACKNOWLEDGED, RESOLVED]
+        createdAt:
+          type: string
+          format: date-time
+        acknowledgedAt:
+          type: string
+          format: date-time
+        resolvedAt:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        path:
+          type: string
+
+security:
+  - BearerAuth: []
+  - ApiKeyAuth: []
+
+paths:
+  /deployments:
+    get:
+      operationId: listDeployments
+      tags:
+        - Deployments
+      summary: List all deployments for a tenant
+      parameters:
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [CLOUD, ON_PREMISES, HYBRID, EDGE]
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [ACTIVE, INACTIVE, MAINTENANCE, DEGRADED]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: List of deployments
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Deployment'
+                  pagination:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      limit:
+                        type: integer
+                      total:
+                        type: integer
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+
+    post:
+      operationId: createDeployment
+      tags:
+        - Deployments
+      summary: Create a new deployment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Deployment'
+      responses:
+        '201':
+          description: Deployment created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Deployment'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Deployment already exists
+
+  /deployments/{deploymentId}:
+    get:
+      operationId: getDeployment
+      tags:
+        - Deployments
+      summary: Get deployment by ID
+      parameters:
+        - name: deploymentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Deployment details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Deployment'
+        '404':
+          description: Deployment not found
+
+    put:
+      operationId: updateDeployment
+      tags:
+        - Deployments
+      summary: Update deployment properties
+      parameters:
+        - name: deploymentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                status:
+                  type: string
+                  enum: [ACTIVE, INACTIVE, MAINTENANCE, DEGRADED]
+      responses:
+        '200':
+          description: Deployment updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Deployment'
+        '404':
+          description: Deployment not found
+
+    delete:
+      operationId: deleteDeployment
+      tags:
+        - Deployments
+      summary: Delete deployment (must be INACTIVE)
+      parameters:
+        - name: deploymentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Deployment deleted
+        '400':
+          description: Cannot delete active deployment
+        '404':
+          description: Deployment not found
+
+  /deployments/{deploymentId}/health:
+    get:
+      operationId: getDeploymentHealth
+      tags:
+        - Health
+      summary: Get current deployment health status
+      parameters:
+        - name: deploymentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Health status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeploymentHealth'
+        '404':
+          description: Deployment not found
+
+  /rollouts:
+    post:
+      operationId: initiateRollout
+      tags:
+        - Updates
+      summary: Initiate a phased update rollout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - deploymentId
+                - version
+              properties:
+                deploymentId:
+                  type: string
+                  format: uuid
+                version:
+                  type: string
+                  pattern: '^\d+\.\d+\.\d+$'
+                phases:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      percentage:
+                        type: integer
+                        minimum: 1
+                        maximum: 100
+                      duration:
+                        type: integer
+      responses:
+        '201':
+          description: Rollout initiated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateRollout'
+        '400':
+          description: Invalid rollout configuration
+
+  /rollouts/{rolloutId}:
+    get:
+      operationId: getRollout
+      tags:
+        - Updates
+      summary: Get rollout status
+      parameters:
+        - name: rolloutId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Rollout status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateRollout'
+        '404':
+          description: Rollout not found
+
+  /rollouts/{rolloutId}/execute:
+    post:
+      operationId: executeRolloutPhase
+      tags:
+        - Updates
+      summary: Execute next phase of rollout
+      parameters:
+        - name: rolloutId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Phase execution started
+        '400':
+          description: Cannot execute phase
+        '404':
+          description: Rollout not found
+
+  /rollouts/{rolloutId}/rollback:
+    post:
+      operationId: rollbackRollout
+      tags:
+        - Updates
+      summary: Rollback update rollout
+      parameters:
+        - name: rolloutId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Rollback initiated
+        '400':
+          description: Cannot rollback completed rollout
+
+  /alerts:
+    get:
+      operationId: listAlerts
+      tags:
+        - Alerts
+      summary: List deployment alerts
+      parameters:
+        - name: deploymentId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: severity
+          in: query
+          schema:
+            type: string
+            enum: [INFO, WARNING, CRITICAL]
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [OPEN, ACKNOWLEDGED, RESOLVED]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+      responses:
+        '200':
+          description: Alert list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Alert'
+
+    post:
+      operationId: sendAlert
+      tags:
+        - Alerts
+      summary: Send alert notification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Alert'
+      responses:
+        '201':
+          description: Alert sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Alert'
+
+  /alerts/{alertId}/acknowledge:
+    post:
+      operationId: acknowledgeAlert
+      tags:
+        - Alerts
+      summary: Acknowledge an alert
+      parameters:
+        - name: alertId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Alert acknowledged
+
+  /sync:
+    post:
+      operationId: coordinateSync
+      tags:
+        - Sync
+      summary: Coordinate data sync across deployments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - masterId
+                - deploymentIds
+              properties:
+                masterId:
+                  type: string
+                  format: uuid
+                deploymentIds:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                dataType:
+                  type: string
+                version:
+                  type: string
+      responses:
+        '200':
+          description: Sync coordinated
+        '400':
+          description: Invalid sync request
+
+  /conflicts:
+    get:
+      operationId: listConflicts
+      tags:
+        - Conflicts
+      summary: List detected conflicts
+      responses:
+        '200':
+          description: Conflicts list
+
+    post:
+      operationId: resolveConflict
+      tags:
+        - Conflicts
+      summary: Resolve a conflict
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - conflictId
+                - resolution
+      responses:
+        '200':
+          description: Conflict resolved
+        '400':
+          description: Invalid resolution

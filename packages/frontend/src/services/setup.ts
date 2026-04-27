@@ -81,8 +81,33 @@ export const setupService = {
    * Check if initial setup has been completed
    */
   getStatus: async (): Promise<SetupStatus> => {
-    const response = await api.get<SetupStatus>('/setup/status');
-    return response.data;
+    try {
+      // First, check if system is initialized with tenants (multi-tenant mode)
+      const systemStatus = await api.get('/api/v1/system/initialized');
+      if (systemStatus.data && systemStatus.data.initialized === false) {
+        // System not initialized - show onboarding
+        return {
+          isSetupComplete: false,
+          deploymentMode: 'saas',
+          tenantCount: 0,
+        };
+      }
+    } catch (err) {
+      // Fall through to old setup check
+      console.log('[setupService] Multi-tenant check failed, falling back to legacy setup check');
+    }
+
+    // Fall back to legacy setup status endpoint
+    try {
+      const response = await api.get<SetupStatus>('/setup/status');
+      return response.data;
+    } catch (err) {
+      // If both fail, assume setup is complete
+      return {
+        isSetupComplete: true,
+        deploymentMode: 'on-premise',
+      };
+    }
   },
 
   /**
