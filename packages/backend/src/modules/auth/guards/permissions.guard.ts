@@ -63,6 +63,7 @@ export class PermissionsGuard implements CanActivate {
         path.startsWith('/api/v1/settings/facility-presets') ||
         path.startsWith('/api/v1/settings/module-registry') ||
         path.includes('/users/system-admins') ||
+        path.includes('/users/tenant-admins') ||
         path.includes('/system-reset-password') ||
         path.includes('/system-create-admin');
 
