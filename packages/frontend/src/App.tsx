@@ -910,13 +910,13 @@ function AppRoutes() {
                 <Route path="/pharmacy/notifications" element={<ModuleRoute module="pharmacy"><PharmacistRoute><NotificationLogPage /></PharmacistRoute></ModuleRoute>} />
                 
                 {/* POS Module */}
-                <Route path="/pharmacy/pos" element={<ModuleRoute module="pharmacy"><PharmacistRoute><POSDashboardPage /></PharmacistRoute></ModuleRoute>} />
-                <Route path="/pharmacy/pos/sale" element={<ModuleRoute module="pharmacy"><PharmacistRoute><POSSalePage /></PharmacistRoute></ModuleRoute>} />
-                <Route path="/pharmacy/pos/shifts" element={<ModuleRoute module="pharmacy"><PharmacistRoute><POSShiftPage /></PharmacistRoute></ModuleRoute>} />
-                <Route path="/pharmacy/pos/reports" element={<ModuleRoute module="pharmacy"><PharmacistRoute><POSReportsPage /></PharmacistRoute></ModuleRoute>} />
-                <Route path="/pharmacy/pos/wholesale/customers" element={<ModuleRoute module="pharmacy"><PharmacistRoute><WholesaleCustomersPage /></PharmacistRoute></ModuleRoute>} />
-                <Route path="/pharmacy/pos/wholesale/tiers" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PricingTiersPage /></PharmacistRoute></ModuleRoute>} />
-                <Route path="/pharmacy/pos/deliveries" element={<ModuleRoute module="pharmacy"><PharmacistRoute><DeliveryTrackingPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/pos" element={<ModuleRoute module="pos"><PharmacistRoute><POSDashboardPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/pos/sale" element={<ModuleRoute module="pos"><PharmacistRoute><POSSalePage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/pos/shifts" element={<ModuleRoute module="pos"><PharmacistRoute><POSShiftPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/pos/reports" element={<ModuleRoute module="pos"><PharmacistRoute><POSReportsPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/pos/wholesale/customers" element={<ModuleRoute module="pos"><PharmacistRoute><WholesaleCustomersPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/pos/wholesale/tiers" element={<ModuleRoute module="pos"><PharmacistRoute><PricingTiersPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/pos/deliveries" element={<ModuleRoute module="pos"><PharmacistRoute><DeliveryTrackingPage /></PharmacistRoute></ModuleRoute>} />
                 
                 {/* IPD Module */}
                 <Route path="/ipd/admissions" element={<ModuleRoute module="ipd"><ClinicalRoute><AdmissionsPage /></ClinicalRoute></ModuleRoute>} />
