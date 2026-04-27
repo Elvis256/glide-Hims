@@ -18,6 +18,7 @@ import {
   Mail,
   Download,
   KeyRound,
+  ShieldAlert,
 } from 'lucide-react';
 
 const sidebarItems = [
@@ -30,6 +31,7 @@ const sidebarItems = [
   { name: 'Downloads', href: '/system/downloads', icon: Download },
   { name: 'Licenses', href: '/system/licenses', icon: KeyRound },
   { name: 'Compliance Center', href: '/system/compliance', icon: ClipboardCheck },
+  { name: 'Security & Blocks', href: '/system/security', icon: ShieldAlert },
   { name: 'Settings', href: '/system/settings', icon: Settings },
 ];
 
