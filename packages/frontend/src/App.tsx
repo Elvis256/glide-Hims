@@ -5,7 +5,7 @@ import axios from 'axios';
 import { Toaster, toast } from 'sonner';
 import { useAuthStore } from './store/auth';
 import { useSessionTimeout } from './hooks/useSessionTimeout';
-import { getApiErrorMessage, SESSION_EXPIRED_EVENT } from './services/api';
+import { api, getApiErrorMessage, SESSION_EXPIRED_EVENT } from './services/api';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import ProtectedRoute from './components/ProtectedRoute';
 import ModuleRoute from './components/ModuleRoute';
@@ -442,6 +442,25 @@ const queryClient = new QueryClient({
 function LoginRouteGuard({ isAuthenticated }: { isAuthenticated: boolean }) {
   const { slug } = useParams<{ slug: string }>();
   const { logout } = useAuthStore();
+  const [pendingSetup, setPendingSetup] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!slug) { setPendingSetup(false); return; }
+    let cancelled = false;
+    api.get(`/tenants/public/by-slug/${slug}`)
+      .then(res => { if (!cancelled) setPendingSetup((res.data as any)?.isSetupComplete === false); })
+      .catch(() => { if (!cancelled) setPendingSetup(false); });
+    return () => { cancelled = true; };
+  }, [slug]);
+
+  if (slug && pendingSetup === null) {
+    return <PageLoader />;
+  }
+
+  // Tenant needs setup — go straight to wizard, regardless of auth state
+  if (slug && pendingSetup) {
+    return <Navigate to={`/setup/${slug}`} replace />;
+  }
 
   if (!isAuthenticated) {
     return <Suspense fallback={<PageLoader />}><LoginPage /></Suspense>;
@@ -449,12 +468,10 @@ function LoginRouteGuard({ isAuthenticated }: { isAuthenticated: boolean }) {
 
   const currentSlug = localStorage.getItem('glide_tenant_slug');
 
-  // No slug in URL or slug matches current tenant → go to dashboard
   if (!slug || slug === currentSlug) {
     return <Navigate to="/" replace />;
   }
 
-  // Different slug → log out so they can authenticate to the correct org
   logout();
   return <Suspense fallback={<PageLoader />}><LoginPage /></Suspense>;
 }
@@ -570,7 +587,7 @@ function AppRoutes() {
     <Suspense fallback={<PageLoader />}>
     <Routes>
       <Route path="/setup" element={isSetupComplete ? <Navigate to="/" replace /> : <SetupWizardPage />} />
-      <Route path="/setup/:slug" element={isSetupComplete ? <Navigate to="/" replace /> : <TenantSetupWizardPage />} />
+      <Route path="/setup/:slug" element={<TenantSetupWizardPage />} />
       <Route path="/register" element={isAuthenticated ? <Navigate to="/" replace /> : <RegisterOrganizationPage />} />
       <Route
         path="/system/login"
