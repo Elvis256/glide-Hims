@@ -1003,6 +1003,7 @@ const navigationSections: NavSection[] = [
           { name: 'System Settings', href: '/admin/site/settings', icon: Settings, permissions: ['settings.update'] },
           { name: 'Facility & Modules', href: '/admin/site/facility-mode', icon: Layers, permissions: ['settings.update'] },
           { name: 'Integrations', href: '/admin/site/integrations', icon: Link2, permissions: ['settings.update'] },
+          { name: 'License & Subscription', href: '/admin/site/license', icon: KeyRound, permissions: ['settings.read'] },
         ],
       },
       {

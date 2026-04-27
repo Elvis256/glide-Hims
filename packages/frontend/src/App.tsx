@@ -356,6 +356,7 @@ const BuildingsFloorsPage = lazy(() => import('./pages/admin/site/BuildingsFloor
 const SystemSettingsPage = lazy(() => import('./pages/admin/site/SystemSettingsPage'));
 const IntegrationsPage = lazy(() => import('./pages/admin/site/IntegrationsPage'));
 const FacilityModePage = lazy(() => import('./pages/admin/site/FacilityModePage'));
+const LicenseSubscriptionPage = lazy(() => import('./pages/admin/site/LicenseSubscriptionPage'));
 const MembershipPlansPage = lazy(() => import('./pages/admin/membership/MembershipPlansPage'));
 const MembershipBenefitsPage = lazy(() => import('./pages/admin/membership/MembershipBenefitsPage'));
 const CorporatePlansPage = lazy(() => import('./pages/admin/membership/CorporatePlansPage'));
@@ -1091,6 +1092,7 @@ function AppRoutes() {
                 <Route path="/admin/site/settings" element={<AdminRoute><SystemSettingsPage /></AdminRoute>} />
                 <Route path="/admin/site/facility-mode" element={<AdminRoute><FacilityModePage /></AdminRoute>} />
                 <Route path="/admin/site/integrations" element={<AdminRoute><IntegrationsPage /></AdminRoute>} />
+                <Route path="/admin/site/license" element={<AdminRoute><LicenseSubscriptionPage /></AdminRoute>} />
                 
                 {/* Admin - Backups */}
                 <Route path="/admin/backups" element={<AdminRoute><BackupManagementPage /></AdminRoute>} />
