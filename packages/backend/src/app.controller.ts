@@ -1,12 +1,12 @@
 import { Controller, Get, Inject, Optional } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Public } from './modules/auth/decorators/public.decorator';
-import { TenantService } from './modules/tenants/services';
+import { TenantsService } from './modules/tenants/tenants.service';
 
 @ApiTags('Health')
 @Controller()
 export class AppController {
-  constructor(@Optional() @Inject(TenantService) private tenantService?: TenantService) {}
+  constructor(@Optional() @Inject(TenantsService) private tenantService?: TenantsService) {}
 
   @Get()
   @Public()
@@ -46,7 +46,7 @@ export class AppController {
           tenant_count: 0,
         };
       }
-      const [tenants] = await this.tenantService.getAllTenants(1);
+      const tenants = await this.tenantService.findAll();
       return {
         initialized: tenants && tenants.length > 0,
         tenant_count: tenants ? tenants.length : 0,

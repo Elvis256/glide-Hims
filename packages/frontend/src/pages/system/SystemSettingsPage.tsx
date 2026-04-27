@@ -69,7 +69,10 @@ export default function SystemSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editValue, setEditValue] = useState<string>('');
-  const [envInfo, setEnvInfo] = useState<Record<string, string>>({});
+  const [envInfo, setEnvInfo] = useState<Record<string, string>>({
+    deploymentMode: 'on-premise',
+    version: '1.0.0',
+  });
 
   const loadData = useCallback(async () => {
     setLoading(true);
