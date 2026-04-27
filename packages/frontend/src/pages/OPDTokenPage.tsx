@@ -109,6 +109,16 @@ export default function OPDTokenPage() {
   const [conditionFlags, setConditionFlags] = useState<string[]>([]);
   const [showQuickRegModal, setShowQuickRegModal] = useState(false);
 
+  // Fetch tenant billing defaults (mode + consultation fee) — configured in Admin → System Settings
+  const { data: billingConfig } = useQuery<{ mode: 'pre_pay' | 'post_pay'; consultationFee: number | null }>({
+    queryKey: ['queue-billing-config'],
+    queryFn: async () => {
+      const res = await api.get<{ mode: 'pre_pay' | 'post_pay'; consultationFee: number | null }>('/queue/billing-config');
+      return res.data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
   // Fetch consultation fee from services API
   const { data: consultationService } = useQuery({
     queryKey: ['consultation-service'],
@@ -123,7 +133,20 @@ export default function OPDTokenPage() {
     },
     staleTime: 5 * 60 * 1000,
   });
-  const CONSULTATION_FEE = consultationService?.basePrice ?? 50000;
+  // Default consultation fee: per-facility service catalog → tenant setting → null (must configure)
+  const defaultConsultationFee: number | null =
+    consultationService?.basePrice ?? billingConfig?.consultationFee ?? null;
+  // Editable per-visit fee
+  const [consultationFeeInput, setConsultationFeeInput] = useState<string>('');
+  const effectiveConsultationFee: number = consultationFeeInput.trim() !== ''
+    ? Number(consultationFeeInput) || 0
+    : (defaultConsultationFee ?? 0);
+  const CONSULTATION_FEE = effectiveConsultationFee;
+
+  // Per-visit billing timing override; defaults to tenant setting (post_pay if unset)
+  const [billingMode, setBillingMode] = useState<'pre_pay' | 'post_pay' | ''>('');
+  const effectiveBillingMode: 'pre_pay' | 'post_pay' =
+    billingMode || billingConfig?.mode || 'post_pay';
 
   // Search patients from API with fallback to local store
   const { data: apiPatients, isLoading: searchLoading } = useQuery({
@@ -339,6 +362,7 @@ export default function OPDTokenPage() {
       assignedDoctorId: selectedDoctor !== 'any' ? selectedDoctor : undefined,
       paymentType,
       consultationFee: Number(CONSULTATION_FEE),
+      billingMode: effectiveBillingMode,
     };
 
     try {
@@ -1344,12 +1368,58 @@ export default function OPDTokenPage() {
               )}
 
               {paymentType === 'cash' && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-600">Consultation Fee</span>
-                    <span className="font-medium">UGX {CONSULTATION_FEE.toLocaleString()}</span>
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <label className="text-xs text-gray-600 font-medium">Consultation Fee (UGX)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={500}
+                      value={consultationFeeInput !== '' ? consultationFeeInput : (defaultConsultationFee ?? '')}
+                      onChange={(e) => setConsultationFeeInput(e.target.value)}
+                      placeholder={defaultConsultationFee != null ? String(defaultConsultationFee) : 'Configure default in Settings'}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                    {defaultConsultationFee == null && (
+                      <p className="text-xs text-amber-600">
+                        No default consultation fee configured. Set service <code>OPD-CONSULT</code> in the Service Catalog
+                        or system_setting <code>billing.consultationFee</code>.
+                      </p>
+                    )}
                   </div>
-                  <p className="text-xs text-gray-500">Patient will pay at billing counter</p>
+
+                  <div className="space-y-1">
+                    <label className="text-xs text-gray-600 font-medium">Payment Timing</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setBillingMode('post_pay')}
+                        className={`px-3 py-2 text-xs font-medium rounded-lg border ${
+                          effectiveBillingMode === 'post_pay'
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        Pay at Checkout
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setBillingMode('pre_pay')}
+                        className={`px-3 py-2 text-xs font-medium rounded-lg border ${
+                          effectiveBillingMode === 'pre_pay'
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        Pay Now (Billing Counter)
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      {effectiveBillingMode === 'pre_pay'
+                        ? 'Patient pays the consultation fee upfront before being seen by the doctor.'
+                        : 'Patient is seen first; consultation, labs and pharmacy are settled in one bill at checkout.'}
+                    </p>
+                  </div>
                 </div>
               )}
             </div>

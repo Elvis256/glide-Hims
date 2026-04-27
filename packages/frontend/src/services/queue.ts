@@ -74,6 +74,8 @@ export interface CreateQueueEntryDto {
   consultationFee?: number;
   /** Insurance policy ID */
   insurancePolicyId?: string;
+  /** Billing timing: 'pre_pay' (pay first) or 'post_pay' (pay at checkout). Defaults to tenant setting. */
+  billingMode?: 'pre_pay' | 'post_pay';
 }
 
 export interface QueueStats {

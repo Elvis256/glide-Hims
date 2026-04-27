@@ -81,6 +81,16 @@ export class CreateQueueDto {
   @IsOptional()
   @IsUUID()
   insurancePolicyId?: string;
+
+  /**
+   * Billing timing for this visit:
+   *   - 'pre_pay'  : patient pays at billing counter before consultation (queue starts at PENDING_PAYMENT)
+   *   - 'post_pay' : patient consults first, settles all charges (consultation + labs + pharmacy) at checkout
+   * If omitted, falls back to tenant default (system_setting `billing.mode`, default 'post_pay').
+   */
+  @IsOptional()
+  @IsString()
+  billingMode?: 'pre_pay' | 'post_pay';
 }
 
 export class CallNextDto {
