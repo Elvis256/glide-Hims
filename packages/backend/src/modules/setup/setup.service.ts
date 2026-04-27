@@ -694,8 +694,17 @@ export class SetupService {
       ];
 
       for (const setting of settings) {
-        const settingEntity = queryRunner.manager.create(SystemSetting, setting);
-        await queryRunner.manager.save(settingEntity);
+        // Idempotent — re-running setup must not violate UNIQUE(key, tenant_id).
+        const existing = await queryRunner.manager.findOne(SystemSetting, {
+          where: { key: setting.key, tenantId: setting.tenantId },
+        });
+        if (existing) {
+          existing.value = setting.value;
+          if (setting.description) existing.description = setting.description;
+          await queryRunner.manager.save(existing);
+        } else {
+          await queryRunner.manager.save(queryRunner.manager.create(SystemSetting, setting));
+        }
       }
 
       // Auto-seed a default "General" department so OPD/queue pages
@@ -1023,8 +1032,17 @@ export class SetupService {
         },
       ];
       for (const setting of settings) {
-        const settingEntity = queryRunner.manager.create(SystemSetting, setting);
-        await queryRunner.manager.save(settingEntity);
+        // Idempotent — re-running setup must not violate UNIQUE(key, tenant_id).
+        const existing = await queryRunner.manager.findOne(SystemSetting, {
+          where: { key: setting.key, tenantId: setting.tenantId },
+        });
+        if (existing) {
+          existing.value = setting.value;
+          if (setting.description) existing.description = setting.description;
+          await queryRunner.manager.save(existing);
+        } else {
+          await queryRunner.manager.save(queryRunner.manager.create(SystemSetting, setting));
+        }
       }
 
       // Auto-seed a default "General" department for OPD/queue usability.
@@ -1281,8 +1299,17 @@ export class SetupService {
         },
       ];
       for (const setting of settings) {
-        const settingEntity = queryRunner.manager.create(SystemSetting, setting);
-        await queryRunner.manager.save(settingEntity);
+        // Idempotent — re-running setup must not violate UNIQUE(key, tenant_id).
+        const existing = await queryRunner.manager.findOne(SystemSetting, {
+          where: { key: setting.key, tenantId: setting.tenantId },
+        });
+        if (existing) {
+          existing.value = setting.value;
+          if (setting.description) existing.description = setting.description;
+          await queryRunner.manager.save(existing);
+        } else {
+          await queryRunner.manager.save(queryRunner.manager.create(SystemSetting, setting));
+        }
       }
 
       // Auto-seed a default "General" department for OPD/queue usability.
