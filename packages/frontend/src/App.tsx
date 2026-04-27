@@ -42,6 +42,7 @@ const SystemComplianceCenterPage = lazy(() => import('./pages/system/SystemCompl
 const SystemDeploymentsPage = lazy(() => import('./pages/system/SystemDeploymentsPage'));
 const SystemLeadsPage = lazy(() => import('./pages/system/SystemLeadsPage'));
 const SystemDownloadsPage = lazy(() => import('./pages/system/SystemDownloadsPage'));
+const DownloadsPage = lazy(() => import('./pages/DownloadsPage'));
 const SupportAccessPage = lazy(() => import('./pages/admin/SupportAccessPage'));
 const SetupWizardPage = lazy(() => import('./pages/SetupWizardPage'));
 const TenantSetupWizardPage = lazy(() => import('./pages/TenantSetupWizardPage'));
@@ -638,6 +639,7 @@ function AppRoutes() {
               <Routes>
                 <Route path="/" element={<SmartDashboardPage />} />
                 <Route path="/dashboard" element={<SmartDashboardPage />} />
+                <Route path="/downloads" element={<DownloadsPage />} />
                 
                 {/* Registration - Patient Management */}
                 <Route path="/patients/search" element={<ReceptionistRoute><PatientSearchPage /></ReceptionistRoute>} />

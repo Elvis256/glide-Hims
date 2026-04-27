@@ -1,16 +1,37 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Installer } from './installer.entity';
+import { InstallerDownload } from './installer-download.entity';
 import { CreateInstallerDto, UpdateInstallerDto } from './installer.dto';
+import { License } from '../../database/entities/license.entity';
 import * as fs from 'fs';
 import * as path from 'path';
 
 const STORAGE_DIR = process.env.INSTALLERS_DIR || '/var/lib/glide-hims/installers';
 
+const TIER_RANK: Record<string, number> = {
+  trial: 0,
+  free: 0,
+  standard: 1,
+  basic: 1,
+  professional: 2,
+  pro: 2,
+  enterprise: 3,
+};
+
+function rank(t?: string | null) {
+  if (!t) return 0;
+  return TIER_RANK[t.toLowerCase()] ?? 0;
+}
+
 @Injectable()
 export class DownloadsService {
-  constructor(@InjectRepository(Installer) private readonly repo: Repository<Installer>) {}
+  constructor(
+    @InjectRepository(Installer) private readonly repo: Repository<Installer>,
+    @InjectRepository(InstallerDownload) private readonly logs: Repository<InstallerDownload>,
+    @InjectRepository(License) private readonly licenses: Repository<License>,
+  ) {}
 
   storageDir() { return STORAGE_DIR; }
 
@@ -63,5 +84,60 @@ export class DownloadsService {
     const full = path.join(STORAGE_DIR, safe);
     if (!full.startsWith(STORAGE_DIR)) return null;
     return fs.existsSync(full) ? full : null;
+  }
+
+  async tierForTenant(tenantId?: string | null): Promise<string> {
+    if (!tenantId) return 'trial';
+    const lic = await this.licenses.findOne({
+      where: { tenantId, status: 'active' as any },
+      order: { expiresAt: 'DESC' as any },
+    });
+    return lic?.licenseType || 'trial';
+  }
+
+  async assertTierAllowed(installer: Installer, tenantTier: string) {
+    if (!installer.minLicenseTier) return;
+    if (rank(tenantTier) < rank(installer.minLicenseTier)) {
+      throw new ForbiddenException(
+        `This installer requires the "${installer.minLicenseTier}" plan or higher (your plan: ${tenantTier}).`,
+      );
+    }
+  }
+
+  async logDownload(args: {
+    installerId: string;
+    userId?: string | null;
+    tenantId?: string | null;
+    username?: string | null;
+    ipAddress?: string | null;
+    userAgent?: string | null;
+    bytesServed?: number | null;
+    success: boolean;
+  }) {
+    try {
+      await this.logs.save(
+        this.logs.create({
+          installerId: args.installerId,
+          userId: args.userId ?? null,
+          tenantId: args.tenantId ?? null,
+          username: args.username ?? null,
+          ipAddress: args.ipAddress ?? null,
+          userAgent: args.userAgent ?? null,
+          bytesServed: args.bytesServed != null ? String(args.bytesServed) : null,
+          success: args.success,
+        }),
+      );
+    } catch {
+      // never let audit failure break a download
+    }
+  }
+
+  async listLogs(installerId?: string, limit = 100) {
+    const qb = this.logs
+      .createQueryBuilder('d')
+      .orderBy('d."createdAt"', 'DESC')
+      .limit(limit);
+    if (installerId) qb.where('d."installerId" = :id', { id: installerId });
+    return qb.getMany();
   }
 }

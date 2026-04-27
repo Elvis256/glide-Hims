@@ -27,7 +27,22 @@ export class DownloadsController {
   @ApiOperation({ summary: 'List installers visible to the caller' })
   async list(@Req() req: any, @Query('channel') channel?: string) {
     if (req.user?.isSystemAdmin) return this.svc.listAll();
-    return this.svc.listPublished(channel);
+    const items = await this.svc.listPublished(channel);
+    const tier = await this.svc.tierForTenant(req.user?.tenantId);
+    // filter out installers gated above the caller's tier and annotate
+    return items
+      .filter((i) => {
+        if (!i.minLicenseTier) return true;
+        const TIER_RANK: Record<string, number> = { trial: 0, free: 0, standard: 1, basic: 1, professional: 2, pro: 2, enterprise: 3 };
+        return (TIER_RANK[tier.toLowerCase()] ?? 0) >= (TIER_RANK[i.minLicenseTier.toLowerCase()] ?? 0);
+      });
+  }
+
+  @Get('audit')
+  @ApiOperation({ summary: 'Recent download audit log (system admin only)' })
+  async audit(@Req() req: any, @Query('installerId') installerId?: string) {
+    if (!req.user?.isSystemAdmin) throw new ForbiddenException('System admin only');
+    return this.svc.listLogs(installerId, 200);
   }
 
   @Get(':id')
@@ -39,18 +54,45 @@ export class DownloadsController {
   @ApiOperation({ summary: 'Stream the installer binary (auth required)' })
   async download(@Param('id') id: string, @Req() req: any, @Res() res: Response) {
     const installer = await this.svc.findOne(id);
+    const userMeta = {
+      installerId: installer.id,
+      userId: req.user?.userId || req.user?.id || null,
+      tenantId: req.user?.tenantId || null,
+      username: req.user?.username || req.user?.email || null,
+      ipAddress: (req.ip || req.connection?.remoteAddress || '').toString().slice(0, 60) || null,
+      userAgent: (req.headers?.['user-agent'] || '').toString().slice(0, 500) || null,
+    };
+
     if (!installer.isPublished && !req.user?.isSystemAdmin) {
+      await this.svc.logDownload({ ...userMeta, success: false });
       throw new ForbiddenException('Installer is not published');
     }
+    if (!req.user?.isSystemAdmin) {
+      const tier = await this.svc.tierForTenant(req.user?.tenantId);
+      try {
+        await this.svc.assertTierAllowed(installer, tier);
+      } catch (e) {
+        await this.svc.logDownload({ ...userMeta, success: false });
+        throw e;
+      }
+    }
+
     const filePath = this.svc.resolveFilePath(installer);
     if (!filePath) {
+      await this.svc.logDownload({ ...userMeta, success: false });
       throw new NotFoundException(
-        `Installer file "${installer.filename}" is not available on this server. Place it at ${this.svc.storageDir()}.`,
+        `Installer file "${installer.filename}" is not on this server. Place it at ${this.svc.storageDir()}.`,
       );
     }
+
+    const stat = fs.statSync(filePath);
     res.setHeader('Content-Type', 'application/octet-stream');
     res.setHeader('Content-Disposition', `attachment; filename="${installer.filename}"`);
     res.setHeader('X-SHA256', installer.sha256);
+    res.setHeader('Content-Length', String(stat.size));
+
+    await this.svc.logDownload({ ...userMeta, bytesServed: stat.size, success: true });
+
     fs.createReadStream(filePath).pipe(res);
   }
 
