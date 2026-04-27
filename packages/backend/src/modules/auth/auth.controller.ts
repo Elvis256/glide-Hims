@@ -7,6 +7,7 @@ import {
   Delete,
   HttpCode,
   HttpStatus,
+  HttpException,
   UseGuards,
   Req,
   Res,
@@ -94,8 +95,8 @@ export class AuthController {
     const ip = this.getClientIp(req);
     const userAgent = req.headers['user-agent'] || undefined;
     const result = await this.authService.login(loginDto, ip, userAgent);
-    // Reset rate limit on successful login
-    await this.rateLimitGuard.resetAttempts(ip);
+    // Reset rate limit on successful login (per-(ip, user) bucket)
+    await this.rateLimitGuard.resetAttempts(ip, loginDto.username);
     // Set httpOnly cookies so frontend never touches tokens
     this.setAuthCookies(res, result.accessToken, result.refreshToken, result.expiresIn);
     // Return user info and expiry only — tokens are in httpOnly cookies, not in response body
@@ -264,6 +265,36 @@ export class AuthController {
   async revokeAllSessions(@CurrentUser('id') userId: string) {
     await this.sessionService.revokeAllSessions(userId);
     return { message: 'All other sessions revoked' };
+  }
+
+  // ─── Admin: rate-limit / IP block management ──────────────────────────────
+
+  @Get('admin/rate-limit/blocked')
+  @Auth()
+  @ApiOperation({ summary: 'List currently rate-limited IPs and accounts (system admin)' })
+  async listBlocked(@CurrentUser() user: any) {
+    if (!user?.isSystemAdmin) {
+      throw new HttpException('Forbidden', HttpStatus.FORBIDDEN);
+    }
+    const blocked = await this.rateLimitGuard.listBlocked();
+    return { data: blocked };
+  }
+
+  @Delete('admin/rate-limit/blocked/:ip')
+  @Auth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Manually unblock an IP (and optionally a specific username)' })
+  @ApiQuery({ name: 'username', required: false })
+  async unblock(
+    @Param('ip') ip: string,
+    @Query('username') username: string | undefined,
+    @CurrentUser() user: any,
+  ) {
+    if (!user?.isSystemAdmin) {
+      throw new HttpException('Forbidden', HttpStatus.FORBIDDEN);
+    }
+    const result = await this.rateLimitGuard.unblockIp(ip, username);
+    return { message: 'Unblocked', ip, username: username || null, ...result };
   }
 
   @Post('enter-tenant')
