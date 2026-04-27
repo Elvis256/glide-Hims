@@ -1,0 +1,123 @@
+version: '3.8'
+
+services:
+  # NestJS Backend with SQLite
+  backend:
+    build:
+      context: ./packages/backend
+      dockerfile: Dockerfile.standalone
+    container_name: glide-hims-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DB_TYPE: sqlite
+      SQLITE_PATH: /data/glide-hims.db
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      JWT_EXPIRATION: 24h
+      REFRESH_TOKEN_EXPIRATION: 7d
+      PORT: 3000
+      LOG_LEVEL: info
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "3000:3000"
+    volumes:
+      - glide-data:/data
+      - glide-backups:/backups
+      - glide-updates:/updates
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - glide-network
+    security_opt:
+      - no-new-privileges:true
+
+  # Redis Cache (for caching and sessions)
+  redis:
+    image: redis:7-alpine
+    container_name: glide-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis-password}
+    volumes:
+      - glide-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - glide-network
+    security_opt:
+      - no-new-privileges:true
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./packages/frontend
+      dockerfile: Dockerfile
+    container_name: glide-hims-frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: https://${DOMAIN:-localhost}/api
+      VITE_WS_URL: wss://${DOMAIN:-localhost}
+    volumes:
+      - glide-frontend:/app/dist
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5000/index.html"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - glide-network
+    security_opt:
+      - no-new-privileges:true
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: glide-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.standalone.conf:/etc/nginx/nginx.conf:ro
+      - ./wildcard.crt:/etc/nginx/ssl/wildcard.crt:ro
+      - ./wildcard.key:/etc/nginx/ssl/wildcard.key:ro
+      - glide-frontend:/var/www/frontend:ro
+    depends_on:
+      - backend
+      - frontend
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - glide-network
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  glide-data:
+    driver: local
+  glide-backups:
+    driver: local
+  glide-updates:
+    driver: local
+  glide-redis:
+    driver: local
+  glide-frontend:
+    driver: local
+
+networks:
+  glide-network:
+    driver: bridge

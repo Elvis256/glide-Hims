@@ -68,3 +68,14 @@ backups/
 *.exe
 *.pdf
 packages/backend/uploads/
+
+# Deployment build artefacts (large, regenerable)
+deployment/build/
+deployment/dist/
+deployment/perf/results/
+
+# TLS material — never commit
+wildcard.crt
+wildcard.key
+*.pem
+packages/frontend/.build-stamp

@@ -1,10 +1,19 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { readFileSync } from 'fs'
+import { readFileSync, existsSync } from 'fs'
 import { resolve } from 'path'
 
 const certsDir = resolve(__dirname, 'certs')
+const keyPath = resolve(certsDir, 'key.pem')
+const certPath = resolve(certsDir, 'cert.pem')
+
+// Load certs only if they exist (for development)
+const hasSSL = existsSync(keyPath) && existsSync(certPath)
+const httpsConfig = hasSSL ? {
+  key: readFileSync(keyPath),
+  cert: readFileSync(certPath),
+} : false
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -18,19 +27,16 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    host: true, // Allow network access
-    https: {
-      key: readFileSync(resolve(certsDir, 'key.pem')),
-      cert: readFileSync(resolve(certsDir, 'cert.pem')),
-    },
+    host: true,
+    https: httpsConfig,
     proxy: {
       '/api': {
-        target: 'https://localhost:3000',
+        target: 'http://localhost:3000',
         changeOrigin: true,
         secure: false,
       },
       '/socket.io': {
-        target: 'https://localhost:3000',
+        target: 'http://localhost:3000',
         changeOrigin: true,
         secure: false,
         ws: true,
@@ -39,19 +45,16 @@ export default defineConfig({
   },
   preview: {
     port: 5173,
-    host: true, // Allow network access
-    https: {
-      key: readFileSync(resolve(certsDir, 'key.pem')),
-      cert: readFileSync(resolve(certsDir, 'cert.pem')),
-    },
+    host: true,
+    https: httpsConfig,
     proxy: {
       '/api': {
-        target: 'https://localhost:3000',
+        target: 'http://localhost:3000',
         changeOrigin: true,
         secure: false,
       },
       '/socket.io': {
-        target: 'https://localhost:3000',
+        target: 'http://localhost:3000',
         changeOrigin: true,
         secure: false,
         ws: true,

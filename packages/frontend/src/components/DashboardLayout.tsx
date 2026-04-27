@@ -118,6 +118,7 @@ import {
 import Logo, { LogoIcon } from './Logo';
 import FacilitySwitcher from './FacilitySwitcher';
 import NotificationBell from './NotificationBell';
+import OfflineBadge from './OfflineBadge';
 import { useNotificationSocket } from '../lib/useNotificationSocket';
 import { useBusinessConfig } from '../hooks/useBusinessConfig';
 
@@ -1576,6 +1577,9 @@ export default function DashboardLayout({ children }: LayoutProps) {
 
             {/* Notifications */}
             <NotificationBell />
+
+            {/* Offline indicator (only renders when backend unreachable) */}
+            <OfflineBadge />
 
             {/* User menu */}
             <div className="relative">

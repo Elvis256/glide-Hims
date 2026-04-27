@@ -1,0 +1,94 @@
+# Glide-HIMS standalone deployment
+# Boots: PostgreSQL + backend (with embedded frontend) + nginx reverse proxy
+# Usage: cp env.example .env && docker compose up -d
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: hims-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-glide_hims}
+      POSTGRES_USER: ${DB_USERNAME:-glide_hims}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-glide_hims} -d ${DB_DATABASE:-glide_hims}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [hims]
+
+  backend:
+    image: glide-hims:${HIMS_VERSION:-latest}
+    container_name: hims-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DEPLOYMENT_MODE: on-premise
+      PORT: 3000
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: ${DB_DATABASE:-glide_hims}
+      DB_USERNAME: ${DB_USERNAME:-glide_hims}
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET must be set in .env}
+      LICENSE_KEY: ${LICENSE_KEY:-}
+      CENTRAL_SERVER_URL: ${CENTRAL_SERVER_URL:-https://hmisdemo.itsolutionsuganda.com}
+      DEPLOYMENT_ID: ${DEPLOYMENT_ID:-}
+    volumes:
+      - uploads:/app/uploads
+      - backups:/app/backups
+      - logs:/app/logs
+    networks: [hims]
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: hims-nginx
+    restart: unless-stopped
+    depends_on: [backend]
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    networks: [hims]
+
+  backup:
+    image: postgres:16-alpine
+    container_name: hims-backup
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGUSER: ${DB_USERNAME:-glide_hims}
+      PGPASSWORD: ${DB_PASSWORD}
+      PGDATABASE: ${DB_DATABASE:-glide_hims}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-90}
+      BACKUP_ENCRYPTION_KEY: ${BACKUP_ENCRYPTION_KEY:-}
+    volumes:
+      - backups:/backups
+      - ../scripts/backup-manager.sh:/usr/local/bin/backup-manager.sh:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      "apk add --no-cache gnupg coreutils tzdata bash && \
+       echo '0 2 * * * /usr/local/bin/backup-manager.sh >> /backups/backup.log 2>&1' | crontab - && \
+       crond -f -l 2"
+    networks: [hims]
+
+volumes:
+  pgdata: {}
+  uploads: {}
+  backups: {}
+  logs: {}
+
+networks:
+  hims: {}

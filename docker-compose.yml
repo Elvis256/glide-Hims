@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: glide_user
+      POSTGRES_PASSWORD: glide_password
+      POSTGRES_DB: glide_hims
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U glide_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: .
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://glide_user:glide_password@postgres:5432/glide_hims
+      REDIS_URL: redis://redis:6379
+      PORT: 3000
+      JWT_SECRET: your-jwt-secret-key-here
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: npm run dev
+
+  frontend:
+    build:
+      context: packages/frontend
+      dockerfile: Dockerfile
+    environment:
+      REACT_APP_API_URL: http://localhost:3000/api/v1
+      NODE_ENV: development
+    ports:
+      - "3001:3001"
+    depends_on:
+      - backend
+    volumes:
+      - ./packages/frontend/src:/app/src
+
+volumes:
+  postgres_data:
+  redis_data:

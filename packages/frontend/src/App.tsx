@@ -39,10 +39,14 @@ const SystemUsersPage = lazy(() => import('./pages/system/SystemUsersPage'));
 const PlatformSettingsPage = lazy(() => import('./pages/system/SystemSettingsPage'));
 const SystemSupportRequestsPage = lazy(() => import('./pages/system/SystemSupportRequestsPage'));
 const SystemComplianceCenterPage = lazy(() => import('./pages/system/SystemComplianceCenterPage'));
+const SystemDeploymentsPage = lazy(() => import('./pages/system/SystemDeploymentsPage'));
 const SupportAccessPage = lazy(() => import('./pages/admin/SupportAccessPage'));
 const SetupWizardPage = lazy(() => import('./pages/SetupWizardPage'));
 const TenantSetupWizardPage = lazy(() => import('./pages/TenantSetupWizardPage'));
 const RegisterOrganizationPage = lazy(() => import('./pages/RegisterOrganizationPage'));
+const FirstRunOnboardingPage = lazy(() => import('./pages/Onboarding/FirstRunOnboardingPage'));
+const AdminDashboard = lazy(() => import('./pages/Admin/AdminDashboard'));
+const PublicLandingPage = lazy(() => import('./pages/Public/PublicLandingPage'));
 const TenantManagementPage = lazy(() => import('./pages/admin/TenantManagementPage'));
 const BackupManagementPage = lazy(() => import('./pages/admin/BackupManagementPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
@@ -573,6 +577,7 @@ function AppRoutes() {
       >
         <Route index element={<SystemDashboardPage />} />
         <Route path="tenants" element={<TenantManagementPage />} />
+        <Route path="deployments" element={<SystemDeploymentsPage />} />
         <Route path="users" element={<SystemUsersPage />} />
         <Route path="settings" element={<PlatformSettingsPage />} />
         <Route path="support-requests" element={<SystemSupportRequestsPage />} />
@@ -583,8 +588,32 @@ function AppRoutes() {
         element={isAuthenticated ? <Navigate to="/system/tenants" replace /> : <Navigate to="/system/login" replace />}
       />
       <Route
+        path="/onboarding"
+        element={!isSetupComplete ? <FirstRunOnboardingPage /> : <Navigate to="/" replace />}
+      />
+      <Route
+        path="/admin"
+        element={<AdminDashboard />}
+      />
+      <Route
+        path="/landing"
+        element={<PublicLandingPage />}
+      />
+      <Route
         path="/login/:slug?"
         element={<LoginRouteGuard isAuthenticated={isAuthenticated} />}
+      />
+      <Route
+        path="/"
+        element={
+          !isSetupComplete ? (
+            <FirstRunOnboardingPage />
+          ) : isAuthenticated ? (
+            <Navigate to="/dashboard" replace />
+          ) : (
+            <PublicLandingPage />
+          )
+        }
       />
       <Route
         path="/*"

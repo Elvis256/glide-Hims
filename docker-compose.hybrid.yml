@@ -1,0 +1,128 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database - Core data storage
+  postgres:
+    image: postgres:15-alpine
+    container_name: glide-hims-postgres
+    environment:
+      POSTGRES_DB: glide_hims
+      POSTGRES_USER: ${DB_USER:-hims_admin}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-ChangeMeInProduction}
+      POSTGRES_INITDB_ARGS: "-c max_connections=500 -c shared_buffers=256MB"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-hims_admin}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - glide-network
+    restart: unless-stopped
+
+  # Redis Cache - Session storage & caching
+  redis:
+    image: redis:7-alpine
+    container_name: glide-hims-redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-ChangeMeInProduction}
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - glide-network
+    restart: unless-stopped
+
+  # NestJS Backend API
+  backend:
+    build:
+      context: ./packages/backend
+      dockerfile: Dockerfile
+    container_name: glide-hims-backend
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://${DB_USER:-hims_admin}:${DB_PASSWORD:-ChangeMeInProduction}@postgres:5432/glide_hims
+      REDIS_URL: redis://:${REDIS_PASSWORD:-ChangeMeInProduction}@redis:6379
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production-with-32-char-min}
+      JWT_EXPIRES_IN: 24h
+      REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:-change-me-in-production-with-32-char-min}
+      REFRESH_TOKEN_EXPIRES_IN: 7d
+      LOG_LEVEL: info
+      CORS_ORIGIN: http://localhost:8080,https://${DOMAIN_NAME}
+      API_URL: https://${DOMAIN_NAME}/api
+      FRONTEND_URL: https://${DOMAIN_NAME}
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - glide-network
+    restart: unless-stopped
+    volumes:
+      - ./packages/backend/logs:/app/logs
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./packages/frontend
+      dockerfile: Dockerfile
+    container_name: glide-hims-frontend
+    environment:
+      VITE_API_URL: https://${DOMAIN_NAME}/api
+      VITE_API_TIMEOUT: 30000
+    ports:
+      - "8080:8080"
+    depends_on:
+      - backend
+    networks:
+      - glide-network
+    restart: unless-stopped
+
+  # Nginx Reverse Proxy & Load Balancer
+  nginx:
+    image: nginx:alpine
+    container_name: glide-hims-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - ./logs/nginx:/var/log/nginx
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - glide-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  glide-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:

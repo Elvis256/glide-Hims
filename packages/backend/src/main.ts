@@ -163,6 +163,28 @@ async function bootstrap() {
   const apiPrefix = configService.get<string>('API_PREFIX', 'api/v1');
   app.setGlobalPrefix(apiPrefix);
 
+  // Standalone/on-premise: serve the frontend bundle from ./public if present.
+  // In SaaS mode nginx serves the dist directly so this directory is absent
+  // and the block is a no-op.
+  const publicDir = join(__dirname, '..', '..', '..', 'public');
+  if (existsSync(publicDir)) {
+    app.useStaticAssets(publicDir, { index: false });
+    const indexHtml = join(publicDir, 'index.html');
+    if (existsSync(indexHtml)) {
+      const html = readFileSync(indexHtml);
+      // SPA fallback — non-API routes return index.html so client-side
+      // routing works on hard refresh.
+      app.use((req: any, res: any, next: any) => {
+        if (req.method !== 'GET' || req.path.startsWith(`/${apiPrefix}`)) return next();
+        if (req.path.includes('.')) return next();
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        return res.end(html);
+      });
+      logger.log(`Serving frontend bundle from ${publicDir}`);
+    }
+  }
+
   // CORS Configuration
   const corsOrigins = configService.get<string>('CORS_ORIGINS', 'http://localhost:5173');
   app.enableCors({
