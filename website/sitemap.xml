@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://hmis.itsolutionsuganda.com/</loc><priority>1.0</priority></url>
+  <url><loc>https://hmis.itsolutionsuganda.com/features.html</loc><priority>0.9</priority></url>
+  <url><loc>https://hmis.itsolutionsuganda.com/pricing.html</loc><priority>0.9</priority></url>
+  <url><loc>https://hmis.itsolutionsuganda.com/contact.html</loc><priority>0.8</priority></url>
+  <url><loc>https://hmis.itsolutionsuganda.com/docs/</loc><priority>0.7</priority></url>
+  <url><loc>https://hmis.itsolutionsuganda.com/docs/quickstart.html</loc><priority>0.6</priority></url>
+  <url><loc>https://hmis.itsolutionsuganda.com/docs/architecture.html</loc><priority>0.6</priority></url>
+  <url><loc>https://hmis.itsolutionsuganda.com/docs/deployment-cloud.html</loc><priority>0.6</priority></url>
+  <url><loc>https://hmis.itsolutionsuganda.com/docs/deployment-onpremise.html</loc><priority>0.6</priority></url>
+  <url><loc>https://hmis.itsolutionsuganda.com/docs/api-overview.html</loc><priority>0.5</priority></url>
+  <url><loc>https://hmis.itsolutionsuganda.com/docs/licensing.html</loc><priority>0.5</priority></url>
+  <url><loc>https://hmis.itsolutionsuganda.com/docs/monitoring.html</loc><priority>0.5</priority></url>
+  <url><loc>https://hmis.itsolutionsuganda.com/docs/backup.html</loc><priority>0.5</priority></url>
+  <url><loc>https://hmis.itsolutionsuganda.com/docs/updates.html</loc><priority>0.5</priority></url>
+</urlset>

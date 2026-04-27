@@ -40,6 +40,7 @@ const PlatformSettingsPage = lazy(() => import('./pages/system/SystemSettingsPag
 const SystemSupportRequestsPage = lazy(() => import('./pages/system/SystemSupportRequestsPage'));
 const SystemComplianceCenterPage = lazy(() => import('./pages/system/SystemComplianceCenterPage'));
 const SystemDeploymentsPage = lazy(() => import('./pages/system/SystemDeploymentsPage'));
+const SystemLeadsPage = lazy(() => import('./pages/system/SystemLeadsPage'));
 const SupportAccessPage = lazy(() => import('./pages/admin/SupportAccessPage'));
 const SetupWizardPage = lazy(() => import('./pages/SetupWizardPage'));
 const TenantSetupWizardPage = lazy(() => import('./pages/TenantSetupWizardPage'));
@@ -586,6 +587,7 @@ function AppRoutes() {
         <Route path="users" element={<SystemUsersPage />} />
         <Route path="settings" element={<PlatformSettingsPage />} />
         <Route path="support-requests" element={<SystemSupportRequestsPage />} />
+        <Route path="leads" element={<SystemLeadsPage />} />
         <Route path="compliance" element={<SystemComplianceCenterPage />} />
       </Route>
       <Route

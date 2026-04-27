@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pricing &mdash; Glide HIMS</title>
+  <meta name="description" content="Simple pricing for clinics, hospitals, and ministries. Free tier for small clinics, Pro for hospitals, custom Enterprise for networks." />
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+  <link rel="canonical" href="https://hmis.itsolutionsuganda.com/pricing.html" />
+  <meta property="og:title" content="Glide HIMS — Pricing" />
+  <meta property="og:description" content="Free, Pro, and Enterprise tiers. Cloud-hosted or self-hosted." />
+  <meta property="og:url" content="https://hmis.itsolutionsuganda.com/pricing.html" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script>
+    tailwind.config = { theme: { extend: {
+      fontFamily: { sans: ['Plus Jakarta Sans','system-ui','sans-serif'] },
+      colors: {
+        midnight:{50:'#f0f4ff',600:'#4c6ef5',700:'#4263eb',900:'#364fc7',950:'#0B1D3A'},
+        emerald:{500:'#51cf66',600:'#40c057',700:'#37b24d'},
+        ocean:{600:'#228be6',700:'#1c7ed6'}
+      }
+    }}}
+  </script>
+  <style>
+    .nav-scrolled{background:rgba(255,255,255,0.95)!important;backdrop-filter:blur(20px);box-shadow:0 1px 3px rgba(0,0,0,0.08);}
+    .mobile-menu{max-height:0;overflow:hidden;transition:max-height .3s ease;}
+    .mobile-menu.open{max-height:500px;}
+    .pricing-card{transition:all .3s ease;}
+    .pricing-card:hover{transform:translateY(-4px);}
+  </style>
+</head>
+<body class="font-sans text-gray-900 antialiased">
+
+  <nav id="navbar" class="fixed top-0 w-full z-50 transition-all duration-300 nav-scrolled">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16 lg:h-20">
+        <a href="/" class="flex items-center"><img src="assets/logo.svg" alt="Glide HIMS" class="h-10" /></a>
+        <div class="hidden lg:flex items-center gap-1">
+          <a href="index.html#features" class="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 hover:text-midnight-600 hover:bg-gray-100">Features</a>
+          <a href="features.html" class="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 hover:text-midnight-600 hover:bg-gray-100">Modules</a>
+          <a href="pricing.html" class="px-4 py-2 rounded-lg text-sm font-medium text-midnight-600 bg-midnight-50">Pricing</a>
+          <a href="docs/" class="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 hover:text-midnight-600 hover:bg-gray-100">Docs</a>
+          <a href="contact.html" class="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 hover:text-midnight-600 hover:bg-gray-100">Contact</a>
+        </div>
+        <div class="hidden lg:flex items-center gap-3">
+          <a href="https://hmisdemo.itsolutionsuganda.com/system/login" class="px-4 py-2 rounded-lg text-sm font-medium text-midnight-700 hover:bg-midnight-50">Admin Portal</a>
+          <a href="https://hmisdemo.itsolutionsuganda.com" target="_blank" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-midnight-600 to-midnight-700 text-white text-sm font-semibold hover:from-midnight-500 hover:to-midnight-600 shadow-lg">
+            <i data-lucide="play" class="w-4 h-4"></i> Live Demo
+          </a>
+        </div>
+        <button id="mobileBtn" class="lg:hidden p-2 rounded-lg text-gray-600 hover:bg-gray-100"><i data-lucide="menu" class="w-6 h-6"></i></button>
+      </div>
+    </div>
+    <div id="mobileMenu" class="mobile-menu lg:hidden bg-white border-t border-gray-100">
+      <div class="px-4 py-4 space-y-1">
+        <a href="index.html#features" class="block px-4 py-3 rounded-lg text-gray-600 hover:bg-gray-50 text-sm font-medium">Features</a>
+        <a href="features.html" class="block px-4 py-3 rounded-lg text-gray-600 hover:bg-gray-50 text-sm font-medium">Modules</a>
+        <a href="pricing.html" class="block px-4 py-3 rounded-lg text-midnight-600 bg-midnight-50 text-sm font-medium">Pricing</a>
+        <a href="docs/" class="block px-4 py-3 rounded-lg text-gray-600 hover:bg-gray-50 text-sm font-medium">Docs</a>
+        <a href="contact.html" class="block px-4 py-3 rounded-lg text-gray-600 hover:bg-gray-50 text-sm font-medium">Contact</a>
+        <a href="https://hmisdemo.itsolutionsuganda.com/system/login" class="block px-4 py-3 rounded-lg text-midnight-700 hover:bg-midnight-50 text-sm font-medium">Admin Portal</a>
+      </div>
+    </div>
+  </nav>
+
+  <section class="pt-32 pb-12 bg-gradient-to-b from-midnight-950 to-midnight-900 text-white">
+    <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+      <h1 class="text-4xl lg:text-6xl font-extrabold tracking-tight">Simple, transparent pricing</h1>
+      <p class="mt-4 text-white/70 text-lg max-w-2xl mx-auto">Start free, scale when you're ready. All tiers include core HIMS modules — pay for capacity and support.</p>
+    </div>
+  </section>
+
+  <section class="py-16 bg-gray-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid md:grid-cols-3 gap-6">
+
+      <div class="pricing-card bg-white rounded-2xl border border-gray-200 p-8 flex flex-col">
+        <h3 class="text-xl font-bold">Free</h3>
+        <p class="text-gray-500 text-sm mt-1">Small clinics getting started</p>
+        <div class="mt-6 flex items-baseline gap-1"><span class="text-5xl font-extrabold text-midnight-950">$0</span><span class="text-gray-500">/month</span></div>
+        <ul class="mt-6 space-y-3 text-sm text-gray-700 flex-1">
+          <li class="flex gap-2"><i data-lucide="check" class="w-5 h-5 text-emerald-600 flex-shrink-0"></i>Up to 5 users, 1 facility</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-5 h-5 text-emerald-600 flex-shrink-0"></i>Patient management &amp; encounters</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-5 h-5 text-emerald-600 flex-shrink-0"></i>Basic billing &amp; pharmacy</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-5 h-5 text-emerald-600 flex-shrink-0"></i>Cloud-hosted (shared)</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-5 h-5 text-emerald-600 flex-shrink-0"></i>Community support</li>
+        </ul>
+        <a href="contact.html?plan=free" class="mt-8 inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gray-900 text-white font-semibold hover:bg-gray-800">Get started</a>
+      </div>
+
+      <div class="pricing-card bg-white rounded-2xl border-2 border-emerald-500 p-8 flex flex-col shadow-xl relative">
+        <span class="absolute -top-3 left-1/2 -translate-x-1/2 bg-emerald-500 text-white text-xs font-bold px-4 py-1 rounded-full uppercase tracking-wider">Most popular</span>
+        <h3 class="text-xl font-bold">Pro</h3>
+        <p class="text-gray-500 text-sm mt-1">Hospitals &amp; multi-facility groups</p>
+        <div class="mt-6 flex items-baseline gap-1"><span class="text-5xl font-extrabold text-midnight-950">$99</span><span class="text-gray-500">/month</span></div>
+        <p class="text-xs text-gray-500 mt-1">+ $5/active user/mo · billed monthly</p>
+        <ul class="mt-6 space-y-3 text-sm text-gray-700 flex-1">
+          <li class="flex gap-2"><i data-lucide="check" class="w-5 h-5 text-emerald-600 flex-shrink-0"></i>Unlimited users &amp; facilities</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-5 h-5 text-emerald-600 flex-shrink-0"></i>All 60+ modules</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-5 h-5 text-emerald-600 flex-shrink-0"></i>Insurance / NHIF claims</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-5 h-5 text-emerald-600 flex-shrink-0"></i>HMIS / DHIS2 exports</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-5 h-5 text-emerald-600 flex-shrink-0"></i>Daily encrypted backups</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-5 h-5 text-emerald-600 flex-shrink-0"></i>4-hour business response SLA</li>
+        </ul>
+        <a href="contact.html?plan=pro" class="mt-8 inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-emerald-500 text-white font-semibold hover:bg-emerald-400">Start free trial</a>
+      </div>
+
+      <div class="pricing-card bg-white rounded-2xl border border-gray-200 p-8 flex flex-col">
+        <h3 class="text-xl font-bold">Enterprise</h3>
+        <p class="text-gray-500 text-sm mt-1">Hospital networks &amp; ministries</p>
+        <div class="mt-6 flex items-baseline gap-1"><span class="text-5xl font-extrabold text-midnight-950">Custom</span></div>
+        <p class="text-xs text-gray-500 mt-1">Annual licensing · per-bed or per-facility</p>
+        <ul class="mt-6 space-y-3 text-sm text-gray-700 flex-1">
+          <li class="flex gap-2"><i data-lucide="check" class="w-5 h-5 text-emerald-600 flex-shrink-0"></i>Hybrid or fully air-gapped deployment</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-5 h-5 text-emerald-600 flex-shrink-0"></i>Dedicated control plane</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-5 h-5 text-emerald-600 flex-shrink-0"></i>Single sign-on (SSO / SAML)</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-5 h-5 text-emerald-600 flex-shrink-0"></i>Custom integrations &amp; data migration</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-5 h-5 text-emerald-600 flex-shrink-0"></i>1-hour critical response SLA</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-5 h-5 text-emerald-600 flex-shrink-0"></i>On-site training &amp; deployment</li>
+        </ul>
+        <a href="contact.html?plan=enterprise" class="mt-8 inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-midnight-950 text-white font-semibold hover:bg-midnight-900">Contact sales</a>
+      </div>
+
+    </div>
+
+    <div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 mt-16">
+      <h2 class="text-2xl font-bold text-midnight-950 text-center mb-8">Frequently asked</h2>
+      <div class="space-y-4 text-sm">
+        <details class="bg-white rounded-xl border border-gray-200 p-5"><summary class="font-semibold cursor-pointer">Can we host it ourselves?</summary><p class="mt-3 text-gray-600">Yes — Pro and Enterprise tiers can be self-hosted on your own AWS / Azure / on-prem infrastructure. Air-gapped (USB-distributed updates) is available on Enterprise.</p></details>
+        <details class="bg-white rounded-xl border border-gray-200 p-5"><summary class="font-semibold cursor-pointer">What about NHIF and other insurance schemes?</summary><p class="mt-3 text-gray-600">Pro and Enterprise include the insurance claims module with NHIF (Uganda/Kenya) and customizable schema for other payers.</p></details>
+        <details class="bg-white rounded-xl border border-gray-200 p-5"><summary class="font-semibold cursor-pointer">Do you offer training?</summary><p class="mt-3 text-gray-600">Pro tier includes remote onboarding. Enterprise includes on-site training, data migration, and ongoing change-management support.</p></details>
+        <details class="bg-white rounded-xl border border-gray-200 p-5"><summary class="font-semibold cursor-pointer">Is patient data secure?</summary><p class="mt-3 text-gray-600">All deployments use encrypted backups, JWT auth with short-lived tokens, role-based access, and full audit logging. See our <a href="docs/architecture.html" class="text-midnight-600 hover:underline">architecture docs</a>.</p></details>
+      </div>
+    </div>
+  </section>
+
+  <footer class="bg-midnight-950 text-white/60 py-8 text-center text-sm">
+    &copy; <span id="yr"></span> Glide HIMS &middot; <a href="contact.html" class="hover:text-white">Contact</a> &middot; <a href="docs/" class="hover:text-white">Docs</a>
+  </footer>
+
+  <script>
+    lucide.createIcons();
+    document.getElementById('yr').textContent = new Date().getFullYear();
+    document.getElementById('mobileBtn').addEventListener('click', () => document.getElementById('mobileMenu').classList.toggle('open'));
+  </script>
+</body>
+</html>
