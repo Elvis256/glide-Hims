@@ -16,6 +16,7 @@ import {
   ClipboardCheck,
   Server,
   Mail,
+  Download,
 } from 'lucide-react';
 
 const sidebarItems = [
@@ -25,6 +26,7 @@ const sidebarItems = [
   { name: 'System Users', href: '/system/users', icon: Users },
   { name: 'Support Requests', href: '/system/support-requests', icon: LifeBuoy },
   { name: 'Leads', href: '/system/leads', icon: Mail },
+  { name: 'Downloads', href: '/system/downloads', icon: Download },
   { name: 'Compliance Center', href: '/system/compliance', icon: ClipboardCheck },
   { name: 'Settings', href: '/system/settings', icon: Settings },
 ];

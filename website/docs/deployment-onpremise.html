@@ -74,6 +74,15 @@
             <p class="lead text-muted">Deploy Glide HIMS on your own servers</p>
         </div>
 
+        <div class="alert alert-success border-0 shadow-sm" style="background:#ecfdf5;border-left:4px solid #10b981;">
+            <strong>✓ Verified in v1.0</strong> — self-registration is <em>off by default</em> on production
+            on-prem deployments. New tenants must be provisioned by a system admin via
+            <code>/system/tenants</code>. To open the public <code>/register</code> flow, set
+            <code>platform.allow_self_registration=true</code> in System Settings.
+            Use <code>/system/login</code> for the System Administration portal — distinct from tenant logins
+            at <code>/login</code> or <code>/login/{tenant-slug}</code>.
+        </div>
+
         <!-- Prerequisites -->
         <div class="card">
             <div class="card-header"><i class="bi bi-list-check me-2"></i>Prerequisites</div>

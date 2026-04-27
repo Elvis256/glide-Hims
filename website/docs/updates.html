@@ -74,6 +74,14 @@
             <p class="lead text-muted">Managing system updates and version control</p>
         </div>
 
+        <div class="alert alert-success border-0 shadow-sm" style="background:#ecfdf5;border-left:4px solid #10b981;">
+            <strong>✓ Verified in v1.0 (Phase 2)</strong> — the platform now ships
+            <code>UpdateDistributionService</code> (gradual 10% → 50% → 100% rollouts with configurable
+            failure thresholds) and <code>RolloutOrchestrationService</code> (auto-scheduling, health
+            monitoring, automatic rollback). Standalone (air-gapped) deployments receive update bundles via
+            USB; hybrid deployments pull signed bundles from the control plane.
+        </div>
+
         <!-- Overview -->
         <div class="card">
             <div class="card-header"><i class="bi bi-info-circle me-2"></i>Overview</div>
