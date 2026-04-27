@@ -25,6 +25,19 @@ export class PermissionsGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    // @SystemAdminOnly() bypass: short-circuit when the route demands sysadmin.
+    const systemAdminOnly = this.reflector.getAllAndOverride<boolean>('systemAdminOnly', [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (systemAdminOnly) {
+      const req = context.switchToHttp().getRequest();
+      if (!req.user?.isSystemAdmin) {
+        return false;
+      }
+      return true;
+    }
+
     const requiredPermissions = this.reflector.getAllAndOverride<string[]>(PERMISSIONS_KEY, [
       context.getHandler(),
       context.getClass(),

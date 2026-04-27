@@ -71,7 +71,7 @@ export default function SystemSettingsPage() {
   const [editValue, setEditValue] = useState<string>('');
   const [envInfo, setEnvInfo] = useState<Record<string, string>>({
     deploymentMode: 'on-premise',
-    version: '1.0.0',
+    version: typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.0',
   });
 
   const loadData = useCallback(async () => {

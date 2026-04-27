@@ -1,8 +1,17 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import api from '../../services/api';
 
 const PublicLandingPage: React.FC = () => {
   const navigate = useNavigate();
+  const [registrationAllowed, setRegistrationAllowed] = useState(false);
+
+  useEffect(() => {
+    api
+      .get('/setup/registration-allowed')
+      .then((r) => setRegistrationAllowed(!!(r.data?.data?.allowed ?? r.data?.allowed)))
+      .catch(() => setRegistrationAllowed(false));
+  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50">
@@ -21,12 +30,14 @@ const PublicLandingPage: React.FC = () => {
         <h2 className="text-5xl font-bold mb-4">Healthcare Management System</h2>
         <p className="text-xl text-gray-600 mb-8">Complete HIMS solution for hospitals and clinics across Africa</p>
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
-          <button
-            onClick={() => navigate('/register')}
-            className="bg-blue-600 text-white px-8 py-3 rounded-lg hover:bg-blue-700 text-lg font-semibold"
-          >
-            Get Started Free
-          </button>
+          {registrationAllowed && (
+            <button
+              onClick={() => navigate('/register')}
+              className="bg-blue-600 text-white px-8 py-3 rounded-lg hover:bg-blue-700 text-lg font-semibold"
+            >
+              Get Started Free
+            </button>
+          )}
           <button
             onClick={() => navigate('/system/login')}
             className="bg-white text-blue-600 border-2 border-blue-600 px-8 py-3 rounded-lg hover:bg-blue-50 text-lg font-semibold"

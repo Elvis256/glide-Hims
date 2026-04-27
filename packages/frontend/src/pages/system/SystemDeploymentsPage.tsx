@@ -73,6 +73,8 @@ function useCopyToClipboard() {
 
 export default function SystemDeploymentsPage() {
   const [deployments, setDeployments] = useState<Deployment[]>([]);
+  const [tenants, setTenants] = useState<Array<{ id: string; name: string; slug: string }>>([]);
+  const [selectedTenantId, setSelectedTenantId] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | DeploymentType>('all');
@@ -104,22 +106,36 @@ export default function SystemDeploymentsPage() {
 
   useEffect(() => {
     loadDeployments();
+    api
+      .get('/tenants')
+      .then((r) => {
+        const list = Array.isArray(r.data) ? r.data : (r.data?.data || []);
+        setTenants(list.map((t: any) => ({ id: t.id, name: t.name, slug: t.slug })));
+      })
+      .catch(() => setTenants([]));
   }, []);
 
   const handleCreate = async () => {
-    if (!form.organizationName.trim()) {
-      toast.error('Organization name is required');
+    if (!selectedTenantId && !form.organizationName.trim()) {
+      toast.error('Pick an existing organization or enter a new name');
       return;
     }
     setCreating(true);
     try {
-      await api.post('/deployments', form);
+      const payload: any = { ...form };
+      if (selectedTenantId) {
+        payload.tenantId = selectedTenantId;
+        const t = tenants.find((x) => x.id === selectedTenantId);
+        if (t && !payload.organizationName) payload.organizationName = t.name;
+      }
+      await api.post('/deployments', payload);
       toast.success(`${form.type === 'hybrid' ? 'Hybrid' : 'Standalone'} deployment created`);
       setShowCreate(false);
+      setSelectedTenantId('');
       setForm({ organizationName: '', type: 'hybrid', tier: 'professional', domain: '', maxUsers: 50, notes: '' });
       loadDeployments();
-    } catch {
-      toast.error('Failed to create deployment');
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Failed to create deployment');
     } finally {
       setCreating(false);
     }
@@ -341,12 +357,28 @@ export default function SystemDeploymentsPage() {
 
             <div className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Organization Name *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Existing Organization (optional)</label>
+                <select
+                  value={selectedTenantId}
+                  onChange={(e) => setSelectedTenantId(e.target.value)}
+                  className="input w-full"
+                >
+                  <option value="">— Create new organization —</option>
+                  {tenants.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name} ({t.slug})</option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">Pick an existing tenant, or leave blank to provision a new one from the name below.</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Organization Name {selectedTenantId ? '' : '*'}</label>
                 <input
                   value={form.organizationName}
                   onChange={(e) => setForm({ ...form, organizationName: e.target.value })}
                   className="input w-full"
                   placeholder="e.g. Mulago National Referral Hospital"
+                  disabled={!!selectedTenantId}
                 />
               </div>
 

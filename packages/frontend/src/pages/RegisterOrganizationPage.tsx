@@ -280,6 +280,14 @@ export default function RegisterOrganizationPage() {
   const [presets, setPresets] = useState<FacilityPreset[]>([]);
   const [selectedPreset, setSelectedPreset] = useState<FacilityPreset | null>(null);
   const [businessType, setBusinessType] = useState('');
+  const [registrationAllowed, setRegistrationAllowed] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    api
+      .get('/setup/registration-allowed')
+      .then((r) => setRegistrationAllowed(!!(r.data?.data?.allowed ?? r.data?.allowed)))
+      .catch(() => setRegistrationAllowed(false));
+  }, []);
 
   useEffect(() => {
     setupService.getPresets().then(setPresets).catch((err) => console.error('Failed to load presets:', err));
@@ -902,7 +910,12 @@ export default function RegisterOrganizationPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4">
-      <div className="max-w-3xl mx-auto">
+      {registrationAllowed === false && (
+        <div className="max-w-3xl mx-auto bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-3 mb-6 text-center">
+          Self-service registration is currently disabled. Contact your platform administrator.
+        </div>
+      )}
+      <div className="max-w-3xl mx-auto" style={{ pointerEvents: registrationAllowed === false ? 'none' : 'auto', opacity: registrationAllowed === false ? 0.5 : 1 }}>
         {/* Header */}
         <div className="text-center mb-8">
           <Logo size="lg" variant="full" />
