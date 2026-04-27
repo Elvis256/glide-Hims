@@ -158,7 +158,9 @@ export default function LoginPage() {
       }
 
       // System admin → tenant management dashboard, tenant members → main dashboard
-      if (response.user.isSystemAdmin && isSaas) {
+      if (response.mustChangePassword) {
+        navigate('/change-password', { state: { forced: true } });
+      } else if (response.user.isSystemAdmin && isSaas) {
         navigate('/admin/tenants');
       } else {
         navigate('/');

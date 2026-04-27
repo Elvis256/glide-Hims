@@ -47,6 +47,10 @@ export default function SystemLoginPage() {
       }
 
       login(response.user, response.accessToken, response.refreshToken);
+      if (response.mustChangePassword) {
+        navigate('/change-password', { state: { forced: true } });
+        return;
+      }
       navigate('/system');
     } catch (err: unknown) {
       const error = err as { response?: { data?: { message?: string } } };
