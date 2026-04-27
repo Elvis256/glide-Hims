@@ -103,11 +103,33 @@ export class ModuleGuard implements CanActivate {
 
   /**
    * Resolve enabled sidebar module codes for a tenant.
-   * Priority: enabled_modules setting > tenant.settings.enabledModules > facility_mode preset
+   * Resolution:
+   *   - License (if active) defines the UPPER BOUND of allowed modules.
+   *   - Tenant config (system_settings or tenant.settings) may NARROW that set.
+   *   - With no license and no tenant config, falls back to facility_mode preset.
+   *   - Empty result = allow-all (tenant hasn't configured anything yet).
    */
   private async resolveTenantModules(tenantId: string): Promise<string[]> {
     try {
-      // 1. Check for custom enabled_modules override
+      // License upper bound (if any active license exists)
+      const licenseRow = await this.dataSource.query(
+        `SELECT enabled_modules FROM licenses
+           WHERE tenant_id = $1 AND status = 'active' AND expires_at > now()
+           ORDER BY expires_at DESC LIMIT 1`,
+        [tenantId],
+      );
+      let licenseModules: string[] | null = null;
+      if (licenseRow.length > 0 && licenseRow[0].enabled_modules) {
+        const raw =
+          typeof licenseRow[0].enabled_modules === 'string'
+            ? JSON.parse(licenseRow[0].enabled_modules)
+            : licenseRow[0].enabled_modules;
+        if (Array.isArray(raw) && raw.length > 0) {
+          licenseModules = presetModulesToSidebarCodes(raw);
+        }
+      }
+
+      // 1. Tenant override via system_settings
       const customRow = await this.dataSource.query(
         `SELECT value FROM system_settings WHERE tenant_id = $1 AND key = 'enabled_modules' AND deleted_at IS NULL LIMIT 1`,
         [tenantId],
@@ -118,11 +140,12 @@ export class ModuleGuard implements CanActivate {
             ? JSON.parse(customRow[0].value)
             : customRow[0].value;
         if (Array.isArray(val) && val.length > 0) {
-          return val;
+          const codes = presetModulesToSidebarCodes(val);
+          return licenseModules ? codes.filter((c) => licenseModules!.includes(c)) : codes;
         }
       }
 
-      // 2. Check tenant.settings.enabledModules
+      // 2. tenant.settings.enabledModules
       const tenantRow = await this.dataSource.query(
         `SELECT settings FROM tenants WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
         [tenantId],
@@ -137,11 +160,17 @@ export class ModuleGuard implements CanActivate {
           Array.isArray(settings.enabledModules) &&
           settings.enabledModules.length > 0
         ) {
-          return presetModulesToSidebarCodes(settings.enabledModules);
+          const codes = presetModulesToSidebarCodes(settings.enabledModules);
+          return licenseModules ? codes.filter((c) => licenseModules!.includes(c)) : codes;
         }
       }
 
-      // 3. Fall back to facility_mode preset
+      // 3. License alone (no tenant config) — use the license's modules as the enabled set
+      if (licenseModules) {
+        return licenseModules;
+      }
+
+      // 4. Fall back to facility_mode preset
       const modeRow = await this.dataSource.query(
         `SELECT value FROM system_settings WHERE tenant_id = $1 AND key = 'facility_mode' AND deleted_at IS NULL LIMIT 1`,
         [tenantId],

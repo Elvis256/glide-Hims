@@ -5,25 +5,11 @@ import { Installer } from './installer.entity';
 import { InstallerDownload } from './installer-download.entity';
 import { CreateInstallerDto, UpdateInstallerDto } from './installer.dto';
 import { License } from '../../database/entities/license.entity';
+import { tierRank as rank, meetsTier } from '../../common/constants/license-tiers.constants';
 import * as fs from 'fs';
 import * as path from 'path';
 
 const STORAGE_DIR = process.env.INSTALLERS_DIR || '/var/lib/glide-hims/installers';
-
-const TIER_RANK: Record<string, number> = {
-  trial: 0,
-  free: 0,
-  standard: 1,
-  basic: 1,
-  professional: 2,
-  pro: 2,
-  enterprise: 3,
-};
-
-function rank(t?: string | null) {
-  if (!t) return 0;
-  return TIER_RANK[t.toLowerCase()] ?? 0;
-}
 
 @Injectable()
 export class DownloadsService {
@@ -97,7 +83,7 @@ export class DownloadsService {
 
   async assertTierAllowed(installer: Installer, tenantTier: string) {
     if (!installer.minLicenseTier) return;
-    if (rank(tenantTier) < rank(installer.minLicenseTier)) {
+    if (!meetsTier(tenantTier, installer.minLicenseTier)) {
       throw new ForbiddenException(
         `This installer requires the "${installer.minLicenseTier}" plan or higher (your plan: ${tenantTier}).`,
       );

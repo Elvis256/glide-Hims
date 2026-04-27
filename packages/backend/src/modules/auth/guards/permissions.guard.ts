@@ -71,6 +71,7 @@ export class PermissionsGuard implements CanActivate {
         path.startsWith('/api/v1/deployments') ||
         path.startsWith('/api/v1/system') ||
         path.startsWith('/api/v1/licenses') ||
+        path.startsWith('/api/v1/license') ||
         path.startsWith('/api/v1/updates') ||
         path.startsWith('/api/v1/settings/platform') ||
         path.startsWith('/api/v1/settings/facility-presets') ||
