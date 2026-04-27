@@ -629,6 +629,7 @@ function AppRoutes() {
               <Suspense fallback={<PageLoader />}>
               <Routes>
                 <Route path="/" element={<SmartDashboardPage />} />
+                <Route path="/dashboard" element={<SmartDashboardPage />} />
                 
                 {/* Registration - Patient Management */}
                 <Route path="/patients/search" element={<ReceptionistRoute><PatientSearchPage /></ReceptionistRoute>} />
