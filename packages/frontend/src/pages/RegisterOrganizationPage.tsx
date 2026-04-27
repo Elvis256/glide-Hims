@@ -22,6 +22,7 @@ import {
   ShoppingBag,
 } from 'lucide-react';
 import { setupService, type InitializeSetupData, type FacilityPreset } from '../services/setup';
+import { api } from '../services/api';
 import Logo from '../components/Logo';
 
 type Step = 'business_type' | 'organization' | 'deployment' | 'facility' | 'admin' | 'settings' | 'review';
