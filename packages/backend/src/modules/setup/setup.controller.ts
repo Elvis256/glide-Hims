@@ -79,18 +79,34 @@ export class SetupController {
   @ApiResponse({ status: 201, description: 'Organization registered successfully' })
   @ApiResponse({ status: 400, description: 'Validation error or duplicate organization/user' })
   async registerTenant(@Body() dto: RegisterTenantDto) {
-    // Check if self-registration is allowed
+    // Self-registration is OPT-IN: only allow when the platform flag is
+    // explicitly set to true. Default (missing setting) = deny.
+    let allowed = false;
     try {
       const setting = await this.systemSettingsService.getByKey('platform.allow_self_registration');
-      if (setting.value === false || setting.value === 'false') {
-        throw new ForbiddenException('Self-service registration is currently disabled');
-      }
-    } catch (err) {
-      // If the setting doesn't exist (NotFoundException), allow registration by default
-      if (err instanceof ForbiddenException) throw err;
+      const v = setting?.value;
+      allowed = v === true || v === 'true';
+    } catch {
+      allowed = false;
+    }
+    if (!allowed) {
+      throw new ForbiddenException('Self-service registration is currently disabled');
     }
 
     return this.setupService.registerTenant(dto);
+  }
+
+  @Get('registration-allowed')
+  @Public()
+  @ApiOperation({ summary: 'Check whether self-service registration is enabled' })
+  async registrationAllowed() {
+    try {
+      const setting = await this.systemSettingsService.getByKey('platform.allow_self_registration');
+      const v = setting?.value;
+      return { allowed: v === true || v === 'true' };
+    } catch {
+      return { allowed: false };
+    }
   }
 
   @Post('initialize-tenant/:slug')

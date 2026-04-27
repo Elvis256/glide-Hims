@@ -614,7 +614,11 @@ function AppRoutes() {
           !isSetupComplete ? (
             <FirstRunOnboardingPage />
           ) : isAuthenticated ? (
-            <Navigate to="/dashboard" replace />
+            (useAuthStore.getState().user as any)?.isSystemAdmin ? (
+              <Navigate to="/system" replace />
+            ) : (
+              <Navigate to="/dashboard" replace />
+            )
           ) : (
             <PublicLandingPage />
           )

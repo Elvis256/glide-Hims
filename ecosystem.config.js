@@ -3,7 +3,7 @@ module.exports = {
     {
       name: 'glide-hims-backend',
       script: 'dist/main.js',
-      cwd: '/home/bi/hims/glide-Hims/packages/backend',
+      cwd: '/root/glide-Hims/packages/backend',
       env: {
         NODE_ENV: 'production',
         PORT: 3000
@@ -23,7 +23,7 @@ module.exports = {
       name: 'glide-hims-frontend',
       script: 'node_modules/vite/bin/vite.js',
       args: 'preview --port 5173 --host 127.0.0.1',
-      cwd: '/home/bi/hims/glide-Hims/packages/frontend',
+      cwd: '/root/glide-Hims/packages/frontend',
       watch: false,
       autorestart: true,
       max_restarts: 10,

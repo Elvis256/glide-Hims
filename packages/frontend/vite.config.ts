@@ -5,6 +5,11 @@ import { VitePWA } from 'vite-plugin-pwa'
 import { readFileSync, existsSync } from 'fs'
 import { resolve } from 'path'
 
+// Precache only HTML + chunks. Images/fonts can come from the SWR runtime
+// cache (#15: keeps service-worker installs small after each deploy).
+import pkg from './package.json'
+const APP_VERSION = (pkg as any).version || '0.0.0'
+
 const certsDir = resolve(__dirname, 'certs')
 const keyPath = resolve(certsDir, 'key.pem')
 const certPath = resolve(certsDir, 'cert.pem')
@@ -33,8 +38,9 @@ export default defineConfig({
         skipWaiting: true,
         clientsClaim: true,
         cleanupOutdatedCaches: true,
-        // Precache the built HTML and hashed JS/CSS so a cold offline boot works.
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff,woff2}'],
+        // Precache HTML + JS/CSS only (~3 MB instead of 9 MB).
+        // Images/fonts/icons load on-demand via the SWR runtime cache below.
+        globPatterns: ['**/*.{js,css,html}'],
         // SPA fallback: any navigation hits index.html (handled below as NetworkFirst).
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//, /^\/socket\.io\//],
@@ -90,6 +96,9 @@ export default defineConfig({
       },
     }),
   ],
+  define: {
+    __APP_VERSION__: JSON.stringify(APP_VERSION),
+  },
   build: {
     // Strip console.log/warn in production builds
     minify: 'esbuild',
