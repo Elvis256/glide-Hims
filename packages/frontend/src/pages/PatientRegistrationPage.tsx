@@ -165,6 +165,7 @@ export default function PatientRegistrationPage() {
   const [showDuplicateWarning, setShowDuplicateWarning] = useState(false);
   const [quickRegistration, setQuickRegistration] = useState(false);
   const [showWebcam, setShowWebcam] = useState(false);
+  const [billImmediately, setBillImmediately] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);

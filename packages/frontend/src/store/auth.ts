@@ -102,8 +102,10 @@ export const useAuthStore = create<AuthState & AuthActions>()(
       hasModuleAccess: (moduleCode: string) => {
         const { user } = get();
         if (!user) return false;
-        const matchRole = (r: string) => user.roles?.some((ur: any) => ur === r || ur?.role === r || ur?.name === r);
-        if (matchRole('Super Admin')) return true;
+        // Only platform-level system admins bypass module gating.
+        // Tenant 'Super Admin' is still bound by license/module config.
+        if ((user as any).isSystemAdmin) return true;
+        if (moduleCode === 'admin' || moduleCode === 'registration') return true;
         return user.accessibleModules?.includes(moduleCode) ?? false;
       },
 
