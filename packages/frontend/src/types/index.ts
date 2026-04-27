@@ -104,6 +104,8 @@ export interface LoginResponse {
   accessToken: string;
   refreshToken: string;
   user: User;
+  mustChangePassword?: boolean;
+  expiresIn?: number;
 }
 
 export interface AuthState {

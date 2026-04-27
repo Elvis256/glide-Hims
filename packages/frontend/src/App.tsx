@@ -44,6 +44,7 @@ const SupportAccessPage = lazy(() => import('./pages/admin/SupportAccessPage'));
 const SetupWizardPage = lazy(() => import('./pages/SetupWizardPage'));
 const TenantSetupWizardPage = lazy(() => import('./pages/TenantSetupWizardPage'));
 const RegisterOrganizationPage = lazy(() => import('./pages/RegisterOrganizationPage'));
+const ChangePasswordPage = lazy(() => import('./pages/ChangePasswordPage'));
 const FirstRunOnboardingPage = lazy(() => import('./pages/Onboarding/FirstRunOnboardingPage'));
 const AdminDashboard = lazy(() => import('./pages/Admin/AdminDashboard'));
 const PublicLandingPage = lazy(() => import('./pages/Public/PublicLandingPage'));
@@ -557,7 +558,7 @@ function AppRoutes() {
   }
 
   // Redirect to setup if not complete (allow tenant setup wizard and system routes through)
-  if (!isSetupComplete && !window.location.pathname.startsWith('/setup') && !window.location.pathname.startsWith('/system')) {
+  if (!isSetupComplete && !window.location.pathname.startsWith('/setup') && !window.location.pathname.startsWith('/system') && !window.location.pathname.startsWith('/change-password')) {
     return <Navigate to="/setup" replace />;
   }
 
@@ -570,6 +571,10 @@ function AppRoutes() {
       <Route
         path="/system/login"
         element={isAuthenticated ? <Navigate to="/system" replace /> : <SystemLoginPage />}
+      />
+      <Route
+        path="/change-password"
+        element={isAuthenticated ? <ChangePasswordPage /> : <Navigate to="/login" replace />}
       />
       <Route
         path="/system"
