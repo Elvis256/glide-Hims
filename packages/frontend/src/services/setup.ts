@@ -83,7 +83,7 @@ export const setupService = {
   getStatus: async (): Promise<SetupStatus> => {
     try {
       // First, check if system is initialized with tenants (multi-tenant mode)
-      const systemStatus = await api.get('/api/v1/system/initialized');
+      const systemStatus = await api.get('/system/initialized');
       if (systemStatus.data && systemStatus.data.initialized === false) {
         // System not initialized - show onboarding
         return {
