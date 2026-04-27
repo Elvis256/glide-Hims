@@ -13,30 +13,5 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    <script>
-      // Service worker kill-switch: unregister any existing SW and wipe caches
-      // on every page load. The previous SW (caching strategy v13) was serving
-      // stale bundles after deploys, breaking the login flow.
-      (function () {
-        try {
-          if ("serviceWorker" in navigator) {
-            navigator.serviceWorker.getRegistrations().then(function (regs) {
-              var hadAny = regs.length > 0;
-              Promise.all(regs.map(function (r) { return r.unregister(); })).then(function () {
-                if (window.caches && caches.keys) {
-                  caches.keys().then(function (keys) {
-                    Promise.all(keys.map(function (k) { return caches.delete(k); })).then(function () {
-                      if (hadAny) window.location.reload();
-                    });
-                  });
-                } else if (hadAny) {
-                  window.location.reload();
-                }
-              });
-            }).catch(function () {});
-          }
-        } catch (_) {}
-      })();
-    </script>
   </body>
 </html>
