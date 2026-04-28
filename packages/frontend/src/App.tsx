@@ -59,6 +59,17 @@ const TenantManagementPage = lazy(() => import('./pages/admin/TenantManagementPa
 const BackupManagementPage = lazy(() => import('./pages/admin/BackupManagementPage'));
 const TrashRecoveryPage = lazy(() => import('./pages/admin/TrashRecoveryPage'));
 const AuditLogsPage = lazy(() => import('./pages/admin/AuditLogsPage'));
+const PasswordPoliciesPage = lazy(() => import('./pages/admin/PasswordPoliciesPage'));
+const JobMonitorPage = lazy(() => import('./pages/admin/JobMonitorPage'));
+const WebhooksPage = lazy(() => import('./pages/admin/WebhooksPage'));
+const EmailTemplatesPage = lazy(() => import('./pages/admin/EmailTemplatesPage'));
+const SsoConfigPage = lazy(() => import('./pages/admin/SsoConfigPage'));
+const EmployeeGoalsPage = lazy(() => import('./pages/admin/hr/EmployeeGoalsPage'));
+const PIPManagementPage = lazy(() => import('./pages/admin/hr/PIPManagementPage'));
+const LetterTemplatesPage = lazy(() => import('./pages/admin/hr/LetterTemplatesPage'));
+const OrgChartPage = lazy(() => import('./pages/admin/hr/OrgChartPage'));
+const LeaveDashboardPage = lazy(() => import('./pages/admin/hr/LeaveDashboardPage'));
+const CareersPage = lazy(() => import('./pages/CareersPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const SmartDashboardPage = lazy(() => import('./pages/SmartDashboardPage'));
 const UsersPage = lazy(() => import('./pages/UsersPage'));
@@ -595,6 +606,7 @@ function AppRoutes() {
       <Route path="/setup" element={isSetupComplete ? <Navigate to="/" replace /> : <SetupWizardPage />} />
       <Route path="/setup/:slug" element={<TenantSetupWizardPage />} />
       <Route path="/register" element={isAuthenticated ? <Navigate to="/" replace /> : <RegisterOrganizationPage />} />
+      <Route path="/careers" element={<CareersPage />} />
       <Route
         path="/system/login"
         element={isAuthenticated ? <Navigate to="/system" replace /> : <SystemLoginPage />}
@@ -1105,6 +1117,16 @@ function AppRoutes() {
                 <Route path="/admin/backups" element={<AdminRoute><BackupManagementPage /></AdminRoute>} />
                 <Route path="/admin/trash" element={<AdminRoute><TrashRecoveryPage /></AdminRoute>} />
                 <Route path="/admin/audit-logs" element={<AdminRoute><AuditLogsPage /></AdminRoute>} />
+                <Route path="/admin/password-policies" element={<AdminRoute><PasswordPoliciesPage /></AdminRoute>} />
+                <Route path="/admin/jobs" element={<AdminRoute><JobMonitorPage /></AdminRoute>} />
+                <Route path="/admin/integrations/webhooks" element={<AdminRoute><WebhooksPage /></AdminRoute>} />
+                <Route path="/admin/integrations/email-templates" element={<AdminRoute><EmailTemplatesPage /></AdminRoute>} />
+                <Route path="/admin/integrations/sso" element={<AdminRoute><SsoConfigPage /></AdminRoute>} />
+                <Route path="/admin/hr/goals" element={<AdminRoute><EmployeeGoalsPage /></AdminRoute>} />
+                <Route path="/admin/hr/pips" element={<AdminRoute><PIPManagementPage /></AdminRoute>} />
+                <Route path="/admin/hr/letter-templates" element={<AdminRoute><LetterTemplatesPage /></AdminRoute>} />
+                <Route path="/admin/hr/org-chart" element={<AdminRoute><OrgChartPage /></AdminRoute>} />
+                <Route path="/admin/hr/leave-dashboard" element={<AdminRoute><LeaveDashboardPage /></AdminRoute>} />
                 <Route path="/admin/support-access" element={<AdminRoute><SupportAccessPage /></AdminRoute>} />
                 
                 {/* Admin - Membership */}

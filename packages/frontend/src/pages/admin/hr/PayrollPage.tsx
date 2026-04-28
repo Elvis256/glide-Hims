@@ -117,12 +117,40 @@ export default function PayrollPage() {
     onError: (err: any) => toast.error(err?.response?.data?.message || 'Failed to reset payroll'),
   });
 
+  const approveMutation = useMutation({
+    mutationFn: async (id: string) => hrService.payroll.approve(id),
+    onSuccess: () => {
+      toast.success('Payroll approved. You can now process it.');
+      queryClient.invalidateQueries({ queryKey: ['payroll'] });
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || 'Failed to approve payroll'),
+  });
+
+  const markPaidMutation = useMutation({
+    mutationFn: async (id: string) => hrService.payroll.markPaid(id),
+    onSuccess: () => {
+      toast.success('Payroll marked as paid');
+      queryClient.invalidateQueries({ queryKey: ['payroll'] });
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || 'Failed to mark paid'),
+  });
+
+  const handleExport = async (id: string, type: 'paye' | 'nssf' | 'bank') => {
+    try {
+      await hrService.payroll.downloadExport(id, type);
+      toast.success(`${type.toUpperCase()} export downloaded`);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Export failed');
+    }
+  };
+
   const handleCreatePayroll = () => {
     createMutation.mutate({ month: newMonth, year: newYear });
   };
 
   const statusColors: Record<string, string> = {
     draft: 'bg-gray-100 text-gray-800',
+    approved: 'bg-purple-100 text-purple-800',
     processing: 'bg-yellow-100 text-yellow-800',
     completed: 'bg-green-100 text-green-800',
     paid: 'bg-blue-100 text-blue-800',
@@ -268,8 +296,18 @@ export default function PayrollPage() {
                       </span>
                     </td>
                     <td className="p-4">
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 flex-wrap">
                         {run.status === 'draft' && (
+                          <button
+                            onClick={() => approveMutation.mutate(run.id)}
+                            disabled={approveMutation.isPending}
+                            className="px-2 py-1 text-xs text-purple-700 bg-purple-50 hover:bg-purple-100 rounded"
+                            title="Approve (Draft → Approved)"
+                          >
+                            Approve
+                          </button>
+                        )}
+                        {run.status === 'approved' && (
                           <button
                             onClick={() => processMutation.mutate(run.id)}
                             disabled={processMutation.isPending}
@@ -291,6 +329,45 @@ export default function PayrollPage() {
                           >
                             <Eye className="w-4 h-4" />
                           </button>
+                        )}
+                        {run.status === 'completed' && (
+                          <button
+                            onClick={() => {
+                              if (confirm('Mark this payroll as paid? This is a final action.')) {
+                                markPaidMutation.mutate(run.id);
+                              }
+                            }}
+                            disabled={markPaidMutation.isPending}
+                            className="px-2 py-1 text-xs text-blue-700 bg-blue-50 hover:bg-blue-100 rounded"
+                            title="Mark as Paid"
+                          >
+                            Mark Paid
+                          </button>
+                        )}
+                        {(run.status === 'completed' || run.status === 'paid') && (
+                          <>
+                            <button
+                              onClick={() => handleExport(run.id, 'paye')}
+                              className="px-2 py-1 text-xs text-gray-700 bg-gray-100 hover:bg-gray-200 rounded"
+                              title="Export PAYE CSV"
+                            >
+                              PAYE
+                            </button>
+                            <button
+                              onClick={() => handleExport(run.id, 'nssf')}
+                              className="px-2 py-1 text-xs text-gray-700 bg-gray-100 hover:bg-gray-200 rounded"
+                              title="Export NSSF CSV"
+                            >
+                              NSSF
+                            </button>
+                            <button
+                              onClick={() => handleExport(run.id, 'bank')}
+                              className="px-2 py-1 text-xs text-gray-700 bg-gray-100 hover:bg-gray-200 rounded"
+                              title="Export Bank CSV"
+                            >
+                              Bank
+                            </button>
+                          </>
                         )}
                         {run.status === 'completed' && run.status !== 'paid' && (
                           <button

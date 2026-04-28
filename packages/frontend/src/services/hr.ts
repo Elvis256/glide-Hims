@@ -394,6 +394,24 @@ export const hrService = {
       const response = await api.post<PayrollRun>(`/hr/payroll/${id}/reset`);
       return response.data;
     },
+    approve: async (id: string): Promise<PayrollRun> => {
+      const response = await api.post<PayrollRun>(`/hr/payroll/${id}/approve`);
+      return response.data;
+    },
+    markPaid: async (id: string): Promise<PayrollRun> => {
+      const response = await api.post<PayrollRun>(`/hr/payroll/${id}/mark-paid`);
+      return response.data;
+    },
+    downloadExport: async (id: string, type: 'paye' | 'nssf' | 'bank') => {
+      const response = await api.get(`/hr/payroll/${id}/export/${type}`, { responseType: 'blob' });
+      const blob = new Blob([response.data], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${type}-${id}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    },
     getMyPayslips: async (year?: number): Promise<Payslip[]> => {
       const response = await api.get<Payslip[]>('/hr/my-payslips', { params: { year } });
       return response.data;

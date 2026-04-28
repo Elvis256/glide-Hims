@@ -1050,6 +1050,91 @@ export class HrService {
     });
   }
 
+  async approvePayrollRun(id: string, userId: string, tenantId?: string): Promise<PayrollRun> {
+    const payroll = await this.payrollRunRepo.findOne({
+      where: { id, ...(tenantId ? { tenantId } : {}) },
+    });
+    if (!payroll) throw new NotFoundException('Payroll run not found');
+    if (payroll.status !== PayrollStatus.DRAFT) {
+      throw new BadRequestException('Only draft payroll runs can be approved');
+    }
+    payroll.status = PayrollStatus.APPROVED;
+    (payroll as any).approvedById = userId;
+    (payroll as any).approvedAt = new Date();
+    this.logger.log(`[HR_NOTIFY] payroll.approved id=${id} approver=${userId}`);
+    return this.payrollRunRepo.save(payroll);
+  }
+
+  async markPayrollPaid(id: string, tenantId?: string): Promise<PayrollRun> {
+    const payroll = await this.payrollRunRepo.findOne({
+      where: { id, ...(tenantId ? { tenantId } : {}) },
+    });
+    if (!payroll) throw new NotFoundException('Payroll run not found');
+    if (payroll.status !== PayrollStatus.COMPLETED) {
+      throw new BadRequestException('Only completed payroll runs can be marked paid');
+    }
+    payroll.status = PayrollStatus.PAID;
+    await this.payslipRepo.update({ payrollRunId: id }, { isPaid: true });
+    this.logger.log(`[HR_NOTIFY] payroll.paid id=${id}`);
+    return this.payrollRunRepo.save(payroll);
+  }
+
+  // ============ PAYROLL EXPORTS ============
+  async exportPayrollPaye(id: string, tenantId?: string) {
+    const payroll = await this.payrollRunRepo.findOne({
+      where: { id, ...(tenantId ? { tenantId } : {}) },
+    });
+    if (!payroll) throw new NotFoundException('Payroll run not found');
+    const slips = await this.payslipRepo.find({
+      where: { payrollRunId: id },
+      relations: ['employee'],
+    });
+    const rows = ['EmployeeId,EmployeeName,GrossSalary,PAYE'];
+    for (const s of slips) {
+      const name = (s as any).employee?.fullName || '';
+      rows.push(`${s.employeeId},"${name}",${s.grossSalary},${s.paye}`);
+    }
+    return rows.join('\n');
+  }
+
+  async exportPayrollNssf(id: string, tenantId?: string) {
+    const payroll = await this.payrollRunRepo.findOne({
+      where: { id, ...(tenantId ? { tenantId } : {}) },
+    });
+    if (!payroll) throw new NotFoundException('Payroll run not found');
+    const slips = await this.payslipRepo.find({
+      where: { payrollRunId: id },
+      relations: ['employee'],
+    });
+    const rows = ['EmployeeId,EmployeeName,GrossSalary,NSSFEmployee,NSSFEmployer'];
+    for (const s of slips) {
+      const name = (s as any).employee?.fullName || '';
+      rows.push(
+        `${s.employeeId},"${name}",${s.grossSalary},${s.nssfEmployee},${s.nssfEmployer}`,
+      );
+    }
+    return rows.join('\n');
+  }
+
+  async exportPayrollBank(id: string, tenantId?: string) {
+    const payroll = await this.payrollRunRepo.findOne({
+      where: { id, ...(tenantId ? { tenantId } : {}) },
+    });
+    if (!payroll) throw new NotFoundException('Payroll run not found');
+    const slips = await this.payslipRepo.find({
+      where: { payrollRunId: id },
+      relations: ['employee'],
+    });
+    const rows = ['BeneficiaryName,BankName,AccountNumber,Amount,Reference'];
+    for (const s of slips) {
+      const e: any = (s as any).employee || {};
+      rows.push(
+        `"${e.fullName || ''}","${e.bankName || ''}","${e.bankAccountNumber || ''}",${s.netSalary},${payroll.payrollNumber}`,
+      );
+    }
+    return rows.join('\n');
+  }
+
   async resetPayrollRun(id: string, tenantId?: string): Promise<PayrollRun> {
     const payroll = await this.payrollRunRepo.findOne({
       where: { id, ...(tenantId ? { tenantId } : {}) },
@@ -1691,6 +1776,18 @@ export class HrService {
   }
 
   // ============ RECRUITMENT - APPLICATIONS ============
+
+  async getPublishedJobs(facilityId?: string): Promise<JobPosting[]> {
+    const where: any = { status: JobStatus.OPEN };
+    if (facilityId) where.facilityId = facilityId;
+    return this.jobPostingRepo.find({ where, order: { createdAt: 'DESC' } });
+  }
+
+  async getPublishedJobById(id: string): Promise<JobPosting> {
+    const posting = await this.jobPostingRepo.findOne({ where: { id, status: JobStatus.OPEN } });
+    if (!posting) throw new NotFoundException('Job posting not found');
+    return posting;
+  }
 
   async createJobApplication(
     dto: CreateJobApplicationDto,

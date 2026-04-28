@@ -13,6 +13,7 @@ import { User } from './user.entity';
 
 export enum PayrollStatus {
   DRAFT = 'draft',
+  APPROVED = 'approved',
   PROCESSING = 'processing',
   COMPLETED = 'completed',
   PAID = 'paid',
@@ -81,6 +82,12 @@ export class PayrollRun {
   @ManyToOne(() => User)
   @JoinColumn({ name: 'created_by_id' })
   createdBy: User;
+
+  @Column({ type: 'uuid', nullable: true, name: 'approved_by_id' })
+  approvedById?: string;
+
+  @Column({ type: 'timestamp', nullable: true, name: 'approved_at' })
+  approvedAt?: Date;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

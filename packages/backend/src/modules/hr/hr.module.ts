@@ -26,6 +26,11 @@ import { UserRole } from '../../database/entities/user-role.entity';
 import { DisciplinaryAction } from '../../database/entities/disciplinary-action.entity';
 import { SalaryHistory } from '../../database/entities/salary-history.entity';
 import { OnboardingTask } from '../../database/entities/onboarding-task.entity';
+import { PerformanceImprovementPlan } from '../../database/entities/performance-improvement-plan.entity';
+import { EmployeeGoal } from '../../database/entities/employee-goal.entity';
+import { LetterTemplate } from '../../database/entities/letter-template.entity';
+import { CareersPublicController } from './careers-public.controller';
+import { HrExtrasController } from './hr-extras.controller';
 import { SystemSettingsModule } from '../system-settings/system-settings.module';
 import { FinanceModule } from '../finance/finance.module';
 
@@ -53,6 +58,9 @@ import { FinanceModule } from '../finance/finance.module';
       DisciplinaryAction,
       SalaryHistory,
       OnboardingTask,
+      PerformanceImprovementPlan,
+      EmployeeGoal,
+      LetterTemplate,
     ]),
     SystemSettingsModule,
     forwardRef(() => FinanceModule),
@@ -76,7 +84,7 @@ import { FinanceModule } from '../finance/finance.module';
       limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
     }),
   ],
-  controllers: [HrController],
+  controllers: [HrController, CareersPublicController, HrExtrasController],
   providers: [HrService],
   exports: [HrService],
 })
