@@ -29,6 +29,7 @@ import { Loading } from '../../../components/Loading';
 import { hrService, type Employee, type CreateEmployeeDto } from '../../../services/hr';
 import { facilitiesService, rolesService } from '../../../services';
 import { api } from '../../../services/api';
+import SearchableSelect from '../../../components/SearchableSelect';
 
 // Error Boundary Component
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
@@ -218,6 +219,16 @@ function StaffDirectoryPageContent() {
 
   const staff: Employee[] = Array.isArray(employeesData) ? employeesData : [];
   const totalStaff = staff.length;
+
+  const designationOptions = useMemo(
+    () =>
+      designationsList.map((d) => ({
+        value: d.title,
+        label: d.title,
+        prefix: d.grade || undefined,
+      })),
+    [designationsList],
+  );
   
   const departments = useMemo(() => {
     const deptNames = staff.map((s: Employee) => {
@@ -671,14 +682,6 @@ function StaffDirectoryPageContent() {
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">
-      {/* Shared datalist for Job Title combo inputs */}
-      <datalist id="designations-options">
-        {designationsList.map((d) => (
-          <option key={d.id} value={d.title}>
-            {d.department ? `${d.department}${d.grade ? ' · ' + d.grade : ''}` : d.grade || ''}
-          </option>
-        ))}
-      </datalist>
       {/* Header */}
       <div className="flex-shrink-0 mb-6">
         <div className="flex items-center justify-between">
@@ -1032,15 +1035,15 @@ function StaffDirectoryPageContent() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Job Title <span className="text-xs text-gray-400">(pick a designation or type)</span>
+                  Job Title <span className="text-xs text-gray-400">(searchable)</span>
                 </label>
-                <input
-                  type="text"
-                  list="designations-options"
-                  className="w-full border rounded-lg px-3 py-2"
-                  placeholder={designationsList.length ? 'Select or type…' : 'e.g. Doctor, Nurse, Receptionist'}
+                <SearchableSelect
+                  options={designationOptions}
                   value={newStaff.jobTitle}
-                  onChange={(e) => setNewStaff({ ...newStaff, jobTitle: e.target.value })}
+                  onChange={(v) => setNewStaff({ ...newStaff, jobTitle: v })}
+                  placeholder={designationOptions.length ? 'Search designations…' : 'Type job title…'}
+                  allowFreeText
+                  noOptionsText="No matching designation — press Enter to use as-is"
                 />
               </div>
               <div>
@@ -1247,15 +1250,15 @@ function StaffDirectoryPageContent() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Job Title <span className="text-xs text-gray-400">(pick a designation or type)</span>
+                  Job Title <span className="text-xs text-gray-400">(searchable)</span>
                 </label>
-                <input
-                  type="text"
-                  list="designations-options"
-                  className="w-full border rounded-lg px-3 py-2"
-                  placeholder={designationsList.length ? 'Select or type…' : 'e.g. Doctor, Nurse'}
+                <SearchableSelect
+                  options={designationOptions}
                   value={editForm.jobTitle}
-                  onChange={(e) => setEditForm({ ...editForm, jobTitle: e.target.value })}
+                  onChange={(v) => setEditForm({ ...editForm, jobTitle: v })}
+                  placeholder={designationOptions.length ? 'Search designations…' : 'Type job title…'}
+                  allowFreeText
+                  noOptionsText="No matching designation — press Enter to use as-is"
                 />
               </div>
               <div>
