@@ -9,6 +9,7 @@ import { AppController } from './app.controller';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
+import { SystemDocsModule } from './modules/system-docs/system-docs.module';
 import { FacilitiesModule } from './modules/facilities/facilities.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { PatientsModule } from './modules/patients/patients.module';
@@ -138,6 +139,7 @@ import { DeploymentsModule } from './modules/deployments/deployment.module';
     AuthModule,
     UsersModule,
     TenantsModule,
+    SystemDocsModule,
     AdminModule,
     FacilitiesModule,
     RolesModule,

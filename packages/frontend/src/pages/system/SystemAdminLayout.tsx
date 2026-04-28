@@ -19,6 +19,7 @@ import {
   Download,
   KeyRound,
   ShieldAlert,
+  BookOpen,
 } from 'lucide-react';
 
 const sidebarItems = [
@@ -32,6 +33,7 @@ const sidebarItems = [
   { name: 'Licenses', href: '/system/licenses', icon: KeyRound },
   { name: 'Compliance Center', href: '/system/compliance', icon: ClipboardCheck },
   { name: 'Security & Blocks', href: '/system/security', icon: ShieldAlert },
+  { name: 'Documentation', href: '/system/docs', icon: BookOpen },
   { name: 'Settings', href: '/system/settings', icon: Settings },
 ];
 
