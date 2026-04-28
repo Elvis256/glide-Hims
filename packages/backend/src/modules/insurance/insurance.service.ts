@@ -9,6 +9,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, LessThan, MoreThan, IsNull, DataSource } from 'typeorm';
 import { FinanceService } from '../finance/finance.service';
+import { BillingService } from '../billing/billing.service';
 import { InsuranceProvider } from '../../database/entities/insurance-provider.entity';
 import { InsurancePolicy, PolicyStatus } from '../../database/entities/insurance-policy.entity';
 import { InsuranceClaim, ClaimStatus } from '../../database/entities/insurance-claim.entity';
@@ -52,6 +53,8 @@ export class InsuranceService {
     private invoiceRepo: Repository<Invoice>,
     @Inject(forwardRef(() => FinanceService))
     private financeService: FinanceService,
+    @Inject(forwardRef(() => BillingService))
+    private billingService: BillingService,
     private dataSource: DataSource,
   ) {}
 
@@ -610,6 +613,25 @@ export class InsuranceService {
     await this.policyRepo.save(policy);
 
     const saved = await this.claimRepo.save(claim);
+
+    // Also reflect the insurance payment on the underlying invoice so the invoice
+    // balance closes (or goes to PARTIALLY_PAID if patient still owes a copay).
+    if (claim.invoiceId && dto.paidAmount > 0) {
+      await this.billingService
+        .recordInsuranceClaimPayment(
+          claim.invoiceId,
+          dto.paidAmount,
+          claim.claimNumber,
+          dto.paymentReference,
+          'system',
+          tenantId,
+        )
+        .catch((err: any) =>
+          this.logger.warn(
+            `Failed to mirror claim payment ${claim.claimNumber} onto invoice ${claim.invoiceId}: ${err.message}`,
+          ),
+        );
+    }
 
     // Auto-post GL entry: DR Cash/Bank, CR Accounts Receivable
     if (claim.facilityId) {

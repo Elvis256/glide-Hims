@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BillingController } from './billing.controller';
 import { BillingService } from './billing.service';
@@ -18,7 +18,7 @@ import { InsuranceModule } from '../insurance/insurance.module';
     SystemSettingsModule,
     FinanceModule,
     PricingEngineModule,
-    InsuranceModule,
+    forwardRef(() => InsuranceModule),
   ],
   controllers: [BillingController],
   providers: [BillingService],

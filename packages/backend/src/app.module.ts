@@ -18,6 +18,7 @@ import { VitalsModule } from './modules/vitals/vitals.module';
 import { ClinicalNotesModule } from './modules/clinical-notes/clinical-notes.module';
 import { PrescriptionsModule } from './modules/prescriptions/prescriptions.module';
 import { BillingModule } from './modules/billing/billing.module';
+import { PaymentGatewayModule } from './modules/payment-gateway/payment-gateway.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { IpdModule } from './modules/ipd/ipd.module';
@@ -151,6 +152,7 @@ import { DeploymentsModule } from './modules/deployments/deployment.module';
     ClinicalNotesModule,
     PrescriptionsModule,
     BillingModule,
+    PaymentGatewayModule,
     InventoryModule,
     OrdersModule,
 

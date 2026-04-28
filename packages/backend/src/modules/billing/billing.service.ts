@@ -7,6 +7,7 @@ import {
   Payment,
   InvoiceStatus,
   PaymentStatus,
+  PaymentMethod,
 } from '../../database/entities/invoice.entity';
 import { Encounter, EncounterStatus } from '../../database/entities/encounter.entity';
 import { Queue, QueueStatus } from '../../database/entities/queue.entity';
@@ -567,6 +568,13 @@ export class BillingService {
 
       const savedPayment = await manager.save(payment);
 
+      // For cash payments without an external reference, stamp the receipt number
+      // back as the transaction reference so every payment row has a traceable code.
+      if (!savedPayment.transactionReference) {
+        savedPayment.transactionReference = receiptNumber;
+        await manager.save(savedPayment);
+      }
+
       // Update invoice totals
       invoice.amountPaid = Number(invoice.amountPaid) + dto.amount;
       invoice.balanceDue = Number(invoice.totalAmount) - Number(invoice.amountPaid);
@@ -818,6 +826,195 @@ export class BillingService {
       }
 
       return payment;
+    });
+  }
+
+  /**
+   * Issue a partial or full refund against a single payment.
+   * Creates a counter-Payment row with status=REFUNDED and amount = -refundAmount,
+   * adjusts the parent invoice balance, and posts a GL reversal for the refund leg.
+   * Maker-checker: the original receiver cannot also process the refund.
+   */
+  async refundPayment(
+    paymentId: string,
+    refundAmount: number,
+    reason: string,
+    userId: string,
+    tenantId?: string,
+  ): Promise<Payment> {
+    if (!refundAmount || refundAmount <= 0) {
+      throw new BadRequestException('Refund amount must be greater than zero');
+    }
+    if (!reason || !reason.trim()) {
+      throw new BadRequestException('Refund reason is required');
+    }
+
+    return this.dataSource.transaction(async (manager) => {
+      const paymentRepo = manager.getRepository(Payment);
+      const invoiceRepo = manager.getRepository(Invoice);
+
+      const original = await paymentRepo.findOne({
+        where: { id: paymentId, ...(tenantId ? { tenantId } : {}) },
+        relations: ['invoice', 'invoice.encounter'],
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!original) throw new NotFoundException('Payment not found');
+      if (original.status !== PaymentStatus.COMPLETED) {
+        throw new BadRequestException(
+          `Cannot refund a payment with status '${original.status}'`,
+        );
+      }
+      if (original.receivedById === userId) {
+        throw new BadRequestException(
+          'Segregation of duties violation: the payment receiver cannot process its refund',
+        );
+      }
+
+      // How much of this payment is still refundable?
+      const priorRefunds = await paymentRepo
+        .createQueryBuilder('p')
+        .where('p.transactionReference = :ref', {
+          ref: `REFUND-${original.receiptNumber}`,
+        })
+        .andWhere('p.status = :st', { st: PaymentStatus.REFUNDED })
+        .getMany();
+      const alreadyRefunded = priorRefunds.reduce(
+        (sum, p) => sum + Math.abs(Number(p.amount)),
+        0,
+      );
+      const remaining = Number(original.amount) - alreadyRefunded;
+      if (refundAmount > remaining) {
+        throw new BadRequestException(
+          `Refund amount ${refundAmount} exceeds remaining refundable balance ${remaining}`,
+        );
+      }
+
+      const refundReceipt = `REF${original.receiptNumber.replace(/^RCP/, '')}-${Date.now().toString().slice(-4)}`;
+
+      const refund = manager.create(Payment, {
+        receiptNumber: refundReceipt,
+        invoiceId: original.invoiceId,
+        amount: -Math.abs(refundAmount),
+        method: original.method,
+        status: PaymentStatus.REFUNDED,
+        transactionReference: `REFUND-${original.receiptNumber}`,
+        notes: `Partial refund of payment ${original.receiptNumber}: ${reason}`,
+        receivedById: userId,
+        ...(tenantId ? { tenantId } : {}),
+      });
+      const savedRefund = await manager.save(refund);
+
+      // If the entire payment is refunded, mark the original VOIDED to keep ledger tidy
+      if (alreadyRefunded + refundAmount >= Number(original.amount)) {
+        original.status = PaymentStatus.VOIDED;
+        original.notes =
+          `${original.notes || ''}\nFully refunded by ${userId}: ${reason}`.trim();
+        await paymentRepo.save(original);
+      }
+
+      // Adjust invoice balance
+      if (original.invoice) {
+        const invoice = await invoiceRepo.findOne({
+          where: { id: original.invoice.id },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (invoice) {
+          invoice.amountPaid = Number(invoice.amountPaid) - refundAmount;
+          if (invoice.amountPaid < 0) invoice.amountPaid = 0;
+          invoice.balanceDue = Number(invoice.totalAmount) - Number(invoice.amountPaid);
+
+          if (invoice.amountPaid <= 0) {
+            invoice.status = InvoiceStatus.REFUNDED;
+          } else if (invoice.balanceDue > 0) {
+            invoice.status = InvoiceStatus.PARTIALLY_PAID;
+          }
+          invoice.notes = `${invoice.notes || ''}\nRefund (${refundAmount}): ${reason}`.trim();
+          await invoiceRepo.save(invoice);
+        }
+
+        // GL reversal for the refund leg
+        const facilityId = original.invoice.encounter?.facilityId;
+        if (facilityId && refundAmount > 0) {
+          this.financeService
+            .autoPostPatientPaymentJournal(
+              {
+                facilityId,
+                receiptNumber: refundReceipt,
+                amount: -refundAmount,
+                paymentMethod: original.method || 'cash',
+                userId,
+              },
+              tenantId,
+            )
+            .catch((err) =>
+              this.logger.error(
+                `GL reversal failed for refund ${refundReceipt}: ${err.message}`,
+                { receiptNumber: refundReceipt, refundAmount, error: err.stack },
+              ),
+            );
+        }
+      }
+
+      return savedRefund;
+    });
+  }
+
+  /**
+   * Internal helper used by InsuranceService when a claim payment is recorded.
+   * Creates a Payment row of method=INSURANCE on the claim's invoice so the invoice
+   * balance reflects insurance settlement automatically.
+   * Idempotent on transactionReference (claim number).
+   */
+  async recordInsuranceClaimPayment(
+    invoiceId: string,
+    amount: number,
+    claimNumber: string,
+    paymentReference: string | undefined,
+    userId: string,
+    tenantId?: string,
+  ): Promise<Payment | null> {
+    if (!invoiceId || !amount || amount <= 0) return null;
+
+    return this.dataSource.transaction(async (manager) => {
+      const txnRef = `CLAIM-${claimNumber}`;
+      const existing = await manager.findOne(Payment, {
+        where: { transactionReference: txnRef, ...(tenantId ? { tenantId } : {}) },
+      });
+      if (existing) return existing;
+
+      const invoice = await manager.findOne(Invoice, {
+        where: { id: invoiceId, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!invoice) return null;
+
+      const settle = Math.min(amount, Number(invoice.balanceDue));
+      if (settle <= 0) return null;
+
+      const receiptNumber = await this.generateReceiptNumber(tenantId);
+      const payment = manager.create(Payment, {
+        receiptNumber,
+        invoiceId,
+        amount: settle,
+        method: PaymentMethod.INSURANCE,
+        transactionReference: txnRef,
+        notes: `Insurance settlement for claim ${claimNumber}${paymentReference ? ` (ref ${paymentReference})` : ''}`,
+        receivedById: userId,
+        ...(tenantId ? { tenantId } : {}),
+      });
+      const saved = await manager.save(payment);
+
+      invoice.amountPaid = Number(invoice.amountPaid) + settle;
+      invoice.balanceDue = Number(invoice.totalAmount) - Number(invoice.amountPaid);
+      if (invoice.balanceDue <= 0) {
+        invoice.status = InvoiceStatus.PAID;
+      } else {
+        invoice.status = InvoiceStatus.PARTIALLY_PAID;
+      }
+      await manager.save(invoice);
+
+      return saved;
     });
   }
 
