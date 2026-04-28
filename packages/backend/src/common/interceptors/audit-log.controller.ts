@@ -10,7 +10,7 @@ export class AuditLogController {
   constructor(private readonly auditLogService: AuditLogService) {}
 
   @Get()
-  @AuthWithPermissions('admin.audit')
+  @AuthWithPermissions('audit.read')
   @ApiOperation({ summary: 'Get audit logs with filters' })
   async findAll(
     @Query('page') page = '1',
@@ -40,7 +40,7 @@ export class AuditLogController {
   }
 
   @Get('stats')
-  @AuthWithPermissions('admin.audit')
+  @AuthWithPermissions('audit.read')
   @ApiOperation({ summary: 'Get audit log statistics' })
   async getStats(@Request() req?: any) {
     return this.auditLogService.getStats(req?.user?.tenantId);

@@ -124,7 +124,7 @@ export class BillingController {
   }
 
   @Patch('invoices/:id/refund')
-  @AuthWithPermissions('billing.update')
+  @AuthWithPermissions('billing.refund')
   @ApiOperation({ summary: 'Refund invoice' })
   refundInvoice(
     @Param('id', ParseUUIDPipe) id: string,
@@ -161,7 +161,7 @@ export class BillingController {
   }
 
   @Post('payments')
-  @AuthWithPermissions('billing.create')
+  @AuthWithPermissions('billing.collect_payment')
   @ApiOperation({ summary: 'Record payment' })
   recordPayment(@Body() dto: CreatePaymentDto, @Request() req: any) {
     return this.billingService.recordPayment(dto, req.user.id, req.user?.tenantId);
@@ -179,7 +179,7 @@ export class BillingController {
   }
 
   @Post('payments/:id/refund')
-  @AuthWithPermissions('billing.update')
+  @AuthWithPermissions('billing.refund')
   @ApiOperation({ summary: 'Issue a partial or full refund against a payment' })
   refundPayment(
     @Param('id', ParseUUIDPipe) id: string,

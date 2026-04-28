@@ -122,13 +122,13 @@ export class InventoryController {
   }
 
   @Post('stock/adjust')
-  @AuthWithPermissions('inventory.update')
+  @AuthWithPermissions('inventory.adjust')
   async adjustStock(@Body() dto: StockAdjustmentDto, @Request() req: any) {
     return this.inventoryService.adjustStock(dto, req.user.id, req.user?.tenantId);
   }
 
   @Post('stock/transfer')
-  @AuthWithPermissions('inventory.create')
+  @AuthWithPermissions('inventory.transfer')
   async transferStock(@Body() dto: StockTransferDto, @Request() req: any) {
     return this.inventoryService.transferStock(dto, req.user.id, req.user?.tenantId);
   }

@@ -370,6 +370,21 @@ const defaultPermissions = [
 
   // Procurement Sub-permissions
   { code: 'procurement.delete', name: 'Delete Procurement', module: 'procurement' },
+
+  // ── Audit additions (controllers reference these but they were missing) ──
+  { code: 'admin.backup', name: 'Manage System Backups', module: 'admin' },
+  { code: 'data.export', name: 'Export System Data', module: 'admin' },
+  { code: 'pos.manage', name: 'Manage Point of Sale', module: 'billing' },
+  { code: 'pos.shift', name: 'Open/Close POS Shift', module: 'billing' },
+  { code: 'prescriptions.delete', name: 'Delete Prescriptions', module: 'pharmacy' },
+  { code: 'settings.manage', name: 'Manage System Settings', module: 'admin' },
+  { code: 'stock-transfer.read', name: 'View Stock Transfers', module: 'inventory' },
+  { code: 'stock-transfer.create', name: 'Create Stock Transfers', module: 'inventory' },
+  { code: 'stock-transfer.ship', name: 'Ship Stock Transfers', module: 'inventory' },
+  { code: 'stock-transfer.receive', name: 'Receive Stock Transfers', module: 'inventory' },
+  { code: 'stock-transfer.approve', name: 'Approve Stock Transfers', module: 'inventory' },
+  { code: 'system.admin', name: 'System Administration', module: 'admin' },
+  { code: 'wholesale.manage', name: 'Manage Wholesale Operations', module: 'billing' },
 ];
 
 // Default roles
@@ -444,7 +459,9 @@ export async function seed(dataSource: DataSource) {
   // 4. Assign permissions to Administrator (all except tenant management)
   console.log('\n🔐 Assigning permissions to Administrator...');
   const adminRole = roles['Administrator'];
-  const adminPermissions = permissions.filter((p) => !p.code.startsWith('tenants.'));
+  const adminPermissions = permissions.filter(
+    (p) => !p.code.startsWith('tenants.') && p.code !== 'system.admin',
+  );
   for (const permission of adminPermissions) {
     const exists = await rolePermissionRepo.findOne({
       where: { roleId: adminRole.id, permissionId: permission.id },
@@ -542,8 +559,7 @@ export async function seed(dataSource: DataSource) {
       'stores.read',
       'billing.read',
     ],
-    Nurse: [
-      'facilities.read',
+    Nurse: [      'facilities.read',
       'dashboard.read',
       'patients.read',
       'patients.update',
@@ -612,8 +628,7 @@ export async function seed(dataSource: DataSource) {
       'triage.read',
       'services.read',
     ],
-    'Lab Technician': [
-      'facilities.read',
+    'Lab Technician': [      'facilities.read',
       'dashboard.read',
       'patients.read',
       'encounters.read',
@@ -628,6 +643,9 @@ export async function seed(dataSource: DataSource) {
       'providers.read',
       'analytics.read',
       'pharmacy.read', // Dashboard stats
+      'inventory.read', // reagents/supplies
+      'appointments.read',
+      'reports.read',
     ],
     Pharmacist: [
       'facilities.read',
@@ -635,12 +653,17 @@ export async function seed(dataSource: DataSource) {
       'patients.read',
       'encounters.read',
       'prescriptions.read',
+      'prescriptions.create',
       'prescriptions.update',
+      'prescriptions.delete',
       'pharmacy.read',
       'pharmacy.create',
       'pharmacy.update',
       'inventory.read',
+      'inventory.create',
       'inventory.update',
+      'inventory.adjust',
+      'inventory.transfer',
       'orders.read',
       'queue.read',
       'queue.update',
@@ -649,6 +672,11 @@ export async function seed(dataSource: DataSource) {
       'disposal.read',
       'disposal.create',
       'supplier-returns.read',
+      'wholesale.manage',
+      'reports.read',
+      'billing.read',
+      'billing.create',
+      'billing.collect_payment',
     ],
     Cashier: [
       'facilities.read',
@@ -658,6 +686,10 @@ export async function seed(dataSource: DataSource) {
       'billing.read',
       'billing.create',
       'billing.update',
+      'billing.collect_payment',
+      'billing.refund',
+      'pos.manage',
+      'pos.shift',
       'analytics.read',
       'pharmacy.read', // Dashboard stats
       'lab.read', // Dashboard stats
@@ -667,6 +699,7 @@ export async function seed(dataSource: DataSource) {
       'finance.journals.read',
       'finance.reports.read',
       'insurance.read',
+      'insurance.verify',
       'insurance.claims.read',
       'insurance.claims.create',
       'insurance.policies.read',
@@ -724,10 +757,8 @@ export async function seed(dataSource: DataSource) {
       'users.read',
       'users.create',
       'users.update',
-      // Facilities/Departments - Can view and manage departments
+      // Facilities/Departments - read-only (HR shouldn't create new sites)
       'facilities.read',
-      'facilities.create',
-      'facilities.update',
       // Analytics and Reports
       'analytics.read',
       'reports.read',
@@ -762,9 +793,9 @@ export async function seed(dataSource: DataSource) {
       'orders.update',
       // Analytics
       'analytics.read',
-      // Queue
       'queue.read',
       'reports.read',
+      'appointments.read',
     ],
     Accountant: [
       'facilities.read',
@@ -776,6 +807,7 @@ export async function seed(dataSource: DataSource) {
       'billing.read',
       'billing.create',
       'billing.update',
+      'billing.refund',
       // Finance (full)
       'finance.read',
       'finance.accounts.read',
@@ -787,9 +819,15 @@ export async function seed(dataSource: DataSource) {
       'insurance.claims.read',
       'insurance.claims.create',
       'insurance.policies.read',
+      // HR / payroll context
+      'hr.read',
+      'payroll.read',
+      // Audit
+      'audit.read',
       // Reporting / analytics
       'analytics.read',
       'reports.read',
+      'data.export',
     ],
   };
 
