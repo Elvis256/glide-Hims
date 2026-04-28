@@ -42,6 +42,82 @@ function daysUntil(iso: string) {
   return Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000);
 }
 
+// Module catalog grouped for the Issue License modal. Names match the
+// preset module slugs the backend expects (see facility-presets.constants.ts).
+const MODULE_CATALOG: Array<{ group: string; modules: Array<{ id: string; label: string }> }> = [
+  {
+    group: 'Core Clinical',
+    modules: [
+      { id: 'patients', label: 'Registration / Patients' },
+      { id: 'appointments', label: 'Appointments' },
+      { id: 'encounters', label: 'Encounters / Doctors' },
+      { id: 'vitals', label: 'Vitals / Nursing' },
+      { id: 'emergency', label: 'Emergency / Triage' },
+    ],
+  },
+  {
+    group: 'Diagnostics',
+    modules: [
+      { id: 'lab', label: 'Laboratory' },
+      { id: 'radiology', label: 'Radiology / Imaging' },
+    ],
+  },
+  {
+    group: 'Pharmacy & Inventory',
+    modules: [
+      { id: 'pharmacy', label: 'Pharmacy / Dispensing' },
+      { id: 'controlled_substances', label: 'Controlled Substances' },
+      { id: 'drug_interactions', label: 'Drug Interactions' },
+      { id: 'inventory', label: 'Inventory / Stores' },
+      { id: 'suppliers', label: 'Suppliers' },
+      { id: 'wholesale', label: 'Wholesale / POS' },
+    ],
+  },
+  {
+    group: 'Inpatient',
+    modules: [
+      { id: 'ipd', label: 'IPD / Wards' },
+      { id: 'theatre', label: 'Theatre / Surgery' },
+      { id: 'maternity', label: 'Maternity' },
+    ],
+  },
+  {
+    group: 'Specialty',
+    modules: [
+      { id: 'dental_charting', label: 'Dental Charting' },
+      { id: 'dental_procedures', label: 'Dental Procedures' },
+      { id: 'orthodontics', label: 'Orthodontics' },
+      { id: 'periodontics', label: 'Periodontics' },
+      { id: 'optical_exams', label: 'Optical Exams' },
+      { id: 'optical_rx', label: 'Optical Rx' },
+      { id: 'contact_lenses', label: 'Contact Lenses' },
+    ],
+  },
+  {
+    group: 'Finance & Admin',
+    modules: [
+      { id: 'billing', label: 'Billing & Invoicing' },
+      { id: 'insurance', label: 'Insurance' },
+      { id: 'finance', label: 'Finance / Accounting' },
+      { id: 'reports', label: 'Reports & Analytics' },
+      { id: 'hr', label: 'Human Resources' },
+    ],
+  },
+];
+
+const ALL_MODULE_IDS = MODULE_CATALOG.flatMap((g) => g.modules.map((m) => m.id));
+
+const TIER_DEFAULT_MODULES: Record<string, string[]> = {
+  trial: ['patients', 'encounters', 'billing', 'reports'],
+  standard: ['patients', 'encounters', 'vitals', 'lab', 'pharmacy', 'inventory', 'billing', 'reports', 'appointments'],
+  professional: [
+    'patients', 'encounters', 'vitals', 'lab', 'radiology', 'pharmacy',
+    'inventory', 'billing', 'insurance', 'reports', 'appointments', 'ipd',
+    'emergency', 'theatre',
+  ],
+  enterprise: ALL_MODULE_IDS,
+};
+
 export default function SystemLicensesPage() {
   const [items, setItems] = useState<License[]>([]);
   const [tenants, setTenants] = useState<Tenant[]>([]);
@@ -247,8 +323,20 @@ function CreateLicenseModal({
   const [validityDays, setValidityDays] = useState(365);
   const [maxUsers, setMaxUsers] = useState(50);
   const [maxFacilities, setMaxFacilities] = useState(1);
+  const [enabledModules, setEnabledModules] = useState<string[]>(TIER_DEFAULT_MODULES.professional);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  const onTierChange = (tier: 'trial' | 'standard' | 'professional' | 'enterprise') => {
+    setLicenseType(tier);
+    setEnabledModules(TIER_DEFAULT_MODULES[tier] || []);
+  };
+
+  const toggleModule = (id: string) => {
+    setEnabledModules((prev) =>
+      prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id],
+    );
+  };
 
   const submit = async () => {
     if (!tenantId) { setErr('Select a tenant'); return; }
@@ -264,6 +352,7 @@ function CreateLicenseModal({
         maxUsers,
         maxFacilities,
         validityDays,
+        enabledModules,
       });
       onCreated();
     } catch (e: any) {
@@ -275,14 +364,14 @@ function CreateLicenseModal({
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-lg w-full">
+      <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] flex flex-col">
         <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
             <ShieldCheck className="w-5 h-5 text-indigo-600" /> Issue License
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">✕</button>
         </div>
-        <div className="px-5 py-4 space-y-3 text-sm">
+        <div className="px-5 py-4 space-y-3 text-sm overflow-y-auto">
           {err && <div className="p-2 bg-rose-50 text-rose-700 rounded text-xs">{err}</div>}
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Tenant *</label>
@@ -323,7 +412,7 @@ function CreateLicenseModal({
               <select
                 className="w-full px-3 py-2 border border-gray-300 rounded"
                 value={licenseType}
-                onChange={(e) => setLicenseType(e.target.value as any)}
+                onChange={(e) => onTierChange(e.target.value as any)}
               >
                 <option value="trial">Trial</option>
                 <option value="standard">Standard</option>
@@ -360,6 +449,62 @@ function CreateLicenseModal({
                 value={maxFacilities}
                 onChange={(e) => setMaxFacilities(parseInt(e.target.value) || 1)}
               />
+            </div>
+          </div>
+
+          <div className="pt-2 border-t border-gray-200">
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-xs font-semibold text-gray-700">
+                Enabled Modules <span className="text-gray-400 font-normal">({enabledModules.length} selected)</span>
+              </label>
+              <div className="flex gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setEnabledModules(ALL_MODULE_IDS)}
+                  className="text-indigo-600 hover:underline"
+                >
+                  Select all
+                </button>
+                <span className="text-gray-300">·</span>
+                <button
+                  type="button"
+                  onClick={() => setEnabledModules([])}
+                  className="text-gray-600 hover:underline"
+                >
+                  Clear
+                </button>
+                <span className="text-gray-300">·</span>
+                <button
+                  type="button"
+                  onClick={() => setEnabledModules(TIER_DEFAULT_MODULES[licenseType] || [])}
+                  className="text-gray-600 hover:underline"
+                >
+                  Tier defaults
+                </button>
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 mb-2">
+              These modules will be unlocked for the tenant immediately after the license is issued.
+            </p>
+            <div className="space-y-3 max-h-72 overflow-y-auto pr-1 border border-gray-200 rounded p-3 bg-gray-50">
+              {MODULE_CATALOG.map((group) => (
+                <div key={group.group}>
+                  <div className="text-xs font-semibold text-gray-600 mb-1">{group.group}</div>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                    {group.modules.map((m) => (
+                      <label key={m.id} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-white px-1 py-0.5 rounded">
+                        <input
+                          type="checkbox"
+                          className="rounded text-indigo-600 focus:ring-indigo-500"
+                          checked={enabledModules.includes(m.id)}
+                          onChange={() => toggleModule(m.id)}
+                        />
+                        <span>{m.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
