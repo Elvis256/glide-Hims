@@ -4,6 +4,7 @@ import {
   IsUUID,
   IsArray,
   ValidateNested,
+  ValidateIf,
   IsNumber,
   IsDateString,
   IsEnum,
@@ -133,9 +134,11 @@ export class CreatePaymentDto {
   @IsEnum(PaymentMethod)
   method: PaymentMethod;
 
+  @ValidateIf((o) => o.method !== PaymentMethod.CASH)
   @IsString()
   @IsNotEmpty({ message: 'Transaction reference is required for non-cash payments' })
-  transactionReference: string;
+  @IsOptional()
+  transactionReference?: string;
 
   @IsString()
   @IsOptional()
