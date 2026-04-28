@@ -6,7 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, ILike, DataSource, IsNull } from 'typeorm';
+import { Repository, Like, ILike, DataSource, IsNull, In } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { User } from '../../database/entities/user.entity';
@@ -1127,5 +1127,28 @@ export class UsersService {
     }
 
     return rows;
+  }
+
+  async bulkForcePasswordReset(userIds: string[], tenantId?: string) {
+    if (!userIds?.length) throw new BadRequestException('No user IDs provided');
+    const where: any = { id: In(userIds) };
+    if (tenantId) where.tenantId = tenantId;
+    const result = await this.userRepository.update(where, {
+      mustChangePassword: true,
+    } as any);
+    // Best-effort revoke of active sessions
+    try {
+      await this.userRepository.manager
+        .getRepository('UserSession')
+        .createQueryBuilder()
+        .update()
+        .set({ revokedAt: () => 'NOW()', isActive: false })
+        .where('user_id IN (:...ids)', { ids: userIds })
+        .andWhere('is_active = true')
+        .execute();
+    } catch {
+      /* sessions table optional; ignore */
+    }
+    return { affected: result.affected || 0, userIds };
   }
 }

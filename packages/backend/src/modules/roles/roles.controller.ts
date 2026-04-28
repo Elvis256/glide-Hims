@@ -50,6 +50,13 @@ export class RolesController {
     return this.rolesService.findRoleWithPermissions(id, req.user?.tenantId);
   }
 
+  @Get(':id/users')
+  @AuthWithPermissions('roles.read')
+  @ApiOperation({ summary: 'List users assigned to this role' })
+  async getRoleUsers(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.rolesService.getRoleUsers(id, req.user?.tenantId);
+  }
+
   @Patch(':id')
   @AuthWithPermissions('roles.update')
   @ApiOperation({ summary: 'Update role' })

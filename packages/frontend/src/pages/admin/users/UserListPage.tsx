@@ -319,6 +319,18 @@ export default function UserListPage() {
     setSelectedUsers([]);
   };
 
+  const handleBulkForcePasswordReset = async () => {
+    if (!confirm(`Force ${selectedUsers.length} user(s) to change password on next login? Active sessions will be revoked.`)) return;
+    try {
+      const { default: api } = await import('../../../services/api');
+      await api.post('/users/bulk-force-password-reset', { userIds: selectedUsers });
+      toast.success(`${selectedUsers.length} user(s) flagged for password reset`);
+      setSelectedUsers([]);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Bulk password reset failed');
+    }
+  };
+
   const handleViewUser = (user: User) => {
     setViewingUser(user);
     setShowViewModal(true);
@@ -517,6 +529,12 @@ export default function UserListPage() {
           >
             <Trash2 className="w-4 h-4" />
             Delete
+          </button>
+          <button 
+            onClick={handleBulkForcePasswordReset}
+            className="text-sm text-purple-600 hover:text-purple-800 flex items-center gap-1"
+          >
+            🔑 Force Password Reset
           </button>
           <button 
             onClick={() => setSelectedUsers([])}
