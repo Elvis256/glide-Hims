@@ -73,6 +73,9 @@ const DEFAULT_DESIGNATIONS: Omit<Designation, 'id'>[] = [
   { title: 'Cashier', level: 5, grade: 'T1', department: 'Finance', payScaleMin: 700000, payScaleMax: 1200000, reportsTo: 'Finance Manager', staffCount: 0, status: 'Active' },
   { title: 'Store Keeper', level: 5, grade: 'T1', department: 'Stores', payScaleMin: 700000, payScaleMax: 1200000, reportsTo: 'Hospital Administrator', staffCount: 0, status: 'Active' },
   { title: 'Accountant', level: 4, grade: 'T1', department: 'Finance', payScaleMin: 1500000, payScaleMax: 2500000, reportsTo: 'Finance Manager', staffCount: 0, status: 'Active' },
+  { title: 'Head of IT', level: 2, grade: 'E2', department: 'Information Technology', payScaleMin: 3500000, payScaleMax: 6000000, reportsTo: 'Hospital Administrator', staffCount: 0, status: 'Active' },
+  { title: 'Systems Administrator', level: 3, grade: 'T1', department: 'Information Technology', payScaleMin: 2000000, payScaleMax: 3500000, reportsTo: 'Head of IT', staffCount: 0, status: 'Active' },
+  { title: 'IT Support Officer', level: 4, grade: 'T1', department: 'Information Technology', payScaleMin: 1200000, payScaleMax: 2000000, reportsTo: 'Head of IT', staffCount: 0, status: 'Active' },
 ];
 
 const gradeColors: Record<string, string> = {
@@ -321,7 +324,7 @@ export default function DesignationsPage() {
                 onClick={() => seedMutation.mutate()}
                 disabled={seedMutation.isPending}
                 className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
-                title="Load 27 standard HMIS designations"
+                title="Load 30 standard HMIS designations"
               >
                 {seedMutation.isPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -439,7 +442,7 @@ export default function DesignationsPage() {
                             className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
                           >
                             {seedMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                            Load 27 standard HMIS designations
+                            Load 30 standard HMIS designations
                           </button>
                         </>
                       )}
