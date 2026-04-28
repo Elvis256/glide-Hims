@@ -94,7 +94,28 @@ export class LicenseService implements OnModuleInit {
       signature,
     });
 
-    return this.licenseRepository.save(license);
+    const saved = await this.licenseRepository.save(license);
+
+    // Sync enabled modules to tenant's system_settings so the License
+    // actually drives the UI module gating (otherwise modules selected here
+    // are decorative and the tenant still has to set them via Facility Mode).
+    if (dto.tenantId && saved.enabledModules?.length) {
+      try {
+        await this.licenseRepository.manager.query(
+          `INSERT INTO system_settings (tenant_id, key, value, description)
+           VALUES ($1, 'enabled_modules', $2::jsonb, 'Modules enabled by license')
+           ON CONFLICT (key, tenant_id)
+           DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+          [dto.tenantId, JSON.stringify(saved.enabledModules)],
+        );
+      } catch (err) {
+        this.logger.warn(
+          `License generated but failed to sync enabled_modules to tenant ${dto.tenantId}: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    return saved;
   }
 
   /**
