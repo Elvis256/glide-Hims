@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { Role } from '../../database/entities/role.entity';
@@ -35,6 +35,19 @@ export class RolesService {
       ...(tenantId ? { tenantId } : {}),
     });
     return this.roleRepository.save(role);
+  }
+
+  /**
+   * Throws if `role` is a global system role and the caller is operating in
+   * tenant context (tenantId set). Only platform admins (no tenantId) may
+   * mutate system roles, since those roles are shared across every tenant.
+   */
+  private assertMutable(role: Role, tenantId?: string): void {
+    if (role.isSystemRole && tenantId) {
+      throw new ForbiddenException(
+        'System roles are shared across all tenants and can only be modified by a platform administrator',
+      );
+    }
   }
 
   async findAllRoles(tenantId?: string) {
@@ -149,6 +162,7 @@ export class RolesService {
 
   async updateRole(id: string, dto: UpdateRoleDto, tenantId?: string): Promise<Role> {
     const role = await this.findOneRole(id, tenantId);
+    this.assertMutable(role, tenantId);
     if (role.isSystemRole && dto.name && dto.name !== role.name) {
       throw new ConflictException('Cannot rename system roles');
     }
@@ -158,6 +172,7 @@ export class RolesService {
 
   async setParentRole(id: string, parentRoleId: string | null, tenantId?: string): Promise<Role> {
     const role = await this.findOneRole(id, tenantId);
+    this.assertMutable(role, tenantId);
 
     if (parentRoleId) {
       // Validate parent exists
@@ -193,7 +208,8 @@ export class RolesService {
   }
 
   async assignPermission(roleId: string, dto: AssignPermissionDto, tenantId?: string) {
-    await this.findOneRole(roleId, tenantId);
+    const role = await this.findOneRole(roleId, tenantId);
+    this.assertMutable(role, tenantId);
     // Permissions are shared (NULL tenant_id), so don't filter by tenant
     const permission = await this.permissionRepository.findOne({ where: { id: dto.permissionId } });
     if (!permission) throw new NotFoundException('Permission not found');
@@ -209,7 +225,8 @@ export class RolesService {
   }
 
   async removePermission(roleId: string, permissionId: string, tenantId?: string): Promise<void> {
-    await this.findOneRole(roleId, tenantId);
+    const role = await this.findOneRole(roleId, tenantId);
+    this.assertMutable(role, tenantId);
     const rp = await this.rolePermissionRepository.findOne({
       where: { roleId, permissionId },
     });
@@ -223,6 +240,7 @@ export class RolesService {
     tenantId?: string,
   ): Promise<void> {
     const role = await this.findOneRole(roleId, tenantId);
+    this.assertMutable(role, tenantId);
 
     await this.dataSource.transaction(async (manager) => {
       for (const [permCode, enabled] of Object.entries(permissions)) {
@@ -249,7 +267,52 @@ export class RolesService {
   async createPermission(dto: CreatePermissionDto, tenantId?: string): Promise<Permission> {
     const existing = await this.permissionRepository.findOne({ where: { code: dto.code } });
     if (existing) throw new ConflictException('Permission code already exists');
-    return this.permissionRepository.save(this.permissionRepository.create(dto));
+    // Tenant admins create tenant-scoped permissions; only platform admins
+    // (no tenantId) can create globally-shared permission codes.
+    return this.permissionRepository.save(
+      this.permissionRepository.create({ ...dto, ...(tenantId ? { tenantId } : {}) }),
+    );
+  }
+
+  /**
+   * Clone an existing role (and its directly-assigned permissions) into a new
+   * tenant-scoped role with a different name. Inherited permissions from a
+   * parent role are NOT copied — set the same parent on the clone if needed.
+   */
+  async cloneRole(
+    sourceRoleId: string,
+    newName: string,
+    tenantId?: string,
+    description?: string,
+  ): Promise<Role> {
+    const source = await this.findOneRole(sourceRoleId, tenantId);
+
+    const nameClash = await this.roleRepository.findOne({
+      where: { name: newName, ...(tenantId ? { tenantId } : {}) },
+    });
+    if (nameClash) throw new ConflictException('Role name already exists');
+
+    return this.dataSource.transaction(async (manager) => {
+      const clone = manager.create(Role, {
+        name: newName,
+        description: description ?? `Cloned from ${source.name}`,
+        status: 'active',
+        isSystemRole: false, // clones are always tenant-scoped, never system
+        parentRoleId: source.parentRoleId ?? undefined,
+        ...(tenantId ? { tenantId } : {}),
+      } as any);
+      const saved = await manager.save(clone);
+
+      // Copy direct permissions only (parent inheritance is preserved via parentRoleId).
+      const directRps = await manager.find(RolePermission, { where: { roleId: source.id } });
+      if (directRps.length > 0) {
+        const newRps = directRps.map((rp) =>
+          manager.create(RolePermission, { roleId: saved.id, permissionId: rp.permissionId }),
+        );
+        await manager.save(newRps);
+      }
+      return saved;
+    });
   }
 
   async findAllPermissions(module?: string, tenantId?: string) {

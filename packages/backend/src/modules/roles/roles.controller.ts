@@ -70,6 +70,23 @@ export class RolesController {
     return { message: 'Role deleted' };
   }
 
+  @Post(':id/clone')
+  @AuthWithPermissions('roles.create')
+  @ApiOperation({ summary: 'Duplicate a role with all its direct permissions' })
+  async cloneRole(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { name: string; description?: string },
+    @Request() req: any,
+  ) {
+    const role = await this.rolesService.cloneRole(
+      id,
+      body.name,
+      req.user?.tenantId,
+      body.description,
+    );
+    return { message: 'Role cloned', data: role };
+  }
+
   @Post(':id/permissions')
   @AuthWithPermissions('roles.update')
   @ApiOperation({ summary: 'Assign permission to role' })

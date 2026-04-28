@@ -11,6 +11,7 @@ import {
   Shield,
   X,
   Check,
+  Copy,
 } from 'lucide-react';
 
 export default function RolesPage() {
@@ -65,6 +66,15 @@ export default function RolesPage() {
       if (selectedRole?.id === editingRole?.id) {
         setSelectedRole(null);
       }
+    },
+  });
+
+  // Clone role mutation
+  const cloneMutation = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) =>
+      api.post(`/roles/${id}/clone`, { name }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['roles'] });
     },
   });
 
@@ -160,6 +170,22 @@ export default function RolesPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const name = prompt(
+                          `Duplicate "${role.name}" as:`,
+                          `${role.name} (Copy)`,
+                        );
+                        if (name && name.trim()) {
+                          cloneMutation.mutate({ id: role.id, name: name.trim() });
+                        }
+                      }}
+                      className="p-1 text-gray-400 hover:text-green-600"
+                      title="Duplicate role with all its permissions"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </button>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
