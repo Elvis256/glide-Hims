@@ -75,12 +75,11 @@
         </div>
 
         <div class="alert alert-success border-0 shadow-sm" style="background:#ecfdf5;border-left:4px solid #10b981;">
-            <strong>✓ Verified in v1.0</strong> — self-registration is <em>off by default</em> on production
-            on-prem deployments. New tenants must be provisioned by a system admin via
-            <code>/system/tenants</code>. To open the public <code>/register</code> flow, set
-            <code>platform.allow_self_registration=true</code> in System Settings.
-            Use <code>/system/login</code> for the System Administration portal — distinct from tenant logins
-            at <code>/login</code> or <code>/login/{tenant-slug}</code>.
+            <strong>✓ Verified in v1.0</strong> — public self-registration is <em>off by default</em> on
+            production on-prem deployments. New tenants are provisioned by a system administrator from
+            the System Administration portal; self-registration can be enabled by your administrator
+            when appropriate. Tenant users sign in at their tenant login page — your administrator will
+            share the URL during onboarding.
         </div>
 
         <!-- Prerequisites -->

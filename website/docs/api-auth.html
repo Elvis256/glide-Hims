@@ -217,13 +217,10 @@
 
         <div class="alert alert-success border-0 shadow-sm" style="background:#ecfdf5;border-left:4px solid #10b981;">
             <strong>✓ Verified in v1.0</strong> — tokens are issued as <strong>HttpOnly cookies</strong>
-            (not in JSON), so XSS cannot exfiltrate them. <code>accessToken</code> is scoped to <code>/</code>
-            (15 min); <code>refreshToken</code> is scoped to <code>/api/v1/auth/refresh</code> (7 days).
-            The frontend writes a non-sensitive <code>glide_login_kind=system|tenant</code> flag in
-            localStorage to route 401 redirects to the correct login page (<code>/system/login</code> vs
-            <code>/login/{tenant-slug}</code>). System administrators authenticate via the same
-            <code>POST /api/v1/auth/login</code> endpoint and are identified by
-            <code>user.isSystemAdmin === true</code>.
+            (not in JSON), so XSS cannot exfiltrate them. The access token is short-lived (15 min) and
+            the refresh token is long-lived (7 days) and scoped narrowly to the refresh endpoint.
+            System administrators authenticate via the same <code>POST /api/v1/auth/login</code> endpoint
+            and are identified by <code>user.isSystemAdmin === true</code> in the response.
         </div>
 
         <!-- Overview -->
