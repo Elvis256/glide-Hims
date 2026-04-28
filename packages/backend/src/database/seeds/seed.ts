@@ -385,6 +385,7 @@ const defaultRoles = [
   { name: 'Store Keeper', description: 'Inventory management', isSystemRole: true },
   { name: 'HR Manager', description: 'Human resources management', isSystemRole: true },
   { name: 'Radiologist', description: 'Radiology staff', isSystemRole: true },
+  { name: 'Accountant', description: 'Finance and accounting staff', isSystemRole: true },
 ];
 
 export async function seed(dataSource: DataSource) {
@@ -762,6 +763,31 @@ export async function seed(dataSource: DataSource) {
       'analytics.read',
       // Queue
       'queue.read',
+      'reports.read',
+    ],
+    Accountant: [
+      'facilities.read',
+      'dashboard.read',
+      // Patient + encounter visibility for billing context
+      'patients.read',
+      'encounters.read',
+      // Billing (full)
+      'billing.read',
+      'billing.create',
+      'billing.update',
+      // Finance (full)
+      'finance.read',
+      'finance.accounts.read',
+      'finance.journals.read',
+      'finance.journals.create',
+      'finance.reports.read',
+      // Insurance
+      'insurance.read',
+      'insurance.claims.read',
+      'insurance.claims.create',
+      'insurance.policies.read',
+      // Reporting / analytics
+      'analytics.read',
       'reports.read',
     ],
   };
