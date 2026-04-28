@@ -175,6 +175,15 @@ export default function DesignationsPage() {
     },
   });
 
+  const resetMutation = useMutation({
+    mutationFn: async () => {
+      await saveDesignationsConfig([]);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'designations'] });
+    },
+  });
+
   // Real departments from facilities API (merged with departments referenced by existing designations)
   const { data: realDepartments = [] } = useQuery<Array<{ id: string; name: string }>>({
     queryKey: ['departments-all'],
@@ -332,6 +341,21 @@ export default function DesignationsPage() {
                   <Sparkles className="h-4 w-4" />
                 )}
                 Load Default HMIS Designations
+              </button>
+            )}
+            {designations.length > 0 && (
+              <button
+                onClick={() => {
+                  if (window.confirm(`Delete all ${designations.length} designations? This cannot be undone.`)) {
+                    resetMutation.mutate();
+                  }
+                }}
+                disabled={resetMutation.isPending}
+                className="flex items-center gap-2 px-3 py-2 border border-red-300 text-red-700 rounded-lg hover:bg-red-50 disabled:opacity-50"
+                title="Delete all designations"
+              >
+                {resetMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                Reset All
               </button>
             )}
             <button
