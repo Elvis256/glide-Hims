@@ -28,6 +28,7 @@ import {
 import { Loading } from '../../../components/Loading';
 import { hrService, type Employee, type CreateEmployeeDto } from '../../../services/hr';
 import { facilitiesService, rolesService } from '../../../services';
+import { api } from '../../../services/api';
 
 // Error Boundary Component
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
@@ -155,6 +156,21 @@ function StaffDirectoryPageContent() {
         return await facilitiesService.departments.listAll();
       } catch (err) {
         console.error('Failed to fetch departments:', err);
+        return [];
+      }
+    },
+    staleTime: 60000,
+  });
+
+  // Fetch designations from SystemSettings (used to populate Job Title dropdown)
+  const { data: designationsList = [] } = useQuery<Array<{ id: string; title: string; department?: string; grade?: string }>>({
+    queryKey: ['designations-for-staff'],
+    queryFn: async () => {
+      try {
+        const res = await api.get<{ value?: { designations?: any[] } }>('/settings/designations');
+        const list = res.data?.value?.designations || [];
+        return list.filter((d: any) => d?.title).sort((a: any, b: any) => String(a.title).localeCompare(String(b.title)));
+      } catch {
         return [];
       }
     },
@@ -655,6 +671,14 @@ function StaffDirectoryPageContent() {
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">
+      {/* Shared datalist for Job Title combo inputs */}
+      <datalist id="designations-options">
+        {designationsList.map((d) => (
+          <option key={d.id} value={d.title}>
+            {d.department ? `${d.department}${d.grade ? ' · ' + d.grade : ''}` : d.grade || ''}
+          </option>
+        ))}
+      </datalist>
       {/* Header */}
       <div className="flex-shrink-0 mb-6">
         <div className="flex items-center justify-between">
@@ -1007,11 +1031,14 @@ function StaffDirectoryPageContent() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Job Title</label>
-                <input 
-                  type="text" 
-                  className="w-full border rounded-lg px-3 py-2" 
-                  placeholder="e.g. Doctor, Nurse, Receptionist"
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Job Title <span className="text-xs text-gray-400">(pick a designation or type)</span>
+                </label>
+                <input
+                  type="text"
+                  list="designations-options"
+                  className="w-full border rounded-lg px-3 py-2"
+                  placeholder={designationsList.length ? 'Select or type…' : 'e.g. Doctor, Nurse, Receptionist'}
                   value={newStaff.jobTitle}
                   onChange={(e) => setNewStaff({ ...newStaff, jobTitle: e.target.value })}
                 />
@@ -1219,11 +1246,14 @@ function StaffDirectoryPageContent() {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Job Title</label>
-                <input 
-                  type="text" 
-                  className="w-full border rounded-lg px-3 py-2" 
-                  placeholder="e.g. Doctor, Nurse"
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Job Title <span className="text-xs text-gray-400">(pick a designation or type)</span>
+                </label>
+                <input
+                  type="text"
+                  list="designations-options"
+                  className="w-full border rounded-lg px-3 py-2"
+                  placeholder={designationsList.length ? 'Select or type…' : 'e.g. Doctor, Nurse'}
                   value={editForm.jobTitle}
                   onChange={(e) => setEditForm({ ...editForm, jobTitle: e.target.value })}
                 />

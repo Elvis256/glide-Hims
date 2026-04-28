@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import api from '../../../services/api';
+import { hrService } from '../../../services/hr';
 import toast from 'react-hot-toast';
 
 interface Employee {
@@ -8,12 +8,10 @@ interface Employee {
   firstName?: string;
   lastName?: string;
   jobTitle?: string;
-  department?: string;
+  department?: string | { name?: string };
   email?: string;
   status?: string;
 }
-
-const facilityId = () => localStorage.getItem('glide_facility_id') || '';
 
 export default function OrgChartPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -24,12 +22,9 @@ export default function OrgChartPage() {
     (async () => {
       setLoading(true);
       try {
-        const res = await api.get('/hr/employees', { params: { facilityId: facilityId() } });
-        const list: Employee[] = Array.isArray(res.data)
-          ? res.data
-          : ((res.data as any)?.data ?? []);
+        const list = await hrService.employees.list({});
         setEmployees(
-          list.map((e: any) => ({
+          (list as any[]).map((e: any) => ({
             ...e,
             fullName:
               e.fullName || `${e.firstName ?? ''} ${e.lastName ?? ''}`.trim() || e.employeeNumber,
@@ -44,16 +39,18 @@ export default function OrgChartPage() {
   }, []);
 
   const grouped = useMemo(() => {
+    const deptName = (e: Employee) =>
+      typeof e.department === 'string' ? e.department : e.department?.name || '';
     const filt = employees.filter(
       (e) =>
         !search ||
         e.fullName?.toLowerCase().includes(search.toLowerCase()) ||
         e.jobTitle?.toLowerCase().includes(search.toLowerCase()) ||
-        e.department?.toLowerCase().includes(search.toLowerCase()),
+        deptName(e).toLowerCase().includes(search.toLowerCase()),
     );
     const map = new Map<string, Employee[]>();
     for (const e of filt) {
-      const key = e.department || '— Unassigned —';
+      const key = deptName(e) || '— Unassigned —';
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(e);
     }
