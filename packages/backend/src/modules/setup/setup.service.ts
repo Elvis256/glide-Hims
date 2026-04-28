@@ -60,9 +60,9 @@ const DEFAULT_PERMISSIONS = [
   { code: 'vitals.update', name: 'Update Vitals', module: 'vitals' },
 
   // Clinical Notes
-  { code: 'clinical_notes.read', name: 'View Clinical Notes', module: 'clinical_notes' },
-  { code: 'clinical_notes.create', name: 'Create Clinical Notes', module: 'clinical_notes' },
-  { code: 'clinical_notes.update', name: 'Update Clinical Notes', module: 'clinical_notes' },
+  { code: 'clinical-notes.read', name: 'View Clinical Notes', module: 'clinical_notes' },
+  { code: 'clinical-notes.create', name: 'Create Clinical Notes', module: 'clinical_notes' },
+  { code: 'clinical-notes.update', name: 'Update Clinical Notes', module: 'clinical_notes' },
 
   // Orders
   { code: 'orders.read', name: 'View Orders', module: 'orders' },
@@ -182,9 +182,9 @@ const DEFAULT_ROLES = [
       'encounters.create',
       'encounters.update',
       'vitals.read',
-      'clinical_notes.read',
-      'clinical_notes.create',
-      'clinical_notes.update',
+      'clinical-notes.read',
+      'clinical-notes.create',
+      'clinical-notes.update',
       'orders.read',
       'orders.create',
       'lab.read',
@@ -214,8 +214,8 @@ const DEFAULT_ROLES = [
       'vitals.read',
       'vitals.create',
       'vitals.update',
-      'clinical_notes.read',
-      'clinical_notes.create',
+      'clinical-notes.read',
+      'clinical-notes.create',
       'orders.read',
       'lab.read',
       'pharmacy.read',

@@ -166,7 +166,7 @@ export class IpdController {
   }
 
   @Post('admissions/:id/discharge')
-  @AuthWithPermissions('ipd.update')
+  @AuthWithPermissions('ipd.discharge')
   @ApiOperation({ summary: 'Discharge a patient' })
   dischargePatient(
     @Param('id') id: string,
@@ -178,7 +178,7 @@ export class IpdController {
   }
 
   @Post('admissions/:id/transfer')
-  @AuthWithPermissions('ipd.update')
+  @AuthWithPermissions('ipd.transfer')
   @ApiOperation({ summary: 'Transfer patient to another bed' })
   transferBed(@Param('id') id: string, @Body() dto: TransferBedDto, @Request() req: any) {
     validateUuid(id);
