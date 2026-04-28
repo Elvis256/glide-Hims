@@ -28,7 +28,7 @@ import {
   ChangePasswordDto,
   UpdateProfileDto,
 } from './dto/auth.dto';
-import { Auth } from './decorators/auth.decorator';
+import { Auth, AuthWithPermissions } from './decorators/auth.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { Public } from './decorators/public.decorator';
 import { RateLimitGuard } from './guards/rate-limit.guard';
@@ -265,6 +265,40 @@ export class AuthController {
   async revokeAllSessions(@CurrentUser('id') userId: string) {
     await this.sessionService.revokeAllSessions(userId);
     return { message: 'All other sessions revoked' };
+  }
+
+  // ─── Admin: tenant-wide session management ──────────────────────────────
+
+  @Get('admin/sessions')
+  @AuthWithPermissions('users.read')
+  @ApiOperation({ summary: 'List all active sessions in tenant (admin)' })
+  async listAllSessions(@CurrentUser() user: any) {
+    const sessions = await this.sessionService.getAllTenantSessions(user.tenantId);
+    return { data: sessions };
+  }
+
+  @Delete('admin/sessions/:id')
+  @AuthWithPermissions('users.update')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Force-revoke any session in tenant (admin)' })
+  async adminRevokeSession(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: any,
+  ) {
+    await this.sessionService.adminRevokeSession(id, user.tenantId);
+    return { message: 'Session revoked' };
+  }
+
+  @Delete('admin/users/:userId/sessions')
+  @AuthWithPermissions('users.update')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Revoke all sessions for a specific user (force logout)' })
+  async adminRevokeUserSessions(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @CurrentUser() user: any,
+  ) {
+    await this.sessionService.adminRevokeUserSessions(userId, user.tenantId);
+    return { message: 'All sessions revoked for user' };
   }
 
   // ─── Admin: rate-limit / IP block management ──────────────────────────────

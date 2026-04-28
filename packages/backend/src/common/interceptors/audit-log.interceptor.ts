@@ -63,6 +63,13 @@ export class AuditLogInterceptor implements NestInterceptor {
               }
             }
 
+            const reason =
+              (request.headers['x-audit-reason'] as string) ||
+              (body && typeof body === 'object' ? body.reason || body._reason : undefined) ||
+              undefined;
+
+            const statusCode = context.switchToHttp().getResponse()?.statusCode;
+
             await this.auditLogService.log({
               userId: user.id,
               action,
@@ -73,6 +80,10 @@ export class AuditLogInterceptor implements NestInterceptor {
               userAgent: request.headers['user-agent'],
               actorType,
               supportAccessTier,
+              reason,
+              requestMethod: method,
+              requestUrl: url,
+              statusCode,
             });
           }
         } catch (error) {
