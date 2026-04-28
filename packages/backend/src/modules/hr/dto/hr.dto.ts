@@ -1018,6 +1018,50 @@ export class UpdateStaffDto {
   department?: string;
 
   @IsOptional()
+  @IsString()
+  departmentId?: string;
+
+  @IsOptional()
+  @IsString()
+  facilityId?: string;
+
+  @IsOptional()
+  @IsString()
+  staffCategory?: string;
+
+  @IsOptional()
+  @IsString()
+  employmentType?: string;
+
+  @IsOptional()
+  @IsString()
+  gender?: string;
+
+  @IsOptional()
+  @IsString()
+  dateOfBirth?: string;
+
+  @IsOptional()
+  @IsString()
+  hireDate?: string;
+
+  @IsOptional()
+  @IsString()
+  address?: string;
+
+  @IsOptional()
+  @IsString()
+  nationalId?: string;
+
+  @IsOptional()
+  @IsString()
+  emergencyContactName?: string;
+
+  @IsOptional()
+  @IsString()
+  emergencyContactPhone?: string;
+
+  @IsOptional()
   @IsNumber()
   @Min(0)
   basicSalary?: number;
