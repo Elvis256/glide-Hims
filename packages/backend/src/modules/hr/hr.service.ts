@@ -137,19 +137,31 @@ export class HrService {
     options: { status?: string; departmentId?: string; limit?: number; offset?: number } = {},
     tenantId?: string,
   ) {
-    const where: any = { deletedAt: IsNull() };
-    if (tenantId) where.tenantId = tenantId;
-    if (options.status) where.status = options.status;
-    if (options.departmentId) where.departmentId = options.departmentId;
-    if (facilityId) where.facilityId = facilityId;
+    const qb = this.userRepo
+      .createQueryBuilder('u')
+      .leftJoinAndSelect('u.department', 'department')
+      .leftJoinAndSelect('u.facility', 'facility')
+      .leftJoinAndSelect('u.userRoles', 'userRoles')
+      .leftJoinAndSelect('userRoles.role', 'role')
+      .where('u.deletedAt IS NULL');
 
-    const [data, total] = await this.userRepo.findAndCount({
-      where,
-      relations: ['department', 'facility', 'userRoles', 'userRoles.role'],
-      order: { fullName: 'ASC' },
-      take: options.limit || 50,
-      skip: options.offset || 0,
-    });
+    if (tenantId) qb.andWhere('u.tenantId = :tenantId', { tenantId });
+    if (options.status) qb.andWhere('u.status = :status', { status: options.status });
+    if (options.departmentId) qb.andWhere('u.departmentId = :deptId', { deptId: options.departmentId });
+    if (facilityId) {
+      // Match by user.facilityId OR by any user_role at that facility
+      // (legacy users have NULL users.facility_id and rely on role-scoped facility)
+      qb.andWhere(
+        '(u.facilityId = :facilityId OR u.facilityId IS NULL OR EXISTS (SELECT 1 FROM user_roles ur2 WHERE ur2.user_id = u.id AND ur2.facility_id = :facilityId))',
+        { facilityId },
+      );
+    }
+
+    qb.orderBy('u.fullName', 'ASC')
+      .take(options.limit || 50)
+      .skip(options.offset || 0);
+
+    const [data, total] = await qb.getManyAndCount();
 
     // Transform to staff format
     const staff = data.map((user) => ({
@@ -245,16 +257,26 @@ export class HrService {
   }
 
   async getStaffDashboard(facilityId?: string, tenantId?: string) {
-    const where: any = { deletedAt: IsNull() };
-    if (tenantId) where.tenantId = tenantId;
-    if (facilityId) where.facilityId = facilityId;
+    const baseQb = () => {
+      const qb = this.userRepo
+        .createQueryBuilder('u')
+        .where('u.deletedAt IS NULL');
+      if (tenantId) qb.andWhere('u.tenantId = :tenantId', { tenantId });
+      if (facilityId) {
+        qb.andWhere(
+          '(u.facilityId = :facilityId OR u.facilityId IS NULL OR EXISTS (SELECT 1 FROM user_roles ur2 WHERE ur2.user_id = u.id AND ur2.facility_id = :facilityId))',
+          { facilityId },
+        );
+      }
+      return qb;
+    };
 
-    const totalStaff = await this.userRepo.count({ where });
-    const activeStaff = await this.userRepo.count({ where: { ...where, status: 'active' } });
-    const onLeaveStaff = await this.userRepo.count({ where: { ...where, status: 'on_leave' } });
-    const resignedStaff = await this.userRepo.count({
-      where: { ...where, status: In(['resigned', 'terminated', 'inactive']) },
-    });
+    const totalStaff = await baseQb().getCount();
+    const activeStaff = await baseQb().andWhere('u.status = :s', { s: 'active' }).getCount();
+    const onLeaveStaff = await baseQb().andWhere('u.status = :s', { s: 'on_leave' }).getCount();
+    const resignedStaff = await baseQb()
+      .andWhere('u.status IN (:...statuses)', { statuses: ['resigned', 'terminated', 'inactive'] })
+      .getCount();
 
     // Get pending leave requests count
     const pendingLeave = await this.leaveRepo.count({
