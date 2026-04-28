@@ -21,10 +21,6 @@ const PUBLIC_PAGES = [
   { slug: 'architecture', title: 'Architecture' },
   { slug: 'api-overview', title: 'API Overview' },
   { slug: 'api-auth', title: 'Authentication' },
-  { slug: 'api-patients', title: 'Patients API' },
-  { slug: 'api-billing', title: 'Billing API' },
-  { slug: 'api-inventory', title: 'Inventory API' },
-  { slug: 'changelog', title: 'Changelog' },
 ];
 
 const OPERATOR_PAGES = [
@@ -43,6 +39,12 @@ const OPERATOR_PAGES = [
 
 const ALL_SLUGS = new Set([...PUBLIC_PAGES, ...OPERATOR_PAGES].map((p) => p.slug));
 
+function existingPages(pages: { slug: string; title: string }[]) {
+  return pages.filter((p) =>
+    fs.existsSync(path.join(DOCS_ROOT, `${p.slug}.html`)),
+  );
+}
+
 @ApiTags('system-docs')
 @Controller('system/docs')
 export class SystemDocsController {
@@ -55,8 +57,8 @@ export class SystemDocsController {
     }
     return {
       sections: [
-        { title: 'Getting Started', pages: PUBLIC_PAGES },
-        { title: 'Operations', pages: OPERATOR_PAGES },
+        { title: 'Getting Started', pages: existingPages(PUBLIC_PAGES) },
+        { title: 'Operations', pages: existingPages(OPERATOR_PAGES) },
       ],
     };
   }
@@ -89,7 +91,23 @@ export class SystemDocsController {
       (_m, p1) => `href="/api/v1/system/docs/${p1}"`,
     );
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    // Override the global Helmet CSP for this endpoint only:
+    //  - allow embedding in our own app (iframe in /system/docs)
+    //  - permit the static CDN assets the doc HTML pulls (Bootstrap, Prism, icons)
+    //  - allow inline scripts/styles the doc pages use for syntax highlighting
+    res.setHeader(
+      'Content-Security-Policy',
+      [
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+        "font-src 'self' data: https://cdn.jsdelivr.net",
+        "img-src 'self' data: blob: https:",
+        "connect-src 'self'",
+        "frame-ancestors 'self'",
+      ].join('; '),
+    );
+    res.removeHeader('X-Frame-Options');
     res.setHeader('Cache-Control', 'private, max-age=300');
     res.send(rewritten);
   }
