@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../../services/api';
+import { hrService } from '../../../services/hr';
+import { facilitiesService } from '../../../services/facilities';
 import { formatCurrency } from '../../../lib/currency';
 import {
   Briefcase,
@@ -16,6 +18,7 @@ import {
   Filter,
   MoreVertical,
   Loader2,
+  Sparkles,
 } from 'lucide-react';
 
 interface Designation {
@@ -41,6 +44,36 @@ const saveDesignationsConfig = async (designations: Designation[]) => {
   const payload: DesignationsConfig = { designations };
   await api.put(SETTINGS_KEY, { value: payload, description: 'Designations configuration' });
 };
+
+const DEFAULT_DESIGNATIONS: Omit<Designation, 'id'>[] = [
+  { title: 'Chief Executive Officer', level: 1, grade: 'E1', department: 'Administration', payScaleMin: 8000000, payScaleMax: 15000000, reportsTo: null, staffCount: 0, status: 'Active' },
+  { title: 'Chief Medical Officer', level: 1, grade: 'E1', department: 'Administration', payScaleMin: 7000000, payScaleMax: 12000000, reportsTo: 'Chief Executive Officer', staffCount: 0, status: 'Active' },
+  { title: 'Hospital Administrator', level: 2, grade: 'E2', department: 'Administration', payScaleMin: 4000000, payScaleMax: 7000000, reportsTo: 'Chief Executive Officer', staffCount: 0, status: 'Active' },
+  { title: 'HR Manager', level: 2, grade: 'E2', department: 'Human Resources', payScaleMin: 3500000, payScaleMax: 6000000, reportsTo: 'Hospital Administrator', staffCount: 0, status: 'Active' },
+  { title: 'Finance Manager', level: 2, grade: 'E2', department: 'Finance', payScaleMin: 3500000, payScaleMax: 6000000, reportsTo: 'Hospital Administrator', staffCount: 0, status: 'Active' },
+  { title: 'Consultant Physician', level: 2, grade: 'M1', department: 'Medical', payScaleMin: 5000000, payScaleMax: 9000000, reportsTo: 'Chief Medical Officer', staffCount: 0, status: 'Active' },
+  { title: 'Consultant Surgeon', level: 2, grade: 'M1', department: 'Surgery', payScaleMin: 5500000, payScaleMax: 10000000, reportsTo: 'Chief Medical Officer', staffCount: 0, status: 'Active' },
+  { title: 'Senior Medical Officer', level: 3, grade: 'M2', department: 'Medical', payScaleMin: 3000000, payScaleMax: 5000000, reportsTo: 'Consultant Physician', staffCount: 0, status: 'Active' },
+  { title: 'Medical Officer', level: 4, grade: 'M3', department: 'Medical', payScaleMin: 2000000, payScaleMax: 3500000, reportsTo: 'Senior Medical Officer', staffCount: 0, status: 'Active' },
+  { title: 'Intern Doctor', level: 5, grade: 'M3', department: 'Medical', payScaleMin: 1200000, payScaleMax: 1800000, reportsTo: 'Medical Officer', staffCount: 0, status: 'Active' },
+  { title: 'Nursing Officer In-Charge', level: 2, grade: 'N1', department: 'Nursing', payScaleMin: 2500000, payScaleMax: 4500000, reportsTo: 'Chief Medical Officer', staffCount: 0, status: 'Active' },
+  { title: 'Senior Nursing Officer', level: 3, grade: 'N1', department: 'Nursing', payScaleMin: 1800000, payScaleMax: 2800000, reportsTo: 'Nursing Officer In-Charge', staffCount: 0, status: 'Active' },
+  { title: 'Registered Nurse', level: 4, grade: 'N2', department: 'Nursing', payScaleMin: 1200000, payScaleMax: 2000000, reportsTo: 'Senior Nursing Officer', staffCount: 0, status: 'Active' },
+  { title: 'Enrolled Nurse', level: 5, grade: 'N3', department: 'Nursing', payScaleMin: 800000, payScaleMax: 1300000, reportsTo: 'Registered Nurse', staffCount: 0, status: 'Active' },
+  { title: 'Midwife', level: 4, grade: 'N2', department: 'Maternity', payScaleMin: 1300000, payScaleMax: 2200000, reportsTo: 'Senior Nursing Officer', staffCount: 0, status: 'Active' },
+  { title: 'Pharmacist In-Charge', level: 3, grade: 'M2', department: 'Pharmacy', payScaleMin: 2500000, payScaleMax: 4000000, reportsTo: 'Chief Medical Officer', staffCount: 0, status: 'Active' },
+  { title: 'Pharmacist', level: 4, grade: 'T1', department: 'Pharmacy', payScaleMin: 1500000, payScaleMax: 2500000, reportsTo: 'Pharmacist In-Charge', staffCount: 0, status: 'Active' },
+  { title: 'Pharmacy Technician', level: 5, grade: 'T1', department: 'Pharmacy', payScaleMin: 800000, payScaleMax: 1300000, reportsTo: 'Pharmacist', staffCount: 0, status: 'Active' },
+  { title: 'Laboratory Manager', level: 3, grade: 'T1', department: 'Laboratory', payScaleMin: 2200000, payScaleMax: 3800000, reportsTo: 'Chief Medical Officer', staffCount: 0, status: 'Active' },
+  { title: 'Lab Technologist', level: 4, grade: 'T1', department: 'Laboratory', payScaleMin: 1300000, payScaleMax: 2200000, reportsTo: 'Laboratory Manager', staffCount: 0, status: 'Active' },
+  { title: 'Lab Technician', level: 5, grade: 'T1', department: 'Laboratory', payScaleMin: 800000, payScaleMax: 1300000, reportsTo: 'Lab Technologist', staffCount: 0, status: 'Active' },
+  { title: 'Radiologist', level: 2, grade: 'M1', department: 'Radiology', payScaleMin: 4500000, payScaleMax: 8000000, reportsTo: 'Chief Medical Officer', staffCount: 0, status: 'Active' },
+  { title: 'Radiographer', level: 4, grade: 'T1', department: 'Radiology', payScaleMin: 1400000, payScaleMax: 2300000, reportsTo: 'Radiologist', staffCount: 0, status: 'Active' },
+  { title: 'Receptionist', level: 5, grade: 'T1', department: 'Front Desk', payScaleMin: 600000, payScaleMax: 1100000, reportsTo: 'Hospital Administrator', staffCount: 0, status: 'Active' },
+  { title: 'Cashier', level: 5, grade: 'T1', department: 'Finance', payScaleMin: 700000, payScaleMax: 1200000, reportsTo: 'Finance Manager', staffCount: 0, status: 'Active' },
+  { title: 'Store Keeper', level: 5, grade: 'T1', department: 'Stores', payScaleMin: 700000, payScaleMax: 1200000, reportsTo: 'Hospital Administrator', staffCount: 0, status: 'Active' },
+  { title: 'Accountant', level: 4, grade: 'T1', department: 'Finance', payScaleMin: 1500000, payScaleMax: 2500000, reportsTo: 'Finance Manager', staffCount: 0, status: 'Active' },
+];
 
 const gradeColors: Record<string, string> = {
   E1: 'bg-purple-100 text-purple-800',
@@ -126,6 +159,55 @@ export default function DesignationsPage() {
     },
   });
 
+  const seedMutation = useMutation({
+    mutationFn: async () => {
+      const seeded: Designation[] = DEFAULT_DESIGNATIONS.map((d) => ({
+        ...d,
+        id: crypto.randomUUID(),
+      }));
+      await saveDesignationsConfig([...designations, ...seeded]);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'designations'] });
+    },
+  });
+
+  // Real departments from facilities API (merged with departments referenced by existing designations)
+  const { data: realDepartments = [] } = useQuery<Array<{ id: string; name: string }>>({
+    queryKey: ['departments-all'],
+    queryFn: async () => {
+      try {
+        return await facilitiesService.departments.listAll();
+      } catch {
+        return [];
+      }
+    },
+    staleTime: 60000,
+  });
+
+  // Live staff counts derived from users by jobTitle
+  const { data: staffList = [] } = useQuery({
+    queryKey: ['staff-for-designations'],
+    queryFn: async () => {
+      try {
+        return await hrService.employees.list({});
+      } catch {
+        return [] as Array<{ jobTitle?: string }>;
+      }
+    },
+    staleTime: 60000,
+  });
+
+  const staffCountByTitle = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const s of staffList) {
+      const t = (s.jobTitle || '').trim();
+      if (!t || t === 'Not Assigned') continue;
+      map[t] = (map[t] || 0) + 1;
+    }
+    return map;
+  }, [staffList]);
+
   const resetForm = () => {
     setFormData({
       title: '',
@@ -190,7 +272,12 @@ export default function DesignationsPage() {
     resetForm();
   };
 
-  const departments = useMemo(() => [...new Set(designations.map((d) => d.department))], [designations]);
+  const departments = useMemo(() => {
+    const set = new Set<string>();
+    realDepartments.forEach((d) => set.add(d.name));
+    designations.forEach((d) => d.department && set.add(d.department));
+    return Array.from(set).sort();
+  }, [designations, realDepartments]);
 
   const filteredDesignations = useMemo(() => {
     return designations.filter((designation) => {
@@ -228,13 +315,30 @@ export default function DesignationsPage() {
             </h1>
             <p className="text-gray-600 mt-1">Manage job titles, grades, and reporting structure</p>
           </div>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            <Plus className="h-4 w-4" />
-            Add Designation
-          </button>
+          <div className="flex items-center gap-2">
+            {designations.length === 0 && (
+              <button
+                onClick={() => seedMutation.mutate()}
+                disabled={seedMutation.isPending}
+                className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
+                title="Load 27 standard HMIS designations"
+              >
+                {seedMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
+                Load Default HMIS Designations
+              </button>
+            )}
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              <Plus className="h-4 w-4" />
+              Add Designation
+            </button>
+          </div>
         </div>
 
         {/* Stats */}
@@ -316,6 +420,33 @@ export default function DesignationsPage() {
               </tr>
             </thead>
             <tbody className="divide-y">
+              {filteredDesignations.length === 0 && !isLoading && (
+                <tr>
+                  <td colSpan={8} className="px-4 py-12 text-center">
+                    <div className="flex flex-col items-center gap-3 text-gray-500">
+                      <Briefcase className="h-12 w-12 text-gray-300" />
+                      <div className="font-medium">
+                        {designations.length === 0 ? 'No designations defined yet' : 'No designations match your filters'}
+                      </div>
+                      {designations.length === 0 && (
+                        <>
+                          <p className="text-sm max-w-md">
+                            Designations define job titles, grades, pay scales, and reporting hierarchy used across HR, payroll, and staff management.
+                          </p>
+                          <button
+                            onClick={() => seedMutation.mutate()}
+                            disabled={seedMutation.isPending}
+                            className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
+                          >
+                            {seedMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                            Load 27 standard HMIS designations
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              )}
               {filteredDesignations.map((designation) => (
                 <tr key={designation.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3">
@@ -359,10 +490,19 @@ export default function DesignationsPage() {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-1">
-                      <Users className="h-4 w-4 text-gray-400" />
-                      <span className="font-medium">{designation.staffCount}</span>
-                    </div>
+                    {(() => {
+                      const live = staffCountByTitle[designation.title];
+                      const count = live !== undefined ? live : designation.staffCount;
+                      return (
+                        <div className="flex items-center gap-1" title={live !== undefined ? 'Live count from staff records' : 'Manual count'}>
+                          <Users className={`h-4 w-4 ${live !== undefined ? 'text-blue-500' : 'text-gray-400'}`} />
+                          <span className="font-medium">{count}</span>
+                          {live !== undefined && live > 0 && (
+                            <span className="text-[10px] text-blue-600 font-medium">LIVE</span>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td className="px-4 py-3">
                     <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
