@@ -409,6 +409,50 @@ export class HrController {
     return this.hrService.resetPayrollRun(id, req.user?.tenantId);
   }
 
+  @Post('payroll/:id/approve')
+  @AuthWithPermissions('payroll.process')
+  @ApiOperation({ summary: 'Approve payroll run (Draft → Approved)' })
+  async approvePayrollRun(@Param('id') id: string, @Request() req: any) {
+    return this.hrService.approvePayrollRun(id, req.user?.id, req.user?.tenantId);
+  }
+
+  @Post('payroll/:id/mark-paid')
+  @AuthWithPermissions('payroll.process')
+  @ApiOperation({ summary: 'Mark payroll run as paid (Completed → Paid)' })
+  async markPayrollPaid(@Param('id') id: string, @Request() req: any) {
+    return this.hrService.markPayrollPaid(id, req.user?.tenantId);
+  }
+
+  @Get('payroll/:id/export/paye')
+  @AuthWithPermissions('payroll.read')
+  @ApiOperation({ summary: 'Export PAYE CSV' })
+  async exportPaye(@Param('id') id: string, @Request() req: any, @Res() res: any) {
+    const csv = await this.hrService.exportPayrollPaye(id, req.user?.tenantId);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="paye-${id}.csv"`);
+    res.send(csv);
+  }
+
+  @Get('payroll/:id/export/nssf')
+  @AuthWithPermissions('payroll.read')
+  @ApiOperation({ summary: 'Export NSSF CSV' })
+  async exportNssf(@Param('id') id: string, @Request() req: any, @Res() res: any) {
+    const csv = await this.hrService.exportPayrollNssf(id, req.user?.tenantId);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="nssf-${id}.csv"`);
+    res.send(csv);
+  }
+
+  @Get('payroll/:id/export/bank')
+  @AuthWithPermissions('payroll.read')
+  @ApiOperation({ summary: 'Export bank transfer file CSV' })
+  async exportBank(@Param('id') id: string, @Request() req: any, @Res() res: any) {
+    const csv = await this.hrService.exportPayrollBank(id, req.user?.tenantId);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="bank-${id}.csv"`);
+    res.send(csv);
+  }
+
   @Get('payroll')
   @AuthWithPermissions('payroll.read')
   @ApiOperation({ summary: 'Get payroll runs' })

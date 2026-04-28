@@ -948,7 +948,12 @@ const navigationSections: NavSection[] = [
           { name: 'Designations', href: '/admin/hr/designations', icon: Briefcase, permissions: ['hr.read'] },
           { name: 'Shift Management', href: '/admin/hr/shifts', icon: Clock, permissions: ['hr.update'] },
           { name: 'Leave Management', href: '/admin/hr/leave', icon: Calendar, permissions: ['leave.read'] },
+          { name: 'Leave Dashboard', href: '/admin/hr/leave-dashboard', icon: Calendar, permissions: ['leave.read'] },
           { name: 'Staff Credentials', href: '/admin/hr/credentials', icon: Award, permissions: ['employees.read'] },
+          { name: 'Org Chart', href: '/admin/hr/org-chart', icon: Building, permissions: ['hr.read'] },
+          { name: 'Goals & OKRs', href: '/admin/hr/goals', icon: Award, permissions: ['hr.read'] },
+          { name: 'Performance PIPs', href: '/admin/hr/pips', icon: FileText, permissions: ['hr.update'] },
+          { name: 'Letter Templates', href: '/admin/hr/letter-templates', icon: FileText, permissions: ['hr.read'] },
         ],
       },
       {
@@ -1053,6 +1058,25 @@ const navigationSections: NavSection[] = [
         icon: HardDrive,
         href: '/admin/audit-logs',
         permissions: ['audit.read'],
+      },
+      {
+        name: 'Security & Policies',
+        icon: Settings,
+        permissions: ['settings.read'],
+        children: [
+          { name: 'Password Policies', href: '/admin/password-policies', icon: Settings, permissions: ['settings.read'] },
+          { name: 'Background Jobs', href: '/admin/jobs', icon: Settings, permissions: ['settings.read'] },
+        ],
+      },
+      {
+        name: 'Integrations',
+        icon: Send,
+        permissions: ['settings.read'],
+        children: [
+          { name: 'Webhooks', href: '/admin/integrations/webhooks', icon: Send, permissions: ['settings.read'] },
+          { name: 'Email Templates', href: '/admin/integrations/email-templates', icon: FileText, permissions: ['settings.read'] },
+          { name: 'SSO Configuration', href: '/admin/integrations/sso', icon: Settings, permissions: ['settings.read'] },
+        ],
       },
       {
         name: 'Support Access',

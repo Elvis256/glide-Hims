@@ -799,6 +799,17 @@ export class AuthService {
     return this.passwordPolicyRepository.find({ where });
   }
 
+  async updatePasswordPolicy(id: string, data: Partial<PasswordPolicy>): Promise<PasswordPolicy> {
+    const policy = await this.passwordPolicyRepository.findOne({ where: { id } });
+    if (!policy) throw new BadRequestException('Policy not found');
+    Object.assign(policy, data);
+    return this.passwordPolicyRepository.save(policy);
+  }
+
+  async deletePasswordPolicy(id: string): Promise<void> {
+    await this.passwordPolicyRepository.delete(id);
+  }
+
   async getProfile(userId: string) {
     const user = await this.userRepository.findOne({ where: { id: userId } });
 
