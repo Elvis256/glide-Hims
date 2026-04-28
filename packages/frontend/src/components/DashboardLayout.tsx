@@ -793,6 +793,8 @@ const navigationSections: NavSection[] = [
     title: 'Reports',
     icon: BarChart3,
     moduleCode: 'reports',
+    roles: ['Doctor', 'Nurse', 'Pharmacist', 'Lab Technician', 'Radiologist', 'Cashier', 'Accountant', 'HR Manager', 'Store Keeper', 'Administrator'],
+    permissions: ['reports.read', 'analytics.read'],
     items: [
       { name: 'Reports Dashboard', href: '/reports', icon: LayoutDashboard, permissions: ['reports.read'] },
       { name: 'Analytics', href: '/analytics', icon: BarChart3, permissions: ['analytics.read'] },
@@ -1449,44 +1451,42 @@ export default function DashboardLayout({ children }: LayoutProps) {
   
   const filteredNavigationSections = navigationSections
     .filter((section) => {
-      // Primary: use backend-driven module access (if available) — applies to ALL users including Super Admin
-      if (section.moduleCode && user?.accessibleModules && user.accessibleModules.length > 0) {
-        return user.accessibleModules.includes(section.moduleCode);
-      }
-      
-      // Super Admin without module restrictions sees everything
+      // Super Admin sees everything
       if (isSuperAdmin) return true;
-      
-      // Fallback: role-based filtering (for users who haven't fetched /auth/me yet)
-      if (section.roles && section.roles.length > 0) {
-        if (!hasAnyRole(section.roles)) {
+
+      // Tenant-level module gate: if the tenant hasn't enabled this module, hide.
+      if (section.moduleCode && user?.accessibleModules && user.accessibleModules.length > 0) {
+        if (!user.accessibleModules.includes(section.moduleCode)) {
           return false;
         }
       }
-      
+
+      // User-role gate: even when the tenant has the module enabled, a user must
+      // either match one of the section's roles OR have at least one of its
+      // section-level permissions. This prevents e.g. a Cashier from seeing
+      // the Doctors/Pharmacy/Diagnostics groups just because the hospital has
+      // those modules turned on.
+      const roleOk = section.roles && section.roles.length > 0
+        ? hasAnyRole(section.roles)
+        : null; // no role list ⇒ undecided
+      const permOk = section.permissions && section.permissions.length > 0
+        ? hasAnyPermission(section.permissions)
+        : null; // no permission list ⇒ undecided
+
+      if (roleOk === false && permOk !== true) return false;
+      if (permOk === false && roleOk !== true) return false;
+
+      // Default-deny: if neither roles nor permissions are declared on the
+      // section, fall back to "must have at least one item visible" via the
+      // second filter pass below. We return true here and let item-level
+      // permissions decide.
       return true;
     })
     .map(filterSectionItems)
     .filter((section) => {
-      // If we have module-level filtering, trust it; otherwise Super Admin sees all
-      if (user?.accessibleModules && user.accessibleModules.length > 0) {
-        return section.items.length > 0 || !section.moduleCode;
-      }
       if (isSuperAdmin) return true;
-      
-      // Section must have at least one visible item after filtering
-      if (section.items.length === 0) {
-        return false;
-      }
-      
-      // Check section-level permission restriction (for sections that still define them)
-      if (section.permissions && section.permissions.length > 0) {
-        const hasRequiredPermission = hasAnyPermission(section.permissions);
-        if (!hasRequiredPermission) {
-          return false;
-        }
-      }
-      
+      // After item-level filtering, drop empty sections.
+      if (section.items.length === 0) return false;
       return true;
     })
     // Apply business-type-specific title overrides
