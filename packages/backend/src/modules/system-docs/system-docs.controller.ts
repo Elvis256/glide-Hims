@@ -99,11 +99,11 @@ export class SystemDocsController {
       'Content-Security-Policy',
       [
         "default-src 'self'",
-        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://static.cloudflareinsights.com",
         "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
         "font-src 'self' data: https://cdn.jsdelivr.net",
         "img-src 'self' data: blob: https:",
-        "connect-src 'self'",
+        "connect-src 'self' https://cdn.jsdelivr.net https://cloudflareinsights.com",
         "frame-ancestors 'self'",
       ].join('; '),
     );
