@@ -80,6 +80,7 @@ import { DownloadsModule } from './modules/downloads/downloads.module';
 import { HealthModule } from './modules/health/health.module';
 import { TenantModule } from './common/middleware/tenant.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { ComplianceModule } from './modules/compliance/compliance.module';
 import { AdherenceModule } from './modules/adherence/adherence.module';
 import { ScheduledTasksModule } from './modules/scheduled-tasks/scheduled-tasks.module';
 import { SupportAccessModule } from './modules/support-access/support-access.module';
@@ -142,6 +143,7 @@ import { DeploymentsModule } from './modules/deployments/deployment.module';
     TenantsModule,
     SystemDocsModule,
     AdminModule,
+    ComplianceModule,
     FacilitiesModule,
     RolesModule,
     PatientsModule,

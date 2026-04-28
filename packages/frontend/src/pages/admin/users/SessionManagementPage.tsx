@@ -28,6 +28,8 @@ import api from '../../../services/api';
 interface Session {
   id: string;
   userId: string;
+  username?: string;
+  fullName?: string;
   ipAddress: string;
   userAgent: string;
   deviceInfo: string;
@@ -127,7 +129,7 @@ export default function SessionManagementPage() {
   const { data: sessionsData, isLoading, error, refetch } = useQuery({
     queryKey: ['sessions'],
     queryFn: async () => {
-      const response = await api.get('/auth/sessions');
+      const response = await api.get('/auth/admin/sessions');
       return response.data.data as Session[];
     },
     staleTime: 30000,
@@ -195,7 +197,7 @@ export default function SessionManagementPage() {
 
   const revokeSessionMutation = useMutation({
     mutationFn: async (sessionId: string) => {
-      await api.delete(`/auth/sessions/${sessionId}`);
+      await api.delete(`/auth/admin/sessions/${sessionId}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sessions'] });

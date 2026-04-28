@@ -86,7 +86,8 @@ export class HrController {
   @ApiOperation({ summary: 'Get HR dashboard stats' })
   @ApiQuery({ name: 'facilityId', required: false })
   async getDashboard(@Query('facilityId') facilityId?: string, @Request() req?: any) {
-    return this.hrService.getStaffDashboard(facilityId, req?.user?.tenantId);
+    const scopedFacilityId = this.scopeFacilityId(req, facilityId);
+    return this.hrService.getStaffDashboard(scopedFacilityId, req?.user?.tenantId);
   }
 
   // ============ STAFF (Users as Staff) ============
@@ -107,10 +108,20 @@ export class HrController {
     @Request() req?: any,
   ) {
     return this.hrService.getStaff(
-      facilityId,
+      this.scopeFacilityId(req, facilityId),
       { status, departmentId, limit, offset },
       req?.user?.tenantId,
     );
+  }
+
+  private scopeFacilityId(req: any, requested?: string): string | undefined {
+    const u = req?.user;
+    if (!u) return requested;
+    if (u.isSystemAdmin) return requested;
+    const allowed = u.allFacilityIds && u.allFacilityIds.length > 0 ? u.allFacilityIds : (u.facilityId ? [u.facilityId] : []);
+    if (allowed.length === 0) return requested;
+    if (requested && allowed.includes(requested)) return requested;
+    return allowed[0];
   }
 
   @Get('staff/:id')

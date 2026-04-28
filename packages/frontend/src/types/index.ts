@@ -106,6 +106,7 @@ export interface LoginResponse {
   refreshToken: string;
   user: User;
   mustChangePassword?: boolean;
+  mustEnrollMfa?: boolean;
   expiresIn?: number;
 }
 

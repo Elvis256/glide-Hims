@@ -54,6 +54,11 @@ export default function SystemLoginPage() {
         navigate('/change-password', { state: { forced: true } });
         return;
       }
+      if (response.mustEnrollMfa) {
+        localStorage.setItem('glide_mfa_enroll_required', '1');
+      } else {
+        localStorage.removeItem('glide_mfa_enroll_required');
+      }
       navigate('/system');
     } catch (err: unknown) {
       const error = err as { response?: { data?: { message?: string } } };

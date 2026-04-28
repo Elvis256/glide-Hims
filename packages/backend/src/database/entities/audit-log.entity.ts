@@ -40,4 +40,16 @@ export class AuditLog extends BaseEntity {
 
   @Column({ name: 'support_access_tier', type: 'int', nullable: true })
   supportAccessTier?: number;
+
+  @Column({ type: 'text', nullable: true })
+  reason?: string;
+
+  @Column({ name: 'request_method', type: 'varchar', length: 10, nullable: true })
+  requestMethod?: string;
+
+  @Column({ name: 'request_url', type: 'text', nullable: true })
+  requestUrl?: string;
+
+  @Column({ name: 'status_code', type: 'int', nullable: true })
+  statusCode?: number;
 }

@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ShieldCheck, AlertTriangle, Siren, DatabaseBackup, KeyRound, FileBarChart2, Download } from 'lucide-react';
+import api from '../../services/api';
 
 type VulnerabilityRecord = {
   id: string;
@@ -47,33 +48,50 @@ type SLARecord = {
   p4Count: number;
 };
 
-const STORAGE_KEYS = {
-  vulnerabilities: 'compliance_vulnerability_records',
-  incidents: 'compliance_incident_records',
-  backups: 'compliance_backup_records',
-  accessReviews: 'compliance_access_review_records',
-  sla: 'compliance_sla_records',
+// (legacy STORAGE_KEYS removed; data now lives in /api/v1/compliance/:type)
+
+const RECORD_TYPES = {
+  vulnerabilities: 'vulnerability',
+  incidents: 'incident',
+  backups: 'backup',
+  accessReviews: 'access_review',
+  sla: 'sla',
 } as const;
 
-function useLocalRecords<T>(key: string, defaultValue: T[]) {
-  const [records, setRecords] = useState<T[]>(() => {
-    try {
-      const raw = localStorage.getItem(key);
-      return raw ? JSON.parse(raw) : defaultValue;
-    } catch {
-      return defaultValue;
-    }
-  });
+function useApiRecords<T extends { id: string }>(recordType: string, defaultValue: T[]) {
+  const [records, setRecords] = useState<T[]>(defaultValue);
+  const [loading, setLoading] = useState(true);
 
-  const persist = (next: T[]) => {
-    setRecords(next);
-    localStorage.setItem(key, JSON.stringify(next));
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get(`/compliance/${recordType}`)
+      .then((r) => {
+        if (cancelled) return;
+        const items = (r.data?.data || []).map((row: any) => ({ id: row.id, ...row.payload }));
+        setRecords(items);
+      })
+      .catch(() => {})
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [recordType]);
+
+  const add = async (record: T) => {
+    const { id, ...payload } = record as any;
+    void id;
+    const resp = await api.post(`/compliance/${recordType}`, payload);
+    const created = { id: resp.data.id, ...resp.data.payload } as T;
+    setRecords((prev) => [created, ...prev]);
   };
 
-  const add = (record: T) => persist([record, ...records]);
-  const clear = () => persist([]);
+  const clear = async () => {
+    await Promise.all(records.map((r) => api.delete(`/compliance/${recordType}/${r.id}`)));
+    setRecords([]);
+  };
 
-  return { records, add, clear };
+  return { records, add, clear, loading };
 }
 
 function StatusPill({ value }: { value: string }) {
@@ -87,11 +105,11 @@ function StatusPill({ value }: { value: string }) {
 }
 
 export default function SystemComplianceCenterPage() {
-  const vulnerabilities = useLocalRecords<VulnerabilityRecord>(STORAGE_KEYS.vulnerabilities, []);
-  const incidents = useLocalRecords<IncidentRecord>(STORAGE_KEYS.incidents, []);
-  const backups = useLocalRecords<BackupRecord>(STORAGE_KEYS.backups, []);
-  const accessReviews = useLocalRecords<AccessReviewRecord>(STORAGE_KEYS.accessReviews, []);
-  const sla = useLocalRecords<SLARecord>(STORAGE_KEYS.sla, []);
+  const vulnerabilities = useApiRecords<VulnerabilityRecord>(RECORD_TYPES.vulnerabilities, []);
+  const incidents = useApiRecords<IncidentRecord>(RECORD_TYPES.incidents, []);
+  const backups = useApiRecords<BackupRecord>(RECORD_TYPES.backups, []);
+  const accessReviews = useApiRecords<AccessReviewRecord>(RECORD_TYPES.accessReviews, []);
+  const sla = useApiRecords<SLARecord>(RECORD_TYPES.sla, []);
 
   const [vulnForm, setVulnForm] = useState({ severity: 'high', component: '', status: 'open', owner: '' });
   const [incidentForm, setIncidentForm] = useState({ severity: 'p2', service: '', summary: '', status: 'open' });

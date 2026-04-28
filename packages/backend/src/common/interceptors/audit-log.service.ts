@@ -22,6 +22,10 @@ export class AuditLogService {
     tenantId?: string;
     actorType?: string;
     supportAccessTier?: number;
+    reason?: string;
+    requestMethod?: string;
+    requestUrl?: string;
+    statusCode?: number;
   }): Promise<AuditLog> {
     return this.auditLogRepository.save(this.auditLogRepository.create(data));
   }

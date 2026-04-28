@@ -74,6 +74,9 @@ export class AuthResponseDto {
   @ApiPropertyOptional()
   mustChangePassword?: boolean;
 
+  @ApiPropertyOptional()
+  mustEnrollMfa?: boolean;
+
   @ApiProperty()
   user: {
     id: string;

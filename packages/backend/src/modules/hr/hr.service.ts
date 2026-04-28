@@ -140,7 +140,7 @@ export class HrService {
     if (tenantId) where.tenantId = tenantId;
     if (options.status) where.status = options.status;
     if (options.departmentId) where.departmentId = options.departmentId;
-    // Note: facilityId filter can be added if needed: if (facilityId) where.facilityId = facilityId;
+    if (facilityId) where.facilityId = facilityId;
 
     const [data, total] = await this.userRepo.findAndCount({
       where,
@@ -246,7 +246,7 @@ export class HrService {
   async getStaffDashboard(facilityId?: string, tenantId?: string) {
     const where: any = { deletedAt: IsNull() };
     if (tenantId) where.tenantId = tenantId;
-    // if (facilityId) where.facilityId = facilityId;
+    if (facilityId) where.facilityId = facilityId;
 
     const totalStaff = await this.userRepo.count({ where });
     const activeStaff = await this.userRepo.count({ where: { ...where, status: 'active' } });

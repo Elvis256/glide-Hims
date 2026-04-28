@@ -448,6 +448,7 @@ export class AuthService {
       refreshToken,
       expiresIn: expiresInSeconds,
       mustChangePassword: user.mustChangePassword || undefined,
+      mustEnrollMfa: user.isSystemAdmin && !user.mfaEnabled ? true : undefined,
       user: {
         id: user.id,
         username: user.username,

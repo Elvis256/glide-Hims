@@ -142,6 +142,48 @@ export class SessionService {
     });
   }
 
+  async getAllTenantSessions(tenantId: string): Promise<any[]> {
+    return this.sessionRepository
+      .createQueryBuilder('s')
+      .leftJoin('users', 'u', 'u.id = s.userId')
+      .select([
+        's.id AS id',
+        's.userId AS "userId"',
+        'u.username AS username',
+        'u.full_name AS "fullName"',
+        's.ipAddress AS "ipAddress"',
+        's.userAgent AS "userAgent"',
+        's.deviceInfo AS "deviceInfo"',
+        's.isActive AS "isActive"',
+        's.lastActivityAt AS "lastActivityAt"',
+        's.expiresAt AS "expiresAt"',
+        's.createdAt AS "createdAt"',
+      ])
+      .where('s.tenantId = :tenantId', { tenantId })
+      .andWhere('s.isActive = true')
+      .orderBy('s.lastActivityAt', 'DESC')
+      .getRawMany();
+  }
+
+  async adminRevokeSession(sessionId: string, tenantId: string): Promise<void> {
+    const session = await this.sessionRepository.findOne({
+      where: { id: sessionId, tenantId, isActive: true },
+    });
+    if (!session) return;
+    session.isActive = false;
+    session.revokedAt = new Date();
+    await this.sessionRepository.save(session);
+    this.logger.log(`Admin revoked session ${sessionId} in tenant ${tenantId}`);
+  }
+
+  async adminRevokeUserSessions(userId: string, tenantId: string): Promise<void> {
+    await this.sessionRepository.update(
+      { userId, tenantId, isActive: true },
+      { isActive: false, revokedAt: new Date() },
+    );
+    this.logger.log(`Admin revoked all sessions for user ${userId} in tenant ${tenantId}`);
+  }
+
   /**
    * Update the token hash on a session after token rotation (refresh).
    */
