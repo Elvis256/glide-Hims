@@ -8,7 +8,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, MoreThanOrEqual, LessThanOrEqual, In, IsNull, Not } from 'typeorm';
+import { Repository, Between, MoreThanOrEqual, LessThanOrEqual, In, IsNull, Not, DataSource } from 'typeorm';
 import { Employee, EmploymentStatus } from '../../database/entities/employee.entity';
 import { AttendanceRecord } from '../../database/entities/attendance.entity';
 import { LeaveRequest, LeaveStatus, LeaveType } from '../../database/entities/leave-request.entity';
@@ -127,6 +127,7 @@ export class HrService {
     private userRoleRepo: Repository<UserRole>,
     @Inject(forwardRef(() => FinanceService))
     private financeService: FinanceService,
+    private dataSource: DataSource,
   ) {}
 
   // ============ STAFF MANAGEMENT (Users as Staff) ============
@@ -738,8 +739,35 @@ export class HrService {
 
     const startDate = new Date(dto.startDate);
     const endDate = new Date(dto.endDate);
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+      throw new BadRequestException('Invalid start or end date');
+    }
+    if (endDate < startDate) {
+      throw new BadRequestException('End date must be on or after start date');
+    }
     const daysRequested =
       Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    if (daysRequested <= 0) {
+      throw new BadRequestException('Leave duration must be at least one day');
+    }
+
+    // Reject overlapping pending/approved requests for same employee
+    const overlap = await this.leaveRepo
+      .createQueryBuilder('l')
+      .where('l.employeeId = :eid', { eid: dto.employeeId })
+      .andWhere('l.status IN (:...statuses)', {
+        statuses: [LeaveStatus.PENDING, LeaveStatus.APPROVED],
+      })
+      .andWhere('l.startDate <= :end AND l.endDate >= :start', {
+        start: startDate,
+        end: endDate,
+      })
+      .getOne();
+    if (overlap) {
+      throw new BadRequestException(
+        'An overlapping leave request already exists for this period',
+      );
+    }
 
     // Check leave balance for annual/sick leave
     if (dto.leaveType === LeaveType.ANNUAL && daysRequested > employee.annualLeaveBalance) {
@@ -788,15 +816,32 @@ export class HrService {
     leave.approvedAt = new Date();
     if (dto.notes) leave.approvalNotes = dto.notes;
 
-    // Update leave balance if approved
+    // Update leave balance if approved (re-check at approval time to avoid race)
     if (dto.approved) {
       const employee = leave.employee;
       if (leave.leaveType === LeaveType.ANNUAL) {
+        if (employee.annualLeaveBalance < leave.daysRequested) {
+          throw new BadRequestException(
+            `Cannot approve: insufficient annual leave balance (${employee.annualLeaveBalance} available, ${leave.daysRequested} requested).`,
+          );
+        }
         employee.annualLeaveBalance -= leave.daysRequested;
       } else if (leave.leaveType === LeaveType.SICK) {
+        if (employee.sickLeaveBalance < leave.daysRequested) {
+          throw new BadRequestException(
+            `Cannot approve: insufficient sick leave balance (${employee.sickLeaveBalance} available, ${leave.daysRequested} requested).`,
+          );
+        }
         employee.sickLeaveBalance -= leave.daysRequested;
       }
       await this.employeeRepo.save(employee);
+      this.logger.log(
+        `[HR_NOTIFY] leave.approved employeeId=${employee.id} type=${leave.leaveType} days=${leave.daysRequested}`,
+      );
+    } else {
+      this.logger.log(
+        `[HR_NOTIFY] leave.rejected employeeId=${leave.employeeId} type=${leave.leaveType}`,
+      );
     }
 
     return this.leaveRepo.save(leave);
@@ -873,130 +918,136 @@ export class HrService {
   }
 
   async processPayroll(id: string, tenantId?: string): Promise<PayrollRun> {
-    const payroll = await this.payrollRunRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
-    });
-    if (!payroll) throw new NotFoundException('Payroll run not found');
+    return this.dataSource.transaction(async (manager) => {
+      // Row-lock the payroll run to prevent concurrent processing
+      const payroll = await manager
+        .getRepository(PayrollRun)
+        .createQueryBuilder('p')
+        .setLock('pessimistic_write')
+        .where('p.id = :id', { id })
+        .andWhere(tenantId ? 'p.tenantId = :tenantId' : '1=1', tenantId ? { tenantId } : {})
+        .getOne();
+      if (!payroll) throw new NotFoundException('Payroll run not found');
 
-    if (payroll.status !== PayrollStatus.DRAFT) {
-      throw new BadRequestException('Payroll has already been processed');
-    }
+      if (payroll.status !== PayrollStatus.DRAFT) {
+        throw new BadRequestException('Payroll has already been processed');
+      }
 
-    payroll.status = PayrollStatus.PROCESSING;
-    await this.payrollRunRepo.save(payroll);
+      payroll.status = PayrollStatus.PROCESSING;
+      await manager.save(payroll);
 
-    // Get active staff from users table
-    const staff = await this.userRepo.find({
-      where: {
-        facilityId: payroll.facilityId,
-        status: 'active',
-        deletedAt: IsNull(),
-      },
-    });
+      const userRepoTx = manager.getRepository(User);
+      const payslipRepoTx = manager.getRepository(Payslip);
 
-    // Filter to only staff with salary configured
-    const paidStaff = staff.filter((u) => u.basicSalary && Number(u.basicSalary) > 0);
-
-    if (paidStaff.length === 0) {
-      payroll.status = PayrollStatus.DRAFT;
-      await this.payrollRunRepo.save(payroll);
-      throw new BadRequestException(
-        'No employees have basic salary configured. Please set salaries in Staff Directory before processing payroll.',
-      );
-    }
-
-    // Delete any existing payslips from previous attempts
-    await this.payslipRepo.delete({ payrollRunId: payroll.id });
-
-    let totalGross = 0;
-    let totalDeductions = 0;
-    let totalNet = 0;
-    let totalPaye = 0;
-    let totalNssf = 0;
-
-    for (const emp of paidStaff) {
-      // Calculate gross salary
-      const allowancesTotal = (emp.allowances || []).reduce((sum, a) => sum + Number(a.amount), 0);
-      const grossSalary = Number(emp.basicSalary) + allowancesTotal;
-
-      // Calculate NSSF (5% employee, 10% employer, max 500,000 UGX salary cap)
-      const nssfSalaryCap = Math.min(grossSalary, 500000);
-      const nssfEmployee = nssfSalaryCap * 0.05;
-      const nssfEmployer = nssfSalaryCap * 0.1;
-
-      // Calculate PAYE (Uganda tax brackets simplified)
-      const paye = this.calculatePaye(grossSalary);
-
-      // Other deductions
-      const otherDeductionsTotal = (emp.deductions || []).reduce((sum, d) => {
-        if (d.type === 'fixed') return sum + Number(d.amount);
-        return sum + (grossSalary * Number(d.amount)) / 100;
-      }, 0);
-
-      const totalDeductionsForEmp = paye + nssfEmployee + otherDeductionsTotal;
-      const netSalary = grossSalary - totalDeductionsForEmp;
-
-      // Create payslip
-      const payslip = this.payslipRepo.create({
-        payrollRunId: payroll.id,
-        employeeId: emp.id,
-        basicSalary: emp.basicSalary,
-        allowances: emp.allowances?.map((a) => ({ name: a.name, amount: Number(a.amount) })),
-        grossSalary,
-        paye,
-        nssfEmployee,
-        nssfEmployer,
-        otherDeductions: emp.deductions?.map((d) => ({
-          name: d.name,
-          amount: d.type === 'fixed' ? Number(d.amount) : (grossSalary * Number(d.amount)) / 100,
-        })),
-        totalDeductions: totalDeductionsForEmp,
-        netSalary,
-        daysWorked: 22,
-        isPaid: false,
-        ...(tenantId ? { tenantId } : {}),
-      });
-      await this.payslipRepo.save(payslip);
-
-      totalGross += grossSalary;
-      totalDeductions += totalDeductionsForEmp;
-      totalNet += netSalary;
-      totalPaye += paye;
-      totalNssf += nssfEmployee + nssfEmployer;
-    }
-
-    // Update payroll totals
-    payroll.employeeCount = paidStaff.length;
-    payroll.totalGross = totalGross;
-    payroll.totalDeductions = totalDeductions;
-    payroll.totalNet = totalNet;
-    payroll.totalPaye = totalPaye;
-    payroll.totalNssf = totalNssf;
-    payroll.status = PayrollStatus.COMPLETED;
-
-    const saved = await this.payrollRunRepo.save(payroll);
-
-    // Auto-post GL: DR Salary Expense, CR Salaries Payable + PAYE Payable + NSSF Payable
-    this.financeService
-      .autoPostPayrollJournal(
-        {
+      const staff = await userRepoTx.find({
+        where: {
           facilityId: payroll.facilityId,
-          payrollNumber: payroll.payrollNumber,
-          totalGross: totalGross,
-          totalNet: totalNet,
-          totalPaye: totalPaye,
-          totalNssf: totalNssf,
-          userId: 'system',
+          status: 'active',
+          deletedAt: IsNull(),
         },
-        tenantId,
-      )
-      .catch((err) =>
-        this.logger.warn(
-          `GL auto-post failed for payroll ${payroll.payrollNumber}: ${err.message}`,
-        ),
+      });
+
+      const paidStaff = staff.filter((u) => u.basicSalary && Number(u.basicSalary) > 0);
+
+      if (paidStaff.length === 0) {
+        payroll.status = PayrollStatus.DRAFT;
+        await manager.save(payroll);
+        throw new BadRequestException(
+          'No employees have basic salary configured. Please set salaries in Staff Directory before processing payroll.',
+        );
+      }
+
+      await payslipRepoTx.delete({ payrollRunId: payroll.id });
+
+      let totalGross = 0;
+      let totalDeductions = 0;
+      let totalNet = 0;
+      let totalPaye = 0;
+      let totalNssf = 0;
+
+      for (const emp of paidStaff) {
+        const allowancesTotal = (emp.allowances || []).reduce((sum, a) => sum + Number(a.amount), 0);
+        const grossSalary = Number(emp.basicSalary) + allowancesTotal;
+
+        const nssfSalaryCap = Math.min(grossSalary, 500000);
+        const nssfEmployee = nssfSalaryCap * 0.05;
+        const nssfEmployer = nssfSalaryCap * 0.1;
+
+        const paye = this.calculatePaye(grossSalary);
+
+        const otherDeductionsTotal = (emp.deductions || []).reduce((sum, d) => {
+          if (d.type === 'fixed') return sum + Number(d.amount);
+          return sum + (grossSalary * Number(d.amount)) / 100;
+        }, 0);
+
+        const totalDeductionsForEmp = paye + nssfEmployee + otherDeductionsTotal;
+        const netSalary = grossSalary - totalDeductionsForEmp;
+
+        const payslip = payslipRepoTx.create({
+          payrollRunId: payroll.id,
+          employeeId: emp.id,
+          basicSalary: emp.basicSalary,
+          allowances: emp.allowances?.map((a) => ({ name: a.name, amount: Number(a.amount) })),
+          grossSalary,
+          paye,
+          nssfEmployee,
+          nssfEmployer,
+          otherDeductions: emp.deductions?.map((d) => ({
+            name: d.name,
+            amount: d.type === 'fixed' ? Number(d.amount) : (grossSalary * Number(d.amount)) / 100,
+          })),
+          totalDeductions: totalDeductionsForEmp,
+          netSalary,
+          daysWorked: 22,
+          isPaid: false,
+          ...(tenantId ? { tenantId } : {}),
+        });
+        await payslipRepoTx.save(payslip);
+
+        totalGross += grossSalary;
+        totalDeductions += totalDeductionsForEmp;
+        totalNet += netSalary;
+        totalPaye += paye;
+        totalNssf += nssfEmployee + nssfEmployer;
+      }
+
+      payroll.employeeCount = paidStaff.length;
+      payroll.totalGross = totalGross;
+      payroll.totalDeductions = totalDeductions;
+      payroll.totalNet = totalNet;
+      payroll.totalPaye = totalPaye;
+      payroll.totalNssf = totalNssf;
+      payroll.status = PayrollStatus.COMPLETED;
+
+      const saved = await manager.save(payroll);
+
+      // Auto-post GL outside of the transaction commitment is not strictly required;
+      // we fire-and-forget so failures don't roll back payroll creation.
+      this.financeService
+        .autoPostPayrollJournal(
+          {
+            facilityId: payroll.facilityId,
+            payrollNumber: payroll.payrollNumber,
+            totalGross,
+            totalNet,
+            totalPaye,
+            totalNssf,
+            userId: 'system',
+          },
+          tenantId,
+        )
+        .catch((err) =>
+          this.logger.warn(
+            `GL auto-post failed for payroll ${payroll.payrollNumber}: ${err.message}`,
+          ),
+        );
+
+      this.logger.log(
+        `[HR_NOTIFY] payroll.processed payrollId=${saved.id} number=${saved.payrollNumber} employees=${paidStaff.length} totalNet=${totalNet}`,
       );
 
-    return saved;
+      return saved;
+    });
   }
 
   async resetPayrollRun(id: string, tenantId?: string): Promise<PayrollRun> {

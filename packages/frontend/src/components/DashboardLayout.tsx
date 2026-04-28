@@ -1045,7 +1045,14 @@ const navigationSections: NavSection[] = [
         permissions: ['admin.backup'],
         children: [
           { name: 'Backup Management', href: '/admin/backups', icon: HardDrive, permissions: ['admin.backup'] },
+          { name: 'Trash & Recovery', href: '/admin/trash', icon: HardDrive, permissions: ['users.delete'] },
         ],
+      },
+      {
+        name: 'Audit Logs',
+        icon: HardDrive,
+        href: '/admin/audit-logs',
+        permissions: ['audit.read'],
       },
       {
         name: 'Support Access',

@@ -129,6 +129,17 @@ export class UsersController {
     return { message: 'Password reset successfully', data: result };
   }
 
+  @Post('bulk-force-password-reset')
+  @AuthWithPermissions('users.update')
+  @ApiOperation({ summary: 'Force password reset for multiple users (next-login)' })
+  async bulkForcePasswordReset(@Body() body: { userIds: string[] }, @Request() req: any) {
+    const result = await this.usersService.bulkForcePasswordReset(
+      body?.userIds || [],
+      req.user?.tenantId,
+    );
+    return { message: 'Password reset enforced', data: result };
+  }
+
   @Get('tenant-admins')
   @AuthWithPermissions('users.read')
   @ApiOperation({ summary: 'System admin: list all tenant admin users across tenants' })

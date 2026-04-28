@@ -57,6 +57,8 @@ const AdminDashboard = lazy(() => import('./pages/Admin/AdminDashboard'));
 const PublicLandingPage = lazy(() => import('./pages/Public/PublicLandingPage'));
 const TenantManagementPage = lazy(() => import('./pages/admin/TenantManagementPage'));
 const BackupManagementPage = lazy(() => import('./pages/admin/BackupManagementPage'));
+const TrashRecoveryPage = lazy(() => import('./pages/admin/TrashRecoveryPage'));
+const AuditLogsPage = lazy(() => import('./pages/admin/AuditLogsPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const SmartDashboardPage = lazy(() => import('./pages/SmartDashboardPage'));
 const UsersPage = lazy(() => import('./pages/UsersPage'));
@@ -1101,6 +1103,8 @@ function AppRoutes() {
                 
                 {/* Admin - Backups */}
                 <Route path="/admin/backups" element={<AdminRoute><BackupManagementPage /></AdminRoute>} />
+                <Route path="/admin/trash" element={<AdminRoute><TrashRecoveryPage /></AdminRoute>} />
+                <Route path="/admin/audit-logs" element={<AdminRoute><AuditLogsPage /></AdminRoute>} />
                 <Route path="/admin/support-access" element={<AdminRoute><SupportAccessPage /></AdminRoute>} />
                 
                 {/* Admin - Membership */}

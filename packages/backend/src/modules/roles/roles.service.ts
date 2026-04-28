@@ -201,9 +201,41 @@ export class RolesService {
     return this.roleRepository.save(role);
   }
 
+  async getRoleUsers(roleId: string, tenantId?: string) {
+    const role = await this.findOneRole(roleId, tenantId);
+    const rows = await this.dataSource
+      .getRepository('UserRole')
+      .createQueryBuilder('ur')
+      .innerJoin('users', 'u', 'u.id = ur.user_id')
+      .leftJoin('facilities', 'f', 'f.id = ur.facility_id')
+      .where('ur.role_id = :roleId', { roleId })
+      .andWhere(tenantId ? 'u.tenant_id = :tid' : '1=1', tenantId ? { tid: tenantId } : {})
+      .andWhere('u.deleted_at IS NULL')
+      .select([
+        'u.id AS id',
+        'u.username AS username',
+        'u.full_name AS "fullName"',
+        'u.email AS email',
+        'u.status AS status',
+        'f.name AS "facilityName"',
+      ])
+      .getRawMany();
+    return { role: { id: role.id, name: role.name }, users: rows, count: rows.length };
+  }
+
   async removeRole(id: string, tenantId?: string): Promise<void> {
     const role = await this.findOneRole(id, tenantId);
     if (role.isSystemRole) throw new ConflictException('Cannot delete system roles');
+    const userCount = await this.dataSource
+      .getRepository('UserRole')
+      .createQueryBuilder('ur')
+      .where('ur.role_id = :id', { id })
+      .getCount();
+    if (userCount > 0) {
+      throw new ConflictException(
+        `Cannot delete role: ${userCount} user(s) are still assigned. Reassign them first.`,
+      );
+    }
     await this.roleRepository.softRemove(role);
   }
 
