@@ -215,7 +215,6 @@ export default function OrgChartPage() {
           padding: 0 8px;
           text-align: center;
         }
-        /* vertical connector from card down to children's horizontal bar */
         .org-tree li.org-node > ul::before {
           content: '';
           position: absolute;
@@ -225,7 +224,6 @@ export default function OrgChartPage() {
           width: 2px;
           background: #cbd5e1;
         }
-        /* horizontal bar across siblings */
         .org-tree li.org-node > ul::after {
           content: '';
           position: absolute;
@@ -235,12 +233,6 @@ export default function OrgChartPage() {
           height: 2px;
           background: #cbd5e1;
         }
-        /* hide bar tails for first/last child */
-        .org-tree li.org-node > ul > li.org-node:first-child::before,
-        .org-tree li.org-node > ul > li.org-node:last-child::after {
-          /* nothing — bar handled by parent's ::after; per-child we draw connector down */
-        }
-        /* per-child connector down from horizontal bar to child card */
         .org-tree li.org-node > ul > li.org-node {
           position: relative;
           padding-top: 18px;
@@ -262,10 +254,22 @@ export default function OrgChartPage() {
         }
         @media print {
           @page { size: A3 landscape; margin: 10mm; }
-          body { background: white !important; }
-          .no-print { display: none !important; }
+          /* Hide everything by default */
+          body * { visibility: hidden !important; }
+          /* Show only the print area and its descendants */
+          .org-print-area, .org-print-area * { visibility: visible !important; }
+          /* Pull the print area out of the layout flow to the page top */
+          .org-print-area {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            background: white !important;
+          }
+          .no-print, .no-print * { display: none !important; visibility: hidden !important; }
           .org-card { box-shadow: none !important; }
-          .org-tree { transform: scale(0.85); transform-origin: top center; }
         }
       `}</style>
 
@@ -317,75 +321,85 @@ export default function OrgChartPage() {
         </div>
       </div>
 
-      {loading ? (
-        <p className="text-gray-500">Loading…</p>
-      ) : view === 'hierarchy' ? (
-        <>
-          {tree.length === 0 ? (
-            <div className="bg-amber-50 border border-amber-200 rounded p-6 text-center">
-              <p className="text-amber-800 font-medium">No designations defined yet.</p>
-              <p className="text-sm text-amber-700 mt-1">
-                Go to <a className="underline" href="/hr/designations">HR → Designations</a> and click <b>Load Default HMIS Designations</b> to seed the hierarchy.
-              </p>
-            </div>
-          ) : (
-            <div className="bg-white border rounded-lg p-6 overflow-x-auto print:border-0 print:p-0">
-              <ul className="org-tree">
-                {tree.map(renderNode)}
-              </ul>
-            </div>
-          )}
+      <div className="org-print-area">
+        {/* Print-only header (hidden on screen) */}
+        <div className="hidden print:block mb-4 text-center">
+          <h1 className="text-xl font-bold">Organisation Chart</h1>
+          <p className="text-sm text-gray-600">
+            {employees.length} staff · {designations.length} designations · printed {new Date().toLocaleDateString()}
+          </p>
+        </div>
 
-          {unassignedStaff.length > 0 && (
-            <div className="mt-6 bg-white border rounded-lg p-4 print:break-before-page">
-              <h2 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
-                <Users className="h-4 w-4 text-gray-500" />
-                Unassigned Staff
-                <span className="text-xs text-gray-500 font-normal">({unassignedStaff.length})</span>
-              </h2>
-              <p className="text-xs text-gray-500 mb-3 no-print">
-                These users have no <b>Job Title</b> matching a defined designation. Assign them via Staff Directory → Edit.
-              </p>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-                {unassignedStaff.map((s) => (
-                  <div key={s.id} className="border rounded p-2 bg-gray-50 text-sm">
-                    <div className="font-medium">{s.fullName}</div>
-                    <div className="text-xs text-gray-600">{s.jobTitle || '—'}</div>
-                    <div className="text-xs text-gray-500">{deptName(s) || '—'}</div>
-                  </div>
-                ))}
+        {loading ? (
+          <p className="text-gray-500">Loading…</p>
+        ) : view === 'hierarchy' ? (
+          <>
+            {tree.length === 0 ? (
+              <div className="bg-amber-50 border border-amber-200 rounded p-6 text-center no-print">
+                <p className="text-amber-800 font-medium">No designations defined yet.</p>
+                <p className="text-sm text-amber-700 mt-1">
+                  Go to <a className="underline" href="/hr/designations">HR → Designations</a> and click <b>Load Default HMIS Designations</b> to seed the hierarchy.
+                </p>
               </div>
-            </div>
-          )}
-        </>
-      ) : (
-        <div className="space-y-6">
-          {groupedByDept.length === 0 ? (
-            <div className="bg-white rounded shadow p-8 text-center text-gray-500">No employees match.</div>
-          ) : (
-            groupedByDept.map(([dept, members]) => (
-              <div key={dept} className="bg-white rounded shadow border">
-                <div className="border-b p-4 flex justify-between items-center">
-                  <h2 className="font-semibold text-lg">{dept}</h2>
-                  <span className="text-sm text-gray-500">{members.length} staff</span>
-                </div>
-                <div className="p-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                  {members.map((m) => (
-                    <div key={m.id} className="border rounded p-3 hover:shadow transition bg-gray-50" title={m.email || ''}>
-                      <div className="font-medium">{m.fullName}</div>
-                      <div className="text-xs text-gray-600">{m.jobTitle || '—'}</div>
-                      {m.email && <div className="text-xs text-blue-600 truncate mt-1">{m.email}</div>}
-                      {m.status && m.status !== 'active' && (
-                        <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-yellow-100 text-yellow-800 rounded">{m.status}</span>
-                      )}
+            ) : (
+              <div className="bg-white border rounded-lg p-6 overflow-x-auto print:border-0 print:p-0">
+                <ul className="org-tree">
+                  {tree.map(renderNode)}
+                </ul>
+              </div>
+            )}
+
+            {unassignedStaff.length > 0 && (
+              <div className="mt-6 bg-white border rounded-lg p-4 print:break-before-page">
+                <h2 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                  <Users className="h-4 w-4 text-gray-500" />
+                  Unassigned Staff
+                  <span className="text-xs text-gray-500 font-normal">({unassignedStaff.length})</span>
+                </h2>
+                <p className="text-xs text-gray-500 mb-3 no-print">
+                  These users have no <b>Job Title</b> matching a defined designation. Assign them via Staff Directory → Edit.
+                </p>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                  {unassignedStaff.map((s) => (
+                    <div key={s.id} className="border rounded p-2 bg-gray-50 text-sm">
+                      <div className="font-medium">{s.fullName}</div>
+                      <div className="text-xs text-gray-600">{s.jobTitle || '—'}</div>
+                      <div className="text-xs text-gray-500">{deptName(s) || '—'}</div>
                     </div>
                   ))}
                 </div>
               </div>
-            ))
-          )}
-        </div>
-      )}
+            )}
+          </>
+        ) : (
+          <div className="space-y-6">
+            {groupedByDept.length === 0 ? (
+              <div className="bg-white rounded shadow p-8 text-center text-gray-500">No employees match.</div>
+            ) : (
+              groupedByDept.map(([dept, members]) => (
+                <div key={dept} className="bg-white rounded shadow border">
+                  <div className="border-b p-4 flex justify-between items-center">
+                    <h2 className="font-semibold text-lg">{dept}</h2>
+                    <span className="text-sm text-gray-500">{members.length} staff</span>
+                  </div>
+                  <div className="p-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                    {members.map((m) => (
+                      <div key={m.id} className="border rounded p-3 hover:shadow transition bg-gray-50" title={m.email || ''}>
+                        <div className="font-medium">{m.fullName}</div>
+                        <div className="text-xs text-gray-600">{m.jobTitle || '—'}</div>
+                        {m.email && <div className="text-xs text-blue-600 truncate mt-1">{m.email}</div>}
+                        {m.status && m.status !== 'active' && (
+                          <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-yellow-100 text-yellow-800 rounded">{m.status}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
