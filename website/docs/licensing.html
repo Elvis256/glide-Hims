@@ -84,11 +84,11 @@
         </div>
 
         <div class="alert alert-success border-0 shadow-sm" style="background:#ecfdf5;border-left:4px solid #10b981;">
-            <strong>✓ Verified in v1.0</strong> — license keys are issued from the System Admin portal
-            (<code>/system/deployments</code>) when provisioning a hybrid or standalone deployment. Keys are
-            cryptographically signed (Ed25519) and encode tenant id, plan, user/facility limits, and expiry.
-            Validation runs at boot and every 24 hours; expired keys put the deployment in
-            <code>maintenance_mode</code> automatically.
+            <strong>✓ Verified in v1.0</strong> — license keys are issued from the System Administration
+            portal when provisioning a hybrid or standalone deployment. Keys are cryptographically signed
+            and encode tenant id, plan, user/facility limits, and expiry. Validation runs periodically;
+            expired keys gracefully transition the deployment into a restricted state until a valid key
+            is installed.
         </div>
 
         <!-- Overview -->
