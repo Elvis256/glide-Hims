@@ -178,6 +178,23 @@ export class BillingController {
     return this.billingService.voidPayment(id, reason, req?.user?.id, req?.user?.tenantId);
   }
 
+  @Post('payments/:id/refund')
+  @AuthWithPermissions('billing.update')
+  @ApiOperation({ summary: 'Issue a partial or full refund against a payment' })
+  refundPayment(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { amount: number; reason: string },
+    @Request() req?: any,
+  ) {
+    return this.billingService.refundPayment(
+      id,
+      body.amount,
+      body.reason,
+      req?.user?.id,
+      req?.user?.tenantId,
+    );
+  }
+
   @Get('revenue/daily')
   @AuthWithPermissions('billing.read')
   @ApiOperation({ summary: 'Get daily revenue summary' })

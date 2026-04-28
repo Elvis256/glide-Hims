@@ -1,6 +1,7 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { FinanceModule } from '../finance/finance.module';
+import { BillingModule } from '../billing/billing.module';
 import { InsuranceService } from './insurance.service';
 import { InsuranceController } from './insurance.controller';
 import { CoverageCheckService } from './coverage-check.service';
@@ -25,6 +26,7 @@ import { Invoice } from '../../database/entities/invoice.entity';
       Invoice,
     ]),
     forwardRef(() => FinanceModule),
+    forwardRef(() => BillingModule),
   ],
   controllers: [InsuranceController, CoverageCheckController],
   providers: [InsuranceService, CoverageCheckService],

@@ -233,6 +233,10 @@ export const billingService = {
       const response = await api.patch<Payment>(`/billing/payments/${paymentId}/void`, { reason });
       return response.data;
     },
+    refund: async (paymentId: string, amount: number, reason: string): Promise<Payment> => {
+      const response = await api.post<Payment>(`/billing/payments/${paymentId}/refund`, { amount, reason });
+      return response.data;
+    },
   },
 
   // Revenue
