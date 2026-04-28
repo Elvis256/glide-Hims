@@ -153,7 +153,119 @@ export default function OrgChartPage() {
     return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
   }, [employees, search]);
 
-  const handlePrint = () => window.print();
+  const handlePrint = () => {
+    // Build pure HTML for the chart and open in a new window — bypasses all app layout/CSS conflicts
+    const renderNodeHtml = (node: TreeNode): string => {
+      const grade = node.designation.grade || '';
+      const gradeColor: Record<string, string> = {
+        E1: '#a78bfa', E2: '#c4b5fd',
+        M1: '#60a5fa', M2: '#93c5fd', M3: '#93c5fd',
+        N1: '#4ade80', N2: '#86efac', N3: '#86efac',
+        T1: '#fdba74',
+      };
+      const borderColor = gradeColor[grade] || '#cbd5e1';
+      const staffHtml = node.staff.length
+        ? node.staff.map((s) => `<div class="staff-line">▸ ${escape(s.fullName)}</div>`).join('')
+        : '<div class="vacant">vacant</div>';
+      const childrenHtml = node.children.length
+        ? `<ul>${node.children.map(renderNodeHtml).join('')}</ul>`
+        : '';
+      return `
+        <li>
+          <div class="card" style="border-color:${borderColor}">
+            <div class="title">${escape(node.designation.title)}</div>
+            <div class="meta">
+              ${grade ? `<span class="grade">${grade}</span>` : ''}
+              ${node.designation.department ? `<span>${escape(node.designation.department)}</span>` : ''}
+            </div>
+            <div class="staff">${staffHtml}</div>
+          </div>
+          ${childrenHtml}
+        </li>`;
+    };
+
+    function escape(s: string) {
+      return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
+    }
+
+    const treeHtml = tree.length
+      ? `<ul class="org-tree">${tree.map(renderNodeHtml).join('')}</ul>`
+      : '<p style="text-align:center;color:#92400e">No designations defined.</p>';
+
+    const unassignedHtml = unassignedStaff.length
+      ? `<div class="unassigned">
+          <h2>Unassigned Staff (${unassignedStaff.length})</h2>
+          <div class="grid">
+            ${unassignedStaff.map((s) => `
+              <div class="ucard">
+                <div class="uname">${escape(s.fullName)}</div>
+                <div class="ujob">${escape(s.jobTitle || '—')}</div>
+                <div class="udept">${escape(deptName(s) || '—')}</div>
+              </div>`).join('')}
+          </div>
+        </div>`
+      : '';
+
+    const html = `<!doctype html>
+<html><head>
+<meta charset="utf-8" />
+<title>Organisation Chart</title>
+<style>
+  @page { size: A3 landscape; margin: 10mm; }
+  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; padding: 16px; color: #111827; }
+  h1 { margin: 0 0 4px; font-size: 22px; }
+  .header { text-align: center; margin-bottom: 16px; }
+  .header p { margin: 0; color: #6b7280; font-size: 12px; }
+
+  .org-tree, .org-tree ul { list-style: none; margin: 0; padding: 0; position: relative; }
+  .org-tree ul { display: flex; padding-top: 24px; gap: 12px; justify-content: center; }
+  .org-tree li { position: relative; padding: 0 6px; text-align: center; }
+  .org-tree li > ul::before { content:''; position:absolute; top:0; left:50%; height:12px; width:2px; background:#cbd5e1; }
+  .org-tree li > ul::after  { content:''; position:absolute; top:12px; left:8px; right:8px; height:2px; background:#cbd5e1; }
+  .org-tree li > ul > li { padding-top: 18px; }
+  .org-tree li > ul > li::before { content:''; position:absolute; top:0; left:50%; width:2px; height:18px; background:#cbd5e1; }
+
+  .card {
+    display: inline-block; min-width: 160px; max-width: 200px; text-align: left;
+    border: 2px solid #cbd5e1; border-radius: 6px; background: white; padding: 6px 8px;
+  }
+  .title { font-weight: 600; font-size: 12px; color: #111827; }
+  .meta  { font-size: 10px; color: #6b7280; margin-top: 2px; display: flex; gap: 6px; align-items: center; }
+  .grade { background: #f3f4f6; padding: 1px 4px; border-radius: 3px; font-family: monospace; }
+  .staff { font-size: 10px; margin-top: 4px; border-top: 1px dashed #e5e7eb; padding-top: 4px; }
+  .staff-line { color: #1f2937; }
+  .vacant { color: #9ca3af; font-style: italic; }
+
+  .unassigned { margin-top: 24px; page-break-before: always; }
+  .unassigned h2 { font-size: 14px; margin: 0 0 8px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .ucard { border: 1px solid #e5e7eb; border-radius: 4px; padding: 6px; background: #f9fafb; font-size: 11px; }
+  .uname { font-weight: 600; }
+  .ujob, .udept { color: #6b7280; font-size: 10px; }
+</style>
+</head><body>
+  <div class="header">
+    <h1>Organisation Chart</h1>
+    <p>${employees.length} staff &middot; ${designations.length} designations &middot; ${totalAssigned} placed &middot; printed ${new Date().toLocaleDateString()}</p>
+  </div>
+  ${treeHtml}
+  ${unassignedHtml}
+  <script>
+    window.onload = function () {
+      setTimeout(function(){ window.print(); }, 200);
+    };
+  </script>
+</body></html>`;
+
+    const w = window.open('', '_blank', 'width=1200,height=800');
+    if (!w) {
+      toast.error('Popup blocked — allow popups for this site to print');
+      return;
+    }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  };
 
   const renderNode = (node: TreeNode) => {
     const grade = node.designation.grade || '';
