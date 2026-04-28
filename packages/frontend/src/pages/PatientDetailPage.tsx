@@ -230,63 +230,59 @@ export default function PatientDetailPage() {
     // Use loaded hospital name or fallback
     const hospital = hospitalName || 'Hospital';
     
+    // Card laid out for a single 85mm x 54mm credit-card page (landscape).
+    // All sizing is in mm/pt so it never overflows to a 2nd page.
     const extraCss = `
-      .card { border: 2px solid #333; border-radius: 10px; padding: 20px; max-width: 400px; margin: auto; }
-      .header { text-align: center; border-bottom: 1px solid #ccc; padding-bottom: 10px; margin-bottom: 15px; }
-      .header h1 { margin: 0; font-size: 18px; color: #2563eb; font-weight: bold; }
-      .header h2 { margin: 5px 0 0; font-size: 14px; color: #333; }
-      .header p { margin: 5px 0 0; color: #666; font-size: 11px; }
-      .photo { width: 80px; height: 80px; background: #dbeafe; border-radius: 50%; margin: 10px auto; display: flex; align-items: center; justify-content: center; font-size: 32px; color: #2563eb; font-weight: bold; }
-      .name { font-size: 20px; font-weight: bold; text-align: center; margin: 10px 0; }
-      .mrn { text-align: center; font-size: 14px; color: #666; margin-bottom: 15px; background: #f3f4f6; padding: 5px 10px; border-radius: 5px; display: inline-block; }
-      .mrn-container { text-align: center; }
-      .details { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
-      .detail { font-size: 12px; }
-      .detail-label { color: #666; font-size: 10px; text-transform: uppercase; }
-      .detail-value { font-weight: 500; margin-top: 2px; }
-      .qr { text-align: center; margin-top: 15px; padding-top: 15px; border-top: 1px solid #ccc; }
-      .footer { text-align: center; margin-top: 10px; font-size: 9px; color: #999; }
+      html, body { width: 85mm; height: 54mm; margin: 0; padding: 0; }
+      body { font-family: Arial, sans-serif; color: #1a1a2e; }
+      .card { width: 81mm; height: 50mm; padding: 1.5mm 2mm; border: 0.4mm solid #2563eb; border-radius: 2mm; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; }
+      .hdr { display: flex; justify-content: space-between; align-items: center; border-bottom: 0.2mm solid #2563eb; padding-bottom: 0.8mm; margin-bottom: 1.2mm; }
+      .hdr .h-name { font-size: 7.5pt; font-weight: 700; color: #2563eb; text-transform: uppercase; letter-spacing: 0.2mm; max-width: 55mm; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .hdr .h-tag { font-size: 5pt; color: #666; text-transform: uppercase; letter-spacing: 0.15mm; }
+      .body { display: flex; gap: 2mm; flex: 1; min-height: 0; }
+      .photo { width: 14mm; height: 14mm; background: #dbeafe; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11pt; color: #2563eb; font-weight: 700; flex-shrink: 0; }
+      .info { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; }
+      .pname { font-size: 9pt; font-weight: 700; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .mrn { font-size: 6.5pt; font-family: 'Courier New', monospace; background: #f3f4f6; padding: 0.4mm 1.2mm; border-radius: 1mm; display: inline-block; margin-top: 0.6mm; }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4mm 2mm; margin-top: 0.8mm; }
+      .lbl { font-size: 4.5pt; color: #666; text-transform: uppercase; letter-spacing: 0.1mm; line-height: 1.1; }
+      .val { font-size: 6.5pt; font-weight: 600; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .ftr { font-size: 4pt; color: #999; text-align: center; margin-top: 1mm; padding-top: 0.6mm; border-top: 0.1mm solid #e5e7eb; }
     `;
-    
+
+    const dob = patient.dateOfBirth ? formatDate(patient.dateOfBirth) : 'N/A';
+    const gender = patient.gender ? patient.gender.charAt(0).toUpperCase() + patient.gender.slice(1) : 'N/A';
+    const blood = (patient as any).bloodGroup || 'N/A';
+    const phone = patient.phone || 'N/A';
+
     const bodyHtml = `
       <div class="card">
-        <div class="header">
-          <h1>${hospital.toUpperCase()}</h1>
-          <h2>PATIENT IDENTIFICATION CARD</h2>
-          <p>Valid for identification purposes only</p>
+        <div class="hdr">
+          <div class="h-name">${hospital}</div>
+          <div class="h-tag">Patient ID Card</div>
         </div>
-        <div class="photo">${getInitials(patient.fullName)}</div>
-        <div class="name">${patient.fullName}</div>
-        <div class="mrn-container"><span class="mrn">MRN: ${patient.mrn}</span></div>
-        <div class="details">
-          <div class="detail">
-            <div class="detail-label">Date of Birth</div>
-            <div class="detail-value">${patient.dateOfBirth ? formatDate(patient.dateOfBirth) : 'N/A'}</div>
-          </div>
-          <div class="detail">
-            <div class="detail-label">Gender</div>
-            <div class="detail-value">${patient.gender ? patient.gender.charAt(0).toUpperCase() + patient.gender.slice(1) : 'N/A'}</div>
-          </div>
-          <div class="detail">
-            <div class="detail-label">Blood Group</div>
-            <div class="detail-value">${(patient as any).bloodGroup || 'N/A'}</div>
-          </div>
-          <div class="detail">
-            <div class="detail-label">Phone</div>
-            <div class="detail-value">${patient.phone || 'N/A'}</div>
+        <div class="body">
+          <div class="photo">${getInitials(patient.fullName)}</div>
+          <div class="info">
+            <div>
+              <div class="pname">${patient.fullName}</div>
+              <span class="mrn">${patient.mrn}</span>
+            </div>
+            <div class="grid">
+              <div><div class="lbl">DOB</div><div class="val">${dob}</div></div>
+              <div><div class="lbl">Gender</div><div class="val">${gender}</div></div>
+              <div><div class="lbl">Blood</div><div class="val">${blood}</div></div>
+              <div><div class="lbl">Phone</div><div class="val">${phone}</div></div>
+            </div>
           </div>
         </div>
-        <div class="qr">
-          <div style="font-family:monospace;font-size:11px;padding:10px;background:#f0f0f0;border-radius:4px">${patient.mrn}</div>
-          <p style="font-size: 10px; color: #999; margin-top: 5px;">Scan for patient lookup</p>
-        </div>
-        <div class="footer">This card is property of ${hospital}. If found, please return to the facility.</div>
+        <div class="ftr">If found, please return to ${hospital}</div>
       </div>
     `;
-    
+
     printService.printCustom(bodyHtml, {
       pageSize: '85mm 54mm',
-      margin: '2mm',
+      margin: '0',
       title: `Patient Card - ${patient.fullName}`,
       extraCss,
     });
