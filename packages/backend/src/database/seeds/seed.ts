@@ -670,6 +670,7 @@ export async function seed(dataSource: DataSource) {
       'insurance.claims.read',
       'insurance.claims.create',
       'insurance.policies.read',
+      'orders.read',
     ],
     'Store Keeper': [
       'facilities.read',
