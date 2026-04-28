@@ -1,10 +1,16 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { PermissionGroup } from '../../database/entities/permission-group.entity';
 import { GroupPermission } from '../../database/entities/group-permission.entity';
 import { RolePermissionGroup } from '../../database/entities/role-permission-group.entity';
 import { Permission } from '../../database/entities/permission.entity';
+import { Role } from '../../database/entities/role.entity';
 
 @Injectable()
 export class PermissionGroupsService {
@@ -17,7 +23,45 @@ export class PermissionGroupsService {
     private roleGroupRepository: Repository<RolePermissionGroup>,
     @InjectRepository(Permission)
     private permissionRepository: Repository<Permission>,
+    @InjectRepository(Role)
+    private roleRepository: Repository<Role>,
   ) {}
+
+  /**
+   * Ensure every permission id in the list is either tenant-owned or global.
+   * Prevents tenant A from attaching tenant B's permissions to a group.
+   */
+  private async assertPermissionsAccessible(permissionIds: string[], tenantId?: string) {
+    if (!permissionIds.length) return;
+    const perms = await this.permissionRepository.find({ where: { id: In(permissionIds) } });
+    if (perms.length !== permissionIds.length) {
+      throw new NotFoundException('One or more permissions not found');
+    }
+    if (!tenantId) return;
+    const bad = perms.find((p) => (p as any).tenantId && (p as any).tenantId !== tenantId);
+    if (bad) {
+      throw new ForbiddenException(
+        'Cannot attach a permission that belongs to a different tenant',
+      );
+    }
+  }
+
+  /**
+   * Ensure the target role is in the caller's tenant (or global if caller is platform admin).
+   */
+  private async assertRoleAccessible(roleId: string, tenantId?: string) {
+    const role = await this.roleRepository.findOne({ where: { id: roleId } });
+    if (!role) throw new NotFoundException('Role not found');
+    if (tenantId) {
+      if (role.tenantId && role.tenantId !== tenantId) {
+        throw new ForbiddenException('Role belongs to a different tenant');
+      }
+      if (role.isSystemRole) {
+        throw new ForbiddenException('Cannot attach groups to a system role');
+      }
+    }
+    return role;
+  }
 
   async findAll(tenantId?: string): Promise<any[]> {
     const qb = this.groupRepository.createQueryBuilder('g');
@@ -85,11 +129,14 @@ export class PermissionGroupsService {
     const saved = await this.groupRepository.save(group);
 
     if (dto.permissionIds?.length) {
-      const groupPerms = dto.permissionIds.map((pid) =>
+      await this.assertPermissionsAccessible(dto.permissionIds, tenantId);
+      const effectiveTenantId = tenantId || (saved as any).tenantId;
+      const groupPerms: GroupPermission[] = dto.permissionIds.map((pid) =>
         this.groupPermRepository.create({
           groupId: saved.id,
           permissionId: pid,
-        }),
+          ...(effectiveTenantId ? { tenantId: effectiveTenantId } : {}),
+        } as Partial<GroupPermission>),
       );
       await this.groupPermRepository.save(groupPerms);
     }
@@ -120,13 +167,16 @@ export class PermissionGroupsService {
   async setPermissions(groupId: string, permissionIds: string[], tenantId?: string) {
     const group = await this.findOne(groupId, tenantId);
     if (!group) throw new NotFoundException('Permission group not found');
+    await this.assertPermissionsAccessible(permissionIds, tenantId);
     await this.groupPermRepository.delete({ groupId });
     if (permissionIds.length > 0) {
-      const groupPerms = permissionIds.map((pid) =>
+      const effectiveTenantId = tenantId || (group as any).tenantId;
+      const groupPerms: GroupPermission[] = permissionIds.map((pid) =>
         this.groupPermRepository.create({
           groupId,
           permissionId: pid,
-        }),
+          ...(effectiveTenantId ? { tenantId: effectiveTenantId } : {}),
+        } as Partial<GroupPermission>),
       );
       await this.groupPermRepository.save(groupPerms);
     }
@@ -135,6 +185,7 @@ export class PermissionGroupsService {
 
   async assignToRole(groupId: string, roleId: string, tenantId?: string) {
     await this.findOne(groupId, tenantId);
+    await this.assertRoleAccessible(roleId, tenantId);
     const existing = await this.roleGroupRepository.findOne({
       where: { groupId, roleId },
     });
@@ -147,6 +198,7 @@ export class PermissionGroupsService {
 
   async removeFromRole(groupId: string, roleId: string, tenantId?: string) {
     await this.findOne(groupId, tenantId);
+    await this.assertRoleAccessible(roleId, tenantId);
     const result = await this.roleGroupRepository.delete({ groupId, roleId });
     if (result.affected === 0) throw new NotFoundException('Group not assigned to this role');
     return { message: 'Group removed from role' };

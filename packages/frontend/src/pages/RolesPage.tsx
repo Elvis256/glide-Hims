@@ -20,6 +20,7 @@ export default function RolesPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingRole, setEditingRole] = useState<Role | null>(null);
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
+  const [cloneSource, setCloneSource] = useState<Role | null>(null);
 
   // Fetch roles
   const { data: roles, isLoading } = useQuery({
@@ -71,10 +72,11 @@ export default function RolesPage() {
 
   // Clone role mutation
   const cloneMutation = useMutation({
-    mutationFn: ({ id, name }: { id: string; name: string }) =>
-      api.post(`/roles/${id}/clone`, { name }),
+    mutationFn: ({ id, name, description }: { id: string; name: string; description?: string }) =>
+      api.post(`/roles/${id}/clone`, { name, description }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['roles'] });
+      setCloneSource(null);
     },
   });
 
@@ -173,13 +175,7 @@ export default function RolesPage() {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        const name = prompt(
-                          `Duplicate "${role.name}" as:`,
-                          `${role.name} (Copy)`,
-                        );
-                        if (name && name.trim()) {
-                          cloneMutation.mutate({ id: role.id, name: name.trim() });
-                        }
+                        setCloneSource(role);
                       }}
                       className="p-1 text-gray-400 hover:text-green-600"
                       title="Duplicate role with all its permissions"
@@ -303,6 +299,102 @@ export default function RolesPage() {
           isLoading={createMutation.isPending}
         />
       )}
+
+      {cloneSource && (
+        <CloneRoleModal
+          source={cloneSource}
+          onClose={() => setCloneSource(null)}
+          onSave={(data) =>
+            cloneMutation.mutate({
+              id: cloneSource.id,
+              name: data.name,
+              description: data.description,
+            })
+          }
+          isLoading={cloneMutation.isPending}
+        />
+      )}
+    </div>
+  );
+}
+
+interface CloneRoleModalProps {
+  source: Role;
+  onClose: () => void;
+  onSave: (data: { name: string; description?: string }) => void;
+  isLoading: boolean;
+}
+
+function CloneRoleModal({ source, onClose, onSave, isLoading }: CloneRoleModalProps) {
+  const [formData, setFormData] = useState({
+    name: `${source.name} (Copy)`,
+    description: source.description || '',
+  });
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl w-full max-w-md">
+        <div className="flex items-center justify-between p-4 border-b">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <Copy className="w-5 h-5 text-green-600" />
+            Duplicate Role
+          </h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const trimmed = formData.name.trim();
+            if (!trimmed) return;
+            onSave({ name: trimmed, description: formData.description.trim() || undefined });
+          }}
+          className="p-4 space-y-4"
+        >
+          <p className="text-sm text-gray-600">
+            Creating a copy of <span className="font-medium">{source.name}</span> with all
+            its permissions. The new role will be tenant-scoped and fully editable.
+          </p>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">New Name *</label>
+            <input
+              type="text"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              className="input"
+              required
+              autoFocus
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <textarea
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              className="input"
+              rows={3}
+              placeholder="Optional description for the new role"
+            />
+          </div>
+
+          <div className="flex gap-3 pt-4">
+            <button type="button" onClick={onClose} className="btn-secondary flex-1">
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isLoading || !formData.name.trim()}
+              className="btn-primary flex-1"
+            >
+              {isLoading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Duplicate'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
