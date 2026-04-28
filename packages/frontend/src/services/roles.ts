@@ -66,6 +66,12 @@ export const rolesService = {
     await api.delete(`/roles/${id}`);
   },
 
+  // Clone a role (copies all directly-assigned permissions)
+  clone: async (id: string, name: string, description?: string): Promise<Role> => {
+    const response = await api.post<Role>(`/roles/${id}/clone`, { name, description });
+    return response.data;
+  },
+
   // Assign permission to role
   assignPermission: async (roleId: string, permissionId: string): Promise<void> => {
     await api.post(`/roles/${roleId}/permissions`, { permissionId });
