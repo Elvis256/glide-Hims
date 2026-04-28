@@ -6,6 +6,7 @@ import {
   ChronicStatus,
 } from '../../database/entities/patient-chronic-condition.entity';
 import { Patient } from '../../database/entities/patient.entity';
+import { hashPii } from '../../common/crypto/pii-crypto';
 import { Diagnosis } from '../../database/entities/diagnosis.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ReminderType, ReminderChannel } from '../../database/entities/patient-reminder.entity';
@@ -85,9 +86,10 @@ export class ChronicCareService {
     }
 
     if (query.search) {
+      // Phone is encrypted; match by deterministic blind index instead of ILIKE.
       qb.andWhere(
-        '(patient.fullName ILIKE :search OR patient.mrn ILIKE :search OR patient.phone ILIKE :search)',
-        { search: `%${query.search}%` },
+        '(patient.fullName ILIKE :search OR patient.mrn ILIKE :search OR patient.phoneHash = :searchPhoneHash)',
+        { search: `%${query.search}%`, searchPhoneHash: hashPii(query.search, 'phone') },
       );
     }
 
