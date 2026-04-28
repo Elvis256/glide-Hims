@@ -666,13 +666,13 @@ function AppRoutes() {
                 <Route path="/downloads" element={<DownloadsPage />} />
                 
                 {/* Registration - Patient Management */}
-                <Route path="/patients/search" element={<ReceptionistRoute><PatientSearchPage /></ReceptionistRoute>} />
-                <Route path="/patients/new" element={<ReceptionistRoute><PatientRegistrationPage /></ReceptionistRoute>} />
+                <Route path="/patients/search" element={<ProtectedRoute requiredPermissions={['patients.read']}><PatientSearchPage /></ProtectedRoute>} />
+                <Route path="/patients/new" element={<ProtectedRoute requiredPermissions={['patients.create']}><PatientRegistrationPage /></ProtectedRoute>} />
                 <Route path="/patients/hospital-scheme-enroll" element={<ReceptionistRoute><HospitalSchemeEnrollmentPage /></ReceptionistRoute>} />
-                <Route path="/patients/documents" element={<ReceptionistRoute><PatientDocumentsPage /></ReceptionistRoute>} />
-                <Route path="/patients/history" element={<RoleRoute roles={[ROLES.RECEPTIONIST, ROLES.DOCTOR, ROLES.NURSE, ROLES.CASHIER]}><PatientHistoryPage /></RoleRoute>} />
-                <Route path="/patients/:id/edit" element={<ReceptionistRoute><PatientEditPage /></ReceptionistRoute>} />
-                <Route path="/patients/:id" element={<RoleRoute roles={[ROLES.RECEPTIONIST, ROLES.DOCTOR, ROLES.NURSE, ROLES.CASHIER, ROLES.LAB_TECHNICIAN, ROLES.PHARMACIST, ROLES.RADIOLOGIST, ROLES.ADMIN]}><PatientDetailPage /></RoleRoute>} />
+                <Route path="/patients/documents" element={<ProtectedRoute requiredPermissions={['patients.read']}><PatientDocumentsPage /></ProtectedRoute>} />
+                <Route path="/patients/history" element={<ProtectedRoute requiredPermissions={['patients.read']}><PatientHistoryPage /></ProtectedRoute>} />
+                <Route path="/patients/:id/edit" element={<ProtectedRoute requiredPermissions={['patients.update']}><PatientEditPage /></ProtectedRoute>} />
+                <Route path="/patients/:id" element={<ProtectedRoute requiredPermissions={['patients.read']}><PatientDetailPage /></ProtectedRoute>} />
                 <Route path="/patients" element={<RoleRoute roles={[ROLES.RECEPTIONIST, ROLES.DOCTOR, ROLES.NURSE, ROLES.CASHIER, ROLES.LAB_TECHNICIAN, ROLES.PHARMACIST, ROLES.RADIOLOGIST, ROLES.ADMIN]}><PatientsPage /></RoleRoute>} />
                 
                 {/* Registration - Queue & Tokens */}
