@@ -1,14 +1,21 @@
-import { Entity, Column, Index, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, Column, Index, ManyToOne, JoinColumn, BeforeInsert, BeforeUpdate } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { User } from './user.entity';
+import { piiColumnTransformer, hashPii } from '../../common/crypto/pii-crypto';
 
 @Entity('patients')
 @Index(['mrn'], { unique: true, where: 'deleted_at IS NULL' })
-@Index(['nationalId'], { unique: true, where: 'national_id IS NOT NULL AND deleted_at IS NULL' })
+// Uniqueness on national ID is enforced via the blind-index hash column because
+// the plaintext column now stores random AES-GCM ciphertext.
+@Index(['nationalIdHash'], {
+  unique: true,
+  where: 'national_id_hash IS NOT NULL AND deleted_at IS NULL',
+})
 @Index(['userId'])
 @Index(['fullName'])
 @Index(['dateOfBirth'])
-@Index(['phone'])
+@Index(['phoneHash'])
+@Index(['emailHash'])
 @Index(['fullName', 'dateOfBirth'])
 export class Patient extends BaseEntity {
   @Column({ type: 'varchar', length: 50, unique: true })
@@ -21,8 +28,12 @@ export class Patient extends BaseEntity {
   @JoinColumn({ name: 'user_id' })
   user?: User;
 
-  @Column({ type: 'varchar', length: 50, nullable: true, name: 'national_id' })
+  // Encrypted at rest (AES-256-GCM). Searchable via nationalIdHash.
+  @Column({ type: 'text', nullable: true, name: 'national_id', transformer: piiColumnTransformer })
   nationalId?: string;
+
+  @Column({ type: 'varchar', length: 64, nullable: true, name: 'national_id_hash' })
+  nationalIdHash?: string;
 
   @Column({ type: 'varchar', length: 255, name: 'full_name' })
   fullName: string;
@@ -33,14 +44,22 @@ export class Patient extends BaseEntity {
   @Column({ type: 'date', name: 'date_of_birth' })
   dateOfBirth: Date;
 
-  @Column({ type: 'varchar', length: 50, nullable: true })
+  // Encrypted at rest. Searchable via phoneHash (digits-only normalization).
+  @Column({ type: 'text', nullable: true, transformer: piiColumnTransformer })
   phone?: string;
+
+  @Column({ type: 'varchar', length: 64, nullable: true, name: 'phone_hash' })
+  phoneHash?: string;
 
   @Column({ type: 'text', nullable: true })
   address?: string;
 
-  @Column({ type: 'varchar', length: 100, nullable: true })
+  // Encrypted at rest. Searchable via emailHash (lowercase normalization).
+  @Column({ type: 'text', nullable: true, transformer: piiColumnTransformer })
   email?: string;
+
+  @Column({ type: 'varchar', length: 64, nullable: true, name: 'email_hash' })
+  emailHash?: string;
 
   @Column({ type: 'varchar', length: 100, nullable: true, name: 'blood_group' })
   bloodGroup?: string;
@@ -70,4 +89,17 @@ export class Patient extends BaseEntity {
 
   @Column({ type: 'varchar', length: 500, nullable: true, name: 'photograph_url' })
   photographUrl?: string;
+
+  /**
+   * Keep blind-index hash columns in sync with their plaintext sources on every
+   * insert/update. Runs against the in-memory plaintext BEFORE the column
+   * transformer encrypts the value on write.
+   */
+  @BeforeInsert()
+  @BeforeUpdate()
+  syncPiiHashes() {
+    this.nationalIdHash = this.nationalId ? hashPii(this.nationalId, 'generic') : undefined;
+    this.phoneHash = this.phone ? hashPii(this.phone, 'phone') : undefined;
+    this.emailHash = this.email ? hashPii(this.email, 'email') : undefined;
+  }
 }

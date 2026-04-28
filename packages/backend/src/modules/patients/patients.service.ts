@@ -20,6 +20,7 @@ import { AuditLog } from '../../database/entities/audit-log.entity';
 import { SystemSetting } from '../../database/entities/system-setting.entity';
 import { Encounter } from '../../database/entities/encounter.entity';
 import { CreatePatientDto, UpdatePatientDto, PatientSearchDto } from './dto/patient.dto';
+import { hashPii } from '../../common/crypto/pii-crypto';
 import { checkDuplicates, DuplicateMatch } from './duplicate-detector.util';
 
 export interface UploadDocumentDto {
@@ -139,7 +140,7 @@ export class PatientsService {
 
       // 2. Check national ID uniqueness with lock inside transaction
       if (dto.nationalId) {
-        const whereCondition: any = { nationalId: dto.nationalId };
+        const whereCondition: any = { nationalIdHash: hashPii(dto.nationalId, 'generic') };
         if (tenantId) whereCondition.tenantId = tenantId;
         const existing = await manager.findOne(Patient, {
           where: whereCondition,
@@ -212,9 +213,11 @@ export class PatientsService {
     }
 
     if (search) {
+      // Phone is encrypted, so substring ILIKE no longer works against ciphertext.
+      // Match on the deterministic phone hash instead (exact normalized number).
       queryBuilder.andWhere(
-        '(patient.fullName ILIKE :search OR patient.mrn ILIKE :search OR patient.phone ILIKE :search)',
-        { search: `%${search}%` },
+        '(patient.fullName ILIKE :search OR patient.mrn ILIKE :search OR patient.phoneHash = :searchPhoneHash)',
+        { search: `%${search}%`, searchPhoneHash: hashPii(search, 'phone') },
       );
     }
 
@@ -223,11 +226,15 @@ export class PatientsService {
     }
 
     if (nationalId) {
-      queryBuilder.andWhere('patient.nationalId = :nationalId', { nationalId });
+      queryBuilder.andWhere('patient.nationalIdHash = :nationalIdHash', {
+        nationalIdHash: hashPii(nationalId, 'generic'),
+      });
     }
 
     if (phone) {
-      queryBuilder.andWhere('patient.phone ILIKE :phone', { phone: `%${phone}%` });
+      queryBuilder.andWhere('patient.phoneHash = :phoneHash', {
+        phoneHash: hashPii(phone, 'phone'),
+      });
     }
 
     const [patients, total] = await queryBuilder
@@ -269,7 +276,7 @@ export class PatientsService {
     // Check for duplicate national ID if updating
     if (dto.nationalId && dto.nationalId !== patient.nationalId) {
       const existing = await this.patientRepository.findOne({
-        where: { nationalId: dto.nationalId, ...(tenantId ? { tenantId } : {}) },
+        where: { nationalIdHash: hashPii(dto.nationalId, 'generic'), ...(tenantId ? { tenantId } : {}) },
       });
       if (existing) {
         throw new ConflictException('Patient with this National ID already exists');
@@ -293,7 +300,7 @@ export class PatientsService {
     // 1. Check by national ID (if provided)
     if (dto.nationalId) {
       const byNationalId = await this.patientRepository.find({
-        where: { nationalId: dto.nationalId, ...(tenantId ? { tenantId } : {}) },
+        where: { nationalIdHash: hashPii(dto.nationalId, 'generic'), ...(tenantId ? { tenantId } : {}) },
       });
       candidates.push(...byNationalId);
     }
