@@ -93,6 +93,21 @@ export function BillingRoute({ children }: { children: ReactNode }) {
   return <RoleRoute roles={[ROLES.CASHIER, ROLES.RECEPTIONIST, ROLES.ACCOUNTANT]}>{children}</RoleRoute>;
 }
 
+/**
+ * Insurance back-office pages (claims dashboard, providers, denials reports,
+ * provider-performance reports) — strictly NOT for Cashiers, who only see
+ * point-of-sale screens. Cashier still has insurance.claims.read for receipt
+ * verification; the broader insurance dashboards belong to Receptionist /
+ * Accountant / Administrator.
+ */
+export function InsuranceRoute({ children }: { children: ReactNode }) {
+  return (
+    <RoleRoute roles={[ROLES.RECEPTIONIST, ROLES.ACCOUNTANT, ROLES.ADMIN]}>
+      {children}
+    </RoleRoute>
+  );
+}
+
 export function RadiologyRoute({ children }: { children: ReactNode }) {
   return <RoleRoute roles={[ROLES.RADIOLOGIST, ROLES.DOCTOR, ROLES.NURSE]}>{children}</RoleRoute>;
 }

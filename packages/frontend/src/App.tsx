@@ -24,6 +24,7 @@ import RoleRoute, {
   FinanceRoute,
   HRRoute,
   BillingRoute,
+  InsuranceRoute,
   RadiologyRoute,
   ROLES,
 } from './components/RoleRoute';
@@ -826,8 +827,8 @@ function AppRoutes() {
                 <Route path="/billing/payments" element={<ModuleRoute module="billing"><BillingRoute><PaymentsPage /></BillingRoute></ModuleRoute>} />
                 
                 {/* Billing - Insurance */}
-                <Route path="/insurance/claims" element={<ModuleRoute module="billing"><BillingRoute><ClaimsPage /></BillingRoute></ModuleRoute>} />
-                <Route path="/insurance/providers" element={<ModuleRoute module="billing"><BillingRoute><InsuranceProvidersPage /></BillingRoute></ModuleRoute>} />
+                <Route path="/insurance/claims" element={<ModuleRoute module="billing"><InsuranceRoute><ClaimsPage /></InsuranceRoute></ModuleRoute>} />
+                <Route path="/insurance/providers" element={<ModuleRoute module="billing"><InsuranceRoute><InsuranceProvidersPage /></InsuranceRoute></ModuleRoute>} />
                 
                 {/* Billing - Procurement */}
                 <Route path="/procurement/requisitions" element={<ModuleRoute module="stores"><StoreKeeperRoute><RequisitionsPage /></StoreKeeperRoute></ModuleRoute>} />
@@ -1014,8 +1015,8 @@ function AppRoutes() {
                 <Route path="/hr/my-attendance" element={<ModuleRoute module="hr"><ProtectedRoute><MyAttendancePage /></ProtectedRoute></ModuleRoute>} />
                 <Route path="/hr/my-appraisals" element={<ModuleRoute module="hr"><ProtectedRoute><MyAppraisalsPage /></ProtectedRoute></ModuleRoute>} />
                 <Route path="/finance" element={<ModuleRoute module="finance"><FinanceRoute><FinancePage /></FinanceRoute></ModuleRoute>} />
-                <Route path="/insurance/dashboard" element={<ModuleRoute module="billing"><BillingRoute><InsuranceDashboardPage /></BillingRoute></ModuleRoute>} />
-                <Route path="/insurance" element={<ModuleRoute module="billing"><BillingRoute><InsurancePage /></BillingRoute></ModuleRoute>} />
+                <Route path="/insurance/dashboard" element={<ModuleRoute module="billing"><InsuranceRoute><InsuranceDashboardPage /></InsuranceRoute></ModuleRoute>} />
+                <Route path="/insurance" element={<ModuleRoute module="billing"><InsuranceRoute><InsurancePage /></InsuranceRoute></ModuleRoute>} />
                 <Route path="/analytics" element={<AdminRoute><AnalyticsPage /></AdminRoute>} />
                 <Route path="/membership" element={<ModuleRoute module="billing"><AdminRoute><MembershipPage /></AdminRoute></ModuleRoute>} />
                 <Route path="/services" element={<AdminRoute><ServicesPage /></AdminRoute>} />
