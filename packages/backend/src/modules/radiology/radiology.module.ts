@@ -6,12 +6,14 @@ import { ImagingModality } from '../../database/entities/imaging-modality.entity
 import { ImagingOrder } from '../../database/entities/imaging-order.entity';
 import { ImagingResult } from '../../database/entities/imaging-result.entity';
 import { InAppNotificationsModule } from '../in-app-notifications/in-app-notifications.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { FinanceModule } from '../finance/finance.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([ImagingModality, ImagingOrder, ImagingResult]),
     InAppNotificationsModule,
+    NotificationsModule,
     forwardRef(() => FinanceModule),
   ],
   controllers: [RadiologyController],

@@ -23,6 +23,7 @@ import {
   CreateImagingResultDto,
 } from './dto/radiology.dto';
 import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { FinanceService } from '../finance/finance.service';
 
 @Injectable()
@@ -39,6 +40,7 @@ export class RadiologyService {
     private dataSource: DataSource,
     @Inject(forwardRef(() => InAppNotificationsService))
     private inAppNotificationsService: InAppNotificationsService,
+    private notificationsService: NotificationsService,
     @Inject(forwardRef(() => FinanceService))
     private financeService: FinanceService,
   ) {}
@@ -350,7 +352,7 @@ export class RadiologyService {
     try {
       const fullOrder = await this.orderRepo.findOne({
         where: { id: dto.imagingOrderId, ...(tenantId ? { tenantId } : {}) },
-        relations: ['patient'],
+        relations: ['patient', 'facility'],
       });
       if (order.orderedById) {
         await this.inAppNotificationsService.notifyRadiologyResultReady(
@@ -361,6 +363,20 @@ export class RadiologyService {
           order.facilityId,
           tenantId,
         );
+      }
+
+      // Notify patient via SMS (fire-and-forget; suppressed for critical findings to avoid alarm)
+      const patient = fullOrder?.patient as any;
+      if (patient && order.facilityId && !dto.isCritical) {
+        const fname = String(patient.fullName || 'patient').split(' ')[0];
+        const facName = (fullOrder as any)?.facility?.name || 'the facility';
+        const study = order.studyType || 'imaging';
+        const msg =
+          `Hello ${fname}, your ${study} results from ${facName} are ready. ` +
+          `Please contact the facility or check your patient portal.`;
+        this.notificationsService
+          .sendSmsToPatient({ patient, facilityId: order.facilityId, message: msg, tenantId })
+          .catch((e) => this.logger.warn(`Patient radiology-ready SMS failed: ${e.message}`));
       }
     } catch (e) {
       this.logger.warn(`Failed to send radiology notification: ${e.message}`);

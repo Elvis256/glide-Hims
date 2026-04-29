@@ -13,6 +13,7 @@ import { SampleReferralService } from './sample-referral.service';
 import { SampleReferralController } from './sample-referral.controller';
 import { BillingModule } from '../billing/billing.module';
 import { InAppNotificationsModule } from '../in-app-notifications/in-app-notifications.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { EncountersModule } from '../encounters/encounters.module';
 
 @Module({
@@ -29,6 +30,7 @@ import { EncountersModule } from '../encounters/encounters.module';
     forwardRef(() => BillingModule),
     forwardRef(() => EncountersModule),
     InAppNotificationsModule,
+    NotificationsModule,
   ],
   controllers: [LabController, SampleReferralController],
   providers: [LabService, SampleReferralService],

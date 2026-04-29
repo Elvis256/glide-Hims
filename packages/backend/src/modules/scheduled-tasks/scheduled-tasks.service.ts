@@ -25,6 +25,8 @@ import {
 import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../../database/entities/notification-config.entity';
+import { Invoice, InvoiceStatus } from '../../database/entities/invoice.entity';
+import { Patient } from '../../database/entities/patient.entity';
 
 @Injectable()
 export class ScheduledTasksService {
@@ -49,6 +51,10 @@ export class ScheduledTasksService {
     private readonly expiryAlertConfigRepo: Repository<ExpiryAlertConfig>,
     @InjectRepository(ExpiryAlertHistory)
     private readonly expiryAlertHistoryRepo: Repository<ExpiryAlertHistory>,
+    @InjectRepository(Invoice)
+    private readonly invoiceRepo: Repository<Invoice>,
+    @InjectRepository(Patient)
+    private readonly patientRepo: Repository<Patient>,
     private readonly inAppNotificationsService: InAppNotificationsService,
     private readonly notificationsService: NotificationsService,
   ) {}
@@ -697,6 +703,188 @@ export class ScheduledTasksService {
     } catch (error) {
       this.logger.error(
         'Appointment reminder job failed',
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
+  }
+
+  /**
+   * T-2h appointment reminders. Runs every 30 minutes; finds confirmed/scheduled
+   * appointments starting between now+90min and now+150min that have NOT yet
+   * been short-reminded (tracked via metadata.shortReminderSentAt on InAppNotification).
+   * Sends a short SMS to the patient. Idempotent — checks for an existing T-2h
+   * notification record before sending.
+   */
+  @Cron('*/30 * * * *', { name: 'appointment-reminders-2h' })
+  async sendShortAppointmentReminders() {
+    try {
+      const now = new Date();
+      const lower = new Date(now.getTime() + 90 * 60 * 1000); // +90m
+      const upper = new Date(now.getTime() + 150 * 60 * 1000); // +150m
+      // appointmentDate is a date column; we filter by date == today/tomorrow then by startTime.
+      const todayStart = new Date(now);
+      todayStart.setHours(0, 0, 0, 0);
+      const tomorrowEnd = new Date(todayStart);
+      tomorrowEnd.setDate(tomorrowEnd.getDate() + 2);
+
+      const appointments = await this.appointmentRepo.find({
+        where: [
+          {
+            status: AppointmentStatus.SCHEDULED,
+            appointmentDate: Between(todayStart, tomorrowEnd),
+          },
+          {
+            status: AppointmentStatus.CONFIRMED,
+            appointmentDate: Between(todayStart, tomorrowEnd),
+          },
+        ],
+        relations: ['patient', 'doctor', 'facility'],
+      });
+
+      let sent = 0;
+      for (const appt of appointments) {
+        try {
+          const dateStr = (appt.appointmentDate as unknown as string).toString().slice(0, 10);
+          const startTime = appt.startTime || '00:00';
+          const fullStart = new Date(`${dateStr}T${startTime}`);
+          if (Number.isNaN(fullStart.getTime())) continue;
+          if (fullStart < lower || fullStart > upper) continue;
+
+          // Idempotency guard: skip if a T-2h notification was already created
+          const already = await this.notificationRepo.findOne({
+            where: { type: InAppNotificationType.GENERAL, title: '⏰ Appointment Today (Soon)' },
+            order: { createdAt: 'DESC' },
+            relations: [],
+          } as any);
+          // Use metadata appointmentId match instead
+          const exists = await this.notificationRepo
+            .createQueryBuilder('n')
+            .where("n.metadata->>'appointmentId' = :id", { id: appt.id })
+            .andWhere("n.metadata->>'shortReminder' = 'true'")
+            .getOne();
+          if (exists || already?.metadata?.appointmentId === appt.id) continue;
+
+          const patient = appt.patient as any;
+          const doctorName = appt.doctor ? `Dr. ${appt.doctor.fullName || ''}`.trim() : 'your doctor';
+          const facName = appt.facility?.name || 'the facility';
+
+          // SMS to patient
+          if (patient?.phone && appt.facilityId) {
+            await this.notificationsService.sendSmsToPatient({
+              patient,
+              facilityId: appt.facilityId,
+              tenantId: (appt as any).tenantId,
+              message: `Reminder: Your appointment with ${doctorName} at ${facName} is at ${startTime} today. Please arrive 15 minutes early.`,
+            });
+            sent++;
+          }
+
+          // Audit notification (keeps idempotency state)
+          if (patient?.userId) {
+            await this.notificationRepo.save(
+              this.notificationRepo.create({
+                targetUserId: patient.userId,
+                type: InAppNotificationType.GENERAL,
+                title: '⏰ Appointment Today (Soon)',
+                message: `Your appointment with ${doctorName} starts at ${startTime}.`,
+                metadata: { appointmentId: appt.id, shortReminder: 'true' },
+                facilityId: appt.facilityId,
+                tenantId: (appt as any).tenantId,
+              }),
+            );
+          }
+        } catch (e) {
+          this.logger.warn(`T-2h reminder failed for appt ${appt.id}: ${(e as Error).message}`);
+        }
+      }
+      if (sent > 0) this.logger.log(`T-2h appointment reminders sent: ${sent}`);
+    } catch (error) {
+      this.logger.error(
+        'T-2h appointment reminder job failed',
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
+  }
+
+  /**
+   * Outstanding-balance reminders. Runs daily at 9 AM. For invoices that are
+   * PENDING or PARTIALLY_PAID, older than 7 days, with a balance > 0, sends
+   * the patient an SMS courtesy reminder. Throttled to once per 7 days per
+   * invoice via metadata on an InAppNotification audit record.
+   */
+  @Cron('0 9 * * *', { name: 'outstanding-balance-reminders' })
+  async sendOutstandingBalanceReminders() {
+    this.logger.log('Running outstanding balance reminder job...');
+    try {
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+      const invoices = await this.invoiceRepo
+        .createQueryBuilder('inv')
+        .leftJoinAndSelect('inv.patient', 'patient')
+        .leftJoinAndSelect('inv.encounter', 'encounter')
+        .leftJoinAndSelect('encounter.facility', 'facility')
+        .where('inv.status IN (:...statuses)', {
+          statuses: [InvoiceStatus.PENDING, InvoiceStatus.PARTIALLY_PAID],
+        })
+        .andWhere('inv.balance_due > 0')
+        .andWhere('inv.created_at <= :cutoff', { cutoff: sevenDaysAgo })
+        .andWhere('inv.deleted_at IS NULL')
+        .getMany();
+
+      let sent = 0;
+      for (const inv of invoices) {
+        try {
+          const patient: any = (inv as any).patient;
+          const facilityId =
+            (inv as any).encounter?.facilityId || (inv as any).facilityId;
+          if (!patient?.phone || !facilityId) continue;
+
+          // Throttle: once per 7 days per invoice
+          const recent = await this.notificationRepo
+            .createQueryBuilder('n')
+            .where("n.metadata->>'invoiceId' = :id", { id: inv.id })
+            .andWhere("n.metadata->>'balanceReminder' = 'true'")
+            .andWhere('n.created_at >= :cutoff', { cutoff: sevenDaysAgo })
+            .getOne();
+          if (recent) continue;
+
+          const facName = (inv as any).encounter?.facility?.name || 'the facility';
+          const fname = String(patient.fullName || 'patient').split(' ')[0];
+          const balance = Number(inv.balanceDue || 0).toLocaleString();
+          const msg =
+            `Hello ${fname}, your invoice ${inv.invoiceNumber} at ${facName} has an ` +
+            `outstanding balance of UGX ${balance}. Please settle at your earliest convenience.`;
+
+          await this.notificationsService.sendSmsToPatient({
+            patient,
+            facilityId,
+            tenantId: (inv as any).tenantId,
+            message: msg,
+          });
+
+          await this.notificationRepo.save(
+            this.notificationRepo.create({
+              targetUserId: patient.userId || null,
+              type: InAppNotificationType.GENERAL,
+              title: '💰 Outstanding Balance Reminder',
+              message: msg,
+              metadata: { invoiceId: inv.id, balanceReminder: 'true' },
+              facilityId,
+              tenantId: (inv as any).tenantId,
+            } as any),
+          );
+          sent++;
+        } catch (e) {
+          this.logger.warn(`Balance reminder failed for invoice ${inv.id}: ${(e as Error).message}`);
+        }
+      }
+      this.logger.log(
+        `Outstanding balance reminders complete — ${invoices.length} invoices scanned, ${sent} SMS sent`,
+      );
+    } catch (error) {
+      this.logger.error(
+        'Outstanding balance reminder job failed',
         error instanceof Error ? error.stack : String(error),
       );
     }
