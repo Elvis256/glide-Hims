@@ -23,6 +23,7 @@ import {
   UserSearch,
 } from 'lucide-react';
 import { insuranceService, type Claim, type InsuranceProvider, type AwaitingClaimEncounter, type InsurancePolicy } from '../../../services/insurance';
+import api from '../../../services/api';
 import { patientsService, type Patient } from '../../../services/patients';
 import { formatCurrency } from '../../../lib/currency';
 
@@ -276,6 +277,47 @@ export default function ClaimsPage() {
     URL.revokeObjectURL(url);
   };
 
+  // Server-side payer-formatted (NHIS-style) batch CSV export. Pulls real claim
+  // line-items rather than the on-screen summary, so the file is uploadable to
+  // an insurer portal.
+  const handleBatchPayerExport = async () => {
+    if (providerFilter === 'All Providers') {
+      toast.error('Pick a specific provider for the batch export');
+      return;
+    }
+    const from = dateFrom || new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().slice(0, 10);
+    const to = dateTo || new Date().toISOString().slice(0, 10);
+    try {
+      const res = await api.get('/insurance/claims/export.csv', {
+        params: { providerId: providerFilter, dateFrom: from, dateTo: to },
+        responseType: 'blob',
+      });
+      const blob = new Blob([res.data], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `claims_batch_${from}_${to}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      const count = res.headers['x-claim-count'];
+      toast.success(`Exported ${count ?? ''} claims`);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Batch export failed');
+    }
+  };
+
+  const handleClaimPdf = async (claimId: string) => {
+    try {
+      const res = await api.get(`/insurance/claims/${claimId}/pdf`, { responseType: 'blob' });
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Could not generate PDF');
+    }
+  };
+
   const handleResubmit = (claim: ClaimDisplay) => {
     submitClaimMutation.mutate(claim.id);
   };
@@ -338,6 +380,14 @@ export default function ClaimsPage() {
           <button onClick={handleExport} className="btn-secondary flex items-center gap-2">
             <Download className="w-4 h-4" />
             Export
+          </button>
+          <button
+            onClick={handleBatchPayerExport}
+            className="btn-secondary flex items-center gap-2"
+            title="NHIS-style CSV batch for the filtered provider + date range"
+          >
+            <Upload className="w-4 h-4" />
+            Payer Batch CSV
           </button>
           <button onClick={() => setShowNewClaimModal(true)} className="btn-primary flex items-center gap-2">
             <Plus className="w-4 h-4" />
@@ -990,6 +1040,14 @@ export default function ClaimsPage() {
               </div>
             </div>
             <div className="flex justify-end gap-2 p-4 border-t flex-shrink-0">
+              <button
+                onClick={() => handleClaimPdf(selectedClaim.id)}
+                className="btn-secondary flex items-center gap-2"
+                title="Open printable claim form"
+              >
+                <FileText className="w-4 h-4" />
+                Print Form (PDF)
+              </button>
               {selectedClaim.status === 'draft' && (
                 <button 
                   onClick={() => submitClaimMutation.mutate(selectedClaim.id)} 
