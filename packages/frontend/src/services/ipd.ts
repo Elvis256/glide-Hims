@@ -310,6 +310,32 @@ export const ipdService = {
     const response = await api.get('/ipd/stats', { params: { facilityId } });
     return response.data;
   },
+
+  // Bed-board / census / reservations
+  bedBoard: async (facilityId: string): Promise<any[]> => {
+    const r = await api.get('/ipd/bed-board', { params: { facilityId } });
+    return r.data;
+  },
+  census: async (facilityId: string, dateFrom: string, dateTo: string): Promise<any> => {
+    const r = await api.get('/ipd/census', { params: { facilityId, dateFrom, dateTo } });
+    return r.data;
+  },
+  reserveBed: async (
+    bedId: string,
+    holdHours: number,
+    reason: string,
+  ): Promise<Bed> => {
+    const r = await api.post(`/ipd/beds/${bedId}/reserve`, { holdHours, reason });
+    return r.data;
+  },
+  releaseReservation: async (bedId: string): Promise<Bed> => {
+    const r = await api.post(`/ipd/beds/${bedId}/release-reservation`, {});
+    return r.data;
+  },
+  previewBedCharges: async (admissionId: string): Promise<any[]> => {
+    const r = await api.get(`/ipd/admissions/${admissionId}/bed-charges-preview`);
+    return r.data;
+  },
 };
 
 export default ipdService;
