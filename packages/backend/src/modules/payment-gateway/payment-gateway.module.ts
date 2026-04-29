@@ -5,12 +5,19 @@ import { PaymentGatewayService } from './payment-gateway.service';
 import { SandboxGatewayAdapter } from './sandbox.adapter';
 import { PesapalAdapter } from './pesapal.adapter';
 import { MtnMomoAdapter } from './mtn-momo.adapter';
+import { AirtelMoneyAdapter } from './airtel-money.adapter';
 import { BillingModule } from '../billing/billing.module';
 
 @Module({
   imports: [ConfigModule, forwardRef(() => BillingModule)],
   controllers: [PaymentGatewayController],
-  providers: [PaymentGatewayService, SandboxGatewayAdapter, PesapalAdapter, MtnMomoAdapter],
+  providers: [
+    PaymentGatewayService,
+    SandboxGatewayAdapter,
+    PesapalAdapter,
+    MtnMomoAdapter,
+    AirtelMoneyAdapter,
+  ],
   exports: [PaymentGatewayService],
 })
 export class PaymentGatewayModule {}

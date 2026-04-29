@@ -29,6 +29,17 @@ export class PaymentGatewayController {
     return this.service.initiate(body.provider, { ...body, tenantId: req.user?.tenantId });
   }
 
+  @Get('status/:provider/:txnId')
+  @AuthWithPermissions('billing.read')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Check the live status of a previously-initiated gateway transaction' })
+  async getStatus(
+    @Param('provider') provider: string,
+    @Param('txnId') txnId: string,
+  ) {
+    return this.service.getStatus(provider, txnId);
+  }
+
   /**
    * Webhook endpoint. PUBLIC (no JWT) because payment processors call us
    * server-to-server. Adapter-level signature verification SHOULD be added

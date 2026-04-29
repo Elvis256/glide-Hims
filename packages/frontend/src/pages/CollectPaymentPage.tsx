@@ -16,6 +16,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { billingService, type Invoice } from '../services/billing';
+import { api } from '../services/api';
 import { formatCurrency } from '../lib/currency';
 import { usePermissions } from '../components/PermissionGate';
 import AccessDenied from '../components/AccessDenied';
@@ -42,6 +43,83 @@ export default function CollectPaymentPage() {
   const [changeGiven, setChangeGiven] = useState(0);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editingPrice, setEditingPrice] = useState<number>(0);
+
+  // Mobile-money STK push state
+  const [momoProvider, setMomoProvider] = useState<'mtn-momo' | 'airtel-money'>('mtn-momo');
+  const [momoMsisdn, setMomoMsisdn] = useState('');
+  const [momoTxnId, setMomoTxnId] = useState<string | null>(null);
+  const [momoStatus, setMomoStatus] = useState<'idle' | 'pending' | 'success' | 'failed'>('idle');
+  const [momoMessage, setMomoMessage] = useState<string>('');
+
+  const startStkPush = async () => {
+    if (!selectedBill) return;
+    if (!momoMsisdn || momoMsisdn.replace(/\D/g, '').length < 9) {
+      toast.error('Enter a valid mobile number');
+      return;
+    }
+    const amount = parseFloat(amountReceived) || (selectedBill.balance || selectedBill.totalAmount || 0);
+    if (amount <= 0) {
+      toast.error('Enter the amount to charge');
+      return;
+    }
+    try {
+      setMomoStatus('pending');
+      setMomoMessage('Sending payment request to phone...');
+      const { data } = await api.post('/payment-gateway/initiate', {
+        provider: momoProvider,
+        channel: 'mobile_money',
+        amount,
+        currency: 'UGX',
+        invoiceId: selectedBill.id,
+        invoiceNumber: selectedBill.invoiceNumber || selectedBill.id,
+        msisdn: momoMsisdn,
+        mobileProvider: momoProvider === 'mtn-momo' ? 'mtn' : 'airtel',
+        customer: { phone: momoMsisdn },
+        description: `Invoice ${selectedBill.invoiceNumber || ''}`.trim(),
+      });
+      setMomoTxnId(data.providerTransactionId);
+      setMomoMessage(data.message || 'Awaiting customer approval on phone...');
+      setTransactionRef(data.providerTransactionId);
+      pollStkStatus(data.provider || momoProvider, data.providerTransactionId);
+    } catch (err: any) {
+      setMomoStatus('failed');
+      const msg = err?.response?.data?.message || err?.message || 'STK push failed';
+      setMomoMessage(msg);
+      toast.error(msg);
+    }
+  };
+
+  const pollStkStatus = async (provider: string, txnId: string) => {
+    const deadline = Date.now() + 120_000; // 2 minutes
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 4000));
+      try {
+        const { data } = await api.get(`/payment-gateway/status/${provider}/${txnId}`);
+        if (data.status === 'success') {
+          setMomoStatus('success');
+          setMomoMessage('Payment confirmed by customer. You can now record it below.');
+          toast.success('Mobile money payment confirmed');
+          return;
+        }
+        if (data.status === 'failed') {
+          setMomoStatus('failed');
+          setMomoMessage('Customer declined or payment failed.');
+          toast.error('Mobile money payment failed');
+          return;
+        }
+      } catch {
+        // transient — keep polling
+      }
+    }
+    setMomoStatus('failed');
+    setMomoMessage('Timed out waiting for customer. They may still complete it; check status later.');
+  };
+
+  const resetMomo = () => {
+    setMomoTxnId(null);
+    setMomoStatus('idle');
+    setMomoMessage('');
+  };
 
   const { data: pendingBills = [], isLoading, error } = useQuery({
     queryKey: ['pending-invoices'],
@@ -431,6 +509,78 @@ export default function CollectPaymentPage() {
                     </button>
                   </div>
                 </div>
+
+                {paymentMethod === 'mobile_money' && (
+                  <div className="border border-emerald-200 bg-emerald-50 rounded-lg p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium text-emerald-800 flex items-center gap-2">
+                        <Smartphone className="w-4 h-4" /> Send STK Push to phone
+                      </p>
+                      {momoStatus !== 'idle' && (
+                        <button
+                          type="button"
+                          onClick={resetMomo}
+                          className="text-xs text-gray-600 underline"
+                        >
+                          Reset
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <select
+                        value={momoProvider}
+                        onChange={(e) => setMomoProvider(e.target.value as any)}
+                        disabled={momoStatus === 'pending'}
+                        className="input py-2 text-sm"
+                      >
+                        <option value="mtn-momo">MTN MoMo</option>
+                        <option value="airtel-money">Airtel Money</option>
+                      </select>
+                      <input
+                        type="tel"
+                        value={momoMsisdn}
+                        onChange={(e) => setMomoMsisdn(e.target.value)}
+                        placeholder="0772XXXXXX or 256772..."
+                        disabled={momoStatus === 'pending'}
+                        className="input py-2 text-sm"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={startStkPush}
+                      disabled={momoStatus === 'pending'}
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium py-2 rounded-md disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {momoStatus === 'pending' ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" /> Waiting for customer...
+                        </>
+                      ) : momoStatus === 'success' ? (
+                        '✓ Payment confirmed — record below'
+                      ) : (
+                        'Send Payment Request'
+                      )}
+                    </button>
+                    {momoMessage && (
+                      <p
+                        className={`text-xs ${
+                          momoStatus === 'success'
+                            ? 'text-green-700'
+                            : momoStatus === 'failed'
+                              ? 'text-red-700'
+                              : 'text-gray-700'
+                        }`}
+                      >
+                        {momoMessage}
+                      </p>
+                    )}
+                    {momoTxnId && (
+                      <p className="text-[10px] text-gray-500 font-mono break-all">
+                        ref: {momoTxnId}
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 {paymentMethod !== 'cash' && (
                   <div>
