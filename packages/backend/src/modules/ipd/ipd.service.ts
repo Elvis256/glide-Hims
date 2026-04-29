@@ -38,6 +38,7 @@ import {
   AdmissionQueryDto,
 } from './dto/ipd.dto';
 import { BillingService } from '../billing/billing.service';
+import { BedBoardService } from './bed-board.service';
 
 @Injectable()
 export class IpdService {
@@ -55,6 +56,7 @@ export class IpdService {
     private dataSource: DataSource,
     @Inject(forwardRef(() => BillingService))
     private billingService: BillingService,
+    private bedBoardService: BedBoardService,
   ) {}
 
   // ========== WARD MANAGEMENT ==========
@@ -456,8 +458,40 @@ export class IpdService {
         endTime: new Date(),
       });
 
+      // Auto-generate the inpatient invoice for bed-days (handles transfers).
+      // We compute outside the transaction's manager because BillingService owns
+      // its own validation + numbering; failures are logged but don't roll back
+      // the discharge (a clerk can re-run billing manually).
+      let invoiceId: string | undefined;
+      try {
+        const bedLines = await this.bedBoardService.computeBedDayCharges(saved.id, tenantId);
+        if (bedLines.length) {
+          const invoice = await this.billingService.createInvoice(
+            {
+              patientId: saved.patientId,
+              encounterId: saved.encounterId,
+              items: bedLines as any,
+            } as any,
+            userId,
+            tenantId,
+          );
+          invoiceId = (invoice as any).id;
+          saved.metadata = {
+            ...(saved.metadata || {}),
+            inpatientInvoiceId: invoiceId,
+          };
+          await manager.save(saved);
+        }
+      } catch (err: any) {
+        this.logger.warn(
+          `Auto-bill on discharge failed for admission ${saved.admissionNumber}: ${err.message}`,
+        );
+      }
+
       this.logger.log(
-        `Patient discharged: admission ${admission.admissionNumber}, patient ${admission.patientId} by user ${userId}`,
+        `Patient discharged: admission ${admission.admissionNumber}, patient ${admission.patientId} by user ${userId}${
+          invoiceId ? ` (invoice ${invoiceId})` : ''
+        }`,
       );
       return saved;
     });

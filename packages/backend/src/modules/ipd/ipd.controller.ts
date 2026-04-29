@@ -14,6 +14,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { IpdService } from './ipd.service';
+import { BedBoardService } from './bed-board.service';
 import {
   CreateWardDto,
   UpdateWardDto,
@@ -46,7 +47,67 @@ function validateUuid(id: string, fieldName = 'id'): void {
 @RequireModule('ipd')
 @Controller('ipd')
 export class IpdController {
-  constructor(private readonly ipdService: IpdService) {}
+  constructor(
+    private readonly ipdService: IpdService,
+    private readonly bedBoardService: BedBoardService,
+  ) {}
+
+  // ========== BED-BOARD / CENSUS / RESERVATIONS ==========
+  @Get('bed-board')
+  @AuthWithPermissions('ipd.read')
+  @ApiOperation({ summary: 'Real-time wall-board: wards → beds → occupants' })
+  bedBoard(@Query('facilityId') facilityId: string, @Request() req: any) {
+    return this.bedBoardService.getBedBoard(facilityId, req.user?.tenantId);
+  }
+
+  @Get('census')
+  @AuthWithPermissions('ipd.read')
+  @ApiOperation({ summary: 'Census report: occupancy %, ALOS, turnover for a date range' })
+  census(
+    @Query('facilityId') facilityId: string,
+    @Query('dateFrom') dateFrom: string,
+    @Query('dateTo') dateTo: string,
+    @Request() req: any,
+  ) {
+    if (!facilityId || !dateFrom || !dateTo) {
+      throw new BadRequestException('facilityId, dateFrom and dateTo are required');
+    }
+    return this.bedBoardService.getCensus(facilityId, dateFrom, dateTo, req.user?.tenantId);
+  }
+
+  @Post('beds/:id/reserve')
+  @AuthWithPermissions('ipd.update')
+  @ApiOperation({ summary: 'Reserve a bed (TTL-bounded hold for a planned admission)' })
+  reserveBed(
+    @Param('id') id: string,
+    @Body() body: { holdHours?: number; reason?: string },
+    @Request() req: any,
+  ) {
+    validateUuid(id, 'bed id');
+    return this.bedBoardService.reserveBed(
+      id,
+      body?.holdHours ?? 4,
+      body?.reason ?? '',
+      req.user?.id,
+      req.user?.tenantId,
+    );
+  }
+
+  @Post('beds/:id/release-reservation')
+  @AuthWithPermissions('ipd.update')
+  @ApiOperation({ summary: 'Release a bed reservation (back to AVAILABLE)' })
+  releaseReservation(@Param('id') id: string, @Request() req: any) {
+    validateUuid(id, 'bed id');
+    return this.bedBoardService.releaseReservation(id, req.user?.tenantId);
+  }
+
+  @Get('admissions/:id/bed-charges-preview')
+  @AuthWithPermissions('ipd.read')
+  @ApiOperation({ summary: 'Preview bed-day charges for an admission (handles transfers)' })
+  previewBedCharges(@Param('id') id: string, @Request() req: any) {
+    validateUuid(id, 'admission id');
+    return this.bedBoardService.computeBedDayCharges(id, req.user?.tenantId);
+  }
 
   // ========== WARD ENDPOINTS ==========
   @Post('wards')

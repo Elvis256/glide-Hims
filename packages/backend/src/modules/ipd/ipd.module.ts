@@ -2,6 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { IpdController } from './ipd.controller';
 import { IpdService } from './ipd.service';
+import { BedBoardService } from './bed-board.service';
 import { Ward } from '../../database/entities/ward.entity';
 import { Bed } from '../../database/entities/bed.entity';
 import { Admission } from '../../database/entities/admission.entity';
@@ -25,7 +26,7 @@ import { BillingModule } from '../billing/billing.module';
     forwardRef(() => BillingModule),
   ],
   controllers: [IpdController],
-  providers: [IpdService],
-  exports: [IpdService],
+  providers: [IpdService, BedBoardService],
+  exports: [IpdService, BedBoardService],
 })
 export class IpdModule {}

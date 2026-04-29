@@ -648,6 +648,7 @@ const navigationSections: NavSection[] = [
     items: [
       { name: 'Admissions', href: '/ipd/admissions', icon: ClipboardPlus, permissions: ['ipd.create'] },
       { name: 'Wards & Beds', href: '/ipd/wards', icon: Bed, permissions: ['ipd.read'] },
+      { name: 'Bed-Board', href: '/ipd/bed-board', icon: Bed, permissions: ['ipd.read'] },
       { name: 'BHT Issue', href: '/ipd/bht', icon: FileText, permissions: ['ipd.create'] },
       { name: 'Inpatient Billing', href: '/ipd/billing', icon: CreditCard, permissions: ['ipd.read', 'billing.create'] },
       { name: 'Nursing Notes', href: '/ipd/nursing', icon: ClipboardList, permissions: ['nursing.create', 'ipd.read'] },
