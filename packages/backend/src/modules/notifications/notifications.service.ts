@@ -156,6 +156,42 @@ export class NotificationsService {
     }
   }
 
+  /**
+   * Convenience helper: send an SMS to a patient by their facility/tenant context.
+   * Respects the patient's `smsOptOut` flag (unless `transactional: true`).
+   * Picks the first enabled SMS config for the facility. Logs and swallows errors
+   * so the caller can fire-and-forget without breaking core flows.
+   *
+   * Returns true if sent, false if skipped/failed.
+   */
+  async sendSmsToPatient(opts: {
+    patient: { phone?: string; smsOptOut?: boolean; fullName?: string };
+    facilityId: string;
+    message: string;
+    tenantId?: string;
+    transactional?: boolean;
+  }): Promise<boolean> {
+    const { patient, facilityId, message, tenantId, transactional } = opts;
+    if (!patient?.phone) return false;
+    if (!transactional && patient.smsOptOut) {
+      this.logger.debug(`Skip SMS to ${patient.phone} (patient opted out)`);
+      return false;
+    }
+    try {
+      const configs = await this.getConfig(facilityId, NotificationType.SMS, tenantId);
+      const config = configs.find((c) => c.isEnabled);
+      if (!config) {
+        this.logger.debug(`No enabled SMS config for facility ${facilityId}`);
+        return false;
+      }
+      await this.sendSms(config, patient.phone, message);
+      return true;
+    } catch (err: any) {
+      this.logger.warn(`sendSmsToPatient failed for ${patient.phone}: ${err.message}`);
+      return false;
+    }
+  }
+
   // WhatsApp Sending
   async sendWhatsApp(
     config: NotificationConfig,

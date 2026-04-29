@@ -90,6 +90,18 @@ export class Patient extends BaseEntity {
   @Column({ type: 'varchar', length: 500, nullable: true, name: 'photograph_url' })
   photographUrl?: string;
 
+  // ─── Communication preferences ────────────────────────────────────────────
+  // When true, the patient has opted out of marketing/reminder SMS/WhatsApp.
+  // Transactional messages (OTPs, critical results) may still be sent.
+  @Column({ type: 'boolean', default: false, name: 'sms_opt_out' })
+  smsOptOut: boolean;
+
+  @Column({ type: 'boolean', default: false, name: 'whatsapp_opt_out' })
+  whatsappOptOut: boolean;
+
+  @Column({ type: 'boolean', default: false, name: 'email_opt_out' })
+  emailOptOut: boolean;
+
   /**
    * Keep blind-index hash columns in sync with their plaintext sources on every
    * insert/update. Runs against the in-memory plaintext BEFORE the column

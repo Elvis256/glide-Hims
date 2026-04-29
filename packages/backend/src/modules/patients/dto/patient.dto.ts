@@ -10,6 +10,7 @@ import {
   IsObject,
   ValidateNested,
   IsArray,
+  IsBoolean,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
@@ -127,6 +128,21 @@ export class CreatePatientDto {
   @IsString()
   @MaxLength(100)
   language?: string;
+
+  @ApiPropertyOptional({ description: 'Opt out of marketing/reminder SMS messages' })
+  @IsOptional()
+  @IsBoolean()
+  smsOptOut?: boolean;
+
+  @ApiPropertyOptional({ description: 'Opt out of WhatsApp messages' })
+  @IsOptional()
+  @IsBoolean()
+  whatsappOptOut?: boolean;
+
+  @ApiPropertyOptional({ description: 'Opt out of marketing/reminder emails' })
+  @IsOptional()
+  @IsBoolean()
+  emailOptOut?: boolean;
 
   @ApiPropertyOptional({ description: 'Additional metadata (max 5 fields)' })
   @IsOptional()

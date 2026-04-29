@@ -28,6 +28,7 @@ import {
 } from './dto/lab.dto';
 import { BillingService } from '../billing/billing.service';
 import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { EncountersService } from '../encounters/encounters.service';
 
 @Injectable()
@@ -46,6 +47,7 @@ export class LabService {
     private billingService: BillingService,
     @Inject(forwardRef(() => InAppNotificationsService))
     private inAppNotificationsService: InAppNotificationsService,
+    private notificationsService: NotificationsService,
     @Inject(forwardRef(() => EncountersService))
     private encountersService: EncountersService,
   ) {}
@@ -731,6 +733,34 @@ export class LabService {
         // Update order status
         await manager.update(Order, sample.orderId, { status: OrderStatus.COMPLETED });
         this.logger.log(`Sample completed: ${sample.sampleNumber}`);
+
+        // Notify patient via SMS that lab results are ready (fire-and-forget)
+        try {
+          const fullSample = await manager.findOne(LabSample, {
+            where: { id: result.sampleId },
+            relations: ['order', 'order.encounter', 'order.encounter.patient', 'order.encounter.facility'],
+          });
+          const patient = fullSample?.order?.encounter?.patient as any;
+          const facility = fullSample?.order?.encounter?.facility;
+          const facilityId = fullSample?.order?.encounter?.facilityId;
+          if (patient && facilityId) {
+            const fname = String(patient.fullName || 'patient').split(' ')[0];
+            const facName = facility?.name || 'the facility';
+            const msg =
+              `Hello ${fname}, your lab results from ${facName} are ready. ` +
+              `Please visit the facility or log in to your patient portal to view them.`;
+            this.notificationsService
+              .sendSmsToPatient({
+                patient,
+                facilityId,
+                message: msg,
+                tenantId,
+              })
+              .catch((e) => this.logger.warn(`Patient lab-ready SMS failed: ${e.message}`));
+          }
+        } catch (e) {
+          this.logger.warn(`Patient lab-ready SMS lookup failed: ${(e as Error).message}`);
+        }
 
         // Billing is handled at order-creation time in orders.service.ts.
         // Do NOT bill again here to avoid duplicate invoice items.

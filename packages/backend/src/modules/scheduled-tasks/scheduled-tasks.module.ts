@@ -9,6 +9,8 @@ import { User } from '../../database/entities/user.entity';
 import { InAppNotification } from '../../database/entities/in-app-notification.entity';
 import { Facility } from '../../database/entities/facility.entity';
 import { ExpiryAlertConfig, ExpiryAlertHistory } from '../../database/entities/expiry-alert.entity';
+import { Invoice } from '../../database/entities/invoice.entity';
+import { Patient } from '../../database/entities/patient.entity';
 import { InAppNotificationsModule } from '../in-app-notifications/in-app-notifications.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 
@@ -24,6 +26,8 @@ import { NotificationsModule } from '../notifications/notifications.module';
       Facility,
       ExpiryAlertConfig,
       ExpiryAlertHistory,
+      Invoice,
+      Patient,
     ]),
     InAppNotificationsModule,
     NotificationsModule,
