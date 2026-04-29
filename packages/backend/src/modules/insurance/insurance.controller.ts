@@ -10,7 +10,10 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import type { Response } from 'express';
+import { Res } from '@nestjs/common';
 import { InsuranceService } from './insurance.service';
+import { ClaimExportService } from './claim-export.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import {
   CreateProviderDto,
@@ -35,7 +38,10 @@ import { ModuleGuard } from '../auth/guards/module.guard';
 @RequireModule('billing')
 @Controller('insurance')
 export class InsuranceController {
-  constructor(private readonly insuranceService: InsuranceService) {}
+  constructor(
+    private readonly insuranceService: InsuranceService,
+    private readonly claimExportService: ClaimExportService,
+  ) {}
 
   // ============ DASHBOARD ============
   @Get('dashboard')
@@ -199,6 +205,42 @@ export class InsuranceController {
   @ApiOperation({ summary: 'Submit claim' })
   async submitClaim(@Param('id') id: string, @Request() req: any) {
     return this.insuranceService.submitClaim(id, req.user.id, req.user?.tenantId);
+  }
+
+  @Get('claims/:id/pdf')
+  @AuthWithPermissions('insurance.claims.read')
+  @ApiOperation({ summary: 'Download printable claim form (PDF)' })
+  async claimPdf(@Param('id') id: string, @Request() req: any, @Res() res: Response) {
+    const { filename, pdf } = await this.claimExportService.generateClaimPdf(id, req.user?.tenantId);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+    res.setHeader('Content-Length', pdf.length.toString());
+    res.end(pdf);
+  }
+
+  @Get('claims/export.csv')
+  @AuthWithPermissions('insurance.claims.read')
+  @ApiOperation({ summary: 'Export submittable claims as a CSV batch (NHIS-style)' })
+  @ApiQuery({ name: 'providerId', required: true })
+  @ApiQuery({ name: 'dateFrom', required: true, description: 'YYYY-MM-DD' })
+  @ApiQuery({ name: 'dateTo', required: true, description: 'YYYY-MM-DD' })
+  async exportBatchCsv(
+    @Query('providerId') providerId: string,
+    @Query('dateFrom') dateFrom: string,
+    @Query('dateTo') dateTo: string,
+    @Request() req: any,
+    @Res() res: Response,
+  ) {
+    const { filename, csv, count } = await this.claimExportService.exportBatchCsv(
+      providerId,
+      dateFrom,
+      dateTo,
+      req.user?.tenantId,
+    );
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('X-Claim-Count', String(count));
+    res.end(csv);
   }
 
   @Post('claims/:id/approve')

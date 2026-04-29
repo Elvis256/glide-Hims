@@ -21,6 +21,7 @@ import {
 import { PreAuthorization, PreAuthStatus } from '../../database/entities/pre-authorization.entity';
 import { Encounter, PayerType } from '../../database/entities/encounter.entity';
 import { Invoice } from '../../database/entities/invoice.entity';
+import { ClaimExportService } from './claim-export.service';
 import {
   CreateProviderDto,
   CreatePolicyDto,
@@ -55,6 +56,7 @@ export class InsuranceService {
     private financeService: FinanceService,
     @Inject(forwardRef(() => BillingService))
     private billingService: BillingService,
+    private claimExportService: ClaimExportService,
     private dataSource: DataSource,
   ) {}
 
@@ -548,7 +550,31 @@ export class InsuranceService {
     claim.submittedAt = new Date();
     claim.submittedById = userId;
 
-    return this.claimRepo.save(claim);
+    const saved = await this.claimRepo.save(claim);
+
+    // Dispatch electronic transmission if the provider supports it. Failures are
+    // captured in metadata; the claim itself stays SUBMITTED so a clerk can retry
+    // via the same endpoint or fall back to manual export (CSV / PDF).
+    if (claim.provider?.apiEndpoint) {
+      const result = await this.claimExportService.submitElectronically(saved, claim.provider);
+      saved.metadata = {
+        ...(saved.metadata || {}),
+        electronicSubmission: {
+          attemptedAt: new Date().toISOString(),
+          transmitted: result.transmitted,
+          ack: result.ack ?? null,
+          error: result.error ?? null,
+        },
+      };
+      if (result.transmitted) {
+        saved.status = ClaimStatus.ACKNOWLEDGED;
+        const externalId = result.ack?.claimId || result.ack?.id || result.ack?.referenceId;
+        if (externalId) saved.metadata.externalClaimId = externalId;
+      }
+      await this.claimRepo.save(saved);
+    }
+
+    return saved;
   }
 
   async processClaim(
