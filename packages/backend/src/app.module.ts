@@ -66,6 +66,7 @@ import { PriceAgreementsModule } from './modules/price-agreements/price-agreemen
 import { InvoiceMatchingModule } from './modules/invoice-matching/invoice-matching.module';
 import { ItemClassificationsModule } from './modules/item-classifications/item-classifications.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { PatientPortalModule } from './modules/patient-portal/patient-portal.module';
 import { ChronicCareModule } from './modules/chronic-care/chronic-care.module';
 import { IntegrationsModule } from './modules/integrations/integrations.module';
 import { PricingEngineModule } from './modules/pricing-engine/pricing-engine.module';
@@ -238,6 +239,7 @@ import { DeploymentsModule } from './modules/deployments/deployment.module';
 
     // Phase 19: Chronic Disease Management & Notifications
     NotificationsModule,
+    PatientPortalModule,
     ChronicCareModule,
 
     // Phase 20: External API Integrations (openFDA, SMS, LOINC)
