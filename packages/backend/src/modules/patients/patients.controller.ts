@@ -187,6 +187,38 @@ export class PatientsController {
     return this.patientsService.findOne(id, tenantId);
   }
 
+  @Get(':id/qr-card')
+  @AuthWithPermissions('patients.read')
+  @ApiOperation({
+    summary: 'Generate a printable PNG QR card for the patient (encodes patient portal deeplink)',
+  })
+  async qrCard(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    const tenantId = (req as any).user?.tenantId;
+    const patient = await this.patientsService.findOne(id, tenantId);
+    // Lazy require keeps qrcode out of the cold-start path for non-QR routes.
+    const QR = await import('qrcode');
+    // Deeplink the QR code at the public portal; reception scanners can also
+    // parse the MRN out of the trailing path segment.
+    const baseUrl = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host') || ''}`;
+    const deeplink = `${baseUrl}/portal/scan/${encodeURIComponent(patient.mrn)}`;
+    const png = await QR.toBuffer(deeplink, {
+      errorCorrectionLevel: 'H',
+      margin: 2,
+      width: 512,
+    });
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="qr-card-${patient.mrn}.png"`,
+    );
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    return res.send(png);
+  }
+
   @Patch(':id')
   @AuthWithPermissions('patients.update')
   @ApiOperation({ summary: 'Update patient' })

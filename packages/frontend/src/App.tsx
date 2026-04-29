@@ -33,6 +33,8 @@ import { PageLoader } from './components/PageLoader';
 
 // Lazy-loaded page components (route-based code splitting)
 const LoginPage = lazy(() => import('./pages/LoginPage'));
+const PortalLoginPage = lazy(() => import('./pages/portal/PortalLoginPage'));
+const PortalDashboardPage = lazy(() => import('./pages/portal/PortalDashboardPage'));
 const SystemLoginPage = lazy(() => import('./pages/system/SystemLoginPage'));
 const SystemAdminLayout = lazy(() => import('./pages/system/SystemAdminLayout'));
 const SystemDashboardPage = lazy(() => import('./pages/system/SystemDashboardPage'));
@@ -607,6 +609,10 @@ function AppRoutes() {
       <Route path="/setup/:slug" element={<TenantSetupWizardPage />} />
       <Route path="/register" element={isAuthenticated ? <Navigate to="/" replace /> : <RegisterOrganizationPage />} />
       <Route path="/careers" element={<CareersPage />} />
+      <Route path="/portal/login" element={<PortalLoginPage />} />
+      <Route path="/portal/dashboard" element={<PortalDashboardPage />} />
+      <Route path="/portal" element={<Navigate to="/portal/login" replace />} />
+      <Route path="/portal/scan/:mrn" element={<Navigate to="/portal/login" replace />} />
       <Route
         path="/system/login"
         element={isAuthenticated ? <Navigate to="/system" replace /> : <SystemLoginPage />}
