@@ -3,11 +3,13 @@ import { ConfigService } from '@nestjs/config';
 import { SandboxGatewayAdapter } from './sandbox.adapter';
 import { PesapalAdapter } from './pesapal.adapter';
 import { MtnMomoAdapter } from './mtn-momo.adapter';
+import { AirtelMoneyAdapter } from './airtel-money.adapter';
 import {
   InitiatePaymentRequest,
   InitiatePaymentResponse,
   NormalisedWebhookEvent,
   PaymentGatewayAdapter,
+  GatewayStatus,
 } from './payment-gateway.types';
 import { BillingService } from '../billing/billing.service';
 import { PaymentMethod } from '../../database/entities/invoice.entity';
@@ -26,6 +28,7 @@ export class PaymentGatewayService {
     private readonly sandbox: SandboxGatewayAdapter,
     private readonly pesapal: PesapalAdapter,
     private readonly mtn: MtnMomoAdapter,
+    private readonly airtel: AirtelMoneyAdapter,
     @Inject(forwardRef(() => BillingService))
     private readonly billing: BillingService,
   ) {
@@ -33,6 +36,7 @@ export class PaymentGatewayService {
       [sandbox.providerKey, sandbox],
       [pesapal.providerKey, pesapal],
       [mtn.providerKey, mtn],
+      [airtel.providerKey, airtel],
     ]);
   }
 
@@ -68,6 +72,22 @@ export class PaymentGatewayService {
     const adapter = this.resolveAdapter(provider);
     const result = await adapter.initiate(req);
     return { ...result, provider: adapter.providerKey };
+  }
+
+  /**
+   * Poll the gateway for the current status of a previously-initiated payment.
+   * Used by the front-end to show "waiting for customer to approve" → success/failure.
+   */
+  async getStatus(
+    providerKey: string,
+    providerTransactionId: string,
+  ): Promise<{ provider: string; status: GatewayStatus }> {
+    const adapter = this.adapters.get(providerKey);
+    if (!adapter) {
+      throw new BadRequestException(`Unknown payment provider: ${providerKey}`);
+    }
+    const status = await adapter.getStatus(providerTransactionId);
+    return { provider: adapter.providerKey, status };
   }
 
   /**
