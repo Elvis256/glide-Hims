@@ -10,6 +10,8 @@ import { SystemSettingsModule } from '../system-settings/system-settings.module'
 import { FinanceModule } from '../finance/finance.module';
 import { PricingEngineModule } from '../pricing-engine/pricing-engine.module';
 import { InsuranceModule } from '../insurance/insurance.module';
+import { ServicesModule } from '../services/services.module';
+import { InventoryModule } from '../inventory/inventory.module';
 
 @Module({
   imports: [
@@ -19,6 +21,8 @@ import { InsuranceModule } from '../insurance/insurance.module';
     FinanceModule,
     PricingEngineModule,
     forwardRef(() => InsuranceModule),
+    ServicesModule,
+    InventoryModule,
   ],
   controllers: [BillingController],
   providers: [BillingService],

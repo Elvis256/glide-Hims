@@ -179,6 +179,42 @@ export const servicesService = {
       await api.delete(`/services/packages/${id}`);
     },
   },
+
+  // Consumables (auto-deducted inventory items per service)
+  consumables: {
+    list: async (serviceId: string): Promise<ServiceConsumable[]> => {
+      const response = await api.get<ServiceConsumable[]>(`/services/${serviceId}/consumables`);
+      return response.data;
+    },
+    add: async (serviceId: string, data: CreateServiceConsumableDto): Promise<ServiceConsumable> => {
+      const response = await api.post<ServiceConsumable>(`/services/${serviceId}/consumables`, data);
+      return response.data;
+    },
+    update: async (cid: string, data: Partial<CreateServiceConsumableDto>): Promise<ServiceConsumable> => {
+      const response = await api.patch<ServiceConsumable>(`/services/consumables/${cid}`, data);
+      return response.data;
+    },
+    remove: async (cid: string): Promise<void> => {
+      await api.delete(`/services/consumables/${cid}`);
+    },
+  },
 };
+
+export interface ServiceConsumable {
+  id: string;
+  serviceId: string;
+  itemId: string;
+  quantity: number;
+  isOptional: boolean;
+  notes?: string;
+  item?: { id: string; name: string; sku?: string; unitOfMeasure?: string };
+}
+
+export interface CreateServiceConsumableDto {
+  itemId: string;
+  quantity: number;
+  isOptional?: boolean;
+  notes?: string;
+}
 
 export default servicesService;

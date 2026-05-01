@@ -8,9 +8,10 @@ import {
   ServicePrice,
   ServicePackage,
 } from '../../database/entities/service-category.entity';
+import { ServiceConsumable } from '../../database/entities/service-consumable.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([ServiceCategory, Service, ServicePrice, ServicePackage])],
+  imports: [TypeOrmModule.forFeature([ServiceCategory, Service, ServicePrice, ServicePackage, ServiceConsumable])],
   controllers: [ServicesController],
   providers: [ServicesService],
   exports: [ServicesService],

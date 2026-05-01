@@ -8,7 +8,8 @@ import {
   ChevronDown, Zap, Package, DollarSign, Shield, Users, Heart, Save,
   ChevronRight,
 } from 'lucide-react';
-import { servicesService, type Service, type ServiceCategory } from '../../../services/services';
+import { servicesService, type Service, type ServiceCategory, type ServiceConsumable } from '../../../services/services';
+import inventoryService, { type InventoryItem } from '../../../services/inventory';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 import {
   getInsurancePriceLists, createInsurancePriceList, updateInsurancePriceList,
@@ -279,6 +280,190 @@ function CategoryModal({
   );
 }
 
+// ─── Consumables Drawer ───────────────────────────────────────────────────────
+function ConsumablesDrawer({
+  service, onClose,
+}: { service: Service; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickQuery, setPickQuery] = useState('');
+  const [newQty, setNewQty] = useState<number>(1);
+  const [pickedItem, setPickedItem] = useState<InventoryItem | null>(null);
+  const [error, setError] = useState('');
+
+  const { data: consumables = [], isLoading } = useQuery({
+    queryKey: ['serviceConsumables', service.id],
+    queryFn: () => servicesService.consumables.list(service.id),
+  });
+
+  const { data: items = [] } = useQuery({
+    queryKey: ['inventoryItemsAll'],
+    queryFn: () => inventoryService.items.list(),
+    staleTime: 60000,
+    enabled: pickerOpen,
+  });
+
+  const filteredItems = useMemo(() => {
+    const used = new Set(consumables.map((c) => c.itemId));
+    return items
+      .filter((i) => !used.has(i.id))
+      .filter((i) =>
+        !pickQuery ||
+        i.name.toLowerCase().includes(pickQuery.toLowerCase()) ||
+        (i.sku || '').toLowerCase().includes(pickQuery.toLowerCase()),
+      )
+      .slice(0, 50);
+  }, [items, consumables, pickQuery]);
+
+  const addMut = useMutation({
+    mutationFn: (data: { itemId: string; quantity: number }) =>
+      servicesService.consumables.add(service.id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['serviceConsumables', service.id] });
+      setPickerOpen(false); setPickedItem(null); setNewQty(1); setPickQuery(''); setError('');
+    },
+    onError: (e: any) => setError(e?.response?.data?.message || 'Failed to add'),
+  });
+
+  const updateMut = useMutation({
+    mutationFn: ({ id, quantity }: { id: string; quantity: number }) =>
+      servicesService.consumables.update(id, { quantity }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['serviceConsumables', service.id] }),
+  });
+
+  const toggleOptMut = useMutation({
+    mutationFn: ({ id, isOptional }: { id: string; isOptional: boolean }) =>
+      servicesService.consumables.update(id, { isOptional }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['serviceConsumables', service.id] }),
+  });
+
+  const removeMut = useMutation({
+    mutationFn: (id: string) => servicesService.consumables.remove(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['serviceConsumables', service.id] }),
+  });
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-40 z-40 flex justify-end" onClick={onClose}>
+      <div className="bg-white w-full max-w-2xl h-full overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="border-b px-6 py-4 flex items-center justify-between bg-gradient-to-r from-purple-50 to-blue-50">
+          <div>
+            <h2 className="text-lg font-bold">Consumables — {service.name}</h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Inventory items auto-deducted from stock when this service is invoiced.
+            </p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-white rounded-lg"><X className="w-5 h-5" /></button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <button
+            onClick={() => setPickerOpen(true)}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" /> Link Inventory Item
+          </button>
+
+          {isLoading ? (
+            <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
+          ) : consumables.length === 0 ? (
+            <div className="text-center py-12 text-gray-500 border-2 border-dashed rounded-lg">
+              <Package className="w-10 h-10 mx-auto mb-2 text-gray-300" />
+              <p className="text-sm">No consumables linked yet.</p>
+              <p className="text-xs mt-1">Add items that should be deducted when this service is rendered.</p>
+            </div>
+          ) : (
+            <table className="w-full text-sm border rounded-lg overflow-hidden">
+              <thead className="bg-gray-50 text-xs uppercase text-gray-600">
+                <tr>
+                  <th className="px-3 py-2 text-left">Item</th>
+                  <th className="px-3 py-2 text-right w-32">Qty per service</th>
+                  <th className="px-3 py-2 text-center w-24">Optional</th>
+                  <th className="px-3 py-2 w-12"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {consumables.map((c: ServiceConsumable) => (
+                  <tr key={c.id}>
+                    <td className="px-3 py-2">
+                      <div className="font-medium text-gray-900">{c.item?.name || '—'}</div>
+                      <div className="text-xs text-gray-500">{c.item?.sku}</div>
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <input
+                        type="number" step="0.001" min="0.001"
+                        defaultValue={c.quantity}
+                        onBlur={(e) => {
+                          const v = parseFloat(e.target.value);
+                          if (v > 0 && v !== Number(c.quantity)) updateMut.mutate({ id: c.id, quantity: v });
+                        }}
+                        className="w-20 px-2 py-1 border rounded text-right"
+                      />
+                      <span className="ml-1 text-xs text-gray-500">{c.item?.unitOfMeasure || ''}</span>
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      <input
+                        type="checkbox" checked={c.isOptional}
+                        onChange={(e) => toggleOptMut.mutate({ id: c.id, isOptional: e.target.checked })}
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <button onClick={() => removeMut.mutate(c.id)}
+                        className="text-red-500 hover:text-red-700 p-1">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
+          {pickerOpen && (
+            <div className="border rounded-lg p-4 bg-gray-50 space-y-3">
+              <div className="font-medium text-sm">Select an item</div>
+              <input
+                type="text" placeholder="Search by name or SKU…"
+                value={pickQuery} onChange={(e) => setPickQuery(e.target.value)}
+                className="w-full px-3 py-2 border rounded"
+              />
+              <div className="max-h-48 overflow-y-auto bg-white border rounded">
+                {filteredItems.length === 0 ? (
+                  <div className="p-4 text-center text-gray-400 text-sm">No matching items</div>
+                ) : filteredItems.map((it) => (
+                  <button key={it.id}
+                    onClick={() => setPickedItem(it)}
+                    className={`w-full text-left px-3 py-2 text-sm border-b hover:bg-blue-50 ${pickedItem?.id === it.id ? 'bg-blue-100' : ''}`}>
+                    <div className="font-medium">{it.name}</div>
+                    <div className="text-xs text-gray-500">{it.sku}</div>
+                  </button>
+                ))}
+              </div>
+              {pickedItem && (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm">Quantity:</span>
+                  <input
+                    type="number" step="0.001" min="0.001" value={newQty}
+                    onChange={(e) => setNewQty(parseFloat(e.target.value) || 0)}
+                    className="w-24 px-2 py-1 border rounded text-right"
+                  />
+                  <button
+                    onClick={() => addMut.mutate({ itemId: pickedItem.id, quantity: newQty })}
+                    disabled={!newQty || newQty <= 0 || addMut.isPending}
+                    className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white text-sm rounded"
+                  >Add</button>
+                  <button onClick={() => { setPickerOpen(false); setPickedItem(null); }}
+                    className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-200 rounded">Cancel</button>
+                </div>
+              )}
+              {error && <div className="text-red-600 text-xs">{error}</div>}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Pricing Drawer ───────────────────────────────────────────────────────────
 function PricingDrawer({
   service,
@@ -505,6 +690,7 @@ export default function ServiceCatalogPage() {
   const [deleteCatTarget, setDeleteCatTarget] = useState<ServiceCategory | null>(null);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [pricingService, setPricingService] = useState<Service | null>(null);
+  const [consumablesService, setConsumablesService] = useState<Service | null>(null);
   const [formError, setFormError] = useState('');
   const [seeding, setSeeding] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -856,6 +1042,10 @@ export default function ServiceCatalogPage() {
                             className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded transition-colors">
                             <DollarSign className="w-4 h-4" />
                           </button>
+                          <button title="Consumables" onClick={() => setConsumablesService(svc)}
+                            className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded transition-colors">
+                            <Package className="w-4 h-4" />
+                          </button>
                           <button title="Edit" onClick={() => { setFormError(''); setEditService(svc); }}
                             className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors">
                             <Edit2 className="w-4 h-4" />
@@ -1074,6 +1264,14 @@ export default function ServiceCatalogPage() {
             queryClient.invalidateQueries({ queryKey: ['insurancePriceLists'] });
             setPricingService(null);
           }}
+        />
+      )}
+
+      {/* Consumables Drawer */}
+      {consumablesService && (
+        <ConsumablesDrawer
+          service={consumablesService}
+          onClose={() => setConsumablesService(null)}
         />
       )}
 
