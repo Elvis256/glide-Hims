@@ -38,6 +38,7 @@ import { pharmacyService, type BatchStock } from '../../services/pharmacy';
 import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
 import { useFacilityId } from '../../lib/facility';
 import { asList } from '../../utils/unwrapResponse';
+import { CatalogItemPicker } from '../../components/catalog';
 
 type DispenseStep = 'search' | 'verify' | 'pick' | 'check' | 'dispense';
 
@@ -351,6 +352,7 @@ export default function DispenseMedicationPage() {
     setEditingItem(item.id);
     setEditValues({
       drugName: item.drugName,
+      drugCode: item.drugCode || '',
       dose: item.dose,
       frequency: item.frequency,
       duration: item.duration,
@@ -820,11 +822,13 @@ export default function DispenseMedicationPage() {
                         return (
                         <tr key={item.id} className="bg-yellow-50">
                           <td className="py-2 pr-1">
-                            <input
-                              value={editValues.drugName || ''}
-                              onChange={e => setEditValues(v => ({ ...v, drugName: e.target.value }))}
-                              className="w-full px-2 py-1 border rounded text-sm"
+                            <CatalogItemPicker
+                              value={editValues.drugName ? { id: editValues.drugCode || '', name: editValues.drugName } : null}
+                              onChange={(item) => setEditValues((v: Record<string, any>) => ({ ...v, drugName: item?.name || '', drugCode: item?.code || item?.id || '' }))}
+                              module="pharmacy"
                               placeholder="Drug name"
+                              size="sm"
+                              allowFreeText
                             />
                           </td>
                           <td className="py-2 px-1">

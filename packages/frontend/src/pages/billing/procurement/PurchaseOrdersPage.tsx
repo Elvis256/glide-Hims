@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import api from '../../../services/api';
 import { getFacilityId } from '../../../lib/facility';
+import { CatalogItemPicker, type SelectedItem } from '../../../components/catalog';
 import {
   ShoppingCart,
   Plus,
@@ -121,10 +122,11 @@ interface BackendPurchaseOrder {
 interface CreatePurchaseOrderData {
   supplierId: string;
   items: Array<{
-    itemId?: string;
-    name: string;
-    quantity: number;
-    unit: string;
+    itemId: string;
+    itemCode: string;
+    itemName: string;
+    itemUnit: string;
+    quantityOrdered: number;
     unitPrice: number;
   }>;
   expectedDeliveryDate?: string;
@@ -181,6 +183,9 @@ export default function PurchaseOrdersPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showAmendModal, setShowAmendModal] = useState(false);
   const [createFormData, setCreateFormData] = useState<Partial<CreatePurchaseOrderData>>({});
+  const [poLineItems, setPoLineItems] = useState<Array<{ rowId: string; itemId: string; itemCode: string; itemName: string; itemUnit: string; quantityOrdered: number; unitPrice: number }>>([
+    { rowId: '1', itemId: '', itemCode: '', itemName: '', itemUnit: 'unit', quantityOrdered: 1, unitPrice: 0 },
+  ]);
 
   const facilityId = getFacilityId();
 
@@ -212,6 +217,7 @@ export default function PurchaseOrdersPage() {
       queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
       setShowCreateModal(false);
       setCreateFormData({});
+      setPoLineItems([{ rowId: '1', itemId: '', itemCode: '', itemName: '', itemUnit: 'unit', quantityOrdered: 1, unitPrice: 0 }]);
     },
   });
 
@@ -280,11 +286,32 @@ export default function PurchaseOrdersPage() {
       toast.error('Please select a supplier');
       return;
     }
-    createMutation.mutate(createFormData as CreatePurchaseOrderData, {
+    const validItems = poLineItems.filter((i) => i.itemId && i.quantityOrdered > 0);
+    if (validItems.length === 0) {
+      toast.error('Add at least one item to the purchase order');
+      return;
+    }
+    const payload: CreatePurchaseOrderData = {
+      supplierId: createFormData.supplierId!,
+      items: validItems.map((i) => ({
+        itemId: i.itemId,
+        itemCode: i.itemCode,
+        itemName: i.itemName,
+        itemUnit: i.itemUnit,
+        quantityOrdered: i.quantityOrdered,
+        unitPrice: i.unitPrice,
+      })),
+      expectedDeliveryDate: createFormData.expectedDeliveryDate,
+      deliveryAddress: createFormData.deliveryAddress,
+      paymentTerms: createFormData.paymentTerms,
+      notes: createFormData.notes,
+    };
+    createMutation.mutate(payload, {
       onSuccess: (data) => {
         if (sendImmediately && data?.id) {
           sendMutation.mutate(data.id);
         }
+        setPoLineItems([{ rowId: '1', itemId: '', itemCode: '', itemName: '', itemUnit: 'unit', quantityOrdered: 1, unitPrice: 0 }]);
       },
     });
   };
@@ -750,6 +777,121 @@ export default function PurchaseOrdersPage() {
                   rows={3}
                   placeholder="Any special delivery or handling instructions"
                 />
+              </div>
+
+              {/* Items */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Order Items</label>
+                <div className="border rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="text-left px-3 py-2">Item</th>
+                        <th className="text-left px-3 py-2 w-20">Qty</th>
+                        <th className="text-left px-3 py-2 w-16">Unit</th>
+                        <th className="text-left px-3 py-2 w-24">Unit Price</th>
+                        <th className="px-3 py-2 w-8"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {poLineItems.map((line) => (
+                        <tr key={line.rowId} className="border-t">
+                          <td className="px-3 py-2 min-w-[200px]">
+                            <CatalogItemPicker
+                              value={line.itemId ? { id: line.itemId, source: 'inventory', code: line.itemCode, name: line.itemName, unit: line.itemUnit } : null}
+                              onChange={(picked) =>
+                                setPoLineItems((prev) =>
+                                  prev.map((l) =>
+                                    l.rowId === line.rowId
+                                      ? {
+                                          ...l,
+                                          itemId: picked?.id || '',
+                                          itemCode: picked?.code || '',
+                                          itemName: picked?.name || '',
+                                          itemUnit: picked?.unit || l.itemUnit,
+                                          unitPrice: picked?.lastPrice ?? picked?.sellingPrice ?? l.unitPrice,
+                                        }
+                                      : l,
+                                  ),
+                                )
+                              }
+                              module="all"
+                              size="sm"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="number"
+                              min={1}
+                              value={line.quantityOrdered || ''}
+                              onChange={(e) =>
+                                setPoLineItems((prev) =>
+                                  prev.map((l) =>
+                                    l.rowId === line.rowId ? { ...l, quantityOrdered: parseInt(e.target.value) || 0 } : l,
+                                  ),
+                                )
+                              }
+                              className="w-16 px-2 py-1 border rounded text-sm"
+                              placeholder="0"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="text"
+                              value={line.itemUnit}
+                              onChange={(e) =>
+                                setPoLineItems((prev) =>
+                                  prev.map((l) => (l.rowId === line.rowId ? { ...l, itemUnit: e.target.value } : l)),
+                                )
+                              }
+                              className="w-14 px-2 py-1 border rounded text-sm"
+                              placeholder="unit"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="number"
+                              min={0}
+                              value={line.unitPrice || ''}
+                              onChange={(e) =>
+                                setPoLineItems((prev) =>
+                                  prev.map((l) =>
+                                    l.rowId === line.rowId ? { ...l, unitPrice: parseFloat(e.target.value) || 0 } : l,
+                                  ),
+                                )
+                              }
+                              className="w-20 px-2 py-1 border rounded text-sm"
+                              placeholder="0.00"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <button
+                              type="button"
+                              onClick={() => setPoLineItems((prev) => prev.filter((l) => l.rowId !== line.rowId))}
+                              className="text-red-400 hover:text-red-600"
+                              disabled={poLineItems.length === 1}
+                            >
+                              <XCircle className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPoLineItems((prev) => [
+                      ...prev,
+                      { rowId: String(Date.now()), itemId: '', itemCode: '', itemName: '', itemUnit: 'unit', quantityOrdered: 1, unitPrice: 0 },
+                    ])
+                  }
+                  className="mt-2 flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Item
+                </button>
               </div>
             </div>
             <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-3">

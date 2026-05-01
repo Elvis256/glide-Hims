@@ -233,6 +233,7 @@ export interface CreateGoodsReceiptDto {
   facilityId: string;
   supplierId: string;
   purchaseOrderId?: string;
+  storeId?: string;
   deliveryNoteNumber?: string;
   invoiceNumber?: string;
   invoiceDate?: string;

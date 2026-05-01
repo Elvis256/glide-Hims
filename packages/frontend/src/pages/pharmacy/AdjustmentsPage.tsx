@@ -2,6 +2,7 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
+import { CatalogItemPicker } from '../../components/catalog';
 import {
   Search,
   Plus,
@@ -65,7 +66,6 @@ export default function AdjustmentsPage() {
   const [selectedReason, setSelectedReason] = useState<AdjustmentReason | 'All'>('All');
   const [showNewModal, setShowNewModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState<Adjustment | null>(null);
-  const [itemSearch, setItemSearch] = useState('');
   const [newAdj, setNewAdj] = useState({
     itemId: '',
     itemName: '',
@@ -73,13 +73,6 @@ export default function AdjustmentsPage() {
     reason: 'Counting error' as AdjustmentReason,
     quantity: 0,
     notes: '',
-  });
-
-  // Search items for the new adjustment modal
-  const { data: searchedItems = [] } = useQuery({
-    queryKey: ['items-search-adj', itemSearch],
-    queryFn: () => storesService.items.search(itemSearch, undefined, 20),
-    enabled: itemSearch.length > 1,
   });
 
   // Fetch all items for name lookup
@@ -111,7 +104,6 @@ export default function AdjustmentsPage() {
       queryClient.invalidateQueries({ queryKey: ['stock-movements'] });
       setShowNewModal(false);
       setNewAdj({ itemId: '', itemName: '', type: 'Decrease', reason: 'Counting error', quantity: 0, notes: '' });
-      setItemSearch('');
       toast.success('Adjustment recorded successfully');
     },
     onError: () => toast.error('Failed to record adjustment'),
@@ -496,45 +488,13 @@ export default function AdjustmentsPage() {
               {/* Item Search */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Medication / Item</label>
-                {newAdj.itemId ? (
-                  <div className="flex items-center justify-between p-2 bg-blue-50 border border-blue-200 rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <Pill className="w-4 h-4 text-blue-600" />
-                      <span className="font-medium">{newAdj.itemName}</span>
-                    </div>
-                    <button onClick={() => setNewAdj({ ...newAdj, itemId: '', itemName: '' })} className="text-gray-400 hover:text-red-500">
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input
-                      type="text"
-                      value={itemSearch}
-                      onChange={(e) => setItemSearch(e.target.value)}
-                      placeholder="Search medications..."
-                      className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                    />
-                    {searchedItems.length > 0 && itemSearch.length > 1 && (
-                      <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-auto">
-                        {searchedItems.map((item: Drug) => (
-                          <button
-                            key={item.id}
-                            onClick={() => {
-                              setNewAdj({ ...newAdj, itemId: item.id, itemName: item.name });
-                              setItemSearch('');
-                            }}
-                            className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm"
-                          >
-                            <span className="font-medium">{item.name}</span>
-                            {item.strength && <span className="text-gray-500 ml-1">{item.strength}</span>}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
+                <CatalogItemPicker
+                  value={newAdj.itemId ? { id: newAdj.itemId, name: newAdj.itemName } : null}
+                  onChange={(item) => setNewAdj({ ...newAdj, itemId: item?.id || '', itemName: item?.name || '' })}
+                  module="pharmacy"
+                  placeholder="Search medications..."
+                  size="md"
+                />
               </div>
               {/* Type */}
               <div>
