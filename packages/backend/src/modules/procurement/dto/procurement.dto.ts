@@ -262,6 +262,10 @@ export class CreateGoodsReceiptDto {
   @IsString()
   facilityId: string;
 
+  @IsOptional()
+  @IsString()
+  storeId?: string;
+
   @IsString()
   supplierId: string;
 
@@ -314,6 +318,10 @@ export class CreateGRNFromPOReceivedItemDto {
 export class CreateGRNFromPODto {
   @IsString()
   purchaseOrderId: string;
+
+  @IsOptional()
+  @IsString()
+  storeId?: string;
 
   @IsArray()
   @ValidateNested({ each: true })
