@@ -136,6 +136,29 @@ export default function OPDTokenPage() {
   // Default consultation fee: per-facility service catalog → tenant setting → null (must configure)
   const defaultConsultationFee: number | null =
     consultationService?.basePrice ?? billingConfig?.consultationFee ?? null;
+
+  // Live preview of the resolved consultation fee for the currently-selected doctor + dept.
+  // Resolves the same chain the backend uses: doctor profile → specialty → tenant default.
+  const { data: feePreview } = useQuery<{
+    fee: number;
+    source: string;
+    feeMode?: string;
+    employmentType?: string;
+    isFollowUp?: boolean;
+  } | null>({
+    queryKey: ['doctor-fee-preview', selectedDoctor, selectedDepartment],
+    enabled: selectedDoctor !== 'any',
+    queryFn: async () => {
+      const res = await api.get('/doctor-fees/preview', {
+        params: {
+          doctorId: selectedDoctor,
+          departmentId: selectedDepartment || undefined,
+        },
+      });
+      return res.data;
+    },
+    staleTime: 30 * 1000,
+  });
   // Editable per-visit fee
   const [consultationFeeInput, setConsultationFeeInput] = useState<string>('');
   const effectiveConsultationFee: number = consultationFeeInput.trim() !== ''
@@ -1379,12 +1402,19 @@ export default function OPDTokenPage() {
                       type="number"
                       min={0}
                       step={500}
-                      value={consultationFeeInput !== '' ? consultationFeeInput : (defaultConsultationFee ?? '')}
+                      value={consultationFeeInput !== '' ? consultationFeeInput : (feePreview?.fee ?? defaultConsultationFee ?? '')}
                       onChange={(e) => setConsultationFeeInput(e.target.value)}
-                      placeholder={defaultConsultationFee != null ? String(defaultConsultationFee) : 'Configure default in Settings'}
+                      placeholder={feePreview?.fee != null ? String(feePreview.fee) : (defaultConsultationFee != null ? String(defaultConsultationFee) : 'Configure default in Settings')}
                       className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
-                    {defaultConsultationFee == null && (
+                    {feePreview && (
+                      <p className="text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded px-2 py-1">
+                        Resolved: <strong>{feePreview.fee.toLocaleString()} UGX</strong> · {feePreview.source}
+                        {feePreview.feeMode === 'split' && ' (revenue-share)'}
+                        {feePreview.isFollowUp && ' · follow-up'}
+                      </p>
+                    )}
+                    {!feePreview && defaultConsultationFee == null && (
                       <p className="text-xs text-amber-600">
                         No default consultation fee configured. Set service <code>OPD-CONSULT</code> in the Service Catalog
                         or system_setting <code>billing.consultationFee</code>.

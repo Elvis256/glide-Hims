@@ -29,6 +29,7 @@ import { DoctorDuty, DutyStatus } from '../../database/entities/doctor-duty.enti
 import { AuditLog } from '../../database/entities/audit-log.entity';
 import { SystemSetting } from '../../database/entities/system-setting.entity';
 import { AfricasTalkingService } from '../integrations/africas-talking.service';
+import { DoctorFeesService } from '../doctor-fees/doctor-fees.service';
 import {
   CreateQueueDto,
   CallNextDto,
@@ -68,6 +69,7 @@ export class QueueManagementService {
     @InjectRepository(Department)
     private departmentRepository: Repository<Department>,
     private readonly smsService: AfricasTalkingService,
+    private readonly doctorFeesService: DoctorFeesService,
     private dataSource: DataSource,
   ) {}
 
@@ -518,17 +520,45 @@ export class QueueManagementService {
     tenantId?: string;
     doctorId?: string;
     departmentId?: string;
-  }): Promise<{ fee: number | null; source: string }> {
-    const { facilityId, tenantId, doctorId, departmentId } = opts;
+    patientId?: string;
+  }): Promise<{ fee: number | null; source: string; metadata?: Record<string, any> }> {
+    const { facilityId, tenantId, doctorId, departmentId, patientId } = opts;
 
-    // 1. Per-doctor override
+    // 1. Doctor fee profile (overrides everything when present + active)
+    if (doctorId) {
+      const dfp = await this.doctorFeesService.resolve({
+        doctorId,
+        departmentId,
+        facilityId,
+        tenantId,
+        patientId,
+      });
+      if (dfp && dfp.fee != null) {
+        return {
+          fee: dfp.fee,
+          source: dfp.source,
+          metadata: {
+            source: dfp.source,
+            doctorId: dfp.doctorId,
+            feeMode: dfp.feeMode,
+            employmentType: dfp.employmentType,
+            doctorShare: dfp.doctorShare,
+            hospitalShare: dfp.hospitalShare,
+            basis: dfp.basis,
+            isFollowUp: dfp.isFollowUp,
+          },
+        };
+      }
+    }
+
+    // 1b. Legacy per-doctor system_setting override (kept for back-compat)
     if (doctorId) {
       const where: any = { key: `billing.consultationFee.doctor.${doctorId}` };
       if (tenantId) where.tenantId = tenantId;
       const setting = await this.systemSettingRepository.findOne({ where });
       const raw = setting?.value;
       const num = raw != null && !isNaN(Number(raw)) ? Number(raw) : null;
-      if (num != null && num > 0) return { fee: num, source: `doctor:${doctorId}` };
+      if (num != null && num > 0) return { fee: num, source: `doctor:${doctorId}:legacy_setting` };
     }
 
     // 2 & 3. Per-department resolution
@@ -640,15 +670,18 @@ export class QueueManagementService {
   ): Promise<Invoice> {
     let fee = feeOverride;
     let feeSource = 'override';
+    let feeMetadata: Record<string, any> | undefined;
     if (!fee || fee <= 0) {
       const resolved = await this.resolveConsultationFee({
         facilityId,
         tenantId,
         doctorId: assignedDoctorId,
         departmentId,
+        patientId,
       });
       fee = resolved.fee ?? undefined;
       feeSource = resolved.source;
+      feeMetadata = resolved.metadata;
       if (fee == null) {
         throw new BadRequestException(
           'Consultation fee is not configured. Set a per-doctor override, an OPD-CONSULT-{DEPT} service, the OPD-CONSULT service, or system_setting `billing.consultationFee`.',
@@ -686,6 +719,7 @@ export class QueueManagementService {
       quantity: 1,
       unitPrice: fee,
       amount: fee,
+      ...(feeMetadata ? { feeMetadata } : {}),
       ...(tenantId ? { tenantId } : {}),
     });
 
@@ -1893,12 +1927,31 @@ export class QueueManagementService {
     if (departmentId) {
       const matched = await buildQb()
         .andWhere('duty.department_id = :departmentId', { departmentId })
-        .getOne();
-      if (matched) return matched.doctorId;
+        .getMany();
+      const eligible = await this.filterByWorkingDays(matched.map((m) => m.doctorId), tenantId);
+      if (eligible.length > 0) return eligible[0];
     }
 
-    const fallback = await buildQb().getOne();
-    return fallback ? fallback.doctorId : null;
+    const fallbackList = await buildQb().getMany();
+    const eligibleFallback = await this.filterByWorkingDays(
+      fallbackList.map((m) => m.doctorId),
+      tenantId,
+    );
+    return eligibleFallback.length > 0 ? eligibleFallback[0] : null;
+  }
+
+  /**
+   * Drop doctor IDs whose fee profile says they're not working today.
+   * Doctors with no profile are always considered working.
+   */
+  private async filterByWorkingDays(doctorIds: string[], tenantId?: string): Promise<string[]> {
+    if (doctorIds.length === 0) return [];
+    const out: string[] = [];
+    for (const id of doctorIds) {
+      const profile = await this.doctorFeesService.getProfile(id, tenantId);
+      if (this.doctorFeesService.isWorkingToday(profile)) out.push(id);
+    }
+    return out;
   }
 
   private async updateDoctorQueueCount(

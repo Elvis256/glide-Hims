@@ -681,6 +681,7 @@ const navigationSections: NavSection[] = [
       { name: 'Invoices', href: '/billing/invoices', icon: Receipt, permissions: ['billing.read'] },
       { name: 'Patient Tab / Interim Bill', href: '/billing/patient-tab', icon: FileText, permissions: ['billing.read'] },
       { name: 'Payments', href: '/billing/payments', icon: Banknote, permissions: ['billing.read'] },
+      { name: 'Doctor Fees', href: '/billing/doctor-fees', icon: DollarSign, permissions: ['billing.update'] },
       {
         name: 'Insurance',
         icon: ShieldCheck,

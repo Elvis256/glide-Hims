@@ -173,6 +173,16 @@ export class InvoiceItem extends BaseEntity {
   @Column({ name: 'coverage_note', type: 'text', nullable: true })
   coverageNote?: string;
 
+  /**
+   * Fee resolution audit + revenue split breakdown.
+   * Populated when a doctor fee profile influenced the price (especially for
+   * `split` mode — visiting consultants). Used by finance reports to compute
+   * doctor payouts. Schema:
+   *   { source, doctorId?, feeMode?, doctorShare?, hospitalShare?, basis? }
+   */
+  @Column({ name: 'fee_metadata', type: 'jsonb', nullable: true })
+  feeMetadata?: Record<string, any>;
+
   // Relationships
   @ManyToOne(() => Invoice, (invoice) => invoice.items)
   @JoinColumn({ name: 'invoice_id' })
