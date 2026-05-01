@@ -5,6 +5,8 @@ import { PharmacyService } from './pharmacy.service';
 import { LabelService } from './label.service';
 import { TemperatureService } from './temperature.service';
 import { PharmacyDashboardService } from './pharmacy-dashboard.service';
+import { PrescriptionLookupService } from './prescription-lookup.service';
+import { PrescriptionController } from './prescription.controller';
 import { PharmacySale, PharmacySaleItem } from '../../database/entities/pharmacy-sale.entity';
 import { Store } from '../../database/entities/store.entity';
 import {
@@ -22,7 +24,8 @@ import {
 } from '../../database/entities/drug-label-template.entity';
 import { TemperatureLog, TemperatureSensor } from '../../database/entities/temperature-log.entity';
 import { AuditLog } from '../../database/entities/audit-log.entity';
-import { DrugClassification } from '../../database/entities/drug-classification.entity';
+import { DrugClassification, DrugInteraction } from '../../database/entities/drug-classification.entity';
+import { DrugInteractionOverride } from '../../database/entities/drug-interaction-override.entity';
 import { ControlledSubstanceLog } from '../../database/entities/controlled-substance.entity';
 import { ReceiptReprint, RetailCustomer } from '../../database/entities/pos-retail.entity';
 import { FinanceModule } from '../finance/finance.module';
@@ -52,13 +55,15 @@ import { EfrisModule } from '../efris/efris.module';
       TemperatureSensor,
       AuditLog,
       DrugClassification,
+      DrugInteraction,
+      DrugInteractionOverride,
       ControlledSubstanceLog,
       ReceiptReprint,
       RetailCustomer,
     ]),
   ],
-  controllers: [PharmacyController],
-  providers: [PharmacyService, LabelService, TemperatureService, PharmacyDashboardService],
+  controllers: [PharmacyController, PrescriptionController],
+  providers: [PharmacyService, LabelService, TemperatureService, PharmacyDashboardService, PrescriptionLookupService],
   exports: [PharmacyService, LabelService, TemperatureService, PharmacyDashboardService],
 })
 export class PharmacyModule {}

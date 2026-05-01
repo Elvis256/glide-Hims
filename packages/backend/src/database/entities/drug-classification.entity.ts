@@ -173,6 +173,16 @@ export class DrugClassification extends BaseEntity {
 
   @Column({ type: 'text', nullable: true })
   notes?: string;
+
+  // ── C3: Drug interaction pairs at drug-class level ─────────────────────────
+  // Each entry: { interactsWith: string (atcCode or therapeuticClass), severity: 'minor'|'moderate'|'severe', mechanism: string, recommendation: string }
+  @Column({ type: 'jsonb', nullable: true, name: 'interactions', default: () => "'[]'::jsonb" })
+  interactions: Array<{
+    interactsWith: string;
+    severity: 'minor' | 'moderate' | 'severe';
+    mechanism: string;
+    recommendation: string;
+  }>;
 }
 
 @Entity('drug_interactions')

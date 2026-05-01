@@ -373,4 +373,42 @@ export class PharmacyController {
   ) {
     return this.service.listReceiptHistory(req.user?.tenantId, { from, to, cashierId, saleNumber });
   }
+
+  // ─── C3: Drug Interaction Check ────────────────────────────────────────────
+
+  @Get('interaction-check')
+  @AuthWithPermissions('pharmacy.read')
+  @ApiOperation({ summary: 'Check drug interactions for cart items + patient history' })
+  checkInteractions(
+    @Request() req: any,
+    @Query('patientId') patientId?: string,
+    @Query('itemIds') itemIdsRaw?: string | string[],
+  ) {
+    const itemIds = Array.isArray(itemIdsRaw)
+      ? itemIdsRaw
+      : itemIdsRaw
+      ? [itemIdsRaw]
+      : [];
+    return this.service.checkInteractions(itemIds, patientId, req.user?.tenantId);
+  }
+
+  @Post('interaction-override')
+  @AuthWithPermissions('pos.interaction.override')
+  @ApiOperation({ summary: 'Record a drug-interaction override after manager PIN confirmation' })
+  recordInteractionOverride(
+    @Body() body: {
+      saleId?: string;
+      patientId?: string;
+      warnings: any[];
+      reason: string;
+      managerApproverId?: string;
+    },
+    @Request() req: any,
+  ) {
+    return this.service.recordInteractionOverride({
+      ...body,
+      overriddenById: req.user.id,
+      tenantId: req.user?.tenantId,
+    });
+  }
 }
