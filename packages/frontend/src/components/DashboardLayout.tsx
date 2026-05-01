@@ -1080,6 +1080,7 @@ const navigationSections: NavSection[] = [
           { name: 'Webhooks', href: '/admin/integrations/webhooks', icon: Send, permissions: ['settings.read'] },
           { name: 'Email Templates', href: '/admin/integrations/email-templates', icon: FileText, permissions: ['settings.read'] },
           { name: 'SSO Configuration', href: '/admin/integrations/sso', icon: Settings, permissions: ['settings.read'] },
+          { name: 'EFRIS (URA e-Invoicing)', href: '/admin/integrations/efris', icon: FileText, permissions: ['settings.read'] },
         ],
       },
       {
