@@ -934,6 +934,32 @@ export class AuthService {
           }
         }
       }
+
+      // Always merge in any modules granted by the tenant's active license.
+      // The license is the commercial source of truth — system_settings/tenant.settings
+      // are operational caches that can drift behind license edits. Merging here
+      // means license edits propagate to /auth/me without requiring a backfill.
+      try {
+        const licenseRows = await this.userRoleRepository.manager.query(
+          `SELECT enabled_modules FROM licenses
+             WHERE tenant_id = $1 AND status = 'active'
+             ORDER BY created_at DESC LIMIT 1`,
+          [user.tenantId],
+        );
+        const lic = licenseRows?.[0]?.enabled_modules;
+        const licMods: string[] = Array.isArray(lic)
+          ? lic
+          : typeof lic === 'string'
+            ? (JSON.parse(lic) as string[])
+            : [];
+        if (licMods.length > 0) {
+          tenantEnabledModules = Array.from(
+            new Set([...(tenantEnabledModules || []), ...licMods]),
+          );
+        }
+      } catch {
+        // licenses table may not exist in some deployments — ignore
+      }
     }
 
     // If we have enabled modules but didn't set facilityMode yet, look it up
