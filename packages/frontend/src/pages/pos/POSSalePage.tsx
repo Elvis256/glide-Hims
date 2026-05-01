@@ -40,6 +40,13 @@ import { api, getApiErrorMessage } from '../../services/api';
 import { useFacilityId } from '../../lib/facility';
 import { formatCurrency, CURRENCY_SYMBOL } from '../../lib/currency';
 import { asList } from '../../utils/unwrapResponse';
+// Phase D — offline mode + mobile money
+import { v4 as uuidv4 } from 'uuid';
+import { useOfflineMode } from '../../hooks/useOfflineMode';
+import { OfflineBanner } from '../../components/OfflineBanner';
+import { MobileMoneyModal } from '../../components/MobileMoneyModal';
+import { offlineDb, getNextSequenceNumber } from '../../lib/offlineDb';
+import { syncPendingSales } from '../../lib/offlineSync';
 
 interface Product {
   id: string;
@@ -217,6 +224,15 @@ export default function POSSalePage() {
   const [ddiOverridePin, setDdiOverridePin] = useState('');
   const [ddiSaleId, setDdiSaleId] = useState<string | undefined>();
 
+  // Phase D1: Mobile Money STK modal
+  const [showMomoModal, setShowMomoModal] = useState(false);
+  const [momoSaleId, setMomoSaleId] = useState<string | null>(null);
+
+  // Phase D2: Offline mode
+  const offlineModeState = useOfflineMode();
+  const { isOnline } = offlineModeState;
+  const [pendingSyncCount, setPendingSyncCount] = useState(0);
+
   // Current shift/register info
   const [currentShiftId, setCurrentShiftId] = useState<string | undefined>();
   const [currentRegisterId, setCurrentRegisterId] = useState<string | undefined>();
@@ -230,6 +246,24 @@ export default function POSSalePage() {
       }
     }).catch(() => {});
   }, []);
+
+  // D2: Load pending sync count
+  useEffect(() => {
+    offlineDb.pendingSales.where('status').anyOf(['pending', 'syncing', 'error']).count()
+      .then(setPendingSyncCount).catch(() => {});
+  }, []);
+
+  // D2: Trigger background sync when we come back online
+  useEffect(() => {
+    if (isOnline) {
+      syncPendingSales((synced, total) => {
+        if (total > 0) toast.info(`Syncing offline sales: ${synced}/${total}`);
+      }).then(() => {
+        offlineDb.pendingSales.where('status').anyOf(['pending', 'syncing', 'error']).count()
+          .then(setPendingSyncCount).catch(() => {});
+      }).catch(() => {});
+    }
+  }, [isOnline]);
 
   // B7: Quick keys query
   const quickKeysQuery = useQuery({
@@ -646,9 +680,60 @@ export default function POSSalePage() {
   const discountAmount = (subtotal * discount) / 100;
   const grandTotal = subtotal - discountAmount;
 
+  // D2: Save sale offline (IndexedDB)
+  const saveOfflineSale = useCallback(async () => {
+    const clientSaleId = uuidv4();
+    const now = new Date().toISOString();
+    const seqNum = currentShiftId
+      ? await getNextSequenceNumber(currentShiftId)
+      : 1;
+    const payload = {
+      saleType: 'otc',
+      saleChannel: 'retail_pos',
+      taxPricingMode: 'inclusive',
+      items: cart.map((item) => ({
+        itemId: item.productId,
+        itemCode: item.productId,
+        itemName: item.name,
+        quantity: item.quantity,
+        unitPrice: item.price,
+        discountPercent: 0,
+      })),
+      discountAmount: (subtotal * discount) / 100,
+      paymentMethod: 'cash',
+      amountPaid: grandTotal,
+      customerPhone: customerPhone || undefined,
+      customerName: customerName || undefined,
+      posShiftId: currentShiftId,
+      posRegisterId: currentRegisterId,
+      wasOffline: true as const,
+      originalOfflineTimestamp: now,
+      clientSaleId,
+      clientSequenceNumber: seqNum,
+    };
+    await offlineDb.pendingSales.put({
+      clientSaleId,
+      clientSequenceNumber: seqNum,
+      shiftId: currentShiftId,
+      registerId: currentRegisterId,
+      payload,
+      createdAt: now,
+      status: 'pending',
+      attempts: 0,
+    });
+    setPendingSyncCount((c) => c + 1);
+    return { clientSaleId, clientSequenceNumber: seqNum };
+  }, [cart, discount, grandTotal, subtotal, customerPhone, customerName, currentShiftId, currentRegisterId]);
+
   // Create and complete sale
   const createSaleMutation = useMutation({
     mutationFn: async () => {
+      // D2: If offline, save to IndexedDB and return a pseudo-sale object
+      if (!navigator.onLine) {
+        const { clientSaleId, clientSequenceNumber } = await saveOfflineSale();
+        return { id: clientSaleId, saleNumber: `OFFLINE-${clientSequenceNumber}`, offline: true };
+      }
+
       const saleData = {
         saleType: 'otc' as const,
         items: cart.map((item) => ({
@@ -669,6 +754,22 @@ export default function POSSalePage() {
       return res.data;
     },
     onSuccess: async (sale: any) => {
+      // D2: Offline sale — skip complete API call, show receipt with watermark
+      if (sale.offline) {
+        setCompletedSaleNumber(sale.saleNumber);
+        setSaleComplete(true);
+        setShowPayment(false);
+        toast.success('Sale saved offline — will sync when connected');
+        return;
+      }
+
+      // D1: Mobile money — open modal instead of completing immediately
+      if (paymentMethod === 'mobile_money' && navigator.onLine) {
+        setMomoSaleId(sale.id);
+        setShowMomoModal(true);
+        return;
+      }
+
       try {
         await api.post(`/pharmacy/sales/${sale.id}/complete`, {
           amountPaid: grandTotal,
@@ -689,6 +790,18 @@ export default function POSSalePage() {
       toast.error(getApiErrorMessage(err, 'Failed to create sale'));
     },
   });
+
+  // D1: Handle MoMo payment success (called by modal)
+  const handleMomoSuccess = useCallback(async (_transactionRef: string) => {
+    setShowMomoModal(false);
+    queryClient.invalidateQueries({ queryKey: ['pos-recent-sales'] });
+    queryClient.invalidateQueries({ queryKey: ['pos-products'] });
+    const saleNumFromMutation = createSaleMutation.data?.saleNumber || momoSaleId || '';
+    setCompletedSaleNumber(saleNumFromMutation);
+    setSaleComplete(true);
+    setShowPayment(false);
+    toast.success('Mobile Money payment confirmed');
+  }, [queryClient, createSaleMutation.data, momoSaleId]);
 
   // C3: Handle override confirm (manager PIN + reason) then re-trigger sale
   const handleDdiOverrideConfirm = useCallback(async () => {
@@ -775,6 +888,8 @@ export default function POSSalePage() {
 
   return (
     <div className="flex h-screen flex-col bg-gray-100">
+      {/* D2: Offline banner */}
+      <OfflineBanner state={offlineModeState} />
       {/* Dark header bar */}
       <div className="flex items-center justify-between bg-gray-900 px-4 py-3">
         <div className="flex items-center gap-3">
@@ -1205,21 +1320,26 @@ export default function POSSalePage() {
             {/* Payment method */}
             <div className="mt-4 grid grid-cols-3 gap-2">
               {([
-                { key: 'cash' as PaymentMethod, icon: Banknote, label: 'Cash' },
-                { key: 'mobile_money' as PaymentMethod, icon: Smartphone, label: 'Mobile' },
-                { key: 'card' as PaymentMethod, icon: CreditCard, label: 'Card' },
-              ]).map(({ key, icon: Icon, label }) => (
+                { key: 'cash' as PaymentMethod, icon: Banknote, label: 'Cash', disabled: false },
+                { key: 'mobile_money' as PaymentMethod, icon: Smartphone, label: 'Mobile', disabled: !isOnline },
+                { key: 'card' as PaymentMethod, icon: CreditCard, label: 'Card', disabled: !isOnline },
+              ]).map(({ key, icon: Icon, label, disabled }) => (
                 <button
                   key={key}
-                  onClick={() => setPaymentMethod(key)}
+                  onClick={() => { if (!disabled) setPaymentMethod(key); }}
+                  disabled={disabled}
+                  title={disabled ? 'Not available offline' : undefined}
                   className={`flex flex-col items-center gap-1 rounded-lg border p-2 text-xs font-medium transition-colors ${
-                    paymentMethod === key
+                    disabled
+                      ? 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed'
+                      : paymentMethod === key
                       ? 'border-blue-500 bg-blue-50 text-blue-700'
                       : 'border-gray-200 text-gray-600 hover:bg-gray-50'
                   }`}
                 >
                   <Icon className="h-4 w-4" />
                   {label}
+                  {disabled && <span className="text-[9px] text-gray-300">offline</span>}
                 </button>
               ))}
             </div>
@@ -1234,7 +1354,7 @@ export default function POSSalePage() {
               ) : (
                 <CheckCircle className="h-4 w-4" />
               )}
-              Complete Sale
+              {!isOnline ? 'Complete Sale (Offline)' : 'Complete Sale'}
             </button>
           </div>
         </div>
@@ -1660,6 +1780,31 @@ export default function POSSalePage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* D1: Mobile Money STK modal */}
+      {showMomoModal && momoSaleId && (
+        <MobileMoneyModal
+          saleId={momoSaleId}
+          amount={grandTotal}
+          defaultPhone={customerPhone}
+          onSuccess={handleMomoSuccess}
+          onClose={() => {
+            setShowMomoModal(false);
+            setMomoSaleId(null);
+          }}
+        />
+      )}
+
+      {/* D2: Pending offline sync badge */}
+      {pendingSyncCount > 0 && (
+        <button
+          onClick={() => window.open('/pharmacy/pos/offline-sync', '_self')}
+          className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full bg-amber-500 px-4 py-2 text-sm font-medium text-white shadow-lg hover:bg-amber-600"
+        >
+          <AlertTriangle className="h-4 w-4" />
+          {pendingSyncCount} offline sale{pendingSyncCount !== 1 ? 's' : ''} pending sync
+        </button>
       )}
     </div>
   );

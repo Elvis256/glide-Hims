@@ -12,6 +12,8 @@ import {
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { PosService } from './pos.service';
+import { PosMomoService } from './pos-momo.service';
+import { InitiateMomoPaymentDto } from './pos-momo.dto';
 import {
   CreateRegisterDto,
   UpdateRegisterDto,
@@ -32,7 +34,10 @@ import { ModuleGuard } from '../auth/guards/module.guard';
 @RequireModule('pos')
 @Controller('pos')
 export class PosController {
-  constructor(private readonly service: PosService) {}
+  constructor(
+    private readonly service: PosService,
+    private readonly momoService: PosMomoService,
+  ) {}
 
   // ─── Registers ─────────────────────────────────────────────────────────────
 
@@ -169,5 +174,28 @@ export class PosController {
   @ApiOperation({ summary: 'List deliveries' })
   findAllDeliveries(@Request() req: any, @Query('status') status?: string) {
     return this.service.findAllDeliveries(req.user?.tenantId, status);
+  }
+
+  // ─── D1: Mobile Money ──────────────────────────────────────────────────────
+
+  @Post('sales/:id/mobile-money')
+  @AuthWithPermissions('pos.payment.mobile_money')
+  @ApiOperation({ summary: 'Initiate Mobile Money STK push for a POS sale' })
+  initiateMoMo(@Param('id') id: string, @Body() dto: InitiateMomoPaymentDto, @Request() req: any) {
+    return this.momoService.initiate(id, dto, req.user.id, req.user.tenantId);
+  }
+
+  @Get('sales/mobile-money/:transactionId/status')
+  @AuthWithPermissions('pos.payment.mobile_money')
+  @ApiOperation({ summary: 'Poll Mobile Money transaction status' })
+  getMoMoStatus(@Param('transactionId') txId: string, @Request() req: any) {
+    return this.momoService.getStatus(txId, req.user.id, req.user.tenantId);
+  }
+
+  @Post('sales/mobile-money/:transactionId/cancel')
+  @AuthWithPermissions('pos.payment.mobile_money')
+  @ApiOperation({ summary: 'Cancel a pending Mobile Money transaction' })
+  cancelMoMo(@Param('transactionId') txId: string, @Request() req: any) {
+    return this.momoService.cancel(txId, req.user.id, req.user.tenantId);
   }
 }

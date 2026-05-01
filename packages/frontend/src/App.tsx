@@ -298,6 +298,7 @@ const PricingTiersPage = lazy(() => import('./pages/pos/PricingTiersPage'));
 const DeliveryTrackingPage = lazy(() => import('./pages/pos/DeliveryTrackingPage'));
 const POSReturnsPage = lazy(() => import('./pages/pos/POSReturnsPage'));
 const POSReceiptHistoryPage = lazy(() => import('./pages/pos/POSReceiptHistoryPage'));
+const POSOfflineSyncPage = lazy(() => import('./pages/pos/POSOfflineSyncPage'));
 const AdmissionsPage = lazy(() => import('./pages/ipd/AdmissionsPage'));
 const WardsBedsPage = lazy(() => import('./pages/ipd/WardsBedsPage'));
 const BedBoardPage = lazy(() => import('./pages/ipd/BedBoardPage'));
@@ -975,6 +976,7 @@ function AppRoutes() {
                 <Route path="/pharmacy/pos/deliveries" element={<ModuleRoute module="pos"><PharmacistRoute><DeliveryTrackingPage /></PharmacistRoute></ModuleRoute>} />
                 <Route path="/pharmacy/pos/returns" element={<ModuleRoute module="pos"><PharmacistRoute><POSReturnsPage /></PharmacistRoute></ModuleRoute>} />
                 <Route path="/pharmacy/pos/receipts" element={<ModuleRoute module="pos"><PharmacistRoute><POSReceiptHistoryPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/pos/offline-sync" element={<ModuleRoute module="pos"><PharmacistRoute><POSOfflineSyncPage /></PharmacistRoute></ModuleRoute>} />
                 
                 {/* IPD Module */}
                 <Route path="/ipd/admissions" element={<ModuleRoute module="ipd"><ClinicalRoute><AdmissionsPage /></ClinicalRoute></ModuleRoute>} />

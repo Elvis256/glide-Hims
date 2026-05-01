@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PosController } from './pos.controller';
 import { PosService } from './pos.service';
@@ -7,6 +7,10 @@ import { PosComplianceService } from './pos-compliance.service';
 import { PosShiftGuardService } from './services/pos-shift-guard.service';
 import { PosRetailController } from './pos-retail.controller';
 import { PosRetailService } from './pos-retail.service';
+import { PosMomoService } from './pos-momo.service';
+import { PosMobileMoneyTransaction } from '../../database/entities/pos-resilience.entity';
+import { PaymentGatewayModule } from '../payment-gateway/payment-gateway.module';
+import { PharmacyModule } from '../pharmacy/pharmacy.module';
 import {
   PosRegister,
   PosShift,
@@ -44,7 +48,10 @@ import { PosRetailEventListener } from './pos-retail.listener';
     EfrisModule,
     SystemSettingsModule,
     FinanceModule,
+    PaymentGatewayModule,
+    forwardRef(() => PharmacyModule),
     TypeOrmModule.forFeature([
+      PosMobileMoneyTransaction,
       PosRegister,
       PosShift,
       PosPaymentSplit,
@@ -68,7 +75,7 @@ import { PosRetailEventListener } from './pos-retail.listener';
     ]),
   ],
   controllers: [PosController, PosComplianceController, PosRetailController],
-  providers: [PosService, PosComplianceService, PosShiftGuardService, PosRetailService, PosRetailEventListener],
-  exports: [PosService, PosComplianceService, PosShiftGuardService, PosRetailService],
+  providers: [PosService, PosComplianceService, PosShiftGuardService, PosRetailService, PosRetailEventListener, PosMomoService],
+  exports: [PosService, PosComplianceService, PosShiftGuardService, PosRetailService, PosMomoService],
 })
 export class PosModule {}
