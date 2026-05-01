@@ -58,14 +58,35 @@ export class QueueManagementController {
 
   @Get('doctor-queue')
   @AuthWithPermissions('queue.read')
-  async getDoctorQueue(@Query('myOnly') myOnly: string, @Request() req: any) {
+  async getDoctorQueue(
+    @Query('myOnly') myOnly: string,
+    @Query('viewAll') viewAll: string,
+    @Request() req: any,
+  ) {
     const facilityId =
       req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
+
+    // Authorize "view all" only for admins/managers/coordinators.
+    const PRIVILEGED_ROLES = new Set([
+      'Super Admin',
+      'Facility Manager',
+      'Hospital Administrator',
+      'Charge Nurse',
+      'Nurse Supervisor',
+      'Receptionist',
+      'Triage Nurse',
+    ]);
+    const userRoles: string[] = Array.isArray(req.user?.roles) ? req.user.roles : [];
+    const canViewAll =
+      req.user?.isSystemAdmin === true || userRoles.some((r) => PRIVILEGED_ROLES.has(r));
+    const effectiveViewAll = viewAll === 'true' && canViewAll;
+
     return this.queueService.getDoctorQueue(
       req.user.sub,
       facilityId,
       req.user?.tenantId,
       myOnly === 'true',
+      effectiveViewAll,
     );
   }
 

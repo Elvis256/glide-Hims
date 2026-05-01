@@ -477,6 +477,10 @@ export default function WaitingPatientsPage() {
   const [filter, setFilter] = useState<FilterType>('all');
   const [appointmentFilter, setAppointmentFilter] = useState<AppointmentFilter>('all');
   const [myPatientsOnly, setMyPatientsOnly] = useState(false);
+  // Admin/manager view: show every consultation queue entry in the facility,
+  // not just unassigned + my own. Default ON for users with queue.manage so a
+  // tenant admin doesn't open this page to a misleading "0 patients".
+  const [viewAll, setViewAll] = useState<boolean | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [selectedPatient, setSelectedPatient] = useState<WaitingPatient | null>(null);
   const [showPreview, setShowPreview] = useState(false);
@@ -489,6 +493,9 @@ export default function WaitingPatientsPage() {
   // Permission check
   const canViewQueue = hasPermission('queue.read') || hasPermission('encounters.read');
   const canManageQueue = hasPermission('queue.manage') || hasPermission('encounters.update');
+
+  // Default viewAll on for managers/admins so they don't see a misleading empty queue.
+  const effectiveViewAll = viewAll === null ? canManageQueue : viewAll;
 
   // Initialize notification sound
   useEffect(() => {
@@ -529,8 +536,8 @@ export default function WaitingPatientsPage() {
   // Always fetch the FULL doctor-visible pool; derive 'my-only' client-side so we
   // can show counts and warn when the filter would hide patients.
   const { data: queueDataAll, isLoading, dataUpdatedAt } = useQuery({
-    queryKey: ['doctor-waiting-queue', 'all'],
-    queryFn: () => queueService.getDoctorQueue(false),
+    queryKey: ['doctor-waiting-queue', 'all', effectiveViewAll],
+    queryFn: () => queueService.getDoctorQueue(false, effectiveViewAll),
     refetchInterval: 15000,
     enabled: !!accessToken,
   });
@@ -549,6 +556,25 @@ export default function WaitingPatientsPage() {
     () => (queueDataAll || []).filter((q: QueueEntry) => q.assignedDoctorId === myUserId).length,
     [queueDataAll, myUserId],
   );
+  const assignedToOthersCount = useMemo(
+    () =>
+      (queueDataAll || []).filter(
+        (q: QueueEntry) => !!q.assignedDoctorId && q.assignedDoctorId !== myUserId,
+      ).length,
+    [queueDataAll, myUserId],
+  );
+  const otherDoctorBreakdown = useMemo(() => {
+    const map = new Map<string, { name: string; count: number }>();
+    (queueDataAll || []).forEach((q: QueueEntry) => {
+      if (!q.assignedDoctorId || q.assignedDoctorId === myUserId) return;
+      const id = q.assignedDoctorId;
+      const name = (q as any).assignedDoctor?.fullName || 'Another doctor';
+      const cur = map.get(id);
+      if (cur) cur.count += 1;
+      else map.set(id, { name, count: 1 });
+    });
+    return Array.from(map.values()).sort((a, b) => b.count - a.count);
+  }, [queueDataAll, myUserId]);
 
   // Fetch returned patients
   const { data: returnedData } = useQuery({
@@ -1057,22 +1083,77 @@ export default function WaitingPatientsPage() {
               </span>
             </span>
           </label>
+
+          {canManageQueue && (
+            <label
+              className="flex items-center gap-2 cursor-pointer"
+              title="Admin/manager view: include queue entries already assigned to other doctors"
+            >
+              <input
+                type="checkbox"
+                checked={effectiveViewAll}
+                onChange={(e) => setViewAll(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+              />
+              <span className="text-sm text-gray-600 inline-flex items-center gap-1">
+                All doctors
+                {effectiveViewAll && (
+                  <span className="px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 text-xs font-medium">
+                    admin
+                  </span>
+                )}
+              </span>
+            </label>
+          )}
         </div>
       </div>
 
       {/* Hidden-by-filter warning — eliminates the "0 patients" footgun */}
-      {myPatientsOnly && assignedToMeCount === 0 && unassignedCount > 0 && (
+      {myPatientsOnly && assignedToMeCount === 0 && (queueDataAll || []).length > 0 && (
         <div className="mb-3 p-3 rounded border border-amber-300 bg-amber-50 flex items-start gap-2 text-sm">
           <span className="text-amber-700 font-semibold">⚠</span>
           <div className="flex-1 text-amber-900">
-            You have <strong>0</strong> patients assigned to you, but <strong>{unassignedCount}</strong>{' '}
-            unassigned patient{unassignedCount === 1 ? ' is' : 's are'} waiting in the consultation pool.
+            You have <strong>0</strong> patients assigned to you, but{' '}
+            <strong>{(queueDataAll || []).length}</strong> patient
+            {(queueDataAll || []).length === 1 ? ' is' : 's are'} waiting in the queue
+            {unassignedCount > 0 && ` (${unassignedCount} unassigned)`}.
           </div>
           <button
             onClick={() => setMyPatientsOnly(false)}
             className="text-xs px-2 py-1 rounded bg-amber-600 text-white hover:bg-amber-700"
           >
-            Show pool
+            Show all
+          </button>
+        </div>
+      )}
+
+      {/* Admin/manager: explain when the queue is empty due to assignments to other doctors */}
+      {!myPatientsOnly &&
+        canManageQueue &&
+        !effectiveViewAll &&
+        (queueDataAll || []).length === 0 &&
+        assignedToOthersCount === 0 && otherDoctorBreakdown.length === 0 && null}
+      {!myPatientsOnly && canManageQueue && !effectiveViewAll && otherDoctorBreakdown.length > 0 && (
+        <div className="mb-3 p-3 rounded border border-blue-300 bg-blue-50 flex items-start gap-2 text-sm">
+          <span className="text-blue-700 font-semibold">ℹ</span>
+          <div className="flex-1 text-blue-900">
+            <strong>{assignedToOthersCount}</strong> patient
+            {assignedToOthersCount === 1 ? ' is' : 's are'} already assigned to other doctors and
+            hidden from your view:{' '}
+            <span className="text-blue-800">
+              {otherDoctorBreakdown
+                .slice(0, 5)
+                .map((d) => `${d.name} (${d.count})`)
+                .join(', ')}
+              {otherDoctorBreakdown.length > 5 && ` +${otherDoctorBreakdown.length - 5} more`}
+            </span>
+            .
+          </div>
+          <button
+            onClick={() => setViewAll(true)}
+            className="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700"
+          >
+            Show all doctors
           </button>
         </div>
       )}
