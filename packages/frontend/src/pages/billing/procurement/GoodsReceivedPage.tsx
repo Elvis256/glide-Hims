@@ -35,6 +35,7 @@ import {
   type CreateGoodsReceiptDto,
 } from '../../../services/procurement';
 import api from '../../../services/api';
+import { CatalogItemPicker, type SelectedItem } from '../../../components/catalog';
 
 // Status display config mapped to backend GRNStatus values
 const statusConfig: Record<GRNStatus, { color: string; bg: string; icon: React.ReactNode; label: string }> = {
@@ -572,10 +573,14 @@ export default function GoodsReceivedPage() {
         <CreateGRNModal
           purchaseOrders={purchaseOrders}
           facilityId={facilityId || ''}
-          isLoading={createFromPOMutation.isPending}
+          isLoadingPO={createFromPOMutation.isPending}
+          isLoadingDirect={createMutation.isPending}
           onClose={() => setShowCreateModal(false)}
-          onSubmit={(purchaseOrderId, receivedItems, storeId) => {
+          onSubmitFromPO={(purchaseOrderId, receivedItems, storeId) => {
             createFromPOMutation.mutate({ purchaseOrderId, receivedItems, storeId });
+          }}
+          onSubmitDirect={(data) => {
+            createMutation.mutate(data);
           }}
         />
       )}
@@ -587,16 +592,24 @@ export default function GoodsReceivedPage() {
 interface CreateGRNModalProps {
   purchaseOrders: PurchaseOrder[];
   facilityId: string;
-  isLoading: boolean;
+  isLoadingPO: boolean;
+  isLoadingDirect: boolean;
   onClose: () => void;
-  onSubmit: (purchaseOrderId: string, receivedItems: { itemId: string; quantityReceived: number; batchNumber?: string; expiryDate?: string }[], storeId?: string) => void;
+  onSubmitFromPO: (purchaseOrderId: string, receivedItems: { itemId: string; quantityReceived: number; batchNumber?: string; expiryDate?: string }[], storeId?: string) => void;
+  onSubmitDirect: (data: CreateGoodsReceiptDto) => void;
 }
 
-function CreateGRNModal({ purchaseOrders, facilityId, isLoading, onClose, onSubmit }: CreateGRNModalProps) {
+function CreateGRNModal({ purchaseOrders, facilityId, isLoadingPO, isLoadingDirect, onClose, onSubmitFromPO, onSubmitDirect }: CreateGRNModalProps) {
+  const [mode, setMode] = useState<'po' | 'direct'>('po');
   const [selectedPOId, setSelectedPOId] = useState('');
   const [storeId, setStoreId] = useState('');
   const [receivedItems, setReceivedItems] = useState<{ itemId: string; quantityReceived: number; batchNumber: string; expiryDate: string }[]>([]);
   const [notes, setNotes] = useState('');
+  // Direct GRN fields
+  const [directSupplierId, setDirectSupplierId] = useState('');
+  const [directItems, setDirectItems] = useState<Array<{ rowId: string; itemId: string; itemCode: string; itemName: string; itemUnit: string; quantityReceived: number; unitCost: number; batchNumber: string; expiryDate: string }>>([
+    { rowId: '1', itemId: '', itemCode: '', itemName: '', itemUnit: 'unit', quantityReceived: 0, unitCost: 0, batchNumber: '', expiryDate: '' },
+  ]);
 
   const { data: storesData } = useQuery({
     queryKey: ['stores-for-facility', facilityId],
@@ -636,13 +649,36 @@ function CreateGRNModal({ purchaseOrders, facilityId, isLoading, onClose, onSubm
   };
 
   const handleSubmit = () => {
-    if (!selectedPOId) return;
-    onSubmit(selectedPOId, receivedItems.filter(item => item.quantityReceived > 0).map(item => ({
-      itemId: item.itemId,
-      quantityReceived: item.quantityReceived,
-      batchNumber: item.batchNumber || undefined,
-      expiryDate: item.expiryDate || undefined,
-    })), storeId || undefined);
+    if (mode === 'po') {
+      if (!selectedPOId) return;
+      onSubmitFromPO(selectedPOId, receivedItems.filter(item => item.quantityReceived > 0).map(item => ({
+        itemId: item.itemId,
+        quantityReceived: item.quantityReceived,
+        batchNumber: item.batchNumber || undefined,
+        expiryDate: item.expiryDate || undefined,
+      })), storeId || undefined);
+    } else {
+      const validItems = directItems.filter(i => i.itemId && i.quantityReceived > 0);
+      if (validItems.length === 0 || !directSupplierId) return;
+      const data: CreateGoodsReceiptDto = {
+        facilityId,
+        supplierId: directSupplierId,
+        storeId: storeId || undefined,
+        notes: notes || undefined,
+        items: validItems.map(i => ({
+          itemId: i.itemId,
+          itemCode: i.itemCode,
+          itemName: i.itemName,
+          itemUnit: i.itemUnit,
+          quantityExpected: i.quantityReceived,
+          quantityReceived: i.quantityReceived,
+          unitCost: i.unitCost,
+          batchNumber: i.batchNumber || undefined,
+          expiryDate: i.expiryDate || undefined,
+        })),
+      };
+      onSubmitDirect(data);
+    }
   };
 
   return (
@@ -655,7 +691,27 @@ function CreateGRNModal({ purchaseOrders, facilityId, isLoading, onClose, onSubm
           </button>
         </div>
         <div className="p-6 space-y-4 overflow-y-auto max-h-[calc(90vh-140px)]">
-          <div>
+          {/* Mode toggle */}
+          <div className="flex rounded-lg border overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setMode('po')}
+              className={`flex-1 px-4 py-2 text-sm font-medium transition-colors ${mode === 'po' ? 'bg-emerald-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+            >
+              Receive Against PO
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('direct')}
+              className={`flex-1 px-4 py-2 text-sm font-medium transition-colors ${mode === 'direct' ? 'bg-emerald-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+            >
+              Walk-in / Direct Receipt
+            </button>
+          </div>
+
+          {mode === 'po' && (
+          <div className="space-y-4">
+            <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Select Purchase Order</label>
             <select 
               value={selectedPOId}
@@ -758,6 +814,96 @@ function CreateGRNModal({ purchaseOrders, facilityId, isLoading, onClose, onSubm
               </div>
             </>
           )}
+          </div> )} {/* end mode=po block */}
+
+          {mode === 'direct' && (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Supplier ID <span className="text-red-500">*</span></label>
+                <input
+                  type="text"
+                  value={directSupplierId}
+                  onChange={(e) => setDirectSupplierId(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
+                  placeholder="Enter supplier ID"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Items Received</label>
+                <div className="border rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="text-left px-3 py-2">Item</th>
+                        <th className="px-3 py-2 w-20">Qty</th>
+                        <th className="px-3 py-2 w-24">Unit Cost</th>
+                        <th className="px-3 py-2 w-24">Batch #</th>
+                        <th className="px-3 py-2 w-28">Expiry</th>
+                        <th className="px-3 py-2 w-8"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {directItems.map((line) => (
+                        <tr key={line.rowId} className="border-t">
+                          <td className="px-3 py-2 min-w-[180px]">
+                            <CatalogItemPicker
+                              value={line.itemId ? { id: line.itemId, source: 'inventory', code: line.itemCode, name: line.itemName, unit: line.itemUnit } : null}
+                              onChange={(picked) =>
+                                setDirectItems((prev) =>
+                                  prev.map((l) =>
+                                    l.rowId === line.rowId
+                                      ? { ...l, itemId: picked?.id || '', itemCode: picked?.code || '', itemName: picked?.name || '', itemUnit: picked?.unit || l.itemUnit, unitCost: picked?.lastPrice ?? l.unitCost }
+                                      : l,
+                                  ),
+                                )
+                              }
+                              module="all"
+                              size="sm"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input type="number" min={0} value={line.quantityReceived || ''}
+                              onChange={(e) => setDirectItems(prev => prev.map(l => l.rowId === line.rowId ? { ...l, quantityReceived: parseInt(e.target.value) || 0 } : l))}
+                              className="w-16 px-2 py-1 border rounded text-sm" placeholder="0" />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input type="number" min={0} value={line.unitCost || ''}
+                              onChange={(e) => setDirectItems(prev => prev.map(l => l.rowId === line.rowId ? { ...l, unitCost: parseFloat(e.target.value) || 0 } : l))}
+                              className="w-20 px-2 py-1 border rounded text-sm" placeholder="0.00" />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input type="text" value={line.batchNumber}
+                              onChange={(e) => setDirectItems(prev => prev.map(l => l.rowId === line.rowId ? { ...l, batchNumber: e.target.value } : l))}
+                              className="w-20 px-2 py-1 border rounded text-sm" placeholder="Batch" />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input type="date" value={line.expiryDate}
+                              onChange={(e) => setDirectItems(prev => prev.map(l => l.rowId === line.rowId ? { ...l, expiryDate: e.target.value } : l))}
+                              className="w-28 px-2 py-1 border rounded text-sm" />
+                          </td>
+                          <td className="px-3 py-2">
+                            <button type="button" onClick={() => setDirectItems(prev => prev.filter(l => l.rowId !== line.rowId))} disabled={directItems.length === 1} className="text-red-400 hover:text-red-600 disabled:opacity-30">
+                              <XCircle className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <button type="button" onClick={() => setDirectItems(prev => [...prev, { rowId: String(Date.now()), itemId: '', itemCode: '', itemName: '', itemUnit: 'unit', quantityReceived: 0, unitCost: 0, batchNumber: '', expiryDate: '' }])}
+                  className="mt-2 flex items-center gap-1 text-sm text-emerald-600 hover:text-emerald-700">
+                  <Plus className="w-4 h-4" />
+                  Add Item
+                </button>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                <textarea value={notes} onChange={(e) => setNotes(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" rows={2} placeholder="Delivery notes..." />
+              </div>
+            </div>
+          )}
         </div>
         <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-3">
           <button
@@ -768,10 +914,14 @@ function CreateGRNModal({ purchaseOrders, facilityId, isLoading, onClose, onSubm
           </button>
           <button 
             onClick={handleSubmit}
-            disabled={!selectedPOId || isLoading || receivedItems.every(item => item.quantityReceived === 0)}
+            disabled={
+              mode === 'po'
+                ? (!selectedPOId || isLoadingPO || receivedItems.every(item => item.quantityReceived === 0))
+                : (!directSupplierId || isLoadingDirect || directItems.every(i => !i.itemId || i.quantityReceived === 0))
+            }
             className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50"
           >
-            {isLoading ? (
+            {(mode === 'po' ? isLoadingPO : isLoadingDirect) ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
               <PackageCheck className="w-4 h-4" />

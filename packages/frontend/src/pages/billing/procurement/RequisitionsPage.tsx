@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../../services/api';
 import { useFacilityId } from '../../../lib/facility';
+import { CatalogItemPicker, type SelectedItem } from '../../../components/catalog';
 import {
   FileText,
   Plus,
@@ -36,6 +37,8 @@ type RequisitionPriority = 'low' | 'normal' | 'high' | 'urgent';
 
 interface RequisitionItem {
   id: string;
+  itemId: string;
+  itemCode: string;
   name: string;
   quantity: number;
   unit: string;
@@ -74,7 +77,7 @@ const emptyFormData: RequisitionFormData = {
   title: '',
   departmentId: '',
   priority: 'normal',
-  items: [{ id: '1', name: '', quantity: 0, unit: 'pcs', estimatedPrice: 0 }],
+  items: [{ id: '1', itemId: '', itemCode: '', name: '', quantity: 0, unit: 'pcs', estimatedPrice: 0 }],
   notes: '',
 };
 
@@ -120,8 +123,23 @@ export default function RequisitionsPage() {
 
   // Create mutation
   const createMutation = useMutation({
-    mutationFn: (data: RequisitionFormData & { submit?: boolean }) =>
-      api.post('/procurement/purchase-requests', { ...data, facilityId }),
+    mutationFn: (data: RequisitionFormData & { submit?: boolean }) => {
+      const payload = {
+        facilityId,
+        departmentId: data.departmentId || undefined,
+        priority: data.priority,
+        notes: data.notes,
+        items: data.items.map((item) => ({
+          itemId: item.itemId || item.name,
+          itemCode: item.itemCode || item.name,
+          itemName: item.name,
+          itemUnit: item.unit,
+          quantityRequested: item.quantity,
+          unitPriceEstimated: item.estimatedPrice,
+        })),
+      };
+      return api.post('/procurement/purchase-requests', payload);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchase-requests'] });
       setShowCreateModal(false);
@@ -160,7 +178,7 @@ export default function RequisitionsPage() {
   const handleAddItem = () => {
     setFormData((prev) => ({
       ...prev,
-      items: [...prev.items, { id: String(prev.items.length + 1), name: '', quantity: 0, unit: 'pcs', estimatedPrice: 0 }],
+      items: [...prev.items, { id: String(prev.items.length + 1), itemId: '', itemCode: '', name: '', quantity: 0, unit: 'pcs', estimatedPrice: 0 }],
     }));
   };
 
@@ -580,7 +598,7 @@ export default function RequisitionsPage() {
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="text-left px-3 py-2">Item Name</th>
+                        <th className="text-left px-3 py-2">Item</th>
                         <th className="text-left px-3 py-2">Qty</th>
                         <th className="text-left px-3 py-2">Unit</th>
                         <th className="text-left px-3 py-2">Est. Price</th>
@@ -590,13 +608,30 @@ export default function RequisitionsPage() {
                     <tbody>
                       {formData.items.map((item) => (
                         <tr key={item.id} className="border-t">
-                          <td className="px-3 py-2">
-                            <input
-                              type="text"
-                              value={item.name}
-                              onChange={(e) => handleItemChange(item.id, 'name', e.target.value)}
-                              className="w-full px-2 py-1 border rounded"
-                              placeholder="Item name"
+                          <td className="px-3 py-2 min-w-[200px]">
+                            <CatalogItemPicker
+                              value={item.name ? { id: item.itemId || null, source: item.itemId ? 'inventory' : 'free_text', code: item.itemCode, name: item.name, unit: item.unit } : null}
+                              onChange={(picked) => {
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  items: prev.items.map((i) =>
+                                    i.id === item.id
+                                      ? {
+                                          ...i,
+                                          itemId: picked?.id || '',
+                                          itemCode: picked?.code || '',
+                                          name: picked?.name || '',
+                                          unit: picked?.unit || i.unit,
+                                          estimatedPrice: picked?.lastPrice ?? picked?.sellingPrice ?? i.estimatedPrice,
+                                        }
+                                      : i,
+                                  ),
+                                }));
+                              }}
+                              module="all"
+                              placeholder="Search items…"
+                              allowFreeText
+                              size="sm"
                             />
                           </td>
                           <td className="px-3 py-2">

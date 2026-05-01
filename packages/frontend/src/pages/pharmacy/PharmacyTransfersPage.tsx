@@ -16,9 +16,10 @@ import {
   X,
 } from 'lucide-react';
 import { CURRENCY_SYMBOL } from '../../lib/currency';
-import { storesService, type StockTransfer, type TransferStatus, type Store, type Drug } from '../../services/stores';
+import { storesService, type StockTransfer, type TransferStatus, type Store } from '../../services/stores';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
+import { CatalogItemPicker } from '../../components/catalog';
 
 const STATUS_CONFIG: Record<TransferStatus, { label: string; color: string; icon: React.ElementType }> = {
   pending: { label: 'Pending', color: 'bg-yellow-100 text-yellow-800', icon: Clock },
@@ -35,7 +36,6 @@ export default function PharmacyTransfersPage() {
   const [statusFilter, setStatusFilter] = useState<TransferStatus | 'all'>('all');
   const [showNewTransfer, setShowNewTransfer] = useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState<StockTransfer | null>(null);
-  const [itemSearch, setItemSearch] = useState('');
   const [transferItems, setTransferItems] = useState<{ itemId: string; name: string; quantity: number }[]>([]);
   const [fromStoreId, setFromStoreId] = useState('');
   const [toStoreId, setToStoreId] = useState('');
@@ -56,14 +56,6 @@ export default function PharmacyTransfersPage() {
     queryFn: () => storesService.transfers.list(undefined, statusFilter === 'all' ? undefined : statusFilter),
     staleTime: 15000,
     refetchInterval: 30000,
-  });
-
-  // Search items for new transfer
-  const { data: searchResults = [] } = useQuery({
-    queryKey: ['transfer-item-search', itemSearch],
-    queryFn: () => storesService.items.search(itemSearch, true),
-    enabled: itemSearch.length > 2,
-    staleTime: 30000,
   });
 
   // Create transfer mutation
@@ -121,13 +113,11 @@ export default function PharmacyTransfersPage() {
     setFromStoreId('');
     setToStoreId('');
     setNotes('');
-    setItemSearch('');
   };
 
-  const addItem = (drug: Drug) => {
-    if (transferItems.some(i => i.itemId === drug.id)) return;
-    setTransferItems(prev => [...prev, { itemId: drug.id, name: drug.name, quantity: 1 }]);
-    setItemSearch('');
+  const addItem = (item: { id: string; name: string }) => {
+    if (transferItems.some(i => i.itemId === item.id)) return;
+    setTransferItems(prev => [...prev, { itemId: item.id, name: item.name, quantity: 1 }]);
   };
 
   const removeItem = (itemId: string) => {
@@ -349,30 +339,13 @@ export default function PharmacyTransfersPage() {
               {/* Item Search */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Add Items</label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="Search drugs..."
-                    value={itemSearch}
-                    onChange={e => setItemSearch(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm"
-                  />
-                  {searchResults.length > 0 && itemSearch.length > 2 && (
-                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-40 overflow-auto">
-                      {searchResults.map(drug => (
-                        <button
-                          key={drug.id}
-                          onClick={() => addItem(drug)}
-                          className="w-full text-left px-3 py-2 hover:bg-blue-50 text-sm flex justify-between"
-                        >
-                          <span>{drug.name}</span>
-                          <span className="text-gray-400">Stock: {drug.currentStock ?? '—'}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <CatalogItemPicker
+                  value={null}
+                  onChange={(item) => { if (item) addItem(item); }}
+                  module="pharmacy"
+                  placeholder="Search drugs..."
+                  size="md"
+                />
               </div>
               {/* Selected Items */}
               {transferItems.length > 0 && (

@@ -22,6 +22,7 @@ import { BillingModule } from './modules/billing/billing.module';
 import { DoctorFeesModule } from './modules/doctor-fees/doctor-fees.module';
 import { PaymentGatewayModule } from './modules/payment-gateway/payment-gateway.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
+import { CatalogModule } from './modules/catalog/catalog.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { IpdModule } from './modules/ipd/ipd.module';
 import { LabModule } from './modules/lab/lab.module';
@@ -164,6 +165,7 @@ import { EfrisModule } from './modules/efris/efris.module';
     DoctorFeesModule,
     PaymentGatewayModule,
     InventoryModule,
+    CatalogModule,
     OrdersModule,
 
     // IPD/Ward Management (Phase 2)
