@@ -224,12 +224,8 @@ export default function OPDTokenPage() {
     staleTime: 5 * 60 * 1000,
   });
 
-  // Auto-select first department when loaded
-  useEffect(() => {
-    if (departments && departments.length > 0 && !selectedDepartment) {
-      setSelectedDepartment(departments[0].id);
-    }
-  }, [departments, selectedDepartment]);
+  // Department is optional — do NOT auto-select. Reception may leave it blank
+  // for general OPD; assignment happens at consultation if needed.
 
   // Fetch today's queue
   const { data: todayQueue } = useQuery({
@@ -327,10 +323,8 @@ export default function OPDTokenPage() {
       return;
     }
 
-    if (!selectedDepartment && user?.workflowMode !== 'simple') {
-      setError('Department is required. Please select a department.');
-      return;
-    }
+    // Department is optional — patient defaults to General OPD pool when not chosen.
+    // (Validation removed; backend already accepts undefined departmentId.)
 
     if (!chiefComplaint.trim()) {
       setError('Chief complaint is required before issuing token.');
@@ -727,8 +721,18 @@ export default function OPDTokenPage() {
           {/* Department Selection (hidden in simple workflow mode — auto-uses default department) */}
           {user?.workflowMode !== 'simple' && (
           <div className="card p-4 flex-1 min-h-0 flex flex-col">
-            <h2 className="text-sm font-semibold mb-2 flex-shrink-0">2. Select Department</h2>
+            <h2 className="text-sm font-semibold mb-2 flex-shrink-0">2. Department <span className="text-xs text-gray-400 font-normal">(optional — leave blank for General OPD)</span></h2>
             <div className="grid grid-cols-2 gap-1.5 flex-1 overflow-y-auto content-start">
+              <button
+                onClick={() => { setSelectedDepartment(''); setSelectedDoctor('any'); }}
+                className={`p-2 rounded border text-left transition-colors text-xs ${
+                  !selectedDepartment
+                    ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                General OPD <span className="text-gray-400">(no dept)</span>
+              </button>
               {(departments || []).filter(d => d.status !== 'inactive').map((dept) => (
                 <button
                   key={dept.id}

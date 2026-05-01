@@ -526,13 +526,29 @@ export default function WaitingPatientsPage() {
     enabled: !!accessToken,
   });
 
-  // Fetch consultation queue — patients assigned to this doctor + unassigned at consultation
-  const { data: queueData, isLoading, dataUpdatedAt } = useQuery({
-    queryKey: ['doctor-waiting-queue', myPatientsOnly],
-    queryFn: () => queueService.getDoctorQueue(myPatientsOnly),
+  // Always fetch the FULL doctor-visible pool; derive 'my-only' client-side so we
+  // can show counts and warn when the filter would hide patients.
+  const { data: queueDataAll, isLoading, dataUpdatedAt } = useQuery({
+    queryKey: ['doctor-waiting-queue', 'all'],
+    queryFn: () => queueService.getDoctorQueue(false),
     refetchInterval: 15000,
     enabled: !!accessToken,
   });
+
+  const myUserId = user?.id;
+  const queueData = useMemo(() => {
+    if (!myPatientsOnly) return queueDataAll || [];
+    return (queueDataAll || []).filter((q: QueueEntry) => q.assignedDoctorId === myUserId);
+  }, [queueDataAll, myPatientsOnly, myUserId]);
+
+  const unassignedCount = useMemo(
+    () => (queueDataAll || []).filter((q: QueueEntry) => !q.assignedDoctorId).length,
+    [queueDataAll],
+  );
+  const assignedToMeCount = useMemo(
+    () => (queueDataAll || []).filter((q: QueueEntry) => q.assignedDoctorId === myUserId).length,
+    [queueDataAll, myUserId],
+  );
 
   // Fetch returned patients
   const { data: returnedData } = useQuery({
@@ -1024,18 +1040,42 @@ export default function WaitingPatientsPage() {
             </select>
           </div>
 
-          {/* My Patients Toggle */}
-          <label className="flex items-center gap-2 cursor-pointer">
+          {/* My Patients Toggle (derives client-side, shows counts, warns when filter hides patients) */}
+          <label className="flex items-center gap-2 cursor-pointer" title="Show only patients explicitly assigned to you">
             <input
               type="checkbox"
               checked={myPatientsOnly}
               onChange={(e) => setMyPatientsOnly(e.target.checked)}
               className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
             />
-            <span className="text-sm text-gray-600">My patients only</span>
+            <span className="text-sm text-gray-600">
+              My patients only
+              <span className="ml-1.5 inline-flex items-center gap-1 text-xs">
+                <span className="px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-medium">{assignedToMeCount}</span>
+                <span className="text-gray-400">/</span>
+                <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 font-medium">{(queueDataAll || []).length}</span>
+              </span>
+            </span>
           </label>
         </div>
       </div>
+
+      {/* Hidden-by-filter warning — eliminates the "0 patients" footgun */}
+      {myPatientsOnly && assignedToMeCount === 0 && unassignedCount > 0 && (
+        <div className="mb-3 p-3 rounded border border-amber-300 bg-amber-50 flex items-start gap-2 text-sm">
+          <span className="text-amber-700 font-semibold">⚠</span>
+          <div className="flex-1 text-amber-900">
+            You have <strong>0</strong> patients assigned to you, but <strong>{unassignedCount}</strong>{' '}
+            unassigned patient{unassignedCount === 1 ? ' is' : 's are'} waiting in the consultation pool.
+          </div>
+          <button
+            onClick={() => setMyPatientsOnly(false)}
+            className="text-xs px-2 py-1 rounded bg-amber-600 text-white hover:bg-amber-700"
+          >
+            Show pool
+          </button>
+        </div>
+      )}
 
       {/* Returned Patients Section */}
       {returnedPatients.length > 0 && filter !== 'returned' && (

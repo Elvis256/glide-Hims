@@ -11,6 +11,7 @@ import { Facility } from '../../database/entities/facility.entity';
 import { ExpiryAlertConfig, ExpiryAlertHistory } from '../../database/entities/expiry-alert.entity';
 import { Invoice } from '../../database/entities/invoice.entity';
 import { Patient } from '../../database/entities/patient.entity';
+import { Queue } from '../../database/entities/queue.entity';
 import { InAppNotificationsModule } from '../in-app-notifications/in-app-notifications.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 
@@ -28,6 +29,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
       ExpiryAlertHistory,
       Invoice,
       Patient,
+      Queue,
     ]),
     InAppNotificationsModule,
     NotificationsModule,

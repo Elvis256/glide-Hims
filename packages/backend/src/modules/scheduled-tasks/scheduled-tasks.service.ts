@@ -27,6 +27,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../../database/entities/notification-config.entity';
 import { Invoice, InvoiceStatus } from '../../database/entities/invoice.entity';
 import { Patient } from '../../database/entities/patient.entity';
+import { Queue, QueueStatus } from '../../database/entities/queue.entity';
 
 @Injectable()
 export class ScheduledTasksService {
@@ -55,6 +56,8 @@ export class ScheduledTasksService {
     private readonly invoiceRepo: Repository<Invoice>,
     @InjectRepository(Patient)
     private readonly patientRepo: Repository<Patient>,
+    @InjectRepository(Queue)
+    private readonly queueRepo: Repository<Queue>,
     private readonly inAppNotificationsService: InAppNotificationsService,
     private readonly notificationsService: NotificationsService,
   ) {}
@@ -885,6 +888,66 @@ export class ScheduledTasksService {
     } catch (error) {
       this.logger.error(
         'Outstanding balance reminder job failed',
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
+  }
+
+  /**
+   * Stale-queue sweeper. Every 15 minutes:
+   *  - Finds queue entries still in WAITING / CALLED / PENDING_PAYMENT
+   *  - Older than `QUEUE_AUTO_NO_SHOW_MINUTES` (env, default 480 = 8h since createdAt)
+   *    OR with queue_date strictly before today
+   *  - Marks them NO_SHOW with reason `auto: stale-sweep` and refreshes actualWaitMinutes.
+   *
+   * This eliminates the "patient parked in queue for days" footgun where reception/doctors
+   * never click No-Show or Cancel and the queue never resets.
+   */
+  @Cron('*/15 * * * *', { name: 'queue-stale-sweep' })
+  async sweepStaleQueueEntries(): Promise<void> {
+    const cutoffMinutes = Number(process.env.QUEUE_AUTO_NO_SHOW_MINUTES || 480);
+    const cutoff = new Date(Date.now() - cutoffMinutes * 60_000);
+    const todayStr = new Date().toISOString().slice(0, 10);
+
+    try {
+      const stale = await this.queueRepo
+        .createQueryBuilder('q')
+        .where('q.status IN (:...statuses)', {
+          statuses: [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.PENDING_PAYMENT],
+        })
+        .andWhere('q.on_hold = false')
+        .andWhere('(q.created_at < :cutoff OR q.queue_date < :today)', {
+          cutoff,
+          today: todayStr,
+        })
+        .limit(500)
+        .getMany();
+
+      if (stale.length === 0) {
+        return;
+      }
+
+      let marked = 0;
+      for (const q of stale) {
+        const prev = q.status;
+        q.status = QueueStatus.NO_SHOW;
+        const ageMin = Math.round((Date.now() - new Date(q.createdAt).getTime()) / 60_000);
+        q.actualWaitMinutes = ageMin;
+        q.skipReason = `auto: stale-sweep (${ageMin}m, prev=${prev})`;
+        try {
+          await this.queueRepo.save(q);
+          marked++;
+        } catch (e) {
+          this.logger.warn(`Failed to auto-no-show queue ${q.id}: ${(e as Error).message}`);
+        }
+      }
+
+      this.logger.log(
+        `Queue stale-sweep: scanned ${stale.length}, auto-no-show ${marked} (cutoff=${cutoffMinutes}m)`,
+      );
+    } catch (error) {
+      this.logger.error(
+        'Queue stale-sweep failed',
         error instanceof Error ? error.stack : String(error),
       );
     }
