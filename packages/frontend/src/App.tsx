@@ -985,7 +985,7 @@ function AppRoutes() {
                 {/* Stores Module */}
                 <Route path="/stores/main" element={<ModuleRoute module="stores"><StoreKeeperRoute><MainInventoryPage /></StoreKeeperRoute></ModuleRoute>} />
                 <Route path="/stores/issue" element={<ModuleRoute module="stores"><StoreKeeperRoute><UnitIssuePage /></StoreKeeperRoute></ModuleRoute>} />
-                <Route path="/stores/transfers" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoreTransfersPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/stores/transfers" element={<Navigate to="/inventory/transfers" replace />} />
                 <Route path="/inventory/transfers" element={<ModuleRoute module="stores"><StoreKeeperRoute><StockTransferPage /></StoreKeeperRoute></ModuleRoute>} />
                 <Route path="/stores/procurement" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresProcurementPage /></StoreKeeperRoute></ModuleRoute>} />
                 <Route path="/stores/suppliers" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresSupplierPage /></StoreKeeperRoute></ModuleRoute>} />
