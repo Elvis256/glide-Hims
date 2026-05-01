@@ -763,9 +763,19 @@ export default function NewConsultationPage() {
   const completeMutation = useMutation({
     mutationFn: async () => {
       if (!encounterId) throw new Error('No encounter');
-      // Validate required fields
-      if (!form.chiefComplaint || form.diagnoses.length === 0) {
-        throw new Error('Please complete chief complaint and at least one diagnosis');
+      // Validate required fields up-front so the doctor sees a clear message
+      // instead of a generic 400 from the backend DTO.
+      const missing: string[] = [];
+      if (!form.chiefComplaint) missing.push('chief complaint');
+      if (form.diagnoses.length === 0) missing.push('at least one diagnosis');
+      if (!form.clinicalImpression && form.diagnoses.length === 0) {
+        missing.push('clinical impression / assessment');
+      }
+      if (form.planItems.length === 0 && !form.clinicalImpression) {
+        missing.push('a plan (add a prescription, lab/imaging order, follow-up, or note)');
+      }
+      if (missing.length > 0) {
+        throw new Error(`Please add: ${missing.join(', ')}`);
       }
       
       // Build subjective section
@@ -805,6 +815,21 @@ export default function NewConsultationPage() {
       }
       if (form.planItems.length > 0) {
         clinicalNotePayload.plan = form.planItems.map(p => `• ${p.description}`).join('\n');
+      }
+
+      // Backend requires non-empty assessment + plan strings. Fall back to
+      // sensible derivations so a valid consultation never 400s on a
+      // technicality (e.g. doctor entered a clinical impression but no
+      // discrete plan line items — the impression itself becomes the plan).
+      if (!clinicalNotePayload.assessment) {
+        clinicalNotePayload.assessment = form.diagnoses
+          .map((d) => `${d.code}: ${d.description}`)
+          .join('; ') || 'See clinical notes';
+      }
+      if (!clinicalNotePayload.plan) {
+        clinicalNotePayload.plan = form.clinicalImpression
+          ? `Plan: ${form.clinicalImpression}`
+          : 'See clinical notes and orders';
       }
       
       // 1. Atomically: save clinical note + update encounter + mark completed (single transaction)
@@ -928,7 +953,22 @@ export default function NewConsultationPage() {
     onError: (error: any) => {
       console.error('Complete consultation error:', error);
       console.error('Error response:', error.response?.data);
-      const errorMessage = error.response?.data?.message || error.message || 'Failed to complete consultation';
+      const data = error.response?.data;
+      // Backend ValidationPipe puts field-level errors on `details`. Surface
+      // them so the doctor knows exactly which field is missing instead of
+      // a generic "Validation failed" toast.
+      let errorMessage: string = data?.message || error.message || 'Failed to complete consultation';
+      if (Array.isArray(data?.details) && data.details.length > 0) {
+        const fieldErrors = data.details
+          .map((d: any) => {
+            const errs = Array.isArray(d?.errors) ? d.errors.join(', ') : '';
+            return d?.field ? `${d.field}: ${errs}` : errs;
+          })
+          .filter(Boolean);
+        if (fieldErrors.length > 0) {
+          errorMessage = `${errorMessage} — ${fieldErrors.join('; ')}`;
+        }
+      }
       toast.error(Array.isArray(errorMessage) ? errorMessage.join(', ') : errorMessage);
     },
   });
