@@ -201,16 +201,33 @@ export class QueueManagementService {
 
   /**
    * Read tenant-level billing defaults from system_settings.
-   *   billing.mode             -> 'pre_pay' | 'post_pay'  (default: 'post_pay')
-   *   billing.consultationFee  -> number                  (default: null = use service catalog)
+   *   billing.mode                    -> 'pre_pay' | 'post_pay'  (default: 'post_pay')
+   *   billing.consultationFee         -> number                  (default: null = use service catalog)
+   *   billing.mode.<payerType>        -> 'pre_pay' | 'post_pay'  per-payer override
+   *      payerType ∈ cash | mobile_money | card | insurance | hospital_scheme | staff | membership
    * These values can be set per-tenant in Admin → System Settings.
    */
   async getBillingDefaults(
     tenantId?: string,
-  ): Promise<{ mode: 'pre_pay' | 'post_pay'; consultationFee: number | null }> {
+  ): Promise<{
+    mode: 'pre_pay' | 'post_pay';
+    consultationFee: number | null;
+    modeByPayer: Record<string, 'pre_pay' | 'post_pay'>;
+  }> {
+    const baseKeys = ['billing.mode', 'billing.consultationFee'];
+    const payerKeys = [
+      'cash',
+      'mobile_money',
+      'card',
+      'insurance',
+      'hospital_scheme',
+      'staff',
+      'membership',
+    ].map((p) => `billing.mode.${p}`);
+    const allKeys = [...baseKeys, ...payerKeys];
     const where = tenantId
-      ? { tenantId, key: In(['billing.mode', 'billing.consultationFee']) }
-      : { key: In(['billing.mode', 'billing.consultationFee']) };
+      ? { tenantId, key: In(allKeys) }
+      : { key: In(allKeys) };
     const rows = await this.systemSettingRepository.find({ where: where as any });
     const map = new Map<string, any>();
     for (const r of rows) map.set(r.key, r.value);
@@ -219,7 +236,14 @@ export class QueueManagementService {
       rawMode === 'pre_pay' || rawMode === 'post_pay' ? rawMode : 'post_pay';
     const rawFee = map.get('billing.consultationFee');
     const fee = rawFee != null && !isNaN(Number(rawFee)) ? Number(rawFee) : null;
-    return { mode, consultationFee: fee };
+    const modeByPayer: Record<string, 'pre_pay' | 'post_pay'> = {};
+    for (const pk of payerKeys) {
+      const v = map.get(pk);
+      if (v === 'pre_pay' || v === 'post_pay') {
+        modeByPayer[pk.replace('billing.mode.', '')] = v;
+      }
+    }
+    return { mode, consultationFee: fee, modeByPayer };
   }
 
   async upsertServiceConfig(
@@ -352,31 +376,9 @@ export class QueueManagementService {
           });
           const txEncounter = (await manager.save(encounter)) as Encounter;
 
-          // Auto-create consultation invoice (non-blocking within the transaction)
-          let txInvoice: Invoice | null = null;
-          try {
-            txInvoice = await this.createConsultationInvoice(
-              dto.patientId,
-              txEncounter.id,
-              facilityId,
-              userId,
-              dto.paymentType,
-              dto.consultationFee,
-              dto.insurancePolicyId,
-              tenantId,
-              manager,
-            );
-            this.logger.log(`Invoice ${txInvoice.invoiceNumber} created for token ${ticketNumber}`);
-          } catch (err) {
-            // Non-blocking: if invoice creation fails, still issue the token
-            this.logger.warn(
-              `Failed to auto-create invoice for token ${ticketNumber}: ${err.message}`,
-            );
-          }
-
           // R3: Auto-assign least-loaded on-duty doctor when none explicitly chosen
-          // and the patient is heading to consultation. Falls back to NULL (pool)
-          // if no doctor is on duty — the existing pool visibility still applies.
+          // and the patient is heading to consultation. Done BEFORE invoice creation so
+          // the per-doctor fee override can be applied during fee resolution.
           let resolvedAssignedDoctorId = dto.assignedDoctorId;
           if (
             !resolvedAssignedDoctorId &&
@@ -390,6 +392,30 @@ export class QueueManagementService {
                 `Auto-assigned doctor ${resolvedAssignedDoctorId} to queue ticket ${ticketNumber} (least-loaded on-duty)`,
               );
             }
+          }
+
+          // Auto-create consultation invoice (non-blocking within the transaction)
+          let txInvoice: Invoice | null = null;
+          try {
+            txInvoice = await this.createConsultationInvoice(
+              dto.patientId,
+              txEncounter.id,
+              facilityId,
+              userId,
+              dto.paymentType,
+              dto.consultationFee,
+              dto.insurancePolicyId,
+              tenantId,
+              manager,
+              resolvedAssignedDoctorId,
+              dto.departmentId,
+            );
+            this.logger.log(`Invoice ${txInvoice.invoiceNumber} created for token ${ticketNumber}`);
+          } catch (err) {
+            // Non-blocking: if invoice creation fails, still issue the token
+            this.logger.warn(
+              `Failed to auto-create invoice for token ${ticketNumber}: ${err.message}`,
+            );
           }
 
           const queue = this.queueRepository.create({
@@ -478,6 +504,108 @@ export class QueueManagementService {
   }
 
   /**
+   * Resolve consultation fee using a most-specific-wins chain:
+   *   1. Per-doctor override → system_setting key `billing.consultationFee.doctor.<doctorId>` (number)
+   *   2. Per-department service code → service `OPD-CONSULT-{DEPT_CODE}` (uppercased, spaces→`_`)
+   *   3. Per-department service.department field → service with code `OPD-CONSULT` whose `department` matches
+   *   4. Generic facility-scoped service `OPD-CONSULT`
+   *   5. Generic global service `OPD-CONSULT`
+   *   6. Tenant `billing.consultationFee` system_setting
+   * Returns { fee: null } when nothing is configured so the caller can decide.
+   */
+  async resolveConsultationFee(opts: {
+    facilityId: string;
+    tenantId?: string;
+    doctorId?: string;
+    departmentId?: string;
+  }): Promise<{ fee: number | null; source: string }> {
+    const { facilityId, tenantId, doctorId, departmentId } = opts;
+
+    // 1. Per-doctor override
+    if (doctorId) {
+      const where: any = { key: `billing.consultationFee.doctor.${doctorId}` };
+      if (tenantId) where.tenantId = tenantId;
+      const setting = await this.systemSettingRepository.findOne({ where });
+      const raw = setting?.value;
+      const num = raw != null && !isNaN(Number(raw)) ? Number(raw) : null;
+      if (num != null && num > 0) return { fee: num, source: `doctor:${doctorId}` };
+    }
+
+    // 2 & 3. Per-department resolution
+    if (departmentId) {
+      const dept = await this.departmentRepository.findOne({
+        where: { id: departmentId, ...(tenantId ? { tenantId } : {}) } as any,
+      });
+      if (dept) {
+        const deptCode = (dept.code || dept.name || '')
+          .toString()
+          .trim()
+          .toUpperCase()
+          .replace(/\s+/g, '_');
+        if (deptCode) {
+          // 2. dedicated specialty service code
+          const specialtyService = await this.serviceRepository.findOne({
+            where: {
+              code: `OPD-CONSULT-${deptCode}`,
+              isActive: true,
+              ...(tenantId ? { tenantId } : {}),
+            } as any,
+          });
+          if (specialtyService) {
+            return {
+              fee: Number(specialtyService.basePrice),
+              source: `service:OPD-CONSULT-${deptCode}`,
+            };
+          }
+        }
+        // 3. generic OPD-CONSULT scoped to this department via the `department` column
+        const deptScopedService = await this.serviceRepository.findOne({
+          where: {
+            code: 'OPD-CONSULT',
+            department: dept.name,
+            isActive: true,
+            ...(tenantId ? { tenantId } : {}),
+          } as any,
+        });
+        if (deptScopedService) {
+          return {
+            fee: Number(deptScopedService.basePrice),
+            source: `service:OPD-CONSULT[dept=${dept.name}]`,
+          };
+        }
+      }
+    }
+
+    // 4. Facility-scoped OPD-CONSULT
+    const facilityService = await this.serviceRepository.findOne({
+      where: {
+        code: 'OPD-CONSULT',
+        facilityId,
+        isActive: true,
+        ...(tenantId ? { tenantId } : {}),
+      } as any,
+    });
+    if (facilityService) {
+      return { fee: Number(facilityService.basePrice), source: 'service:OPD-CONSULT[facility]' };
+    }
+
+    // 5. Global OPD-CONSULT
+    const globalService = await this.serviceRepository.findOne({
+      where: { code: 'OPD-CONSULT', isActive: true },
+    });
+    if (globalService) {
+      return { fee: Number(globalService.basePrice), source: 'service:OPD-CONSULT[global]' };
+    }
+
+    // 6. Tenant default
+    const billingDefaults = await this.getBillingDefaults(tenantId);
+    if (billingDefaults.consultationFee != null) {
+      return { fee: billingDefaults.consultationFee, source: 'system_setting:billing.consultationFee' };
+    }
+    return { fee: null, source: 'unresolved' };
+  }
+
+  /**
    * Map frontend payment type string to encounter PayerType
    */
   private mapPaymentTypeToPayer(paymentType?: string): PayerType {
@@ -507,41 +635,29 @@ export class QueueManagementService {
     insurancePolicyId?: string,
     tenantId?: string,
     manager?: EntityManager,
+    assignedDoctorId?: string,
+    departmentId?: string,
   ): Promise<Invoice> {
-    // Look up consultation fee from services table
     let fee = feeOverride;
+    let feeSource = 'override';
     if (!fee || fee <= 0) {
-      const consultService = await this.serviceRepository.findOne({
-        where: {
-          code: 'OPD-CONSULT',
-          facilityId,
-          isActive: true,
-          ...(tenantId ? { tenantId } : {}),
-        },
+      const resolved = await this.resolveConsultationFee({
+        facilityId,
+        tenantId,
+        doctorId: assignedDoctorId,
+        departmentId,
       });
-      if (!consultService) {
-        // Try global fallback (no facility filter)
-        const globalService = await this.serviceRepository.findOne({
-          where: { code: 'OPD-CONSULT', isActive: true },
-        });
-        if (globalService) {
-          fee = Number(globalService.basePrice);
-        } else {
-          // Final fallback: tenant system_setting `billing.consultationFee`.
-          // If still unset, skip invoice creation entirely so the token can be issued
-          // without an arbitrary hardcoded charge.
-          const billingDefaults = await this.getBillingDefaults(tenantId);
-          if (billingDefaults.consultationFee == null) {
-            throw new BadRequestException(
-              'Consultation fee is not configured. Set service "OPD-CONSULT" in the catalog or system_setting `billing.consultationFee`.',
-            );
-          }
-          fee = billingDefaults.consultationFee;
-        }
-      } else {
-        fee = Number(consultService.basePrice);
+      fee = resolved.fee ?? undefined;
+      feeSource = resolved.source;
+      if (fee == null) {
+        throw new BadRequestException(
+          'Consultation fee is not configured. Set a per-doctor override, an OPD-CONSULT-{DEPT} service, the OPD-CONSULT service, or system_setting `billing.consultationFee`.',
+        );
       }
     }
+    this.logger.log(
+      `Consultation fee resolved to ${fee} via ${feeSource} (doctor=${assignedDoctorId ?? '-'}, dept=${departmentId ?? '-'})`,
+    );
 
     // Generate invoice number
     const datePrefix = new Date().toISOString().slice(0, 10).replace(/-/g, '');

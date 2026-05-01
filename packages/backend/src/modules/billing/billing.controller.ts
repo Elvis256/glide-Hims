@@ -53,6 +53,20 @@ export class BillingController {
     return this.billingService.getPendingInvoices(req.user?.tenantId);
   }
 
+  @Get('patient-tab/:patientId')
+  @AuthWithPermissions('billing.read')
+  @ApiOperation({
+    summary:
+      "Get a patient's running tab — consolidated invoices/items across an encounter (or all unpaid). Used by cashiers to view accumulated charges and produce interim bills.",
+  })
+  getPatientTab(
+    @Param('patientId', ParseUUIDPipe) patientId: string,
+    @Query('encounterId') encounterId: string | undefined,
+    @Request() req: any,
+  ) {
+    return this.billingService.getPatientTab(patientId, encounterId, req.user?.tenantId);
+  }
+
   @Get('invoices/number/:invoiceNumber')
   @AuthWithPermissions('billing.read')
   @ApiOperation({ summary: 'Get invoice by number' })
