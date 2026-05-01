@@ -564,7 +564,7 @@ const navigationSections: NavSection[] = [
         ],
       },
       {
-        name: 'Procurement',
+        name: 'Drug Procurement',
         icon: Truck,
         permissions: ['procurement.read', 'procurement.create'],
         children: [
@@ -696,21 +696,24 @@ const navigationSections: NavSection[] = [
         ],
       },
       { name: 'Membership', href: '/membership', icon: Crown, permissions: ['membership.read'] },
-      {
-        name: 'Procurement',
-        icon: Truck,
-        permissions: ['procurement.read', 'procurement.create'],
-        children: [
-          { name: 'Requisitions', href: '/procurement/requisitions', icon: ClipboardList, permissions: ['procurement.read'] },
-          { name: 'Request Quotation', href: '/procurement/rfq', icon: FileText, permissions: ['procurement.create'] },
-          { name: 'Compare Quotes', href: '/procurement/quotes/compare', icon: FileSpreadsheet, permissions: ['procurement.read'] },
-          { name: 'Approve Quotations', href: '/procurement/quotes/approve', icon: FileCheck, permissions: ['procurement.approve'] },
-          { name: 'Purchase Orders', href: '/procurement/orders', icon: ShoppingCart, permissions: ['procurement.create'] },
-          { name: 'Goods Received', href: '/procurement/grn', icon: PackageCheck, permissions: ['procurement.update'] },
-          { name: 'Invoice Matching', href: '/procurement/invoices/match', icon: FileCheck, permissions: ['procurement.read'] },
-          { name: 'Procurement Trace', href: '/procurement/trace', icon: GitBranch, permissions: ['procurement.read'] },
-        ],
-      },
+    ],
+  },
+  // 8b. Procurement (own top-level module — enterprise-wide PO / vendor management)
+  {
+    title: 'Procurement',
+    icon: Truck,
+    moduleCode: 'procurement',
+    roles: ['Procurement Officer', 'Accountant', 'Administrator', 'Store Keeper'],
+    permissions: ['procurement.read', 'procurement.create', 'suppliers.read'],
+    items: [
+      { name: 'Requisitions', href: '/procurement/requisitions', icon: ClipboardList, permissions: ['procurement.read'] },
+      { name: 'Request Quotation', href: '/procurement/rfq', icon: FileText, permissions: ['procurement.create'] },
+      { name: 'Compare Quotes', href: '/procurement/quotes/compare', icon: FileSpreadsheet, permissions: ['procurement.read'] },
+      { name: 'Approve Quotations', href: '/procurement/quotes/approve', icon: FileCheck, permissions: ['procurement.approve'] },
+      { name: 'Purchase Orders', href: '/procurement/orders', icon: ShoppingCart, permissions: ['procurement.create'] },
+      { name: 'Goods Received', href: '/procurement/grn', icon: PackageCheck, permissions: ['procurement.update'] },
+      { name: 'Invoice Matching', href: '/procurement/invoices/match', icon: FileCheck, permissions: ['procurement.read'] },
+      { name: 'Procurement Trace', href: '/procurement/trace', icon: GitBranch, permissions: ['procurement.read'] },
       {
         name: 'Vendors',
         icon: Building,
@@ -758,7 +761,7 @@ const navigationSections: NavSection[] = [
       { name: 'Unit Issue', href: '/stores/issue', icon: ArrowRightLeft, permissions: ['stores.create'] },
       { name: 'Stock Transfers', href: '/inventory/transfers', icon: ArrowDownUp, permissions: ['stores.update'] },
       {
-        name: 'Procurement',
+        name: 'Supplies Procurement',
         icon: Truck,
         permissions: ['procurement.read', 'procurement.create'],
         children: [

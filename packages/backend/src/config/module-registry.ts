@@ -137,6 +137,16 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     requiredPermissions: ['finance.read', 'finance.create', 'journals.read', 'budgets.read'],
   },
   {
+    code: 'procurement',
+    name: 'Procurement',
+    requiredPermissions: [
+      'procurement.read',
+      'procurement.create',
+      'procurement.approve',
+      'suppliers.read',
+    ],
+  },
+  {
     code: 'integrations',
     name: 'Integrations',
     requiredPermissions: ['settings.read', 'settings.update'],
