@@ -50,6 +50,7 @@ import {
   InspectGRNDto,
 } from './dto/procurement.dto';
 import { FinanceService } from '../finance/finance.service';
+import { InvoiceMatch } from '../../database/entities/invoice-match.entity';
 
 @Injectable()
 export class ProcurementService {
@@ -77,6 +78,8 @@ export class ProcurementService {
     private itemRepo: Repository<Item>,
     @InjectRepository(VendorQuotation)
     private quotationRepo: Repository<VendorQuotation>,
+    @InjectRepository(InvoiceMatch)
+    private invoiceMatchRepo: Repository<InvoiceMatch>,
     @Inject(forwardRef(() => FinanceService))
     private financeService: FinanceService,
     private dataSource: DataSource,
@@ -1234,5 +1237,143 @@ export class ProcurementService {
       pendingGRNs,
       totalValueToday: totalValueToday?.total || 0,
     };
+  }
+
+  // ============ PROCUREMENT TRACE ============
+  /**
+   * Build the full PR -> PO -> GRN -> Invoice chain starting from any document.
+   * type: 'pr' | 'po' | 'grn' | 'invoice'
+   */
+  async traceProcurement(
+    type: 'pr' | 'po' | 'grn' | 'invoice',
+    id: string,
+    tenantId?: string,
+  ): Promise<{
+    pr: any;
+    pos: any[];
+    grns: any[];
+    invoices: any[];
+  }> {
+    const tFilter = tenantId ? { tenantId } : {};
+
+    let prId: string | undefined;
+    let poIds: string[] = [];
+    let grnIds: string[] = [];
+
+    if (type === 'pr') {
+      prId = id;
+      const pos = await this.poRepo.find({ where: { purchaseRequestId: prId, ...tFilter }, select: ['id'] });
+      poIds = pos.map((p) => p.id);
+    } else if (type === 'po') {
+      poIds = [id];
+      const po = await this.poRepo.findOne({ where: { id, ...tFilter }, select: ['id', 'purchaseRequestId'] });
+      if (!po) throw new NotFoundException('Purchase order not found');
+      prId = po.purchaseRequestId || undefined;
+    } else if (type === 'grn') {
+      grnIds = [id];
+      const grn = await this.grnRepo.findOne({ where: { id, ...tFilter }, select: ['id', 'purchaseOrderId'] });
+      if (!grn) throw new NotFoundException('GRN not found');
+      if (grn.purchaseOrderId) {
+        poIds = [grn.purchaseOrderId];
+        const po = await this.poRepo.findOne({ where: { id: grn.purchaseOrderId, ...tFilter }, select: ['id', 'purchaseRequestId'] });
+        prId = po?.purchaseRequestId || undefined;
+      }
+    } else if (type === 'invoice') {
+      const inv = await this.invoiceMatchRepo.findOne({ where: { id, ...tFilter }, select: ['id', 'purchaseOrderId', 'grnId'] });
+      if (!inv) throw new NotFoundException('Invoice match not found');
+      if (inv.purchaseOrderId) {
+        poIds = [inv.purchaseOrderId];
+        const po = await this.poRepo.findOne({ where: { id: inv.purchaseOrderId, ...tFilter }, select: ['id', 'purchaseRequestId'] });
+        prId = po?.purchaseRequestId || undefined;
+      }
+      if (inv.grnId) grnIds = [inv.grnId];
+    }
+
+    // Discover all GRNs from PO chain
+    if (poIds.length && !grnIds.length) {
+      const grns = await this.grnRepo.find({ where: { purchaseOrderId: In(poIds), ...tFilter }, select: ['id'] });
+      grnIds = grns.map((g) => g.id);
+    } else if (poIds.length && grnIds.length) {
+      const more = await this.grnRepo.find({ where: { purchaseOrderId: In(poIds), ...tFilter }, select: ['id'] });
+      grnIds = Array.from(new Set([...grnIds, ...more.map((g) => g.id)]));
+    }
+
+    const [pr, pos, grns, invoices] = await Promise.all([
+      prId
+        ? this.prRepo.findOne({
+            where: { id: prId, ...tFilter },
+            relations: ['items', 'requestedBy', 'department', 'facility', 'approvedBy'],
+          })
+        : Promise.resolve(null),
+      poIds.length
+        ? this.poRepo.find({
+            where: { id: In(poIds), ...tFilter },
+            relations: ['items', 'supplier', 'createdBy', 'approvedBy', 'facility'],
+            order: { createdAt: 'ASC' },
+          })
+        : Promise.resolve([]),
+      grnIds.length
+        ? this.grnRepo.find({
+            where: { id: In(grnIds), ...tFilter },
+            relations: ['items', 'supplier', 'receivedBy', 'inspectedBy', 'postedBy', 'facility'],
+            order: { receivedAt: 'ASC' },
+          })
+        : Promise.resolve([]),
+      poIds.length
+        ? this.invoiceMatchRepo.find({
+            where: { purchaseOrderId: In(poIds), ...tFilter },
+            order: { createdAt: 'ASC' },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    return { pr, pos, grns, invoices };
+  }
+
+  /** Search document numbers across PR/PO/GRN/Invoice for the trace UI. */
+  async searchTraceDocuments(
+    q: string,
+    tenantId?: string,
+  ): Promise<Array<{ type: 'pr' | 'po' | 'grn' | 'invoice'; id: string; number: string; status: string; createdAt: Date }>> {
+    const term = `%${q.toLowerCase()}%`;
+    const tFilter = tenantId ? { tenantId } : {};
+
+    const [prs, pos, grns, invoices] = await Promise.all([
+      this.prRepo
+        .createQueryBuilder('pr')
+        .where('LOWER(pr.requestNumber) LIKE :term', { term })
+        .andWhere(tenantId ? 'pr.tenantId = :tenantId' : '1=1', { tenantId })
+        .select(['pr.id', 'pr.requestNumber', 'pr.status', 'pr.createdAt'])
+        .limit(10)
+        .getMany(),
+      this.poRepo
+        .createQueryBuilder('po')
+        .where('LOWER(po.orderNumber) LIKE :term', { term })
+        .andWhere(tenantId ? 'po.tenantId = :tenantId' : '1=1', { tenantId })
+        .select(['po.id', 'po.orderNumber', 'po.status', 'po.createdAt'])
+        .limit(10)
+        .getMany(),
+      this.grnRepo
+        .createQueryBuilder('grn')
+        .where('LOWER(grn.grnNumber) LIKE :term', { term })
+        .andWhere(tenantId ? 'grn.tenantId = :tenantId' : '1=1', { tenantId })
+        .select(['grn.id', 'grn.grnNumber', 'grn.status', 'grn.createdAt'])
+        .limit(10)
+        .getMany(),
+      this.invoiceMatchRepo
+        .createQueryBuilder('inv')
+        .where('LOWER(inv.invoiceNumber) LIKE :term', { term })
+        .andWhere(tenantId ? 'inv.tenantId = :tenantId' : '1=1', { tenantId })
+        .select(['inv.id', 'inv.invoiceNumber', 'inv.status', 'inv.createdAt'])
+        .limit(10)
+        .getMany(),
+    ]);
+
+    return [
+      ...prs.map((p) => ({ type: 'pr' as const, id: p.id, number: p.requestNumber, status: p.status, createdAt: p.createdAt })),
+      ...pos.map((p) => ({ type: 'po' as const, id: p.id, number: p.orderNumber, status: p.status, createdAt: p.createdAt })),
+      ...grns.map((g) => ({ type: 'grn' as const, id: g.id, number: g.grnNumber, status: g.status, createdAt: g.createdAt })),
+      ...invoices.map((i: any) => ({ type: 'invoice' as const, id: i.id, number: i.invoiceNumber, status: i.status, createdAt: i.createdAt })),
+    ].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
   }
 }

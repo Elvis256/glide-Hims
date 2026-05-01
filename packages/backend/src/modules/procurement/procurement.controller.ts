@@ -32,6 +32,25 @@ export class ProcurementController {
     return this.procurementService.getDashboard(facilityId, req.user?.tenantId);
   }
 
+  // ============ TRACE (PR -> PO -> GRN -> Invoice) ============
+
+  @Get('trace/search')
+  @AuthWithPermissions('procurement.read')
+  searchTraceDocuments(@Query('q') q: string, @Request() req: any) {
+    if (!q || q.trim().length < 2) return [];
+    return this.procurementService.searchTraceDocuments(q.trim(), req.user?.tenantId);
+  }
+
+  @Get('trace/:type/:id')
+  @AuthWithPermissions('procurement.read')
+  traceProcurement(
+    @Param('type') type: 'pr' | 'po' | 'grn' | 'invoice',
+    @Param('id') id: string,
+    @Request() req: any,
+  ) {
+    return this.procurementService.traceProcurement(type, id, req.user?.tenantId);
+  }
+
   // ============ PURCHASE REQUESTS ============
 
   @Post('purchase-requests')

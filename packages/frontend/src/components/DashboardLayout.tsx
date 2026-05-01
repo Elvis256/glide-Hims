@@ -708,6 +708,7 @@ const navigationSections: NavSection[] = [
           { name: 'Purchase Orders', href: '/procurement/orders', icon: ShoppingCart, permissions: ['procurement.create'] },
           { name: 'Goods Received', href: '/procurement/grn', icon: PackageCheck, permissions: ['procurement.update'] },
           { name: 'Invoice Matching', href: '/procurement/invoices/match', icon: FileCheck, permissions: ['procurement.read'] },
+          { name: 'Procurement Trace', href: '/procurement/trace', icon: GitBranch, permissions: ['procurement.read'] },
         ],
       },
       {
