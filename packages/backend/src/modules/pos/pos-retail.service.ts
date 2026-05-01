@@ -769,4 +769,25 @@ export class PosRetailService {
     if (dto.name !== undefined) customer.name = dto.name;
     return this.retailCustomerRepo.save(customer);
   }
+
+  // ─── C1: Patient recent purchases ─────────────────────────────────────────
+
+  async getPatientRecentPurchases(patientId: string, tenantId: string, limit = 10) {
+    const sales = await this.saleRepo.find({
+      where: { patientId, tenantId, status: SaleStatus.COMPLETED },
+      relations: ['items'],
+      order: { createdAt: 'DESC' },
+      take: limit,
+    });
+
+    return sales.map((s) => ({
+      id: s.id,
+      saleNumber: s.saleNumber,
+      date: s.createdAt,
+      totalAmount: Number(s.totalAmount),
+      itemCount: s.items?.length ?? 0,
+      channel: s.saleChannel,
+      paymentMethod: s.paymentMethod,
+    }));
+  }
 }

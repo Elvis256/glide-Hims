@@ -242,4 +242,8 @@ export class PharmacySaleItem extends BaseEntity {
 
   @Column({ name: 'discount_reason', type: 'text', nullable: true })
   discountReason: string;
+
+  // ── C2: Prescription item link ─────────────────────────────────────────────
+  @Column({ name: 'prescription_item_id', type: 'uuid', nullable: true })
+  prescriptionItemId: string;
 }

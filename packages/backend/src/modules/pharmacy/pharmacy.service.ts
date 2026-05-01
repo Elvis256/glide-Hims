@@ -27,12 +27,19 @@ import {
   ExpiryAlertStatus,
 } from '../../database/entities/inventory.entity';
 import { BatchStockBalance } from '../../database/entities/batch-stock.entity';
-import { Prescription, PrescriptionStatus } from '../../database/entities/prescription.entity';
+import {
+  Prescription,
+  PrescriptionItem,
+  PrescriptionStatus,
+  Dispensation,
+} from '../../database/entities/prescription.entity';
 import { AuditLog } from '../../database/entities/audit-log.entity';
 import {
   DrugClassification,
+  DrugInteraction,
   DrugSchedule,
 } from '../../database/entities/drug-classification.entity';
+import { DrugInteractionOverride } from '../../database/entities/drug-interaction-override.entity';
 import { ControlledSubstanceLog } from '../../database/entities/controlled-substance.entity';
 import {
   CreatePharmacySaleDto,
@@ -72,11 +79,16 @@ export class PharmacyService {
     @InjectRepository(StockLedger) private movementRepo: Repository<StockLedger>,
     @InjectRepository(StockBalance) private stockBalanceRepo: Repository<StockBalance>,
     @InjectRepository(Prescription) private prescriptionRepo: Repository<Prescription>,
+    @InjectRepository(PrescriptionItem) private prescriptionItemRepo: Repository<PrescriptionItem>,
     @InjectRepository(BatchStockBalance) private batchStockRepo: Repository<BatchStockBalance>,
     @InjectRepository(ExpiryAlert) private expiryAlertRepo: Repository<ExpiryAlert>,
     @InjectRepository(AuditLog) private auditLogRepo: Repository<AuditLog>,
     @InjectRepository(DrugClassification)
     private drugClassRepo: Repository<DrugClassification>,
+    @InjectRepository(DrugInteraction)
+    private drugInteractionRepo: Repository<DrugInteraction>,
+    @InjectRepository(DrugInteractionOverride)
+    private ddiOverrideRepo: Repository<DrugInteractionOverride>,
     @InjectRepository(ControlledSubstanceLog)
     private controlledLogRepo: Repository<ControlledSubstanceLog>,
     @InjectRepository(ReceiptReprint)
@@ -700,6 +712,38 @@ export class PharmacyService {
       }
       sale.status = SaleStatus.COMPLETED;
       await manager.getRepository(PharmacySale).save(sale);
+
+      // C2: Mark prescription items as dispensed (within same transaction).
+      // Each sale item may carry prescriptionItemId linking it to a specific Rx line.
+      if (sale.prescriptionId) {
+        const prescRxItems = (sale.items as any[]).filter((si) => si.prescriptionItemId);
+        for (const si of prescRxItems) {
+          const rxItem = await manager.findOne(PrescriptionItem, { where: { id: si.prescriptionItemId } });
+          if (rxItem) {
+            rxItem.quantityDispensed = Math.min(rxItem.quantity, rxItem.quantityDispensed + Number(si.quantity));
+            rxItem.isDispensed = rxItem.quantityDispensed >= rxItem.quantity;
+            await manager.save(PrescriptionItem, rxItem);
+          }
+        }
+        // Update prescription-level status
+        const prescRepo = manager.getRepository(Prescription);
+        const prescription = await prescRepo.findOne({
+          where: { id: sale.prescriptionId },
+          relations: ['items'],
+        });
+        if (prescription) {
+          const allItems = prescription.items;
+          const allDone = allItems.every((i) => i.isDispensed);
+          const anyDone = allItems.some((i) => i.quantityDispensed > 0);
+          if (allDone) {
+            prescription.status = PrescriptionStatus.DISPENSED;
+            prescription.dispensedAt = new Date();
+          } else if (anyDone) {
+            prescription.status = PrescriptionStatus.PARTIALLY_DISPENSED;
+          }
+          await prescRepo.save(prescription);
+        }
+      }
 
       // Auto-post GL entry within the same transaction: DR Cash/Bank, CR Pharmacy Revenue
       const facilityIdForGL = sale.store?.facilityId;
@@ -1422,4 +1466,154 @@ export class PharmacyService {
 
     return sales.map((s) => ({ ...s, reprintCount: reprintMap.get(s.id) || 0 }));
   }
+
+  // ─── C1: Patient recent purchases ─────────────────────────────────────────
+
+  /**
+   * Returns the last N pharmacy sales for a given patient.
+   * Used by the POS "link patient" side panel.
+   */
+  async getPatientRecentPurchases(
+    patientId: string,
+    tenantId: string,
+    limit = 10,
+  ) {
+    const sales = await this.saleRepo.find({
+      where: { patientId, tenantId, status: SaleStatus.COMPLETED },
+      relations: ['items'],
+      order: { createdAt: 'DESC' },
+      take: limit,
+    });
+
+    return sales.map((s) => ({
+      id: s.id,
+      saleNumber: s.saleNumber,
+      date: s.createdAt,
+      totalAmount: Number(s.totalAmount),
+      itemCount: s.items?.length ?? 0,
+      channel: s.saleChannel,
+      paymentMethod: s.paymentMethod,
+    }));
+  }
+
+  // ─── C3: Drug interaction check ────────────────────────────────────────────
+
+  /**
+   * Checks for drug-drug interactions for the given cart item IDs,
+   * and optionally against a patient's recent active medications.
+   *
+   * Returns shape:
+   * { warnings: [{ severity, drug1, drug2, mechanism, recommendation, requireOverride }] }
+   */
+  async checkInteractions(
+    itemIds: string[],
+    patientId?: string,
+    tenantId?: string,
+  ): Promise<{ warnings: InteractionWarning[] }> {
+    if (!itemIds || itemIds.length === 0) return { warnings: [] };
+
+    // Resolve item names
+    const items = await this.inventoryRepo.findBy({ id: In(itemIds) });
+    const itemMap = new Map(items.map((i) => [i.id, i]));
+
+    // Build list of all item IDs to check (cart + patient history)
+    const historyItems: Array<{ id: string; name: string; source: 'history' }> = [];
+
+    if (patientId && tenantId) {
+      // Get patient's recently dispensed items (last 90 days)
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 90);
+      const recentSales = await this.saleRepo.find({
+        where: { patientId, tenantId, status: SaleStatus.COMPLETED },
+        relations: ['items'],
+        order: { createdAt: 'DESC' },
+        take: 20,
+      });
+
+      const historyItemIds = new Set<string>();
+      for (const sale of recentSales) {
+        if (sale.createdAt < cutoff) continue;
+        for (const si of sale.items ?? []) {
+          if (!itemIds.includes(si.itemId) && !historyItemIds.has(si.itemId)) {
+            historyItemIds.add(si.itemId);
+            historyItems.push({ id: si.itemId, name: si.itemName, source: 'history' });
+          }
+        }
+      }
+    }
+
+    const allCheckIds = [...new Set([...itemIds, ...historyItems.map((h) => h.id)])];
+    if (allCheckIds.length < 2) return { warnings: [] };
+
+    const warnings: InteractionWarning[] = [];
+
+    // Check all pairs using the drug_interactions table
+    for (let i = 0; i < allCheckIds.length - 1; i++) {
+      for (let j = i + 1; j < allCheckIds.length; j++) {
+        const aId = allCheckIds[i];
+        const bId = allCheckIds[j];
+
+        const interaction = await this.drugInteractionRepo
+          .createQueryBuilder('di')
+          .where(
+            '((di.drug_a_id = :a AND di.drug_b_id = :b) OR (di.drug_a_id = :b AND di.drug_b_id = :a))',
+            { a: aId, b: bId },
+          )
+          .andWhere('di.is_active = true')
+          .getOne();
+
+        if (interaction) {
+          const drug1Item = itemMap.get(aId) ?? historyItems.find((h) => h.id === aId);
+          const drug2Item = itemMap.get(bId) ?? historyItems.find((h) => h.id === bId);
+          const drug2Source = itemIds.includes(bId) ? 'cart' as const : 'history' as const;
+
+          const severity = interaction.severity === 'contraindicated' ? 'severe' : interaction.severity;
+          warnings.push({
+            severity,
+            drug1: { id: aId, name: (drug1Item as any)?.name ?? aId },
+            drug2: { id: bId, name: (drug2Item as any)?.name ?? bId, source: drug2Source },
+            mechanism: interaction.mechanism ?? interaction.description,
+            recommendation: interaction.management ?? 'Review with prescriber',
+            requireOverride: severity === 'severe' || interaction.severity === 'contraindicated',
+          });
+        }
+      }
+    }
+
+    return { warnings };
+  }
+
+  /**
+   * Records a drug-interaction override (manager PIN confirmed in frontend).
+   */
+  async recordInteractionOverride(dto: {
+    saleId?: string;
+    patientId?: string;
+    warnings: InteractionWarning[];
+    reason: string;
+    overriddenById: string;
+    managerApproverId?: string;
+    tenantId?: string;
+  }) {
+    return this.ddiOverrideRepo.save(
+      this.ddiOverrideRepo.create({
+        saleId: dto.saleId,
+        patientId: dto.patientId,
+        warnings: dto.warnings as any,
+        reason: dto.reason,
+        overriddenById: dto.overriddenById,
+        managerApproverId: dto.managerApproverId,
+        tenantId: dto.tenantId,
+      } as any),
+    );
+  }
+}
+
+export interface InteractionWarning {
+  severity: string;
+  drug1: { id: string; name: string };
+  drug2: { id: string; name: string; source: 'cart' | 'history' };
+  mechanism: string;
+  recommendation: string;
+  requireOverride: boolean;
 }

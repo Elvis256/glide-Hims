@@ -123,6 +123,10 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
       'pos.receipt.reprint',
       'pos.quickkey.manage',
       'pos.customer.read',
+      // Phase C: Hospital Bridge
+      'pos.patient.link',
+      'pos.prescription.dispense',
+      'pos.interaction.override',
     ],
   },
   {
