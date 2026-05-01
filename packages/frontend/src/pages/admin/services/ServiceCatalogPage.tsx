@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search, Plus, Edit2, Power, Download, Upload, Stethoscope, FlaskConical,
@@ -700,6 +701,13 @@ export default function ServiceCatalogPage() {
             <p className="text-sm text-gray-500 mt-0.5">Manage services, categories, and pricing</p>
           </div>
           <div className="flex items-center gap-2">
+            <Link
+              to="/admin/services/doctor-fees"
+              className="flex items-center gap-2 px-3 py-2 text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 text-sm"
+              title="Set per-doctor consultation overrides (employed, locum, visiting consultants)"
+            >
+              <Stethoscope className="w-4 h-4" />Doctor Fees
+            </Link>
             <button onClick={handleExport} disabled={!services.length}
               className="flex items-center gap-2 px-3 py-2 text-gray-700 bg-white border rounded-lg hover:bg-gray-50 text-sm disabled:opacity-40">
               <Download className="w-4 h-4" />Export
