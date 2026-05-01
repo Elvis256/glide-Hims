@@ -220,6 +220,7 @@ const ApproveQuotationsPage = lazy(() => import('./pages/billing/procurement/App
 const PurchaseOrdersPage = lazy(() => import('./pages/billing/procurement/PurchaseOrdersPage'));
 const GoodsReceivedPage = lazy(() => import('./pages/billing/procurement/GoodsReceivedPage'));
 const InvoiceMatchingPage = lazy(() => import('./pages/billing/procurement/InvoiceMatchingPage'));
+const ProcurementTracePage = lazy(() => import('./pages/billing/procurement/ProcurementTracePage'));
 const VendorListPage = lazy(() => import('./pages/billing/vendors/VendorListPage'));
 const VendorContractsPage = lazy(() => import('./pages/billing/vendors/VendorContractsPage'));
 const VendorRatingsPage = lazy(() => import('./pages/billing/vendors/VendorRatingsPage'));
@@ -865,6 +866,7 @@ function AppRoutes() {
                 <Route path="/procurement/orders" element={<ModuleRoute module="stores"><StoreKeeperRoute><PurchaseOrdersPage /></StoreKeeperRoute></ModuleRoute>} />
                 <Route path="/procurement/grn" element={<ModuleRoute module="stores"><StoreKeeperRoute><GoodsReceivedPage /></StoreKeeperRoute></ModuleRoute>} />
                 <Route path="/procurement/invoices/match" element={<ModuleRoute module="stores"><AccountantRoute><InvoiceMatchingPage /></AccountantRoute></ModuleRoute>} />
+                <Route path="/procurement/trace" element={<ModuleRoute module="stores"><StoreKeeperRoute><ProcurementTracePage /></StoreKeeperRoute></ModuleRoute>} />
                 
                 {/* Billing - Vendors */}
                 <Route path="/procurement/vendors" element={<ModuleRoute module="stores"><StoreKeeperRoute><VendorListPage /></StoreKeeperRoute></ModuleRoute>} />

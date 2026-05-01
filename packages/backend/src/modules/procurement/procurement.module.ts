@@ -8,6 +8,7 @@ import {
 } from '../../database/entities/purchase-request.entity';
 import { PurchaseOrder, PurchaseOrderItem } from '../../database/entities/purchase-order.entity';
 import { GoodsReceiptNote, GoodsReceiptItem } from '../../database/entities/goods-receipt.entity';
+import { InvoiceMatch } from '../../database/entities/invoice-match.entity';
 import { StockLedger, StockBalance, Item } from '../../database/entities/inventory.entity';
 import { Supplier } from '../../database/entities/supplier.entity';
 import { VendorQuotation } from '../../database/entities/rfq.entity';
@@ -22,6 +23,7 @@ import { FinanceModule } from '../finance/finance.module';
       PurchaseOrderItem,
       GoodsReceiptNote,
       GoodsReceiptItem,
+      InvoiceMatch,
       StockLedger,
       StockBalance,
       Supplier,
