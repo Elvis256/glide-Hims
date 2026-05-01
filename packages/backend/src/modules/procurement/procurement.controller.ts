@@ -163,6 +163,7 @@ export class ProcurementController {
       body.receivedItems,
       req.user.id,
       req.user?.tenantId,
+      body.storeId,
     );
   }
 

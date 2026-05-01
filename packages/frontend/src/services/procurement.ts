@@ -361,8 +361,8 @@ export const procurementService = {
       const response = await api.post<GoodsReceipt>('/procurement/goods-receipts', data);
       return response.data;
     },
-    createFromPO: async (purchaseOrderId: string, receivedItems: { itemId: string; quantityReceived: number; batchNumber?: string; expiryDate?: string }[]): Promise<GoodsReceipt> => {
-      const response = await api.post<GoodsReceipt>('/procurement/goods-receipts/from-po', { purchaseOrderId, receivedItems });
+    createFromPO: async (purchaseOrderId: string, receivedItems: { itemId: string; quantityReceived: number; batchNumber?: string; expiryDate?: string }[], storeId?: string): Promise<GoodsReceipt> => {
+      const response = await api.post<GoodsReceipt>('/procurement/goods-receipts/from-po', { purchaseOrderId, receivedItems, storeId });
       return response.data;
     },
     inspect: async (id: string, data: InspectGRNDto): Promise<GoodsReceipt> => {

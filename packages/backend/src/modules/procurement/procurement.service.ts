@@ -7,7 +7,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, Between, DataSource } from 'typeorm';
+import { Repository, In, Between, DataSource, IsNull } from 'typeorm';
 import {
   PurchaseRequest,
   PurchaseRequestItem,
@@ -743,6 +743,7 @@ export class ProcurementService {
     const grn = this.grnRepo.create({
       grnNumber,
       facilityId: dto.facilityId,
+      storeId: dto.storeId,
       supplierId: dto.supplierId,
       purchaseOrderId: dto.purchaseOrderId,
       receivedAt: new Date(),
@@ -795,6 +796,7 @@ export class ProcurementService {
     }[],
     userId: string,
     tenantId?: string,
+    storeId?: string,
   ): Promise<GoodsReceiptNote> {
     const po = await this.getPurchaseOrder(purchaseOrderId, tenantId);
     if (![POStatus.SENT, POStatus.PARTIALLY_RECEIVED].includes(po.status)) {
@@ -805,6 +807,7 @@ export class ProcurementService {
 
     const grnDto: CreateGoodsReceiptDto = {
       facilityId: po.facilityId,
+      storeId,
       supplierId: po.supplierId,
       purchaseOrderId: po.id,
       items: po.items
@@ -976,11 +979,13 @@ export class ProcurementService {
         const quantityToPost = item.quantityAccepted ?? item.quantityReceived;
         if (quantityToPost <= 0) continue;
 
-        // Pessimistic lock on stock balance to prevent concurrent updates
+        // Pessimistic lock on stock balance to prevent concurrent updates.
+        // Per-store balance when GRN routes to a specific store, otherwise facility-level (storeId IS NULL).
         let stockBalance = await stockBalanceRepo.findOne({
           where: {
             itemId: item.itemId,
             facilityId: grn.facilityId,
+            storeId: grn.storeId ?? IsNull(),
             ...(tenantId ? { tenantId } : {}),
           },
           lock: { mode: 'pessimistic_write' },
@@ -992,6 +997,7 @@ export class ProcurementService {
         const ledgerEntry = stockLedgerRepo.create({
           itemId: item.itemId,
           facilityId: grn.facilityId,
+          storeId: grn.storeId,
           batchNumber: item.batchNumber,
           expiryDate: item.expiryDate,
           quantity: quantityToPost,
@@ -1000,7 +1006,7 @@ export class ProcurementService {
           unitCost: item.unitCost,
           referenceType: 'goods_receipt_note',
           referenceId: grn.id,
-          notes: `GRN: ${grn.grnNumber}`,
+          notes: `GRN: ${grn.grnNumber}${grn.storeId ? ' (store-routed)' : ''}`,
           createdById: userId,
           ...(tenantId ? { tenantId } : {}),
         });
@@ -1016,6 +1022,7 @@ export class ProcurementService {
           stockBalance = stockBalanceRepo.create({
             itemId: item.itemId,
             facilityId: grn.facilityId,
+            storeId: grn.storeId,
             totalQuantity: quantityToPost,
             reservedQuantity: 0,
             availableQuantity: quantityToPost,

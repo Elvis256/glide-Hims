@@ -72,6 +72,9 @@ export class GoodsReceiptNote extends BaseEntity {
   @Column({ name: 'facility_id' })
   facilityId: string;
 
+  @Column({ name: 'store_id', type: 'uuid', nullable: true })
+  storeId?: string;
+
   @ManyToOne(() => Supplier)
   @JoinColumn({ name: 'supplier_id' })
   supplier: Supplier;

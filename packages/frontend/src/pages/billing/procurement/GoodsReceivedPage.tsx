@@ -33,6 +33,7 @@ import {
   type PurchaseOrder,
   type CreateGoodsReceiptDto,
 } from '../../../services/procurement';
+import api from '../../../services/api';
 
 // Status display config mapped to backend GRNStatus values
 const statusConfig: Record<GRNStatus, { color: string; bg: string; icon: React.ReactNode; label: string }> = {
@@ -103,10 +104,11 @@ export default function GoodsReceivedPage() {
   });
 
   const createFromPOMutation = useMutation({
-    mutationFn: ({ purchaseOrderId, receivedItems }: { 
-      purchaseOrderId: string; 
-      receivedItems: { itemId: string; quantityReceived: number; batchNumber?: string; expiryDate?: string }[] 
-    }) => procurementService.goodsReceipts.createFromPO(purchaseOrderId, receivedItems),
+    mutationFn: ({ purchaseOrderId, receivedItems, storeId }: {
+      purchaseOrderId: string;
+      receivedItems: { itemId: string; quantityReceived: number; batchNumber?: string; expiryDate?: string }[];
+      storeId?: string;
+    }) => procurementService.goodsReceipts.createFromPO(purchaseOrderId, receivedItems, storeId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['goods-receipts'] });
       queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
@@ -561,10 +563,11 @@ export default function GoodsReceivedPage() {
       {showCreateModal && (
         <CreateGRNModal
           purchaseOrders={purchaseOrders}
+          facilityId={facilityId || ''}
           isLoading={createFromPOMutation.isPending}
           onClose={() => setShowCreateModal(false)}
-          onSubmit={(purchaseOrderId, receivedItems) => {
-            createFromPOMutation.mutate({ purchaseOrderId, receivedItems });
+          onSubmit={(purchaseOrderId, receivedItems, storeId) => {
+            createFromPOMutation.mutate({ purchaseOrderId, receivedItems, storeId });
           }}
         />
       )}
@@ -575,15 +578,25 @@ export default function GoodsReceivedPage() {
 // Create GRN Modal Component
 interface CreateGRNModalProps {
   purchaseOrders: PurchaseOrder[];
+  facilityId: string;
   isLoading: boolean;
   onClose: () => void;
-  onSubmit: (purchaseOrderId: string, receivedItems: { itemId: string; quantityReceived: number; batchNumber?: string; expiryDate?: string }[]) => void;
+  onSubmit: (purchaseOrderId: string, receivedItems: { itemId: string; quantityReceived: number; batchNumber?: string; expiryDate?: string }[], storeId?: string) => void;
 }
 
-function CreateGRNModal({ purchaseOrders, isLoading, onClose, onSubmit }: CreateGRNModalProps) {
+function CreateGRNModal({ purchaseOrders, facilityId, isLoading, onClose, onSubmit }: CreateGRNModalProps) {
   const [selectedPOId, setSelectedPOId] = useState('');
+  const [storeId, setStoreId] = useState('');
   const [receivedItems, setReceivedItems] = useState<{ itemId: string; quantityReceived: number; batchNumber: string; expiryDate: string }[]>([]);
   const [notes, setNotes] = useState('');
+
+  const { data: storesData } = useQuery({
+    queryKey: ['stores-for-facility', facilityId],
+    queryFn: () => api.get('/stores', { params: { facilityId, canReceive: true } }).then((r) => r.data),
+    enabled: !!facilityId,
+    staleTime: 60000,
+  });
+  const stores: any[] = Array.isArray(storesData) ? storesData : (storesData?.data ?? storesData?.items ?? []);
 
   const selectedPO = purchaseOrders.find(po => po.id === selectedPOId);
 
@@ -621,7 +634,7 @@ function CreateGRNModal({ purchaseOrders, isLoading, onClose, onSubmit }: Create
       quantityReceived: item.quantityReceived,
       batchNumber: item.batchNumber || undefined,
       expiryDate: item.expiryDate || undefined,
-    })));
+    })), storeId || undefined);
   };
 
   return (
@@ -648,6 +661,27 @@ function CreateGRNModal({ purchaseOrders, isLoading, onClose, onSubmit }: Create
                 </option>
               ))}
             </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Receive Into Store <span className="text-gray-400 font-normal">(optional — defaults to facility-level stock)</span>
+            </label>
+            <select
+              value={storeId}
+              onChange={(e) => setStoreId(e.target.value)}
+              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              <option value="">— Facility-level (general stock) —</option>
+              {stores.map((s: any) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}{s.type ? ` · ${s.type}` : ''}{s.department ? ` · ${s.department}` : ''}
+                </option>
+              ))}
+            </select>
+            {stores.length === 0 && facilityId && (
+              <p className="text-xs text-gray-500 mt-1">No stores configured for this facility — stock will go to facility-level inventory.</p>
+            )}
           </div>
 
           {selectedPO && (
