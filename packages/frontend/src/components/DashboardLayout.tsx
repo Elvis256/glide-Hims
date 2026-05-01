@@ -220,6 +220,7 @@ const navigationSections: NavSection[] = [
         children: [
           { name: 'New Bill', href: '/billing/reception/new', icon: Receipt, permissions: ['billing.create'] },
           { name: 'All Invoices', href: '/billing/invoices', icon: FileText, permissions: ['billing.read'] },
+          { name: 'Patient Tab / Interim Bill', href: '/billing/patient-tab', icon: Receipt, permissions: ['billing.read'] },
           { name: 'Collect Payment', href: '/billing/reception/payment', icon: Banknote, permissions: ['billing.create'] },
           { name: 'Print Receipt', href: '/billing/reception/receipt', icon: Printer, permissions: ['billing.read'] },
           { name: 'Pending Payments', href: '/billing/reception/pending', icon: Clock, permissions: ['billing.read'] },
@@ -678,6 +679,7 @@ const navigationSections: NavSection[] = [
         ],
       },
       { name: 'Invoices', href: '/billing/invoices', icon: Receipt, permissions: ['billing.read'] },
+      { name: 'Patient Tab / Interim Bill', href: '/billing/patient-tab', icon: FileText, permissions: ['billing.read'] },
       { name: 'Payments', href: '/billing/payments', icon: Banknote, permissions: ['billing.read'] },
       {
         name: 'Insurance',

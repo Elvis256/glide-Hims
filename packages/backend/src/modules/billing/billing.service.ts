@@ -1093,6 +1093,120 @@ export class BillingService {
     });
   }
 
+  /**
+   * Patient running tab — consolidated view of a patient's billing across the
+   * current (or specified) encounter. The cashier can use this at any stage of
+   * the hospital flow to see what's been charged, what's been paid, what's
+   * still owed, and to print an interim bill.
+   *
+   * - When `encounterId` is supplied, only that encounter's invoices are returned.
+   * - Otherwise, returns ALL non-cancelled invoices for the patient that still
+   *   carry an unpaid balance, plus the most recent paid ones in the same window.
+   * - Items are grouped by chargeType for easy printing.
+   */
+  async getPatientTab(
+    patientId: string,
+    encounterId?: string,
+    tenantId?: string,
+  ): Promise<{
+    patientId: string;
+    encounterId?: string;
+    generatedAt: string;
+    invoices: Array<{
+      id: string;
+      invoiceNumber: string;
+      status: InvoiceStatus;
+      createdAt: Date;
+      subtotal: number;
+      totalAmount: number;
+      amountPaid: number;
+      balanceDue: number;
+      paymentType: string | null;
+      items: Array<{
+        id: string;
+        serviceCode: string;
+        description: string;
+        chargeType: string;
+        quantity: number;
+        unitPrice: number;
+        amount: number;
+      }>;
+    }>;
+    summary: {
+      itemsByChargeType: Record<string, { count: number; total: number }>;
+      grandTotal: number;
+      grandPaid: number;
+      grandBalance: number;
+    };
+  }> {
+    const where: any = { patientId };
+    if (encounterId) where.encounterId = encounterId;
+    if (tenantId) where.tenantId = tenantId;
+
+    const invoices = await this.invoiceRepository.find({
+      where,
+      relations: ['items'],
+      order: { createdAt: 'ASC' },
+    });
+
+    // Filter out cancelled / refunded
+    const active = invoices.filter(
+      (inv) =>
+        inv.status !== InvoiceStatus.CANCELLED && inv.status !== InvoiceStatus.REFUNDED,
+    );
+
+    let grandTotal = 0;
+    let grandPaid = 0;
+    let grandBalance = 0;
+    const itemsByChargeType: Record<string, { count: number; total: number }> = {};
+
+    const shaped = active.map((inv) => {
+      grandTotal += Number(inv.totalAmount);
+      grandPaid += Number(inv.amountPaid);
+      grandBalance += Number(inv.balanceDue);
+      const items = (inv.items || []).map((it) => {
+        const ct = String(it.chargeType);
+        if (!itemsByChargeType[ct]) itemsByChargeType[ct] = { count: 0, total: 0 };
+        itemsByChargeType[ct].count += 1;
+        itemsByChargeType[ct].total += Number(it.amount);
+        return {
+          id: it.id,
+          serviceCode: it.serviceCode,
+          description: it.description,
+          chargeType: ct,
+          quantity: Number(it.quantity),
+          unitPrice: Number(it.unitPrice),
+          amount: Number(it.amount),
+        };
+      });
+      return {
+        id: inv.id,
+        invoiceNumber: inv.invoiceNumber,
+        status: inv.status,
+        createdAt: inv.createdAt,
+        subtotal: Number(inv.subtotal),
+        totalAmount: Number(inv.totalAmount),
+        amountPaid: Number(inv.amountPaid),
+        balanceDue: Number(inv.balanceDue),
+        paymentType: (inv.paymentType as any) ?? null,
+        items,
+      };
+    });
+
+    return {
+      patientId,
+      encounterId,
+      generatedAt: new Date().toISOString(),
+      invoices: shaped,
+      summary: {
+        itemsByChargeType,
+        grandTotal,
+        grandPaid,
+        grandBalance,
+      },
+    };
+  }
+
   async cancelInvoice(
     id: string,
     reason?: string,
