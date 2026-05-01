@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { queueService, type QueueEntry } from '../../../services/queue';
 import { toast } from 'sonner';
+import { playCallChime } from '../../../utils/chime';
 
 const SKIP_REASONS = [
   { value: 'stepped_out', label: 'Stepped out' },
@@ -108,6 +109,7 @@ export default function CallNextPage() {
     mutationFn: () => queueService.callNext('consultation'),
     onSuccess: (data) => {
       if (data) {
+        playCallChime();
         setCurrentPatient(data);
         announcePatient(data);
       }

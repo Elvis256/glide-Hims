@@ -32,6 +32,7 @@ import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 import { useAuthStore } from '../../store/auth';
 import api from '../../services/api';
+import { playCallChime } from '../../utils/chime';
 
 // ===================== TYPES =====================
 interface QueuePatient {
@@ -177,6 +178,7 @@ export default function DoctorDashboardPage() {
     mutationFn: () => queueService.callNext('consultation'),
     onSuccess: (patient) => {
       if (patient) {
+        playCallChime();
         toast.success(`Called: ${patient.patient?.fullName || patient.ticketNumber}`);
         queryClient.invalidateQueries({ queryKey: ['doctor-queue'] });
       } else {
