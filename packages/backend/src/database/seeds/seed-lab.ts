@@ -559,44 +559,69 @@ export async function seedLabTests(dataSource: DataSource) {
   const labTestRepo = dataSource.getRepository(LabTest);
   const facilityRepo = dataSource.getRepository(Facility);
 
-  const facility = await facilityRepo.findOne({ where: { name: 'Main Hospital' } });
-  if (!facility) {
-    console.log('❌ Default facility not found. Run base seed first.');
+  // Seed the catalog for every facility's tenant so multi-tenant deployments
+  // get a working catalog out of the box, not just the demo "Main Hospital".
+  const facilities = await facilityRepo.find();
+  if (facilities.length === 0) {
+    console.log('❌ No facilities found. Run base seed first.');
     return;
   }
-  const tenantId = (facility as any).tenantId || (facility as any).tenant_id;
 
-  let created = 0;
-  let skipped = 0;
-  for (const test of labTests) {
-    const existing = await labTestRepo.findOne({ where: { code: test.code } });
-    if (existing) {
-      skipped++;
-      continue;
+  // Deduplicate tenants — one catalog per tenant, not per facility.
+  const tenantIds = Array.from(
+    new Set(
+      facilities
+        .map((f) => (f as any).tenantId || (f as any).tenant_id)
+        .filter(Boolean),
+    ),
+  );
+
+  let totalCreated = 0;
+  let totalSkipped = 0;
+
+  for (const tenantId of tenantIds) {
+    let created = 0;
+    let skipped = 0;
+    for (const test of labTests) {
+      const existing = await labTestRepo.findOne({
+        where: { code: test.code, ...(tenantId ? { tenantId } : {}) } as any,
+      });
+      if (existing) {
+        skipped++;
+        continue;
+      }
+      const labTest = labTestRepo.create({
+        code: test.code,
+        name: test.name,
+        category: test.category,
+        description: test.description,
+        sampleType: mapSampleType(test.sampleType),
+        turnaroundTimeMinutes: test.turnaroundMinutes,
+        price: test.price,
+        referenceRanges: test.referenceRanges,
+        status: LabTestStatus.ACTIVE,
+        ...(tenantId ? { tenantId } : {}),
+      });
+      try {
+        await labTestRepo.save(labTest);
+        created++;
+      } catch (err: any) {
+        // Tolerate the legacy global UNIQUE(code) constraint while the
+        // (tenant_id, code) migration rolls out — log once and skip.
+        if (err?.code === '23505') {
+          skipped++;
+        } else {
+          throw err;
+        }
+      }
     }
-    const labTest = labTestRepo.create({
-      code: test.code,
-      name: test.name,
-      category: test.category,
-      description: test.description,
-      sampleType: mapSampleType(test.sampleType),
-      turnaroundTimeMinutes: test.turnaroundMinutes,
-      price: test.price,
-      referenceRanges: test.referenceRanges,
-      status: LabTestStatus.ACTIVE,
-      ...(tenantId ? { tenantId } : {}),
-    });
-    await labTestRepo.save(labTest);
-    created++;
+    totalCreated += created;
+    totalSkipped += skipped;
+    console.log(`  tenant ${tenantId}: +${created} created, ${skipped} skipped`);
   }
 
-  console.log(`✅ Created ${created} lab tests (${skipped} already existed)`);
-  console.log('\n📋 Lab Test Categories:');
-  console.log('   - Hematology: CBC, Hemoglobin, Differential, ESR, Coagulation, CD4');
-  console.log('   - Chemistry: RFT, LFT, Lipids, Blood Sugar, HbA1c, Thyroid, PSA');
-  console.log('   - Microbiology: Malaria, Urinalysis, Stool, Culture, Viral Load');
-  console.log('   - Serology: HIV, Hepatitis B/C, VDRL, Widal, Pregnancy');
-  console.log('\n🧪 Lab test seed complete!\n');
+  console.log(`\n✅ Lab catalog: ${totalCreated} created, ${totalSkipped} skipped across ${tenantIds.length} tenant(s)`);
+  console.log('🧪 Lab test seed complete!\n');
 }
 
 // Run if called directly
