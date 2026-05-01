@@ -1491,8 +1491,12 @@ export default function DashboardLayout({ children }: LayoutProps) {
       if (isSuperAdmin) return true;
 
       // Tenant-level module gate: if the tenant hasn't enabled this module, hide.
-      if (section.moduleCode && user?.accessibleModules && user.accessibleModules.length > 0) {
-        if (!user.accessibleModules.includes(section.moduleCode)) {
+      // Fail-CLOSED when accessibleModules hasn't loaded yet ('admin' and 'registration'
+      // are always allowed) — this matches ModuleRoute's behavior so the sidebar can't
+      // advertise a section that the route guard will then block.
+      if (section.moduleCode && section.moduleCode !== 'admin' && section.moduleCode !== 'registration') {
+        const mods = user?.accessibleModules;
+        if (!mods || mods.length === 0 || !mods.includes(section.moduleCode)) {
           return false;
         }
       }

@@ -398,6 +398,17 @@ export class AuthService {
     const effectiveTenantId =
       user.isSystemAdmin && loginDto.tenantId ? loginDto.tenantId : user.tenantId;
 
+    // Compute accessibleModules at login time so the frontend has them atomically
+    // (avoids a race where the post-login /me call hasn't completed yet, leaving
+    // the sidebar fail-open while route guards fail-closed).
+    let loginAccessibleModules: string[] = [];
+    try {
+      const meSnapshot = await this.getMe(user.id);
+      loginAccessibleModules = meSnapshot.accessibleModules || [];
+    } catch {
+      // Non-critical: frontend's /me call will populate this on next mount
+    }
+
     // Generate tokens
     const payload: JwtPayload = {
       sub: user.id,
@@ -456,6 +467,7 @@ export class AuthService {
         email: user.email,
         roles,
         permissions,
+        accessibleModules: loginAccessibleModules,
         isSystemAdmin: user.isSystemAdmin || false,
         tenantId: effectiveTenantId,
         facilityId,
