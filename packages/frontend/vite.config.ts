@@ -1,7 +1,9 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { VitePWA } from 'vite-plugin-pwa'
+// VitePWA disabled — see commented block in plugins. Import retained so the
+// kept-for-reference VitePWA() call below still type-checks if re-enabled.
+// import { VitePWA } from 'vite-plugin-pwa'
 import { readFileSync, existsSync } from 'fs'
 import { resolve } from 'path'
 
@@ -26,86 +28,31 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
-    VitePWA({
-      registerType: 'autoUpdate',
-      injectRegister: 'auto',
-      // Inject our SW into the same /sw.js path the legacy kill-switch lived at,
-      // so any client that previously installed the kill-switch upgrades cleanly.
-      filename: 'sw.js',
-      manifest: false, // we already ship our own /manifest.json
-      workbox: {
-        // Take control immediately and reload open clients on new deploys.
-        skipWaiting: true,
-        clientsClaim: true,
-        cleanupOutdatedCaches: true,
-        // Precache HTML + JS/CSS only (~3 MB instead of 9 MB).
-        // Images/fonts/icons load on-demand via the SWR runtime cache below.
-        globPatterns: ['**/*.{js,css,html}'],
-        // SPA fallback: any navigation hits index.html (handled below as NetworkFirst).
-        navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/api\//, /^\/socket\.io\//],
-        runtimeCaching: [
-          {
-            // SPA navigations: always try network first so a fresh deploy is
-            // visible on the next page load. Fall back to cached HTML offline.
-            urlPattern: ({ request }) => request.mode === 'navigate',
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'glide-html',
-              networkTimeoutSeconds: 5,
-              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 7 },
-            },
-          },
-          {
-            // Live operational endpoints — always fetch from network, never
-            // intercept. Avoids the SW serving stale empty arrays for queues,
-            // pharmacy/lab queues, encounters, notifications, etc.
-            urlPattern: ({ url, request }) =>
-              request.method === 'GET' &&
-              /^\/api\/v\d+\/(queue|pharmacy\/queue|lab\/queue|encounters|notifications|pos|payments|catalog)(\/|$|\?)/.test(
-                url.pathname,
-              ),
-            handler: 'NetworkOnly',
-          },
-          {
-            // API: never serve stale; tolerate brief offline reads of GETs only.
-            urlPattern: ({ url, request }) =>
-              url.pathname.startsWith('/api/') && request.method === 'GET',
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'glide-api',
-              networkTimeoutSeconds: 5,
-              expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-          {
-            // Hashed JS/CSS — content-addressed, safe to cache forever.
-            urlPattern: /\/assets\/.*\.(?:js|css)$/,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'glide-assets',
-              expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 * 365 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-          {
-            // Images / fonts.
-            urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp|ico|woff2?|ttf)$/,
-            handler: 'StaleWhileRevalidate',
-            options: {
-              cacheName: 'glide-static',
-              expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 * 30 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-        ],
-      },
-      devOptions: {
-        // Don't enable the SW during `vite dev` — it complicates HMR.
-        enabled: false,
-      },
-    }),
+    // ⚠️ PWA service worker is currently DISABLED (commented out).
+    //
+    // The aggressive cache started actively breaking the app: clients held a
+    // stale chunk and the SW would serve cached empty arrays for live
+    // operational endpoints, making admin/manager queue views appear empty.
+    // We replace the previous /sw.js with a self-uninstalling kill-switch
+    // (served as a static file) so existing clients clean up automatically.
+    //
+    // Re-enable only after we have versioned cache busting + a forced-update
+    // workflow we trust. See VitePWA() block below — preserved for reference.
+    // VitePWA({
+    //   registerType: 'autoUpdate',
+    //   injectRegister: 'auto',
+    //   filename: 'sw.js',
+    //   manifest: false,
+    //   workbox: {
+    //     skipWaiting: true,
+    //     clientsClaim: true,
+    //     cleanupOutdatedCaches: true,
+    //     globPatterns: ['HTML_AND_ASSETS_GLOB'],
+    //     navigateFallback: '/index.html',
+    //     navigateFallbackDenylist: [/^\/api\//, /^\/socket\.io\//],
+    //   },
+    //   devOptions: { enabled: false },
+    // }),
   ],
   define: {
     __APP_VERSION__: JSON.stringify(APP_VERSION),
