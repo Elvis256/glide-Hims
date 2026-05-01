@@ -530,7 +530,7 @@ export default function WaitingPatientsPage() {
       }
     },
     refetchInterval: 30000,
-    enabled: !!accessToken,
+    enabled: !!user,
   });
 
   // Always fetch the FULL doctor-visible pool; derive 'my-only' client-side so we
@@ -539,7 +539,7 @@ export default function WaitingPatientsPage() {
     queryKey: ['doctor-waiting-queue', 'all', effectiveViewAll],
     queryFn: () => queueService.getDoctorQueue(false, effectiveViewAll),
     refetchInterval: 15000,
-    enabled: !!accessToken,
+    enabled: !!user,
   });
 
   const myUserId = user?.id;
@@ -586,7 +586,7 @@ export default function WaitingPatientsPage() {
       return asList(response.data);
     },
     refetchInterval: 30000,
-    enabled: !!accessToken,
+    enabled: !!user,
   });
 
   // In-progress patients derived from doctor queue data (IN_SERVICE status included)
