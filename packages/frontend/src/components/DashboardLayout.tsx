@@ -175,7 +175,7 @@ const navigationSections: NavSection[] = [
     title: 'Registration',
     icon: UserPlus,
     moduleCode: 'registration',
-    roles: ['Receptionist', 'Cashier', 'Nurse', 'Doctor'],
+    roles: ['Receptionist', 'Cashier', 'Nurse'],
     items: [
       {
         name: 'Patient Management',
