@@ -22,11 +22,17 @@ import {
 } from '../../database/entities/drug-label-template.entity';
 import { TemperatureLog, TemperatureSensor } from '../../database/entities/temperature-log.entity';
 import { AuditLog } from '../../database/entities/audit-log.entity';
+import { DrugClassification } from '../../database/entities/drug-classification.entity';
+import { ControlledSubstanceLog } from '../../database/entities/controlled-substance.entity';
 import { FinanceModule } from '../finance/finance.module';
+import { PosModule } from '../pos/pos.module';
+import { EfrisModule } from '../efris/efris.module';
 
 @Module({
   imports: [
     forwardRef(() => FinanceModule),
+    PosModule,
+    EfrisModule,
     TypeOrmModule.forFeature([
       PharmacySale,
       PharmacySaleItem,
@@ -44,6 +50,8 @@ import { FinanceModule } from '../finance/finance.module';
       TemperatureLog,
       TemperatureSensor,
       AuditLog,
+      DrugClassification,
+      ControlledSubstanceLog,
     ]),
   ],
   controllers: [PharmacyController],

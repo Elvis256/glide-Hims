@@ -80,13 +80,14 @@ export class PosShift extends BaseEntity {
   notes: string;
 
   @Column({ default: 'open' })
-  status: string; // open, closed
+  status: string; // open, closed, z_finalized
 }
 
 // ─── POS Payment Split ───────────────────────────────────────────────────────
 
 @Entity('pos_payment_splits')
 @Index(['tenantId', 'saleId'])
+@Index(['shiftId'])
 export class PosPaymentSplit extends BaseEntity {
   @Column({ type: 'uuid', name: 'sale_id' })
   saleId: string;
@@ -94,6 +95,11 @@ export class PosPaymentSplit extends BaseEntity {
   @ManyToOne(() => PharmacySale)
   @JoinColumn({ name: 'sale_id' })
   sale: PharmacySale;
+
+  // Phase A: link payment splits to the shift for accurate X/Z reporting.
+  // Nullable for backward compatibility with pre-Phase-A rows.
+  @Column({ type: 'uuid', name: 'shift_id', nullable: true })
+  shiftId: string;
 
   @Column({ name: 'payment_method' })
   paymentMethod: string; // cash, mobile_money, card, credit
