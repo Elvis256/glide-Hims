@@ -9,20 +9,25 @@ import { DrugSchedule } from './drug-classification.entity';
 @Index(['dispensationId'])
 @Index(['drugSchedule', 'createdAt'])
 @Index(['facilityId', 'createdAt'])
+@Index(['pharmacySaleItemId'])
 export class ControlledSubstanceLog extends BaseEntity {
-  @Column({ name: 'prescription_item_id' })
+  @Column({ name: 'prescription_item_id', nullable: true })
   prescriptionItemId: string;
 
-  @ManyToOne(() => PrescriptionItem)
+  @ManyToOne(() => PrescriptionItem, { nullable: true })
   @JoinColumn({ name: 'prescription_item_id' })
   prescriptionItem: PrescriptionItem;
 
-  @Column({ name: 'dispensation_id' })
+  @Column({ name: 'dispensation_id', nullable: true })
   dispensationId: string;
 
-  @ManyToOne(() => Dispensation)
+  @ManyToOne(() => Dispensation, { nullable: true })
   @JoinColumn({ name: 'dispensation_id' })
   dispensation: Dispensation;
+
+  // Phase A: link to retail/POS sale items (no prescription path)
+  @Column({ name: 'pharmacy_sale_item_id', type: 'uuid', nullable: true })
+  pharmacySaleItemId: string;
 
   @Column({
     type: 'enum',
@@ -73,4 +78,32 @@ export class ControlledSubstanceLog extends BaseEntity {
   @Column({ name: 'facility_id', type: 'uuid', nullable: true })
   @Index()
   facilityId: string;
+
+  // Phase A: OTC / retail-counter dispensing fields. When prescription_item_id
+  // is null, the sale must populate these for any schedule II–V dispensing.
+  @Column({ name: 'buyer_name', nullable: true })
+  buyerName: string;
+
+  @Column({ name: 'buyer_id_type', length: 30, nullable: true })
+  buyerIdType: string; // national_id, passport, drivers_license, refugee_id, etc.
+
+  @Column({ name: 'buyer_id_number', length: 60, nullable: true })
+  buyerIdNumber: string;
+
+  @Column({ name: 'buyer_phone', length: 30, nullable: true })
+  buyerPhone: string;
+
+  @Column({ name: 'prescriber_name', nullable: true })
+  prescriberName: string;
+
+  @Column({ name: 'prescriber_license', length: 60, nullable: true })
+  prescriberLicense: string;
+
+  @Column({ name: 'pharmacist_id', type: 'uuid', nullable: true })
+  pharmacistId: string;
+
+  // True if this dispense was made under an OTC-permitted classification
+  // (vs a prescription-required dispense). Schedule II is never OTC-permitted.
+  @Column({ name: 'is_otc_permitted', default: false })
+  isOtcPermitted: boolean;
 }

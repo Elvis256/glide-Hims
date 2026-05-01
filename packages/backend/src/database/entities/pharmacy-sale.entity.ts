@@ -12,6 +12,27 @@ export enum SaleType {
   INPATIENT = 'inpatient', // Ward/IPD medication issue
 }
 
+export enum SaleChannel {
+  RETAIL_POS = 'retail_pos',
+  INTERNAL_PHARMACY = 'internal_pharmacy',
+  WARD_INPATIENT = 'ward_inpatient',
+  INSURANCE_B2B = 'insurance_b2b',
+  WHOLESALE = 'wholesale',
+  LEGACY = 'legacy', // pre-Phase-A historical rows
+}
+
+export enum TaxPricingMode {
+  INCLUSIVE = 'inclusive', // displayed unit price already includes VAT
+  EXCLUSIVE = 'exclusive', // VAT added on top of net price
+}
+
+export enum TaxTreatment {
+  STANDARD = 'standard', // standard VAT rate applies
+  ZERO_RATED = 'zero_rated', // zero-rated supply (still in VAT scope)
+  EXEMPT = 'exempt', // VAT-exempt supply
+  OUT_OF_SCOPE = 'out_of_scope', // not a taxable supply
+}
+
 export enum SaleStatus {
   PENDING = 'pending',
   COMPLETED = 'completed',
@@ -36,6 +57,34 @@ export class PharmacySale extends BaseEntity {
     default: SaleType.OTC,
   })
   saleType: SaleType;
+
+  // Origin of the sale (retail counter vs internal pharmacy vs ward, etc).
+  // Distinct from saleType (which captures clinical type).
+  @Column({
+    name: 'sale_channel',
+    type: 'enum',
+    enum: SaleChannel,
+    default: SaleChannel.INTERNAL_PHARMACY,
+  })
+  saleChannel: SaleChannel;
+
+  // Pricing mode used for this sale's line items. Drives VAT computation.
+  @Column({
+    name: 'tax_pricing_mode',
+    type: 'enum',
+    enum: TaxPricingMode,
+    default: TaxPricingMode.INCLUSIVE,
+  })
+  taxPricingMode: TaxPricingMode;
+
+  // POS shift this sale belongs to (only for sale_channel = retail_pos)
+  @Column({ type: 'uuid', name: 'pos_shift_id', nullable: true })
+  @Index()
+  posShiftId: string;
+
+  // POS register this sale was rung on (only for sale_channel = retail_pos)
+  @Column({ type: 'uuid', name: 'pos_register_id', nullable: true })
+  posRegisterId: string;
 
   @Column({
     type: 'enum',
@@ -139,6 +188,33 @@ export class PharmacySaleItem extends BaseEntity {
 
   @Column({ type: 'decimal', precision: 12, scale: 2 })
   amount: number;
+
+  // Per-line tax breakdown (Phase A)
+  @Column({ name: 'net_amount', type: 'decimal', precision: 12, scale: 2, default: 0 })
+  netAmount: number;
+
+  @Column({ name: 'tax_amount', type: 'decimal', precision: 12, scale: 2, default: 0 })
+  taxAmount: number;
+
+  @Column({ name: 'gross_amount', type: 'decimal', precision: 12, scale: 2, default: 0 })
+  grossAmount: number;
+
+  @Column({ name: 'tax_rate', type: 'decimal', precision: 5, scale: 2, default: 0 })
+  taxRate: number;
+
+  @Column({
+    name: 'tax_treatment',
+    type: 'enum',
+    enum: TaxTreatment,
+    default: TaxTreatment.STANDARD,
+  })
+  taxTreatment: TaxTreatment;
+
+  @Column({ name: 'tax_code', length: 20, nullable: true })
+  taxCode: string;
+
+  @Column({ name: 'tax_exemption_reason', type: 'text', nullable: true })
+  taxExemptionReason: string;
 
   @Column({ type: 'text', nullable: true })
   instructions: string;

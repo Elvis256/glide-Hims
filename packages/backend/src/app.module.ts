@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { AppController } from './app.controller';
@@ -92,6 +93,7 @@ import { UpdatesModule } from './modules/updates/updates.module';
 import { ExportModule } from './modules/export/export.module';
 import { BackupModule } from './modules/backup/backup.module';
 import { DeploymentsModule } from './modules/deployments/deployment.module';
+import { EfrisModule } from './modules/efris/efris.module';
 
 @Module({
   imports: [
@@ -100,6 +102,9 @@ import { DeploymentsModule } from './modules/deployments/deployment.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
+
+    // Event emitter (used for SaleCompleted, EFRIS submission requested, etc.)
+    EventEmitterModule.forRoot({ wildcard: false, maxListeners: 20 }),
 
     // Rate Limiting (global)
     ThrottlerModule.forRootAsync({
@@ -197,6 +202,7 @@ import { DeploymentsModule } from './modules/deployments/deployment.module';
     StoresModule,
     PharmacyModule,
     PosModule,
+    EfrisModule,
 
     // Phase 12: Supply Chain & Procurement
     SuppliersModule,

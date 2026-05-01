@@ -8,11 +8,15 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, In, DataSource, LessThanOrEqual, EntityManager } from 'typeorm';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   PharmacySale,
   PharmacySaleItem,
   SaleStatus,
   SaleType,
+  SaleChannel,
+  TaxPricingMode,
+  TaxTreatment,
 } from '../../database/entities/pharmacy-sale.entity';
 import {
   Item,
@@ -26,12 +30,33 @@ import { BatchStockBalance } from '../../database/entities/batch-stock.entity';
 import { Prescription, PrescriptionStatus } from '../../database/entities/prescription.entity';
 import { AuditLog } from '../../database/entities/audit-log.entity';
 import {
+  DrugClassification,
+  DrugSchedule,
+} from '../../database/entities/drug-classification.entity';
+import { ControlledSubstanceLog } from '../../database/entities/controlled-substance.entity';
+import {
   CreatePharmacySaleDto,
   CompleteSaleDto,
   AllocateFEFODto,
   ReceiveBatchDto,
+  SaleItemDto,
+  ControlledSubstanceBuyerDto,
 } from './pharmacy.dto';
 import { FinanceService } from '../finance/finance.service';
+import { PosShiftGuardService } from '../pos/services/pos-shift-guard.service';
+import { EfrisService } from '../efris/efris.service';
+import { EfrisDocumentType } from '../../database/entities/pos-compliance.entity';
+
+// Uganda standard VAT rate. Future: move to tenant tax_rates table (Phase B).
+const UG_STANDARD_VAT_RATE = 18;
+
+// Schedules that trigger controlled-substance logging at retail/POS counter.
+const CONTROLLED_SCHEDULES: DrugSchedule[] = [
+  DrugSchedule.SCHEDULE_II,
+  DrugSchedule.SCHEDULE_III,
+  DrugSchedule.SCHEDULE_IV,
+  DrugSchedule.SCHEDULE_V,
+];
 
 @Injectable()
 export class PharmacyService {
@@ -49,8 +74,68 @@ export class PharmacyService {
     @InjectRepository(BatchStockBalance) private batchStockRepo: Repository<BatchStockBalance>,
     @InjectRepository(ExpiryAlert) private expiryAlertRepo: Repository<ExpiryAlert>,
     @InjectRepository(AuditLog) private auditLogRepo: Repository<AuditLog>,
+    @InjectRepository(DrugClassification)
+    private drugClassRepo: Repository<DrugClassification>,
+    @InjectRepository(ControlledSubstanceLog)
+    private controlledLogRepo: Repository<ControlledSubstanceLog>,
     private dataSource: DataSource,
+    private posShiftGuard: PosShiftGuardService,
+    private efrisService: EfrisService,
+    private eventEmitter: EventEmitter2,
   ) {}
+
+  /**
+   * Compute per-line tax breakdown given gross/net pricing mode + treatment.
+   * - INCLUSIVE: unitPrice already contains VAT → net = gross / (1+r), tax = gross - net
+   * - EXCLUSIVE: unitPrice is net → tax = net * r, gross = net + tax
+   * - EXEMPT / OUT_OF_SCOPE: rate = 0, no tax
+   * - ZERO_RATED: still in VAT scope, but rate = 0
+   */
+  private computeLineTax(
+    item: SaleItemDto,
+    pricingMode: TaxPricingMode,
+  ): {
+    netAmount: number;
+    taxAmount: number;
+    grossAmount: number;
+    taxRate: number;
+    taxTreatment: TaxTreatment;
+  } {
+    const treatment = item.taxTreatment || TaxTreatment.STANDARD;
+    const discount = item.discountPercent || 0;
+    const lineBase = item.quantity * item.unitPrice * (1 - discount / 100);
+
+    let rate = 0;
+    if (treatment === TaxTreatment.STANDARD) {
+      rate = item.taxRate ?? UG_STANDARD_VAT_RATE;
+    } else if (treatment === TaxTreatment.ZERO_RATED) {
+      rate = 0;
+    } else {
+      rate = 0;
+    }
+
+    let net: number, tax: number, gross: number;
+    if (rate === 0) {
+      net = lineBase;
+      tax = 0;
+      gross = lineBase;
+    } else if (pricingMode === TaxPricingMode.INCLUSIVE) {
+      gross = lineBase;
+      net = lineBase / (1 + rate / 100);
+      tax = gross - net;
+    } else {
+      net = lineBase;
+      tax = lineBase * (rate / 100);
+      gross = net + tax;
+    }
+    return {
+      netAmount: Number(net.toFixed(2)),
+      taxAmount: Number(tax.toFixed(2)),
+      grossAmount: Number(gross.toFixed(2)),
+      taxRate: rate,
+      taxTreatment: treatment,
+    };
+  }
 
   private async generateSaleNumber(manager: EntityManager, tenantId?: string): Promise<string> {
     const today = new Date();
@@ -136,15 +221,33 @@ export class PharmacyService {
       }
     }
 
-    let subtotal = 0;
-    for (const item of dto.items) {
-      const discount = item.discountPercent || 0;
-      const amount = item.quantity * item.unitPrice * (1 - discount / 100);
-      subtotal += amount;
+    const saleChannel = dto.saleChannel || SaleChannel.INTERNAL_PHARMACY;
+    const taxPricingMode = dto.taxPricingMode || TaxPricingMode.INCLUSIVE;
+
+    // POS context: when ringing on the retail counter, both the shift and register
+    // must be supplied so X/Z reports can attribute the sale correctly.
+    if (saleChannel === SaleChannel.RETAIL_POS) {
+      if (!dto.posShiftId || !dto.posRegisterId) {
+        throw new BadRequestException(
+          'Retail POS sales require both posShiftId and posRegisterId',
+        );
+      }
+    }
+
+    // Compute per-line tax breakdown up-front (frozen on the sale row).
+    const lineTaxes = dto.items.map((it) => this.computeLineTax(it, taxPricingMode));
+
+    let subtotalNet = 0;
+    let totalTax = 0;
+    let subtotalGross = 0;
+    for (const lt of lineTaxes) {
+      subtotalNet += lt.netAmount;
+      totalTax += lt.taxAmount;
+      subtotalGross += lt.grossAmount;
     }
 
     const discountAmount = dto.discountAmount || 0;
-    const totalAmount = subtotal - discountAmount;
+    const totalAmount = Number((subtotalGross - discountAmount).toFixed(2));
 
     return this.dataSource
       .transaction(async (manager) => {
@@ -166,18 +269,39 @@ export class PharmacyService {
           }
         }
 
+        // If retail_pos channel, lock & validate the shift right now (cart creation)
+        // so we fail fast before assembling line items.
+        if (saleChannel === SaleChannel.RETAIL_POS) {
+          await this.posShiftGuard.assertOpenShift(
+            manager,
+            dto.posShiftId!,
+            tenantId!,
+            userId,
+          );
+          await this.posShiftGuard.assertActiveRegister(
+            manager,
+            dto.posRegisterId!,
+            tenantId!,
+          );
+        }
+
         const sale = manager.create(PharmacySale, {
           saleNumber,
           storeId: dto.storeId,
           saleType: dto.saleType || SaleType.OTC,
+          saleChannel,
+          taxPricingMode,
+          posShiftId: dto.posShiftId,
+          posRegisterId: dto.posRegisterId,
           patientId: dto.patientId,
           customerName: dto.customerName,
           customerPhone: dto.customerPhone,
           prescriptionId: dto.prescriptionId,
           paymentMethod: dto.paymentMethod || 'cash',
           transactionReference: dto.transactionReference,
-          subtotal,
+          subtotal: Number(subtotalNet.toFixed(2)),
           discountAmount,
+          taxAmount: Number(totalTax.toFixed(2)),
           totalAmount,
           notes: dto.notes,
           status: SaleStatus.PENDING,
@@ -186,8 +310,11 @@ export class PharmacyService {
         });
         const saved = await manager.save(PharmacySale, sale);
 
-        // Validate items and create sale items
-        for (const item of dto.items) {
+        // Validate items and create sale items with frozen tax breakdown
+        for (let i = 0; i < dto.items.length; i++) {
+          const item = dto.items[i];
+          const lt = lineTaxes[i];
+
           if (item.itemId) {
             const drug = await manager.findOne(Item, {
               where: { id: item.itemId, ...(tenantId ? { tenantId } : {}) },
@@ -206,8 +333,6 @@ export class PharmacyService {
             }
           }
 
-          const discount = item.discountPercent || 0;
-          const amount = item.quantity * item.unitPrice * (1 - discount / 100);
           const saleItem = manager.create(PharmacySaleItem, {
             saleId: saved.id,
             itemId: item.itemId,
@@ -216,8 +341,15 @@ export class PharmacyService {
             batchNumber: item.batchNumber || undefined,
             quantity: item.quantity,
             unitPrice: item.unitPrice,
-            discountPercent: discount,
-            amount,
+            discountPercent: item.discountPercent || 0,
+            amount: lt.grossAmount, // legacy field — store gross for backward compat
+            netAmount: lt.netAmount,
+            taxAmount: lt.taxAmount,
+            grossAmount: lt.grossAmount,
+            taxRate: lt.taxRate,
+            taxTreatment: lt.taxTreatment,
+            taxCode: item.taxCode,
+            taxExemptionReason: item.taxExemptionReason,
             instructions: item.instructions,
             ...(tenantId ? { tenantId } : {}),
           });
@@ -391,15 +523,39 @@ export class PharmacyService {
           throw new BadRequestException(`Item ${item.itemId} not found in inventory`);
         }
 
-        // Controlled substance validation
-        if (inventoryItem.isControlled) {
-          if (inventoryItem.requiresPrescription && !(item as any).prescriptionReference) {
+        // Controlled substance handling — uses authoritative drug_classifications.schedule
+        // (not the cached items.is_controlled flag) and writes a structured row to
+        // controlled_substance_logs for narcotics inspectors / audit.
+        const classification = await manager.findOne(DrugClassification, {
+          where: { itemId: inventoryItem.id, ...(tenantId ? { tenantId } : {}) },
+        });
+        const schedule = classification?.schedule || DrugSchedule.UNSCHEDULED;
+        const isControlled = CONTROLLED_SCHEDULES.includes(schedule);
+
+        if (isControlled || inventoryItem.isControlled) {
+          // Schedule II is the strictest tier in UG — must always have a prescription.
+          // Reject if dispensed via OTC channel without an Rx.
+          if (
+            schedule === DrugSchedule.SCHEDULE_II &&
+            !sale.prescriptionId &&
+            sale.saleType !== SaleType.PRESCRIPTION
+          ) {
             throw new BadRequestException(
-              `Controlled substance "${inventoryItem.name}" requires a prescription reference. Cannot dispense without valid prescription.`,
+              `${inventoryItem.name} is a Schedule II controlled substance and cannot be dispensed without a prescription.`,
             );
           }
 
-          // Persistent audit log for controlled substance dispensing (transactional)
+          // For non-prescription dispensing of any controlled substance the buyer
+          // identification block is required so the dispensing register satisfies
+          // National Drug Authority record-keeping rules.
+          const buyer = dto.controlledSubstanceBuyer;
+          if (!sale.prescriptionId && (!buyer || !buyer.buyerName || !buyer.buyerIdNumber)) {
+            throw new BadRequestException(
+              `Dispensing controlled substance "${inventoryItem.name}" without a prescription requires buyer name and ID number.`,
+            );
+          }
+
+          // Generic existing audit log (kept for compatibility with existing dashboards).
           const auditRepo = manager.getRepository(AuditLog);
           await auditRepo.save(
             auditRepo.create({
@@ -412,14 +568,37 @@ export class PharmacyService {
                 itemName: inventoryItem.name,
                 quantity: item.quantity,
                 saleNumber: sale.saleNumber,
-                prescriptionReference: (item as any).prescriptionReference || null,
+                schedule,
+                prescriptionReference:
+                  (item as any).prescriptionReference || sale.prescriptionId || null,
               },
               tenantId,
             }),
           );
 
+          // Typed structured log for the controlled substance register.
+          const ctrlLogRepo = manager.getRepository(ControlledSubstanceLog);
+          await ctrlLogRepo.save(
+            ctrlLogRepo.create({
+              pharmacySaleItemId: (item as any).id,
+              prescriptionItemId: (item as any).prescriptionItemId || null,
+              drugScheduleAtSale: schedule,
+              quantityDispensed: item.quantity,
+              isOtcPermitted: !sale.prescriptionId,
+              buyerName: buyer?.buyerName || sale.customerName || null,
+              buyerIdType: buyer?.buyerIdType || null,
+              buyerIdNumber: buyer?.buyerIdNumber || null,
+              buyerPhone: buyer?.buyerPhone || sale.customerPhone || null,
+              prescriberName: buyer?.prescriberName || null,
+              prescriberLicense: buyer?.prescriberLicense || null,
+              pharmacistId: userId,
+              dispensedAt: new Date(),
+              ...(tenantId ? { tenantId } : {}),
+            } as any),
+          );
+
           this.logger.warn(
-            `CONTROLLED SUBSTANCE DISPENSED: item=${inventoryItem.name}, qty=${item.quantity}, user=${userId}, sale=${sale.saleNumber}`,
+            `CONTROLLED SUBSTANCE DISPENSED: item=${inventoryItem.name}, schedule=${schedule}, qty=${item.quantity}, user=${userId}, sale=${sale.saleNumber}`,
           );
         } else if (inventoryItem.requiresPrescription && sale.saleType === SaleType.OTC) {
           throw new BadRequestException(
@@ -538,6 +717,74 @@ export class PharmacyService {
           );
         }
       }
+
+      // POS shift recording — for retail-counter sales, record the payment splits
+      // against the shift and bump cached totals. This is what X/Z reports read from.
+      if (sale.saleChannel === SaleChannel.RETAIL_POS && sale.posShiftId) {
+        const splits = (dto.paymentSplits && dto.paymentSplits.length > 0)
+          ? dto.paymentSplits
+          : [
+              {
+                paymentMethod: dto.paymentMethod || sale.paymentMethod || 'cash',
+                amount: Number(sale.totalAmount),
+                transactionReference: dto.transactionReference || sale.transactionReference,
+              },
+            ];
+        // Re-lock the shift inside this tx (assertOpenShift returns the locked row).
+        const lockedShift = await this.posShiftGuard.assertOpenShift(
+          manager,
+          sale.posShiftId,
+          tenantId!,
+          userId,
+        );
+        await this.posShiftGuard.recordSale(manager, {
+          shift: lockedShift,
+          saleId: sale.id,
+          tenantId: tenantId!,
+          paymentMethod: splits[0].paymentMethod,
+          amount: splits[0].amount,
+          transactionReference: splits[0].transactionReference,
+          splits,
+        });
+      }
+
+      // EFRIS — enqueue an invoice document into the outbox for the async worker
+      // to submit to URA. Skip for legacy sales and when the tenant has not
+      // enabled EFRIS submission.
+      try {
+        const cfg = tenantId ? await this.efrisService.getConfig(tenantId) : null;
+        if (
+          cfg?.isEnabled &&
+          cfg?.submitOnCompletion &&
+          sale.saleChannel !== SaleChannel.LEGACY
+        ) {
+          const payload = this.efrisService.buildInvoicePayload(sale, sale.items as any[], cfg);
+          await this.efrisService.enqueueDocument(
+            manager,
+            {
+              tenantId: tenantId!,
+              saleId: sale.id,
+              documentType: EfrisDocumentType.INVOICE,
+              payload,
+            },
+            `sale:${sale.id}:invoice`,
+          );
+        }
+      } catch (err) {
+        // Never let EFRIS enqueue failure roll back a completed dispense.
+        this.logger.error(
+          `EFRIS enqueue failed for sale ${sale.saleNumber}: ${err.message}`,
+          err.stack,
+        );
+      }
+    });
+
+    // After-commit: notify async listeners (SMS receipt, analytics, etc.).
+    this.eventEmitter.emit('pharmacy.sale.completed', {
+      saleId: id,
+      tenantId,
+      userId,
+      channel: sale.saleChannel,
     });
 
     return this.findSale(id, tenantId);
