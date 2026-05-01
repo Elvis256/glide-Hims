@@ -42,6 +42,7 @@ import { useAuthStore } from '../../../store/auth';
 import api from '../../../services/api';
 import { announcePatientCall } from '../../../utils/announcements';
 import { asList } from '../../../utils/unwrapResponse';
+import { playChime, playCallChime } from '../../../utils/chime';
 
 // ===================== TYPES =====================
 interface ExtendedPatientInfo {
@@ -497,17 +498,14 @@ export default function WaitingPatientsPage() {
   // Default viewAll on for managers/admins so they don't see a misleading empty queue.
   const effectiveViewAll = viewAll === null ? canManageQueue : viewAll;
 
-  // Initialize notification sound
+  // Initialize notification chime (Web Audio synthesised, no file needed)
   useEffect(() => {
-    notificationSoundRef.current = new Audio('/sounds/notification.mp3');
-    notificationSoundRef.current.volume = 0.5;
+    // No-op: chime util lazily creates AudioContext on first play.
   }, []);
 
   // Play notification sound for new patients
   const playNotificationSound = useCallback(() => {
-    if (soundEnabled && notificationSoundRef.current) {
-      notificationSoundRef.current.play().catch(() => {});
-    }
+    if (soundEnabled) playChime();
   }, [soundEnabled]);
 
   // Fetch dashboard stats
@@ -749,6 +747,7 @@ export default function WaitingPatientsPage() {
     onSuccess: (patient) => {
       queryClient.invalidateQueries({ queryKey: ['doctor-waiting-queue'] });
       if (patient) {
+        playCallChime();
         announcePatient({ ticketNumber: patient.ticketNumber, name: patient.patient?.fullName || 'Patient' } as WaitingPatient);
         toast.success(`Called ${patient.patient?.fullName || 'next patient'}`);
         // Announce 3 times using new utility
