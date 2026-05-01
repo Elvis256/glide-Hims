@@ -18,6 +18,7 @@ import { api, getApiErrorMessage } from '../../services/api';
 import { useFacilityId } from '../../lib/facility';
 import { formatCurrency } from '../../lib/currency';
 import { asList } from '../../utils/unwrapResponse';
+import { POSComplianceTools } from '../../components/pos/POSComplianceTools';
 
 interface Shift {
   id: string;
@@ -35,7 +36,7 @@ interface Shift {
   totalMobileMoney: number;
   totalCard: number;
   difference?: number;
-  status: 'open' | 'closed';
+  status: 'open' | 'closed' | 'z_finalized';
   notes?: string;
 }
 
@@ -182,8 +183,9 @@ export default function POSShiftPage() {
           </div>
         </div>
       ) : currentShift ? (
-        /* Active Shift Details */
-        <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+        <>
+          {/* Active Shift Details */}
+          <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className="border-b border-gray-100 px-6 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -360,7 +362,14 @@ export default function POSShiftPage() {
               )}
             </div>
           </div>
-        </div>
+          </div>
+
+          {/* POS Compliance Tools (drawer events, X/Z reports) */}
+          <POSComplianceTools
+            shiftId={currentShift.id}
+            shiftStatus={currentShift.status}
+          />
+        </>
       ) : null}
 
       {/* Shift History */}

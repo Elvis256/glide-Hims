@@ -66,6 +66,7 @@ const JobMonitorPage = lazy(() => import('./pages/admin/JobMonitorPage'));
 const WebhooksPage = lazy(() => import('./pages/admin/WebhooksPage'));
 const EmailTemplatesPage = lazy(() => import('./pages/admin/EmailTemplatesPage'));
 const SsoConfigPage = lazy(() => import('./pages/admin/SsoConfigPage'));
+const EfrisConfigPage = lazy(() => import('./pages/admin/EfrisConfigPage'));
 const EmployeeGoalsPage = lazy(() => import('./pages/admin/hr/EmployeeGoalsPage'));
 const PIPManagementPage = lazy(() => import('./pages/admin/hr/PIPManagementPage'));
 const LetterTemplatesPage = lazy(() => import('./pages/admin/hr/LetterTemplatesPage'));
@@ -1140,6 +1141,7 @@ function AppRoutes() {
                 <Route path="/admin/integrations/webhooks" element={<AdminRoute><WebhooksPage /></AdminRoute>} />
                 <Route path="/admin/integrations/email-templates" element={<AdminRoute><EmailTemplatesPage /></AdminRoute>} />
                 <Route path="/admin/integrations/sso" element={<AdminRoute><SsoConfigPage /></AdminRoute>} />
+                <Route path="/admin/integrations/efris" element={<AdminRoute><EfrisConfigPage /></AdminRoute>} />
                 <Route path="/admin/hr/goals" element={<AdminRoute><EmployeeGoalsPage /></AdminRoute>} />
                 <Route path="/admin/hr/pips" element={<AdminRoute><PIPManagementPage /></AdminRoute>} />
                 <Route path="/admin/hr/letter-templates" element={<AdminRoute><LetterTemplatesPage /></AdminRoute>} />
