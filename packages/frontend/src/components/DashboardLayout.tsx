@@ -681,7 +681,6 @@ const navigationSections: NavSection[] = [
       { name: 'Invoices', href: '/billing/invoices', icon: Receipt, permissions: ['billing.read'] },
       { name: 'Patient Tab / Interim Bill', href: '/billing/patient-tab', icon: FileText, permissions: ['billing.read'] },
       { name: 'Payments', href: '/billing/payments', icon: Banknote, permissions: ['billing.read'] },
-      { name: 'Doctor Fees', href: '/billing/doctor-fees', icon: DollarSign, permissions: ['billing.update'] },
       {
         name: 'Insurance',
         icon: ShieldCheck,
@@ -937,6 +936,7 @@ const navigationSections: NavSection[] = [
         children: [
           { name: 'Service Catalog', href: '/admin/services', icon: Layers, permissions: ['services.read'] },
           { name: 'Pricing Management', href: '/admin/services/pricing', icon: DollarSign, permissions: ['services.update'] },
+          { name: 'Doctor Consultation Fees', href: '/admin/services/doctor-fees', icon: Stethoscope, permissions: ['services.update', 'billing.update'] },
           { name: 'Service Packages', href: '/admin/services/packages', icon: Package, permissions: ['services.create'] },
           { name: 'Discount Schemes', href: '/admin/services/discounts', icon: Percent, permissions: ['services.update'] },
           { name: 'Tax Configuration', href: '/admin/services/tax', icon: Calculator, permissions: ['services.update'] },
