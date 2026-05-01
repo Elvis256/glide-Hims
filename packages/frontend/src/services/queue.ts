@@ -166,10 +166,11 @@ export const queueService = {
     return response.data;
   },
 
-  getDoctorQueue: async (myOnly = false): Promise<QueueEntry[]> => {
-    const response = await api.get<QueueEntry[]>('/queue/doctor-queue', {
-      params: myOnly ? { myOnly: 'true' } : {},
-    });
+  getDoctorQueue: async (myOnly = false, viewAll = false): Promise<QueueEntry[]> => {
+    const params: Record<string, string> = {};
+    if (myOnly) params.myOnly = 'true';
+    if (viewAll) params.viewAll = 'true';
+    const response = await api.get<QueueEntry[]>('/queue/doctor-queue', { params });
     return asList<QueueEntry>(response.data);
   },
 

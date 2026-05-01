@@ -831,6 +831,7 @@ export class QueueManagementService {
     facilityId: string,
     tenantId?: string,
     myOnly = false,
+    viewAll = false,
   ): Promise<Queue[]> {
     const qb = this.queueRepository
       .createQueryBuilder('queue')
@@ -853,7 +854,14 @@ export class QueueManagementService {
       qb.andWhere('queue.tenant_id = :tenantId', { tenantId });
     }
 
-    if (myOnly) {
+    if (viewAll) {
+      // Admin/manager view: every consultation queue entry in the facility,
+      // plus anything explicitly assigned to a doctor at any service point.
+      qb.andWhere(
+        '(queue.servicePoint = :consultation OR queue.assigned_doctor_id IS NOT NULL)',
+        { consultation: ServicePoint.CONSULTATION },
+      );
+    } else if (myOnly) {
       // Only patients explicitly assigned to this doctor
       qb.andWhere('queue.assigned_doctor_id = :doctorId', { doctorId });
     } else {
