@@ -235,6 +235,133 @@ export class LicenseService implements OnModuleInit {
   }
 
   /**
+   * Update an existing license in-place (system admin). Re-signs the license
+   * if any signed field (tier, maxUsers, maxFacilities) is changed. Also
+   * re-syncs enabled_modules to the tenant's system_settings so module gating
+   * picks it up immediately. Returns the saved license.
+   */
+  async updateLicense(
+    licenseKey: string,
+    patch: Partial<{
+      licenseType: 'trial' | 'standard' | 'professional' | 'enterprise';
+      maxUsers: number;
+      maxFacilities: number;
+      enabledModules: string[];
+      features: Record<string, boolean>;
+      expiresAt: Date | string;
+      organizationName: string;
+      email: string;
+    }>,
+  ): Promise<License> {
+    const license = await this.licenseRepository.findOne({ where: { licenseKey } });
+    if (!license) {
+      throw new Error('License not found');
+    }
+
+    let signedFieldsChanged = false;
+    if (patch.licenseType !== undefined && patch.licenseType !== license.licenseType) {
+      license.licenseType = patch.licenseType;
+      signedFieldsChanged = true;
+    }
+    if (patch.maxUsers !== undefined && patch.maxUsers !== license.maxUsers) {
+      license.maxUsers = patch.maxUsers;
+      signedFieldsChanged = true;
+    }
+    if (patch.maxFacilities !== undefined && patch.maxFacilities !== license.maxFacilities) {
+      license.maxFacilities = patch.maxFacilities;
+      signedFieldsChanged = true;
+    }
+    if (patch.organizationName !== undefined) {
+      license.organizationName = patch.organizationName;
+      signedFieldsChanged = true;
+    }
+    if (patch.email !== undefined) license.email = patch.email;
+    if (patch.enabledModules !== undefined) license.enabledModules = patch.enabledModules;
+    if (patch.features !== undefined) license.features = patch.features;
+    if (patch.expiresAt !== undefined) {
+      license.expiresAt = new Date(patch.expiresAt);
+      if (license.status === 'expired' && license.expiresAt > new Date()) {
+        license.status = 'active';
+      }
+    }
+
+    if (signedFieldsChanged) {
+      const payload = JSON.stringify({
+        key: license.licenseKey,
+        org: license.organizationName,
+        type: license.licenseType,
+        users: license.maxUsers,
+        facilities: license.maxFacilities,
+      });
+      license.signature = crypto
+        .createHmac('sha256', this.secretKey)
+        .update(payload)
+        .digest('hex');
+      this.cachedLicense = null;
+      this.lastValidation = null;
+    }
+
+    const saved = await this.licenseRepository.save(license);
+
+    if (patch.enabledModules !== undefined && license.tenantId) {
+      try {
+        await this.licenseRepository.manager.query(
+          `INSERT INTO system_settings (tenant_id, key, value, description)
+           VALUES ($1, 'enabled_modules', $2::jsonb, 'Modules enabled by license')
+           ON CONFLICT (key, tenant_id)
+           DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+          [license.tenantId, JSON.stringify(saved.enabledModules || [])],
+        );
+      } catch (err) {
+        this.logger.warn(
+          `License ${licenseKey} updated but failed to sync enabled_modules to tenant ${license.tenantId}: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    this.logger.log(
+      `License ${licenseKey} updated (resigned=${signedFieldsChanged}, fields=${Object.keys(patch).join(',')})`,
+    );
+    return saved;
+  }
+
+  /**
+   * Suspend a license (reversible). Useful when a tenant stops paying but
+   * their data should be preserved. Validation will fail until reactivated.
+   */
+  async suspendLicense(licenseKey: string): Promise<License> {
+    const license = await this.licenseRepository.findOne({ where: { licenseKey } });
+    if (!license) throw new Error('License not found');
+    if (license.status === 'revoked') {
+      throw new Error('Cannot suspend a revoked license. Issue a new one instead.');
+    }
+    license.status = 'suspended';
+    this.cachedLicense = null;
+    this.lastValidation = null;
+    return this.licenseRepository.save(license);
+  }
+
+  /**
+   * Reactivate a suspended (or expired) license. If expired, caller should
+   * also extend the validity. Returns to 'active' status.
+   */
+  async reactivateLicense(licenseKey: string): Promise<License> {
+    const license = await this.licenseRepository.findOne({ where: { licenseKey } });
+    if (!license) throw new Error('License not found');
+    if (license.status === 'revoked') {
+      throw new Error('Cannot reactivate a revoked license. Issue a new one instead.');
+    }
+    if (license.expiresAt < new Date()) {
+      throw new Error('License has expired. Extend the validity before reactivating.');
+    }
+    license.status = 'active';
+    license.validationFailures = 0;
+    this.cachedLicense = null;
+    this.lastValidation = null;
+    return this.licenseRepository.save(license);
+  }
+
+  /**
    * Revoke a license
    */
   async revokeLicense(licenseKey: string): Promise<License> {

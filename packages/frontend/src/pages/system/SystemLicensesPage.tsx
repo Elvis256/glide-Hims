@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { KeyRound, Loader2, Plus, RefreshCw, Ban, CalendarPlus, ShieldCheck, AlertCircle } from 'lucide-react';
+import { KeyRound, Loader2, Plus, RefreshCw, Ban, CalendarPlus, ShieldCheck, AlertCircle, Pencil, Pause, Play } from 'lucide-react';
 import api from '../../services/api';
 
 interface License {
@@ -124,6 +124,8 @@ export default function SystemLicensesPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [editing, setEditing] = useState<License | null>(null);
+  const [statusActionId, setStatusActionId] = useState<string | null>(null);
   const [extendingId, setExtendingId] = useState<string | null>(null);
 
   const load = async () => {
@@ -174,6 +176,31 @@ export default function SystemLicensesPage() {
       alert(e?.response?.data?.message || 'Extend failed');
     } finally {
       setExtendingId(null);
+    }
+  };
+
+  const onSuspend = async (lic: License) => {
+    if (!confirm(`Suspend license for ${lic.organizationName}? Validation will fail until reactivated. Tenant data is preserved.`)) return;
+    setStatusActionId(lic.id);
+    try {
+      await api.put(`/license/${lic.licenseKey}/suspend`);
+      await load();
+    } catch (e: any) {
+      alert(e?.response?.data?.message || 'Suspend failed');
+    } finally {
+      setStatusActionId(null);
+    }
+  };
+
+  const onReactivate = async (lic: License) => {
+    setStatusActionId(lic.id);
+    try {
+      await api.put(`/license/${lic.licenseKey}/reactivate`);
+      await load();
+    } catch (e: any) {
+      alert(e?.response?.data?.message || 'Reactivate failed');
+    } finally {
+      setStatusActionId(null);
     }
   };
 
@@ -271,6 +298,14 @@ export default function SystemLicensesPage() {
                   <td className="px-4 py-3 text-right">
                     <div className="inline-flex gap-1">
                       <button
+                        onClick={() => setEditing(l)}
+                        disabled={l.status === 'revoked'}
+                        className="p-1.5 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded disabled:opacity-30 disabled:cursor-not-allowed"
+                        title={l.status === 'revoked' ? 'Cannot edit a revoked license' : 'Edit modules / limits / tier'}
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
                         onClick={() => onExtend(l)}
                         disabled={extendingId === l.id}
                         className="p-1.5 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded"
@@ -278,11 +313,30 @@ export default function SystemLicensesPage() {
                       >
                         {extendingId === l.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <CalendarPlus className="w-4 h-4" />}
                       </button>
+                      {l.status === 'suspended' ? (
+                        <button
+                          onClick={() => onReactivate(l)}
+                          disabled={statusActionId === l.id}
+                          className="p-1.5 text-gray-500 hover:text-emerald-600 hover:bg-emerald-50 rounded"
+                          title="Reactivate"
+                        >
+                          {statusActionId === l.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                        </button>
+                      ) : l.status === 'active' ? (
+                        <button
+                          onClick={() => onSuspend(l)}
+                          disabled={statusActionId === l.id}
+                          className="p-1.5 text-gray-500 hover:text-amber-600 hover:bg-amber-50 rounded"
+                          title="Suspend (reversible)"
+                        >
+                          {statusActionId === l.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pause className="w-4 h-4" />}
+                        </button>
+                      ) : null}
                       {l.status !== 'revoked' && (
                         <button
                           onClick={() => onRevoke(l)}
                           className="p-1.5 text-gray-500 hover:text-rose-600 hover:bg-rose-50 rounded"
-                          title="Revoke"
+                          title="Revoke (permanent)"
                         >
                           <Ban className="w-4 h-4" />
                         </button>
@@ -301,6 +355,14 @@ export default function SystemLicensesPage() {
           tenants={tenants}
           onClose={() => setShowCreate(false)}
           onCreated={async () => { setShowCreate(false); await load(); }}
+        />
+      )}
+
+      {editing && (
+        <EditLicenseModal
+          license={editing}
+          onClose={() => setEditing(null)}
+          onSaved={async () => { setEditing(null); await load(); }}
         />
       )}
     </div>
@@ -516,6 +578,200 @@ function CreateLicenseModal({
             className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-indigo-600 rounded hover:bg-indigo-700 disabled:opacity-50"
           >
             {submitting && <Loader2 className="w-4 h-4 animate-spin" />} Issue
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditLicenseModal({
+  license,
+  onClose,
+  onSaved,
+}: {
+  license: License;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [licenseType, setLicenseType] = useState(license.licenseType);
+  const [maxUsers, setMaxUsers] = useState(license.maxUsers);
+  const [maxFacilities, setMaxFacilities] = useState(license.maxFacilities);
+  const [enabledModules, setEnabledModules] = useState<string[]>(license.enabledModules || []);
+  const [expiresAt, setExpiresAt] = useState(license.expiresAt.slice(0, 10));
+  const [organizationName, setOrganizationName] = useState(license.organizationName);
+  const [email, setEmail] = useState(license.email || '');
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const onTierChange = (tier: 'trial' | 'standard' | 'professional' | 'enterprise') => {
+    setLicenseType(tier);
+  };
+
+  const applyTierDefaults = () => {
+    setEnabledModules(TIER_DEFAULT_MODULES[licenseType] || []);
+  };
+
+  const toggleModule = (id: string) => {
+    setEnabledModules((prev) =>
+      prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id],
+    );
+  };
+
+  const submit = async () => {
+    setSubmitting(true);
+    setErr(null);
+    try {
+      await api.patch(`/license/${license.licenseKey}`, {
+        licenseType,
+        maxUsers,
+        maxFacilities,
+        enabledModules,
+        expiresAt: new Date(expiresAt).toISOString(),
+        organizationName,
+        email: email || undefined,
+      });
+      onSaved();
+    } catch (e: any) {
+      setErr(e?.response?.data?.message || 'Failed to update license');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const tierChanged = licenseType !== license.licenseType;
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] flex flex-col">
+        <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+              <Pencil className="w-5 h-5 text-indigo-600" /> Edit License
+            </h2>
+            <p className="text-xs text-gray-500 mt-0.5 font-mono">{license.licenseKey}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">✕</button>
+        </div>
+        <div className="px-5 py-4 space-y-3 text-sm overflow-y-auto">
+          {err && <div className="p-2 bg-rose-50 text-rose-700 rounded text-xs">{err}</div>}
+          {tierChanged && (
+            <div className="p-2 bg-amber-50 border border-amber-200 text-amber-800 rounded text-xs">
+              Tier change: <strong>{license.licenseType}</strong> → <strong>{licenseType}</strong>. The license signature will be regenerated.
+              {' '}
+              <button type="button" onClick={applyTierDefaults} className="underline font-medium">
+                Apply tier-default modules
+              </button>
+            </div>
+          )}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Organization Name</label>
+            <input
+              className="w-full px-3 py-2 border border-gray-300 rounded"
+              value={organizationName}
+              onChange={(e) => setOrganizationName(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Email</label>
+            <input
+              type="email"
+              className="w-full px-3 py-2 border border-gray-300 rounded"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Tier</label>
+              <select
+                className="w-full px-3 py-2 border border-gray-300 rounded"
+                value={licenseType}
+                onChange={(e) => onTierChange(e.target.value as any)}
+              >
+                <option value="trial">Trial</option>
+                <option value="standard">Standard</option>
+                <option value="professional">Professional</option>
+                <option value="enterprise">Enterprise</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Expires</label>
+              <input
+                type="date"
+                className="w-full px-3 py-2 border border-gray-300 rounded"
+                value={expiresAt}
+                onChange={(e) => setExpiresAt(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Max Users</label>
+              <input
+                type="number"
+                min={0}
+                className="w-full px-3 py-2 border border-gray-300 rounded"
+                value={maxUsers}
+                onChange={(e) => setMaxUsers(parseInt(e.target.value) || 0)}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Max Facilities</label>
+              <input
+                type="number"
+                min={1}
+                className="w-full px-3 py-2 border border-gray-300 rounded"
+                value={maxFacilities}
+                onChange={(e) => setMaxFacilities(parseInt(e.target.value) || 1)}
+              />
+            </div>
+          </div>
+
+          <div className="pt-2 border-t border-gray-200">
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-xs font-semibold text-gray-700">
+                Enabled Modules <span className="text-gray-400 font-normal">({enabledModules.length} selected)</span>
+              </label>
+              <div className="flex gap-2 text-xs">
+                <button type="button" onClick={() => setEnabledModules(ALL_MODULE_IDS)} className="text-indigo-600 hover:underline">Select all</button>
+                <span className="text-gray-300">·</span>
+                <button type="button" onClick={() => setEnabledModules([])} className="text-gray-600 hover:underline">Clear</button>
+                <span className="text-gray-300">·</span>
+                <button type="button" onClick={applyTierDefaults} className="text-gray-600 hover:underline">Tier defaults</button>
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 mb-2">
+              Module changes are pushed to the tenant's <code>system_settings.enabled_modules</code> immediately.
+            </p>
+            <div className="space-y-3 max-h-72 overflow-y-auto pr-1 border border-gray-200 rounded p-3 bg-gray-50">
+              {MODULE_CATALOG.map((group) => (
+                <div key={group.group}>
+                  <div className="text-xs font-semibold text-gray-600 mb-1">{group.group}</div>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                    {group.modules.map((m) => (
+                      <label key={m.id} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-white px-1 py-0.5 rounded">
+                        <input
+                          type="checkbox"
+                          className="rounded text-indigo-600 focus:ring-indigo-500"
+                          checked={enabledModules.includes(m.id)}
+                          onChange={() => toggleModule(m.id)}
+                        />
+                        <span>{m.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="px-5 py-3 border-t border-gray-200 flex justify-end gap-2">
+          <button onClick={onClose} className="px-3 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50">Cancel</button>
+          <button
+            onClick={submit}
+            disabled={submitting}
+            className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-indigo-600 rounded hover:bg-indigo-700 disabled:opacity-50"
+          >
+            {submitting && <Loader2 className="w-4 h-4 animate-spin" />} Save Changes
           </button>
         </div>
       </div>

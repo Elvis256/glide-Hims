@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Body,
   Param,
   Query,
@@ -197,6 +198,69 @@ export class LicenseController {
       licenseType,
       tenantId: tenantId || req.user?.tenantId,
     });
+  }
+
+  /**
+   * Update license fields in-place (system admin only). Allows upgrade /
+   * downgrade of tier, change of module set, user/facility limits, and
+   * expiry — without revoking and re-issuing.
+   */
+  @Patch(':licenseKey')
+  @Auth()
+  @ApiOperation({ summary: 'Update an existing license (modules, limits, tier, expiry)' })
+  async updateLicense(
+    @Param('licenseKey') licenseKey: string,
+    @Body()
+    body: {
+      licenseType?: 'trial' | 'standard' | 'professional' | 'enterprise';
+      maxUsers?: number;
+      maxFacilities?: number;
+      enabledModules?: string[];
+      features?: Record<string, boolean>;
+      expiresAt?: string;
+      organizationName?: string;
+      email?: string;
+    },
+    @Request() req: any,
+  ) {
+    this.requireSystemAdmin(req);
+    const license = await this.licenseService.updateLicense(licenseKey, body);
+    return {
+      message: 'License updated',
+      license: {
+        licenseKey: license.licenseKey,
+        licenseType: license.licenseType,
+        maxUsers: license.maxUsers,
+        maxFacilities: license.maxFacilities,
+        enabledModules: license.enabledModules,
+        expiresAt: license.expiresAt,
+        status: license.status,
+      },
+    };
+  }
+
+  /**
+   * Suspend a license (reversible).
+   */
+  @Put(':licenseKey/suspend')
+  @Auth()
+  @ApiOperation({ summary: 'Suspend a license (reversible)' })
+  async suspendLicense(@Param('licenseKey') licenseKey: string, @Request() req: any) {
+    this.requireSystemAdmin(req);
+    const license = await this.licenseService.suspendLicense(licenseKey);
+    return { message: 'License suspended', status: license.status };
+  }
+
+  /**
+   * Reactivate a suspended license.
+   */
+  @Put(':licenseKey/reactivate')
+  @Auth()
+  @ApiOperation({ summary: 'Reactivate a suspended license' })
+  async reactivateLicense(@Param('licenseKey') licenseKey: string, @Request() req: any) {
+    this.requireSystemAdmin(req);
+    const license = await this.licenseService.reactivateLicense(licenseKey);
+    return { message: 'License reactivated', status: license.status };
   }
 
   /**
