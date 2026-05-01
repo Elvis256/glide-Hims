@@ -169,6 +169,7 @@ const PRESET_TO_SIDEBAR_MAP: Record<string, string | string[]> = {
   radiology: 'diagnostics',
   inventory: 'stores',
   appointments: 'registration',
+  chronic: 'chronic-care',
   // Dental sub-modules map to the dental sidebar section
   dental_procedures: 'dental_charting',
   dental_imaging: 'dental_charting',
