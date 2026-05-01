@@ -5,6 +5,7 @@ import {
   ApproveMatchDto,
   ResolveItemDto,
   FlagMatchDto,
+  OverrideFlagDto,
 } from './dto/invoice-match.dto';
 import { InvoiceMatchStatus } from '../../database/entities/invoice-match.entity';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
@@ -67,5 +68,11 @@ export class InvoiceMatchingController {
   @Post(':id/flag')
   flag(@Param('id') id: string, @Body() body: FlagMatchDto, @Request() req: any) {
     return this.service.flag(id, body.reason, req.user?.tenantId);
+  }
+
+  @AuthWithPermissions('procurement.approve')
+  @Post(':id/override')
+  overrideFlag(@Param('id') id: string, @Body() body: OverrideFlagDto, @Request() req: any) {
+    return this.service.overrideFlag(id, body, req.user?.id || 'system', req.user?.tenantId);
   }
 }

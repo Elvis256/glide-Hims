@@ -11,6 +11,7 @@ export enum PRStatus {
   REJECTED = 'rejected',
   PARTIALLY_ORDERED = 'partially_ordered',
   FULLY_ORDERED = 'fully_ordered',
+  COMPLETED = 'completed',
   CANCELLED = 'cancelled',
 }
 
