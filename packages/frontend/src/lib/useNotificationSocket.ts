@@ -23,9 +23,14 @@ export function useNotificationSocket() {
       .catch((err) => console.error('Failed to load unread count:', err));
 
     // Connect socket — rely on httpOnly cookies instead of sending token in auth payload
+    // Start with polling and let socket.io upgrade to WebSocket once the
+    // session handshake is established. WebSocket-first races against the
+    // auth cookie on initial login and triggers "closed before connection"
+    // noise in the console; polling-first is the socket.io default.
     const socket = io(`${SOCKET_URL}/notifications`, {
       withCredentials: true,
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'],
+      upgrade: true,
       reconnection: true,
       reconnectionDelay: 2000,
       reconnectionAttempts: 10,
