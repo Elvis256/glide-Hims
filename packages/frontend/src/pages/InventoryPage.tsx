@@ -255,6 +255,27 @@ export default function InventoryPage() {
 
 // Stock Table Component
 function StockTable({ stocks, isLoading }: { stocks: StockBalance[]; isLoading: boolean }) {
+  const queryClient = useQueryClient();
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState<string>('');
+
+  const saveReorder = async (itemId: string) => {
+    const value = parseInt(editValue, 10);
+    if (isNaN(value) || value < 0) {
+      toast.error('Reorder level must be a non-negative number');
+      return;
+    }
+    try {
+      await api.put(`/inventory/items/${itemId}`, { reorderLevel: value });
+      toast.success('Reorder level updated');
+      setEditingId(null);
+      queryClient.invalidateQueries({ queryKey: ['stock-balances'] });
+      queryClient.invalidateQueries({ queryKey: ['low-stock'] });
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Failed to update');
+    }
+  };
+
   if (isLoading) {
     return <div className="p-8 text-center text-gray-500">Loading...</div>;
   }
@@ -285,6 +306,7 @@ function StockTable({ stocks, isLoading }: { stocks: StockBalance[]; isLoading: 
         <tbody className="divide-y">
           {stocks.map((stock) => {
             const isLow = stock.availableQuantity <= stock.item.reorderLevel;
+            const isEditing = editingId === stock.item.id;
             return (
               <tr key={stock.id} className={isLow ? 'bg-yellow-50' : ''}>
                 <td className="px-4 py-3">
@@ -297,7 +319,49 @@ function StockTable({ stocks, isLoading }: { stocks: StockBalance[]; isLoading: 
                 <td className="px-4 py-3 text-right font-medium">{stock.availableQuantity}</td>
                 <td className="px-4 py-3 text-right text-gray-500">{stock.reservedQuantity}</td>
                 <td className="px-4 py-3 text-right text-gray-500">{stock.totalQuantity}</td>
-                <td className="px-4 py-3 text-right text-gray-500">{stock.item.reorderLevel}</td>
+                <td className="px-4 py-3 text-right text-gray-500">
+                  {isEditing ? (
+                    <div className="inline-flex items-center gap-1">
+                      <input
+                        type="number"
+                        min={0}
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') saveReorder(stock.item.id);
+                          if (e.key === 'Escape') setEditingId(null);
+                        }}
+                        autoFocus
+                        className="w-20 px-2 py-1 border rounded text-right text-sm"
+                      />
+                      <button
+                        onClick={() => saveReorder(stock.item.id)}
+                        className="text-green-600 hover:text-green-700 text-xs px-1"
+                        title="Save"
+                      >
+                        ✓
+                      </button>
+                      <button
+                        onClick={() => setEditingId(null)}
+                        className="text-gray-400 hover:text-gray-600 text-xs px-1"
+                        title="Cancel"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setEditingId(stock.item.id);
+                        setEditValue(String(stock.item.reorderLevel ?? 0));
+                      }}
+                      className="text-gray-700 hover:text-blue-600 hover:underline"
+                      title="Click to edit reorder level"
+                    >
+                      {stock.item.reorderLevel}
+                    </button>
+                  )}
+                </td>
                 <td className="px-4 py-3 text-center">
                   {isLow ? (
                     <span className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">

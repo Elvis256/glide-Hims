@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, Between, DataSource, IsNull } from 'typeorm';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import {
   PurchaseRequest,
   PurchaseRequestItem,
@@ -1375,5 +1376,173 @@ export class ProcurementService {
       ...grns.map((g) => ({ type: 'grn' as const, id: g.id, number: g.grnNumber, status: g.status, createdAt: g.createdAt })),
       ...invoices.map((i: any) => ({ type: 'invoice' as const, id: i.id, number: i.invoiceNumber, status: i.status, createdAt: i.createdAt })),
     ].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+  }
+
+  // ============ AUTO-DRAFT PR FROM REORDER LEVELS ============
+
+  /**
+   * Find items at/below reorder level across all facilities/tenants and create
+   * a single DRAFT PR per (tenant, facility, supplier-cluster). Idempotent per
+   * day: skips items already present in any open (non-cancelled, non-completed)
+   * PR created in the past 7 days for the same facility.
+   *
+   * Suggested target = max(maxStockLevel - currentStock, reorderLevel * 2 - currentStock).
+   */
+  async runAutoReorderDraftPRs(opts?: { tenantId?: string; facilityId?: string; userId?: string; dryRun?: boolean }): Promise<{
+    facilitiesProcessed: number;
+    prsCreated: number;
+    itemsSkipped: number;
+    drafts: Array<{ facilityId: string; tenantId?: string; itemCount: number; prNumber?: string; prId?: string; items: Array<{ itemId: string; itemName: string; available: number; reorderLevel: number; suggestedQty: number }> }>;
+  }> {
+    const dryRun = !!opts?.dryRun;
+    const drafts: any[] = [];
+    let prsCreated = 0;
+    let itemsSkipped = 0;
+
+    // Find low-stock balances grouped by tenant+facility
+    const qb = this.stockBalanceRepo
+      .createQueryBuilder('sb')
+      .innerJoinAndSelect('sb.item', 'item')
+      .where('sb.availableQuantity <= item.reorderLevel')
+      .andWhere('item.status = :active', { active: 'active' });
+
+    if (opts?.tenantId) qb.andWhere('sb.tenantId = :tid', { tid: opts.tenantId });
+    if (opts?.facilityId) qb.andWhere('sb.facilityId = :fid', { fid: opts.facilityId });
+
+    const lowStock = await qb.getMany();
+
+    if (lowStock.length === 0) {
+      return { facilitiesProcessed: 0, prsCreated: 0, itemsSkipped: 0, drafts: [] };
+    }
+
+    // Group by (tenantId, facilityId)
+    const groups = new Map<string, typeof lowStock>();
+    for (const sb of lowStock) {
+      const key = `${sb.tenantId || ''}::${sb.facilityId}`;
+      if (!groups.has(key)) groups.set(key, [] as any);
+      groups.get(key)!.push(sb);
+    }
+
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    for (const [key, balances] of groups) {
+      const [tenantId, facilityId] = key.split('::');
+      const tFilter = tenantId ? { tenantId } : {};
+
+      // Find items already in a recent open PR for this facility
+      const recentOpenPRs = await this.prRepo.find({
+        where: {
+          facilityId,
+          status: In([PRStatus.DRAFT, PRStatus.PENDING_APPROVAL, PRStatus.APPROVED, PRStatus.PARTIALLY_ORDERED, PRStatus.FULLY_ORDERED]),
+          createdAt: Between(sevenDaysAgo, new Date()),
+          ...tFilter,
+        },
+        relations: ['items'],
+      });
+      const itemsAlreadyPending = new Set<string>();
+      for (const pr of recentOpenPRs) {
+        for (const it of pr.items || []) {
+          if (it.itemId) itemsAlreadyPending.add(it.itemId);
+        }
+      }
+
+      const toReorder = balances.filter((sb) => {
+        if (itemsAlreadyPending.has(sb.itemId)) {
+          itemsSkipped++;
+          return false;
+        }
+        return true;
+      });
+
+      if (toReorder.length === 0) continue;
+
+      const items = toReorder.map((sb) => {
+        const reorderLevel = Number(sb.item.reorderLevel || 0);
+        const maxLevel = Number(sb.item.maxStockLevel || 0);
+        const available = Number(sb.availableQuantity || 0);
+        const fromMax = maxLevel > 0 ? maxLevel - available : 0;
+        const fromReorder = reorderLevel * 2 - available;
+        const suggestedQty = Math.max(Math.ceil(Math.max(fromMax, fromReorder, reorderLevel)), 1);
+        return {
+          itemId: sb.itemId,
+          itemCode: sb.item.code,
+          itemName: sb.item.name,
+          itemUnit: sb.item.unit || 'unit',
+          quantityRequested: suggestedQty,
+          unitPriceEstimated: Number(sb.item.unitCost || 0),
+          notes: `Auto-generated: stock ${available} ≤ reorder level ${reorderLevel}`,
+        };
+      });
+
+      const draftSummary = {
+        facilityId,
+        tenantId: tenantId || undefined,
+        itemCount: items.length,
+        items: items.map((i) => ({
+          itemId: i.itemId,
+          itemName: i.itemName,
+          available: Number(toReorder.find((x) => x.itemId === i.itemId)?.availableQuantity || 0),
+          reorderLevel: Number(toReorder.find((x) => x.itemId === i.itemId)?.item.reorderLevel || 0),
+          suggestedQty: i.quantityRequested,
+        })),
+      } as any;
+
+      if (dryRun) {
+        drafts.push(draftSummary);
+        continue;
+      }
+
+      try {
+        const requestNumber = await this.generatePRNumber(facilityId, tenantId || undefined);
+        const totalEstimated = items.reduce((s, it) => s + it.quantityRequested * (it.unitPriceEstimated || 0), 0);
+
+        const pr = this.prRepo.create({
+          requestNumber,
+          facilityId,
+          priority: PRPriority.NORMAL,
+          justification: 'Automatic reorder — items at or below reorder level',
+          totalEstimated,
+          notes: `System-generated draft from reorder-level monitor at ${new Date().toISOString()}`,
+          status: PRStatus.DRAFT,
+          requestedById: opts?.userId || (recentOpenPRs[0]?.requestedById as string) || undefined as any,
+          ...(tenantId ? { tenantId } : {}),
+        });
+        const savedPR = await this.prRepo.save(pr);
+
+        const prItems = items.map((it) =>
+          this.prItemRepo.create({
+            purchaseRequestId: (savedPR as PurchaseRequest).id,
+            itemId: it.itemId,
+            itemCode: it.itemCode,
+            itemName: it.itemName,
+            itemUnit: it.itemUnit,
+            quantityRequested: it.quantityRequested,
+            unitPriceEstimated: it.unitPriceEstimated,
+            notes: it.notes,
+          }),
+        );
+        await this.prItemRepo.save(prItems);
+
+        prsCreated++;
+        drafts.push({ ...draftSummary, prNumber: (savedPR as PurchaseRequest).requestNumber, prId: (savedPR as PurchaseRequest).id });
+        this.logger.log(`Auto-created draft PR ${(savedPR as PurchaseRequest).requestNumber} with ${items.length} items for facility ${facilityId}`);
+      } catch (err: any) {
+        this.logger.error(`Failed to auto-create PR for facility ${facilityId}: ${err.message}`);
+      }
+    }
+
+    return { facilitiesProcessed: groups.size, prsCreated, itemsSkipped, drafts };
+  }
+
+  @Cron(CronExpression.EVERY_DAY_AT_2AM, { name: 'auto-reorder-draft-prs' })
+  async scheduledAutoReorder(): Promise<void> {
+    try {
+      const result = await this.runAutoReorderDraftPRs();
+      this.logger.log(
+        `[auto-reorder] facilities=${result.facilitiesProcessed} drafts=${result.prsCreated} skipped=${result.itemsSkipped}`,
+      );
+    } catch (err: any) {
+      this.logger.error(`[auto-reorder] job failed: ${err.message}`);
+    }
   }
 }
