@@ -109,7 +109,21 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
   {
     code: 'pos',
     name: 'Point of Sale',
-    requiredPermissions: ['pos.shift', 'pos.read', 'pharmacy.read'],
+    requiredPermissions: [
+      'pos.shift',
+      'pos.read',
+      'pharmacy.read',
+      'pos.return.create',
+      'pos.return.read',
+      'pos.sale.void',
+      'pos.sale.hold',
+      'pos.discount.line',
+      'pos.discount.cart_above_threshold',
+      'pos.barcode.scan',
+      'pos.receipt.reprint',
+      'pos.quickkey.manage',
+      'pos.customer.read',
+    ],
   },
   {
     code: 'dental_charting',
