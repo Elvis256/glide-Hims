@@ -117,6 +117,16 @@ export default function DoctorFeesPage() {
             the tenant default. Use this for senior consultants who charge premium, visiting
             consultants who get a revenue share, or locums on a different rate.
           </p>
+          <div className="mt-3 text-xs bg-blue-50 border border-blue-100 text-blue-800 rounded-lg p-3 max-w-2xl">
+            <strong>Insurance &amp; scheme patients:</strong> the rates below apply to cash /
+            self-pay visits. For insured / scheme visits, the payer's contract price is used —
+            configure those in{' '}
+            <a href="/admin/pricing/insurance" className="underline font-medium">
+              Insurance Price Lists
+            </a>
+            . The doctor's revenue-share % set here still applies to the insurance amount, so
+            visiting-consultant payouts stay correct regardless of payer.
+          </div>
         </div>
         <button
           onClick={() => setShowPicker(true)}

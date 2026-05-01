@@ -851,6 +851,7 @@ function AppRoutes() {
                 <Route path="/billing/patient-tab" element={<ModuleRoute module="billing"><BillingRoute><PatientTabPage /></BillingRoute></ModuleRoute>} />
                 <Route path="/billing/patient-tab/:patientId" element={<ModuleRoute module="billing"><BillingRoute><PatientTabPage /></BillingRoute></ModuleRoute>} />
                 <Route path="/billing/doctor-fees" element={<ModuleRoute module="billing"><BillingRoute><DoctorFeesPage /></BillingRoute></ModuleRoute>} />
+                <Route path="/admin/services/doctor-fees" element={<AdminRoute><DoctorFeesPage /></AdminRoute>} />
                 
                 {/* Billing - Insurance */}
                 <Route path="/insurance/claims" element={<ModuleRoute module="billing"><InsuranceRoute><ClaimsPage /></InsuranceRoute></ModuleRoute>} />
