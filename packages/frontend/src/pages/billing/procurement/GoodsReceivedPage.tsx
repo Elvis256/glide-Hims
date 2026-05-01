@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { useFacilityId } from '../../../lib/facility';
 import {
   PackageCheck,
@@ -553,6 +554,13 @@ export default function GoodsReceivedPage() {
                   <Eye className="w-4 h-4" />
                   View Full Details
                 </button>
+                {selectedGRN.items?.some((i) => (i.quantityRejected || 0) > 0) && (
+                  <CreateDebitNoteAction
+                    grnId={selectedGRN.id}
+                    grnNumber={selectedGRN.grnNumber}
+                    onCreated={() => queryClient.invalidateQueries({ queryKey: ['goods-receipts'] })}
+                  />
+                )}
               </div>
             </div>
           </div>
@@ -773,5 +781,165 @@ function CreateGRNModal({ purchaseOrders, facilityId, isLoading, onClose, onSubm
         </div>
       </div>
     </div>
+  );
+}
+// Debit Note Action — appears when GRN has rejected items
+function CreateDebitNoteAction({
+  grnId,
+  grnNumber,
+  onCreated,
+}: {
+  grnId: string;
+  grnNumber: string;
+  onCreated: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [preview, setPreview] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [reasonDetails, setReasonDetails] = useState('');
+
+  const loadPreview = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get(`/supplier-finance/credit-notes/from-grn/${grnId}/preview`);
+      setPreview(res.data);
+      setReasonDetails(
+        (res.data.rejectedItems || [])
+          .filter((i: any) => i.rejectionReason)
+          .map((i: any) => `${i.description}: ${i.rejectionReason}`)
+          .join('; '),
+      );
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Failed to load preview');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  React.useEffect(() => {
+    if (open && !preview) loadPreview();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const submit = async () => {
+    setSubmitting(true);
+    try {
+      const res = await api.post(`/supplier-finance/credit-notes/from-grn/${grnId}`, {
+        reasonDetails,
+      });
+      toast.success(`Debit note ${res.data.noteNumber} created (DRAFT)`);
+      setOpen(false);
+      setPreview(null);
+      onCreated();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Failed to create debit note');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-red-300 text-red-700 rounded-lg hover:bg-red-50"
+      >
+        <AlertTriangle className="w-4 h-4" />
+        Create Debit Note for Rejected Items
+      </button>
+      {open && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[85vh] overflow-y-auto">
+            <div className="px-5 py-3 border-b flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900">Debit Note from GRN {grnNumber}</h3>
+              <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-gray-600">
+                ✕
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              {loading && <p className="text-center text-gray-500 py-6">Loading preview…</p>}
+              {!loading && preview && (
+                <>
+                  {!preview.canCreate && (
+                    <div className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-800">
+                      Cannot create: {preview.blockReason}
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase">Supplier</p>
+                      <p className="font-medium">{preview.supplierName}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase">Total Rejected Value</p>
+                      <p className="font-mono font-semibold text-red-600">
+                        {Number(preview.totalRejectedValue).toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </p>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase mb-2">Rejected Items</p>
+                    <table className="w-full text-sm border">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="text-left px-3 py-2">Item</th>
+                          <th className="text-right px-3 py-2">Qty</th>
+                          <th className="text-right px-3 py-2">Unit Cost</th>
+                          <th className="text-right px-3 py-2">Line Total</th>
+                          <th className="text-left px-3 py-2">Reason</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {preview.rejectedItems.map((it: any, idx: number) => (
+                          <tr key={idx}>
+                            <td className="px-3 py-2">{it.description}</td>
+                            <td className="px-3 py-2 text-right">{it.quantityRejected}</td>
+                            <td className="px-3 py-2 text-right font-mono">{Number(it.unitCost).toFixed(2)}</td>
+                            <td className="px-3 py-2 text-right font-mono">{Number(it.lineTotal).toFixed(2)}</td>
+                            <td className="px-3 py-2 text-xs text-gray-600">{it.rejectionReason || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 uppercase block mb-1">Reason / Notes</label>
+                    <textarea
+                      value={reasonDetails}
+                      onChange={(e) => setReasonDetails(e.target.value)}
+                      rows={3}
+                      className="w-full border rounded px-3 py-2 text-sm"
+                      placeholder="Detail the reason for the debit note"
+                    />
+                  </div>
+                  {preview.existingDebitNotes?.length > 0 && (
+                    <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                      Existing notes for this GRN:{' '}
+                      {preview.existingDebitNotes.map((n: any) => `${n.noteNumber} (${n.status})`).join(', ')}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="px-5 py-3 border-t bg-gray-50 flex justify-end gap-2">
+              <button onClick={() => setOpen(false)} className="px-4 py-2 border rounded text-sm">
+                Cancel
+              </button>
+              <button
+                onClick={submit}
+                disabled={submitting || !preview?.canCreate}
+                className="px-4 py-2 bg-red-600 text-white rounded text-sm hover:bg-red-700 disabled:opacity-50"
+              >
+                {submitting ? 'Creating…' : 'Create Debit Note (DRAFT)'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

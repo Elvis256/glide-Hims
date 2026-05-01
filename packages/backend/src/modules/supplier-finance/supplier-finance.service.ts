@@ -805,4 +805,145 @@ export class SupplierFinanceService {
       bySupplier,
     };
   }
+
+  // ============ DEBIT NOTE FROM GRN REJECTIONS ============
+
+  async previewDebitNoteFromGRN(grnId: string, tenantId?: string): Promise<{
+    grnNumber: string;
+    grnId: string;
+    supplierId: string;
+    supplierName: string;
+    facilityId: string;
+    rejectedItems: Array<{
+      itemId?: string;
+      description: string;
+      quantityRejected: number;
+      unit?: string;
+      unitCost: number;
+      lineTotal: number;
+      batchNumber?: string;
+      rejectionReason?: string;
+    }>;
+    existingDebitNotes: Array<{ id: string; noteNumber: string; status: string; totalAmount: number }>;
+    totalRejectedValue: number;
+    canCreate: boolean;
+    blockReason?: string;
+  }> {
+    const grn = await this.grnRepo.findOne({
+      where: { id: grnId, ...(tenantId ? { tenantId } : {}) },
+      relations: ['items', 'items.item', 'supplier', 'purchaseOrder'],
+    });
+    if (!grn) throw new NotFoundException('GRN not found');
+
+    const rejectedLines = (grn.items || []).filter((it) => Number(it.quantityRejected || 0) > 0);
+
+    const supplierId = grn.supplier?.id || (grn as any).supplierId || (grn.purchaseOrder as any)?.supplierId;
+    const supplierName = grn.supplier?.name || (grn.purchaseOrder as any)?.supplier?.name || 'Unknown';
+
+    const existing = await this.creditNoteRepo.find({
+      where: { grnId, noteType: CreditNoteType.DEBIT_NOTE, ...(tenantId ? { tenantId } : {}) },
+      select: ['id', 'noteNumber', 'status', 'totalAmount'],
+    });
+
+    const rejectedItems = rejectedLines.map((it: any) => ({
+      itemId: it.itemId || it.item?.id,
+      description: it.item?.name || it.itemName || 'Item',
+      quantityRejected: Number(it.quantityRejected),
+      unit: it.item?.unit,
+      unitCost: Number(it.unitCost || 0),
+      lineTotal: Number(it.quantityRejected) * Number(it.unitCost || 0),
+      batchNumber: it.batchNumber,
+      rejectionReason: it.rejectionReason,
+    }));
+
+    const totalRejectedValue = rejectedItems.reduce((s, it) => s + it.lineTotal, 0);
+
+    let canCreate = true;
+    let blockReason: string | undefined;
+    if (rejectedItems.length === 0) {
+      canCreate = false;
+      blockReason = 'GRN has no rejected items';
+    } else if (!supplierId) {
+      canCreate = false;
+      blockReason = 'GRN has no supplier linkage';
+    } else {
+      const openExisting = existing.filter((n) => n.status !== CreditNoteStatus.CANCELLED);
+      if (openExisting.length > 0) {
+        canCreate = false;
+        blockReason = `A debit note already exists for this GRN (${openExisting[0].noteNumber}, ${openExisting[0].status})`;
+      }
+    }
+
+    return {
+      grnNumber: grn.grnNumber,
+      grnId: grn.id,
+      supplierId,
+      supplierName,
+      facilityId: grn.facilityId,
+      rejectedItems,
+      existingDebitNotes: existing.map((n) => ({
+        id: n.id,
+        noteNumber: n.noteNumber,
+        status: n.status,
+        totalAmount: Number(n.totalAmount),
+      })),
+      totalRejectedValue,
+      canCreate,
+      blockReason,
+    };
+  }
+
+  async createDebitNoteFromGRN(
+    grnId: string,
+    opts: { reason?: CreditNoteReason; reasonDetails?: string; notes?: string },
+    userId: string,
+    tenantId?: string,
+  ): Promise<SupplierCreditNote> {
+    const preview = await this.previewDebitNoteFromGRN(grnId, tenantId);
+    if (!preview.canCreate) {
+      throw new BadRequestException(preview.blockReason || 'Cannot create debit note from this GRN');
+    }
+
+    const reason = opts.reason || this.inferReasonFromRejection(preview.rejectedItems[0]?.rejectionReason);
+
+    return this.createCreditNote(
+      {
+        facilityId: preview.facilityId,
+        noteType: CreditNoteType.DEBIT_NOTE,
+        supplierId: preview.supplierId,
+        noteDate: new Date(),
+        grnId,
+        reason,
+        reasonDetails:
+          opts.reasonDetails ||
+          preview.rejectedItems
+            .filter((i) => i.rejectionReason)
+            .map((i) => `${i.description}: ${i.rejectionReason}`)
+            .join('; ') ||
+          'Rejected items from GRN',
+        notes: opts.notes || `Auto-generated from GRN ${preview.grnNumber}`,
+        items: preview.rejectedItems.map((it) => ({
+          itemId: it.itemId,
+          description: it.description,
+          quantity: it.quantityRejected,
+          unit: it.unit,
+          unitPrice: it.unitCost,
+          batchNumber: it.batchNumber,
+        })),
+      },
+      userId,
+      tenantId,
+    );
+  }
+
+  private inferReasonFromRejection(rejectionReason?: string): CreditNoteReason {
+    if (!rejectionReason) return CreditNoteReason.QUALITY_ISSUE;
+    const r = rejectionReason.toLowerCase();
+    if (r.includes('damag')) return CreditNoteReason.DAMAGED_GOODS;
+    if (r.includes('expir')) return CreditNoteReason.EXPIRED_GOODS;
+    if (r.includes('quantity') || r.includes('short') || r.includes('over')) return CreditNoteReason.QUANTITY_DISCREPANCY;
+    if (r.includes('price') || r.includes('overcharge')) return CreditNoteReason.PRICING_ERROR;
+    if (r.includes('return')) return CreditNoteReason.GOODS_RETURNED;
+    return CreditNoteReason.QUALITY_ISSUE;
+  }
 }

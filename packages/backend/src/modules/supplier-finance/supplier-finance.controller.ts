@@ -109,6 +109,25 @@ export class SupplierFinanceController {
 
   // ==================== CREDIT/DEBIT NOTES ====================
 
+  @AuthWithPermissions('finance.read')
+  @Get('credit-notes/from-grn/:grnId/preview')
+  @ApiOperation({ summary: 'Preview a debit note from a GRN with rejected items' })
+  async previewDebitFromGRN(@Param('grnId') grnId: string, @Request() req: any) {
+    return this.supplierFinanceService.previewDebitNoteFromGRN(grnId, req.user?.tenantId);
+  }
+
+  @AuthWithPermissions('finance.manage')
+  @Post('credit-notes/from-grn/:grnId')
+  @ApiOperation({ summary: 'Create a debit note from a GRN with rejected items' })
+  async createDebitFromGRN(
+    @Param('grnId') grnId: string,
+    @Body() body: { reason?: any; reasonDetails?: string; notes?: string },
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    return this.supplierFinanceService.createDebitNoteFromGRN(grnId, body || {}, user.id, req.user?.tenantId);
+  }
+
   @AuthWithPermissions('finance.manage')
   @Post('credit-notes')
   @ApiOperation({ summary: 'Create credit/debit note' })
