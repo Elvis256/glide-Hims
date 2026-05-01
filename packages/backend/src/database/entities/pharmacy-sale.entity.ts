@@ -126,6 +126,23 @@ export class PharmacySale extends BaseEntity {
   @Column({ name: 'prescription_id', nullable: true })
   prescriptionId: string; // If from prescription
 
+  // ── B2: Void / Cancel ──────────────────────────────────────────────────────
+  @Column({ name: 'voided_at', type: 'timestamptz', nullable: true })
+  voidedAt: Date;
+
+  @Column({ name: 'void_reason', type: 'text', nullable: true })
+  voidReason: string;
+
+  @Column({ name: 'voided_by_id', type: 'uuid', nullable: true })
+  voidedById: string;
+
+  // ── B4: Discount approval ──────────────────────────────────────────────────
+  @Column({ name: 'discount_approver_id', type: 'uuid', nullable: true })
+  discountApproverId: string;
+
+  @Column({ name: 'discount_approval_reason', type: 'text', nullable: true })
+  discountApprovalReason: string;
+
   // Relationships
   @ManyToOne(() => Store)
   @JoinColumn({ name: 'store_id' })
@@ -218,4 +235,11 @@ export class PharmacySaleItem extends BaseEntity {
 
   @Column({ type: 'text', nullable: true })
   instructions: string;
+
+  // ── B4: Per-line discount ──────────────────────────────────────────────────
+  @Column({ name: 'discount_amount', type: 'decimal', precision: 12, scale: 2, default: 0, nullable: true })
+  discountAmount: number;
+
+  @Column({ name: 'discount_reason', type: 'text', nullable: true })
+  discountReason: string;
 }

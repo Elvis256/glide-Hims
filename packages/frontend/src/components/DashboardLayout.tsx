@@ -618,6 +618,8 @@ const navigationSections: NavSection[] = [
     items: [
       { name: 'POS Dashboard', href: '/pharmacy/pos', icon: LayoutDashboard, permissions: ['pos.shift'] },
       { name: 'New Sale', href: '/pharmacy/pos/sale', icon: ShoppingCart, permissions: ['pos.shift'] },
+      { name: 'Returns / Refunds', href: '/pharmacy/pos/returns', icon: RotateCcw, permissions: ['pos.return.read'] },
+      { name: 'Receipt History', href: '/pharmacy/pos/receipts', icon: Receipt, permissions: ['pos.receipt.reprint'] },
       { name: 'Shift Management', href: '/pharmacy/pos/shifts', icon: Clock, permissions: ['pos.shift'] },
       { name: 'POS Reports', href: '/pharmacy/pos/reports', icon: BarChart3, permissions: ['pos.shift'] },
       { name: '→ Prescription Dispensing (Pharmacy)', href: '/pharmacy/dispense', icon: Pill, permissions: ['pharmacy.update'] },

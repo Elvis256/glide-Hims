@@ -18,6 +18,14 @@ import {
   Package,
   AlertTriangle,
   XCircle,
+  PauseCircle,
+  ScanBarcode,
+  User,
+  Phone,
+  Star,
+  Ban,
+  Tag,
+  Zap,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, getApiErrorMessage } from '../../services/api';
@@ -56,11 +64,29 @@ interface DrugInteraction {
 
 type PaymentMethod = 'cash' | 'mobile_money' | 'card';
 
+interface QuickKey {
+  id: string;
+  position: number;
+  itemId: string;
+  label: string;
+  color?: string;
+}
+
+interface RetailCustomer {
+  id: string;
+  phone: string;
+  name?: string;
+  totalVisits: number;
+  totalSpend: number;
+  lastSeenAt?: string;
+}
+
 export default function POSSalePage() {
   const navigate = useNavigate();
   const facilityId = useFacilityId();
   const queryClient = useQueryClient();
   const searchRef = useRef<HTMLInputElement>(null);
+  const barcodeRef = useRef<HTMLInputElement>(null);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -71,6 +97,192 @@ export default function POSSalePage() {
   const [completedSaleNumber, setCompletedSaleNumber] = useState('');
   const [interactions, setInteractions] = useState<DrugInteraction[]>([]);
   const [interactionDismissed, setInteractionDismissed] = useState(false);
+
+  // B3: Hold sale
+  const [showHoldModal, setShowHoldModal] = useState(false);
+  const [holdReason, setHoldReason] = useState('');
+  const [showRecallModal, setShowRecallModal] = useState(false);
+
+  // B2: Void
+  const [showVoidModal, setShowVoidModal] = useState(false);
+  const [voidSaleId, setVoidSaleId] = useState('');
+  const [voidReason, setVoidReason] = useState('');
+  const [voidPin, setVoidPin] = useState('');
+
+  // B4: Discount with PIN
+  const [discountPin, setDiscountPin] = useState('');
+  const [showDiscountPinModal, setShowDiscountPinModal] = useState(false);
+  const [pendingDiscount, setPendingDiscount] = useState(0);
+
+  // B5: Barcode
+  const [barcodeInput, setBarcodeInput] = useState('');
+
+  // B8: Customer phone
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [customerName, setCustomerName] = useState('');
+  const [customerData, setCustomerData] = useState<RetailCustomer | null>(null);
+  const [lookingUpCustomer, setLookingUpCustomer] = useState(false);
+
+  // B7: Quick keys
+  const [showQuickKeys, setShowQuickKeys] = useState(true);
+
+  // Current shift/register info
+  const [currentShiftId, setCurrentShiftId] = useState<string | undefined>();
+  const [currentRegisterId, setCurrentRegisterId] = useState<string | undefined>();
+
+  // Load current shift
+  useEffect(() => {
+    api.get('/pos/shifts/current').then((res) => {
+      if (res.data?.id) {
+        setCurrentShiftId(res.data.id);
+        setCurrentRegisterId(res.data.registerId);
+      }
+    }).catch(() => {});
+  }, []);
+
+  // B7: Quick keys query
+  const quickKeysQuery = useQuery({
+    queryKey: ['pos-quick-keys', currentRegisterId],
+    queryFn: async () => {
+      const res = await api.get('/pos/quick-keys', {
+        params: { registerId: currentRegisterId },
+      });
+      return asList(res.data) as QuickKey[];
+    },
+    enabled: !!currentRegisterId,
+  });
+
+  // B3: Held sales query
+  const heldSalesQuery = useQuery({
+    queryKey: ['pos-held-sales', currentRegisterId, currentShiftId],
+    queryFn: async () => {
+      const res = await api.get('/pos/sales/held', {
+        params: { registerId: currentRegisterId, shiftId: currentShiftId },
+      });
+      return asList(res.data);
+    },
+    enabled: showRecallModal,
+  });
+
+  // B5: Barcode handler
+  const handleBarcodeSubmit = useCallback(async (code: string) => {
+    if (!code.trim()) return;
+    try {
+      const res = await api.get(`/pharmacy/items/by-barcode/${encodeURIComponent(code.trim())}`, {
+        params: { facilityId },
+      });
+      const item = res.data;
+      if (!item) { toast.error('Item not found for barcode'); return; }
+      const product: Product = {
+        id: item.id,
+        name: item.name,
+        price: item.sellingPrice || item.price || 0,
+        currentStock: item.availableQty ?? item.availableQuantity ?? 0,
+        unit: item.unit || 'pcs',
+        code: item.code,
+      };
+      // Check if already in cart — increment qty
+      setCart((prev) => {
+        const existing = prev.find((c) => c.productId === product.id);
+        if (existing) {
+          return prev.map((c) =>
+            c.productId === product.id
+              ? { ...c, quantity: Math.min(c.quantity + 1, c.maxStock) }
+              : c,
+          );
+        }
+        if (product.currentStock < 1) { toast.error(`${product.name}: Out of stock`); return prev; }
+        return [...prev, { productId: product.id, name: product.name, price: product.price, quantity: 1, maxStock: product.currentStock, unit: product.unit }];
+      });
+      toast.success(`Added: ${item.name}`);
+    } catch {
+      toast.error(`Barcode not found: ${code}`);
+    }
+    setBarcodeInput('');
+  }, [facilityId]);
+
+  // B8: Customer phone lookup on blur
+  const handlePhoneBlur = useCallback(async () => {
+    if (!customerPhone || customerPhone.length < 9) return;
+    setLookingUpCustomer(true);
+    try {
+      const res = await api.get(`/pos/retail-customers/by-phone/${customerPhone}`);
+      setCustomerData(res.data.customer);
+      if (res.data.customer?.name && !customerName) {
+        setCustomerName(res.data.customer.name);
+      }
+    } catch {
+      setCustomerData(null);
+    } finally {
+      setLookingUpCustomer(false);
+    }
+  }, [customerPhone, customerName]);
+
+  // B3: Hold sale mutation
+  const holdMutation = useMutation({
+    mutationFn: async () => {
+      return api.post('/pos/sales/hold', {
+        posShiftId: currentShiftId,
+        posRegisterId: currentRegisterId,
+        customerName,
+        customerPhone,
+        cartSnapshot: { items: cart, discount },
+        holdReason,
+      });
+    },
+    onSuccess: () => {
+      toast.success('Sale held — cart cleared');
+      setCart([]);
+      setDiscount(0);
+      setCustomerPhone('');
+      setCustomerName('');
+      setCustomerData(null);
+      setShowHoldModal(false);
+      setHoldReason('');
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to hold sale')),
+  });
+
+  // B3: Recall mutation
+  const recallMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await api.post(`/pos/sales/recall/${id}`);
+      return res.data;
+    },
+    onSuccess: (data) => {
+      const snap = data.cartSnapshot as any;
+      if (snap?.items) {
+        setCart(snap.items);
+        if (typeof snap.discount === 'number') setDiscount(snap.discount);
+      }
+      if (data.customerPhone) setCustomerPhone(data.customerPhone);
+      if (data.customerName) setCustomerName(data.customerName);
+      setShowRecallModal(false);
+      queryClient.invalidateQueries({ queryKey: ['pos-held-sales'] });
+      toast.success('Sale recalled');
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to recall sale')),
+  });
+
+  // B2: Void mutation
+  const voidMutation = useMutation({
+    mutationFn: async () => {
+      return api.post(`/pos/sales/${voidSaleId}/void`, {
+        managerPin: voidPin,
+        reason: voidReason,
+        posShiftId: currentShiftId,
+      });
+    },
+    onSuccess: () => {
+      toast.success('Sale voided successfully');
+      setShowVoidModal(false);
+      setVoidPin('');
+      setVoidReason('');
+      setVoidSaleId('');
+      queryClient.invalidateQueries({ queryKey: ['pos-recent-sales'] });
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to void sale')),
+  });
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -235,6 +447,10 @@ export default function POSSalePage() {
         })),
         discountPercent: discount,
         paymentMethod,
+        customerPhone: customerPhone || undefined,
+        customerName: customerName || undefined,
+        posShiftId: currentShiftId,
+        posRegisterId: currentRegisterId,
       };
       const res = await api.post('/pharmacy/sales', saleData);
       return res.data;
@@ -276,6 +492,9 @@ export default function POSSalePage() {
     setPaymentMethod('cash');
     setShowPayment(false);
     setSaleComplete(false);
+    setCustomerPhone('');
+    setCustomerName('');
+    setCustomerData(null);
     setCompletedSaleNumber('');
     setSearchTerm('');
     setInteractions([]);
@@ -335,6 +554,31 @@ export default function POSSalePage() {
             <Keyboard className="h-4 w-4" />
             F2: Search &middot; F5: Pay &middot; Esc: Cancel
           </span>
+          {/* B3: Hold/Recall buttons */}
+          <button
+            onClick={() => { if (cart.length > 0) setShowHoldModal(true); }}
+            disabled={cart.length === 0}
+            className="flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-300 hover:bg-gray-700 disabled:opacity-40"
+            title="Hold sale (park)"
+          >
+            <PauseCircle className="h-4 w-4" />
+            Hold
+          </button>
+          <button
+            onClick={() => setShowRecallModal(true)}
+            className="flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
+            title="Recall held sale"
+          >
+            Recall
+          </button>
+          {/* B7: Quick-keys toggle */}
+          <button
+            onClick={() => setShowQuickKeys((v) => !v)}
+            className="flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
+          >
+            <Zap className="h-4 w-4" />
+            {showQuickKeys ? 'Hide Keys' : 'Quick Keys'}
+          </button>
         </div>
       </div>
 
@@ -342,7 +586,49 @@ export default function POSSalePage() {
         {/* Left Panel - Products (70%) */}
         <div className="flex w-[70%] flex-col border-r border-gray-200 bg-white">
           {/* Search bar */}
-          <div className="border-b border-gray-200 p-4">
+          <div className="border-b border-gray-200 p-4 space-y-2">
+            {/* B5: Hidden barcode input (captures HID scanner input) */}
+            <input
+              ref={barcodeRef}
+              type="text"
+              className="sr-only"
+              value={barcodeInput}
+              onChange={(e) => setBarcodeInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleBarcodeSubmit(barcodeInput);
+                }
+              }}
+              aria-label="Barcode scanner input"
+            />
+            {/* B8: Customer phone input */}
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="tel"
+                  placeholder="Customer phone (optional)"
+                  value={customerPhone}
+                  onChange={(e) => setCustomerPhone(e.target.value)}
+                  onBlur={handlePhoneBlur}
+                  className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+              <input
+                type="text"
+                placeholder="Name (optional)"
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                className="w-40 rounded-lg border border-gray-300 py-2 px-3 text-sm focus:border-blue-500 focus:outline-none"
+              />
+              {lookingUpCustomer && <Loader2 className="h-4 w-4 animate-spin text-gray-400" />}
+              {customerData && (
+                <div className="flex items-center gap-1 text-xs text-purple-700 bg-purple-50 border border-purple-200 rounded px-2 py-1 whitespace-nowrap">
+                  <Star className="h-3 w-3 fill-purple-500 text-purple-500" />
+                  {customerData.totalVisits} visit{customerData.totalVisits !== 1 ? 's' : ''}
+                </div>
+              )}
+            </div>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
               <input
@@ -356,6 +642,41 @@ export default function POSSalePage() {
               />
             </div>
           </div>
+
+          {/* B7: Quick keys panel */}
+          {showQuickKeys && (
+            <div className="border-b border-gray-200 bg-gray-50 p-3">
+              <div className="flex items-center gap-1 mb-2">
+                <Zap className="h-3.5 w-3.5 text-yellow-500" />
+                <span className="text-xs font-medium text-gray-600">Quick Keys</span>
+              </div>
+              {quickKeysQuery.data && quickKeysQuery.data.length > 0 ? (
+                <div className="grid grid-cols-6 gap-1.5">
+                  {quickKeysQuery.data.slice(0, 24).map((qk) => (
+                    <button
+                      key={qk.id}
+                      onClick={async () => {
+                        try {
+                          const res = await api.get(`/pharmacy/items/${qk.itemId}`, { params: { facilityId } });
+                          const item = res.data;
+                          if (item) {
+                            addToCart({ id: item.id, name: item.name, price: item.sellingPrice || item.price || 0, currentStock: item.availableQty ?? item.availableQuantity ?? 0, unit: item.unit || 'pcs', code: item.code, genericName: item.genericName, sku: item.sku });
+                          }
+                        } catch { toast.error('Quick key item not found'); }
+                      }}
+                      className="rounded px-1 py-1.5 text-xs font-medium text-white text-center truncate"
+                      style={{ backgroundColor: qk.color || '#2563eb' }}
+                      title={qk.label}
+                    >
+                      {qk.label}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400">No quick keys configured. Set them up in POS settings.</p>
+              )}
+            </div>
+          )}
 
           {/* Products grid */}
           <div className="flex-1 overflow-y-auto p-4">
@@ -492,9 +813,31 @@ export default function POSSalePage() {
                         {formatCurrency(item.price * item.quantity)}
                       </p>
                     </div>
-                    <p className="mt-1 text-xs text-gray-400">
-                      {formatCurrency(item.price)} × {item.quantity}
-                    </p>
+                    {/* B4: Per-line discount */}
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <Tag className="h-3 w-3 text-gray-400" />
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        placeholder="Line disc %"
+                        className="w-24 rounded border border-gray-200 px-1.5 py-0.5 text-xs focus:outline-none focus:border-blue-400"
+                        onChange={(e) => {
+                          const pct = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+                          setCart((prev) =>
+                            prev.map((ci) =>
+                              ci.productId === item.productId
+                                ? { ...ci, discountPct: pct }
+                                : ci,
+                            ),
+                          );
+                        }}
+                        defaultValue={(item as any).discountPct || ''}
+                      />
+                      <p className="text-xs text-gray-400">
+                        {formatCurrency(item.price)} × {item.quantity}
+                      </p>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -515,7 +858,17 @@ export default function POSSalePage() {
                   min="0"
                   max="100"
                   value={discount}
-                  onChange={(e) => setDiscount(Math.min(100, Math.max(0, Number(e.target.value))))}
+                  onChange={(e) => {
+                    const newDiscount = Math.min(100, Math.max(0, Number(e.target.value)));
+                    const newDiscountAmount = (subtotal * newDiscount) / 100;
+                    // B4: if > 10% or > 50,000 UGX require manager PIN
+                    if (newDiscount > 10 || newDiscountAmount > 50000) {
+                      setPendingDiscount(newDiscount);
+                      setShowDiscountPinModal(true);
+                    } else {
+                      setDiscount(newDiscount);
+                    }
+                  }}
                   className="ml-auto w-16 rounded border border-gray-300 px-2 py-1 text-right text-sm focus:border-blue-500 focus:outline-none"
                 />
               </div>
@@ -570,6 +923,178 @@ export default function POSSalePage() {
           </div>
         </div>
       </div>
+
+      {/* B3: Hold sale modal */}
+      {showHoldModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-xl p-6 max-w-sm w-full shadow-2xl space-y-4">
+            <h3 className="font-bold text-gray-900 flex items-center gap-2">
+              <PauseCircle className="h-5 w-5 text-yellow-500" />
+              Hold Sale
+            </h3>
+            <p className="text-sm text-gray-500">The cart will be saved and cleared. You can recall it later.</p>
+            <input
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Reason (optional)"
+              value={holdReason}
+              onChange={(e) => setHoldReason(e.target.value)}
+            />
+            <div className="flex gap-2">
+              <button
+                className="flex-1 rounded-lg bg-yellow-500 text-white py-2 text-sm font-medium hover:bg-yellow-600 disabled:opacity-50"
+                onClick={() => holdMutation.mutate()}
+                disabled={holdMutation.isPending}
+              >
+                {holdMutation.isPending ? 'Saving...' : 'Hold Sale'}
+              </button>
+              <button
+                className="flex-1 rounded-lg border py-2 text-sm text-gray-700 hover:bg-gray-50"
+                onClick={() => { setShowHoldModal(false); setHoldReason(''); }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* B3: Recall held sale modal */}
+      {showRecallModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <h3 className="font-bold text-gray-900">Recall Held Sale</h3>
+            {heldSalesQuery.isLoading && <p className="text-sm text-gray-500">Loading...</p>}
+            {heldSalesQuery.data?.length === 0 && <p className="text-sm text-gray-500">No held sales for this shift.</p>}
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {(heldSalesQuery.data || []).map((held: any) => (
+                <button
+                  key={held.id}
+                  className="w-full text-left border rounded-lg px-3 py-2 hover:bg-blue-50 text-sm"
+                  onClick={() => recallMutation.mutate(held.id)}
+                  disabled={recallMutation.isPending}
+                >
+                  <div className="flex justify-between">
+                    <span className="font-medium">{held.customerName || 'No name'}</span>
+                    <span className="text-gray-500 text-xs">
+                      {new Date(held.createdAt).toLocaleTimeString()}
+                    </span>
+                  </div>
+                  {held.holdReason && <p className="text-xs text-gray-500 mt-0.5">{held.holdReason}</p>}
+                  <p className="text-xs text-gray-500">{held.customerPhone || ''}</p>
+                </button>
+              ))}
+            </div>
+            <button
+              className="w-full border rounded-lg py-2 text-sm text-gray-700 hover:bg-gray-50"
+              onClick={() => setShowRecallModal(false)}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* B2: Void sale modal */}
+      {showVoidModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-xl p-6 max-w-sm w-full shadow-2xl space-y-4">
+            <h3 className="font-bold text-gray-900 flex items-center gap-2">
+              <Ban className="h-5 w-5 text-red-500" />
+              Void Sale
+            </h3>
+            <p className="text-sm text-gray-500">Enter sale ID/number and manager PIN to void.</p>
+            <input
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Sale ID or number"
+              value={voidSaleId}
+              onChange={(e) => setVoidSaleId(e.target.value)}
+            />
+            <input
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Void reason"
+              value={voidReason}
+              onChange={(e) => setVoidReason(e.target.value)}
+            />
+            <input
+              type="password"
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Manager PIN"
+              value={voidPin}
+              onChange={(e) => setVoidPin(e.target.value)}
+            />
+            <div className="flex gap-2">
+              <button
+                className="flex-1 rounded-lg bg-red-600 text-white py-2 text-sm font-medium hover:bg-red-700 disabled:opacity-50"
+                onClick={() => voidMutation.mutate()}
+                disabled={voidMutation.isPending || !voidSaleId || !voidPin || !voidReason}
+              >
+                {voidMutation.isPending ? 'Voiding...' : 'Void Sale'}
+              </button>
+              <button
+                className="flex-1 rounded-lg border py-2 text-sm text-gray-700 hover:bg-gray-50"
+                onClick={() => { setShowVoidModal(false); setVoidPin(''); setVoidReason(''); setVoidSaleId(''); }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* B4: Discount PIN modal */}
+      {showDiscountPinModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-xl p-6 max-w-sm w-full shadow-2xl space-y-4">
+            <h3 className="font-bold text-gray-900 flex items-center gap-2">
+              <Tag className="h-5 w-5 text-blue-500" />
+              Manager Approval Required
+            </h3>
+            <p className="text-sm text-gray-500">
+              Discount of <strong>{pendingDiscount}%</strong> requires manager approval.
+            </p>
+            <input
+              type="password"
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Manager PIN"
+              value={discountPin}
+              onChange={(e) => setDiscountPin(e.target.value)}
+              autoFocus
+            />
+            <div className="flex gap-2">
+              <button
+                className="flex-1 rounded-lg bg-blue-600 text-white py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                disabled={!discountPin}
+                onClick={async () => {
+                  try {
+                    await api.post('/pos/discounts', {
+                      saleId: 'pending',
+                      discountType: 'percent',
+                      discountValue: pendingDiscount,
+                      managerPin: discountPin,
+                      reason: `Cart discount ${pendingDiscount}%`,
+                      posShiftId: currentShiftId,
+                    });
+                    setDiscount(pendingDiscount);
+                    setShowDiscountPinModal(false);
+                    setDiscountPin('');
+                    toast.success('Discount approved');
+                  } catch (err) {
+                    toast.error(getApiErrorMessage(err, 'Invalid PIN or approval failed'));
+                  }
+                }}
+              >
+                Approve
+              </button>
+              <button
+                className="flex-1 rounded-lg border py-2 text-sm text-gray-700 hover:bg-gray-50"
+                onClick={() => { setShowDiscountPinModal(false); setDiscountPin(''); }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -337,4 +337,40 @@ export class PharmacyController {
   createSensor(@Body() body: CreateTemperatureSensorDto, @Request() req: any) {
     return this.temperatureService.createSensor(body as any, req.user?.tenantId);
   }
+
+  // ─── B5: Barcode Scan ──────────────────────────────────────────────────────
+
+  @Get('items/by-barcode/:code')
+  @AuthWithPermissions('pos.barcode.scan')
+  @ApiOperation({ summary: 'Look up a pharmacy item by barcode (HID scanner)' })
+  getItemByBarcode(@Param('code') code: string, @Request() req: any) {
+    const facilityId = req.headers['x-facility-id'] || req.user?.facilityId;
+    return this.service.getItemByBarcode(code, req.user?.tenantId, facilityId);
+  }
+
+  // ─── B6: Receipt Reprint ───────────────────────────────────────────────────
+
+  @Get('sales/:id/receipt')
+  @AuthWithPermissions('pos.receipt.reprint')
+  @ApiOperation({ summary: 'Get receipt data; duplicate=true logs a reprint and adds DUPLICATE watermark flag' })
+  getReceipt(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('duplicate') duplicate: string,
+    @Request() req: any,
+  ) {
+    return this.service.getReceipt(id, { duplicate: duplicate === 'true' }, req.user?.id, req.user?.tenantId);
+  }
+
+  @Get('receipts/history')
+  @AuthWithPermissions('pos.receipt.reprint')
+  @ApiOperation({ summary: 'List receipt history for reprint lookup' })
+  listReceiptHistory(
+    @Request() req: any,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('cashierId') cashierId?: string,
+    @Query('saleNumber') saleNumber?: string,
+  ) {
+    return this.service.listReceiptHistory(req.user?.tenantId, { from, to, cashierId, saleNumber });
+  }
 }

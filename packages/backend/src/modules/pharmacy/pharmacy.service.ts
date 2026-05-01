@@ -46,6 +46,7 @@ import { FinanceService } from '../finance/finance.service';
 import { PosShiftGuardService } from '../pos/services/pos-shift-guard.service';
 import { EfrisService } from '../efris/efris.service';
 import { EfrisDocumentType } from '../../database/entities/pos-compliance.entity';
+import { ReceiptReprint, RetailCustomer } from '../../database/entities/pos-retail.entity';
 
 // Uganda standard VAT rate. Future: move to tenant tax_rates table (Phase B).
 const UG_STANDARD_VAT_RATE = 18;
@@ -78,6 +79,10 @@ export class PharmacyService {
     private drugClassRepo: Repository<DrugClassification>,
     @InjectRepository(ControlledSubstanceLog)
     private controlledLogRepo: Repository<ControlledSubstanceLog>,
+    @InjectRepository(ReceiptReprint)
+    private reprintRepo: Repository<ReceiptReprint>,
+    @InjectRepository(RetailCustomer)
+    private retailCustomerRepo: Repository<RetailCustomer>,
     private dataSource: DataSource,
     private posShiftGuard: PosShiftGuardService,
     private efrisService: EfrisService,
@@ -785,7 +790,38 @@ export class PharmacyService {
       tenantId,
       userId,
       channel: sale.saleChannel,
+      customerPhone: sale.customerPhone,
+      customerName: sale.customerName,
+      totalAmount: Number(sale.totalAmount),
     });
+
+    // B8: upsert retail customer record (fire-and-forget)
+    if (sale.customerPhone && tenantId) {
+      this.retailCustomerRepo.findOne({ where: { phone: sale.customerPhone, tenantId } })
+        .then((customer) => {
+          const now = new Date();
+          if (customer) {
+            customer.totalVisits += 1;
+            customer.totalSpend = Number(customer.totalSpend) + Number(sale.totalAmount);
+            customer.lastSeenAt = now;
+            if (sale.customerName && !customer.name) customer.name = sale.customerName;
+            return this.retailCustomerRepo.save(customer);
+          } else {
+            return this.retailCustomerRepo.save(
+              this.retailCustomerRepo.create({
+                phone: sale.customerPhone!,
+                name: sale.customerName,
+                totalVisits: 1,
+                totalSpend: Number(sale.totalAmount),
+                firstSeenAt: now,
+                lastSeenAt: now,
+                tenantId,
+              }),
+            );
+          }
+        })
+        .catch((err) => this.logger.warn(`RetailCustomer upsert failed: ${err.message}`));
+    }
 
     return this.findSale(id, tenantId);
   }
@@ -1288,5 +1324,102 @@ export class PharmacyService {
       disposed,
       returned,
     };
+  }
+
+  // ─── B5: Barcode Scan ─────────────────────────────────────────────────────
+
+  async getItemByBarcode(barcode: string, tenantId?: string, facilityId?: string) {
+    const item = await this.inventoryRepo
+      .createQueryBuilder('i')
+      .where('i.barcode = :barcode', { barcode })
+      .andWhere(tenantId ? 'i.tenant_id = :tenantId' : '1=1', tenantId ? { tenantId } : {})
+      .getOne();
+
+    if (!item) {
+      throw new (await import('@nestjs/common').then((m) => m.NotFoundException))(
+        `No item found for barcode "${barcode}"`,
+      );
+    }
+
+    let availableQty = 0;
+    if (facilityId) {
+      const sb = await this.stockBalanceRepo.findOne({
+        where: { itemId: item.id, facilityId, ...(tenantId ? { tenantId } : {}) },
+      });
+      availableQty = sb ? Number(sb.availableQuantity) : 0;
+    }
+
+    return { ...item, availableQty };
+  }
+
+  // ─── B6: Receipt Reprint ──────────────────────────────────────────────────
+
+  async getReceipt(
+    saleId: string,
+    options: { duplicate?: boolean },
+    userId: string,
+    tenantId?: string,
+  ) {
+    const sale = await this.findSale(saleId, tenantId);
+
+    let reprintCount = 0;
+    if (options.duplicate) {
+      const existing = await this.reprintRepo.findOne({ where: { saleId, ...(tenantId ? { tenantId } : {}) } });
+      if (existing) {
+        existing.reprintCount += 1;
+        existing.reprintedAt = new Date();
+        existing.reprintedById = userId;
+        await this.reprintRepo.save(existing);
+        reprintCount = existing.reprintCount;
+      } else {
+        const reprint = await this.reprintRepo.save(
+          this.reprintRepo.create({
+            saleId,
+            reprintedById: userId,
+            reprintCount: 1,
+            reprintedAt: new Date(),
+            ...(tenantId ? { tenantId } : {}),
+          }),
+        );
+        reprintCount = reprint.reprintCount;
+      }
+    }
+
+    return { sale, isDuplicate: !!options.duplicate, reprintCount };
+  }
+
+  async listReceiptHistory(
+    tenantId: string,
+    query: { from?: string; to?: string; cashierId?: string; saleNumber?: string },
+  ) {
+    const qb = this.saleRepo
+      .createQueryBuilder('s')
+      .leftJoinAndSelect('s.soldBy', 'user')
+      .leftJoinAndSelect('s.store', 'store')
+      .where('s.tenant_id = :tenantId', { tenantId })
+      .andWhere('s.status = :status', { status: SaleStatus.COMPLETED })
+      .orderBy('s.created_at', 'DESC')
+      .take(200);
+
+    if (query.from) qb.andWhere('s.created_at >= :from', { from: new Date(query.from) });
+    if (query.to) qb.andWhere('s.created_at <= :to', { to: new Date(query.to) });
+    if (query.cashierId) qb.andWhere('s.sold_by_id = :cashierId', { cashierId: query.cashierId });
+    if (query.saleNumber) qb.andWhere('s.sale_number ILIKE :sn', { sn: `%${query.saleNumber}%` });
+
+    const sales = await qb.getMany();
+
+    const reprintMap = new Map<string, number>();
+    if (sales.length > 0) {
+      const reprints = await this.reprintRepo
+        .createQueryBuilder('rp')
+        .where('rp.sale_id IN (:...ids)', { ids: sales.map((s) => s.id) })
+        .andWhere(tenantId ? 'rp.tenant_id = :tenantId' : '1=1', { tenantId })
+        .getMany();
+      for (const rp of reprints) {
+        reprintMap.set(rp.saleId, rp.reprintCount);
+      }
+    }
+
+    return sales.map((s) => ({ ...s, reprintCount: reprintMap.get(s.id) || 0 }));
   }
 }

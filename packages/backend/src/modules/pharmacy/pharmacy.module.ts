@@ -24,6 +24,7 @@ import { TemperatureLog, TemperatureSensor } from '../../database/entities/tempe
 import { AuditLog } from '../../database/entities/audit-log.entity';
 import { DrugClassification } from '../../database/entities/drug-classification.entity';
 import { ControlledSubstanceLog } from '../../database/entities/controlled-substance.entity';
+import { ReceiptReprint, RetailCustomer } from '../../database/entities/pos-retail.entity';
 import { FinanceModule } from '../finance/finance.module';
 import { PosModule } from '../pos/pos.module';
 import { EfrisModule } from '../efris/efris.module';
@@ -52,6 +53,8 @@ import { EfrisModule } from '../efris/efris.module';
       AuditLog,
       DrugClassification,
       ControlledSubstanceLog,
+      ReceiptReprint,
+      RetailCustomer,
     ]),
   ],
   controllers: [PharmacyController],
