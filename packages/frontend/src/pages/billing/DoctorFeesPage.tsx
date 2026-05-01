@@ -83,8 +83,18 @@ export default function DoctorFeesPage() {
   const { data: doctors } = useQuery({
     queryKey: ['doctors-for-fee-picker'],
     queryFn: async () => {
-      const res = await api.get('/users', { params: { role: 'doctor', limit: 200 } });
-      return (res.data?.data ?? res.data ?? []) as DoctorLite[];
+      // Use the same source the OPD/Triage flows use: doctor-duty's all-doctors
+      // endpoint returns every active user whose role contains "doctor",
+      // "consultant" or "physician" — so visiting consultants registered via
+      // Staff Directory show up here too.
+      const res = await api.get('/doctor-duty/all-doctors');
+      return (res.data || []).map((u: any) => ({
+        id: u.id,
+        firstName: u.firstName ?? (u.fullName?.split(' ')[0] ?? ''),
+        lastName: u.lastName ?? (u.fullName?.split(' ').slice(1).join(' ') ?? ''),
+        email: u.email,
+        department: u.department,
+      })) as DoctorLite[];
     },
     enabled: showPicker,
   });
@@ -307,8 +317,21 @@ function DoctorPickerModal({
         </div>
         <div className="overflow-y-auto flex-1 divide-y">
           {filtered.length === 0 && (
-            <div className="text-center py-8 text-sm text-gray-500">
-              No matching doctors without a fee profile.
+            <div className="text-center py-8 px-6 text-sm text-gray-500 space-y-2">
+              <p>No matching doctors without a fee profile.</p>
+              <p className="text-xs">
+                Adding a <strong>visiting consultant</strong>? Register them once under{' '}
+                <a
+                  href="/admin/hr/staff"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-blue-600 underline"
+                >
+                  HR → Staff Directory
+                </a>{' '}
+                with role <em>Doctor</em> (or <em>Visiting Consultant</em>) — no login is required
+                — then they'll show up here.
+              </p>
             </div>
           )}
           {filtered.map((d) => (
