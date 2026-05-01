@@ -85,6 +85,7 @@ export class AuthResponseDto {
     email: string;
     roles: string[];
     permissions: string[];
+    accessibleModules?: string[];
     isSystemAdmin: boolean;
     supportAccessTier?: number;
     tenantId?: string;
