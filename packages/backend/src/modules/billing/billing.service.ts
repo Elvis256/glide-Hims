@@ -22,6 +22,8 @@ import { SystemSettingsService } from '../system-settings/system-settings.servic
 import { FinanceService } from '../finance/finance.service';
 import { PricingEngineService } from '../pricing-engine/pricing-engine.service';
 import { CoverageCheckService } from '../insurance/coverage-check.service';
+import { ServicesService } from '../services/services.service';
+import { InventoryService } from '../inventory/inventory.service';
 import { PreAuthorization, PreAuthStatus } from '../../database/entities/pre-authorization.entity';
 import { InsurancePolicy, PolicyStatus } from '../../database/entities/insurance-policy.entity';
 import { multiply, add, subtract } from '../../common/utils/currency';
@@ -45,6 +47,8 @@ export class BillingService {
     private financeService: FinanceService,
     private pricingEngineService: PricingEngineService,
     private coverageCheckService: CoverageCheckService,
+    private servicesService: ServicesService,
+    private inventoryService: InventoryService,
   ) {}
 
   private async generateInvoiceNumber(manager: EntityManager, tenantId?: string): Promise<string> {
@@ -245,7 +249,56 @@ export class BillingService {
       return savedInvoice;
     });
 
+    // Best-effort auto-deduction of consumable inventory items linked to
+    // each invoiced service. Failures are logged but never block invoicing.
+    await this.autoDeductServiceConsumables(saved, dto, userId, tenantId).catch((err) => {
+      this.logger.warn(`Auto-deduct consumables failed for ${saved.invoiceNumber}: ${err?.message || err}`);
+    });
+
     return this.findInvoice(saved.id, tenantId);
+  }
+
+  /** For each invoice item with a serviceCode, deduct any linked consumables from stock. */
+  private async autoDeductServiceConsumables(
+    invoice: Invoice,
+    dto: CreateInvoiceDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<void> {
+    let facilityId: string | undefined;
+    if (dto.encounterId) {
+      const enc = await this.encounterRepository.findOne({
+        where: { id: dto.encounterId, ...(tenantId ? { tenantId } : {}) },
+      });
+      facilityId = enc?.facilityId;
+    }
+    if (!facilityId) return; // No facility context — cannot deduct.
+
+    for (const item of dto.items) {
+      if (!item.serviceCode) continue;
+      const consumables = await this.servicesService.getConsumablesByCode(item.serviceCode, tenantId);
+      for (const c of consumables) {
+        const totalQty = Number(c.quantity) * Number(item.quantity || 1);
+        try {
+          await this.inventoryService.deductStock(
+            c.itemId,
+            facilityId,
+            totalQty,
+            'invoice',
+            invoice.id,
+            userId,
+            tenantId,
+          );
+        } catch (err: any) {
+          const msg = `Could not deduct ${totalQty} of item ${c.itemId} for service ${item.serviceCode}: ${err?.message || err}`;
+          if (c.isOptional) {
+            this.logger.warn(msg);
+          } else {
+            this.logger.error(msg);
+          }
+        }
+      }
+    }
   }
 
   async findAll(

@@ -58,3 +58,12 @@ export class CreateServicePackageDto {
   @ApiProperty({ required: false }) @IsOptional() @IsNumber() validDays?: number;
   @ApiProperty() @IsArray() includedServices: { serviceId: string; quantity: number }[];
 }
+
+export class CreateServiceConsumableDto {
+  @ApiProperty() @IsUUID() itemId: string;
+  @ApiProperty({ default: 1 }) @IsNumber() quantity: number;
+  @ApiProperty({ required: false, default: false }) @IsOptional() @IsBoolean() isOptional?: boolean;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() notes?: string;
+}
+
+export class UpdateServiceConsumableDto extends PartialType(CreateServiceConsumableDto) {}

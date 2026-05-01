@@ -19,6 +19,8 @@ import {
   UpdateServiceDto,
   CreateServicePriceDto,
   CreateServicePackageDto,
+  CreateServiceConsumableDto,
+  UpdateServiceConsumableDto,
 } from './services.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { ServiceTier } from '../../database/entities/service-category.entity';
@@ -163,5 +165,42 @@ export class ServicesController {
     @Request() req?: any,
   ) {
     return this.service.getServicePrice(id, tier, facilityId, req?.user?.tenantId);
+  }
+
+  // === CONSUMABLES (auto-deduct items when service rendered) ===
+  @Get(':id/consumables')
+  @AuthWithPermissions('services.read')
+  @ApiOperation({ summary: 'List inventory items consumed by this service' })
+  listConsumables(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.service.listConsumables(id, req.user?.tenantId);
+  }
+
+  @Post(':id/consumables')
+  @AuthWithPermissions('services.update')
+  @ApiOperation({ summary: 'Link an inventory item to this service' })
+  addConsumable(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateServiceConsumableDto,
+    @Request() req: any,
+  ) {
+    return this.service.addConsumable(id, dto, req.user?.tenantId);
+  }
+
+  @Patch('consumables/:cid')
+  @AuthWithPermissions('services.update')
+  @ApiOperation({ summary: 'Update a service consumable link' })
+  updateConsumable(
+    @Param('cid', ParseUUIDPipe) cid: string,
+    @Body() dto: UpdateServiceConsumableDto,
+    @Request() req: any,
+  ) {
+    return this.service.updateConsumable(cid, dto, req.user?.tenantId);
+  }
+
+  @Delete('consumables/:cid')
+  @AuthWithPermissions('services.update')
+  @ApiOperation({ summary: 'Remove a service consumable link' })
+  deleteConsumable(@Param('cid', ParseUUIDPipe) cid: string, @Request() req: any) {
+    return this.service.deleteConsumable(cid, req.user?.tenantId);
   }
 }

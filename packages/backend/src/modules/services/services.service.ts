@@ -8,6 +8,7 @@ import {
   ServicePackage,
   ServiceTier,
 } from '../../database/entities/service-category.entity';
+import { ServiceConsumable } from '../../database/entities/service-consumable.entity';
 import {
   CreateServiceCategoryDto,
   UpdateServiceCategoryDto,
@@ -24,6 +25,7 @@ export class ServicesService {
     @InjectRepository(Service) private serviceRepo: Repository<Service>,
     @InjectRepository(ServicePrice) private priceRepo: Repository<ServicePrice>,
     @InjectRepository(ServicePackage) private packageRepo: Repository<ServicePackage>,
+    @InjectRepository(ServiceConsumable) private consumableRepo: Repository<ServiceConsumable>,
   ) {}
 
   // Categories
@@ -179,5 +181,73 @@ export class ServicesService {
     });
     if (!pkg) throw new NotFoundException('Package not found');
     return this.packageRepo.remove(pkg);
+  }
+
+// ─── Service Consumables (auto-deduct items when service is rendered) ───
+
+  async listConsumables(serviceId: string, tenantId?: string) {
+    return this.consumableRepo.find({
+      where: { serviceId, ...(tenantId ? { tenantId } : {}) },
+      relations: ['item'],
+      order: { createdAt: 'ASC' },
+    });
+  }
+
+  async addConsumable(
+    serviceId: string,
+    dto: { itemId: string; quantity: number; isOptional?: boolean; notes?: string },
+    tenantId?: string,
+  ) {
+    const service = await this.serviceRepo.findOne({
+      where: { id: serviceId, ...(tenantId ? { tenantId } : {}) },
+    });
+    if (!service) throw new NotFoundException('Service not found');
+    const exists = await this.consumableRepo.findOne({
+      where: { serviceId, itemId: dto.itemId, ...(tenantId ? { tenantId } : {}) },
+    });
+    if (exists) throw new ConflictException('Item already linked to this service');
+    return this.consumableRepo.save(
+      this.consumableRepo.create({
+        serviceId,
+        itemId: dto.itemId,
+        quantity: dto.quantity,
+        isOptional: dto.isOptional ?? false,
+        notes: dto.notes,
+        ...(tenantId ? { tenantId } : {}),
+      }),
+    );
+  }
+
+  async updateConsumable(
+    id: string,
+    dto: Partial<{ quantity: number; isOptional: boolean; notes: string }>,
+    tenantId?: string,
+  ) {
+    const row = await this.consumableRepo.findOne({
+      where: { id, ...(tenantId ? { tenantId } : {}) },
+    });
+    if (!row) throw new NotFoundException('Consumable not found');
+    Object.assign(row, dto);
+    return this.consumableRepo.save(row);
+  }
+
+  async deleteConsumable(id: string, tenantId?: string) {
+    const row = await this.consumableRepo.findOne({
+      where: { id, ...(tenantId ? { tenantId } : {}) },
+    });
+    if (!row) throw new NotFoundException('Consumable not found');
+    return this.consumableRepo.remove(row);
+  }
+
+  /** Lookup consumables by service code — used by billing for auto-deduction. */
+  async getConsumablesByCode(serviceCode: string, tenantId?: string) {
+    const svc = await this.serviceRepo.findOne({
+      where: { code: serviceCode, ...(tenantId ? { tenantId } : {}) },
+    });
+    if (!svc) return [];
+    return this.consumableRepo.find({
+      where: { serviceId: svc.id, ...(tenantId ? { tenantId } : {}) },
+      relations: ['item'],
+    });
   }
 }
