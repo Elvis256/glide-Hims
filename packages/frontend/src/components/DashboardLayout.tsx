@@ -751,6 +751,7 @@ const navigationSections: NavSection[] = [
     roles: ['Store Keeper', 'Pharmacist', 'Administrator'],
     items: [
       { name: 'Inventory', href: '/inventory', icon: Package, permissions: ['inventory.read'] },
+      { name: 'Reorder Suggestions', href: '/inventory/reorder', icon: PackageCheck, permissions: ['inventory.read'] },
       { name: 'Unit Issue', href: '/stores/issue', icon: ArrowRightLeft, permissions: ['stores.create'] },
       { name: 'Stock Transfers', href: '/inventory/transfers', icon: ArrowDownUp, permissions: ['stores.update'] },
       {

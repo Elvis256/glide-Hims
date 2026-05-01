@@ -314,6 +314,7 @@ const StoresExpiryPage = lazy(() => import('./pages/stores/StoresExpiryPage'));
 const StockAdjustmentsPage = lazy(() => import('./pages/stores/StockAdjustmentsPage'));
 const StockTakePage = lazy(() => import('./pages/stores/StockTakePage'));
 const StockTransferPage = lazy(() => import('./pages/inventory/StockTransferPage'));
+const ReorderSuggestionsPage = lazy(() => import('./pages/inventory/ReorderSuggestionsPage'));
 const StoresAssetRegisterPage = lazy(() => import('./pages/stores/AssetRegisterPage'));
 const MaintenanceSchedulePage = lazy(() => import('./pages/stores/MaintenanceSchedulePage'));
 const ConsumptionReportsPage = lazy(() => import('./pages/stores/ConsumptionReportsPage'));
@@ -987,6 +988,7 @@ function AppRoutes() {
                 <Route path="/stores/issue" element={<ModuleRoute module="stores"><StoreKeeperRoute><UnitIssuePage /></StoreKeeperRoute></ModuleRoute>} />
                 <Route path="/stores/transfers" element={<Navigate to="/inventory/transfers" replace />} />
                 <Route path="/inventory/transfers" element={<ModuleRoute module="stores"><StoreKeeperRoute><StockTransferPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/inventory/reorder" element={<ModuleRoute module="stores"><StoreKeeperRoute><ReorderSuggestionsPage /></StoreKeeperRoute></ModuleRoute>} />
                 <Route path="/stores/procurement" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresProcurementPage /></StoreKeeperRoute></ModuleRoute>} />
                 <Route path="/stores/suppliers" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresSupplierPage /></StoreKeeperRoute></ModuleRoute>} />
                 <Route path="/stores/expiry" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresExpiryPage /></StoreKeeperRoute></ModuleRoute>} />

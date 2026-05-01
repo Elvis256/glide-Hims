@@ -51,6 +51,28 @@ export class ProcurementController {
     return this.procurementService.traceProcurement(type, id, req.user?.tenantId);
   }
 
+  // ============ AUTO-REORDER ============
+
+  @Get('reorder/preview')
+  @AuthWithPermissions('procurement.read')
+  previewReorder(@Query('facilityId') facilityId: string | undefined, @Request() req: any) {
+    return this.procurementService.runAutoReorderDraftPRs({
+      tenantId: req.user?.tenantId,
+      facilityId,
+      dryRun: true,
+    });
+  }
+
+  @Post('reorder/run')
+  @AuthWithPermissions('procurement.create')
+  runReorder(@Body() body: { facilityId?: string }, @Request() req: any) {
+    return this.procurementService.runAutoReorderDraftPRs({
+      tenantId: req.user?.tenantId,
+      facilityId: body?.facilityId,
+      userId: req.user?.id,
+    });
+  }
+
   // ============ PURCHASE REQUESTS ============
 
   @Post('purchase-requests')
