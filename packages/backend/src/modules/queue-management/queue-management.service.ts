@@ -25,7 +25,7 @@ import {
 } from '../../database/entities/invoice.entity';
 import { Service } from '../../database/entities/service-category.entity';
 import { Department } from '../../database/entities/department.entity';
-import { DoctorDuty } from '../../database/entities/doctor-duty.entity';
+import { DoctorDuty, DutyStatus } from '../../database/entities/doctor-duty.entity';
 import { AuditLog } from '../../database/entities/audit-log.entity';
 import { SystemSetting } from '../../database/entities/system-setting.entity';
 import { AfricasTalkingService } from '../integrations/africas-talking.service';
@@ -310,6 +310,7 @@ export class QueueManagementService {
       savedInvoice: Invoice | null;
       saved: Queue;
       ticketNumber: string;
+      assignedDoctorId?: string;
     };
     // eslint-disable-next-line no-constant-condition
     while (true) {
@@ -373,8 +374,27 @@ export class QueueManagementService {
             );
           }
 
+          // R3: Auto-assign least-loaded on-duty doctor when none explicitly chosen
+          // and the patient is heading to consultation. Falls back to NULL (pool)
+          // if no doctor is on duty — the existing pool visibility still applies.
+          let resolvedAssignedDoctorId = dto.assignedDoctorId;
+          if (
+            !resolvedAssignedDoctorId &&
+            (dto.servicePoint as ServicePoint) === ServicePoint.CONSULTATION &&
+            process.env.QUEUE_AUTO_ASSIGN_DOCTOR !== 'false'
+          ) {
+            resolvedAssignedDoctorId =
+              (await this.pickAvailableDoctor(facilityId, dto.departmentId, tenantId)) || undefined;
+            if (resolvedAssignedDoctorId) {
+              this.logger.log(
+                `Auto-assigned doctor ${resolvedAssignedDoctorId} to queue ticket ${ticketNumber} (least-loaded on-duty)`,
+              );
+            }
+          }
+
           const queue = this.queueRepository.create({
             ...dto,
+            assignedDoctorId: resolvedAssignedDoctorId,
             servicePoint: dto.servicePoint as ServicePoint,
             ticketNumber,
             sequenceNumber,
@@ -404,6 +424,7 @@ export class QueueManagementService {
             savedInvoice: txInvoice,
             saved: txSaved,
             ticketNumber,
+            assignedDoctorId: resolvedAssignedDoctorId,
           };
         });
         break;
@@ -434,8 +455,9 @@ export class QueueManagementService {
 
     const { savedEncounter, savedInvoice, saved } = txResult;
 
-    if (dto.assignedDoctorId) {
-      await this.updateDoctorQueueCount(dto.assignedDoctorId, facilityId, tenantId);
+    const finalAssignedDoctorId = txResult.assignedDoctorId || dto.assignedDoctorId;
+    if (finalAssignedDoctorId) {
+      await this.updateDoctorQueueCount(finalAssignedDoctorId, facilityId, tenantId);
     }
 
     await this.writeAuditLog(saved.id, 'QUEUE_CREATED', userId, null, initialQueueStatus);
@@ -1709,6 +1731,58 @@ export class QueueManagementService {
         ...(tenantId ? { tenantId } : {}),
       },
     });
+  }
+
+  /**
+   * R3: Pick the best on-duty doctor at this facility for an unassigned
+   * consultation queue entry. Strategy: least-loaded (lowest currentQueueCount)
+   * who is below maxPatients. Tie-breaker: earliest checkInTime (round-robin
+   * — whoever started shift first gets the next patient). Department match is
+   * preferred but not required (so OPD walk-ins still get a doctor when only
+   * out-of-department doctors are on duty).
+   *
+   * Returns the doctorId or null if nobody is available — in which case the
+   * queue entry stays unassigned and is visible to the whole pool.
+   */
+  private async pickAvailableDoctor(
+    facilityId: string,
+    departmentId?: string,
+    tenantId?: string,
+  ): Promise<string | null> {
+    const today = new Date().toISOString().split('T')[0];
+    const baseWhere = `duty.facility_id = :facilityId
+        AND duty.duty_date = :today
+        AND duty.status IN (:...activeStatuses)
+        AND duty.current_queue_count < duty.max_patients`;
+
+    const buildQb = () => {
+      const qb = this.doctorDutyRepository
+        .createQueryBuilder('duty')
+        .where(baseWhere, {
+          facilityId,
+          today,
+          activeStatuses: [
+            DutyStatus.ON_DUTY,
+            DutyStatus.IN_CONSULTATION,
+            DutyStatus.ON_BREAK,
+          ],
+        })
+        .orderBy('duty.current_queue_count', 'ASC')
+        .addOrderBy('duty.check_in_time', 'ASC')
+        .limit(1);
+      if (tenantId) qb.andWhere('duty.tenant_id = :tenantId', { tenantId });
+      return qb;
+    };
+
+    if (departmentId) {
+      const matched = await buildQb()
+        .andWhere('duty.department_id = :departmentId', { departmentId })
+        .getOne();
+      if (matched) return matched.doctorId;
+    }
+
+    const fallback = await buildQb().getOne();
+    return fallback ? fallback.doctorId : null;
   }
 
   private async updateDoctorQueueCount(
