@@ -203,6 +203,11 @@ export class InvoiceMatchingService {
     tenantId?: string,
   ): Promise<InvoiceMatch> {
     const match = await this.findOne(id, tenantId);
+    if (match.status === InvoiceMatchStatus.FLAGGED) {
+      throw new BadRequestException(
+        'This invoice is FLAGGED for variance/discrepancy and cannot be approved directly. Use the "Override & Approve" workflow with a documented reason and authorised approver.',
+      );
+    }
     if (match.status !== InvoiceMatchStatus.MATCHED) {
       throw new BadRequestException('Only matched invoices can be approved');
     }
@@ -235,6 +240,39 @@ export class InvoiceMatchingService {
     const match = await this.findOne(id, tenantId);
     match.status = InvoiceMatchStatus.FLAGGED;
     match.notes = reason;
+    await this.matchRepo.save(match);
+    return this.findOne(id, tenantId);
+  }
+
+  /**
+   * Override a FLAGGED invoice — explicit approval despite variance.
+   * Requires a documented overrideReason and authorised user.
+   * Sets status APPROVED and stamps overriddenBy/At for audit.
+   */
+  async overrideFlag(
+    id: string,
+    dto: { overrideReason: string; notes?: string },
+    userId: string,
+    tenantId?: string,
+  ): Promise<InvoiceMatch> {
+    const match = await this.findOne(id, tenantId);
+    if (match.status !== InvoiceMatchStatus.FLAGGED) {
+      throw new BadRequestException(
+        `Override only applies to FLAGGED invoices (current: ${match.status})`,
+      );
+    }
+    if (!dto.overrideReason || dto.overrideReason.trim().length < 10) {
+      throw new BadRequestException(
+        'Override reason is required and must be at least 10 characters',
+      );
+    }
+    match.status = InvoiceMatchStatus.APPROVED;
+    match.approvedById = userId;
+    match.approvedAt = new Date();
+    match.overrideReason = dto.overrideReason.trim();
+    match.overriddenById = userId;
+    match.overriddenAt = new Date();
+    if (dto.notes) match.notes = dto.notes;
     await this.matchRepo.save(match);
     return this.findOne(id, tenantId);
   }

@@ -1125,8 +1125,50 @@ export class ProcurementService {
           this.logger.warn(`GL auto-post failed for GRN ${grn.grnNumber}: ${err.message}`),
         );
 
+      // Try auto-completing the originating PR (best effort)
+      if (grn.purchaseOrderId) {
+        const po = await poRepo.findOne({
+          where: { id: grn.purchaseOrderId, ...(tenantId ? { tenantId } : {}) },
+          select: ['id', 'purchaseRequestId'],
+        });
+        if (po?.purchaseRequestId) {
+          this.tryAutoCompletePR(po.purchaseRequestId, tenantId).catch((err) =>
+            this.logger.warn(`Auto-complete PR failed: ${err.message}`),
+          );
+        }
+      }
+
       return saved;
     });
+  }
+
+  /**
+   * Closes a PR (status COMPLETED) when:
+   *  - PR is FULLY_ORDERED
+   *  - All linked POs are FULLY_RECEIVED or CANCELLED
+   * Called best-effort after GRN post and after invoice payment.
+   */
+  async tryAutoCompletePR(prId: string, tenantId?: string): Promise<boolean> {
+    const where: any = { id: prId };
+    if (tenantId) where.tenantId = tenantId;
+    const pr = await this.prRepo.findOne({ where });
+    if (!pr) return false;
+    if (pr.status !== PRStatus.FULLY_ORDERED) return false;
+
+    const poWhere: any = { purchaseRequestId: prId };
+    if (tenantId) poWhere.tenantId = tenantId;
+    const pos = await this.poRepo.find({ where: poWhere, select: ['id', 'status'] });
+    if (pos.length === 0) return false;
+
+    const allClosed = pos.every(
+      (p) => p.status === POStatus.FULLY_RECEIVED || p.status === POStatus.CANCELLED,
+    );
+    if (!allClosed) return false;
+
+    pr.status = PRStatus.COMPLETED;
+    await this.prRepo.save(pr);
+    this.logger.log(`PR ${pr.requestNumber} auto-completed`);
+    return true;
   }
 
   // ============ DASHBOARD ============

@@ -83,3 +83,13 @@ export class ApproveMatchDto {
   @IsDateString()
   paymentScheduled?: string;
 }
+
+export class OverrideFlagDto {
+  @IsString()
+  @IsNotEmpty()
+  overrideReason: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}

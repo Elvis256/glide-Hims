@@ -100,6 +100,15 @@ export class InvoiceMatch extends BaseEntity {
   @Column({ name: 'approved_at', type: 'timestamptz', nullable: true })
   approvedAt?: Date;
 
+  @Column({ name: 'override_reason', type: 'text', nullable: true })
+  overrideReason?: string;
+
+  @Column({ name: 'overridden_by_id', type: 'uuid', nullable: true })
+  overriddenById?: string;
+
+  @Column({ name: 'overridden_at', type: 'timestamptz', nullable: true })
+  overriddenAt?: Date;
+
   @OneToMany(() => InvoiceMatchItem, (item) => item.match, { cascade: true })
   items: InvoiceMatchItem[];
 }

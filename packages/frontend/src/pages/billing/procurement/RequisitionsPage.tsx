@@ -23,7 +23,15 @@ import {
 } from 'lucide-react';
 import { asList } from '../../../utils/unwrapResponse';
 
-type RequisitionStatus = 'draft' | 'submitted' | 'approved' | 'rejected' | 'cancelled';
+type RequisitionStatus =
+  | 'draft'
+  | 'pending_approval'
+  | 'approved'
+  | 'rejected'
+  | 'partially_ordered'
+  | 'fully_ordered'
+  | 'completed'
+  | 'cancelled';
 type RequisitionPriority = 'low' | 'normal' | 'high' | 'urgent';
 
 interface RequisitionItem {
@@ -72,9 +80,12 @@ const emptyFormData: RequisitionFormData = {
 
 const statusConfig: Record<RequisitionStatus, { color: string; bg: string; icon: React.ReactNode; label: string }> = {
   draft: { color: 'text-gray-600', bg: 'bg-gray-100', icon: <Edit className="w-3 h-3" />, label: 'Draft' },
-  submitted: { color: 'text-blue-600', bg: 'bg-blue-100', icon: <Clock className="w-3 h-3" />, label: 'Submitted' },
+  pending_approval: { color: 'text-blue-600', bg: 'bg-blue-100', icon: <Clock className="w-3 h-3" />, label: 'Pending Approval' },
   approved: { color: 'text-green-600', bg: 'bg-green-100', icon: <CheckCircle className="w-3 h-3" />, label: 'Approved' },
   rejected: { color: 'text-red-600', bg: 'bg-red-100', icon: <XCircle className="w-3 h-3" />, label: 'Rejected' },
+  partially_ordered: { color: 'text-amber-700', bg: 'bg-amber-100', icon: <Clock className="w-3 h-3" />, label: 'Partially Ordered' },
+  fully_ordered: { color: 'text-indigo-700', bg: 'bg-indigo-100', icon: <CheckCircle className="w-3 h-3" />, label: 'Fully Ordered' },
+  completed: { color: 'text-emerald-700', bg: 'bg-emerald-100', icon: <CheckCircle className="w-3 h-3" />, label: 'Completed' },
   cancelled: { color: 'text-gray-600', bg: 'bg-gray-100', icon: <XCircle className="w-3 h-3" />, label: 'Cancelled' },
 };
 
@@ -259,7 +270,7 @@ export default function RequisitionsPage() {
           <div className="flex items-center gap-2">
             <Filter className="w-4 h-4 text-gray-400" />
             <div className="flex gap-1">
-              {(['all', 'draft', 'submitted', 'approved', 'rejected'] as const).map((status) => (
+              {(['all', 'draft', 'pending_approval', 'approved', 'partially_ordered', 'fully_ordered', 'completed', 'rejected'] as const).map((status) => (
                 <button
                   key={status}
                   onClick={() => setStatusFilter(status)}
@@ -351,7 +362,7 @@ export default function RequisitionsPage() {
                     <p className="text-xs text-gray-500">Estimated Cost</p>
                   </div>
                 </div>
-                {req.approvalStage && req.status === 'submitted' && (
+                {req.approvalStage && req.status === 'pending_approval' && (
                   <div className="mt-3 pt-3 border-t">
                     <div className="flex items-center gap-2 text-sm">
                       <Clock className="w-4 h-4 text-blue-500" />
@@ -477,7 +488,7 @@ export default function RequisitionsPage() {
                     </button>
                   </>
                 )}
-                {selectedRequisition.status === 'submitted' && (
+                {selectedRequisition.status === 'pending_approval' && (
                   <>
                     <button
                       onClick={() => approveMutation.mutate(selectedRequisition.id)}
