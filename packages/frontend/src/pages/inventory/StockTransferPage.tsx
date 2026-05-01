@@ -139,7 +139,7 @@ function DashboardTab({ facilityId }: { facilityId: string }) {
                   <tr key={t.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 text-sm font-medium text-gray-900">{t.transferNumber || t.id.slice(0, 8)}</td>
                     <td className="px-4 py-3 text-sm text-gray-600">
-                      {t.sourceFacility?.name ?? '—'} → {t.destinationFacility?.name ?? '—'}
+                      {t.fromFacility?.name ?? '—'} → {t.toFacility?.name ?? '—'}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-600">{REASON_LABELS[t.reason] || t.reason}</td>
                     <td className="px-4 py-3 text-center"><StatusBadge status={t.status} /></td>
@@ -171,7 +171,10 @@ interface NewItemRow {
 
 function NewTransferTab({ facilityId, onCreated }: { facilityId: string; onCreated: () => void }) {
   const queryClient = useQueryClient();
+  const [transferMode, setTransferMode] = useState<'cross_facility' | 'intra_facility'>('cross_facility');
   const [destinationFacilityId, setDestinationFacilityId] = useState('');
+  const [fromStoreId, setFromStoreId] = useState('');
+  const [toStoreId, setToStoreId] = useState('');
   const [reason, setReason] = useState<string>('');
   const [notes, setNotes] = useState('');
   const [items, setItems] = useState<NewItemRow[]>([]);
@@ -184,6 +187,14 @@ function NewTransferTab({ facilityId, onCreated }: { facilityId: string; onCreat
     staleTime: 60000,
   });
   const facilities = asList(facilitiesData).filter((f: any) => f.id !== facilityId);
+
+  const { data: storesData } = useQuery({
+    queryKey: ['stores-for-facility', facilityId],
+    queryFn: () => api.get('/stores', { params: { facilityId } }).then((r) => r.data),
+    enabled: !!facilityId && transferMode === 'intra_facility',
+    staleTime: 60000,
+  });
+  const stores = asList(storesData);
 
   const { data: inventoryData } = useQuery({
     queryKey: ['inventory-stock', facilityId, itemSearch],
@@ -200,16 +211,18 @@ function NewTransferTab({ facilityId, onCreated }: { facilityId: string; onCreat
   const createMutation = useMutation({
     mutationFn: () =>
       stockTransferService.create({
-        sourceFacilityId: facilityId,
-        destinationFacilityId,
+        fromFacilityId: facilityId,
+        toFacilityId: transferMode === 'intra_facility' ? facilityId : destinationFacilityId,
+        fromStoreId: transferMode === 'intra_facility' ? fromStoreId : undefined,
+        toStoreId: transferMode === 'intra_facility' ? toStoreId : undefined,
         reason: reason as any,
         notes: notes || undefined,
         items: items.map((i) => ({
           itemId: i.itemId,
-          batchNumber: i.batchNumber || undefined,
-          expiryDate: i.expiryDate || undefined,
-          quantity: i.quantity,
-          unitCost: i.unitCost || undefined,
+          batchNumber: i.batchNumber,
+          expiryDate: i.expiryDate,
+          requestedQuantity: i.quantity,
+          unitCost: i.unitCost || 0,
         })),
       }),
     onSuccess: () => {
@@ -226,6 +239,8 @@ function NewTransferTab({ facilityId, onCreated }: { facilityId: string; onCreat
 
   const resetForm = () => {
     setDestinationFacilityId('');
+    setFromStoreId('');
+    setToStoreId('');
     setReason('');
     setNotes('');
     setItems([]);
@@ -281,7 +296,11 @@ function NewTransferTab({ facilityId, onCreated }: { facilityId: string; onCreat
   const removeItem = (key: number) => setItems((prev) => prev.filter((i) => i.key !== key));
 
   const totalValue = items.reduce((sum, i) => sum + i.quantity * i.unitCost, 0);
-  const canSubmit = destinationFacilityId && reason && items.length > 0 && items.every((i) => i.quantity > 0 && i.quantity <= i.availableQty);
+  const targetSelected =
+    transferMode === 'cross_facility'
+      ? !!destinationFacilityId
+      : !!fromStoreId && !!toStoreId && fromStoreId !== toStoreId;
+  const canSubmit = targetSelected && reason && items.length > 0 && items.every((i) => i.quantity > 0 && i.quantity <= i.availableQty);
 
   return (
     <div className="bg-white rounded-lg shadow">
@@ -289,21 +308,85 @@ function NewTransferTab({ facilityId, onCreated }: { facilityId: string; onCreat
         <h3 className="font-semibold text-gray-900">Create Transfer Request</h3>
       </div>
       <div className="p-5 space-y-5">
+        {/* Mode toggle */}
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-medium text-gray-700">Transfer type:</span>
+          <div className="inline-flex rounded-lg border border-gray-200 p-0.5 bg-gray-50">
+            <button
+              type="button"
+              onClick={() => setTransferMode('cross_facility')}
+              className={`px-3 py-1.5 text-sm rounded-md transition ${
+                transferMode === 'cross_facility'
+                  ? 'bg-white shadow text-blue-700 font-medium'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Between facilities
+            </button>
+            <button
+              type="button"
+              onClick={() => setTransferMode('intra_facility')}
+              className={`px-3 py-1.5 text-sm rounded-md transition ${
+                transferMode === 'intra_facility'
+                  ? 'bg-white shadow text-blue-700 font-medium'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Between stores (same facility)
+            </button>
+          </div>
+        </div>
+
         {/* Destination + Reason row */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Destination Facility *</label>
-            <select
-              value={destinationFacilityId}
-              onChange={(e) => setDestinationFacilityId(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="">Select facility…</option>
-              {facilities.map((f: any) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
-              ))}
-            </select>
-          </div>
+          {transferMode === 'cross_facility' ? (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Destination Facility *</label>
+              <select
+                value={destinationFacilityId}
+                onChange={(e) => setDestinationFacilityId(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">Select facility…</option>
+                {facilities.map((f: any) => (
+                  <option key={f.id} value={f.id}>{f.name}</option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">From Store *</label>
+                <select
+                  value={fromStoreId}
+                  onChange={(e) => setFromStoreId(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">Select store…</option>
+                  {stores.map((s: any) => (
+                    <option key={s.id} value={s.id} disabled={s.id === toStoreId}>
+                      {s.name} {s.type ? `(${s.type})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">To Store *</label>
+                <select
+                  value={toStoreId}
+                  onChange={(e) => setToStoreId(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">Select store…</option>
+                  {stores.map((s: any) => (
+                    <option key={s.id} value={s.id} disabled={s.id === fromStoreId}>
+                      {s.name} {s.type ? `(${s.type})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Reason *</label>
             <select
@@ -508,6 +591,7 @@ function TransferListTab({
       return stockTransferService.approve(transfer.id, {
         items: detailItems.map((i) => ({
           itemId: i.itemId,
+          batchNumber: i.batchNumber || '',
           approvedQuantity: i.requestedQuantity,
         })),
       });
@@ -535,6 +619,7 @@ function TransferListTab({
       return stockTransferService.receive(transfer.id, {
         items: detailItems.map((i) => ({
           itemId: i.itemId,
+          batchNumber: i.batchNumber || '',
           receivedQuantity: i.approvedQuantity ?? i.requestedQuantity,
         })),
       });
@@ -607,7 +692,7 @@ function TransferListTab({
                 {transfers.map((t) => {
                   const isExpanded = expandedId === t.id;
                   const detailItems = isExpanded ? asList<StockTransferItem>(expandedDetail?.items) : [];
-                  const counterFacility = isIncoming ? t.sourceFacility : t.destinationFacility;
+                  const counterFacility = isIncoming ? t.fromFacility : t.toFacility;
 
                   return (
                     <TransferRow

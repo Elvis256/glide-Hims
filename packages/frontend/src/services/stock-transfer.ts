@@ -2,16 +2,19 @@ import api from './api';
 
 export interface TransferItem {
   itemId: string;
-  batchNumber?: string;
-  expiryDate?: string;
-  quantity: number;
-  unitCost?: number;
+  batchNumber: string;
+  expiryDate: string;
+  requestedQuantity: number;
+  unitCost: number;
+  notes?: string;
 }
 
 export interface CreateTransferDto {
-  sourceFacilityId: string;
-  destinationFacilityId: string;
-  reason: 'near_expiry' | 'surplus' | 'stockout_relief' | 'redistribution' | 'other';
+  fromFacilityId: string;
+  toFacilityId: string;
+  fromStoreId?: string;
+  toStoreId?: string;
+  reason: 'near_expiry' | 'surplus' | 'stockout_relief' | 'redistribution' | 'restock' | 'emergency' | 'expiry_prevention' | 'facility_request' | 'other';
   notes?: string;
   items: TransferItem[];
 }
@@ -19,10 +22,14 @@ export interface CreateTransferDto {
 export interface StockTransfer {
   id: string;
   transferNumber: string;
-  sourceFacilityId: string;
-  destinationFacilityId: string;
-  sourceFacility?: { id: string; name: string };
-  destinationFacility?: { id: string; name: string };
+  fromFacilityId: string;
+  toFacilityId: string;
+  fromStoreId?: string;
+  toStoreId?: string;
+  fromFacility?: { id: string; name: string };
+  toFacility?: { id: string; name: string };
+  fromStore?: { id: string; name: string };
+  toStore?: { id: string; name: string };
   status: 'requested' | 'approved' | 'in_transit' | 'received' | 'cancelled' | 'rejected';
   reason: string;
   notes?: string;
@@ -67,7 +74,7 @@ export const stockTransferService = {
   getDashboard: (facilityId: string) =>
     api.get('/stock-transfers/dashboard', { params: { facilityId } }).then((r) => r.data),
 
-  approve: (id: string, data: { items: Array<{ itemId: string; approvedQuantity: number }> }) =>
+  approve: (id: string, data: { items: Array<{ itemId: string; batchNumber: string; approvedQuantity: number }> }) =>
     api.patch(`/stock-transfers/${id}/approve`, data).then((r) => r.data),
 
   reject: (id: string, reason: string) =>
@@ -76,7 +83,7 @@ export const stockTransferService = {
   ship: (id: string) =>
     api.patch(`/stock-transfers/${id}/ship`).then((r) => r.data),
 
-  receive: (id: string, data: { items: Array<{ itemId: string; receivedQuantity: number }> }) =>
+  receive: (id: string, data: { items: Array<{ itemId: string; batchNumber: string; receivedQuantity: number }> }) =>
     api.patch(`/stock-transfers/${id}/receive`, data).then((r) => r.data),
 
   cancel: (id: string, reason: string) =>
