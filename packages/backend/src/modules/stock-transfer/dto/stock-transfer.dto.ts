@@ -43,6 +43,14 @@ export class CreateStockTransferDto {
   @IsUUID()
   toFacilityId: string;
 
+  @IsOptional()
+  @IsUUID()
+  fromStoreId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  toStoreId?: string;
+
   @IsEnum(TransferReason)
   reason: TransferReason;
 

@@ -30,8 +30,17 @@ export class StockTransferService {
     userId: string,
     tenantId?: string,
   ): Promise<StockTransfer> {
-    if (dto.fromFacilityId === dto.toFacilityId) {
-      throw new BadRequestException('Source and destination facility cannot be the same');
+    const sameFacility = dto.fromFacilityId === dto.toFacilityId;
+    if (sameFacility) {
+      // Intra-facility transfer (store-to-store) requires distinct stores
+      if (!dto.fromStoreId || !dto.toStoreId) {
+        throw new BadRequestException(
+          'Intra-facility transfers require both fromStoreId and toStoreId',
+        );
+      }
+      if (dto.fromStoreId === dto.toStoreId) {
+        throw new BadRequestException('Source and destination store cannot be the same');
+      }
     }
 
     if (!dto.items || dto.items.length === 0) {
@@ -44,6 +53,8 @@ export class StockTransferService {
       transferNumber,
       fromFacilityId: dto.fromFacilityId,
       toFacilityId: dto.toFacilityId,
+      fromStoreId: dto.fromStoreId,
+      toStoreId: dto.toStoreId,
       reason: dto.reason,
       notes: dto.notes,
       requestedById: userId,
@@ -266,6 +277,7 @@ export class StockTransferService {
           const ledgerEntry = manager.create(StockLedger, {
             itemId: transferItem.itemId,
             facilityId: transfer.fromFacilityId,
+            storeId: transfer.fromStoreId,
             quantity: -quantity,
             balanceAfter: newTotal,
             movementType: MovementType.TRANSFER_OUT,
@@ -274,7 +286,10 @@ export class StockTransferService {
             unitCost: transferItem.unitCost,
             referenceType: 'stock_transfer',
             referenceId: transfer.id,
-            notes: `Transfer ${transfer.transferNumber} shipped to ${transfer.toFacilityId}`,
+            notes:
+              transfer.fromFacilityId === transfer.toFacilityId
+                ? `Transfer ${transfer.transferNumber} (intra-facility) from store ${transfer.fromStoreId} to ${transfer.toStoreId}`
+                : `Transfer ${transfer.transferNumber} shipped to ${transfer.toFacilityId}`,
             createdById: userId,
             ...(tenantId ? { tenantId } : {}),
           });
@@ -389,6 +404,7 @@ export class StockTransferService {
         const toLedger = manager.create(StockLedger, {
           itemId: transferItem.itemId,
           facilityId: transfer.toFacilityId,
+          storeId: transfer.toStoreId,
           quantity,
           balanceAfter: toNewTotal,
           movementType: MovementType.TRANSFER_IN,
@@ -397,7 +413,10 @@ export class StockTransferService {
           unitCost: transferItem.unitCost,
           referenceType: 'stock_transfer',
           referenceId: transfer.id,
-          notes: `Transfer ${transfer.transferNumber} from ${transfer.fromFacilityId}`,
+          notes:
+            transfer.fromFacilityId === transfer.toFacilityId
+              ? `Transfer ${transfer.transferNumber} (intra-facility) received in store ${transfer.toStoreId}`
+              : `Transfer ${transfer.transferNumber} from ${transfer.fromFacilityId}`,
           createdById: userId,
           ...(tenantId ? { tenantId } : {}),
         });

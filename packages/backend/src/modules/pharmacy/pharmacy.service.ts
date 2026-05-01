@@ -304,6 +304,36 @@ export class PharmacyService {
       const stockLedgerRepo = manager.getRepository(StockLedger);
       const batchStockRepo = manager.getRepository(BatchStockBalance);
 
+      // FEFO auto-allocation: for any sale item without an explicit batchNumber,
+      // pick the earliest-expiring batch that has enough available stock.
+      // Manual batch selections are respected but expired batches are still rejected below.
+      for (const item of sale.items as any[]) {
+        if (item.batchNumber) continue;
+        const candidates = await batchStockRepo
+          .createQueryBuilder('bs')
+          .where('bs.itemId = :itemId', { itemId: item.itemId })
+          .andWhere('bs.facilityId = :facilityId', { facilityId })
+          .andWhere('(bs.expiryDate IS NULL OR bs.expiryDate >= CURRENT_DATE)')
+          .andWhere('(bs.quantity - COALESCE(bs.reservedQuantity, 0)) >= :qty', {
+            qty: item.quantity,
+          })
+          .andWhere(tenantId ? 'bs.tenantId = :tenantId' : '1=1', tenantId ? { tenantId } : {})
+          .orderBy('bs.expiryDate', 'ASC', 'NULLS LAST')
+          .addOrderBy('bs.createdAt', 'ASC')
+          .getMany();
+        if (candidates.length > 0) {
+          const chosen = candidates[0];
+          item.batchNumber = chosen.batchNumber;
+          if (chosen.expiryDate) item.expiryDate = chosen.expiryDate;
+          // Persist on the saved sale item so the audit/print reflects the batch
+          await this.saleItemRepo.update(
+            { id: item.id },
+            { batchNumber: chosen.batchNumber, expiryDate: chosen.expiryDate },
+          );
+        }
+        // If no candidates, fall through; later validation will surface the stock issue.
+      }
+
       // Acquire ALL stock balance locks upfront in consistent order to prevent deadlocks
       const itemIds = sale.items.map((i: any) => i.itemId).filter(Boolean);
       let allStockBalances: StockBalance[] = [];
