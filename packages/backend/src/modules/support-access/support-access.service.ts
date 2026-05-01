@@ -169,6 +169,7 @@ export class SupportAccessService {
           message: `A tenant has requested support access (Tier ${dto.requestedTier}, ${dto.requestedDurationHours}h): ${dto.reason}`,
           metadata: { referenceType: 'support_access_request', referenceId: saved.id },
         },
+        dto.tenantId,
       );
     }
 
