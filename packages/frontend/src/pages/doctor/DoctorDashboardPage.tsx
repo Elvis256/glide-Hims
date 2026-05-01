@@ -179,7 +179,19 @@ export default function DoctorDashboardPage() {
     onSuccess: (patient) => {
       if (patient) {
         playCallChime();
-        toast.success(`Called: ${patient.patient?.fullName || patient.ticketNumber}`);
+        const name = patient.patient?.fullName || 'Patient';
+        const ticket = patient.ticketNumber || '';
+        try {
+          if (typeof window !== 'undefined' && window.speechSynthesis) {
+            const utterance = new SpeechSynthesisUtterance(
+              `Now calling token number ${ticket}. ${name}, please proceed to the doctor's room.`,
+            );
+            window.speechSynthesis.speak(utterance);
+          }
+        } catch {
+          // best-effort: speech synthesis is optional
+        }
+        toast.success(`Called: ${name || ticket}`);
         queryClient.invalidateQueries({ queryKey: ['doctor-queue'] });
       } else {
         toast.info('No patients waiting');
