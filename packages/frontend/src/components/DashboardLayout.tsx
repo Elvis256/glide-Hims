@@ -540,16 +540,8 @@ const navigationSections: NavSection[] = [
       { name: 'Dispense Medication', href: '/pharmacy/dispense', icon: Pill, permissions: ['pharmacy.update'] },
       { name: 'Pharmacy Queue', href: '/pharmacy/queue', icon: ListOrdered, permissions: ['pharmacy.read'] },
       { name: 'Pharmacy Stock', href: '/pharmacy/stock', icon: Package, permissions: ['pharmacy.read', 'inventory.read'] },
-      {
-        name: 'Transactions',
-        icon: ArrowDownUp,
-        permissions: ['pharmacy.create', 'pharmacy.read'],
-        children: [
-          { name: 'Retail Sales', href: '/pharmacy/retail', icon: ShoppingCart, permissions: ['pharmacy.create'] },
-          { name: 'Wholesale', href: '/pharmacy/wholesale', icon: Boxes, permissions: ['pharmacy.create'] },
-          { name: 'Inpatient Meds', href: '/pharmacy/inpatient', icon: Bed, permissions: ['pharmacy.read'] },
-        ],
-      },
+      { name: 'Inpatient Meds', href: '/pharmacy/inpatient', icon: Bed, permissions: ['pharmacy.read'] },
+      { name: '→ Counter Sales (POS)', href: '/pharmacy/pos', icon: ScanBarcode, permissions: ['pos.shift'] },
       {
         name: 'Expiry Management',
         icon: AlertTriangle,
@@ -628,6 +620,7 @@ const navigationSections: NavSection[] = [
       { name: 'New Sale', href: '/pharmacy/pos/sale', icon: ShoppingCart, permissions: ['pos.shift'] },
       { name: 'Shift Management', href: '/pharmacy/pos/shifts', icon: Clock, permissions: ['pos.shift'] },
       { name: 'POS Reports', href: '/pharmacy/pos/reports', icon: BarChart3, permissions: ['pos.shift'] },
+      { name: '→ Prescription Dispensing (Pharmacy)', href: '/pharmacy/dispense', icon: Pill, permissions: ['pharmacy.update'] },
       {
         name: 'Wholesale',
         icon: Boxes,
