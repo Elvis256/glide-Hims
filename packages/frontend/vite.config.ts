@@ -57,6 +57,17 @@ export default defineConfig({
             },
           },
           {
+            // Live operational endpoints — always fetch from network, never
+            // intercept. Avoids the SW serving stale empty arrays for queues,
+            // pharmacy/lab queues, encounters, notifications, etc.
+            urlPattern: ({ url, request }) =>
+              request.method === 'GET' &&
+              /^\/api\/v\d+\/(queue|pharmacy\/queue|lab\/queue|encounters|notifications|pos|payments|catalog)(\/|$|\?)/.test(
+                url.pathname,
+              ),
+            handler: 'NetworkOnly',
+          },
+          {
             // API: never serve stale; tolerate brief offline reads of GETs only.
             urlPattern: ({ url, request }) =>
               url.pathname.startsWith('/api/') && request.method === 'GET',
