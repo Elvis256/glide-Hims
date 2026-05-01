@@ -64,7 +64,8 @@ export const FACILITY_PRESETS: FacilityPreset[] = [
       'reports',
       'chronic',
       'integrations',
-      'assets'
+      'assets',
+      'finance'
     ],
     recommendedRoles: ['Clinic Staff'],
     notes: [
@@ -95,7 +96,8 @@ export const FACILITY_PRESETS: FacilityPreset[] = [
       'reports',
       'appointments',
       'integrations',
-      'assets'
+      'assets',
+      'finance'
     ],
     recommendedRoles: [
       'Doctor',
@@ -135,7 +137,8 @@ export const FACILITY_PRESETS: FacilityPreset[] = [
       'ipd',
       'chronic',
       'integrations',
-      'assets'
+      'assets',
+      'finance'
     ],
     recommendedRoles: [
       'Doctor',
@@ -175,7 +178,8 @@ export const FACILITY_PRESETS: FacilityPreset[] = [
       'appointments',
       'chronic',
       'integrations',
-      'assets'
+      'assets',
+      'finance'
     ],
     recommendedRoles: [
       'Doctor',
@@ -265,7 +269,8 @@ export const FACILITY_PRESETS: FacilityPreset[] = [
       'insurance',
       'reports',
       'suppliers',
-      'integrations'
+      'integrations',
+      'finance'
     ],
     recommendedRoles: ['Pharmacist', 'Pharmacy Technician', 'Cashier', 'Store Keeper'],
     notes: [
