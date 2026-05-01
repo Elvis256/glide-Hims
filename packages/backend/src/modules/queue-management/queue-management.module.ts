@@ -12,6 +12,7 @@ import { Department } from '../../database/entities/department.entity';
 import { QueueManagementService } from './queue-management.service';
 import { QueueManagementController } from './queue-management.controller';
 import { AfricasTalkingService } from '../integrations/africas-talking.service';
+import { DoctorFeesModule } from '../doctor-fees/doctor-fees.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { AfricasTalkingService } from '../integrations/africas-talking.service';
       Department,
     ]),
     HttpModule.register({ timeout: 10000 }),
+    DoctorFeesModule,
   ],
   controllers: [QueueManagementController],
   providers: [QueueManagementService, AfricasTalkingService],

@@ -209,6 +209,7 @@ const SearchBillsPage = lazy(() => import('./pages/billing/opd/SearchBillsPage')
 const InvoicesPage = lazy(() => import('./pages/billing/InvoicesPage'));
 const PaymentsPage = lazy(() => import('./pages/billing/PaymentsPage'));
 const PatientTabPage = lazy(() => import('./pages/billing/PatientTabPage'));
+const DoctorFeesPage = lazy(() => import('./pages/billing/DoctorFeesPage'));
 const ClaimsPage = lazy(() => import('./pages/billing/insurance/ClaimsPage'));
 const InsuranceProvidersPage = lazy(() => import('./pages/billing/insurance/ProvidersPage'));
 const InsuranceDashboardPage = lazy(() => import('./pages/insurance/InsuranceDashboardPage'));
@@ -849,6 +850,7 @@ function AppRoutes() {
                 <Route path="/billing/payments" element={<ModuleRoute module="billing"><BillingRoute><PaymentsPage /></BillingRoute></ModuleRoute>} />
                 <Route path="/billing/patient-tab" element={<ModuleRoute module="billing"><BillingRoute><PatientTabPage /></BillingRoute></ModuleRoute>} />
                 <Route path="/billing/patient-tab/:patientId" element={<ModuleRoute module="billing"><BillingRoute><PatientTabPage /></BillingRoute></ModuleRoute>} />
+                <Route path="/billing/doctor-fees" element={<ModuleRoute module="billing"><BillingRoute><DoctorFeesPage /></BillingRoute></ModuleRoute>} />
                 
                 {/* Billing - Insurance */}
                 <Route path="/insurance/claims" element={<ModuleRoute module="billing"><InsuranceRoute><ClaimsPage /></InsuranceRoute></ModuleRoute>} />
