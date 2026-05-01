@@ -920,8 +920,8 @@ function AppRoutes() {
                 <Route path="/pharmacy/analytics" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyAnalyticsPage /></PharmacistRoute></ModuleRoute>} />
                 
                 {/* Pharmacy - Transactions */}
-                <Route path="/pharmacy/retail" element={<ModuleRoute module="pharmacy"><PharmacistRoute><RetailSalesPage /></PharmacistRoute></ModuleRoute>} />
-                <Route path="/pharmacy/wholesale" element={<ModuleRoute module="pharmacy"><PharmacistRoute><WholesalePage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/retail" element={<Navigate to="/pharmacy/pos/sale" replace />} />
+                <Route path="/pharmacy/wholesale" element={<Navigate to="/pharmacy/pos/wholesale/customers" replace />} />
                 <Route path="/pharmacy/inpatient" element={<ModuleRoute module="pharmacy"><PharmacistRoute><InpatientMedsPage /></PharmacistRoute></ModuleRoute>} />
                 
                 {/* Pharmacy - Expiry Management */}
