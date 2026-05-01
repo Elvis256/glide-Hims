@@ -127,6 +127,10 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
       'pos.patient.link',
       'pos.prescription.dispense',
       'pos.interaction.override',
+      // Phase D: Resilience & Payments
+      'pos.payment.mobile_money',
+      'pos.offline.use',
+      'pos.offline.sync.review',
     ],
   },
   {

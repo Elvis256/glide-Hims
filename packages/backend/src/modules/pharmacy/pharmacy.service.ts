@@ -218,6 +218,17 @@ export class PharmacyService {
   }
 
   async createSale(dto: CreatePharmacySaleDto, userId: string, tenantId?: string) {
+    // D2: Offline idempotency — if clientSaleId provided and a sale with that key exists, return it
+    if (dto.clientSaleId) {
+      const existing = await this.saleRepo.findOne({
+        where: { clientSaleId: dto.clientSaleId, ...(tenantId ? { tenantId } : {}) },
+      });
+      if (existing) {
+        const existingItems = await this.saleItemRepo.find({ where: { saleId: existing.id } });
+        return { ...existing, items: existingItems };
+      }
+    }
+
     // 1. Initial validation
     for (const item of dto.items) {
       if (item.quantity <= 0) {
@@ -320,9 +331,17 @@ export class PharmacyService {
           discountAmount,
           taxAmount: Number(totalTax.toFixed(2)),
           totalAmount,
-          notes: dto.notes,
+          notes: dto.wasOffline
+            ? `${dto.notes ? dto.notes + ' | ' : ''}Sale completed offline at ${dto.originalOfflineTimestamp || 'unknown'}, synced at ${new Date().toISOString()}`
+            : dto.notes,
           status: SaleStatus.PENDING,
           soldById: userId,
+          clientSaleId: dto.clientSaleId,
+          clientSequenceNumber: dto.clientSequenceNumber,
+          wasOffline: dto.wasOffline,
+          originalOfflineTimestamp: dto.originalOfflineTimestamp
+            ? new Date(dto.originalOfflineTimestamp)
+            : undefined,
           ...(tenantId ? { tenantId } : {}),
         });
         const saved = await manager.save(PharmacySale, sale);
@@ -379,6 +398,62 @@ export class PharmacyService {
         return saved.id;
       })
       .then((id) => this.findSale(id, tenantId));
+  }
+
+  /**
+   * D2: Lightweight item+price snapshot for offline POS cache.
+   * Returns active items with prices/stock updated since `since` timestamp.
+   * Controlled substances are flagged `cacheable=false` so they cannot be sold offline.
+   */
+  async getItemsSyncBundle(
+    tenantId: string | undefined,
+    since?: string,
+    limit = 100,
+    offset = 0,
+  ) {
+    const qb = this.inventoryRepo
+      .createQueryBuilder('item')
+      .select([
+        'item.id',
+        'item.name',
+        'item.code',
+        'item.barcode',
+        'item.sellingPrice',
+        'item.unit',
+        'item.updatedAt',
+        'item.isControlled',
+      ])
+      .where(`item.status = 'active'`)
+      .orderBy('item.updatedAt', 'DESC')
+      .take(limit)
+      .skip(offset);
+
+    if (tenantId) qb.andWhere('item.tenantId = :tenantId', { tenantId });
+    if (since) {
+      const sinceDate = new Date(since);
+      if (!isNaN(sinceDate.getTime())) {
+        qb.andWhere('item.updatedAt >= :since', { since: sinceDate });
+      }
+    }
+
+    const [items, total] = await qb.getManyAndCount();
+    return {
+      items: items.map((i) => ({
+        id: i.id,
+        name: i.name,
+        sku: i.code,
+        barcode: i.barcode,
+        sellingPrice: i.sellingPrice,
+        unit: i.unit,
+        qty: null as number | null,
+        lastUpdated: i.updatedAt,
+        isControlledSubstance: i.isControlled,
+        cacheable: !i.isControlled,
+      })),
+      total,
+      limit,
+      offset,
+    };
   }
 
   async findAllSales(

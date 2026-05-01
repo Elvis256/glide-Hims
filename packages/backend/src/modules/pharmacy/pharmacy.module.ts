@@ -35,7 +35,7 @@ import { EfrisModule } from '../efris/efris.module';
 @Module({
   imports: [
     forwardRef(() => FinanceModule),
-    PosModule,
+    forwardRef(() => PosModule),
     EfrisModule,
     TypeOrmModule.forFeature([
       PharmacySale,

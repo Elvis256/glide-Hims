@@ -340,6 +340,23 @@ export class PharmacyController {
 
   // ─── B5: Barcode Scan ──────────────────────────────────────────────────────
 
+  @Get('items/sync-bundle')
+  @AuthWithPermissions('pharmacy.read')
+  @ApiOperation({ summary: 'Get lightweight item+price snapshot for offline POS cache' })
+  getItemsSyncBundle(
+    @Request() req: any,
+    @Query('since') since?: string,
+    @Query('limit') limit = '100',
+    @Query('offset') offset = '0',
+  ) {
+    return this.service.getItemsSyncBundle(
+      req.user?.tenantId,
+      since,
+      parseInt(limit, 10) || 100,
+      parseInt(offset, 10) || 0,
+    );
+  }
+
   @Get('items/by-barcode/:code')
   @AuthWithPermissions('pos.barcode.scan')
   @ApiOperation({ summary: 'Look up a pharmacy item by barcode (HID scanner)' })

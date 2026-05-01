@@ -114,6 +114,19 @@ export class PharmacySale extends BaseEntity {
   @Column({ name: 'transaction_reference', nullable: true })
   transactionReference: string;
 
+  // ── D2: Offline mode idempotency ──────────────────────────────────────────
+  @Column({ name: 'client_sale_id', type: 'uuid', nullable: true })
+  clientSaleId: string;
+
+  @Column({ name: 'client_sequence_number', type: 'int', nullable: true })
+  clientSequenceNumber: number;
+
+  @Column({ name: 'was_offline', type: 'boolean', default: false, nullable: true })
+  wasOffline: boolean;
+
+  @Column({ name: 'original_offline_timestamp', type: 'timestamptz', nullable: true })
+  originalOfflineTimestamp: Date;
+
   @Column({ name: 'customer_name', nullable: true })
   customerName: string; // For walk-in without patient record
 

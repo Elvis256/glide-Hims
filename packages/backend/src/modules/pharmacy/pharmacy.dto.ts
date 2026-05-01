@@ -82,6 +82,26 @@ export class CreatePharmacySaleDto {
   @IsOptional()
   @IsUUID()
   posRegisterId?: string;
+
+  // ── Phase D — offline mode idempotency ───────────────────────────────────
+  @ApiProperty({ required: false, description: 'Client-generated UUID for offline idempotency' })
+  @IsOptional()
+  @IsUUID()
+  clientSaleId?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsNumber()
+  clientSequenceNumber?: number;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  wasOffline?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsDateString()
+  originalOfflineTimestamp?: string;
 }
 
 // Buyer-identification block for controlled-substance OTC dispense at the counter.
