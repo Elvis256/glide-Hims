@@ -137,7 +137,10 @@ export class DoctorDutyService {
       .leftJoinAndSelect('user.userRoles', 'userRoles')
       .leftJoinAndSelect('userRoles.role', 'role')
       .where('(userRoles.facilityId = :facilityId OR userRoles.facilityId IS NULL)', { facilityId })
-      .andWhere('LOWER(role.name) LIKE :doctor', { doctor: '%doctor%' })
+      .andWhere(
+        "(LOWER(role.name) LIKE :doctor OR LOWER(role.name) LIKE :consultant OR LOWER(role.name) LIKE :physician)",
+        { doctor: '%doctor%', consultant: '%consultant%', physician: '%physician%' },
+      )
       .andWhere('user.status = :status', { status: 'active' })
       .orderBy('user.fullName', 'ASC');
 
