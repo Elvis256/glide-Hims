@@ -11,6 +11,8 @@ import {
 } from '../../database/entities/invoice.entity';
 import { Encounter, EncounterStatus } from '../../database/entities/encounter.entity';
 import { Queue, QueueStatus } from '../../database/entities/queue.entity';
+import { Facility } from '../../database/entities/facility.entity';
+import { ChargeType } from '../../database/entities/invoice.entity';
 import {
   CreateInvoiceDto,
   AddInvoiceItemDto,
@@ -656,6 +658,49 @@ export class BillingService {
             this.logger.log(
               `Queue ${queueEntry.ticketNumber} advanced from PENDING_PAYMENT to WAITING after payment ${receiptNumber}`,
             );
+
+            // Pre-pay mode: after payment, route patient to the next clinical
+            // service point based on what was billed (lab > radiology > pharmacy).
+            // Only applies when the facility has prePayMode enabled — otherwise
+            // the queue stays where it is and the cashier/doctor routes manually.
+            try {
+              const facility = await manager.findOne(Facility, {
+                where: { id: queueEntry.facilityId },
+              });
+              const prePayMode = Boolean(
+                (facility?.settings as Record<string, unknown> | undefined)?.prePayMode,
+              );
+              if (prePayMode) {
+                const lineChargeTypes = new Set(
+                  (invoice.items || []).map((it) => it.chargeType),
+                );
+                let nextServicePoint: string | null = null;
+                if (lineChargeTypes.has(ChargeType.LAB)) {
+                  nextServicePoint = 'laboratory';
+                } else if (lineChargeTypes.has(ChargeType.RADIOLOGY)) {
+                  nextServicePoint = 'radiology';
+                } else if (lineChargeTypes.has(ChargeType.PHARMACY)) {
+                  nextServicePoint = 'pharmacy';
+                }
+                if (nextServicePoint && queueEntry.servicePoint !== nextServicePoint) {
+                  await manager.update(
+                    Queue,
+                    { id: queueEntry.id },
+                    {
+                      previousServicePoint: queueEntry.servicePoint,
+                      servicePoint: nextServicePoint as any,
+                    },
+                  );
+                  this.logger.log(
+                    `Pre-pay routing: queue ${queueEntry.ticketNumber} moved from ${queueEntry.servicePoint} to ${nextServicePoint} after payment ${receiptNumber}`,
+                  );
+                }
+              }
+            } catch (err) {
+              this.logger.warn(
+                `Pre-pay routing failed for queue ${queueEntry.ticketNumber}: ${(err as Error).message}`,
+              );
+            }
           }
 
           // If encounter is in PENDING_PAYMENT status (post-consultation), complete it

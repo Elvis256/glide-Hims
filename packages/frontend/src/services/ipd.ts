@@ -72,6 +72,7 @@ export interface CreateAdmissionDto {
   admissionDiagnosis?: string;
   admissionReason?: string;
   attendingDoctorId?: string;
+  encounterId?: string;
 }
 
 export interface AdmissionQueryParams {
