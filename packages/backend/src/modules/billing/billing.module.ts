@@ -12,6 +12,7 @@ import { PricingEngineModule } from '../pricing-engine/pricing-engine.module';
 import { InsuranceModule } from '../insurance/insurance.module';
 import { ServicesModule } from '../services/services.module';
 import { InventoryModule } from '../inventory/inventory.module';
+import { AuditModule } from '../../common/interceptors/audit.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { InventoryModule } from '../inventory/inventory.module';
     forwardRef(() => InsuranceModule),
     ServicesModule,
     InventoryModule,
+    AuditModule,
   ],
   controllers: [BillingController],
   providers: [BillingService],
