@@ -730,8 +730,14 @@ export class LabService {
         lockedSample.completedTime = new Date();
         await manager.save(lockedSample);
 
-        // Update order status
-        await manager.update(Order, sample.orderId, { status: OrderStatus.COMPLETED });
+        // Update order status (also stamp completed_at so "Completed Today"
+        // counters and audit trails work correctly — the orders endpoint
+        // sets this when status is updated, but the lab result-release
+        // path bypasses that and writes directly).
+        await manager.update(Order, sample.orderId, {
+          status: OrderStatus.COMPLETED,
+          completedAt: new Date(),
+        });
         this.logger.log(`Sample completed: ${sample.sampleNumber}`);
 
         // Notify patient via SMS that lab results are ready (fire-and-forget)

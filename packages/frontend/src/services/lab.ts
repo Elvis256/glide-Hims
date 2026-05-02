@@ -358,8 +358,8 @@ export const labService = {
         };
       });
     },
-    getPending: async (): Promise<LabOrder[]> => {
-      const response = await api.get<{ data: any[]; total: number; page: number; limit: number }>('/orders', { params: { orderType: 'lab', status: 'pending' } });
+    getPending: async (params?: { facilityId?: string }): Promise<LabOrder[]> => {
+      const response = await api.get<{ data: any[]; total: number; page: number; limit: number }>('/orders', { params: { orderType: 'lab', status: 'pending', ...(params?.facilityId ? { facilityId: params.facilityId } : {}) } });
       const orders = response.data || [];
       return orders.map(order => ({
         id: order.id,
