@@ -47,7 +47,7 @@ export class PatientsController {
   }
 
   @Post('check-duplicates')
-  @AuthWithPermissions('patients.create')
+  @AuthWithPermissions('patients.read')
   @ApiOperation({ summary: 'Check for duplicate patients before registration' })
   async checkDuplicates(@Body() dto: CreatePatientDto, @Req() req: Request) {
     return this.patientsService.checkDuplicates(dto, (req as any).user?.tenantId);

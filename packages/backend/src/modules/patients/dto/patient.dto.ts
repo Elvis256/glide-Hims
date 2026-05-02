@@ -144,6 +144,14 @@ export class CreatePatientDto {
   @IsBoolean()
   emailOptOut?: boolean;
 
+  @ApiPropertyOptional({
+    description:
+      'Override the server-side high-confidence duplicate guard. Use only when the receptionist has manually confirmed via /patients/check-duplicates that this is a genuinely different person (e.g. twins, common name).',
+  })
+  @IsOptional()
+  @IsBoolean()
+  forceCreate?: boolean;
+
   @ApiPropertyOptional({ description: 'Additional metadata (max 5 fields)' })
   @IsOptional()
   @IsObject()

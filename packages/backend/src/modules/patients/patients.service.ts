@@ -151,7 +151,35 @@ export class PatientsService {
         }
       }
 
-      // 3. Create and save patient
+      // 3. Re-check duplicates server-side BEFORE save. The frontend already
+      // does this on the Register button via /patients/check-duplicates, but
+      // an API client (Swagger / curl / mobile) can bypass that. We block
+      // creation only on a high-confidence match — receptionists can still
+      // create a "John Smith" if the existing one is a low-confidence match
+      // (different DOB, different phone). Override is via explicit
+      // `forceCreate: true` in the DTO (audit-logged below).
+      const dupResult = await this.checkDuplicates(dto, tenantId);
+      const hasHighConfidence = dupResult.duplicates.some(
+        (d) => d.confidenceLevel === 'high',
+      );
+      if (hasHighConfidence && !(dto as any).forceCreate) {
+        throw new ConflictException({
+          message:
+            'Possible duplicate patient detected. Confirm via /patients/check-duplicates and resubmit with forceCreate=true if this is genuinely a different person.',
+          duplicates: dupResult.duplicates
+            .filter((d) => d.confidenceLevel === 'high')
+            .slice(0, 3)
+            .map((d) => ({
+              id: d.id,
+              mrn: d.mrn,
+              fullName: d.fullName,
+              confidenceLevel: d.confidenceLevel,
+              matchReasons: d.matchReasons,
+            })),
+        });
+      }
+
+      // 4. Create and save patient
       const patient = manager.create(Patient, {
         ...dto,
         mrn,
@@ -194,8 +222,12 @@ export class PatientsService {
 
     const queryBuilder = this.patientRepository.createQueryBuilder('patient');
 
+    // createQueryBuilder bypasses TypeORM's soft-delete auto-filter, so
+    // soft-removed patients would otherwise show up in receptionist search.
+    queryBuilder.where('patient.deletedAt IS NULL');
+
     if (tenantId) {
-      queryBuilder.where('patient.tenantId = :tenantId', { tenantId });
+      queryBuilder.andWhere('patient.tenantId = :tenantId', { tenantId });
     }
 
     // Facility filter: prefer patients with encounters at this facility, but don't exclude new patients
