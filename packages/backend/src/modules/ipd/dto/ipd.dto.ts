@@ -338,6 +338,10 @@ export class AdministerMedicationDto {
   @IsString()
   @IsOptional()
   reason?: string;
+
+  @IsString()
+  @IsOptional()
+  allergyOverrideReason?: string;
 }
 
 // Query DTOs
