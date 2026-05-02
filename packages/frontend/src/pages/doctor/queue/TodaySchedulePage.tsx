@@ -13,6 +13,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { encountersService, type Encounter } from '../../../services/encounters';
+import { useAuthStore } from '../../../store/auth';
 
 type AppointmentStatus = 'scheduled' | 'in-progress' | 'completed' | 'no-show';
 
@@ -89,10 +90,13 @@ export default function TodaySchedulePage() {
     return () => clearInterval(t);
   }, []);
 
+  const user = useAuthStore((s) => s.user);
+
   const { data: encounters = [], isLoading, refetch } = useQuery({
-    queryKey: ['encounters', 'queue'],
-    queryFn: () => encountersService.getQueue(),
+    queryKey: ['encounters', 'queue', user?.id],
+    queryFn: () => encountersService.getQueue({ doctorId: user?.id }),
     refetchInterval: 30000, // refresh every 30s
+    enabled: !!user?.id,
   });
 
   const appointments = useMemo(() => transformEncounters(encounters), [encounters]);

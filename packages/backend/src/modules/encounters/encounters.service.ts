@@ -692,6 +692,7 @@ export class EncountersService {
     facilityId: string,
     departmentId?: string,
     tenantId?: string,
+    doctorId?: string,
   ): Promise<Encounter[]> {
     const qb = this.encounterRepository
       .createQueryBuilder('encounter')
@@ -714,6 +715,12 @@ export class EncountersService {
       qb.andWhere('encounter.department_id = :departmentId', { departmentId });
     }
 
+    if (doctorId) {
+      // Show patients assigned to this doctor + unassigned waiting patients
+      // (so an idle doctor can still see and pick up the unassigned queue).
+      qb.andWhere('(encounter.doctor_id = :doctorId OR encounter.doctor_id IS NULL)', { doctorId });
+    }
+
     // Priority: RETURN_TO_DOCTOR patients first, then by queue number
     qb.orderBy(
       `CASE WHEN encounter.status = 'return_to_doctor' THEN 0 ELSE 1 END`,
@@ -721,6 +728,76 @@ export class EncountersService {
     ).addOrderBy('encounter.queue_number', 'ASC');
 
     return qb.getMany();
+  }
+
+  /**
+   * Preflight check: returns whether an encounter can be transitioned to
+   * COMPLETED. Surfaces blocking reasons (unpaid invoices, missing data) so
+   * the UI can warn doctors BEFORE they attempt to complete and hit a 400.
+   */
+  async canComplete(
+    encounterId: string,
+    tenantId?: string,
+  ): Promise<{
+    canComplete: boolean;
+    reasons: string[];
+    unpaidBalance?: number;
+    unpaidInvoiceCount?: number;
+  }> {
+    const reasons: string[] = [];
+
+    const encounter = await this.encounterRepository.findOne({
+      where: { id: encounterId, ...(tenantId ? { tenantId } : {}) },
+    });
+    if (!encounter) {
+      throw new NotFoundException('Encounter not found');
+    }
+
+    if (encounter.status === EncounterStatus.COMPLETED) {
+      return {
+        canComplete: false,
+        reasons: ['Encounter is already completed'],
+      };
+    }
+    if (encounter.status === EncounterStatus.CANCELLED) {
+      return {
+        canComplete: false,
+        reasons: ['Encounter has been cancelled'],
+      };
+    }
+    if (encounter.status === EncounterStatus.ADMITTED) {
+      return {
+        canComplete: false,
+        reasons: ['Encounter is currently ADMITTED — discharge from IPD instead'],
+      };
+    }
+
+    const unpaidInvoices = await this.dataSource
+      .createQueryBuilder(Invoice, 'inv')
+      .where('inv.encounter_id = :encounterId', { encounterId })
+      .andWhere('inv.status NOT IN (:...paidStatuses)', {
+        paidStatuses: ['paid', 'cancelled', 'refunded'],
+      })
+      .andWhere('inv.balance_due > 0')
+      .getMany();
+
+    let unpaidBalance = 0;
+    if (unpaidInvoices.length > 0) {
+      unpaidBalance = unpaidInvoices.reduce(
+        (sum, inv) => sum + Number(inv.balanceDue),
+        0,
+      );
+      reasons.push(
+        `Patient has UGX ${unpaidBalance.toLocaleString()} unpaid balance across ${unpaidInvoices.length} invoice(s). Move to pending payment first.`,
+      );
+    }
+
+    return {
+      canComplete: reasons.length === 0,
+      reasons,
+      unpaidBalance,
+      unpaidInvoiceCount: unpaidInvoices.length,
+    };
   }
 
   async getTodayStats(

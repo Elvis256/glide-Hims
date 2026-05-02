@@ -53,13 +53,28 @@ export class EncountersController {
   getQueue(
     @Query('facilityId') facilityIdQuery: string,
     @Query('departmentId') departmentId: string,
+    @Query('doctorId') doctorId: string | undefined,
     @Request() req: any,
   ) {
     const facilityId = facilityIdQuery || req.headers['x-facility-id'] || req.user?.facilityId;
     if (!facilityId) {
       return [];
     }
-    return this.encountersService.getQueue(facilityId, departmentId, req.user?.tenantId);
+    return this.encountersService.getQueue(
+      facilityId,
+      departmentId,
+      req.user?.tenantId,
+      doctorId,
+    );
+  }
+
+  @Get(':id/can-complete')
+  @AuthWithPermissions('encounters.read')
+  @ApiOperation({
+    summary: 'Check if an encounter can be completed (preflight)',
+  })
+  canComplete(@Param('id') id: string, @Request() req: any) {
+    return this.encountersService.canComplete(id, req.user?.tenantId);
   }
 
   @Get('stats/today')

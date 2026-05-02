@@ -86,11 +86,29 @@ export const encountersService = {
   },
 
   // Get today's patient queue
-  getQueue: async (): Promise<Encounter[]> => {
+  getQueue: async (params?: { doctorId?: string }): Promise<Encounter[]> => {
     const facilityId = sessionStorage.getItem('glide_active_facility_id') || useAuthStore.getState().user?.facilityId;
     const response = await api.get<Encounter[]>('/encounters/queue', {
-      params: { facilityId },
+      params: { facilityId, ...(params?.doctorId ? { doctorId: params.doctorId } : {}) },
     });
+    return response.data;
+  },
+
+  // Preflight: can this encounter be completed?
+  canComplete: async (
+    encounterId: string,
+  ): Promise<{
+    canComplete: boolean;
+    reasons: string[];
+    unpaidBalance?: number;
+    unpaidInvoiceCount?: number;
+  }> => {
+    const response = await api.get<{
+      canComplete: boolean;
+      reasons: string[];
+      unpaidBalance?: number;
+      unpaidInvoiceCount?: number;
+    }>(`/encounters/${encounterId}/can-complete`);
     return response.data;
   },
 

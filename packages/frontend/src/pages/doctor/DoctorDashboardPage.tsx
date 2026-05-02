@@ -152,24 +152,36 @@ export default function DoctorDashboardPage() {
 
   // Stats
   const { data: stats } = useQuery({
-    queryKey: ['doctor-queue-stats'],
+    queryKey: ['doctor-queue-stats', user?.id],
     queryFn: async () => {
       const response = await api.get('/encounters/stats/today');
       return response.data;
     },
     refetchInterval: 60000,
+    enabled: !!user?.id,
   });
 
-  // Pending lab reviews
+  // Pending lab reviews — scoped to this doctor's orders + excludes already
+  // reviewed ones, so the count reflects work that genuinely needs MY action.
   const { data: pendingLabs = [], isLoading: labsLoading } = useQuery({
-    queryKey: ['pending-lab-reviews'],
-    queryFn: () => labService.orders.list({ status: 'completed' }),
+    queryKey: ['pending-lab-reviews', user?.id],
+    queryFn: () =>
+      labService.orders.list({
+        status: 'completed',
+        orderedById: user?.id,
+        excludeReviewed: true,
+      }),
+    enabled: !!user?.id,
+    refetchInterval: 30000,
   });
 
-  // Today's encounters (schedule)
+  // Today's encounters (schedule) — scoped to MY assigned patients (or
+  // unassigned ones I could pick up). Without doctorId this returned every
+  // doctor's queue for the facility.
   const { data: todayEncounters = [], isLoading: scheduleLoading } = useQuery({
-    queryKey: ['today-schedule'],
-    queryFn: () => encountersService.getQueue(),
+    queryKey: ['today-schedule', user?.id],
+    queryFn: () => encountersService.getQueue({ doctorId: user?.id }),
+    enabled: !!user?.id,
   });
 
   // ===================== MUTATIONS =====================
