@@ -231,7 +231,12 @@ export default function DoctorDashboardPage() {
   const inConsultationPatients = queuePatients.filter(p => p.status === 'in_service');
 
   const pendingReviews = useMemo((): PendingReview[] => {
-    return pendingLabs.map((order: LabOrder) => ({
+    return pendingLabs
+      // Hide orders the doctor has already acknowledged via "Mark as Reviewed"
+      // on the Lab Results page. Without this filter the dashboard counter
+      // never decreases, even after results are reviewed.
+      .filter((order: LabOrder) => !(order as any).reviewedAt)
+      .map((order: LabOrder) => ({
       id: order.id,
       patientName: order.patient?.fullName || 'Unknown',
       mrn: order.patient?.mrn || order.patientId,

@@ -165,9 +165,11 @@ export default function PendingReviewsPage() {
   const reviews = useMemo(() => {
     const labReviews = labOrders
       .filter(order => !dismissedIds.has(order.id))
+      .filter(order => !(order as any).reviewedAt)
       .map(transformLabOrderToReview);
     const imgReviews = imagingOrders
       .filter(order => !dismissedIds.has(order.id))
+      .filter(order => !(order as any).reviewedAt)
       .map(transformImagingOrderToReview);
     const refReviews = incomingReferrals
       .filter(r => !dismissedIds.has(r.id))
