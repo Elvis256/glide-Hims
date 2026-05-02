@@ -21,6 +21,7 @@ import { radiologyService, type ImagingOrder } from '../../../services/radiology
 import { referralsService, type Referral } from '../../../services/referrals';
 import { encountersService, type Encounter } from '../../../services/encounters';
 import { useFacilityId } from '../../../lib/facility';
+import { useAuthStore } from '../../../store/auth';
 
 type ReviewCategory = 'lab' | 'imaging' | 'referral' | 'notes';
 
@@ -134,29 +135,40 @@ type FilterCategory = 'all' | ReviewCategory;
 export default function PendingReviewsPage() {
   const facilityId = useFacilityId();
   const navigate = useNavigate();
+  const user = useAuthStore((s) => s.user);
 
   const { data: labOrders = [], isLoading: isLoadingLab } = useQuery({
-    queryKey: ['pendingLabReviews'],
-    queryFn: () => labService.orders.list({ status: 'completed' }),
+    queryKey: ['pendingLabReviews', user?.id],
+    queryFn: () =>
+      labService.orders.list({
+        status: 'completed',
+        orderedById: user?.id,
+        excludeReviewed: true,
+      }),
+    enabled: !!user?.id,
   });
 
   const { data: imagingOrders = [], isLoading: isLoadingImaging } = useQuery({
-    queryKey: ['pendingImagingReviews', facilityId],
+    queryKey: ['pendingImagingReviews', facilityId, user?.id],
     queryFn: () => radiologyService.orders.getPendingReports(facilityId),
     enabled: !!facilityId,
   });
 
   const { data: incomingReferrals = [], isLoading: isLoadingReferrals } = useQuery({
-    queryKey: ['pendingReferralReviews'],
+    queryKey: ['pendingReferralReviews', user?.id],
     queryFn: () => referralsService.getIncoming(),
   });
 
   const { data: completedEncounters = [], isLoading: isLoadingEncounters } = useQuery({
-    queryKey: ['pendingNotesToSign'],
+    queryKey: ['pendingNotesToSign', user?.id],
     queryFn: async () => {
-      const result = await encountersService.list({ status: 'completed' });
+      const result = await encountersService.list({
+        status: 'completed',
+        ...(user?.id ? { doctorId: user.id } : {}),
+      });
       return result.data || [];
     },
+    enabled: !!user?.id,
   });
 
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());

@@ -115,6 +115,9 @@ export default function CallNextPage() {
       }
       queryClient.invalidateQueries({ queryKey: ['queue'] });
     },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Failed to call next patient');
+    },
   });
 
   // Complete service mutation
@@ -123,6 +126,9 @@ export default function CallNextPage() {
     onSuccess: () => {
       setCurrentPatient(null);
       queryClient.invalidateQueries({ queryKey: ['queue'] });
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Failed to mark patient complete');
     },
   });
 
@@ -144,10 +150,21 @@ export default function CallNextPage() {
     return Math.floor((now.getTime() - created.getTime()) / 60000);
   };
 
-  const handleCallNext = () => {
+  const handleCallNext = async () => {
+    // Race-safe sequencing: if a patient is currently being served, wait for
+    // their completion to succeed BEFORE calling the next one. Without this
+    // the two mutations fire in parallel and the queue can advance while the
+    // previous patient's "completed" status is still in flight, creating
+    // ghost active patients and lost callback events.
+    if (callNextMutation.isPending || completeMutation.isPending) return;
+
     if (currentPatient) {
-      // Complete current patient first, then call next
-      completeMutation.mutate(currentPatient.id);
+      try {
+        await completeMutation.mutateAsync(currentPatient.id);
+      } catch (err: any) {
+        toast.error(err?.response?.data?.message || 'Could not complete current patient — call next aborted');
+        return;
+      }
     }
     callNextMutation.mutate();
   };
@@ -268,14 +285,14 @@ export default function CallNextPage() {
 
                 <button
                   onClick={handleCallNext}
-                  disabled={isAnnouncing || callNextMutation.isPending}
+                  disabled={isAnnouncing || callNextMutation.isPending || completeMutation.isPending}
                   className={`inline-flex items-center gap-2 px-8 py-4 rounded-xl text-lg font-semibold transition-all ${
-                    isAnnouncing || callNextMutation.isPending
+                    isAnnouncing || callNextMutation.isPending || completeMutation.isPending
                       ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                       : 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg hover:shadow-xl'
                   }`}
                 >
-                  {callNextMutation.isPending ? (
+                  {(callNextMutation.isPending || completeMutation.isPending) ? (
                     <Loader2 className="w-6 h-6 animate-spin" />
                   ) : (
                     <>

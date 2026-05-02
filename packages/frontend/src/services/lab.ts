@@ -286,8 +286,9 @@ export const labService = {
 
   // Legacy orders support (uses /orders endpoint for backwards compatibility)
   orders: {
-    list: async (params?: { status?: string; patientId?: string; date?: string; facilityId?: string }): Promise<LabOrder[]> => {
-      const response = await api.get<{ data: any[]; total: number; page: number; limit: number }>('/orders', { params: { ...params, orderType: 'lab' } });
+    list: async (params?: { status?: string; patientId?: string; date?: string; facilityId?: string; orderedById?: string; excludeReviewed?: boolean }): Promise<LabOrder[]> => {
+      const { excludeReviewed, ...rest } = params || {};
+      const response = await api.get<{ data: any[]; total: number; page: number; limit: number }>('/orders', { params: { ...rest, orderType: 'lab', ...(excludeReviewed ? { excludeReviewed: 'true' } : {}) } });
       // Transform orders API response to LabOrder format
       const orders = response.data || [];
       return orders.map(order => {

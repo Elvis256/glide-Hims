@@ -607,6 +607,32 @@ export default function NewConsultationPage() {
     enabled: !!encounterId,
   });
 
+  // Preflight: can this encounter actually be completed right now? Returns
+  // blocking reasons (e.g. unpaid invoices) so we can warn the doctor BEFORE
+  // they hit Sign and get a 400. Refetched on payment / order changes via
+  // the query-invalidation cascade in payment hooks.
+  const { data: canCompleteData } = useQuery({
+    queryKey: ['encounter-can-complete', encounterId],
+    queryFn: () => encountersService.canComplete(encounterId!),
+    enabled: !!encounterId,
+    refetchInterval: 30000,
+  });
+
+  // Read-only mode: if the encounter is already terminal (completed /
+  // discharged / admitted / cancelled) the doctor is just viewing history,
+  // so disable Sign + edit-related affordances.
+  const { data: currentEncounter } = useQuery({
+    queryKey: ['encounter-detail', encounterId],
+    queryFn: () => encountersService.getById(encounterId!),
+    enabled: !!encounterId,
+  });
+  const isReadOnlyEncounter = !!currentEncounter && [
+    'completed',
+    'discharged',
+    'cancelled',
+    'admitted',
+  ].includes(currentEncounter.status as string);
+
   // State for lab test selection
   const [showLabTestSelector, setShowLabTestSelector] = useState(false);
   const [labTestSearch, setLabTestSearch] = useState('');
@@ -2190,6 +2216,34 @@ export default function NewConsultationPage() {
         <div className="flex-1 flex flex-col min-h-0">
           {selectedPatient ? (
             <>
+              {/* Read-only / preflight banners */}
+              {isReadOnlyEncounter && (
+                <div className="mb-3 px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg flex items-center gap-2 text-sm text-gray-700">
+                  <CheckCircle className="w-4 h-4 text-gray-500" />
+                  <span>
+                    Encounter is <strong>{currentEncounter?.status}</strong> — read-only. No further sign / admit / refer actions allowed.
+                  </span>
+                </div>
+              )}
+              {!isReadOnlyEncounter && canCompleteData && !canCompleteData.canComplete && (
+                <div className="mb-3 px-3 py-2 bg-yellow-50 border border-yellow-300 rounded-lg flex items-start gap-2 text-sm text-yellow-800">
+                  <AlertCircle className="w-4 h-4 text-yellow-600 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="font-medium">Cannot complete consultation yet:</p>
+                    <ul className="list-disc list-inside mt-1 space-y-0.5">
+                      {canCompleteData.reasons.map((r, i) => (
+                        <li key={i}>{r}</li>
+                      ))}
+                    </ul>
+                    {canCompleteData.unpaidBalance > 0 && (
+                      <p className="mt-1 text-xs">
+                        Unpaid balance: <strong>UGX {canCompleteData.unpaidBalance.toLocaleString()}</strong> across {canCompleteData.unpaidInvoiceCount} invoice(s). Patient must clear at billing first, or select Admit / Refer.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Smart Features Bar */}
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
@@ -2282,6 +2336,13 @@ export default function NewConsultationPage() {
                       )}
                       <button
                         onClick={() => {
+                          // Hard-block if backend preflight says we can't complete
+                          // (e.g. unpaid balance); show the reason instead of
+                          // letting the user discover the 400 the hard way.
+                          if (canCompleteData && !canCompleteData.canComplete && disposition !== 'admit' && disposition !== 'refer') {
+                            toast.error(canCompleteData.reasons[0] || 'Cannot complete consultation');
+                            return;
+                          }
                           // Open the disposition-specific modal first when extra
                           // input is needed; otherwise fire the mutation directly.
                           if (disposition === 'admit') {
@@ -2310,7 +2371,19 @@ export default function NewConsultationPage() {
                             completeMutation.mutate(undefined);
                           }
                         }}
-                        disabled={completeMutation.isPending || form.diagnoses.length === 0}
+                        disabled={
+                          completeMutation.isPending ||
+                          form.diagnoses.length === 0 ||
+                          isReadOnlyEncounter ||
+                          (canCompleteData && !canCompleteData.canComplete && disposition !== 'admit' && disposition !== 'refer')
+                        }
+                        title={
+                          isReadOnlyEncounter
+                            ? `Encounter is ${currentEncounter?.status} — read-only`
+                            : canCompleteData && !canCompleteData.canComplete
+                            ? canCompleteData.reasons.join(' ')
+                            : ''
+                        }
                         className="flex items-center gap-1.5 px-4 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
                       >
                         {completeMutation.isPending ? (

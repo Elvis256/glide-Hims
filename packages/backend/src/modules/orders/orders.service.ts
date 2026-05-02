@@ -202,6 +202,8 @@ export class OrdersService {
     facilityId?: string;
     patientId?: string;
     priority?: OrderPriority;
+    orderedById?: string;
+    excludeReviewed?: boolean;
     startDate?: string;
     endDate?: string;
     page?: number;
@@ -215,6 +217,8 @@ export class OrdersService {
       facilityId,
       patientId,
       priority,
+      orderedById,
+      excludeReviewed,
       startDate,
       endDate,
       page = 1,
@@ -250,6 +254,14 @@ export class OrdersService {
     }
     if (priority) {
       query.andWhere('order.priority = :priority', { priority });
+    }
+    if (orderedById) {
+      query.andWhere('order.orderedById = :orderedById', { orderedById });
+    }
+    if (excludeReviewed) {
+      // Hide orders the doctor has already acknowledged via /orders/:id/review
+      // Used by dashboards that show "needs my attention" lists.
+      query.andWhere('order.reviewedAt IS NULL');
     }
     if (startDate) {
       query.andWhere('order.createdAt >= :startDate', { startDate });
