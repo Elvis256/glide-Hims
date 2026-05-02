@@ -688,7 +688,14 @@ export default function LabQueuePage() {
                 <tr>
                   <td colSpan={9} className="px-4 py-12 text-center text-gray-500">
                     <FlaskConical className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                    <p>No orders in queue</p>
+                    {!facilityId ? (
+                      <>
+                        <p className="font-medium text-amber-600">No facility assigned to your account</p>
+                        <p className="text-sm mt-1">Ask an admin to set your facility so lab orders appear here.</p>
+                      </>
+                    ) : (
+                      <p>No orders in queue</p>
+                    )}
                   </td>
                 </tr>
               )}

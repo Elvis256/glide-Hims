@@ -148,10 +148,15 @@ export default function SampleCollectionPage() {
       } catch { /* invalid barcode value */ }
     }
   }, [showPrintModal, lastBarcode]);
-  // Fetch pending collections from API
+  // Fetch pending collections from API — scope to the lab tech's facility so
+  // this page stays consistent with /lab/queue (which is also facility-scoped).
+  // Otherwise samples from another facility in the same tenant would appear
+  // here but not in the queue, leading to the "appears in samples, missing
+  // from queue" mismatch.
   const { data: apiOrders, isLoading, refetch } = useQuery({
-    queryKey: ['lab-orders', 'pending-collection'],
-    queryFn: () => labService.orders.getPending(),
+    queryKey: ['lab-orders', 'pending-collection', facilityId],
+    queryFn: () => labService.orders.getPending({ facilityId }),
+    enabled: !!facilityId,
     staleTime: 15000,
     refetchInterval: 15000,
   });
