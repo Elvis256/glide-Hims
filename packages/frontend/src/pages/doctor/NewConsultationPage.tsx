@@ -394,6 +394,11 @@ export default function NewConsultationPage() {
   const [consultationStartTime, setConsultationStartTime] = useState<Date | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [encounterId, setEncounterId] = useState<string | null>(null);
+  // Disposition controls how the patient is routed after this consultation.
+  // 'auto' = derive from orders/prescriptions (Lab → Imaging → Pharmacy → Billing).
+  // Explicit values let the doctor override the routing or admit/refer/discharge.
+  type Disposition = 'auto' | 'lab' | 'imaging' | 'pharmacy' | 'billing' | 'admit' | 'refer';
+  const [disposition, setDisposition] = useState<Disposition>('auto');
   const [icdSearchQuery, setIcdSearchQuery] = useState('');
   const [showIcdSearch, setShowIcdSearch] = useState(false);
   const [showPreviousEncounters, setShowPreviousEncounters] = useState(false);
@@ -833,19 +838,34 @@ export default function NewConsultationPage() {
       }
       
       // 1. Atomically: save clinical note + update encounter + mark completed (single transaction)
+      // For 'admit' disposition we DON'T mark completed — we save the note then transition to ADMITTED.
       const { encounterId: _eid, ...clinicalNoteBody } = clinicalNotePayload;
-      await encountersService.completeConsultation(encounterId, {
-        ...clinicalNoteBody,
-        chiefComplaint: form.chiefComplaint,
-        notes: JSON.stringify({
-          hpi: form.historyOfPresentIllness,
-          ros: form.reviewOfSystems,
-          exam: form.physicalExam,
-          assessment: form.clinicalImpression,
-          diagnoses: form.diagnoses,
-          plan: form.planItems,
-        }),
-      });
+      if (disposition === 'admit') {
+        // Save clinical note via standalone endpoint, then transition encounter to ADMITTED.
+        try {
+          await clinicalNotesService.create({ encounterId, ...clinicalNoteBody });
+        } catch (e: any) {
+          // If a note already exists for this encounter, update path would be needed.
+          // Soft-fail so admission can proceed; doctor can edit notes from chart.
+          if (!e?.response?.data?.message?.includes?.('already')) {
+            throw e;
+          }
+        }
+        await encountersService.updateStatus(encounterId, 'admitted');
+      } else {
+        await encountersService.completeConsultation(encounterId, {
+          ...clinicalNoteBody,
+          chiefComplaint: form.chiefComplaint,
+          notes: JSON.stringify({
+            hpi: form.historyOfPresentIllness,
+            ros: form.reviewOfSystems,
+            exam: form.physicalExam,
+            assessment: form.clinicalImpression,
+            diagnoses: form.diagnoses,
+            plan: form.planItems,
+          }),
+        });
+      }
       
       // 2. Auto-create prescription if unsent Rx items exist
       const rxItems = form.planItems.filter(p => p.type === 'prescription');
@@ -907,41 +927,126 @@ export default function NewConsultationPage() {
         }
       }
 
-      // 6. Complete queue entry and transfer to next department
+      // 6. Complete queue entry and route to next service point
       const hasQueueEntry = selectedPatient?.id && !selectedPatient.id.startsWith('no-queue-') && !selectedPatient.id.startsWith('temp-');
-      if (hasQueueEntry) {
-        const hasPrescriptions = rxItems.length > 0;
-        const hasLabOrders = labItems.length > 0;
-        const hasImagingOrders = imagingItems.length > 0;
+      let routedTo: string | null = null;
 
+      if (hasQueueEntry) {
         try {
           await queueService.complete(selectedPatient.id);
         } catch (e) {
           // Queue completion is non-critical; consultation already saved
         }
 
-        // Transfer to next service point
+        // Determine routing target. We look at BOTH new items (this visit) AND
+        // any existing pending orders/prescriptions on the encounter — this
+        // makes second-visit routing (after RETURN_TO_DOCTOR from lab) correct.
+        let hasPendingLab = labItems.length > 0;
+        let hasPendingImaging = imagingItems.length > 0;
+        let hasPendingRx = rxItems.length > 0;
         try {
-          if (hasPrescriptions) {
-            await queueService.transfer(selectedPatient.id, 'pharmacy', 'Prescription ordered');
-          } else if (hasLabOrders) {
-            await queueService.transfer(selectedPatient.id, 'laboratory', 'Lab tests ordered');
-          } else if (hasImagingOrders) {
-            await queueService.transfer(selectedPatient.id, 'radiology', 'Imaging ordered');
-          } else {
-            await queueService.transfer(selectedPatient.id, 'billing', 'Consultation complete — ready for billing');
+          const [existingOrders, existingRx] = await Promise.all([
+            ordersService.getByEncounter(encounterId).catch(() => [] as Order[]),
+            prescriptionsService.getByEncounter(encounterId).catch(() => [] as Prescription[]),
+          ]);
+          if (!hasPendingLab) {
+            hasPendingLab = existingOrders.some(
+              (o) => o.orderType === 'lab' && (o.status === 'pending' || o.status === 'in_progress'),
+            );
           }
-        } catch (e) {
-          // Queue transfer is non-critical; consultation already saved
+          if (!hasPendingImaging) {
+            hasPendingImaging = existingOrders.some(
+              (o) => o.orderType === 'imaging' && (o.status === 'pending' || o.status === 'in_progress'),
+            );
+          }
+          if (!hasPendingRx) {
+            hasPendingRx = existingRx.some(
+              (p) => (p as any).status !== 'dispensed' && (p as any).status !== 'cancelled',
+            );
+          }
+        } catch {
+          // fall back to in-form items only
+        }
+
+        // Resolve final destination per disposition.
+        // Clinical priority order for 'auto': Lab → Imaging → Pharmacy → Billing.
+        // Doctors typically want results before finalising prescriptions; if
+        // labs/imaging are pending, the patient returns via RETURN_TO_DOCTOR
+        // and on the second completion will be routed to Pharmacy/Billing.
+        let target: string | null = null;
+        let reason = '';
+        switch (disposition) {
+          case 'admit':
+            // No queue transfer — patient is in IPD now. Frontend nav can show admission.
+            target = null;
+            break;
+          case 'refer':
+            // No downstream service point in this system yet; just close the queue.
+            // (Future: create a referral letter + referral queue entry.)
+            target = null;
+            break;
+          case 'lab':
+            target = 'laboratory';
+            reason = 'Lab tests ordered (manual disposition)';
+            break;
+          case 'imaging':
+            target = 'radiology';
+            reason = 'Imaging ordered (manual disposition)';
+            break;
+          case 'pharmacy':
+            target = 'pharmacy';
+            reason = 'Direct to pharmacy (manual disposition)';
+            break;
+          case 'billing':
+            target = 'billing';
+            reason = 'Direct to billing — consultation only (manual disposition)';
+            break;
+          case 'auto':
+          default:
+            if (hasPendingLab) {
+              target = 'laboratory';
+              reason = 'Lab tests ordered';
+            } else if (hasPendingImaging) {
+              target = 'radiology';
+              reason = 'Imaging ordered';
+            } else if (hasPendingRx) {
+              target = 'pharmacy';
+              reason = 'Prescription ordered';
+            } else {
+              target = 'billing';
+              reason = 'Consultation complete — ready for billing';
+            }
+        }
+
+        if (target) {
+          try {
+            await queueService.transfer(selectedPatient.id, target, reason);
+            routedTo = target;
+          } catch (e) {
+            // Queue transfer is non-critical; consultation already saved
+          }
         }
       }
+
+      return { disposition, routedTo };
     },
-    onSuccess: () => {
-      const hasPrescriptions = form.planItems.some(p => p.type === 'prescription');
-      const hasLabOrders = form.planItems.some(p => p.type === 'lab');
-      const hasImagingOrders = form.planItems.some(p => p.type === 'imaging');
-      const destination = hasPrescriptions ? 'Pharmacy' : hasLabOrders ? 'Laboratory' : hasImagingOrders ? 'Radiology' : 'Billing';
-      toast.success(`Consultation completed — patient sent to ${destination}`);
+    onSuccess: (result) => {
+      const { disposition: dispUsed, routedTo } = result || { disposition, routedTo: null };
+      let msg = 'Consultation completed';
+      if (dispUsed === 'admit') {
+        msg = 'Patient admitted to IPD';
+      } else if (dispUsed === 'refer') {
+        msg = 'Consultation completed — referral noted';
+      } else if (routedTo) {
+        const labelMap: Record<string, string> = {
+          laboratory: 'Laboratory',
+          radiology: 'Radiology',
+          pharmacy: 'Pharmacy',
+          billing: 'Billing',
+        };
+        msg = `Consultation completed — patient sent to ${labelMap[routedTo] || routedTo}`;
+      }
+      toast.success(msg);
       // Reset form
       setSelectedPatient(null);
       setEncounterId(null);
@@ -1967,6 +2072,20 @@ export default function NewConsultationPage() {
                         )}
                         Send to Billing
                       </button>
+                      <select
+                        value={disposition}
+                        onChange={(e) => setDisposition(e.target.value as typeof disposition)}
+                        title="Disposition: where the patient goes after this consultation"
+                        className="px-2 py-1.5 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                      >
+                        <option value="auto">Auto-route (Lab → Imaging → Pharmacy → Billing)</option>
+                        <option value="lab">Send to Laboratory</option>
+                        <option value="imaging">Send to Radiology</option>
+                        <option value="pharmacy">Send to Pharmacy</option>
+                        <option value="billing">Discharge (consultation only → Billing)</option>
+                        <option value="admit">Admit to IPD</option>
+                        <option value="refer">Refer to specialist</option>
+                      </select>
                       <button
                         onClick={() => completeMutation.mutate()}
                         disabled={completeMutation.isPending || form.diagnoses.length === 0}
@@ -1977,7 +2096,7 @@ export default function NewConsultationPage() {
                         ) : (
                           <CheckCircle className="w-4 h-4" />
                         )}
-                        Sign & Complete
+                        {disposition === 'admit' ? 'Sign & Admit' : 'Sign & Complete'}
                       </button>
                     </>
                   )}
