@@ -140,34 +140,38 @@ export class EncountersService {
       }
     }
 
-    // Check for active encounter (any non-terminal status)
-    const activeStatuses = [
-      EncounterStatus.REGISTERED,
-      EncounterStatus.TRIAGE,
-      EncounterStatus.WAITING,
-      EncounterStatus.IN_CONSULTATION,
-      EncounterStatus.PENDING_LAB,
-      EncounterStatus.PENDING_PHARMACY,
-      EncounterStatus.PENDING_PAYMENT,
-      EncounterStatus.RETURN_TO_DOCTOR,
-      EncounterStatus.RETURN_TO_PHARMACY,
-    ];
-    const activeEncounter = await this.encounterRepository.findOne({
-      where: {
-        patientId: dto.patientId,
-        status: In(activeStatuses),
-        ...(tenantId ? { tenantId } : {}),
-      },
-    });
-
-    if (activeEncounter && dto.type === EncounterType.OPD) {
-      throw new BadRequestException({
-        message: 'Patient already has an active OPD encounter',
-        activeEncounterId: activeEncounter.id,
-      });
-    }
-
     return this.dataSource.transaction(async (manager) => {
+      // Active-encounter check INSIDE the transaction with pessimistic lock so
+      // two concurrent registration submits for the same patient cannot both
+      // pass the check. Without this, double-clicking the Register button (or
+      // two reception tabs) yields two encounters + two consultation invoices.
+      const activeStatuses = [
+        EncounterStatus.REGISTERED,
+        EncounterStatus.TRIAGE,
+        EncounterStatus.WAITING,
+        EncounterStatus.IN_CONSULTATION,
+        EncounterStatus.PENDING_LAB,
+        EncounterStatus.PENDING_PHARMACY,
+        EncounterStatus.PENDING_PAYMENT,
+        EncounterStatus.RETURN_TO_DOCTOR,
+        EncounterStatus.RETURN_TO_PHARMACY,
+      ];
+      const activeEncounter = await manager.findOne(Encounter, {
+        where: {
+          patientId: dto.patientId,
+          status: In(activeStatuses),
+          ...(tenantId ? { tenantId } : {}),
+        },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (activeEncounter && dto.type === EncounterType.OPD) {
+        throw new BadRequestException({
+          message: 'Patient already has an active OPD encounter',
+          activeEncounterId: activeEncounter.id,
+        });
+      }
+
       const visitNumber = await this.generateVisitNumber(manager, tenantId);
       const queueNumber = await this.getNextQueueNumber(
         manager,
