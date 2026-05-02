@@ -1,9 +1,12 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { Vital } from '../../database/entities/vital.entity';
 import { Encounter, EncounterStatus } from '../../database/entities/encounter.entity';
 import { CreateVitalDto, UpdateVitalDto } from './vitals.dto';
+import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
+import { InAppNotificationType } from '../../database/entities/in-app-notification.entity';
+import { AuditLogService } from '../../common/interceptors/audit-log.service';
 
 export interface VitalAlert {
   parameter: string;
@@ -42,6 +45,8 @@ export class VitalsService {
     private vitalRepository: Repository<Vital>,
     @InjectRepository(Encounter)
     private encounterRepository: Repository<Encounter>,
+    private inAppNotifications: InAppNotificationsService,
+    private auditLogService: AuditLogService,
   ) {}
 
   private calculateBMI(weight: number, heightCm: number): number | null {
@@ -133,6 +138,62 @@ export class VitalsService {
         this.logger.warn(
           `CRITICAL VITAL ALERTS for encounter ${dto.encounterId}: ${criticals.map((a) => a.message).join('; ')}`,
         );
+
+        // Fan out an in-app notification to the attending doctor (if any) and
+        // any nurse watching this facility's nursing channel. Failures are
+        // logged but never block the save — clinicians need the vital saved
+        // even if the WebSocket gateway is down.
+        try {
+          const summary = criticals.map((a) => a.message).join('; ');
+          const targets: string[] = [];
+          if (encounter.attendingProviderId) {
+            targets.push(encounter.attendingProviderId);
+          }
+          // Charge nurses on this facility (best-effort role lookup)
+          const nurseIds = await this.inAppNotifications
+            .getUserIdsByRole(['charge_nurse', 'nurse_supervisor', 'nurse'], encounter.facilityId, tenantId)
+            .catch(() => [] as string[]);
+          targets.push(...nurseIds);
+          const unique = [...new Set(targets)].filter(Boolean);
+          if (unique.length > 0) {
+            await this.inAppNotifications.notifyMany(
+              unique,
+              {
+                facilityId: encounter.facilityId,
+                senderUserId: userId,
+                type: InAppNotificationType.GENERAL,
+                title: 'Critical vital sign',
+                message: summary,
+                metadata: {
+                  kind: 'critical_vital',
+                  encounterId: encounter.id,
+                  patientId: encounter.patientId,
+                  vitalId: savedVital.id,
+                  alerts: criticals,
+                },
+              },
+              tenantId,
+            );
+          }
+        } catch (err: any) {
+          this.logger.error(
+            `Failed to fan out critical vital alert for encounter ${dto.encounterId}: ${err?.message || err}`,
+          );
+        }
+
+        // Audit log: critical vitals are a regulated clinical event
+        await this.auditLogService
+          .log({
+            userId,
+            action: 'VITAL_CRITICAL_RECORDED',
+            entityType: 'Vital',
+            entityId: savedVital.id,
+            newValue: { alerts: criticals, encounterId: encounter.id, patientId: encounter.patientId },
+            ...(tenantId ? { tenantId } : {}),
+          })
+          .catch((err) =>
+            this.logger.error(`Audit log failed for critical vital ${savedVital.id}: ${err.message}`),
+          );
       }
     }
 
@@ -146,7 +207,7 @@ export class VitalsService {
   }
 
   async findByEncounter(encounterId: string, tenantId?: string): Promise<Vital[]> {
-    const where: any = { encounterId };
+    const where: any = { encounterId, deletedAt: IsNull() };
     if (tenantId) where.tenantId = tenantId;
     return this.vitalRepository.find({
       where,
@@ -156,7 +217,7 @@ export class VitalsService {
   }
 
   async findLatestByEncounter(encounterId: string, tenantId?: string): Promise<Vital | null> {
-    const where: any = { encounterId };
+    const where: any = { encounterId, deletedAt: IsNull() };
     if (tenantId) where.tenantId = tenantId;
     return this.vitalRepository.findOne({
       where,

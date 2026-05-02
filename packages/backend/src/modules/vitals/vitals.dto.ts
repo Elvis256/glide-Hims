@@ -91,41 +91,57 @@ export class UpdateVitalDto {
   @Type(() => Number)
   @IsNumber()
   @IsOptional()
+  @Min(32)
+  @Max(45)
   temperature?: number;
 
   @Type(() => Number)
   @IsNumber()
   @IsOptional()
+  @Min(20)
+  @Max(250)
   pulse?: number;
 
   @Type(() => Number)
   @IsNumber()
   @IsOptional()
+  @Min(50)
+  @Max(300)
   bpSystolic?: number;
 
   @Type(() => Number)
   @IsNumber()
   @IsOptional()
+  @Min(30)
+  @Max(200)
   bpDiastolic?: number;
 
   @Type(() => Number)
   @IsNumber()
   @IsOptional()
+  @Min(5)
+  @Max(60)
   respiratoryRate?: number;
 
   @Type(() => Number)
   @IsNumber()
   @IsOptional()
+  @Min(50)
+  @Max(100)
   oxygenSaturation?: number;
 
   @Type(() => Number)
   @IsNumber()
   @IsOptional()
+  @Min(0.5)
+  @Max(500)
   weight?: number;
 
   @Type(() => Number)
   @IsNumber()
   @IsOptional()
+  @Min(30)
+  @Max(275)
   height?: number;
 
   @Type(() => Number)
@@ -136,6 +152,8 @@ export class UpdateVitalDto {
   @Type(() => Number)
   @IsNumber()
   @IsOptional()
+  @Min(0)
+  @Max(10)
   painScale?: number;
 
   @IsString()

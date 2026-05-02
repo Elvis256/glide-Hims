@@ -22,6 +22,8 @@ import {
   EncounterStatus,
   EncounterType,
 } from '../../database/entities/encounter.entity';
+import { Patient } from '../../database/entities/patient.entity';
+import { PrescriptionItem } from '../../database/entities/prescription.entity';
 import {
   CreateWardDto,
   UpdateWardDto,
@@ -39,6 +41,7 @@ import {
 } from './dto/ipd.dto';
 import { BillingService } from '../billing/billing.service';
 import { BedBoardService } from './bed-board.service';
+import { AuditLogService } from '../../common/interceptors/audit-log.service';
 
 @Injectable()
 export class IpdService {
@@ -53,10 +56,13 @@ export class IpdService {
     private medAdminRepo: Repository<MedicationAdministration>,
     @InjectRepository(BedTransfer) private transferRepo: Repository<BedTransfer>,
     @InjectRepository(Encounter) private encounterRepo: Repository<Encounter>,
+    @InjectRepository(Patient) private patientRepo: Repository<Patient>,
+    @InjectRepository(PrescriptionItem) private prescriptionItemRepo: Repository<PrescriptionItem>,
     private dataSource: DataSource,
     @Inject(forwardRef(() => BillingService))
     private billingService: BillingService,
     private bedBoardService: BedBoardService,
+    private auditLogService: AuditLogService,
   ) {}
 
   // ========== WARD MANAGEMENT ==========
@@ -672,23 +678,89 @@ export class IpdService {
     userId: string,
     tenantId?: string,
   ): Promise<MedicationAdministration> {
-    const med = await this.medAdminRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+    return this.dataSource.transaction(async (manager) => {
+      // C2: pessimistic lock prevents two nurses double-administering the same dose.
+      const med = await manager.findOne(MedicationAdministration, {
+        where: { id, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!med) throw new NotFoundException('Medication schedule not found');
+
+      // Refuse re-administration of a dose already finalized as ADMINISTERED.
+      if (med.status === MedicationStatus.ADMINISTERED) {
+        throw new BadRequestException('This dose has already been administered');
+      }
+
+      // C3: documented-allergy guard. We use the patient.allergies free-text array
+      // as the source of truth (frontend writes to it). Substring match is the
+      // safest non-invasive default; pharmacists can override with a reason.
+      if (dto.status === MedicationStatus.ADMINISTERED && med.admissionId && med.drugName) {
+        const admission = await manager.findOne(Admission, {
+          where: { id: med.admissionId },
+          relations: ['patient'],
+        });
+        const allergies = admission?.patient?.allergies || [];
+        const drug = med.drugName.toLowerCase();
+        const hit = allergies.find((a) => {
+          const tag = String(a || '').trim().toLowerCase();
+          return tag.length > 2 && drug.includes(tag);
+        });
+        if (hit && !dto.allergyOverrideReason) {
+          throw new BadRequestException(
+            `Patient has documented allergy to "${hit}". Provide allergyOverrideReason to proceed.`,
+          );
+        }
+      }
+
+      const previousStatus = med.status;
+      med.status = dto.status;
+      med.administeredById = userId;
+      med.administeredAt = new Date();
+      if (dto.batchNumber) med.batchNumber = dto.batchNumber;
+      if (dto.notes) med.notes = dto.notes;
+      if (dto.reason) med.reason = dto.reason;
+
+      const saved = await manager.save(med);
+
+      // C5: dose tracking — increment quantityDispensed on the linked Rx item
+      // so prescription remaining-count reflects what was actually given.
+      if (
+        dto.status === MedicationStatus.ADMINISTERED &&
+        med.prescriptionItemId
+      ) {
+        await manager.increment(
+          PrescriptionItem,
+          { id: med.prescriptionItemId },
+          'quantityDispensed',
+          1,
+        );
+      }
+
+      // C6: audit log (best-effort, never blocks the dose).
+      this.auditLogService
+        .log({
+          userId,
+          action: 'MEDICATION_ADMINISTERED',
+          entityType: 'MedicationAdministration',
+          entityId: saved.id,
+          oldValue: { status: previousStatus },
+          newValue: {
+            status: saved.status,
+            drugName: saved.drugName,
+            admissionId: saved.admissionId,
+            allergyOverrideReason: dto.allergyOverrideReason || null,
+          },
+          ...(tenantId ? { tenantId } : {}),
+        })
+        .catch((err) =>
+          this.logger.error(`Audit log failed for med admin ${saved.id}: ${err.message}`),
+        );
+
+      this.logger.log(
+        `Medication administered: ${med.drugName} status ${dto.status} for admission ${med.admissionId} by user ${userId}`,
+      );
+      return saved;
     });
-    if (!med) throw new NotFoundException('Medication schedule not found');
-
-    med.status = dto.status;
-    med.administeredById = userId;
-    med.administeredAt = new Date();
-    if (dto.batchNumber) med.batchNumber = dto.batchNumber;
-    if (dto.notes) med.notes = dto.notes;
-    if (dto.reason) med.reason = dto.reason;
-
-    const saved = await this.medAdminRepo.save(med);
-    this.logger.log(
-      `Medication administered: ${med.drugName} status ${dto.status} for admission ${med.admissionId} by user ${userId}`,
-    );
-    return saved;
   }
 
   // ========== DASHBOARD STATS ==========
