@@ -67,6 +67,10 @@ import { labService } from '../../services/lab';
 import { diagnosesService } from '../../services/diagnoses';
 import { clinicalNotesService } from '../../services/clinical-notes';
 import { servicesService } from '../../services/services';
+import { ipdService, type Ward, type Bed, type CreateAdmissionDto } from '../../services/ipd';
+import { referralsService, type ReferralReasonValue } from '../../services/referrals';
+import { facilitiesService } from '../../services/facilities';
+import { useAuthStore } from '../../store/auth';
 import { useFacilityId } from '../../lib/facility';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
@@ -399,6 +403,43 @@ export default function NewConsultationPage() {
   // Explicit values let the doctor override the routing or admit/refer/discharge.
   type Disposition = 'auto' | 'lab' | 'imaging' | 'pharmacy' | 'billing' | 'admit' | 'refer';
   const [disposition, setDisposition] = useState<Disposition>('auto');
+
+  // Admit (IPD) modal — shown when disposition='admit' and Sign clicked.
+  const [admitModalOpen, setAdmitModalOpen] = useState(false);
+  const [admitForm, setAdmitForm] = useState<{
+    wardId: string;
+    bedId: string;
+    type: 'emergency' | 'elective' | 'transfer';
+    admissionReason: string;
+    admissionDiagnosis: string;
+  }>({ wardId: '', bedId: '', type: 'elective', admissionReason: '', admissionDiagnosis: '' });
+
+  // Referral modal — shown when disposition='refer' and Sign clicked.
+  const [referralModalOpen, setReferralModalOpen] = useState(false);
+  const [referralForm, setReferralForm] = useState<{
+    type: 'internal' | 'external';
+    priority: 'routine' | 'urgent' | 'emergency';
+    reason: ReferralReasonValue;
+    referredToSpecialty: string;
+    referredToDepartment: string;
+    externalFacilityName: string;
+    externalFacilityAddress: string;
+    externalFacilityPhone: string;
+    clinicalSummary: string;
+    appointmentDate: string;
+  }>({
+    type: 'internal',
+    priority: 'routine',
+    reason: 'specialist_consultation',
+    referredToSpecialty: '',
+    referredToDepartment: '',
+    externalFacilityName: '',
+    externalFacilityAddress: '',
+    externalFacilityPhone: '',
+    clinicalSummary: '',
+    appointmentDate: '',
+  });
+
   const [icdSearchQuery, setIcdSearchQuery] = useState('');
   const [showIcdSearch, setShowIcdSearch] = useState(false);
   const [showPreviousEncounters, setShowPreviousEncounters] = useState(false);
@@ -650,6 +691,37 @@ export default function NewConsultationPage() {
     staleTime: 60000,
   });
 
+  // Current authenticated user (for attendingDoctorId on admit, etc.)
+  const currentUser = useAuthStore((state) => state.user);
+
+  // Facility settings — used to detect pre-pay mode (cash hospitals route via
+  // billing before lab/pharmacy). Stored in facility.settings.prePayMode.
+  const { data: currentFacility } = useQuery({
+    queryKey: ['facility', facilityId],
+    queryFn: () => facilitiesService.getById(facilityId as string),
+    enabled: !!facilityId,
+    staleTime: 5 * 60_000,
+  });
+  const prePayMode = Boolean(
+    (currentFacility?.settings as Record<string, unknown> | undefined)?.prePayMode,
+  );
+
+  // Wards — only loaded when admit modal is open (lazy)
+  const { data: wards = [] } = useQuery<Ward[]>({
+    queryKey: ['ipd-wards'],
+    queryFn: () => ipdService.wards.list(),
+    enabled: admitModalOpen,
+    staleTime: 60_000,
+  });
+
+  // Available beds for the selected ward (re-fetches on ward change or modal open)
+  const { data: availableBeds = [], refetch: refetchBeds } = useQuery<Bed[]>({
+    queryKey: ['ipd-beds-available', admitForm.wardId],
+    queryFn: () => ipdService.beds.getAvailable(admitForm.wardId || undefined),
+    enabled: admitModalOpen && !!admitForm.wardId,
+    staleTime: 15_000,
+  });
+
   // WHO ICD-10 search for diagnoses - try online first, fallback to local
   const { data: whoIcdResults = [], isLoading: icdSearchLoading } = useQuery({
     queryKey: ['icd-search', icdSearchQuery],
@@ -766,7 +838,29 @@ export default function NewConsultationPage() {
 
   // Complete consultation mutation
   const completeMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (
+      extra?: {
+        admit?: {
+          wardId: string;
+          bedId: string;
+          type: 'emergency' | 'elective' | 'transfer';
+          admissionReason: string;
+          admissionDiagnosis: string;
+        };
+        referral?: {
+          type: 'internal' | 'external';
+          priority: 'routine' | 'urgent' | 'emergency';
+          reason: ReferralReasonValue;
+          referredToSpecialty?: string;
+          referredToDepartment?: string;
+          externalFacilityName?: string;
+          externalFacilityAddress?: string;
+          externalFacilityPhone?: string;
+          appointmentDate?: string;
+          clinicalSummary: string;
+        };
+      },
+    ) => {
       if (!encounterId) throw new Error('No encounter');
       // Validate required fields up-front so the doctor sees a clear message
       // instead of a generic 400 from the backend DTO.
@@ -836,22 +930,36 @@ export default function NewConsultationPage() {
           ? `Plan: ${form.clinicalImpression}`
           : 'See clinical notes and orders';
       }
-      
-      // 1. Atomically: save clinical note + update encounter + mark completed (single transaction)
-      // For 'admit' disposition we DON'T mark completed — we save the note then transition to ADMITTED.
+
       const { encounterId: _eid, ...clinicalNoteBody } = clinicalNotePayload;
-      if (disposition === 'admit') {
-        // Save clinical note via standalone endpoint, then transition encounter to ADMITTED.
+
+      // Upsert helper — for admit flow we don't go through completeConsultation
+      // (which would mark the encounter COMPLETED, blocking ADMITTED). Instead
+      // we save/update the clinical note directly. Idempotent against retries.
+      const upsertClinicalNote = async () => {
         try {
-          await clinicalNotesService.create({ encounterId, ...clinicalNoteBody });
+          const existing = await clinicalNotesService
+            .getByEncounter(encounterId)
+            .catch(() => [] as any[]);
+          if (Array.isArray(existing) && existing.length > 0) {
+            await clinicalNotesService.update(existing[0].id, clinicalNoteBody as any);
+          } else {
+            await clinicalNotesService.create({ encounterId, ...clinicalNoteBody } as any);
+          }
         } catch (e: any) {
-          // If a note already exists for this encounter, update path would be needed.
-          // Soft-fail so admission can proceed; doctor can edit notes from chart.
           if (!e?.response?.data?.message?.includes?.('already')) {
             throw e;
           }
         }
-        await encountersService.updateStatus(encounterId, 'admitted');
+      };
+
+      // ===== Step 1: Persist the clinical record =====
+      // For admit/refer we route through different terminal states:
+      //   admit  → encounter ends as ADMITTED (set by ipdService.admissions.create)
+      //   refer  → encounter ends as COMPLETED + referral artifact
+      //   other  → encounter ends as COMPLETED via completeConsultation
+      if (disposition === 'admit') {
+        await upsertClinicalNote();
       } else {
         await encountersService.completeConsultation(encounterId, {
           ...clinicalNoteBody,
@@ -866,8 +974,8 @@ export default function NewConsultationPage() {
           }),
         });
       }
-      
-      // 2. Auto-create prescription if unsent Rx items exist
+
+      // ===== Step 2: Auto-create orders/prescriptions from plan items =====
       const rxItems = form.planItems.filter(p => p.type === 'prescription');
       if (rxItems.length > 0) {
         try {
@@ -891,7 +999,6 @@ export default function NewConsultationPage() {
         }
       }
 
-      // 4. Auto-create lab orders if lab items exist
       const labItems = form.planItems.filter(p => p.type === 'lab');
       if (labItems.length > 0 && selectedPatient?.id) {
         try {
@@ -909,7 +1016,6 @@ export default function NewConsultationPage() {
         }
       }
 
-      // 5. Auto-create imaging orders if imaging items exist
       const imagingItems = form.planItems.filter(p => p.type === 'imaging');
       if (imagingItems.length > 0 && selectedPatient?.id) {
         try {
@@ -927,7 +1033,68 @@ export default function NewConsultationPage() {
         }
       }
 
-      // 6. Complete queue entry and route to next service point
+      // ===== Step 3: Disposition-specific terminal action =====
+      // For ADMIT: create the IPD admission (atomically transitions encounter
+      // to ADMITTED, occupies bed, auto-bills bed charge). If the bed has been
+      // taken since the modal opened, surface a clean error and let the doctor
+      // pick another bed.
+      if (disposition === 'admit') {
+        if (!extra?.admit) {
+          throw new Error('Admission details required');
+        }
+        const adm = extra.admit;
+        try {
+          await ipdService.admissions.create({
+            patientId: selectedPatient?.patient?.id || (selectedPatient as any)?.patientId || '',
+            encounterId,
+            wardId: adm.wardId,
+            bedId: adm.bedId,
+            type: adm.type,
+            admissionReason: adm.admissionReason || form.chiefComplaint,
+            admissionDiagnosis:
+              adm.admissionDiagnosis ||
+              form.diagnoses.map((d) => `${d.code}: ${d.description}`).join('; '),
+            attendingDoctorId: currentUser?.id,
+          });
+        } catch (e: any) {
+          // Refresh available beds so the doctor can re-pick if it was a race.
+          if (extra.admit.wardId) {
+            void refetchBeds();
+          }
+          throw e;
+        }
+      }
+
+      // For REFER: create the referral artifact (referral letter is generated
+      // server-side from this record). This runs AFTER completeConsultation —
+      // so the encounter is already COMPLETED. If referral creation fails, the
+      // doctor must retry from the Referrals page (consultation is preserved).
+      if (disposition === 'refer') {
+        if (!extra?.referral) {
+          throw new Error('Referral details required');
+        }
+        const ref = extra.referral;
+        await referralsService.create({
+          patientId: selectedPatient?.patient?.id || (selectedPatient as any)?.patientId || '',
+          sourceEncounterId: encounterId,
+          type: ref.type,
+          priority: ref.priority,
+          reason: ref.reason,
+          clinicalSummary: ref.clinicalSummary,
+          referredToDepartment: ref.referredToDepartment || undefined,
+          referredToSpecialty: ref.referredToSpecialty || undefined,
+          externalFacilityName: ref.type === 'external' ? ref.externalFacilityName : undefined,
+          externalFacilityAddress: ref.type === 'external' ? ref.externalFacilityAddress : undefined,
+          externalFacilityPhone: ref.type === 'external' ? ref.externalFacilityPhone : undefined,
+          appointmentDate: ref.appointmentDate || undefined,
+          provisionalDiagnosis:
+            form.clinicalImpression ||
+            form.diagnoses.map((d) => `${d.code}: ${d.description}`).join('; ') ||
+            undefined,
+        });
+      }
+
+      // ===== Step 4: Close the OPD queue and route to next service point =====
       const hasQueueEntry = selectedPatient?.id && !selectedPatient.id.startsWith('no-queue-') && !selectedPatient.id.startsWith('temp-');
       let routedTo: string | null = null;
 
@@ -935,12 +1102,10 @@ export default function NewConsultationPage() {
         try {
           await queueService.complete(selectedPatient.id);
         } catch (e) {
-          // Queue completion is non-critical; consultation already saved
+          // Queue completion is non-critical; clinical state already saved.
         }
 
-        // Determine routing target. We look at BOTH new items (this visit) AND
-        // any existing pending orders/prescriptions on the encounter — this
-        // makes second-visit routing (after RETURN_TO_DOCTOR from lab) correct.
+        // Determine routing target by combining new and existing pending work.
         let hasPendingLab = labItems.length > 0;
         let hasPendingImaging = imagingItems.length > 0;
         let hasPendingRx = rxItems.length > 0;
@@ -968,22 +1133,16 @@ export default function NewConsultationPage() {
           // fall back to in-form items only
         }
 
-        // Resolve final destination per disposition.
-        // Clinical priority order for 'auto': Lab → Imaging → Pharmacy → Billing.
-        // Doctors typically want results before finalising prescriptions; if
-        // labs/imaging are pending, the patient returns via RETURN_TO_DOCTOR
-        // and on the second completion will be routed to Pharmacy/Billing.
+        // Resolve final destination per disposition (priority Lab → Imaging →
+        // Pharmacy → Billing for 'auto'). If pre-pay mode is enabled and there
+        // are billable downstream items, override to billing first; cashier or
+        // backend post-payment hook will route onward after invoice is paid.
         let target: string | null = null;
         let reason = '';
         switch (disposition) {
           case 'admit':
-            // No queue transfer — patient is in IPD now. Frontend nav can show admission.
-            target = null;
-            break;
           case 'refer':
-            // No downstream service point in this system yet; just close the queue.
-            // (Future: create a referral letter + referral queue entry.)
-            target = null;
+            target = null; // queue stays closed; admission/referral is the terminus
             break;
           case 'lab':
             target = 'laboratory';
@@ -1018,25 +1177,44 @@ export default function NewConsultationPage() {
             }
         }
 
+        // Pre-pay override: cash-flow facilities take payment before delivering
+        // billable services. If billable downstream work exists, force billing
+        // first regardless of clinical priority. Discharge/billing/admit/refer
+        // are unaffected since their destination is already correct.
+        const billableTargets = new Set(['laboratory', 'radiology', 'pharmacy']);
+        if (
+          prePayMode &&
+          target &&
+          billableTargets.has(target) &&
+          (hasPendingLab || hasPendingImaging || hasPendingRx)
+        ) {
+          target = 'billing';
+          reason = 'Pre-pay mode: invoice first; cashier will route after payment';
+        }
+
         if (target) {
           try {
             await queueService.transfer(selectedPatient.id, target, reason);
             routedTo = target;
           } catch (e) {
-            // Queue transfer is non-critical; consultation already saved
+            // Queue transfer is non-critical; clinical state already saved.
           }
         }
       }
 
-      return { disposition, routedTo };
+      return { disposition, routedTo, prePayApplied: prePayMode && routedTo === 'billing' };
     },
     onSuccess: (result) => {
-      const { disposition: dispUsed, routedTo } = result || { disposition, routedTo: null };
+      const { disposition: dispUsed, routedTo, prePayApplied } = result || {
+        disposition,
+        routedTo: null,
+        prePayApplied: false,
+      };
       let msg = 'Consultation completed';
       if (dispUsed === 'admit') {
         msg = 'Patient admitted to IPD';
       } else if (dispUsed === 'refer') {
-        msg = 'Consultation completed — referral noted';
+        msg = 'Referral created — letter ready in Referrals';
       } else if (routedTo) {
         const labelMap: Record<string, string> = {
           laboratory: 'Laboratory',
@@ -1045,14 +1223,22 @@ export default function NewConsultationPage() {
           billing: 'Billing',
         };
         msg = `Consultation completed — patient sent to ${labelMap[routedTo] || routedTo}`;
+        if (prePayApplied) {
+          msg += ' (pre-pay mode)';
+        }
       }
       toast.success(msg);
+      // Close any open disposition modal
+      setAdmitModalOpen(false);
+      setReferralModalOpen(false);
       // Reset form
       setSelectedPatient(null);
       setEncounterId(null);
       setConsultationStartTime(null);
+      setDisposition('auto');
       queryClient.invalidateQueries({ queryKey: ['queue'] });
       queryClient.invalidateQueries({ queryKey: ['clinical-notes'] });
+      queryClient.invalidateQueries({ queryKey: ['ipd-beds-available'] });
       navigate('/doctor/queue');
     },
     onError: (error: any) => {
@@ -2086,8 +2272,44 @@ export default function NewConsultationPage() {
                         <option value="admit">Admit to IPD</option>
                         <option value="refer">Refer to specialist</option>
                       </select>
+                      {prePayMode && (
+                        <span
+                          title="Pre-pay mode is enabled for this facility — billable services route to billing first"
+                          className="inline-flex items-center px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-800 rounded-full"
+                        >
+                          Pre-pay
+                        </span>
+                      )}
                       <button
-                        onClick={() => completeMutation.mutate()}
+                        onClick={() => {
+                          // Open the disposition-specific modal first when extra
+                          // input is needed; otherwise fire the mutation directly.
+                          if (disposition === 'admit') {
+                            setAdmitForm((f) => ({
+                              ...f,
+                              admissionReason: f.admissionReason || form.chiefComplaint,
+                              admissionDiagnosis:
+                                f.admissionDiagnosis ||
+                                form.diagnoses
+                                  .map((d) => `${d.code}: ${d.description}`)
+                                  .join('; '),
+                            }));
+                            setAdmitModalOpen(true);
+                          } else if (disposition === 'refer') {
+                            setReferralForm((f) => ({
+                              ...f,
+                              clinicalSummary:
+                                f.clinicalSummary ||
+                                form.clinicalImpression ||
+                                form.diagnoses
+                                  .map((d) => `${d.code}: ${d.description}`)
+                                  .join('; '),
+                            }));
+                            setReferralModalOpen(true);
+                          } else {
+                            completeMutation.mutate(undefined);
+                          }
+                        }}
                         disabled={completeMutation.isPending || form.diagnoses.length === 0}
                         className="flex items-center gap-1.5 px-4 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
                       >
@@ -2096,7 +2318,11 @@ export default function NewConsultationPage() {
                         ) : (
                           <CheckCircle className="w-4 h-4" />
                         )}
-                        {disposition === 'admit' ? 'Sign & Admit' : 'Sign & Complete'}
+                        {disposition === 'admit'
+                          ? 'Sign & Admit…'
+                          : disposition === 'refer'
+                          ? 'Sign & Refer…'
+                          : 'Sign & Complete'}
                       </button>
                     </>
                   )}
@@ -3995,6 +4221,372 @@ export default function NewConsultationPage() {
           </>
         )}
       </div>
+
+      {/* ====== ADMIT TO IPD MODAL ====== */}
+      {admitModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg bg-white rounded-xl shadow-2xl">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
+              <h3 className="text-base font-semibold text-gray-900">Admit Patient to IPD</h3>
+              <button
+                onClick={() => setAdmitModalOpen(false)}
+                disabled={completeMutation.isPending}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Ward *</label>
+                <select
+                  value={admitForm.wardId}
+                  onChange={(e) =>
+                    setAdmitForm({ ...admitForm, wardId: e.target.value, bedId: '' })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select ward…</option>
+                  {wards.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name}
+                      {(w as any).code ? ` (${(w as any).code})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Bed * {availableBeds.length > 0 && `(${availableBeds.length} available)`}
+                </label>
+                <select
+                  value={admitForm.bedId}
+                  onChange={(e) => setAdmitForm({ ...admitForm, bedId: e.target.value })}
+                  disabled={!admitForm.wardId}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+                >
+                  <option value="">
+                    {!admitForm.wardId ? 'Select ward first' : 'Select bed…'}
+                  </option>
+                  {availableBeds.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      Bed {b.bedNumber}
+                      {(b as any).type ? ` — ${(b as any).type}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Type *</label>
+                <select
+                  value={admitForm.type}
+                  onChange={(e) =>
+                    setAdmitForm({
+                      ...admitForm,
+                      type: e.target.value as 'emergency' | 'elective' | 'transfer',
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="elective">Elective</option>
+                  <option value="emergency">Emergency</option>
+                  <option value="transfer">Transfer</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Reason</label>
+                <input
+                  type="text"
+                  value={admitForm.admissionReason}
+                  onChange={(e) =>
+                    setAdmitForm({ ...admitForm, admissionReason: e.target.value })
+                  }
+                  placeholder="Reason for admission"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Admission diagnosis
+                </label>
+                <textarea
+                  value={admitForm.admissionDiagnosis}
+                  onChange={(e) =>
+                    setAdmitForm({ ...admitForm, admissionDiagnosis: e.target.value })
+                  }
+                  rows={2}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <p className="text-xs text-gray-500">
+                Bed charge will be auto-billed. Encounter becomes IPD on submit.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-3 border-t border-gray-200 bg-gray-50 rounded-b-xl">
+              <button
+                onClick={() => setAdmitModalOpen(false)}
+                disabled={completeMutation.isPending}
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-100 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (!admitForm.wardId || !admitForm.bedId) {
+                    toast.error('Please select a ward and bed');
+                    return;
+                  }
+                  completeMutation.mutate({
+                    admit: {
+                      wardId: admitForm.wardId,
+                      bedId: admitForm.bedId,
+                      type: admitForm.type,
+                      admissionReason: admitForm.admissionReason,
+                      admissionDiagnosis: admitForm.admissionDiagnosis,
+                    },
+                  });
+                }}
+                disabled={
+                  completeMutation.isPending || !admitForm.wardId || !admitForm.bedId
+                }
+                className="flex items-center gap-1.5 px-4 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                {completeMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                Confirm Admission
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ====== REFERRAL MODAL ====== */}
+      {referralModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg bg-white rounded-xl shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 sticky top-0 bg-white">
+              <h3 className="text-base font-semibold text-gray-900">Create Referral</h3>
+              <button
+                onClick={() => setReferralModalOpen(false)}
+                disabled={completeMutation.isPending}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Type *</label>
+                  <select
+                    value={referralForm.type}
+                    onChange={(e) =>
+                      setReferralForm({
+                        ...referralForm,
+                        type: e.target.value as 'internal' | 'external',
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    <option value="internal">Internal (within facility)</option>
+                    <option value="external">External (other facility)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Priority *</label>
+                  <select
+                    value={referralForm.priority}
+                    onChange={(e) =>
+                      setReferralForm({
+                        ...referralForm,
+                        priority: e.target.value as 'routine' | 'urgent' | 'emergency',
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    <option value="routine">Routine</option>
+                    <option value="urgent">Urgent</option>
+                    <option value="emergency">Emergency</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Reason *</label>
+                <select
+                  value={referralForm.reason}
+                  onChange={(e) =>
+                    setReferralForm({
+                      ...referralForm,
+                      reason: e.target.value as ReferralReasonValue,
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  <option value="specialist_consultation">Specialist consultation</option>
+                  <option value="diagnostic_services">Diagnostic services</option>
+                  <option value="surgical_intervention">Surgical intervention</option>
+                  <option value="higher_level_care">Higher level of care</option>
+                  <option value="inpatient_admission">Inpatient admission</option>
+                  <option value="maternity_care">Maternity care</option>
+                  <option value="mental_health">Mental health</option>
+                  <option value="rehabilitation">Rehabilitation</option>
+                  <option value="palliative_care">Palliative care</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              {referralForm.type === 'internal' ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      Specialty *
+                    </label>
+                    <input
+                      type="text"
+                      value={referralForm.referredToSpecialty}
+                      onChange={(e) =>
+                        setReferralForm({ ...referralForm, referredToSpecialty: e.target.value })
+                      }
+                      placeholder="e.g. Cardiology"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Department</label>
+                    <input
+                      type="text"
+                      value={referralForm.referredToDepartment}
+                      onChange={(e) =>
+                        setReferralForm({
+                          ...referralForm,
+                          referredToDepartment: e.target.value,
+                        })
+                      }
+                      placeholder="Optional"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      Facility name *
+                    </label>
+                    <input
+                      type="text"
+                      value={referralForm.externalFacilityName}
+                      onChange={(e) =>
+                        setReferralForm({
+                          ...referralForm,
+                          externalFacilityName: e.target.value,
+                        })
+                      }
+                      placeholder="e.g. Mulago Hospital"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Address</label>
+                      <input
+                        type="text"
+                        value={referralForm.externalFacilityAddress}
+                        onChange={(e) =>
+                          setReferralForm({
+                            ...referralForm,
+                            externalFacilityAddress: e.target.value,
+                          })
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Phone</label>
+                      <input
+                        type="text"
+                        value={referralForm.externalFacilityPhone}
+                        onChange={(e) =>
+                          setReferralForm({
+                            ...referralForm,
+                            externalFacilityPhone: e.target.value,
+                          })
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Appointment date (optional)
+                </label>
+                <input
+                  type="date"
+                  value={referralForm.appointmentDate}
+                  onChange={(e) =>
+                    setReferralForm({ ...referralForm, appointmentDate: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Clinical summary *
+                </label>
+                <textarea
+                  value={referralForm.clinicalSummary}
+                  onChange={(e) =>
+                    setReferralForm({ ...referralForm, clinicalSummary: e.target.value })
+                  }
+                  rows={4}
+                  placeholder="Pre-filled from clinical impression — edit as needed"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+              <p className="text-xs text-gray-500">
+                Consultation will be marked complete and a referral letter generated.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-3 border-t border-gray-200 bg-gray-50 sticky bottom-0">
+              <button
+                onClick={() => setReferralModalOpen(false)}
+                disabled={completeMutation.isPending}
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-100 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (!referralForm.clinicalSummary.trim()) {
+                    toast.error('Clinical summary is required');
+                    return;
+                  }
+                  if (
+                    referralForm.type === 'internal' &&
+                    !referralForm.referredToSpecialty.trim()
+                  ) {
+                    toast.error('Specialty is required for internal referrals');
+                    return;
+                  }
+                  if (
+                    referralForm.type === 'external' &&
+                    !referralForm.externalFacilityName.trim()
+                  ) {
+                    toast.error('Facility name is required for external referrals');
+                    return;
+                  }
+                  completeMutation.mutate({ referral: referralForm });
+                }}
+                disabled={completeMutation.isPending}
+                className="flex items-center gap-1.5 px-4 py-1.5 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
+              >
+                {completeMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                Create Referral
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

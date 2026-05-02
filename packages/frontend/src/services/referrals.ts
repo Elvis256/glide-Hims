@@ -136,18 +136,33 @@ export const referralsService = {
     sourceEncounterId?: string;
     type: ReferralType;
     priority: ReferralPriority;
-    reason: string;
+    reason: ReferralReasonValue;
     reasonDetails?: string;
     clinicalSummary: string;
     referredToDepartment?: string;
     referredToSpecialty?: string;
     externalFacilityName?: string;
     externalFacilityAddress?: string;
-    preferredDate?: string;
+    externalFacilityPhone?: string;
+    appointmentDate?: string;
+    provisionalDiagnosis?: string;
   }): Promise<Referral> => {
     const response = await api.post<Referral>('/referrals', data);
     return response.data;
   },
 };
+
+// Backend ReferralReason enum values — keep in sync with referral.entity.ts
+export type ReferralReasonValue =
+  | 'specialist_consultation'
+  | 'diagnostic_services'
+  | 'surgical_intervention'
+  | 'higher_level_care'
+  | 'inpatient_admission'
+  | 'maternity_care'
+  | 'mental_health'
+  | 'rehabilitation'
+  | 'palliative_care'
+  | 'other';
 
 export default referralsService;
