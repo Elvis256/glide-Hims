@@ -38,6 +38,7 @@ import {
   VendorQuotationItem,
   QuotationStatus,
   RFQ,
+  RFQStatus,
   RFQItem,
 } from '../../database/entities/rfq.entity';
 import {
@@ -550,6 +551,22 @@ export class ProcurementService {
     const rfq = quotation.rfq;
     if (!rfq) throw new NotFoundException('RFQ not found on quotation');
 
+    // Crit 3: Validate RFQ is CLOSED before allowing PO creation (PPDA procurement compliance)
+    if (rfq.status !== RFQStatus.CLOSED) {
+      throw new BadRequestException(
+        `RFQ ${rfq.rfqNumber} is in ${rfq.status} status. RFQ must be CLOSED before creating PO (ensures bidding period has concluded).`,
+      );
+    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const deadline = new Date(rfq.deadline);
+    deadline.setHours(0, 0, 0, 0);
+    if (today > deadline) {
+      throw new BadRequestException(
+        `RFQ ${rfq.rfqNumber} deadline expired on ${rfq.deadline.toISOString().slice(0, 10)}. Cannot create PO after RFQ deadline.`,
+      );
+    }
+
     // Load RFQ items to get item details (codes, names, units)
     const rfqItems = await this.dataSource.getRepository(RFQItem).find({
       where: { rfqId: rfq.id },
@@ -719,6 +736,24 @@ export class ProcurementService {
         throw new BadRequestException(
           `PO ${po.orderNumber} is not ready for delivery (status: ${po.status}). PO must be sent to the supplier first.`,
         );
+      }
+
+      // Crit 1: Validate GRN item quantities don't exceed PO allowance
+      const poItems = await this.poItemRepo.find({ where: { purchaseOrderId: po.id } });
+      for (const grnItem of dto.items) {
+        const poItem = poItems.find((pi) => pi.itemId === grnItem.itemId);
+        if (!poItem) {
+          throw new BadRequestException(
+            `Item ${grnItem.itemName || grnItem.itemId} is not on PO ${po.orderNumber}.`,
+          );
+        }
+        const alreadyReceived = poItem.quantityReceived || 0;
+        const maxAllowed = poItem.quantityOrdered - alreadyReceived;
+        if (grnItem.quantityReceived > maxAllowed) {
+          throw new BadRequestException(
+            `Cannot receive ${grnItem.quantityReceived} units of "${grnItem.itemName}". PO line allows max ${maxAllowed} more units (ordered: ${poItem.quantityOrdered}, already received: ${alreadyReceived}).`,
+          );
+        }
       }
     }
 
