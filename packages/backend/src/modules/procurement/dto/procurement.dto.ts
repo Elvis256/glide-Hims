@@ -8,6 +8,7 @@ import {
   IsDateString,
   IsPositive,
   Min,
+  Max,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PRPriority } from '../../../database/entities/purchase-request.entity';
@@ -109,17 +110,22 @@ export class CreatePOItemDto {
   @IsString()
   itemUnit?: string;
 
-  @IsNumber()
+  @IsPositive()
   quantityOrdered: number;
 
+  @Min(0)
   @IsNumber()
   unitPrice: number;
 
   @IsOptional()
+  @Min(0)
+  @Max(100)
   @IsNumber()
   taxRate?: number;
 
   @IsOptional()
+  @Min(0)
+  @Max(100)
   @IsNumber()
   discountPercent?: number;
 
@@ -134,6 +140,14 @@ export class CreatePurchaseOrderDto {
 
   @IsString()
   supplierId: string;
+
+  @IsOptional()
+  @IsString()
+  departmentId?: string;
+
+  @IsOptional()
+  @IsString()
+  costCenterId?: string;
 
   @IsOptional()
   @IsString()
@@ -162,6 +176,10 @@ export class CreatePurchaseOrderDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsString()
+  emergencyJustification?: string;
 
   @IsArray()
   @ValidateNested({ each: true })
