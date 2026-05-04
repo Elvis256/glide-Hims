@@ -12,6 +12,8 @@ import { InvoiceMatch } from '../../database/entities/invoice-match.entity';
 import { StockLedger, StockBalance, Item } from '../../database/entities/inventory.entity';
 import { Supplier } from '../../database/entities/supplier.entity';
 import { VendorQuotation } from '../../database/entities/rfq.entity';
+import { ProcurementApprovalThreshold } from '../../database/entities/procurement-approval-threshold.entity';
+import { ProcurementApprovalChain } from '../../database/entities/procurement-approval-chain.entity';
 import { FinanceModule } from '../finance/finance.module';
 
 @Module({
@@ -29,6 +31,8 @@ import { FinanceModule } from '../finance/finance.module';
       Supplier,
       VendorQuotation,
       Item,
+      ProcurementApprovalThreshold,
+      ProcurementApprovalChain,
     ]),
     forwardRef(() => FinanceModule),
   ],
