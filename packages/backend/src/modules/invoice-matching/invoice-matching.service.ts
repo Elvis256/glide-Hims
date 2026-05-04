@@ -34,13 +34,30 @@ export class InvoiceMatchingService {
     userId: string,
     tenantId?: string,
   ): Promise<InvoiceMatch> {
-    const matchNumber = await this.generateMatchNumber(dto.facilityId, tenantId);
-
+    // Get PO first to verify it exists and get supplier ID
     const po = await this.poRepo.findOne({
       where: { id: dto.purchaseOrderId, ...(tenantId ? { tenantId } : {}) },
       relations: ['items', 'supplier'],
     });
     if (!po) throw new NotFoundException('Purchase order not found');
+
+    // CRITICAL FIX: Check for duplicate invoice matches
+    const existingMatch = await this.matchRepo.findOne({
+      where: {
+        vendorInvoiceNumber: dto.invoiceNumber,
+        supplierId: po.supplierId,
+        status: InvoiceMatchStatus.PENDING,
+        ...(tenantId ? { tenantId } : {}),
+      },
+    });
+
+    if (existingMatch) {
+      throw new BadRequestException(
+        `Invoice ${dto.invoiceNumber} is already matched (Match #${existingMatch.matchNumber} created on ${existingMatch.createdAt}). Cannot create duplicate match.`,
+      );
+    }
+
+    const matchNumber = await this.generateMatchNumber(dto.facilityId, tenantId);
 
     if (!dto.grnId) {
       throw new BadRequestException(
