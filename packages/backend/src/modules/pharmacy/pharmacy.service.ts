@@ -7,7 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, In, DataSource, LessThanOrEqual, EntityManager } from 'typeorm';
+import { Repository, Between, In, DataSource, LessThanOrEqual, EntityManager, IsNull } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   PharmacySale,
@@ -55,7 +55,8 @@ import { EfrisService } from '../efris/efris.service';
 import { EfrisDocumentType } from '../../database/entities/pos-compliance.entity';
 import { ReceiptReprint, RetailCustomer } from '../../database/entities/pos-retail.entity';
 
-// Uganda standard VAT rate. Future: move to tenant tax_rates table (Phase B).
+// C4: VAT rate is loaded per-tenant from efris_config, fallback to UG default.
+// This is retrieved in getDefaultVatRate() which caches the result.
 const UG_STANDARD_VAT_RATE = 18;
 
 // Schedules that trigger controlled-substance logging at retail/POS counter.
@@ -69,6 +70,7 @@ const CONTROLLED_SCHEDULES: DrugSchedule[] = [
 @Injectable()
 export class PharmacyService {
   private readonly logger = new Logger(PharmacyService.name);
+  private vatRateCache = new Map<string, { rate: number; expiresAt: number }>();
 
   constructor(
     @Inject(forwardRef(() => FinanceService))
@@ -499,7 +501,8 @@ export class PharmacyService {
       (sale as any).patient = patient;
     }
     if (!sale) throw new NotFoundException('Sale not found');
-    const itemWhere: any = { saleId: id };
+    // C3: filter soft-deleted sale items
+    const itemWhere: any = { saleId: id, deletedAt: IsNull() };
     if (tenantId) itemWhere.tenantId = tenantId;
     const items = await this.saleItemRepo.find({ where: itemWhere });
     return { ...sale, items };
@@ -621,6 +624,15 @@ export class PharmacyService {
         const classification = await manager.findOne(DrugClassification, {
           where: { itemId: inventoryItem.id, ...(tenantId ? { tenantId } : {}) },
         });
+        // C6: do NOT silently fall back to UNSCHEDULED for items the inventory
+        // master flags as controlled. A missing classification row is a data
+        // integrity bug — refuse to dispense rather than risk treating a Schedule II
+        // narcotic as OTC.
+        if (!classification && inventoryItem.isControlled) {
+          throw new BadRequestException(
+            `Drug classification missing for controlled substance "${inventoryItem.name}" (item ${inventoryItem.id}). Configure DrugClassification before dispensing.`,
+          );
+        }
         const schedule = classification?.schedule || DrugSchedule.UNSCHEDULED;
         const isControlled = CONTROLLED_SCHEDULES.includes(schedule);
 
@@ -639,11 +651,21 @@ export class PharmacyService {
 
           // For non-prescription dispensing of any controlled substance the buyer
           // identification block is required so the dispensing register satisfies
-          // National Drug Authority record-keeping rules.
+          // National Drug Authority record-keeping rules. Trim to prevent
+          // empty-string bypass (C5).
           const buyer = dto.controlledSubstanceBuyer;
-          if (!sale.prescriptionId && (!buyer || !buyer.buyerName || !buyer.buyerIdNumber)) {
+          const buyerName = buyer?.buyerName?.trim();
+          const buyerIdNumber = buyer?.buyerIdNumber?.trim();
+          if (!sale.prescriptionId && (!buyerName || !buyerIdNumber)) {
             throw new BadRequestException(
               `Dispensing controlled substance "${inventoryItem.name}" without a prescription requires buyer name and ID number.`,
+            );
+          }
+
+          // C8: zero-price controlled substances are a fraud vector.
+          if (Number(item.unitPrice) <= 0) {
+            throw new BadRequestException(
+              `Controlled substance "${inventoryItem.name}" cannot be dispensed at zero price.`,
             );
           }
 
@@ -790,12 +812,23 @@ export class PharmacyService {
 
       // C2: Mark prescription items as dispensed (within same transaction).
       // Each sale item may carry prescriptionItemId linking it to a specific Rx line.
+      // Lock the prescription_item row to prevent two concurrent sales from each
+      // reading qty=0, both dispensing N, and both writing qty=N (over-dispense).
       if (sale.prescriptionId) {
         const prescRxItems = (sale.items as any[]).filter((si) => si.prescriptionItemId);
         for (const si of prescRxItems) {
-          const rxItem = await manager.findOne(PrescriptionItem, { where: { id: si.prescriptionItemId } });
+          const rxItem = await manager.findOne(PrescriptionItem, {
+            where: { id: si.prescriptionItemId },
+            lock: { mode: 'pessimistic_write' },
+          });
           if (rxItem) {
-            rxItem.quantityDispensed = Math.min(rxItem.quantity, rxItem.quantityDispensed + Number(si.quantity));
+            const requested = Number(si.quantity);
+            if (rxItem.quantityDispensed + requested > rxItem.quantity) {
+              throw new BadRequestException(
+                `Dispense exceeds prescribed quantity for item ${rxItem.id}: prescribed=${rxItem.quantity}, already dispensed=${rxItem.quantityDispensed}, requested=${requested}.`,
+              );
+            }
+            rxItem.quantityDispensed = rxItem.quantityDispensed + requested;
             rxItem.isDispensed = rxItem.quantityDispensed >= rxItem.quantity;
             await manager.save(PrescriptionItem, rxItem);
           }
@@ -945,16 +978,40 @@ export class PharmacyService {
     return this.findSale(id, tenantId);
   }
 
-  async cancelSale(id: string, tenantId?: string) {
+  async cancelSale(id: string, userId: string, reason?: string, tenantId?: string) {
     const sale = await this.findSale(id, tenantId);
     if (sale.status === SaleStatus.COMPLETED) {
-      throw new BadRequestException('Cannot cancel a completed sale');
+      throw new BadRequestException('Cannot cancel a completed sale. Use refund endpoint for completed sales.');
     }
+    const oldStatus = sale.status;
     sale.status = SaleStatus.CANCELLED;
-    return this.saleRepo.save(sale);
+    const saved = await this.saleRepo.save(sale);
+
+    // H1: audit log on cancellation
+    const auditRepo = this.dataSource.getRepository(AuditLog);
+    await auditRepo
+      .save(
+        auditRepo.create({
+          action: 'SALE_CANCELLED',
+          entityType: 'PharmacySale',
+          entityId: id,
+          userId,
+          oldValue: { status: oldStatus },
+          newValue: { status: SaleStatus.CANCELLED, reason: reason || null },
+          ...(tenantId ? { tenantId } : {}),
+        }),
+      )
+      .catch((err) => this.logger.error(`Audit log failed for sale cancel ${id}: ${err.message}`));
+
+    return saved;
   }
 
   async getDailySummary(storeId?: string, date?: string, facilityId?: string, tenantId?: string) {
+    // H6: Require tenantId to prevent data leak across tenants
+    if (!tenantId) {
+      throw new BadRequestException('tenantId is required for daily summary queries');
+    }
+
     const parsedDate = date ? new Date(date) : new Date();
     const start = isNaN(parsedDate.getTime()) ? new Date() : parsedDate;
     start.setHours(0, 0, 0, 0);

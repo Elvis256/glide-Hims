@@ -102,8 +102,8 @@ export class PharmacyController {
   @Post('sales/:id/cancel')
   @AuthWithPermissions('pharmacy.delete')
   @ApiOperation({ summary: 'Cancel pending sale' })
-  cancelSale(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
-    return this.service.cancelSale(id, req.user?.tenantId);
+  cancelSale(@Param('id', ParseUUIDPipe) id: string, @Body() dto: { reason?: string }, @Request() req: any) {
+    return this.service.cancelSale(id, req.user?.id, dto?.reason, req.user?.tenantId);
   }
 
   @Get('summary/daily')
