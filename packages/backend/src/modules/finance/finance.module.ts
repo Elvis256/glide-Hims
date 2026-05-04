@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { FinanceService } from './finance.service';
 import { FinanceController } from './finance.controller';
@@ -36,6 +36,8 @@ import {
   PettyCashFund,
   PettyCashTransaction,
 } from '../../database/entities/finance-extended.entity';
+import { FacilityBudget } from '../../database/entities/facility-budget.entity';
+import { BudgetReservation } from '../../database/entities/budget-reservation.entity';
 import { SystemSettingsModule } from '../system-settings/system-settings.module';
 
 @Module({
@@ -59,6 +61,8 @@ import { SystemSettingsModule } from '../system-settings/system-settings.module'
       BankReconciliationItem,
       PettyCashFund,
       PettyCashTransaction,
+      FacilityBudget,
+      BudgetReservation,
     ]),
     SystemSettingsModule,
   ],

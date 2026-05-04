@@ -52,6 +52,7 @@ import {
   InspectGRNDto,
 } from './dto/procurement.dto';
 import { FinanceService } from '../finance/finance.service';
+import { BudgetService } from '../finance/budget.service';
 import { InvoiceMatch } from '../../database/entities/invoice-match.entity';
 
 @Injectable()
@@ -84,6 +85,8 @@ export class ProcurementService {
     private invoiceMatchRepo: Repository<InvoiceMatch>,
     @Inject(forwardRef(() => FinanceService))
     private financeService: FinanceService,
+    @Inject(forwardRef(() => BudgetService))
+    private budgetService: BudgetService,
     private dataSource: DataSource,
   ) {}
 
@@ -333,6 +336,23 @@ export class ProcurementService {
           item.quantityApproved = item.quantityRequested;
           totalEstimatedApproved += item.quantityRequested * Number(item.unitPriceEstimated || 0);
         }
+      }
+
+      // Phase 2A: Validate sufficient budget available
+      try {
+        await this.budgetService.validateBudgetSufficient(
+          pr.facilityId,
+          totalEstimatedApproved,
+          tenantId,
+        );
+      } catch (error) {
+        if (error instanceof BadRequestException) {
+          throw error;
+        }
+        // Log but don't fail if budget service unavailable (e.g., no budget configured)
+        this.logger.warn(
+          `Budget validation skipped for PR ${id}: ${error.message}`,
+        );
       }
 
       await prItemRepo.save(pr.items);

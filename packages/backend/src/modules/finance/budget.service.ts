@@ -1,7 +1,20 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Logger,
+  Inject,
+  forwardRef,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, LessThanOrEqual, IsNull, DataSource } from 'typeorm';
 import { Budget, BudgetLine, BudgetStatus } from '../../database/entities/finance-extended.entity';
+import { FacilityBudget } from '../../database/entities/facility-budget.entity';
+import {
+  BudgetReservation,
+  ReservationStatus,
+} from '../../database/entities/budget-reservation.entity';
+import { JournalEntry, JournalStatus } from '../../database/entities/journal-entry.entity';
 
 export interface BudgetCheckResult {
   withinBudget: boolean;
@@ -22,6 +35,13 @@ export class BudgetService {
     private budgetRepo: Repository<Budget>,
     @InjectRepository(BudgetLine)
     private budgetLineRepo: Repository<BudgetLine>,
+    @InjectRepository(FacilityBudget)
+    private facilityBudgetRepo: Repository<FacilityBudget>,
+    @InjectRepository(BudgetReservation)
+    private reservationRepo: Repository<BudgetReservation>,
+    @InjectRepository(JournalEntry)
+    private journalEntryRepo: Repository<JournalEntry>,
+    private dataSource: DataSource,
   ) {}
 
   async create(
@@ -228,5 +248,323 @@ export class BudgetService {
           `Please request a budget amendment or reduce the amount.`,
       );
     }
+  }
+
+  // ============ FACILITY-WIDE BUDGET MANAGEMENT (for Procurement Phase 2) ============
+
+  /**
+   * Get or create fiscal year budget for a facility
+   */
+  async getFacilityBudgetForYear(
+    facilityId: string,
+    year: number,
+    tenantId?: string,
+  ): Promise<FacilityBudget> {
+    const where: any = {
+      facilityId,
+      isActive: true,
+      deletedAt: IsNull(),
+    };
+    if (tenantId) where.tenantId = tenantId;
+
+    // Assume fiscal year starts Jan 1
+    const fiscalYearStart = new Date(`${year}-01-01`);
+
+    // Try to find existing budget
+    let budget = await this.facilityBudgetRepo.findOne({
+      where: {
+        ...where,
+        fiscalYearStart: LessThanOrEqual(fiscalYearStart),
+      },
+      relations: ['reservations'],
+      order: { fiscalYearStart: 'DESC' },
+    });
+
+    if (!budget) {
+      throw new NotFoundException(
+        `No active budget found for facility ${facilityId} in fiscal year ${year}`,
+      );
+    }
+
+    return budget;
+  }
+
+  /**
+   * Calculate total spent from GL EXPENSE accounts
+   * Uses Finance GL entries to determine actual expense spending
+   */
+  async calculateBudgetSpent(
+    facilityId: string,
+    fiscalYearStart: Date,
+    tenantId?: string,
+  ): Promise<number> {
+    try {
+      // Query GL entry lines for EXPENSE accounts with debit = actual spending
+      const qb = this.journalEntryRepo
+        .createQueryBuilder('je')
+        .leftJoinAndSelect('je.lines', 'jel')
+        .leftJoinAndSelect('jel.account', 'acc')
+        .where('je.facilityId = :facilityId', { facilityId })
+        .andWhere('je.journalDate >= :startDate', { startDate: fiscalYearStart })
+        .andWhere('je.status = :status', { status: JournalStatus.POSTED })
+        .andWhere('acc.accountType = :type', { type: 'EXPENSE' });
+
+      if (tenantId) {
+        qb.andWhere('je.tenantId = :tenantId', { tenantId });
+      }
+
+      const entries = await qb.getMany();
+
+      let spent = 0;
+      for (const entry of entries) {
+        if (entry.lines) {
+          for (const line of entry.lines) {
+            // Debits are positive for EXPENSE accounts
+            spent += Number(line.debit || 0);
+          }
+        }
+      }
+
+      this.logger.debug(
+        `Calculated budget spent for facility ${facilityId}: ${spent}`,
+      );
+      return spent;
+    } catch (error) {
+      this.logger.error(
+        `Error calculating budget spent: ${error.message}`,
+        error.stack,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Calculate total budget reserved but not yet spent
+   */
+  async calculateBudgetReserved(
+    budgetId: string,
+    tenantId?: string,
+  ): Promise<number> {
+    const where: any = {
+      budgetId,
+      status: ReservationStatus.PENDING,
+    };
+    if (tenantId) where.tenantId = tenantId;
+
+    const reservations = await this.reservationRepo.find({ where });
+    return reservations.reduce((sum, r) => sum + Number(r.reservedAmount), 0);
+  }
+
+  /**
+   * Calculate available budget = total allocation - spent - reserved
+   */
+  async calculateBudgetAvailable(
+    facilityId: string,
+    tenantId?: string,
+  ): Promise<{
+    totalAllocation: number;
+    spent: number;
+    reserved: number;
+    available: number;
+  }> {
+    try {
+      const currentYear = new Date().getFullYear();
+      const budget = await this.getFacilityBudgetForYear(
+        facilityId,
+        currentYear,
+        tenantId,
+      );
+
+      const spent = await this.calculateBudgetSpent(
+        facilityId,
+        budget.fiscalYearStart,
+        tenantId,
+      );
+      const reserved = await this.calculateBudgetReserved(budget.id, tenantId);
+
+      const available = Number(budget.totalBudgetAllocation) - spent - reserved;
+
+      return {
+        totalAllocation: Number(budget.totalBudgetAllocation),
+        spent,
+        reserved,
+        available: Math.max(0, available), // Never negative
+      };
+    } catch (error) {
+      this.logger.error(
+        `Error calculating available budget: ${error.message}`,
+        error.stack,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Validate that sufficient budget exists for proposed amount
+   * Throws BadRequestException if insufficient
+   */
+  async validateBudgetSufficient(
+    facilityId: string,
+    amount: number,
+    tenantId?: string,
+  ): Promise<boolean> {
+    try {
+      const { available } = await this.calculateBudgetAvailable(
+        facilityId,
+        tenantId,
+      );
+
+      if (amount > available) {
+        throw new BadRequestException(
+          `Insufficient budget. Requested: $${amount.toFixed(2)}, Available: $${available.toFixed(2)}`,
+        );
+      }
+
+      return true;
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      this.logger.error(
+        `Error validating budget: ${error.message}`,
+        error.stack,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Create a budget reservation for a PR or PO
+   */
+  async reserveBudget(
+    facilityId: string,
+    documentId: string,
+    documentType: 'PR' | 'PO',
+    amount: number,
+    tenantId?: string,
+  ): Promise<BudgetReservation> {
+    return this.dataSource.transaction(async (manager) => {
+      try {
+        const budgetRepo = manager.getRepository(FacilityBudget);
+        const reservationRepo = manager.getRepository(BudgetReservation);
+
+        // Get active budget
+        const currentYear = new Date().getFullYear();
+        const where: any = {
+          facilityId,
+          isActive: true,
+          deletedAt: IsNull(),
+        };
+        if (tenantId) where.tenantId = tenantId;
+
+        const budget = await budgetRepo.findOne({
+          where,
+          order: { fiscalYearStart: 'DESC' },
+        });
+
+        if (!budget) {
+          throw new NotFoundException(
+            `No active budget for facility ${facilityId}`,
+          );
+        }
+
+        // Create reservation
+        const reservation = reservationRepo.create({
+          budgetId: budget.id,
+          documentId,
+          documentType,
+          reservedAmount: amount,
+          status: ReservationStatus.PENDING,
+          tenantId,
+          remarks: `Budget reserved for ${documentType} ${documentId}`,
+        });
+
+        const saved = await reservationRepo.save(reservation);
+
+        this.logger.log(
+          `Reserved $${amount} budget for ${documentType} ${documentId}`,
+        );
+        return saved;
+      } catch (error) {
+        this.logger.error(
+          `Error reserving budget: ${error.message}`,
+          error.stack,
+        );
+        throw error;
+      }
+    });
+  }
+
+  /**
+   * Update reservation status when PR/PO is approved
+   */
+  async approveReservation(
+    reservationId: string,
+    tenantId?: string,
+  ): Promise<BudgetReservation> {
+    const where: any = { id: reservationId };
+    if (tenantId) where.tenantId = tenantId;
+
+    const reservation = await this.reservationRepo.findOne({ where });
+    if (!reservation) {
+      throw new NotFoundException(`Reservation ${reservationId} not found`);
+    }
+
+    reservation.status = ReservationStatus.APPROVED;
+    return this.reservationRepo.save(reservation);
+  }
+
+  /**
+   * Release a budget reservation (e.g., when PR/PO is rejected or cancelled)
+   */
+  async releaseReservation(
+    reservationId: string,
+    tenantId?: string,
+  ): Promise<BudgetReservation> {
+    const where: any = { id: reservationId };
+    if (tenantId) where.tenantId = tenantId;
+
+    const reservation = await this.reservationRepo.findOne({ where });
+    if (!reservation) {
+      throw new NotFoundException(`Reservation ${reservationId} not found`);
+    }
+
+    reservation.status = ReservationStatus.RELEASED;
+    this.logger.log(`Released budget reservation ${reservationId}`);
+    return this.reservationRepo.save(reservation);
+  }
+
+  /**
+   * Mark reservation as spent when GRN is posted
+   */
+  async markReservationSpent(
+    documentId: string,
+    tenantId?: string,
+  ): Promise<void> {
+    const where: any = { documentId, status: ReservationStatus.APPROVED };
+    if (tenantId) where.tenantId = tenantId;
+
+    const reservations = await this.reservationRepo.find({ where });
+    for (const res of reservations) {
+      res.status = ReservationStatus.SPENT;
+      await this.reservationRepo.save(res);
+    }
+  }
+
+  /**
+   * Get all reservations for a document
+   */
+  async getReservationsForDocument(
+    documentId: string,
+    tenantId?: string,
+  ): Promise<BudgetReservation[]> {
+    const where: any = { documentId };
+    if (tenantId) where.tenantId = tenantId;
+
+    return this.reservationRepo.find({
+      where,
+      relations: ['budget'],
+      order: { createdAt: 'DESC' },
+    });
   }
 }
