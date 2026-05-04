@@ -453,6 +453,11 @@ export class FinanceService {
       throw new BadRequestException('Journal entry must have at least 2 lines');
     }
 
+    // CRITICAL FIX: Validate all GL accounts before creating journal
+    for (const line of dto.lines) {
+      await this.validateGLAccount(line.accountId, tenantId);
+    }
+
     const journalDate = new Date(dto.journalDate);
 
     // Get or create fiscal period
@@ -504,6 +509,28 @@ export class FinanceService {
     });
   }
 
+  private async validateGLAccount(accountId: string, tenantId?: string): Promise<void> {
+    const account = await this.accountRepo.findOne({
+      where: { id: accountId, ...(tenantId ? { tenantId } : {}) },
+    });
+
+    if (!account) {
+      throw new NotFoundException(`GL Account ${accountId} not found`);
+    }
+
+    if (!account.isActive) {
+      throw new BadRequestException(
+        `GL Account ${account.accountCode} (${account.accountName}) is inactive`,
+      );
+    }
+
+    if (account.isHeader) {
+      throw new BadRequestException(
+        `Cannot post to header account ${account.accountCode}. Please use a leaf account instead.`,
+      );
+    }
+  }
+
   async getJournalEntry(id: string, tenantId?: string): Promise<JournalEntry> {
     const journal = await this.journalRepo.findOne({
       where: { id, ...(tenantId ? { tenantId } : {}) },
@@ -536,7 +563,7 @@ export class FinanceService {
     }
 
     if (tenantId) {
-      qb.andWhere('je.tenant_id = :tenantId', { tenantId });
+      qb.andWhere('je.tenantId = :tenantId', { tenantId });
     }
     return qb.orderBy('je.journalDate', 'DESC').addOrderBy('je.journalNumber', 'DESC').getMany();
   }
