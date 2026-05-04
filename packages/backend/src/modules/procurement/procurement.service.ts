@@ -54,6 +54,11 @@ import {
 import { FinanceService } from '../finance/finance.service';
 import { BudgetService } from '../finance/budget.service';
 import { InvoiceMatch } from '../../database/entities/invoice-match.entity';
+import { ProcurementApprovalThreshold } from '../../database/entities/procurement-approval-threshold.entity';
+import {
+  ProcurementApprovalChain,
+  ApprovalChainStatus,
+} from '../../database/entities/procurement-approval-chain.entity';
 
 @Injectable()
 export class ProcurementService {
@@ -83,6 +88,10 @@ export class ProcurementService {
     private quotationRepo: Repository<VendorQuotation>,
     @InjectRepository(InvoiceMatch)
     private invoiceMatchRepo: Repository<InvoiceMatch>,
+    @InjectRepository(ProcurementApprovalThreshold)
+    private approvalThresholdRepo: Repository<ProcurementApprovalThreshold>,
+    @InjectRepository(ProcurementApprovalChain)
+    private approvalChainRepo: Repository<ProcurementApprovalChain>,
     @Inject(forwardRef(() => FinanceService))
     private financeService: FinanceService,
     @Inject(forwardRef(() => BudgetService))
@@ -279,8 +288,27 @@ export class ProcurementService {
         throw new BadRequestException('PR must have at least one item');
       }
 
+      // Calculate total estimated for approval chain routing
+      let totalEstimated = 0;
+      for (const item of pr.items) {
+        totalEstimated += item.quantityRequested * Number(item.unitPriceEstimated || 0);
+      }
+
       pr.status = PRStatus.PENDING_APPROVAL;
-      return prRepo.save(pr);
+      pr.totalEstimated = totalEstimated;
+      const saved = await prRepo.save(pr);
+
+      // Phase 2B: Create approval chain
+      try {
+        await this.createApprovalChain(pr.id, 'PR', totalEstimated, pr.facilityId, tenantId);
+      } catch (error) {
+        this.logger.warn(
+          `Failed to create approval chain for PR ${pr.id}: ${error.message}`,
+        );
+        // Don't fail PR submission if approval chain fails
+      }
+
+      return saved;
     });
   }
 
@@ -1698,5 +1726,241 @@ export class ProcurementService {
     } catch (err: any) {
       this.logger.error(`[auto-reorder] job failed: ${err.message}`);
     }
+  }
+
+  // ============ APPROVAL WORKFLOW (Phase 2B) ============
+
+  /**
+   * Get or create approval threshold config for facility
+   */
+  private async getApprovalThreshold(
+    facilityId: string,
+    tenantId?: string,
+  ): Promise<ProcurementApprovalThreshold> {
+    const where: any = {
+      facilityId,
+      isActive: true,
+      deletedAt: IsNull(),
+    };
+    if (tenantId) where.tenantId = tenantId;
+
+    let threshold = await this.approvalThresholdRepo.findOne({ where });
+
+    // If not found, create defaults
+    if (!threshold) {
+      threshold = this.approvalThresholdRepo.create({
+        facilityId,
+        ...(tenantId ? { tenantId } : {}),
+        level1MaxAmount: 500,
+        level2MaxAmount: 5000,
+        level3MaxAmount: 50000,
+        level4MaxAmount: null as any,
+        requireJustificationMin: 50000,
+        isActive: true,
+      });
+      await this.approvalThresholdRepo.save(threshold);
+      this.logger.log(`Created default approval threshold for facility ${facilityId}`);
+    }
+
+    return threshold;
+  }
+
+  /**
+   * Calculate approval level (1-4) based on amount and thresholds
+   */
+  private calculateApprovalLevel(
+    amount: number,
+    thresholds: ProcurementApprovalThreshold,
+  ): number {
+    const amt = Number(amount);
+
+    if (amt <= Number(thresholds.level1MaxAmount)) return 1;
+    if (amt <= Number(thresholds.level2MaxAmount)) return 2;
+    if (amt <= Number(thresholds.level3MaxAmount)) return 3;
+    return 4; // Above level 3, requires CFO
+  }
+
+  /**
+   * Get required approver roles for each level
+   */
+  private getRoleForLevel(level: number): string {
+    const roleMap: Record<number, string> = {
+      1: 'manager',
+      2: 'finance_officer',
+      3: 'director',
+      4: 'cfo',
+    };
+    return roleMap[level] || 'manager';
+  }
+
+  /**
+   * Create approval chain for PR/PO
+   * Returns array of approval chain records (one per level)
+   */
+  async createApprovalChain(
+    documentId: string,
+    documentType: 'PR' | 'PO',
+    amount: number,
+    facilityId: string,
+    tenantId?: string,
+  ): Promise<ProcurementApprovalChain[]> {
+    try {
+      const thresholds = await this.getApprovalThreshold(facilityId, tenantId);
+      const maxApprovalLevel = this.calculateApprovalLevel(amount, thresholds);
+
+      const chains: ProcurementApprovalChain[] = [];
+
+      // Create chain records for each required approval level
+      for (let level = 1; level <= maxApprovalLevel; level++) {
+        const chain = this.approvalChainRepo.create({
+          documentId,
+          documentType,
+          tenantId,
+          approvalLevel: level,
+          requiredRole: this.getRoleForLevel(level),
+          status: ApprovalChainStatus.PENDING,
+        });
+        chains.push(await this.approvalChainRepo.save(chain));
+      }
+
+      this.logger.log(
+        `Created ${maxApprovalLevel}-level approval chain for ${documentType} ${documentId}`,
+      );
+      return chains;
+    } catch (error) {
+      this.logger.error(
+        `Error creating approval chain: ${error.message}`,
+        error.stack,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Get pending approval chain for document
+   */
+  async getApprovalChain(
+    documentId: string,
+    tenantId?: string,
+  ): Promise<ProcurementApprovalChain[]> {
+    const where: any = { documentId };
+    if (tenantId) where.tenantId = tenantId;
+
+    return this.approvalChainRepo.find({
+      where,
+      relations: ['approver', 'approvedBy'],
+      order: { approvalLevel: 'ASC', createdAt: 'ASC' },
+    });
+  }
+
+  /**
+   * Get next pending approval in chain
+   */
+  async getNextPendingApproval(
+    documentId: string,
+    tenantId?: string,
+  ): Promise<ProcurementApprovalChain | null> {
+    const where: any = {
+      documentId,
+      status: ApprovalChainStatus.PENDING,
+    };
+    if (tenantId) where.tenantId = tenantId;
+
+    return this.approvalChainRepo.findOne({
+      where,
+      relations: ['approver', 'approvedBy'],
+      order: { approvalLevel: 'ASC' },
+    });
+  }
+
+  /**
+   * Check if all approvals are complete
+   */
+  async isApprovalChainComplete(
+    documentId: string,
+    tenantId?: string,
+  ): Promise<boolean> {
+    const where: any = { documentId };
+    if (tenantId) where.tenantId = tenantId;
+
+    const chains = await this.approvalChainRepo.find({ where });
+    if (chains.length === 0) return true; // No chain = no approvals required
+
+    return chains.every((c) => c.status === ApprovalChainStatus.APPROVED);
+  }
+
+  /**
+   * Approve at current level
+   */
+  async approveAtLevel(
+    documentId: string,
+    documentType: 'PR' | 'PO',
+    userId: string,
+    comments?: string,
+    tenantId?: string,
+  ): Promise<ProcurementApprovalChain> {
+    return this.dataSource.transaction(async (manager) => {
+      const chainRepo = manager.getRepository(ProcurementApprovalChain);
+
+      // Get next pending approval
+      const where: any = {
+        documentId,
+        documentType,
+        status: ApprovalChainStatus.PENDING,
+      };
+      if (tenantId) where.tenantId = tenantId;
+
+      const chain = await chainRepo.findOne({
+        where,
+        relations: ['approver'],
+        order: { approvalLevel: 'ASC' },
+      });
+
+      if (!chain) {
+        throw new NotFoundException(
+          `No pending approval found for ${documentType} ${documentId}`,
+        );
+      }
+
+      // Mark as approved
+      chain.status = ApprovalChainStatus.APPROVED;
+      chain.approvedById = userId;
+      chain.approvedAt = new Date();
+      chain.comments = comments;
+
+      return chainRepo.save(chain);
+    });
+  }
+
+  /**
+   * Reject approval chain (stops entire workflow)
+   */
+  async rejectApprovalChain(
+    documentId: string,
+    userId: string,
+    comments: string,
+    tenantId?: string,
+  ): Promise<ProcurementApprovalChain[]> {
+    return this.dataSource.transaction(async (manager) => {
+      const chainRepo = manager.getRepository(ProcurementApprovalChain);
+
+      const where: any = { documentId };
+      if (tenantId) where.tenantId = tenantId;
+
+      const chains = await chainRepo.find({ where });
+
+      // Mark first pending as rejected, others as cancelled
+      for (const chain of chains) {
+        if (chain.status === ApprovalChainStatus.PENDING) {
+          chain.status = ApprovalChainStatus.REJECTED;
+          chain.approvedById = userId;
+          chain.approvedAt = new Date();
+          chain.comments = comments;
+          break; // Only first pending is rejected
+        }
+      }
+
+      return chainRepo.save(chains);
+    });
   }
 }
