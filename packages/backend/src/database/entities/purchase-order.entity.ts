@@ -63,12 +63,22 @@ export class PurchaseOrder extends BaseEntity {
   @Column({ type: 'text', nullable: true })
   notes: string;
 
+  @Column({ name: 'emergency_justification', type: 'text', nullable: true })
+  emergencyJustification?: string;
+
   // Approval tracking
   @Column({ name: 'approved_at', type: 'timestamptz', nullable: true })
   approvedAt: Date;
 
   @Column({ name: 'sent_at', type: 'timestamptz', nullable: true })
   sentAt: Date;
+
+  // Cost center tracking (for direct purchases)
+  @Column({ name: 'department_id', nullable: true })
+  departmentId?: string;
+
+  @Column({ name: 'cost_center_id', nullable: true })
+  costCenterId?: string;
 
   // Relationships
   @ManyToOne(() => Facility)

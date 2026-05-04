@@ -390,6 +390,26 @@ export class ProcurementService {
     userId: string,
     tenantId?: string,
   ): Promise<PurchaseOrder> {
+    // Validate facility exists
+    const facilityRepo = this.dataSource.getRepository('Facility');
+    const facilityWhere: any = { id: dto.facilityId };
+    if (tenantId) facilityWhere.tenantId = tenantId;
+    const facility = await facilityRepo.findOne({ where: facilityWhere });
+    if (!facility) {
+      throw new BadRequestException('Facility not found or does not belong to this tenant');
+    }
+
+    // Validate department exists (if provided for direct PO)
+    if (dto.departmentId) {
+      const deptRepo = this.dataSource.getRepository('Department');
+      const deptWhere: any = { id: dto.departmentId };
+      if (tenantId) deptWhere.tenantId = tenantId;
+      const department = await deptRepo.findOne({ where: deptWhere });
+      if (!department) {
+        throw new BadRequestException('Department not found or does not belong to this tenant');
+      }
+    }
+
     // Verify supplier is active before creating PO
     const supplier = await this.supplierRepo.findOne({
       where: { id: dto.supplierId, ...(tenantId ? { tenantId } : {}) },
@@ -425,6 +445,8 @@ export class ProcurementService {
     const po = this.poRepo.create({
       orderNumber,
       facilityId: dto.facilityId,
+      departmentId: dto.departmentId,
+      costCenterId: dto.costCenterId,
       supplierId: dto.supplierId,
       purchaseRequestId: dto.purchaseRequestId,
       orderDate: dto.orderDate ? new Date(dto.orderDate) : new Date(),
@@ -437,8 +459,10 @@ export class ProcurementService {
       totalAmount: subtotal + taxAmount,
       terms: dto.terms,
       notes: dto.notes,
+      emergencyJustification: dto.emergencyJustification,
       status: POStatus.DRAFT,
       createdById: userId,
+      createdFrom: 'manual',
       ...(tenantId ? { tenantId } : {}),
     });
 
@@ -537,7 +561,7 @@ export class ProcurementService {
   }
 
   async getPurchaseOrder(id: string, tenantId?: string): Promise<PurchaseOrder> {
-    const where: any = { id };
+    const where: any = { id, deletedAt: IsNull() };
     if (tenantId) where.tenantId = tenantId;
     const po = await this.poRepo.findOne({
       where,
@@ -562,21 +586,15 @@ export class ProcurementService {
       .leftJoinAndSelect('po.items', 'items')
       .leftJoinAndSelect('po.supplier', 'supplier')
       .leftJoinAndSelect('po.createdBy', 'createdBy')
-      .leftJoinAndSelect('po.approvedBy', 'approvedBy');
+      .leftJoinAndSelect('po.approvedBy', 'approvedBy')
+      .where('po.deletedAt IS NULL');
 
-    let hasWhere = false;
     if (facilityId && facilityId.trim() !== '') {
-      qb.where('po.facilityId = :facilityId', { facilityId });
-      hasWhere = true;
+      qb.andWhere('po.facilityId = :facilityId', { facilityId });
     }
 
     if (options.status) {
-      if (hasWhere) {
-        qb.andWhere('po.status = :status', { status: options.status });
-      } else {
-        qb.where('po.status = :status', { status: options.status });
-        hasWhere = true;
-      }
+      qb.andWhere('po.status = :status', { status: options.status });
     }
     if (options.supplierId) {
       qb.andWhere('po.supplierId = :supplierId', { supplierId: options.supplierId });
@@ -589,7 +607,7 @@ export class ProcurementService {
     }
 
     if (tenantId) {
-      qb.andWhere('po.tenant_id = :tenantId', { tenantId });
+      qb.andWhere('po.tenantId = :tenantId', { tenantId });
     }
 
     return qb.orderBy('po.createdAt', 'DESC').getMany();
