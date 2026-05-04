@@ -88,6 +88,10 @@ export class ApprovePRDto {
   @ValidateNested({ each: true })
   @Type(() => ApprovedItemDto)
   approvedItems?: ApprovedItemDto[];
+
+  @IsOptional()
+  @IsString()
+  comments?: string;
 }
 
 export class RejectPRDto {

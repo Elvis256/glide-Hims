@@ -321,6 +321,7 @@ export class ProcurementService {
     return this.dataSource.transaction(async (manager) => {
       const prRepo = manager.getRepository(PurchaseRequest);
       const prItemRepo = manager.getRepository(PurchaseRequestItem);
+      const chainRepo = manager.getRepository(ProcurementApprovalChain);
 
       const where: any = { id, deletedAt: IsNull() };
       if (tenantId) where.tenantId = tenantId;
@@ -342,6 +343,35 @@ export class ProcurementService {
           'Segregation of duties violation: the requester cannot approve their own purchase request',
         );
       }
+
+      // Phase 2C: Get next pending approval in chain
+      const chainWhere: any = { documentId: id, status: ApprovalChainStatus.PENDING };
+      if (tenantId) chainWhere.tenantId = tenantId;
+
+      const nextChain = await chainRepo.findOne({
+        where: chainWhere,
+        order: { approvalLevel: 'ASC' },
+        relations: ['approver'],
+      });
+
+      if (!nextChain) {
+        throw new BadRequestException(
+          'No pending approval required for this PR or approval chain is complete',
+        );
+      }
+
+      // Verify current user has required role (TODO: implement role checking)
+      // For now, log the required role
+      this.logger.log(
+        `Approving PR at level ${nextChain.approvalLevel} (requires role: ${nextChain.requiredRole})`,
+      );
+
+      // Mark approval at this level
+      nextChain.status = ApprovalChainStatus.APPROVED;
+      nextChain.approvedById = userId;
+      nextChain.approvedAt = new Date();
+      nextChain.comments = dto.comments;
+      await chainRepo.save(nextChain);
 
       // Update approved quantities if provided
       let totalEstimatedApproved = 0;
@@ -384,11 +414,26 @@ export class ProcurementService {
       }
 
       await prItemRepo.save(pr.items);
-
-      pr.status = PRStatus.APPROVED;
-      pr.approvedById = userId;
-      pr.approvedAt = new Date();
       pr.totalEstimated = totalEstimatedApproved;
+
+      // Check if approval chain is complete
+      const pendingChains = await chainRepo.find({
+        where: { documentId: id, status: ApprovalChainStatus.PENDING },
+      });
+
+      if (pendingChains.length === 0) {
+        // All approvals complete → transition to APPROVED
+        pr.status = PRStatus.APPROVED;
+        pr.approvedById = userId;
+        pr.approvedAt = new Date();
+        this.logger.log(`PR ${id} fully approved after ${nextChain.approvalLevel} approval levels`);
+      } else {
+        // More approvals needed → stay PENDING_APPROVAL
+        this.logger.log(
+          `PR ${id} approved at level ${nextChain.approvalLevel}, ${pendingChains.length} more approvals needed`,
+        );
+      }
+
       return prRepo.save(pr);
     });
   }
@@ -401,6 +446,7 @@ export class ProcurementService {
   ): Promise<PurchaseRequest> {
     return this.dataSource.transaction(async (manager) => {
       const prRepo = manager.getRepository(PurchaseRequest);
+      const chainRepo = manager.getRepository(ProcurementApprovalChain);
 
       const where: any = { id, deletedAt: IsNull() };
       if (tenantId) where.tenantId = tenantId;
@@ -415,10 +461,27 @@ export class ProcurementService {
         throw new BadRequestException('PR must be pending approval');
       }
 
+      // Phase 2C: Reject approval chain
+      const chainWhere: any = { documentId: id };
+      if (tenantId) chainWhere.tenantId = tenantId;
+
+      const chains = await chainRepo.find({ where: chainWhere });
+      for (const chain of chains) {
+        if (chain.status === ApprovalChainStatus.PENDING) {
+          chain.status = ApprovalChainStatus.REJECTED;
+          chain.approvedById = userId;
+          chain.approvedAt = new Date();
+          chain.comments = dto.rejectionReason;
+        }
+      }
+      await chainRepo.save(chains);
+
       pr.status = PRStatus.REJECTED;
       pr.approvedById = userId;
       pr.approvedAt = new Date();
       pr.rejectionReason = dto.rejectionReason;
+      
+      this.logger.log(`PR ${id} rejected by user ${userId}`);
       return prRepo.save(pr);
     });
   }
