@@ -77,6 +77,16 @@ export class InvoiceMatchingService {
 
     const savedMatch = await this.matchRepo.save(match);
 
+    // Crit 5: Validate invoice items exist on the PO before creating match items
+    const poItemIds = new Set(po.items?.map((i) => i.itemId) || []);
+    for (const itemDto of dto.items) {
+      if (!poItemIds.has(itemDto.itemId)) {
+        throw new BadRequestException(
+          `Item ${itemDto.itemName || itemDto.itemId} is not on PO ${po.orderNumber}. Invoice items must correspond to PO line items.`,
+        );
+      }
+    }
+
     // Create match items
     let hasVariance = false;
     for (const itemDto of dto.items) {
