@@ -53,6 +53,7 @@ import {
 } from './dto/procurement.dto';
 import { FinanceService } from '../finance/finance.service';
 import { BudgetService } from '../finance/budget.service';
+import { UsersService } from '../users/users.service';
 import { InvoiceMatch } from '../../database/entities/invoice-match.entity';
 import { ProcurementApprovalThreshold } from '../../database/entities/procurement-approval-threshold.entity';
 import {
@@ -96,6 +97,8 @@ export class ProcurementService {
     private financeService: FinanceService,
     @Inject(forwardRef(() => BudgetService))
     private budgetService: BudgetService,
+    @Inject(forwardRef(() => UsersService))
+    private usersService: UsersService,
     private dataSource: DataSource,
   ) {}
 
@@ -360,11 +363,16 @@ export class ProcurementService {
         );
       }
 
-      // Verify current user has required role (TODO: implement role checking)
-      // For now, log the required role
-      this.logger.log(
-        `Approving PR at level ${nextChain.approvalLevel} (requires role: ${nextChain.requiredRole})`,
-      );
+      // Verify current user has required role
+      const userRoles = await this.usersService.getUserRoles(userId, tenantId);
+      const userRoleNames = userRoles.map((r) => r.name.toLowerCase());
+      const requiredRoleLower = nextChain.requiredRole.toLowerCase();
+      
+      if (!userRoleNames.includes(requiredRoleLower)) {
+        throw new BadRequestException(
+          `User does not have the required role '${nextChain.requiredRole}' to approve at level ${nextChain.approvalLevel}. User has roles: ${userRoleNames.join(', ')}`,
+        );
+      }
 
       // Mark approval at this level
       nextChain.status = ApprovalChainStatus.APPROVED;
