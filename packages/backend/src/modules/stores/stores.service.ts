@@ -49,7 +49,8 @@ export class StoresService {
       .createQueryBuilder('item')
       .leftJoin(StockBalance, 'sb', stockJoin, storeId ? { storeId } : {})
       .addSelect('COALESCE(sb.availableQuantity, 0)', 'availableStock')
-      .where('item.status = :status', { status: 'active' });
+      .where('item.status = :status', { status: 'active' })
+      .andWhere('item.deletedAt IS NULL');
 
     if (isDrug !== undefined) {
       qb.andWhere('item.isDrug = :isDrug', { isDrug });
@@ -62,7 +63,7 @@ export class StoresService {
     }
 
     if (tenantId) {
-      qb.andWhere('item.tenant_id = :tenantId', { tenantId });
+      qb.andWhere('item.tenantId = :tenantId', { tenantId });
     }
 
     const rawItems = await qb.orderBy('item.name', 'ASC').take(limit).getRawAndEntities();
@@ -75,7 +76,7 @@ export class StoresService {
   }
 
   async getItem(id: string, tenantId?: string) {
-    const where: any = { id };
+    const where: any = { id, deletedAt: null };
     if (tenantId) where.tenantId = tenantId;
     const item = await this.itemRepo.findOne({ where });
     if (!item) throw new NotFoundException('Item not found');
@@ -668,78 +669,95 @@ export class StoresService {
     facilityId: string,
     tenantId?: string,
   ) {
-    const where: any = { id: itemId };
+    const where: any = { id: itemId, deletedAt: null };
     if (tenantId) where.tenantId = tenantId;
     const item = await this.itemRepo.findOne({ where });
     if (!item) throw new NotFoundException('Item not found');
 
-    // Get or create stock balance (facility-level or store-level)
-    const whereClause: any = { itemId, facilityId };
-    if (dto.storeId) {
-      whereClause.storeId = dto.storeId;
-    } else {
-      whereClause.storeId = null as any;
+    // Validate expiry date if provided
+    if (dto.expiryDate) {
+      const expiryDate = new Date(dto.expiryDate);
+      if (expiryDate < new Date()) {
+        throw new BadRequestException('Expiry date cannot be in the past');
+      }
     }
-    if (tenantId) whereClause.tenantId = tenantId;
-    let balance = await this.stockBalanceRepo.findOne({ where: whereClause });
 
-    if (!balance) {
-      balance = this.stockBalanceRepo.create({
+    // CRITICAL FIX: Wrap in transaction with pessimistic lock to prevent race conditions
+    return this.dataSource.transaction(async (manager) => {
+      const stockRepo = manager.getRepository(StockBalance);
+
+      // Get or create stock balance (facility-level or store-level) with pessimistic lock
+      const whereClause: any = { itemId, facilityId };
+      if (dto.storeId) {
+        whereClause.storeId = dto.storeId;
+      } else {
+        whereClause.storeId = null as any;
+      }
+      if (tenantId) whereClause.tenantId = tenantId;
+
+      let balance = await stockRepo.findOne({
+        where: whereClause,
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!balance) {
+        balance = stockRepo.create({
+          itemId,
+          facilityId,
+          storeId: dto.storeId || undefined,
+          totalQuantity: 0,
+          reservedQuantity: 0,
+          availableQuantity: 0,
+          ...(tenantId ? { tenantId } : {}),
+        });
+      }
+
+      // Calculate new balance
+      const adjustmentQty = dto.type === 'out' ? -Math.abs(dto.quantity) : Math.abs(dto.quantity);
+      const newBalance = balance.totalQuantity + adjustmentQty;
+
+      if (newBalance < 0) {
+        throw new BadRequestException('Insufficient stock for this adjustment');
+      }
+
+      // Update balance
+      balance.totalQuantity = newBalance;
+      balance.availableQuantity = newBalance - balance.reservedQuantity;
+      balance.lastMovementAt = new Date();
+      await stockRepo.save(balance);
+
+      // Create ledger entry
+      const movementType =
+        dto.type === 'in' ? 'purchase' : dto.type === 'out' ? 'sale' : 'adjustment';
+      const ledger = this.stockLedgerRepo.create({
         itemId,
         facilityId,
         storeId: dto.storeId || undefined,
-        totalQuantity: 0,
-        reservedQuantity: 0,
-        availableQuantity: 0,
+        batchNumber: dto.batchNumber,
+        expiryDate: dto.expiryDate ? new Date(dto.expiryDate) : undefined,
+        quantity: adjustmentQty,
+        balanceAfter: newBalance,
+        movementType: movementType as any,
+        unitCost: Number(item.unitCost) || 0,
+        referenceType: dto.type,
+        referenceId: dto.reference,
+        notes: dto.reason,
+        createdById: userId,
         ...(tenantId ? { tenantId } : {}),
       });
-    }
+      await manager.getRepository(StockLedger).save(ledger);
 
-    // Calculate new balance
-    const adjustmentQty = dto.type === 'out' ? -Math.abs(dto.quantity) : Math.abs(dto.quantity);
-    const newBalance = balance.totalQuantity + adjustmentQty;
-
-    if (newBalance < 0) {
-      throw new BadRequestException('Insufficient stock for this adjustment');
-    }
-
-    // Update balance
-    balance.totalQuantity = newBalance;
-    balance.availableQuantity = newBalance - balance.reservedQuantity;
-    balance.lastMovementAt = new Date();
-    await this.stockBalanceRepo.save(balance);
-
-    // Create ledger entry
-    const movementType =
-      dto.type === 'in' ? 'purchase' : dto.type === 'out' ? 'sale' : 'adjustment';
-    const ledger = this.stockLedgerRepo.create({
-      itemId,
-      facilityId,
-      storeId: dto.storeId || undefined,
-      batchNumber: dto.batchNumber,
-      expiryDate: dto.expiryDate ? new Date(dto.expiryDate) : undefined,
-      quantity: adjustmentQty,
-      balanceAfter: newBalance,
-      movementType: movementType as any,
-      unitCost: Number(item.unitCost) || 0,
-      referenceType: dto.type,
-      referenceId: dto.reference,
-      notes: dto.reason,
-      createdById: userId,
-      ...(tenantId ? { tenantId } : {}),
+      return {
+        success: true,
+        newBalance,
+        movement: ledger,
+      };
     });
-    await this.stockLedgerRepo.save(ledger);
-
-    return {
-      success: true,
-      newBalance,
-      movement: ledger,
-    };
   }
 
   // Get stock movements for an item
   async getStockMovements(itemId: string, limit = 50, tenantId?: string) {
-    const where: any = { itemId };
+    const where: any = { itemId, deletedAt: null };
     if (tenantId) where.tenantId = tenantId;
     return this.stockLedgerRepo.find({
       where,
@@ -750,7 +768,7 @@ export class StoresService {
   }
 
   async getInventoryItem(id: string, tenantId?: string) {
-    const where: any = { id };
+    const where: any = { id, deletedAt: null };
     if (tenantId) where.tenantId = tenantId;
     const item = await this.itemRepo.findOne({
       where,
@@ -776,10 +794,11 @@ export class StoresService {
       .leftJoin(StockBalance, 'sb', 'sb.itemId = item.id')
       .where('item.status = :status', { status: 'active' })
       .andWhere('item.isDrug = :isDrug', { isDrug: true })
+      .andWhere('item.deletedAt IS NULL')
       .andWhere('(sb.totalQuantity IS NULL OR sb.totalQuantity <= item.reorderLevel)');
 
     if (tenantId) {
-      qb.andWhere('item.tenant_id = :tenantId', { tenantId });
+      qb.andWhere('item.tenantId = :tenantId', { tenantId });
     }
 
     const items = await qb.orderBy('item.name', 'ASC').getMany();
@@ -805,13 +824,14 @@ export class StoresService {
           'COALESCE(sb.availableQuantity, 0) as "availableStock"',
         ])
         .where('item.requiresExpiryTracking = true')
+        .andWhere('item.deletedAt IS NULL')
         .andWhere('COALESCE(sb.totalQuantity, 0) > 0');
 
       if (facilityId) {
         qb.andWhere('sb.facilityId = :facilityId', { facilityId });
       }
       if (tenantId) {
-        qb.andWhere('item.tenant_id = :tenantId', { tenantId });
+        qb.andWhere('item.tenantId = :tenantId', { tenantId });
       }
 
       const rows = await qb.orderBy('item.name', 'ASC').getRawMany();
@@ -860,6 +880,8 @@ export class StoresService {
       .createQueryBuilder('sl')
       .leftJoinAndSelect('sl.item', 'item')
       .leftJoinAndSelect('sl.store', 'store')
+      .where('sl.deletedAt IS NULL')
+      .andWhere('item.deletedAt IS NULL')
       .orderBy('sl.createdAt', 'DESC')
       .take(limit);
 
