@@ -6,6 +6,8 @@ import {
   IsArray,
   ValidateNested,
   IsDateString,
+  IsPositive,
+  Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PRPriority } from '../../../database/entities/purchase-request.entity';
@@ -24,10 +26,11 @@ export class CreatePRItemDto {
   @IsString()
   itemUnit?: string;
 
-  @IsNumber()
+  @IsPositive()
   quantityRequested: number;
 
   @IsOptional()
+  @Min(0)
   @IsNumber()
   unitPriceEstimated?: number;
 
@@ -70,10 +73,20 @@ export class CreatePurchaseRequestDto {
   items: CreatePRItemDto[];
 }
 
+export class ApprovedItemDto {
+  @IsString()
+  itemId: string;
+
+  @IsPositive()
+  quantityApproved: number;
+}
+
 export class ApprovePRDto {
   @IsOptional()
   @IsArray()
-  approvedItems?: { itemId: string; quantityApproved: number }[];
+  @ValidateNested({ each: true })
+  @Type(() => ApprovedItemDto)
+  approvedItems?: ApprovedItemDto[];
 }
 
 export class RejectPRDto {

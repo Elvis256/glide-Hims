@@ -90,11 +90,16 @@ export class ProcurementService {
   // ============ PURCHASE REQUEST ============
 
   private async generatePRNumber(facilityId: string, tenantId?: string): Promise<string> {
-    const count = await this.prRepo.count({
-      where: { facilityId, ...(tenantId ? { tenantId } : {}) },
+    return this.dataSource.transaction(async (manager) => {
+      const prRepo = manager.getRepository(PurchaseRequest);
+
+      const where: any = { facilityId, deletedAt: IsNull() };
+      if (tenantId) where.tenantId = tenantId;
+
+      const count = await prRepo.count({ where });
+      const date = new Date();
+      return `PR${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(count + 1).padStart(5, '0')}`;
     });
-    const date = new Date();
-    return `PR${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(count + 1).padStart(5, '0')}`;
   }
 
   async createPurchaseRequest(
@@ -105,7 +110,27 @@ export class ProcurementService {
     try {
       this.logger.log(`Creating PR for facility ${dto.facilityId} with ${dto.items.length} items`);
 
-      // Validate all items have positive quantities
+      // Validate facility exists
+      const facilityRepo = this.dataSource.getRepository('Facility');
+      const facilityWhere: any = { id: dto.facilityId };
+      if (tenantId) facilityWhere.tenantId = tenantId;
+      const facility = await facilityRepo.findOne({ where: facilityWhere });
+      if (!facility) {
+        throw new BadRequestException('Facility not found or does not belong to this tenant');
+      }
+
+      // Validate department exists (if provided)
+      if (dto.departmentId) {
+        const deptRepo = this.dataSource.getRepository('Department');
+        const deptWhere: any = { id: dto.departmentId };
+        if (tenantId) deptWhere.tenantId = tenantId;
+        const department = await deptRepo.findOne({ where: deptWhere });
+        if (!department) {
+          throw new BadRequestException('Department not found or does not belong to this tenant');
+        }
+      }
+
+      // Validate all items have positive quantities and exist
       for (const item of dto.items) {
         if (!item.quantityRequested || item.quantityRequested <= 0) {
           throw new BadRequestException(
@@ -115,6 +140,16 @@ export class ProcurementService {
         if (item.unitPriceEstimated !== undefined && item.unitPriceEstimated < 0) {
           throw new BadRequestException(
             `Item "${item.itemName || item.itemCode}" cannot have a negative estimated price`,
+          );
+        }
+
+        // Validate item exists
+        const itemWhere: any = { id: item.itemId };
+        if (tenantId) itemWhere.tenantId = tenantId;
+        const existingItem = await this.itemRepo.findOne({ where: itemWhere });
+        if (!existingItem) {
+          throw new BadRequestException(
+            `Item "${item.itemName || item.itemCode}" (${item.itemId}) not found or does not belong to this tenant`,
           );
         }
       }
@@ -160,7 +195,7 @@ export class ProcurementService {
 
       await this.prItemRepo.save(items);
 
-      return this.getPurchaseRequest((savedPR as PurchaseRequest).id);
+      return this.getPurchaseRequest((savedPR as PurchaseRequest).id, tenantId);
     } catch (error) {
       this.logger.error(`Error creating PR: ${error.message}`, error.stack);
       throw error;
@@ -168,7 +203,7 @@ export class ProcurementService {
   }
 
   async getPurchaseRequest(id: string, tenantId?: string): Promise<PurchaseRequest> {
-    const where: any = { id };
+    const where: any = { id, deletedAt: IsNull() };
     if (tenantId) where.tenantId = tenantId;
     const pr = await this.prRepo.findOne({
       where,
@@ -192,21 +227,16 @@ export class ProcurementService {
       .createQueryBuilder('pr')
       .leftJoinAndSelect('pr.items', 'items')
       .leftJoinAndSelect('pr.department', 'department')
-      .leftJoinAndSelect('pr.requestedBy', 'requestedBy');
+      .leftJoinAndSelect('pr.requestedBy', 'requestedBy')
+      .where('pr.deletedAt IS NULL');
 
-    let hasWhere = false;
+    let hasWhere = true;
     if (facilityId && facilityId.trim() !== '') {
-      qb.where('pr.facilityId = :facilityId', { facilityId });
-      hasWhere = true;
+      qb.andWhere('pr.facilityId = :facilityId', { facilityId });
     }
 
     if (options.status) {
-      if (hasWhere) {
-        qb.andWhere('pr.status = :status', { status: options.status });
-      } else {
-        qb.where('pr.status = :status', { status: options.status });
-        hasWhere = true;
-      }
+      qb.andWhere('pr.status = :status', { status: options.status });
     }
     if (options.priority) {
       qb.andWhere('pr.priority = :priority', { priority: options.priority });
@@ -219,22 +249,36 @@ export class ProcurementService {
     }
 
     if (tenantId) {
-      qb.andWhere('pr.tenant_id = :tenantId', { tenantId });
+      qb.andWhere('pr.tenantId = :tenantId', { tenantId });
     }
 
     return qb.orderBy('pr.createdAt', 'DESC').getMany();
   }
 
   async submitPurchaseRequest(id: string, tenantId?: string): Promise<PurchaseRequest> {
-    const pr = await this.getPurchaseRequest(id, tenantId);
-    if (pr.status !== PRStatus.DRAFT) {
-      throw new BadRequestException('Only draft PRs can be submitted');
-    }
-    if (pr.items.length === 0) {
-      throw new BadRequestException('PR must have at least one item');
-    }
-    pr.status = PRStatus.PENDING_APPROVAL;
-    return this.prRepo.save(pr);
+    return this.dataSource.transaction(async (manager) => {
+      const prRepo = manager.getRepository(PurchaseRequest);
+
+      const where: any = { id, deletedAt: IsNull() };
+      if (tenantId) where.tenantId = tenantId;
+
+      const pr = await prRepo.findOne({
+        where,
+        relations: ['items'],
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!pr) throw new NotFoundException('Purchase request not found');
+      if (pr.status !== PRStatus.DRAFT) {
+        throw new BadRequestException('Only draft PRs can be submitted');
+      }
+      if (pr.items.length === 0) {
+        throw new BadRequestException('PR must have at least one item');
+      }
+
+      pr.status = PRStatus.PENDING_APPROVAL;
+      return prRepo.save(pr);
+    });
   }
 
   async approvePurchaseRequest(
@@ -243,39 +287,62 @@ export class ProcurementService {
     userId: string,
     tenantId?: string,
   ): Promise<PurchaseRequest> {
-    const pr = await this.getPurchaseRequest(id, tenantId);
-    if (pr.status !== PRStatus.PENDING_APPROVAL) {
-      throw new BadRequestException('PR must be pending approval');
-    }
+    return this.dataSource.transaction(async (manager) => {
+      const prRepo = manager.getRepository(PurchaseRequest);
+      const prItemRepo = manager.getRepository(PurchaseRequestItem);
 
-    // Segregation of duties: requester cannot approve their own PR
-    if (pr.requestedById === userId) {
-      throw new BadRequestException(
-        'Segregation of duties violation: the requester cannot approve their own purchase request',
-      );
-    }
+      const where: any = { id, deletedAt: IsNull() };
+      if (tenantId) where.tenantId = tenantId;
 
-    // Update approved quantities if provided
-    if (dto.approvedItems) {
-      for (const approved of dto.approvedItems) {
-        const item = pr.items.find((i) => i.itemId === approved.itemId);
-        if (item) {
-          item.quantityApproved = approved.quantityApproved;
-          await this.prItemRepo.save(item);
+      const pr = await prRepo.findOne({
+        where,
+        relations: ['items'],
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!pr) throw new NotFoundException('Purchase request not found');
+      if (pr.status !== PRStatus.PENDING_APPROVAL) {
+        throw new BadRequestException('PR must be pending approval');
+      }
+
+      // Segregation of duties: requester cannot approve their own PR
+      if (pr.requestedById === userId) {
+        throw new BadRequestException(
+          'Segregation of duties violation: the requester cannot approve their own purchase request',
+        );
+      }
+
+      // Update approved quantities if provided
+      let totalEstimatedApproved = 0;
+      if (dto.approvedItems) {
+        for (const approved of dto.approvedItems) {
+          const item = pr.items.find((i) => i.itemId === approved.itemId);
+          if (item) {
+            if (approved.quantityApproved > item.quantityRequested) {
+              throw new BadRequestException(
+                `Approved quantity (${approved.quantityApproved}) cannot exceed requested quantity (${item.quantityRequested}) for item ${item.itemName}`,
+              );
+            }
+            item.quantityApproved = approved.quantityApproved;
+            totalEstimatedApproved += approved.quantityApproved * Number(item.unitPriceEstimated || 0);
+          }
+        }
+      } else {
+        // Default: approve all requested quantities
+        for (const item of pr.items) {
+          item.quantityApproved = item.quantityRequested;
+          totalEstimatedApproved += item.quantityRequested * Number(item.unitPriceEstimated || 0);
         }
       }
-    } else {
-      // Default: approve all requested quantities
-      for (const item of pr.items) {
-        item.quantityApproved = item.quantityRequested;
-        await this.prItemRepo.save(item);
-      }
-    }
 
-    pr.status = PRStatus.APPROVED;
-    pr.approvedById = userId;
-    pr.approvedAt = new Date();
-    return this.prRepo.save(pr);
+      await prItemRepo.save(pr.items);
+
+      pr.status = PRStatus.APPROVED;
+      pr.approvedById = userId;
+      pr.approvedAt = new Date();
+      pr.totalEstimated = totalEstimatedApproved;
+      return prRepo.save(pr);
+    });
   }
 
   async rejectPurchaseRequest(
@@ -284,15 +351,28 @@ export class ProcurementService {
     userId: string,
     tenantId?: string,
   ): Promise<PurchaseRequest> {
-    const pr = await this.getPurchaseRequest(id, tenantId);
-    if (pr.status !== PRStatus.PENDING_APPROVAL) {
-      throw new BadRequestException('PR must be pending approval');
-    }
-    pr.status = PRStatus.REJECTED;
-    pr.approvedById = userId;
-    pr.approvedAt = new Date();
-    pr.rejectionReason = dto.rejectionReason;
-    return this.prRepo.save(pr);
+    return this.dataSource.transaction(async (manager) => {
+      const prRepo = manager.getRepository(PurchaseRequest);
+
+      const where: any = { id, deletedAt: IsNull() };
+      if (tenantId) where.tenantId = tenantId;
+
+      const pr = await prRepo.findOne({
+        where,
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!pr) throw new NotFoundException('Purchase request not found');
+      if (pr.status !== PRStatus.PENDING_APPROVAL) {
+        throw new BadRequestException('PR must be pending approval');
+      }
+
+      pr.status = PRStatus.REJECTED;
+      pr.approvedById = userId;
+      pr.approvedAt = new Date();
+      pr.rejectionReason = dto.rejectionReason;
+      return prRepo.save(pr);
+    });
   }
 
   // ============ PURCHASE ORDER ============
@@ -1225,11 +1305,11 @@ export class ProcurementService {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    const prWhere: any = { facilityId };
+    const prWhere: any = { facilityId, deletedAt: IsNull() };
     if (tenantId) prWhere.tenantId = tenantId;
-    const poWhere: any = { facilityId };
+    const poWhere: any = { facilityId, deletedAt: IsNull() };
     if (tenantId) poWhere.tenantId = tenantId;
-    const grnWhere: any = { facilityId };
+    const grnWhere: any = { facilityId, deletedAt: IsNull() };
     if (tenantId) grnWhere.tenantId = tenantId;
 
     const [pendingPRs, approvedPRs, pendingPOs, sentPOs, pendingGRNs, totalValueToday] =
@@ -1256,10 +1336,11 @@ export class ProcurementService {
             .createQueryBuilder('grn')
             .select('SUM(grn.totalValue)', 'total')
             .where('grn.facilityId = :facilityId', { facilityId })
+            .andWhere('grn.deletedAt IS NULL')
             .andWhere('grn.status = :status', { status: GRNStatus.POSTED })
             .andWhere('grn.postedAt BETWEEN :today AND :tomorrow', { today, tomorrow });
           if (tenantId) {
-            qb.andWhere('grn.tenant_id = :tenantId', { tenantId });
+            qb.andWhere('grn.tenantId = :tenantId', { tenantId });
           }
           return qb.getRawOne();
         })(),
