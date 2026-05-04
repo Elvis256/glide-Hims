@@ -15,6 +15,7 @@ import { VendorQuotation } from '../../database/entities/rfq.entity';
 import { ProcurementApprovalThreshold } from '../../database/entities/procurement-approval-threshold.entity';
 import { ProcurementApprovalChain } from '../../database/entities/procurement-approval-chain.entity';
 import { FinanceModule } from '../finance/finance.module';
+import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { FinanceModule } from '../finance/finance.module';
       ProcurementApprovalChain,
     ]),
     forwardRef(() => FinanceModule),
+    forwardRef(() => UsersModule),
   ],
   controllers: [ProcurementController],
   providers: [ProcurementService],
