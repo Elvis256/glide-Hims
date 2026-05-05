@@ -241,6 +241,10 @@ const PatientFinancePage = lazy(() => import('./pages/billing/finance/PatientFin
 const PettyCashPage = lazy(() => import('./pages/billing/finance/PettyCashPage'));
 const DonorFundsPage = lazy(() => import('./pages/billing/finance/DonorFundsPage'));
 const TrialBalancePage = lazy(() => import('./pages/billing/finance/TrialBalancePage'));
+const GLTrendAnalysisPage = lazy(() => import('./pages/billing/finance/GLTrendAnalysisPage'));
+const RevenueDashboardPage = lazy(() => import('./pages/billing/finance/RevenueDashboardPage'));
+const BudgetVsActualPage = lazy(() => import('./pages/billing/finance/BudgetVsActualPage'));
+const CustomReportBuilderPage = lazy(() => import('./pages/billing/finance/CustomReportBuilderPage'));
 const EmergencyQueuePage = lazy(() => import('./pages/emergency/EmergencyQueuePage'));
 const AmbulanceTrackingPage = lazy(() => import('./pages/emergency/AmbulanceTrackingPage'));
 const EmergencyTriagePage = lazy(() => import('./pages/emergency/EmergencyTriagePage'));
@@ -898,6 +902,10 @@ function AppRoutes() {
                 <Route path="/finance/petty-cash" element={<ModuleRoute module="finance"><FinanceRoute><PettyCashPage /></FinanceRoute></ModuleRoute>} />
                 <Route path="/finance/donor-funds" element={<ModuleRoute module="finance"><FinanceRoute><DonorFundsPage /></FinanceRoute></ModuleRoute>} />
                 <Route path="/finance/trial-balance" element={<ModuleRoute module="finance"><FinanceRoute><TrialBalancePage /></FinanceRoute></ModuleRoute>} />
+                <Route path="/finance/gl-trends" element={<ModuleRoute module="finance"><FinanceRoute><GLTrendAnalysisPage /></FinanceRoute></ModuleRoute>} />
+                <Route path="/finance/revenue-dashboard" element={<ModuleRoute module="finance"><FinanceRoute><RevenueDashboardPage /></FinanceRoute></ModuleRoute>} />
+                <Route path="/finance/budget-vs-actual" element={<ModuleRoute module="finance"><FinanceRoute><BudgetVsActualPage /></FinanceRoute></ModuleRoute>} />
+                <Route path="/finance/custom-reports" element={<ModuleRoute module="finance"><FinanceRoute><CustomReportBuilderPage /></FinanceRoute></ModuleRoute>} />
                 
                 {/* Emergency Module */}
                 <Route path="/emergency/queue" element={<ModuleRoute module="emergency"><ClinicalRoute><EmergencyQueuePage /></ClinicalRoute></ModuleRoute>} />
