@@ -216,6 +216,7 @@ const InsuranceProvidersPage = lazy(() => import('./pages/billing/insurance/Prov
 const InsuranceDashboardPage = lazy(() => import('./pages/insurance/InsuranceDashboardPage'));
 const RequisitionsPage = lazy(() => import('./pages/billing/procurement/RequisitionsPage'));
 const ApprovalDashboardPage = lazy(() => import('./pages/billing/procurement/ApprovalDashboardPage'));
+const DirectPOPage = lazy(() => import('./pages/billing/procurement/DirectPOPage'));
 const RFQPage = lazy(() => import('./pages/billing/procurement/RFQPage'));
 const CompareQuotesPage = lazy(() => import('./pages/billing/procurement/CompareQuotesPage'));
 const ApproveQuotationsPage = lazy(() => import('./pages/billing/procurement/ApproveQuotationsPage'));
@@ -866,6 +867,7 @@ function AppRoutes() {
                 
                 {/* Billing - Procurement */}
                 <Route path="/procurement/approvals" element={<ModuleRoute module="stores"><AdminRoute><ApprovalDashboardPage /></AdminRoute></ModuleRoute>} />
+                <Route path="/procurement/direct-po" element={<ModuleRoute module="stores"><StoreKeeperRoute><DirectPOPage /></StoreKeeperRoute></ModuleRoute>} />
                 <Route path="/procurement/requisitions" element={<ModuleRoute module="stores"><StoreKeeperRoute><RequisitionsPage /></StoreKeeperRoute></ModuleRoute>} />
                 <Route path="/procurement/rfq" element={<ModuleRoute module="stores"><StoreKeeperRoute><RFQPage /></StoreKeeperRoute></ModuleRoute>} />
                 <Route path="/procurement/quotes/compare" element={<ModuleRoute module="stores"><StoreKeeperRoute><CompareQuotesPage /></StoreKeeperRoute></ModuleRoute>} />

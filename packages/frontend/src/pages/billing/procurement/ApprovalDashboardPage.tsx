@@ -14,6 +14,8 @@ import {
   RefreshCw,
   Calendar,
   Zap,
+  DollarSign,
+  AlertOctagon,
 } from 'lucide-react';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 
@@ -123,6 +125,40 @@ export default function ApprovalDashboardPage() {
     staleTime: 30000,
   });
 
+  // Fetch budget information
+  const { data: budget = null, isLoading: budgetLoading } = useQuery({
+    queryKey: ['budget:status', facilityId],
+    queryFn: async () => {
+      try {
+        const res = await api.get(`/finance/budget`, {
+          params: { facilityId },
+        });
+        return res.data.data || null;
+      } catch {
+        return null;
+      }
+    },
+    enabled: !!facilityId,
+    staleTime: 60000,
+  });
+
+  // Fetch supplier risk alerts (items flagged for risk)
+  const { data: supplierRisks = [], isLoading: riskLoading } = useQuery({
+    queryKey: ['procurement:supplier-risks', facilityId],
+    queryFn: async () => {
+      try {
+        const res = await api.get(`/procurement/approvals/supplier-risks`, {
+          params: { facilityId },
+        });
+        return res.data.data || [];
+      } catch {
+        return [];
+      }
+    },
+    enabled: !!facilityId,
+    staleTime: 30000,
+  });
+
   const filteredPending = useMemo(() => {
     if (!pendingData) return [];
     if (selectedDocType === 'ALL') return pendingData;
@@ -137,7 +173,7 @@ export default function ApprovalDashboardPage() {
     return `${Math.floor(days)}d`;
   };
 
-  const isLoading = pendingLoading || summaryLoading || bottleneckLoading || escalationLoading;
+  const isLoading = pendingLoading || summaryLoading || bottleneckLoading || escalationLoading || budgetLoading || riskLoading;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -218,6 +254,84 @@ export default function ApprovalDashboardPage() {
               <AlertTriangle className="h-12 w-12 text-red-200" />
             </div>
           </div>
+        </div>
+
+        {/* Budget & Risk Alerts */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
+          {/* Budget Card */}
+          {budget && (
+            <div className="bg-white rounded-lg shadow p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">Budget Status</h3>
+                <DollarSign className="h-6 w-6 text-blue-600" />
+              </div>
+              <div className="space-y-3">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Allocated</span>
+                  <span className="font-medium text-gray-900">{formatCurrency(budget.budgetAllocated || 0)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Used (GL)</span>
+                  <span className="font-medium text-gray-900">{formatCurrency(budget.budgetUsed || 0)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Available</span>
+                  <span className={`font-medium ${(budget.budgetAvailable || 0) > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {formatCurrency(budget.budgetAvailable || 0)}
+                  </span>
+                </div>
+                <div className="mt-4">
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      className={`h-2 rounded-full ${
+                        (budget.percentageUsed || 0) < 10 ? 'bg-green-500' : 
+                        (budget.percentageUsed || 0) < 30 ? 'bg-yellow-500' : 'bg-red-500'
+                      }`}
+                      style={{ width: `${Math.min(budget.percentageUsed || 0, 100)}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-600 mt-1">{(budget.percentageUsed || 0).toFixed(1)}% used</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Supplier Risk Alerts */}
+          {supplierRisks.length > 0 ? (
+            <div className="bg-white rounded-lg shadow p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">Supplier Risk Alerts</h3>
+                <AlertOctagon className="h-6 w-6 text-red-600" />
+              </div>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {supplierRisks.slice(0, 5).map((risk: any) => (
+                  <div key={risk.documentId} className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="h-4 w-4 text-red-600 flex-shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-red-900 truncate">
+                          {risk.riskType}: {risk.supplierName}
+                        </p>
+                        <p className="text-xs text-red-700 truncate">{risk.documentType} {risk.documentNumber}</p>
+                        <p className="text-xs text-red-600 mt-1">{risk.riskReason}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {supplierRisks.length > 5 && (
+                  <p className="text-xs text-gray-600 text-center py-2">+{supplierRisks.length - 5} more alerts</p>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="bg-white rounded-lg shadow p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">Supplier Risk Alerts</h3>
+                <AlertOctagon className="h-6 w-6 text-green-600" />
+              </div>
+              <p className="text-sm text-gray-600">✓ No supplier risk alerts at this time</p>
+            </div>
+          )}
         </div>
 
         {/* Main Content Grid */}
