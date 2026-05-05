@@ -22,6 +22,10 @@ import { GLAnalyticsService } from './gl-analytics.service';
 import { RevenueExpenseService } from './revenue-expense.service';
 import { BudgetVarianceService } from './budget-variance.service';
 import { ReportGeneratorService } from './report-generator.service';
+import { DataCleanupService } from './data-cleanup.service';
+import { DataIntegrityService } from './data-integrity.service';
+import { AuditComplianceService } from './audit-compliance.service';
+import { PerformanceOptimizationService } from './performance-optimization.service';
 import { SystemSettingsService } from '../system-settings/system-settings.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import {
@@ -73,6 +77,10 @@ export class FinanceController {
     private readonly revenueExpenseService: RevenueExpenseService,
     private readonly budgetVarianceService: BudgetVarianceService,
     private readonly reportGeneratorService: ReportGeneratorService,
+    private readonly dataCleanupService: DataCleanupService,
+    private readonly dataIntegrityService: DataIntegrityService,
+    private readonly auditComplianceService: AuditComplianceService,
+    private readonly performanceOptimizationService: PerformanceOptimizationService,
     private readonly settingsService: SystemSettingsService,
   ) {}
 
@@ -1459,6 +1467,317 @@ export class FinanceController {
       success: true,
       data: csv,
       fileName: `${report.reportName}-${new Date().getTime()}.csv`,
+    };
+  }
+
+  // ============ CLEANUP OPERATIONS (Phase 2D) ============
+  @Get('cleanup/report')
+  @AuthWithPermissions('finance.admin')
+  @ApiOperation({ summary: 'Get cleanup report' })
+  async getCleanupReport() {
+    return {
+      success: true,
+      data: await this.dataCleanupService.getCleanupReport(),
+    };
+  }
+
+  @Post('cleanup/execute')
+  @AuthWithPermissions('finance.admin')
+  @ApiOperation({ summary: 'Execute full cleanup cycle' })
+  async executeCleanup(
+    @Query('dryRun') dryRun: boolean = true,
+    @Request() req: any,
+  ) {
+    return {
+      success: true,
+      data: await this.dataCleanupService.executeFullCleanup(dryRun),
+    };
+  }
+
+  @Post('cleanup/orphaned')
+  @AuthWithPermissions('finance.admin')
+  @ApiOperation({ summary: 'Detect and remove orphaned entries' })
+  async cleanupOrphaned(
+    @Query('dryRun') dryRun: boolean = true,
+    @Request() req: any,
+  ) {
+    return {
+      success: true,
+      data: await this.dataCleanupService.detectOrphanedEntries(dryRun),
+    };
+  }
+
+  @Post('cleanup/duplicates')
+  @AuthWithPermissions('finance.admin')
+  @ApiOperation({ summary: 'Detect and remove duplicate entries' })
+  async cleanupDuplicates(
+    @Query('dryRun') dryRun: boolean = true,
+    @Request() req: any,
+  ) {
+    return {
+      success: true,
+      data: await this.dataCleanupService.detectDuplicateEntries(dryRun),
+    };
+  }
+
+  @Post('cleanup/audit-logs')
+  @AuthWithPermissions('finance.admin')
+  @ApiOperation({ summary: 'Clean up old audit logs' })
+  async cleanupAuditLogs(
+    @Query('retentionDays') retentionDays: number = 365,
+    @Query('dryRun') dryRun: boolean = true,
+    @Request() req: any,
+  ) {
+    return {
+      success: true,
+      data: await this.dataCleanupService.cleanupOldAuditLogs(
+        retentionDays,
+        dryRun,
+      ),
+    };
+  }
+
+  // ============ DATA INTEGRITY (Phase 2D) ============
+  @Get('integrity/report')
+  @AuthWithPermissions('finance.read')
+  @ApiOperation({ summary: 'Get comprehensive integrity report' })
+  async getIntegrityReport() {
+    return {
+      success: true,
+      data: await this.dataIntegrityService.getIntegrityReport(),
+    };
+  }
+
+  @Get('integrity/gl-balance')
+  @AuthWithPermissions('finance.read')
+  @ApiOperation({ summary: 'Validate GL balance' })
+  @ApiQuery({ name: 'periodStart', required: false })
+  @ApiQuery({ name: 'periodEnd', required: false })
+  async validateGLBalance(
+    @Request() req: any,
+    @Query('periodStart') periodStart?: string,
+    @Query('periodEnd') periodEnd?: string,
+  ) {
+    const start = periodStart ? new Date(periodStart) : undefined;
+    const end = periodEnd ? new Date(periodEnd) : undefined;
+    return {
+      success: true,
+      data: await this.dataIntegrityService.validateGLBalance(start, end),
+    };
+  }
+
+  @Get('integrity/unbalanced-accounts')
+  @AuthWithPermissions('finance.read')
+  @ApiOperation({ summary: 'Detect unbalanced GL accounts' })
+  async getUnbalancedAccounts() {
+    return {
+      success: true,
+      data: await this.dataIntegrityService.detectUnbalancedAccounts(),
+    };
+  }
+
+  @Get('integrity/anomalies')
+  @AuthWithPermissions('finance.read')
+  @ApiOperation({ summary: 'Detect GL anomalies (fraud patterns)' })
+  async detectAnomalies() {
+    return {
+      success: true,
+      data: await this.dataIntegrityService.detectAnomalies(),
+    };
+  }
+
+  @Get('integrity/master-data')
+  @AuthWithPermissions('finance.read')
+  @ApiOperation({ summary: 'Validate account master data' })
+  async validateMasterData() {
+    return {
+      success: true,
+      data: await this.dataIntegrityService.validateAccountMasterData(),
+    };
+  }
+
+  @Get('integrity/referential')
+  @AuthWithPermissions('finance.read')
+  @ApiOperation({ summary: 'Verify referential integrity' })
+  async verifyReferentialIntegrity() {
+    return {
+      success: true,
+      data: await this.dataIntegrityService.verifyReferentialIntegrity(),
+    };
+  }
+
+  // ============ COMPLIANCE (Phase 2D) ============
+  @Get('compliance/policies')
+  @AuthWithPermissions('finance.read')
+  @ApiOperation({ summary: 'Get compliance policies' })
+  async getCompliancePolicies(@Request() req: any): Promise<any> {
+    return {
+      success: true,
+      data: this.auditComplianceService.getCompliancePolicies(),
+    };
+  }
+
+  @Get('compliance/status/:policyName')
+  @AuthWithPermissions('finance.read')
+  @ApiOperation({ summary: 'Check compliance status' })
+  async checkComplianceStatus(
+    @Param('policyName') policyName: string,
+    @Request() req: any,
+  ) {
+    return {
+      success: true,
+      data: await this.auditComplianceService.checkComplianceStatus(
+        policyName,
+      ),
+    };
+  }
+
+  @Get('compliance/audit-trail')
+  @AuthWithPermissions('finance.read')
+  @ApiOperation({ summary: 'Generate compliance audit trail' })
+  @ApiQuery({ name: 'periodDays', required: false })
+  async generateComplianceAudit(
+    @Query('periodDays') periodDays: number = 90,
+    @Request() req: any,
+  ) {
+    return {
+      success: true,
+      data: await this.auditComplianceService.generateComplianceAudit(
+        periodDays,
+      ),
+    };
+  }
+
+  @Get('compliance/report')
+  @AuthWithPermissions('finance.read')
+  @ApiOperation({ summary: 'Generate compliance report for auditors' })
+  @ApiQuery({ name: 'includePeriodDays', required: false })
+  async generateComplianceReport(
+    @Query('includePeriodDays') includePeriodDays: number = 90,
+    @Request() req: any,
+  ) {
+    return {
+      success: true,
+      data: await this.auditComplianceService.generateComplianceReport(
+        includePeriodDays,
+      ),
+    };
+  }
+
+  @Post('compliance/archive')
+  @AuthWithPermissions('finance.admin')
+  @ApiOperation({ summary: 'Archive audit records' })
+  @ApiQuery({ name: 'dryRun', required: false })
+  @ApiQuery({ name: 'archiveDate', required: false })
+  async archiveAuditRecords(
+    @Request() req: any,
+    @Query('dryRun') dryRun: boolean = true,
+    @Query('archiveDate') archiveDate?: string,
+  ) {
+    const date = archiveDate ? new Date(archiveDate) : new Date();
+    return {
+      success: true,
+      data: await this.auditComplianceService.archiveInactiveRecords(
+        date,
+        dryRun,
+      ),
+    };
+  }
+
+  @Get('compliance/integrity')
+  @AuthWithPermissions('finance.read')
+  @ApiOperation({ summary: 'Verify audit trail integrity' })
+  async verifyAuditIntegrity() {
+    return {
+      success: true,
+      data: await this.auditComplianceService.verifyAuditIntegrity(),
+    };
+  }
+
+  // ============ PERFORMANCE (Phase 2D) ============
+  @Get('performance/metrics')
+  @AuthWithPermissions('finance.read')
+  @ApiOperation({ summary: 'Get performance metrics' })
+  async getPerformanceMetrics() {
+    return {
+      success: true,
+      data: await this.performanceOptimizationService.getPerformanceMetrics(),
+    };
+  }
+
+  @Get('performance/table-sizes')
+  @AuthWithPermissions('finance.read')
+  @ApiOperation({ summary: 'Analyze table sizes' })
+  async analyzeTableSizes() {
+    return {
+      success: true,
+      data: await this.performanceOptimizationService.analyzeTableSizes(),
+    };
+  }
+
+  @Get('performance/index-health')
+  @AuthWithPermissions('finance.read')
+  @ApiOperation({ summary: 'Analyze index health' })
+  async analyzeIndexHealth() {
+    return {
+      success: true,
+      data: await this.performanceOptimizationService.analyzeIndexHealth(),
+    };
+  }
+
+  @Get('performance/fragmentation')
+  @AuthWithPermissions('finance.read')
+  @ApiOperation({ summary: 'Analyze table fragmentation' })
+  async analyzeFragmentation() {
+    return {
+      success: true,
+      data: await this.performanceOptimizationService.analyzeTableFragmentation(),
+    };
+  }
+
+  @Get('performance/slow-queries')
+  @AuthWithPermissions('finance.read')
+  @ApiOperation({ summary: 'Identify slow queries' })
+  async identifySlowQueries() {
+    return {
+      success: true,
+      data: await this.performanceOptimizationService.identifySlowQueries(),
+    };
+  }
+
+  @Post('performance/optimize-tables')
+  @AuthWithPermissions('finance.admin')
+  @ApiOperation({ summary: 'Optimize table statistics' })
+  async optimizeTableStatistics(@Request() req: any) {
+    return {
+      success: true,
+      data: await this.performanceOptimizationService.optimizeTableStatistics(),
+    };
+  }
+
+  @Post('performance/create-indexes')
+  @AuthWithPermissions('finance.admin')
+  @ApiOperation({ summary: 'Create recommended indexes' })
+  @ApiQuery({ name: 'dryRun', required: false })
+  async createRecommendedIndexes(
+    @Query('dryRun') dryRun: boolean = true,
+    @Request() req: any,
+  ) {
+    return {
+      success: true,
+      data: await this.performanceOptimizationService.createRecommendedIndexes(
+        dryRun,
+      ),
+    };
+  }
+
+  @Get('performance/report')
+  @AuthWithPermissions('finance.read')
+  @ApiOperation({ summary: 'Generate optimization report' })
+  async generateOptimizationReport() {
+    return {
+      success: true,
+      data: await this.performanceOptimizationService.generateOptimizationReport(),
     };
   }
 }

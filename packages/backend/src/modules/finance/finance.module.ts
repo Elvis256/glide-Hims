@@ -23,6 +23,10 @@ import { GLAnalyticsService } from './gl-analytics.service';
 import { RevenueExpenseService } from './revenue-expense.service';
 import { BudgetVarianceService } from './budget-variance.service';
 import { ReportGeneratorService } from './report-generator.service';
+import { DataCleanupService } from './data-cleanup.service';
+import { DataIntegrityService } from './data-integrity.service';
+import { AuditComplianceService } from './audit-compliance.service';
+import { PerformanceOptimizationService } from './performance-optimization.service';
 import { ChartOfAccount } from '../../database/entities/chart-of-account.entity';
 import { JournalEntry } from '../../database/entities/journal-entry.entity';
 import { JournalEntryLine } from '../../database/entities/journal-entry-line.entity';
@@ -46,6 +50,7 @@ import {
 } from '../../database/entities/finance-extended.entity';
 import { FacilityBudget } from '../../database/entities/facility-budget.entity';
 import { BudgetReservation } from '../../database/entities/budget-reservation.entity';
+import { AuditLog } from '../../database/entities/audit-log.entity';
 import { SystemSettingsModule } from '../system-settings/system-settings.module';
 
 @Module({
@@ -72,6 +77,7 @@ import { SystemSettingsModule } from '../system-settings/system-settings.module'
       FacilityBudget,
       BudgetReservation,
       FinanceApprovalChain,
+      AuditLog,
     ]),
     SystemSettingsModule,
   ],
@@ -118,6 +124,10 @@ import { SystemSettingsModule } from '../system-settings/system-settings.module'
     RevenueExpenseService,
     BudgetVarianceService,
     ReportGeneratorService,
+    DataCleanupService,
+    DataIntegrityService,
+    AuditComplianceService,
+    PerformanceOptimizationService,
   ],
 })
 export class FinanceModule {}
