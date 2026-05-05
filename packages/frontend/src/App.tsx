@@ -240,6 +240,7 @@ const BankReconciliationPage = lazy(() => import('./pages/billing/finance/BankRe
 const PatientFinancePage = lazy(() => import('./pages/billing/finance/PatientFinancePage'));
 const PettyCashPage = lazy(() => import('./pages/billing/finance/PettyCashPage'));
 const DonorFundsPage = lazy(() => import('./pages/billing/finance/DonorFundsPage'));
+const TrialBalancePage = lazy(() => import('./pages/billing/finance/TrialBalancePage'));
 const EmergencyQueuePage = lazy(() => import('./pages/emergency/EmergencyQueuePage'));
 const AmbulanceTrackingPage = lazy(() => import('./pages/emergency/AmbulanceTrackingPage'));
 const EmergencyTriagePage = lazy(() => import('./pages/emergency/EmergencyTriagePage'));
@@ -896,6 +897,7 @@ function AppRoutes() {
                 <Route path="/finance/patient-finance" element={<ModuleRoute module="finance"><FinanceRoute><PatientFinancePage /></FinanceRoute></ModuleRoute>} />
                 <Route path="/finance/petty-cash" element={<ModuleRoute module="finance"><FinanceRoute><PettyCashPage /></FinanceRoute></ModuleRoute>} />
                 <Route path="/finance/donor-funds" element={<ModuleRoute module="finance"><FinanceRoute><DonorFundsPage /></FinanceRoute></ModuleRoute>} />
+                <Route path="/finance/trial-balance" element={<ModuleRoute module="finance"><FinanceRoute><TrialBalancePage /></FinanceRoute></ModuleRoute>} />
                 
                 {/* Emergency Module */}
                 <Route path="/emergency/queue" element={<ModuleRoute module="emergency"><ClinicalRoute><EmergencyQueuePage /></ClinicalRoute></ModuleRoute>} />
