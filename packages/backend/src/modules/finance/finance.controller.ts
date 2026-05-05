@@ -18,6 +18,10 @@ import { FinanceService } from './finance.service';
 import { FinanceApprovalService } from './finance-approval.service';
 import { TrialBalanceService } from './trial-balance.service';
 import { GLReconciliationService } from './gl-reconciliation.service';
+import { GLAnalyticsService } from './gl-analytics.service';
+import { RevenueExpenseService } from './revenue-expense.service';
+import { BudgetVarianceService } from './budget-variance.service';
+import { ReportGeneratorService } from './report-generator.service';
 import { SystemSettingsService } from '../system-settings/system-settings.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import {
@@ -44,6 +48,7 @@ import {
   ComparePeriodQueryDto,
   MarkAccountReconciledDto,
 } from './dto/trial-balance.dto';
+import { GenerateReportDto } from './dto/analytics.dto';
 import { AccountType } from '../../database/entities/chart-of-account.entity';
 import { JournalStatus } from '../../database/entities/journal-entry.entity';
 import { RequireModule } from '../auth/decorators/module.decorator';
@@ -64,6 +69,10 @@ export class FinanceController {
     private readonly financeApprovalService: FinanceApprovalService,
     private readonly trialBalanceService: TrialBalanceService,
     private readonly glReconciliationService: GLReconciliationService,
+    private readonly glAnalyticsService: GLAnalyticsService,
+    private readonly revenueExpenseService: RevenueExpenseService,
+    private readonly budgetVarianceService: BudgetVarianceService,
+    private readonly reportGeneratorService: ReportGeneratorService,
     private readonly settingsService: SystemSettingsService,
   ) {}
 
@@ -990,6 +999,466 @@ export class FinanceController {
     return {
       success: true,
       data: report,
+    };
+  }
+
+  // ============ GL ANALYTICS ============
+
+  @Get('analytics/account-trends/:accountId')
+  @ApiOperation({ summary: 'Get multi-period trend analysis for an account' })
+  @ApiQuery({ name: 'startPeriod', required: true, example: '2024-01' })
+  @ApiQuery({ name: 'endPeriod', required: true, example: '2024-12' })
+  async getAccountTrends(
+    @Param('accountId', new ParseUUIDPipe()) accountId: string,
+    @Query('startPeriod') startPeriod: string,
+    @Query('endPeriod') endPeriod: string,
+    @Request() req: any,
+  ) {
+    const facilityId = req?.user?.facilityId;
+
+    const trends = await this.glAnalyticsService.getAccountTrends(
+      facilityId,
+      accountId,
+      startPeriod,
+      endPeriod,
+    );
+
+    return {
+      success: true,
+      data: trends,
+    };
+  }
+
+  @Get('analytics/compare-periods')
+  @ApiOperation({ summary: 'Compare GL account balances between two periods' })
+  @ApiQuery({ name: 'period1', required: true, example: '2024-01' })
+  @ApiQuery({ name: 'period2', required: true, example: '2024-02' })
+  async comparePeriodsGL(
+    @Query('period1') period1: string,
+    @Query('period2') period2: string,
+    @Request() req: any,
+  ) {
+    const facilityId = req?.user?.facilityId;
+
+    const comparison = await this.glAnalyticsService.compareAccountsBetweenPeriods(
+      facilityId,
+      period1,
+      period2,
+    );
+
+    return {
+      success: true,
+      data: comparison,
+    };
+  }
+
+  @Get('analytics/gl-summary/:period')
+  @ApiOperation({ summary: 'Get aggregated GL data for a period' })
+  async getGLSummary(
+    @Param('period') period: string,
+    @Request() req: any,
+  ) {
+    const facilityId = req?.user?.facilityId;
+
+    const summary = await this.glAnalyticsService.getAggregatedGLData(
+      facilityId,
+      period,
+    );
+
+    return {
+      success: true,
+      data: summary,
+    };
+  }
+
+  @Get('analytics/top-accounts/:period')
+  @ApiOperation({ summary: 'Get top accounts by debit/credit volume' })
+  @ApiQuery({ name: 'limit', required: false, example: '10' })
+  async getTopAccountsByVolume(
+    @Param('period') period: string,
+    @Request() req: any,
+    @Query('limit') limit?: string,
+  ) {
+    const facilityId = req?.user?.facilityId;
+
+    const topAccounts = await this.glAnalyticsService.getTopAccountsByVolume(
+      facilityId,
+      period,
+      limit ? parseInt(limit) : 10,
+    );
+
+    return {
+      success: true,
+      data: topAccounts,
+    };
+  }
+
+  // ============ REVENUE & EXPENSE ============
+
+  @Get('revenue-expense/:period')
+  @ApiOperation({ summary: 'Get revenue and expense summary for a period' })
+  async getRevenueExpenseSummary(
+    @Param('period') period: string,
+    @Request() req: any,
+  ) {
+    const facilityId = req?.user?.facilityId;
+
+    const summary = await this.revenueExpenseService.getRevenueExpenseSummary(
+      facilityId,
+      period,
+    );
+
+    return {
+      success: true,
+      data: summary,
+    };
+  }
+
+  @Get('revenue-expense/by-cost-center/:period')
+  @ApiOperation({ summary: 'Get revenue breakdown by cost center' })
+  async getRevenueByCC(
+    @Param('period') period: string,
+    @Request() req: any,
+  ) {
+    const facilityId = req?.user?.facilityId;
+
+    const breakdown = await this.revenueExpenseService.getRevenueByCostCenter(
+      facilityId,
+      period,
+    );
+
+    return {
+      success: true,
+      data: breakdown,
+    };
+  }
+
+  @Get('expense/by-cost-center/:period')
+  @ApiOperation({ summary: 'Get expense breakdown by cost center' })
+  async getExpenseByCC(
+    @Param('period') period: string,
+    @Request() req: any,
+  ) {
+    const facilityId = req?.user?.facilityId;
+
+    const breakdown = await this.revenueExpenseService.getExpenseByCostCenter(
+      facilityId,
+      period,
+    );
+
+    return {
+      success: true,
+      data: breakdown,
+    };
+  }
+
+  @Get('revenue-expense/by-account-type/:period')
+  @ApiOperation({ summary: 'Get revenue/expense analysis by account type' })
+  async getRevenueExpenseByAccountType(
+    @Param('period') period: string,
+    @Request() req: any,
+  ) {
+    const facilityId = req?.user?.facilityId;
+
+    const analysis = await this.revenueExpenseService.getRevenueByAccountType(
+      facilityId,
+      period,
+    );
+
+    return {
+      success: true,
+      data: analysis,
+    };
+  }
+
+  @Get('revenue-expense/top-revenue/:period')
+  @ApiOperation({ summary: 'Get top revenue accounts' })
+  @ApiQuery({ name: 'limit', required: false, example: '10' })
+  async getTopRevenueAccounts(
+    @Param('period') period: string,
+    @Request() req: any,
+    @Query('limit') limit?: string,
+  ) {
+    const facilityId = req?.user?.facilityId;
+
+    const accounts = await this.revenueExpenseService.getTopRevenueAccounts(
+      facilityId,
+      period,
+      limit ? parseInt(limit) : 10,
+    );
+
+    return {
+      success: true,
+      data: accounts,
+    };
+  }
+
+  @Get('revenue-expense/top-expense/:period')
+  @ApiOperation({ summary: 'Get top expense accounts' })
+  @ApiQuery({ name: 'limit', required: false, example: '10' })
+  async getTopExpenseAccounts(
+    @Param('period') period: string,
+    @Request() req: any,
+    @Query('limit') limit?: string,
+  ) {
+    const facilityId = req?.user?.facilityId;
+
+    const accounts = await this.revenueExpenseService.getTopExpenseAccounts(
+      facilityId,
+      period,
+      limit ? parseInt(limit) : 10,
+    );
+
+    return {
+      success: true,
+      data: accounts,
+    };
+  }
+
+  // ============ BUDGET VARIANCE ============
+
+  @Get('budget-variance/:period')
+  @ApiOperation({ summary: 'Get budget variance summary for a period' })
+  async getBudgetVarianceSummary(
+    @Param('period') period: string,
+    @Request() req: any,
+  ) {
+    const facilityId = req?.user?.facilityId;
+
+    const summary = await this.budgetVarianceService.getBudgetVarianceSummary(
+      facilityId,
+      period,
+    );
+
+    return {
+      success: true,
+      data: summary,
+    };
+  }
+
+  @Get('budget-variance/detailed/:period')
+  @ApiOperation({ summary: 'Get detailed budget variance for each account' })
+  async getDetailedVariances(
+    @Param('period') period: string,
+    @Request() req: any,
+  ) {
+    const facilityId = req?.user?.facilityId;
+
+    const variances = await this.budgetVarianceService.getDetailedVariances(
+      facilityId,
+      period,
+    );
+
+    return {
+      success: true,
+      data: variances,
+    };
+  }
+
+  @Get('budget-variance/by-cost-center/:period')
+  @ApiOperation({ summary: 'Get budget vs actual by cost center' })
+  async getBudgetByCC(
+    @Param('period') period: string,
+    @Request() req: any,
+  ) {
+    const facilityId = req?.user?.facilityId;
+
+    const analysis = await this.budgetVarianceService.getBudgetByCostCenter(
+      facilityId,
+      period,
+    );
+
+    return {
+      success: true,
+      data: analysis,
+    };
+  }
+
+  @Get('budget-variance/by-account-type/:period')
+  @ApiOperation({ summary: 'Get budget variance by account type' })
+  async getBudgetVarianceByAccountType(
+    @Param('period') period: string,
+    @Request() req: any,
+  ) {
+    const facilityId = req?.user?.facilityId;
+
+    const analysis = await this.budgetVarianceService.getBudgetByAccountType(
+      facilityId,
+      period,
+    );
+
+    return {
+      success: true,
+      data: analysis,
+    };
+  }
+
+  @Get('budget-variance/over-budget/:period')
+  @ApiOperation({ summary: 'Get accounts significantly over budget' })
+  @ApiQuery({ name: 'threshold', required: false, example: '10' })
+  async getOverBudgetAccounts(
+    @Param('period') period: string,
+    @Request() req: any,
+    @Query('threshold') threshold?: string,
+  ) {
+    const facilityId = req?.user?.facilityId;
+
+    const accounts = await this.budgetVarianceService.getOverBudgetAccounts(
+      facilityId,
+      period,
+      threshold ? parseInt(threshold) : 10,
+    );
+
+    return {
+      success: true,
+      data: accounts,
+    };
+  }
+
+  @Get('budget-variance/under-budget/:period')
+  @ApiOperation({ summary: 'Get accounts significantly under budget' })
+  @ApiQuery({ name: 'threshold', required: false, example: '10' })
+  async getUnderBudgetAccounts(
+    @Param('period') period: string,
+    @Request() req: any,
+    @Query('threshold') threshold?: string,
+  ) {
+    const facilityId = req?.user?.facilityId;
+
+    const accounts = await this.budgetVarianceService.getUnderBudgetAccounts(
+      facilityId,
+      period,
+      threshold ? parseInt(threshold) : 10,
+    );
+
+    return {
+      success: true,
+      data: accounts,
+    };
+  }
+
+  @Get('budget-variance/burn-rate/:period')
+  @ApiOperation({ summary: 'Get budget burn rate for a period' })
+  async getBudgetBurnRate(
+    @Param('period') period: string,
+    @Request() req: any,
+  ) {
+    const facilityId = req?.user?.facilityId;
+
+    const burnRate = await this.budgetVarianceService.getBudgetBurnRate(
+      facilityId,
+      period,
+    );
+
+    return {
+      success: true,
+      data: burnRate,
+    };
+  }
+
+  // ============ REPORT GENERATION ============
+
+  @Get('reports/standard')
+  @ApiOperation({ summary: 'Get list of standard reports' })
+  async getStandardReports() {
+    const reports = this.reportGeneratorService.getStandardReports();
+
+    return {
+      success: true,
+      data: reports,
+    };
+  }
+
+  @Post('reports/generate')
+  @ApiOperation({ summary: 'Generate a report (trial balance, income statement, etc.)' })
+  async generateReport(
+    @Body() dto: GenerateReportDto,
+    @Request() req: any,
+  ) {
+    const facilityId = req?.user?.facilityId;
+
+    let report;
+    switch (dto.reportType) {
+      case 'trial-balance':
+        report = await this.reportGeneratorService.generateTrialBalanceReport(
+          facilityId,
+          dto.period,
+        );
+        break;
+      case 'income-statement':
+        report = await this.reportGeneratorService.generateIncomeStatement(
+          facilityId,
+          dto.period,
+        );
+        break;
+      case 'balance-sheet':
+        report = await this.reportGeneratorService.generateBalanceSheet(
+          facilityId,
+          dto.period,
+        );
+        break;
+      case 'variance':
+        report = await this.reportGeneratorService.generateVarianceReport(
+          facilityId,
+          dto.period,
+          dto.budget,
+        );
+        break;
+      default:
+        throw new Error(`Unknown report type: ${dto.reportType}`);
+    }
+
+    return {
+      success: true,
+      data: report,
+    };
+  }
+
+  @Post('reports/export-csv')
+  @ApiOperation({ summary: 'Export report to CSV format' })
+  async exportReportCSV(
+    @Body() dto: GenerateReportDto,
+    @Request() req: any,
+  ) {
+    const facilityId = req?.user?.facilityId;
+
+    let report;
+    switch (dto.reportType) {
+      case 'trial-balance':
+        report = await this.reportGeneratorService.generateTrialBalanceReport(
+          facilityId,
+          dto.period,
+        );
+        break;
+      case 'income-statement':
+        report = await this.reportGeneratorService.generateIncomeStatement(
+          facilityId,
+          dto.period,
+        );
+        break;
+      case 'balance-sheet':
+        report = await this.reportGeneratorService.generateBalanceSheet(
+          facilityId,
+          dto.period,
+        );
+        break;
+      case 'variance':
+        report = await this.reportGeneratorService.generateVarianceReport(
+          facilityId,
+          dto.period,
+          dto.budget,
+        );
+        break;
+      default:
+        throw new Error(`Unknown report type: ${dto.reportType}`);
+    }
+
+    const csv = await this.reportGeneratorService.exportToCSV(report);
+
+    return {
+      success: true,
+      data: csv,
+      fileName: `${report.reportName}-${new Date().getTime()}.csv`,
     };
   }
 }
