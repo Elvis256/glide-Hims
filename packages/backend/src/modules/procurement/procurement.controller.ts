@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Put, Body, Param, Query, Request, UseGuards } from '@nestjs/common';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { ProcurementService } from './procurement.service';
+import { ProcurementGLIntegrationService } from './procurement-gl-integration.service';
 import {
   CreatePurchaseRequestDto,
   CreatePRItemDto,
@@ -13,6 +14,11 @@ import {
   InspectGRNDto,
   CreateGRNFromPODto,
 } from './dto/procurement.dto';
+import {
+  PostReceiptToGLDto,
+  EncumbranceDto,
+  ThreeWayMatchDto,
+} from './dto/procurement-gl-integration.dto';
 import { PRStatus, PRPriority } from '../../database/entities/purchase-request.entity';
 import { POStatus } from '../../database/entities/purchase-order.entity';
 import { GRNStatus } from '../../database/entities/goods-receipt.entity';
@@ -23,7 +29,10 @@ import { ModuleGuard } from '../auth/guards/module.guard';
 @RequireModule('stores')
 @Controller('procurement')
 export class ProcurementController {
-  constructor(private readonly procurementService: ProcurementService) {}
+  constructor(
+    private readonly procurementService: ProcurementService,
+    private readonly glIntegrationService: ProcurementGLIntegrationService,
+  ) {}
 
   // ============ DASHBOARD ============
 
@@ -284,5 +293,65 @@ export class ProcurementController {
   @AuthWithPermissions('procurement.update')
   postGoodsReceipt(@Param('id') id: string, @Request() req: any) {
     return this.procurementService.postGoodsReceipt(id, req.user.id, req.user?.tenantId);
+  }
+
+  // ============ GL INTEGRATION ============
+
+  @Post('grn/:id/post-to-gl')
+  @AuthWithPermissions('procurement.post_to_gl')
+  async postGRNToGL(@Param('id') id: string, @Request() req: any) {
+    return this.glIntegrationService.postGRNReceiptToGL(id, req.user.id);
+  }
+
+  @Get('budget/encumbrances')
+  @AuthWithPermissions('procurement.read')
+  async getEncumbrances() {
+    return this.glIntegrationService.getIntegrationSummary();
+  }
+
+  @Get('budget/encumbrances/:departmentId')
+  @AuthWithPermissions('procurement.read')
+  async getDepartmentEncumbrances(@Param('departmentId') departmentId: string) {
+    return this.glIntegrationService.getDepartmentEncumbrances(departmentId);
+  }
+
+  @Post('po/:id/encumber')
+  @AuthWithPermissions('procurement.create')
+  async encumberBudget(
+    @Param('id') poId: string,
+    @Body() dto: EncumbranceDto,
+    @Request() req: any,
+  ) {
+    return this.glIntegrationService.encumberBudgetForPO(poId, dto.departmentId);
+  }
+
+  @Get('reconciliation/three-way-match')
+  @AuthWithPermissions('procurement.read')
+  async getThreeWayMatches(
+    @Query('poId') poId: string,
+    @Query('grnId') grnId: string,
+    @Query('invoiceId') invoiceId: string,
+  ) {
+    return this.glIntegrationService.validateThreeWayMatch(poId, grnId, invoiceId);
+  }
+
+  @Get('gl-integration/summary')
+  @AuthWithPermissions('procurement.read')
+  async getGLIntegrationSummary() {
+    return this.glIntegrationService.getIntegrationSummary();
+  }
+
+  @Get('reconciliation/report')
+  @AuthWithPermissions('procurement.read')
+  async getReconciliationReport(
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @Query('departmentId') departmentId?: string,
+  ) {
+    return this.glIntegrationService.getReconciliationReport(
+      new Date(startDate),
+      new Date(endDate),
+      departmentId,
+    );
   }
 }

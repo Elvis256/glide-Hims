@@ -5,6 +5,7 @@ import { ApprovalDashboardController } from './approval-dashboard.controller';
 import { ProcurementService } from './procurement.service';
 import { SupplierRiskService } from './supplier-risk.service';
 import { ApprovalDashboardService } from './approval-dashboard.service';
+import { ProcurementGLIntegrationService } from './procurement-gl-integration.service';
 import {
   PurchaseRequest,
   PurchaseRequestItem,
@@ -17,6 +18,8 @@ import { Supplier } from '../../database/entities/supplier.entity';
 import { VendorQuotation } from '../../database/entities/rfq.entity';
 import { ProcurementApprovalThreshold } from '../../database/entities/procurement-approval-threshold.entity';
 import { ProcurementApprovalChain } from '../../database/entities/procurement-approval-chain.entity';
+import { ChartOfAccount } from '../../database/entities/chart-of-account.entity';
+import { JournalEntry } from '../../database/entities/journal-entry.entity';
 import { FinanceModule } from '../finance/finance.module';
 import { UsersModule } from '../users/users.module';
 import { ComplianceModule } from '../compliance/compliance.module';
@@ -38,13 +41,25 @@ import { ComplianceModule } from '../compliance/compliance.module';
       Item,
       ProcurementApprovalThreshold,
       ProcurementApprovalChain,
+      ChartOfAccount,
+      JournalEntry,
     ]),
     forwardRef(() => FinanceModule),
     forwardRef(() => UsersModule),
     forwardRef(() => ComplianceModule),
   ],
   controllers: [ProcurementController, ApprovalDashboardController],
-  providers: [ProcurementService, SupplierRiskService, ApprovalDashboardService],
-  exports: [ProcurementService, SupplierRiskService, ApprovalDashboardService],
+  providers: [
+    ProcurementService,
+    SupplierRiskService,
+    ApprovalDashboardService,
+    ProcurementGLIntegrationService,
+  ],
+  exports: [
+    ProcurementService,
+    SupplierRiskService,
+    ApprovalDashboardService,
+    ProcurementGLIntegrationService,
+  ],
 })
 export class ProcurementModule {}
