@@ -509,104 +509,148 @@ export class ProcurementService {
     userId: string,
     tenantId?: string,
   ): Promise<PurchaseOrder> {
-    // Validate facility exists
-    const facilityRepo = this.dataSource.getRepository('Facility');
-    const facilityWhere: any = { id: dto.facilityId };
-    if (tenantId) facilityWhere.tenantId = tenantId;
-    const facility = await facilityRepo.findOne({ where: facilityWhere });
-    if (!facility) {
-      throw new BadRequestException('Facility not found or does not belong to this tenant');
-    }
+    return this.dataSource.transaction(async (manager) => {
+      const facilityRepo = manager.getRepository('Facility');
+      const deptRepo = manager.getRepository('Department');
+      const poRepo = manager.getRepository(PurchaseOrder);
+      const poItemRepo = manager.getRepository(PurchaseOrderItem);
+      const chainRepo = manager.getRepository(ProcurementApprovalChain);
 
-    // Validate department exists (if provided for direct PO)
-    if (dto.departmentId) {
-      const deptRepo = this.dataSource.getRepository('Department');
-      const deptWhere: any = { id: dto.departmentId };
-      if (tenantId) deptWhere.tenantId = tenantId;
-      const department = await deptRepo.findOne({ where: deptWhere });
-      if (!department) {
-        throw new BadRequestException('Department not found or does not belong to this tenant');
+      // Validate facility exists
+      const facilityWhere: any = { id: dto.facilityId };
+      if (tenantId) facilityWhere.tenantId = tenantId;
+      const facility = await facilityRepo.findOne({ where: facilityWhere });
+      if (!facility) {
+        throw new BadRequestException('Facility not found or does not belong to this tenant');
       }
-    }
 
-    // Verify supplier is active before creating PO
-    const supplier = await this.supplierRepo.findOne({
-      where: { id: dto.supplierId, ...(tenantId ? { tenantId } : {}) },
-    });
-    if (!supplier) throw new NotFoundException('Supplier not found');
-    if (supplier.status !== SupplierStatus.ACTIVE) {
-      throw new BadRequestException(
-        `Cannot create PO for ${supplier.status} supplier. Only active suppliers are allowed.`,
+      // Validate department exists (if provided for direct PO)
+      if (dto.departmentId) {
+        const deptWhere: any = { id: dto.departmentId };
+        if (tenantId) deptWhere.tenantId = tenantId;
+        const department = await deptRepo.findOne({ where: deptWhere });
+        if (!department) {
+          throw new BadRequestException('Department not found or does not belong to this tenant');
+        }
+      }
+
+      // Verify supplier is active before creating PO
+      const supplier = await this.supplierRepo.findOne({
+        where: { id: dto.supplierId, ...(tenantId ? { tenantId } : {}) },
+      });
+      if (!supplier) throw new NotFoundException('Supplier not found');
+      if (supplier.status !== SupplierStatus.ACTIVE) {
+        throw new BadRequestException(
+          `Cannot create PO for ${supplier.status} supplier. Only active suppliers are allowed.`,
+        );
+      }
+
+      const orderNumber = await this.generatePONumber(dto.facilityId, tenantId);
+
+      // Calculate totals
+      let subtotal = 0;
+      let taxAmount = 0;
+      let discountAmount = 0;
+
+      const itemsWithTotals = dto.items.map((item) => {
+        const lineGross = item.quantityOrdered * item.unitPrice;
+        const lineDiscount = (lineGross * (item.discountPercent || 0)) / 100;
+        const lineNet = lineGross - lineDiscount;
+        const lineTax = (lineNet * (item.taxRate || 0)) / 100;
+        const lineTotal = lineNet + lineTax;
+
+        subtotal += lineNet;
+        taxAmount += lineTax;
+        discountAmount += lineDiscount;
+
+        return { ...item, lineTotal };
+      });
+
+      const totalAmount = subtotal + taxAmount;
+
+      // Phase 2: Budget Validation for Direct PO
+      try {
+        await this.budgetService.validateBudgetSufficient(dto.facilityId, totalAmount, tenantId);
+      } catch (error) {
+        if (error instanceof BadRequestException) {
+          throw error;
+        }
+        // Log but don't fail if budget service unavailable (graceful degradation)
+        this.logger.warn(
+          `Budget validation skipped for PO ${orderNumber}: ${error.message}`,
+        );
+      }
+
+      const po = poRepo.create({
+        orderNumber,
+        facilityId: dto.facilityId,
+        departmentId: dto.departmentId,
+        costCenterId: dto.costCenterId,
+        supplierId: dto.supplierId,
+        purchaseRequestId: dto.purchaseRequestId,
+        orderDate: dto.orderDate ? new Date(dto.orderDate) : new Date(),
+        expectedDelivery: dto.expectedDelivery ? new Date(dto.expectedDelivery) : undefined,
+        paymentTerms: dto.paymentTerms,
+        deliveryAddress: dto.deliveryAddress,
+        subtotal,
+        taxAmount,
+        discountAmount,
+        totalAmount,
+        terms: dto.terms,
+        notes: dto.notes,
+        emergencyJustification: dto.emergencyJustification,
+        status: POStatus.DRAFT,
+        createdById: userId,
+        createdFrom: 'manual',
+        ...(tenantId ? { tenantId } : {}),
+      });
+
+      const savedPO = await poRepo.save(po);
+
+      // Create items
+      const items = itemsWithTotals.map((item) =>
+        poItemRepo.create({
+          purchaseOrderId: (savedPO as PurchaseOrder).id,
+          itemId: item.itemId,
+          itemCode: item.itemCode,
+          itemName: item.itemName,
+          itemUnit: item.itemUnit || 'unit',
+          quantityOrdered: item.quantityOrdered,
+          unitPrice: item.unitPrice,
+          taxRate: item.taxRate || 0,
+          discountPercent: item.discountPercent || 0,
+          lineTotal: item.lineTotal,
+          notes: item.notes,
+        }),
       );
-    }
 
-    const orderNumber = await this.generatePONumber(dto.facilityId, tenantId);
+      await poItemRepo.save(items);
 
-    // Calculate totals
-    let subtotal = 0;
-    let taxAmount = 0;
-    let discountAmount = 0;
+      // Phase 2: Create Approval Chain based on amount thresholds
+      const thresholds = await this.getApprovalThreshold(dto.facilityId, tenantId);
+      const approvalsNeeded = this.calculateApprovalLevel(totalAmount, thresholds);
 
-    const itemsWithTotals = dto.items.map((item) => {
-      const lineGross = item.quantityOrdered * item.unitPrice;
-      const lineDiscount = (lineGross * (item.discountPercent || 0)) / 100;
-      const lineNet = lineGross - lineDiscount;
-      const lineTax = (lineNet * (item.taxRate || 0)) / 100;
-      const lineTotal = lineNet + lineTax;
+      if (approvalsNeeded > 1) {
+        // Create sequential approval chain for multi-level approvals
+        const chainEntries = [];
+        for (let level = 1; level <= approvalsNeeded; level++) {
+          chainEntries.push({
+            documentId: (savedPO as PurchaseOrder).id,
+            documentType: 'PO',
+            approvalLevel: level,
+            requiredRole: this.getRoleForLevel(level),
+            status: ApprovalChainStatus.PENDING,
+            tenantId,
+          });
+        }
+        await chainRepo.save(chainEntries);
+        this.logger.log(
+          `Created ${approvalsNeeded}-level approval chain for PO ${orderNumber} (amount: $${totalAmount})`,
+        );
+      }
 
-      subtotal += lineNet;
-      taxAmount += lineTax;
-      discountAmount += lineDiscount;
-
-      return { ...item, lineTotal };
+      return this.getPurchaseOrder((savedPO as PurchaseOrder).id, tenantId);
     });
-
-    const po = this.poRepo.create({
-      orderNumber,
-      facilityId: dto.facilityId,
-      departmentId: dto.departmentId,
-      costCenterId: dto.costCenterId,
-      supplierId: dto.supplierId,
-      purchaseRequestId: dto.purchaseRequestId,
-      orderDate: dto.orderDate ? new Date(dto.orderDate) : new Date(),
-      expectedDelivery: dto.expectedDelivery ? new Date(dto.expectedDelivery) : undefined,
-      paymentTerms: dto.paymentTerms,
-      deliveryAddress: dto.deliveryAddress,
-      subtotal,
-      taxAmount,
-      discountAmount,
-      totalAmount: subtotal + taxAmount,
-      terms: dto.terms,
-      notes: dto.notes,
-      emergencyJustification: dto.emergencyJustification,
-      status: POStatus.DRAFT,
-      createdById: userId,
-      createdFrom: 'manual',
-      ...(tenantId ? { tenantId } : {}),
-    });
-
-    const savedPO = await this.poRepo.save(po);
-
-    // Create items
-    const items = itemsWithTotals.map((item) =>
-      this.poItemRepo.create({
-        purchaseOrderId: (savedPO as PurchaseOrder).id,
-        itemId: item.itemId,
-        itemCode: item.itemCode,
-        itemName: item.itemName,
-        itemUnit: item.itemUnit || 'unit',
-        quantityOrdered: item.quantityOrdered,
-        unitPrice: item.unitPrice,
-        taxRate: item.taxRate || 0,
-        discountPercent: item.discountPercent || 0,
-        lineTotal: item.lineTotal,
-        notes: item.notes,
-      }),
-    );
-
-    await this.poItemRepo.save(items);
-
-    return this.getPurchaseOrder((savedPO as PurchaseOrder).id);
   }
 
   async createPOFromPR(
