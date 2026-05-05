@@ -2,6 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ProcurementController } from './procurement.controller';
 import { ProcurementService } from './procurement.service';
+import { SupplierRiskService } from './supplier-risk.service';
 import {
   PurchaseRequest,
   PurchaseRequestItem,
@@ -41,7 +42,7 @@ import { ComplianceModule } from '../compliance/compliance.module';
     forwardRef(() => ComplianceModule),
   ],
   controllers: [ProcurementController],
-  providers: [ProcurementService],
-  exports: [ProcurementService],
+  providers: [ProcurementService, SupplierRiskService],
+  exports: [ProcurementService, SupplierRiskService],
 })
 export class ProcurementModule {}

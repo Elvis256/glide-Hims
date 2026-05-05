@@ -56,6 +56,7 @@ import { FinanceService } from '../finance/finance.service';
 import { BudgetService } from '../finance/budget.service';
 import { UsersService } from '../users/users.service';
 import { AuditService } from '../compliance/audit.service';
+import { SupplierRiskService } from './supplier-risk.service';
 import { InvoiceMatch } from '../../database/entities/invoice-match.entity';
 import { ProcurementApprovalThreshold } from '../../database/entities/procurement-approval-threshold.entity';
 import {
@@ -103,6 +104,7 @@ export class ProcurementService {
     private usersService: UsersService,
     @Inject(forwardRef(() => AuditService))
     private auditService: AuditService,
+    private supplierRiskService: SupplierRiskService,
     private dataSource: DataSource,
   ) {}
 
@@ -759,6 +761,35 @@ export class ProcurementService {
         // Log but don't fail if budget service unavailable (graceful degradation)
         this.logger.warn(
           `Budget validation skipped for PO ${orderNumber}: ${error.message}`,
+        );
+      }
+
+      // Phase 3: Supplier Risk Validation
+      const { allowed: supplierAllowed, warnings: supplierWarnings } =
+        await this.supplierRiskService.validateSupplierForOrder(
+          dto.supplierId,
+          dto.facilityId,
+          totalAmount,
+          tenantId,
+        );
+
+      if (!supplierAllowed) {
+        throw new BadRequestException(
+          `Cannot create PO: ${supplierWarnings.join('; ')}`,
+        );
+      }
+
+      if (supplierWarnings.length > 0) {
+        this.logger.warn(
+          `Supplier risk warnings for PO ${orderNumber}: ${supplierWarnings.join('; ')}`,
+        );
+      }
+
+      // Check for RFQ requirement
+      const rfqRequired = this.supplierRiskService.isRFQRequired(totalAmount);
+      if (rfqRequired) {
+        this.logger.warn(
+          `PO ${orderNumber} amount ($${totalAmount.toLocaleString()}) exceeds RFQ threshold. Competitive bidding recommended.`,
         );
       }
 
