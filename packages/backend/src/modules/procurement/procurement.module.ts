@@ -16,6 +16,7 @@ import { ProcurementApprovalThreshold } from '../../database/entities/procuremen
 import { ProcurementApprovalChain } from '../../database/entities/procurement-approval-chain.entity';
 import { FinanceModule } from '../finance/finance.module';
 import { UsersModule } from '../users/users.module';
+import { ComplianceModule } from '../compliance/compliance.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { UsersModule } from '../users/users.module';
     ]),
     forwardRef(() => FinanceModule),
     forwardRef(() => UsersModule),
+    forwardRef(() => ComplianceModule),
   ],
   controllers: [ProcurementController],
   providers: [ProcurementService],
