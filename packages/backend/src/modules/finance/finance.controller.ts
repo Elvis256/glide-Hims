@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Patch,
   Delete,
   Body,
@@ -14,6 +15,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { FinanceService } from './finance.service';
+import { FinanceApprovalService } from './finance-approval.service';
 import { SystemSettingsService } from '../system-settings/system-settings.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import {
@@ -28,6 +30,12 @@ import {
   UpdateExchangeRateDto,
   ReverseJournalEntryDto,
 } from './dto/finance.dto';
+import {
+  SubmitJournalEntryForApprovalDto,
+  ApproveJournalEntryDto,
+  RejectJournalEntryDto,
+  PostJournalEntryDto,
+} from './dto/finance-approval.dto';
 import { AccountType } from '../../database/entities/chart-of-account.entity';
 import { JournalStatus } from '../../database/entities/journal-entry.entity';
 import { RequireModule } from '../auth/decorators/module.decorator';
@@ -45,6 +53,7 @@ const EXCHANGE_RATES_KEY = 'finance_exchange_rates';
 export class FinanceController {
   constructor(
     private readonly financeService: FinanceService,
+    private readonly financeApprovalService: FinanceApprovalService,
     private readonly settingsService: SystemSettingsService,
   ) {}
 
@@ -663,5 +672,160 @@ export class FinanceController {
       endDate,
       req?.user?.tenantId,
     );
+  }
+
+  // ==================== Finance Approval Workflow (Phase 2A) ====================
+
+  /**
+   * Submit journal entry for approval workflow
+   * Entry must be in DRAFT status
+   * Creates approval chain based on entry amount
+   */
+  @Put('journal-entries/:id/submit')
+  @ApiOperation({ summary: 'Submit journal entry for approval' })
+  async submitForApproval(
+    @Param('id', ParseUUIDPipe) journalEntryId: string,
+    @Body() dto: SubmitJournalEntryForApprovalDto,
+    @Request() req: any,
+  ) {
+    const approvalChain = await this.financeApprovalService.submitForApproval(
+      journalEntryId,
+      req.user.id,
+      req.user.tenantId,
+      req.user.facilityId,
+      dto.comments,
+    );
+
+    return {
+      success: true,
+      data: approvalChain,
+      message: 'Entry submitted for approval',
+    };
+  }
+
+  /**
+   * Get pending approvals for current user's role
+   * Returns all SUBMITTED entries awaiting this user's role approval
+   */
+  @Get('approvals/pending')
+  @ApiOperation({ summary: 'Get pending approvals for user' })
+  @ApiQuery({ name: 'role', required: false, description: 'Filter by role (uses user role if not provided)' })
+  @ApiQuery({ name: 'facilityId', required: false, description: 'Filter by facility' })
+  async getPendingApprovalsForRole(
+    @Query('role') role?: string,
+    @Query('facilityId') facilityId?: string,
+    @Request() req?: any,
+  ) {
+    const userRole = role || req?.user?.roles?.[0]?.name;
+    const userFacilityId = facilityId || req?.user?.facilityId;
+
+    const pending = await this.financeApprovalService.getPendingApprovalsForRole(
+      userRole,
+      userFacilityId,
+      req?.user?.tenantId,
+    );
+
+    return {
+      success: true,
+      data: pending,
+      count: pending.length,
+    };
+  }
+
+  /**
+   * Approve journal entry at current approval level
+   * If all levels approved, entry becomes APPROVED and ready to post
+   */
+  @Put('journal-entries/:id/approve')
+  @ApiOperation({ summary: 'Approve journal entry at current level' })
+  async approveJournalEntry(
+    @Param('id', ParseUUIDPipe) journalEntryId: string,
+    @Body() dto: ApproveJournalEntryDto,
+    @Request() req: any,
+  ) {
+    const approval = await this.financeApprovalService.approveAtLevel(
+      journalEntryId,
+      req.user.id,
+      req.user.roles?.[0]?.name,
+      req.user.tenantId,
+      dto.comments,
+    );
+
+    return {
+      success: true,
+      data: approval,
+      message: 'Entry approved',
+    };
+  }
+
+  /**
+   * Reject journal entry
+   * Marks all approval levels as rejected and entry returns to DRAFT
+   */
+  @Put('journal-entries/:id/reject')
+  @ApiOperation({ summary: 'Reject journal entry' })
+  async rejectJournalEntry(
+    @Param('id', ParseUUIDPipe) journalEntryId: string,
+    @Body() dto: RejectJournalEntryDto,
+    @Request() req: any,
+  ) {
+    await this.financeApprovalService.rejectAtLevel(
+      journalEntryId,
+      req.user.id,
+      req.user.roles?.[0]?.name,
+      dto.rejectionReason,
+      req.user.tenantId,
+    );
+
+    return {
+      success: true,
+      message: 'Entry rejected and returned to draft',
+    };
+  }
+
+  /**
+   * Get approval history for a journal entry
+   * Shows full chain of approvals with timestamps and comments
+   */
+  @Get('journal-entries/:id/approval-history')
+  @ApiOperation({ summary: 'Get approval history for entry' })
+  async getApprovalHistory(
+    @Param('id', ParseUUIDPipe) journalEntryId: string,
+  ) {
+    const history = await this.financeApprovalService.getApprovalHistory(journalEntryId);
+
+    return {
+      success: true,
+      data: history,
+      count: history.length,
+    };
+  }
+
+  /**
+   * Get escalation candidates (entries pending >5 days)
+   * Used for admin notifications and follow-ups
+   */
+  @Get('approvals/escalations')
+  @ApiOperation({ summary: 'Get escalation candidates (pending >5 days)' })
+  @ApiQuery({ name: 'facilityId', required: false })
+  @ApiQuery({ name: 'days', required: false, example: 5 })
+  async getEscalationCandidates(
+    @Query('facilityId') facilityId?: string,
+    @Query('days') days?: string,
+    @Request() req?: any,
+  ) {
+    const userFacilityId = facilityId || req?.user?.facilityId;
+    const daysPending = days ? parseInt(days, 10) : 5;
+
+    const escalations = await this.financeApprovalService.getEscalationCandidates(
+      userFacilityId,
+      daysPending,
+    );
+
+    return {
+      success: true,
+      data: escalations,
+      count: escalations.length,
+    };
   }
 }
