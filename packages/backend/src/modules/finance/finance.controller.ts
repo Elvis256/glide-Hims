@@ -16,6 +16,8 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { FinanceService } from './finance.service';
 import { FinanceApprovalService } from './finance-approval.service';
+import { TrialBalanceService } from './trial-balance.service';
+import { GLReconciliationService } from './gl-reconciliation.service';
 import { SystemSettingsService } from '../system-settings/system-settings.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import {
@@ -36,6 +38,12 @@ import {
   RejectJournalEntryDto,
   PostJournalEntryDto,
 } from './dto/finance-approval.dto';
+import {
+  GetTrialBalanceQueryDto,
+  GetReconciliationStatusQueryDto,
+  ComparePeriodQueryDto,
+  MarkAccountReconciledDto,
+} from './dto/trial-balance.dto';
 import { AccountType } from '../../database/entities/chart-of-account.entity';
 import { JournalStatus } from '../../database/entities/journal-entry.entity';
 import { RequireModule } from '../auth/decorators/module.decorator';
@@ -54,6 +62,8 @@ export class FinanceController {
   constructor(
     private readonly financeService: FinanceService,
     private readonly financeApprovalService: FinanceApprovalService,
+    private readonly trialBalanceService: TrialBalanceService,
+    private readonly glReconciliationService: GLReconciliationService,
     private readonly settingsService: SystemSettingsService,
   ) {}
 
@@ -826,6 +836,160 @@ export class FinanceController {
       success: true,
       data: escalations,
       count: escalations.length,
+    };
+  }
+
+  // ============================================
+  // TRIAL BALANCE ENDPOINTS (Phase 2B)
+  // ============================================
+
+  @Get('reports/trial-balance-analysis')
+  @ApiOperation({ summary: 'Get detailed trial balance analysis' })
+  @ApiQuery({ name: 'fiscalPeriodId', required: true })
+  async getTrialBalanceAnalysis(
+    @Query('fiscalPeriodId', new ParseUUIDPipe()) fiscalPeriodId: string,
+    @Request() req: any,
+  ) {
+    const facilityId = req?.user?.facilityId;
+
+    const trialBalance = await this.trialBalanceService.getTrialBalance(
+      facilityId,
+      fiscalPeriodId,
+    );
+
+    return {
+      success: true,
+      data: trialBalance,
+    };
+  }
+
+  @Get('trial-balance/compare')
+  @ApiOperation({ summary: 'Compare trial balance between two periods' })
+  @ApiQuery({ name: 'period1Id', required: true })
+  @ApiQuery({ name: 'period2Id', required: true })
+  async compareTrialBalance(
+    @Query('period1Id', new ParseUUIDPipe()) period1Id: string,
+    @Query('period2Id', new ParseUUIDPipe()) period2Id: string,
+    @Request() req: any,
+  ) {
+    const facilityId = req?.user?.facilityId;
+
+    const comparison = await this.trialBalanceService.comparePeriodsTrialBalance(
+      facilityId,
+      period1Id,
+      period2Id,
+    );
+
+    return {
+      success: true,
+      data: comparison,
+    };
+  }
+
+  @Get('trial-balance/reconciliation')
+  @ApiOperation({ summary: 'Get reconciliation status for accounts' })
+  @ApiQuery({ name: 'fiscalPeriodId', required: true })
+  async getReconciliationStatus(
+    @Query('fiscalPeriodId', new ParseUUIDPipe()) fiscalPeriodId: string,
+    @Request() req: any,
+  ) {
+    const facilityId = req?.user?.facilityId;
+
+    const reconciliation = await this.trialBalanceService.getReconciliationStatus(
+      facilityId,
+      fiscalPeriodId,
+    );
+
+    return {
+      success: true,
+      data: reconciliation,
+    };
+  }
+
+  @Get('trial-balance/variances')
+  @ApiOperation({ summary: 'Detect variances in trial balance' })
+  @ApiQuery({ name: 'fiscalPeriodId', required: true })
+  async detectVariances(
+    @Query('fiscalPeriodId', new ParseUUIDPipe()) fiscalPeriodId: string,
+    @Request() req: any,
+  ) {
+    const facilityId = req?.user?.facilityId;
+
+    const variances = await this.trialBalanceService.detectVariances(
+      facilityId,
+      fiscalPeriodId,
+    );
+
+    return {
+      success: true,
+      data: variances,
+      count: variances.length,
+    };
+  }
+
+  @Get('trial-balance/account/:accountId')
+  @ApiOperation({ summary: 'Get balance for specific account' })
+  @ApiQuery({ name: 'fiscalPeriodId', required: true })
+  async getAccountBalance(
+    @Param('accountId', new ParseUUIDPipe()) accountId: string,
+    @Query('fiscalPeriodId', new ParseUUIDPipe()) fiscalPeriodId: string,
+    @Request() req: any,
+  ) {
+    const facilityId = req?.user?.facilityId;
+
+    const balance = await this.trialBalanceService.getAccountBalance(
+      accountId,
+      fiscalPeriodId,
+    );
+
+    return {
+      success: true,
+      data: balance,
+    };
+  }
+
+  @Put('trial-balance/reconcile/:accountId')
+  @ApiOperation({ summary: 'Mark account as reconciled' })
+  async markAccountReconciled(
+    @Param('accountId', new ParseUUIDPipe()) accountId: string,
+    @Body() dto: MarkAccountReconciledDto,
+    @Request() req: any,
+  ) {
+    const facilityId = req?.user?.facilityId;
+    const userId = req?.user?.id;
+
+    await this.glReconciliationService.markAsReconciled(
+      accountId,
+      dto.fiscalPeriodId,
+      userId,
+      dto.notes,
+    );
+
+    return {
+      success: true,
+      message: 'Account marked as reconciled',
+    };
+  }
+
+  @Get('trial-balance/reconciliation-report/:accountId')
+  @ApiOperation({ summary: 'Get reconciliation report for an account' })
+  @ApiQuery({ name: 'fiscalPeriodId', required: true })
+  async getReconciliationReport(
+    @Param('accountId', new ParseUUIDPipe()) accountId: string,
+    @Query('fiscalPeriodId', new ParseUUIDPipe()) fiscalPeriodId: string,
+    @Request() req: any,
+  ) {
+    const facilityId = req?.user?.facilityId;
+
+    const report = await this.glReconciliationService.generateReconciliationReport(
+      accountId,
+      fiscalPeriodId,
+      facilityId,
+    );
+
+    return {
+      success: true,
+      data: report,
     };
   }
 }
