@@ -245,6 +245,7 @@ const GLTrendAnalysisPage = lazy(() => import('./pages/billing/finance/GLTrendAn
 const RevenueDashboardPage = lazy(() => import('./pages/billing/finance/RevenueDashboardPage'));
 const BudgetVsActualPage = lazy(() => import('./pages/billing/finance/BudgetVsActualPage'));
 const CustomReportBuilderPage = lazy(() => import('./pages/billing/finance/CustomReportBuilderPage'));
+const FinanceDashboard = lazy(() => import('./pages/billing/finance/FinanceDashboard'));
 const EmergencyQueuePage = lazy(() => import('./pages/emergency/EmergencyQueuePage'));
 const AmbulanceTrackingPage = lazy(() => import('./pages/emergency/AmbulanceTrackingPage'));
 const EmergencyTriagePage = lazy(() => import('./pages/emergency/EmergencyTriagePage'));
@@ -906,6 +907,7 @@ function AppRoutes() {
                 <Route path="/finance/revenue-dashboard" element={<ModuleRoute module="finance"><FinanceRoute><RevenueDashboardPage /></FinanceRoute></ModuleRoute>} />
                 <Route path="/finance/budget-vs-actual" element={<ModuleRoute module="finance"><FinanceRoute><BudgetVsActualPage /></FinanceRoute></ModuleRoute>} />
                 <Route path="/finance/custom-reports" element={<ModuleRoute module="finance"><FinanceRoute><CustomReportBuilderPage /></FinanceRoute></ModuleRoute>} />
+                <Route path="/finance/dashboard" element={<ModuleRoute module="finance"><FinanceRoute><FinanceDashboard /></FinanceRoute></ModuleRoute>} />
                 
                 {/* Emergency Module */}
                 <Route path="/emergency/queue" element={<ModuleRoute module="emergency"><ClinicalRoute><EmergencyQueuePage /></ClinicalRoute></ModuleRoute>} />
