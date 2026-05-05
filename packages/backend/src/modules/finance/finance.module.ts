@@ -16,9 +16,11 @@ import { BankReconciliationService } from './bank-reconciliation.service';
 import { BankReconciliationController } from './bank-reconciliation.controller';
 import { PettyCashService } from './petty-cash.service';
 import { PettyCashController } from './petty-cash.controller';
+import { FinanceApprovalService } from './finance-approval.service';
 import { ChartOfAccount } from '../../database/entities/chart-of-account.entity';
 import { JournalEntry } from '../../database/entities/journal-entry.entity';
 import { JournalEntryLine } from '../../database/entities/journal-entry-line.entity';
+import { FinanceApprovalChain } from '../../database/entities/finance-approval-chain.entity';
 import { FiscalPeriod } from '../../database/entities/fiscal-period.entity';
 import {
   CostCenter,
@@ -63,6 +65,7 @@ import { SystemSettingsModule } from '../system-settings/system-settings.module'
       PettyCashTransaction,
       FacilityBudget,
       BudgetReservation,
+      FinanceApprovalChain,
     ]),
     SystemSettingsModule,
   ],
@@ -85,6 +88,7 @@ import { SystemSettingsModule } from '../system-settings/system-settings.module'
     DonorFundService,
     BankReconciliationService,
     PettyCashService,
+    FinanceApprovalService,
   ],
   exports: [
     FinanceService,
@@ -95,6 +99,7 @@ import { SystemSettingsModule } from '../system-settings/system-settings.module'
     DonorFundService,
     BankReconciliationService,
     PettyCashService,
+    FinanceApprovalService,
   ],
 })
 export class FinanceModule {}

@@ -14,7 +14,10 @@ import { FiscalPeriod } from './fiscal-period.entity';
 
 export enum JournalStatus {
   DRAFT = 'draft',
+  SUBMITTED = 'submitted',
+  APPROVED = 'approved',
   POSTED = 'posted',
+  REJECTED = 'rejected',
   REVERSED = 'reversed',
 }
 
@@ -109,6 +112,32 @@ export class JournalEntry {
 
   @Column({ type: 'timestamp', nullable: true, name: 'reversed_at' })
   reversedAt: Date;
+
+  // Approval workflow fields (Finance Phase 2A)
+  @Column({ type: 'varchar', length: 20, nullable: true, name: 'approval_status' })
+  approvalStatus?: string; // 'draft', 'submitted', 'approved', 'posted', 'rejected'
+
+  @Column({ type: 'uuid', nullable: true, name: 'submitted_by_user_id' })
+  submittedByUserId?: string;
+
+  @ManyToOne(() => User)
+  @JoinColumn({ name: 'submitted_by_user_id' })
+  submittedBy?: User;
+
+  @Column({ type: 'timestamp', nullable: true, name: 'submitted_at' })
+  submittedAt?: Date;
+
+  @Column({ type: 'boolean', default: false, name: 'approval_required' })
+  approvalRequired?: boolean;
+
+  @Column({
+    type: 'decimal',
+    precision: 20,
+    scale: 2,
+    nullable: true,
+    name: 'approval_amount_threshold',
+  })
+  approvalAmountThreshold?: number;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
