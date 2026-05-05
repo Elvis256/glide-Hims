@@ -17,6 +17,8 @@ import { BankReconciliationController } from './bank-reconciliation.controller';
 import { PettyCashService } from './petty-cash.service';
 import { PettyCashController } from './petty-cash.controller';
 import { FinanceApprovalService } from './finance-approval.service';
+import { TrialBalanceService } from './trial-balance.service';
+import { GLReconciliationService } from './gl-reconciliation.service';
 import { ChartOfAccount } from '../../database/entities/chart-of-account.entity';
 import { JournalEntry } from '../../database/entities/journal-entry.entity';
 import { JournalEntryLine } from '../../database/entities/journal-entry-line.entity';
@@ -89,6 +91,8 @@ import { SystemSettingsModule } from '../system-settings/system-settings.module'
     BankReconciliationService,
     PettyCashService,
     FinanceApprovalService,
+    TrialBalanceService,
+    GLReconciliationService,
   ],
   exports: [
     FinanceService,
@@ -100,6 +104,8 @@ import { SystemSettingsModule } from '../system-settings/system-settings.module'
     BankReconciliationService,
     PettyCashService,
     FinanceApprovalService,
+    TrialBalanceService,
+    GLReconciliationService,
   ],
 })
 export class FinanceModule {}
