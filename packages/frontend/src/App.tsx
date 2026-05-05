@@ -215,6 +215,7 @@ const ClaimsPage = lazy(() => import('./pages/billing/insurance/ClaimsPage'));
 const InsuranceProvidersPage = lazy(() => import('./pages/billing/insurance/ProvidersPage'));
 const InsuranceDashboardPage = lazy(() => import('./pages/insurance/InsuranceDashboardPage'));
 const RequisitionsPage = lazy(() => import('./pages/billing/procurement/RequisitionsPage'));
+const ApprovalDashboardPage = lazy(() => import('./pages/billing/procurement/ApprovalDashboardPage'));
 const RFQPage = lazy(() => import('./pages/billing/procurement/RFQPage'));
 const CompareQuotesPage = lazy(() => import('./pages/billing/procurement/CompareQuotesPage'));
 const ApproveQuotationsPage = lazy(() => import('./pages/billing/procurement/ApproveQuotationsPage'));
@@ -368,7 +369,6 @@ const LabEquipmentPage = lazy(() => import('./pages/admin/lab/LabEquipmentPage')
 const ReagentsInventoryPage = lazy(() => import('./pages/admin/lab/ReagentsInventoryPage'));
 const LabPanelsPage = lazy(() => import('./pages/admin/lab/LabPanelsPage'));
 const ApprovalWorkflowPage = lazy(() => import('./pages/admin/procurement/ApprovalWorkflowPage'));
-const ApprovalDashboardPage = lazy(() => import('./pages/admin/procurement/ApprovalDashboardPage'));
 const BudgetManagementPage = lazy(() => import('./pages/admin/procurement/BudgetManagementPage'));
 const ProcurementPoliciesPage = lazy(() => import('./pages/admin/procurement/ProcurementPoliciesPage'));
 const ItemCategoriesPage = lazy(() => import('./pages/admin/procurement/ItemCategoriesPage'));
@@ -865,6 +865,7 @@ function AppRoutes() {
                 <Route path="/insurance/providers" element={<ModuleRoute module="billing"><InsuranceRoute><InsuranceProvidersPage /></InsuranceRoute></ModuleRoute>} />
                 
                 {/* Billing - Procurement */}
+                <Route path="/procurement/approvals" element={<ModuleRoute module="stores"><AdminRoute><ApprovalDashboardPage /></AdminRoute></ModuleRoute>} />
                 <Route path="/procurement/requisitions" element={<ModuleRoute module="stores"><StoreKeeperRoute><RequisitionsPage /></StoreKeeperRoute></ModuleRoute>} />
                 <Route path="/procurement/rfq" element={<ModuleRoute module="stores"><StoreKeeperRoute><RFQPage /></StoreKeeperRoute></ModuleRoute>} />
                 <Route path="/procurement/quotes/compare" element={<ModuleRoute module="stores"><StoreKeeperRoute><CompareQuotesPage /></StoreKeeperRoute></ModuleRoute>} />
@@ -1116,7 +1117,6 @@ function AppRoutes() {
                 
                 {/* Admin - Procurement Settings */}
                 <Route path="/admin/procurement/approvals" element={<AdminRoute><ApprovalWorkflowPage /></AdminRoute>} />
-                <Route path="/admin/procurement/dashboard" element={<AdminRoute><ApprovalDashboardPage /></AdminRoute>} />
                 <Route path="/admin/procurement/budgets" element={<AdminRoute><BudgetManagementPage /></AdminRoute>} />
                 <Route path="/admin/procurement/policies" element={<AdminRoute><ProcurementPoliciesPage /></AdminRoute>} />
                 <Route path="/admin/procurement/categories" element={<AdminRoute><ItemCategoriesPage /></AdminRoute>} />
