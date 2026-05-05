@@ -43,6 +43,7 @@ import {
 } from '../../database/entities/rfq.entity';
 import {
   CreatePurchaseRequestDto,
+  CreatePRItemDto,
   ApprovePRDto,
   RejectPRDto,
   CreatePurchaseOrderDto,
@@ -215,6 +216,151 @@ export class ProcurementService {
       this.logger.error(`Error creating PR: ${error.message}`, error.stack);
       throw error;
     }
+  }
+
+  /**
+   * Add items to a PR (only in DRAFT status)
+   * Prevents mid-workflow changes that could corrupt data
+   */
+  async addPurchaseRequestItems(
+    prId: string,
+    items: CreatePRItemDto[],
+    tenantId?: string,
+  ): Promise<PurchaseRequest> {
+    const pr = await this.getPurchaseRequest(prId, tenantId);
+    
+    if (pr.status !== PRStatus.DRAFT) {
+      throw new BadRequestException(
+        `Cannot add items to PR in ${pr.status} status. Only DRAFT PRs can be modified.`,
+      );
+    }
+
+    // Validate all new items
+    for (const item of items) {
+      if (!item.quantityRequested || item.quantityRequested <= 0) {
+        throw new BadRequestException(
+          `Item "${item.itemName || item.itemCode}" must have quantity > 0`,
+        );
+      }
+      if (item.unitPriceEstimated !== undefined && item.unitPriceEstimated < 0) {
+        throw new BadRequestException(
+          `Item "${item.itemName || item.itemCode}" cannot have a negative estimated price`,
+        );
+      }
+
+      const itemWhere: any = { id: item.itemId };
+      if (tenantId) itemWhere.tenantId = tenantId;
+      const existingItem = await this.itemRepo.findOne({ where: itemWhere });
+      if (!existingItem) {
+        throw new BadRequestException(
+          `Item "${item.itemName || item.itemCode}" (${item.itemId}) not found`,
+        );
+      }
+    }
+
+    // Add items to PR
+    const newItems = items.map((item) =>
+      this.prItemRepo.create({
+        purchaseRequestId: prId,
+        itemId: item.itemId,
+        itemCode: item.itemCode,
+        itemName: item.itemName,
+        itemUnit: item.itemUnit || 'unit',
+        quantityRequested: item.quantityRequested,
+        unitPriceEstimated: item.unitPriceEstimated || 0,
+        specifications: item.specifications,
+        notes: item.notes,
+      }),
+    );
+
+    await this.prItemRepo.save(newItems);
+
+    // Recalculate total
+    const allItems = await this.prItemRepo.find({ where: { purchaseRequestId: prId } });
+    const newTotal = allItems.reduce(
+      (sum, i) => sum + i.quantityRequested * Number(i.unitPriceEstimated || 0),
+      0,
+    );
+    pr.totalEstimated = newTotal;
+    await this.prRepo.save(pr);
+
+    this.logger.log(`Added ${items.length} items to PR ${pr.requestNumber}`);
+    return this.getPurchaseRequest(prId, tenantId);
+  }
+
+  /**
+   * Remove an item from a PR (only in DRAFT status)
+   */
+  async removePurchaseRequestItem(
+    prId: string,
+    itemId: string,
+    tenantId?: string,
+  ): Promise<PurchaseRequest> {
+    const pr = await this.getPurchaseRequest(prId, tenantId);
+
+    if (pr.status !== PRStatus.DRAFT) {
+      throw new BadRequestException(
+        `Cannot remove items from PR in ${pr.status} status. Only DRAFT PRs can be modified.`,
+      );
+    }
+
+    await this.prItemRepo.delete({ purchaseRequestId: prId, id: itemId });
+
+    // Recalculate total
+    const allItems = await this.prItemRepo.find({ where: { purchaseRequestId: prId } });
+    const newTotal = allItems.reduce(
+      (sum, i) => sum + i.quantityRequested * Number(i.unitPriceEstimated || 0),
+      0,
+    );
+    pr.totalEstimated = newTotal;
+    await this.prRepo.save(pr);
+
+    this.logger.log(`Removed item ${itemId} from PR ${pr.requestNumber}`);
+    return this.getPurchaseRequest(prId, tenantId);
+  }
+
+  /**
+   * Update item quantity/price in a PR (only in DRAFT status)
+   */
+  async updatePurchaseRequestItem(
+    prId: string,
+    itemId: string,
+    updates: { quantityRequested?: number; unitPriceEstimated?: number },
+    tenantId?: string,
+  ): Promise<PurchaseRequest> {
+    const pr = await this.getPurchaseRequest(prId, tenantId);
+
+    if (pr.status !== PRStatus.DRAFT) {
+      throw new BadRequestException(
+        `Cannot edit items in PR in ${pr.status} status. Only DRAFT PRs can be modified.`,
+      );
+    }
+
+    // Validate updates
+    if (updates.quantityRequested !== undefined && updates.quantityRequested <= 0) {
+      throw new BadRequestException('Quantity must be greater than 0');
+    }
+    if (updates.unitPriceEstimated !== undefined && updates.unitPriceEstimated < 0) {
+      throw new BadRequestException('Unit price cannot be negative');
+    }
+
+    // Update item
+    await this.prItemRepo.update(
+      { purchaseRequestId: prId, id: itemId },
+      updates,
+    );
+
+    // Recalculate total
+    const allItems = await this.prItemRepo.find({ where: { purchaseRequestId: prId } });
+    const newTotal = allItems.reduce(
+      (sum, i) => sum + i.quantityRequested * Number(i.unitPriceEstimated || 0),
+      0,
+    );
+    pr.totalEstimated = newTotal;
+    await this.prRepo.save(pr);
+
+    this.logger.log(`Updated item ${itemId} in PR ${pr.requestNumber}`);
+    return this.getPurchaseRequest(prId, tenantId);
   }
 
   async getPurchaseRequest(id: string, tenantId?: string): Promise<PurchaseRequest> {

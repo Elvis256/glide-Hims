@@ -3,6 +3,7 @@ import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { ProcurementService } from './procurement.service';
 import {
   CreatePurchaseRequestDto,
+  CreatePRItemDto,
   ApprovePRDto,
   RejectPRDto,
   CreatePurchaseOrderDto,
@@ -102,6 +103,42 @@ export class ProcurementController {
   @AuthWithPermissions('procurement.read')
   getPurchaseRequest(@Param('id') id: string, @Request() req: any) {
     return this.procurementService.getPurchaseRequest(id, req.user?.tenantId);
+  }
+
+  @Post('purchase-requests/:id/items')
+  @AuthWithPermissions('procurement.update')
+  addPurchaseRequestItems(
+    @Param('id') id: string,
+    @Body('items') items: CreatePRItemDto[],
+    @Request() req: any,
+  ) {
+    return this.procurementService.addPurchaseRequestItems(id, items, req.user?.tenantId);
+  }
+
+  @Put('purchase-requests/:id/items/:itemId')
+  @AuthWithPermissions('procurement.update')
+  updatePurchaseRequestItem(
+    @Param('id') id: string,
+    @Param('itemId') itemId: string,
+    @Body() body: { quantityRequested?: number; unitPriceEstimated?: number },
+    @Request() req: any,
+  ) {
+    return this.procurementService.updatePurchaseRequestItem(
+      id,
+      itemId,
+      body,
+      req.user?.tenantId,
+    );
+  }
+
+  @Put('purchase-requests/:id/items/:itemId/remove')
+  @AuthWithPermissions('procurement.update')
+  removePurchaseRequestItem(
+    @Param('id') id: string,
+    @Param('itemId') itemId: string,
+    @Request() req: any,
+  ) {
+    return this.procurementService.removePurchaseRequestItem(id, itemId, req.user?.tenantId);
   }
 
   @Put('purchase-requests/:id/submit')
