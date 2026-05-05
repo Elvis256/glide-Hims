@@ -55,6 +55,7 @@ import {
 import { FinanceService } from '../finance/finance.service';
 import { BudgetService } from '../finance/budget.service';
 import { UsersService } from '../users/users.service';
+import { AuditService } from '../compliance/audit.service';
 import { InvoiceMatch } from '../../database/entities/invoice-match.entity';
 import { ProcurementApprovalThreshold } from '../../database/entities/procurement-approval-threshold.entity';
 import {
@@ -100,6 +101,8 @@ export class ProcurementService {
     private budgetService: BudgetService,
     @Inject(forwardRef(() => UsersService))
     private usersService: UsersService,
+    @Inject(forwardRef(() => AuditService))
+    private auditService: AuditService,
     private dataSource: DataSource,
   ) {}
 
@@ -527,6 +530,24 @@ export class ProcurementService {
       nextChain.comments = dto.comments;
       await chainRepo.save(nextChain);
 
+      // Phase 3: Log approval for audit trail
+      try {
+        await this.auditService.logPRApprove({
+          prId: id,
+          requestNumber: pr.requestNumber,
+          approvalLevel: nextChain.approvalLevel,
+          requiredRole: nextChain.requiredRole,
+          actualRole: userRoles.map((r) => r.name).join(', '),
+          userId,
+          tenantId,
+          comments: dto.comments,
+          amount: pr.totalEstimated,
+        });
+      } catch (error) {
+        this.logger.warn(`Failed to log PR approval: ${error.message}`);
+        // Don't fail approval if audit log fails
+      }
+
       // Update approved quantities if provided
       let totalEstimatedApproved = 0;
       if (dto.approvedItems) {
@@ -635,6 +656,20 @@ export class ProcurementService {
       pr.approvedAt = new Date();
       pr.rejectionReason = dto.rejectionReason;
       
+      // Phase 3: Log rejection for audit trail
+      try {
+        await this.auditService.logPRReject({
+          prId: id,
+          requestNumber: pr.requestNumber,
+          rejectedById: userId,
+          rejectionReason: dto.rejectionReason,
+          tenantId,
+        });
+      } catch (error) {
+        this.logger.warn(`Failed to log PR rejection: ${error.message}`);
+        // Don't fail rejection if audit log fails
+      }
+
       this.logger.log(`PR ${id} rejected by user ${userId}`);
       return prRepo.save(pr);
     });
@@ -1088,6 +1123,23 @@ export class ProcurementService {
         nextChain.approvedById = userId;
         nextChain.approvedAt = new Date();
         await chainRepo.save(nextChain);
+
+        // Phase 3: Log approval for audit trail
+        try {
+          await this.auditService.logPOApprove({
+            poId: id,
+            poNumber: po.orderNumber,
+            approvalLevel: nextChain.approvalLevel,
+            requiredRole: nextChain.requiredRole,
+            actualRole: userRoleNames.join(', '),
+            userId,
+            tenantId,
+            amount: Number(po.totalAmount),
+          });
+        } catch (error) {
+          this.logger.warn(`Failed to log PO approval: ${error.message}`);
+          // Don't fail approval if audit log fails
+        }
 
         // Check if approval chain is complete
         const pendingChains = await chainRepo.find({
