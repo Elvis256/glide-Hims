@@ -701,6 +701,8 @@ const navigationSections: NavSection[] = [
     roles: ['Procurement Officer', 'Accountant', 'Administrator', 'Store Keeper'],
     permissions: ['procurement.read', 'procurement.create', 'suppliers.read'],
     items: [
+      { name: 'Approval Approvals', href: '/procurement/approvals', icon: BadgeCheck, permissions: ['procurement.approve'] },
+      { name: 'Quick Purchase', href: '/procurement/direct-po', icon: ShoppingCart, permissions: ['procurement.create'] },
       { name: 'Requisitions', href: '/procurement/requisitions', icon: ClipboardList, permissions: ['procurement.read'] },
       { name: 'Request Quotation', href: '/procurement/rfq', icon: FileText, permissions: ['procurement.create'] },
       { name: 'Compare Quotes', href: '/procurement/quotes/compare', icon: FileSpreadsheet, permissions: ['procurement.read'] },
