@@ -1,18 +1,18 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThan, LessThan } from 'typeorm';
-import { JournalEntry } from '../../database/entities/journal-entry.entity';
-import { ChartOfAccounts } from '../../database/entities/chart-of-account.entity';
+import { Repository } from 'typeorm';
+import { JournalEntryLine } from '../../database/entities/journal-entry-line.entity';
+import { ChartOfAccount } from '../../database/entities/chart-of-account.entity';
 
 @Injectable()
 export class DataIntegrityService {
   private readonly logger = new Logger('DataIntegrityService');
 
   constructor(
-    @InjectRepository(JournalEntry)
-    private journalEntryRepo: Repository<JournalEntry>,
-    @InjectRepository(ChartOfAccounts)
-    private coaRepo: Repository<ChartOfAccounts>,
+    @InjectRepository(JournalEntryLine)
+    private journalEntryLineRepo: Repository<JournalEntryLine>,
+    @InjectRepository(ChartOfAccount)
+    private coaRepo: Repository<ChartOfAccount>,
   ) {}
 
   /**
@@ -27,21 +27,22 @@ export class DataIntegrityService {
   }> {
     this.logger.debug('Validating GL balance');
 
-    let query = this.journalEntryRepo.createQueryBuilder('je');
+    let query = this.journalEntryLineRepo.createQueryBuilder('jel');
 
     if (periodStart && periodEnd) {
+      query = query.leftJoinAndSelect('jel.journalEntry', 'je');
       query = query.where('je.journalDate >= :start', { start: periodStart });
       query = query.andWhere('je.journalDate <= :end', { end: periodEnd });
     }
 
     const totals = await query
-      .select('SUM(je.debit) as totalDebits, SUM(je.credit) as totalCredits')
+      .select('SUM(jel.debit) as totalDebits, SUM(jel.credit) as totalCredits')
       .getRawOne();
 
-    const totalDebits = parseFloat(totals.totalDebits) || 0;
-    const totalCredits = parseFloat(totals.totalCredits) || 0;
+    const totalDebits = parseFloat(totals?.totalDebits) || 0;
+    const totalCredits = parseFloat(totals?.totalCredits) || 0;
     const difference = Math.abs(totalDebits - totalCredits);
-    const isBalanced = difference < 0.01; // Allow 1 cent variance for rounding
+    const isBalanced = difference < 0.01;
 
     return {
       isBalanced,
@@ -68,19 +69,19 @@ export class DataIntegrityService {
   }> {
     this.logger.debug('Detecting unbalanced accounts');
 
-    const unbalanced = await this.journalEntryRepo
-      .createQueryBuilder('je')
-      .select('je.accountId')
-      .addSelect('SUM(je.debit) as totalDebits')
-      .addSelect('SUM(je.credit) as totalCredits')
-      .groupBy('je.accountId')
+    const unbalanced = await this.journalEntryLineRepo
+      .createQueryBuilder('jel')
+      .select('jel.accountId')
+      .addSelect('SUM(jel.debit) as totalDebits')
+      .addSelect('SUM(jel.credit) as totalCredits')
+      .groupBy('jel.accountId')
       .getRawMany();
 
     const results = [];
 
     for (const row of unbalanced) {
       const account = await this.coaRepo.findOne({
-        where: { id: row.je_accountId },
+        where: { id: row.jel_accountId },
       });
 
       if (!account) continue;
@@ -90,7 +91,6 @@ export class DataIntegrityService {
       const balance = totalDebits - totalCredits;
       const variance = Math.abs(balance);
 
-      // Only flag if variance > 0.01 (1 cent)
       if (variance > 0.01) {
         results.push({
           accountCode: account.accountCode,
@@ -122,10 +122,10 @@ export class DataIntegrityService {
   }> {
     this.logger.debug('Validating account master data');
 
-    // Find entries with non-existent accounts
-    const orphaned = await this.journalEntryRepo
-      .createQueryBuilder('je')
-      .leftJoinAndSelect('je.account', 'a')
+    // Find lines with non-existent accounts
+    const orphaned = await this.journalEntryLineRepo
+      .createQueryBuilder('jel')
+      .leftJoinAndSelect('jel.account', 'a')
       .where('a.id IS NULL')
       .getMany();
 
@@ -160,63 +160,42 @@ export class DataIntegrityService {
       amount: number;
       date: Date;
     }>;
-    unusualAccounts: Array<{ accountCode: string; description: string }>;
   }> {
     this.logger.debug('Detecting GL anomalies');
 
     // Find accounts with many entries in a short period
-    const rapidPostings = await this.journalEntryRepo
-      .createQueryBuilder('je')
-      .select('je.accountId')
+    const rapidPostings = await this.journalEntryLineRepo
+      .createQueryBuilder('jel')
+      .leftJoinAndSelect('jel.journalEntry', 'je')
+      .select('jel.accountId')
       .addSelect('COUNT(*) as entryCount')
       .where('je.journalDate >= DATE_SUB(NOW(), INTERVAL 1 DAY)')
-      .groupBy('je.accountId')
+      .groupBy('jel.accountId')
       .having('COUNT(*) > 50')
       .getRawMany();
 
     // Find unusually large transactions (> 1M)
-    const largeTransactions = await this.journalEntryRepo
-      .createQueryBuilder('je')
-      .where('je.debit > 1000000 OR je.credit > 1000000')
+    const largeTransactions = await this.journalEntryLineRepo
+      .createQueryBuilder('jel')
+      .leftJoinAndSelect('jel.journalEntry', 'je')
+      .where('jel.debit > 1000000 OR jel.credit > 1000000')
       .orderBy('je.journalDate', 'DESC')
       .limit(10)
       .getMany();
 
-    // Find entries in non-standard accounts (not asset/liability/equity)
-    const unusual = await this.journalEntryRepo
-      .createQueryBuilder('je')
-      .leftJoinAndSelect('je.account', 'a')
-      .where('a.accountType NOT IN (:...types)', {
-        types: [
-          'ASSET',
-          'LIABILITY',
-          'EQUITY',
-          'REVENUE',
-          'EXPENSE',
-          'COST_OF_GOODS_SOLD',
-        ],
-      })
-      .groupBy('a.id')
-      .limit(5)
-      .getMany();
-
     const anomalyCount =
-      rapidPostings.length + largeTransactions.length + unusual.length;
+      rapidPostings.length + largeTransactions.length;
 
     return {
       anomalyCount,
       rapidPostings: rapidPostings.map((rp) => ({
-        accountCode: rp.je_accountId,
+        accountCode: rp.jel_accountId,
         count: parseInt(rp.entryCount),
       })),
       largeTransactions: largeTransactions.map((lt) => ({
         accountCode: lt.accountId!,
         amount: (lt.debit || 0) + (lt.credit || 0),
-        date: lt.journalDate,
-      })),
-      unusualAccounts: unusual.map((u) => ({
-        accountCode: u.account?.accountCode || 'UNKNOWN',
-        description: u.account?.accountName || 'Unknown Account',
+        date: lt.journalEntry?.journalDate || new Date(),
       })),
     };
   }
@@ -236,16 +215,16 @@ export class DataIntegrityService {
 
     const issues = [];
 
-    // Check journalEntries → accounts
-    const brokenAccountRefs = await this.journalEntryRepo
-      .createQueryBuilder('je')
-      .leftJoinAndSelect('je.account', 'a')
+    // Check journalEntryLines → accounts
+    const brokenAccountRefs = await this.journalEntryLineRepo
+      .createQueryBuilder('jel')
+      .leftJoinAndSelect('jel.account', 'a')
       .where('a.id IS NULL')
       .getCount();
 
     if (brokenAccountRefs > 0) {
       issues.push({
-        entityType: 'JournalEntry',
+        entityType: 'JournalEntryLine',
         fieldName: 'accountId',
         invalidCount: brokenAccountRefs,
       });
