@@ -844,64 +844,96 @@ export class ProcurementService {
     tenantId?: string,
     userRoles?: string[],
   ): Promise<PurchaseOrder> {
-    const po = await this.getPurchaseOrder(id, tenantId);
-    if (po.status !== POStatus.DRAFT && po.status !== POStatus.PENDING_APPROVAL) {
-      throw new BadRequestException('PO cannot be approved from current status');
-    }
+    return this.dataSource.transaction(async (manager) => {
+      const poRepo = manager.getRepository(PurchaseOrder);
+      const chainRepo = manager.getRepository(ProcurementApprovalChain);
 
-    // Segregation of duties: PO creator cannot approve their own PO
-    // Super Admin bypasses this check (logged for audit)
-    const isSuperAdminUser = userRoles?.some((r) => r.toLowerCase() === 'super admin');
-    if (po.createdById === userId && !isSuperAdminUser) {
-      const otherApprovers = await this.dataSource
-        .createQueryBuilder()
-        .select('u.id')
-        .from('users', 'u')
-        .innerJoin('user_roles', 'ur', 'ur.user_id = u.id')
-        .innerJoin('role_permissions', 'rp', 'rp.role_id = ur.role_id')
-        .innerJoin('permissions', 'perm', 'perm.id = rp.permission_id')
-        .where('u.id != :userId', { userId })
-        .andWhere('u.status = :status', { status: 'active' })
-        .andWhere('perm.code LIKE :permCode', { permCode: '%procurement%approve%' })
-        .andWhere(po.facilityId ? 'u.facility_id = :facilityId' : '1=1', {
-          facilityId: po.facilityId,
-        })
-        .getCount();
+      const po = await poRepo.findOne({
+        where: { id, deletedAt: IsNull(), ...(tenantId && { tenantId }) },
+        lock: { mode: 'pessimistic_write' },
+      });
 
-      if (otherApprovers > 0) {
-        throw new BadRequestException(
-          'Segregation of duties: the PO creator cannot approve their own purchase order. Another approver is available.',
+      if (!po) throw new NotFoundException('Purchase order not found');
+      if (po.status !== POStatus.DRAFT && po.status !== POStatus.PENDING_APPROVAL) {
+        throw new BadRequestException('PO cannot be approved from current status');
+      }
+
+      // Segregation of duties: PO creator cannot approve their own PO
+      if (po.createdById === userId) {
+        const isSuperAdminUser = userRoles?.some((r) => r.toLowerCase() === 'super admin');
+        if (!isSuperAdminUser) {
+          throw new BadRequestException(
+            'Segregation of duties: the PO creator cannot approve their own purchase order',
+          );
+        }
+        this.logger.warn(`Super Admin self-approval: user ${userId} approving own PO ${po.orderNumber}`);
+      }
+
+      // Phase 2C: Get next pending approval in chain (if any)
+      const chainWhere: any = { documentId: id, documentType: 'PO', status: ApprovalChainStatus.PENDING };
+      if (tenantId) chainWhere.tenantId = tenantId;
+
+      const nextChain = await chainRepo.findOne({
+        where: chainWhere,
+        order: { approvalLevel: 'ASC' },
+      });
+
+      if (nextChain) {
+        // Multi-level approval workflow is configured for this PO
+        // Verify user has required role
+        const userRolesList = userRoles || (await this.usersService.getUserRoles(userId, tenantId));
+        const userRoleNames = (userRolesList as any[]).map((r: any) => 
+          typeof r === 'string' ? r.toLowerCase() : r.name?.toLowerCase() || ''
         );
+        const requiredRoleLower = nextChain.requiredRole.toLowerCase();
+
+        if (!userRoleNames.includes(requiredRoleLower)) {
+          throw new BadRequestException(
+            `User does not have the required role '${nextChain.requiredRole}' to approve at level ${nextChain.approvalLevel}`,
+          );
+        }
+
+        // Mark approval at this level
+        nextChain.status = ApprovalChainStatus.APPROVED;
+        nextChain.approvedById = userId;
+        nextChain.approvedAt = new Date();
+        await chainRepo.save(nextChain);
+
+        // Check if approval chain is complete
+        const pendingChains = await chainRepo.find({
+          where: { documentId: id, documentType: 'PO', status: ApprovalChainStatus.PENDING },
+        });
+
+        if (pendingChains.length === 0) {
+          // All approvals complete → transition to APPROVED
+          po.status = POStatus.APPROVED;
+          po.approvedById = userId;
+          po.approvedAt = new Date();
+          this.logger.log(`PO ${id} fully approved after ${nextChain.approvalLevel} approval levels`);
+        } else {
+          // More approvals needed → stay PENDING_APPROVAL
+          po.status = POStatus.PENDING_APPROVAL;
+          this.logger.log(
+            `PO ${id} approved at level ${nextChain.approvalLevel}, ${pendingChains.length} more approvals needed`,
+          );
+        }
+      } else {
+        // No multi-level approval chain configured
+        // For high-value POs, require additional justification
+        const totalAmount = Number(po.totalAmount) || 0;
+        if (totalAmount > 50000000) {
+          this.logger.warn(
+            `HIGH-VALUE PO ${po.orderNumber}: ${totalAmount.toLocaleString()} UGX. Approved by ${userId}`,
+          );
+        }
+
+        po.status = POStatus.APPROVED;
+        po.approvedById = userId;
+        po.approvedAt = new Date();
       }
-      this.logger.warn(
-        `Self-approval: user ${userId} approving own PO ${po.orderNumber} — no other approvers available`,
-      );
-    }
 
-    if (po.createdById === userId && isSuperAdminUser) {
-      this.logger.warn(
-        `Super Admin self-approval: user ${userId} approving own PO ${po.orderNumber}`,
-      );
-    }
-
-    // Spending threshold enforcement for high-value POs
-    const totalAmount = Number(po.totalAmount) || 0;
-    if (totalAmount > 50000000) {
-      this.logger.warn(
-        `HIGH-VALUE PO ${po.orderNumber}: ${totalAmount.toLocaleString()} UGX requires director-level approval. Approved by ${userId}`,
-      );
-      if (!po.notes?.includes('[DIRECTOR_APPROVED]')) {
-        po.status = POStatus.PENDING_APPROVAL;
-        po.notes =
-          `${po.notes || ''}\n[HIGH_VALUE] Amount ${totalAmount.toLocaleString()} UGX exceeds 50M threshold. Director approval required.`.trim();
-        return this.poRepo.save(po);
-      }
-    }
-
-    po.status = POStatus.APPROVED;
-    po.approvedById = userId;
-    po.approvedAt = new Date();
-    return this.poRepo.save(po);
+      return poRepo.save(po);
+    });
   }
 
   async sendPurchaseOrder(id: string, tenantId?: string): Promise<PurchaseOrder> {
