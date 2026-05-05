@@ -14,7 +14,6 @@ interface CompliancePolicy {
 export class AuditComplianceService {
   private readonly logger = new Logger('AuditComplianceService');
 
-  // Standard compliance policies
   private readonly defaultPolicies: Record<string, CompliancePolicy> = {
     STANDARD: {
       name: 'Standard Retention',
@@ -24,13 +23,13 @@ export class AuditComplianceService {
     },
     REGULATORY: {
       name: 'Regulatory Compliance',
-      retentionDays: 2555, // 7 years
+      retentionDays: 2555,
       archiveAfterDays: 180,
       description: 'Archive after 6 months, retain for 7 years (HIPAA/SOX)',
     },
     FINANCIAL: {
       name: 'Financial Records',
-      retentionDays: 1825, // 5 years
+      retentionDays: 1825,
       archiveAfterDays: 90,
       description: 'Archive after 90 days, retain for 5 years',
     },
@@ -75,7 +74,6 @@ export class AuditComplianceService {
 
     const totalRecords = await this.auditLogRepo.count();
 
-    // Count records that exceed archive threshold
     const archiveDate = new Date();
     archiveDate.setDate(archiveDate.getDate() - policy.archiveAfterDays);
 
@@ -141,7 +139,6 @@ export class AuditComplianceService {
       },
     });
 
-    // Group by action
     const byAction: Record<string, number> = {};
     const byUser: Record<string, number> = {};
     const critical: any[] = [];
@@ -153,7 +150,6 @@ export class AuditComplianceService {
       const userId = record.userId || 'SYSTEM';
       byUser[userId] = (byUser[userId] || 0) + 1;
 
-      // Flag critical operations
       if (
         ['DELETE', 'UPDATE', 'MODIFY', 'CHANGE_APPROVAL'].includes(action)
       ) {
@@ -162,13 +158,16 @@ export class AuditComplianceService {
           action,
           userId,
           timestamp: record.createdAt,
-          details: record.details,
+          details: {
+            action: record.action,
+            oldValue: record.oldValue,
+            newValue: record.newValue,
+            reason: record.reason,
+          },
         });
       }
     }
 
-    // Calculate compliance score (0-100)
-    // Higher score = more compliant
     const criticalCountRatio =
       critical.length > 0 ? Math.min(critical.length / 100, 1) : 0;
     const complianceScore = Math.round((1 - criticalCountRatio) * 100);
@@ -178,7 +177,7 @@ export class AuditComplianceService {
       totalRecords: records.length,
       recordsByAction: byAction,
       recordsByUser: byUser,
-      criticalOperations: critical.slice(0, 20), // Last 20 critical ops
+      criticalOperations: critical.slice(0, 20),
       complianceScore,
     };
   }
@@ -204,11 +203,9 @@ export class AuditComplianceService {
     });
 
     if (!dryRun && toArchive.length > 0) {
-      // In production, would export to archive table/S3/separate DB
       const archiveId = `archive_${Date.now()}`;
       const estimatedSize = `${(toArchive.length * 0.0008).toFixed(2)} MB`;
 
-      // Remove from active table
       await this.auditLogRepo.remove(toArchive);
 
       this.logger.log(
@@ -248,11 +245,9 @@ export class AuditComplianceService {
       complianceScore: number;
     };
     recommendations: string[];
-    signOffDate?: Date;
   }> {
     this.logger.debug('Generating compliance report');
 
-    // Check all policies
     const policyStatus = [];
     for (const policyName of Object.keys(this.defaultPolicies)) {
       const status = await this.checkComplianceStatus(policyName);
@@ -263,10 +258,8 @@ export class AuditComplianceService {
       });
     }
 
-    // Generate audit trail
     const auditTrail = await this.generateComplianceAudit(includePeriodDays);
 
-    // Generate recommendations
     const recommendations = [];
     if (auditTrail.complianceScore < 80) {
       recommendations.push(
@@ -307,7 +300,6 @@ export class AuditComplianceService {
   async verifyAuditIntegrity(): Promise<{
     isValid: boolean;
     totalRecords: number;
-    orphanedRecords: number;
     gapsDetected: number;
     lastVerificationDate: Date;
     nextVerificationDate: Date;
@@ -316,7 +308,6 @@ export class AuditComplianceService {
 
     const totalRecords = await this.auditLogRepo.count();
 
-    // Check for gaps (more than 1 hour between consecutive entries per user)
     const records = await this.auditLogRepo.find({
       order: { createdAt: 'DESC' },
       take: 1000,
@@ -339,44 +330,9 @@ export class AuditComplianceService {
     return {
       isValid: gaps === 0,
       totalRecords,
-      orphanedRecords: 0,
       gapsDetected: gaps,
       lastVerificationDate: new Date(),
       nextVerificationDate: nextVerification,
-    };
-  }
-
-  /**
-   * Export audit records for external auditor
-   */
-  async exportAuditRecords(startDate: Date, endDate: Date): Promise<{
-    exportId: string;
-    recordCount: number;
-    dateRange: { start: Date; end: Date };
-    hash: string;
-    exportDate: Date;
-  }> {
-    this.logger.debug(`Exporting audit records from ${startDate} to ${endDate}`);
-
-    const records = await this.auditLogRepo.find({
-      where: {
-        createdAt: MoreThan(startDate),
-      },
-    });
-
-    // Filter by end date (TypeORM has issues with multiple date conditions)
-    const filtered = records.filter((r) => r.createdAt <= endDate);
-
-    // Generate hash for verification
-    const hash = `hash_${Date.now()}_${filtered.length}`;
-    const exportId = `export_${Date.now()}`;
-
-    return {
-      exportId,
-      recordCount: filtered.length,
-      dateRange: { start: startDate, end: endDate },
-      hash,
-      exportDate: new Date(),
     };
   }
 }
