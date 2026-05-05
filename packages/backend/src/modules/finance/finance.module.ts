@@ -19,6 +19,10 @@ import { PettyCashController } from './petty-cash.controller';
 import { FinanceApprovalService } from './finance-approval.service';
 import { TrialBalanceService } from './trial-balance.service';
 import { GLReconciliationService } from './gl-reconciliation.service';
+import { GLAnalyticsService } from './gl-analytics.service';
+import { RevenueExpenseService } from './revenue-expense.service';
+import { BudgetVarianceService } from './budget-variance.service';
+import { ReportGeneratorService } from './report-generator.service';
 import { ChartOfAccount } from '../../database/entities/chart-of-account.entity';
 import { JournalEntry } from '../../database/entities/journal-entry.entity';
 import { JournalEntryLine } from '../../database/entities/journal-entry-line.entity';
@@ -93,6 +97,10 @@ import { SystemSettingsModule } from '../system-settings/system-settings.module'
     FinanceApprovalService,
     TrialBalanceService,
     GLReconciliationService,
+    GLAnalyticsService,
+    RevenueExpenseService,
+    BudgetVarianceService,
+    ReportGeneratorService,
   ],
   exports: [
     FinanceService,
@@ -106,6 +114,10 @@ import { SystemSettingsModule } from '../system-settings/system-settings.module'
     FinanceApprovalService,
     TrialBalanceService,
     GLReconciliationService,
+    GLAnalyticsService,
+    RevenueExpenseService,
+    BudgetVarianceService,
+    ReportGeneratorService,
   ],
 })
 export class FinanceModule {}
