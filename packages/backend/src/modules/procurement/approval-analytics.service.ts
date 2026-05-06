@@ -38,7 +38,7 @@ export class ApprovalAnalyticsService {
   async detectBottlenecks(): Promise<ApprovalBottleneck[]> {
     const bottlenecks: ApprovalBottleneck[] = [];
     const pendingOrders = await this.poRepository.find({
-      where: { status: 'PENDING_APPROVAL' as any },
+      where: { status: POStatus.PENDING_APPROVAL },
     });
 
     const levels = [

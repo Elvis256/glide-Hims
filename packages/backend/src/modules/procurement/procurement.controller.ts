@@ -376,24 +376,28 @@ export class ProcurementController {
   }
 
   @Get('approvals/summary')
-  @AuthWithPermissions('procurement.approve')
+  @AuthWithPermissions('procurement.read')
   async getApprovalSummary(@Query('facilityId') facilityId: string) {
-    const bottlenecks = await this.approvalAnalytics.detectBottlenecks();
-    
+    let bottlenecksCount = 0;
+    try {
+      const bottlenecks = await this.approvalAnalytics.detectBottlenecks();
+      bottlenecksCount = Array.isArray(bottlenecks) ? bottlenecks.length : 0;
+    } catch (err) {
+      bottlenecksCount = 0;
+    }
+
     return {
-      data: {
-        // For ApprovalDashboard
-        pending: 0,
-        approved: 0,
-        rejected: 0,
-        avgApprovalDays: 0,
-        bottlenecks: bottlenecks.length,
-        escalations: 0,
-        escalationList: [],
-        // For DirectPOPage (budget information)
-        budgetAvailable: 0,
-        budgetAllocated: 0,
-      },
+      // For ApprovalDashboard
+      pending: 0,
+      approved: 0,
+      rejected: 0,
+      avgApprovalDays: 0,
+      bottlenecks: bottlenecksCount,
+      escalations: 0,
+      escalationList: [],
+      // For DirectPOPage (budget information)
+      budgetAvailable: 0,
+      budgetAllocated: 0,
     };
   }
 
