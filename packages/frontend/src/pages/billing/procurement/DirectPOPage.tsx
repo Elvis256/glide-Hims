@@ -28,69 +28,70 @@ interface DirectPOFormData {
 }
 
 export function DirectPOPage() {
-  const { user } = useAuthStore();
-  const [formData, setFormData] = useState<DirectPOFormData>({
-    supplierId: '',
-    items: [],
-    taxRate: 0,
-    discountPercent: 0,
-  });
+  try {
+    const { user } = useAuthStore();
+    const [formData, setFormData] = useState<DirectPOFormData>({
+      supplierId: '',
+      items: [],
+      taxRate: 0,
+      discountPercent: 0,
+    });
 
-  const [newItem, setNewItem] = useState<Omit<PurchaseOrderItem, 'id'>>({
-    itemId: '',
-    itemName: '',
-    quantityOrdered: 1,
-    unitPrice: 0,
-    taxRate: 0,
-    discountPercent: 0,
-  });
+    const [newItem, setNewItem] = useState<Omit<PurchaseOrderItem, 'id'>>({
+      itemId: '',
+      itemName: '',
+      quantityOrdered: 1,
+      unitPrice: 0,
+      taxRate: 0,
+      discountPercent: 0,
+    });
 
-  // Fetch suppliers
-  const { data: suppliers = [], isLoading: suppliersLoading, isError: suppliersError } = useQuery({
-    queryKey: ['suppliers'],
-    queryFn: async () => {
-      const { data } = await api.get('/suppliers');
-      return Array.isArray(data) ? data : [];
-    },
-    retry: 1,
-    enabled: !!user,
-  });
+    // Fetch suppliers
+    const { data: suppliers = [], isLoading: suppliersLoading, isError: suppliersError } = useQuery({
+      queryKey: ['suppliers'],
+      queryFn: async () => {
+        const { data } = await api.get('/suppliers');
+        return Array.isArray(data) ? data : [];
+      },
+      retry: 1,
+      enabled: !!user,
+    });
 
-  // Fetch items
-  const { data: items = [], isLoading: itemsLoading, isError: itemsError } = useQuery({
-    queryKey: ['items'],
-    queryFn: async () => {
-      const { data } = await api.get('/inventory/items');
-      return Array.isArray(data) ? data : [];
-    },
-    retry: 1,
-    enabled: !!user,
-  });
+    // Fetch items
+    const { data: items = [], isLoading: itemsLoading, isError: itemsError } = useQuery({
+      queryKey: ['items'],
+      queryFn: async () => {
+        const { data } = await api.get('/inventory/items');
+        return Array.isArray(data) ? data : [];
+      },
+      retry: 1,
+      enabled: !!user,
+    });
 
-  // Fetch departments
-  const { data: departments = [], isLoading: departmentsLoading, isError: departmentsError } = useQuery({
-    queryKey: ['departments'],
-    queryFn: async () => {
-      const { data } = await api.get('/departments');
-      return Array.isArray(data) ? data : [];
-    },
-    retry: 1,
-    enabled: !!user,
-  });
+    // Fetch departments
+    const { data: departments = [], isLoading: departmentsLoading, isError: departmentsError } = useQuery({
+      queryKey: ['departments'],
+      queryFn: async () => {
+        const { data } = await api.get('/departments');
+        return Array.isArray(data) ? data : [];
+      },
+      retry: 1,
+      enabled: !!user,
+    });
 
-  // Fetch budget
-  const { data: budget, isLoading: budgetLoading, isError: budgetError } = useQuery({
-    queryKey: ['procurement/budget'],
-    queryFn: async () => {
-      const { data } = await api.get('/procurement/approvals/summary');
-      return data || {};
-    },
-    retry: 1,
-    enabled: !!user,
-  });
+    // Fetch budget
+    const { data: budget, isLoading: budgetLoading, isError: budgetError } = useQuery({
+      queryKey: ['procurement/budget'],
+      queryFn: async () => {
+        const { data } = await api.get('/procurement/approvals/summary');
+        return data || {};
+      },
+      retry: 1,
+      enabled: !!user,
+    });
 
-  const isLoading = suppliersLoading || itemsLoading || departmentsLoading || budgetLoading;
-  const hasErrors = suppliersError || itemsError || departmentsError || budgetError;
+    const isLoading = suppliersLoading || itemsLoading || departmentsLoading || budgetLoading;
+    const hasErrors = suppliersError || itemsError || departmentsError || budgetError;
 
   // Create Direct PO mutation
   const createPOMutation = useMutation({
@@ -546,5 +547,23 @@ export function DirectPOPage() {
         </form>
       </div>
     </div>
-  );
+    );
+  } catch (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
+        <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8 text-center">
+          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Component Error</h2>
+          <p className="text-gray-600 mb-2">{error instanceof Error ? error.message : 'Unknown error'}</p>
+          <p className="text-gray-600 mb-6 text-sm">Please try refreshing the page.</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Reload Page
+          </button>
+        </div>
+      </div>
+    );
+  }
 }
