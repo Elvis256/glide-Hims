@@ -573,6 +573,7 @@ export class ProcurementService {
     dto: ApprovePRDto,
     userId: string,
     tenantId?: string,
+    userRoles?: string[],
   ): Promise<PurchaseRequest> {
     return this.dataSource.transaction(async (manager) => {
       const prRepo = manager.getRepository(PurchaseRequest);
@@ -584,24 +585,37 @@ export class ProcurementService {
 
       const pr = await prRepo.findOne({
         where,
-        relations: ['items'],
         lock: { mode: 'pessimistic_write' },
       });
 
       if (!pr) throw new NotFoundException('Purchase request not found');
+      pr.items = await prItemRepo.find({ where: { purchaseRequestId: pr.id } });
       if (pr.status !== PRStatus.PENDING_APPROVAL) {
         throw new BadRequestException('PR must be pending approval');
       }
 
+      const userRolesList = userRoles
+        ? userRoles.map((r) => ({ name: r }))
+        : await this.usersService.getUserRoles(userId, tenantId);
+      const userRoleNames = (userRolesList as any[]).map((r: any) =>
+        (typeof r === 'string' ? r : r.name || '').toLowerCase(),
+      );
+      const isSuperAdmin = userRoleNames.includes('super admin');
+
       // Segregation of duties: requester cannot approve their own PR
-      if (pr.requestedById === userId) {
+      // (Super Admin override allowed for platform unblocking)
+      if (pr.requestedById === userId && !isSuperAdmin) {
         throw new BadRequestException(
           'Segregation of duties violation: the requester cannot approve their own purchase request',
         );
       }
 
       // Phase 2C: Get next pending approval in chain
-      const chainWhere: any = { documentId: id, status: ApprovalChainStatus.PENDING };
+      const chainWhere: any = {
+        documentId: id,
+        documentType: 'PR',
+        status: ApprovalChainStatus.PENDING,
+      };
       if (tenantId) chainWhere.tenantId = tenantId;
 
       const nextChain = await chainRepo.findOne({
@@ -616,14 +630,22 @@ export class ProcurementService {
         );
       }
 
-      // Verify current user has required role
-      const userRoles = await this.usersService.getUserRoles(userId, tenantId);
-      const userRoleNames = userRoles.map((r) => r.name.toLowerCase());
+      // Verify current user has required role.
+      // Accept the configured role name OR common synonyms, OR Super Admin
+      // as a universal override so platform owners can always unblock.
       const requiredRoleLower = nextChain.requiredRole.toLowerCase();
-      
-      if (!userRoleNames.includes(requiredRoleLower)) {
+      const synonyms: Record<string, string[]> = {
+        manager: ['manager', 'department head', 'department manager', 'super admin'],
+        finance_officer: ['finance_officer', 'finance officer', 'accountant', 'super admin'],
+        director: ['director', 'super admin'],
+        cfo: ['cfo', 'chief financial officer', 'super admin'],
+      };
+      const acceptedRoles = synonyms[requiredRoleLower] || [requiredRoleLower, 'super admin'];
+      const matched = userRoleNames.some((r) => acceptedRoles.includes(r));
+
+      if (!matched) {
         throw new BadRequestException(
-          `User does not have the required role '${nextChain.requiredRole}' to approve at level ${nextChain.approvalLevel}. User has roles: ${userRoleNames.join(', ')}`,
+          `User does not have a role authorised to approve at level ${nextChain.approvalLevel} (required: ${nextChain.requiredRole}). User has roles: ${userRoleNames.join(', ') || 'none'}`,
         );
       }
 
@@ -641,7 +663,7 @@ export class ProcurementService {
           requestNumber: pr.requestNumber,
           approvalLevel: nextChain.approvalLevel,
           requiredRole: nextChain.requiredRole,
-          actualRole: userRoles.map((r) => r.name).join(', '),
+          actualRole: userRoleNames.join(', '),
           userId,
           tenantId,
           comments: dto.comments,
@@ -1245,9 +1267,17 @@ export class ProcurementService {
         );
         const requiredRoleLower = nextChain.requiredRole.toLowerCase();
 
-        if (!userRoleNames.includes(requiredRoleLower)) {
+        const synonyms: Record<string, string[]> = {
+          manager: ['manager', 'department head', 'department manager', 'super admin'],
+          finance_officer: ['finance_officer', 'finance officer', 'accountant', 'super admin'],
+          director: ['director', 'super admin'],
+          cfo: ['cfo', 'chief financial officer', 'super admin'],
+        };
+        const acceptedRoles = synonyms[requiredRoleLower] || [requiredRoleLower, 'super admin'];
+
+        if (!userRoleNames.some((r) => acceptedRoles.includes(r))) {
           throw new BadRequestException(
-            `User does not have the required role '${nextChain.requiredRole}' to approve at level ${nextChain.approvalLevel}`,
+            `User does not have a role authorised to approve at level ${nextChain.approvalLevel} (required: ${nextChain.requiredRole})`,
           );
         }
 
@@ -2226,14 +2256,18 @@ export class ProcurementService {
 
     // If not found, create defaults
     if (!threshold) {
+      // Defaults expressed in the tenant's base currency. Numbers below
+      // assume UGX (Uganda Shillings); for USD-denominated tenants update
+      // the row directly. Tiers: Manager <= 500K, Finance <= 5M,
+      // Director <= 50M, CFO above 50M.
       threshold = this.approvalThresholdRepo.create({
         facilityId,
         ...(tenantId ? { tenantId } : {}),
-        level1MaxAmount: 500,
-        level2MaxAmount: 5000,
-        level3MaxAmount: 50000,
+        level1MaxAmount: 500000,
+        level2MaxAmount: 5000000,
+        level3MaxAmount: 50000000,
         level4MaxAmount: null as any,
-        requireJustificationMin: 50000,
+        requireJustificationMin: 5000000,
         isActive: true,
       });
       await this.approvalThresholdRepo.save(threshold);
@@ -2283,8 +2317,18 @@ export class ProcurementService {
     tenantId?: string,
   ): Promise<ProcurementApprovalChain[]> {
     try {
-      const thresholds = await this.getApprovalThreshold(facilityId, tenantId);
-      const maxApprovalLevel = this.calculateApprovalLevel(amount, thresholds);
+      // Purchase Requisitions are just internal requests for goods/services,
+      // not financial commitments. They get a single manager-level approval
+      // regardless of amount. The full amount-tiered chain (manager →
+      // finance → director → CFO) only applies to Purchase Orders, which
+      // are the actual binding spend.
+      let maxApprovalLevel: number;
+      if (documentType === 'PR') {
+        maxApprovalLevel = 1;
+      } else {
+        const thresholds = await this.getApprovalThreshold(facilityId, tenantId);
+        maxApprovalLevel = this.calculateApprovalLevel(amount, thresholds);
+      }
 
       const chains: ProcurementApprovalChain[] = [];
 
