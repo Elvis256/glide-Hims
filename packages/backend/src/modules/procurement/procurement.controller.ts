@@ -382,6 +382,7 @@ export class ProcurementController {
     
     return {
       data: {
+        // For ApprovalDashboard
         pending: 0,
         approved: 0,
         rejected: 0,
@@ -389,6 +390,9 @@ export class ProcurementController {
         bottlenecks: bottlenecks.length,
         escalations: 0,
         escalationList: [],
+        // For DirectPOPage (budget information)
+        budgetAvailable: 0,
+        budgetAllocated: 0,
       },
     };
   }
