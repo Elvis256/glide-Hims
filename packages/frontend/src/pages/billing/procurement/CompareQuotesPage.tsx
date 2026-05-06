@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { rfqService, type RFQ, type VendorQuotation } from '../../../services/rfq';
 import { useAuthStore } from '../../../store/auth';
+import { CategoryContextBanner } from '../../../components/procurement/CategoryContextBanner';
 
 export default function CompareQuotesPage() {
   const queryClient = useQueryClient();
@@ -95,6 +96,7 @@ export default function CompareQuotesPage() {
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50">
+      <CategoryContextBanner />
       {/* Header */}
       <div className="bg-white border-b px-6 py-4 flex-shrink-0">
         <div className="flex items-center justify-between">

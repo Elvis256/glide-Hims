@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { invoiceMatchingService, type InvoiceMatch, type InvoiceMatchStatus as MatchStatusType, type CreateInvoiceMatchDto } from '../../../services/invoice-matching';
 import { useAuthStore } from '../../../store/auth';
+import { CategoryContextBanner } from '../../../components/procurement/CategoryContextBanner';
 
 type MatchStatus = 'pending' | 'matched' | 'mismatch' | 'approved' | 'flagged' | 'paid';
 
@@ -102,6 +103,7 @@ export default function InvoiceMatchingPage() {
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50">
+      <CategoryContextBanner />
       {/* Header */}
       <div className="bg-white border-b px-6 py-4 flex-shrink-0">
         <div className="flex items-center justify-between mb-4">

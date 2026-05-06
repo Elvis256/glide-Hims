@@ -23,6 +23,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { asList } from '../../../utils/unwrapResponse';
+import { CategoryContextBanner, useProcurementCategory } from '../../../components/procurement/CategoryContextBanner';
 
 type RequisitionStatus =
   | 'draft'
@@ -100,6 +101,9 @@ const priorityConfig: Record<RequisitionPriority, { color: string; bg: string; l
 };
 
 export default function RequisitionsPage() {
+  const { category: __procCategory } = useProcurementCategory();
+  const catalogModule: 'pharmacy' | 'general' | 'all' = __procCategory === 'drugs' ? 'pharmacy' : __procCategory === 'supplies' ? 'general' : 'all';
+
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<RequisitionStatus | 'all'>('all');
@@ -230,6 +234,7 @@ export default function RequisitionsPage() {
   if (isLoading) {
     return (
       <div className="h-[calc(100vh-120px)] flex items-center justify-center bg-gray-50">
+        <CategoryContextBanner />
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
           <p className="text-gray-500">Loading requisitions...</p>
@@ -610,6 +615,7 @@ export default function RequisitionsPage() {
                         <tr key={item.id} className="border-t">
                           <td className="px-3 py-2 min-w-[200px]">
                             <CatalogItemPicker
+                              module={catalogModule}
                               value={item.name ? { id: item.itemId || null, source: item.itemId ? 'inventory' : 'free_text', code: item.itemCode, name: item.name, unit: item.unit } : null}
                               onChange={(picked) => {
                                 setFormData((prev) => ({

@@ -15,6 +15,10 @@ import {
 } from 'lucide-react';
 import { formatCurrency } from '../../../lib/currency';
 import SearchableSelect, { SelectOption } from '../../../components/SearchableSelect';
+import {
+  CategoryContextBanner,
+  useProcurementCategory,
+} from '../../../components/procurement/CategoryContextBanner';
 
 interface PurchaseOrderItem {
   id?: string;
@@ -75,10 +79,15 @@ export function DirectPOPage() {
     enabled: !!user,
   });
 
+  const { isDrug } = useProcurementCategory();
+
   const { data: items = [], isLoading: itemsLoading, isError: itemsError } = useQuery({
-    queryKey: ['items'],
+    queryKey: ['items', { isDrug }],
     queryFn: async () => {
-      const { data } = await api.get('/inventory/items');
+      const qs = new URLSearchParams();
+      if (isDrug !== undefined) qs.set('isDrug', String(isDrug));
+      const url = qs.toString() ? `/inventory/items?${qs}` : '/inventory/items';
+      const { data } = await api.get(url);
       const list = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
       return list;
     },
@@ -279,6 +288,7 @@ export function DirectPOPage() {
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-6">
       <div className="max-w-6xl mx-auto">
+        <CategoryContextBanner />
         {/* Header */}
         <div className="mb-6 flex items-start justify-between gap-4 flex-wrap">
           <div>

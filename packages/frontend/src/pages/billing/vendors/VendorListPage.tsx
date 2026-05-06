@@ -27,6 +27,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { asList } from '../../../utils/unwrapResponse';
+import { CategoryContextBanner } from '../../../components/procurement/CategoryContextBanner';
 
 type SupplierStatus = 'active' | 'inactive' | 'suspended';
 type SupplierType = 'pharmaceutical' | 'medical_equipment' | 'consumables' | 'general';
@@ -202,6 +203,7 @@ export default function VendorListPage() {
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50">
+      <CategoryContextBanner />
       {/* Header */}
       <div className="bg-white border-b px-6 py-4">
         <div className="flex items-center justify-between">
