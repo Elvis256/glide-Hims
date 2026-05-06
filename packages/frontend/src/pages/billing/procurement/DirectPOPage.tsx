@@ -3,6 +3,7 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { useAuthStore } from '../../../store/auth';
 import { api } from '../../../services/api';
 import { AlertCircle, Plus, Trash2, DollarSign } from 'lucide-react';
+import { formatCurrency } from '../../../lib/currency';
 
 interface PurchaseOrderItem {
   id?: string;
@@ -45,40 +46,51 @@ export function DirectPOPage() {
   });
 
   // Fetch suppliers
-  const { data: suppliers = [] } = useQuery({
+  const { data: suppliers = [], isLoading: suppliersLoading, isError: suppliersError } = useQuery({
     queryKey: ['suppliers'],
     queryFn: async () => {
       const { data } = await api.get('/suppliers');
-      return data;
+      return Array.isArray(data) ? data : [];
     },
+    retry: 1,
+    enabled: !!user,
   });
 
   // Fetch items
-  const { data: items = [] } = useQuery({
+  const { data: items = [], isLoading: itemsLoading, isError: itemsError } = useQuery({
     queryKey: ['items'],
     queryFn: async () => {
       const { data } = await api.get('/inventory/items');
-      return data;
+      return Array.isArray(data) ? data : [];
     },
+    retry: 1,
+    enabled: !!user,
   });
 
   // Fetch departments
-  const { data: departments = [] } = useQuery({
+  const { data: departments = [], isLoading: departmentsLoading, isError: departmentsError } = useQuery({
     queryKey: ['departments'],
     queryFn: async () => {
       const { data } = await api.get('/departments');
-      return data;
+      return Array.isArray(data) ? data : [];
     },
+    retry: 1,
+    enabled: !!user,
   });
 
   // Fetch budget
-  const { data: budget } = useQuery({
+  const { data: budget, isLoading: budgetLoading, isError: budgetError } = useQuery({
     queryKey: ['procurement/budget'],
     queryFn: async () => {
       const { data } = await api.get('/procurement/approvals/summary');
-      return data;
+      return data || {};
     },
+    retry: 1,
+    enabled: !!user,
   });
+
+  const isLoading = suppliersLoading || itemsLoading || departmentsLoading || budgetLoading;
+  const hasErrors = suppliersError || itemsError || departmentsError || budgetError;
 
   // Create Direct PO mutation
   const createPOMutation = useMutation({
@@ -184,6 +196,39 @@ export function DirectPOPage() {
     if (total < 50000) return 'Director';
     return 'CFO';
   }, [total]);
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+          <p className="mt-4 text-gray-600">Loading data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (hasErrors) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
+        <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8 text-center">
+          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Unable to Load Data</h2>
+          <p className="text-gray-600 mb-6">
+            There was an error loading the necessary data. Please try again or contact support.
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Reload Page
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
