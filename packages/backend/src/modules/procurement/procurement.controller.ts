@@ -421,6 +421,21 @@ export class ProcurementController {
     };
   }
 
+  @Get('approvals/history/:documentType/:documentId')
+  @AuthWithPermissions('procurement.read')
+  async getApprovalHistory(
+    @Param('documentType') documentType: string,
+    @Param('documentId') documentId: string,
+  ) {
+    return {
+      data: {
+        documentType,
+        documentId,
+        history: [],
+      },
+    };
+  }
+
   // ============ ANALYTICS - SUPPLIERS ============
 
   @Get('analytics/suppliers/metrics')
