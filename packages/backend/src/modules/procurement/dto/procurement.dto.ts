@@ -74,6 +74,34 @@ export class CreatePurchaseRequestDto {
   items: CreatePRItemDto[];
 }
 
+export class UpdatePurchaseRequestDto {
+  @IsOptional()
+  @IsString()
+  departmentId?: string;
+
+  @IsOptional()
+  @IsEnum(PRPriority)
+  priority?: PRPriority;
+
+  @IsOptional()
+  @IsString()
+  justification?: string;
+
+  @IsOptional()
+  @IsDateString()
+  requiredDate?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreatePRItemDto)
+  items?: CreatePRItemDto[];
+}
+
 export class ApprovedItemDto {
   @IsString()
   itemId: string;

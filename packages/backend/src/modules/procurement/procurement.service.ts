@@ -43,6 +43,7 @@ import {
 } from '../../database/entities/rfq.entity';
 import {
   CreatePurchaseRequestDto,
+  UpdatePurchaseRequestDto,
   CreatePRItemDto,
   ApprovePRDto,
   RejectPRDto,
@@ -221,6 +222,91 @@ export class ProcurementService {
       this.logger.error(`Error creating PR: ${error.message}`, error.stack);
       throw error;
     }
+  }
+
+  /**
+   * Update a draft PR's header fields and (optionally) replace its items.
+   * Only DRAFT PRs can be edited.
+   */
+  async updatePurchaseRequest(
+    prId: string,
+    dto: UpdatePurchaseRequestDto,
+    tenantId?: string,
+  ): Promise<PurchaseRequest> {
+    const pr = await this.getPurchaseRequest(prId, tenantId);
+
+    if (pr.status !== PRStatus.DRAFT) {
+      throw new BadRequestException(
+        `Cannot edit PR in ${pr.status} status. Only DRAFT PRs can be modified.`,
+      );
+    }
+
+    if (dto.departmentId) {
+      const deptRepo = this.dataSource.getRepository('Department');
+      const deptWhere: any = { id: dto.departmentId };
+      if (tenantId) deptWhere.tenantId = tenantId;
+      const department = await deptRepo.findOne({ where: deptWhere });
+      if (!department) {
+        throw new BadRequestException('Department not found or does not belong to this tenant');
+      }
+    }
+
+    if (dto.departmentId !== undefined) pr.departmentId = dto.departmentId || (null as any);
+    if (dto.priority !== undefined) pr.priority = dto.priority;
+    if (dto.justification !== undefined) pr.justification = dto.justification;
+    if (dto.notes !== undefined) pr.notes = dto.notes;
+    if (dto.requiredDate !== undefined) {
+      pr.requiredDate = dto.requiredDate ? new Date(dto.requiredDate) : (undefined as any);
+    }
+
+    if (dto.items) {
+      for (const item of dto.items) {
+        if (!item.quantityRequested || item.quantityRequested <= 0) {
+          throw new BadRequestException(
+            `Item "${item.itemName || item.itemCode}" must have quantity > 0`,
+          );
+        }
+        if (item.unitPriceEstimated !== undefined && item.unitPriceEstimated < 0) {
+          throw new BadRequestException(
+            `Item "${item.itemName || item.itemCode}" cannot have a negative estimated price`,
+          );
+        }
+        const itemWhere: any = { id: item.itemId };
+        if (tenantId) itemWhere.tenantId = tenantId;
+        const existingItem = await this.itemRepo.findOne({ where: itemWhere });
+        if (!existingItem) {
+          throw new BadRequestException(
+            `Item "${item.itemName || item.itemCode}" (${item.itemId}) not found or does not belong to this tenant`,
+          );
+        }
+      }
+
+      await this.prItemRepo.delete({ purchaseRequestId: prId });
+
+      const newItems = dto.items.map((item) =>
+        this.prItemRepo.create({
+          purchaseRequestId: prId,
+          itemId: item.itemId,
+          itemCode: item.itemCode,
+          itemName: item.itemName,
+          itemUnit: item.itemUnit || 'unit',
+          quantityRequested: item.quantityRequested,
+          unitPriceEstimated: item.unitPriceEstimated || 0,
+          specifications: item.specifications,
+          notes: item.notes,
+        }),
+      );
+      await this.prItemRepo.save(newItems);
+
+      pr.totalEstimated = dto.items.reduce(
+        (sum, i) => sum + i.quantityRequested * Number(i.unitPriceEstimated || 0),
+        0,
+      );
+    }
+
+    await this.prRepo.save(pr);
+    this.logger.log(`Updated PR ${pr.requestNumber}`);
+    return this.getPurchaseRequest(prId, tenantId);
   }
 
   /**

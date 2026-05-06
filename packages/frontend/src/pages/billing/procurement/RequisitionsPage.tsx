@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../../services/api';
 import { useFacilityId } from '../../../lib/facility';
@@ -115,6 +115,8 @@ export default function RequisitionsPage() {
   const [statusFilter, setStatusFilter] = useState<RequisitionStatus | 'all'>('all');
   const [selectedRequisition, setSelectedRequisition] = useState<PurchaseRequest | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [viewingId, setViewingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<RequisitionFormData>(emptyFormData);
 
   const facilityId = useFacilityId();
@@ -188,8 +190,50 @@ export default function RequisitionsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchase-requests'] });
       setShowCreateModal(false);
+      setEditingId(null);
       setFormData(emptyFormData);
     },
+  });
+
+  // Update mutation (edit a draft requisition)
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: RequisitionFormData }) => {
+      const payload = {
+        departmentId: data.departmentId || undefined,
+        priority: data.priority,
+        justification: data.justification || undefined,
+        notes: data.notes,
+        items: data.items
+          .filter((item) => item.name && item.quantity > 0)
+          .map((item) => ({
+            itemId: item.itemId || item.name,
+            itemCode: item.itemCode || item.name,
+            itemName: item.name,
+            itemUnit: item.unit,
+            quantityRequested: item.quantity,
+            unitPriceEstimated: item.estimatedPrice,
+          })),
+      };
+      return api.put(`/procurement/purchase-requests/${id}`, payload);
+    },
+    onSuccess: (_res, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['purchase-requests'] });
+      queryClient.invalidateQueries({ queryKey: ['purchase-request', vars.id] });
+      setShowCreateModal(false);
+      setEditingId(null);
+      setFormData(emptyFormData);
+    },
+  });
+
+  // Full requisition detail (used by View Full Details and Edit)
+  const detailId = viewingId || editingId;
+  const { data: requisitionDetail, isLoading: detailLoading } = useQuery({
+    queryKey: ['purchase-request', detailId],
+    queryFn: async () => {
+      const { data } = await api.get(`/procurement/purchase-requests/${detailId}`);
+      return (data?.data ?? data) as PurchaseRequest;
+    },
+    enabled: !!detailId,
   });
 
   // Submit mutation
@@ -244,12 +288,61 @@ export default function RequisitionsPage() {
   };
 
   const handleSaveAsDraft = () => {
-    createMutation.mutate({ ...formData, submit: false });
+    if (editingId) {
+      updateMutation.mutate({ id: editingId, data: formData });
+    } else {
+      createMutation.mutate({ ...formData, submit: false });
+    }
   };
 
   const handleSubmitForApproval = () => {
-    createMutation.mutate({ ...formData, submit: true });
+    if (editingId) {
+      updateMutation.mutate(
+        { id: editingId, data: formData },
+        {
+          onSuccess: () => {
+            submitMutation.mutate(editingId);
+          },
+        },
+      );
+    } else {
+      createMutation.mutate({ ...formData, submit: true });
+    }
   };
+
+  const startEdit = (req: PurchaseRequest) => {
+    setEditingId(req.id);
+    setViewingId(null);
+    setShowCreateModal(true);
+  };
+
+  // Hydrate form when full detail is loaded for editing
+  useEffect(() => {
+    if (editingId && requisitionDetail && requisitionDetail.id === editingId) {
+      const deptId =
+        typeof requisitionDetail.department === 'object' && requisitionDetail.department
+          ? requisitionDetail.department.id
+          : (requisitionDetail.departmentId || '');
+      setFormData({
+        justification: requisitionDetail.justification || '',
+        departmentId: deptId,
+        priority: requisitionDetail.priority || 'normal',
+        notes: requisitionDetail.notes || '',
+        items:
+          (requisitionDetail.items || []).length > 0
+            ? requisitionDetail.items.map((it: any, idx: number) => ({
+                id: String(idx + 1),
+                itemId: it.itemId || '',
+                itemCode: it.itemCode || '',
+                name: it.itemName || it.name || '',
+                quantity: Number(it.quantityRequested ?? it.quantity ?? 0),
+                unit: it.itemUnit || it.unit || 'pcs',
+                estimatedPrice: Number(it.unitPriceEstimated ?? it.estimatedPrice ?? 0),
+              }))
+            : emptyFormData.items,
+      });
+    }
+  }, [editingId, requisitionDetail]);
 
   const filteredRequisitions = useMemo(() => {
     return requisitions.filter((req) => {
@@ -314,7 +407,11 @@ export default function RequisitionsPage() {
             </div>
           </div>
           <button
-            onClick={() => setShowCreateModal(true)}
+            onClick={() => {
+              setEditingId(null);
+              setFormData(emptyFormData);
+              setShowCreateModal(true);
+            }}
             className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
           >
             <Plus className="w-4 h-4" />
@@ -368,7 +465,11 @@ export default function RequisitionsPage() {
               <h3 className="text-lg font-medium text-gray-900 mb-1">No Requisitions</h3>
               <p className="text-sm text-gray-500 mb-4">Get started by creating a new requisition</p>
               <button
-                onClick={() => setShowCreateModal(true)}
+                onClick={() => {
+                  setEditingId(null);
+                  setFormData(emptyFormData);
+                  setShowCreateModal(true);
+                }}
                 className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
               >
                 <Plus className="w-4 h-4" />
@@ -566,7 +667,10 @@ export default function RequisitionsPage() {
                       {submitMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                       Submit for Approval
                     </button>
-                    <button className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+                    <button
+                      onClick={() => startEdit(selectedRequisition)}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                    >
                       <Edit className="w-4 h-4" />
                       Edit Requisition
                     </button>
@@ -598,7 +702,10 @@ export default function RequisitionsPage() {
                     Convert to RFQ
                   </button>
                 )}
-                <button className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+                <button
+                  onClick={() => setViewingId(selectedRequisition.id)}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                >
                   <Eye className="w-4 h-4" />
                   View Full Details
                 </button>
@@ -613,8 +720,19 @@ export default function RequisitionsPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
             <div className="px-6 py-4 border-b flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Create New Requisition</h2>
-              <button onClick={() => setShowCreateModal(false)} className="p-1 hover:bg-gray-100 rounded">
+              <h2 className="text-lg font-semibold">
+                {editingId
+                  ? `Edit Requisition${requisitionDetail?.requestNumber ? ` · ${requisitionDetail.requestNumber}` : ''}`
+                  : 'Create New Requisition'}
+              </h2>
+              <button
+                onClick={() => {
+                  setShowCreateModal(false);
+                  setEditingId(null);
+                  setFormData(emptyFormData);
+                }}
+                className="p-1 hover:bg-gray-100 rounded"
+              >
                 <XCircle className="w-5 h-5 text-gray-400" />
               </button>
             </div>
@@ -769,6 +887,7 @@ export default function RequisitionsPage() {
               <button
                 onClick={() => {
                   setShowCreateModal(false);
+                  setEditingId(null);
                   setFormData(emptyFormData);
                 }}
                 className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100"
@@ -777,19 +896,176 @@ export default function RequisitionsPage() {
               </button>
               <button
                 onClick={handleSaveAsDraft}
-                disabled={createMutation.isPending}
+                disabled={createMutation.isPending || updateMutation.isPending || (editingId ? detailLoading : false)}
                 className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 flex items-center gap-2"
               >
-                {createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                Save as Draft
+                {(createMutation.isPending || updateMutation.isPending) && <Loader2 className="w-4 h-4 animate-spin" />}
+                {editingId ? 'Save Changes' : 'Save as Draft'}
               </button>
               <button
                 onClick={handleSubmitForApproval}
-                disabled={createMutation.isPending}
+                disabled={createMutation.isPending || updateMutation.isPending || submitMutation.isPending || (editingId ? detailLoading : false)}
                 className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
               >
-                {createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                Submit for Approval
+                {(createMutation.isPending || updateMutation.isPending || submitMutation.isPending) && <Loader2 className="w-4 h-4 animate-spin" />}
+                {editingId ? 'Save & Submit for Approval' : 'Submit for Approval'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Full Details Modal */}
+      {viewingId && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold">
+                  Requisition {requisitionDetail?.requestNumber || ''}
+                </h2>
+                {requisitionDetail && (
+                  <div className="mt-1 flex items-center gap-2">
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-xs font-medium inline-flex items-center gap-1 ${statusConfig[requisitionDetail.status].bg} ${statusConfig[requisitionDetail.status].color}`}
+                    >
+                      {statusConfig[requisitionDetail.status].icon}
+                      {statusConfig[requisitionDetail.status].label}
+                    </span>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-xs font-medium ${priorityConfig[requisitionDetail.priority].bg} ${priorityConfig[requisitionDetail.priority].color}`}
+                    >
+                      {priorityConfig[requisitionDetail.priority].label}
+                    </span>
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => setViewingId(null)}
+                className="p-1 hover:bg-gray-100 rounded"
+              >
+                <XCircle className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto space-y-5">
+              {detailLoading || !requisitionDetail ? (
+                <div className="flex items-center justify-center py-10 text-gray-500">
+                  <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                  Loading details…
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <p className="text-xs text-gray-500">Department</p>
+                      <p className="font-medium flex items-center gap-1">
+                        <Building2 className="w-4 h-4 text-gray-400" />
+                        {departmentName(requisitionDetail)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Requester</p>
+                      <p className="font-medium flex items-center gap-1">
+                        <User className="w-4 h-4 text-gray-400" />
+                        {requesterName(requisitionDetail)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Request Date</p>
+                      <p className="font-medium flex items-center gap-1">
+                        <Calendar className="w-4 h-4 text-gray-400" />
+                        {formatDate(requisitionDetail.requestDate || requisitionDetail.createdAt)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Required By</p>
+                      <p className="font-medium">
+                        {formatDate((requisitionDetail as any).requiredDate)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {requisitionDetail.justification && (
+                    <div>
+                      <p className="text-xs text-gray-500 mb-1">Justification</p>
+                      <p className="text-sm whitespace-pre-wrap">{requisitionDetail.justification}</p>
+                    </div>
+                  )}
+
+                  {requisitionDetail.notes && (
+                    <div>
+                      <p className="text-xs text-gray-500 mb-1">Notes</p>
+                      <p className="text-sm whitespace-pre-wrap">{requisitionDetail.notes}</p>
+                    </div>
+                  )}
+
+                  <div>
+                    <p className="text-sm font-semibold mb-2">
+                      Items ({(requisitionDetail.items || []).length})
+                    </p>
+                    {(requisitionDetail.items || []).length === 0 ? (
+                      <p className="text-sm text-gray-500 italic">No items added.</p>
+                    ) : (
+                      <div className="border rounded-lg overflow-hidden">
+                        <table className="w-full text-sm">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="text-left px-3 py-2">Code</th>
+                              <th className="text-left px-3 py-2">Item</th>
+                              <th className="text-right px-3 py-2">Qty</th>
+                              <th className="text-left px-3 py-2">Unit</th>
+                              <th className="text-right px-3 py-2">Est. Price</th>
+                              <th className="text-right px-3 py-2">Line Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(requisitionDetail.items as any[]).map((it: any, idx: number) => {
+                              const qty = Number(it.quantityRequested ?? it.quantity ?? 0);
+                              const price = Number(it.unitPriceEstimated ?? it.estimatedPrice ?? 0);
+                              return (
+                                <tr key={it.id || idx} className="border-t">
+                                  <td className="px-3 py-2 font-mono text-xs">{it.itemCode || '—'}</td>
+                                  <td className="px-3 py-2">{it.itemName || it.name}</td>
+                                  <td className="px-3 py-2 text-right tabular-nums">{qty}</td>
+                                  <td className="px-3 py-2">{it.itemUnit || it.unit || '—'}</td>
+                                  <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(price)}</td>
+                                  <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(qty * price)}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                          <tfoot>
+                            <tr className="bg-gray-50 border-t font-semibold">
+                              <td className="px-3 py-2" colSpan={5}>Total Estimated</td>
+                              <td className="px-3 py-2 text-right tabular-nums">
+                                {formatCurrency(totalOf(requisitionDetail))}
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-3">
+              {requisitionDetail?.status === 'draft' && (
+                <button
+                  onClick={() => {
+                    if (requisitionDetail) startEdit(requisitionDetail);
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 flex items-center gap-2"
+                >
+                  <Edit className="w-4 h-4" />
+                  Edit
+                </button>
+              )}
+              <button
+                onClick={() => setViewingId(null)}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+              >
+                Close
               </button>
             </div>
           </div>
