@@ -238,6 +238,11 @@ export class UserListQueryDto {
   @IsOptional()
   @IsString()
   status?: string;
+
+  @ApiPropertyOptional({ description: 'Filter users by role name (e.g., cashier, doctor, nurse)' })
+  @IsOptional()
+  @IsString()
+  role?: string;
 }
 
 export class AssignMultiplePermissionsDto {

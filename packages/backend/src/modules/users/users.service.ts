@@ -233,7 +233,7 @@ export class UsersService {
   }
 
   async findAll(query: UserListQueryDto, tenantId?: string) {
-    const { page = 1, limit = 20, search, status } = query;
+    const { page = 1, limit = 20, search, status, role } = query;
     const skip = (page - 1) * limit;
 
     const queryBuilder = this.userRepository.createQueryBuilder('user');
@@ -253,6 +253,10 @@ export class UsersService {
 
     if (status) {
       queryBuilder.andWhere('user.status = :status', { status });
+    }
+
+    if (role) {
+      queryBuilder.andWhere('role.name = :roleName', { roleName: role });
     }
 
     const [users, total] = await queryBuilder
