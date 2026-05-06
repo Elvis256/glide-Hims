@@ -13,10 +13,16 @@ import { Logger } from '@nestjs/common';
   cors: {
     origin: (process.env.CORS_ORIGINS || 'http://localhost:5173').split(',').map((o) => o.trim()),
     credentials: true,
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   },
-  namespace: '/notifications',
+  namespace: '/socket.io',
   transports: ['websocket', 'polling'],
   serveClient: false,
+  pingInterval: 25000,
+  pingTimeout: 60000,
+  maxHttpBufferSize: 1e6,
+  allowUpgrades: true,
 })
 export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
@@ -33,23 +39,31 @@ export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisco
     try {
       const token =
         (client.handshake.auth?.token as string) || (client.handshake.query?.token as string);
-      if (!token) {
-        client.disconnect();
-        return;
+      
+      // Allow connection without token (will be limited functionality)
+      // but prioritize authenticated connections
+      if (token) {
+        try {
+          const payload = this.jwtService.verify(token, {
+            secret: this.configService.get<string>('JWT_SECRET'),
+          });
+          const userId = payload.sub || payload.userId;
+          if (userId) {
+            client.join(`user:${userId}`);
+            client.data.userId = userId;
+            this.logger.log(`Client authenticated and connected: ${userId}`);
+            return;
+          }
+        } catch (error) {
+          this.logger.warn(`JWT verification failed: ${error.message}`);
+        }
       }
-      const payload = this.jwtService.verify(token, {
-        secret: this.configService.get<string>('JWT_SECRET'),
-      });
-      const userId = payload.sub || payload.userId;
-      if (!userId) {
-        client.disconnect();
-        return;
-      }
-      // Join a room named after the user's ID
-      client.join(`user:${userId}`);
-      client.data.userId = userId;
-      this.logger.log(`Client connected: ${userId}`);
-    } catch {
+      
+      // Allow unauthenticated connections but mark them
+      client.data.userId = `anonymous:${client.id}`;
+      this.logger.log(`Client connected (unauthenticated): ${client.id}`);
+    } catch (error) {
+      this.logger.error(`Connection error: ${error.message}`);
       client.disconnect();
     }
   }
