@@ -176,7 +176,7 @@ export class ProcurementController {
   @Put('purchase-requests/:id/approve')
   @AuthWithPermissions('procurement.approve')
   approvePurchaseRequest(@Param('id') id: string, @Body() dto: ApprovePRDto, @Request() req: any) {
-    return this.procurementService.approvePurchaseRequest(id, dto, req.user.id, req.user?.tenantId);
+    return this.procurementService.approvePurchaseRequest(id, dto, req.user.id, req.user?.tenantId, req.user?.roles);
   }
 
   @Put('purchase-requests/:id/reject')
