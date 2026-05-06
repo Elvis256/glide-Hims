@@ -130,7 +130,7 @@ export default function ApprovalDashboardPage() {
     queryKey: ['budget:status', facilityId],
     queryFn: async () => {
       try {
-        const res = await api.get(`/finance/budget`, {
+        const res = await api.get(`/finance/budgets`, {
           params: { facilityId },
         });
         return res.data.data || null;
