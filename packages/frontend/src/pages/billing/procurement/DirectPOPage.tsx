@@ -548,3 +548,5 @@ export function DirectPOPage() {
     </div>
   );
 }
+
+export default DirectPOPage;
