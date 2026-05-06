@@ -796,21 +796,59 @@ export default function RequisitionsPage() {
                               module={catalogModule}
                               value={item.name ? { id: item.itemId || null, source: item.itemId ? 'inventory' : 'free_text', code: item.itemCode, name: item.name, unit: item.unit } : null}
                               onChange={(picked) => {
-                                setFormData((prev) => ({
-                                  ...prev,
-                                  items: prev.items.map((i) =>
-                                    i.id === item.id
-                                      ? {
-                                          ...i,
-                                          itemId: picked?.id || '',
-                                          itemCode: picked?.code || '',
-                                          name: picked?.name || '',
-                                          unit: picked?.unit || i.unit,
-                                          estimatedPrice: picked?.lastPrice ?? picked?.sellingPrice ?? i.estimatedPrice,
-                                        }
-                                      : i,
-                                  ),
-                                }));
+                                if (!picked) {
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    items: prev.items.map((i) =>
+                                      i.id === item.id
+                                        ? { ...i, itemId: '', itemCode: '', name: '', estimatedPrice: 0 }
+                                        : i,
+                                    ),
+                                  }));
+                                  return;
+                                }
+                                setFormData((prev) => {
+                                  // If the picked item is already on another row, bump that row's qty
+                                  // and remove the current empty/duplicate row.
+                                  const dupKey = picked.id || picked.name;
+                                  const existing = prev.items.find(
+                                    (i) =>
+                                      i.id !== item.id &&
+                                      ((picked.id && i.itemId === picked.id) ||
+                                        (!picked.id && i.name && i.name.toLowerCase() === picked.name.toLowerCase())),
+                                  );
+                                  if (existing) {
+                                    const incoming = Math.max(item.quantity || 0, 1);
+                                    return {
+                                      ...prev,
+                                      items: prev.items
+                                        .filter((i) => i.id !== item.id)
+                                        .map((i) =>
+                                          i.id === existing.id
+                                            ? { ...i, quantity: (i.quantity || 0) + incoming }
+                                            : i,
+                                        ),
+                                    };
+                                  }
+                                  return {
+                                    ...prev,
+                                    items: prev.items.map((i) =>
+                                      i.id === item.id
+                                        ? {
+                                            ...i,
+                                            itemId: picked.id || '',
+                                            itemCode: picked.code || '',
+                                            name: picked.name || '',
+                                            unit: picked.unit || i.unit,
+                                            quantity: i.quantity > 0 ? i.quantity : 1,
+                                            estimatedPrice:
+                                              picked.lastPrice ?? picked.sellingPrice ?? i.estimatedPrice,
+                                          }
+                                        : i,
+                                    ),
+                                  };
+                                  void dupKey;
+                                });
                               }}
                               placeholder="Search items…"
                               allowFreeText
