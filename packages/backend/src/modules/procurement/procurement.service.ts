@@ -308,7 +308,14 @@ export class ProcurementService {
       );
     }
 
-    await this.prRepo.save(pr);
+    await this.prRepo.update(prId, {
+      departmentId: pr.departmentId,
+      priority: pr.priority,
+      justification: pr.justification,
+      notes: pr.notes,
+      requiredDate: pr.requiredDate,
+      totalEstimated: pr.totalEstimated,
+    });
     this.logger.log(`Updated PR ${pr.requestNumber}`);
     return this.getPurchaseRequest(prId, tenantId);
   }
