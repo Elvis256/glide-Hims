@@ -18,12 +18,13 @@ import {
   User,
   Building2,
   Calendar,
-  DollarSign,
   Package,
   Loader2,
 } from 'lucide-react';
 import { asList } from '../../../utils/unwrapResponse';
 import { CategoryContextBanner, useProcurementCategory } from '../../../components/procurement/CategoryContextBanner';
+import SearchableSelect from '../../../components/SearchableSelect';
+import { formatCurrency } from '../../../lib/currency';
 
 type RequisitionStatus =
   | 'draft'
@@ -55,11 +56,16 @@ interface PurchaseRequest {
   departmentId: string;
   items: RequisitionItem[];
   notes?: string;
+  justification?: string;
   totalAmount: number;
-  requestDate: string;
+  totalEstimated?: number;
+  requestDate?: string;
+  createdAt?: string;
+  // Joined relations from backend
+  requestedBy?: { id: string; fullName?: string; firstName?: string; lastName?: string; email?: string };
+  department?: { id: string; name: string } | string;
   // Extended fields for UI display
   title?: string;
-  department?: string;
   requester?: string;
   submittedDate?: string;
   approvedDate?: string;
@@ -67,7 +73,7 @@ interface PurchaseRequest {
 }
 
 interface RequisitionFormData {
-  title: string;
+  justification: string;
   departmentId: string;
   priority: RequisitionPriority;
   items: RequisitionItem[];
@@ -75,7 +81,7 @@ interface RequisitionFormData {
 }
 
 const emptyFormData: RequisitionFormData = {
-  title: '',
+  justification: '',
   departmentId: '',
   priority: 'normal',
   items: [{ id: '1', itemId: '', itemCode: '', name: '', quantity: 0, unit: 'pcs', estimatedPrice: 0 }],
@@ -113,6 +119,38 @@ export default function RequisitionsPage() {
 
   const facilityId = useFacilityId();
 
+  // Fetch departments for the create modal
+  const { data: departments = [] } = useQuery({
+    queryKey: ['departments'],
+    queryFn: async () => {
+      const { data } = await api.get('/departments');
+      const list = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
+      return list as Array<{ id: string; name: string; code?: string }>;
+    },
+  });
+
+  // Helpers to humanize joined fields
+  const requesterName = (req: PurchaseRequest): string => {
+    const u = req.requestedBy;
+    if (u) return u.fullName || [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email || '—';
+    return req.requester || '—';
+  };
+  const departmentName = (req: PurchaseRequest): string => {
+    if (typeof req.department === 'object' && req.department) return req.department.name || '—';
+    if (typeof req.department === 'string' && req.department) return req.department;
+    return '—';
+  };
+  const formatDate = (s?: string) => {
+    if (!s) return '—';
+    try {
+      return new Date(s).toLocaleDateString();
+    } catch {
+      return s;
+    }
+  };
+  const totalOf = (req: PurchaseRequest) => Number(req.totalAmount ?? req.totalEstimated ?? 0);
+
+
   // Fetch purchase requests
   const { data: requisitions = [], isLoading, error } = useQuery({
     queryKey: ['purchase-requests', facilityId, statusFilter],
@@ -132,15 +170,18 @@ export default function RequisitionsPage() {
         facilityId,
         departmentId: data.departmentId || undefined,
         priority: data.priority,
+        justification: data.justification || undefined,
         notes: data.notes,
-        items: data.items.map((item) => ({
-          itemId: item.itemId || item.name,
-          itemCode: item.itemCode || item.name,
-          itemName: item.name,
-          itemUnit: item.unit,
-          quantityRequested: item.quantity,
-          unitPriceEstimated: item.estimatedPrice,
-        })),
+        items: data.items
+          .filter((item) => item.name && item.quantity > 0)
+          .map((item) => ({
+            itemId: item.itemId || item.name,
+            itemCode: item.itemCode || item.name,
+            itemName: item.name,
+            itemUnit: item.unit,
+            quantityRequested: item.quantity,
+            unitPriceEstimated: item.estimatedPrice,
+          })),
       };
       return api.post('/procurement/purchase-requests', payload);
     },
@@ -212,11 +253,14 @@ export default function RequisitionsPage() {
 
   const filteredRequisitions = useMemo(() => {
     return requisitions.filter((req) => {
-      const matchesSearch =
-        req.requestNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (req.title || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (req.department || '').toLowerCase().includes(searchTerm.toLowerCase());
-      return matchesSearch;
+      const term = searchTerm.toLowerCase();
+      if (!term) return true;
+      return (
+        req.requestNumber.toLowerCase().includes(term) ||
+        (req.justification || '').toLowerCase().includes(term) ||
+        departmentName(req).toLowerCase().includes(term) ||
+        requesterName(req).toLowerCase().includes(term)
+      );
     });
   }, [requisitions, searchTerm]);
 
@@ -357,19 +401,21 @@ export default function RequisitionsPage() {
                         {priorityConfig[req.priority].label}
                       </span>
                     </div>
-                    <h3 className="font-medium text-gray-900 mb-1">{req.title || req.requestNumber}</h3>
-                    <div className="flex items-center gap-4 text-sm text-gray-500">
+                    <h3 className="font-medium text-gray-900 mb-1">
+                      {req.justification || `Requisition ${req.requestNumber}`}
+                    </h3>
+                    <div className="flex items-center gap-4 text-sm text-gray-500 flex-wrap">
                       <span className="flex items-center gap-1">
                         <Building2 className="w-3.5 h-3.5" />
-                        {req.department || req.departmentId}
+                        {departmentName(req)}
                       </span>
                       <span className="flex items-center gap-1">
                         <User className="w-3.5 h-3.5" />
-                        {req.requester || req.requestedById}
+                        {requesterName(req)}
                       </span>
                       <span className="flex items-center gap-1">
                         <Calendar className="w-3.5 h-3.5" />
-                        {req.requestDate}
+                        {formatDate(req.requestDate || req.createdAt)}
                       </span>
                       <span className="flex items-center gap-1">
                         <Package className="w-3.5 h-3.5" />
@@ -378,9 +424,8 @@ export default function RequisitionsPage() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="flex items-center gap-1 text-lg font-semibold text-gray-900">
-                      <DollarSign className="w-4 h-4" />
-                      {(req.totalAmount || 0).toLocaleString()}
+                    <div className="text-lg font-semibold text-gray-900 tabular-nums">
+                      {formatCurrency(totalOf(req))}
                     </div>
                     <p className="text-xs text-gray-500">Estimated Cost</p>
                   </div>
@@ -419,39 +464,54 @@ export default function RequisitionsPage() {
                 <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Requisition Number</p>
                 <p className="font-mono font-medium">{selectedRequisition.requestNumber}</p>
               </div>
-              <div>
-                <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Title</p>
-                <p className="font-medium">{selectedRequisition.title || selectedRequisition.requestNumber}</p>
-              </div>
+              {selectedRequisition.justification && (
+                <div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Justification</p>
+                  <p className="text-sm">{selectedRequisition.justification}</p>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Department</p>
-                  <p className="text-sm">{selectedRequisition.department || selectedRequisition.departmentId}</p>
+                  <p className="text-sm">{departmentName(selectedRequisition)}</p>
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Requester</p>
-                  <p className="text-sm">{selectedRequisition.requester || selectedRequisition.requestedById}</p>
+                  <p className="text-sm">{requesterName(selectedRequisition)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Date</p>
+                  <p className="text-sm">{formatDate(selectedRequisition.requestDate || selectedRequisition.createdAt)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Priority</p>
+                  <p className="text-sm capitalize">{selectedRequisition.priority}</p>
                 </div>
               </div>
               <div>
                 <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Items</p>
-                <div className="space-y-2">
-                  {(selectedRequisition.items || []).map((item) => (
-                    <div key={item.id} className="flex justify-between text-sm bg-gray-50 p-2 rounded">
-                      <span>{item.name}</span>
-                      <span className="text-gray-600">
-                        {item.quantity} {item.unit} × ${item.estimatedPrice}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+                {(selectedRequisition.items || []).length === 0 ? (
+                  <p className="text-sm italic text-gray-400">No items added.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {(selectedRequisition.items || []).map((item) => (
+                      <div key={item.id} className="flex justify-between text-sm bg-gray-50 p-2 rounded">
+                        <span>{item.name}</span>
+                        <span className="text-gray-600 tabular-nums">
+                          {item.quantity} {item.unit} × {formatCurrency(item.estimatedPrice || 0)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="flex justify-between mt-2 pt-2 border-t font-medium">
                   <span>Total Estimated</span>
-                  <span>${(selectedRequisition.totalAmount || 0).toLocaleString()}</span>
+                  <span className="tabular-nums">{formatCurrency(totalOf(selectedRequisition))}</span>
                 </div>
               </div>
 
               {/* Approval Workflow */}
+              {selectedRequisition.status !== 'draft' && (
               <div>
                 <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Approval Workflow</p>
                 <div className="space-y-2">
@@ -492,6 +552,7 @@ export default function RequisitionsPage() {
                   )}
                 </div>
               </div>
+              )}
 
               {/* Actions */}
               <div className="pt-4 space-y-2">
@@ -559,29 +620,28 @@ export default function RequisitionsPage() {
             </div>
             <div className="p-6 space-y-4 overflow-y-auto max-h-[calc(90vh-140px)]">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Justification / Reason</label>
                 <input
                   type="text"
-                  value={formData.title}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, title: e.target.value }))}
+                  value={formData.justification}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, justification: e.target.value }))}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  placeholder="Enter requisition title"
+                  placeholder="e.g. Restock lab reagents for August"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
-                  <select
+                  <SearchableSelect
                     value={formData.departmentId}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, departmentId: e.target.value }))}
-                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="">Select department</option>
-                    <option value="pharmacy">Pharmacy</option>
-                    <option value="laboratory">Laboratory</option>
-                    <option value="administration">Administration</option>
-                    <option value="emergency">Emergency</option>
-                  </select>
+                    onChange={(v) => setFormData((prev) => ({ ...prev, departmentId: v }))}
+                    options={(departments as Array<{ id: string; name: string; code?: string }>).map((d) => ({
+                      value: d.id,
+                      label: d.name,
+                      prefix: d.code,
+                    }))}
+                    placeholder="Search department..."
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
@@ -634,7 +694,6 @@ export default function RequisitionsPage() {
                                   ),
                                 }));
                               }}
-                              module="all"
                               placeholder="Search items…"
                               allowFreeText
                               size="sm"
@@ -643,9 +702,11 @@ export default function RequisitionsPage() {
                           <td className="px-3 py-2">
                             <input
                               type="number"
+                              min={0}
                               value={item.quantity || ''}
                               onChange={(e) => handleItemChange(item.id, 'quantity', Number(e.target.value))}
-                              className="w-16 px-2 py-1 border rounded"
+                              onFocus={(e) => e.currentTarget.select()}
+                              className="w-20 px-2 py-1 border rounded tabular-nums"
                               placeholder="0"
                             />
                           </td>
@@ -661,9 +722,12 @@ export default function RequisitionsPage() {
                           <td className="px-3 py-2">
                             <input
                               type="number"
+                              min={0}
+                              step="0.01"
                               value={item.estimatedPrice || ''}
                               onChange={(e) => handleItemChange(item.id, 'estimatedPrice', Number(e.target.value))}
-                              className="w-20 px-2 py-1 border rounded"
+                              onFocus={(e) => e.currentTarget.select()}
+                              className="w-24 px-2 py-1 border rounded tabular-nums"
                               placeholder="0.00"
                             />
                           </td>
