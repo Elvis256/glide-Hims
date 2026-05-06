@@ -956,6 +956,7 @@ const navigationSections: NavSection[] = [
         permissions: ['procurement.read', 'settings.read'],
         children: [
           { name: 'Approval Workflows', href: '/admin/procurement/approvals', icon: GitBranch, permissions: ['settings.update'] },
+          { name: 'Org & Approval Routing', href: '/admin/procurement/org-approvals', icon: GitBranch, permissions: ['settings.update'] },
           { name: 'Budget Management', href: '/admin/procurement/budgets', icon: Wallet, permissions: ['finance.read'] },
           { name: 'Procurement Policies', href: '/admin/procurement/policies', icon: FileText, permissions: ['settings.read'] },
           { name: 'Item Categories', href: '/admin/procurement/categories', icon: FolderTree, permissions: ['inventory.read'] },
