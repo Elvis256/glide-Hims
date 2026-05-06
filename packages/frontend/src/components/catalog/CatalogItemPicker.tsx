@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Search, X, Package, Pill, FlaskConical, Wrench, ChevronDown } from 'lucide-react';
 import api from '../../services/api';
@@ -126,7 +127,10 @@ export function CatalogItemPicker({
   // Close dropdown on outside click
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      const insideContainer = containerRef.current && containerRef.current.contains(target);
+      const insideDropdown = dropdownRef.current && dropdownRef.current.contains(target);
+      if (!insideContainer && !insideDropdown) {
         setIsOpen(false);
       }
     }
@@ -202,6 +206,25 @@ export function CatalogItemPicker({
 
   const inputPadding = size === 'sm' ? 'px-2 py-1 text-sm' : 'px-3 py-2';
   const iconSize = size === 'sm' ? 'w-3.5 h-3.5' : 'w-4 h-4';
+
+  // Position dropdown via portal so it isn't clipped by overflow:auto ancestors (e.g., modals)
+  const [dropdownRect, setDropdownRect] = useState<{ left: number; top: number; width: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    const update = () => {
+      const el = inputRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setDropdownRect({ left: r.left, top: r.bottom + 4, width: r.width });
+    };
+    update();
+    window.addEventListener('scroll', update, true);
+    window.addEventListener('resize', update);
+    return () => {
+      window.removeEventListener('scroll', update, true);
+      window.removeEventListener('resize', update);
+    };
+  }, [isOpen, inputValue]);
 
   // If item is selected, show the selected state
   if (value) {
@@ -284,10 +307,11 @@ export function CatalogItemPicker({
         )}
       </div>
 
-      {isOpen && (inputValue.trim().length >= 1) && (
+      {isOpen && (inputValue.trim().length >= 1) && dropdownRect && createPortal(
         <div
           ref={dropdownRef}
-          className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto"
+          className="fixed z-[1000] bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto"
+          style={{ left: dropdownRect.left, top: dropdownRect.top, width: dropdownRect.width }}
         >
           {results.length === 0 && !isFetching && (
             <div className="px-3 py-3 text-sm text-gray-500 text-center">
@@ -349,7 +373,8 @@ export function CatalogItemPicker({
               </div>
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
