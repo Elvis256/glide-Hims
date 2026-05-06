@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { rfqService, type RFQ, type RFQStatus as RFQStatusType, type CreateRFQDto } from '../../../services/rfq';
 import { useAuthStore } from '../../../store/auth';
+import { CategoryContextBanner } from '../../../components/procurement/CategoryContextBanner';
 
 type RFQStatus = 'draft' | 'sent' | 'pending_responses' | 'responses_received' | 'closed' | 'cancelled';
 
@@ -98,6 +99,7 @@ export default function RFQPage() {
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50">
+      <CategoryContextBanner />
       {/* Header */}
       <div className="bg-white border-b px-6 py-4 flex-shrink-0">
         <div className="flex items-center justify-between mb-4">

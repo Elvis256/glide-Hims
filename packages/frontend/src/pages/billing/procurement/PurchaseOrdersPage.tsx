@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import api from '../../../services/api';
 import { getFacilityId } from '../../../lib/facility';
 import { CatalogItemPicker, type SelectedItem } from '../../../components/catalog';
+import { CategoryContextBanner, useProcurementCategory } from '../../../components/procurement/CategoryContextBanner';
 import {
   ShoppingCart,
   Plus,
@@ -176,6 +177,9 @@ const statusConfig: Record<POStatus, { color: string; bg: string; icon: React.Re
 };
 
 export default function PurchaseOrdersPage() {
+  const { category: __procCategory } = useProcurementCategory();
+  const catalogModule: 'pharmacy' | 'general' | 'all' = __procCategory === 'drugs' ? 'pharmacy' : __procCategory === 'supplies' ? 'general' : 'all';
+
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<POStatus | 'All'>('All');
@@ -344,6 +348,7 @@ export default function PurchaseOrdersPage() {
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50">
+      <CategoryContextBanner />
       {/* Header */}
       <div className="bg-white border-b px-6 py-4 flex-shrink-0">
         <div className="flex items-center justify-between mb-4">
@@ -798,6 +803,7 @@ export default function PurchaseOrdersPage() {
                         <tr key={line.rowId} className="border-t">
                           <td className="px-3 py-2 min-w-[200px]">
                             <CatalogItemPicker
+                              module={catalogModule}
                               value={line.itemId ? { id: line.itemId, source: 'inventory', code: line.itemCode, name: line.itemName, unit: line.itemUnit } : null}
                               onChange={(picked) =>
                                 setPoLineItems((prev) =>
