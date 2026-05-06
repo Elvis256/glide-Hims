@@ -11,20 +11,14 @@ export class DepartmentsController {
   ) {}
 
   @Get()
-  async getDepartments(@Query('facilityId') facilityId: string) {
-    if (!facilityId) {
-      return [];
+  async getDepartments(@Query('facilityId') facilityId?: string) {
+    const where: any = { status: 'active' };
+    if (facilityId) {
+      where.facilityId = facilityId;
     }
-
-    const departments = await this.departmentsRepository.find({
-      where: { facilityId, status: 'active' },
+    return this.departmentsRepository.find({
+      where,
       order: { name: 'ASC' },
     });
-
-    return {
-      statusCode: 200,
-      data: departments,
-      timestamp: new Date().toISOString(),
-    };
   }
 }
