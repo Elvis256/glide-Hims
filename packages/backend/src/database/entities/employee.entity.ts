@@ -202,6 +202,16 @@ export class Employee {
   @JoinColumn({ name: 'facility_id' })
   facility: Facility;
 
+  @Column({ type: 'uuid', nullable: true, name: 'manager_id' })
+  managerId?: string;
+
+  @ManyToOne(() => Employee, { nullable: true })
+  @JoinColumn({ name: 'manager_id' })
+  manager?: Employee;
+
+  @Column({ type: 'uuid', nullable: true, name: 'position_id' })
+  positionId?: string;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

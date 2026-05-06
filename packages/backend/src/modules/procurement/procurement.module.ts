@@ -21,6 +21,19 @@ import { Supplier } from '../../database/entities/supplier.entity';
 import { VendorQuotation } from '../../database/entities/rfq.entity';
 import { ProcurementApprovalThreshold } from '../../database/entities/procurement-approval-threshold.entity';
 import { ProcurementApprovalChain } from '../../database/entities/procurement-approval-chain.entity';
+import {
+  Position,
+  ApproverGroup,
+  ApproverGroupMember,
+  ProcurementApprovalPolicy,
+  ProcurementApprovalPolicyStep,
+  ApprovalDelegation,
+} from '../../database/entities/org-approval.entities';
+import { Employee } from '../../database/entities/employee.entity';
+import { Department } from '../../database/entities/department.entity';
+import { OrgApprovalResolverService } from './org-approval-resolver.service';
+import { OrgAdminController } from './org-admin.controller';
+import { OrgAdminService } from './org-admin.service';
 import { ChartOfAccount } from '../../database/entities/chart-of-account.entity';
 import { JournalEntry } from '../../database/entities/journal-entry.entity';
 import { FinanceModule } from '../finance/finance.module';
@@ -44,6 +57,14 @@ import { ComplianceModule } from '../compliance/compliance.module';
       Item,
       ProcurementApprovalThreshold,
       ProcurementApprovalChain,
+      Position,
+      ApproverGroup,
+      ApproverGroupMember,
+      ProcurementApprovalPolicy,
+      ProcurementApprovalPolicyStep,
+      ApprovalDelegation,
+      Employee,
+      Department,
       ChartOfAccount,
       JournalEntry,
     ]),
@@ -51,7 +72,7 @@ import { ComplianceModule } from '../compliance/compliance.module';
     forwardRef(() => UsersModule),
     forwardRef(() => ComplianceModule),
   ],
-  controllers: [ProcurementController, ApprovalDashboardController],
+  controllers: [ProcurementController, ApprovalDashboardController, OrgAdminController],
   providers: [
     ProcurementService,
     SupplierRiskService,
@@ -60,6 +81,8 @@ import { ComplianceModule } from '../compliance/compliance.module';
     SupplierAnalyticsService,
     ApprovalAnalyticsService,
     SpendAnalyticsService,
+    OrgApprovalResolverService,
+    OrgAdminService,
   ],
   exports: [
     ProcurementService,
@@ -69,6 +92,8 @@ import { ComplianceModule } from '../compliance/compliance.module';
     SupplierAnalyticsService,
     ApprovalAnalyticsService,
     SpendAnalyticsService,
+    OrgApprovalResolverService,
+    OrgAdminService,
   ],
 })
 export class ProcurementModule {}

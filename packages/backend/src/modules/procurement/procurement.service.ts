@@ -58,6 +58,7 @@ import { BudgetService } from '../finance/budget.service';
 import { UsersService } from '../users/users.service';
 import { AuditService } from '../compliance/audit.service';
 import { SupplierRiskService } from './supplier-risk.service';
+import { OrgApprovalResolverService } from './org-approval-resolver.service';
 import { InvoiceMatch } from '../../database/entities/invoice-match.entity';
 import { ProcurementApprovalThreshold } from '../../database/entities/procurement-approval-threshold.entity';
 import {
@@ -106,6 +107,7 @@ export class ProcurementService {
     @Inject(forwardRef(() => AuditService))
     private auditService: AuditService,
     private supplierRiskService: SupplierRiskService,
+    private orgApprovalResolver: OrgApprovalResolverService,
     private dataSource: DataSource,
   ) {}
 
@@ -554,9 +556,13 @@ export class ProcurementService {
       pr.totalEstimated = totalEstimated;
       const saved = await prRepo.save(pr);
 
-      // Phase 2B: Create approval chain
+      // Phase 2B: Create approval chain (org-aware resolver if configured)
       try {
-        await this.createApprovalChain(pr.id, 'PR', totalEstimated, pr.facilityId, tenantId);
+        await this.createApprovalChain(pr.id, 'PR', totalEstimated, pr.facilityId, tenantId, {
+          requesterId: pr.requestedById,
+          departmentId: pr.departmentId,
+          category: (pr as any).category || null,
+        });
       } catch (error) {
         this.logger.warn(
           `Failed to create approval chain for PR ${pr.id}: ${error.message}`,
@@ -630,23 +636,34 @@ export class ProcurementService {
         );
       }
 
-      // Verify current user has required role.
-      // Accept the configured role name OR common synonyms, OR Super Admin
-      // as a universal override so platform owners can always unblock.
+      // Authorisation: prefer specific approver (set by org-aware resolver),
+      // then role match, then Super Admin universal override.
       const requiredRoleLower = nextChain.requiredRole.toLowerCase();
       const synonyms: Record<string, string[]> = {
         manager: ['manager', 'department head', 'department manager', 'super admin'],
         finance_officer: ['finance_officer', 'finance officer', 'accountant', 'super admin'],
         director: ['director', 'super admin'],
         cfo: ['cfo', 'chief financial officer', 'super admin'],
+        'department head': ['department head', 'department manager', 'manager', 'super admin'],
       };
       const acceptedRoles = synonyms[requiredRoleLower] || [requiredRoleLower, 'super admin'];
-      const matched = userRoleNames.some((r) => acceptedRoles.includes(r));
 
-      if (!matched) {
-        throw new BadRequestException(
-          `User does not have a role authorised to approve at level ${nextChain.approvalLevel} (required: ${nextChain.requiredRole}). User has roles: ${userRoleNames.join(', ') || 'none'}`,
-        );
+      let matched = false;
+      if ((nextChain as any).approverId) {
+        // Specific user routing: only that user (or Super Admin) can approve.
+        matched = (nextChain as any).approverId === userId || isSuperAdmin;
+        if (!matched) {
+          throw new BadRequestException(
+            `This approval is assigned to a specific user. You are not the designated approver.`,
+          );
+        }
+      } else {
+        matched = userRoleNames.some((r) => acceptedRoles.includes(r));
+        if (!matched) {
+          throw new BadRequestException(
+            `User does not have a role authorised to approve at level ${nextChain.approvalLevel} (required: ${nextChain.requiredRole}). User has roles: ${userRoleNames.join(', ') || 'none'}`,
+          );
+        }
       }
 
       // Mark approval at this level
@@ -962,26 +979,24 @@ export class ProcurementService {
 
       await poItemRepo.save(items);
 
-      // Phase 2: Create Approval Chain based on amount thresholds
-      const thresholds = await this.getApprovalThreshold(dto.facilityId, tenantId);
-      const approvalsNeeded = this.calculateApprovalLevel(totalAmount, thresholds);
-
-      if (approvalsNeeded > 1) {
-        // Create sequential approval chain for multi-level approvals
-        const chainEntries = [];
-        for (let level = 1; level <= approvalsNeeded; level++) {
-          chainEntries.push({
-            documentId: (savedPO as PurchaseOrder).id,
-            documentType: 'PO',
-            approvalLevel: level,
-            requiredRole: this.getRoleForLevel(level),
-            status: ApprovalChainStatus.PENDING,
-            tenantId,
-          });
-        }
-        await chainRepo.save(chainEntries);
-        this.logger.log(
-          `Created ${approvalsNeeded}-level approval chain for PO ${orderNumber} (amount: $${totalAmount})`,
+      // Phase 2: Create Approval Chain (org-aware resolver if configured,
+      // legacy tier ladder fallback)
+      try {
+        await this.createApprovalChain(
+          (savedPO as PurchaseOrder).id,
+          'PO',
+          totalAmount,
+          dto.facilityId,
+          tenantId,
+          {
+            requesterId: userId,
+            departmentId: dto.departmentId || null,
+            category: null,
+          },
+        );
+      } catch (error) {
+        this.logger.warn(
+          `Failed to create approval chain for PO ${orderNumber}: ${error.message}`,
         );
       }
 
@@ -1272,10 +1287,18 @@ export class ProcurementService {
           finance_officer: ['finance_officer', 'finance officer', 'accountant', 'super admin'],
           director: ['director', 'super admin'],
           cfo: ['cfo', 'chief financial officer', 'super admin'],
+          'department head': ['department head', 'department manager', 'manager', 'super admin'],
         };
         const acceptedRoles = synonyms[requiredRoleLower] || [requiredRoleLower, 'super admin'];
+        const isSuperAdminUser = userRoleNames.includes('super admin');
 
-        if (!userRoleNames.some((r) => acceptedRoles.includes(r))) {
+        if ((nextChain as any).approverId) {
+          if ((nextChain as any).approverId !== userId && !isSuperAdminUser) {
+            throw new BadRequestException(
+              `This approval is assigned to a specific user. You are not the designated approver.`,
+            );
+          }
+        } else if (!userRoleNames.some((r) => acceptedRoles.includes(r))) {
           throw new BadRequestException(
             `User does not have a role authorised to approve at level ${nextChain.approvalLevel} (required: ${nextChain.requiredRole})`,
           );
@@ -2306,8 +2329,12 @@ export class ProcurementService {
   }
 
   /**
-   * Create approval chain for PR/PO
-   * Returns array of approval chain records (one per level)
+   * Create approval chain for PR/PO.
+   * Strategy:
+   *   1) If org-aware policies / managers exist, use OrgApprovalResolverService
+   *      to build a chain of resolved specific approvers.
+   *   2) Otherwise fall back to the legacy role-based ladder
+   *      (single "manager" step for PR; tiered for PO).
    */
   async createApprovalChain(
     documentId: string,
@@ -2315,13 +2342,25 @@ export class ProcurementService {
     amount: number,
     facilityId: string,
     tenantId?: string,
+    context?: { requesterId?: string; departmentId?: string | null; category?: string | null },
   ): Promise<ProcurementApprovalChain[]> {
     try {
-      // Purchase Requisitions are just internal requests for goods/services,
-      // not financial commitments. They get a single manager-level approval
-      // regardless of amount. The full amount-tiered chain (manager →
-      // finance → director → CFO) only applies to Purchase Orders, which
-      // are the actual binding spend.
+      // Try the org-aware resolver first.
+      if (tenantId && context?.requesterId) {
+        const resolved = await this.orgApprovalResolver.buildAndPersistChain({
+          documentId,
+          documentType,
+          amount,
+          facilityId,
+          departmentId: context.departmentId || null,
+          category: context.category || null,
+          requesterId: context.requesterId,
+          tenantId,
+        });
+        if (resolved.length > 0) return resolved;
+      }
+
+      // Legacy fallback (no tenant context, or resolver returned nothing).
       let maxApprovalLevel: number;
       if (documentType === 'PR') {
         maxApprovalLevel = 1;
@@ -2331,8 +2370,6 @@ export class ProcurementService {
       }
 
       const chains: ProcurementApprovalChain[] = [];
-
-      // Create chain records for each required approval level
       for (let level = 1; level <= maxApprovalLevel; level++) {
         const chain = this.approvalChainRepo.create({
           documentId,
@@ -2344,9 +2381,8 @@ export class ProcurementService {
         });
         chains.push(await this.approvalChainRepo.save(chain));
       }
-
       this.logger.log(
-        `Created ${maxApprovalLevel}-level approval chain for ${documentType} ${documentId}`,
+        `Created ${maxApprovalLevel}-level (legacy) approval chain for ${documentType} ${documentId}`,
       );
       return chains;
     } catch (error) {
