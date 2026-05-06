@@ -87,6 +87,28 @@ export class ApprovalDashboardController {
     @Query('facilityId') facilityId: string,
     @Request() req?: any,
   ) {
-    return this.dashboardService.getDashboardSummary(facilityId, req?.user?.tenantId);
+    try {
+      const summary = await this.dashboardService.getDashboardSummary(
+        facilityId,
+        req?.user?.tenantId,
+      );
+      return {
+        ...summary,
+        budgetAvailable: 0,
+        budgetAllocated: 0,
+      };
+    } catch (err) {
+      return {
+        pending: 0,
+        approved: 0,
+        rejected: 0,
+        avgApprovalDays: 0,
+        bottlenecks: 0,
+        escalations: 0,
+        escalationList: [],
+        budgetAvailable: 0,
+        budgetAllocated: 0,
+      };
+    }
   }
 }

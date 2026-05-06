@@ -196,6 +196,18 @@ export class ApprovalDashboardService {
    * Get high-level dashboard summary
    */
   async getDashboardSummary(facilityId: string, tenantId: string): Promise<any> {
+    if (!tenantId) {
+      return {
+        pending: 0,
+        approved: 0,
+        rejected: 0,
+        avgApprovalDays: 0,
+        bottlenecks: 0,
+        escalations: 0,
+        escalationList: [],
+      };
+    }
+
     // Count by status
     const chainStats = await this.chainRepository
       .createQueryBuilder('chain')
@@ -216,8 +228,12 @@ export class ApprovalDashboardService {
     }
 
     // Get bottlenecks and escalations
-    const bottlenecks = await this.getApprovalBottlenecks(facilityId, tenantId);
-    const escalations = await this.getEscalationCandidates(facilityId, 5, tenantId);
+    const bottlenecks = facilityId
+      ? await this.getApprovalBottlenecks(facilityId, tenantId)
+      : [];
+    const escalations = facilityId
+      ? await this.getEscalationCandidates(facilityId, 5, tenantId)
+      : [];
 
     // Calculate average approval time for approved items
     const approvedChains = await this.chainRepository
@@ -235,7 +251,7 @@ export class ApprovalDashboardService {
         ? await this.prRepository.findOne({ where: { id: chain.documentId } })
         : await this.poRepository.findOne({ where: { id: chain.documentId } });
 
-      if (doc && doc.facilityId === facilityId) {
+      if (doc && (!facilityId || doc.facilityId === facilityId)) {
         const days = Math.floor(
           (new Date(chain.approvedAt!).getTime() - new Date(chain.createdAt).getTime()) /
             (1000 * 60 * 60 * 24),
