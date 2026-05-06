@@ -212,6 +212,7 @@ export class ProcurementService {
           unitPriceEstimated: item.unitPriceEstimated || 0,
           specifications: item.specifications,
           notes: item.notes,
+          ...(tenantId ? { tenantId } : {}),
         }),
       );
 
@@ -294,6 +295,9 @@ export class ProcurementService {
           unitPriceEstimated: item.unitPriceEstimated || 0,
           specifications: item.specifications,
           notes: item.notes,
+          ...(tenantId || (pr as any).tenantId
+            ? { tenantId: tenantId || (pr as any).tenantId }
+            : {}),
         }),
       );
       await this.prItemRepo.save(newItems);
@@ -361,6 +365,9 @@ export class ProcurementService {
         unitPriceEstimated: item.unitPriceEstimated || 0,
         specifications: item.specifications,
         notes: item.notes,
+        ...(tenantId || (pr as any).tenantId
+          ? { tenantId: tenantId || (pr as any).tenantId }
+          : {}),
       }),
     );
 
