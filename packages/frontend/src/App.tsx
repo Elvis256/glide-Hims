@@ -378,6 +378,7 @@ const LabEquipmentPage = lazy(() => import('./pages/admin/lab/LabEquipmentPage')
 const ReagentsInventoryPage = lazy(() => import('./pages/admin/lab/ReagentsInventoryPage'));
 const LabPanelsPage = lazy(() => import('./pages/admin/lab/LabPanelsPage'));
 const ApprovalWorkflowPage = lazy(() => import('./pages/admin/procurement/ApprovalWorkflowPage'));
+const OrgApprovalAdminPage = lazy(() => import('./pages/admin/procurement/OrgApprovalAdminPage'));
 const BudgetManagementPage = lazy(() => import('./pages/admin/procurement/BudgetManagementPage'));
 const ProcurementPoliciesPage = lazy(() => import('./pages/admin/procurement/ProcurementPoliciesPage'));
 const ItemCategoriesPage = lazy(() => import('./pages/admin/procurement/ItemCategoriesPage'));
@@ -1135,6 +1136,7 @@ function AppRoutes() {
                 
                 {/* Admin - Procurement Settings */}
                 <Route path="/admin/procurement/approvals" element={<AdminRoute><ApprovalWorkflowPage /></AdminRoute>} />
+                <Route path="/admin/procurement/org-approvals" element={<AdminRoute><OrgApprovalAdminPage /></AdminRoute>} />
                 <Route path="/admin/procurement/budgets" element={<AdminRoute><BudgetManagementPage /></AdminRoute>} />
                 <Route path="/admin/procurement/policies" element={<AdminRoute><ProcurementPoliciesPage /></AdminRoute>} />
                 <Route path="/admin/procurement/categories" element={<AdminRoute><ItemCategoriesPage /></AdminRoute>} />
