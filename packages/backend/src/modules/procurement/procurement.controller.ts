@@ -7,6 +7,7 @@ import { ApprovalAnalyticsService } from './approval-analytics.service';
 import { SpendAnalyticsService } from './spend-analytics.service';
 import {
   CreatePurchaseRequestDto,
+  UpdatePurchaseRequestDto,
   CreatePRItemDto,
   ApprovePRDto,
   RejectPRDto,
@@ -118,6 +119,16 @@ export class ProcurementController {
   @AuthWithPermissions('procurement.read')
   getPurchaseRequest(@Param('id') id: string, @Request() req: any) {
     return this.procurementService.getPurchaseRequest(id, req.user?.tenantId);
+  }
+
+  @Put('purchase-requests/:id')
+  @AuthWithPermissions('procurement.update')
+  updatePurchaseRequest(
+    @Param('id') id: string,
+    @Body() dto: UpdatePurchaseRequestDto,
+    @Request() req: any,
+  ) {
+    return this.procurementService.updatePurchaseRequest(id, dto, req.user?.tenantId);
   }
 
   @Post('purchase-requests/:id/items')
