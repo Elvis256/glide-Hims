@@ -6,6 +6,9 @@ import { ProcurementService } from './procurement.service';
 import { SupplierRiskService } from './supplier-risk.service';
 import { ApprovalDashboardService } from './approval-dashboard.service';
 import { ProcurementGLIntegrationService } from './procurement-gl-integration.service';
+import { SupplierAnalyticsService } from './supplier-analytics.service';
+import { ApprovalAnalyticsService } from './approval-analytics.service';
+import { SpendAnalyticsService } from './spend-analytics.service';
 import {
   PurchaseRequest,
   PurchaseRequestItem,
@@ -54,12 +57,18 @@ import { ComplianceModule } from '../compliance/compliance.module';
     SupplierRiskService,
     ApprovalDashboardService,
     ProcurementGLIntegrationService,
+    SupplierAnalyticsService,
+    ApprovalAnalyticsService,
+    SpendAnalyticsService,
   ],
   exports: [
     ProcurementService,
     SupplierRiskService,
     ApprovalDashboardService,
     ProcurementGLIntegrationService,
+    SupplierAnalyticsService,
+    ApprovalAnalyticsService,
+    SpendAnalyticsService,
   ],
 })
 export class ProcurementModule {}

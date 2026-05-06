@@ -2,6 +2,9 @@ import { Controller, Get, Post, Put, Body, Param, Query, Request, UseGuards } fr
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { ProcurementService } from './procurement.service';
 import { ProcurementGLIntegrationService } from './procurement-gl-integration.service';
+import { SupplierAnalyticsService } from './supplier-analytics.service';
+import { ApprovalAnalyticsService } from './approval-analytics.service';
+import { SpendAnalyticsService } from './spend-analytics.service';
 import {
   CreatePurchaseRequestDto,
   CreatePRItemDto,
@@ -32,6 +35,9 @@ export class ProcurementController {
   constructor(
     private readonly procurementService: ProcurementService,
     private readonly glIntegrationService: ProcurementGLIntegrationService,
+    private readonly supplierAnalytics: SupplierAnalyticsService,
+    private readonly approvalAnalytics: ApprovalAnalyticsService,
+    private readonly spendAnalytics: SpendAnalyticsService,
   ) {}
 
   // ============ DASHBOARD ============
@@ -353,5 +359,140 @@ export class ProcurementController {
       new Date(endDate),
       departmentId,
     );
+  }
+
+  // ============ ANALYTICS - SUPPLIERS ============
+
+  @Get('analytics/suppliers/metrics')
+  @AuthWithPermissions('procurement.analytics')
+  async getSupplierMetrics(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ): Promise<any> {
+    return this.supplierAnalytics.getSupplierMetrics(
+      startDate ? new Date(startDate) : undefined,
+      endDate ? new Date(endDate) : undefined,
+    );
+  }
+
+  @Get('analytics/suppliers/spend-trends')
+  @AuthWithPermissions('procurement.analytics')
+  async getSupplierSpendTrends(
+    @Query('supplierId') supplierId: string,
+    @Query('months') months: number = 12,
+  ): Promise<any> {
+    if (!supplierId) {
+      return { error: 'supplierId is required' };
+    }
+    return this.supplierAnalytics.getSupplierSpendTrends(supplierId, months);
+  }
+
+  @Get('analytics/suppliers/top-suppliers')
+  @AuthWithPermissions('procurement.analytics')
+  async getTopSuppliers(@Query('limit') limit: number = 10): Promise<any> {
+    return this.supplierAnalytics.getTopSuppliers(limit);
+  }
+
+  @Get('analytics/suppliers/performance-comparison')
+  @AuthWithPermissions('procurement.analytics')
+  async getSupplierPerformanceComparison(): Promise<any> {
+    return this.supplierAnalytics.getSupplierPerformanceComparison();
+  }
+
+  @Get('analytics/suppliers/risk-score')
+  @AuthWithPermissions('procurement.analytics')
+  async getSupplierRiskScore(@Query('supplierId') supplierId: string): Promise<any> {
+    if (!supplierId) {
+      return { error: 'supplierId is required' };
+    }
+    return this.supplierAnalytics.getSupplierRiskScore(supplierId);
+  }
+
+  // ============ ANALYTICS - APPROVALS ============
+
+  @Get('analytics/approvals/bottlenecks')
+  @AuthWithPermissions('procurement.analytics')
+  async detectApprovalBottlenecks(): Promise<any> {
+    return this.approvalAnalytics.detectBottlenecks();
+  }
+
+  @Get('analytics/approvals/time-metrics')
+  @AuthWithPermissions('procurement.analytics')
+  async getApprovalTimeMetrics(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ): Promise<any> {
+    return this.approvalAnalytics.getApprovalTimeMetrics(
+      startDate ? new Date(startDate) : undefined,
+      endDate ? new Date(endDate) : undefined,
+    );
+  }
+
+  @Get('analytics/approvals/trends')
+  @AuthWithPermissions('procurement.analytics')
+  async getApprovalTrends(@Query('days') days: number = 30): Promise<any> {
+    return this.approvalAnalytics.getApprovalTrends(days);
+  }
+
+  @Get('analytics/approvals/sla-compliance')
+  @AuthWithPermissions('procurement.analytics')
+  async getApprovalSLACompliance(): Promise<any> {
+    return this.approvalAnalytics.getApprovalSLACompliance();
+  }
+
+  @Get('analytics/approvals/workload')
+  @AuthWithPermissions('procurement.analytics')
+  async getApprovalWorkload(): Promise<any> {
+    return this.approvalAnalytics.getApprovalWorkload();
+  }
+
+  // ============ ANALYTICS - SPEND ============
+
+  @Get('analytics/spend/by-category')
+  @AuthWithPermissions('procurement.analytics')
+  async getSpendByCategory(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ): Promise<any> {
+    return this.spendAnalytics.getCategorySpend(
+      startDate ? new Date(startDate) : undefined,
+      endDate ? new Date(endDate) : undefined,
+    );
+  }
+
+  @Get('analytics/spend/by-department')
+  @AuthWithPermissions('procurement.analytics')
+  async getSpendByDepartment(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ): Promise<any> {
+    return this.spendAnalytics.getDepartmentSpend(
+      startDate ? new Date(startDate) : undefined,
+      endDate ? new Date(endDate) : undefined,
+    );
+  }
+
+  @Get('analytics/spend/trends')
+  @AuthWithPermissions('procurement.analytics')
+  async getSpendTrends(@Query('months') months: number = 12): Promise<any> {
+    return this.spendAnalytics.getSpendTrends(months);
+  }
+
+  @Get('analytics/spend/budget-utilization')
+  @AuthWithPermissions('procurement.analytics')
+  async getBudgetUtilization(): Promise<any> {
+    return this.spendAnalytics.getBudgetUtilization();
+  }
+
+  @Get('analytics/spend/forecast')
+  @AuthWithPermissions('procurement.analytics')
+  async getSpendForecast(@Query('months') months: number = 3): Promise<any> {
+    return this.spendAnalytics.getSpendForecast(months);
+  }
+
+  @Get('analytics/spend/top-items')
+  @AuthWithPermissions('procurement.analytics')
+  async getTopSpendItems(@Query('limit') limit: number = 10): Promise<any> {
+    return this.spendAnalytics.getTopSpendItems(limit);
   }
 }
