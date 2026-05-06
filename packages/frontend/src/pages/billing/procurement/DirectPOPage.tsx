@@ -68,7 +68,8 @@ export function DirectPOPage() {
     queryKey: ['suppliers'],
     queryFn: async () => {
       const { data } = await api.get('/suppliers');
-      return Array.isArray(data) ? data : [];
+      const list = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
+      return list;
     },
     retry: 1,
     enabled: !!user,
@@ -78,7 +79,8 @@ export function DirectPOPage() {
     queryKey: ['items'],
     queryFn: async () => {
       const { data } = await api.get('/inventory/items');
-      return Array.isArray(data) ? data : [];
+      const list = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
+      return list;
     },
     retry: 1,
     enabled: !!user,
@@ -88,7 +90,8 @@ export function DirectPOPage() {
     queryKey: ['departments'],
     queryFn: async () => {
       const { data } = await api.get('/departments');
-      return Array.isArray(data) ? data : [];
+      const list = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
+      return list;
     },
     retry: 1,
     enabled: !!user,
@@ -394,6 +397,7 @@ export function DirectPOPage() {
                       }
                       min={1}
                       className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    onFocus={(e) => e.currentTarget.select()}
                     />
                   </div>
                   <div className="md:col-span-2">
@@ -409,6 +413,7 @@ export function DirectPOPage() {
                       step="0.01"
                       min={0}
                       className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    onFocus={(e) => e.currentTarget.select()}
                     />
                   </div>
                   <div className="md:col-span-1">
@@ -423,6 +428,7 @@ export function DirectPOPage() {
                       max={100}
                       step="0.01"
                       className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    onFocus={(e) => e.currentTarget.select()}
                     />
                   </div>
                   <div className="md:col-span-1">
@@ -437,6 +443,7 @@ export function DirectPOPage() {
                       max={100}
                       step="0.01"
                       className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    onFocus={(e) => e.currentTarget.select()}
                     />
                   </div>
                   <div className="md:col-span-2">
@@ -534,7 +541,8 @@ export function DirectPOPage() {
                     max={100}
                     step="0.01"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
+                  onFocus={(e) => e.currentTarget.select()}
+                    />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Discount (%)</label>
@@ -548,7 +556,8 @@ export function DirectPOPage() {
                     max={100}
                     step="0.01"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
+                  onFocus={(e) => e.currentTarget.select()}
+                    />
                 </div>
               </div>
 
