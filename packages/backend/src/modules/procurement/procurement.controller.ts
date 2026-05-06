@@ -361,6 +361,66 @@ export class ProcurementController {
     );
   }
 
+  // ============ APPROVALS ============
+
+  @Get('approvals/pending')
+  @AuthWithPermissions('procurement.approve')
+  async getPendingApprovals(
+    @Query('facilityId') facilityId: string,
+    @Query('role') role?: string,
+  ) {
+    // Return empty pending approvals for now
+    return {
+      data: [],
+    };
+  }
+
+  @Get('approvals/summary')
+  @AuthWithPermissions('procurement.approve')
+  async getApprovalSummary(@Query('facilityId') facilityId: string) {
+    const bottlenecks = await this.approvalAnalytics.detectBottlenecks();
+    
+    return {
+      data: {
+        pending: 0,
+        approved: 0,
+        rejected: 0,
+        avgApprovalDays: 0,
+        bottlenecks: bottlenecks.length,
+        escalations: 0,
+        escalationList: [],
+      },
+    };
+  }
+
+  @Get('approvals/bottlenecks')
+  @AuthWithPermissions('procurement.read')
+  async getApprovalBottlenecks(@Query('facilityId') facilityId: string) {
+    const bottlenecks = await this.approvalAnalytics.detectBottlenecks();
+    return {
+      data: bottlenecks || [],
+    };
+  }
+
+  @Get('approvals/escalations')
+  @AuthWithPermissions('procurement.approve')
+  async getApprovalEscalations(
+    @Query('facilityId') facilityId: string,
+    @Query('days') days: number = 5,
+  ) {
+    return {
+      data: [],
+    };
+  }
+
+  @Get('approvals/supplier-risks')
+  @AuthWithPermissions('procurement.read')
+  async getSupplierRisks(@Query('facilityId') facilityId: string) {
+    return {
+      data: [],
+    };
+  }
+
   // ============ ANALYTICS - SUPPLIERS ============
 
   @Get('analytics/suppliers/metrics')
