@@ -107,6 +107,10 @@ import { SystemSettingsModule } from '../system-settings/system-settings.module'
     RevenueExpenseService,
     BudgetVarianceService,
     ReportGeneratorService,
+    DataCleanupService,
+    DataIntegrityService,
+    AuditComplianceService,
+    PerformanceOptimizationService,
   ],
   exports: [
     FinanceService,
