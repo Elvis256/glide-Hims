@@ -530,11 +530,13 @@ export class ProcurementService {
 
       const pr = await prRepo.findOne({
         where,
-        relations: ['items'],
         lock: { mode: 'pessimistic_write' },
       });
 
       if (!pr) throw new NotFoundException('Purchase request not found');
+      pr.items = await manager.getRepository(PurchaseRequestItem).find({
+        where: { purchaseRequestId: pr.id },
+      });
       if (pr.status !== PRStatus.DRAFT) {
         throw new BadRequestException('Only draft PRs can be submitted');
       }
