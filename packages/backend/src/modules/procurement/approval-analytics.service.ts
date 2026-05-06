@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between } from 'typeorm';
 import { PurchaseOrder, POStatus } from '../../database/entities/purchase-order.entity';
 
-interface ApprovalBottleneck {
+export interface ApprovalBottleneck {
   level: number;
   approverRole: string;
   pendingCount: number;
@@ -12,7 +12,7 @@ interface ApprovalBottleneck {
   severity: 'low' | 'medium' | 'high' | 'critical';
 }
 
-interface ApprovalTimeMetric {
+export interface ApprovalTimeMetric {
   period: string;
   avgApprovalTime: number;
   medianApprovalTime: number;
@@ -21,7 +21,7 @@ interface ApprovalTimeMetric {
   slowApprovals: number;
 }
 
-interface ApprovalTrend {
+export interface ApprovalTrend {
   date: string;
   avgTimeToApprove: number;
   approvalRate: number;
