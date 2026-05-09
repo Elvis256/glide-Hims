@@ -9,6 +9,7 @@ import * as crypto from 'crypto';
 import { PhoneHomeRecord } from '../../database/entities/phone-home-record.entity';
 import { License } from '../../database/entities/license.entity';
 import { AppVersion } from '../../database/entities/app-version.entity';
+import { Deployment, DeploymentStatus } from '../../database/entities/deployment.entity';
 
 export interface PhoneHomePayload {
   licenseKey: string;
@@ -46,6 +47,8 @@ export class PhoneHomeService {
     private readonly licenseRepository: Repository<License>,
     @InjectRepository(AppVersion)
     private readonly versionRepository: Repository<AppVersion>,
+    @InjectRepository(Deployment)
+    private readonly deploymentRepository: Repository<Deployment>,
     private readonly configService: ConfigService,
   ) {
     this.phoneHomeUrl =
@@ -124,6 +127,33 @@ export class PhoneHomeService {
     // Update license validation
     license.lastValidatedAt = new Date();
     await this.licenseRepository.save(license);
+
+    // Mirror the heartbeat onto the tenant's deployment(s) so the Deployments
+    // page shows accurate "last seen" and flips PENDING → ACTIVE on first
+    // contact. Phone-home payloads carry licenseKey but no deploymentId, so we
+    // update all deployments for the license's tenant. (Most tenants have one.)
+    if (license.tenantId) {
+      try {
+        const deployments = await this.deploymentRepository.find({
+          where: { tenantId: license.tenantId },
+        });
+        const now = new Date();
+        for (const d of deployments) {
+          d.lastHealthCheck = now;
+          if (payload.appVersion) d.currentVersion = payload.appVersion;
+          if (d.status === DeploymentStatus.PENDING) {
+            d.status = DeploymentStatus.ACTIVE;
+          }
+        }
+        if (deployments.length > 0) {
+          await this.deploymentRepository.save(deployments);
+        }
+      } catch (err) {
+        this.logger.warn(
+          `Failed to update deployment heartbeat for tenant ${license.tenantId}: ${(err as Error).message}`,
+        );
+      }
+    }
 
     // Check for updates
     const latestVersion = await this.getLatestVersion();

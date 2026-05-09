@@ -131,4 +131,59 @@ export class BackupService {
   async restoreBackup(id: string, tenantId: string): Promise<void> {
     throw new NotImplementedException('Restore functionality coming soon');
   }
+
+  async importSnapshot(opts: {
+    tenantId: string;
+    deploymentId?: string;
+    file: Express.Multer.File;
+    uploadedBy?: string;
+    notes?: string;
+  }): Promise<Backup> {
+    const { tenantId, deploymentId, file, uploadedBy, notes } = opts;
+    if (!file) throw new NotFoundException('No snapshot file provided');
+
+    const tenantDir = path.join(this.backupsDir, tenantId);
+    fs.mkdirSync(tenantDir, { recursive: true });
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const safeOriginal = (file.originalname || 'snapshot').replace(/[^a-zA-Z0-9._-]/g, '_');
+    const filename = `imported-${timestamp}-${safeOriginal}`;
+    const filePath = path.join(tenantDir, filename);
+
+    fs.writeFileSync(filePath, file.buffer);
+    const stats = fs.statSync(filePath);
+
+    const annotated = [
+      notes?.trim(),
+      deploymentId ? `deploymentId=${deploymentId}` : null,
+      'source=imported',
+    ]
+      .filter(Boolean)
+      .join(' | ');
+
+    const backup = this.backupRepository.create({
+      tenantId,
+      filename,
+      filePath,
+      sizeBytes: stats.size,
+      status: 'completed',
+      createdBy: uploadedBy,
+      notes: annotated,
+    });
+
+    await this.backupRepository.save(backup);
+    this.logger.log(`Imported snapshot ${filename} (${stats.size} bytes) for tenant ${tenantId}`);
+    return backup;
+  }
+
+  async listSnapshotsForTenant(tenantId: string): Promise<Backup[]> {
+    return this.backupRepository.find({
+      where: { tenantId },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  async findById(id: string): Promise<Backup | null> {
+    return this.backupRepository.findOne({ where: { id } });
+  }
 }

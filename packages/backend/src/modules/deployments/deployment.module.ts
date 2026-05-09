@@ -13,6 +13,8 @@ import { ConflictResolutionEngine } from './conflict-resolution.service';
 import { HealthMetricsCollectorService } from './health-metrics-collector.service';
 import { AlertingService } from './alerting.service';
 import { TenantsModule } from '../tenants/tenants.module';
+import { LicensingModule } from '../licensing/licensing.module';
+import { BackupModule } from '../backup/backup.module';
 import { Deployment } from '../../database/entities/deployment.entity';
 import { DeploymentVersion } from '../../database/entities/deployment-version.entity';
 import { DeploymentConfig } from '../../database/entities/deployment-config.entity';
@@ -22,6 +24,7 @@ import { ReplicationLog } from '../../database/entities/replication-log.entity';
 import { ChangeSet } from '../../database/entities/changeset.entity';
 import { DeploymentHealth } from '../../database/entities/deployment-health.entity';
 import { DeploymentAlert } from '../../database/entities/deployment-alert.entity';
+import { License } from '../../database/entities/license.entity';
 
 @Module({
   imports: [
@@ -35,8 +38,11 @@ import { DeploymentAlert } from '../../database/entities/deployment-alert.entity
       ChangeSet,
       DeploymentHealth,
       DeploymentAlert,
+      License,
     ]),
     TenantsModule,
+    LicensingModule,
+    BackupModule,
   ],
   controllers: [DeploymentController],
   providers: [

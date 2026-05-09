@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../../store/auth';
 import api from '../../services/api';
 import {
   Building2, Plus, Copy, Check, Search, MoreVertical,
   Loader2, Power, PowerOff, Trash2, Pencil,
   Users, Calendar, Shield, Hospital, Activity, AlertTriangle,
-  CheckCircle2, Clock, Eye, RefreshCw, X, KeyRound, EyeOff, LogIn
+  CheckCircle2, Clock, Eye, RefreshCw, X, KeyRound, EyeOff, LogIn, Server,
 } from 'lucide-react';
 import { authService } from '../../services/auth';
 import { toast } from 'sonner';
@@ -73,6 +73,7 @@ export default function TenantManagementPage() {
   const [resetPasswordTenant, setResetPasswordTenant] = useState<Tenant | null>(null);
   const [enterTenantTarget, setEnterTenantTarget] = useState<Tenant | null>(null);
   const [enteringTenant, setEnteringTenant] = useState(false);
+  const [deploymentCounts, setDeploymentCounts] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (user && !user.isSystemAdmin) {
@@ -92,9 +93,36 @@ export default function TenantManagementPage() {
     }
   };
 
+  const fetchDeploymentCounts = async () => {
+    try {
+      const res = await api.get('/deployments');
+      const list: any[] = Array.isArray(res.data) ? res.data : (res.data as any)?.data || [];
+      const counts: Record<string, number> = {};
+      for (const dep of list) {
+        if (dep.tenantId) counts[dep.tenantId] = (counts[dep.tenantId] || 0) + 1;
+      }
+      setDeploymentCounts(counts);
+    } catch {
+      // non-fatal — tenants page still works without counts
+    }
+  };
+
   useEffect(() => {
     fetchTenants();
+    fetchDeploymentCounts();
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const targetId = params.get('tenantId');
+    if (targetId && tenants.length > 0) {
+      const t = tenants.find((x) => x.id === targetId);
+      if (t) {
+        setDetailTenant(t);
+        setShowDetailModal(true);
+      }
+    }
+  }, [tenants]);
 
   const getLoginUrl = (slug: string) => `${window.location.origin}/login/${slug}`;
 
@@ -188,10 +216,14 @@ export default function TenantManagementPage() {
   };
 
   const filteredTenants = tenants.filter(t => {
-    const matchesSearch = !searchQuery ||
-      t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.slug.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (t.adminUsername && t.adminUsername.toLowerCase().includes(searchQuery.toLowerCase()));
+    const q = searchQuery.trim().toLowerCase();
+    const matchesSearch = !q ||
+      t.name.toLowerCase().includes(q) ||
+      t.slug.toLowerCase().includes(q) ||
+      t.id.toLowerCase().includes(q) ||
+      (t.adminUsername && t.adminUsername.toLowerCase().includes(q)) ||
+      (t.adminEmail && t.adminEmail.toLowerCase().includes(q)) ||
+      (t.description && t.description.toLowerCase().includes(q));
     const matchesStatus = statusFilter === 'all' || t.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
@@ -331,7 +363,7 @@ export default function TenantManagementPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
             type="text"
-            placeholder="Search by name, slug, or admin..."
+            placeholder="Search by name, slug, ID, admin, email, or description…"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="input pl-10"
@@ -376,6 +408,7 @@ export default function TenantManagementPage() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Login Link</th>
                 <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Users</th>
                 <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Facilities</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Deployments</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Mode</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Setup</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
@@ -434,6 +467,23 @@ export default function TenantManagementPage() {
                       <Hospital className="w-3.5 h-3.5 text-gray-400" />
                       {tenant.facilityCount || 0}
                     </span>
+                  </td>
+                  <td className="px-4 py-4 text-center">
+                    {(deploymentCounts[tenant.id] || 0) > 0 ? (
+                      <Link
+                        to={`/system/deployments?tenantId=${tenant.id}`}
+                        className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                        title="View deployments for this organization"
+                      >
+                        <Server className="w-3.5 h-3.5" />
+                        {deploymentCounts[tenant.id]}
+                      </Link>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-sm text-gray-400">
+                        <Server className="w-3.5 h-3.5" />
+                        0
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-4">
                     {tenant.settings?.facilityMode ? (

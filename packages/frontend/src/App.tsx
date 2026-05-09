@@ -43,6 +43,9 @@ const PlatformSettingsPage = lazy(() => import('./pages/system/SystemSettingsPag
 const SystemSupportRequestsPage = lazy(() => import('./pages/system/SystemSupportRequestsPage'));
 const SystemComplianceCenterPage = lazy(() => import('./pages/system/SystemComplianceCenterPage'));
 const SystemDeploymentsPage = lazy(() => import('./pages/system/SystemDeploymentsPage'));
+const SystemDeploymentDetailPage = lazy(() => import('./pages/system/SystemDeploymentDetailPage'));
+const SystemRolloutsPage = lazy(() => import('./pages/system/SystemRolloutsPage'));
+const SystemAuditLogsPage = lazy(() => import('./pages/system/SystemAuditLogsPage'));
 const SystemLeadsPage = lazy(() => import('./pages/system/SystemLeadsPage'));
 const SystemDownloadsPage = lazy(() => import('./pages/system/SystemDownloadsPage'));
 const SystemLicensesPage = lazy(() => import('./pages/system/SystemLicensesPage'));
@@ -648,6 +651,9 @@ function AppRoutes() {
         <Route index element={<SystemDashboardPage />} />
         <Route path="tenants" element={<TenantManagementPage />} />
         <Route path="deployments" element={<SystemDeploymentsPage />} />
+        <Route path="deployments/:deploymentId" element={<SystemDeploymentDetailPage />} />
+        <Route path="rollouts" element={<SystemRolloutsPage />} />
+        <Route path="audit-logs" element={<SystemAuditLogsPage />} />
         <Route path="users" element={<SystemUsersPage />} />
         <Route path="settings" element={<PlatformSettingsPage />} />
         <Route path="support-requests" element={<SystemSupportRequestsPage />} />

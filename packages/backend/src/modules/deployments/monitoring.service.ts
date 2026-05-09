@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { DeploymentHealth, HealthStatus } from '../../database/entities/deployment-health.entity';
 import { DeploymentAlert, AlertSeverity, AlertStatus } from '../../database/entities/deployment-alert.entity';
-import { Deployment } from '../../database/entities/deployment.entity';
+import { Deployment, DeploymentStatus } from '../../database/entities/deployment.entity';
 
 @Injectable()
 export class MonitoringService {
@@ -49,8 +49,11 @@ export class MonitoringService {
       errorRatePercent: metrics.errorRatePercent,
     });
 
-    // Update deployment's last health check
+    // Update deployment's last health check; flip PENDING → ACTIVE on first heartbeat.
     deployment.lastHealthCheck = new Date();
+    if (deployment.status === DeploymentStatus.PENDING) {
+      deployment.status = DeploymentStatus.ACTIVE;
+    }
     await this.deploymentRepository.save(deployment);
 
     return this.healthRepository.save(health);
