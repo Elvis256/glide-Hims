@@ -8,5 +8,6 @@ import { Backup } from '../../database/entities/backup.entity';
   imports: [TypeOrmModule.forFeature([Backup])],
   controllers: [BackupController],
   providers: [BackupService],
+  exports: [BackupService],
 })
 export class BackupModule {}

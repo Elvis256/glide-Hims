@@ -44,6 +44,38 @@ export class UpdateManagementService {
     });
   }
 
+  async pauseRollout(rolloutId: string): Promise<UpdateRollout> {
+    const rollout = await this.rolloutRepository.findOne({ where: { id: rolloutId } });
+    if (!rollout) throw new NotFoundException('Rollout not found');
+    if (rollout.status !== UpdateRolloutStatus.IN_PROGRESS && rollout.status !== UpdateRolloutStatus.SCHEDULED) {
+      throw new BadRequestException(`Cannot pause a rollout in status "${rollout.status}"`);
+    }
+    rollout.status = UpdateRolloutStatus.PAUSED;
+    return this.rolloutRepository.save(rollout);
+  }
+
+  async resumeRollout(rolloutId: string): Promise<UpdateRollout> {
+    const rollout = await this.rolloutRepository.findOne({ where: { id: rolloutId } });
+    if (!rollout) throw new NotFoundException('Rollout not found');
+    if (rollout.status !== UpdateRolloutStatus.PAUSED) {
+      throw new BadRequestException(`Cannot resume a rollout in status "${rollout.status}"`);
+    }
+    rollout.status = UpdateRolloutStatus.IN_PROGRESS;
+    return this.rolloutRepository.save(rollout);
+  }
+
+  async cancelRollout(rolloutId: string, reason?: string): Promise<UpdateRollout> {
+    const rollout = await this.rolloutRepository.findOne({ where: { id: rolloutId } });
+    if (!rollout) throw new NotFoundException('Rollout not found');
+    if (rollout.status === UpdateRolloutStatus.COMPLETED || rollout.status === UpdateRolloutStatus.ROLLED_BACK) {
+      throw new BadRequestException(`Rollout already finalized (${rollout.status})`);
+    }
+    rollout.status = UpdateRolloutStatus.ROLLED_BACK;
+    rollout.rolledBackAt = new Date();
+    rollout.rollbackReason = { reason: reason || 'cancelled by admin', cancelledAt: new Date().toISOString() };
+    return this.rolloutRepository.save(rollout);
+  }
+
   async rollbackDeployment(tenantId: string, deploymentId: string): Promise<any> {
     const deployment = await this.deploymentRepository.findOne({
       where: { id: deploymentId, tenantId },

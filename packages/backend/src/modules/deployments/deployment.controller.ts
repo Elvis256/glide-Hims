@@ -1,10 +1,13 @@
-import { Controller, Get, Post, Put, Delete, Param, Body, Req, HttpCode, HttpStatus } from '@nestjs/common';
-import { Request } from 'express';
+import { Controller, Get, Post, Put, Delete, Param, Body, Req, Res, HttpCode, HttpStatus, ForbiddenException, NotFoundException, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { Request, Response } from 'express';
+import { FileInterceptor } from '@nestjs/platform-express';
+import * as fs from 'fs';
 import { DeploymentService } from './deployment.service';
 import { UpdateManagementService } from './update-management.service';
 import { FeatureFlagService } from './feature-flag.service';
 import { ReplicationService } from './replication.service';
 import { MonitoringService } from './monitoring.service';
+import { BackupService } from '../backup/backup.service';
 import { CreateDeploymentDto, UpdateDeploymentDto, ToggleFeatureFlagDto, ProvisionDeploymentDto } from './deployment.dto';
 
 @Controller('deployments')
@@ -15,6 +18,7 @@ export class DeploymentController {
     private featureFlagService: FeatureFlagService,
     private replicationService: ReplicationService,
     private monitoringService: MonitoringService,
+    private backupService: BackupService,
   ) {}
 
   private getTenantId(req: Request): string {
@@ -84,6 +88,42 @@ export class DeploymentController {
     return this.deploymentService.getDeploymentHealth(tenantId, deploymentId);
   }
 
+  @Get(':deploymentId/detail')
+  async getDeploymentDetail(@Req() req: Request, @Param('deploymentId') deploymentId: string) {
+    if (!this.isSystemAdmin(req)) {
+      throw new ForbiddenException('System admin access required');
+    }
+    const detail = await this.deploymentService.getAdminDeploymentDetail(deploymentId);
+    const [history, alerts] = await Promise.all([
+      this.monitoringService.getHealthHistory(detail.tenantId, deploymentId, 50),
+      this.monitoringService.getAlerts(detail.tenantId, deploymentId),
+    ]);
+    return {
+      deployment: detail,
+      health: {
+        latest: history[0] || null,
+        history,
+      },
+      alerts,
+    };
+  }
+
+  @Get(':deploymentId/installer-bundle')
+  async downloadInstallerBundle(
+    @Req() req: Request,
+    @Param('deploymentId') deploymentId: string,
+    @Res() res: Response,
+  ) {
+    if (!this.isSystemAdmin(req)) {
+      throw new ForbiddenException('System admin access required');
+    }
+    const bundle = await this.deploymentService.generateInstallerBundle(deploymentId);
+    res.setHeader('Content-Type', bundle.mimeType);
+    res.setHeader('Content-Disposition', `attachment; filename="${bundle.filename}"`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(bundle.content);
+  }
+
   // ============ UPDATE MANAGEMENT ============
 
   @Get('rollouts/:rolloutId/status')
@@ -97,10 +137,83 @@ export class DeploymentController {
     return this.updateService.listRollouts();
   }
 
+  @Put('rollouts/:rolloutId/pause')
+  async pauseRollout(@Req() req: Request, @Param('rolloutId') rolloutId: string) {
+    if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
+    return this.updateService.pauseRollout(rolloutId);
+  }
+
+  @Put('rollouts/:rolloutId/resume')
+  async resumeRollout(@Req() req: Request, @Param('rolloutId') rolloutId: string) {
+    if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
+    return this.updateService.resumeRollout(rolloutId);
+  }
+
+  @Put('rollouts/:rolloutId/cancel')
+  async cancelRollout(
+    @Req() req: Request,
+    @Param('rolloutId') rolloutId: string,
+    @Body() body: { reason?: string },
+  ) {
+    if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
+    return this.updateService.cancelRollout(rolloutId, body?.reason);
+  }
+
   @Post(':deploymentId/rollback')
   async rollbackDeployment(@Req() req: Request, @Param('deploymentId') deploymentId: string) {
     const tenantId = this.getTenantId(req);
     return this.updateService.rollbackDeployment(tenantId, deploymentId);
+  }
+
+  @Post(':deploymentId/test-connectivity')
+  async testConnectivity(@Req() req: Request, @Param('deploymentId') deploymentId: string) {
+    if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
+    return this.deploymentService.testConnectivity(deploymentId);
+  }
+
+  // ============ STANDALONE SNAPSHOT IMPORT ============
+
+  @Get(':deploymentId/snapshots')
+  async listSnapshots(@Req() req: Request, @Param('deploymentId') deploymentId: string) {
+    if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
+    const detail = await this.deploymentService.getAdminDeploymentDetail(deploymentId);
+    return this.backupService.listSnapshotsForTenant(detail.tenantId);
+  }
+
+  @Post(':deploymentId/snapshots')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadSnapshot(
+    @Req() req: Request,
+    @Param('deploymentId') deploymentId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Body() body: { notes?: string },
+  ) {
+    if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
+    if (!file) throw new NotFoundException('No file provided');
+    const detail = await this.deploymentService.getAdminDeploymentDetail(deploymentId);
+    return this.backupService.importSnapshot({
+      tenantId: detail.tenantId,
+      deploymentId,
+      file,
+      uploadedBy: (req.user as any)?.id,
+      notes: body?.notes,
+    });
+  }
+
+  @Get('snapshots/:snapshotId/download')
+  async downloadSnapshot(
+    @Req() req: Request,
+    @Param('snapshotId') snapshotId: string,
+    @Res() res: Response,
+  ) {
+    if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
+    const backup = await this.backupService.findById(snapshotId);
+    if (!backup || !fs.existsSync(backup.filePath)) {
+      throw new NotFoundException('Snapshot file not found');
+    }
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${backup.filename}"`);
+    fs.createReadStream(backup.filePath).pipe(res);
   }
 
   // ============ FEATURE FLAGS ============

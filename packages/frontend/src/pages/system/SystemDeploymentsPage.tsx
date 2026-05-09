@@ -1,21 +1,26 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams, Link } from 'react-router-dom';
 import api from '../../services/api';
 import {
   Server, Cloud, HardDrive, Plus, Search, RefreshCw,
   CheckCircle2, AlertTriangle, Clock, Loader2, Copy, Check,
-  ExternalLink, MoreVertical, KeyRound, Activity, Building2,
+  ExternalLink, MoreVertical, KeyRound, Activity, Building2, Download, X,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import TierBadge from '../../components/TierBadge';
 
 type DeploymentType = 'hybrid' | 'standalone';
 type DeploymentStatus = 'active' | 'pending' | 'error' | 'expired';
 
 interface Deployment {
   id: string;
+  tenantId?: string;
   organizationName: string;
   type: DeploymentType;
   status: DeploymentStatus;
   licenseKey: string;
+  licenseStatus?: 'active' | 'suspended' | 'revoked' | 'expired' | null;
+  licenseExpiresAt?: string | null;
   domain?: string;
   version: string;
   lastSeen?: string;
@@ -76,7 +81,16 @@ export default function SystemDeploymentsPage() {
   const [tenants, setTenants] = useState<Array<{ id: string; name: string; slug: string }>>([]);
   const [selectedTenantId, setSelectedTenantId] = useState<string>('');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [bannerDismissed, setBannerDismissed] = useState<boolean>(() => {
+    try { return localStorage.getItem('deployments_intro_banner_dismissed') === '1'; }
+    catch { return false; }
+  });
+  const dismissBanner = () => {
+    setBannerDismissed(true);
+    try { localStorage.setItem('deployments_intro_banner_dismissed', '1'); } catch { /* ignore */ }
+  };
   const [typeFilter, setTypeFilter] = useState<'all' | DeploymentType>('all');
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -89,16 +103,100 @@ export default function SystemDeploymentsPage() {
     notes: '',
   });
   const { copied, copy } = useCopyToClipboard();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tenantFilterId = searchParams.get('tenantId') || '';
+  const [actionMenuId, setActionMenuId] = useState<string | null>(null);
+  const [busyDeploymentId, setBusyDeploymentId] = useState<string | null>(null);
+
+  const closeActionMenu = () => setActionMenuId(null);
+
+  const runLicenseAction = async (
+    dep: Deployment,
+    action: 'suspend' | 'reactivate' | 'revoke' | 'extend',
+  ) => {
+    if (!dep.licenseKey) {
+      toast.error('No license key on this deployment');
+      return;
+    }
+    if (action === 'revoke' && !window.confirm(
+      `Revoke license for ${dep.organizationName}? This is permanent — the install will stop validating immediately.`,
+    )) {
+      return;
+    }
+    setBusyDeploymentId(dep.id);
+    closeActionMenu();
+    try {
+      if (action === 'extend') {
+        await api.put(`/license/${encodeURIComponent(dep.licenseKey)}/extend`, { days: 30 });
+        toast.success('License extended by 30 days');
+      } else {
+        await api.put(`/license/${encodeURIComponent(dep.licenseKey)}/${action}`);
+        toast.success(`License ${action === 'reactivate' ? 'reactivated' : action + 'd'}`);
+      }
+      await loadDeployments();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || `Failed to ${action} license`);
+    } finally {
+      setBusyDeploymentId(null);
+    }
+  };
+
+  const downloadInstallerBundle = async (dep: Deployment) => {
+    closeActionMenu();
+    setBusyDeploymentId(dep.id);
+    try {
+      const res = await api.get(`/deployments/${dep.id}/installer-bundle`, { responseType: 'blob' });
+      const cd: string = res.headers['content-disposition'] || '';
+      const match = cd.match(/filename="?([^";]+)"?/i);
+      const filename = match?.[1] || `glide-hims-bootstrap-${dep.id}.sh`;
+      const url = URL.createObjectURL(res.data as Blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('Installer bundle downloaded');
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Failed to download installer bundle');
+    } finally {
+      setBusyDeploymentId(null);
+    }
+  };
+
+  const downloadLicense = async (dep: Deployment) => {
+    if (!dep.licenseKey) {
+      toast.error('No license key on this deployment');
+      return;
+    }
+    closeActionMenu();
+    try {
+      const res = await api.get(`/license/${encodeURIComponent(dep.licenseKey)}`);
+      const blob = new Blob([JSON.stringify(res.data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `license-${dep.organizationName.replace(/\s+/g, '-').toLowerCase()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Failed to download license');
+    }
+  };
 
   const loadDeployments = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
-      // Try to load from the deployments API; fall back to empty state if not yet implemented
-      const res = await api.get('/deployments').catch(() => ({ data: [] }));
+      const res = await api.get('/deployments');
       const data = Array.isArray(res.data) ? res.data : (res.data?.data || []);
       setDeployments(data);
-    } catch {
+    } catch (err: any) {
       setDeployments([]);
+      const message =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Failed to load deployments';
+      setLoadError(message);
     } finally {
       setLoading(false);
     }
@@ -142,13 +240,29 @@ export default function SystemDeploymentsPage() {
   };
 
   const filtered = deployments.filter((d) => {
-    const matchSearch =
-      d.organizationName.toLowerCase().includes(search.toLowerCase()) ||
-      d.licenseKey.toLowerCase().includes(search.toLowerCase()) ||
-      (d.domain || '').toLowerCase().includes(search.toLowerCase());
+    const matchTenant = !tenantFilterId || d.tenantId === tenantFilterId;
+    const q = search.trim().toLowerCase();
+    const tenantSlug = d.tenantId ? tenants.find((t) => t.id === d.tenantId)?.slug || '' : '';
+    const matchSearch = !q ||
+      d.organizationName.toLowerCase().includes(q) ||
+      d.licenseKey.toLowerCase().includes(q) ||
+      (d.domain || '').toLowerCase().includes(q) ||
+      tenantSlug.toLowerCase().includes(q) ||
+      (d.tenantId || '').toLowerCase().includes(q) ||
+      d.id.toLowerCase().includes(q);
     const matchType = typeFilter === 'all' || d.type === typeFilter;
-    return matchSearch && matchType;
+    return matchTenant && matchSearch && matchType;
   });
+
+  const tenantFilterName = tenantFilterId
+    ? deployments.find((d) => d.tenantId === tenantFilterId)?.organizationName
+    : null;
+
+  const clearTenantFilter = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('tenantId');
+    setSearchParams(next, { replace: true });
+  };
 
   const stats = {
     total: deployments.length,
@@ -201,18 +315,28 @@ export default function SystemDeploymentsPage() {
       </div>
 
       {/* Info banner */}
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex gap-3">
-        <Building2 className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-        <div className="text-sm text-blue-800">
-          <p className="font-medium">Two deployment types available</p>
-          <p className="mt-1">
-            <strong>Hybrid</strong> — Customer hosts on their own servers (AWS/Azure/On-Premise). 
-            Updates pushed from this server.{' '}
-            <strong>Standalone</strong> — Completely air-gapped for government, military, and remote clinics. 
-            Updates via USB/manual distribution.
-          </p>
+      {!bannerDismissed && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex gap-3 relative">
+          <Building2 className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+          <div className="text-sm text-blue-800 flex-1 pr-6">
+            <p className="font-medium">Two deployment types available</p>
+            <p className="mt-1">
+              <strong>Hybrid</strong> — Customer hosts on their own servers (AWS/Azure/On-Premise).
+              Updates pushed from this server.{' '}
+              <strong>Standalone</strong> — Completely air-gapped for government, military, and remote clinics.
+              Updates via USB/manual distribution.
+            </p>
+          </div>
+          <button
+            onClick={dismissBanner}
+            className="absolute top-2 right-2 p-1 text-blue-600 hover:bg-blue-100 rounded"
+            aria-label="Dismiss"
+            title="Dismiss"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
-      </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3">
@@ -222,7 +346,7 @@ export default function SystemDeploymentsPage() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by organization, license key, or domain…"
+            placeholder="Search by organization, slug, license key, domain, or ID…"
             className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
@@ -243,10 +367,42 @@ export default function SystemDeploymentsPage() {
         </div>
       </div>
 
+      {/* Tenant filter banner */}
+      {tenantFilterId && (
+        <div className="mb-4 flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5">
+          <div className="flex items-center gap-2 text-sm text-blue-900">
+            <Building2 className="w-4 h-4" />
+            <span>
+              Showing deployments for{' '}
+              <strong>{tenantFilterName || 'selected organization'}</strong>
+            </span>
+          </div>
+          <button
+            onClick={clearTenantFilter}
+            className="text-blue-700 hover:text-blue-900 text-sm font-medium inline-flex items-center gap-1"
+          >
+            Clear filter
+          </button>
+        </div>
+      )}
+
       {/* Deployments List */}
       {loading ? (
         <div className="flex items-center justify-center py-20">
           <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        </div>
+      ) : loadError ? (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-12 text-center">
+          <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+          <p className="text-red-700 font-medium">Could not load deployments</p>
+          <p className="text-red-600 text-sm mt-1">{loadError}</p>
+          <button
+            onClick={loadDeployments}
+            className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Retry
+          </button>
         </div>
       ) : filtered.length === 0 ? (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
@@ -284,7 +440,23 @@ export default function SystemDeploymentsPage() {
               {filtered.map((dep) => (
                 <tr key={dep.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-4 py-3">
-                    <p className="font-medium text-gray-900">{dep.organizationName}</p>
+                    {dep.tenantId ? (
+                      <Link
+                        to={`/system/tenants?tenantId=${dep.tenantId}`}
+                        className="font-medium text-gray-900 hover:text-blue-700 hover:underline"
+                        title="Open organization"
+                      >
+                        {dep.organizationName}
+                      </Link>
+                    ) : (
+                      <p className="font-medium text-gray-900">{dep.organizationName}</p>
+                    )}
+                    <Link
+                      to={`/system/deployments/${dep.id}`}
+                      className="text-xs text-blue-600 hover:underline inline-flex items-center gap-1 mt-0.5"
+                    >
+                      View detail <ExternalLink className="w-3 h-3" />
+                    </Link>
                     {dep.domain && (
                       <a
                         href={`https://${dep.domain}`}
@@ -301,22 +473,29 @@ export default function SystemDeploymentsPage() {
                       {TYPE_CONFIG[dep.type].icon}
                       {TYPE_CONFIG[dep.type].label}
                     </span>
+                    <div className="mt-1">
+                      <TierBadge tier={dep.tier} />
+                    </div>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <code className="text-xs bg-gray-100 px-2 py-1 rounded font-mono">{dep.licenseKey}</code>
-                      <button
-                        onClick={() => copy(dep.licenseKey, dep.id)}
-                        className="text-gray-400 hover:text-gray-600"
-                        title="Copy license key"
-                      >
-                        {copied === dep.id ? (
-                          <Check className="w-4 h-4 text-green-500" />
-                        ) : (
-                          <Copy className="w-4 h-4" />
-                        )}
-                      </button>
-                    </div>
+                    {dep.licenseKey ? (
+                      <div className="flex items-center gap-2">
+                        <code className="text-xs bg-gray-100 px-2 py-1 rounded font-mono">{dep.licenseKey}</code>
+                        <button
+                          onClick={() => copy(dep.licenseKey, dep.id)}
+                          className="text-gray-400 hover:text-gray-600"
+                          title="Copy license key"
+                        >
+                          {copied === dep.id ? (
+                            <Check className="w-4 h-4 text-green-500" />
+                          ) : (
+                            <Copy className="w-4 h-4" />
+                          )}
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-gray-400 italic">No license</span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${STATUS_STYLES[dep.status]}`}>
@@ -332,10 +511,82 @@ export default function SystemDeploymentsPage() {
                         : '—'}
                   </td>
                   <td className="px-4 py-3 text-gray-500 text-xs font-mono">{dep.version}</td>
-                  <td className="px-4 py-3">
-                    <button className="text-gray-400 hover:text-gray-600 p-1">
-                      <MoreVertical className="w-4 h-4" />
+                  <td className="px-4 py-3 relative">
+                    <button
+                      className="text-gray-400 hover:text-gray-600 p-1 disabled:opacity-50"
+                      disabled={busyDeploymentId === dep.id}
+                      onClick={() => setActionMenuId(actionMenuId === dep.id ? null : dep.id)}
+                    >
+                      {busyDeploymentId === dep.id ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <MoreVertical className="w-4 h-4" />
+                      )}
                     </button>
+                    {actionMenuId === dep.id && (
+                      <>
+                        <div
+                          className="fixed inset-0 z-10"
+                          onClick={closeActionMenu}
+                        />
+                        <div className="absolute right-2 mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-20 py-1 text-sm">
+                          {dep.licenseKey ? (
+                            <>
+                              <button
+                                onClick={() => downloadInstallerBundle(dep)}
+                                className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2 text-blue-700"
+                              >
+                                <Download className="w-4 h-4" />
+                                Download installer
+                              </button>
+                              <button
+                                onClick={() => downloadLicense(dep)}
+                                className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2 text-gray-700"
+                              >
+                                <KeyRound className="w-4 h-4" />
+                                Download license
+                              </button>
+                              <button
+                                onClick={() => runLicenseAction(dep, 'extend')}
+                                className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2 text-gray-700"
+                              >
+                                <Clock className="w-4 h-4" />
+                                Extend +30 days
+                              </button>
+                              {dep.licenseStatus === 'suspended' ? (
+                                <button
+                                  onClick={() => runLicenseAction(dep, 'reactivate')}
+                                  className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2 text-green-700"
+                                >
+                                  <CheckCircle2 className="w-4 h-4" />
+                                  Reactivate license
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => runLicenseAction(dep, 'suspend')}
+                                  className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2 text-yellow-700"
+                                >
+                                  <AlertTriangle className="w-4 h-4" />
+                                  Suspend license
+                                </button>
+                              )}
+                              <div className="border-t border-gray-100 my-1" />
+                              <button
+                                onClick={() => runLicenseAction(dep, 'revoke')}
+                                className="w-full text-left px-3 py-2 hover:bg-red-50 flex items-center gap-2 text-red-700"
+                              >
+                                <AlertTriangle className="w-4 h-4" />
+                                Revoke license
+                              </button>
+                            </>
+                          ) : (
+                            <p className="px-3 py-2 text-gray-400 italic text-xs">
+                              No license actions available
+                            </p>
+                          )}
+                        </div>
+                      </>
+                    )}
                   </td>
                 </tr>
               ))}

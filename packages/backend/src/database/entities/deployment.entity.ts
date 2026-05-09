@@ -21,6 +21,7 @@ export enum DeploymentStatus {
   INACTIVE = 'inactive',
   SUSPENDED = 'suspended',
   MAINTENANCE = 'maintenance',
+  PENDING = 'pending',
 }
 
 @Entity('deployments')

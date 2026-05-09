@@ -25,6 +25,7 @@ export class AuditLogController {
     @Headers('x-facility-id') facilityId?: string,
     @Request() req?: any,
   ) {
+    const isSystemAdmin = !!req?.user?.isSystemAdmin;
     return this.auditLogService.findAllPaginated({
       page: parseInt(page, 10),
       limit: Math.min(parseInt(limit, 10), 100),
@@ -35,7 +36,7 @@ export class AuditLogController {
       startDate,
       endDate,
       search,
-      tenantId: req?.user?.tenantId,
+      tenantId: isSystemAdmin ? undefined : req?.user?.tenantId,
     });
   }
 
@@ -43,6 +44,7 @@ export class AuditLogController {
   @AuthWithPermissions('audit.read')
   @ApiOperation({ summary: 'Get audit log statistics' })
   async getStats(@Request() req?: any) {
-    return this.auditLogService.getStats(req?.user?.tenantId);
+    const isSystemAdmin = !!req?.user?.isSystemAdmin;
+    return this.auditLogService.getStats(isSystemAdmin ? undefined : req?.user?.tenantId);
   }
 }

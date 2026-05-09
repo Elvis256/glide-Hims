@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { KeyRound, Loader2, Plus, RefreshCw, Ban, CalendarPlus, ShieldCheck, AlertCircle, Pencil, Pause, Play } from 'lucide-react';
 import api from '../../services/api';
+import TierBadge from '../../components/TierBadge';
 
 interface License {
   id: string;
@@ -29,13 +30,6 @@ const STATUS_BADGE: Record<string, string> = {
   expired: 'bg-rose-100 text-rose-700',
   suspended: 'bg-amber-100 text-amber-700',
   revoked: 'bg-gray-200 text-gray-700',
-};
-
-const TIER_BADGE: Record<string, string> = {
-  trial: 'bg-gray-100 text-gray-700',
-  standard: 'bg-blue-100 text-blue-700',
-  professional: 'bg-indigo-100 text-indigo-700',
-  enterprise: 'bg-purple-100 text-purple-700',
 };
 
 function daysUntil(iso: string) {
@@ -270,9 +264,7 @@ export default function SystemLicensesPage() {
                     {l.email && <div className="text-xs text-gray-500">{l.email}</div>}
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${TIER_BADGE[l.licenseType] || ''}`}>
-                      {l.licenseType}
-                    </span>
+                    <TierBadge tier={l.licenseType} />
                   </td>
                   <td className="px-4 py-3">
                     <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${STATUS_BADGE[l.status] || ''}`}>
