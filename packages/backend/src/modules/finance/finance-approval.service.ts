@@ -16,6 +16,7 @@ import {
   JournalStatus,
 } from '../../database/entities/journal-entry.entity';
 import { AuditLog } from '../../database/entities/audit-log.entity';
+import { maxMoney } from '../../common/utils/money';
 
 /**
  * Finance approval thresholds by amount.
@@ -85,8 +86,14 @@ export class FinanceApprovalService {
   ): Promise<Array<{ level: number; role: string }>> {
     const approvals: Array<{ level: number; role: string }> = [];
 
+    // Compare in cents to avoid float-drift causing wrong-band routing.
+    const amountCents = Math.round(amount * 100);
     for (const threshold of FINANCE_APPROVAL_THRESHOLDS) {
-      if (amount >= threshold.minAmount && amount < threshold.maxAmount) {
+      const minCents = Math.round(threshold.minAmount * 100);
+      const maxCents = Number.isFinite(threshold.maxAmount)
+        ? Math.round(threshold.maxAmount * 100)
+        : Number.POSITIVE_INFINITY;
+      if (amountCents >= minCents && amountCents < maxCents) {
         for (let i = 1; i <= threshold.level; i++) {
           const level = FINANCE_APPROVAL_THRESHOLDS[i - 1];
           if (!approvals.find((a) => a.level === level.level)) {
@@ -175,10 +182,7 @@ export class FinanceApprovalService {
           .delete({ journalEntryId });
       }
 
-      const amount = Math.max(
-        Number(entry.totalDebit) || 0,
-        Number(entry.totalCredit) || 0,
-      );
+      const amount = maxMoney(entry.totalDebit ?? 0, entry.totalCredit ?? 0);
       const requiredLevels = await this.getRequiredApprovalsForAmount(amount);
 
       const chainEntries = requiredLevels.map((lvl) =>
