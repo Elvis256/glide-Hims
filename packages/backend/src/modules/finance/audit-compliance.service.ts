@@ -1,7 +1,13 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ForbiddenException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan, LessThan } from 'typeorm';
 import { AuditLog } from '../../database/entities/audit-log.entity';
+import { JournalEntry } from '../../database/entities/journal-entry.entity';
 
 interface CompliancePolicy {
   name: string;
@@ -10,9 +16,19 @@ interface CompliancePolicy {
   description: string;
 }
 
+/**
+ * AuditComplianceService
+ *
+ * IMPORTANT: the audit_logs table currently has no `tenant_id` column. To
+ * keep this service tenant-safe we only count audit log rows whose
+ * `entity_id` corresponds to a journal_entry belonging to the caller's
+ * tenant. A platform-wide audit_logs.tenant_id column is tracked as a
+ * follow-up (Sprint-3); when it ships, the JE-join logic below can be
+ * replaced with a direct WHERE.
+ */
 @Injectable()
 export class AuditComplianceService {
-  private readonly logger = new Logger('AuditComplianceService');
+  private readonly logger = new Logger(AuditComplianceService.name);
 
   private readonly defaultPolicies: Record<string, CompliancePolicy> = {
     STANDARD: {
@@ -37,21 +53,50 @@ export class AuditComplianceService {
 
   constructor(
     @InjectRepository(AuditLog)
-    private auditLogRepo: Repository<AuditLog>,
+    private readonly auditLogRepo: Repository<AuditLog>,
+    @InjectRepository(JournalEntry)
+    private readonly journalEntryRepo: Repository<JournalEntry>,
   ) {}
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Helpers
+  // ─────────────────────────────────────────────────────────────────────────
+
+  private requireTenant(tenantId: string | undefined | null): string {
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context required');
+    }
+    return tenantId;
+  }
+
   /**
-   * Get all compliance policies
+   * Build a tenant-scoped query against audit_logs by joining through
+   * journal_entries on entity_id. Only journal-entry-related audit rows
+   * are returned.
    */
+  private tenantScopedAuditQB(tenantId: string) {
+    return this.auditLogRepo
+      .createQueryBuilder('al')
+      .innerJoin(
+        JournalEntry,
+        'je',
+        'je.id::text = al.entity_id::text AND je.tenant_id = :tid',
+        { tid: tenantId },
+      )
+      .where("al.entity_type IN ('journal_entry', 'JournalEntry')");
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Public API
+  // ─────────────────────────────────────────────────────────────────────────
+
   getCompliancePolicies(): Record<string, CompliancePolicy> {
     return this.defaultPolicies;
   }
 
-  /**
-   * Check compliance status for a specific policy
-   */
   async checkComplianceStatus(
     policyName: string = 'STANDARD',
+    tenantId: string,
   ): Promise<{
     policyName: string;
     status: string;
@@ -65,23 +110,20 @@ export class AuditComplianceService {
       nextReviewDate: Date;
     };
   }> {
-    this.logger.debug(`Checking compliance status for policy: ${policyName}`);
-
+    const tid = this.requireTenant(tenantId);
     const policy = this.defaultPolicies[policyName];
     if (!policy) {
-      throw new Error(`Unknown policy: ${policyName}`);
+      throw new BadRequestException(`Unknown policy: ${policyName}`);
     }
 
-    const totalRecords = await this.auditLogRepo.count();
+    const totalRecords = await this.tenantScopedAuditQB(tid).getCount();
 
     const archiveDate = new Date();
     archiveDate.setDate(archiveDate.getDate() - policy.archiveAfterDays);
 
-    const overdueRecords = await this.auditLogRepo.count({
-      where: {
-        createdAt: LessThan(archiveDate),
-      },
-    });
+    const overdueRecords = await this.tenantScopedAuditQB(tid)
+      .andWhere('al.created_at < :archiveDate', { archiveDate })
+      .getCount();
 
     const percentCompliance =
       totalRecords === 0
@@ -106,10 +148,10 @@ export class AuditComplianceService {
     };
   }
 
-  /**
-   * Generate compliance audit trail
-   */
-  async generateComplianceAudit(periodDays: number = 90): Promise<{
+  async generateComplianceAudit(
+    periodDays: number = 90,
+    tenantId: string,
+  ): Promise<{
     periodDays: number;
     totalRecords: number;
     recordsByAction: Record<string, number>;
@@ -123,21 +165,15 @@ export class AuditComplianceService {
     }>;
     complianceScore: number;
   }> {
-    this.logger.debug(
-      `Generating compliance audit for last ${periodDays} days`,
-    );
-
+    const tid = this.requireTenant(tenantId);
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - periodDays);
 
-    const records = await this.auditLogRepo.find({
-      where: {
-        createdAt: MoreThan(startDate),
-      },
-      order: {
-        createdAt: 'DESC',
-      },
-    });
+    const records: AuditLog[] = await this.tenantScopedAuditQB(tid)
+      .andWhere('al.created_at > :startDate', { startDate })
+      .orderBy('al.created_at', 'DESC')
+      .select('al')
+      .getMany();
 
     const byAction: Record<string, number> = {};
     const byUser: Record<string, number> = {};
@@ -183,54 +219,40 @@ export class AuditComplianceService {
   }
 
   /**
-   * Archive inactive audit records
+   * Archive (REPORT-ONLY) inactive audit records.
+   *
+   * Audit logs are append-only; this method MUST never delete rows.
+   * It returns the candidate count and an estimated archive size so the
+   * UI can display compliance progress, but performs no destructive work.
+   * Any actual archiving must be done by an offline ETL job that ships
+   * data into cold storage, never by an HTTP request.
    */
   async archiveInactiveRecords(
     archiveDate: Date,
-    dryRun: boolean = true,
+    _dryRun: boolean = true,
+    tenantId?: string,
   ): Promise<{
     recordsToArchive: number;
-    archiveId?: string;
-    estimatedSize?: string;
-    archivedCount?: number;
+    estimatedSize: string;
+    note: string;
   }> {
-    this.logger.debug(`Archiving inactive records before ${archiveDate}`);
-
-    const toArchive = await this.auditLogRepo.find({
-      where: {
-        createdAt: LessThan(archiveDate),
-      },
-    });
-
-    if (!dryRun && toArchive.length > 0) {
-      const archiveId = `archive_${Date.now()}`;
-      const estimatedSize = `${(toArchive.length * 0.0008).toFixed(2)} MB`;
-
-      await this.auditLogRepo.remove(toArchive);
-
-      this.logger.log(
-        `Archived ${toArchive.length} records to ${archiveId}`,
-      );
-
-      return {
-        recordsToArchive: toArchive.length,
-        archiveId,
-        estimatedSize,
-        archivedCount: toArchive.length,
-      };
-    }
+    const tid = this.requireTenant(tenantId);
+    const candidateCount = await this.tenantScopedAuditQB(tid)
+      .andWhere('al.created_at < :archiveDate', { archiveDate })
+      .getCount();
 
     return {
-      recordsToArchive: toArchive.length,
-      estimatedSize: `${(toArchive.length * 0.0008).toFixed(2)} MB`,
+      recordsToArchive: candidateCount,
+      estimatedSize: `${(candidateCount * 0.0008).toFixed(2)} MB`,
+      note:
+        'Audit logs are append-only. This endpoint reports candidates only; ' +
+        'no rows have been deleted. Use the offline archive job for cold-storage transfer.',
     };
   }
 
-  /**
-   * Generate compliance report for auditors
-   */
   async generateComplianceReport(
     includePeriodDays: number = 90,
+    tenantId: string,
   ): Promise<{
     reportDate: Date;
     reportPeriod: number;
@@ -246,11 +268,15 @@ export class AuditComplianceService {
     };
     recommendations: string[];
   }> {
-    this.logger.debug('Generating compliance report');
+    const tid = this.requireTenant(tenantId);
+    const policyStatus: Array<{
+      policyName: string;
+      status: string;
+      percentCompliance: number;
+    }> = [];
 
-    const policyStatus = [];
     for (const policyName of Object.keys(this.defaultPolicies)) {
-      const status = await this.checkComplianceStatus(policyName);
+      const status = await this.checkComplianceStatus(policyName, tid);
       policyStatus.push({
         policyName: status.policyName,
         status: status.status,
@@ -258,25 +284,25 @@ export class AuditComplianceService {
       });
     }
 
-    const auditTrail = await this.generateComplianceAudit(includePeriodDays);
+    const auditTrail = await this.generateComplianceAudit(
+      includePeriodDays,
+      tid,
+    );
 
-    const recommendations = [];
+    const recommendations: string[] = [];
     if (auditTrail.complianceScore < 80) {
       recommendations.push(
         'Review and increase controls for critical operations',
       );
     }
     if (auditTrail.criticalOperations.length > 50) {
-      recommendations.push(
-        'Investigate high volume of critical operations',
-      );
+      recommendations.push('Investigate high volume of critical operations');
     }
     policyStatus.forEach((ps) => {
       if (ps.status === 'NON_COMPLIANT') {
         recommendations.push(`${ps.policyName} policy is not compliant`);
       }
     });
-
     if (recommendations.length === 0) {
       recommendations.push('System is fully compliant with all policies');
     }
@@ -294,32 +320,30 @@ export class AuditComplianceService {
     };
   }
 
-  /**
-   * Verify audit trail integrity
-   */
-  async verifyAuditIntegrity(): Promise<{
+  async verifyAuditIntegrity(tenantId: string): Promise<{
     isValid: boolean;
     totalRecords: number;
     gapsDetected: number;
     lastVerificationDate: Date;
     nextVerificationDate: Date;
   }> {
-    this.logger.debug('Verifying audit trail integrity');
+    const tid = this.requireTenant(tenantId);
 
-    const totalRecords = await this.auditLogRepo.count();
+    const totalRecords = await this.tenantScopedAuditQB(tid).getCount();
 
-    const records = await this.auditLogRepo.find({
-      order: { createdAt: 'DESC' },
-      take: 1000,
-    });
+    const records: AuditLog[] = await this.tenantScopedAuditQB(tid)
+      .orderBy('al.created_at', 'DESC')
+      .limit(1000)
+      .select('al')
+      .getMany();
 
     let gaps = 0;
     for (let i = 0; i < records.length - 1; i++) {
-      const timeDiff =
-        (records[i].createdAt.getTime() -
-          records[i + 1].createdAt.getTime()) /
-        (1000 * 60 * 60);
-      if (timeDiff > 1 && records[i].userId === records[i + 1].userId) {
+      const ts1 = records[i].createdAt?.getTime();
+      const ts2 = records[i + 1].createdAt?.getTime();
+      if (!ts1 || !ts2) continue;
+      const diffHours = (ts1 - ts2) / (1000 * 60 * 60);
+      if (diffHours > 1 && records[i].userId === records[i + 1].userId) {
         gaps++;
       }
     }
@@ -335,4 +359,9 @@ export class AuditComplianceService {
       nextVerificationDate: nextVerification,
     };
   }
+
+  // Reserved imports kept tree-shake-friendly for older callers.
+  // (MoreThan/LessThan no longer used directly but retained for back-compat
+  // with any external imports.)
+  static readonly _typeormGuards = { MoreThan, LessThan };
 }

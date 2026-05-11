@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { FinanceApprovalService } from '../finance-approval.service';
 import { FinanceApprovalChain, FinanceApprovalStatus } from '../../../database/entities/finance-approval-chain.entity';
 import { JournalEntry, JournalStatus } from '../../../database/entities/journal-entry.entity';
@@ -66,6 +66,12 @@ describe('FinanceApprovalService', () => {
             find: jest.fn(),
             save: jest.fn(),
             createQueryBuilder: jest.fn(),
+          },
+        },
+        {
+          provide: DataSource,
+          useValue: {
+            transaction: jest.fn(async (cb: any) => cb({} as any)),
           },
         },
       ],

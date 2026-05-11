@@ -823,8 +823,12 @@ export class FinanceController {
   @ApiOperation({ summary: 'Get approval history for entry' })
   async getApprovalHistory(
     @Param('id', ParseUUIDPipe) journalEntryId: string,
+    @Request() req: any,
   ) {
-    const history = await this.financeApprovalService.getApprovalHistory(journalEntryId);
+    const history = await this.financeApprovalService.getApprovalHistory(
+      journalEntryId,
+      req?.user?.tenantId,
+    );
 
     return {
       success: true,
@@ -852,6 +856,7 @@ export class FinanceController {
 
     const escalations = await this.financeApprovalService.getEscalationCandidates(
       userFacilityId,
+      req?.user?.tenantId,
       daysPending,
     );
 
@@ -1650,7 +1655,7 @@ export class FinanceController {
   }
 
   @Get('compliance/status/:policyName')
-  @AuthWithPermissions('finance.read')
+  @AuthWithPermissions('finance.admin')
   @ApiOperation({ summary: 'Check compliance status' })
   async checkComplianceStatus(
     @Param('policyName') policyName: string,
@@ -1660,12 +1665,13 @@ export class FinanceController {
       success: true,
       data: await this.auditComplianceService.checkComplianceStatus(
         policyName,
+        req?.user?.tenantId,
       ),
     };
   }
 
   @Get('compliance/audit-trail')
-  @AuthWithPermissions('finance.read')
+  @AuthWithPermissions('finance.admin')
   @ApiOperation({ summary: 'Generate compliance audit trail' })
   @ApiQuery({ name: 'periodDays', required: false })
   async generateComplianceAudit(
@@ -1676,12 +1682,13 @@ export class FinanceController {
       success: true,
       data: await this.auditComplianceService.generateComplianceAudit(
         periodDays,
+        req?.user?.tenantId,
       ),
     };
   }
 
   @Get('compliance/report')
-  @AuthWithPermissions('finance.read')
+  @AuthWithPermissions('finance.admin')
   @ApiOperation({ summary: 'Generate compliance report for auditors' })
   @ApiQuery({ name: 'includePeriodDays', required: false })
   async generateComplianceReport(
@@ -1692,13 +1699,17 @@ export class FinanceController {
       success: true,
       data: await this.auditComplianceService.generateComplianceReport(
         includePeriodDays,
+        req?.user?.tenantId,
       ),
     };
   }
 
   @Post('compliance/archive')
   @AuthWithPermissions('finance.admin')
-  @ApiOperation({ summary: 'Archive audit records' })
+  @ApiOperation({
+    summary:
+      'Report audit-log archive candidates (READ-ONLY; never deletes rows)',
+  })
   @ApiQuery({ name: 'dryRun', required: false })
   @ApiQuery({ name: 'archiveDate', required: false })
   async archiveAuditRecords(
@@ -1712,17 +1723,20 @@ export class FinanceController {
       data: await this.auditComplianceService.archiveInactiveRecords(
         date,
         dryRun,
+        req?.user?.tenantId,
       ),
     };
   }
 
   @Get('compliance/integrity')
-  @AuthWithPermissions('finance.read')
+  @AuthWithPermissions('finance.admin')
   @ApiOperation({ summary: 'Verify audit trail integrity' })
-  async verifyAuditIntegrity() {
+  async verifyAuditIntegrity(@Request() req: any) {
     return {
       success: true,
-      data: await this.auditComplianceService.verifyAuditIntegrity(),
+      data: await this.auditComplianceService.verifyAuditIntegrity(
+        req?.user?.tenantId,
+      ),
     };
   }
 
