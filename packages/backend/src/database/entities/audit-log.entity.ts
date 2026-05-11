@@ -6,7 +6,11 @@ import { User } from './user.entity';
 @Index(['entityType', 'entityId'])
 @Index(['userId'])
 @Index(['createdAt'])
+@Index(['tenantId'])
 export class AuditLog extends BaseEntity {
+  @Column({ type: 'uuid', name: 'tenant_id', nullable: true })
+  tenantId?: string;
+
   @Column({ type: 'uuid', name: 'user_id' })
   userId: string;
 

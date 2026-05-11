@@ -15,6 +15,7 @@ import {
   MoreThanOrEqual,
   TreeRepository,
   DataSource,
+  EntityManager,
 } from 'typeorm';
 import {
   ChartOfAccount,
@@ -417,12 +418,32 @@ export class FinanceService {
 
   // ============ JOURNAL ENTRIES ============
 
-  private async generateJournalNumber(facilityId: string, tenantId?: string): Promise<string> {
+  private async generateJournalNumber(
+    facilityId: string,
+    tenantId?: string,
+    manager?: EntityManager,
+  ): Promise<string> {
+    const date = new Date();
+    const yyyymm = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}`;
+
+    // Acquire a per-(tenant, facility, month) advisory lock so that two
+    // concurrent createJournalEntry transactions cannot derive the same
+    // journalNumber. Lock is released at transaction end. Falls back to a
+    // plain count when no manager is provided (old call sites).
+    if (manager) {
+      const key = `je:${tenantId ?? 'global'}:${facilityId}:${yyyymm}`;
+      await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [key]);
+      const repo = manager.getRepository(JournalEntry);
+      const count = await repo.count({
+        where: { facilityId, ...(tenantId ? { tenantId } : {}) },
+      });
+      return `JE${yyyymm}${String(count + 1).padStart(5, '0')}`;
+    }
+
     const count = await this.journalRepo.count({
       where: { facilityId, ...(tenantId ? { tenantId } : {}) },
     });
-    const date = new Date();
-    return `JE${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(count + 1).padStart(5, '0')}`;
+    return `JE${yyyymm}${String(count + 1).padStart(5, '0')}`;
   }
 
   private async getFiscalPeriodForDate(
@@ -493,8 +514,16 @@ export class FinanceService {
     const journalNumber = await this.generateJournalNumber(dto.facilityId, tenantId);
 
     return this.dataSource.transaction(async (manager) => {
+      // Re-derive inside the tx so the advisory lock and final number are
+      // committed atomically (prevents duplicate journalNumbers under load).
+      const finalJournalNumber = await this.generateJournalNumber(
+        dto.facilityId,
+        tenantId,
+        manager,
+      );
+      void journalNumber;
       const journal = manager.create(JournalEntry, {
-        journalNumber,
+        journalNumber: finalJournalNumber,
         facilityId: dto.facilityId,
         journalDate,
         fiscalPeriodId: fiscalPeriod.id,
@@ -610,6 +639,35 @@ export class FinanceService {
 
       if (journal.status !== JournalStatus.DRAFT) {
         throw new BadRequestException('Only draft entries can be posted');
+      }
+
+      // F12: re-validate debit==credit at post-time using cents-rounded math.
+      // Lines may have been mutated after creation; never trust journal.totalDebit/Credit.
+      const recomputedDebit = (journal.lines ?? []).reduce(
+        (s, l) => s + Math.round(Number(l.debit || 0) * 100),
+        0,
+      );
+      const recomputedCredit = (journal.lines ?? []).reduce(
+        (s, l) => s + Math.round(Number(l.credit || 0) * 100),
+        0,
+      );
+      if (recomputedDebit !== recomputedCredit) {
+        throw new BadRequestException(
+          `Journal entry is unbalanced: debit=${recomputedDebit / 100} credit=${recomputedCredit / 100}`,
+        );
+      }
+      // Also reject any line that has both debit and credit > 0 (F14 belt-and-braces)
+      for (const l of journal.lines ?? []) {
+        if (Number(l.debit) > 0 && Number(l.credit) > 0) {
+          throw new BadRequestException(
+            `Line ${l.lineNumber}: a journal line cannot carry both debit and credit amounts`,
+          );
+        }
+        if (Number(l.debit) <= 0 && Number(l.credit) <= 0) {
+          throw new BadRequestException(
+            `Line ${l.lineNumber}: a journal line must have either debit or credit > 0`,
+          );
+        }
       }
 
       // Maker-checker: creator cannot post their own journal entry

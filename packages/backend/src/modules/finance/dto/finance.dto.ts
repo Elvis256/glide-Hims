@@ -9,6 +9,10 @@ import {
   ValidateNested,
   Min,
   IsInt,
+  Validate,
+  ValidatorConstraint,
+  ValidatorConstraintInterface,
+  ValidationArguments,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -69,6 +73,23 @@ export class UpdateAccountDto {
 }
 
 // ============ JOURNAL ENTRIES ============
+
+@ValidatorConstraint({ name: 'JournalLineDebitXorCredit', async: false })
+class JournalLineDebitXorCredit implements ValidatorConstraintInterface {
+  validate(_: any, args: ValidationArguments): boolean {
+    const obj = args.object as { debit?: number; credit?: number };
+    const d = Number(obj.debit ?? 0);
+    const c = Number(obj.credit ?? 0);
+    if (d < 0 || c < 0) return false;
+    if (d > 0 && c > 0) return false;
+    if (d === 0 && c === 0) return false;
+    return true;
+  }
+  defaultMessage(): string {
+    return 'A journal line must have exactly one of debit or credit > 0 (not both, not neither)';
+  }
+}
+
 export class JournalLineDto {
   @ApiProperty()
   @IsUUID()
@@ -87,6 +108,7 @@ export class JournalLineDto {
   @ApiProperty()
   @IsNumber()
   @Min(0)
+  @Validate(JournalLineDebitXorCredit)
   credit: number;
 }
 

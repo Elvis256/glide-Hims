@@ -69,6 +69,15 @@ describe('FinanceApprovalService', () => {
           },
         },
         {
+          provide: getRepositoryToken(
+            require('../../../database/entities/audit-log.entity').AuditLog,
+          ),
+          useValue: {
+            create: jest.fn((d) => d),
+            save: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
           provide: DataSource,
           useValue: {
             transaction: jest.fn(async (cb: any) => cb({} as any)),

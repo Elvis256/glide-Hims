@@ -167,7 +167,7 @@ export class FinanceController {
   }
 
   @Post('fiscal-periods/:id/open')
-  @AuthWithPermissions('finance.periods.close')
+  @AuthWithPermissions('finance.periods.open')
   @ApiOperation({ summary: 'Re-open a closed fiscal period (not allowed for locked periods)' })
   async openPeriod(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     return this.financeService.openPeriod(id, req.user?.tenantId);
@@ -996,6 +996,7 @@ export class FinanceController {
       accountId,
       dto.fiscalPeriodId,
       userId,
+      req?.user?.tenantId,
       dto.notes,
     );
 
@@ -1020,6 +1021,7 @@ export class FinanceController {
       accountId,
       fiscalPeriodId,
       facilityId,
+      req?.user?.tenantId,
     );
 
     return {

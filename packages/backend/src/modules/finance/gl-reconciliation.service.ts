@@ -1,13 +1,14 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { JournalEntry, JournalStatus } from '../../database/entities/journal-entry.entity';
+import { JournalEntry } from '../../database/entities/journal-entry.entity';
 import { ChartOfAccount } from '../../database/entities/chart-of-account.entity';
 
 /**
  * Reconciliation item (for tracking unmatched GL entries)
- * Note: This service tracks reconciliation at a high level
- * In a full implementation, would need reconciliation_items table
+ * NOTE: this service is currently a stub; a full reconciliation_items table
+ * is required for production behaviour. Every method is tenant-scoped to
+ * prevent cross-tenant data leakage in the meantime.
  */
 export interface ReconciliationItem {
   accountId: string;
@@ -29,13 +30,17 @@ export class GLReconciliationService {
     private readonly chartOfAccountRepo: Repository<ChartOfAccount>,
   ) {}
 
-  /**
-   * Get reconciliation history for an account
-   * Returns timeline of reconciliation actions
-   */
+  private requireTenant(tenantId?: string): string {
+    if (!tenantId) {
+      throw new NotFoundException('Tenant context is required for reconciliation');
+    }
+    return tenantId;
+  }
+
   async getReconciliationHistory(
-    accountId: string,
-    facilityId: string,
+    _accountId: string,
+    _facilityId: string,
+    tenantId?: string,
   ): Promise<
     Array<{
       date: Date;
@@ -45,44 +50,32 @@ export class GLReconciliationService {
       notes: string;
     }>
   > {
-    // In a real system, this would query a reconciliation_audit_log table
-    // For now, return empty history (placeholder for integration)
+    this.requireTenant(tenantId);
     return [];
   }
 
-  /**
-   * Mark account as fully reconciled for a period
-   * Records who reconciled and when
-   */
   async markAsReconciled(
     accountId: string,
     fiscalPeriodId: string,
     userId: string,
+    tenantId?: string,
     notes?: string,
   ): Promise<void> {
+    const tid = this.requireTenant(tenantId);
     const account = await this.chartOfAccountRepo.findOne({
-      where: { id: accountId },
+      where: { id: accountId, tenantId: tid },
     });
-
-    if (!account) {
-      throw new NotFoundException(`Account ${accountId} not found`);
-    }
-
-    // In a real system, would update reconciliation_status table
-    // For now, just log the action
-    console.log(
-      `[RECONCILIATION] Marked account ${accountId} (${account.accountCode}) as reconciled for period ${fiscalPeriodId} by ${userId}`,
-      notes,
-    );
+    if (!account) throw new NotFoundException(`Account ${accountId} not found`);
+    // TODO: persist to reconciliation_status table when introduced.
+    void fiscalPeriodId;
+    void userId;
+    void notes;
   }
 
-  /**
-   * Detect unmatched GL entries in an account for a period
-   * Returns items that need manual reconciliation
-   */
   async detectUnmatchedItems(
-    accountId: string,
-    fiscalPeriodId: string,
+    _accountId: string,
+    _fiscalPeriodId: string,
+    tenantId?: string,
   ): Promise<
     Array<{
       journalEntryId: string;
@@ -92,30 +85,25 @@ export class GLReconciliationService {
       description: string;
     }>
   > {
-    // In a real system, this would use a reconciliation_matching table
-    // to identify items that haven't been matched to bank statements, etc.
-    // For now, return empty (placeholder)
+    this.requireTenant(tenantId);
     return [];
   }
 
-  /**
-   * Get reconciliation summary for facility and period
-   */
   async getReconciliationSummary(
     facilityId: string,
     fiscalPeriodId: string,
+    tenantId?: string,
   ): Promise<{
     totalAccounts: number;
     reconciledAccounts: number;
     pendingAccounts: number;
     completionPercent: number;
   }> {
+    const tid = this.requireTenant(tenantId);
     const accounts = await this.chartOfAccountRepo.find({
-      where: { facilityId },
+      where: { facilityId, tenantId: tid },
     });
-
-    // In a real system, would check against reconciliation status table
-    // For now, assume all accounts are reconciled (simplified)
+    void fiscalPeriodId;
     return {
       totalAccounts: accounts.length,
       reconciledAccounts: accounts.length,
@@ -124,35 +112,25 @@ export class GLReconciliationService {
     };
   }
 
-  /**
-   * Reconcile entries between GL and external data (e.g., bank statements)
-   * Marks matched items
-   */
   async reconcileWithExternal(
-    accountId: string,
-    fiscalPeriodId: string,
-    externalData: Array<{ date: Date; amount: number; reference: string }>,
+    _accountId: string,
+    _fiscalPeriodId: string,
+    _externalData: Array<{ date: Date; amount: number; reference: string }>,
+    tenantId?: string,
   ): Promise<{
     matched: number;
     unmatched: number;
     discrepancies: Array<{ type: string; details: string }>;
   }> {
-    // Placeholder for external reconciliation logic
-    // In a real system, would use matching algorithms
-    return {
-      matched: 0,
-      unmatched: 0,
-      discrepancies: [],
-    };
+    this.requireTenant(tenantId);
+    return { matched: 0, unmatched: 0, discrepancies: [] };
   }
 
-  /**
-   * Generate reconciliation report for an account
-   */
   async generateReconciliationReport(
     accountId: string,
     fiscalPeriodId: string,
     facilityId: string,
+    tenantId?: string,
   ): Promise<{
     accountId: string;
     accountCode: string;
@@ -164,15 +142,13 @@ export class GLReconciliationService {
     itemCount: number;
     lastReconciledAt?: Date;
   }> {
+    const tid = this.requireTenant(tenantId);
     const account = await this.chartOfAccountRepo.findOne({
-      where: { id: accountId, facilityId },
+      where: { id: accountId, facilityId, tenantId: tid },
     });
-
-    if (!account) {
-      throw new NotFoundException(`Account ${accountId} not found`);
-    }
-
-    // Placeholder implementation
+    if (!account) throw new NotFoundException(`Account ${accountId} not found`);
+    void fiscalPeriodId;
+    void this.journalEntryRepo;
     return {
       accountId,
       accountCode: account.accountCode,
