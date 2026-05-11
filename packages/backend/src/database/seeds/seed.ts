@@ -342,6 +342,7 @@ const defaultPermissions = [
   { code: 'finance.periods.read', name: 'View Fiscal Periods', module: 'finance' },
   { code: 'finance.periods.create', name: 'Create Fiscal Periods', module: 'finance' },
   { code: 'finance.periods.close', name: 'Close Fiscal Periods', module: 'finance' },
+  { code: 'finance.periods.open', name: 'Re-open Closed Fiscal Periods', module: 'finance' },
   { code: 'finance.periods.lock', name: 'Lock Fiscal Periods', module: 'finance' },
   { code: 'finance.reports.read', name: 'View Financial Reports', module: 'finance' },
   { code: 'finance.admin', name: 'Finance Administration (cleanup, integrity, compliance)', module: 'finance' },

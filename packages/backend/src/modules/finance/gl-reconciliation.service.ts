@@ -1,8 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, NotImplementedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { JournalEntry } from '../../database/entities/journal-entry.entity';
+import { JournalEntry, JournalStatus } from '../../database/entities/journal-entry.entity';
+import { JournalEntryLine } from '../../database/entities/journal-entry-line.entity';
 import { ChartOfAccount } from '../../database/entities/chart-of-account.entity';
+import { fromCents, toCents } from '../../common/utils/money';
 
 /**
  * Reconciliation item (for tracking unmatched GL entries)
@@ -66,10 +68,16 @@ export class GLReconciliationService {
       where: { id: accountId, tenantId: tid },
     });
     if (!account) throw new NotFoundException(`Account ${accountId} not found`);
-    // TODO: persist to reconciliation_status table when introduced.
     void fiscalPeriodId;
     void userId;
     void notes;
+    // Sprint-6: refuse silently-successful reconciliation. Until the
+    // reconciliation_status table lands, this endpoint MUST NOT pretend
+    // to have persisted anything — auditors and operators would walk
+    // away with the false impression that the period was reconciled.
+    throw new NotImplementedException(
+      'GL reconciliation persistence is not yet implemented (no reconciliation_status table). The endpoint will become functional once the schema lands.',
+    );
   }
 
   async detectUnmatchedItems(
@@ -104,11 +112,15 @@ export class GLReconciliationService {
       where: { facilityId, tenantId: tid },
     });
     void fiscalPeriodId;
+    // Sprint-6: report the truth. Until reconciliation_status is
+    // persisted no account is reconciled — pretending 100% of accounts
+    // are reconciled (the original stub) hides unreconciled GL drift
+    // from operators and auditors.
     return {
       totalAccounts: accounts.length,
-      reconciledAccounts: accounts.length,
-      pendingAccounts: 0,
-      completionPercent: 100,
+      reconciledAccounts: 0,
+      pendingAccounts: accounts.length,
+      completionPercent: 0,
     };
   }
 
@@ -147,17 +159,43 @@ export class GLReconciliationService {
       where: { id: accountId, facilityId, tenantId: tid },
     });
     if (!account) throw new NotFoundException(`Account ${accountId} not found`);
-    void fiscalPeriodId;
-    void this.journalEntryRepo;
+
+    // Sprint-6: actually compute glTotal from posted journal lines for
+    // the account in the period, in cents to avoid IEEE-754 drift. The
+    // external total / status remain at safe defaults (no external feed
+    // is hooked up yet) so the caller can see a real GL number side-
+    // by-side with externalTotal=0 and learn the gap, instead of being
+    // told everything is zero.
+    const lines = await this.journalEntryRepo.manager
+      .getRepository(JournalEntryLine)
+      .createQueryBuilder('jel')
+      .innerJoin(JournalEntry, 'je', 'je.id = jel.journal_entry_id')
+      .where('jel.account_id = :accountId', { accountId })
+      .andWhere('jel.tenant_id = :tid', { tid })
+      .andWhere('je.fiscal_period_id = :fp', { fp: fiscalPeriodId })
+      .andWhere('je.status = :posted', { posted: JournalStatus.POSTED })
+      .andWhere('jel.deleted_at IS NULL')
+      .getMany();
+
+    const debitCents = lines.reduce(
+      (acc, l) => acc + toCents(l.debit),
+      0,
+    );
+    const creditCents = lines.reduce(
+      (acc, l) => acc + toCents(l.credit),
+      0,
+    );
+    const glTotal = fromCents(debitCents - creditCents);
+
     return {
       accountId,
       accountCode: account.accountCode,
       accountName: account.accountName,
-      glTotal: 0,
+      glTotal,
       externalTotal: 0,
-      difference: 0,
+      difference: glTotal,
       reconciliationStatus: 'unreconciled',
-      itemCount: 0,
+      itemCount: lines.length,
     };
   }
 }
