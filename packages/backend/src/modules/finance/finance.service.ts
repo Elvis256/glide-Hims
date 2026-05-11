@@ -649,8 +649,13 @@ export class FinanceService {
       });
       if (!journal) throw new NotFoundException('Journal entry not found');
 
-      if (journal.status !== JournalStatus.DRAFT) {
-        throw new BadRequestException('Only draft entries can be posted');
+      if (
+        journal.status !== JournalStatus.DRAFT &&
+        journal.status !== JournalStatus.APPROVED
+      ) {
+        throw new BadRequestException(
+          'Only draft or fully approved entries can be posted',
+        );
       }
 
       // F12: re-validate debit==credit at post-time using cents-rounded math.
