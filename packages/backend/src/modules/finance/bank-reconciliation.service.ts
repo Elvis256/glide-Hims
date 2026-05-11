@@ -233,11 +233,13 @@ export class BankReconciliationService {
     if (!userId) throw new ForbiddenException('Authenticated user required');
 
     return this.dataSource.transaction(async (manager) => {
+      // Lock the parent row WITHOUT joining items: PostgreSQL rejects
+      // FOR UPDATE on the nullable side of an outer join. Load items
+      // in a separate query after the lock is acquired.
       const recon = await manager
         .getRepository(BankReconciliation)
         .createQueryBuilder('r')
         .setLock('pessimistic_write')
-        .leftJoinAndSelect('r.items', 'items')
         .where('r.id = :id AND r.tenant_id = :tid', { id: reconId, tid })
         .getOne();
 
@@ -246,7 +248,9 @@ export class BankReconciliationService {
         throw new BadRequestException('Reconciliation is not in progress');
       }
 
-      const items = recon.items || [];
+      const items = await manager.getRepository(BankReconciliationItem).find({
+        where: { reconciliationId: recon.id, tenantId: tid },
+      });
       const matchedTotal = items
         .filter((i) => i.status === ReconciliationItemStatus.MATCHED)
         .reduce((sum, i) => sum + Number(i.statementAmount), 0);
