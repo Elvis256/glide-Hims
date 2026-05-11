@@ -1,24 +1,17 @@
 import {
   Entity,
-  PrimaryGeneratedColumn,
   Column,
-  CreateDateColumn,
   ManyToOne,
   JoinColumn,
 } from 'typeorm';
+import { BaseEntity } from './base.entity';
 import { JournalEntry } from './journal-entry.entity';
 import { ChartOfAccount } from './chart-of-account.entity';
 
 @Entity('journal_entry_lines')
-export class JournalEntryLine {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
-
+export class JournalEntryLine extends BaseEntity {
   @Column({ type: 'uuid', name: 'journal_entry_id' })
   journalEntryId: string;
-
-  @Column({ type: 'uuid', nullable: true, name: 'tenant_id' })
-  tenantId: string;
 
   @ManyToOne(() => JournalEntry, (je) => je.lines, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'journal_entry_id' })
@@ -42,7 +35,4 @@ export class JournalEntryLine {
 
   @Column({ type: 'int', default: 0, name: 'line_number' })
   lineNumber: number;
-
-  @CreateDateColumn({ name: 'created_at' })
-  createdAt: Date;
 }
