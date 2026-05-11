@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between } from 'typeorm';
 import { ChartOfAccount, AccountType } from '../../database/entities/chart-of-account.entity';
-import { JournalEntry } from '../../database/entities/journal-entry.entity';
+import { JournalEntry, JournalStatus } from '../../database/entities/journal-entry.entity';
 import { JournalEntryLine } from '../../database/entities/journal-entry-line.entity';
 
 /**
@@ -87,17 +87,18 @@ export class GLAnalyticsService {
       throw new Error(`Account ${accountId} not found`);
     }
 
-    // Parse period strings (YYYY-MM)
-    const startDate = new Date(`${startPeriod}-01`);
-    const endDate = new Date(
-      `${endPeriod}-${new Date(endPeriod + '-01').getDate()}`,
-    );
+    // Parse period strings (YYYY-MM) and compute proper month boundaries.
+    const [sY, sM] = startPeriod.split('-').map((n) => parseInt(n, 10));
+    const [eY, eM] = endPeriod.split('-').map((n) => parseInt(n, 10));
+    const startDate = new Date(sY, sM - 1, 1);
+    const endDate = new Date(eY, eM, 0); // day 0 of next month = last day of endPeriod
 
     const lines = await this.journalEntryLineRepository.find({
       where: {
         accountId,
         journalEntry: {
           facilityId,
+          status: JournalStatus.POSTED,
           journalDate: Between(startDate, endDate),
         },
       },
@@ -190,6 +191,7 @@ export class GLAnalyticsService {
       where: {
         journalEntry: {
           facilityId,
+          status: JournalStatus.POSTED,
           journalDate: Between(startDate1, endDate1),
         },
       },
@@ -201,6 +203,7 @@ export class GLAnalyticsService {
       where: {
         journalEntry: {
           facilityId,
+          status: JournalStatus.POSTED,
           journalDate: Between(startDate2, endDate2),
         },
       },
@@ -267,6 +270,7 @@ export class GLAnalyticsService {
       where: {
         journalEntry: {
           facilityId,
+          status: JournalStatus.POSTED,
           journalDate: Between(startDate, endDate),
         },
       },
@@ -330,6 +334,7 @@ export class GLAnalyticsService {
         accountId,
         journalEntry: {
           facilityId,
+          status: JournalStatus.POSTED,
           journalDate: Between(startDate, endDate),
         },
       },
@@ -400,6 +405,7 @@ export class GLAnalyticsService {
       where: {
         journalEntry: {
           facilityId,
+          status: JournalStatus.POSTED,
           journalDate: Between(startDate, endDate),
         },
       },

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ChartOfAccount } from '../../database/entities/chart-of-account.entity';
@@ -268,64 +268,118 @@ export class ReportGeneratorService {
    * Build a custom query from report definition
    * (This would be used to generate the SQL query for custom reports)
    */
-  buildCustomReportQuery(definition: ReportDefinition): string {
-    // Stub: builds SQL from report definition
-    let query = 'SELECT ';
+  buildCustomReportQuery(definition: ReportDefinition): {
+    sql: string;
+    parameters: Record<string, unknown>;
+  } {
+    // Allow-list of safe column identifiers that may appear in user-supplied
+    // report definitions. Anything outside this list is rejected to prevent
+    // SQL injection via field names.
+    const allowedColumns = new Set([
+      'id',
+      'tenant_id',
+      'facility_id',
+      'journal_entry_id',
+      'account_id',
+      'account_code',
+      'account_name',
+      'debit',
+      'credit',
+      'description',
+      'reference',
+      'cost_center',
+      'department',
+      'created_at',
+      'updated_at',
+      'journal_date',
+      'period_id',
+      'status',
+      'type',
+    ]);
+    const allowedDirections = new Set(['ASC', 'DESC']);
 
-    // Add columns
-    query += definition.columns.map((col) => col.field).join(', ');
-    query += ' FROM journal_entry_lines';
+    const validateField = (field: string): string => {
+      if (!allowedColumns.has(field)) {
+        throw new BadRequestException(`Invalid report field: ${field}`);
+      }
+      return field;
+    };
 
-    // Add filters
+    let sql = 'SELECT ';
+
+    sql += definition.columns
+      .map((col) => validateField(col.field))
+      .join(', ');
+    sql += ' FROM journal_entry_lines';
+
+    const parameters: Record<string, unknown> = {};
+    let paramIdx = 0;
+    const nextParam = (value: unknown): string => {
+      const key = `p${paramIdx++}`;
+      parameters[key] = value;
+      return `:${key}`;
+    };
+
     if (definition.filters.length > 0) {
-      query += ' WHERE ' + this.buildWhereClause(definition.filters);
+      const clauses = definition.filters.map((filter) => {
+        const field = validateField(filter.field);
+        switch (filter.operator) {
+          case 'eq':
+            return `${field} = ${nextParam(filter.value)}`;
+          case 'neq':
+            return `${field} != ${nextParam(filter.value)}`;
+          case 'gt':
+            return `${field} > ${nextParam(filter.value)}`;
+          case 'lt':
+            return `${field} < ${nextParam(filter.value)}`;
+          case 'gte':
+            return `${field} >= ${nextParam(filter.value)}`;
+          case 'lte':
+            return `${field} <= ${nextParam(filter.value)}`;
+          case 'in': {
+            if (!Array.isArray(filter.value) || filter.value.length === 0) {
+              throw new BadRequestException(
+                `Operator 'in' requires a non-empty array value`,
+              );
+            }
+            const placeholders = filter.value.map((v) => nextParam(v)).join(', ');
+            return `${field} IN (${placeholders})`;
+          }
+          case 'between': {
+            if (!Array.isArray(filter.value) || filter.value.length !== 2) {
+              throw new BadRequestException(
+                `Operator 'between' requires an array of exactly two values`,
+              );
+            }
+            return `${field} BETWEEN ${nextParam(filter.value[0])} AND ${nextParam(filter.value[1])}`;
+          }
+          default:
+            throw new BadRequestException(`Unsupported operator: ${filter.operator}`);
+        }
+      });
+      sql += ' WHERE ' + clauses.join(' AND ');
     }
 
-    // Add group by
     if (definition.groupBy && definition.groupBy.length > 0) {
-      query += ' GROUP BY ' + definition.groupBy.join(', ');
+      sql += ' GROUP BY ' + definition.groupBy.map(validateField).join(', ');
     }
 
-    // Add sorting
     if (definition.sorts && definition.sorts.length > 0) {
-      query +=
+      sql +=
         ' ORDER BY ' +
         definition.sorts
-          .map((sort) => `${sort.field} ${sort.direction.toUpperCase()}`)
+          .map((sort) => {
+            const field = validateField(sort.field);
+            const dir = sort.direction.toUpperCase();
+            if (!allowedDirections.has(dir)) {
+              throw new BadRequestException(`Invalid sort direction: ${sort.direction}`);
+            }
+            return `${field} ${dir}`;
+          })
           .join(', ');
     }
 
-    return query;
-  }
-
-  /**
-   * Helper: Build WHERE clause from filters
-   */
-  private buildWhereClause(filters: ReportFilter[]): string {
-    return filters
-      .map((filter) => {
-        switch (filter.operator) {
-          case 'eq':
-            return `${filter.field} = ${filter.value}`;
-          case 'neq':
-            return `${filter.field} != ${filter.value}`;
-          case 'gt':
-            return `${filter.field} > ${filter.value}`;
-          case 'lt':
-            return `${filter.field} < ${filter.value}`;
-          case 'gte':
-            return `${filter.field} >= ${filter.value}`;
-          case 'lte':
-            return `${filter.field} <= ${filter.value}`;
-          case 'in':
-            return `${filter.field} IN (${filter.value.join(',')})`;
-          case 'between':
-            return `${filter.field} BETWEEN ${filter.value[0]} AND ${filter.value[1]}`;
-          default:
-            return '';
-        }
-      })
-      .join(' AND ');
+    return { sql, parameters };
   }
 
   /**

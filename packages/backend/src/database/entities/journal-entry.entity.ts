@@ -7,6 +7,7 @@ import {
   ManyToOne,
   OneToMany,
   JoinColumn,
+  Unique,
 } from 'typeorm';
 import { Facility } from './facility.entity';
 import { User } from './user.entity';
@@ -30,6 +31,7 @@ export enum JournalType {
 }
 
 @Entity('journal_entries')
+@Unique('uq_journal_entries_tenant_journal_number', ['tenantId', 'journalNumber'])
 export class JournalEntry {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -44,7 +46,7 @@ export class JournalEntry {
   @JoinColumn({ name: 'facility_id' })
   facility: Facility;
 
-  @Column({ length: 20, unique: true, name: 'journal_number' })
+  @Column({ length: 20, name: 'journal_number' })
   journalNumber: string;
 
   @Column({ type: 'date', name: 'journal_date' })

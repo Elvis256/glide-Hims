@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+  Logger,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import {
@@ -10,6 +16,13 @@ import {
   Waiver,
   WaiverStatus,
 } from '../../database/entities/finance-extended.entity';
+
+function requireTenant(tenantId?: string): string {
+  if (!tenantId) {
+    throw new ForbiddenException('Tenant context required');
+  }
+  return tenantId;
+}
 
 @Injectable()
 export class PatientFinanceService {
@@ -73,33 +86,41 @@ export class PatientFinanceService {
     amount: number,
     tenantId?: string,
   ): Promise<PatientCreditNote> {
-    const where: any = { id: creditNoteId };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenant(tenantId);
 
-    const creditNote = await this.creditNoteRepo.findOne({ where });
-    if (!creditNote) {
-      throw new NotFoundException(`Credit note ${creditNoteId} not found`);
-    }
+    return this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(PatientCreditNote);
 
-    if (
-      creditNote.status !== CreditNoteStatus.DRAFT &&
-      creditNote.status !== CreditNoteStatus.APPROVED
-    ) {
-      throw new BadRequestException(
-        `Credit note is in status '${creditNote.status}' and cannot be applied`,
-      );
-    }
+      const creditNote = await repo.findOne({
+        where: { id: creditNoteId, tenantId: tid },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!creditNote) {
+        throw new NotFoundException(`Credit note ${creditNoteId} not found`);
+      }
 
-    if (amount > Number(creditNote.amount)) {
-      throw new BadRequestException(
-        `Application amount ${amount} exceeds credit note amount ${creditNote.amount}`,
-      );
-    }
+      // Only APPROVED credit notes may be applied. DRAFT must go through approval first.
+      if (creditNote.status !== CreditNoteStatus.APPROVED) {
+        throw new BadRequestException(
+          `Credit note must be APPROVED before application (current status: '${creditNote.status}')`,
+        );
+      }
 
-    creditNote.invoiceId = invoiceId;
-    creditNote.status = CreditNoteStatus.APPLIED;
-    creditNote.appliedAt = new Date();
-    return this.creditNoteRepo.save(creditNote);
+      if (amount <= 0) {
+        throw new BadRequestException('Application amount must be positive');
+      }
+
+      if (amount > Number(creditNote.amount)) {
+        throw new BadRequestException(
+          `Application amount ${amount} exceeds credit note amount ${creditNote.amount}`,
+        );
+      }
+
+      creditNote.invoiceId = invoiceId;
+      creditNote.status = CreditNoteStatus.APPLIED;
+      creditNote.appliedAt = new Date();
+      return repo.save(creditNote);
+    });
   }
 
   // ─── DEPOSITS ───────────────────────────────────────────────────────────────
@@ -243,32 +264,46 @@ export class PatientFinanceService {
     notes?: string,
     tenantId?: string,
   ): Promise<Waiver> {
-    const where: any = { id: waiverId };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenant(tenantId);
+    if (!userId) throw new ForbiddenException('Authenticated user required');
 
-    const waiver = await this.waiverRepo.findOne({ where });
-    if (!waiver) {
-      throw new NotFoundException(`Waiver ${waiverId} not found`);
-    }
+    return this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(Waiver);
+      const waiver = await repo.findOne({
+        where: { id: waiverId, tenantId: tid },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!waiver) {
+        throw new NotFoundException(`Waiver ${waiverId} not found`);
+      }
 
-    if (waiver.status !== WaiverStatus.PENDING) {
-      throw new BadRequestException(
-        `Waiver is in status '${waiver.status}' and cannot be approved`,
-      );
-    }
+      if (waiver.status !== WaiverStatus.PENDING) {
+        throw new BadRequestException(
+          `Waiver is in status '${waiver.status}' and cannot be approved`,
+        );
+      }
 
-    // Validate approved amount does not exceed the originally requested amount
-    if (amount > Number(waiver.waiverAmount)) {
-      throw new BadRequestException(
-        `Approved waiver amount (${amount}) cannot exceed the requested amount (${waiver.waiverAmount})`,
-      );
-    }
+      // Segregation of duties: requester cannot approve their own waiver
+      if (waiver.requestedBy && waiver.requestedBy === userId) {
+        throw new ForbiddenException('You cannot approve a waiver you requested');
+      }
 
-    waiver.status = WaiverStatus.APPROVED;
-    waiver.approvedBy = userId;
-    waiver.waiverAmount = amount;
-    waiver.approvedAt = new Date();
-    return this.waiverRepo.save(waiver);
+      if (!(amount > 0)) {
+        throw new BadRequestException('Approved waiver amount must be positive');
+      }
+
+      if (amount > Number(waiver.waiverAmount)) {
+        throw new BadRequestException(
+          `Approved waiver amount (${amount}) cannot exceed the requested amount (${waiver.waiverAmount})`,
+        );
+      }
+
+      waiver.status = WaiverStatus.APPROVED;
+      waiver.approvedBy = userId;
+      waiver.waiverAmount = amount;
+      waiver.approvedAt = new Date();
+      return repo.save(waiver);
+    });
   }
 
   async rejectWaiver(

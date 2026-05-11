@@ -12,7 +12,12 @@ import { Repository, DataSource } from 'typeorm';
 import { Tenant } from '../../database/entities/tenant.entity';
 import { CreateTenantDto, UpdateTenantDto } from './dto/tenant.dto';
 import { LicenseService } from '../licensing/license.service';
-import { getPreset } from '../../common/constants/facility-presets.constants';
+import {
+  FACILITY_MODES,
+  FACILITY_PRESETS,
+  FacilityMode,
+  getPreset,
+} from '../../common/constants/facility-presets.constants';
 
 @Injectable()
 export class TenantsService implements OnModuleInit {
@@ -246,5 +251,165 @@ export class TenantsService implements OnModuleInit {
   async remove(id: string): Promise<void> {
     const tenant = await this.findOne(id);
     await this.tenantRepository.softRemove(tenant);
+  }
+
+  /**
+   * Returns the catalogue of facility presets so the System Admin UI can render
+   * mode-switcher cards without hard-coding the list in two places.
+   */
+  listFacilityPresets() {
+    return FACILITY_PRESETS.map((p) => ({
+      mode: p.mode,
+      businessType: p.businessType,
+      name: p.name,
+      description: p.description,
+      icon: p.icon,
+      facilityType: p.facilityType,
+      supportsMultiSite: p.supportsMultiSite,
+      singleUserMode: p.singleUserMode,
+      enabledModules: p.enabledModules,
+      recommendedRoles: p.recommendedRoles,
+      notes: p.notes,
+    }));
+  }
+
+  /**
+   * Change a tenant's facility mode (promotion or demotion).
+   *
+   * Why a dedicated endpoint instead of generic PATCH:
+   *  - `tenant.settings` must be merged, not replaced (UpdateTenantDto would
+   *    overwrite all keys).
+   *  - The mode lives in TWO places that both must stay in sync:
+   *      1. tenants.settings.facilityMode (jsonb, used by admin UI)
+   *      2. system_settings rows: facility_mode, single_user_mode
+   *         (read by AuthService and the mode/module guards)
+   *  - When the caller wants the change to actually take effect, we also need
+   *    to refresh system_settings.enabled_modules from the new preset, since
+   *    that override otherwise wins over the preset.
+   *
+   * No data is destroyed: hidden modules remain in the database and re-appear
+   * on promotion back to a richer mode.
+   */
+  async changeFacilityMode(
+    tenantId: string,
+    newMode: string,
+    options: { syncEnabledModules?: boolean } = {},
+  ): Promise<{
+    tenant: Tenant;
+    previousMode: string | null;
+    newMode: FacilityMode;
+    enabledModules: string[];
+    enabledModulesSynced: boolean;
+    addedModules: string[];
+    removedModules: string[];
+  }> {
+    const validModes = Object.values(FACILITY_MODES) as string[];
+    if (!validModes.includes(newMode)) {
+      throw new ConflictException(
+        `Invalid facility mode "${newMode}". Allowed: ${validModes.join(', ')}`,
+      );
+    }
+    const mode = newMode as FacilityMode;
+    const preset = getPreset(mode);
+    if (!preset) {
+      throw new ConflictException(`No preset defined for mode "${newMode}"`);
+    }
+
+    const tenant = await this.findOne(tenantId);
+    const previousMode: string | null =
+      (tenant.settings && (tenant.settings as any).facilityMode) || null;
+    const previousPreset = previousMode
+      ? getPreset(previousMode as FacilityMode)
+      : null;
+
+    const previousModules = new Set(previousPreset?.enabledModules || []);
+    const newModules = new Set(preset.enabledModules);
+    const addedModules = preset.enabledModules.filter((m) => !previousModules.has(m));
+    const removedModules = (previousPreset?.enabledModules || []).filter(
+      (m) => !newModules.has(m),
+    );
+
+    const syncEnabledModules = options.syncEnabledModules ?? true;
+
+    await this.dataSource.transaction(async (manager) => {
+      // 1. Merge facilityMode into tenants.settings (preserve other keys)
+      const mergedSettings = { ...(tenant.settings || {}), facilityMode: mode };
+      tenant.settings = mergedSettings;
+      await manager.save(tenant);
+
+      // 2. Upsert system_settings rows used by AuthService / module.guard
+      await this.upsertSystemSetting(
+        manager,
+        tenantId,
+        'facility_mode',
+        mode,
+        'Deployment mode preset',
+      );
+      await this.upsertSystemSetting(
+        manager,
+        tenantId,
+        'single_user_mode',
+        preset.singleUserMode,
+        'Single-user clinic mode',
+      );
+
+      // 3. Optionally refresh the enabled_modules override so the change takes
+      //    effect immediately. Skipped when the operator explicitly opts out
+      //    (e.g. they want their custom module list to keep winning).
+      if (syncEnabledModules) {
+        await this.upsertSystemSetting(
+          manager,
+          tenantId,
+          'enabled_modules',
+          JSON.stringify(preset.enabledModules),
+          'Enabled navigation modules for this tenant',
+        );
+      }
+    });
+
+    this.logger.log(
+      `Tenant ${tenant.slug || tenant.id} facility mode: ${previousMode || '(none)'} → ${mode}` +
+        (syncEnabledModules ? ' (modules synced)' : ' (modules left as-is)'),
+    );
+
+    return {
+      tenant,
+      previousMode,
+      newMode: mode,
+      enabledModules: preset.enabledModules,
+      enabledModulesSynced: syncEnabledModules,
+      addedModules,
+      removedModules,
+    };
+  }
+
+  private async upsertSystemSetting(
+    manager: import('typeorm').EntityManager,
+    tenantId: string,
+    key: string,
+    value: any,
+    description: string,
+  ): Promise<void> {
+    // Raw SQL keeps this service free of a hard dependency on the
+    // SystemSetting entity / SystemSettingsModule.
+    const existing: { id: string }[] = await manager.query(
+      `SELECT id FROM system_settings WHERE tenant_id = $1 AND key = $2 AND deleted_at IS NULL LIMIT 1`,
+      [tenantId, key],
+    );
+    const jsonValue = JSON.stringify(value);
+    if (existing.length > 0) {
+      await manager.query(
+        `UPDATE system_settings
+           SET value = $1::jsonb, description = $2, updated_at = NOW()
+         WHERE id = $3`,
+        [jsonValue, description, existing[0].id],
+      );
+    } else {
+      await manager.query(
+        `INSERT INTO system_settings (key, value, tenant_id, description, created_at, updated_at)
+         VALUES ($1, $2::jsonb, $3, $4, NOW(), NOW())`,
+        [key, jsonValue, tenantId, description],
+      );
+    }
   }
 }

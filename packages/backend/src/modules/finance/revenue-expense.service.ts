@@ -4,6 +4,7 @@ import { Repository, Between } from 'typeorm';
 import { JournalEntryLine } from '../../database/entities/journal-entry-line.entity';
 import { CostCenter } from '../../database/entities/finance-extended.entity';
 import { AccountType } from '../../database/entities/chart-of-account.entity';
+import { JournalStatus } from '../../database/entities/journal-entry.entity';
 
 /**
  * Revenue & Expense Service
@@ -76,15 +77,15 @@ export class RevenueExpenseService {
     facilityId: string,
     period: string,
   ): Promise<RevenueExpenseSummary> {
-    const startDate = new Date(`${period}-01`);
-    const endDate = new Date(
-      `${period}-${new Date(period + '-01').getDate()}`,
-    );
+    const [pY, pM] = period.split('-').map((n) => parseInt(n, 10));
+    const startDate = new Date(pY, pM - 1, 1);
+    const endDate = new Date(pY, pM, 0); // last day of period month
 
     const lines = await this.journalEntryLineRepository.find({
       where: {
         journalEntry: {
           facilityId,
+          status: JournalStatus.POSTED,
           journalDate: Between(startDate, endDate),
         },
       },
@@ -147,15 +148,15 @@ export class RevenueExpenseService {
     facilityId: string,
     period: string,
   ): Promise<CostCenterBreakdown[]> {
-    const startDate = new Date(`${period}-01`);
-    const endDate = new Date(
-      `${period}-${new Date(period + '-01').getDate()}`,
-    );
+    const [pY, pM] = period.split('-').map((n) => parseInt(n, 10));
+    const startDate = new Date(pY, pM - 1, 1);
+    const endDate = new Date(pY, pM, 0); // last day of period month
 
     const lines = await this.journalEntryLineRepository.find({
       where: {
         journalEntry: {
           facilityId,
+          status: JournalStatus.POSTED,
           journalDate: Between(startDate, endDate),
         },
       },
@@ -216,15 +217,15 @@ export class RevenueExpenseService {
     facilityId: string,
     period: string,
   ): Promise<CostCenterBreakdown[]> {
-    const startDate = new Date(`${period}-01`);
-    const endDate = new Date(
-      `${period}-${new Date(period + '-01').getDate()}`,
-    );
+    const [pY, pM] = period.split('-').map((n) => parseInt(n, 10));
+    const startDate = new Date(pY, pM - 1, 1);
+    const endDate = new Date(pY, pM, 0); // last day of period month
 
     const lines = await this.journalEntryLineRepository.find({
       where: {
         journalEntry: {
           facilityId,
+          status: JournalStatus.POSTED,
           journalDate: Between(startDate, endDate),
         },
       },
@@ -285,15 +286,15 @@ export class RevenueExpenseService {
     facilityId: string,
     period: string,
   ): Promise<AccountTypeAnalysis[]> {
-    const startDate = new Date(`${period}-01`);
-    const endDate = new Date(
-      `${period}-${new Date(period + '-01').getDate()}`,
-    );
+    const [pY, pM] = period.split('-').map((n) => parseInt(n, 10));
+    const startDate = new Date(pY, pM - 1, 1);
+    const endDate = new Date(pY, pM, 0); // last day of period month
 
     const lines = await this.journalEntryLineRepository.find({
       where: {
         journalEntry: {
           facilityId,
+          status: JournalStatus.POSTED,
           journalDate: Between(startDate, endDate),
         },
       },

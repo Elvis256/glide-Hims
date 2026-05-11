@@ -336,10 +336,15 @@ const defaultPermissions = [
   { code: 'finance.journals.read', name: 'View Journal Entries', module: 'finance' },
   { code: 'finance.journals.create', name: 'Create Journal Entries', module: 'finance' },
   { code: 'finance.journals.post', name: 'Post Journal Entries', module: 'finance' },
+  { code: 'finance.journals.submit', name: 'Submit Journal Entries for Approval', module: 'finance' },
+  { code: 'finance.journals.approve', name: 'Approve Journal Entries', module: 'finance' },
+  { code: 'finance.journals.reverse', name: 'Reverse Posted Journal Entries', module: 'finance' },
   { code: 'finance.periods.read', name: 'View Fiscal Periods', module: 'finance' },
   { code: 'finance.periods.create', name: 'Create Fiscal Periods', module: 'finance' },
   { code: 'finance.periods.close', name: 'Close Fiscal Periods', module: 'finance' },
+  { code: 'finance.periods.lock', name: 'Lock Fiscal Periods', module: 'finance' },
   { code: 'finance.reports.read', name: 'View Financial Reports', module: 'finance' },
+  { code: 'finance.admin', name: 'Finance Administration (cleanup, integrity, compliance)', module: 'finance' },
 
   // Insurance Sub-permissions (granular)
   { code: 'insurance.claims.read', name: 'View Insurance Claims', module: 'insurance' },

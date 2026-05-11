@@ -338,6 +338,11 @@ export class FinanceService {
     if (original.isReversed) {
       throw new BadRequestException('This journal entry has already been reversed');
     }
+    if (original.isReversal) {
+      throw new BadRequestException(
+        'A reversal entry cannot itself be reversed. Create a correcting journal entry instead.',
+      );
+    }
 
     const reversalDate = new Date();
     const fiscalPeriod = await this.getFiscalPeriodForDate(
@@ -392,8 +397,22 @@ export class FinanceService {
       );
     });
 
-    // Auto-post the reversal entry after the transaction commits
-    return this.postJournalEntry(reversalId, userId, tenantId, true);
+    // Auto-post the reversal entry. If posting fails, roll back the original's
+    // reversed flag and delete the orphaned DRAFT reversal so the books stay consistent.
+    try {
+      return await this.postJournalEntry(reversalId, userId, tenantId, true);
+    } catch (err) {
+      await this.dataSource.transaction(async (manager) => {
+        await manager.update(
+          JournalEntry,
+          { id: original.id },
+          { isReversed: false, reversedById: null as any, reversedAt: null as any },
+        );
+        await manager.delete(JournalEntryLine, { journalEntryId: reversalId });
+        await manager.delete(JournalEntry, { id: reversalId });
+      });
+      throw err;
+    }
   }
 
   // ============ JOURNAL ENTRIES ============
@@ -1797,7 +1816,7 @@ export class FinanceService {
          JOIN journal_entries je ON jel.journal_entry_id = je.id
          JOIN chart_of_accounts coa ON jel.account_id = coa.id
          WHERE je.facility_id = $1 AND je.status = 'posted'
-           AND je.entry_date BETWEEN $2 AND $3
+           AND je.journal_date BETWEEN $2 AND $3
            AND coa.account_code = '2300'
            ${tenantFilter}`,
         params,
@@ -1808,7 +1827,7 @@ export class FinanceService {
          JOIN journal_entries je ON jel.journal_entry_id = je.id
          JOIN chart_of_accounts coa ON jel.account_id = coa.id
          WHERE je.facility_id = $1 AND je.status = 'posted'
-           AND je.entry_date BETWEEN $2 AND $3
+           AND je.journal_date BETWEEN $2 AND $3
            AND coa.account_code = '1301'
            ${tenantFilter}`,
         params,
@@ -1834,7 +1853,7 @@ export class FinanceService {
          JOIN journal_entries je ON jel.journal_entry_id = je.id
          JOIN chart_of_accounts coa ON jel.account_id = coa.id
          WHERE je.facility_id = $1 AND je.status = 'posted'
-           AND je.entry_date BETWEEN $2 AND $3
+           AND je.journal_date BETWEEN $2 AND $3
            AND (coa.account_code LIKE '5100%' OR coa.account_code = '2301')
            ${tenantFilter}`,
         params,
@@ -1855,7 +1874,7 @@ export class FinanceService {
        JOIN journal_entries je ON jel.journal_entry_id = je.id
        JOIN chart_of_accounts coa ON jel.account_id = coa.id
        WHERE je.facility_id = $1 AND je.status = 'posted'
-         AND je.entry_date BETWEEN $2 AND $3
+         AND je.journal_date BETWEEN $2 AND $3
          AND coa.account_code LIKE '5100%'
          ${tenantFilter}`,
       params,

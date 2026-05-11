@@ -9,6 +9,7 @@ import {
   Tree,
   TreeParent,
   TreeChildren,
+  Unique,
 } from 'typeorm';
 import { Facility } from './facility.entity';
 
@@ -47,6 +48,7 @@ export enum AccountCategory {
 
 @Entity('chart_of_accounts')
 @Tree('materialized-path')
+@Unique('uq_chart_of_accounts_tenant_account_code', ['tenantId', 'accountCode'])
 export class ChartOfAccount {
   @PrimaryGeneratedColumn('uuid')
   id: string;

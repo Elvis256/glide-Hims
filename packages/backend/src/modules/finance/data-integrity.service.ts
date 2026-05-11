@@ -1,8 +1,13 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JournalEntryLine } from '../../database/entities/journal-entry-line.entity';
 import { ChartOfAccount } from '../../database/entities/chart-of-account.entity';
+
+function requireTenant(tenantId?: string): string {
+  if (!tenantId) throw new ForbiddenException('Tenant context required');
+  return tenantId;
+}
 
 @Injectable()
 export class DataIntegrityService {
@@ -15,24 +20,28 @@ export class DataIntegrityService {
     private coaRepo: Repository<ChartOfAccount>,
   ) {}
 
-  /**
-   * Validate GL balance: sum of debits should equal sum of credits
-   */
-  async validateGLBalance(periodStart?: Date, periodEnd?: Date): Promise<{
+  async validateGLBalance(
+    tenantId: string | undefined,
+    periodStart?: Date,
+    periodEnd?: Date,
+  ): Promise<{
     isBalanced: boolean;
     totalDebits: number;
     totalCredits: number;
     difference: number;
     status: string;
   }> {
-    this.logger.debug('Validating GL balance');
+    const tid = requireTenant(tenantId);
 
-    let query = this.journalEntryLineRepo.createQueryBuilder('jel');
+    let query = this.journalEntryLineRepo
+      .createQueryBuilder('jel')
+      .innerJoin('jel.journalEntry', 'je')
+      .where('je.tenant_id = :tid', { tid });
 
     if (periodStart && periodEnd) {
-      query = query.leftJoinAndSelect('jel.journalEntry', 'je');
-      query = query.where('je.journalDate >= :start', { start: periodStart });
-      query = query.andWhere('je.journalDate <= :end', { end: periodEnd });
+      query = query
+        .andWhere('je.journal_date >= :start', { start: periodStart })
+        .andWhere('je.journal_date <= :end', { end: periodEnd });
     }
 
     const totals = await query
@@ -53,10 +62,7 @@ export class DataIntegrityService {
     };
   }
 
-  /**
-   * Detect unbalanced GL accounts (accounts where debits != credits)
-   */
-  async detectUnbalancedAccounts(): Promise<{
+  async detectUnbalancedAccounts(tenantId: string | undefined): Promise<{
     unbalancedCount: number;
     accounts: Array<{
       accountCode: string;
@@ -67,23 +73,24 @@ export class DataIntegrityService {
       variance: number;
     }>;
   }> {
-    this.logger.debug('Detecting unbalanced accounts');
+    const tid = requireTenant(tenantId);
 
     const unbalanced = await this.journalEntryLineRepo
       .createQueryBuilder('jel')
-      .select('jel.accountId')
-      .addSelect('SUM(jel.debit) as totalDebits')
-      .addSelect('SUM(jel.credit) as totalCredits')
-      .groupBy('jel.accountId')
+      .innerJoin('jel.journalEntry', 'je')
+      .select('jel.account_id', 'account_id')
+      .addSelect('SUM(jel.debit)', 'totalDebits')
+      .addSelect('SUM(jel.credit)', 'totalCredits')
+      .where('je.tenant_id = :tid', { tid })
+      .groupBy('jel.account_id')
       .getRawMany();
 
-    const results = [];
+    const results = [] as any[];
 
     for (const row of unbalanced) {
       const account = await this.coaRepo.findOne({
-        where: { id: row.jel_accountId },
+        where: { id: row.account_id, tenantId: tid } as any,
       });
-
       if (!account) continue;
 
       const totalDebits = parseFloat(row.totalDebits) || 0;
@@ -104,42 +111,33 @@ export class DataIntegrityService {
     }
 
     results.sort((a, b) => b.variance - a.variance);
-
-    return {
-      unbalancedCount: results.length,
-      accounts: results,
-    };
+    return { unbalancedCount: results.length, accounts: results };
   }
 
-  /**
-   * Check for missing required GL account master records
-   */
-  async validateAccountMasterData(): Promise<{
+  async validateAccountMasterData(tenantId: string | undefined): Promise<{
     isValid: boolean;
     missingAccounts: string[];
     orphanedEntries: number;
     accountsWithoutType: number;
   }> {
-    this.logger.debug('Validating account master data');
+    const tid = requireTenant(tenantId);
 
-    // Find lines with non-existent accounts
     const orphaned = await this.journalEntryLineRepo
       .createQueryBuilder('jel')
-      .leftJoinAndSelect('jel.account', 'a')
+      .leftJoin('jel.account', 'a')
+      .innerJoin('jel.journalEntry', 'je')
       .where('a.id IS NULL')
+      .andWhere('je.tenant_id = :tid', { tid })
       .getMany();
 
-    // Find accounts without required fields
     const incomplete = await this.coaRepo
       .createQueryBuilder('coa')
-      .where('coa.accountType IS NULL OR coa.accountType = :empty', {
-        empty: '',
-      })
+      .where('coa.tenant_id = :tid', { tid })
+      .andWhere('(coa.account_type IS NULL OR coa.account_type = :empty)', { empty: '' })
       .getMany();
 
     const missingAccounts = orphaned.map((e) => e.accountId!);
-    const isValid =
-      orphaned.length === 0 && incomplete.length === 0;
+    const isValid = orphaned.length === 0 && incomplete.length === 0;
 
     return {
       isValid,
@@ -149,77 +147,65 @@ export class DataIntegrityService {
     };
   }
 
-  /**
-   * Detect potential fraud patterns (rapid posting, large amounts, unusual accounts)
-   */
-  async detectAnomalies(): Promise<{
+  async detectAnomalies(tenantId: string | undefined): Promise<{
     anomalyCount: number;
     rapidPostings: Array<{ accountCode: string; count: number }>;
-    largeTransactions: Array<{
-      accountCode: string;
-      amount: number;
-      date: Date;
-    }>;
+    largeTransactions: Array<{ accountCode: string; amount: number; date: Date }>;
   }> {
-    this.logger.debug('Detecting GL anomalies');
+    const tid = requireTenant(tenantId);
 
-    // Find accounts with many entries in a short period
+    // Use Postgres-compatible interval arithmetic (was MySQL DATE_SUB)
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
     const rapidPostings = await this.journalEntryLineRepo
       .createQueryBuilder('jel')
-      .leftJoinAndSelect('jel.journalEntry', 'je')
-      .select('jel.accountId')
-      .addSelect('COUNT(*) as entryCount')
-      .where('je.journalDate >= DATE_SUB(NOW(), INTERVAL 1 DAY)')
-      .groupBy('jel.accountId')
+      .innerJoin('jel.journalEntry', 'je')
+      .select('jel.account_id', 'account_id')
+      .addSelect('COUNT(*)', 'entryCount')
+      .where('je.tenant_id = :tid', { tid })
+      .andWhere('je.journal_date >= :oneDayAgo', { oneDayAgo })
+      .groupBy('jel.account_id')
       .having('COUNT(*) > 50')
       .getRawMany();
 
-    // Find unusually large transactions (> 1M)
     const largeTransactions = await this.journalEntryLineRepo
       .createQueryBuilder('jel')
-      .leftJoinAndSelect('jel.journalEntry', 'je')
-      .where('jel.debit > 1000000 OR jel.credit > 1000000')
-      .orderBy('je.journalDate', 'DESC')
+      .innerJoinAndSelect('jel.journalEntry', 'je')
+      .where('je.tenant_id = :tid', { tid })
+      .andWhere('(jel.debit > 1000000 OR jel.credit > 1000000)')
+      .orderBy('je.journal_date', 'DESC')
       .limit(10)
       .getMany();
 
-    const anomalyCount =
-      rapidPostings.length + largeTransactions.length;
+    const anomalyCount = rapidPostings.length + largeTransactions.length;
 
     return {
       anomalyCount,
       rapidPostings: rapidPostings.map((rp) => ({
-        accountCode: rp.jel_accountId,
+        accountCode: rp.account_id,
         count: parseInt(rp.entryCount),
       })),
       largeTransactions: largeTransactions.map((lt) => ({
         accountCode: lt.accountId!,
-        amount: (lt.debit || 0) + (lt.credit || 0),
+        amount: (Number(lt.debit) || 0) + (Number(lt.credit) || 0),
         date: lt.journalEntry?.journalDate || new Date(),
       })),
     };
   }
 
-  /**
-   * Verify referential integrity: all FK relationships are valid
-   */
-  async verifyReferentialIntegrity(): Promise<{
+  async verifyReferentialIntegrity(tenantId: string | undefined): Promise<{
     isValid: boolean;
-    brokenReferences: Array<{
-      entityType: string;
-      fieldName: string;
-      invalidCount: number;
-    }>;
+    brokenReferences: Array<{ entityType: string; fieldName: string; invalidCount: number }>;
   }> {
-    this.logger.debug('Verifying referential integrity');
+    const tid = requireTenant(tenantId);
+    const issues = [] as any[];
 
-    const issues = [];
-
-    // Check journalEntryLines → accounts
     const brokenAccountRefs = await this.journalEntryLineRepo
       .createQueryBuilder('jel')
-      .leftJoinAndSelect('jel.account', 'a')
+      .leftJoin('jel.account', 'a')
+      .innerJoin('jel.journalEntry', 'je')
       .where('a.id IS NULL')
+      .andWhere('je.tenant_id = :tid', { tid })
       .getCount();
 
     if (brokenAccountRefs > 0) {
@@ -230,44 +216,25 @@ export class DataIntegrityService {
       });
     }
 
-    const isValid = issues.length === 0;
-
-    return {
-      isValid,
-      brokenReferences: issues,
-    };
+    return { isValid: issues.length === 0, brokenReferences: issues };
   }
 
-  /**
-   * Generate comprehensive integrity report
-   */
-  async getIntegrityReport(): Promise<{
+  async getIntegrityReport(tenantId: string | undefined): Promise<{
     timestamp: Date;
     overallStatus: string;
     sections: {
-      glBalance: {
-        isBalanced: boolean;
-        totalDebits: number;
-        totalCredits: number;
-        difference: number;
-      };
+      glBalance: { isBalanced: boolean; totalDebits: number; totalCredits: number; difference: number };
       unbalancedAccounts: { unbalancedCount: number };
-      masterData: {
-        isValid: boolean;
-        orphanedEntries: number;
-        accountsWithoutType: number;
-      };
+      masterData: { isValid: boolean; orphanedEntries: number; accountsWithoutType: number };
       anomalies: { anomalyCount: number };
       referentialIntegrity: { isValid: boolean; brokenCount: number };
     };
   }> {
-    this.logger.debug('Generating integrity report');
-
-    const glBalance = await this.validateGLBalance();
-    const unbalanced = await this.detectUnbalancedAccounts();
-    const masterData = await this.validateAccountMasterData();
-    const anomalies = await this.detectAnomalies();
-    const referential = await this.verifyReferentialIntegrity();
+    const glBalance = await this.validateGLBalance(tenantId);
+    const unbalanced = await this.detectUnbalancedAccounts(tenantId);
+    const masterData = await this.validateAccountMasterData(tenantId);
+    const anomalies = await this.detectAnomalies(tenantId);
+    const referential = await this.verifyReferentialIntegrity(tenantId);
 
     const allValid =
       glBalance.isBalanced &&
@@ -286,17 +253,13 @@ export class DataIntegrityService {
           totalCredits: glBalance.totalCredits,
           difference: glBalance.difference,
         },
-        unbalancedAccounts: {
-          unbalancedCount: unbalanced.unbalancedCount,
-        },
+        unbalancedAccounts: { unbalancedCount: unbalanced.unbalancedCount },
         masterData: {
           isValid: masterData.isValid,
           orphanedEntries: masterData.orphanedEntries,
           accountsWithoutType: masterData.accountsWithoutType,
         },
-        anomalies: {
-          anomalyCount: anomalies.anomalyCount,
-        },
+        anomalies: { anomalyCount: anomalies.anomalyCount },
         referentialIntegrity: {
           isValid: referential.isValid,
           brokenCount: referential.brokenReferences.length,

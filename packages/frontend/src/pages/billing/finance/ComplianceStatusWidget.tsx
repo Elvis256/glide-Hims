@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ShieldCheck, AlertTriangle, CheckCircle } from 'lucide-react';
+import { api } from '../../../services/api';
 
 interface ComplianceStatus {
   score: number;
@@ -22,17 +23,15 @@ export const ComplianceStatusWidget: React.FC = () => {
   useEffect(() => {
     const fetchComplianceStatus = async () => {
       try {
-        const response = await fetch('/api/finance/compliance/status/overall');
-        if (response.ok) {
-          const data = await response.json();
-          setCompliance({
-            score: data.complianceScore || 0,
-            status: data.score >= 90 ? 'compliant' : data.score >= 70 ? 'warning' : 'critical',
-            lastAudit: data.lastAuditDate || 'N/A',
-            policyCount: data.activePolicies || 0,
-            violationCount: data.violations || 0,
-          });
-        }
+        const { data } = await api.get('/finance/compliance/status/overall');
+        const score = data?.complianceScore || 0;
+        setCompliance({
+          score,
+          status: score >= 90 ? 'compliant' : score >= 70 ? 'warning' : 'critical',
+          lastAudit: data?.lastAuditDate || 'N/A',
+          policyCount: data?.activePolicies || 0,
+          violationCount: data?.violations || 0,
+        });
       } catch (error) {
         console.error('Failed to fetch compliance status:', error);
       } finally {
