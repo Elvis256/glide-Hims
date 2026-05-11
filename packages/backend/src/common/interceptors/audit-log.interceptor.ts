@@ -72,6 +72,7 @@ export class AuditLogInterceptor implements NestInterceptor {
 
             await this.auditLogService.log({
               userId: user.id,
+              tenantId: user.tenantId,
               action,
               entityType,
               entityId,

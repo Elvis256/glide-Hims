@@ -163,8 +163,12 @@ export class AuditComplianceService {
     complianceScore: number;
   }> {
     const tid = this.requireTenant(tenantId);
+    // Defensive coercion: query strings arrive as strings in some setups.
+    const days = Number.isFinite(Number(periodDays)) && Number(periodDays) > 0
+      ? Math.floor(Number(periodDays))
+      : 90;
     const startDate = new Date();
-    startDate.setDate(startDate.getDate() - periodDays);
+    startDate.setDate(startDate.getDate() - days);
 
     const records: AuditLog[] = await this.tenantScopedAuditQB(tid)
       .andWhere('al.created_at > :startDate', { startDate })
@@ -206,7 +210,7 @@ export class AuditComplianceService {
     const complianceScore = Math.round((1 - criticalCountRatio) * 100);
 
     return {
-      periodDays,
+      periodDays: days,
       totalRecords: records.length,
       recordsByAction: byAction,
       recordsByUser: byUser,

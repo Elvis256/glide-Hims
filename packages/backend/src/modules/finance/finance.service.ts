@@ -382,6 +382,7 @@ export class FinanceService {
         const origLine = original.lines[i];
         const line = manager.create(JournalEntryLine, {
           journalEntryId: reversalId,
+          tenantId: original.tenantId,
           accountId: origLine.accountId,
           description: `Reversal: ${origLine.description || ''}`.trim(),
           debit: origLine.credit,
@@ -546,6 +547,7 @@ export class FinanceService {
         const lineDto = dto.lines[i];
         const line = manager.create(JournalEntryLine, {
           journalEntryId: savedJournal.id,
+          tenantId,
           accountId: lineDto.accountId,
           description: lineDto.description,
           debit: lineDto.debit,
@@ -555,7 +557,15 @@ export class FinanceService {
         await manager.save(JournalEntryLine, line);
       }
 
-      return this.getJournalEntry(savedJournal.id, tenantId);
+      // Read back through the same transaction manager so the freshly-inserted
+      // rows are visible (default repo uses a different connection from the
+      // pool which would not yet see the uncommitted writes).
+      const created = await manager.findOne(JournalEntry, {
+        where: { id: savedJournal.id, ...(tenantId ? { tenantId } : {}) },
+        relations: ['lines', 'lines.account', 'fiscalPeriod', 'createdBy'],
+      });
+      if (!created) throw new NotFoundException('Journal entry not found');
+      return created;
     });
   }
 
