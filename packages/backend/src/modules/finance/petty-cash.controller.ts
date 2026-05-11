@@ -59,7 +59,7 @@ export class PettyCashController {
     @Body() dto: RecordTransactionDto,
     @Request() req: any,
   ) {
-    return this.pettyCashService.recordTransaction(id, dto, req.user?.tenantId);
+    return this.pettyCashService.recordTransaction(id, dto, req.user?.tenantId, req.user?.id);
   }
 
   @Post('funds/:id/replenish')
