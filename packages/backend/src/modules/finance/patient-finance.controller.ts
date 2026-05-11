@@ -69,6 +69,15 @@ export class PatientFinanceController {
     );
   }
 
+  @Post('credit-notes/:id/approve')
+  @AuthWithPermissions('finance.manage')
+  @ApiOperation({
+    summary: 'Approve a draft credit note (maker-checker: approver must differ from creator)',
+  })
+  async approveCreditNote(@Param('id') id: string, @Request() req: any) {
+    return this.patientFinanceService.approveCreditNote(id, req.user?.id, req.user?.tenantId);
+  }
+
   @Post('credit-notes/:id/apply')
   @AuthWithPermissions('finance.manage')
   @ApiOperation({ summary: 'Apply a credit note to an invoice' })
