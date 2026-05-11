@@ -14,6 +14,7 @@ import {
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { TenantsService } from './tenants.service';
 import { CreateTenantDto, UpdateTenantDto } from './dto/tenant.dto';
+import { ChangeFacilityModeDto } from './dto/change-facility-mode.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 
@@ -70,6 +71,16 @@ export class TenantsController {
     return this.tenantsService.findAllWithStats();
   }
 
+  @Get('facility-presets')
+  @AuthWithPermissions('tenants.read')
+  @ApiOperation({ summary: 'List available facility-mode presets' })
+  async facilityPresets(@Request() req: any) {
+    if (!req.user?.isSystemAdmin) {
+      throw new ForbiddenException('System admin access required');
+    }
+    return this.tenantsService.listFacilityPresets();
+  }
+
   @Get(':id')
   @AuthWithPermissions('tenants.read')
   @ApiOperation({ summary: 'Get tenant by ID' })
@@ -104,5 +115,29 @@ export class TenantsController {
     }
     await this.tenantsService.remove(id);
     return { message: 'Tenant deleted' };
+  }
+
+  @Patch(':id/facility-mode')
+  @AuthWithPermissions('tenants.update')
+  @ApiOperation({
+    summary: 'Change a tenant\'s facility mode (promote/demote)',
+    description:
+      'Updates tenants.settings.facilityMode and the matching system_settings rows. ' +
+      'When syncEnabledModules is true (default), the tenant\'s enabled module list is ' +
+      'refreshed from the new preset so the change takes effect immediately. No data is ' +
+      'destroyed on demotion — hidden modules return on promotion back.',
+  })
+  async changeFacilityMode(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ChangeFacilityModeDto,
+    @Request() req: any,
+  ) {
+    if (!req.user?.isSystemAdmin) {
+      throw new ForbiddenException('System admin access required');
+    }
+    const result = await this.tenantsService.changeFacilityMode(id, dto.facilityMode, {
+      syncEnabledModules: dto.syncEnabledModules,
+    });
+    return { message: 'Facility mode updated', data: result };
   }
 }

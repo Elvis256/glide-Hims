@@ -45,7 +45,7 @@ export class PatientFinanceController {
         noteNumber: body.noteNumber ?? '',
         amount: body.amount,
         reason: body.reason,
-        issuedById: body.issuedById ?? req.user?.id,
+        issuedById: req.user?.id,
         facilityId: body.facilityId ?? '',
       },
       req.user?.tenantId,
@@ -98,7 +98,7 @@ export class PatientFinanceController {
         amount: body.amount,
         paymentMethod: body.paymentMethod ?? '',
         facilityId: body.facilityId ?? '',
-        receivedById: body.receivedById ?? req.user?.id,
+        receivedById: req.user?.id,
         notes: body.notes,
       },
       req.user?.tenantId,
@@ -120,7 +120,7 @@ export class PatientFinanceController {
       id,
       body.invoiceId,
       body.amount,
-      body.appliedById ?? req.user?.id,
+      req.user?.id,
       req.user?.tenantId,
     );
   }
@@ -144,7 +144,7 @@ export class PatientFinanceController {
         patientId: body.patientId,
         requestedAmount: body.requestedAmount,
         reason: body.reason,
-        requestedById: body.requestedById ?? req.user?.id,
+        requestedById: req.user?.id,
         facilityId: body.facilityId ?? '',
       },
       req.user?.tenantId,
@@ -174,7 +174,7 @@ export class PatientFinanceController {
   ) {
     return this.patientFinanceService.approveWaiver(
       id,
-      body.userId ?? req.user?.id,
+      req.user?.id,
       body.amount ?? 0,
       body.notes,
       req.user?.tenantId,
@@ -187,7 +187,7 @@ export class PatientFinanceController {
   async rejectWaiver(@Param('id') id: string, @Body() body: RejectWaiverDto, @Request() req: any) {
     return this.patientFinanceService.rejectWaiver(
       id,
-      body.userId ?? req.user?.id,
+      req.user?.id,
       body.reason,
       req.user?.tenantId,
     );

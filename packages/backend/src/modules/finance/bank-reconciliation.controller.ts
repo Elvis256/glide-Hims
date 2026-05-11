@@ -84,7 +84,7 @@ export class BankReconciliationController {
   @AuthWithPermissions('finance.manage')
   @ApiOperation({ summary: 'Complete a bank reconciliation' })
   async complete(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
-    return this.bankReconService.complete(id, req.user?.tenantId);
+    return this.bankReconService.complete(id, req.user?.id, req.user?.tenantId);
   }
 
   @Get(':id/summary')

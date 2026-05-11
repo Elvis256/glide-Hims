@@ -7,6 +7,7 @@ import {
   Loader2, Power, PowerOff, Trash2, Pencil,
   Users, Calendar, Shield, Hospital, Activity, AlertTriangle,
   CheckCircle2, Clock, Eye, RefreshCw, X, KeyRound, EyeOff, LogIn, Server,
+  Settings2, ArrowRight,
 } from 'lucide-react';
 import { authService } from '../../services/auth';
 import { toast } from 'sonner';
@@ -74,6 +75,7 @@ export default function TenantManagementPage() {
   const [enterTenantTarget, setEnterTenantTarget] = useState<Tenant | null>(null);
   const [enteringTenant, setEnteringTenant] = useState(false);
   const [deploymentCounts, setDeploymentCounts] = useState<Record<string, number>>({});
+  const [changeModeTenant, setChangeModeTenant] = useState<Tenant | null>(null);
 
   useEffect(() => {
     if (user && !user.isSystemAdmin) {
@@ -554,6 +556,15 @@ export default function TenantManagementPage() {
                           >
                             <LogIn className="w-4 h-4" /> Enter Organization
                           </button>
+                          <button
+                            onClick={() => {
+                              setChangeModeTenant(tenant);
+                              setActionMenuId(null);
+                            }}
+                            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                          >
+                            <Settings2 className="w-4 h-4" /> Change Facility Mode
+                          </button>
                           {tenant.adminUsername && (
                             <button
                               onClick={() => {
@@ -653,6 +664,18 @@ export default function TenantManagementPage() {
         <TenantAdminResetPasswordModal
           tenant={resetPasswordTenant}
           onClose={() => setResetPasswordTenant(null)}
+        />
+      )}
+
+      {/* Change Facility Mode Modal */}
+      {changeModeTenant && (
+        <ChangeFacilityModeModal
+          tenant={changeModeTenant}
+          onClose={() => setChangeModeTenant(null)}
+          onChanged={() => {
+            setChangeModeTenant(null);
+            fetchTenants();
+          }}
         />
       )}
 
@@ -1265,6 +1288,277 @@ function TenantAdminResetPasswordModal({
               </div>
             </form>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Change Facility Mode Modal ─────────────────────────────────────
+//
+// Lets a system admin promote/demote a tenant between facility-mode presets
+// (e.g. medical centre → full hospital, or hospital → clinic_opd). Shows a
+// module-level diff so the operator can see exactly what will appear or
+// disappear, and a non-destructive warning for demotions.
+interface FacilityPreset {
+  mode: string;
+  businessType: string;
+  name: string;
+  description: string;
+  icon: string;
+  facilityType: string;
+  supportsMultiSite: boolean;
+  singleUserMode: boolean;
+  enabledModules: string[];
+  recommendedRoles: string[];
+  notes: string[];
+}
+
+function ChangeFacilityModeModal({
+  tenant, onClose, onChanged,
+}: {
+  tenant: Tenant;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const currentMode: string | null =
+    (tenant.settings?.facilityMode as string | undefined) || null;
+
+  const [presets, setPresets] = useState<FacilityPreset[]>([]);
+  const [loadingPresets, setLoadingPresets] = useState(true);
+  const [selected, setSelected] = useState<string>(currentMode || '');
+  const [syncEnabledModules, setSyncEnabledModules] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get('/tenants/facility-presets');
+        const data = Array.isArray(res.data) ? res.data : (res.data as any)?.data || [];
+        if (!cancelled) setPresets(data);
+      } catch {
+        if (!cancelled) toast.error('Failed to load facility presets');
+      } finally {
+        if (!cancelled) setLoadingPresets(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const currentPreset = presets.find((p) => p.mode === currentMode) || null;
+  const targetPreset = presets.find((p) => p.mode === selected) || null;
+
+  const currentModules = new Set(currentPreset?.enabledModules || []);
+  const targetModules = new Set(targetPreset?.enabledModules || []);
+  const added = targetPreset
+    ? targetPreset.enabledModules.filter((m) => !currentModules.has(m))
+    : [];
+  const removed = currentPreset
+    ? currentPreset.enabledModules.filter((m) => !targetModules.has(m))
+    : [];
+
+  const isDemotion = removed.length > 0;
+  const isPromotion = added.length > 0;
+  const isNoOp = !!currentMode && currentMode === selected;
+
+  const handleSubmit = async () => {
+    if (!selected || isNoOp) return;
+    setSubmitting(true);
+    try {
+      await api.patch(`/tenants/${tenant.id}/facility-mode`, {
+        facilityMode: selected,
+        syncEnabledModules,
+      });
+      toast.success(`${tenant.name} switched to "${targetPreset?.name || selected}"`);
+      onChanged();
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Failed to change facility mode';
+      toast.error(Array.isArray(msg) ? msg.join(', ') : msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+        <div className="px-6 py-4 border-b flex items-center justify-between sticky top-0 bg-white z-10">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center">
+              <Settings2 className="w-5 h-5 text-indigo-600" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">Change Facility Mode</h3>
+              <p className="text-sm text-gray-500">{tenant.name}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-5">
+          {/* Current mode */}
+          <div className="bg-gray-50 border rounded-lg p-4">
+            <div className="text-xs uppercase tracking-wider text-gray-500 mb-1">Current mode</div>
+            {currentPreset ? (
+              <div>
+                <div className="font-medium text-gray-900 capitalize">{currentPreset.name}</div>
+                <div className="text-sm text-gray-600">{currentPreset.description}</div>
+              </div>
+            ) : (
+              <div className="text-sm text-gray-500 italic">
+                No mode set yet (defaults to "hospital" preset modules).
+              </div>
+            )}
+          </div>
+
+          {/* Target mode picker */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Switch to
+            </label>
+            {loadingPresets ? (
+              <div className="flex items-center justify-center py-8 text-gray-400">
+                <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading presets…
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {presets.map((p) => {
+                  const isCurrent = p.mode === currentMode;
+                  const isSelected = p.mode === selected;
+                  return (
+                    <button
+                      key={p.mode}
+                      type="button"
+                      onClick={() => setSelected(p.mode)}
+                      className={`text-left p-3 rounded-lg border-2 transition-colors ${
+                        isSelected
+                          ? 'border-indigo-500 bg-indigo-50'
+                          : 'border-gray-200 hover:border-gray-300 bg-white'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="font-medium text-gray-900 text-sm">{p.name}</div>
+                        {isCurrent && (
+                          <span className="text-[10px] uppercase tracking-wider bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded">
+                            current
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1 line-clamp-2">{p.description}</div>
+                      <div className="text-[11px] text-gray-400 mt-1">
+                        {p.enabledModules.length} modules · {p.businessType}
+                        {p.supportsMultiSite ? ' · multi-site' : ''}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Diff preview */}
+          {targetPreset && !isNoOp && (
+            <div className="border rounded-lg p-4 space-y-3">
+              <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                {currentPreset?.name || '(no mode)'} <ArrowRight className="w-4 h-4" /> {targetPreset.name}
+              </div>
+
+              {isPromotion && (
+                <div>
+                  <div className="text-xs font-medium text-green-700 mb-1">
+                    + {added.length} module{added.length === 1 ? '' : 's'} will appear
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {added.map((m) => (
+                      <span
+                        key={m}
+                        className="inline-flex items-center px-2 py-0.5 text-xs rounded bg-green-50 text-green-700 border border-green-200"
+                      >
+                        {m}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {isDemotion && (
+                <div>
+                  <div className="text-xs font-medium text-amber-700 mb-1">
+                    − {removed.length} module{removed.length === 1 ? '' : 's'} will be hidden
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {removed.map((m) => (
+                      <span
+                        key={m}
+                        className="inline-flex items-center px-2 py-0.5 text-xs rounded bg-amber-50 text-amber-700 border border-amber-200"
+                      >
+                        {m}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="mt-2 flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-2">
+                    <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    <span>
+                      Existing data in these modules is <strong>not deleted</strong> — it remains in
+                      the database and will reappear if you promote the tenant back to a mode that
+                      includes these modules.
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {!isPromotion && !isDemotion && (
+                <div className="text-xs text-gray-500">
+                  Same module set — only metadata (mode label, business type, single-user flag)
+                  will change.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Sync toggle */}
+          <label className="flex items-start gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
+            <input
+              type="checkbox"
+              checked={syncEnabledModules}
+              onChange={(e) => setSyncEnabledModules(e.target.checked)}
+              className="mt-1"
+            />
+            <span className="text-sm">
+              <span className="font-medium text-gray-900">
+                Refresh enabled modules from preset
+              </span>
+              <span className="block text-xs text-gray-500 mt-0.5">
+                Recommended. Updates the tenant's <code>enabled_modules</code> override so the
+                sidebar matches the new preset immediately. Untick to keep any custom module list
+                you've configured for this tenant — the mode change becomes metadata-only.
+              </span>
+            </span>
+          </label>
+        </div>
+
+        <div className="px-6 py-4 border-t bg-gray-50 flex items-center justify-end gap-2 sticky bottom-0">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={submitting || !selected || isNoOp}
+            onClick={handleSubmit}
+            className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
+          >
+            {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+            {isNoOp ? 'No change' : 'Apply mode change'}
+          </button>
         </div>
       </div>
     </div>

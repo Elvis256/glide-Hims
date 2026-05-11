@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { TrendingUp, Zap } from 'lucide-react';
+import { api } from '../../../services/api';
 
 interface PerformanceMetrics {
   avgQueryTime: number;
@@ -22,17 +23,14 @@ export const PerformanceMetricsWidget: React.FC = () => {
   useEffect(() => {
     const fetchPerformanceMetrics = async () => {
       try {
-        const response = await fetch('/api/finance/performance/metrics');
-        if (response.ok) {
-          const data = await response.json();
-          setMetrics({
-            avgQueryTime: data.averageQueryTimeMs || 0,
-            cacheHitRate: data.cacheHitRate || 0,
-            indexHealth: data.indexHealthScore || 0,
-            tableFragmentation: data.fragmentationPercentage || 0,
-            recommendationsCount: data.optimizationCount || 0,
-          });
-        }
+        const { data } = await api.get('/finance/performance/metrics');
+        setMetrics({
+          avgQueryTime: data?.averageQueryTimeMs || 0,
+          cacheHitRate: data?.cacheHitRate || 0,
+          indexHealth: data?.indexHealthScore || 0,
+          tableFragmentation: data?.fragmentationPercentage || 0,
+          recommendationsCount: data?.optimizationCount || 0,
+        });
       } catch (error) {
         console.error('Failed to fetch performance metrics:', error);
       } finally {

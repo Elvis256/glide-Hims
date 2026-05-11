@@ -1,6 +1,12 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+  Logger,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import {
   BankReconciliation,
   BankReconciliationItem,
@@ -9,6 +15,13 @@ import {
 } from '../../database/entities/finance-extended.entity';
 import { JournalEntry, JournalStatus } from '../../database/entities/journal-entry.entity';
 import { CreateBankReconciliationDto, StatementItemDto } from './dto/bank-reconciliation.dto';
+
+function requireTenant(tenantId?: string): string {
+  if (!tenantId) {
+    throw new ForbiddenException('Tenant context required');
+  }
+  return tenantId;
+}
 
 @Injectable()
 export class BankReconciliationService {
@@ -21,9 +34,11 @@ export class BankReconciliationService {
     private reconItemRepo: Repository<BankReconciliationItem>,
     @InjectRepository(JournalEntry)
     private journalRepo: Repository<JournalEntry>,
+    private dataSource: DataSource,
   ) {}
 
   async create(dto: CreateBankReconciliationDto, tenantId?: string): Promise<BankReconciliation> {
+    const tid = requireTenant(tenantId);
     const recon = this.reconRepo.create({
       facilityId: dto.facilityId,
       bankAccountId: dto.bankAccountId,
@@ -31,15 +46,15 @@ export class BankReconciliationService {
       statementBalance: dto.statementBalance,
       bookBalance: dto.bookBalance,
       status: ReconciliationStatus.IN_PROGRESS,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
     return this.reconRepo.save(recon);
   }
 
   async findAll(facilityId?: string, tenantId?: string): Promise<BankReconciliation[]> {
-    const where: any = {};
+    const tid = requireTenant(tenantId);
+    const where: any = { tenantId: tid };
     if (facilityId) where.facilityId = facilityId;
-    if (tenantId) where.tenantId = tenantId;
     return this.reconRepo.find({
       where,
       relations: ['bankAccount'],
@@ -48,10 +63,9 @@ export class BankReconciliationService {
   }
 
   async findOne(id: string, tenantId?: string): Promise<BankReconciliation> {
-    const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenant(tenantId);
     const recon = await this.reconRepo.findOne({
-      where,
+      where: { id, tenantId: tid },
       relations: ['bankAccount', 'items'],
     });
     if (!recon) throw new NotFoundException(`Bank reconciliation ${id} not found`);
@@ -63,7 +77,8 @@ export class BankReconciliationService {
     items: StatementItemDto[],
     tenantId?: string,
   ): Promise<BankReconciliationItem[]> {
-    const recon = await this.findOne(reconId, tenantId);
+    const tid = requireTenant(tenantId);
+    const recon = await this.findOne(reconId, tid);
     if (recon.status !== ReconciliationStatus.IN_PROGRESS) {
       throw new BadRequestException('Cannot add items to a completed reconciliation');
     }
@@ -77,66 +92,85 @@ export class BankReconciliationService {
         statementDate: item.statementDate as any,
         status: ReconciliationItemStatus.UNMATCHED,
         notes: item.notes,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       }),
     );
     return this.reconItemRepo.save(entities);
   }
 
   async autoMatch(reconId: string, tenantId?: string): Promise<{ matchedCount: number }> {
-    const recon = await this.findOne(reconId, tenantId);
-    if (recon.status !== ReconciliationStatus.IN_PROGRESS) {
-      throw new BadRequestException('Reconciliation is not in progress');
-    }
+    const tid = requireTenant(tenantId);
 
-    const unmatchedItems = await this.reconItemRepo.find({
-      where: { reconciliationId: recon.id, status: ReconciliationItemStatus.UNMATCHED },
-    });
+    return this.dataSource.transaction(async (manager) => {
+      // Lock the reconciliation row to serialize concurrent autoMatch calls
+      const recon = await manager
+        .getRepository(BankReconciliation)
+        .createQueryBuilder('r')
+        .setLock('pessimistic_write')
+        .where('r.id = :id AND r.tenant_id = :tid', { id: reconId, tid })
+        .getOne();
 
-    let matchedCount = 0;
+      if (!recon) throw new NotFoundException(`Bank reconciliation ${reconId} not found`);
+      if (recon.status !== ReconciliationStatus.IN_PROGRESS) {
+        throw new BadRequestException('Reconciliation is not in progress');
+      }
 
-    for (const item of unmatchedItems) {
-      const itemDate = new Date(item.statementDate);
-      const startDate = new Date(itemDate);
-      startDate.setDate(startDate.getDate() - 2);
-      const endDate = new Date(itemDate);
-      endDate.setDate(endDate.getDate() + 2);
+      const itemRepo = manager.getRepository(BankReconciliationItem);
+      const jeRepo = manager.getRepository(JournalEntry);
 
-      const amount = Math.abs(Number(item.statementAmount));
+      const unmatchedItems = await itemRepo.find({
+        where: {
+          reconciliationId: recon.id,
+          tenantId: tid,
+          status: ReconciliationItemStatus.UNMATCHED,
+        },
+      });
 
-      // Find journal entries with exact amount match within ±2 days
-      const candidates = await this.journalRepo
-        .createQueryBuilder('je')
-        .where('je.journal_date BETWEEN :startDate AND :endDate', {
-          startDate: startDate.toISOString().split('T')[0],
-          endDate: endDate.toISOString().split('T')[0],
-        })
-        .andWhere('je.status = :status', { status: JournalStatus.POSTED })
-        .andWhere('(je.total_debit = :amount OR je.total_credit = :amount)', { amount })
-        .andWhere(tenantId ? 'je.tenant_id = :tenantId' : '1=1', { tenantId })
-        .getMany();
+      let matchedCount = 0;
 
-      if (candidates.length === 1) {
-        // Exact single match — check it hasn't been matched already
-        const alreadyMatched = await this.reconItemRepo.findOne({
-          where: {
-            reconciliationId: recon.id,
-            journalEntryId: candidates[0].id,
-            status: ReconciliationItemStatus.MATCHED,
-          },
-        });
+      for (const item of unmatchedItems) {
+        const itemDate = new Date(item.statementDate);
+        const startDate = new Date(itemDate);
+        startDate.setDate(startDate.getDate() - 2);
+        const endDate = new Date(itemDate);
+        endDate.setDate(endDate.getDate() + 2);
 
-        if (!alreadyMatched) {
-          item.journalEntryId = candidates[0].id;
-          item.status = ReconciliationItemStatus.MATCHED;
-          await this.reconItemRepo.save(item);
-          matchedCount++;
+        const amount = Math.abs(Number(item.statementAmount));
+
+        const candidates = await jeRepo
+          .createQueryBuilder('je')
+          .where('je.journal_date BETWEEN :startDate AND :endDate', {
+            startDate: startDate.toISOString().split('T')[0],
+            endDate: endDate.toISOString().split('T')[0],
+          })
+          .andWhere('je.status = :status', { status: JournalStatus.POSTED })
+          .andWhere('(je.total_debit = :amount OR je.total_credit = :amount)', { amount })
+          .andWhere('je.tenant_id = :tid', { tid })
+          .getMany();
+
+        if (candidates.length === 1) {
+          // Reject if this journal entry has already been matched in ANY reconciliation
+          // (across the whole tenant) to prevent cross-period double-counting.
+          const alreadyMatched = await itemRepo.findOne({
+            where: {
+              tenantId: tid,
+              journalEntryId: candidates[0].id,
+              status: ReconciliationItemStatus.MATCHED,
+            },
+          });
+
+          if (!alreadyMatched) {
+            item.journalEntryId = candidates[0].id;
+            item.status = ReconciliationItemStatus.MATCHED;
+            await itemRepo.save(item);
+            matchedCount++;
+          }
         }
       }
-    }
 
-    this.logger.log(`Auto-matched ${matchedCount} items for reconciliation ${reconId}`);
-    return { matchedCount };
+      this.logger.log(`Auto-matched ${matchedCount} items for reconciliation ${reconId}`);
+      return { matchedCount };
+    });
   }
 
   async manualMatch(
@@ -144,37 +178,85 @@ export class BankReconciliationService {
     journalEntryId: string,
     tenantId?: string,
   ): Promise<BankReconciliationItem> {
-    const where: any = { id: itemId };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenant(tenantId);
 
-    const item = await this.reconItemRepo.findOne({ where });
-    if (!item) throw new NotFoundException(`Reconciliation item ${itemId} not found`);
+    return this.dataSource.transaction(async (manager) => {
+      const itemRepo = manager.getRepository(BankReconciliationItem);
 
-    const journal = await this.journalRepo.findOne({
-      where: { id: journalEntryId, ...(tenantId ? { tenantId } : {}) },
+      const item = await itemRepo
+        .createQueryBuilder('i')
+        .setLock('pessimistic_write')
+        .where('i.id = :id AND i.tenant_id = :tid', { id: itemId, tid })
+        .getOne();
+      if (!item) throw new NotFoundException(`Reconciliation item ${itemId} not found`);
+
+      // Enforce period-close protection: cannot mutate items on a completed reconciliation
+      const parent = await manager.getRepository(BankReconciliation).findOne({
+        where: { id: item.reconciliationId, tenantId: tid },
+      });
+      if (!parent) throw new NotFoundException('Parent reconciliation not found');
+      if (parent.status !== ReconciliationStatus.IN_PROGRESS) {
+        throw new BadRequestException('Cannot modify items on a completed reconciliation');
+      }
+
+      const journal = await manager.getRepository(JournalEntry).findOne({
+        where: { id: journalEntryId, tenantId: tid },
+      });
+      if (!journal) throw new NotFoundException(`Journal entry ${journalEntryId} not found`);
+
+      // Reject duplicate match across tenant
+      const dup = await itemRepo.findOne({
+        where: {
+          tenantId: tid,
+          journalEntryId,
+          status: ReconciliationItemStatus.MATCHED,
+        },
+      });
+      if (dup && dup.id !== item.id) {
+        throw new BadRequestException(
+          'This journal entry has already been matched to another statement line',
+        );
+      }
+
+      item.journalEntryId = journalEntryId;
+      item.status = ReconciliationItemStatus.MATCHED;
+      return itemRepo.save(item);
     });
-    if (!journal) throw new NotFoundException(`Journal entry ${journalEntryId} not found`);
-
-    item.journalEntryId = journalEntryId;
-    item.status = ReconciliationItemStatus.MATCHED;
-    return this.reconItemRepo.save(item);
   }
 
-  async complete(reconId: string, tenantId?: string): Promise<BankReconciliation> {
-    const recon = await this.findOne(reconId, tenantId);
-    if (recon.status !== ReconciliationStatus.IN_PROGRESS) {
-      throw new BadRequestException('Reconciliation is not in progress');
-    }
+  async complete(
+    reconId: string,
+    userId: string,
+    tenantId?: string,
+  ): Promise<BankReconciliation> {
+    const tid = requireTenant(tenantId);
+    if (!userId) throw new ForbiddenException('Authenticated user required');
 
-    const items = recon.items || [];
-    const matchedTotal = items
-      .filter((i) => i.status === ReconciliationItemStatus.MATCHED)
-      .reduce((sum, i) => sum + Number(i.statementAmount), 0);
+    return this.dataSource.transaction(async (manager) => {
+      const recon = await manager
+        .getRepository(BankReconciliation)
+        .createQueryBuilder('r')
+        .setLock('pessimistic_write')
+        .leftJoinAndSelect('r.items', 'items')
+        .where('r.id = :id AND r.tenant_id = :tid', { id: reconId, tid })
+        .getOne();
 
-    recon.reconciledBalance = matchedTotal;
-    recon.status = ReconciliationStatus.COMPLETED;
-    recon.reconciledAt = new Date();
-    return this.reconRepo.save(recon);
+      if (!recon) throw new NotFoundException(`Bank reconciliation ${reconId} not found`);
+      if (recon.status !== ReconciliationStatus.IN_PROGRESS) {
+        throw new BadRequestException('Reconciliation is not in progress');
+      }
+
+      const items = recon.items || [];
+      const matchedTotal = items
+        .filter((i) => i.status === ReconciliationItemStatus.MATCHED)
+        .reduce((sum, i) => sum + Number(i.statementAmount), 0);
+
+      recon.reconciledBalance = matchedTotal;
+      recon.status = ReconciliationStatus.COMPLETED;
+      recon.reconciledAt = new Date();
+      recon.reconciledBy = userId;
+      return manager.getRepository(BankReconciliation).save(recon);
+    });
   }
 
   async getSummary(

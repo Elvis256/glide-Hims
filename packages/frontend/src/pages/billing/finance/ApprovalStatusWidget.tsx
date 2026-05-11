@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { AlertCircle, CheckCircle, Clock } from 'lucide-react';
+import { api } from '../../../services/api';
 
 interface ApprovalStatus {
   pending: number;
@@ -20,16 +21,16 @@ export const ApprovalStatusWidget: React.FC = () => {
   useEffect(() => {
     const fetchApprovalStatus = async () => {
       try {
-        const response = await fetch('/api/finance/approvals/status/summary');
-        if (response.ok) {
-          const data = await response.json();
-          setStatus({
-            pending: data.pendingCount || 0,
-            approved: data.approvedCount || 0,
-            rejected: data.rejectedCount || 0,
-            total: (data.pendingCount || 0) + (data.approvedCount || 0) + (data.rejectedCount || 0),
-          });
-        }
+        const { data } = await api.get('/finance/approvals/status/summary');
+        setStatus({
+          pending: data?.pendingCount || 0,
+          approved: data?.approvedCount || 0,
+          rejected: data?.rejectedCount || 0,
+          total:
+            (data?.pendingCount || 0) +
+            (data?.approvedCount || 0) +
+            (data?.rejectedCount || 0),
+        });
       } catch (error) {
         console.error('Failed to fetch approval status:', error);
       } finally {

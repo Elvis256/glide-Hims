@@ -18,7 +18,7 @@ export enum FinanceApprovalStatus {
 }
 
 @Entity('finance_approval_chains')
-@Index(['journalEntryId', 'approvalLevel'])
+@Index('uq_finance_approval_journal_level', ['journalEntryId', 'approvalLevel'], { unique: true })
 @Index(['status'])
 @Index(['facilityId', 'requiredRole'])
 export class FinanceApprovalChain {

@@ -66,7 +66,7 @@ export class DonorFundController {
       id,
       body.amount,
       body.description,
-      body.userId ?? req.user?.id,
+      req.user?.id,
       req.user?.tenantId,
     );
   }
@@ -87,7 +87,7 @@ export class DonorFundController {
         amount: body.amount,
         description: body.description ?? '',
         referenceNumber: body.referenceNumber ?? '',
-        initiatedById: body.initiatedById ?? req.user?.id,
+        initiatedById: req.user?.id,
       },
       req.user?.tenantId,
     );
@@ -111,7 +111,7 @@ export class DonorFundController {
   ) {
     return this.donorFundService.approveInterFacility(
       id,
-      body.userId ?? req.user?.id,
+      req.user?.id,
       req.user?.tenantId,
     );
   }
@@ -126,7 +126,7 @@ export class DonorFundController {
   ) {
     return this.donorFundService.settleInterFacility(
       id,
-      body.userId ?? req.user?.id,
+      req.user?.id,
       req.user?.tenantId,
     );
   }

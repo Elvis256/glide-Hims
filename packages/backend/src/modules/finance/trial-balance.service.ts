@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { JournalEntry, JournalStatus } from '../../database/entities/journal-entry.entity';
 import { JournalEntryLine } from '../../database/entities/journal-entry-line.entity';
 import { ChartOfAccount, AccountType } from '../../database/entities/chart-of-account.entity';
@@ -135,7 +135,7 @@ export class TrialBalanceService {
     // Get all lines for these entries
     const lines = await this.journalEntryLineRepo.find({
       where: {
-        journalEntryId: Object.assign({}, ...entryIds.map((id) => ({ journalEntryId: id }))),
+        journalEntryId: In(entryIds),
       },
       relations: ['account'],
     });

@@ -174,7 +174,7 @@ export class FinanceController {
   }
 
   @Post('fiscal-periods/:id/lock')
-  @AuthWithPermissions('finance.periods.close')
+  @AuthWithPermissions('finance.periods.lock')
   @ApiOperation({ summary: 'Permanently lock a closed fiscal period' })
   async lockPeriod(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     return this.financeService.lockPeriod(id, req.user.id, req.user?.tenantId);
@@ -224,7 +224,7 @@ export class FinanceController {
   }
 
   @Post('journals/:id/reverse')
-  @AuthWithPermissions('finance.journals.post')
+  @AuthWithPermissions('finance.journals.reverse')
   @ApiOperation({
     summary: 'Reverse a posted journal entry (creates offsetting entry and auto-posts it)',
   })
@@ -709,6 +709,7 @@ export class FinanceController {
    * Creates approval chain based on entry amount
    */
   @Put('journal-entries/:id/submit')
+  @AuthWithPermissions('finance.journals.submit')
   @ApiOperation({ summary: 'Submit journal entry for approval' })
   async submitForApproval(
     @Param('id', ParseUUIDPipe) journalEntryId: string,
@@ -735,6 +736,7 @@ export class FinanceController {
    * Returns all SUBMITTED entries awaiting this user's role approval
    */
   @Get('approvals/pending')
+  @AuthWithPermissions('finance.journals.read')
   @ApiOperation({ summary: 'Get pending approvals for user' })
   @ApiQuery({ name: 'role', required: false, description: 'Filter by role (uses user role if not provided)' })
   @ApiQuery({ name: 'facilityId', required: false, description: 'Filter by facility' })
@@ -764,6 +766,7 @@ export class FinanceController {
    * If all levels approved, entry becomes APPROVED and ready to post
    */
   @Put('journal-entries/:id/approve')
+  @AuthWithPermissions('finance.journals.approve')
   @ApiOperation({ summary: 'Approve journal entry at current level' })
   async approveJournalEntry(
     @Param('id', ParseUUIDPipe) journalEntryId: string,
@@ -790,6 +793,7 @@ export class FinanceController {
    * Marks all approval levels as rejected and entry returns to DRAFT
    */
   @Put('journal-entries/:id/reject')
+  @AuthWithPermissions('finance.journals.approve')
   @ApiOperation({ summary: 'Reject journal entry' })
   async rejectJournalEntry(
     @Param('id', ParseUUIDPipe) journalEntryId: string,
@@ -815,6 +819,7 @@ export class FinanceController {
    * Shows full chain of approvals with timestamps and comments
    */
   @Get('journal-entries/:id/approval-history')
+  @AuthWithPermissions('finance.journals.read')
   @ApiOperation({ summary: 'Get approval history for entry' })
   async getApprovalHistory(
     @Param('id', ParseUUIDPipe) journalEntryId: string,
@@ -833,6 +838,7 @@ export class FinanceController {
    * Used for admin notifications and follow-ups
    */
   @Get('approvals/escalations')
+  @AuthWithPermissions('finance.journals.read')
   @ApiOperation({ summary: 'Get escalation candidates (pending >5 days)' })
   @ApiQuery({ name: 'facilityId', required: false })
   @ApiQuery({ name: 'days', required: false, example: 5 })
@@ -861,6 +867,7 @@ export class FinanceController {
   // ============================================
 
   @Get('reports/trial-balance-analysis')
+  @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get detailed trial balance analysis' })
   @ApiQuery({ name: 'fiscalPeriodId', required: true })
   async getTrialBalanceAnalysis(
@@ -881,6 +888,7 @@ export class FinanceController {
   }
 
   @Get('trial-balance/compare')
+  @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Compare trial balance between two periods' })
   @ApiQuery({ name: 'period1Id', required: true })
   @ApiQuery({ name: 'period2Id', required: true })
@@ -904,6 +912,7 @@ export class FinanceController {
   }
 
   @Get('trial-balance/reconciliation')
+  @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get reconciliation status for accounts' })
   @ApiQuery({ name: 'fiscalPeriodId', required: true })
   async getReconciliationStatus(
@@ -924,6 +933,7 @@ export class FinanceController {
   }
 
   @Get('trial-balance/variances')
+  @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Detect variances in trial balance' })
   @ApiQuery({ name: 'fiscalPeriodId', required: true })
   async detectVariances(
@@ -945,6 +955,7 @@ export class FinanceController {
   }
 
   @Get('trial-balance/account/:accountId')
+  @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get balance for specific account' })
   @ApiQuery({ name: 'fiscalPeriodId', required: true })
   async getAccountBalance(
@@ -966,6 +977,7 @@ export class FinanceController {
   }
 
   @Put('trial-balance/reconcile/:accountId')
+  @AuthWithPermissions('finance.manage')
   @ApiOperation({ summary: 'Mark account as reconciled' })
   async markAccountReconciled(
     @Param('accountId', new ParseUUIDPipe()) accountId: string,
@@ -989,6 +1001,7 @@ export class FinanceController {
   }
 
   @Get('trial-balance/reconciliation-report/:accountId')
+  @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get reconciliation report for an account' })
   @ApiQuery({ name: 'fiscalPeriodId', required: true })
   async getReconciliationReport(
@@ -1013,6 +1026,7 @@ export class FinanceController {
   // ============ GL ANALYTICS ============
 
   @Get('analytics/account-trends/:accountId')
+  @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get multi-period trend analysis for an account' })
   @ApiQuery({ name: 'startPeriod', required: true, example: '2024-01' })
   @ApiQuery({ name: 'endPeriod', required: true, example: '2024-12' })
@@ -1038,6 +1052,7 @@ export class FinanceController {
   }
 
   @Get('analytics/compare-periods')
+  @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Compare GL account balances between two periods' })
   @ApiQuery({ name: 'period1', required: true, example: '2024-01' })
   @ApiQuery({ name: 'period2', required: true, example: '2024-02' })
@@ -1061,6 +1076,7 @@ export class FinanceController {
   }
 
   @Get('analytics/gl-summary/:period')
+  @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get aggregated GL data for a period' })
   async getGLSummary(
     @Param('period') period: string,
@@ -1080,6 +1096,7 @@ export class FinanceController {
   }
 
   @Get('analytics/top-accounts/:period')
+  @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get top accounts by debit/credit volume' })
   @ApiQuery({ name: 'limit', required: false, example: '10' })
   async getTopAccountsByVolume(
@@ -1104,6 +1121,7 @@ export class FinanceController {
   // ============ REVENUE & EXPENSE ============
 
   @Get('revenue-expense/:period')
+  @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get revenue and expense summary for a period' })
   async getRevenueExpenseSummary(
     @Param('period') period: string,
@@ -1123,6 +1141,7 @@ export class FinanceController {
   }
 
   @Get('revenue-expense/by-cost-center/:period')
+  @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get revenue breakdown by cost center' })
   async getRevenueByCC(
     @Param('period') period: string,
@@ -1142,6 +1161,7 @@ export class FinanceController {
   }
 
   @Get('expense/by-cost-center/:period')
+  @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get expense breakdown by cost center' })
   async getExpenseByCC(
     @Param('period') period: string,
@@ -1161,6 +1181,7 @@ export class FinanceController {
   }
 
   @Get('revenue-expense/by-account-type/:period')
+  @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get revenue/expense analysis by account type' })
   async getRevenueExpenseByAccountType(
     @Param('period') period: string,
@@ -1180,6 +1201,7 @@ export class FinanceController {
   }
 
   @Get('revenue-expense/top-revenue/:period')
+  @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get top revenue accounts' })
   @ApiQuery({ name: 'limit', required: false, example: '10' })
   async getTopRevenueAccounts(
@@ -1202,6 +1224,7 @@ export class FinanceController {
   }
 
   @Get('revenue-expense/top-expense/:period')
+  @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get top expense accounts' })
   @ApiQuery({ name: 'limit', required: false, example: '10' })
   async getTopExpenseAccounts(
@@ -1226,6 +1249,7 @@ export class FinanceController {
   // ============ BUDGET VARIANCE ============
 
   @Get('budget-variance/:period')
+  @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get budget variance summary for a period' })
   async getBudgetVarianceSummary(
     @Param('period') period: string,
@@ -1245,6 +1269,7 @@ export class FinanceController {
   }
 
   @Get('budget-variance/detailed/:period')
+  @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get detailed budget variance for each account' })
   async getDetailedVariances(
     @Param('period') period: string,
@@ -1264,6 +1289,7 @@ export class FinanceController {
   }
 
   @Get('budget-variance/by-cost-center/:period')
+  @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get budget vs actual by cost center' })
   async getBudgetByCC(
     @Param('period') period: string,
@@ -1283,6 +1309,7 @@ export class FinanceController {
   }
 
   @Get('budget-variance/by-account-type/:period')
+  @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get budget variance by account type' })
   async getBudgetVarianceByAccountType(
     @Param('period') period: string,
@@ -1302,6 +1329,7 @@ export class FinanceController {
   }
 
   @Get('budget-variance/over-budget/:period')
+  @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get accounts significantly over budget' })
   @ApiQuery({ name: 'threshold', required: false, example: '10' })
   async getOverBudgetAccounts(
@@ -1324,6 +1352,7 @@ export class FinanceController {
   }
 
   @Get('budget-variance/under-budget/:period')
+  @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get accounts significantly under budget' })
   @ApiQuery({ name: 'threshold', required: false, example: '10' })
   async getUnderBudgetAccounts(
@@ -1346,6 +1375,7 @@ export class FinanceController {
   }
 
   @Get('budget-variance/burn-rate/:period')
+  @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get budget burn rate for a period' })
   async getBudgetBurnRate(
     @Param('period') period: string,
@@ -1367,6 +1397,7 @@ export class FinanceController {
   // ============ REPORT GENERATION ============
 
   @Get('reports/standard')
+  @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get list of standard reports' })
   async getStandardReports() {
     const reports = this.reportGeneratorService.getStandardReports();
@@ -1378,6 +1409,7 @@ export class FinanceController {
   }
 
   @Post('reports/generate')
+  @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Generate a report (trial balance, income statement, etc.)' })
   async generateReport(
     @Body() dto: GenerateReportDto,
@@ -1423,6 +1455,7 @@ export class FinanceController {
   }
 
   @Post('reports/export-csv')
+  @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Export report to CSV format' })
   async exportReportCSV(
     @Body() dto: GenerateReportDto,
@@ -1474,10 +1507,10 @@ export class FinanceController {
   @Get('cleanup/report')
   @AuthWithPermissions('finance.admin')
   @ApiOperation({ summary: 'Get cleanup report' })
-  async getCleanupReport() {
+  async getCleanupReport(@Request() req: any) {
     return {
       success: true,
-      data: await this.dataCleanupService.getCleanupReport(),
+      data: await this.dataCleanupService.getCleanupReport(req.user?.tenantId),
     };
   }
 
@@ -1490,7 +1523,7 @@ export class FinanceController {
   ) {
     return {
       success: true,
-      data: await this.dataCleanupService.executeFullCleanup(dryRun),
+      data: await this.dataCleanupService.executeFullCleanup(req.user?.tenantId, dryRun),
     };
   }
 
@@ -1503,7 +1536,7 @@ export class FinanceController {
   ) {
     return {
       success: true,
-      data: await this.dataCleanupService.detectOrphanedEntries(dryRun),
+      data: await this.dataCleanupService.detectOrphanedEntries(req.user?.tenantId, dryRun),
     };
   }
 
@@ -1516,23 +1549,22 @@ export class FinanceController {
   ) {
     return {
       success: true,
-      data: await this.dataCleanupService.detectDuplicateEntries(dryRun),
+      data: await this.dataCleanupService.detectDuplicateEntries(req.user?.tenantId, dryRun),
     };
   }
 
-  @Post('cleanup/audit-logs')
+  @Get('cleanup/audit-logs')
   @AuthWithPermissions('finance.admin')
-  @ApiOperation({ summary: 'Clean up old audit logs' })
-  async cleanupAuditLogs(
+  @ApiOperation({ summary: 'Report old audit logs (does NOT delete — audit logs are append-only)' })
+  async reportAuditLogs(
     @Query('retentionDays') retentionDays: number = 365,
-    @Query('dryRun') dryRun: boolean = true,
     @Request() req: any,
   ) {
     return {
       success: true,
-      data: await this.dataCleanupService.cleanupOldAuditLogs(
+      data: await this.dataCleanupService.reportOldAuditLogs(
+        req.user?.tenantId,
         retentionDays,
-        dryRun,
       ),
     };
   }
@@ -1541,10 +1573,10 @@ export class FinanceController {
   @Get('integrity/report')
   @AuthWithPermissions('finance.read')
   @ApiOperation({ summary: 'Get comprehensive integrity report' })
-  async getIntegrityReport() {
+  async getIntegrityReport(@Request() req: any) {
     return {
       success: true,
-      data: await this.dataIntegrityService.getIntegrityReport(),
+      data: await this.dataIntegrityService.getIntegrityReport(req.user?.tenantId),
     };
   }
 
@@ -1562,47 +1594,47 @@ export class FinanceController {
     const end = periodEnd ? new Date(periodEnd) : undefined;
     return {
       success: true,
-      data: await this.dataIntegrityService.validateGLBalance(start, end),
+      data: await this.dataIntegrityService.validateGLBalance(req.user?.tenantId, start, end),
     };
   }
 
   @Get('integrity/unbalanced-accounts')
   @AuthWithPermissions('finance.read')
   @ApiOperation({ summary: 'Detect unbalanced GL accounts' })
-  async getUnbalancedAccounts() {
+  async getUnbalancedAccounts(@Request() req: any) {
     return {
       success: true,
-      data: await this.dataIntegrityService.detectUnbalancedAccounts(),
+      data: await this.dataIntegrityService.detectUnbalancedAccounts(req.user?.tenantId),
     };
   }
 
   @Get('integrity/anomalies')
   @AuthWithPermissions('finance.read')
   @ApiOperation({ summary: 'Detect GL anomalies (fraud patterns)' })
-  async detectAnomalies() {
+  async detectAnomalies(@Request() req: any) {
     return {
       success: true,
-      data: await this.dataIntegrityService.detectAnomalies(),
+      data: await this.dataIntegrityService.detectAnomalies(req.user?.tenantId),
     };
   }
 
   @Get('integrity/master-data')
   @AuthWithPermissions('finance.read')
   @ApiOperation({ summary: 'Validate account master data' })
-  async validateMasterData() {
+  async validateMasterData(@Request() req: any) {
     return {
       success: true,
-      data: await this.dataIntegrityService.validateAccountMasterData(),
+      data: await this.dataIntegrityService.validateAccountMasterData(req.user?.tenantId),
     };
   }
 
   @Get('integrity/referential')
   @AuthWithPermissions('finance.read')
   @ApiOperation({ summary: 'Verify referential integrity' })
-  async verifyReferentialIntegrity() {
+  async verifyReferentialIntegrity(@Request() req: any) {
     return {
       success: true,
-      data: await this.dataIntegrityService.verifyReferentialIntegrity(),
+      data: await this.dataIntegrityService.verifyReferentialIntegrity(req.user?.tenantId),
     };
   }
 

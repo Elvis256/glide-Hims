@@ -1,8 +1,17 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ForbiddenException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan } from 'typeorm';
+import { Repository, LessThan, In } from 'typeorm';
 import { JournalEntryLine } from '../../database/entities/journal-entry-line.entity';
 import { AuditLog } from '../../database/entities/audit-log.entity';
+
+function requireTenant(tenantId?: string): string {
+  if (!tenantId) throw new ForbiddenException('Tenant context required');
+  return tenantId;
+}
 
 @Injectable()
 export class DataCleanupService {
@@ -15,28 +24,31 @@ export class DataCleanupService {
     private auditLogRepo: Repository<AuditLog>,
   ) {}
 
-  /**
-   * Detect orphaned journal entry line items (entries with no associated GL account)
-   */
-  async detectOrphanedEntries(dryRun: boolean = true): Promise<{
+  async detectOrphanedEntries(
+    tenantId: string | undefined,
+    dryRun: boolean = true,
+  ): Promise<{
     orphanedCount: number;
     orphanIds: string[];
     deletedCount?: number;
   }> {
-    this.logger.debug(`Detecting orphaned entries (dryRun: ${dryRun})`);
+    const tid = requireTenant(tenantId);
+    this.logger.debug(`Detecting orphaned entries (tenant: ${tid}, dryRun: ${dryRun})`);
 
-    // Find lines where accountId references a non-existent account
     const orphaned = await this.journalEntryLineRepo
       .createQueryBuilder('jel')
-      .leftJoinAndSelect('jel.account', 'a')
+      .leftJoin('jel.account', 'a')
+      .innerJoin('jel.journalEntry', 'je')
       .where('a.id IS NULL')
+      .andWhere('je.tenant_id = :tid', { tid })
+      .select(['jel.id'])
       .getMany();
 
     const orphanIds = orphaned.map((e) => e.id!);
 
     if (!dryRun && orphanIds.length > 0) {
-      const result = await this.journalEntryLineRepo.delete(orphanIds as any);
-      this.logger.log(`Deleted ${result.affected} orphaned entries`);
+      const result = await this.journalEntryLineRepo.delete({ id: In(orphanIds) });
+      this.logger.log(`Deleted ${result.affected} orphaned entries (tenant ${tid})`);
       return {
         orphanedCount: orphanIds.length,
         orphanIds,
@@ -44,49 +56,54 @@ export class DataCleanupService {
       };
     }
 
-    return {
-      orphanedCount: orphanIds.length,
-      orphanIds,
-    };
+    return { orphanedCount: orphanIds.length, orphanIds };
   }
 
-  /**
-   * Detect duplicate journal entry lines (same account, amount, date, description)
-   */
-  async detectDuplicateEntries(dryRun: boolean = true): Promise<{
+  async detectDuplicateEntries(
+    tenantId: string | undefined,
+    dryRun: boolean = true,
+  ): Promise<{
     duplicateGroups: number;
     affectedEntries: string[];
   }> {
-    this.logger.debug(`Detecting duplicate entries (dryRun: ${dryRun})`);
+    const tid = requireTenant(tenantId);
+    this.logger.debug(`Detecting duplicate entries (tenant: ${tid}, dryRun: ${dryRun})`);
 
     const duplicates = await this.journalEntryLineRepo
       .createQueryBuilder('jel')
-      .select('jel.accountId, jel.debit, jel.credit, jel.description')
-      .addSelect('COUNT(*) as cnt')
-      .groupBy('jel.accountId, jel.debit, jel.credit, jel.description')
+      .innerJoin('jel.journalEntry', 'je')
+      .select('jel.account_id', 'account_id')
+      .addSelect('jel.debit', 'debit')
+      .addSelect('jel.credit', 'credit')
+      .addSelect('jel.description', 'description')
+      .addSelect('COUNT(*)', 'cnt')
+      .where('je.tenant_id = :tid', { tid })
+      .groupBy('jel.account_id, jel.debit, jel.credit, jel.description')
       .having('COUNT(*) > 1')
       .getRawMany();
 
     const affectedIds: Set<string> = new Set();
 
     for (const dup of duplicates) {
-      const entries = await this.journalEntryLineRepo.find({
-        where: {
-          accountId: dup.jel_accountId,
-          debit: parseFloat(dup.jel_debit),
-          credit: parseFloat(dup.jel_credit),
-          description: dup.jel_description,
-        },
-      });
+      const entries = await this.journalEntryLineRepo
+        .createQueryBuilder('jel')
+        .innerJoin('jel.journalEntry', 'je')
+        .where('je.tenant_id = :tid', { tid })
+        .andWhere('jel.account_id = :aid', { aid: dup.account_id })
+        .andWhere('jel.debit = :debit', { debit: parseFloat(dup.debit) })
+        .andWhere('jel.credit = :credit', { credit: parseFloat(dup.credit) })
+        .andWhere('jel.description = :desc', { desc: dup.description })
+        .orderBy('jel.created_at', 'ASC')
+        .getMany();
 
-      // Mark all but the first as duplicates
+      // Keep the earliest, mark the rest as duplicates
       entries.slice(1).forEach((e) => affectedIds.add(e.id!));
     }
 
     if (!dryRun && affectedIds.size > 0) {
       const ids = Array.from(affectedIds);
-      const result = await this.journalEntryLineRepo.delete(ids as any);
-      this.logger.log(`Deleted ${result.affected} duplicate entries`);
+      const result = await this.journalEntryLineRepo.delete({ id: In(ids) });
+      this.logger.log(`Deleted ${result.affected} duplicate entries (tenant ${tid})`);
     }
 
     return {
@@ -96,104 +113,73 @@ export class DataCleanupService {
   }
 
   /**
-   * Clean up old audit logs beyond retention period (default: 365 days)
+   * Audit logs are append-only and may NOT be hard-deleted via this service.
+   * This method only reports counts older than the retention threshold so an
+   * archival/escrow process can take action through an out-of-band tool.
    */
-  async cleanupOldAuditLogs(
+  async reportOldAuditLogs(
+    tenantId: string | undefined,
     retentionDays: number = 365,
-    dryRun: boolean = true,
-  ): Promise<{
-    auditRecordsToDelete: number;
-    deletedCount?: number;
-  }> {
-    this.logger.debug(
-      `Cleaning up audit logs (retention: ${retentionDays} days, dryRun: ${dryRun})`,
-    );
-
+  ): Promise<{ auditRecordsBeyondRetention: number }> {
+    const tid = requireTenant(tenantId);
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
 
-    const toDelete = await this.auditLogRepo.find({
-      where: {
-        createdAt: LessThan(cutoffDate),
-      },
+    const count = await this.auditLogRepo.count({
+      where: { tenantId: tid, createdAt: LessThan(cutoffDate) } as any,
     });
 
-    if (!dryRun && toDelete.length > 0) {
-      const result = await this.auditLogRepo.delete({
-        createdAt: LessThan(cutoffDate),
-      });
-      this.logger.log(`Deleted ${result.affected} old audit logs`);
-      return {
-        auditRecordsToDelete: toDelete.length,
-        deletedCount: result.affected || 0,
-      };
-    }
-
-    return {
-      auditRecordsToDelete: toDelete.length,
-    };
+    return { auditRecordsBeyondRetention: count };
   }
 
-  /**
-   * Get comprehensive cleanup report
-   */
-  async getCleanupReport(): Promise<{
+  async getCleanupReport(tenantId: string | undefined): Promise<{
     orphanedEntries: number;
     duplicateEntries: number;
-    oldAuditLogs: number;
+    auditLogsBeyondRetention: number;
     totalCleanupOpportunity: number;
     estimatedFreedSpace: string;
   }> {
-    this.logger.debug('Generating cleanup report');
-
-    const orphaned = await this.detectOrphanedEntries(true);
-    const duplicates = await this.detectDuplicateEntries(true);
-    const oldLogs = await this.cleanupOldAuditLogs(365, true);
+    const orphaned = await this.detectOrphanedEntries(tenantId, true);
+    const duplicates = await this.detectDuplicateEntries(tenantId, true);
+    const oldLogs = await this.reportOldAuditLogs(tenantId, 365);
 
     const total =
       orphaned.orphanedCount +
-      duplicates.affectedEntries.length +
-      oldLogs.auditRecordsToDelete;
+      duplicates.affectedEntries.length;
 
     return {
       orphanedEntries: orphaned.orphanedCount,
       duplicateEntries: duplicates.affectedEntries.length,
-      oldAuditLogs: oldLogs.auditRecordsToDelete,
+      auditLogsBeyondRetention: oldLogs.auditRecordsBeyondRetention,
       totalCleanupOpportunity: total,
       estimatedFreedSpace: `${(total * 0.0015).toFixed(2)} MB`,
     };
   }
 
-  /**
-   * Execute full cleanup cycle
-   */
-  async executeFullCleanup(dryRun: boolean = true): Promise<{
+  async executeFullCleanup(
+    tenantId: string | undefined,
+    dryRun: boolean = true,
+  ): Promise<{
     timestamp: Date;
     dryRun: boolean;
     results: {
       orphaned: { orphanedCount: number; deletedCount?: number };
       duplicates: { affectedEntries: string[] };
-      auditLogs: { auditRecordsToDelete: number; deletedCount?: number };
+      auditLogsBeyondRetention: number;
     };
     summary: {
       totalRecordsAffected: number;
       operationsCompleted: number;
     };
   }> {
-    this.logger.log(`Starting full cleanup cycle (dryRun: ${dryRun})`);
+    this.logger.log(`Starting full cleanup cycle (tenant: ${tenantId}, dryRun: ${dryRun})`);
 
-    const orphaned = await this.detectOrphanedEntries(dryRun);
-    const duplicates = await this.detectDuplicateEntries(dryRun);
-    const auditLogs = await this.cleanupOldAuditLogs(365, dryRun);
+    const orphaned = await this.detectOrphanedEntries(tenantId, dryRun);
+    const duplicates = await this.detectDuplicateEntries(tenantId, dryRun);
+    const auditLogs = await this.reportOldAuditLogs(tenantId, 365);
 
     const totalAffected =
-      (orphaned.deletedCount || 0) +
-      duplicates.affectedEntries.length +
-      (auditLogs.deletedCount || 0);
-
-    this.logger.log(
-      `Cleanup cycle completed. Records affected: ${totalAffected}`,
-    );
+      (orphaned.deletedCount || 0) + duplicates.affectedEntries.length;
 
     return {
       timestamp: new Date(),
@@ -201,11 +187,11 @@ export class DataCleanupService {
       results: {
         orphaned,
         duplicates,
-        auditLogs,
+        auditLogsBeyondRetention: auditLogs.auditRecordsBeyondRetention,
       },
       summary: {
         totalRecordsAffected: totalAffected,
-        operationsCompleted: 3,
+        operationsCompleted: 2,
       },
     };
   }
