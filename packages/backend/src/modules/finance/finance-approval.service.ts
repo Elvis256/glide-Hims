@@ -15,6 +15,7 @@ import {
   JournalEntry,
   JournalStatus,
 } from '../../database/entities/journal-entry.entity';
+import { AuditLog } from '../../database/entities/audit-log.entity';
 
 /**
  * Finance approval thresholds by amount.
@@ -60,6 +61,8 @@ export class FinanceApprovalService {
     private readonly financeApprovalChainRepo: Repository<FinanceApprovalChain>,
     @InjectRepository(JournalEntry)
     private readonly journalEntryRepo: Repository<JournalEntry>,
+    @InjectRepository(AuditLog)
+    private readonly auditLogRepo: Repository<AuditLog>,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -612,8 +615,26 @@ export class FinanceApprovalService {
     details: any,
   ): void {
     this.logger.log(
-      `[AUDIT] ${action} entity=${entityId} user=${userId} tenant=${tenantId} ${JSON.stringify(details)}`,
+      `[AUDIT] ${action} entity=${entityId} user=${userId} tenant=${tenantId}`,
     );
+    // Fire-and-forget persistent audit row. Failure must not break the
+    // business transaction (it has already committed by the time we get here).
+    this.auditLogRepo
+      .save(
+        this.auditLogRepo.create({
+          userId,
+          tenantId,
+          action,
+          entityType: 'JournalEntry',
+          entityId,
+          newValue: details ?? null,
+        }),
+      )
+      .catch((err) =>
+        this.logger.warn(
+          `Failed to persist audit row for ${action}/${entityId}: ${err?.message ?? err}`,
+        ),
+      );
   }
 
   private notifyFirstLevelApprovers(

@@ -75,15 +75,12 @@ export class AuditComplianceService {
    * are returned.
    */
   private tenantScopedAuditQB(tenantId: string) {
+    // tenant_id column populated from migration 1782900000001 backfill and
+    // by all writers going forward. Restrict to finance-relevant entity types.
     return this.auditLogRepo
       .createQueryBuilder('al')
-      .innerJoin(
-        JournalEntry,
-        'je',
-        'je.id::text = al.entity_id::text AND je.tenant_id = :tid',
-        { tid: tenantId },
-      )
-      .where("al.entity_type IN ('journal_entry', 'JournalEntry')");
+      .where('al.tenant_id = :tid', { tid: tenantId })
+      .andWhere("al.entity_type IN ('journal_entry', 'JournalEntry')");
   }
 
   // ─────────────────────────────────────────────────────────────────────────
