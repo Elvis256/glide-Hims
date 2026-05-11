@@ -115,14 +115,15 @@ export class BudgetService {
     for (const line of budget.lines || []) {
       // Look up actual amounts from posted journal entries for the budget line's account & period
       const actual = await this.budgetLineRepo.query(
-        `SELECT COALESCE(SUM(jel.debit_amount - jel.credit_amount), 0) as actual
+        `SELECT COALESCE(SUM(jel.debit - jel.credit), 0) as actual
          FROM journal_entry_lines jel
          JOIN journal_entries je ON jel.journal_entry_id = je.id
          WHERE jel.account_id = $1
            AND je.status = 'posted'
-           AND je.entry_date >= (SELECT start_date FROM fiscal_periods WHERE fiscal_year = $2 AND period = $3 LIMIT 1)
-           AND je.entry_date <= (SELECT end_date FROM fiscal_periods WHERE fiscal_year = $2 AND period = $3 LIMIT 1)
-           AND je.tenant_id = $4`,
+           AND je.journal_date >= (SELECT start_date FROM fiscal_periods WHERE fiscal_year = $2 AND period = $3 AND tenant_id = $4 LIMIT 1)
+           AND je.journal_date <= (SELECT end_date   FROM fiscal_periods WHERE fiscal_year = $2 AND period = $3 AND tenant_id = $4 LIMIT 1)
+           AND je.tenant_id = $4
+           AND jel.tenant_id = $4`,
         [line.accountId, budget.fiscalYear, line.period, tenantId],
       );
       const actualAmount = Number(actual[0]?.actual || 0);
@@ -195,14 +196,15 @@ export class BudgetService {
     if (!line) return null; // No budget line for this account/period
 
     const actual = await this.budgetLineRepo.query(
-      `SELECT COALESCE(SUM(jel.debit_amount - jel.credit_amount), 0) as actual
+      `SELECT COALESCE(SUM(jel.debit - jel.credit), 0) as actual
        FROM journal_entry_lines jel
        JOIN journal_entries je ON jel.journal_entry_id = je.id
        WHERE jel.account_id = $1
          AND je.status = 'posted'
-         AND je.entry_date >= (SELECT start_date FROM fiscal_periods WHERE fiscal_year = $2 AND period = $3 LIMIT 1)
-         AND je.entry_date <= (SELECT end_date FROM fiscal_periods WHERE fiscal_year = $2 AND period = $3 LIMIT 1)
-         AND je.tenant_id = $4`,
+         AND je.journal_date >= (SELECT start_date FROM fiscal_periods WHERE fiscal_year = $2 AND period = $3 AND tenant_id = $4 LIMIT 1)
+         AND je.journal_date <= (SELECT end_date   FROM fiscal_periods WHERE fiscal_year = $2 AND period = $3 AND tenant_id = $4 LIMIT 1)
+         AND je.tenant_id = $4
+         AND jel.tenant_id = $4`,
       [accountId, budget.fiscalYear, period, tenantId],
     );
 
