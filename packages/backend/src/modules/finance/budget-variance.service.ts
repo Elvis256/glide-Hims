@@ -6,6 +6,24 @@ import { JournalEntryLine } from '../../database/entities/journal-entry-line.ent
 import { ChartOfAccount, AccountType } from '../../database/entities/chart-of-account.entity';
 
 /**
+ * Resolve a YYYY-MM period string to its true [start, end] day window.
+ * Centralised because previous code used
+ *   new Date(period + '-01').getDate()
+ * which always returns 1 → start === end → 1-day query window
+ * (Budget audit F6).
+ */
+function resolvePeriodRange(period: string): { startDate: Date; endDate: Date } {
+  const [year, month] = period.split('-').map(Number);
+  if (!year || !month || month < 1 || month > 12) {
+    throw new Error(`Invalid period '${period}'; expected YYYY-MM`);
+  }
+  const startDate = new Date(Date.UTC(year, month - 1, 1));
+  // Day 0 of next month = last day of this month.
+  const endDate = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
+  return { startDate, endDate };
+}
+
+/**
  * Budget Variance Service
  * Compares budget allocations against actual GL entries
  */
@@ -121,10 +139,7 @@ export class BudgetVarianceService {
     period: string,
     tenantId?: string,
   ): Promise<BudgetVarianceItem[]> {
-    const startDate = new Date(`${period}-01`);
-    const endDate = new Date(
-      `${period}-${new Date(period + '-01').getDate()}`,
-    );
+    const { startDate, endDate } = resolvePeriodRange(period);
 
     // Get budgets for period — must scope by tenant to avoid leaking
     // other tenants' budget lines if the same facilityId UUID were
@@ -214,10 +229,7 @@ export class BudgetVarianceService {
     period: string,
     tenantId?: string,
   ): Promise<CostCenterBudgetAnalysis[]> {
-    const startDate = new Date(`${period}-01`);
-    const endDate = new Date(
-      `${period}-${new Date(period + '-01').getDate()}`,
-    );
+    const { startDate, endDate } = resolvePeriodRange(period);
 
     // Get budgets grouped by cost center
     const budgetLines = await this.budgetLineRepository.find({
@@ -371,13 +383,17 @@ export class BudgetVarianceService {
   async getOverBudgetAccounts(
     facilityId: string,
     period: string,
-    threshold: number = 10, // % over budget
+    threshold: number = 10, // % over budget (positive number)
     tenantId?: string,
   ): Promise<BudgetVarianceItem[]> {
     const variances = await this.getDetailedVariances(facilityId, period, tenantId);
 
+    // absoluteVariance = budgeted - actual, so over-budget items have
+    // a NEGATIVE percentVariance. The previous filter
+    //   v.percentVariance > threshold
+    // never matched any over-budget line (Budget audit F5).
     return variances.filter(
-      (v) => v.status === 'over' && v.percentVariance > threshold,
+      (v) => v.status === 'over' && v.percentVariance < -threshold,
     );
   }
 
