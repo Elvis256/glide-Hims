@@ -557,6 +557,10 @@ export class CreateDonorFundDto {
 
   @ApiProperty()
   @IsString()
+  fundCode: string;
+
+  @ApiProperty()
+  @IsString()
   name: string;
 
   @ApiProperty()
@@ -566,7 +570,12 @@ export class CreateDonorFundDto {
   @ApiProperty()
   @IsNumber()
   @Min(0)
-  totalAmount: number;
+  grantAmount: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  restriction?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -575,8 +584,12 @@ export class CreateDonorFundDto {
 
   @ApiPropertyOptional()
   @IsOptional()
+  @IsUUID()
+  accountId?: string;
+
+  @ApiProperty()
   @IsDateString()
-  startDate?: string;
+  startDate: string;
 
   @ApiPropertyOptional()
   @IsOptional()

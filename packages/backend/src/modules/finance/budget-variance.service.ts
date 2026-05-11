@@ -82,8 +82,9 @@ export class BudgetVarianceService {
   async getBudgetVarianceSummary(
     facilityId: string,
     period: string,
+    tenantId?: string,
   ): Promise<BudgetVarianceSummary> {
-    const variances = await this.getDetailedVariances(facilityId, period);
+    const variances = await this.getDetailedVariances(facilityId, period, tenantId);
 
     const totalBudget = variances.reduce((sum, v) => sum + v.budgetedAmount, 0);
     const totalActual = variances.reduce((sum, v) => sum + v.actualAmount, 0);
@@ -118,30 +119,37 @@ export class BudgetVarianceService {
   async getDetailedVariances(
     facilityId: string,
     period: string,
+    tenantId?: string,
   ): Promise<BudgetVarianceItem[]> {
     const startDate = new Date(`${period}-01`);
     const endDate = new Date(
       `${period}-${new Date(period + '-01').getDate()}`,
     );
 
-    // Get budgets for period
+    // Get budgets for period — must scope by tenant to avoid leaking
+    // other tenants' budget lines if the same facilityId UUID were
+    // ever reused (defence in depth).
     const budgetLines = await this.budgetLineRepository.find({
       where: {
+        ...(tenantId ? { tenantId } : {}),
         budget: {
           facilityId,
+          ...(tenantId ? { tenantId } : {}),
         },
-      },
+      } as any,
       relations: ['account', 'budget'],
     });
 
-    // Get actuals from GL
+    // Get actuals from GL — same tenant scoping.
     const lines = await this.journalEntryLineRepository.find({
       where: {
+        ...(tenantId ? { tenantId } : {}),
         journalEntry: {
           facilityId,
           journalDate: Between(startDate, endDate),
+          ...(tenantId ? { tenantId } : {}),
         },
-      },
+      } as any,
       relations: ['account', 'journalEntry'],
     });
 
@@ -204,6 +212,7 @@ export class BudgetVarianceService {
   async getBudgetByCostCenter(
     facilityId: string,
     period: string,
+    tenantId?: string,
   ): Promise<CostCenterBudgetAnalysis[]> {
     const startDate = new Date(`${period}-01`);
     const endDate = new Date(
@@ -213,21 +222,25 @@ export class BudgetVarianceService {
     // Get budgets grouped by cost center
     const budgetLines = await this.budgetLineRepository.find({
       where: {
+        ...(tenantId ? { tenantId } : {}),
         budget: {
           facilityId,
+          ...(tenantId ? { tenantId } : {}),
         },
-      },
+      } as any,
       relations: ['budget'],
     });
 
     // Get actuals by cost center
     const lines = await this.journalEntryLineRepository.find({
       where: {
+        ...(tenantId ? { tenantId } : {}),
         journalEntry: {
           facilityId,
           journalDate: Between(startDate, endDate),
+          ...(tenantId ? { tenantId } : {}),
         },
-      },
+      } as any,
       relations: ['journalEntry'],
     });
 
@@ -293,13 +306,17 @@ export class BudgetVarianceService {
   async getBudgetByAccountType(
     facilityId: string,
     period: string,
+    tenantId?: string,
   ): Promise<BudgetByAccountType[]> {
-    const variances = await this.getDetailedVariances(facilityId, period);
+    const variances = await this.getDetailedVariances(facilityId, period, tenantId);
     const accountMap = new Map<string, BudgetByAccountType>();
 
     for (const variance of variances) {
       const account = await this.accountRepository.findOne({
-        where: { id: variance.accountId },
+        where: {
+          id: variance.accountId,
+          ...(tenantId ? { tenantId } : {}),
+        } as any,
       });
 
       const accountType = account?.accountType || 'UNKNOWN';
@@ -339,8 +356,9 @@ export class BudgetVarianceService {
     facilityId: string,
     period: string,
     limit: number = 10,
+    tenantId?: string,
   ): Promise<BudgetVarianceItem[]> {
-    const variances = await this.getDetailedVariances(facilityId, period);
+    const variances = await this.getDetailedVariances(facilityId, period, tenantId);
 
     return variances
       .sort((a, b) => Math.abs(b.absoluteVariance) - Math.abs(a.absoluteVariance))
@@ -354,8 +372,9 @@ export class BudgetVarianceService {
     facilityId: string,
     period: string,
     threshold: number = 10, // % over budget
+    tenantId?: string,
   ): Promise<BudgetVarianceItem[]> {
-    const variances = await this.getDetailedVariances(facilityId, period);
+    const variances = await this.getDetailedVariances(facilityId, period, tenantId);
 
     return variances.filter(
       (v) => v.status === 'over' && v.percentVariance > threshold,
@@ -369,8 +388,9 @@ export class BudgetVarianceService {
     facilityId: string,
     period: string,
     threshold: number = 10, // % under budget
+    tenantId?: string,
   ): Promise<BudgetVarianceItem[]> {
-    const variances = await this.getDetailedVariances(facilityId, period);
+    const variances = await this.getDetailedVariances(facilityId, period, tenantId);
 
     return variances.filter(
       (v) => v.status === 'under' && v.percentVariance > threshold,
@@ -384,6 +404,7 @@ export class BudgetVarianceService {
   async getBudgetBurnRate(
     facilityId: string,
     period: string,
+    tenantId?: string,
   ): Promise<{
     currentPeriod: string;
     estimatedTotalBudget: number;
@@ -393,7 +414,7 @@ export class BudgetVarianceService {
     daysElapsed: number;
     daysRemaining: number;
   }> {
-    const summary = await this.getBudgetVarianceSummary(facilityId, period);
+    const summary = await this.getBudgetVarianceSummary(facilityId, period, tenantId);
 
     // Calculate days into the month
     const [year, month] = period.split('-').map(Number);

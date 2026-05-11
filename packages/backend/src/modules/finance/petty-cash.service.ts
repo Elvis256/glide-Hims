@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, LessThanOrEqual, MoreThanOrEqual, DataSource } from 'typeorm';
 import {
@@ -62,6 +62,7 @@ export class PettyCashService {
     fundId: string,
     dto: RecordTransactionDto,
     tenantId?: string,
+    actingUserId?: string,
   ): Promise<PettyCashTransaction> {
     return this.dataSource.transaction(async (manager) => {
       const fundRepo = manager.getRepository(PettyCashFund);
@@ -83,6 +84,19 @@ export class PettyCashService {
       }
 
       if (dto.type === PettyCashTransactionType.EXPENSE) {
+        // Custodian SoD: only the assigned custodian may record
+        // expenses against the fund. Without this, any user with the
+        // finance.manage permission can drain any petty-cash float.
+        if (
+          actingUserId &&
+          fund.custodianId &&
+          actingUserId !== fund.custodianId
+        ) {
+          throw new ForbiddenException(
+            'Only the assigned custodian can record expenses against this petty cash fund',
+          );
+        }
+
         if (amount > Number(fund.currentBalance)) {
           throw new BadRequestException(
             `Insufficient balance. Current: ${fund.currentBalance}, Requested: ${amount}`,
@@ -101,7 +115,7 @@ export class PettyCashService {
         category: dto.category,
         receiptReference: dto.receiptNumber,
         approvedBy: dto.approvedById,
-        recordedBy: dto.approvedById || fund.custodianId,
+        recordedBy: actingUserId || dto.approvedById || fund.custodianId,
         ...(tenantId ? { tenantId } : {}),
       });
 

@@ -1263,10 +1263,12 @@ export class FinanceController {
     @Request() req: any,
   ) {
     const facilityId = req?.user?.facilityId;
+    const tenantId = req?.user?.tenantId;
 
     const summary = await this.budgetVarianceService.getBudgetVarianceSummary(
       facilityId,
       period,
+      tenantId,
     );
 
     return {
@@ -1283,10 +1285,12 @@ export class FinanceController {
     @Request() req: any,
   ) {
     const facilityId = req?.user?.facilityId;
+    const tenantId = req?.user?.tenantId;
 
     const variances = await this.budgetVarianceService.getDetailedVariances(
       facilityId,
       period,
+      tenantId,
     );
 
     return {
@@ -1303,10 +1307,12 @@ export class FinanceController {
     @Request() req: any,
   ) {
     const facilityId = req?.user?.facilityId;
+    const tenantId = req?.user?.tenantId;
 
     const analysis = await this.budgetVarianceService.getBudgetByCostCenter(
       facilityId,
       period,
+      tenantId,
     );
 
     return {
@@ -1323,10 +1329,12 @@ export class FinanceController {
     @Request() req: any,
   ) {
     const facilityId = req?.user?.facilityId;
+    const tenantId = req?.user?.tenantId;
 
     const analysis = await this.budgetVarianceService.getBudgetByAccountType(
       facilityId,
       period,
+      tenantId,
     );
 
     return {
@@ -1345,11 +1353,13 @@ export class FinanceController {
     @Query('threshold') threshold?: string,
   ) {
     const facilityId = req?.user?.facilityId;
+    const tenantId = req?.user?.tenantId;
 
     const accounts = await this.budgetVarianceService.getOverBudgetAccounts(
       facilityId,
       period,
       threshold ? parseInt(threshold) : 10,
+      tenantId,
     );
 
     return {
@@ -1368,11 +1378,13 @@ export class FinanceController {
     @Query('threshold') threshold?: string,
   ) {
     const facilityId = req?.user?.facilityId;
+    const tenantId = req?.user?.tenantId;
 
     const accounts = await this.budgetVarianceService.getUnderBudgetAccounts(
       facilityId,
       period,
       threshold ? parseInt(threshold) : 10,
+      tenantId,
     );
 
     return {
@@ -1389,10 +1401,12 @@ export class FinanceController {
     @Request() req: any,
   ) {
     const facilityId = req?.user?.facilityId;
+    const tenantId = req?.user?.tenantId;
 
     const burnRate = await this.budgetVarianceService.getBudgetBurnRate(
       facilityId,
       period,
+      tenantId,
     );
 
     return {

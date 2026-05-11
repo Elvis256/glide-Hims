@@ -445,24 +445,30 @@ export class BudgetService {
     amount: number,
     tenantId?: string,
   ): Promise<BudgetReservation> {
+    if (!(amount > 0)) {
+      throw new BadRequestException('Reservation amount must be positive');
+    }
+
     return this.dataSource.transaction(async (manager) => {
       try {
         const budgetRepo = manager.getRepository(FacilityBudget);
         const reservationRepo = manager.getRepository(BudgetReservation);
 
-        // Get active budget
-        const currentYear = new Date().getFullYear();
-        const where: any = {
-          facilityId,
-          isActive: true,
-          deletedAt: IsNull(),
-        };
-        if (tenantId) where.tenantId = tenantId;
-
-        const budget = await budgetRepo.findOne({
-          where,
-          order: { fiscalYearStart: 'DESC' },
-        });
+        // Lock the active budget row to serialise concurrent reservations.
+        // Without this, two parallel reserveBudget calls can both pass the
+        // available-balance check and over-commit.
+        const qb = budgetRepo
+          .createQueryBuilder('b')
+          .setLock('pessimistic_write')
+          .where('b.facility_id = :facilityId', { facilityId })
+          .andWhere('b.is_active = TRUE')
+          .andWhere('b.deleted_at IS NULL');
+        if (tenantId) {
+          qb.andWhere('b.tenant_id = :tenantId', { tenantId });
+        }
+        const budget = await qb
+          .orderBy('b.fiscal_year_start', 'DESC')
+          .getOne();
 
         if (!budget) {
           throw new NotFoundException(
@@ -470,7 +476,28 @@ export class BudgetService {
           );
         }
 
-        // Create reservation
+        // Recompute remaining capacity inside the lock so the check is
+        // race-free.
+        const reservations = await reservationRepo.find({
+          where: {
+            budgetId: budget.id,
+            ...(tenantId ? { tenantId } : {}),
+            status: ReservationStatus.PENDING,
+          },
+        });
+        const reservedTotal = reservations.reduce(
+          (sum, r) => sum + Number(r.reservedAmount),
+          0,
+        );
+        const remaining =
+          Number(budget.totalBudgetAllocation) - reservedTotal;
+
+        if (amount > remaining) {
+          throw new BadRequestException(
+            `Reservation of ${amount} exceeds remaining budget capacity ${remaining}`,
+          );
+        }
+
         const reservation = reservationRepo.create({
           budgetId: budget.id,
           documentId,
