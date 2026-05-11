@@ -15,6 +15,7 @@ import {
   ReservationStatus,
 } from '../../database/entities/budget-reservation.entity';
 import { JournalEntry, JournalStatus } from '../../database/entities/journal-entry.entity';
+import { sumCents, fromCents, toCents } from '../../common/utils/money';
 
 export interface BudgetCheckResult {
   withinBudget: boolean;
@@ -208,12 +209,14 @@ export class BudgetService {
       [accountId, budget.fiscalYear, period, tenantId],
     );
 
-    const actualSpent = Number(actual[0]?.actual || 0);
-    const budgetedAmount = Number(line.budgetedAmount);
-    const remainingBudget = budgetedAmount - actualSpent;
+    const actualSpent = fromCents(toCents(actual[0]?.actual || 0));
+    const budgetedAmount = fromCents(toCents(line.budgetedAmount));
+    const remainingBudget = fromCents(
+      toCents(line.budgetedAmount) - toCents(actual[0]?.actual || 0),
+    );
 
     return {
-      withinBudget: proposedAmount <= remainingBudget,
+      withinBudget: toCents(proposedAmount) <= toCents(remainingBudget),
       budgetedAmount,
       actualSpent,
       pendingAmount: proposedAmount,
@@ -317,15 +320,17 @@ export class BudgetService {
 
       const entries = await qb.getMany();
 
-      let spent = 0;
+      // Sprint-6 money-cents sweep: aggregate JEL debits at cent
+      // precision, then return a 2-dp number for downstream compares.
+      let spentCents = 0;
       for (const entry of entries) {
         if (entry.lines) {
           for (const line of entry.lines) {
-            // Debits are positive for EXPENSE accounts
-            spent += Number(line.debit || 0);
+            spentCents += toCents(line.debit || 0);
           }
         }
       }
+      const spent = fromCents(spentCents);
 
       this.logger.debug(
         `Calculated budget spent for facility ${facilityId}: ${spent}`,
@@ -359,7 +364,9 @@ export class BudgetService {
     if (tenantId) where.tenantId = tenantId;
 
     const reservations = await this.reservationRepo.find({ where });
-    return reservations.reduce((sum, r) => sum + Number(r.reservedAmount), 0);
+    return fromCents(
+      reservations.reduce((sum, r) => sum + toCents(r.reservedAmount), 0),
+    );
   }
 
   /**
@@ -389,10 +396,12 @@ export class BudgetService {
       );
       const reserved = await this.calculateBudgetReserved(budget.id, tenantId);
 
-      const available = Number(budget.totalBudgetAllocation) - spent - reserved;
+      const available = fromCents(
+        toCents(budget.totalBudgetAllocation) - toCents(spent) - toCents(reserved),
+      );
 
       return {
-        totalAllocation: Number(budget.totalBudgetAllocation),
+        totalAllocation: fromCents(toCents(budget.totalBudgetAllocation)),
         spent,
         reserved,
         available: Math.max(0, available), // Never negative
@@ -493,14 +502,15 @@ export class BudgetService {
             ]),
           },
         });
-        const reservedTotal = reservations.reduce(
-          (sum, r) => sum + Number(r.reservedAmount),
+        const reservedTotalCents = reservations.reduce(
+          (sum, r) => sum + toCents(r.reservedAmount),
           0,
         );
-        const remaining =
-          Number(budget.totalBudgetAllocation) - reservedTotal;
+        const remainingCents =
+          toCents(budget.totalBudgetAllocation) - reservedTotalCents;
+        const remaining = fromCents(remainingCents);
 
-        if (amount > remaining) {
+        if (toCents(amount) > remainingCents) {
           throw new BadRequestException(
             `Reservation of ${amount} exceeds remaining budget capacity ${remaining}`,
           );

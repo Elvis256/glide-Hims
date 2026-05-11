@@ -713,16 +713,21 @@ export class FinanceService {
         });
         if (!account) continue;
 
-        // Assets & Expenses: Debit increases, Credit decreases
-        // Liabilities, Equity, Revenue: Credit increases, Debit decreases
-        let adjustment = 0;
+        // Sprint-6 money-cents sweep: cents arithmetic for COA
+        // balance updates so posting hundreds of JEL rows can't
+        // accumulate IEEE 754 drift in `currentBalance`.
+        const debitCents = toCents(line.debit);
+        const creditCents = toCents(line.credit);
+        let adjustmentCents = 0;
         if ([AccountType.ASSET, AccountType.EXPENSE].includes(account.accountType)) {
-          adjustment = Number(line.debit) - Number(line.credit);
+          adjustmentCents = debitCents - creditCents;
         } else {
-          adjustment = Number(line.credit) - Number(line.debit);
+          adjustmentCents = creditCents - debitCents;
         }
 
-        account.currentBalance = Number(account.currentBalance) + adjustment;
+        account.currentBalance = fromCents(
+          toCents(account.currentBalance) + adjustmentCents,
+        );
         await manager.save(ChartOfAccount, account);
       }
 

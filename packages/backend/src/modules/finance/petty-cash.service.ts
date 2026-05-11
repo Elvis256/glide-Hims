@@ -7,6 +7,7 @@ import {
   PettyCashTransactionType,
 } from '../../database/entities/finance-extended.entity';
 import { CreatePettyCashFundDto, RecordTransactionDto } from './dto/petty-cash.dto';
+import { sumCents, fromCents, toCents, cmpMoney } from '../../common/utils/money';
 
 @Injectable()
 export class PettyCashService {
@@ -97,14 +98,14 @@ export class PettyCashService {
           );
         }
 
-        if (amount > Number(fund.currentBalance)) {
+        if (cmpMoney(amount, fund.currentBalance) > 0) {
           throw new BadRequestException(
             `Insufficient balance. Current: ${fund.currentBalance}, Requested: ${amount}`,
           );
         }
-        fund.currentBalance = Number(fund.currentBalance) - amount;
+        fund.currentBalance = fromCents(toCents(fund.currentBalance) - toCents(amount));
       } else {
-        fund.currentBalance = Number(fund.currentBalance) + amount;
+        fund.currentBalance = fromCents(sumCents(fund.currentBalance, amount));
       }
 
       const txn = txnRepo.create({
@@ -143,37 +144,34 @@ export class PettyCashService {
         throw new BadRequestException('Fund is not active');
       }
 
-      const replenishAmount = Number(fund.imprestAmount) - Number(fund.currentBalance);
-      const requested = amount || replenishAmount;
+      // Sprint-6 money-cents sweep: do all imprest/headroom math at
+      // cent precision so the cap is exact and the stored balance
+      // can never drift above imprestAmount due to float error.
+      const imprestCents = toCents(fund.imprestAmount);
+      const balanceCents = toCents(fund.currentBalance);
+      const headroomCents = Math.max(imprestCents - balanceCents, 0);
+      const requestedCents =
+        amount && amount > 0 ? toCents(amount) : headroomCents;
 
-      // Budget audit F11: cap replenishment so currentBalance never
-      // exceeds imprestAmount. Without this cap, repeated calls
-      // (e.g. operator passes a fixed `amount` rather than letting
-      // the service compute) could push the float above the imprest,
-      // breaking the imprest model and giving petty-cash custodians
-      // more cash on hand than authorised.
-      const headroom = Math.max(
-        Number(fund.imprestAmount) - Number(fund.currentBalance),
-        0,
-      );
-      if (headroom <= 0) {
+      if (headroomCents <= 0) {
         throw new BadRequestException(
           'Fund is already at or above imprest amount; no replenishment required',
         );
       }
-      if (requested <= 0) {
+      if (requestedCents <= 0) {
         throw new BadRequestException(
           'Replenishment amount must be greater than zero',
         );
       }
-      const actualAmount = Math.min(requested, headroom);
-      if (actualAmount < requested) {
+      const actualCents = Math.min(requestedCents, headroomCents);
+      const actualAmount = fromCents(actualCents);
+      if (actualCents < requestedCents) {
         this.logger.warn(
-          `Petty cash replenish for ${fundId} capped: requested ${requested}, capped to ${actualAmount} (headroom)`,
+          `Petty cash replenish for ${fundId} capped: requested ${fromCents(requestedCents)}, capped to ${actualAmount} (headroom)`,
         );
       }
 
-      fund.currentBalance = Number(fund.currentBalance) + actualAmount;
+      fund.currentBalance = fromCents(balanceCents + actualCents);
 
       const txn = txnRepo.create({
         fundId: fund.id,

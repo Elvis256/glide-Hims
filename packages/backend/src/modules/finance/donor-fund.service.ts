@@ -13,6 +13,7 @@ import {
   InterFacilityTransaction,
   InterFacilityStatus,
 } from '../../database/entities/finance-extended.entity';
+import { sumCents, fromCents, toCents } from '../../common/utils/money';
 
 function requireTenant(tenantId?: string): string {
   if (!tenantId) {
@@ -139,15 +140,19 @@ export class DonorFundService {
         }
       }
 
-      const newDisbursed = Number(fund.disbursedAmount) + amount;
-      if (newDisbursed > Number(fund.grantAmount)) {
+      // Sprint-6 money-cents sweep: avoid float drift on grant
+      // arithmetic so the over-grant check and stored balance stay
+      // exact at cent precision.
+      const newDisbursedCents = sumCents(fund.disbursedAmount, amount);
+      const grantCents = toCents(fund.grantAmount);
+      if (newDisbursedCents > grantCents) {
         throw new BadRequestException(
           `Disbursement amount ${amount} would exceed grant amount ${fund.grantAmount} (already disbursed: ${fund.disbursedAmount})`,
         );
       }
 
-      fund.disbursedAmount = newDisbursed;
-      fund.remainingBalance = Number(fund.grantAmount) - newDisbursed;
+      fund.disbursedAmount = fromCents(newDisbursedCents);
+      fund.remainingBalance = fromCents(grantCents - newDisbursedCents);
 
       if (fund.remainingBalance <= 0) {
         fund.status = FundStatus.EXHAUSTED;
