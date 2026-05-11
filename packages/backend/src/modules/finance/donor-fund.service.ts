@@ -121,6 +121,24 @@ export class DonorFundService {
         );
       }
 
+      // Budget audit F12: reject (and auto-flip status) if grant
+      // window has closed. Stored endDate is a 'date' (no time), so
+      // compare on day boundaries: a fund expiring 2025-12-31 is
+      // valid through end-of-day on the 31st.
+      if (fund.endDate) {
+        const today = new Date();
+        const expiry = new Date(fund.endDate);
+        expiry.setHours(23, 59, 59, 999);
+        if (today > expiry) {
+          fund.status = FundStatus.EXPIRED;
+          await repo.save(fund);
+          throw new BadRequestException(
+            `Donor fund ${fundId} expired on ${fund.endDate.toString().slice(0, 10)} ` +
+              `and cannot accept new disbursements`,
+          );
+        }
+      }
+
       const newDisbursed = Number(fund.disbursedAmount) + amount;
       if (newDisbursed > Number(fund.grantAmount)) {
         throw new BadRequestException(
