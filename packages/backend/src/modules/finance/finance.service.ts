@@ -36,6 +36,7 @@ import {
   CreateFiscalYearDto,
 } from './dto/finance.dto';
 import { InvoiceStatus } from '../../database/entities/invoice.entity';
+import { sumCents, eqCents, fromCents, toCents } from '../../common/utils/money';
 
 @Injectable()
 export class FinanceService {
@@ -478,12 +479,13 @@ export class FinanceService {
     userId: string,
     tenantId?: string,
   ): Promise<JournalEntry> {
-    // Validate debit = credit
-    const totalDebit = dto.lines.reduce((sum, l) => sum + Number(l.debit), 0);
-    const totalCredit = dto.lines.reduce((sum, l) => sum + Number(l.credit), 0);
+    // Validate debit = credit using exact cents-based math (no float drift).
+    const totalDebitCents = sumCents(...dto.lines.map((l) => l.debit ?? 0));
+    const totalCreditCents = sumCents(...dto.lines.map((l) => l.credit ?? 0));
+    const totalDebit = fromCents(totalDebitCents);
+    const totalCredit = fromCents(totalCreditCents);
 
-    // Use exact zero check — tolerance of 0.01 is too loose for financial data
-    if (Math.round(totalDebit * 100) !== Math.round(totalCredit * 100)) {
+    if (!eqCents(totalDebitCents, totalCreditCents)) {
       throw new BadRequestException(
         `Journal entry must balance. Debit: ${totalDebit}, Credit: ${totalCredit}`,
       );
@@ -643,17 +645,15 @@ export class FinanceService {
 
       // F12: re-validate debit==credit at post-time using cents-rounded math.
       // Lines may have been mutated after creation; never trust journal.totalDebit/Credit.
-      const recomputedDebit = (journal.lines ?? []).reduce(
-        (s, l) => s + Math.round(Number(l.debit || 0) * 100),
-        0,
+      const recomputedDebit = sumCents(
+        ...(journal.lines ?? []).map((l) => l.debit ?? 0),
       );
-      const recomputedCredit = (journal.lines ?? []).reduce(
-        (s, l) => s + Math.round(Number(l.credit || 0) * 100),
-        0,
+      const recomputedCredit = sumCents(
+        ...(journal.lines ?? []).map((l) => l.credit ?? 0),
       );
-      if (recomputedDebit !== recomputedCredit) {
+      if (!eqCents(recomputedDebit, recomputedCredit)) {
         throw new BadRequestException(
-          `Journal entry is unbalanced: debit=${recomputedDebit / 100} credit=${recomputedCredit / 100}`,
+          `Journal entry is unbalanced: debit=${fromCents(recomputedDebit)} credit=${fromCents(recomputedCredit)}`,
         );
       }
       // Also reject any line that has both debit and credit > 0 (F14 belt-and-braces)
@@ -727,8 +727,11 @@ export class FinanceService {
       order: { accountCode: 'ASC' },
     });
 
-    let totalDebit = 0;
-    let totalCredit = 0;
+    // Accumulate trial balance totals in cents to prevent IEEE 754 drift
+    // across hundreds of accounts (which would otherwise cause spurious
+    // "out of balance" reports).
+    let totalDebitCents = 0;
+    let totalCreditCents = 0;
 
     const data = accounts
       .map((acc) => {
@@ -744,8 +747,8 @@ export class FinanceService {
           else debit = Math.abs(balance);
         }
 
-        totalDebit += debit;
-        totalCredit += credit;
+        totalDebitCents += toCents(debit);
+        totalCreditCents += toCents(credit);
 
         return {
           accountCode: acc.accountCode,
@@ -757,12 +760,15 @@ export class FinanceService {
       })
       .filter((a) => a.debit > 0 || a.credit > 0);
 
+    const totalDebit = fromCents(totalDebitCents);
+    const totalCredit = fromCents(totalCreditCents);
+
     return {
       asOfDate: asOfDate || new Date().toISOString().slice(0, 10),
       accounts: data,
       totalDebit,
       totalCredit,
-      isBalanced: Math.abs(totalDebit - totalCredit) < 0.01,
+      isBalanced: eqCents(totalDebitCents, totalCreditCents),
     };
   }
 
