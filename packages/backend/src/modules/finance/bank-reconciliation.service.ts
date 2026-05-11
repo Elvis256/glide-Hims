@@ -83,8 +83,47 @@ export class BankReconciliationService {
       throw new BadRequestException('Cannot add items to a completed reconciliation');
     }
 
-    const entities = items.map((item) =>
-      this.reconItemRepo.create({
+    // Sprint-6 idempotency: re-uploading the same statement file must
+    // not create duplicate lines. We dedupe within this reconciliation
+    // by the natural key (date, amount, reference|description). If a
+    // matching row already exists we silently skip the new one and
+    // return the already-persisted entity instead.
+    const existing = await this.reconItemRepo.find({
+      where: { reconciliationId: recon.id, tenantId: tid },
+    });
+    const fingerprint = (
+      ref: string | undefined | null,
+      desc: string | undefined | null,
+      date: any,
+      amount: number | string,
+    ) => {
+      const d = date instanceof Date ? date.toISOString().slice(0, 10) : String(date).slice(0, 10);
+      const key = (ref && String(ref).trim()) || (desc && String(desc).trim()) || '';
+      return `${d}|${Number(amount).toFixed(2)}|${key.toLowerCase()}`;
+    };
+    const existingByKey = new Map<string, BankReconciliationItem>();
+    for (const e of existing) {
+      existingByKey.set(
+        fingerprint(e.statementReference, e.statementDescription, e.statementDate, e.statementAmount),
+        e,
+      );
+    }
+
+    const toInsert: BankReconciliationItem[] = [];
+    const reused: BankReconciliationItem[] = [];
+    for (const item of items) {
+      const k = fingerprint(
+        item.statementReference,
+        item.statementDescription,
+        item.statementDate,
+        item.statementAmount,
+      );
+      const dup = existingByKey.get(k);
+      if (dup) {
+        reused.push(dup);
+        continue;
+      }
+      const created = this.reconItemRepo.create({
         reconciliationId: recon.id,
         statementReference: item.statementReference,
         statementDescription: item.statementDescription,
@@ -93,9 +132,18 @@ export class BankReconciliationService {
         status: ReconciliationItemStatus.UNMATCHED,
         notes: item.notes,
         tenantId: tid,
-      }),
-    );
-    return this.reconItemRepo.save(entities);
+      });
+      existingByKey.set(k, created);
+      toInsert.push(created);
+    }
+
+    const saved = toInsert.length ? await this.reconItemRepo.save(toInsert) : [];
+    if (reused.length) {
+      this.logger.log(
+        `addStatementItems: skipped ${reused.length} duplicate line(s) for reconciliation ${reconId}`,
+      );
+    }
+    return [...saved, ...reused];
   }
 
   async autoMatch(reconId: string, tenantId?: string): Promise<{ matchedCount: number }> {

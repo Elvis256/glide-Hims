@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
   Inject,
   forwardRef,
 } from '@nestjs/common';
@@ -452,6 +453,15 @@ export class SupplierFinanceService {
       note.status !== CreditNoteStatus.PENDING_APPROVAL
     ) {
       throw new BadRequestException('Note cannot be approved from current status');
+    }
+    // Sprint-6 maker-checker: the user who created the credit/debit
+    // note cannot also approve it. Without this, a single user with
+    // supplier-finance.manage can both raise and approve a CN, which
+    // wipes the SoD control on supplier balance reductions.
+    if (note.createdBy && note.createdBy === userId) {
+      throw new ForbiddenException(
+        'Segregation of duties: the credit note creator cannot also approve it. A different user must approve.',
+      );
     }
     note.status = CreditNoteStatus.APPROVED;
     note.approvedBy = userId;

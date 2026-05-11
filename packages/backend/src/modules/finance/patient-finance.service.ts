@@ -80,6 +80,38 @@ export class PatientFinanceService {
     return this.creditNoteRepo.find({ where, order: { createdAt: 'DESC' } });
   }
 
+  async approveCreditNote(
+    creditNoteId: string,
+    approverUserId: string,
+    tenantId?: string,
+  ): Promise<PatientCreditNote> {
+    const tid = requireTenant(tenantId);
+    const note = await this.creditNoteRepo.findOne({
+      where: { id: creditNoteId, tenantId: tid },
+    });
+    if (!note) {
+      throw new NotFoundException(`Credit note ${creditNoteId} not found`);
+    }
+    if (note.status !== CreditNoteStatus.DRAFT) {
+      throw new BadRequestException(
+        `Credit note cannot be approved from status '${note.status}' (must be DRAFT)`,
+      );
+    }
+    // Sprint-6 maker-checker: the user who created the credit
+    // note cannot also approve it. This pairs with applyCreditNote's
+    // APPROVED gate so a single user can never both raise and apply
+    // a CN against a patient invoice.
+    if (note.createdBy && note.createdBy === approverUserId) {
+      throw new ForbiddenException(
+        'Segregation of duties: the credit note creator cannot also approve it. A different user must approve.',
+      );
+    }
+    note.status = CreditNoteStatus.APPROVED;
+    note.approvedBy = approverUserId;
+    note.approvedAt = new Date();
+    return this.creditNoteRepo.save(note);
+  }
+
   async applyCreditNote(
     creditNoteId: string,
     invoiceId: string,
@@ -197,7 +229,25 @@ export class PatientFinanceService {
       });
       const savedApplication = await appRepo.save(application);
 
-      const newBalance = currentBalance - amount;
+      // Sprint-6 deposit balance recompute: instead of decrementing the
+      // stored balance (which can drift on partial failures, manual SQL,
+      // or migrations), recompute it authoritatively from
+      //     deposit.amount  -  SUM(applications.amount)
+      // The row is already pessimistic_write-locked above, so the SUM is
+      // serialised against concurrent applyDeposit calls.
+      const sumRow = await appRepo
+        .createQueryBuilder('a')
+        .select('COALESCE(SUM(a.amount), 0)', 'sum')
+        .where('a.deposit_id = :depositId', { depositId })
+        .andWhere(tenantId ? 'a.tenant_id = :tenantId' : '1=1', { tenantId })
+        .getRawOne();
+      const totalApplied = Number(sumRow?.sum ?? 0);
+      const newBalance = Number(deposit.amount) - totalApplied;
+      if (newBalance < 0) {
+        throw new BadRequestException(
+          `Deposit balance recompute would go negative (amount=${deposit.amount}, applied=${totalApplied}).`,
+        );
+      }
       deposit.balance = newBalance;
       deposit.status =
         newBalance <= 0 ? DepositStatus.FULLY_APPLIED : DepositStatus.PARTIALLY_APPLIED;
