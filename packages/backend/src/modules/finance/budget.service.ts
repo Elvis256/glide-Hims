@@ -7,7 +7,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThanOrEqual, IsNull, DataSource } from 'typeorm';
+import { Repository, LessThanOrEqual, IsNull, DataSource, In } from 'typeorm';
 import { Budget, BudgetLine, BudgetStatus } from '../../database/entities/finance-extended.entity';
 import { FacilityBudget } from '../../database/entities/facility-budget.entity';
 import {
@@ -341,7 +341,12 @@ export class BudgetService {
   }
 
   /**
-   * Calculate total budget reserved but not yet spent
+   * Calculate total budget reserved but not yet spent.
+   * Includes both PENDING and APPROVED reservations — APPROVED money
+   * is committed-but-not-disbursed and must still reduce availability
+   * (Budget audit F3: previously only PENDING was excluded, so as
+   * soon as a reservation flipped to APPROVED it disappeared from
+   * the availability calculation, double-counting the budget).
    */
   async calculateBudgetReserved(
     budgetId: string,
@@ -349,7 +354,7 @@ export class BudgetService {
   ): Promise<number> {
     const where: any = {
       budgetId,
-      status: ReservationStatus.PENDING,
+      status: In([ReservationStatus.PENDING, ReservationStatus.APPROVED]),
     };
     if (tenantId) where.tenantId = tenantId;
 
@@ -482,7 +487,10 @@ export class BudgetService {
           where: {
             budgetId: budget.id,
             ...(tenantId ? { tenantId } : {}),
-            status: ReservationStatus.PENDING,
+            status: In([
+              ReservationStatus.PENDING,
+              ReservationStatus.APPROVED,
+            ]),
           },
         });
         const reservedTotal = reservations.reduce(
