@@ -144,7 +144,34 @@ export class PettyCashService {
       }
 
       const replenishAmount = Number(fund.imprestAmount) - Number(fund.currentBalance);
-      const actualAmount = amount || replenishAmount;
+      const requested = amount || replenishAmount;
+
+      // Budget audit F11: cap replenishment so currentBalance never
+      // exceeds imprestAmount. Without this cap, repeated calls
+      // (e.g. operator passes a fixed `amount` rather than letting
+      // the service compute) could push the float above the imprest,
+      // breaking the imprest model and giving petty-cash custodians
+      // more cash on hand than authorised.
+      const headroom = Math.max(
+        Number(fund.imprestAmount) - Number(fund.currentBalance),
+        0,
+      );
+      if (headroom <= 0) {
+        throw new BadRequestException(
+          'Fund is already at or above imprest amount; no replenishment required',
+        );
+      }
+      if (requested <= 0) {
+        throw new BadRequestException(
+          'Replenishment amount must be greater than zero',
+        );
+      }
+      const actualAmount = Math.min(requested, headroom);
+      if (actualAmount < requested) {
+        this.logger.warn(
+          `Petty cash replenish for ${fundId} capped: requested ${requested}, capped to ${actualAmount} (headroom)`,
+        );
+      }
 
       fund.currentBalance = Number(fund.currentBalance) + actualAmount;
 
