@@ -174,13 +174,13 @@ export class FinanceApprovalService {
         );
       }
 
-      // If a previous chain was rejected, clear it before creating the new one
-      // so the (journal_entry_id, approval_level) UNIQUE constraint is honoured.
-      if (existingChain.length > 0) {
-        await manager
-          .getRepository(FinanceApprovalChain)
-          .delete({ journalEntryId });
-      }
+      // Sprint-6: preserve the rejected chain as audit history. Instead
+      // of deleting prior REJECTED rows, increment the attempt counter
+      // so the new chain coexists with old ones under the
+      // (journal_entry_id, approval_level, attempt) UNIQUE index.
+      const nextAttempt = existingChain.length === 0
+        ? 1
+        : Math.max(...existingChain.map((c) => c.attempt ?? 1)) + 1;
 
       const amount = maxMoney(entry.totalDebit ?? 0, entry.totalCredit ?? 0);
       const requiredLevels = await this.getRequiredApprovalsForAmount(amount);
@@ -191,6 +191,7 @@ export class FinanceApprovalService {
           tenantId: tid,
           facilityId: entry.facilityId,
           approvalLevel: lvl.level,
+          attempt: nextAttempt,
           requiredRole: lvl.role,
           status: FinanceApprovalStatus.PENDING,
         }),
@@ -342,6 +343,8 @@ export class FinanceApprovalService {
       }
 
       // Load the chain (also locked) for this role.
+      // Versioned chain: filter to PENDING so we never pick up a row
+      // from a rejected attempt (those are all REJECTED).
       const chainEntry = await manager
         .getRepository(FinanceApprovalChain)
         .createQueryBuilder('c')
@@ -349,6 +352,9 @@ export class FinanceApprovalService {
         .where('c.journal_entry_id = :id', { id: journalEntryId })
         .andWhere('c.tenant_id = :tid', { tid })
         .andWhere('c.required_role = :role', { role: userRole })
+        .andWhere('c.status = :pending', {
+          pending: FinanceApprovalStatus.PENDING,
+        })
         .getOne();
 
       if (!chainEntry) {
@@ -364,10 +370,16 @@ export class FinanceApprovalService {
       }
 
       // Out-of-order guard: every lower level must already be APPROVED.
+      // Restrict to the CURRENT attempt — rejected attempts must not
+      // bleed into the completeness evaluation of the new chain.
       const lowerLevels = await manager
         .getRepository(FinanceApprovalChain)
         .find({
-          where: { journalEntryId, tenantId: tid },
+          where: {
+            journalEntryId,
+            tenantId: tid,
+            attempt: chainEntry.attempt,
+          },
           order: { approvalLevel: 'ASC' },
         });
 
@@ -403,10 +415,16 @@ export class FinanceApprovalService {
 
       await manager.getRepository(FinanceApprovalChain).save(chainEntry);
 
-      // Recompute completeness.
+      // Recompute completeness — only consider the CURRENT attempt.
       const refreshed = await manager
         .getRepository(FinanceApprovalChain)
-        .find({ where: { journalEntryId, tenantId: tid } });
+        .find({
+          where: {
+            journalEntryId,
+            tenantId: tid,
+            attempt: chainEntry.attempt,
+          },
+        });
 
       const allApproved = refreshed.every(
         (c) => c.status === FinanceApprovalStatus.APPROVED,
@@ -501,6 +519,9 @@ export class FinanceApprovalService {
         .where('c.journal_entry_id = :id', { id: journalEntryId })
         .andWhere('c.tenant_id = :tid', { tid })
         .andWhere('c.required_role = :role', { role: userRole })
+        .andWhere('c.status = :pending', {
+          pending: FinanceApprovalStatus.PENDING,
+        })
         .getOne();
 
       if (!chainEntry) {
