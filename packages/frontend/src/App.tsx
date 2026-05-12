@@ -55,6 +55,8 @@ const SystemSubscriptionDetailPage = lazy(() => import('./pages/system/SystemSub
 const SystemSaasInvoicesPage = lazy(() => import('./pages/system/SystemSaasInvoicesPage'));
 const SystemCouponsPage = lazy(() => import('./pages/system/SystemCouponsPage'));
 const SystemRevenuePage = lazy(() => import('./pages/system/SystemRevenuePage'));
+const PublicPricingPage = lazy(() => import('./pages/PublicPricingPage'));
+const BillingPortalPage = lazy(() => import('./pages/BillingPortalPage'));
 const SystemSecurityPage = lazy(() => import('./pages/system/SystemSecurityPage'));
 const SystemDocsPage = lazy(() => import('./pages/system/SystemDocsPage'));
 const DownloadsPage = lazy(() => import('./pages/DownloadsPage'));
@@ -638,6 +640,7 @@ function AppRoutes() {
       <Route path="/setup/:slug" element={<TenantSetupWizardPage />} />
       <Route path="/register" element={isAuthenticated ? <Navigate to="/" replace /> : <RegisterOrganizationPage />} />
       <Route path="/careers" element={<CareersPage />} />
+      <Route path="/pricing" element={<PublicPricingPage />} />
       <Route path="/portal/login" element={<PortalLoginPage />} />
       <Route path="/portal/dashboard" element={<PortalDashboardPage />} />
       <Route path="/portal" element={<Navigate to="/portal/login" replace />} />
@@ -723,6 +726,7 @@ function AppRoutes() {
                 <Route path="/" element={<SmartDashboardPage />} />
                 <Route path="/dashboard" element={<SmartDashboardPage />} />
                 <Route path="/downloads" element={<DownloadsPage />} />
+                <Route path="/billing-portal" element={<BillingPortalPage />} />
                 
                 {/* Registration - Patient Management */}
                 <Route path="/patients/search" element={<ProtectedRoute requiredPermissions={['patients.read']}><PatientSearchPage /></ProtectedRoute>} />

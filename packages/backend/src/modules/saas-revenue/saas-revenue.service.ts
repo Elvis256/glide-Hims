@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import {
@@ -38,6 +38,10 @@ const TIER_TO_LICENSE: Record<string, License['licenseType']> = {
   enterprise: 'enterprise',
 };
 
+import { SaasMailerService } from './saas-mailer.service';
+import { FlutterwaveService } from './flutterwave.service';
+import { Lead } from '../leads/lead.entity';
+
 @Injectable()
 export class SaasRevenueService {
   private readonly logger = new Logger(SaasRevenueService.name);
@@ -50,6 +54,9 @@ export class SaasRevenueService {
     @InjectRepository(SaasCoupon) private readonly coupons: Repository<SaasCoupon>,
     @InjectRepository(SaasSubscriptionEvent) private readonly events: Repository<SaasSubscriptionEvent>,
     @InjectRepository(License) private readonly licenses: Repository<License>,
+    @InjectRepository(Lead) private readonly leads: Repository<Lead>,
+    private readonly mailer: SaasMailerService,
+    private readonly flw: FlutterwaveService,
   ) {}
 
   // ============================================================
@@ -184,6 +191,8 @@ export class SaasRevenueService {
       currentPeriodEnd: periodEnd,
       nextRenewalAt: periodEnd,
       autoRenew: dto.autoRenew ?? true,
+      billingEmail: (dto as any).billingEmail ?? null,
+      billingName: (dto as any).billingName ?? null,
       notes: dto.notes ?? null,
     });
     const saved = await this.subs.save(sub );
@@ -314,6 +323,10 @@ export class SaasRevenueService {
     sub.lastInvoicedAt = new Date();
     await this.subs.save(sub);
     await this.recordEvent(sub.id, 'invoice_issued', `Invoice ${invoiceNumber} issued for ${this.fmtMoney(total, sub.currency)}`, { invoiceId: saved.id }, actorId);
+    if (sub.billingEmail) {
+      const plan = await this.plans.findOne({ where: { id: sub.planId } });
+      this.mailer.sendInvoiceIssued(sub.billingEmail, saved, plan ?? undefined).catch(() => {});
+    }
     return saved;
   }
 
@@ -356,6 +369,7 @@ export class SaasRevenueService {
     }
     await this.recordEvent(sub.id, 'payment_recorded', `Payment ${this.fmtMoney(dto.amountMinor, inv.currency)} via ${dto.gateway ?? 'manual'}`, { paymentId: savedPay.id, invoiceId: inv.id }, actorId);
     await this.syncLicenseFromSubscription(sub.id);
+    if (sub.billingEmail) this.mailer.sendPaymentReceipt(sub.billingEmail, savedPay, inv).catch(() => {});
     return savedPay;
   }
 
@@ -556,6 +570,10 @@ export class SaasRevenueService {
         sub.lastDunningAt = now;
         await this.subs.save(sub);
         await this.recordEvent(sub.id, 'past_due', `Invoice ${inv.invoiceNumber} ${daysOverdue}d overdue`);
+        if (sub.billingEmail) this.mailer.sendDunning(sub.billingEmail, sub, inv, daysOverdue).catch(() => {});
+      } else if (sub.status === 'past_due' && daysOverdue > 0 && daysOverdue % 3 === 0) {
+        // Send a reminder every 3 days while past due.
+        if (sub.billingEmail) this.mailer.sendDunning(sub.billingEmail, sub, inv, daysOverdue).catch(() => {});
       }
       // Auto-churn at 30 days past due.
       if (daysOverdue >= 30 && sub.status === 'past_due') {
@@ -630,5 +648,112 @@ export class SaasRevenueService {
   }
   private fmtMoney(minor: number, currency: string) {
     return `${currency} ${(minor / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+  }
+
+  // ============================================================
+  // PUBLIC PRICING (no auth)
+  // ============================================================
+  async listPublicPlans() {
+    return this.plans.find({ where: { isActive: true, isPublic: true } as any, order: { sortOrder: 'ASC', priceMonthlyMinor: 'ASC' } });
+  }
+
+  // ============================================================
+  // LEAD CONVERSION
+  // ============================================================
+  async convertLead(leadId: string, dto: any, actorId?: string) {
+    const lead = await this.leads.findOne({ where: { id: leadId } });
+    const billingEmail = dto.billingEmail ?? lead?.email ?? null;
+    const billingName = lead?.fullName ?? null;
+    const created = await this.createSubscription({
+      tenantId: dto.tenantId, planId: dto.planId, billingInterval: dto.billingInterval,
+      seats: dto.seats ?? 1, leadId, startTrial: dto.startTrial ?? false, autoRenew: true,
+      billingEmail, billingName,
+    } as any, actorId);
+    if (lead) {
+      lead.status = 'won';
+      await this.leads.save(lead);
+    }
+    return created;
+  }
+
+  // ============================================================
+  // TENANT SELF-SERVE BILLING PORTAL
+  // ============================================================
+  async getMyBilling(tenantId: string) {
+    const subs = await this.subs.find({ where: { tenantId }, relations: ['plan'], order: { createdAt: 'DESC' } });
+    const invoices = await this.invoices.find({ where: { tenantId }, order: { issuedAt: 'DESC' }, take: 100 });
+    const payments = await this.payments.find({ where: { tenantId }, order: { paidAt: 'DESC' }, take: 50 });
+    const outstanding = invoices.filter((i) => i.status === 'open').reduce((a, i) => a + (i.totalMinor - i.amountPaidMinor), 0);
+    return { subscriptions: subs, invoices, payments, outstandingMinor: outstanding };
+  }
+
+  // ============================================================
+  // GATEWAY (Flutterwave)
+  // ============================================================
+  async initCheckout(invoiceId: string, opts: { redirectUrl: string; customerEmail?: string; customerName?: string }, tenantId?: string) {
+    const inv = await this.invoices.findOne({ where: { id: invoiceId } });
+    if (!inv) throw new NotFoundException('Invoice not found');
+    if (tenantId && inv.tenantId !== tenantId) throw new ForbiddenException('Cross-tenant access');
+    if (inv.status === 'paid') throw new BadRequestException('Invoice already paid');
+    const sub = await this.subs.findOne({ where: { id: inv.subscriptionId } });
+    const due = inv.totalMinor - inv.amountPaidMinor;
+    const customerEmail = opts.customerEmail || sub?.billingEmail || `tenant-${inv.tenantId}@noemail.local`;
+    const result = await this.flw.initCheckout({
+      txRef: `inv_${inv.id.slice(0, 8)}_${Date.now()}`,
+      amount: due,
+      currency: inv.currency,
+      customerEmail,
+      customerName: opts.customerName || sub?.billingName || undefined,
+      redirectUrl: opts.redirectUrl,
+      meta: { invoiceId: inv.id, subscriptionId: inv.subscriptionId, tenantId: inv.tenantId, description: `Invoice ${inv.invoiceNumber}` },
+    });
+    return { ...result, invoiceId: inv.id, amountMinor: due, currency: inv.currency };
+  }
+
+  async handleFlutterwaveWebhook(rawBody: string, signature: string | undefined) {
+    if (!this.flw.verifyWebhookSignature(signature, rawBody)) {
+      throw new ForbiddenException('Invalid webhook signature');
+    }
+    const evt = JSON.parse(rawBody || '{}');
+    const data = evt.data || evt;
+    const event = evt.event || evt['event.type'] || data?.status;
+    const txId = data?.id ?? data?.transaction_id;
+    const txRef: string | undefined = data?.tx_ref ?? data?.txRef;
+    const status: string | undefined = data?.status;
+    if (!txId || status !== 'successful') {
+      this.logger.log(`Webhook ignored: event=${event} status=${status}`);
+      return { ok: true, ignored: true };
+    }
+    const verified = await this.flw.verifyTransaction(txId);
+    if (!verified.ok) {
+      this.logger.warn(`Verify failed for tx=${txId}`);
+      return { ok: false };
+    }
+    const invoiceId: string | undefined = data?.meta?.invoiceId;
+    if (!invoiceId) {
+      this.logger.warn(`Webhook tx=${txId} missing meta.invoiceId`);
+      return { ok: true, ignored: true };
+    }
+    // Idempotency guard: skip if a payment with this gateway ref already exists.
+    const existing = await this.payments.findOne({ where: { gatewayRef: String(txId) } });
+    if (existing) return { ok: true, duplicate: true };
+    const inv = await this.invoices.findOne({ where: { id: invoiceId } });
+    if (!inv) return { ok: false };
+    await this.recordPayment(inv.id, {
+      amountMinor: verified.amount ?? (inv.totalMinor - inv.amountPaidMinor),
+      currency: verified.currency ?? inv.currency,
+      gateway: 'flutterwave',
+      gatewayRef: String(txId),
+      method: data?.payment_type || 'card',
+      paidAt: new Date().toISOString(),
+      notes: `Flutterwave tx_ref=${txRef ?? ''}`,
+    } as any);
+    // Persist gateway payload on the latest payment.
+    const latest = await this.payments.findOne({ where: { gatewayRef: String(txId) } });
+    if (latest) {
+      latest.gatewayPayload = data;
+      await this.payments.save(latest);
+    }
+    return { ok: true };
   }
 }

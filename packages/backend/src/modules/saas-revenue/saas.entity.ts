@@ -100,6 +100,8 @@ export class SaasSubscription {
 
   @Column({ default: true }) autoRenew: boolean;
   @Column({ default: false }) cancelAtPeriodEnd: boolean;
+  @Column({ type: 'varchar', length: 255, nullable: true, name: 'billing_email' }) billingEmail: string | null;
+  @Column({ type: 'varchar', length: 255, nullable: true, name: 'billing_name' }) billingName: string | null;
   @Column({ type: 'text', nullable: true }) notes: string | null;
   @Column({ type: 'jsonb', nullable: true }) metadata: Record<string, any> | null;
 
@@ -132,6 +134,7 @@ export class SaasInvoice {
   @Column({ type: 'integer', default: 0 }) taxMinor: number;
   @Column({ type: 'integer', default: 0 }) totalMinor: number;
   @Column({ type: 'integer', default: 0 }) amountPaidMinor: number;
+  @Column({ type: 'numeric', precision: 18, scale: 6, default: 1, name: 'fx_rate_to_base' }) fxRateToBase: string;
 
   @Column({ type: 'timestamp' }) issuedAt: Date;
   @Column({ type: 'timestamp' }) dueAt: Date;
@@ -165,6 +168,7 @@ export class SaasPayment {
   @Column({ type: 'varchar', length: 200, nullable: true }) gatewayRef: string | null;
   @Column({ type: 'varchar', length: 50, nullable: true }) method: string | null; // card / bank / momo / cash
   @Column({ type: 'jsonb', nullable: true }) gatewayPayload: Record<string, any> | null;
+  @Column({ type: 'numeric', precision: 18, scale: 6, default: 1, name: 'fx_rate_to_base' }) fxRateToBase: string;
 
   @Column({ type: 'timestamp' }) paidAt: Date;
   @Column({ type: 'uuid', nullable: true }) recordedBy: string | null;
