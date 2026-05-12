@@ -163,6 +163,12 @@ export class DeploymentController {
     return this.updateService.listRolloutReports(rolloutId);
   }
 
+  @Get('rollouts/:rolloutId/summary')
+  async getRolloutSummary(@Req() req: Request, @Param('rolloutId') rolloutId: string) {
+    if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
+    return this.updateService.getRolloutSummary(rolloutId);
+  }
+
   @Get('snapshots/:snapshotId/download')
   async downloadSnapshot(
     @Req() req: Request,
