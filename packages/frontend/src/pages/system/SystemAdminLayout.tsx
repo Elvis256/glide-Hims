@@ -22,6 +22,11 @@ import {
   KeyRound,
   ShieldAlert,
   BookOpen,
+  Package,
+  CreditCard,
+  Receipt,
+  Tag,
+  TrendingUp,
 } from 'lucide-react';
 
 const sidebarItems = [
@@ -34,6 +39,11 @@ const sidebarItems = [
   { name: 'Leads', href: '/system/leads', icon: Mail },
   { name: 'Downloads', href: '/system/downloads', icon: Download },
   { name: 'Licenses', href: '/system/licenses', icon: KeyRound },
+  { name: 'Plans', href: '/system/plans', icon: Package },
+  { name: 'Subscriptions', href: '/system/subscriptions', icon: CreditCard },
+  { name: 'SaaS Invoices', href: '/system/saas-invoices', icon: Receipt },
+  { name: 'Coupons', href: '/system/coupons', icon: Tag },
+  { name: 'Revenue', href: '/system/revenue', icon: TrendingUp },
   { name: 'Compliance Center', href: '/system/compliance', icon: ClipboardCheck },
   { name: 'Security & Blocks', href: '/system/security', icon: ShieldAlert },
   { name: 'Audit Logs', href: '/system/audit-logs', icon: ScrollText },

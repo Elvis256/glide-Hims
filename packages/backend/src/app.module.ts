@@ -80,6 +80,7 @@ import { AuditModule } from './common/interceptors/audit.module';
 import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
 import { InAppNotificationsModule } from './modules/in-app-notifications/in-app-notifications.module';
 import { LeadsModule } from './modules/leads/leads.module';
+import { SaasRevenueModule } from './modules/saas-revenue/saas-revenue.module';
 import { DownloadsModule } from './modules/downloads/downloads.module';
 import { HealthModule } from './modules/health/health.module';
 import { TenantModule } from './common/middleware/tenant.module';
@@ -268,6 +269,7 @@ import { EfrisModule } from './modules/efris/efris.module';
     // Real-time In-App Notifications
     InAppNotificationsModule,
     LeadsModule,
+    SaasRevenueModule,
     DownloadsModule,
 
     // Phase 22: Medication Adherence Tracking
