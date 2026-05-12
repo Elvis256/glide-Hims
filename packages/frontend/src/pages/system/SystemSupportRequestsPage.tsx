@@ -17,6 +17,7 @@ import {
   MessageSquare,
 } from 'lucide-react';
 import api from '../../services/api';
+import { userDisplayName } from '../../utils/userName';
 
 interface SupportAccessRequest {
   id: string;
@@ -165,9 +166,7 @@ export default function SystemSupportRequestsPage() {
                       <div className="flex items-center gap-4 text-sm text-gray-500 mb-3">
                         <span className="flex items-center gap-1">
                           <User className="w-3.5 h-3.5" />
-                          {request.requestedBy
-                            ? `${request.requestedBy.firstName} ${request.requestedBy.lastName}`
-                            : 'Unknown'}
+                          {userDisplayName(request.requestedBy, 'Unknown')}
                         </span>
                         <span className="flex items-center gap-1">
                           <Clock className="w-3.5 h-3.5" />
@@ -237,9 +236,7 @@ export default function SystemSupportRequestsPage() {
             <p className="text-sm text-gray-500 mb-4">
               Deny the support access request from{' '}
               <strong>
-                {selectedRequest.requestedBy
-                  ? `${selectedRequest.requestedBy.firstName} ${selectedRequest.requestedBy.lastName}`
-                  : 'tenant admin'}
+                {userDisplayName(selectedRequest.requestedBy, 'tenant admin')}
               </strong>
               {selectedRequest.tenant?.name ? ` at ${selectedRequest.tenant.name}` : ''}
             </p>

@@ -105,6 +105,29 @@ const statusConfig: Record<ExpenseStatus, { label: string; color: string; icon: 
   paid: { label: 'Paid', color: 'bg-green-100 text-green-700', icon: DollarSign },
 };
 
+const categoryFallback = { label: 'Other', color: 'bg-gray-100 text-gray-700', budget: 0 };
+const statusFallback = { label: 'Unknown', color: 'bg-gray-100 text-gray-700', icon: Info };
+const getCategoryConfig = (c?: string) =>
+  (c && (categoryConfig as Record<string, typeof categoryFallback>)[c]) || categoryFallback;
+const getStatusConfig = (s?: string) =>
+  (s && (statusConfig as Record<string, typeof statusFallback>)[s]) || statusFallback;
+
+function extractUserName(u: unknown): string {
+  if (!u) return '';
+  if (typeof u === 'string') return u;
+  if (typeof u === 'object') {
+    const o = u as Record<string, unknown>;
+    if (typeof o.fullName === 'string' && o.fullName) return o.fullName;
+    if (typeof o.username === 'string' && o.username) return o.username;
+    const fn = typeof o.firstName === 'string' ? o.firstName : '';
+    const ln = typeof o.lastName === 'string' ? o.lastName : '';
+    const joined = `${fn} ${ln}`.trim();
+    if (joined) return joined;
+    if (typeof o.email === 'string' && o.email) return o.email;
+  }
+  return '';
+}
+
 export default function ExpensesPage() {
   const facilityId = useFacilityId();
   const queryClient = useQueryClient();
@@ -258,7 +281,7 @@ export default function ExpensesPage() {
               accountCode: line.accountCode,
               accountName: line.accountName,
               amount: line.debit,
-              createdBy: journal.createdBy ? `${journal.createdBy.firstName} ${journal.createdBy.lastName}` : 'System',
+              createdBy: extractUserName(journal.createdBy) || 'System',
             });
           }
         });
@@ -411,7 +434,7 @@ export default function ExpensesPage() {
             const isOverBudget = percentage > 100;
             return (
               <div key={cat} className="text-center">
-                <div className="text-xs text-gray-600 truncate">{categoryConfig[category].label}</div>
+                <div className="text-xs text-gray-600 truncate">{getCategoryConfig(category).label}</div>
                 <div className="h-2 bg-gray-200 rounded-full mt-1 overflow-hidden">
                   <div
                     className={`h-full rounded-full ${isOverBudget ? 'bg-red-500' : 'bg-green-500'}`}
@@ -592,14 +615,14 @@ export default function ExpensesPage() {
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Category</p>
-                  <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${categoryConfig[viewingExpense.category].color}`}>
-                    {categoryConfig[viewingExpense.category].label}
+                  <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${getCategoryConfig(viewingExpense.category).color}`}>
+                    {getCategoryConfig(viewingExpense.category).label}
                   </span>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Status</p>
-                  <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${statusConfig[viewingExpense.status].color}`}>
-                    {statusConfig[viewingExpense.status].label}
+                  <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${getStatusConfig(viewingExpense.status).color}`}>
+                    {getStatusConfig(viewingExpense.status).label}
                   </span>
                 </div>
               </div>
