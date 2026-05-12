@@ -293,6 +293,20 @@ export class DeploymentController {
     return this.deploymentService.testConnectivity(deploymentId);
   }
 
+  @Post(':deploymentId/request-poll')
+  async requestPoll(@Req() req: Request, @Param('deploymentId') deploymentId: string) {
+    if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
+    return this.deploymentService.requestHealthPoll(deploymentId);
+  }
+
+  @Get(':deploymentId/rollouts-history')
+  async getRolloutsHistory(@Req() req: Request, @Param('deploymentId') deploymentId: string) {
+    if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
+    const detail = await this.deploymentService.getAdminDeploymentDetail(deploymentId);
+    if (!detail.license?.id) return [];
+    return this.updateService.listRolloutsForLicense(detail.license.id);
+  }
+
   // ============ STANDALONE SNAPSHOT IMPORT ============
 
   @Get(':deploymentId/snapshots')

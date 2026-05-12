@@ -291,8 +291,10 @@ export class DeploymentService {
       updatedAt: deployment.updatedAt,
       lastSync: deployment.lastSync,
       lastHealthCheck: deployment.lastHealthCheck,
+      pollRequestedAt: deployment.pollRequestedAt || null,
       license: license
         ? {
+            id: license.id,
             licenseKey: license.licenseKey,
             status: license.status,
             licenseType: license.licenseType,
@@ -306,6 +308,17 @@ export class DeploymentService {
           }
         : null,
     };
+  }
+
+  async requestHealthPoll(deploymentId: string): Promise<{ deploymentId: string; pollRequestedAt: string }> {
+    const deployment = await this.deploymentRepository.findOne({ where: { id: deploymentId } });
+    if (!deployment) {
+      throw new NotFoundException('Deployment not found');
+    }
+    const now = new Date();
+    deployment.pollRequestedAt = now;
+    await this.deploymentRepository.save(deployment);
+    return { deploymentId, pollRequestedAt: now.toISOString() };
   }
 
   async testConnectivity(deploymentId: string): Promise<{
