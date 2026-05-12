@@ -75,6 +75,24 @@ const statusFallback = { label: 'Unknown', color: 'bg-gray-100 text-gray-600', i
 const getStatusConfig = (s: string | undefined) =>
   (s && (statusConfig as Record<string, typeof statusFallback>)[s]) || statusFallback;
 
+// Coerce a backend "user" relation into a human-readable string. The
+// API returns the full User entity (with `fullName`/`username`/`email`)
+// nested under fields like `createdBy`/`postedBy`. Rendering an object
+// directly throws React error #31 ("Objects are not valid as a React
+// child"), which is what crashed this page.
+function extractUserName(u: unknown): string {
+  if (!u) return '';
+  if (typeof u === 'string') return u;
+  if (typeof u === 'object') {
+    const o = u as Record<string, unknown>;
+    const first = (o.firstName as string) || '';
+    const last = (o.lastName as string) || '';
+    if (first || last) return `${first} ${last}`.trim();
+    return (o.fullName as string) || (o.username as string) || (o.email as string) || (o.id as string) || '';
+  }
+  return String(u);
+}
+
 export default function JournalEntriesPage() {
   const queryClient = useQueryClient();
   const facilityId = useFacilityId();
@@ -137,7 +155,7 @@ export default function JournalEntriesPage() {
       description: e.description || '',
       reference: e.reference || '',
       status: e.status || 'draft',
-      createdBy: e.createdBy?.firstName ? `${e.createdBy.firstName} ${e.createdBy.lastName || ''}`.trim() : (e.createdBy || ''),
+      createdBy: extractUserName(e.createdBy) || extractUserName(e.postedBy) || '',
       createdAt: e.createdAt || '',
       reversedFromId: e.reversedFromId,
       totalDebit: Number(e.totalDebit || 0),
