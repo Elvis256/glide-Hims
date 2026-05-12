@@ -252,6 +252,7 @@ export default function SystemDeploymentDetailPage() {
   const [restoreInstructions, setRestoreInstructions] = useState<any | null>(null);
   const [loadingRestore, setLoadingRestore] = useState(false);
   const [copiedCmd, setCopiedCmd] = useState<string | null>(null);
+  const [syncingFromLicense, setSyncingFromLicense] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadSnapshots = async () => {
@@ -453,6 +454,21 @@ export default function SystemDeploymentDetailPage() {
       setTimeout(() => setCopiedCmd((c) => (c === key ? null : c)), 1500);
     } catch {
       toast.error('Could not copy to clipboard');
+    }
+  };
+
+  const syncFromLicense = async () => {
+    if (!deploymentId) return;
+    setSyncingFromLicense(true);
+    try {
+      const res = await api.post(`/deployments/${deploymentId}/sync-from-license`);
+      const d: any = res.data;
+      toast.success(`Synced: tier=${d.tier}, maxUsers=${d.maxUsers}`);
+      await load(true);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Sync from license failed');
+    } finally {
+      setSyncingFromLicense(false);
     }
   };
 
@@ -928,12 +944,47 @@ export default function SystemDeploymentDetailPage() {
       </div>
 
       {/* License + meta */}
+      {(deployment as any).drift && (
+        <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 flex items-start gap-3">
+          <ShieldAlert className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <h3 className="text-sm font-semibold text-amber-900">Deployment metadata is out of sync with the license</h3>
+            <ul className="text-sm text-amber-800 mt-1 space-y-0.5 list-disc list-inside">
+              {(deployment as any).drift.tier && (
+                <li>
+                  Tier: metadata says <strong>{(deployment as any).drift.tier.metadata}</strong>,
+                  license entitles <strong>{(deployment as any).drift.tier.license}</strong> ({(deployment as any).drift.tier.licenseType})
+                </li>
+              )}
+              {(deployment as any).drift.maxUsers && (
+                <li>
+                  Max users: metadata says <strong>{(deployment as any).drift.maxUsers.metadata}</strong>,
+                  license entitles <strong>{(deployment as any).drift.maxUsers.license}</strong>
+                </li>
+              )}
+            </ul>
+            <p className="text-xs text-amber-700 mt-1">
+              Only the license is enforced at runtime. The deployment metadata is descriptive only and was likely set when this deployment was created.
+            </p>
+          </div>
+          <button
+            onClick={syncFromLicense}
+            disabled={syncingFromLicense}
+            className="px-3 py-1.5 text-xs bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-50 inline-flex items-center gap-1 flex-shrink-0"
+          >
+            {syncingFromLicense ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+            Sync from license
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-white border border-gray-200 rounded-xl p-6">
-          <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-4 flex items-center gap-2">
+        <div className="bg-white border border-blue-200 rounded-xl p-6 ring-1 ring-blue-100">
+          <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-1 flex items-center gap-2">
             <KeyRound className="w-4 h-4" />
-            License
+            Entitlement <span className="text-[10px] font-normal text-blue-600 normal-case">· license · enforced</span>
           </h2>
+          <p className="text-xs text-gray-500 mb-4">What runtime checks allow this deployment to do.</p>
           {deployment.license ? (
             <dl className="space-y-2 text-sm">
               <div className="flex justify-between">
@@ -981,10 +1032,11 @@ export default function SystemDeploymentDetailPage() {
         </div>
 
         <div className="bg-white border border-gray-200 rounded-xl p-6">
-          <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-4 flex items-center gap-2">
+          <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-1 flex items-center gap-2">
             <Calendar className="w-4 h-4" />
-            Deployment metadata
+            Deployment metadata <span className="text-[10px] font-normal text-gray-500 normal-case">· descriptive only</span>
           </h2>
+          <p className="text-xs text-gray-500 mb-4">Free-text labels captured at provisioning. Not enforced.</p>
           <dl className="space-y-2 text-sm">
             <div className="flex justify-between">
               <dt className="text-gray-500">Tier</dt>

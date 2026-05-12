@@ -20,6 +20,13 @@ const TIER_TO_LICENSE_TYPE: Record<DeploymentTier, LicenseType> = {
   enterprise: 'enterprise',
 };
 
+const LICENSE_TYPE_TO_TIER: Record<string, DeploymentTier> = {
+  trial: 'community',
+  standard: 'community',
+  professional: 'professional',
+  enterprise: 'enterprise',
+};
+
 @Injectable()
 export class DeploymentService {
   constructor(
@@ -272,6 +279,18 @@ export class DeploymentService {
       tenant = null;
     }
 
+    const metadataTier = deployment.config?.tier || null;
+    const metadataMaxUsers = deployment.config?.maxUsers || null;
+    const licenseTierEquivalent = license ? LICENSE_TYPE_TO_TIER[license.licenseType] || null : null;
+    const tierDrift = license && metadataTier && licenseTierEquivalent && metadataTier !== licenseTierEquivalent;
+    const usersDrift = license && metadataMaxUsers != null && license.maxUsers !== metadataMaxUsers;
+    const drift = (tierDrift || usersDrift)
+      ? {
+          tier: tierDrift ? { metadata: metadataTier, license: licenseTierEquivalent, licenseType: license.licenseType } : null,
+          maxUsers: usersDrift ? { metadata: metadataMaxUsers, license: license.maxUsers } : null,
+        }
+      : null;
+
     return {
       id: deployment.id,
       tenantId: deployment.tenantId,
@@ -283,8 +302,8 @@ export class DeploymentService {
       status: deployment.status,
       apiEndpoint: deployment.apiEndpoint,
       domain: deployment.config?.domain || null,
-      tier: deployment.config?.tier || null,
-      maxUsers: deployment.config?.maxUsers || null,
+      tier: metadataTier,
+      maxUsers: metadataMaxUsers,
       currentVersion: deployment.currentVersion,
       notes: deployment.notes,
       createdAt: deployment.createdAt,
@@ -292,6 +311,7 @@ export class DeploymentService {
       lastSync: deployment.lastSync,
       lastHealthCheck: deployment.lastHealthCheck,
       pollRequestedAt: deployment.pollRequestedAt || null,
+      drift,
       license: license
         ? {
             id: license.id,
@@ -319,6 +339,30 @@ export class DeploymentService {
     deployment.pollRequestedAt = now;
     await this.deploymentRepository.save(deployment);
     return { deploymentId, pollRequestedAt: now.toISOString() };
+  }
+
+  async syncMetadataFromLicense(deploymentId: string): Promise<{ deploymentId: string; tier: string; maxUsers: number; previous: { tier: any; maxUsers: any } }> {
+    const deployment = await this.deploymentRepository.findOne({ where: { id: deploymentId } });
+    if (!deployment) throw new NotFoundException('Deployment not found');
+    if (!deployment.tenantId) throw new BadRequestException('Deployment has no tenant');
+
+    const license = await this.licenseRepository.findOne({
+      where: { tenantId: deployment.tenantId },
+      order: { createdAt: 'DESC' },
+    });
+    if (!license) throw new NotFoundException('No license found for this deployment');
+
+    const newTier = LICENSE_TYPE_TO_TIER[license.licenseType] || 'professional';
+    const previous = { tier: deployment.config?.tier ?? null, maxUsers: deployment.config?.maxUsers ?? null };
+
+    deployment.config = {
+      ...(deployment.config || {}),
+      tier: newTier,
+      maxUsers: license.maxUsers,
+    };
+    await this.deploymentRepository.save(deployment);
+
+    return { deploymentId, tier: newTier, maxUsers: license.maxUsers, previous };
   }
 
   async updateNotes(deploymentId: string, notes: string): Promise<{ deploymentId: string; notes: string; updatedAt: string }> {
