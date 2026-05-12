@@ -321,6 +321,18 @@ export class DeploymentService {
     return { deploymentId, pollRequestedAt: now.toISOString() };
   }
 
+  async updateNotes(deploymentId: string, notes: string): Promise<{ deploymentId: string; notes: string; updatedAt: string }> {
+    const deployment = await this.deploymentRepository.findOne({ where: { id: deploymentId } });
+    if (!deployment) throw new NotFoundException('Deployment not found');
+    deployment.notes = notes.trim() || undefined;
+    const saved = await this.deploymentRepository.save(deployment);
+    return {
+      deploymentId,
+      notes: saved.notes ?? '',
+      updatedAt: saved.updatedAt.toISOString(),
+    };
+  }
+
   async testConnectivity(deploymentId: string): Promise<{
     deploymentId: string;
     target: string | null;

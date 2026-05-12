@@ -5,7 +5,7 @@ import {
   ArrowLeft, Activity, AlertTriangle, CheckCircle2, Clock, Cpu,
   HardDrive, Loader2, RefreshCw, Server, Building2, KeyRound,
   ExternalLink, Database, Download, Power, Calendar, Upload, FileArchive, Wifi, WifiOff,
-  Bell, Rocket, ShieldAlert,
+  Bell, Rocket, ShieldAlert, Pencil, X, FileDown, Copy, Check,
 } from 'lucide-react';
 import TierBadge from '../../components/TierBadge';
 import { toast } from 'sonner';
@@ -180,6 +180,39 @@ function licenseExpiryBanner(expiresAt?: string): {
   return { level: null, daysLeft: days, message: '' };
 }
 
+function Sparkline({ data, label, unit = '%', color = '#3b82f6', height = 36 }: {
+  data: number[]; label: string; unit?: string; color?: string; height?: number;
+}) {
+  if (!data || data.length === 0) {
+    return <div className="text-xs text-gray-400 italic">No 24h history</div>;
+  }
+  const width = 160;
+  const max = Math.max(...data, unit === '%' ? 100 : 1);
+  const min = Math.min(...data, 0);
+  const range = max - min || 1;
+  const stepX = data.length > 1 ? width / (data.length - 1) : 0;
+  const points = data.map((v, i) => {
+    const x = i * stepX;
+    const y = height - ((v - min) / range) * (height - 4) - 2;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  const last = data[data.length - 1];
+  const lastX = (data.length - 1) * stepX;
+  const lastY = height - ((last - min) / range) * (height - 4) - 2;
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between text-xs text-gray-500">
+        <span>{label} (24h)</span>
+        <span className="font-mono text-gray-700">{last.toFixed(1)}{unit}</span>
+      </div>
+      <svg width={width} height={height} className="overflow-visible">
+        <polyline fill="none" stroke={color} strokeWidth="1.5" points={points} />
+        <circle cx={lastX} cy={lastY} r="2.5" fill={color} />
+      </svg>
+    </div>
+  );
+}
+
 function MetricBar({ label, value, icon }: { label: string; value: number; icon: React.ReactNode }) {
   const v = Math.max(0, Math.min(100, value || 0));
   const color = v >= 85 ? 'bg-red-500' : v >= 70 ? 'bg-yellow-500' : 'bg-green-500';
@@ -213,6 +246,12 @@ export default function SystemDeploymentDetailPage() {
   const [rollouts, setRollouts] = useState<RolloutHistoryEntry[]>([]);
   const [requestingPoll, setRequestingPoll] = useState(false);
   const [pollRequestedAt, setPollRequestedAt] = useState<string | null>(null);
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [notesDraft, setNotesDraft] = useState('');
+  const [savingNotes, setSavingNotes] = useState(false);
+  const [restoreInstructions, setRestoreInstructions] = useState<any | null>(null);
+  const [loadingRestore, setLoadingRestore] = useState(false);
+  const [copiedCmd, setCopiedCmd] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadSnapshots = async () => {
@@ -377,6 +416,43 @@ export default function SystemDeploymentDetailPage() {
       toast.error(e?.response?.data?.message || 'Failed to request poll');
     } finally {
       setRequestingPoll(false);
+    }
+  };
+
+  const saveNotes = async () => {
+    if (!deploymentId) return;
+    setSavingNotes(true);
+    try {
+      await api.put(`/deployments/${deploymentId}/notes`, { notes: notesDraft });
+      toast.success('Notes updated');
+      setEditingNotes(false);
+      await load(true);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Failed to update notes');
+    } finally {
+      setSavingNotes(false);
+    }
+  };
+
+  const openRestoreInstructions = async (snapshotId: string) => {
+    setLoadingRestore(true);
+    try {
+      const res = await api.get(`/deployments/snapshots/${snapshotId}/restore-instructions`);
+      setRestoreInstructions(res.data);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Failed to load restore instructions');
+    } finally {
+      setLoadingRestore(false);
+    }
+  };
+
+  const copyToClipboard = async (text: string, key: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedCmd(key);
+      setTimeout(() => setCopiedCmd((c) => (c === key ? null : c)), 1500);
+    } catch {
+      toast.error('Could not copy to clipboard');
     }
   };
 
@@ -664,6 +740,32 @@ export default function SystemDeploymentDetailPage() {
         )}
       </div>
 
+      {/* 24h sparklines */}
+      {health.history.length > 1 && (
+        <div className="bg-white border border-gray-200 rounded-xl p-6">
+          <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-4">
+            Last 24h trend
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <Sparkline
+              label="CPU"
+              color="#3b82f6"
+              data={health.history.slice(0, 24).reverse().map((h: any) => Number(h.cpuUsagePercent) || 0)}
+            />
+            <Sparkline
+              label="Memory"
+              color="#8b5cf6"
+              data={health.history.slice(0, 24).reverse().map((h: any) => Number(h.memoryUsagePercent) || 0)}
+            />
+            <Sparkline
+              label="Disk"
+              color="#f59e0b"
+              data={health.history.slice(0, 24).reverse().map((h: any) => Number(h.diskUsagePercent) || 0)}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Heartbeat history */}
       {health.history.length > 0 && (
         <div className="bg-white border border-gray-200 rounded-xl p-6">
@@ -923,12 +1025,51 @@ export default function SystemDeploymentDetailPage() {
                 <dd className="text-gray-900">{new Date(deployment.lastSync).toLocaleString()}</dd>
               </div>
             )}
-            {deployment.notes && (
-              <div className="pt-2 border-t border-gray-100">
-                <dt className="text-gray-500 text-xs uppercase mb-1">Notes</dt>
-                <dd className="text-gray-700 text-sm whitespace-pre-wrap">{deployment.notes}</dd>
+            {/* Editable notes */}
+            <div className="pt-2 border-t border-gray-100">
+              <div className="flex items-center justify-between mb-1">
+                <dt className="text-gray-500 text-xs uppercase">Notes</dt>
+                {!editingNotes && (
+                  <button
+                    onClick={() => { setNotesDraft(deployment.notes || ''); setEditingNotes(true); }}
+                    className="text-xs text-blue-600 hover:underline inline-flex items-center gap-1"
+                  >
+                    <Pencil className="w-3 h-3" /> Edit
+                  </button>
+                )}
               </div>
-            )}
+              {editingNotes ? (
+                <div className="space-y-2">
+                  <textarea
+                    value={notesDraft}
+                    onChange={(e) => setNotesDraft(e.target.value)}
+                    rows={4}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Add operator notes (visible to system admins only)…"
+                  />
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={saveNotes}
+                      disabled={savingNotes}
+                      className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 inline-flex items-center gap-1"
+                    >
+                      {savingNotes ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                      Save
+                    </button>
+                    <button
+                      onClick={() => { setEditingNotes(false); setNotesDraft(''); }}
+                      className="px-3 py-1.5 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 inline-flex items-center gap-1"
+                    >
+                      <X className="w-3 h-3" /> Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <dd className="text-gray-700 text-sm whitespace-pre-wrap">
+                  {deployment.notes || <span className="text-gray-400 italic">No notes</span>}
+                </dd>
+              )}
+            </div>
           </dl>
         </div>
       </div>
@@ -1015,12 +1156,21 @@ export default function SystemDeploymentDetailPage() {
                     <td className="px-3 py-2 text-xs text-gray-600 truncate max-w-[200px]">{s.notes || '—'}</td>
                     <td className="px-3 py-2 text-xs text-gray-600">{new Date(s.createdAt).toLocaleString()}</td>
                     <td className="px-3 py-2 text-right">
-                      <button
-                        onClick={() => downloadSnapshot(s.id, s.filename)}
-                        className="inline-flex items-center gap-1 px-2 py-1 border border-gray-200 rounded text-xs text-gray-700 hover:bg-gray-50"
-                      >
-                        <Download className="w-3 h-3" /> Download
-                      </button>
+                      <div className="inline-flex items-center gap-1">
+                        <button
+                          onClick={() => downloadSnapshot(s.id, s.filename)}
+                          className="inline-flex items-center gap-1 px-2 py-1 border border-gray-200 rounded text-xs text-gray-700 hover:bg-gray-50"
+                        >
+                          <Download className="w-3 h-3" /> Download
+                        </button>
+                        <button
+                          onClick={() => openRestoreInstructions(s.id)}
+                          className="inline-flex items-center gap-1 px-2 py-1 border border-amber-300 bg-amber-50 rounded text-xs text-amber-800 hover:bg-amber-100"
+                          title="Show restore instructions"
+                        >
+                          <FileDown className="w-3 h-3" /> Restore
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1029,6 +1179,77 @@ export default function SystemDeploymentDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Restore instructions modal */}
+      {(restoreInstructions || loadingRestore) && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => !loadingRestore && setRestoreInstructions(null)}>
+          <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 sticky top-0 bg-white">
+              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <FileDown className="w-5 h-5 text-amber-600" /> Restore from snapshot
+              </h3>
+              <button onClick={() => setRestoreInstructions(null)} className="text-gray-400 hover:text-gray-700">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            {loadingRestore && (
+              <div className="p-12 text-center">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto" />
+              </div>
+            )}
+            {restoreInstructions && (
+              <div className="p-6 space-y-4">
+                <div className="bg-amber-50 border border-amber-200 rounded p-3 text-sm text-amber-900 flex gap-2">
+                  <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <strong>Run on the target deployment host.</strong> These commands will OVERWRITE the tenant database. Take a fresh backup first and stop the application.
+                  </div>
+                </div>
+                <dl className="grid grid-cols-2 gap-y-2 text-sm">
+                  <dt className="text-gray-500">File</dt>
+                  <dd className="font-mono text-xs text-gray-900 break-all">{restoreInstructions.filename}</dd>
+                  <dt className="text-gray-500">Size</dt>
+                  <dd className="text-gray-900">{formatBytes(restoreInstructions.sizeBytes)}</dd>
+                  <dt className="text-gray-500">Format</dt>
+                  <dd className="text-gray-900">{restoreInstructions.detectedFormat}</dd>
+                  <dt className="text-gray-500">SHA-256</dt>
+                  <dd className="font-mono text-[10px] text-gray-700 break-all">{restoreInstructions.sha256}</dd>
+                </dl>
+                <div className="space-y-3">
+                  {restoreInstructions.commands.map((c: any, i: number) => {
+                    const key = `cmd-${i}`;
+                    return (
+                      <div key={key}>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-medium text-gray-700">{c.label}</span>
+                          <button
+                            onClick={() => copyToClipboard(c.command, key)}
+                            className="text-xs text-blue-600 hover:underline inline-flex items-center gap-1"
+                          >
+                            {copiedCmd === key ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                            {copiedCmd === key ? 'Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <pre className="bg-gray-900 text-gray-100 text-xs p-3 rounded overflow-x-auto whitespace-pre-wrap break-all">
+                          {c.command}
+                        </pre>
+                      </div>
+                    );
+                  })}
+                </div>
+                {restoreInstructions.warnings?.length > 0 && (
+                  <div className="border-t pt-3">
+                    <h4 className="text-xs font-semibold text-gray-700 uppercase mb-2">Reminders</h4>
+                    <ul className="space-y-1 text-sm text-gray-600 list-disc list-inside">
+                      {restoreInstructions.warnings.map((w: string, i: number) => <li key={i}>{w}</li>)}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
