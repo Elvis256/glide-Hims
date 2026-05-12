@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { asList } from '../../../utils/unwrapResponse';
 
-type EntryStatus = 'draft' | 'posted' | 'reversed';
+type EntryStatus = 'draft' | 'submitted' | 'approved' | 'posted' | 'rejected' | 'reversed';
 
 interface JournalLine {
   id: string;
@@ -61,9 +61,19 @@ interface CreateJournalEntryPayload {
 
 const statusConfig: Record<EntryStatus, { label: string; color: string; icon: React.ElementType }> = {
   draft: { label: 'Draft', color: 'bg-yellow-100 text-yellow-700', icon: Clock },
+  submitted: { label: 'Submitted', color: 'bg-blue-100 text-blue-700', icon: Clock },
+  approved: { label: 'Approved', color: 'bg-emerald-100 text-emerald-700', icon: CheckCircle2 },
   posted: { label: 'Posted', color: 'bg-green-100 text-green-700', icon: CheckCircle2 },
+  rejected: { label: 'Rejected', color: 'bg-red-100 text-red-700', icon: AlertCircle },
   reversed: { label: 'Reversed', color: 'bg-gray-100 text-gray-500', icon: RotateCcw },
 };
+
+// Defensive fallback for any unexpected backend status value (prevents
+// ErrorBoundary trips like the one on /finance/journals when the API
+// returned `submitted` while the UI only knew draft/posted/reversed).
+const statusFallback = { label: 'Unknown', color: 'bg-gray-100 text-gray-600', icon: AlertCircle };
+const getStatusConfig = (s: string | undefined) =>
+  (s && (statusConfig as Record<string, typeof statusFallback>)[s]) || statusFallback;
 
 export default function JournalEntriesPage() {
   const queryClient = useQueryClient();
@@ -414,7 +424,8 @@ export default function JournalEntriesPage() {
             </thead>
             <tbody className="divide-y">
               {filteredEntries.map((entry) => {
-                const StatusIcon = statusConfig[entry.status].icon;
+                const cfg = getStatusConfig(entry.status);
+                const StatusIcon = cfg.icon;
                 const totals = getEntryTotals(entry.lines || []);
                 return (
                   <tr key={entry.id} className="hover:bg-gray-50">
@@ -440,9 +451,9 @@ export default function JournalEntriesPage() {
                     <td className="px-4 py-3 text-right font-medium text-gray-900">{formatCurrency(totals.totalDebit)}</td>
                     <td className="px-4 py-3 text-right font-medium text-gray-900">{formatCurrency(totals.totalCredit)}</td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${statusConfig[entry.status].color}`}>
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${cfg.color}`}>
                         <StatusIcon className="w-3 h-3" />
-                        {statusConfig[entry.status].label}
+                        {cfg.label}
                       </span>
                     </td>
                     <td className="px-4 py-3">
@@ -521,8 +532,8 @@ export default function JournalEntriesPage() {
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Status</p>
-                  <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${statusConfig[viewingEntry.status].color}`}>
-                    {statusConfig[viewingEntry.status].label}
+                  <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${getStatusConfig(viewingEntry.status).color}`}>
+                    {getStatusConfig(viewingEntry.status).label}
                   </span>
                 </div>
               </div>
