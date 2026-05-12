@@ -112,9 +112,13 @@ export default function SystemAuditLogsPage() {
 
   const userLabel = (log: AuditLog) => {
     const u = log.user;
-    if (!u) return log.userId.slice(0, 8) + '…';
+    if (!u) {
+      if (log.attemptedIdentifier) return log.attemptedIdentifier;
+      if (log.userId) return log.userId.slice(0, 8) + '…';
+      return '—';
+    }
     const name = [u.firstName, u.lastName].filter(Boolean).join(' ');
-    return name || u.username || u.email || u.id.slice(0, 8) + '…';
+    return name || u.username || u.email || (u.id ? u.id.slice(0, 8) + '…' : '—');
   };
 
   return (
