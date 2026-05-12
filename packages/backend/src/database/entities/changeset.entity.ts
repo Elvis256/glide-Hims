@@ -30,14 +30,14 @@ export class ChangeSet {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column('uuid')
+  @Column({ name: 'tenant_id', type: 'uuid' })
   tenantId: string;
 
   @ManyToOne(() => Tenant, { nullable: false, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'tenant_id' })
   tenant: Tenant;
 
-  @Column('uuid', { nullable: true })
+  @Column({ name: 'deployment_id', type: 'uuid', nullable: true })
   deploymentId: string;
 
   @ManyToOne(() => Deployment, { nullable: true, onDelete: 'SET NULL' })
