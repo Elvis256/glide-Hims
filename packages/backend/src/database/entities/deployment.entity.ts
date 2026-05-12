@@ -68,6 +68,9 @@ export class Deployment {
   @Column({ type: 'timestamp', nullable: true, name: 'last_health_check' })
   lastHealthCheck?: Date;
 
+  @Column({ type: 'timestamp', nullable: true, name: 'poll_requested_at' })
+  pollRequestedAt?: Date;
+
   @Column({ type: 'jsonb', nullable: true })
   config?: Record<string, any>;
 

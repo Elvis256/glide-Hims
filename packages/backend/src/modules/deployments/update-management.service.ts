@@ -471,6 +471,58 @@ export class UpdateManagementService {
     });
   }
 
+  /**
+   * Reverse lookup: rollouts that touched a particular license/deployment, with
+   * this license's most recent report attached. Used by the deployment detail
+   * page to surface "what updates have been pushed to me".
+   */
+  async listRolloutsForLicense(licenseId: string): Promise<
+    Array<{
+      rolloutId: string;
+      rolloutStatus: string;
+      currentPhase: string;
+      startDate: string | null;
+      report: {
+        status: string;
+        fromVersion: string | null;
+        toVersion: string | null;
+        errorMessage: string | null;
+        updatedAt: string;
+      };
+    }>
+  > {
+    const reports = await this.reportRepository.find({
+      where: { licenseId },
+      order: { updatedAt: 'DESC' },
+      take: 50,
+    });
+    if (reports.length === 0) return [];
+
+    const rolloutIds = Array.from(new Set(reports.map((r) => r.rolloutId)));
+    const rollouts = await this.rolloutRepository.findByIds(rolloutIds);
+    const rolloutById = new Map(rollouts.map((r) => [r.id, r]));
+
+    return reports
+      .map((r) => {
+        const ro = rolloutById.get(r.rolloutId);
+        if (!ro) return null;
+        return {
+          rolloutId: ro.id,
+          rolloutStatus: ro.status,
+          currentPhase: ro.currentPhase,
+          startDate: ro.startDate ? (ro.startDate as Date).toISOString() : null,
+          report: {
+            status: r.status,
+            fromVersion: r.fromVersion || null,
+            toVersion: r.toVersion || null,
+            errorMessage: r.errorMessage || null,
+            updatedAt: r.updatedAt.toISOString?.() || String(r.updatedAt),
+          },
+        };
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
+  }
+
   private calculateProgress(rollout: UpdateRollout): number {
     if (rollout.status === UpdateRolloutStatus.COMPLETED) return 100;
     if (rollout.status === UpdateRolloutStatus.FAILED || rollout.status === UpdateRolloutStatus.ROLLED_BACK) return 0;
