@@ -10,9 +10,14 @@ fail=0
 pass=0
 
 check() {
-  local name="$1" url="$2" expect="${3:-200}"
+  local name="$1" url="$2" expect="${3:-200}" method="${4:-GET}" body="${5:-}"
   local code
-  code=$(curl -ks -o /dev/null -w "%{http_code}" --max-time 10 "$url" || echo "000")
+  if [ "$method" = "POST" ]; then
+    code=$(curl -ks -o /dev/null -w "%{http_code}" --max-time 10 \
+      -X POST -H "content-type: application/json" -d "${body:-{}}" "$url" 2>/dev/null) || code="000"
+  else
+    code=$(curl -ks -o /dev/null -w "%{http_code}" --max-time 10 "$url" 2>/dev/null) || code="000"
+  fi
   if [ "$code" = "$expect" ]; then
     printf "  ✅ %-45s %s\n" "$name" "$code"
     pass=$((pass + 1))
@@ -24,7 +29,7 @@ check() {
 
 echo "── Backend (direct on $BASE) ──"
 check "Public plans"           "$BASE/api/v1/saas-revenue/public/plans"
-check "Auth login (rejects empty)" "$BASE/api/v1/auth/login" "400"
+check "Auth login (rejects empty)" "$BASE/api/v1/auth/login" "400" "POST" "{}"
 check "Tenants public list"    "$BASE/api/v1/tenants/public/list"
 
 echo "── Nginx ($NGINX_BASE) ──"
