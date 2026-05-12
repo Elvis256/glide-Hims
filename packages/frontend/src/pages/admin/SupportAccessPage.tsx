@@ -17,6 +17,7 @@ import {
   Info,
 } from 'lucide-react';
 import api from '../../services/api';
+import { userDisplayName } from '../../utils/userName';
 
 interface SupportAccessRequest {
   id: string;
@@ -272,7 +273,7 @@ export default function SupportAccessPage() {
                         </span>
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-500">
-                        {req.reviewedBy ? `${req.reviewedBy.firstName} ${req.reviewedBy.lastName}` : '—'}
+                        {userDisplayName(req.reviewedBy)}
                         {req.reviewNotes && (
                           <p className="text-xs text-gray-400 mt-0.5">{req.reviewNotes}</p>
                         )}

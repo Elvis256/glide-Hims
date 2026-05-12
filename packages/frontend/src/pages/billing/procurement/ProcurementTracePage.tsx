@@ -17,6 +17,22 @@ import {
 } from 'lucide-react';
 import api, { getApiErrorMessage } from '../../../services/api';
 
+function userName(u: unknown): string {
+  if (!u) return '—';
+  if (typeof u === 'string') return u || '—';
+  if (typeof u === 'object') {
+    const o = u as Record<string, unknown>;
+    if (typeof o.fullName === 'string' && o.fullName) return o.fullName;
+    if (typeof o.username === 'string' && o.username) return o.username;
+    const fn = typeof o.firstName === 'string' ? o.firstName : '';
+    const ln = typeof o.lastName === 'string' ? o.lastName : '';
+    const joined = `${fn} ${ln}`.trim();
+    if (joined) return joined;
+    if (typeof o.email === 'string' && o.email) return o.email;
+  }
+  return '—';
+}
+
 type DocType = 'pr' | 'po' | 'grn' | 'invoice';
 
 interface SearchHit {
@@ -221,10 +237,10 @@ export default function ProcurementTracePage() {
               meta={[
                 ['Facility', trace.pr.facility?.name],
                 ['Department', trace.pr.department?.name],
-                ['Requested by', trace.pr.requestedBy ? `${trace.pr.requestedBy.firstName ?? ''} ${trace.pr.requestedBy.lastName ?? ''}`.trim() : '—'],
+                ['Requested by', userName(trace.pr.requestedBy)],
                 ['Priority', trace.pr.priority],
                 ['Created', fmtDate(trace.pr.createdAt)],
-                ['Approved by', trace.pr.approvedBy ? `${trace.pr.approvedBy.firstName ?? ''} ${trace.pr.approvedBy.lastName ?? ''}`.trim() : '—'],
+                ['Approved by', userName(trace.pr.approvedBy)],
               ]}
               link={`/procurement/requisitions?id=${trace.pr.id}`}
             >
@@ -251,8 +267,8 @@ export default function ProcurementTracePage() {
                 ['Total', fmtMoney(po.totalAmount)],
                 ['Order date', fmtDate(po.orderDate || po.createdAt)],
                 ['Expected delivery', fmtDate(po.expectedDeliveryDate)],
-                ['Created by', po.createdBy ? `${po.createdBy.firstName ?? ''} ${po.createdBy.lastName ?? ''}`.trim() : '—'],
-                ['Approved by', po.approvedBy ? `${po.approvedBy.firstName ?? ''} ${po.approvedBy.lastName ?? ''}`.trim() : '—'],
+                ['Created by', userName(po.createdBy)],
+                ['Approved by', userName(po.approvedBy)],
               ]}
               link={`/procurement/orders?id=${po.id}`}
             >
@@ -284,7 +300,7 @@ export default function ProcurementTracePage() {
                 ['Total qty', grn.totalQuantityReceived],
                 ['Total value', fmtMoney(grn.totalValue)],
                 ['Posted at', fmtDate(grn.postedAt)],
-                ['Posted by', grn.postedBy ? `${grn.postedBy.firstName ?? ''} ${grn.postedBy.lastName ?? ''}`.trim() : '—'],
+                ['Posted by', userName(grn.postedBy)],
               ]}
               link={`/procurement/grn?id=${grn.id}`}
             >

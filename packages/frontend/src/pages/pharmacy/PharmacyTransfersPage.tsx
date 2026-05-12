@@ -18,6 +18,7 @@ import {
 import { CURRENCY_SYMBOL } from '../../lib/currency';
 import { storesService, type StockTransfer, type TransferStatus, type Store } from '../../services/stores';
 import { usePermissions } from '../../components/PermissionGate';
+import { userDisplayName } from '../../utils/userName';
 import AccessDenied from '../../components/AccessDenied';
 import { CatalogItemPicker } from '../../components/catalog';
 
@@ -434,7 +435,7 @@ export default function PharmacyTransfersPage() {
                 {selectedTransfer.requestedBy && (
                   <div>
                     <p className="text-xs text-gray-500">Requested By</p>
-                    <p className="text-sm">{selectedTransfer.requestedBy.firstName} {selectedTransfer.requestedBy.lastName}</p>
+                    <p className="text-sm">{userDisplayName(selectedTransfer.requestedBy)}</p>
                   </div>
                 )}
               </div>
