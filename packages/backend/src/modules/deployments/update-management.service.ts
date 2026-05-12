@@ -80,6 +80,28 @@ export class UpdateManagementService {
     return this.rolloutRepository.save(rollout);
   }
 
+  async advanceRollout(rolloutId: string): Promise<UpdateRollout> {
+    const rollout = await this.rolloutRepository.findOne({ where: { id: rolloutId } });
+    if (!rollout) throw new NotFoundException('Rollout not found');
+    if (rollout.status !== UpdateRolloutStatus.IN_PROGRESS) {
+      throw new BadRequestException(`Cannot advance a rollout in status "${rollout.status}"`);
+    }
+    if (rollout.currentPhase === UpdateRolloutPhase.PHASE_1) {
+      rollout.currentPhase = UpdateRolloutPhase.PHASE_2;
+    } else if (rollout.currentPhase === UpdateRolloutPhase.PHASE_2) {
+      rollout.currentPhase = UpdateRolloutPhase.PHASE_3;
+    } else {
+      rollout.status = UpdateRolloutStatus.COMPLETED;
+      rollout.endDate = new Date();
+    }
+    rollout.metadata = {
+      ...(rollout.metadata || {}),
+      lastAdvancedAt: new Date().toISOString(),
+      phaseStartedAt: new Date().toISOString(),
+    };
+    return this.rolloutRepository.save(rollout);
+  }
+
   async cancelRollout(rolloutId: string, reason?: string): Promise<UpdateRollout> {
     const rollout = await this.rolloutRepository.findOne({ where: { id: rolloutId } });
     if (!rollout) throw new NotFoundException('Rollout not found');
