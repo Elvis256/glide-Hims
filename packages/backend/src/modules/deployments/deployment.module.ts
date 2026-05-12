@@ -8,6 +8,7 @@ import { ReplicationService } from './replication.service';
 import { MonitoringService } from './monitoring.service';
 import { UpdateDistributionService } from './update-distribution.service';
 import { RolloutOrchestrationService } from './rollout-orchestration.service';
+import { RolloutSchedulerService } from './rollout-scheduler.service';
 import { MasterDataSyncService } from './master-data-sync.service';
 import { ConflictResolutionEngine } from './conflict-resolution.service';
 import { HealthMetricsCollectorService } from './health-metrics-collector.service';
@@ -57,6 +58,7 @@ import { License } from '../../database/entities/license.entity';
     MonitoringService,
     UpdateDistributionService,
     RolloutOrchestrationService,
+    RolloutSchedulerService,
     MasterDataSyncService,
     ConflictResolutionEngine,
     HealthMetricsCollectorService,

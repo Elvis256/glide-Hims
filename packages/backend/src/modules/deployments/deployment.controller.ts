@@ -106,6 +106,12 @@ export class DeploymentController {
     return this.updateService.resumeRollout(rolloutId);
   }
 
+  @Put('rollouts/:rolloutId/advance')
+  async advanceRolloutEndpoint(@Req() req: Request, @Param('rolloutId') rolloutId: string) {
+    if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
+    return this.updateService.advanceRollout(rolloutId);
+  }
+
   @Put('rollouts/:rolloutId/cancel')
   async cancelRollout(
     @Req() req: Request,

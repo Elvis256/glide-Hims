@@ -126,12 +126,14 @@ export default function SystemRolloutsPage() {
     }
   };
 
-  const action = async (rollout: Rollout, op: 'pause' | 'resume' | 'cancel') => {
+  const action = async (rollout: Rollout, op: 'pause' | 'resume' | 'cancel' | 'advance') => {
     if (op === 'cancel' && !window.confirm('Cancel this rollout? Deployments already updated will not be reverted.')) return;
+    if (op === 'advance' && !window.confirm(`Advance this rollout from ${rollout.currentPhase.replace('_', ' ')} to the next phase?`)) return;
     setBusyId(rollout.id);
     try {
       await api.put(`/deployments/rollouts/${rollout.id}/${op}`, op === 'cancel' ? { reason: 'cancelled by admin' } : {});
-      toast.success(`Rollout ${op === 'resume' ? 'resumed' : op + 'd'}`);
+      const labels: Record<string, string> = { pause: 'paused', resume: 'resumed', cancel: 'cancelled', advance: 'advanced' };
+      toast.success(`Rollout ${labels[op]}`);
       await load();
     } catch (e: any) {
       toast.error(e?.response?.data?.message || `Failed to ${op} rollout`);
@@ -272,6 +274,17 @@ export default function SystemRolloutsPage() {
                         className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-yellow-300 text-yellow-800 bg-yellow-50 rounded text-xs font-medium hover:bg-yellow-100 disabled:opacity-50"
                       >
                         <Pause className="w-3.5 h-3.5" /> Pause
+                      </button>
+                    )}
+                    {r.status === 'in_progress' && (
+                      <button
+                        onClick={() => action(r, 'advance')}
+                        disabled={isBusy}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-indigo-300 text-indigo-800 bg-indigo-50 rounded text-xs font-medium hover:bg-indigo-100 disabled:opacity-50"
+                        title={r.currentPhase === 'phase_3' ? 'Mark as completed' : 'Move to next phase'}
+                      >
+                        <TrendingUp className="w-3.5 h-3.5" />
+                        {r.currentPhase === 'phase_3' ? 'Complete' : 'Advance'}
                       </button>
                     )}
                     {r.status === 'paused' && (
