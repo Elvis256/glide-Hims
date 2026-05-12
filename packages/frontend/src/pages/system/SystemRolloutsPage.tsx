@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import api from '../../services/api';
 import {
   Rocket, RefreshCw, Loader2, AlertTriangle, CheckCircle2, Clock,
-  Pause, Play, XCircle, TrendingUp,
+  Pause, Play, XCircle, TrendingUp, Plus, X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -52,6 +52,30 @@ export default function SystemRolloutsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [versions, setVersions] = useState<Array<{ id: string; version: string; isLatest?: boolean }>>([]);
+  const [form, setForm] = useState({
+    appVersionId: '',
+    strategy: 'gradual' as 'immediate' | 'scheduled' | 'gradual',
+    startDate: '',
+    autoRollbackOnError: true,
+    notes: '',
+  });
+  const [creating, setCreating] = useState(false);
+
+  const loadVersions = async () => {
+    try {
+      const res = await api.get<any>('/updates/versions');
+      const list = Array.isArray(res.data) ? res.data : (res.data as any)?.data || [];
+      setVersions(list);
+      if (list.length && !form.appVersionId) {
+        const latest = list.find((v: any) => v.isLatest) || list[0];
+        setForm((f) => ({ ...f, appVersionId: latest.id }));
+      }
+    } catch {
+      setVersions([]);
+    }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -69,7 +93,38 @@ export default function SystemRolloutsPage() {
 
   useEffect(() => {
     load();
+    loadVersions();
   }, []);
+
+  const submitCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.appVersionId) {
+      toast.error('Pick a version first');
+      return;
+    }
+    if (form.strategy === 'scheduled' && !form.startDate) {
+      toast.error('Scheduled rollouts need a start date');
+      return;
+    }
+    setCreating(true);
+    try {
+      await api.post('/deployments/rollouts', {
+        appVersionId: form.appVersionId,
+        strategy: form.strategy,
+        startDate: form.strategy === 'scheduled' ? form.startDate : undefined,
+        autoRollbackOnError: form.autoRollbackOnError,
+        notes: form.notes || undefined,
+      });
+      toast.success('Rollout created');
+      setShowCreate(false);
+      setForm({ ...form, notes: '' });
+      await load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Failed to create rollout');
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const action = async (rollout: Rollout, op: 'pause' | 'resume' | 'cancel') => {
     if (op === 'cancel' && !window.confirm('Cancel this rollout? Deployments already updated will not be reverted.')) return;
@@ -104,14 +159,23 @@ export default function SystemRolloutsPage() {
             Phased software updates across the deployment fleet (immediate / scheduled / gradual).
           </p>
         </div>
-        <button
-          onClick={load}
-          disabled={loading}
-          className="inline-flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowCreate(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
+          >
+            <Plus className="w-4 h-4" />
+            Create Rollout
+          </button>
+          <button
+            onClick={load}
+            disabled={loading}
+            className="inline-flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -267,6 +331,101 @@ export default function SystemRolloutsPage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {showCreate && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <Rocket className="w-5 h-5 text-blue-600" />
+                Create Rollout
+              </h2>
+              <button onClick={() => setShowCreate(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={submitCreate} className="px-5 py-4 space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">App version</label>
+                {versions.length === 0 ? (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                    No app versions yet. Publish a version via <code>POST /api/v1/updates/versions</code> first.
+                  </p>
+                ) : (
+                  <select
+                    value={form.appVersionId}
+                    onChange={(e) => setForm({ ...form, appVersionId: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  >
+                    {versions.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        v{v.version}{v.isLatest ? ' (latest)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Strategy</label>
+                <select
+                  value={form.strategy}
+                  onChange={(e) => setForm({ ...form, strategy: e.target.value as any })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                >
+                  <option value="immediate">Immediate (100% now)</option>
+                  <option value="gradual">Gradual (10% → 50% → 100%)</option>
+                  <option value="scheduled">Scheduled (start at specified time)</option>
+                </select>
+              </div>
+              {form.strategy === 'scheduled' && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Start date/time</label>
+                  <input
+                    type="datetime-local"
+                    value={form.startDate}
+                    onChange={(e) => setForm({ ...form, startDate: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  />
+                </div>
+              )}
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={form.autoRollbackOnError}
+                  onChange={(e) => setForm({ ...form, autoRollbackOnError: e.target.checked })}
+                />
+                Auto-rollback on error threshold (5%)
+              </label>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Notes (optional)</label>
+                <textarea
+                  rows={2}
+                  value={form.notes}
+                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCreate(false)}
+                  className="px-3 py-2 text-sm text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={creating || versions.length === 0}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Rocket className="w-4 h-4" />}
+                  Create
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

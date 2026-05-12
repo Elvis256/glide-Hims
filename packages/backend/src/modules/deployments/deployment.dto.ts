@@ -95,29 +95,30 @@ export class DeploymentResponseDto {
 }
 
 export class CreateUpdateRolloutDto {
+  @IsOptional()
   @IsUUID()
-  deploymentId: string;
+  appVersionId?: string;
 
-  @IsUUID()
-  versionId: string;
+  @IsOptional()
+  @IsString()
+  version?: string;
 
   @IsEnum(['immediate', 'scheduled', 'gradual'])
   strategy: 'immediate' | 'scheduled' | 'gradual';
 
   @IsOptional()
-  @IsObject()
-  scheduleConfig?: {
-    startTime?: Date;
-    endTime?: Date;
-  };
+  @IsString()
+  startDate?: string;
 
   @IsOptional()
-  @IsObject()
-  gradualConfig?: {
-    percentagePerDay?: number;
-    maxDeploymentsPerDay?: number;
-    autoRollbackOnFailureRate?: number;
-  };
+  @IsString()
+  endDate?: string;
+
+  @IsOptional()
+  autoRollbackOnError?: boolean;
+
+  @IsOptional()
+  errorThresholdPercentage?: number;
 
   @IsOptional()
   @IsString()

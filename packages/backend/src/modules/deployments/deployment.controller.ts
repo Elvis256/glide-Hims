@@ -8,7 +8,7 @@ import { FeatureFlagService } from './feature-flag.service';
 import { ReplicationService } from './replication.service';
 import { MonitoringService } from './monitoring.service';
 import { BackupService } from '../backup/backup.service';
-import { CreateDeploymentDto, UpdateDeploymentDto, ToggleFeatureFlagDto, ProvisionDeploymentDto } from './deployment.dto';
+import { CreateDeploymentDto, UpdateDeploymentDto, ToggleFeatureFlagDto, ProvisionDeploymentDto, CreateUpdateRolloutDto } from './deployment.dto';
 
 @Controller('deployments')
 export class DeploymentController {
@@ -66,6 +66,26 @@ export class DeploymentController {
   @Get('rollouts')
   async listRollouts() {
     return this.updateService.listRollouts();
+  }
+
+  @Post('rollouts')
+  async createRolloutEndpoint(@Req() req: Request, @Body() dto: CreateUpdateRolloutDto) {
+    if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
+    if (!dto.appVersionId && !dto.version) {
+      throw new NotFoundException('appVersionId or version is required');
+    }
+    return this.updateService.createRollout({
+      appVersionId: dto.appVersionId,
+      versionString: dto.version,
+      strategy: dto.strategy,
+      startDate: dto.startDate,
+      endDate: dto.endDate,
+      autoRollbackOnError: dto.autoRollbackOnError,
+      errorThresholdPercentage: dto.errorThresholdPercentage,
+      notes: dto.notes,
+      actorUserId: (req.user as any)?.id,
+      triggeredBy: 'manual',
+    });
   }
 
   @Get('rollouts/:rolloutId/status')
