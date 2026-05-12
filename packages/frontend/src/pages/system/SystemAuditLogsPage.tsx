@@ -17,6 +17,8 @@ interface AuditLog {
   actorType?: string;
   supportAccessTier?: number;
   reason?: string;
+  attemptedIdentifier?: string;
+  errorMessage?: string;
   requestMethod?: string;
   requestUrl?: string;
   statusCode?: number;
@@ -312,6 +314,18 @@ export default function SystemAuditLogsPage() {
                                 <div className="md:col-span-2">
                                   <p className="text-gray-500 mb-1">Reason</p>
                                   <p className="text-gray-800 italic">{log.reason}</p>
+                                </div>
+                              )}
+                              {log.attemptedIdentifier && (
+                                <div>
+                                  <p className="text-gray-500 mb-1">Attempted identifier</p>
+                                  <p className="text-gray-800 font-mono">{log.attemptedIdentifier}</p>
+                                </div>
+                              )}
+                              {log.errorMessage && (
+                                <div className="md:col-span-2">
+                                  <p className="text-gray-500 mb-1">Error</p>
+                                  <p className="text-red-700">{log.errorMessage}</p>
                                 </div>
                               )}
                               {log.userAgent && (

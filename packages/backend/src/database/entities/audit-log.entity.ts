@@ -11,12 +11,18 @@ export class AuditLog extends BaseEntity {
   @Column({ type: 'uuid', name: 'tenant_id', nullable: true })
   tenantId?: string;
 
-  @Column({ type: 'uuid', name: 'user_id' })
-  userId: string;
+  @Column({ type: 'uuid', name: 'user_id', nullable: true })
+  userId?: string;
 
   @ManyToOne(() => User)
   @JoinColumn({ name: 'user_id' })
   user: User;
+
+  @Column({ name: 'attempted_identifier', type: 'varchar', length: 255, nullable: true })
+  attemptedIdentifier?: string;
+
+  @Column({ name: 'error_message', type: 'text', nullable: true })
+  errorMessage?: string;
 
   @Column({ type: 'varchar', length: 100 })
   action: string; // CREATE, UPDATE, DELETE, LOGIN, etc.
