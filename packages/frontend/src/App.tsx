@@ -49,6 +49,12 @@ const SystemAuditLogsPage = lazy(() => import('./pages/system/SystemAuditLogsPag
 const SystemLeadsPage = lazy(() => import('./pages/system/SystemLeadsPage'));
 const SystemDownloadsPage = lazy(() => import('./pages/system/SystemDownloadsPage'));
 const SystemLicensesPage = lazy(() => import('./pages/system/SystemLicensesPage'));
+const SystemPlansPage = lazy(() => import('./pages/system/SystemPlansPage'));
+const SystemSubscriptionsPage = lazy(() => import('./pages/system/SystemSubscriptionsPage'));
+const SystemSubscriptionDetailPage = lazy(() => import('./pages/system/SystemSubscriptionDetailPage'));
+const SystemSaasInvoicesPage = lazy(() => import('./pages/system/SystemSaasInvoicesPage'));
+const SystemCouponsPage = lazy(() => import('./pages/system/SystemCouponsPage'));
+const SystemRevenuePage = lazy(() => import('./pages/system/SystemRevenuePage'));
 const SystemSecurityPage = lazy(() => import('./pages/system/SystemSecurityPage'));
 const SystemDocsPage = lazy(() => import('./pages/system/SystemDocsPage'));
 const DownloadsPage = lazy(() => import('./pages/DownloadsPage'));
@@ -660,6 +666,12 @@ function AppRoutes() {
         <Route path="leads" element={<SystemLeadsPage />} />
         <Route path="downloads" element={<SystemDownloadsPage />} />
         <Route path="licenses" element={<SystemLicensesPage />} />
+        <Route path="plans" element={<SystemPlansPage />} />
+        <Route path="subscriptions" element={<SystemSubscriptionsPage />} />
+        <Route path="subscriptions/:id" element={<SystemSubscriptionDetailPage />} />
+        <Route path="saas-invoices" element={<SystemSaasInvoicesPage />} />
+        <Route path="coupons" element={<SystemCouponsPage />} />
+        <Route path="revenue" element={<SystemRevenuePage />} />
         <Route path="compliance" element={<SystemComplianceCenterPage />} />
         <Route path="security" element={<SystemSecurityPage />} />
         <Route path="docs" element={<SystemDocsPage />} />
