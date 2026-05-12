@@ -29,7 +29,7 @@ if [ ! -d "$ROOT/repo/.git" ]; then
   for f in "$ROOT"/*; do
     name=$(basename "$f")
     case "$name" in
-      releases|shared|current|repo|.previous-release|.current.new) continue ;;
+      releases|shared|current|repo|deploy|.previous-release|.current.new) continue ;;
     esac
     mv "$f" "$ROOT/repo/"
   done
