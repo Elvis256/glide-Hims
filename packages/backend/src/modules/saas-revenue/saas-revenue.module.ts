@@ -4,13 +4,16 @@ import {
   SaasPlan, SaasSubscription, SaasInvoice, SaasPayment, SaasCoupon, SaasSubscriptionEvent,
 } from './saas.entity';
 import { License } from '../../database/entities/license.entity';
+import { Lead } from '../leads/lead.entity';
 import { SaasRevenueService } from './saas-revenue.service';
 import { SaasRevenueController } from './saas-revenue.controller';
+import { SaasMailerService } from './saas-mailer.service';
+import { FlutterwaveService } from './flutterwave.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([SaasPlan, SaasSubscription, SaasInvoice, SaasPayment, SaasCoupon, SaasSubscriptionEvent, License])],
+  imports: [TypeOrmModule.forFeature([SaasPlan, SaasSubscription, SaasInvoice, SaasPayment, SaasCoupon, SaasSubscriptionEvent, License, Lead])],
   controllers: [SaasRevenueController],
-  providers: [SaasRevenueService],
+  providers: [SaasRevenueService, SaasMailerService, FlutterwaveService],
   exports: [SaasRevenueService],
 })
 export class SaasRevenueModule {}

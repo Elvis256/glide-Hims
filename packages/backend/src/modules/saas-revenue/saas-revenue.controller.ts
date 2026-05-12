@@ -1,13 +1,20 @@
 import {
-  Body, Controller, Delete, ForbiddenException, Get, Param, Post, Put, Query, Req,
+  Body, Controller, Delete, ForbiddenException, Get, Headers, Param, Post, Put, Query, RawBodyRequest, Req,
 } from '@nestjs/common';
+import { Public } from '../auth/decorators/public.decorator';
 import { SaasRevenueService } from './saas-revenue.service';
 import {
   CreatePlanDto, UpdatePlanDto, CreateSubscriptionDto, ChangePlanDto, RecordPaymentDto, CreateCouponDto,
+  ConvertLeadDto, InitCheckoutDto,
 } from './dtos';
 
 function ensureAdmin(req: any) {
   if (!req.user?.isSystemAdmin) throw new ForbiddenException('System admin only');
+}
+function ensureTenant(req: any): string {
+  const tid = req.user?.tenantId;
+  if (!tid) throw new ForbiddenException('Tenant context required');
+  return tid;
 }
 
 @Controller('saas-revenue')
@@ -97,4 +104,38 @@ export class SaasRevenueController {
   // ---------- Cron triggers (admin manual run) ----------
   @Post('cron/run')
   manualCron(@Req() req: any) { ensureAdmin(req); return this.svc.renewalTick().then(() => ({ ok: true })); }
+
+  // ---------- Public pricing (no auth) ----------
+  @Public()
+  @Get('public/plans')
+  publicPlans() { return this.svc.listPublicPlans(); }
+
+  // ---------- Lead conversion ----------
+  @Post('leads/:leadId/convert')
+  convertLead(@Req() req: any, @Param('leadId') leadId: string, @Body() dto: ConvertLeadDto) {
+    ensureAdmin(req);
+    return this.svc.convertLead(leadId, dto, req.user?.id);
+  }
+
+  // ---------- Tenant self-serve billing portal ----------
+  @Get('portal/me')
+  myBilling(@Req() req: any) {
+    if (req.user?.isSystemAdmin && req.query?.tenantId) return this.svc.getMyBilling(String(req.query.tenantId));
+    return this.svc.getMyBilling(ensureTenant(req));
+  }
+
+  @Post('portal/checkout')
+  myCheckout(@Req() req: any, @Body() dto: InitCheckoutDto) {
+    const tenantId = req.user?.isSystemAdmin ? undefined : ensureTenant(req);
+    const redirectUrl = dto.redirectUrl || `${process.env.PUBLIC_BASE_URL || ''}/billing-portal/return`;
+    return this.svc.initCheckout(dto.invoiceId, { redirectUrl, customerEmail: dto.customerEmail, customerName: dto.customerName }, tenantId);
+  }
+
+  // ---------- Webhook (public, signature-verified) ----------
+  @Public()
+  @Post('webhooks/flutterwave')
+  async flwWebhook(@Req() req: RawBodyRequest<any>, @Headers('verif-hash') signature?: string) {
+    const raw = (req as any).rawBody?.toString('utf8') || JSON.stringify(req.body || {});
+    return this.svc.handleFlutterwaveWebhook(raw, signature);
+  }
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Mail, Phone, Building2, Globe, Loader2, RefreshCw } from 'lucide-react';
+import { Mail, Phone, Building2, Globe, Loader2, RefreshCw, Sparkles, X, Check } from 'lucide-react';
 import api from '../../services/api';
 
 type LeadStatus = 'new' | 'contacted' | 'qualified' | 'won' | 'lost' | 'spam';
@@ -37,6 +37,7 @@ export default function SystemLeadsPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+  const [converting, setConverting] = useState<Lead | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -148,6 +149,11 @@ export default function SystemLeadsPage() {
                       <option value="lost">lost</option>
                       <option value="spam">spam</option>
                     </select>
+                    {(l.status === 'qualified' || l.status === 'won') && (
+                      <button onClick={() => setConverting(l)} className="inline-flex items-center gap-1 text-xs px-2 py-1 bg-emerald-600 text-white rounded hover:bg-emerald-700">
+                        <Sparkles className="w-3 h-3" /> Convert to subscription
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -155,6 +161,7 @@ export default function SystemLeadsPage() {
           </div>
         </div>
       )}
+      {converting && <ConvertModal lead={converting} onClose={() => setConverting(null)} onDone={() => { setConverting(null); load(); }} />}
     </div>
   );
 }
@@ -165,6 +172,86 @@ function StatCard({ label, value, accent }: { label: string; value: number; acce
     <div className="bg-white rounded-xl border border-gray-200 p-4">
       <div className="text-xs text-gray-500 uppercase tracking-wider">{label}</div>
       <div className={`mt-1 text-3xl font-bold ${color}`}>{value}</div>
+    </div>
+  );
+}
+
+function ConvertModal({ lead, onClose, onDone }: { lead: Lead; onClose: () => void; onDone: () => void }) {
+  const [tenants, setTenants] = useState<any[]>([]);
+  const [plans, setPlans] = useState<any[]>([]);
+  const [tenantId, setTenantId] = useState('');
+  const [planId, setPlanId] = useState('');
+  const [billingInterval, setInterval] = useState<'monthly' | 'annual'>('monthly');
+  const [seats, setSeats] = useState(1);
+  const [startTrial, setStartTrial] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    Promise.all([
+      api.get('/tenants', { params: { perPage: 200 } }),
+      api.get('/saas-revenue/plans'),
+    ]).then(([t, p]) => {
+      const tList = t.data?.data?.items ?? t.data?.data ?? t.data ?? [];
+      const pList = p.data?.data ?? p.data ?? [];
+      setTenants(tList);
+      setPlans(pList);
+      const matchByOrg = tList.find((x: any) => (x.name || '').toLowerCase() === lead.organization.toLowerCase());
+      if (matchByOrg) setTenantId(matchByOrg.id);
+      const pro = pList.find((p: any) => p.code === 'professional');
+      if (pro) setPlanId(pro.id);
+    });
+  }, [lead.organization]);
+
+  const submit = async () => {
+    if (!tenantId || !planId) { setErr('Pick a tenant and a plan'); return; }
+    setSaving(true); setErr(null);
+    try {
+      await api.post(`/saas-revenue/leads/${lead.id}/convert`, { tenantId, planId, billingInterval, seats, startTrial });
+      onDone();
+    } catch (e: any) { setErr(e?.response?.data?.message || 'Conversion failed'); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => !saving && onClose()}>
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">Convert lead → subscription</h2>
+          <button onClick={onClose} className="text-gray-400"><X className="w-5 h-5" /></button>
+        </div>
+        <p className="text-xs text-gray-500 mb-3">{lead.fullName} · {lead.organization}</p>
+        <div className="space-y-3 text-sm">
+          <div><div className="text-xs text-gray-500 mb-1">Tenant</div>
+            <select className="input w-full" value={tenantId} onChange={(e) => setTenantId(e.target.value)}>
+              <option value="">— select tenant —</option>
+              {tenants.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          </div>
+          <div><div className="text-xs text-gray-500 mb-1">Plan</div>
+            <select className="input w-full" value={planId} onChange={(e) => setPlanId(e.target.value)}>
+              <option value="">— select plan —</option>
+              {plans.map((p: any) => <option key={p.id} value={p.id}>{p.name} ({p.tier})</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><div className="text-xs text-gray-500 mb-1">Interval</div>
+              <select className="input w-full" value={billingInterval} onChange={(e) => setInterval(e.target.value as any)}>
+                <option value="monthly">Monthly</option>
+                <option value="annual">Annual</option>
+              </select>
+            </div>
+            <div><div className="text-xs text-gray-500 mb-1">Seats</div><input type="number" min={1} className="input w-full" value={seats} onChange={(e) => setSeats(parseInt(e.target.value || '1', 10))} /></div>
+          </div>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={startTrial} onChange={(e) => setStartTrial(e.target.checked)} /> Start with trial period (per plan)</label>
+          {err && <div className="text-xs text-red-600">{err}</div>}
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button onClick={onClose} className="px-3 py-2 text-sm border rounded hover:bg-gray-50">Cancel</button>
+          <button onClick={submit} disabled={saving} className="px-3 py-2 text-sm bg-emerald-600 text-white rounded inline-flex items-center gap-2 hover:bg-emerald-700 disabled:opacity-50">{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Convert</button>
+        </div>
+        <style>{`.input{border:1px solid #d1d5db;border-radius:6px;padding:6px 10px;font-size:13px}`}</style>
+      </div>
     </div>
   );
 }

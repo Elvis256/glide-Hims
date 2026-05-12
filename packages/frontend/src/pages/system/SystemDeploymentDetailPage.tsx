@@ -5,7 +5,7 @@ import {
   ArrowLeft, Activity, AlertTriangle, CheckCircle2, Clock, Cpu,
   HardDrive, Loader2, RefreshCw, Server, Building2, KeyRound,
   ExternalLink, Database, Download, Power, Calendar, Upload, FileArchive, Wifi, WifiOff,
-  Bell, Rocket, ShieldAlert, Pencil, X, FileDown, Copy, Check,
+  Bell, Rocket, ShieldAlert, Pencil, X, FileDown, Copy, Check, DollarSign,
 } from 'lucide-react';
 import TierBadge from '../../components/TierBadge';
 import { toast } from 'sonner';
@@ -978,6 +978,8 @@ export default function SystemDeploymentDetailPage() {
         </div>
       )}
 
+      <SubscriptionPanel tenantId={deployment.tenant?.id} />
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-white border border-blue-200 rounded-xl p-6 ring-1 ring-blue-100">
           <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-1 flex items-center gap-2">
@@ -1299,6 +1301,73 @@ export default function SystemDeploymentDetailPage() {
                 )}
               </div>
             )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SubscriptionPanel({ tenantId }: { tenantId?: string }) {
+  const [data, setData] = useState<any | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!tenantId) return;
+    setLoading(true); setErr(null);
+    api.get('/saas-revenue/portal/me', { params: { tenantId } })
+      .then((r) => setData(r.data?.data ?? r.data))
+      .catch((e) => setErr(e?.response?.data?.message || 'Failed to load billing'))
+      .finally(() => setLoading(false));
+  }, [tenantId]);
+
+  if (!tenantId) return null;
+
+  const sub = data?.subscriptions?.[0];
+  const outstanding = data?.outstanding ?? 0;
+  const fmtMoney = (n: number, c?: string) => `${c || 'UGX'} ${Number(n || 0).toLocaleString()}`;
+
+  return (
+    <div className="bg-white border border-emerald-200 rounded-xl p-6 ring-1 ring-emerald-100">
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wider flex items-center gap-2">
+          <DollarSign className="w-4 h-4" />
+          SaaS Subscription <span className="text-[10px] font-normal text-emerald-600 normal-case">· billing · revenue</span>
+        </h2>
+        <Link to={`/system/revenue`} className="text-xs text-emerald-700 hover:underline">Open revenue console →</Link>
+      </div>
+      <p className="text-xs text-gray-500 mb-4">Commercial agreement that funds this deployment. Drives invoices, dunning &amp; renewals.</p>
+      {loading ? (
+        <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>
+      ) : err ? (
+        <div className="text-sm text-red-600">{err}</div>
+      ) : !sub ? (
+        <div className="text-sm text-gray-500 flex items-center justify-between">
+          <span>No active subscription on file for this tenant.</span>
+          <Link to="/system/revenue" className="px-3 py-1.5 bg-emerald-600 text-white rounded text-xs hover:bg-emerald-700">Create subscription</Link>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+          <div>
+            <div className="text-xs text-gray-500">Plan</div>
+            <div className="font-semibold text-gray-900">{sub.plan?.name || sub.planId}</div>
+            <div className="text-[11px] text-gray-500 capitalize">{sub.plan?.tier} · {sub.billingInterval}</div>
+          </div>
+          <div>
+            <div className="text-xs text-gray-500">Status</div>
+            <div className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${sub.status === 'active' ? 'bg-emerald-100 text-emerald-700' : sub.status === 'past_due' ? 'bg-red-100 text-red-700' : sub.status === 'trial' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}`}>{sub.status}</div>
+            <div className="text-[11px] text-gray-500 mt-1">Seats: {sub.seats}</div>
+          </div>
+          <div>
+            <div className="text-xs text-gray-500">Next renewal</div>
+            <div className="font-semibold text-gray-900">{sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd).toLocaleDateString() : '—'}</div>
+            {sub.trialEndsAt && new Date(sub.trialEndsAt) > new Date() && <div className="text-[11px] text-blue-600">Trial ends {new Date(sub.trialEndsAt).toLocaleDateString()}</div>}
+          </div>
+          <div>
+            <div className="text-xs text-gray-500">Outstanding</div>
+            <div className={`font-semibold ${outstanding > 0 ? 'text-red-600' : 'text-emerald-600'}`}>{fmtMoney(outstanding, sub.plan?.currency)}</div>
+            <div className="text-[11px] text-gray-500 mt-1">Invoices: {data?.invoices?.length ?? 0}</div>
           </div>
         </div>
       )}

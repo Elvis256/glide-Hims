@@ -37,6 +37,7 @@ async function bootstrap() {
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     httpsOptions,
+    rawBody: true,
   });
 
   // Trust the first proxy (nginx) so Express uses X-Forwarded-For correctly

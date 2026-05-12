@@ -31,7 +31,25 @@ export class CreateSubscriptionDto {
   @IsOptional() @IsString() couponCode?: string;
   @IsOptional() @IsBoolean() startTrial?: boolean;
   @IsOptional() @IsBoolean() autoRenew?: boolean;
+  @IsOptional() @IsString() billingEmail?: string;
+  @IsOptional() @IsString() billingName?: string;
   @IsOptional() @IsString() notes?: string;
+}
+
+export class ConvertLeadDto {
+  @IsUUID() tenantId: string;
+  @IsUUID() planId: string;
+  @IsEnum(['monthly', 'annual']) billingInterval: 'monthly' | 'annual';
+  @IsOptional() @IsInt() @Min(1) seats?: number;
+  @IsOptional() @IsString() billingEmail?: string;
+  @IsOptional() @IsBoolean() startTrial?: boolean;
+}
+
+export class InitCheckoutDto {
+  @IsUUID() invoiceId: string;
+  @IsOptional() @IsString() redirectUrl?: string;
+  @IsOptional() @IsString() customerEmail?: string;
+  @IsOptional() @IsString() customerName?: string;
 }
 
 export class ChangePlanDto {
