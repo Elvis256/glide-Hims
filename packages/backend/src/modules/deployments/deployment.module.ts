@@ -20,6 +20,8 @@ import { DeploymentVersion } from '../../database/entities/deployment-version.en
 import { DeploymentConfig } from '../../database/entities/deployment-config.entity';
 import { TenantFeatureModule } from '../../database/entities/tenant-feature-module.entity';
 import { UpdateRollout } from '../../database/entities/update-rollout.entity';
+import { ReleaseCandidate } from '../../database/entities/release-candidate.entity';
+import { AppVersion } from '../../database/entities/app-version.entity';
 import { ReplicationLog } from '../../database/entities/replication-log.entity';
 import { ChangeSet } from '../../database/entities/changeset.entity';
 import { DeploymentHealth } from '../../database/entities/deployment-health.entity';
@@ -34,6 +36,8 @@ import { License } from '../../database/entities/license.entity';
       DeploymentConfig,
       TenantFeatureModule,
       UpdateRollout,
+      ReleaseCandidate,
+      AppVersion,
       ReplicationLog,
       ChangeSet,
       DeploymentHealth,

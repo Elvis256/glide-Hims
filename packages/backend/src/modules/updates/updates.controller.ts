@@ -95,7 +95,7 @@ export class UpdatesController {
     @Request() req: any,
   ) {
     this.requireSystemAdmin(req);
-    return this.updatesService.createVersion(body);
+    return this.updatesService.createVersion(body, req?.user?.id);
   }
 
   /**
@@ -106,7 +106,7 @@ export class UpdatesController {
   @ApiOperation({ summary: 'Set version as latest' })
   async setLatestVersion(@Param('version') version: string, @Request() req: any) {
     this.requireSystemAdmin(req);
-    return this.updatesService.setLatestVersion(version);
+    return this.updatesService.setLatestVersion(version, req?.user?.id);
   }
 
   /**
