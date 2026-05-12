@@ -20,7 +20,8 @@ export default function PublicPricingPage() {
   const [loading, setLoading] = useState(true);
   const [interval, setInterval] = useState<'monthly' | 'annual'>('monthly');
   useEffect(() => {
-    axios.get('/api/v1/saas-revenue/public/plans')
+    const base = (import.meta as any).env?.VITE_API_URL || '/api/v1';
+    axios.get(`${base}/saas-revenue/public/plans`)
       .then((r) => setPlans(r.data?.data ?? r.data ?? []))
       .finally(() => setLoading(false));
   }, []);
