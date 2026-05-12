@@ -179,6 +179,18 @@ export class DeploymentController {
     fs.createReadStream(backup.filePath).pipe(res);
   }
 
+  @Get('snapshots/:snapshotId/restore-instructions')
+  async getRestoreInstructions(
+    @Req() req: Request,
+    @Param('snapshotId') snapshotId: string,
+  ) {
+    if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
+    const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol;
+    const host = (req.headers['x-forwarded-host'] as string) || req.headers['host'];
+    const baseUrl = `${proto}://${host}`;
+    return this.backupService.getRestoreInstructions(snapshotId, baseUrl);
+  }
+
   @Post('features/toggle')
   async toggleFeature(@Req() req: Request, @Body() dto: ToggleFeatureFlagDto) {
     const tenantId = this.getTenantId(req);
@@ -297,6 +309,16 @@ export class DeploymentController {
   async requestPoll(@Req() req: Request, @Param('deploymentId') deploymentId: string) {
     if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
     return this.deploymentService.requestHealthPoll(deploymentId);
+  }
+
+  @Put(':deploymentId/notes')
+  async updateNotes(
+    @Req() req: Request,
+    @Param('deploymentId') deploymentId: string,
+    @Body() body: { notes?: string },
+  ) {
+    if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
+    return this.deploymentService.updateNotes(deploymentId, body?.notes ?? '');
   }
 
   @Get(':deploymentId/rollouts-history')
