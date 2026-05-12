@@ -11,7 +11,7 @@ export class AuditLogService {
   ) {}
 
   async log(data: {
-    userId: string;
+    userId?: string;
     action: string;
     entityType: string;
     entityId?: string;
@@ -26,6 +26,8 @@ export class AuditLogService {
     requestMethod?: string;
     requestUrl?: string;
     statusCode?: number;
+    attemptedIdentifier?: string;
+    errorMessage?: string;
   }): Promise<AuditLog> {
     return this.auditLogRepository.save(this.auditLogRepository.create(data));
   }

@@ -32,6 +32,7 @@ import { Auth, AuthWithPermissions } from './decorators/auth.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { Public } from './decorators/public.decorator';
 import { RateLimitGuard } from './guards/rate-limit.guard';
+import { AuditLogService } from '../../common/interceptors/audit-log.service';
 
 @ApiTags('authentication')
 @Controller('auth')
@@ -43,6 +44,7 @@ export class AuthController {
     private readonly sessionService: SessionService,
     private readonly rateLimitGuard: RateLimitGuard,
     private readonly configService: ConfigService,
+    private readonly auditLogService: AuditLogService,
   ) {
     this.isProduction = configService.get('NODE_ENV') === 'production';
   }
@@ -94,17 +96,55 @@ export class AuthController {
   ): Promise<AuthResponseDto> {
     const ip = this.getClientIp(req);
     const userAgent = req.headers['user-agent'] || undefined;
-    const result = await this.authService.login(loginDto, ip, userAgent);
-    // Reset rate limit on successful login (per-(ip, user) bucket)
-    await this.rateLimitGuard.resetAttempts(ip, loginDto.username);
-    // Set httpOnly cookies so frontend never touches tokens
-    this.setAuthCookies(res, result.accessToken, result.refreshToken, result.expiresIn);
-    // Return user info and expiry only — tokens are in httpOnly cookies, not in response body
-    return {
-      ...result,
-      accessToken: undefined,
-      refreshToken: undefined,
-    } as any as AuthResponseDto;
+    try {
+      const result = await this.authService.login(loginDto, ip, userAgent);
+      // Reset rate limit on successful login (per-(ip, user) bucket)
+      await this.rateLimitGuard.resetAttempts(ip, loginDto.username);
+      // Audit: login success
+      this.auditLogService
+        .log({
+          userId: result.user?.id,
+          tenantId: result.user?.tenantId,
+          action: 'LOGIN_SUCCESS',
+          entityType: 'auth',
+          entityId: result.user?.id,
+          ipAddress: ip,
+          userAgent,
+          actorType: result.user?.isSystemAdmin ? 'system_admin' : 'tenant_user',
+          requestMethod: 'POST',
+          requestUrl: '/api/v1/auth/login',
+          statusCode: 200,
+          attemptedIdentifier: loginDto.username,
+        })
+        .catch(() => undefined);
+      // Set httpOnly cookies so frontend never touches tokens
+      this.setAuthCookies(res, result.accessToken, result.refreshToken, result.expiresIn);
+      // Return user info and expiry only — tokens are in httpOnly cookies, not in response body
+      return {
+        ...result,
+        accessToken: undefined,
+        refreshToken: undefined,
+      } as any as AuthResponseDto;
+    } catch (err) {
+      const status = err instanceof HttpException ? err.getStatus() : 500;
+      const message = err instanceof Error ? err.message : 'Login failed';
+      this.auditLogService
+        .log({
+          action: 'LOGIN_FAILED',
+          entityType: 'auth',
+          ipAddress: ip,
+          userAgent,
+          actorType: 'tenant_user',
+          requestMethod: 'POST',
+          requestUrl: '/api/v1/auth/login',
+          statusCode: status,
+          attemptedIdentifier: loginDto.username,
+          errorMessage: (message || '').slice(0, 1000),
+          tenantId: loginDto.tenantId,
+        })
+        .catch(() => undefined);
+      throw err;
+    }
   }
 
   @Post('refresh')
@@ -123,9 +163,43 @@ export class AuthController {
     const token = req.cookies?.refreshToken || dto.refreshToken;
     const ipAddress = (req as any).ip || req.headers['x-forwarded-for']?.toString();
     const userAgent = req.headers['user-agent'];
-    const result = await this.authService.refreshToken(token, ipAddress, userAgent);
-    this.setAuthCookies(res, result.accessToken, result.refreshToken, result.expiresIn);
-    return result;
+    try {
+      const result = await this.authService.refreshToken(token, ipAddress, userAgent);
+      this.auditLogService
+        .log({
+          userId: result.user?.id,
+          tenantId: result.user?.tenantId,
+          action: 'TOKEN_REFRESHED',
+          entityType: 'auth',
+          entityId: result.user?.id,
+          ipAddress,
+          userAgent: userAgent as string | undefined,
+          actorType: result.user?.isSystemAdmin ? 'system_admin' : 'tenant_user',
+          requestMethod: 'POST',
+          requestUrl: '/api/v1/auth/refresh',
+          statusCode: 200,
+        })
+        .catch(() => undefined);
+      this.setAuthCookies(res, result.accessToken, result.refreshToken, result.expiresIn);
+      return result;
+    } catch (err) {
+      const status = err instanceof HttpException ? err.getStatus() : 500;
+      const message = err instanceof Error ? err.message : 'Refresh failed';
+      this.auditLogService
+        .log({
+          action: 'TOKEN_REFRESH_FAILED',
+          entityType: 'auth',
+          ipAddress,
+          userAgent: userAgent as string | undefined,
+          actorType: 'tenant_user',
+          requestMethod: 'POST',
+          requestUrl: '/api/v1/auth/refresh',
+          statusCode: status,
+          errorMessage: (message || '').slice(0, 1000),
+        })
+        .catch(() => undefined);
+      throw err;
+    }
   }
 
   @Post('change-password')
