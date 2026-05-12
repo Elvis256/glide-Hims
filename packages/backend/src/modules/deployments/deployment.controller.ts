@@ -311,6 +311,15 @@ export class DeploymentController {
     return this.deploymentService.requestHealthPoll(deploymentId);
   }
 
+  @Post(':deploymentId/sync-from-license')
+  async syncFromLicense(
+    @Req() req: Request,
+    @Param('deploymentId') deploymentId: string,
+  ) {
+    if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
+    return this.deploymentService.syncMetadataFromLicense(deploymentId);
+  }
+
   @Put(':deploymentId/notes')
   async updateNotes(
     @Req() req: Request,
