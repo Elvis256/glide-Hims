@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import api from '../../services/api';
 import {
   Rocket, RefreshCw, Loader2, AlertTriangle, CheckCircle2, Clock,
-  Pause, Play, XCircle, TrendingUp, Plus, X,
+  Pause, Play, XCircle, TrendingUp, Plus, X, Activity,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -62,6 +62,36 @@ export default function SystemRolloutsPage() {
     notes: '',
   });
   const [creating, setCreating] = useState(false);
+  const [reportsRollout, setReportsRollout] = useState<Rollout | null>(null);
+  const [reports, setReports] = useState<Array<{
+    id: string;
+    licenseId: string;
+    tenantId: string | null;
+    hardwareId: string | null;
+    fromVersion: string | null;
+    toVersion: string | null;
+    status: string;
+    errorMessage: string | null;
+    ipAddress: string | null;
+    createdAt: string;
+    updatedAt: string;
+  }>>([]);
+  const [reportsLoading, setReportsLoading] = useState(false);
+
+  const openReports = async (r: Rollout) => {
+    setReportsRollout(r);
+    setReports([]);
+    setReportsLoading(true);
+    try {
+      const res = await api.get(`/deployments/rollouts/${r.id}/reports`);
+      const list = Array.isArray(res.data) ? res.data : (res.data as any)?.data || [];
+      setReports(list);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Failed to load reports');
+    } finally {
+      setReportsLoading(false);
+    }
+  };
 
   const loadVersions = async () => {
     try {
@@ -305,6 +335,13 @@ export default function SystemRolloutsPage() {
                         <XCircle className="w-3.5 h-3.5" /> Cancel
                       </button>
                     )}
+                    <button
+                      onClick={() => openReports(r)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-gray-300 text-gray-700 bg-white rounded text-xs font-medium hover:bg-gray-50"
+                      title="View per-instance update reports"
+                    >
+                      <Activity className="w-3.5 h-3.5" /> Reports
+                    </button>
                     {isBusy && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
                   </div>
                 </div>
@@ -438,6 +475,95 @@ export default function SystemRolloutsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {reportsRollout && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex justify-end" onClick={() => setReportsRollout(null)}>
+          <div
+            className="w-full max-w-2xl h-full bg-white shadow-2xl overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-5 py-4 flex items-center justify-between">
+              <div className="min-w-0">
+                <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2">
+                  <Activity className="w-5 h-5 text-blue-600" />
+                  Per-instance update reports
+                </h3>
+                <p className="text-xs text-gray-500 truncate font-mono mt-0.5">
+                  Rollout {reportsRollout.id}
+                </p>
+              </div>
+              <button onClick={() => setReportsRollout(null)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="px-5 py-4 grid grid-cols-4 gap-3 border-b border-gray-100 text-center text-xs">
+              <div className="bg-gray-50 rounded p-2">
+                <div className="text-gray-500">Total</div>
+                <div className="text-lg font-semibold text-gray-900">{reportsRollout.deploymentsTotalCount}</div>
+              </div>
+              <div className="bg-green-50 rounded p-2">
+                <div className="text-green-700">Success</div>
+                <div className="text-lg font-semibold text-green-800">{reportsRollout.deploymentsSuccessCount}</div>
+              </div>
+              <div className="bg-red-50 rounded p-2">
+                <div className="text-red-700">Failed</div>
+                <div className="text-lg font-semibold text-red-800">{reportsRollout.deploymentsFailedCount}</div>
+              </div>
+              <div className="bg-gray-50 rounded p-2">
+                <div className="text-gray-500">Rolled back</div>
+                <div className="text-lg font-semibold text-gray-900">{reportsRollout.deploymentsRolledBackCount}</div>
+              </div>
+            </div>
+
+            <div className="px-5 py-4">
+              {reportsLoading ? (
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Loading reports…
+                </div>
+              ) : reports.length === 0 ? (
+                <div className="text-center py-10 text-sm text-gray-500">
+                  <Activity className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                  No instances have reported yet.
+                  <p className="text-xs text-gray-400 mt-2">
+                    Tenant agents POST to <code className="bg-gray-100 px-1.5 py-0.5 rounded text-[11px]">/deployments/rollouts/&lt;id&gt;/report</code> with their license key.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {reports.map((rep) => {
+                    const statusColor =
+                      rep.status === 'success' ? 'bg-green-100 text-green-800' :
+                      rep.status === 'failed' ? 'bg-red-100 text-red-800' :
+                      rep.status === 'rolled_back' ? 'bg-gray-100 text-gray-700' :
+                      'bg-blue-100 text-blue-800';
+                    return (
+                      <div key={rep.id} className="border border-gray-200 rounded-lg p-3 text-xs">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className={`px-2 py-0.5 rounded-full font-medium ${statusColor}`}>{rep.status}</span>
+                          <span className="text-gray-500">{new Date(rep.updatedAt).toLocaleString()}</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 mt-2 text-gray-700">
+                          <div><span className="text-gray-500">Hardware:</span> <span className="font-mono">{rep.hardwareId || '—'}</span></div>
+                          <div><span className="text-gray-500">License:</span> <span className="font-mono truncate">{rep.licenseId.slice(0, 8)}…</span></div>
+                          <div><span className="text-gray-500">From:</span> {rep.fromVersion || '—'}</div>
+                          <div><span className="text-gray-500">To:</span> {rep.toVersion || '—'}</div>
+                          {rep.ipAddress && <div className="col-span-2"><span className="text-gray-500">IP:</span> {rep.ipAddress}</div>}
+                        </div>
+                        {rep.errorMessage && (
+                          <div className="mt-2 px-2 py-1.5 bg-red-50 border border-red-100 rounded text-red-700 text-xs">
+                            {rep.errorMessage}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

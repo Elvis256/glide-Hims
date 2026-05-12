@@ -28,6 +28,7 @@ import { ChangeSet } from '../../database/entities/changeset.entity';
 import { DeploymentHealth } from '../../database/entities/deployment-health.entity';
 import { DeploymentAlert } from '../../database/entities/deployment-alert.entity';
 import { License } from '../../database/entities/license.entity';
+import { DeploymentReport } from '../../database/entities/deployment-report.entity';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { License } from '../../database/entities/license.entity';
       DeploymentHealth,
       DeploymentAlert,
       License,
+      DeploymentReport,
     ]),
     TenantsModule,
     LicensingModule,

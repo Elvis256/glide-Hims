@@ -1,4 +1,5 @@
 import { Controller, Get, Post, Put, Delete, Param, Body, Req, Res, HttpCode, HttpStatus, ForbiddenException, NotFoundException, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import * as fs from 'fs';
@@ -8,6 +9,7 @@ import { FeatureFlagService } from './feature-flag.service';
 import { ReplicationService } from './replication.service';
 import { MonitoringService } from './monitoring.service';
 import { BackupService } from '../backup/backup.service';
+import { Public } from '../auth/decorators/public.decorator';
 import { CreateDeploymentDto, UpdateDeploymentDto, ToggleFeatureFlagDto, ProvisionDeploymentDto, CreateUpdateRolloutDto } from './deployment.dto';
 
 @Controller('deployments')
@@ -120,6 +122,45 @@ export class DeploymentController {
   ) {
     if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
     return this.updateService.cancelRollout(rolloutId, body?.reason);
+  }
+
+  /**
+   * Per-instance update report (called by tenant agents, NOT by browsers).
+   * Authenticated by `licenseKey` in the body — no user session required.
+   * Throttled to prevent runaway agents from spamming the platform.
+   */
+  @Post('rollouts/:rolloutId/report')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 60000, limit: 30 } })
+  async reportRolloutResult(
+    @Req() req: Request,
+    @Param('rolloutId') rolloutId: string,
+    @Body()
+    body: {
+      licenseKey: string;
+      hardwareId?: string;
+      fromVersion?: string;
+      toVersion?: string;
+      status: 'started' | 'in_progress' | 'success' | 'failed' | 'rolled_back';
+      errorMessage?: string;
+      metadata?: Record<string, any>;
+    },
+  ) {
+    const ipAddress =
+      ((req.headers['x-forwarded-for'] as string) || '').split(',')[0].trim() ||
+      req.socket.remoteAddress ||
+      undefined;
+    return this.updateService.reportRolloutResult(rolloutId, {
+      ...body,
+      ipAddress,
+    });
+  }
+
+  @Get('rollouts/:rolloutId/reports')
+  async listRolloutReports(@Req() req: Request, @Param('rolloutId') rolloutId: string) {
+    if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
+    return this.updateService.listRolloutReports(rolloutId);
   }
 
   @Get('snapshots/:snapshotId/download')

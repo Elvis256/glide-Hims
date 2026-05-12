@@ -14,6 +14,11 @@ import {
   ReleaseCandidateStage,
 } from '../../database/entities/release-candidate.entity';
 import { AppVersion } from '../../database/entities/app-version.entity';
+import {
+  DeploymentReport,
+  DeploymentReportStatus,
+} from '../../database/entities/deployment-report.entity';
+import { License } from '../../database/entities/license.entity';
 import { CreateUpdateRolloutDto } from './deployment.dto';
 
 @Injectable()
@@ -31,6 +36,10 @@ export class UpdateManagementService {
     private rcRepository: Repository<ReleaseCandidate>,
     @InjectRepository(AppVersion)
     private appVersionRepository: Repository<AppVersion>,
+    @InjectRepository(DeploymentReport)
+    private reportRepository: Repository<DeploymentReport>,
+    @InjectRepository(License)
+    private licenseRepository: Repository<License>,
   ) {}
 
   async getRolloutStatus(tenantId: string, rolloutId: string): Promise<any> {
@@ -292,6 +301,174 @@ export class UpdateManagementService {
         `Failed to auto-create rollout for ${payload.version}: ${err?.message ?? err}`,
       );
     }
+  }
+
+  // ============ DEPLOYMENT REPORTS (per-instance update worker channel) ============
+
+  /**
+   * Ingest a per-instance update report for a rollout.
+   * Called by tenant agents at update-start, on success, and on failure.
+   * Authenticated by the on-prem licenseKey (NOT by user session).
+   * One report per (rolloutId, licenseId) — re-submissions UPSERT.
+   * After persisting, recomputes the rollout's success / failure / rolled-back
+   * counters from the canonical reports table so the scheduler has live data.
+   */
+  async reportRolloutResult(
+    rolloutId: string,
+    payload: {
+      licenseKey: string;
+      hardwareId?: string;
+      fromVersion?: string;
+      toVersion?: string;
+      status: 'started' | 'in_progress' | 'success' | 'failed' | 'rolled_back';
+      errorMessage?: string;
+      metadata?: Record<string, any>;
+      ipAddress?: string;
+    },
+  ): Promise<{
+    accepted: true;
+    reportId: string;
+    rollout: {
+      id: string;
+      status: UpdateRolloutStatus;
+      deploymentsTotalCount: number;
+      deploymentsSuccessCount: number;
+      deploymentsFailedCount: number;
+      deploymentsRolledBackCount: number;
+    };
+  }> {
+    if (!payload?.licenseKey) {
+      throw new BadRequestException('licenseKey is required');
+    }
+    if (!payload?.status) {
+      throw new BadRequestException('status is required');
+    }
+
+    const license = await this.licenseRepository.findOne({
+      where: { licenseKey: payload.licenseKey },
+    });
+    if (!license) {
+      throw new NotFoundException('Invalid license key');
+    }
+    if (license.status !== 'active') {
+      throw new BadRequestException(`License is ${license.status}`);
+    }
+
+    const rollout = await this.rolloutRepository.findOne({ where: { id: rolloutId } });
+    if (!rollout) {
+      throw new NotFoundException('Rollout not found');
+    }
+
+    const reportStatus = payload.status as DeploymentReportStatus;
+
+    let report = await this.reportRepository.findOne({
+      where: { rolloutId, licenseId: license.id },
+    });
+
+    if (report) {
+      report.status = reportStatus;
+      report.fromVersion = payload.fromVersion ?? report.fromVersion;
+      report.toVersion = payload.toVersion ?? report.toVersion;
+      report.hardwareId = payload.hardwareId ?? report.hardwareId;
+      report.errorMessage = payload.errorMessage ?? report.errorMessage;
+      report.metadata = payload.metadata ?? report.metadata;
+      report.ipAddress = payload.ipAddress ?? report.ipAddress;
+      report.tenantId = license.tenantId ?? report.tenantId;
+      report = await this.reportRepository.save(report);
+    } else {
+      report = this.reportRepository.create({
+        rolloutId,
+        rollout,
+        licenseId: license.id,
+        license,
+        tenantId: license.tenantId ?? null,
+        hardwareId: payload.hardwareId ?? null,
+        fromVersion: payload.fromVersion ?? null,
+        toVersion: payload.toVersion ?? null,
+        status: reportStatus,
+        errorMessage: payload.errorMessage ?? null,
+        metadata: payload.metadata ?? null,
+        ipAddress: payload.ipAddress ?? null,
+      });
+      report = await this.reportRepository.save(report);
+    }
+
+    await this.recomputeRolloutCounters(rolloutId);
+
+    const fresh = await this.rolloutRepository.findOne({ where: { id: rolloutId } });
+    if (!fresh) {
+      throw new NotFoundException('Rollout disappeared after report');
+    }
+
+    this.logger.log(
+      `Rollout ${rolloutId} report from license ${license.id}: ${reportStatus} ` +
+        `(success=${fresh.deploymentsSuccessCount}, failed=${fresh.deploymentsFailedCount}, total=${fresh.deploymentsTotalCount})`,
+    );
+
+    return {
+      accepted: true,
+      reportId: report.id,
+      rollout: {
+        id: fresh.id,
+        status: fresh.status,
+        deploymentsTotalCount: fresh.deploymentsTotalCount,
+        deploymentsSuccessCount: fresh.deploymentsSuccessCount,
+        deploymentsFailedCount: fresh.deploymentsFailedCount,
+        deploymentsRolledBackCount: fresh.deploymentsRolledBackCount,
+      },
+    };
+  }
+
+  /**
+   * Recompute rollout's success / failed / rolled-back counters from the
+   * canonical deployment_reports table. Idempotent. Total stays as configured
+   * (set at rollout creation from active deployments) unless the live count
+   * of distinct reporters now exceeds it (e.g., new instances came online).
+   */
+  async recomputeRolloutCounters(rolloutId: string): Promise<void> {
+    const rollout = await this.rolloutRepository.findOne({ where: { id: rolloutId } });
+    if (!rollout) return;
+
+    const rows = await this.reportRepository
+      .createQueryBuilder('r')
+      .select('r.status', 'status')
+      .addSelect('COUNT(*)', 'count')
+      .where('r.rollout_id = :rolloutId', { rolloutId })
+      .groupBy('r.status')
+      .getRawMany<{ status: DeploymentReportStatus; count: string }>();
+
+    let success = 0;
+    let failed = 0;
+    let rolled = 0;
+    let reporters = 0;
+    for (const row of rows) {
+      const n = parseInt(row.count, 10) || 0;
+      reporters += n;
+      if (row.status === DeploymentReportStatus.SUCCESS) success = n;
+      else if (row.status === DeploymentReportStatus.FAILED) failed = n;
+      else if (row.status === DeploymentReportStatus.ROLLED_BACK) rolled = n;
+    }
+
+    rollout.deploymentsSuccessCount = success;
+    rollout.deploymentsFailedCount = failed;
+    rollout.deploymentsRolledBackCount = rolled;
+    if (reporters > rollout.deploymentsTotalCount) {
+      rollout.deploymentsTotalCount = reporters;
+    }
+    await this.rolloutRepository.save(rollout);
+  }
+
+  /**
+   * List per-instance reports for a rollout (system admin UI).
+   */
+  async listRolloutReports(rolloutId: string): Promise<DeploymentReport[]> {
+    const rollout = await this.rolloutRepository.findOne({ where: { id: rolloutId } });
+    if (!rollout) throw new NotFoundException('Rollout not found');
+    return this.reportRepository.find({
+      where: { rolloutId },
+      order: { updatedAt: 'DESC' },
+      take: 200,
+    });
   }
 
   private calculateProgress(rollout: UpdateRollout): number {
