@@ -57,6 +57,91 @@ export class DeploymentController {
     return this.deploymentService.listDeployments(tenantId);
   }
 
+  // ============ STATIC-PREFIX ROUTES ============
+  // These MUST be declared before the `:deploymentId` parametric routes
+  // below, otherwise Express matches e.g. /deployments/rollouts against
+  // `:deploymentId` and the service tries to look up a deployment whose
+  // id is the literal string "rollouts" (UUID parse error → 500).
+
+  @Get('rollouts')
+  async listRollouts() {
+    return this.updateService.listRollouts();
+  }
+
+  @Get('rollouts/:rolloutId/status')
+  async getRolloutStatus(@Req() req: Request, @Param('rolloutId') rolloutId: string) {
+    const tenantId = this.getTenantId(req);
+    return this.updateService.getRolloutStatus(tenantId, rolloutId);
+  }
+
+  @Put('rollouts/:rolloutId/pause')
+  async pauseRollout(@Req() req: Request, @Param('rolloutId') rolloutId: string) {
+    if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
+    return this.updateService.pauseRollout(rolloutId);
+  }
+
+  @Put('rollouts/:rolloutId/resume')
+  async resumeRollout(@Req() req: Request, @Param('rolloutId') rolloutId: string) {
+    if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
+    return this.updateService.resumeRollout(rolloutId);
+  }
+
+  @Put('rollouts/:rolloutId/cancel')
+  async cancelRollout(
+    @Req() req: Request,
+    @Param('rolloutId') rolloutId: string,
+    @Body() body: { reason?: string },
+  ) {
+    if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
+    return this.updateService.cancelRollout(rolloutId, body?.reason);
+  }
+
+  @Get('snapshots/:snapshotId/download')
+  async downloadSnapshot(
+    @Req() req: Request,
+    @Param('snapshotId') snapshotId: string,
+    @Res() res: Response,
+  ) {
+    if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
+    const backup = await this.backupService.findById(snapshotId);
+    if (!backup || !fs.existsSync(backup.filePath)) {
+      throw new NotFoundException('Snapshot file not found');
+    }
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${backup.filename}"`);
+    fs.createReadStream(backup.filePath).pipe(res);
+  }
+
+  @Post('features/toggle')
+  async toggleFeature(@Req() req: Request, @Body() dto: ToggleFeatureFlagDto) {
+    const tenantId = this.getTenantId(req);
+    return this.featureFlagService.toggleFeature(tenantId, dto);
+  }
+
+  @Get('features')
+  async getTenantFeatures(@Req() req: Request) {
+    const tenantId = this.getTenantId(req);
+    return this.featureFlagService.getFeatures(tenantId);
+  }
+
+  @Get('replication-history')
+  async getReplicationHistory(@Req() req: Request) {
+    const tenantId = this.getTenantId(req);
+    return this.replicationService.getReplicationHistory(tenantId);
+  }
+
+  @Get('alerts')
+  async listAlerts(@Req() req: Request) {
+    const tenantId = this.getTenantId(req);
+    return this.monitoringService.getAlerts(tenantId);
+  }
+
+  @Put('alerts/:alertId/resolve')
+  async resolveAlert(@Req() req: Request, @Param('alertId') alertId: string) {
+    const tenantId = this.getTenantId(req);
+    return this.monitoringService.resolveAlert(tenantId, alertId);
+  }
+
   @Get(':deploymentId')
   async getDeployment(@Req() req: Request, @Param('deploymentId') deploymentId: string) {
     const tenantId = this.getTenantId(req);
@@ -125,39 +210,9 @@ export class DeploymentController {
   }
 
   // ============ UPDATE MANAGEMENT ============
-
-  @Get('rollouts/:rolloutId/status')
-  async getRolloutStatus(@Req() req: Request, @Param('rolloutId') rolloutId: string) {
-    const tenantId = this.getTenantId(req);
-    return this.updateService.getRolloutStatus(tenantId, rolloutId);
-  }
-
-  @Get('rollouts')
-  async listRollouts() {
-    return this.updateService.listRollouts();
-  }
-
-  @Put('rollouts/:rolloutId/pause')
-  async pauseRollout(@Req() req: Request, @Param('rolloutId') rolloutId: string) {
-    if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
-    return this.updateService.pauseRollout(rolloutId);
-  }
-
-  @Put('rollouts/:rolloutId/resume')
-  async resumeRollout(@Req() req: Request, @Param('rolloutId') rolloutId: string) {
-    if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
-    return this.updateService.resumeRollout(rolloutId);
-  }
-
-  @Put('rollouts/:rolloutId/cancel')
-  async cancelRollout(
-    @Req() req: Request,
-    @Param('rolloutId') rolloutId: string,
-    @Body() body: { reason?: string },
-  ) {
-    if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
-    return this.updateService.cancelRollout(rolloutId, body?.reason);
-  }
+  // (rollout list/status/pause/resume/cancel routes are declared above
+  // the `:deploymentId` parametric routes — see "STATIC-PREFIX ROUTES"
+  // section near the top of this controller.)
 
   @Post(':deploymentId/rollback')
   async rollbackDeployment(@Req() req: Request, @Param('deploymentId') deploymentId: string) {
@@ -200,35 +255,12 @@ export class DeploymentController {
     });
   }
 
-  @Get('snapshots/:snapshotId/download')
-  async downloadSnapshot(
-    @Req() req: Request,
-    @Param('snapshotId') snapshotId: string,
-    @Res() res: Response,
-  ) {
-    if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
-    const backup = await this.backupService.findById(snapshotId);
-    if (!backup || !fs.existsSync(backup.filePath)) {
-      throw new NotFoundException('Snapshot file not found');
-    }
-    res.setHeader('Content-Type', 'application/octet-stream');
-    res.setHeader('Content-Disposition', `attachment; filename="${backup.filename}"`);
-    fs.createReadStream(backup.filePath).pipe(res);
-  }
+  // ============ STANDALONE SNAPSHOT IMPORT ============
+  // (snapshots/:snapshotId/download is declared in the STATIC-PREFIX
+  // ROUTES section above the `:deploymentId` parametric routes.)
 
   // ============ FEATURE FLAGS ============
-
-  @Post('features/toggle')
-  async toggleFeature(@Req() req: Request, @Body() dto: ToggleFeatureFlagDto) {
-    const tenantId = this.getTenantId(req);
-    return this.featureFlagService.toggleFeature(tenantId, dto);
-  }
-
-  @Get('features')
-  async getTenantFeatures(@Req() req: Request) {
-    const tenantId = this.getTenantId(req);
-    return this.featureFlagService.getFeatures(tenantId);
-  }
+  // (toggle + list routes are declared in the STATIC-PREFIX ROUTES section above)
 
   // ============ REPLICATION ============
 
@@ -244,11 +276,7 @@ export class DeploymentController {
     return this.replicationService.getPendingChanges(tenantId, deploymentId);
   }
 
-  @Get('replication-history')
-  async getReplicationHistory(@Req() req: Request) {
-    const tenantId = this.getTenantId(req);
-    return this.replicationService.getReplicationHistory(tenantId);
-  }
+  // (replication-history is declared in the STATIC-PREFIX ROUTES section above)
 
   // ============ MONITORING ============
 
@@ -292,15 +320,5 @@ export class DeploymentController {
     return this.monitoringService.createAlert(tenantId, deploymentId, dto.title, dto.severity as any);
   }
 
-  @Get('alerts')
-  async listAlerts(@Req() req: Request) {
-    const tenantId = this.getTenantId(req);
-    return this.monitoringService.getAlerts(tenantId);
-  }
-
-  @Put('alerts/:alertId/resolve')
-  async resolveAlert(@Req() req: Request, @Param('alertId') alertId: string) {
-    const tenantId = this.getTenantId(req);
-    return this.monitoringService.resolveAlert(tenantId, alertId);
-  }
+  // (alerts list + resolve are declared in the STATIC-PREFIX ROUTES section above)
 }
