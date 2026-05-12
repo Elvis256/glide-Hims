@@ -51,7 +51,7 @@ export class DeploymentAlert {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column('uuid')
+  @Column({ name: 'deployment_id', type: 'uuid' })
   deploymentId: string;
 
   @ManyToOne(() => Deployment, { nullable: false, onDelete: 'CASCADE' })

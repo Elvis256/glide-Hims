@@ -27,7 +27,7 @@ export class ReleaseCandidate {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column('uuid')
+  @Column({ name: 'app_version_id', type: 'uuid' })
   appVersionId: string;
 
   @ManyToOne(() => AppVersion, (av) => av.id, {

@@ -40,14 +40,14 @@ export class UpdateNotification {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column('uuid')
+  @Column({ name: 'deployment_id', type: 'uuid' })
   deploymentId: string;
 
   @ManyToOne(() => Deployment, { nullable: false, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'deployment_id' })
   deployment: Deployment;
 
-  @Column('uuid', { nullable: true })
+  @Column({ name: 'update_rollout_id', type: 'uuid', nullable: true })
   updateRolloutId: string;
 
   @ManyToOne(() => UpdateRollout, { nullable: true, onDelete: 'SET NULL' })

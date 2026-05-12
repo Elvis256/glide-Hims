@@ -34,7 +34,7 @@ export class UpdateRollout {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column('uuid')
+  @Column({ name: 'release_candidate_id', type: 'uuid' })
   releaseCandidateId: string;
 
   @ManyToOne(() => ReleaseCandidate, (rc) => rc.rollouts, {
