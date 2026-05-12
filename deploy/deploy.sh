@@ -29,7 +29,13 @@ err() { printf "\033[1;31m✗ %s\033[0m\n" "$*" >&2; }
 log "Fetching $REF from origin"
 cd "$REPO"
 git fetch --all --tags --prune --quiet
-SHA=$(git rev-parse "${REF}^{commit}")
+# Prefer origin/<ref> for branches (local branch ref isn't advanced by `fetch`).
+# Fall back to the bare ref so tags and explicit SHAs still resolve.
+if git rev-parse --verify --quiet "origin/$REF^{commit}" >/dev/null; then
+  SHA=$(git rev-parse "origin/$REF^{commit}")
+else
+  SHA=$(git rev-parse "${REF}^{commit}")
+fi
 SHORT=$(git rev-parse --short=8 "$SHA")
 TARGET="$RELEASES/${REF//\//-}_${SHORT}"
 log "Resolved $REF → $SHA"
