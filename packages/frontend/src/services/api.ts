@@ -147,6 +147,8 @@ api.interceptors.response.use(
       'data' in body
     ) {
       response.data = body.data;
+      // Preserve pagination/meta envelope so callers can access total/totalPages/etc.
+      (response as unknown as { meta?: unknown }).meta = (body as Record<string, unknown>).meta;
     }
     return response;
   },

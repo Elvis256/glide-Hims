@@ -78,9 +78,15 @@ export default function SystemAuditLogsPage() {
       if (endDate) params.endDate = endDate;
 
       const res = await api.get<PageResp>('/audit-logs', { params });
-      setData(res.data.data || []);
-      setTotal(res.data.total || 0);
-      setTotalPages(res.data.totalPages || 1);
+      const body: any = res.data;
+      const meta: any = (res as any).meta || {};
+      // Tolerate both shapes: unwrapped (array via interceptor) or raw envelope
+      const list = Array.isArray(body) ? body : (body?.data || []);
+      const total = meta.total ?? body?.total ?? list.length;
+      const totalPages = meta.totalPages ?? body?.totalPages ?? 1;
+      setData(list);
+      setTotal(total);
+      setTotalPages(totalPages);
       if (resetPage) setPage(1);
     } catch (e: any) {
       setError(e?.response?.data?.message || 'Failed to load audit logs');
