@@ -4,6 +4,7 @@ import { DataSource } from 'typeorm';
 import { ROLES_KEY } from '../decorators/roles.decorator';
 import { isSuperAdmin } from '../../../common/constants/roles.constants';
 import { getActiveSupportTier, checkSystemAdminAccess } from './support-tier.util';
+import { SupportAccessTier } from '../../../database/entities/support-access-grant.entity';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -40,6 +41,16 @@ export class RolesGuard implements CanActivate {
     // System admins: enforce support tier on clinical/operational endpoints
     if (user.isSystemAdmin) {
       const path = request.url || '';
+
+      // System-management endpoints are always allowed for system admins,
+      // regardless of tenant context (system admins frequently operate
+      // without an active tenant — e.g. publishing app versions, managing
+      // rollouts, configuring the platform itself).
+      if (checkSystemAdminAccess(SupportAccessTier.NONE, path, request.method)) {
+        this.logSuperAdminAccess(request, requiredRoles);
+        return true;
+      }
+
       const tenantId = user.tenantId;
       if (!tenantId) {
         return false;

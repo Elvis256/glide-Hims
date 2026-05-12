@@ -7,7 +7,7 @@ export interface TierCheckResult {
 }
 
 const SYSTEM_ENDPOINT_REGEX =
-  /^\/(api\/v1\/)?(tenants|setup|settings|support-access|users\/(system-admins|tenant-admins|system-reset-password))/;
+  /^\/(api\/v1\/)?(tenants|setup|settings|support-access|users\/(system-admins|tenant-admins|system-reset-password)|updates|deployments|system|audit-logs|licenses|feature-flags|backups|alerts|monitoring|replication)/;
 const METADATA_ENDPOINT_REGEX = /^\/(api\/v1\/)?(analytics|dashboard|facilities)/;
 
 /**
