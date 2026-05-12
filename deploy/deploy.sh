@@ -111,8 +111,9 @@ fi
 pm2 save >/dev/null
 
 # 9. Smoke test
+log "Waiting for backend to settle"
+sleep 15
 log "Smoke test"
-sleep 6
 if "$SCRIPTS/smoke.sh"; then
   log "✅ Deploy successful: $REF ($SHORT)"
   log "   Previous: ${PREV:-none}"
