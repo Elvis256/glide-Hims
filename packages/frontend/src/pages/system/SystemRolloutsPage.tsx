@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import api from '../../services/api';
 import {
   Rocket, RefreshCw, Loader2, AlertTriangle, CheckCircle2, Clock,
   Pause, Play, XCircle, TrendingUp, Plus, X, Activity,
+  ShieldAlert, ExternalLink, FileText, EyeOff, Eye, Layers,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -67,25 +69,37 @@ export default function SystemRolloutsPage() {
     id: string;
     licenseId: string;
     tenantId: string | null;
+    deploymentId: string | null;
+    deploymentName: string | null;
     hardwareId: string | null;
     fromVersion: string | null;
     toVersion: string | null;
     status: string;
     errorMessage: string | null;
     ipAddress: string | null;
+    metadata: any;
     createdAt: string;
     updatedAt: string;
+    simulated: boolean;
   }>>([]);
   const [reportsLoading, setReportsLoading] = useState(false);
+  const [reportSummary, setReportSummary] = useState<any | null>(null);
+  const [hideSimulated, setHideSimulated] = useState(false);
+  const [payloadReport, setPayloadReport] = useState<any | null>(null);
 
   const openReports = async (r: Rollout) => {
     setReportsRollout(r);
     setReports([]);
+    setReportSummary(null);
     setReportsLoading(true);
     try {
-      const res = await api.get(`/deployments/rollouts/${r.id}/reports`);
-      const list = Array.isArray(res.data) ? res.data : (res.data as any)?.data || [];
+      const [reportsRes, summaryRes] = await Promise.all([
+        api.get(`/deployments/rollouts/${r.id}/reports`),
+        api.get(`/deployments/rollouts/${r.id}/summary`),
+      ]);
+      const list = Array.isArray(reportsRes.data) ? reportsRes.data : (reportsRes.data as any)?.data || [];
       setReports(list);
+      setReportSummary((summaryRes.data as any)?.data ?? summaryRes.data);
     } catch (e: any) {
       toast.error(e?.response?.data?.message || 'Failed to load reports');
     } finally {
@@ -519,6 +533,72 @@ export default function SystemRolloutsPage() {
               </div>
             </div>
 
+            {/* Auto-rollback status panel */}
+            {reportSummary?.autoRollback && (
+              <div className={`px-5 py-3 border-b border-gray-100 text-xs ${
+                reportSummary.autoRollback.tripped ? 'bg-red-50' :
+                reportSummary.autoRollback.currentFailureRatePct >= reportSummary.autoRollback.threshold ? 'bg-amber-50' :
+                'bg-gray-50'
+              }`}>
+                <div className="flex items-center gap-2 font-semibold text-gray-800 mb-1">
+                  <ShieldAlert className="w-4 h-4" />
+                  Auto-rollback
+                </div>
+                {reportSummary.autoRollback.tripped ? (
+                  <div className="text-red-800">
+                    Tripped at {new Date(reportSummary.autoRollback.rolledBackAt).toLocaleString()}.
+                    {reportSummary.autoRollback.rollbackReason?.reason && (
+                      <span> Reason: <em>{reportSummary.autoRollback.rollbackReason.reason}</em></span>
+                    )}
+                  </div>
+                ) : reportSummary.autoRollback.enabled ? (
+                  <div className="text-gray-700">
+                    Threshold <strong>{reportSummary.autoRollback.threshold}%</strong> failures —
+                    current <strong>{reportSummary.autoRollback.currentFailureRatePct.toFixed(1)}%</strong>
+                    {reportSummary.autoRollback.currentFailureRatePct >= reportSummary.autoRollback.threshold
+                      ? <span className="text-amber-700"> (would trip on next scheduler tick)</span>
+                      : <span className="text-green-700"> (within tolerance)</span>}
+                  </div>
+                ) : (
+                  <div className="text-gray-600">Disabled — failures will not auto-rollback this rollout.</div>
+                )}
+              </div>
+            )}
+
+            {/* Failure clusters */}
+            {reportSummary?.errorClusters?.length > 0 && (
+              <div className="px-5 py-3 border-b border-gray-100">
+                <div className="flex items-center gap-2 font-semibold text-gray-800 text-xs mb-2">
+                  <Layers className="w-4 h-4" /> Failure clusters
+                </div>
+                <div className="space-y-1.5">
+                  {reportSummary.errorClusters.slice(0, 5).map((c: any, i: number) => (
+                    <div key={i} className="flex items-start gap-2 text-xs bg-red-50 border border-red-100 rounded px-2 py-1.5">
+                      <span className="font-mono font-semibold text-red-800 flex-shrink-0">×{c.count}</span>
+                      <span className="text-red-700 break-all">{c.message || <em>no message</em>}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Simulated filter toggle */}
+            {reportSummary?.counts?.simulated > 0 && (
+              <div className="px-5 py-2 border-b border-gray-100 flex items-center justify-between text-xs bg-gray-50">
+                <span className="text-gray-600">
+                  {reportSummary.counts.simulated} of {reportSummary.counts.reported} reports are from simulated agents
+                  (localhost / agent-* hardware ID).
+                </span>
+                <button
+                  onClick={() => setHideSimulated((h) => !h)}
+                  className="inline-flex items-center gap-1 px-2 py-1 border border-gray-300 rounded hover:bg-white"
+                >
+                  {hideSimulated ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                  {hideSimulated ? 'Show simulated' : 'Hide simulated'}
+                </button>
+              </div>
+            )}
+
             <div className="px-5 py-4">
               {reportsLoading ? (
                 <div className="flex items-center gap-2 text-sm text-gray-500">
@@ -534,7 +614,7 @@ export default function SystemRolloutsPage() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {reports.map((rep) => {
+                  {reports.filter((r) => !hideSimulated || !r.simulated).map((rep) => {
                     const statusColor =
                       rep.status === 'success' ? 'bg-green-100 text-green-800' :
                       rep.status === 'failed' ? 'bg-red-100 text-red-800' :
@@ -542,27 +622,96 @@ export default function SystemRolloutsPage() {
                       'bg-blue-100 text-blue-800';
                     return (
                       <div key={rep.id} className="border border-gray-200 rounded-lg p-3 text-xs">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className={`px-2 py-0.5 rounded-full font-medium ${statusColor}`}>{rep.status}</span>
-                          <span className="text-gray-500">{new Date(rep.updatedAt).toLocaleString()}</span>
+                        <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2 py-0.5 rounded-full font-medium ${statusColor}`}>{rep.status}</span>
+                            {rep.simulated && (
+                              <span className="px-2 py-0.5 rounded-full bg-gray-200 text-gray-700 text-[10px] font-medium" title="Localhost or agent-* hardware ID">
+                                simulated
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-gray-500" title={new Date(rep.updatedAt).toString()}>
+                            {new Date(rep.updatedAt).toLocaleString()}
+                          </span>
                         </div>
                         <div className="grid grid-cols-2 gap-2 mt-2 text-gray-700">
                           <div><span className="text-gray-500">Hardware:</span> <span className="font-mono">{rep.hardwareId || '—'}</span></div>
-                          <div><span className="text-gray-500">License:</span> <span className="font-mono truncate">{rep.licenseId.slice(0, 8)}…</span></div>
+                          <div>
+                            <span className="text-gray-500">License:</span>{' '}
+                            {rep.deploymentId ? (
+                              <Link
+                                to={`/system/deployments/${rep.deploymentId}`}
+                                className="font-mono text-blue-600 hover:underline inline-flex items-center gap-1"
+                                title={`Open deployment ${rep.deploymentName || ''}`}
+                              >
+                                {rep.licenseId.slice(0, 8)}… <ExternalLink className="w-3 h-3" />
+                              </Link>
+                            ) : (
+                              <span className="font-mono">{rep.licenseId.slice(0, 8)}…</span>
+                            )}
+                          </div>
                           <div><span className="text-gray-500">From:</span> {rep.fromVersion || '—'}</div>
                           <div><span className="text-gray-500">To:</span> {rep.toVersion || '—'}</div>
                           {rep.ipAddress && <div className="col-span-2"><span className="text-gray-500">IP:</span> {rep.ipAddress}</div>}
+                          {rep.deploymentName && <div className="col-span-2"><span className="text-gray-500">Deployment:</span> {rep.deploymentName}</div>}
                         </div>
                         {rep.errorMessage && (
                           <div className="mt-2 px-2 py-1.5 bg-red-50 border border-red-100 rounded text-red-700 text-xs">
                             {rep.errorMessage}
                           </div>
                         )}
+                        <div className="mt-2 flex justify-end">
+                          <button
+                            onClick={() => setPayloadReport(rep)}
+                            className="inline-flex items-center gap-1 px-2 py-1 border border-gray-200 rounded text-[11px] text-gray-600 hover:bg-gray-50"
+                          >
+                            <FileText className="w-3 h-3" /> View payload
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Payload modal */}
+      {payloadReport && (
+        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4" onClick={() => setPayloadReport(null)}>
+          <div className="bg-white rounded-xl max-w-2xl w-full max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 sticky top-0 bg-white">
+              <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2">
+                <FileText className="w-5 h-5 text-blue-600" /> Report payload
+              </h3>
+              <button onClick={() => setPayloadReport(null)} className="text-gray-400 hover:text-gray-700">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              <div className="grid grid-cols-2 gap-y-1 text-xs">
+                <div className="text-gray-500">Report ID</div>
+                <div className="font-mono break-all">{payloadReport.id}</div>
+                <div className="text-gray-500">Created</div>
+                <div>{new Date(payloadReport.createdAt).toLocaleString()}</div>
+                <div className="text-gray-500">Updated</div>
+                <div>{new Date(payloadReport.updatedAt).toLocaleString()}</div>
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-gray-700 mb-1">Agent metadata</div>
+                <pre className="bg-gray-900 text-gray-100 text-xs p-3 rounded overflow-x-auto whitespace-pre-wrap break-all">
+{JSON.stringify(payloadReport.metadata ?? {}, null, 2)}
+                </pre>
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-gray-700 mb-1">Full record</div>
+                <pre className="bg-gray-50 border border-gray-200 text-gray-800 text-xs p-3 rounded overflow-x-auto whitespace-pre-wrap break-all">
+{JSON.stringify(payloadReport, null, 2)}
+                </pre>
+              </div>
             </div>
           </div>
         </div>

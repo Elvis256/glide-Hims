@@ -461,14 +461,126 @@ export class UpdateManagementService {
   /**
    * List per-instance reports for a rollout (system admin UI).
    */
-  async listRolloutReports(rolloutId: string): Promise<DeploymentReport[]> {
+  async listRolloutReports(rolloutId: string): Promise<any[]> {
     const rollout = await this.rolloutRepository.findOne({ where: { id: rolloutId } });
     if (!rollout) throw new NotFoundException('Rollout not found');
-    return this.reportRepository.find({
+    const reports = await this.reportRepository.find({
       where: { rolloutId },
       order: { updatedAt: 'DESC' },
       take: 200,
     });
+    if (reports.length === 0) return [];
+
+    const licenseIds = Array.from(new Set(reports.map((r) => r.licenseId)));
+    const deployments = licenseIds.length
+      ? await this.deploymentRepository
+          .createQueryBuilder('d')
+          .leftJoin('licenses', 'l', 'l.tenant_id = d.tenant_id')
+          .select(['d.id AS "id"', 'd.name AS "name"', 'l.id AS "licenseId"'])
+          .where('l.id IN (:...ids)', { ids: licenseIds })
+          .getRawMany()
+      : [];
+    const licenseToDeployment = new Map<string, { id: string; name: string }>();
+    for (const d of deployments) licenseToDeployment.set(d.licenseId, { id: d.id, name: d.name });
+
+    const isSimulated = (r: DeploymentReport): boolean =>
+      (!!r.ipAddress && (r.ipAddress === '::1' || r.ipAddress === '127.0.0.1')) ||
+      (!!r.hardwareId && /^agent-/i.test(r.hardwareId));
+
+    return reports.map((r) => {
+      const dep = licenseToDeployment.get(r.licenseId);
+      return {
+        id: r.id,
+        rolloutId: r.rolloutId,
+        licenseId: r.licenseId,
+        tenantId: r.tenantId,
+        deploymentId: dep?.id || null,
+        deploymentName: dep?.name || null,
+        hardwareId: r.hardwareId,
+        fromVersion: r.fromVersion,
+        toVersion: r.toVersion,
+        status: r.status,
+        errorMessage: r.errorMessage,
+        ipAddress: r.ipAddress,
+        metadata: r.metadata,
+        createdAt: r.createdAt,
+        updatedAt: r.updatedAt,
+        simulated: isSimulated(r),
+      };
+    });
+  }
+
+  /**
+   * Aggregate auto-rollback status + error clusters for the rollout reports drawer.
+   */
+  async getRolloutSummary(rolloutId: string): Promise<{
+    autoRollback: {
+      enabled: boolean;
+      threshold: number;
+      currentFailureRatePct: number;
+      tripped: boolean;
+      rolledBackAt: string | null;
+      rollbackReason: any;
+    };
+    errorClusters: Array<{ message: string; count: number; licenseIds: string[] }>;
+    counts: {
+      total: number;
+      success: number;
+      failed: number;
+      rolledBack: number;
+      simulated: number;
+      reported: number;
+    };
+  }> {
+    const rollout = await this.rolloutRepository.findOne({ where: { id: rolloutId } });
+    if (!rollout) throw new NotFoundException('Rollout not found');
+
+    const reports = await this.reportRepository.find({ where: { rolloutId } });
+
+    const success = reports.filter((r) => r.status === DeploymentReportStatus.SUCCESS).length;
+    const failed = reports.filter((r) => r.status === DeploymentReportStatus.FAILED).length;
+    const rolledBack = reports.filter((r) => r.status === DeploymentReportStatus.ROLLED_BACK).length;
+    const simulated = reports.filter(
+      (r) =>
+        (r.ipAddress === '::1' || r.ipAddress === '127.0.0.1') ||
+        (r.hardwareId && /^agent-/i.test(r.hardwareId)),
+    ).length;
+    const reported = reports.length;
+    const denom = success + failed;
+    const currentFailureRatePct = denom > 0 ? (failed / denom) * 100 : 0;
+
+    const clusterMap = new Map<string, { count: number; licenseIds: string[] }>();
+    for (const r of reports) {
+      if (r.status !== DeploymentReportStatus.FAILED) continue;
+      const key = (r.errorMessage || '<no message>').trim();
+      const c = clusterMap.get(key) || { count: 0, licenseIds: [] };
+      c.count += 1;
+      if (!c.licenseIds.includes(r.licenseId)) c.licenseIds.push(r.licenseId);
+      clusterMap.set(key, c);
+    }
+    const errorClusters = Array.from(clusterMap.entries())
+      .map(([message, v]) => ({ message, count: v.count, licenseIds: v.licenseIds }))
+      .sort((a, b) => b.count - a.count);
+
+    return {
+      autoRollback: {
+        enabled: !!rollout.autoRollbackOnError,
+        threshold: rollout.errorThresholdPercentage,
+        currentFailureRatePct,
+        tripped: !!rollout.rolledBackAt,
+        rolledBackAt: rollout.rolledBackAt ? rollout.rolledBackAt.toISOString() : null,
+        rollbackReason: rollout.rollbackReason || null,
+      },
+      errorClusters,
+      counts: {
+        total: rollout.deploymentsTotalCount,
+        success,
+        failed,
+        rolledBack,
+        simulated,
+        reported,
+      },
+    };
   }
 
   /**
