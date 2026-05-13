@@ -1,6 +1,6 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource, In } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   ProcurementApprovalChain,
@@ -56,6 +56,7 @@ export class ApprovalsService {
     private readonly actionRepo: Repository<ApprovalAction>,
     private readonly resolver: OrgApprovalResolverService,
     private readonly events: EventEmitter2,
+    private readonly dataSource: DataSource,
   ) {}
 
   // ---------- Preview (no persistence) ----------
@@ -221,12 +222,160 @@ export class ApprovalsService {
 
   // ---------- Act ----------
 
+  /**
+   * Verify the actor is authorised to act on this step. Authorised when ANY:
+   *   1. They are the explicitly named approver (`approverId` matches).
+   *   2. They are a member of the assigned approver group (`groupId`).
+   *   3. The step's `requiredRole` starts with `permission:` and the actor
+   *      holds that permission (directly or via role).
+   *   4. The step's `requiredRole` starts with `role:` and the actor holds
+   *      that role.
+   */
+  async assertCanAct(
+    step: ProcurementApprovalChain,
+    actorUserId: string,
+  ): Promise<void> {
+    if (!actorUserId) throw new ForbiddenException('Authentication required');
+    if (step.approverId && step.approverId === actorUserId) return;
+    if (step.groupId) {
+      const isMember = await this.dataSource.query(
+        `SELECT 1 FROM approver_group_members WHERE group_id = $1 AND user_id = $2 LIMIT 1`,
+        [step.groupId, actorUserId],
+      );
+      if (isMember && isMember.length > 0) return;
+    }
+    const role = step.requiredRole || '';
+    if (role.startsWith('permission:')) {
+      const code = role.slice('permission:'.length).trim();
+      if (await this.userHasPermission(actorUserId, code, step.tenantId)) return;
+    }
+    if (role.startsWith('role:')) {
+      const wantRole = role.slice('role:'.length).trim();
+      const has = await this.dataSource.query(
+        `SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id
+         WHERE ur.user_id = $1 AND r.name = $2 LIMIT 1`,
+        [actorUserId, wantRole],
+      );
+      if (has && has.length > 0) return;
+    }
+    throw new ForbiddenException('You are not authorised to act on this approval step');
+  }
+
+  /**
+   * Returns true if the user holds `permissionCode` either directly or via
+   * any of their roles.
+   */
+  async userHasPermission(
+    userId: string,
+    permissionCode: string,
+    tenantId?: string,
+  ): Promise<boolean> {
+    const tenantClause = tenantId ? 'AND (up.tenant_id = $3 OR up.tenant_id IS NULL)' : '';
+    const params: any[] = [userId, permissionCode];
+    if (tenantId) params.push(tenantId);
+    const direct = await this.dataSource.query(
+      `SELECT 1 FROM user_permissions up
+       JOIN permissions p ON p.id = up.permission_id
+       WHERE up.user_id = $1 AND p.code = $2 ${tenantClause} LIMIT 1`,
+      params,
+    );
+    if (direct && direct.length > 0) return true;
+    const viaRole = await this.dataSource.query(
+      `SELECT 1 FROM user_roles ur
+       JOIN role_permissions rp ON rp.role_id = ur.role_id
+       JOIN permissions p ON p.id = rp.permission_id
+       WHERE ur.user_id = $1 AND p.code = $2 LIMIT 1`,
+      [userId, permissionCode],
+    );
+    return !!(viaRole && viaRole.length > 0);
+  }
+
+  /**
+   * Returns user IDs who can act on a chain step (used to populate inbox).
+   */
+  private async resolvePotentialApprovers(
+    step: ProcurementApprovalChain,
+  ): Promise<string[]> {
+    const ids = new Set<string>();
+    if (step.approverId) ids.add(step.approverId);
+    if (step.groupId) {
+      const rows = await this.dataSource.query(
+        `SELECT user_id FROM approver_group_members WHERE group_id = $1`,
+        [step.groupId],
+      );
+      for (const r of rows) ids.add(r.user_id);
+    }
+    const role = step.requiredRole || '';
+    if (role.startsWith('permission:')) {
+      const code = role.slice('permission:'.length).trim();
+      const rows = await this.dataSource.query(
+        `SELECT DISTINCT u.id FROM users u
+         LEFT JOIN user_permissions up ON up.user_id = u.id
+         LEFT JOIN permissions p1 ON p1.id = up.permission_id
+         LEFT JOIN user_roles ur ON ur.user_id = u.id
+         LEFT JOIN role_permissions rp ON rp.role_id = ur.role_id
+         LEFT JOIN permissions p2 ON p2.id = rp.permission_id
+         WHERE p1.code = $1 OR p2.code = $1`,
+        [code],
+      );
+      for (const r of rows) ids.add(r.id);
+    }
+    return [...ids];
+  }
+
+  /**
+   * Inbox: pending approval steps where the user can act. Includes module +
+   * documentRef + level so a generic UI can render rows for any module.
+   */
+  async getInbox(userId: string, tenantId?: string) {
+    if (!userId) return [];
+    const where: any = { status: ApprovalChainStatus.PENDING };
+    if (tenantId) where.tenantId = tenantId;
+    const all = await this.chainRepo.find({
+      where,
+      order: { createdAt: 'DESC' },
+      take: 500,
+    });
+    const mine: ProcurementApprovalChain[] = [];
+    for (const step of all) {
+      try {
+        await this.assertCanAct(step, userId);
+        mine.push(step);
+      } catch {
+        // not theirs
+      }
+    }
+    if (mine.length === 0) return [];
+    const namesByKey = await this.resolver.enrichSteps(
+      mine.map((r) => ({ approverId: r.approverId, groupId: r.groupId })),
+      tenantId || '',
+    );
+    return mine.map((r) => {
+      const key = `${r.approverId || ''}|${r.groupId || ''}`;
+      const enriched = namesByKey.get(key) || {};
+      return {
+        stepId: r.id,
+        module: r.module,
+        documentType: r.documentType,
+        documentId: r.documentId,
+        approvalLevel: r.approvalLevel,
+        requiredRole: r.requiredRole,
+        approverId: r.approverId ?? null,
+        approverName: enriched.approverName ?? null,
+        groupId: r.groupId ?? null,
+        groupName: enriched.groupName ?? null,
+        createdAt: r.createdAt,
+      };
+    });
+  }
+
   async approveStep(stepId: string, actor: ApprovalActor, comment?: string) {
     const step = await this.chainRepo.findOne({ where: { id: stepId } });
     if (!step) throw new NotFoundException('Approval step not found');
     if (step.status !== ApprovalChainStatus.PENDING) {
       throw new BadRequestException(`Step is not pending (status=${step.status})`);
     }
+    await this.assertCanAct(step, actor.userId);
     const before = { status: step.status, approvedById: step.approvedById };
     step.status = ApprovalChainStatus.APPROVED;
     step.approvedById = actor.userId;
@@ -284,6 +433,7 @@ export class ApprovalsService {
     if (step.status !== ApprovalChainStatus.PENDING) {
       throw new BadRequestException(`Step is not pending (status=${step.status})`);
     }
+    await this.assertCanAct(step, actor.userId);
     const before = { status: step.status };
     step.status = ApprovalChainStatus.REJECTED;
     step.approvedById = actor.userId;

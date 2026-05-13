@@ -56,6 +56,13 @@ export class ApprovalsController {
     });
   }
 
+  // ---- Inbox (cross-module pending approvals for the current user) ----
+  @Get('inbox')
+  @AuthWithPermissions('procurement.read')
+  inbox(@Request() req: AuthedRequest) {
+    return this.approvals.getInbox(req.user?.id || '', req.user?.tenantId);
+  }
+
   // ---- Read persisted chain ----
   @Get('chain')
   @AuthWithPermissions('procurement.read')
