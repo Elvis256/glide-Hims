@@ -98,6 +98,12 @@ export class SaasRevenueController {
   @Post('invoices/:id/void')
   voidInv(@Req() req: any, @Param('id') id: string) { ensureAdmin(req); return this.svc.voidInvoice(id, req.user?.id); }
 
+  @Post('invoices/:id/send-email')
+  sendInv(@Req() req: any, @Param('id') id: string, @Body() body: { to?: string }) {
+    ensureAdmin(req);
+    return this.svc.sendInvoiceEmail(id, body?.to);
+  }
+
   @Get('invoices/:id/print')
   async printInv(@Req() req: any, @Param('id') id: string, @Res() res: Response) {
     ensureAdmin(req);
@@ -138,6 +144,14 @@ export class SaasRevenueController {
   myBilling(@Req() req: any) {
     if (req.user?.isSystemAdmin && req.query?.tenantId) return this.svc.getMyBilling(String(req.query.tenantId));
     return this.svc.getMyBilling(ensureTenant(req));
+  }
+
+  @Get('portal/invoices/:id/print')
+  async myInvoicePrint(@Req() req: any, @Param('id') id: string, @Res() res: Response) {
+    const tenantId = req.user?.isSystemAdmin ? undefined : ensureTenant(req);
+    const html = await this.svc.renderInvoiceHtml(id, tenantId);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
   }
 
   @Post('portal/checkout')

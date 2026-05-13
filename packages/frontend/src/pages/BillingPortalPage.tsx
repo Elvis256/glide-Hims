@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Loader2, RefreshCw, ExternalLink, AlertTriangle, CheckCircle, CreditCard } from 'lucide-react';
+import { Loader2, RefreshCw, ExternalLink, AlertTriangle, CheckCircle, CreditCard, Printer } from 'lucide-react';
 import api from '../services/api';
 import { fmtMoney, fmtDate, INVOICE_STATUS_STYLES, SUB_STATUS_STYLES, unwrap, SaasInvoice, Subscription, SaasPayment } from './system/saas/_shared';
 
@@ -35,6 +35,18 @@ export default function BillingPortalPage() {
       else alert('Could not create checkout link');
     } catch (e: any) { alert(e?.response?.data?.message || 'Failed'); }
     finally { setPaying(null); }
+  };
+
+  const printInvoice = (inv: SaasInvoice) => {
+    const baseURL = (api.defaults.baseURL || '').replace(/\/$/, '');
+    fetch(`${baseURL}/saas-revenue/portal/invoices/${inv.id}/print`, { credentials: 'include' })
+      .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); })
+      .then((html) => {
+        const w = window.open('', '_blank');
+        if (!w) { alert('Pop-up blocked. Allow pop-ups to view invoices.'); return; }
+        w.document.open(); w.document.write(html); w.document.close();
+      })
+      .catch((e) => alert(`Could not open invoice: ${e.message}`));
   };
 
   if (loading || !data) return <div className="p-8 flex items-center gap-2 text-gray-500"><Loader2 className="w-5 h-5 animate-spin" /> Loading…</div>;
@@ -103,6 +115,7 @@ export default function BillingPortalPage() {
                   <td className="py-2 text-right">{fmtMoney(inv.amountPaidMinor, inv.currency)}</td>
                   <td className="py-2">{fmtDate(inv.dueAt)}</td>
                   <td className="py-2 text-right">
+                    <button onClick={() => printInvoice(inv)} className="inline-flex items-center gap-1 px-2 py-1 border text-xs rounded hover:bg-gray-50 mr-1" title="View / print invoice"><Printer className="w-3 h-3" /> View</button>
                     {inv.status === 'open' && (
                       <button onClick={() => payInvoice(inv)} disabled={paying === inv.id} className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-600 text-white text-xs rounded hover:bg-emerald-700 disabled:opacity-50">
                         {paying === inv.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CreditCard className="w-3 h-3" />} Pay now
