@@ -4,6 +4,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import {
   Repository,
   In,
+  LessThan,
   LessThanOrEqual,
   IsNull,
   MoreThan,
@@ -1863,7 +1864,255 @@ export class SaasRevenueService {
     return done;
   }
 
-  // ----- Payment methods (placeholder; gateway integration deferred) -----
+  // ============================================================
+  // TENANT STATEMENTS (multi-currency, FX-aware)
+  // ============================================================
+  async buildMyStatement(tenantId: string, opts: { from?: string; to?: string } = {}) {
+    const tenant = await this.tenants.findOne({ where: { id: tenantId }, select: ['id', 'name', 'slug'] as any });
+    if (!tenant) throw new NotFoundException('Tenant not found');
+    const vendor = await this.getVendorBilling();
+    const baseCcy = (vendor.defaultCurrency || 'UGX').toUpperCase();
+
+    // Date window: default last 12 full months.
+    const to = opts.to ? new Date(opts.to) : new Date();
+    const from = opts.from ? new Date(opts.from) : new Date(to.getFullYear() - 1, to.getMonth(), to.getDate());
+    if (isNaN(+from) || isNaN(+to)) throw new BadRequestException('Invalid date range');
+
+    const invoices = await this.invoices.find({
+      where: { tenantId, issuedAt: Between(from, to) as any },
+      order: { issuedAt: 'ASC' },
+    });
+    const payments = await this.payments.find({
+      where: { tenantId, paidAt: Between(from, to) as any },
+      order: { paidAt: 'ASC' },
+    });
+
+    const openingInvoices = await this.invoices.find({
+      where: { tenantId, issuedAt: LessThan(from) as any },
+    });
+    const openingPayments = await this.payments.find({
+      where: { tenantId, paidAt: LessThan(from) as any },
+    });
+
+    const sumInBase = (rows: Array<{ totalMinor?: number; amountMinor?: number; currency: string; fxRateToBase: any }>, kind: 'invoice' | 'payment') => {
+      let total = 0;
+      for (const r of rows) {
+        const minor = kind === 'invoice' ? (r.totalMinor || 0) : (r.amountMinor || 0);
+        const rate = Number(r.fxRateToBase || 1) || 1;
+        total += Math.round(minor * rate);
+      }
+      return total;
+    };
+
+    const openingBalanceBase = sumInBase(openingInvoices as any, 'invoice') - sumInBase(openingPayments as any, 'payment');
+
+    // Per-currency breakdown for the period.
+    const byCcy = new Map<string, { currency: string; invoiced: number; paid: number; outstanding: number }>();
+    const bumpC = (ccy: string, key: 'invoiced' | 'paid', minor: number) => {
+      const k = (ccy || baseCcy).toUpperCase();
+      const cur = byCcy.get(k) || { currency: k, invoiced: 0, paid: 0, outstanding: 0 };
+      cur[key] += minor;
+      byCcy.set(k, cur);
+    };
+    for (const inv of invoices) {
+      bumpC(inv.currency, 'invoiced', inv.totalMinor || 0);
+      bumpC(inv.currency, 'paid', inv.amountPaidMinor || 0);
+    }
+    for (const c of byCcy.values()) c.outstanding = c.invoiced - c.paid;
+
+    // Build a chronological ledger with running base-currency balance.
+    type Row = { date: Date; type: 'invoice' | 'payment'; ref: string; description: string; currency: string; amountMinor: number; fxRate: number; baseMinor: number; signedBaseMinor: number; runningBalanceBase: number };
+    const ledger: Row[] = [];
+    let running = openingBalanceBase;
+    const events: Array<{ date: Date; row: Omit<Row, 'runningBalanceBase'> }> = [];
+    for (const inv of invoices) {
+      const rate = Number(inv.fxRateToBase || 1) || 1;
+      const baseMinor = Math.round((inv.totalMinor || 0) * rate);
+      events.push({
+        date: inv.issuedAt,
+        row: { date: inv.issuedAt, type: 'invoice', ref: inv.invoiceNumber, description: `Invoice ${inv.invoiceNumber}`, currency: inv.currency, amountMinor: inv.totalMinor || 0, fxRate: rate, baseMinor, signedBaseMinor: baseMinor },
+      });
+    }
+    for (const p of payments) {
+      const rate = Number(p.fxRateToBase || 1) || 1;
+      const baseMinor = Math.round((p.amountMinor || 0) * rate);
+      const signed = (p.status === 'refunded' ? +1 : -1) * baseMinor;
+      events.push({
+        date: p.paidAt,
+        row: { date: p.paidAt, type: 'payment', ref: p.gatewayRef || p.id.slice(0, 8), description: `Payment ${p.gateway}${p.method ? ` (${p.method})` : ''}${p.status === 'refunded' ? ' — REFUND' : ''}`, currency: p.currency, amountMinor: p.amountMinor || 0, fxRate: rate, baseMinor, signedBaseMinor: signed },
+      });
+    }
+    events.sort((a, b) => +a.date - +b.date);
+    for (const e of events) {
+      running += e.row.signedBaseMinor;
+      ledger.push({ ...e.row, runningBalanceBase: running });
+    }
+
+    const totals = {
+      invoicedBase: sumInBase(invoices as any, 'invoice'),
+      paidBase: ledger.filter((r) => r.type === 'payment' && r.signedBaseMinor < 0).reduce((s, r) => s + Math.abs(r.signedBaseMinor), 0),
+      refundedBase: ledger.filter((r) => r.type === 'payment' && r.signedBaseMinor > 0).reduce((s, r) => s + r.signedBaseMinor, 0),
+      openingBalanceBase,
+      closingBalanceBase: running,
+    };
+
+    return {
+      tenant: { id: tenant.id, name: tenant.name, slug: (tenant as any).slug },
+      vendor,
+      period: { from: from.toISOString(), to: to.toISOString() },
+      baseCurrency: baseCcy,
+      byCurrency: Array.from(byCcy.values()).sort((a, b) => a.currency.localeCompare(b.currency)),
+      ledger,
+      totals,
+    };
+  }
+
+  async renderMyStatementCsv(tenantId: string, opts: { from?: string; to?: string } = {}): Promise<string> {
+    const s = await this.buildMyStatement(tenantId, opts);
+    const esc = (v: any) => {
+      if (v === null || v === undefined) return '';
+      const str = String(v);
+      return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+    };
+    const lines: string[] = [];
+    lines.push(`# Statement for ${s.tenant.name}`);
+    lines.push(`# Period: ${s.period.from.slice(0, 10)} to ${s.period.to.slice(0, 10)}`);
+    lines.push(`# Base currency: ${s.baseCurrency}`);
+    lines.push(`# Opening balance (${s.baseCurrency}): ${(s.totals.openingBalanceBase / 100).toFixed(2)}`);
+    lines.push('');
+    lines.push(['Date', 'Type', 'Ref', 'Description', 'Currency', 'Amount', 'FX rate to base', `Base amount (${s.baseCurrency})`, `Signed base`, `Running balance (${s.baseCurrency})`].map(esc).join(','));
+    for (const r of s.ledger) {
+      lines.push([
+        new Date(r.date).toISOString().slice(0, 10),
+        r.type, r.ref, r.description, r.currency,
+        (r.amountMinor / 100).toFixed(2),
+        r.fxRate.toString(),
+        (r.baseMinor / 100).toFixed(2),
+        (r.signedBaseMinor / 100).toFixed(2),
+        (r.runningBalanceBase / 100).toFixed(2),
+      ].map(esc).join(','));
+    }
+    lines.push('');
+    lines.push(`# Closing balance (${s.baseCurrency}): ${(s.totals.closingBalanceBase / 100).toFixed(2)}`);
+    lines.push('');
+    lines.push('# Per-currency breakdown');
+    lines.push(['Currency', 'Invoiced', 'Paid', 'Outstanding'].map(esc).join(','));
+    for (const c of s.byCurrency) {
+      lines.push([c.currency, (c.invoiced / 100).toFixed(2), (c.paid / 100).toFixed(2), (c.outstanding / 100).toFixed(2)].map(esc).join(','));
+    }
+    return lines.join('\n') + '\n';
+  }
+
+  async renderMyStatementPdf(tenantId: string, opts: { from?: string; to?: string } = {}): Promise<Buffer> {
+    const s = await this.buildMyStatement(tenantId, opts);
+    const PDFDocumentMod: any = await import('pdfkit');
+    const PDFDocument = PDFDocumentMod.default || PDFDocumentMod;
+    const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    const chunks: Buffer[] = [];
+    doc.on('data', (c: Buffer) => chunks.push(c));
+    const done: Promise<Buffer> = new Promise((resolve) => doc.on('end', () => resolve(Buffer.concat(chunks))));
+
+    const fmtBase = (n: number) => this.fmtMoney(n, s.baseCurrency);
+    const fmtCcy = (n: number, c: string) => this.fmtMoney(n, c);
+    const fmtD = (d: any) => (d ? new Date(d).toISOString().slice(0, 10) : '—');
+
+    // Header
+    const top = doc.y;
+    doc.fontSize(16).font('Helvetica-Bold').text(s.vendor.tradingName || s.vendor.legalName || 'Statement', 40, top);
+    doc.fontSize(9).font('Helvetica').fillColor('#555');
+    if (s.vendor.legalName && s.vendor.legalName !== s.vendor.tradingName) doc.text(s.vendor.legalName);
+    if (s.vendor.addressLine1) doc.text(s.vendor.addressLine1);
+    if (s.vendor.email) doc.text(s.vendor.email);
+    doc.fillColor('black');
+
+    doc.fontSize(20).font('Helvetica-Bold').text('STATEMENT', 380, top, { width: 175, align: 'right' });
+    doc.fontSize(10).font('Helvetica').fillColor('#555')
+      .text(`${fmtD(s.period.from)} → ${fmtD(s.period.to)}`, 380, top + 24, { width: 175, align: 'right' })
+      .text(`Base: ${s.baseCurrency}`, 380, top + 38, { width: 175, align: 'right' });
+    doc.fillColor('black');
+
+    doc.y = Math.max(doc.y, top + 90);
+    doc.moveTo(40, doc.y).lineTo(555, doc.y).strokeColor('#ccc').stroke().strokeColor('black');
+    doc.moveDown(0.6);
+
+    // Bill-to
+    doc.fontSize(8).fillColor('#64748b').font('Helvetica-Bold').text('BILL TO', 40, doc.y);
+    doc.fontSize(11).fillColor('black').font('Helvetica-Bold').text(s.tenant.name, 40, doc.y + 2);
+    if (s.tenant.slug) doc.fontSize(9).font('Helvetica').fillColor('#555').text(s.tenant.slug, 40);
+    doc.fillColor('black').moveDown(0.6);
+
+    // Summary box
+    const boxY = doc.y;
+    doc.rect(40, boxY, 515, 56).fill('#f8fafc').stroke('#e2e8f0');
+    doc.fillColor('#475569').fontSize(8).font('Helvetica-Bold');
+    doc.text('OPENING', 50, boxY + 8);
+    doc.text('INVOICED', 180, boxY + 8);
+    doc.text('PAID', 310, boxY + 8);
+    doc.text('REFUNDED', 380, boxY + 8);
+    doc.text('CLOSING', 470, boxY + 8);
+    doc.fillColor('black').fontSize(11).font('Helvetica-Bold');
+    doc.text(fmtBase(s.totals.openingBalanceBase), 50, boxY + 24, { width: 120 });
+    doc.text(fmtBase(s.totals.invoicedBase), 180, boxY + 24, { width: 120 });
+    doc.text(fmtBase(s.totals.paidBase), 310, boxY + 24, { width: 60 });
+    doc.text(fmtBase(s.totals.refundedBase), 380, boxY + 24, { width: 80 });
+    const closingColor = s.totals.closingBalanceBase > 0 ? '#b91c1c' : '#15803d';
+    doc.fillColor(closingColor).text(fmtBase(s.totals.closingBalanceBase), 470, boxY + 24, { width: 80 });
+    doc.fillColor('black');
+    doc.y = boxY + 64;
+    doc.moveDown(0.4);
+
+    // Per-currency breakdown
+    if (s.byCurrency.length > 1) {
+      doc.fontSize(9).font('Helvetica-Bold').fillColor('#475569').text('Per-currency breakdown', 40);
+      doc.moveDown(0.2);
+      const ch = doc.y;
+      doc.fontSize(8).fillColor('#64748b');
+      doc.text('Currency', 40, ch); doc.text('Invoiced', 140, ch, { width: 120, align: 'right' });
+      doc.text('Paid', 270, ch, { width: 120, align: 'right' });
+      doc.text('Outstanding', 400, ch, { width: 150, align: 'right' });
+      let cy = ch + 12;
+      doc.fillColor('black').font('Helvetica');
+      for (const c of s.byCurrency) {
+        doc.text(c.currency, 40, cy);
+        doc.text(fmtCcy(c.invoiced, c.currency), 140, cy, { width: 120, align: 'right' });
+        doc.text(fmtCcy(c.paid, c.currency), 270, cy, { width: 120, align: 'right' });
+        doc.text(fmtCcy(c.outstanding, c.currency), 400, cy, { width: 150, align: 'right' });
+        cy += 14;
+      }
+      doc.y = cy + 4;
+    }
+
+    // Ledger
+    doc.fontSize(9).font('Helvetica-Bold').fillColor('#475569').text('Ledger', 40);
+    doc.moveDown(0.2);
+    let y = doc.y;
+    doc.fontSize(8).fillColor('#64748b');
+    doc.text('Date', 40, y); doc.text('Type', 90, y); doc.text('Ref', 130, y);
+    doc.text('Amount', 230, y, { width: 100, align: 'right' });
+    doc.text(`Base (${s.baseCurrency})`, 340, y, { width: 90, align: 'right' });
+    doc.text('Balance', 440, y, { width: 110, align: 'right' });
+    y += 12;
+    doc.moveTo(40, y - 2).lineTo(555, y - 2).strokeColor('#e2e8f0').stroke().strokeColor('black');
+    doc.fillColor('black').font('Helvetica');
+    for (const r of s.ledger) {
+      if (y > 760) { doc.addPage(); y = 40; }
+      doc.text(fmtD(r.date), 40, y);
+      doc.text(r.type, 90, y);
+      doc.text(r.ref, 130, y, { width: 100 });
+      doc.text(fmtCcy(r.amountMinor, r.currency), 230, y, { width: 100, align: 'right' });
+      const signDisp = r.signedBaseMinor < 0 ? `-${fmtBase(Math.abs(r.signedBaseMinor))}` : fmtBase(r.signedBaseMinor);
+      doc.fillColor(r.signedBaseMinor < 0 ? '#15803d' : '#b91c1c').text(signDisp, 340, y, { width: 90, align: 'right' });
+      doc.fillColor('black').text(fmtBase(r.runningBalanceBase), 440, y, { width: 110, align: 'right' });
+      y += 14;
+    }
+    if (s.ledger.length === 0) {
+      doc.fontSize(9).fillColor('#64748b').text('No activity in this period.', 40, y);
+    }
+
+    doc.end();
+    return done;
+  }
+
   async listMyPaymentMethods(tenantId: string) {
     return this.paymentMethods.find({ where: { tenantId }, order: { isDefault: 'DESC', createdAt: 'DESC' } });
   }
