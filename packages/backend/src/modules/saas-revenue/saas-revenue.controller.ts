@@ -513,18 +513,17 @@ export class SaasRevenueController {
   }
 
   @Post('portal/charge-saved')
-  myChargeSaved(
+  async myChargeSaved(
     @Req() req: any,
     @Body() dto: { invoiceId: string; paymentMethodId: string; redirectUrl?: string },
   ) {
     const tenantId = req.user?.isSystemAdmin ? undefined : ensureTenant(req);
     const redirectUrl = dto.redirectUrl || `${process.env.PUBLIC_BASE_URL || ''}/billing-portal/return`;
     const originUrl = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get?.('host') || ''}`;
-    // Tenant-scope safety: ensure invoice belongs to the caller (or its payer) when not system admin.
-    if (tenantId) {
-      return this.svc.getMyInvoice(tenantId, dto.invoiceId).then(() =>
-        this.svc.chargeSavedPesapalToken(dto.invoiceId, dto.paymentMethodId, { redirectUrl, originUrl }, req.user?.id),
-      );
+    if (tenantId) await this.svc.getMyInvoice(tenantId, dto.invoiceId);
+    const gateway = await this.svc.detectSavedTokenGateway(dto.paymentMethodId);
+    if (gateway === 'flutterwave') {
+      return this.svc.chargeSavedFlutterwaveToken(dto.invoiceId, dto.paymentMethodId, { redirectUrl, originUrl }, req.user?.id);
     }
     return this.svc.chargeSavedPesapalToken(dto.invoiceId, dto.paymentMethodId, { redirectUrl, originUrl }, req.user?.id);
   }

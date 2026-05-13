@@ -229,10 +229,14 @@ export default function BillingPortalPage() {
                             </button>
                           )}
                           {(() => {
-                            const savedPesapal = (data.paymentMethods || []).find((pm: any) => (pm.metadata || {}).gateway === 'pesapal' && (pm.metadata || {}).accountNumber);
-                            if (!savedPesapal) return null;
+                            const savedToken = (data.paymentMethods || []).find((pm: any) => {
+                              const m = pm.metadata || {};
+                              return (m.gateway === 'pesapal' && m.accountNumber) || (m.gateway === 'flutterwave' && m.token);
+                            });
+                            if (!savedToken) return null;
+                            const gw = (savedToken.metadata || {}).gateway;
                             return (
-                              <button onClick={() => chargeSaved(inv, savedPesapal.id)} disabled={paying === inv.id} className="inline-flex items-center gap-1 px-3 py-1 ml-1 bg-purple-600 text-white text-xs rounded hover:bg-purple-700 disabled:opacity-50" title={`Charge saved Pesapal token (${savedPesapal.label})`}>
+                              <button onClick={() => chargeSaved(inv, savedToken.id)} disabled={paying === inv.id} className="inline-flex items-center gap-1 px-3 py-1 ml-1 bg-purple-600 text-white text-xs rounded hover:bg-purple-700 disabled:opacity-50" title={`Charge saved ${gw === 'flutterwave' ? 'card' : 'token'} (${savedToken.label})`}>
                                 {paying === inv.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CreditCard className="w-3 h-3" />} Charge saved
                               </button>
                             );

@@ -1709,7 +1709,101 @@ export class SaasRevenueService {
       latest.gatewayPayload = data;
       await this.payments.save(latest);
     }
+    // Persist saved-card token on first successful charge so future renewals can auto-debit.
+    const card = (verified.raw as any)?.card || data?.card || {};
+    const cardToken: string | undefined = card?.token;
+    if (cardToken) {
+      const matched = await this.paymentMethods
+        .createQueryBuilder('pm')
+        .where('pm.tenantId = :tid', { tid: inv.tenantId })
+        .andWhere(`pm.metadata ->> 'token' = :tok`, { tok: String(cardToken) })
+        .getOne();
+      if (!matched) {
+        const existingPm = await this.paymentMethods.findOne({ where: { tenantId: inv.tenantId } });
+        const pm = this.paymentMethods.create({
+          tenantId: inv.tenantId,
+          kind: 'card' as any,
+          label: `Flutterwave · ${card?.type || 'card'} ****${card?.last_4digits || ''}`,
+          brand: card?.type || 'card',
+          last4: card?.last_4digits || undefined,
+          expMonth: card?.expiry ? Number(String(card.expiry).split('/')[0]) : undefined,
+          expYear: card?.expiry ? Number(String(card.expiry).split('/')[1]) : undefined,
+          isDefault: !existingPm,
+          metadata: {
+            gateway: 'flutterwave',
+            token: String(cardToken),
+            firstSeenTxId: String(txId),
+            country: card?.country,
+          },
+        });
+        await this.paymentMethods.save(pm);
+        this.logger.log(`Saved Flutterwave card token for tenant=${inv.tenantId} last4=${card?.last_4digits || '?'}`);
+      }
+    }
     return { ok: true };
+  }
+
+  /**
+   * Charge a previously-saved Flutterwave card token (metadata.gateway='flutterwave', metadata.token=…).
+   * Records a `note` event; the actual payment row is created when Flutterwave's
+   * webhook (`charge.completed`) fires for the new transaction.
+   */
+  /** Inspect a saved payment method's metadata to choose the right charge path. */
+  async detectSavedTokenGateway(paymentMethodId: string): Promise<'flutterwave' | 'pesapal' | null> {
+    const pm = await this.paymentMethods.findOne({ where: { id: paymentMethodId } });
+    if (!pm) return null;
+    const g = (pm.metadata as any)?.gateway;
+    return g === 'flutterwave' || g === 'pesapal' ? g : null;
+  }
+
+  async chargeSavedFlutterwaveToken(
+    invoiceId: string,
+    paymentMethodId: string,
+    _opts: { redirectUrl?: string; originUrl?: string } = {},
+    actorId?: string,
+  ) {
+    const inv = await this.invoices.findOne({ where: { id: invoiceId } });
+    if (!inv) throw new NotFoundException('Invoice not found');
+    if (inv.status === 'paid' || inv.status === 'void') {
+      throw new BadRequestException(`Invoice is ${inv.status}; cannot charge`);
+    }
+    const due = Math.max(0, inv.totalMinor - (inv.amountPaidMinor || 0));
+    if (due <= 0) throw new BadRequestException('Invoice has no balance due');
+    const pm = await this.paymentMethods.findOne({ where: { id: paymentMethodId } });
+    if (!pm) throw new NotFoundException('Payment method not found');
+    if (pm.tenantId !== inv.tenantId && pm.tenantId !== inv.billingPayerTenantId) {
+      throw new ForbiddenException('Payment method does not belong to invoice tenant');
+    }
+    const meta: any = pm.metadata || {};
+    if (meta.gateway !== 'flutterwave' || !meta.token) {
+      throw new BadRequestException('Selected payment method has no saved Flutterwave token');
+    }
+    const sub = inv.subscriptionId ? await this.subs.findOne({ where: { id: inv.subscriptionId } }) : null;
+    const tenant = await this.tenants.findOne({ where: { id: inv.tenantId } });
+    const customerEmail = sub?.billingEmail || `tenant-${inv.tenantId}@noemail.local`;
+    const customerName = tenant?.name || 'Customer';
+    const txRef = `recur_${inv.id.slice(0, 8)}_${Date.now()}`;
+    const result = await this.flw.chargeTokenized({
+      token: String(meta.token),
+      txRef,
+      amountMinor: due,
+      currency: inv.currency,
+      customerEmail,
+      customerName,
+      narration: `Auto-renewal for invoice ${inv.invoiceNumber}`,
+      meta: { invoiceId: inv.id, paymentMethodId, gateway: 'flutterwave', source: 'saved-token' },
+    });
+    if (!result.ok) {
+      throw new BadRequestException('Flutterwave tokenized charge failed');
+    }
+    await this.recordEvent(
+      inv.subscriptionId,
+      'note',
+      `Flutterwave saved-card charge initiated for invoice ${inv.invoiceNumber} (last4=${pm.last4 || '?'})`,
+      { invoiceId: inv.id, paymentMethodId, txRef, transactionId: result.transactionId },
+      actorId,
+    );
+    return { ok: true, gateway: 'flutterwave' as const, invoiceId: inv.id, amountMinor: due, currency: inv.currency, txRef, paymentMethodId, transactionId: result.transactionId, status: result.status };
   }
 
   // ---------- Pesapal IPN ----------
