@@ -73,7 +73,14 @@ export default function SystemSubscriptionsPage() {
                       <span className="font-mono text-xs text-gray-500" title={s.tenantId}>{s.tenantId.slice(0, 8)}…</span>
                     )}
                   </td>
-                  <td className="px-4 py-2"><span className={`px-2 py-0.5 rounded-full text-xs ${SUB_STATUS_STYLES[s.status]}`}>{s.status.replace('_', ' ')}</span></td>
+                  <td className="px-4 py-2">
+                    <span className={`px-2 py-0.5 rounded-full text-xs ${SUB_STATUS_STYLES[s.status]}`}>{s.status.replace('_', ' ')}</span>
+                    {s.failedPaymentAttempts > 0 && (
+                      <div className="mt-1 inline-flex items-center gap-1 text-xs text-rose-700" title={s.lastDunningAt ? `Last dunning: ${fmtDate(s.lastDunningAt)}` : 'Failed payments'}>
+                        <span className="px-1.5 py-0.5 rounded bg-rose-50 border border-rose-200 font-medium">{s.failedPaymentAttempts} failed</span>
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-2 text-right">{fmtMoney(s.unitPriceMinor * s.seats, s.currency)}</td>
                   <td className="px-4 py-2 capitalize">{s.billingInterval}</td>
                   <td className="px-4 py-2">{fmtDate(s.nextRenewalAt)} {!s.autoRenew && <span className="text-xs text-amber-600">(no auto)</span>}</td>

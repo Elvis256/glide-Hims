@@ -53,6 +53,8 @@ const SystemPlansPage = lazy(() => import('./pages/system/SystemPlansPage'));
 const SystemSubscriptionsPage = lazy(() => import('./pages/system/SystemSubscriptionsPage'));
 const SystemSubscriptionDetailPage = lazy(() => import('./pages/system/SystemSubscriptionDetailPage'));
 const SystemSaasInvoicesPage = lazy(() => import('./pages/system/SystemSaasInvoicesPage'));
+const SystemInvoiceDetailPage = lazy(() => import('./pages/system/SystemInvoiceDetailPage'));
+const SystemBillingSettingsPage = lazy(() => import('./pages/system/SystemBillingSettingsPage'));
 const SystemCouponsPage = lazy(() => import('./pages/system/SystemCouponsPage'));
 const SystemRevenuePage = lazy(() => import('./pages/system/SystemRevenuePage'));
 const PublicPricingPage = lazy(() => import('./pages/PublicPricingPage'));
@@ -673,6 +675,8 @@ function AppRoutes() {
         <Route path="subscriptions" element={<SystemSubscriptionsPage />} />
         <Route path="subscriptions/:id" element={<SystemSubscriptionDetailPage />} />
         <Route path="saas-invoices" element={<SystemSaasInvoicesPage />} />
+        <Route path="saas-invoices/:id" element={<SystemInvoiceDetailPage />} />
+        <Route path="billing-settings" element={<SystemBillingSettingsPage />} />
         <Route path="coupons" element={<SystemCouponsPage />} />
         <Route path="revenue" element={<SystemRevenuePage />} />
         <Route path="compliance" element={<SystemComplianceCenterPage />} />

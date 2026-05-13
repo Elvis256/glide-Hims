@@ -42,6 +42,7 @@ const sidebarItems = [
   { name: 'Plans', href: '/system/plans', icon: Package },
   { name: 'Subscriptions', href: '/system/subscriptions', icon: CreditCard },
   { name: 'SaaS Invoices', href: '/system/saas-invoices', icon: Receipt },
+  { name: 'Billing Identity', href: '/system/billing-settings', icon: Building2 },
   { name: 'Coupons', href: '/system/coupons', icon: Tag },
   { name: 'Revenue', href: '/system/revenue', icon: TrendingUp },
   { name: 'Compliance Center', href: '/system/compliance', icon: ClipboardCheck },

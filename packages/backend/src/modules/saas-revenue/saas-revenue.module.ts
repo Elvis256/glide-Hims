@@ -10,9 +10,13 @@ import { SaasRevenueService } from './saas-revenue.service';
 import { SaasRevenueController } from './saas-revenue.controller';
 import { SaasMailerService } from './saas-mailer.service';
 import { FlutterwaveService } from './flutterwave.service';
+import { SystemSettingsModule } from '../system-settings/system-settings.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([SaasPlan, SaasSubscription, SaasInvoice, SaasPayment, SaasCoupon, SaasSubscriptionEvent, License, Lead, Tenant])],
+  imports: [
+    TypeOrmModule.forFeature([SaasPlan, SaasSubscription, SaasInvoice, SaasPayment, SaasCoupon, SaasSubscriptionEvent, License, Lead, Tenant]),
+    SystemSettingsModule,
+  ],
   controllers: [SaasRevenueController],
   providers: [SaasRevenueService, SaasMailerService, FlutterwaveService],
   exports: [SaasRevenueService],

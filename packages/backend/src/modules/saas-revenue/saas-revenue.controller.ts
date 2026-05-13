@@ -1,6 +1,7 @@
 import {
-  Body, Controller, Delete, ForbiddenException, Get, Headers, Param, Post, Put, Query, RawBodyRequest, Req,
+  Body, Controller, Delete, ForbiddenException, Get, Headers, Param, Post, Put, Query, RawBodyRequest, Req, Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { Public } from '../auth/decorators/public.decorator';
 import { SaasRevenueService } from './saas-revenue.service';
 import {
@@ -96,6 +97,21 @@ export class SaasRevenueController {
 
   @Post('invoices/:id/void')
   voidInv(@Req() req: any, @Param('id') id: string) { ensureAdmin(req); return this.svc.voidInvoice(id, req.user?.id); }
+
+  @Get('invoices/:id/print')
+  async printInv(@Req() req: any, @Param('id') id: string, @Res() res: Response) {
+    ensureAdmin(req);
+    const html = await this.svc.renderInvoiceHtml(id);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+  }
+
+  // ---------- Vendor billing identity (system-wide settings) ----------
+  @Get('billing-settings')
+  getBillingSettings(@Req() req: any) { ensureAdmin(req); return this.svc.getVendorBilling(); }
+
+  @Put('billing-settings')
+  updateBillingSettings(@Req() req: any, @Body() dto: any) { ensureAdmin(req); return this.svc.updateVendorBilling(dto || {}); }
 
   // ---------- Revenue dashboard ----------
   @Get('revenue/dashboard')
