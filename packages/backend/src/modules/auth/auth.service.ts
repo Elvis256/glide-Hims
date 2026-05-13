@@ -853,6 +853,187 @@ export class AuthService {
    * Get current user info + accessible modules based on effective permissions.
    * Used by frontend to drive navigation visibility.
    */
+  /**
+   * Tenant impersonation — system admin starts acting as a specific tenant.
+   * Issues a fresh access+refresh token pair where tenantId points at the
+   * target. The original tenantId (often null for cross-tenant admins) is
+   * preserved in the JWT so we can restore it later.
+   */
+  async impersonateTenant(
+    adminUserId: string,
+    targetTenantId: string,
+    reason: string | undefined,
+    ipAddress: string,
+    userAgent: string,
+  ): Promise<AuthResponseDto> {
+    const admin = await this.userRepository.findOne({ where: { id: adminUserId } });
+    if (!admin) throw new UnauthorizedException('User not found');
+    if (!admin.isSystemAdmin) {
+      throw new ForbiddenException('Only system administrators may impersonate tenants');
+    }
+    if (!targetTenantId) throw new BadRequestException('targetTenantId is required');
+    const tenant = await this.tenantRepository.findOne({ where: { id: targetTenantId } });
+    if (!tenant) throw new NotFoundException('Target tenant not found');
+    if ((tenant as any).status && (tenant as any).status !== 'active') {
+      this.logger.warn(`Admin ${admin.username} impersonating non-active tenant ${tenant.id} (${(tenant as any).status})`);
+    }
+
+    const userRoles = await this.userRoleRepository.find({ where: { userId: admin.id }, relations: ['role'] });
+    const roles = userRoles.map((ur) => ur.role.name);
+    const grantId = crypto.randomUUID();
+
+    const payload: JwtPayload = {
+      sub: admin.id,
+      username: admin.username,
+      email: admin.email,
+      tenantId: targetTenantId,
+      roles,
+      tokenVersion: admin.tokenVersion,
+      impersonating: true,
+      originalTenantId: admin.tenantId ?? null,
+      impersonationGrantId: grantId,
+    };
+
+    const accessToken = this.jwtService.sign(payload);
+    const refreshToken = this.jwtService.sign(
+      { ...payload, jti: crypto.randomUUID() },
+      {
+        secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
+        expiresIn: this.configService.get<string>('JWT_REFRESH_EXPIRES_IN', '7d'),
+      },
+    );
+    const expiresInConfig = this.configService.get<string>('JWT_EXPIRES_IN', '8h');
+    const expiresInSeconds = this.parseExpiryToSeconds(expiresInConfig);
+
+    await this.refreshTokenService.createRefreshToken(admin.id, targetTenantId, refreshToken, ipAddress, userAgent);
+    await this.sessionService.createSession(admin.id, targetTenantId, refreshToken, ipAddress, userAgent);
+
+    // Audit
+    try {
+      const auditLog = this.dataSource.getRepository(AuditLog).create({
+        userId: admin.id,
+        username: admin.username,
+        action: 'tenant.impersonate.start',
+        entityType: 'tenants',
+        entityId: targetTenantId,
+        tenantId: targetTenantId,
+        ipAddress,
+        userAgent,
+        reason: reason || null,
+        newValue: { grantId, targetTenantId, targetTenantName: tenant.name, originalTenantId: admin.tenantId ?? null },
+        statusCode: 200,
+        actorType: 'user',
+      } as any);
+      await this.dataSource.getRepository(AuditLog).save(auditLog);
+    } catch (e) {
+      this.logger.error(`Failed to write impersonation audit: ${(e as any)?.message}`);
+    }
+    this.logger.warn(`IMPERSONATION START admin=${admin.username} → tenant=${tenant.name} (${tenant.id}) reason="${reason ?? ''}" grant=${grantId}`);
+
+    let modules: string[] = [];
+    try { modules = (await this.getMe(admin.id)).accessibleModules || []; } catch { /* non-critical */ }
+
+    return {
+      accessToken,
+      refreshToken,
+      expiresIn: expiresInSeconds,
+      user: {
+        id: admin.id,
+        username: admin.username,
+        fullName: admin.fullName,
+        email: admin.email,
+        roles,
+        permissions: [],
+        accessibleModules: modules,
+        isSystemAdmin: true,
+        tenantId: targetTenantId,
+      } as any,
+    } as any;
+  }
+
+  /**
+   * End an active tenant impersonation — restore the admin's natural
+   * tenant context (often null) and issue a fresh token pair.
+   */
+  async endImpersonation(
+    adminUserId: string,
+    currentJwt: { impersonating?: boolean; originalTenantId?: string | null; impersonationGrantId?: string; tenantId?: string },
+    ipAddress: string,
+    userAgent: string,
+  ): Promise<AuthResponseDto> {
+    const admin = await this.userRepository.findOne({ where: { id: adminUserId } });
+    if (!admin) throw new UnauthorizedException('User not found');
+    if (!admin.isSystemAdmin) throw new ForbiddenException('Only system administrators may end impersonation');
+    if (!currentJwt?.impersonating) throw new BadRequestException('Not currently impersonating');
+
+    const userRoles = await this.userRoleRepository.find({ where: { userId: admin.id }, relations: ['role'] });
+    const roles = userRoles.map((ur) => ur.role.name);
+    const restoredTenantId = currentJwt.originalTenantId ?? admin.tenantId ?? undefined;
+
+    const payload: JwtPayload = {
+      sub: admin.id,
+      username: admin.username,
+      email: admin.email,
+      tenantId: restoredTenantId,
+      roles,
+      tokenVersion: admin.tokenVersion,
+    };
+    const accessToken = this.jwtService.sign(payload);
+    const refreshToken = this.jwtService.sign(
+      { ...payload, jti: crypto.randomUUID() },
+      {
+        secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
+        expiresIn: this.configService.get<string>('JWT_REFRESH_EXPIRES_IN', '7d'),
+      },
+    );
+    const expiresInConfig = this.configService.get<string>('JWT_EXPIRES_IN', '8h');
+    const expiresInSeconds = this.parseExpiryToSeconds(expiresInConfig);
+
+    await this.refreshTokenService.createRefreshToken(admin.id, restoredTenantId, refreshToken, ipAddress, userAgent);
+    await this.sessionService.createSession(admin.id, restoredTenantId, refreshToken, ipAddress, userAgent);
+
+    try {
+      const auditLog = this.dataSource.getRepository(AuditLog).create({
+        userId: admin.id,
+        username: admin.username,
+        action: 'tenant.impersonate.end',
+        entityType: 'tenants',
+        entityId: currentJwt.tenantId || null,
+        tenantId: currentJwt.tenantId || null,
+        ipAddress,
+        userAgent,
+        oldValue: { grantId: currentJwt.impersonationGrantId, impersonatedTenantId: currentJwt.tenantId },
+        newValue: { restoredTenantId: restoredTenantId ?? null },
+        statusCode: 200,
+        actorType: 'user',
+      } as any);
+      await this.dataSource.getRepository(AuditLog).save(auditLog);
+    } catch (e) {
+      this.logger.error(`Failed to write end-impersonation audit: ${(e as any)?.message}`);
+    }
+    this.logger.warn(`IMPERSONATION END admin=${admin.username} grant=${currentJwt.impersonationGrantId}`);
+
+    let modules: string[] = [];
+    try { modules = (await this.getMe(admin.id)).accessibleModules || []; } catch { /* non-critical */ }
+
+    return {
+      accessToken,
+      refreshToken,
+      expiresIn: expiresInSeconds,
+      user: {
+        id: admin.id,
+        username: admin.username,
+        fullName: admin.fullName,
+        email: admin.email,
+        roles,
+        permissions: [],
+        accessibleModules: modules,
+        isSystemAdmin: true,
+        tenantId: restoredTenantId,
+      } as any,
+    } as any;
+  }
+
   async getMe(userId: string) {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) throw new UnauthorizedException('User not found');

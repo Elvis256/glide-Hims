@@ -38,4 +38,14 @@ export const authService = {
     const response = await api.post<LoginResponse>('/auth/enter-tenant', { tenantId });
     return response.data;
   },
+
+  impersonate: async (tenantId: string, reason?: string): Promise<LoginResponse> => {
+    const response = await api.post<LoginResponse>('/auth/impersonate', { tenantId, reason });
+    return response.data;
+  },
+
+  endImpersonation: async (): Promise<LoginResponse> => {
+    const response = await api.post<LoginResponse>('/auth/end-impersonation', {});
+    return response.data;
+  },
 };

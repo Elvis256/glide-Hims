@@ -29,6 +29,7 @@ import RoleRoute, {
   ROLES,
 } from './components/RoleRoute';
 import DashboardLayout from './components/DashboardLayout';
+import ImpersonationBanner from './components/ImpersonationBanner';
 import { PageLoader } from './components/PageLoader';
 
 // Lazy-loaded page components (route-based code splitting)
@@ -643,6 +644,7 @@ function AppRoutes() {
 
   return (
     <Suspense fallback={<PageLoader />}>
+    <ImpersonationBanner />
     <Routes>
       <Route path="/setup" element={isSetupComplete ? <Navigate to="/" replace /> : <SetupWizardPage />} />
       <Route path="/setup/:slug" element={<TenantSetupWizardPage />} />
