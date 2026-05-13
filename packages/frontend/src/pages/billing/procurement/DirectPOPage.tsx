@@ -636,6 +636,7 @@ export function DirectPOPage() {
                 amount={total}
                 facilityId={user?.facilityId}
                 departmentId={formData.departmentId}
+                hideWhenEmpty={false}
               />
             </div>
           </section>
