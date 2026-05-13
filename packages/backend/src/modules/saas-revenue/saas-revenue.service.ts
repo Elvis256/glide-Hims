@@ -69,6 +69,22 @@ const DEFAULT_VENDOR_BILLING: VendorBillingSettings = {
   defaultCurrency: 'UGX',
 };
 
+export const DUNNING_RULES_KEY = 'dunning_rules';
+
+export interface DunningRules {
+  enabled: boolean;
+  graceDays: number;
+  reminderIntervalDays: number;
+  churnAfterDays: number;
+}
+
+const DEFAULT_DUNNING_RULES: DunningRules = {
+  enabled: true,
+  graceDays: 1,
+  reminderIntervalDays: 3,
+  churnAfterDays: 30,
+};
+
 @Injectable()
 export class SaasRevenueService {
   private readonly logger = new Logger(SaasRevenueService.name);
@@ -107,6 +123,39 @@ export class SaasRevenueService {
       throw new BadRequestException('legalName is required');
     }
     await this.settings.upsert(VENDOR_BILLING_KEY, merged, undefined, 'Vendor billing identity used on SaaS invoices');
+    return merged;
+  }
+
+  // ============================================================
+  // DUNNING RULES (system-wide, tenantId NULL)
+  // ============================================================
+  async getDunningRules(): Promise<DunningRules> {
+    try {
+      const s = await this.settings.getByKey(DUNNING_RULES_KEY);
+      const v = (s.value || {}) as Partial<DunningRules>;
+      return {
+        enabled: v.enabled ?? DEFAULT_DUNNING_RULES.enabled,
+        graceDays: Math.max(0, Number(v.graceDays ?? DEFAULT_DUNNING_RULES.graceDays)),
+        reminderIntervalDays: Math.max(1, Number(v.reminderIntervalDays ?? DEFAULT_DUNNING_RULES.reminderIntervalDays)),
+        churnAfterDays: Math.max(1, Number(v.churnAfterDays ?? DEFAULT_DUNNING_RULES.churnAfterDays)),
+      };
+    } catch {
+      return { ...DEFAULT_DUNNING_RULES };
+    }
+  }
+
+  async updateDunningRules(dto: Partial<DunningRules>): Promise<DunningRules> {
+    const current = await this.getDunningRules();
+    const merged: DunningRules = {
+      enabled: dto.enabled ?? current.enabled,
+      graceDays: Math.max(0, Number(dto.graceDays ?? current.graceDays)),
+      reminderIntervalDays: Math.max(1, Number(dto.reminderIntervalDays ?? current.reminderIntervalDays)),
+      churnAfterDays: Math.max(1, Number(dto.churnAfterDays ?? current.churnAfterDays)),
+    };
+    if (merged.churnAfterDays < merged.graceDays) {
+      throw new BadRequestException('churnAfterDays must be greater than or equal to graceDays');
+    }
+    await this.settings.upsert(DUNNING_RULES_KEY, merged, undefined, 'SaaS dunning schedule (grace period, reminder cadence, auto-churn)');
     return merged;
   }
 
@@ -788,6 +837,11 @@ export class SaasRevenueService {
   }
 
   async processDunning() {
+    const rules = await this.getDunningRules();
+    if (!rules.enabled) {
+      this.logger.log('Dunning is disabled — skipping');
+      return;
+    }
     const now = new Date();
     // Mark overdue invoices' subscriptions as past_due.
     const overdueInv = await this.invoices.find({
@@ -797,23 +851,27 @@ export class SaasRevenueService {
       const sub = await this.subs.findOne({ where: { id: inv.subscriptionId } });
       if (!sub) continue;
       const daysOverdue = Math.floor((now.getTime() - inv.dueAt.getTime()) / 86400000);
-      if (sub.status === 'active' && daysOverdue >= 1) {
+      if (sub.status === 'active' && daysOverdue >= rules.graceDays) {
         sub.status = 'past_due';
         sub.failedPaymentAttempts += 1;
         sub.lastDunningAt = now;
         await this.subs.save(sub);
         await this.recordEvent(sub.id, 'past_due', `Invoice ${inv.invoiceNumber} ${daysOverdue}d overdue`);
         if (sub.billingEmail) this.mailer.sendDunning(sub.billingEmail, sub, inv, daysOverdue).catch(() => {});
-      } else if (sub.status === 'past_due' && daysOverdue > 0 && daysOverdue % 3 === 0) {
-        // Send a reminder every 3 days while past due.
+      } else if (
+        sub.status === 'past_due' &&
+        daysOverdue > rules.graceDays &&
+        ((daysOverdue - rules.graceDays) % rules.reminderIntervalDays === 0)
+      ) {
+        // Send a reminder every reminderIntervalDays after the grace period.
         if (sub.billingEmail) this.mailer.sendDunning(sub.billingEmail, sub, inv, daysOverdue).catch(() => {});
       }
-      // Auto-churn at 30 days past due.
-      if (daysOverdue >= 30 && sub.status === 'past_due') {
+      // Auto-churn at churnAfterDays past due.
+      if (daysOverdue >= rules.churnAfterDays && sub.status === 'past_due') {
         sub.status = 'churned';
         sub.churnedAt = now;
         await this.subs.save(sub);
-        await this.recordEvent(sub.id, 'churned', `Auto-churn after 30d unpaid`);
+        await this.recordEvent(sub.id, 'churned', `Auto-churn after ${rules.churnAfterDays}d unpaid`);
         await this.syncLicenseFromSubscription(sub.id);
       }
     }

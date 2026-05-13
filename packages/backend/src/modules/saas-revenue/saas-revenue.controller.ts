@@ -126,6 +126,13 @@ export class SaasRevenueController {
   @Put('billing-settings')
   updateBillingSettings(@Req() req: any, @Body() dto: any) { ensureAdmin(req); return this.svc.updateVendorBilling(dto || {}); }
 
+  // ---------- Dunning rules (system-wide) ----------
+  @Get('dunning-rules')
+  getDunningRules(@Req() req: any) { ensureAdmin(req); return this.svc.getDunningRules(); }
+
+  @Put('dunning-rules')
+  updateDunningRules(@Req() req: any, @Body() dto: any) { ensureAdmin(req); return this.svc.updateDunningRules(dto || {}); }
+
   // ---------- Email templates ----------
   @Get('email-templates')
   listEmailTemplates(@Req() req: any) { ensureAdmin(req); return this.mailer.listTemplates(); }
