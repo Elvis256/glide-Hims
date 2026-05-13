@@ -221,6 +221,8 @@ export default function BillingPortalPage() {
           </table>}
       </Card>
 
+      <StatementCard />
+
       <Card title="Payment methods">
         <div className="flex items-center justify-between mb-3">
           <p className="text-xs text-gray-500">Saved methods are used for renewals and one-off payments. We never store full card numbers — only the last 4 digits and metadata for your reference.</p>
@@ -554,6 +556,154 @@ function WebhooksCard() {
             </div>
           </div>
         </div>
+      )}
+    </Card>
+  );
+}
+
+interface StatementSummary {
+  baseCurrency: string;
+  byCurrency: Array<{ currency: string; invoiced: number; paid: number; outstanding: number }>;
+  ledger: Array<{ date: string; type: 'invoice' | 'payment'; ref: string; description: string; currency: string; amountMinor: number; signedBaseMinor: number; runningBalanceBase: number }>;
+  totals: { invoicedBase: number; paidBase: number; refundedBase: number; openingBalanceBase: number; closingBalanceBase: number };
+  period: { from: string; to: string };
+}
+
+function StatementCard() {
+  const today = new Date();
+  const oneYearAgo = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
+  const fmtInput = (d: Date) => d.toISOString().slice(0, 10);
+  const [from, setFrom] = useState(fmtInput(oneYearAgo));
+  const [to, setTo] = useState(fmtInput(today));
+  const [data, setData] = useState<StatementSummary | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const r = await api.get(`/saas-revenue/portal/statement?from=${from}&to=${to}`);
+      setData(unwrap<StatementSummary>(r));
+    } catch (e: any) { alert(e?.response?.data?.message || 'Failed to load statement'); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+
+  const downloadFile = async (kind: 'csv' | 'pdf') => {
+    try {
+      const r = await api.get(`/saas-revenue/portal/statement.${kind}?from=${from}&to=${to}`, { responseType: 'blob' });
+      const blob = new Blob([r.data], { type: kind === 'csv' ? 'text/csv' : 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `statement-${from}-to-${to}.${kind}`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e: any) { alert(`Could not download ${kind.toUpperCase()}: ${e?.response?.data?.message || e.message}`); }
+  };
+
+  const setPreset = (months: number) => {
+    const t = new Date();
+    const f = new Date(t.getFullYear(), t.getMonth() - months, t.getDate());
+    setFrom(fmtInput(f)); setTo(fmtInput(t));
+  };
+
+  return (
+    <Card title="Account statement">
+      <div className="flex flex-wrap items-end gap-3 mb-3">
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">From</label>
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="border rounded px-2 py-1 text-sm" />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">To</label>
+          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="border rounded px-2 py-1 text-sm" />
+        </div>
+        <div className="flex gap-1">
+          {[1, 3, 6, 12].map((m) => (
+            <button key={m} onClick={() => setPreset(m)} className="px-2 py-1 text-xs border rounded hover:bg-gray-50">{m}m</button>
+          ))}
+        </div>
+        <button onClick={load} disabled={loading} className="px-3 py-1.5 text-xs bg-gray-800 text-white rounded hover:bg-gray-900 disabled:opacity-50">{loading ? 'Loading…' : 'Refresh'}</button>
+        <div className="ml-auto flex gap-2">
+          <button onClick={() => downloadFile('csv')} className="inline-flex items-center gap-1 px-3 py-1.5 text-xs border rounded hover:bg-gray-50"><Download className="w-3 h-3" /> CSV</button>
+          <button onClick={() => downloadFile('pdf')} className="inline-flex items-center gap-1 px-3 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"><Download className="w-3 h-3" /> PDF</button>
+        </div>
+      </div>
+
+      {!data ? <div className="text-sm text-gray-500">Loading…</div> : (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs mb-3">
+            {[
+              { label: 'Opening', value: data.totals.openingBalanceBase },
+              { label: 'Invoiced', value: data.totals.invoicedBase },
+              { label: 'Paid', value: data.totals.paidBase },
+              { label: 'Refunded', value: data.totals.refundedBase },
+              { label: 'Closing', value: data.totals.closingBalanceBase },
+            ].map((b) => (
+              <div key={b.label} className="bg-gray-50 border rounded p-2">
+                <div className="text-gray-500 uppercase tracking-wide">{b.label}</div>
+                <div className={`font-semibold mt-0.5 ${b.label === 'Closing' && b.value > 0 ? 'text-rose-700' : b.label === 'Closing' ? 'text-emerald-700' : ''}`}>
+                  {fmtMoney(b.value, data.baseCurrency)}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {data.byCurrency.length > 1 && (
+            <div className="mb-3 text-xs">
+              <div className="font-medium text-gray-600 mb-1">Per-currency breakdown</div>
+              <table className="w-full">
+                <thead className="text-gray-500"><tr>
+                  <th className="text-left">Currency</th>
+                  <th className="text-right">Invoiced</th>
+                  <th className="text-right">Paid</th>
+                  <th className="text-right">Outstanding</th>
+                </tr></thead>
+                <tbody>
+                  {data.byCurrency.map((c) => (
+                    <tr key={c.currency} className="border-t">
+                      <td className="py-1">{c.currency}</td>
+                      <td className="py-1 text-right">{fmtMoney(c.invoiced, c.currency)}</td>
+                      <td className="py-1 text-right">{fmtMoney(c.paid, c.currency)}</td>
+                      <td className="py-1 text-right">{fmtMoney(c.outstanding, c.currency)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div className="text-xs">
+            <div className="font-medium text-gray-600 mb-1">Ledger ({data.ledger.length} entries)</div>
+            {data.ledger.length === 0 ? <div className="text-gray-500">No activity in this period.</div> : (
+              <div className="max-h-72 overflow-auto border rounded">
+                <table className="w-full text-[11px]">
+                  <thead className="bg-gray-50 text-gray-500 sticky top-0"><tr>
+                    <th className="text-left px-2 py-1">Date</th>
+                    <th className="text-left px-2 py-1">Type</th>
+                    <th className="text-left px-2 py-1">Ref</th>
+                    <th className="text-right px-2 py-1">Amount</th>
+                    <th className="text-right px-2 py-1">Base ({data.baseCurrency})</th>
+                    <th className="text-right px-2 py-1">Balance</th>
+                  </tr></thead>
+                  <tbody>
+                    {data.ledger.map((r, i) => (
+                      <tr key={i} className="border-t">
+                        <td className="px-2 py-1">{new Date(r.date).toLocaleDateString()}</td>
+                        <td className="px-2 py-1">{r.type}</td>
+                        <td className="px-2 py-1 font-mono">{r.ref}</td>
+                        <td className="px-2 py-1 text-right">{fmtMoney(r.amountMinor, r.currency)}</td>
+                        <td className={`px-2 py-1 text-right ${r.signedBaseMinor < 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                          {r.signedBaseMinor < 0 ? '-' : ''}{fmtMoney(Math.abs(r.signedBaseMinor), data.baseCurrency)}
+                        </td>
+                        <td className="px-2 py-1 text-right">{fmtMoney(r.runningBalanceBase, data.baseCurrency)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
       )}
     </Card>
   );

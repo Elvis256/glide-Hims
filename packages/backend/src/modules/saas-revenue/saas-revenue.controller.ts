@@ -378,6 +378,34 @@ export class SaasRevenueController {
     res.end(buf);
   }
 
+  // ---------- Tenant statements (multi-currency, FX-aware) ----------
+  @Get('portal/statement')
+  myStatement(@Req() req: any, @Query('from') from?: string, @Query('to') to?: string) {
+    const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
+    return this.svc.buildMyStatement(tenantId, { from, to });
+  }
+
+  @Get('portal/statement.csv')
+  async myStatementCsv(@Req() req: any, @Res() res: Response, @Query('from') from?: string, @Query('to') to?: string) {
+    const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
+    const csv = await this.svc.renderMyStatementCsv(tenantId, { from, to });
+    const stamp = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="statement-${stamp}.csv"`);
+    res.send(csv);
+  }
+
+  @Get('portal/statement.pdf')
+  async myStatementPdf(@Req() req: any, @Res() res: Response, @Query('from') from?: string, @Query('to') to?: string) {
+    const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
+    const buf = await this.svc.renderMyStatementPdf(tenantId, { from, to });
+    const stamp = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="statement-${stamp}.pdf"`);
+    res.setHeader('Content-Length', String(buf.length));
+    res.end(buf);
+  }
+
   @Get('portal/payment-methods')
   myPaymentMethods(@Req() req: any) {
     const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
