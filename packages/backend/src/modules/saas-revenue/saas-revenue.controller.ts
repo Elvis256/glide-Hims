@@ -90,6 +90,12 @@ export class SaasRevenueController {
   @Post('subscriptions')
   createSub(@Req() req: any, @Body() dto: CreateSubscriptionDto) { ensureAdmin(req); return this.svc.createSubscription(dto, req.user?.id); }
 
+  @Put('subscriptions/:id')
+  updateSub(@Req() req: any, @Param('id') id: string, @Body() dto: { billingEmail?: string | null; billingCurrency?: string | null; autoRenew?: boolean }) {
+    ensureAdmin(req);
+    return this.svc.updateSubscription(id, dto || {}, req.user?.id);
+  }
+
   @Post('subscriptions/:id/change-plan')
   changePlan(@Req() req: any, @Param('id') id: string, @Body() dto: ChangePlanDto) { ensureAdmin(req); return this.svc.changePlan(id, dto, req.user?.id); }
 

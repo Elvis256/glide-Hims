@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Loader2, ArrowLeft, Pause, Play, Ban, KeyRound, RefreshCw, FileText, DollarSign, Calendar, Tag, AlertTriangle, TrendingUp } from 'lucide-react';
+import { Loader2, ArrowLeft, Pause, Play, Ban, KeyRound, RefreshCw, FileText, DollarSign, Calendar, Tag, AlertTriangle, TrendingUp, Settings, Save, Coins } from 'lucide-react';
 import api from '../../services/api';
 import { Plan, Subscription, SaasInvoice, SaasPayment, INVOICE_STATUS_STYLES, SUB_STATUS_STYLES, fmtMoney, fmtDate, fmtDateTime, unwrap } from './saas/_shared';
 
@@ -123,6 +123,8 @@ export default function SystemSubscriptionDetailPage() {
         <Stat label="Current period ends" value={fmtDate(data.currentPeriodEnd)} sub={data.autoRenew ? 'Auto-renew on' : 'Manual renewal'} />
         <Stat label="Lifetime paid" value={fmtMoney(data.payments.reduce((a, p) => a + p.amountMinor, 0), data.currency)} sub={`${data.payments.length} payment(s)`} />
       </div>
+
+      <BillingSettingsCard sub={data} onSaved={load} />
 
       <Section title="Invoices" icon={<FileText className="w-4 h-4" />}>
         <table className="w-full text-sm">
@@ -294,6 +296,84 @@ function ChangePlanModal({ sub, plans, onClose, onSaved }: { sub: Subscription; 
           <button onClick={save} disabled={saving} className="px-3 py-2 text-sm bg-blue-600 text-white rounded inline-flex items-center gap-2 hover:bg-blue-700 disabled:opacity-50">{saving && <Loader2 className="w-4 h-4 animate-spin" />} Save</button>
         </div>
         <style>{`.input{border:1px solid #d1d5db;border-radius:6px;padding:6px 10px;font-size:13px}`}</style>
+      </div>
+    </div>
+  );
+}
+
+function BillingSettingsCard({ sub, onSaved }: { sub: Subscription; onSaved: () => void }) {
+  const [email, setEmail] = useState(sub.billingEmail || '');
+  const [billingCcy, setBillingCcy] = useState<string>(sub.billingCurrency || '');
+  const [autoRenew, setAutoRenew] = useState<boolean>(sub.autoRenew);
+  const [available, setAvailable] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.get('/saas-revenue/public/currency-rates')
+      .then((r) => {
+        const fx: any = unwrap(r);
+        const list = Array.from(new Set([fx.base, ...Object.keys(fx.rates || {})])) as string[];
+        setAvailable(list.sort());
+      })
+      .catch(() => setAvailable([]));
+  }, []);
+
+  const dirty = (email || '') !== (sub.billingEmail || '') || (billingCcy || '') !== (sub.billingCurrency || '') || autoRenew !== sub.autoRenew;
+
+  const save = async () => {
+    setErr(null); setSaving(true);
+    try {
+      await api.put(`/saas-revenue/subscriptions/${sub.id}`, {
+        billingEmail: email.trim() || null,
+        billingCurrency: billingCcy ? billingCcy.toUpperCase() : null,
+        autoRenew,
+      });
+      setSavedAt(Date.now()); setTimeout(() => setSavedAt(null), 2500);
+      onSaved();
+    } catch (e: any) {
+      setErr(e?.response?.data?.message || e?.message || 'Save failed');
+    } finally { setSaving(false); }
+  };
+
+  const fxOverride = !!billingCcy && billingCcy.toUpperCase() !== sub.currency.toUpperCase();
+  return (
+    <div className="bg-white border rounded-lg p-5">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="font-medium inline-flex items-center gap-2"><Settings className="w-4 h-4" /> Billing settings</h2>
+        {savedAt && <span className="text-xs text-emerald-700">Saved</span>}
+      </div>
+      {err && <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">{err}</div>}
+      <div className="grid md:grid-cols-3 gap-4 text-sm">
+        <div>
+          <label className="text-xs text-gray-500 block mb-1">Billing email</label>
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="billing@tenant.example" className="w-full px-2 py-1.5 border rounded" />
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 block mb-1 inline-flex items-center gap-1"><Coins className="w-3 h-3" /> Billing currency</label>
+          <select value={billingCcy} onChange={(e) => setBillingCcy(e.target.value)} className="w-full px-2 py-1.5 border rounded">
+            <option value="">Plan default ({sub.currency})</option>
+            {available.filter((c) => c !== sub.currency).map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+          {fxOverride && (
+            <div className="text-[11px] text-amber-700 mt-1">
+              Renewals will be converted from {sub.currency} → {billingCcy.toUpperCase()} at issue time using current FX rates.
+            </div>
+          )}
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 block mb-1">Auto-renew</label>
+          <label className="inline-flex items-center gap-2 mt-1">
+            <input type="checkbox" checked={autoRenew} onChange={(e) => setAutoRenew(e.target.checked)} />
+            <span className="text-sm">Renew automatically</span>
+          </label>
+        </div>
+      </div>
+      <div className="mt-4 flex justify-end">
+        <button disabled={!dirty || saving} onClick={save} className="px-3 py-2 text-sm bg-emerald-600 text-white rounded inline-flex items-center gap-2 hover:bg-emerald-700 disabled:opacity-50">
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save
+        </button>
       </div>
     </div>
   );

@@ -83,6 +83,7 @@ export class SaasSubscription {
   @Column({ type: 'varchar', length: 30, default: 'trial' }) @Index() status: SubscriptionStatus;
   @Column({ type: 'varchar', length: 20, default: 'monthly' }) billingInterval: BillingInterval;
   @Column({ type: 'varchar', length: 3, default: 'UGX' }) currency: string;
+  @Column({ type: 'varchar', length: 3, nullable: true, name: 'billing_currency' }) billingCurrency: string | null;
   @Column({ type: 'integer', default: 0 }) unitPriceMinor: number; // snapshot at start
   @Column({ type: 'integer', default: 1 }) seats: number;
 
