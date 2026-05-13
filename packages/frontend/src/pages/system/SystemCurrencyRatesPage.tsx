@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Loader2, Save, CheckCircle, AlertTriangle, Plus, Trash2, RotateCcw, Coins } from 'lucide-react';
+import { Loader2, Save, CheckCircle, AlertTriangle, Plus, Trash2, RotateCcw, Coins, RefreshCw } from 'lucide-react';
 import api from '../../services/api';
 import { unwrap } from './saas/_shared';
 
@@ -23,6 +23,8 @@ export default function SystemCurrencyRatesPage() {
   const [error, setError] = useState<string | null>(null);
   const [newCcy, setNewCcy] = useState('');
   const [newRate, setNewRate] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshInfo, setRefreshInfo] = useState<{ updated: string[]; missing: string[] } | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -76,6 +78,19 @@ export default function SystemCurrencyRatesPage() {
 
   const reset = () => setData(DEFAULTS);
 
+  const refreshFromProvider = async () => {
+    setError(null); setRefreshInfo(null); setRefreshing(true);
+    try {
+      const r = await api.post('/saas-revenue/currency-rates/refresh', {});
+      const body = unwrap<CurrencyRates & { _refreshed?: { updated: string[]; missing: string[]; provider: string } }>(r);
+      setData({ base: body.base, rates: body.rates, updatedAt: body.updatedAt });
+      if (body._refreshed) setRefreshInfo({ updated: body._refreshed.updated, missing: body._refreshed.missing });
+      setSavedAt(Date.now()); setTimeout(() => setSavedAt(null), 3000);
+    } catch (e: any) {
+      setError(e?.response?.data?.message || e?.message || 'Refresh failed');
+    } finally { setRefreshing(false); }
+  };
+
   if (loading) {
     return <div className="p-8 flex items-center gap-2 text-gray-600"><Loader2 className="w-5 h-5 animate-spin" /> Loading FX rates…</div>;
   }
@@ -97,10 +112,24 @@ export default function SystemCurrencyRatesPage() {
           </p>
           {data.updatedAt && <p className="text-xs text-gray-500 mt-1">Last updated: {new Date(data.updatedAt).toLocaleString()}</p>}
         </div>
-        <button onClick={reset} className="text-xs px-3 py-1.5 border rounded inline-flex items-center gap-1 hover:bg-gray-50">
-          <RotateCcw className="w-3.5 h-3.5" /> Reset defaults
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={refreshFromProvider} disabled={refreshing} className="text-xs px-3 py-1.5 border rounded inline-flex items-center gap-1 hover:bg-blue-50 text-blue-700 disabled:opacity-50">
+            {refreshing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+            Refresh from provider
+          </button>
+          <button onClick={reset} className="text-xs px-3 py-1.5 border rounded inline-flex items-center gap-1 hover:bg-gray-50">
+            <RotateCcw className="w-3.5 h-3.5" /> Reset defaults
+          </button>
+        </div>
       </div>
+
+      {refreshInfo && (
+        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded text-xs text-blue-800">
+          Refreshed {refreshInfo.updated.length} rate{refreshInfo.updated.length === 1 ? '' : 's'}{refreshInfo.updated.length ? `: ${refreshInfo.updated.join(', ')}` : ''}.
+          {refreshInfo.missing.length > 0 && <> Provider had no rate for: <span className="font-mono">{refreshInfo.missing.join(', ')}</span>.</>}
+          {' '}Auto-refresh runs daily at 03:00 server time (set <code>SAAS_FX_AUTOREFRESH=off</code> to disable).
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700 flex items-center gap-2">

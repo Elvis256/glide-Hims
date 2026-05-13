@@ -302,6 +302,58 @@ export class SaasRevenueService {
     return Math.round(inBase * toRate);
   }
 
+  /**
+   * Refresh FX rates from a public provider. Defaults to open.er-api.com
+   * (no API key required). Falls back to exchangerate.host if env override is set.
+   * Preserves currencies already in our table — only updates values for matches.
+   */
+  async refreshCurrencyRatesFromProvider(opts?: { providerUrl?: string }): Promise<CurrencyRates & { _refreshed: { provider: string; updated: string[]; missing: string[] } }> {
+    const current = await this.getCurrencyRates();
+    const base = (current.base || 'UGX').toUpperCase();
+    const tpl = opts?.providerUrl || process.env.SAAS_FX_PROVIDER_URL || 'https://open.er-api.com/v6/latest/{base}';
+    const url = tpl.replace('{base}', encodeURIComponent(base));
+    let body: any;
+    try {
+      const fetchFn: any = (globalThis as any).fetch;
+      if (!fetchFn) throw new Error('fetch unavailable in runtime');
+      const res = await fetchFn(url, { method: 'GET', headers: { Accept: 'application/json' } });
+      if (!res.ok) throw new Error(`provider HTTP ${res.status}`);
+      body = await res.json();
+    } catch (e: any) {
+      throw new BadRequestException(`FX provider fetch failed: ${e?.message || e}`);
+    }
+    // Normalise — support open.er-api.com {result, rates} and exchangerate.host {success, rates}
+    const providerRates: Record<string, number> = (body && (body.rates || body.conversion_rates)) || {};
+    if (!providerRates || typeof providerRates !== 'object' || !Object.keys(providerRates).length) {
+      throw new BadRequestException('FX provider returned no rates');
+    }
+    const updated: string[] = [];
+    const missing: string[] = [];
+    const merged: Record<string, number> = { ...current.rates };
+    for (const ccy of Object.keys(current.rates)) {
+      if (ccy === base) { merged[ccy] = 1; continue; }
+      const v = Number(providerRates[ccy]);
+      if (isFinite(v) && v > 0) { merged[ccy] = v; updated.push(ccy); }
+      else missing.push(ccy);
+    }
+    const out: CurrencyRates = { base, rates: merged, updatedAt: new Date().toISOString() };
+    await this.settings.upsert(CURRENCY_RATES_KEY, out, undefined, `SaaS plan FX rates refreshed from ${url}`);
+    return { ...out, _refreshed: { provider: url, updated, missing } } as any;
+  }
+
+  @Cron(CronExpression.EVERY_DAY_AT_3AM)
+  async cronRefreshFxRates() {
+    try {
+      if (process.env.SAAS_FX_AUTOREFRESH === 'off') return;
+      const r = await this.refreshCurrencyRatesFromProvider();
+      // eslint-disable-next-line no-console
+      console.log(`[saas-fx] cron refresh ok base=${r.base} updated=${(r as any)._refreshed?.updated?.length || 0} missing=${(r as any)._refreshed?.missing?.length || 0}`);
+    } catch (e: any) {
+      // eslint-disable-next-line no-console
+      console.warn(`[saas-fx] cron refresh failed: ${e?.message || e}`);
+    }
+  }
+
   async listPublicPlansLocalized(currency?: string) {
     const plans = await this.plans.find({ where: { isActive: true, isPublic: true } as any, order: { sortOrder: 'ASC', priceMonthlyMinor: 'ASC' } });
     if (!currency) return plans;
