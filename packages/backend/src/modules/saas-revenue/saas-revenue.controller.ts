@@ -4,6 +4,7 @@ import {
 import type { Response } from 'express';
 import { Public } from '../auth/decorators/public.decorator';
 import { SaasRevenueService } from './saas-revenue.service';
+import { SaasMailerService, EMAIL_TEMPLATES_META, EmailTemplateKey } from './saas-mailer.service';
 import {
   CreatePlanDto, UpdatePlanDto, CreateSubscriptionDto, ChangePlanDto, RecordPaymentDto, CreateCouponDto,
   ConvertLeadDto, InitCheckoutDto,
@@ -20,7 +21,10 @@ function ensureTenant(req: any): string {
 
 @Controller('saas-revenue')
 export class SaasRevenueController {
-  constructor(private readonly svc: SaasRevenueService) {}
+  constructor(
+    private readonly svc: SaasRevenueService,
+    private readonly mailer: SaasMailerService,
+  ) {}
 
   // ---------- Plans ----------
   @Get('plans')
@@ -118,6 +122,51 @@ export class SaasRevenueController {
 
   @Put('billing-settings')
   updateBillingSettings(@Req() req: any, @Body() dto: any) { ensureAdmin(req); return this.svc.updateVendorBilling(dto || {}); }
+
+  // ---------- Email templates ----------
+  @Get('email-templates')
+  listEmailTemplates(@Req() req: any) { ensureAdmin(req); return this.mailer.listTemplates(); }
+
+  @Get('email-templates/:key')
+  async getEmailTemplate(@Req() req: any, @Param('key') key: string) {
+    ensureAdmin(req);
+    if (!(key in EMAIL_TEMPLATES_META)) throw new ForbiddenException('Unknown template');
+    const meta = EMAIL_TEMPLATES_META[key as EmailTemplateKey];
+    const current = await this.mailer.getTemplate(key as EmailTemplateKey);
+    return { ...meta, current };
+  }
+
+  @Put('email-templates/:key')
+  async putEmailTemplate(@Req() req: any, @Param('key') key: string, @Body() body: { subject: string; body: string }) {
+    ensureAdmin(req);
+    if (!(key in EMAIL_TEMPLATES_META)) throw new ForbiddenException('Unknown template');
+    if (!body?.subject?.trim() || !body?.body?.trim()) throw new ForbiddenException('subject and body are required');
+    await this.mailer.setTemplate(key as EmailTemplateKey, { subject: body.subject, body: body.body });
+    return { ok: true };
+  }
+
+  @Delete('email-templates/:key')
+  async resetEmailTemplate(@Req() req: any, @Param('key') key: string) {
+    ensureAdmin(req);
+    if (!(key in EMAIL_TEMPLATES_META)) throw new ForbiddenException('Unknown template');
+    const defaults = await this.mailer.resetTemplate(key as EmailTemplateKey);
+    return { ok: true, defaults };
+  }
+
+  @Post('email-templates/:key/preview')
+  async previewEmailTemplate(@Req() req: any, @Param('key') key: string, @Body() body: { subject?: string; body?: string }) {
+    ensureAdmin(req);
+    if (!(key in EMAIL_TEMPLATES_META)) throw new ForbiddenException('Unknown template');
+    return this.mailer.previewTemplate(key as EmailTemplateKey, body);
+  }
+
+  @Post('email-templates/:key/test')
+  async testEmailTemplate(@Req() req: any, @Param('key') key: string, @Body() body: { to: string }) {
+    ensureAdmin(req);
+    if (!(key in EMAIL_TEMPLATES_META)) throw new ForbiddenException('Unknown template');
+    if (!body?.to?.trim()) throw new ForbiddenException('Recipient `to` is required');
+    return this.mailer.sendTest(key as EmailTemplateKey, body.to.trim());
+  }
 
   // ---------- Revenue dashboard ----------
   @Get('revenue/dashboard')
