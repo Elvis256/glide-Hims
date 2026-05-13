@@ -42,6 +42,32 @@ const TIER_TO_LICENSE: Record<string, License['licenseType']> = {
 import { SaasMailerService } from './saas-mailer.service';
 import { FlutterwaveService } from './flutterwave.service';
 import { Lead } from '../leads/lead.entity';
+import { SystemSettingsService } from '../system-settings/system-settings.service';
+
+export const VENDOR_BILLING_KEY = 'vendor_billing';
+
+export interface VendorBillingSettings {
+  legalName: string;
+  tradingName?: string;
+  taxId?: string;
+  email?: string;
+  phone?: string;
+  website?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  country?: string;
+  logoUrl?: string;
+  defaultCurrency?: string;
+  invoiceFooter?: string;
+}
+
+const DEFAULT_VENDOR_BILLING: VendorBillingSettings = {
+  legalName: 'Glide HIMS',
+  tradingName: 'Glide HIMS',
+  email: 'billing@itsolutionsuganda.com',
+  defaultCurrency: 'UGX',
+};
 
 @Injectable()
 export class SaasRevenueService {
@@ -59,7 +85,132 @@ export class SaasRevenueService {
     @InjectRepository(Tenant) private readonly tenants: Repository<Tenant>,
     private readonly mailer: SaasMailerService,
     private readonly flw: FlutterwaveService,
+    private readonly settings: SystemSettingsService,
   ) {}
+
+  // ============================================================
+  // VENDOR BILLING SETTINGS (system-wide, tenantId NULL)
+  // ============================================================
+  async getVendorBilling(): Promise<VendorBillingSettings> {
+    try {
+      const s = await this.settings.getByKey(VENDOR_BILLING_KEY);
+      return { ...DEFAULT_VENDOR_BILLING, ...((s.value || {}) as VendorBillingSettings) };
+    } catch {
+      return { ...DEFAULT_VENDOR_BILLING };
+    }
+  }
+
+  async updateVendorBilling(dto: Partial<VendorBillingSettings>): Promise<VendorBillingSettings> {
+    const current = await this.getVendorBilling();
+    const merged: VendorBillingSettings = { ...current, ...dto };
+    if (!merged.legalName || !merged.legalName.trim()) {
+      throw new BadRequestException('legalName is required');
+    }
+    await this.settings.upsert(VENDOR_BILLING_KEY, merged, undefined, 'Vendor billing identity used on SaaS invoices');
+    return merged;
+  }
+
+  // ============================================================
+  // PRINTABLE INVOICE (HTML — browser saves as PDF)
+  // ============================================================
+  async renderInvoiceHtml(id: string): Promise<string> {
+    const inv = await this.getInvoice(id);
+    const sub = await this.subs.findOne({ where: { id: inv.subscriptionId } });
+    const plan = sub ? await this.plans.findOne({ where: { id: sub.planId } }) : null;
+    const tenant = await this.tenants.findOne({ where: { id: inv.tenantId }, select: ['id', 'name', 'slug'] as any });
+    const vendor = await this.getVendorBilling();
+    const fmt = (n: number) => this.fmtMoney(n, inv.currency);
+    const fmtD = (d: any) => (d ? new Date(d).toISOString().slice(0, 10) : '—');
+    const esc = (s: any) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+    const lines = (inv.lines || []) as Array<{ description: string; quantity: number; unitPriceMinor: number; amountMinor: number }>;
+    const paidRows = (inv as any).payments as Array<{ paidAt: any; amountMinor: number; gateway: string; method?: string | null; gatewayRef?: string | null }> | undefined;
+    const vendorAddr = [vendor.addressLine1, vendor.addressLine2, [vendor.city, vendor.country].filter(Boolean).join(', ')].filter(Boolean).map((l) => `<div>${esc(l)}</div>`).join('');
+
+    return `<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8" />
+<title>Invoice ${esc(inv.invoiceNumber)}</title>
+<style>
+  *{box-sizing:border-box} body{font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a;margin:0;padding:32px;background:#f8fafc}
+  .sheet{max-width:820px;margin:0 auto;background:#fff;padding:48px;border:1px solid #e2e8f0;border-radius:8px}
+  h1{margin:0 0 4px;font-size:28px} h2{margin:0 0 12px;font-size:14px;color:#64748b;text-transform:uppercase;letter-spacing:.08em}
+  .grid{display:flex;justify-content:space-between;gap:32px;margin-bottom:32px}
+  .col{flex:1} .muted{color:#64748b;font-size:13px}
+  table{width:100%;border-collapse:collapse;margin-top:16px} th,td{padding:10px 8px;text-align:left;border-bottom:1px solid #e2e8f0;font-size:13px}
+  th{background:#f1f5f9;font-weight:600;color:#475569} .right{text-align:right} .totals{margin-top:16px;width:100%}
+  .totals td{border:none;padding:4px 8px;font-size:14px} .totals .grand{font-size:18px;font-weight:700;border-top:2px solid #0f172a;padding-top:12px}
+  .badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+  .b-paid{background:#d1fae5;color:#065f46} .b-open{background:#fef3c7;color:#92400e} .b-void{background:#e5e7eb;color:#374151} .b-draft{background:#dbeafe;color:#1e3a8a}
+  .footer{margin-top:40px;padding-top:24px;border-top:1px solid #e2e8f0;color:#64748b;font-size:12px;line-height:1.5}
+  @media print{ body{padding:0;background:#fff} .sheet{border:none;box-shadow:none;padding:24px} .noprint{display:none} }
+  .noprint{position:fixed;top:16px;right:16px;background:#0f172a;color:#fff;padding:10px 16px;border:none;border-radius:6px;cursor:pointer;font-weight:600}
+</style>
+</head><body>
+<button class="noprint" onclick="window.print()">Print / Save as PDF</button>
+<div class="sheet">
+  <div class="grid">
+    <div class="col">
+      ${vendor.logoUrl ? `<img src="${esc(vendor.logoUrl)}" alt="logo" style="max-height:56px;margin-bottom:8px" />` : ''}
+      <h1>${esc(vendor.tradingName || vendor.legalName)}</h1>
+      <div class="muted">${esc(vendor.legalName)}</div>
+      ${vendorAddr}
+      ${vendor.taxId ? `<div class="muted">Tax ID: ${esc(vendor.taxId)}</div>` : ''}
+      ${vendor.email ? `<div class="muted">${esc(vendor.email)}</div>` : ''}
+      ${vendor.phone ? `<div class="muted">${esc(vendor.phone)}</div>` : ''}
+      ${vendor.website ? `<div class="muted">${esc(vendor.website)}</div>` : ''}
+    </div>
+    <div class="col" style="text-align:right">
+      <h1>INVOICE</h1>
+      <div class="muted"># ${esc(inv.invoiceNumber)}</div>
+      <div style="margin-top:8px"><span class="badge b-${esc(inv.status)}">${esc(inv.status)}</span></div>
+      <div class="muted" style="margin-top:12px">Issued: ${fmtD(inv.issuedAt)}</div>
+      <div class="muted">Due: ${fmtD(inv.dueAt)}</div>
+      ${inv.paidAt ? `<div class="muted">Paid: ${fmtD(inv.paidAt)}</div>` : ''}
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="col">
+      <h2>Bill to</h2>
+      <div style="font-weight:600">${esc(tenant?.name || inv.tenantId)}</div>
+      ${tenant?.slug ? `<div class="muted">${esc(tenant.slug)}</div>` : ''}
+      ${sub?.billingName ? `<div>${esc(sub.billingName)}</div>` : ''}
+      ${sub?.billingEmail ? `<div class="muted">${esc(sub.billingEmail)}</div>` : ''}
+    </div>
+    <div class="col">
+      <h2>Subscription</h2>
+      <div>${esc(plan?.name || '—')} <span class="muted">(${esc(sub?.billingInterval || '')})</span></div>
+      ${inv.periodStart || inv.periodEnd ? `<div class="muted">Period: ${fmtD(inv.periodStart)} → ${fmtD(inv.periodEnd)}</div>` : ''}
+    </div>
+  </div>
+
+  <table>
+    <thead><tr><th>Description</th><th class="right">Qty</th><th class="right">Unit price</th><th class="right">Amount</th></tr></thead>
+    <tbody>
+      ${lines.map((l) => `<tr><td>${esc(l.description)}</td><td class="right">${l.quantity}</td><td class="right">${fmt(l.unitPriceMinor)}</td><td class="right">${fmt(l.amountMinor)}</td></tr>`).join('')}
+    </tbody>
+  </table>
+
+  <table class="totals">
+    <tr><td class="right" style="width:80%">Subtotal</td><td class="right">${fmt(inv.subtotalMinor)}</td></tr>
+    ${inv.discountMinor > 0 ? `<tr><td class="right">Discount</td><td class="right">-${fmt(inv.discountMinor)}</td></tr>` : ''}
+    ${inv.taxMinor > 0 ? `<tr><td class="right">Tax</td><td class="right">${fmt(inv.taxMinor)}</td></tr>` : ''}
+    <tr class="grand"><td class="right">Total due</td><td class="right">${fmt(inv.totalMinor)}</td></tr>
+    ${inv.amountPaidMinor > 0 ? `<tr><td class="right">Paid</td><td class="right">-${fmt(inv.amountPaidMinor)}</td></tr>` : ''}
+    ${inv.amountPaidMinor > 0 && inv.amountPaidMinor < inv.totalMinor ? `<tr class="grand"><td class="right">Balance</td><td class="right">${fmt(inv.totalMinor - inv.amountPaidMinor)}</td></tr>` : ''}
+  </table>
+
+  ${paidRows && paidRows.length ? `
+    <h2 style="margin-top:32px">Payments</h2>
+    <table><thead><tr><th>Date</th><th>Gateway</th><th>Method</th><th>Reference</th><th class="right">Amount</th></tr></thead>
+    <tbody>${paidRows.map((p) => `<tr><td>${fmtD(p.paidAt)}</td><td>${esc(p.gateway)}</td><td>${esc(p.method || '—')}</td><td class="muted">${esc(p.gatewayRef || '—')}</td><td class="right">${fmt(p.amountMinor)}</td></tr>`).join('')}</tbody>
+    </table>` : ''}
+
+  ${inv.memo ? `<div class="footer">${esc(inv.memo)}</div>` : ''}
+  ${vendor.invoiceFooter ? `<div class="footer">${esc(vendor.invoiceFooter)}</div>` : ''}
+</div>
+</body></html>`;
+  }
 
   // ============================================================
   // PLANS

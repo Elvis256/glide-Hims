@@ -65,7 +65,7 @@ export default function SystemSaasInvoicesPage() {
                 const overdue = inv.status === 'open' && new Date(inv.dueAt) < new Date();
                 return (
                   <tr key={inv.id} className="border-t">
-                    <td className="px-4 py-2 font-mono text-xs">{inv.invoiceNumber}</td>
+                    <td className="px-4 py-2 font-mono text-xs"><Link to={`/system/saas-invoices/${inv.id}`} className="text-blue-600 hover:underline">{inv.invoiceNumber}</Link></td>
                     <td className="px-4 py-2">
                       <span className={`px-2 py-0.5 rounded-full text-xs ${INVOICE_STATUS_STYLES[inv.status]}`}>{inv.status}</span>
                       {overdue && <span className="ml-1 inline-flex items-center text-xs text-amber-700"><AlertTriangle className="w-3 h-3 mr-0.5" />overdue</span>}
@@ -84,7 +84,10 @@ export default function SystemSaasInvoicesPage() {
                     <td className="px-4 py-2 text-right">{fmtMoney(inv.amountPaidMinor, inv.currency)}</td>
                     <td className="px-4 py-2">{fmtDate(inv.issuedAt)}</td>
                     <td className="px-4 py-2">{fmtDate(inv.dueAt)}</td>
-                    <td className="px-4 py-2"><Link to={`/system/subscriptions/${inv.subscriptionId}`} className="text-blue-600 inline-flex items-center gap-1 text-xs hover:underline"><ExternalLink className="w-3 h-3" /> Subscription</Link></td>
+                    <td className="px-4 py-2 flex items-center gap-3">
+                      <Link to={`/system/saas-invoices/${inv.id}`} className="text-blue-600 inline-flex items-center gap-1 text-xs hover:underline"><ExternalLink className="w-3 h-3" /> Open</Link>
+                      <Link to={`/system/subscriptions/${inv.subscriptionId}`} className="text-blue-600 inline-flex items-center gap-1 text-xs hover:underline">Subscription</Link>
+                    </td>
                   </tr>
                 );
               })}
