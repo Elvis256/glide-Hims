@@ -23,7 +23,8 @@
     "db:migrate": "npm run typeorm migration:run -- -d src/config/database.config.ts",
     "db:migrate:revert": "npm run typeorm migration:revert -- -d src/config/database.config.ts",
     "db:migrate:create": "npm run typeorm migration:create",
-    "db:seed": "ts-node src/database/seeds/seed.ts"
+    "db:seed": "ts-node src/database/seeds/seed.ts",
+    "db:reconcile-inventory": "ts-node src/database/scripts/reconcile-inventory-drift.ts"
   },
   "dependencies": {
     "@nestjs/axios": "^4.0.1",
