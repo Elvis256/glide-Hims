@@ -179,13 +179,6 @@ export function DirectPOPage() {
 
   const newItemLineTotal = useMemo(() => (newItem.itemId ? lineTotalOf(newItem) : 0), [newItem]);
 
-  const approvalLevel = useMemo(() => {
-    if (total < 500) return 'Manager';
-    if (total < 5000) return 'Finance Officer';
-    if (total < 50000) return 'Director';
-    return 'CFO';
-  }, [total]);
-
   const handleAddItem = () => {
     if (!newItem.itemId) {
       setFormError('Select an item before adding');
@@ -225,6 +218,10 @@ export function DirectPOPage() {
     e.preventDefault();
     setSubmitMessage(null);
 
+    if (!user?.facilityId) {
+      setFormError('Your account is not linked to a facility. Contact your administrator.');
+      return;
+    }
     if (!formData.supplierId) {
       setFormError('Please select a supplier');
       return;
@@ -239,15 +236,25 @@ export function DirectPOPage() {
     }
     setFormError(null);
 
+    const headerTax = formData.taxRate || 0;
+    const headerDiscount = formData.discountPercent || 0;
+
     createPOMutation.mutate({
+      facilityId: user.facilityId,
       supplierId: formData.supplierId,
-      departmentId: formData.departmentId,
-      costCenterId: formData.costCenterId,
-      items: formData.items,
-      taxRate: formData.taxRate,
-      discountPercent: formData.discountPercent,
-      emergencyJustification: formData.emergencyJustification,
-      notes: formData.notes,
+      departmentId: formData.departmentId || undefined,
+      costCenterId: formData.costCenterId || undefined,
+      emergencyJustification: formData.emergencyJustification || undefined,
+      notes: formData.notes || undefined,
+      items: formData.items.map(({ id: _id, ...item }) => ({
+        itemId: item.itemId,
+        itemCode: item.itemCode || item.itemId,
+        itemName: item.itemName,
+        quantityOrdered: item.quantityOrdered,
+        unitPrice: item.unitPrice,
+        taxRate: (item.taxRate || 0) + headerTax,
+        discountPercent: (item.discountPercent || 0) + headerDiscount,
+      })),
     });
   };
 
@@ -624,13 +631,10 @@ export function DirectPOPage() {
               </div>
 
               <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <p className="text-sm text-gray-600 mb-1">Approval required from</p>
-                <p className="text-lg font-semibold text-blue-900">{approvalLevel}</p>
-                {total >= 50000 && (
-                  <p className="text-xs text-gray-600 mt-2">
-                    💡 Approval chain: Manager → Finance → Director → CFO
-                  </p>
-                )}
+                <p className="text-sm text-gray-600 mb-1">Approval routing</p>
+                <p className="text-sm text-blue-900">
+                  Routed per your facility&rsquo;s approval policy after submission.
+                </p>
               </div>
             </div>
           </section>
