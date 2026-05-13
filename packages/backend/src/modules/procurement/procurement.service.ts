@@ -59,6 +59,7 @@ import { UsersService } from '../users/users.service';
 import { AuditService } from '../compliance/audit.service';
 import { SupplierRiskService } from './supplier-risk.service';
 import { OrgApprovalResolverService } from './org-approval-resolver.service';
+import { ApprovalsService } from '../approvals/approvals.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { InvoiceMatch } from '../../database/entities/invoice-match.entity';
 import { ProcurementApprovalThreshold } from '../../database/entities/procurement-approval-threshold.entity';
@@ -109,6 +110,8 @@ export class ProcurementService {
     private auditService: AuditService,
     private supplierRiskService: SupplierRiskService,
     private orgApprovalResolver: OrgApprovalResolverService,
+    @Inject(forwardRef(() => ApprovalsService))
+    private approvalsService: ApprovalsService,
     private dataSource: DataSource,
     private inventoryService: InventoryService,
   ) {}
@@ -2313,11 +2316,12 @@ export class ProcurementService {
     context?: { requesterId?: string; departmentId?: string | null; category?: string | null },
   ): Promise<ProcurementApprovalChain[]> {
     try {
-      // Try the org-aware resolver first.
+      // Try the cross-cutting ApprovalsService (org-aware resolver) first.
       if (tenantId && context?.requesterId) {
-        const resolved = await this.orgApprovalResolver.buildAndPersistChain({
-          documentId,
+        const resolved = await this.approvalsService.submit({
+          module: 'procurement',
           documentType,
+          documentId,
           amount,
           facilityId,
           departmentId: context.departmentId || null,
@@ -2420,6 +2424,19 @@ export class ProcurementService {
    * and group display names so the UI can render a meaningful timeline.
    */
   async getEnrichedApprovalChain(documentId: string, tenantId?: string) {
+    // Determine documentType by probing one row (PR vs PO ambiguity)
+    const sample = await this.approvalChainRepo.findOne({
+      where: { documentId } as any,
+      order: { approvalLevel: 'ASC' },
+    });
+    if (!sample) return [];
+    return this.approvalsService.getChain(
+      { module: 'procurement', documentType: sample.documentType, documentId },
+      tenantId,
+    );
+  }
+
+  async _legacyGetEnrichedApprovalChain(documentId: string, tenantId?: string) {
     const where: any = { documentId };
     if (tenantId) where.tenantId = tenantId;
 

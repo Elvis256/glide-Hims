@@ -34,6 +34,7 @@ import { Department } from '../../database/entities/department.entity';
 import { OrgApprovalResolverService } from './org-approval-resolver.service';
 import { OrgAdminController } from './org-admin.controller';
 import { OrgAdminService } from './org-admin.service';
+import { ApprovalsModule } from '../approvals/approvals.module';
 import { ChartOfAccount } from '../../database/entities/chart-of-account.entity';
 import { JournalEntry } from '../../database/entities/journal-entry.entity';
 import { FinanceModule } from '../finance/finance.module';
@@ -72,6 +73,7 @@ import { InventoryModule } from '../inventory/inventory.module';
     forwardRef(() => FinanceModule),
     forwardRef(() => UsersModule),
     forwardRef(() => ComplianceModule),
+    forwardRef(() => ApprovalsModule),
     InventoryModule,
   ],
   controllers: [ProcurementController, ApprovalDashboardController, OrgAdminController],
