@@ -292,15 +292,17 @@ const PharmacyAnalyticsPage = lazy(() => import('./pages/pharmacy/PharmacyAnalyt
 const RetailSalesPage = lazy(() => import('./pages/pharmacy/transactions/RetailSalesPage'));
 const WholesalePage = lazy(() => import('./pages/pharmacy/transactions/WholesalePage'));
 const InpatientMedsPage = lazy(() => import('./pages/pharmacy/transactions/InpatientMedsPage'));
-const ExpiringSoonPage = lazy(() => import('./pages/pharmacy/expiry/ExpiringSoonPage'));
-const ExpiredItemsPage = lazy(() => import('./pages/pharmacy/expiry/ExpiredItemsPage'));
-const ExpiryAlertsPage = lazy(() => import('./pages/pharmacy/expiry/ExpiryAlertsPage'));
-const DisposalLogPage = lazy(() => import('./pages/pharmacy/expiry/DisposalLogPage'));
-const ReturnToSupplierPage = lazy(() => import('./pages/pharmacy/expiry/ReturnToSupplierPage'));
+// Audit Phase 3.5 — promoted from pages/pharmacy/expiry/* to pages/expiry/* so the workflow
+// is no longer scoped to pharmacy in the file tree (it serves stores too).
+const ExpiringSoonPage = lazy(() => import('./pages/expiry/ExpiringSoonPage'));
+const ExpiredItemsPage = lazy(() => import('./pages/expiry/ExpiredItemsPage'));
+const ExpiryAlertsPage = lazy(() => import('./pages/expiry/ExpiryAlertsPage'));
+const DisposalLogPage = lazy(() => import('./pages/expiry/DisposalLogPage'));
+const ReturnToSupplierPage = lazy(() => import('./pages/expiry/ReturnToSupplierPage'));
 const ControlledSubstancesRegisterPage = lazy(() => import('./pages/pharmacy/ControlledSubstancesRegisterPage'));
 // Pharmacy procurement & supplier pages removed in audit Phase 3.1 — these routes
 // now redirect to the canonical /procurement/* pages.
-const ExpiryManagementPage = lazy(() => import('./pages/pharmacy/ExpiryManagementPage'));
+const ExpiryManagementPage = lazy(() => import('./pages/expiry/ExpiryManagementPage'));
 const MedicationAdherencePage = lazy(() => import('./pages/pharmacy/MedicationAdherencePage'));
 const SupplierRankingsPage = lazy(() => import('./pages/pharmacy/SupplierRankingsPage'));
 const PharmacyDashboardPage = lazy(() => import('./pages/pharmacy/PharmacyDashboardPage'));
@@ -972,13 +974,19 @@ function AppRoutes() {
                 <Route path="/pharmacy/wholesale" element={<Navigate to="/pharmacy/pos/wholesale/customers" replace />} />
                 <Route path="/pharmacy/inpatient" element={<ModuleRoute module="pharmacy"><PharmacistRoute><InpatientMedsPage /></PharmacistRoute></ModuleRoute>} />
                 
-                {/* Pharmacy - Expiry Management */}
-                <Route path="/pharmacy/expiry/soon" element={<ModuleRoute module="pharmacy"><PharmacistRoute><ExpiringSoonPage /></PharmacistRoute></ModuleRoute>} />
-                <Route path="/pharmacy/expiry/expired" element={<ModuleRoute module="pharmacy"><PharmacistRoute><ExpiredItemsPage /></PharmacistRoute></ModuleRoute>} />
-                <Route path="/pharmacy/expiry/alerts" element={<ModuleRoute module="pharmacy"><PharmacistRoute><ExpiryAlertsPage /></PharmacistRoute></ModuleRoute>} />
-                <Route path="/pharmacy/expiry/disposal" element={<ModuleRoute module="pharmacy"><PharmacistRoute><DisposalLogPage /></PharmacistRoute></ModuleRoute>} />
-                <Route path="/pharmacy/expiry/return" element={<ModuleRoute module="pharmacy"><PharmacistRoute><ReturnToSupplierPage /></PharmacistRoute></ModuleRoute>} />
-                <Route path="/pharmacy/expiry/management" element={<ModuleRoute module="pharmacy"><PharmacistRoute><ExpiryManagementPage /></PharmacistRoute></ModuleRoute>} />
+                {/* Expiry Management — canonical /expiry/*; /pharmacy/expiry/* kept as redirects (audit Phase 3.5) */}
+                <Route path="/expiry/soon" element={<ModuleRoute module="pharmacy"><PharmacistRoute><ExpiringSoonPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/expiry/expired" element={<ModuleRoute module="pharmacy"><PharmacistRoute><ExpiredItemsPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/expiry/alerts" element={<ModuleRoute module="pharmacy"><PharmacistRoute><ExpiryAlertsPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/expiry/disposal" element={<ModuleRoute module="pharmacy"><PharmacistRoute><DisposalLogPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/expiry/return" element={<ModuleRoute module="pharmacy"><PharmacistRoute><ReturnToSupplierPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/expiry/management" element={<ModuleRoute module="pharmacy"><PharmacistRoute><ExpiryManagementPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/expiry/soon" element={<Navigate to="/expiry/soon" replace />} />
+                <Route path="/pharmacy/expiry/expired" element={<Navigate to="/expiry/expired" replace />} />
+                <Route path="/pharmacy/expiry/alerts" element={<Navigate to="/expiry/alerts" replace />} />
+                <Route path="/pharmacy/expiry/disposal" element={<Navigate to="/expiry/disposal" replace />} />
+                <Route path="/pharmacy/expiry/return" element={<Navigate to="/expiry/return" replace />} />
+                <Route path="/pharmacy/expiry/management" element={<Navigate to="/expiry/management" replace />} />
                 <Route path="/pharmacy/controlled-register" element={<ModuleRoute module="pharmacy"><PharmacistRoute><ControlledSubstancesRegisterPage /></PharmacistRoute></ModuleRoute>} />
                 
                 {/* Pharmacy procurement & suppliers — audit Phase 3.1: redirect to canonical /procurement/* */}

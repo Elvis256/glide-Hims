@@ -219,7 +219,7 @@ export default function PharmacyDashboardPage() {
               <QuickAction
                 label="View Alerts"
                 icon={<AlertTriangle className="w-4 h-4 text-amber-500" />}
-                to="/pharmacy/expiry/alerts"
+                to="/expiry/alerts"
               />
               <QuickAction
                 label="New Sale"

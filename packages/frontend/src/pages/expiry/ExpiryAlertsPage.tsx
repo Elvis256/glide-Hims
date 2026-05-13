@@ -19,9 +19,9 @@ import {
   BellRing,
   Loader2,
 } from 'lucide-react';
-import { usePermissions } from '../../../components/PermissionGate';
-import AccessDenied from '../../../components/AccessDenied';
-import { asList } from '../../../utils/unwrapResponse';
+import { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
+import { asList } from '../../utils/unwrapResponse';
 
 interface AlertConfig {
   id: string;
@@ -54,7 +54,7 @@ export default function ExpiryAlertsPage() {
   const { data: alertHistoryData, isLoading } = useQuery({
     queryKey: ['expiry-alert-history'],
     queryFn: async () => {
-      const api = (await import('../../../services/api')).default;
+      const api = (await import('../../services/api')).default;
       const res = await api.get('/notifications', { params: { type: 'expiry_alert', limit: 100 } });
       return (asList(res.data)) as AlertHistory[];
     },

@@ -547,12 +547,12 @@ const navigationSections: NavSection[] = [
         icon: AlertTriangle,
         permissions: ['inventory.read', 'pharmacy.read'],
         children: [
-          { name: 'Expiring Soon', href: '/pharmacy/expiry/soon', icon: Clock, permissions: ['inventory.read'] },
-          { name: 'Expired Items', href: '/pharmacy/expiry/expired', icon: AlertTriangle, permissions: ['inventory.read'] },
-          { name: 'Expiry Alerts', href: '/pharmacy/expiry/alerts', icon: Bell, permissions: ['inventory.read'] },
-          { name: 'Disposal Log', href: '/pharmacy/expiry/disposal', icon: Trash2, permissions: ['inventory.update'] },
-          { name: 'Return to Supplier', href: '/pharmacy/expiry/return', icon: RotateCcw, permissions: ['inventory.update'] },
-          { name: 'Expiry Dashboard', href: '/pharmacy/expiry/management', icon: LayoutGrid, permissions: ['inventory.read'] },
+          { name: 'Expiring Soon', href: '/expiry/soon', icon: Clock, permissions: ['inventory.read'] },
+          { name: 'Expired Items', href: '/expiry/expired', icon: AlertTriangle, permissions: ['inventory.read'] },
+          { name: 'Expiry Alerts', href: '/expiry/alerts', icon: Bell, permissions: ['inventory.read'] },
+          { name: 'Disposal Log', href: '/expiry/disposal', icon: Trash2, permissions: ['inventory.update'] },
+          { name: 'Return to Supplier', href: '/expiry/return', icon: RotateCcw, permissions: ['inventory.update'] },
+          { name: 'Expiry Dashboard', href: '/expiry/management', icon: LayoutGrid, permissions: ['inventory.read'] },
         ],
       },
       {
