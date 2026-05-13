@@ -56,6 +56,7 @@ const SystemSaasInvoicesPage = lazy(() => import('./pages/system/SystemSaasInvoi
 const SystemInvoiceDetailPage = lazy(() => import('./pages/system/SystemInvoiceDetailPage'));
 const SystemBillingSettingsPage = lazy(() => import('./pages/system/SystemBillingSettingsPage'));
 const SystemEmailTemplatesPage = lazy(() => import('./pages/system/SystemEmailTemplatesPage'));
+const SystemEmailLogsPage = lazy(() => import('./pages/system/SystemEmailLogsPage'));
 const SystemDunningRulesPage = lazy(() => import('./pages/system/SystemDunningRulesPage'));
 const SystemVatRulesPage = lazy(() => import('./pages/system/SystemVatRulesPage'));
 const SystemCurrencyRatesPage = lazy(() => import('./pages/system/SystemCurrencyRatesPage'));
@@ -682,6 +683,7 @@ function AppRoutes() {
         <Route path="saas-invoices/:id" element={<SystemInvoiceDetailPage />} />
         <Route path="billing-settings" element={<SystemBillingSettingsPage />} />
         <Route path="email-templates" element={<SystemEmailTemplatesPage />} />
+        <Route path="email-logs" element={<SystemEmailLogsPage />} />
         <Route path="dunning-rules" element={<SystemDunningRulesPage />} />
         <Route path="vat-rules" element={<SystemVatRulesPage />} />
         <Route path="currency-rates" element={<SystemCurrencyRatesPage />} />

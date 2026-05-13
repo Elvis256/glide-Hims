@@ -211,3 +211,21 @@ export class SaasSubscriptionEvent {
   @Column({ type: 'uuid', nullable: true }) actorId: string | null;
   @CreateDateColumn() createdAt: Date;
 }
+
+export type SaasEmailLogStatus = 'sent' | 'failed' | 'skipped';
+
+@Entity('saas_email_logs')
+export class SaasEmailLog {
+  @PrimaryGeneratedColumn('uuid') id: string;
+  @Column({ type: 'uuid', nullable: true }) @Index() tenantId: string | null;
+  @Column({ type: 'varchar', length: 50 }) @Index() templateKey: string;
+  @Column({ type: 'varchar', length: 255, nullable: true }) to: string | null;
+  @Column({ type: 'text' }) subject: string;
+  @Column({ type: 'varchar', length: 20 }) @Index() status: SaasEmailLogStatus;
+  @Column({ type: 'text', nullable: true }) error: string | null;
+  @Column({ type: 'uuid', nullable: true }) invoiceId: string | null;
+  @Column({ type: 'uuid', nullable: true }) subscriptionId: string | null;
+  @Column({ type: 'boolean', default: false }) isTest: boolean;
+  @Column({ type: 'text', nullable: true }) bodyPreview: string | null;
+  @CreateDateColumn() @Index() createdAt: Date;
+}
