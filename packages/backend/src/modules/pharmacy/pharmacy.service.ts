@@ -52,6 +52,7 @@ import {
 import { FinanceService } from '../finance/finance.service';
 import { PosShiftGuardService } from '../pos/services/pos-shift-guard.service';
 import { EfrisService } from '../efris/efris.service';
+import { InventoryService } from '../inventory/inventory.service';
 import { EfrisDocumentType } from '../../database/entities/pos-compliance.entity';
 import { ReceiptReprint, RetailCustomer } from '../../database/entities/pos-retail.entity';
 
@@ -101,6 +102,7 @@ export class PharmacyService {
     private posShiftGuard: PosShiftGuardService,
     private efrisService: EfrisService,
     private eventEmitter: EventEmitter2,
+    private inventoryService: InventoryService,
   ) {}
 
   /**
@@ -1259,7 +1261,7 @@ export class PharmacyService {
     };
   }
 
-  async receiveBatch(dto: ReceiveBatchDto, tenantId?: string) {
+  async receiveBatch(dto: ReceiveBatchDto, tenantId?: string, userId?: string) {
     const { itemId, facilityId, batchNumber, expiryDate, quantity, storeId } = dto;
 
     // Validate item exists
@@ -1270,39 +1272,65 @@ export class PharmacyService {
       throw new NotFoundException('Item not found');
     }
 
-    // Check if batch already exists for this item+facility
-    const existingWhere: any = { itemId, facilityId, batchNumber };
-    if (tenantId) existingWhere.tenantId = tenantId;
-    if (storeId) existingWhere.storeId = storeId;
-    const existing = await this.batchStockRepo.findOne({ where: existingWhere });
+    // Audit Phase 2.4 — previously this method ONLY wrote batch_stock_balances,
+    // bypassing stock_ledger + stock_balances. That caused silent inventory drift
+    // because pharmacy receipts weren't visible to inventory low-stock / movement
+    // queries. Now we write all three inside one transaction via the canonical
+    // InventoryService.applyStockMovement primitive.
+    return this.dataSource.transaction(async (manager) => {
+      const batchRepo = manager.getRepository(BatchStockBalance);
 
-    if (existing) {
-      existing.quantity = Number(existing.quantity) + quantity;
-      // Reactivate if previously expired/quarantined and receiving new stock
-      if (existing.status === 'expired') {
-        // Only update expiry if the new date is later than the existing one
-        const newExpiry = new Date(expiryDate);
-        if (newExpiry > existing.expiryDate) {
-          existing.expiryDate = newExpiry;
+      const existingWhere: any = { itemId, facilityId, batchNumber };
+      if (tenantId) existingWhere.tenantId = tenantId;
+      if (storeId) existingWhere.storeId = storeId;
+      const existing = await batchRepo.findOne({ where: existingWhere });
+
+      let batch: BatchStockBalance;
+      if (existing) {
+        existing.quantity = Number(existing.quantity) + quantity;
+        if (existing.status === 'expired') {
+          const newExpiry = new Date(expiryDate);
+          if (newExpiry > existing.expiryDate) {
+            existing.expiryDate = newExpiry;
+          }
+          existing.status = 'active';
         }
-        existing.status = 'active';
+        batch = await batchRepo.save(existing);
+      } else {
+        const created = batchRepo.create({
+          itemId,
+          facilityId,
+          storeId: storeId || undefined,
+          batchNumber,
+          expiryDate: new Date(expiryDate),
+          quantity,
+          reservedQuantity: 0,
+          status: 'active',
+          ...(tenantId ? { tenantId } : {}),
+        });
+        batch = await batchRepo.save(created);
       }
-      return this.batchStockRepo.save(existing);
-    }
 
-    const batch = this.batchStockRepo.create({
-      itemId,
-      facilityId,
-      storeId: storeId || undefined,
-      batchNumber,
-      expiryDate: new Date(expiryDate),
-      quantity,
-      reservedQuantity: 0,
-      status: 'active',
-      ...(tenantId ? { tenantId } : {}),
+      // Mirror into inventory ledger + balance so pharmacy receipts are visible
+      // to /inventory/* and /stores/* low-stock and movement reports.
+      await this.inventoryService.applyStockMovement(manager, {
+        itemId,
+        facilityId,
+        storeId: storeId || null,
+        signedQuantity: quantity,
+        movementType: MovementType.PURCHASE,
+        batchNumber,
+        expiryDate,
+        unitCost: Number(item.unitCost) || 0,
+        referenceType: 'pharmacy_batch_receive',
+        referenceId: batch.id,
+        notes: `Pharmacy batch receive: ${batchNumber}`,
+        userId,
+        tenantId,
+      });
+
+      return batch;
     });
-
-    return this.batchStockRepo.save(batch);
   }
 
   // ── Low-Stock Reorder Alerts ──────────────────────────────────────────

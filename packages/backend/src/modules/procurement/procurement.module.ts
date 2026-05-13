@@ -39,6 +39,7 @@ import { JournalEntry } from '../../database/entities/journal-entry.entity';
 import { FinanceModule } from '../finance/finance.module';
 import { UsersModule } from '../users/users.module';
 import { ComplianceModule } from '../compliance/compliance.module';
+import { InventoryModule } from '../inventory/inventory.module';
 
 @Module({
   imports: [
@@ -71,6 +72,7 @@ import { ComplianceModule } from '../compliance/compliance.module';
     forwardRef(() => FinanceModule),
     forwardRef(() => UsersModule),
     forwardRef(() => ComplianceModule),
+    InventoryModule,
   ],
   controllers: [ProcurementController, ApprovalDashboardController, OrgAdminController],
   providers: [
