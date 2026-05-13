@@ -21,6 +21,7 @@ export interface Subscription {
   deploymentId: string | null; leadId: string | null;
   planId: string; plan?: Plan; status: SubStatus; billingInterval: BillingInterval;
   currency: string; unitPriceMinor: number; seats: number;
+  billingEmail?: string | null; billingCurrency?: string | null;
   discountPercent: number; discountFixedMinor: number;
   startDate: string; trialEndsAt: string | null;
   currentPeriodStart: string | null; currentPeriodEnd: string | null;

@@ -856,40 +856,97 @@ export class SaasRevenueService {
     const taxInfo = await this.resolveTaxForTenant(sub.tenantId);
     const tax = taxInfo.rate > 0 ? Math.floor((taxBase * taxInfo.rate) / 100) : 0;
     const total = taxBase + tax;
+
+    // ---- Optional invoice-currency conversion --------------------------------
+    // If the subscription has a billingCurrency override that differs from the
+    // plan/sub currency, convert all monetary fields at issue time using the
+    // current FX rates table. Original amounts are preserved on the line memo
+    // for audit; fxRateToBase records the multiplier from sub.currency -> invoice.currency.
+    const sourceCcy = (sub.currency || 'UGX').toUpperCase();
+    const billingCcy = (sub.billingCurrency || sourceCcy).toUpperCase();
+    const fxApplied = billingCcy !== sourceCcy;
+    let invSubtotal = subtotal, invDiscount = discount, invTax = tax, invTotal = total;
+    let invUnitPrice = sub.unitPriceMinor;
+    let fxRate = 1;
+    let fxMemo: string | null = null;
+    if (fxApplied) {
+      const cs = await this.convertMinor(subtotal, sourceCcy, billingCcy);
+      const cd = await this.convertMinor(discount, sourceCcy, billingCcy);
+      const ct = await this.convertMinor(tax, sourceCcy, billingCcy);
+      const co = await this.convertMinor(total, sourceCcy, billingCcy);
+      const cu = await this.convertMinor(sub.unitPriceMinor, sourceCcy, billingCcy);
+      if (cs == null || cd == null || ct == null || co == null || cu == null) {
+        throw new BadRequestException(`Cannot convert invoice from ${sourceCcy} to ${billingCcy}: missing FX rate. Add the rate at /system/currency-rates or clear the subscription's billing currency.`);
+      }
+      invSubtotal = cs; invDiscount = cd; invTax = ct; invTotal = co; invUnitPrice = cu;
+      fxRate = subtotal > 0 ? invSubtotal / subtotal : 1;
+      fxMemo = `Converted from ${sourceCcy} ${this.fmtMoney(total, sourceCcy)} at rate ${fxRate.toFixed(6)}.`;
+    }
+
     const invoiceNumber = await this.nextInvoiceNumber();
     const inv = this.invoices.create(<Partial<SaasInvoice>>{
       invoiceNumber,
       subscriptionId: sub.id,
       tenantId: sub.tenantId,
       status: 'open',
-      currency: sub.currency,
-      subtotalMinor: subtotal,
-      discountMinor: discount,
-      taxMinor: tax,
-      totalMinor: total,
+      currency: billingCcy,
+      subtotalMinor: invSubtotal,
+      discountMinor: invDiscount,
+      taxMinor: invTax,
+      totalMinor: invTotal,
       amountPaidMinor: 0,
+      fxRateToBase: fxRate.toFixed(6) as any,
       issuedAt: new Date(),
       dueAt: this.addDays(new Date(), 7),
       periodStart,
       periodEnd,
+      memo: fxMemo,
       lines: [
         {
-          description: `Subscription · ${sub.billingInterval} · ${sub.seats} seat(s)`,
+          description: `Subscription · ${sub.billingInterval} · ${sub.seats} seat(s)${fxApplied ? ` (${sourceCcy}→${billingCcy} @ ${fxRate.toFixed(4)})` : ''}`,
           quantity: sub.seats,
-          unitPriceMinor: sub.unitPriceMinor,
-          amountMinor: subtotal,
+          unitPriceMinor: invUnitPrice,
+          amountMinor: invSubtotal,
         },
       ],
     });
     const saved = await this.invoices.save(inv );
     sub.lastInvoicedAt = new Date();
     await this.subs.save(sub);
-    await this.recordEvent(sub.id, 'invoice_issued', `Invoice ${invoiceNumber} issued for ${this.fmtMoney(total, sub.currency)}`, { invoiceId: saved.id }, actorId);
+    await this.recordEvent(sub.id, 'invoice_issued', `Invoice ${invoiceNumber} issued for ${this.fmtMoney(invTotal, billingCcy)}${fxApplied ? ` (FX ${sourceCcy}→${billingCcy})` : ''}`, { invoiceId: saved.id, fxApplied, fxRate, sourceCcy, billingCcy }, actorId);
     if (sub.billingEmail) {
       const plan = await this.plans.findOne({ where: { id: sub.planId } });
       this.mailer.sendInvoiceIssued(sub.billingEmail, saved, plan ?? undefined).catch(() => {});
     }
     return saved;
+  }
+
+  async updateSubscription(id: string, dto: { billingEmail?: string | null; billingCurrency?: string | null; autoRenew?: boolean }, actorId?: string) {
+    const sub = await this.subs.findOne({ where: { id } });
+    if (!sub) throw new NotFoundException();
+    const changes: string[] = [];
+    if (dto.billingEmail !== undefined) {
+      const v = dto.billingEmail ? String(dto.billingEmail).trim() : null;
+      if (v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) throw new BadRequestException('Invalid billing email');
+      if (v !== sub.billingEmail) { sub.billingEmail = v; changes.push(`billingEmail=${v ?? 'null'}`); }
+    }
+    if (dto.billingCurrency !== undefined) {
+      const raw = dto.billingCurrency ? String(dto.billingCurrency).trim().toUpperCase() : null;
+      if (raw && raw.length !== 3) throw new BadRequestException('Billing currency must be a 3-letter code');
+      if (raw && raw !== (sub.currency || '').toUpperCase()) {
+        // Validate FX rate exists either way
+        const fx = await this.getCurrencyRates();
+        const knows = (raw === fx.base) || !!fx.rates[raw];
+        if (!knows) throw new BadRequestException(`No FX rate for ${raw}. Add it at /system/currency-rates first.`);
+      }
+      const next = raw && raw !== (sub.currency || '').toUpperCase() ? raw : null;
+      if (next !== sub.billingCurrency) { sub.billingCurrency = next; changes.push(`billingCurrency=${next ?? 'null'}`); }
+    }
+    if (dto.autoRenew !== undefined && dto.autoRenew !== sub.autoRenew) { sub.autoRenew = !!dto.autoRenew; changes.push(`autoRenew=${sub.autoRenew}`); }
+    if (changes.length === 0) return this.getSubscription(sub.id);
+    await this.subs.save(sub);
+    await this.recordEvent(sub.id, 'note', `Updated: ${changes.join(', ')}`, { changes }, actorId);
+    return this.getSubscription(sub.id);
   }
 
   async recordPayment(invoiceId: string, dto: RecordPaymentDto, actorId?: string) {
