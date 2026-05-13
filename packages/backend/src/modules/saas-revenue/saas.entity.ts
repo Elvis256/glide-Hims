@@ -249,3 +249,41 @@ export class SaasPaymentMethod {
   @CreateDateColumn() createdAt: Date;
   @UpdateDateColumn() updatedAt: Date;
 }
+
+export type WebhookDeliveryStatus = 'pending' | 'succeeded' | 'failed';
+
+@Entity('saas_webhook_endpoints')
+export class SaasWebhookEndpoint {
+  @PrimaryGeneratedColumn('uuid') id: string;
+  @Column({ type: 'uuid' }) @Index() tenantId: string;
+  @Column({ type: 'text' }) url: string;
+  @Column({ type: 'text' }) secret: string;
+  @Column({ type: 'text', array: true, default: '{}' }) events: string[];
+  @Column({ type: 'text', nullable: true }) description: string | null;
+  @Column({ type: 'boolean', default: true }) enabled: boolean;
+  @Column({ type: 'int', default: 0 }) consecutiveFailures: number;
+  @Column({ type: 'timestamptz', nullable: true }) lastSuccessAt: Date | null;
+  @Column({ type: 'timestamptz', nullable: true }) lastFailureAt: Date | null;
+  @Column({ type: 'timestamptz', nullable: true }) disabledAt: Date | null;
+  @CreateDateColumn() createdAt: Date;
+  @UpdateDateColumn() updatedAt: Date;
+}
+
+@Entity('saas_webhook_deliveries')
+export class SaasWebhookDelivery {
+  @PrimaryGeneratedColumn('uuid') id: string;
+  @Column({ type: 'uuid' }) @Index() endpointId: string;
+  @Column({ type: 'uuid' }) @Index() tenantId: string;
+  @Column({ type: 'varchar', length: 64 }) eventType: string;
+  @Column({ type: 'uuid' }) eventId: string;
+  @Column({ type: 'jsonb' }) payload: Record<string, any>;
+  @Column({ type: 'varchar', length: 16, default: 'pending' }) status: WebhookDeliveryStatus;
+  @Column({ type: 'int', default: 0 }) attempts: number;
+  @Column({ type: 'int', nullable: true }) responseCode: number | null;
+  @Column({ type: 'text', nullable: true }) responseBody: string | null;
+  @Column({ type: 'text', nullable: true }) errorMessage: string | null;
+  @Column({ type: 'timestamptz' }) nextAttemptAt: Date;
+  @Column({ type: 'timestamptz', nullable: true }) lastAttemptAt: Date | null;
+  @Column({ type: 'timestamptz', nullable: true }) succeededAt: Date | null;
+  @CreateDateColumn() createdAt: Date;
+}

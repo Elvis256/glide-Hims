@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
   SaasPlan, SaasSubscription, SaasInvoice, SaasPayment, SaasCoupon, SaasSubscriptionEvent, SaasEmailLog, SaasPaymentMethod,
+  SaasWebhookEndpoint, SaasWebhookDelivery,
 } from './saas.entity';
 import { License } from '../../database/entities/license.entity';
 import { Tenant } from '../../database/entities/tenant.entity';
@@ -11,15 +12,16 @@ import { SaasRevenueController } from './saas-revenue.controller';
 import { SaasMailerService } from './saas-mailer.service';
 import { FlutterwaveService } from './flutterwave.service';
 import { PesapalService } from './pesapal.service';
+import { WebhookDispatcherService } from './webhook-dispatcher.service';
 import { SystemSettingsModule } from '../system-settings/system-settings.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([SaasPlan, SaasSubscription, SaasInvoice, SaasPayment, SaasCoupon, SaasSubscriptionEvent, SaasEmailLog, SaasPaymentMethod, License, Lead, Tenant]),
+    TypeOrmModule.forFeature([SaasPlan, SaasSubscription, SaasInvoice, SaasPayment, SaasCoupon, SaasSubscriptionEvent, SaasEmailLog, SaasPaymentMethod, SaasWebhookEndpoint, SaasWebhookDelivery, License, Lead, Tenant]),
     SystemSettingsModule,
   ],
   controllers: [SaasRevenueController],
-  providers: [SaasRevenueService, SaasMailerService, FlutterwaveService, PesapalService],
+  providers: [SaasRevenueService, SaasMailerService, FlutterwaveService, PesapalService, WebhookDispatcherService],
   exports: [SaasRevenueService],
 })
 export class SaasRevenueModule {}

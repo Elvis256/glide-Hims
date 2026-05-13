@@ -402,6 +402,58 @@ export class SaasRevenueController {
     return this.svc.deleteMyPaymentMethod(tenantId, id);
   }
 
+  // ---------- Webhooks (tenant-side) ----------
+  @Get('portal/webhook-event-types')
+  myWebhookEventTypes() { return this.svc.webhookEventTypes(); }
+
+  @Get('portal/webhooks')
+  myListWebhooks(@Req() req: any) {
+    const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
+    return this.svc.listMyWebhookEndpoints(tenantId);
+  }
+
+  @Post('portal/webhooks')
+  myCreateWebhook(@Req() req: any, @Body() dto: { url: string; events?: string[]; description?: string }) {
+    const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
+    return this.svc.createMyWebhookEndpoint(tenantId, dto);
+  }
+
+  @Put('portal/webhooks/:id')
+  myUpdateWebhook(@Req() req: any, @Param('id') id: string, @Body() dto: { url?: string; events?: string[]; description?: string | null; enabled?: boolean }) {
+    const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
+    return this.svc.updateMyWebhookEndpoint(tenantId, id, dto);
+  }
+
+  @Delete('portal/webhooks/:id')
+  myDeleteWebhook(@Req() req: any, @Param('id') id: string) {
+    const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
+    return this.svc.deleteMyWebhookEndpoint(tenantId, id);
+  }
+
+  @Post('portal/webhooks/:id/rotate-secret')
+  myRotateWebhookSecret(@Req() req: any, @Param('id') id: string) {
+    const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
+    return this.svc.rotateMyWebhookSecret(tenantId, id);
+  }
+
+  @Post('portal/webhooks/:id/test')
+  myTestWebhook(@Req() req: any, @Param('id') id: string) {
+    const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
+    return this.svc.testMyWebhookEndpoint(tenantId, id);
+  }
+
+  @Get('portal/webhook-deliveries')
+  myWebhookDeliveries(@Req() req: any, @Query('endpointId') endpointId?: string, @Query('status') status?: string, @Query('limit') limit?: string) {
+    const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
+    return this.svc.listMyWebhookDeliveries(tenantId, { endpointId, status, limit: limit ? Number(limit) : undefined });
+  }
+
+  @Post('portal/webhook-deliveries/:id/retry')
+  myRetryWebhookDelivery(@Req() req: any, @Param('id') id: string) {
+    const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
+    return this.svc.retryMyWebhookDelivery(tenantId, id);
+  }
+
   @Post('portal/checkout')
   myCheckout(@Req() req: any, @Body() dto: InitCheckoutDto) {
     const tenantId = req.user?.isSystemAdmin ? undefined : ensureTenant(req);

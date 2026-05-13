@@ -19,6 +19,8 @@ import {
   SaasSubscriptionEvent,
   SaasPaymentMethod,
   SaasPaymentMethodKind,
+  SaasWebhookEndpoint,
+  SaasWebhookDelivery,
   BillingInterval,
   SubscriptionStatus,
   SubscriptionEventType,
@@ -44,6 +46,8 @@ const TIER_TO_LICENSE: Record<string, License['licenseType']> = {
 import { SaasMailerService } from './saas-mailer.service';
 import { FlutterwaveService } from './flutterwave.service';
 import { PesapalService } from './pesapal.service';
+import { WebhookDispatcherService, WebhookEventType, WEBHOOK_EVENT_TYPES } from './webhook-dispatcher.service';
+import * as crypto from 'crypto';
 import { Lead } from '../leads/lead.entity';
 import { SystemSettingsService } from '../system-settings/system-settings.service';
 
@@ -151,9 +155,12 @@ export class SaasRevenueService {
     @InjectRepository(Lead) private readonly leads: Repository<Lead>,
     @InjectRepository(Tenant) private readonly tenants: Repository<Tenant>,
     @InjectRepository(SaasPaymentMethod) private readonly paymentMethods: Repository<SaasPaymentMethod>,
+    @InjectRepository(SaasWebhookEndpoint) private readonly webhookEndpoints: Repository<SaasWebhookEndpoint>,
+    @InjectRepository(SaasWebhookDelivery) private readonly webhookDeliveries: Repository<SaasWebhookDelivery>,
     private readonly mailer: SaasMailerService,
     private readonly flw: FlutterwaveService,
     private readonly pesapal: PesapalService,
+    private readonly webhooks: WebhookDispatcherService,
     private readonly settings: SystemSettingsService,
   ) {}
 
@@ -790,6 +797,10 @@ export class SaasRevenueService {
       await this.subs.save(sub);
       await this.recordEvent(sub.id, 'cancelled', `Cancelled immediately. Reason: ${reason ?? 'n/a'}`, null, actorId);
     }
+    this.webhooks.enqueue(sub.tenantId, 'subscription.cancelled', {
+      subscriptionId: sub.id, planId: sub.planId, atPeriodEnd: !!atPeriodEnd,
+      reason: reason ?? null, periodEnd: sub.currentPeriodEnd, cancelledAt: sub.cancelledAt,
+    }).catch(() => {});
     return this.getSubscription(sub.id);
   }
 
@@ -920,6 +931,12 @@ export class SaasRevenueService {
       const plan = await this.plans.findOne({ where: { id: sub.planId } });
       this.mailer.sendInvoiceIssued(sub.billingEmail, saved, plan ?? undefined).catch(() => {});
     }
+    this.webhooks.enqueue(sub.tenantId, 'invoice.issued', {
+      invoiceId: saved.id, invoiceNumber, subscriptionId: sub.id,
+      totalMinor: saved.totalMinor, currency: saved.currency,
+      issuedAt: saved.issuedAt, dueAt: saved.dueAt,
+      fxApplied, fxRate, sourceCurrency: sourceCcy, billingCurrency: billingCcy,
+    }).catch(() => {});
     return saved;
   }
 
@@ -991,6 +1008,17 @@ export class SaasRevenueService {
     await this.recordEvent(sub.id, 'payment_recorded', `Payment ${this.fmtMoney(dto.amountMinor, inv.currency)} via ${dto.gateway ?? 'manual'}`, { paymentId: savedPay.id, invoiceId: inv.id }, actorId);
     await this.syncLicenseFromSubscription(sub.id);
     if (sub.billingEmail) this.mailer.sendPaymentReceipt(sub.billingEmail, savedPay, inv).catch(() => {});
+    this.webhooks.enqueue(sub.tenantId, 'payment.recorded', {
+      paymentId: savedPay.id, invoiceId: inv.id, subscriptionId: sub.id,
+      amountMinor: savedPay.amountMinor, currency: savedPay.currency, gateway: savedPay.gateway, method: savedPay.method,
+      paidAt: savedPay.paidAt,
+    }).catch(() => {});
+    if (inv.status === 'paid') {
+      this.webhooks.enqueue(sub.tenantId, 'invoice.paid', {
+        invoiceId: inv.id, invoiceNumber: inv.invoiceNumber, subscriptionId: sub.id,
+        totalMinor: inv.totalMinor, currency: inv.currency, paidAt: inv.paidAt,
+      }).catch(() => {});
+    }
     return savedPay;
   }
 
@@ -1046,6 +1074,13 @@ export class SaasRevenueService {
       { paymentId: pay.id, invoiceId: pay.invoiceId, amountMinor: amount, reason },
       actorId,
     );
+    const subForRefund = await this.subs.findOne({ where: { id: pay.subscriptionId } });
+    if (subForRefund) {
+      this.webhooks.enqueue(subForRefund.tenantId, 'payment.refunded', {
+        paymentId: pay.id, invoiceId: pay.invoiceId, subscriptionId: pay.subscriptionId,
+        amountMinor: amount, currency: pay.currency, reason, refundedTotalMinor: newRefundedTotal,
+      }).catch(() => {});
+    }
 
     return pay;
   }
@@ -1880,5 +1915,101 @@ export class SaasRevenueService {
       if (next) { next.isDefault = true; await this.paymentMethods.save(next); }
     }
     return { ok: true };
+  }
+
+  // ============================================================
+  // TENANT-SIDE WEBHOOKS
+  // ============================================================
+  webhookEventTypes(): string[] { return [...WEBHOOK_EVENT_TYPES]; }
+
+  async listMyWebhookEndpoints(tenantId: string) {
+    const rows = await this.webhookEndpoints.find({ where: { tenantId }, order: { createdAt: 'DESC' } });
+    return rows.map((r) => ({ ...r, secret: this.maskSecret(r.secret) }));
+  }
+
+  async createMyWebhookEndpoint(tenantId: string, dto: { url: string; events?: string[]; description?: string }) {
+    if (!dto.url || !/^https?:\/\//i.test(dto.url)) throw new BadRequestException('A valid http(s) URL is required');
+    const events = (dto.events || []).filter((e) => e === '*' || (WEBHOOK_EVENT_TYPES as readonly string[]).includes(e));
+    if (!events.length) events.push('*');
+    const secret = `whsec_${crypto.randomBytes(24).toString('base64url')}`;
+    const ep = this.webhookEndpoints.create({
+      tenantId, url: dto.url.trim(), secret, events,
+      description: dto.description?.trim() || null,
+      enabled: true, consecutiveFailures: 0,
+    });
+    const saved = await this.webhookEndpoints.save(ep);
+    // Return the secret ONCE in cleartext so the tenant can copy it.
+    return { ...saved, secret, secretRevealed: true };
+  }
+
+  async updateMyWebhookEndpoint(tenantId: string, id: string, dto: { url?: string; events?: string[]; description?: string | null; enabled?: boolean }) {
+    const ep = await this.webhookEndpoints.findOne({ where: { id, tenantId } });
+    if (!ep) throw new NotFoundException('Endpoint not found');
+    if (dto.url !== undefined) {
+      if (!/^https?:\/\//i.test(dto.url)) throw new BadRequestException('A valid http(s) URL is required');
+      ep.url = dto.url.trim();
+    }
+    if (dto.events !== undefined) {
+      const events = dto.events.filter((e) => e === '*' || (WEBHOOK_EVENT_TYPES as readonly string[]).includes(e));
+      ep.events = events.length ? events : ['*'];
+    }
+    if (dto.description !== undefined) ep.description = dto.description?.toString().trim() || null;
+    if (dto.enabled !== undefined) {
+      ep.enabled = !!dto.enabled;
+      if (ep.enabled) { ep.consecutiveFailures = 0; ep.disabledAt = null; }
+      else if (!ep.disabledAt) ep.disabledAt = new Date();
+    }
+    await this.webhookEndpoints.save(ep);
+    return { ...ep, secret: this.maskSecret(ep.secret) };
+  }
+
+  async deleteMyWebhookEndpoint(tenantId: string, id: string) {
+    const ep = await this.webhookEndpoints.findOne({ where: { id, tenantId } });
+    if (!ep) throw new NotFoundException('Endpoint not found');
+    await this.webhookEndpoints.remove(ep);
+    return { ok: true };
+  }
+
+  async rotateMyWebhookSecret(tenantId: string, id: string) {
+    const ep = await this.webhookEndpoints.findOne({ where: { id, tenantId } });
+    if (!ep) throw new NotFoundException('Endpoint not found');
+    const secret = `whsec_${crypto.randomBytes(24).toString('base64url')}`;
+    ep.secret = secret;
+    await this.webhookEndpoints.save(ep);
+    return { ...ep, secret, secretRevealed: true };
+  }
+
+  async testMyWebhookEndpoint(tenantId: string, id: string) {
+    const ep = await this.webhookEndpoints.findOne({ where: { id, tenantId } });
+    if (!ep) throw new NotFoundException('Endpoint not found');
+    return this.webhooks.sendTestPing(ep);
+  }
+
+  async listMyWebhookDeliveries(tenantId: string, opts: { endpointId?: string; status?: string; limit?: number } = {}) {
+    const where: any = { tenantId };
+    if (opts.endpointId) where.endpointId = opts.endpointId;
+    if (opts.status) where.status = opts.status;
+    const rows = await this.webhookDeliveries.find({
+      where, order: { createdAt: 'DESC' },
+      take: Math.min(Math.max(opts.limit || 50, 1), 200),
+    });
+    return rows;
+  }
+
+  async retryMyWebhookDelivery(tenantId: string, id: string) {
+    const d = await this.webhookDeliveries.findOne({ where: { id, tenantId } });
+    if (!d) throw new NotFoundException();
+    if (d.status === 'succeeded') return { ok: true, alreadySucceeded: true };
+    d.status = 'pending';
+    d.nextAttemptAt = new Date();
+    await this.webhookDeliveries.save(d);
+    setImmediate(() => this.webhooks.flush().catch(() => {}));
+    return { ok: true };
+  }
+
+  private maskSecret(s: string): string {
+    if (!s) return '';
+    if (s.length <= 12) return '***';
+    return `${s.slice(0, 8)}…${s.slice(-4)}`;
   }
 }
