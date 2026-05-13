@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   Building2,
@@ -20,15 +20,17 @@ import {
   Smile,
   Glasses,
   ShoppingBag,
+  Sparkles,
 } from 'lucide-react';
-import { setupService, type InitializeSetupData, type FacilityPreset } from '../services/setup';
+import { setupService, type InitializeSetupData, type FacilityPreset, type PublicPlan } from '../services/setup';
 import { api } from '../services/api';
 import Logo from '../components/Logo';
 
-type Step = 'business_type' | 'organization' | 'deployment' | 'facility' | 'admin' | 'settings' | 'review';
+type Step = 'business_type' | 'plan' | 'organization' | 'deployment' | 'facility' | 'admin' | 'settings' | 'review';
 
 const steps: { id: Step; title: string; icon: React.ReactNode }[] = [
   { id: 'business_type', title: 'Business Type', icon: <Building2 className="w-5 h-5" /> },
+  { id: 'plan', title: 'Plan', icon: <Sparkles className="w-5 h-5" /> },
   { id: 'organization', title: 'Organization', icon: <Building2 className="w-5 h-5" /> },
   { id: 'deployment', title: 'Deployment', icon: <Monitor className="w-5 h-5" /> },
   { id: 'facility', title: 'Facility', icon: <Hospital className="w-5 h-5" /> },
@@ -276,6 +278,9 @@ const presetIcons: Record<string, React.ReactNode> = {
 
 export default function RegisterOrganizationPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const [plans, setPlans] = useState<PublicPlan[]>([]);
+  const [plansLoading, setPlansLoading] = useState(true);
   const [currentStep, setCurrentStep] = useState<Step>('business_type');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [presets, setPresets] = useState<FacilityPreset[]>([]);
@@ -294,6 +299,24 @@ export default function RegisterOrganizationPage() {
     setupService.getPresets().then(setPresets).catch((err) => console.error('Failed to load presets:', err));
   }, []);
 
+  useEffect(() => {
+    setPlansLoading(true);
+    setupService.getPublicPlans()
+      .then((p) => {
+        setPlans(p);
+        const wantCode = searchParams.get('plan');
+        if (wantCode) {
+          const match = p.find((pl) => pl.code === wantCode);
+          if (match) {
+            setFormData((prev) => ({ ...prev, plan: { code: match.code, billingInterval: 'monthly' } }));
+          }
+        }
+      })
+      .catch((err) => console.error('Failed to load plans:', err))
+      .finally(() => setPlansLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [formData, setFormData] = useState<InitializeSetupData>({
     organization: { name: '', slug: '', type: 'hospital', country: 'Uganda' },
     facility: { name: '', type: 'hospital' },
@@ -306,6 +329,7 @@ export default function RegisterOrganizationPage() {
       enabledModules: modules.filter(m => m.default).map(m => m.id),
       workflowMode: 'simple',
     },
+    plan: undefined,
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -422,6 +446,11 @@ export default function RegisterOrganizationPage() {
           newErrors['businessType'] = 'Please select a business type';
         }
         break;
+      case 'plan':
+        if (!formData.plan?.code) {
+          newErrors['plan'] = 'Please select a plan to continue';
+        }
+        break;
       case 'organization':
         if (!formData.organization.name.trim()) {
           newErrors['organization.name'] = 'Organization name is required';
@@ -529,6 +558,78 @@ export default function RegisterOrganizationPage() {
             </div>
           </div>
         );
+
+      case 'plan': {
+        const interval = formData.plan?.billingInterval || 'monthly';
+        const fmtPrice = (minor: number, currency: string) => {
+          if (minor === 0) return 'Free';
+          return new Intl.NumberFormat('en-US').format(Math.round(minor / 100)) + ' ' + currency;
+        };
+        return (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">Choose Your Plan</h2>
+              <p className="mt-1 text-gray-600">Start with a free trial — no card required. You can upgrade or downgrade anytime.</p>
+            </div>
+            <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1 text-sm">
+              {(['monthly', 'annual'] as const).map((iv) => (
+                <button
+                  key={iv}
+                  type="button"
+                  onClick={() => setFormData((p) => ({ ...p, plan: p.plan ? { ...p.plan, billingInterval: iv } : { code: '', billingInterval: iv } }))}
+                  className={`px-4 py-1.5 rounded-md font-medium ${interval === iv ? 'bg-blue-600 text-white' : 'text-gray-600 hover:text-gray-900'}`}
+                >
+                  {iv === 'monthly' ? 'Monthly' : 'Annual · save up to 17%'}
+                </button>
+              ))}
+            </div>
+            {plansLoading ? (
+              <div className="flex items-center gap-2 text-gray-500"><Loader2 className="w-4 h-4 animate-spin" /> Loading plans…</div>
+            ) : plans.length === 0 ? (
+              <div className="text-sm text-gray-500">No plans configured. Continuing without a plan is allowed.</div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {plans.map((p) => {
+                  const selected = formData.plan?.code === p.code;
+                  const priceMinor = interval === 'annual' ? p.priceAnnualMinor : p.priceMonthlyMinor;
+                  const popular = p.tier === 'professional';
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setFormData((prev) => ({ ...prev, plan: { code: p.code, billingInterval: interval } }))}
+                      className={`relative text-left p-5 rounded-xl border-2 transition-all ${
+                        selected ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100' : 'border-gray-200 hover:border-blue-300 bg-white'
+                      }`}
+                    >
+                      {popular && (
+                        <span className="absolute -top-2.5 left-4 inline-block px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide rounded-full bg-amber-500 text-white">Most popular</span>
+                      )}
+                      <div className="flex items-start justify-between">
+                        <h3 className="font-bold text-gray-900">{p.name}</h3>
+                        {selected && <CheckCircle className="w-5 h-5 text-blue-600 shrink-0" />}
+                      </div>
+                      <div className="mt-2 text-2xl font-bold text-gray-900">
+                        {fmtPrice(priceMinor, p.currency)}
+                        {priceMinor > 0 && <span className="text-sm font-normal text-gray-500"> /{interval === 'annual' ? 'yr' : 'mo'}</span>}
+                      </div>
+                      {p.description && <p className="mt-2 text-sm text-gray-600">{p.description}</p>}
+                      <ul className="mt-3 space-y-1 text-xs text-gray-600">
+                        <li>• Up to {p.maxUsers ?? '∞'} users</li>
+                        <li>• {p.maxFacilities ?? '∞'} facilities</li>
+                        <li>• {(p.enabledModules?.length ?? 0)} modules</li>
+                        {p.trialDays > 0 && <li className="text-emerald-700 font-medium">• {p.trialDays}-day free trial</li>}
+                      </ul>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {errors['plan'] && <p className="text-sm text-red-500">{errors['plan']}</p>}
+            <p className="text-xs text-gray-500">You can change plans later from the billing portal. Existing trial subscriptions can be upgraded or cancelled at any time.</p>
+          </div>
+        );
+      }
 
       case 'organization':
         return (
@@ -908,6 +1009,26 @@ export default function RegisterOrganizationPage() {
                 <p className="text-sm text-gray-500">{formData.organization.type} • {formData.organization.country}</p>
                 <p className="text-sm text-blue-600 font-mono mt-1">Login URL: /login/{formData.organization.slug}</p>
               </div>
+              {formData.plan?.code && (() => {
+                const selected = plans.find((p) => p.code === formData.plan?.code);
+                if (!selected) return null;
+                const iv = formData.plan?.billingInterval || 'monthly';
+                const priceMinor = iv === 'annual' ? selected.priceAnnualMinor : selected.priceMonthlyMinor;
+                const priceLabel = priceMinor === 0
+                  ? 'Free'
+                  : `${new Intl.NumberFormat('en-US').format(Math.round(priceMinor / 100))} ${selected.currency} / ${iv === 'annual' ? 'yr' : 'mo'}`;
+                return (
+                  <div className="bg-emerald-50 rounded-lg p-4">
+                    <h3 className="font-semibold text-emerald-900 flex items-center gap-2">
+                      <Sparkles className="w-4 h-4" /> Plan
+                    </h3>
+                    <p className="mt-1 text-emerald-900 font-medium">{selected.name} · {priceLabel}</p>
+                    {selected.trialDays > 0 && (
+                      <p className="text-sm text-emerald-700">{selected.trialDays}-day free trial — no charge until trial ends.</p>
+                    )}
+                  </div>
+                );
+              })()}
               <div className="bg-blue-50 rounded-lg p-4">
                 <h3 className="font-semibold text-blue-900 flex items-center gap-2">
                   <Monitor className="w-4 h-4" /> Deployment Mode

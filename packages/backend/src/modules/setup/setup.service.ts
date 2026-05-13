@@ -20,6 +20,8 @@ import { RolePermission } from '../../database/entities/role-permission.entity';
 import { Department } from '../../database/entities/department.entity';
 import { InitializeSetupDto, RegisterTenantDto, InitializeTenantSetupDto } from './dto/setup.dto';
 import { TenantsService } from '../tenants/tenants.service';
+import { SaasRevenueService } from '../saas-revenue/saas-revenue.service';
+import { SaasPlan } from '../saas-revenue/saas.entity';
 import {
   FACILITY_PRESETS,
   FACILITY_MODES,
@@ -383,6 +385,7 @@ export class SetupService {
     private settingRepo: Repository<SystemSetting>,
     private dataSource: DataSource,
     private configService: ConfigService,
+    private readonly saasRevenue: SaasRevenueService,
   ) {}
 
   /**
@@ -1053,6 +1056,36 @@ export class SetupService {
       this.logger.log(
         `New tenant registered - Org: ${tenant.name}, Facility: ${facility.name}, Admin: ${user.username}`,
       );
+
+      // Self-serve plan selection: create a trial subscription on the chosen plan.
+      // Best-effort — registration must succeed even if the subscription fails.
+      if (dto.plan?.code) {
+        try {
+          const plan = await this.dataSource
+            .getRepository(SaasPlan)
+            .findOne({ where: { code: dto.plan.code, isActive: true } });
+          if (plan) {
+            await this.saasRevenue.createSubscription(
+              {
+                tenantId: tenant.id,
+                planId: plan.id,
+                billingInterval: dto.plan.billingInterval || 'monthly',
+                seats: 1,
+                startTrial: plan.trialDays > 0,
+                autoRenew: true,
+                billingEmail: dto.admin.email,
+                billingName: dto.admin.fullName,
+              } as any,
+              user.id,
+            );
+            this.logger.log(`Trial subscription created for ${tenant.slug} on plan ${plan.code}`);
+          } else {
+            this.logger.warn(`Plan '${dto.plan.code}' not found — skipping subscription creation`);
+          }
+        } catch (err: any) {
+          this.logger.warn(`Failed to auto-create subscription for ${tenant.slug}: ${err?.message || err}`);
+        }
+      }
 
       return {
         success: true,
