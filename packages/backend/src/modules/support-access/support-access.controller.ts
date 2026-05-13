@@ -124,6 +124,24 @@ export class SupportAccessController {
     return this.supportAccessService.listPendingRequests();
   }
 
+  @Get('requests/all')
+  @ApiOperation({ summary: 'List all support access requests across tenants (system admin)' })
+  async listAllRequests(@Request() req: any) {
+    if (!req.user?.isSystemAdmin) {
+      throw new ForbiddenException('System admin access required');
+    }
+    return this.supportAccessService.listAllRequests();
+  }
+
+  @Get('grants/all')
+  @ApiOperation({ summary: 'List all support access grants across tenants (system admin)' })
+  async listAllGrants(@Request() req: any) {
+    if (!req.user?.isSystemAdmin) {
+      throw new ForbiddenException('System admin access required');
+    }
+    return this.supportAccessService.listAllGrants();
+  }
+
   @Post('requests/:id/approve')
   @ApiOperation({ summary: 'Approve a support access request (system admin)' })
   async approveRequest(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {

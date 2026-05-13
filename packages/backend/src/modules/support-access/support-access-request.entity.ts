@@ -1,6 +1,7 @@
 import { Entity, Column, ManyToOne, JoinColumn, Index } from 'typeorm';
 import { BaseEntity } from '../../database/entities/base.entity';
 import { User } from '../../database/entities/user.entity';
+import { Tenant } from '../../database/entities/tenant.entity';
 
 export enum SupportAccessRequestStatus {
   PENDING = 'pending',
@@ -47,4 +48,8 @@ export class SupportAccessRequest extends BaseEntity {
 
   @Column({ name: 'review_notes', type: 'text', nullable: true })
   reviewNotes: string | null;
+
+  @ManyToOne(() => Tenant, { nullable: true })
+  @JoinColumn({ name: 'tenant_id' })
+  tenant?: Tenant;
 }
