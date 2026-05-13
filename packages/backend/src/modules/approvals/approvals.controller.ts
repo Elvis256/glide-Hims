@@ -8,6 +8,7 @@ import {
   Request,
 } from '@nestjs/common';
 import { ApprovalsService, DocumentRef } from './approvals.service';
+import { ApprovalsSeederService } from './approvals-seeder.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 
 interface AuthedRequest {
@@ -38,7 +39,10 @@ function actorFrom(req: AuthedRequest) {
  */
 @Controller('approvals')
 export class ApprovalsController {
-  constructor(private readonly approvals: ApprovalsService) {}
+  constructor(
+    private readonly approvals: ApprovalsService,
+    private readonly seeder: ApprovalsSeederService,
+  ) {}
 
   // ---- Preview ----
   @Post('preview')
@@ -122,5 +126,17 @@ export class ApprovalsController {
       { module: body.module, documentType: body.documentType, documentId: body.documentId },
       actorFrom(req),
     );
+  }
+
+  /**
+   * Idempotently install the default approval policies for the caller's
+   * tenant. Safe to call multiple times — existing policies (matched by
+   * name) are skipped.
+   */
+  @Post('seed-defaults')
+  @AuthWithPermissions('system.admin')
+  async seedDefaults(@Request() req: AuthedRequest) {
+    const tenantId = req.user?.tenantId || '';
+    return this.seeder.seedForTenant(tenantId);
   }
 }

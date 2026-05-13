@@ -33,6 +33,8 @@ import { CareersPublicController } from './careers-public.controller';
 import { HrExtrasController } from './hr-extras.controller';
 import { SystemSettingsModule } from '../system-settings/system-settings.module';
 import { FinanceModule } from '../finance/finance.module';
+import { ApprovalsModule } from '../approvals/approvals.module';
+import { HrApprovalListener } from './hr-approval.listener';
 
 @Module({
   imports: [
@@ -64,6 +66,7 @@ import { FinanceModule } from '../finance/finance.module';
     ]),
     SystemSettingsModule,
     forwardRef(() => FinanceModule),
+    forwardRef(() => ApprovalsModule),
     MulterModule.register({
       storage: diskStorage({
         destination: './uploads/staff-documents',
@@ -85,7 +88,7 @@ import { FinanceModule } from '../finance/finance.module';
     }),
   ],
   controllers: [HrController, CareersPublicController, HrExtrasController],
-  providers: [HrService],
+  providers: [HrService, HrApprovalListener],
   exports: [HrService],
 })
 export class HrModule {}
