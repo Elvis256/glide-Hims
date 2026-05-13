@@ -101,6 +101,15 @@ export class ProcurementApprovalChain extends BaseEntity {
   @Column({ name: 'quorum_count', type: 'int', nullable: true })
   quorumCount?: number;
 
+  @Column({ name: 'sla_hours', type: 'int', nullable: true })
+  slaHours?: number;
+
+  @Column({ name: 'sla_due_at', type: 'timestamp', nullable: true })
+  slaDueAt?: Date;
+
+  @Column({ name: 'escalated_at', type: 'timestamp', nullable: true })
+  escalatedAt?: Date;
+
   // Relationships
   @ManyToOne(() => User, { nullable: true })
   @JoinColumn({ name: 'approver_id' })
