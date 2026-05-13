@@ -337,6 +337,54 @@ export class SaasRevenueController {
     res.send(html);
   }
 
+  @Get('portal/invoices')
+  myInvoices(@Req() req: any, @Query('status') status?: string) {
+    const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
+    return this.svc.listMyInvoices(tenantId, status);
+  }
+
+  @Get('portal/invoices/:id')
+  myInvoice(@Req() req: any, @Param('id') id: string) {
+    const tenantId = req.user?.isSystemAdmin ? undefined : ensureTenant(req);
+    return tenantId ? this.svc.getMyInvoice(tenantId, id) : this.svc.getInvoice(id);
+  }
+
+  @Get('portal/invoices/:id/pdf')
+  async myInvoicePdf(@Req() req: any, @Param('id') id: string, @Res() res: Response) {
+    const tenantId = req.user?.isSystemAdmin ? undefined : ensureTenant(req);
+    const inv = await this.svc.getInvoice(id);
+    if (tenantId && inv.tenantId !== tenantId) throw new ForbiddenException('Invoice does not belong to your tenant');
+    const buf = await this.svc.renderInvoicePdf(id, tenantId);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${inv.invoiceNumber}.pdf"`);
+    res.setHeader('Content-Length', String(buf.length));
+    res.end(buf);
+  }
+
+  @Get('portal/payment-methods')
+  myPaymentMethods(@Req() req: any) {
+    const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
+    return this.svc.listMyPaymentMethods(tenantId);
+  }
+
+  @Post('portal/payment-methods')
+  myAddPaymentMethod(@Req() req: any, @Body() dto: any) {
+    const tenantId = req.user?.isSystemAdmin && req.body?.tenantId ? String(req.body.tenantId) : ensureTenant(req);
+    return this.svc.addMyPaymentMethod(tenantId, dto || {});
+  }
+
+  @Put('portal/payment-methods/:id/default')
+  mySetDefaultPaymentMethod(@Req() req: any, @Param('id') id: string) {
+    const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
+    return this.svc.setDefaultPaymentMethod(tenantId, id);
+  }
+
+  @Delete('portal/payment-methods/:id')
+  myDeletePaymentMethod(@Req() req: any, @Param('id') id: string) {
+    const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
+    return this.svc.deleteMyPaymentMethod(tenantId, id);
+  }
+
   @Post('portal/checkout')
   myCheckout(@Req() req: any, @Body() dto: InitCheckoutDto) {
     const tenantId = req.user?.isSystemAdmin ? undefined : ensureTenant(req);

@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
-  SaasPlan, SaasSubscription, SaasInvoice, SaasPayment, SaasCoupon, SaasSubscriptionEvent, SaasEmailLog,
+  SaasPlan, SaasSubscription, SaasInvoice, SaasPayment, SaasCoupon, SaasSubscriptionEvent, SaasEmailLog, SaasPaymentMethod,
 } from './saas.entity';
 import { License } from '../../database/entities/license.entity';
 import { Tenant } from '../../database/entities/tenant.entity';
@@ -14,7 +14,7 @@ import { SystemSettingsModule } from '../system-settings/system-settings.module'
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([SaasPlan, SaasSubscription, SaasInvoice, SaasPayment, SaasCoupon, SaasSubscriptionEvent, SaasEmailLog, License, Lead, Tenant]),
+    TypeOrmModule.forFeature([SaasPlan, SaasSubscription, SaasInvoice, SaasPayment, SaasCoupon, SaasSubscriptionEvent, SaasEmailLog, SaasPaymentMethod, License, Lead, Tenant]),
     SystemSettingsModule,
   ],
   controllers: [SaasRevenueController],
