@@ -113,8 +113,11 @@ export class SaasRevenueService {
   // ============================================================
   // PRINTABLE INVOICE (HTML — browser saves as PDF)
   // ============================================================
-  async renderInvoiceHtml(id: string): Promise<string> {
+  async renderInvoiceHtml(id: string, requireTenantId?: string): Promise<string> {
     const inv = await this.getInvoice(id);
+    if (requireTenantId && inv.tenantId !== requireTenantId) {
+      throw new ForbiddenException('Invoice does not belong to your tenant');
+    }
     const sub = await this.subs.findOne({ where: { id: inv.subscriptionId } });
     const plan = sub ? await this.plans.findOne({ where: { id: sub.planId } }) : null;
     const tenant = await this.tenants.findOne({ where: { id: inv.tenantId }, select: ['id', 'name', 'slug'] as any });
@@ -453,6 +456,23 @@ export class SaasRevenueService {
     if (!inv) throw new NotFoundException();
     const payments = await this.payments.find({ where: { invoiceId: id }, order: { paidAt: 'DESC' } });
     return { ...inv, payments };
+  }
+
+  async sendInvoiceEmail(invoiceId: string, overrideTo?: string) {
+    const inv = await this.invoices.findOne({ where: { id: invoiceId } });
+    if (!inv) throw new NotFoundException('Invoice not found');
+    const sub = await this.subs.findOne({ where: { id: inv.subscriptionId } });
+    const plan = sub ? await this.plans.findOne({ where: { id: sub.planId } }) : null;
+    const tenant = await this.tenants.findOne({ where: { id: inv.tenantId } });
+    const to = (overrideTo && overrideTo.trim()) || sub?.billingEmail || (tenant as any)?.contactEmail || (tenant as any)?.adminEmail || null;
+    if (!to) throw new BadRequestException('No recipient email available — set billingEmail on the subscription or pass `to` in the request body.');
+    try {
+      await this.mailer.sendInvoiceIssued(to, inv as any, plan ?? undefined);
+      await this.recordEvent(inv.subscriptionId, 'invoice_issued', `Invoice ${inv.invoiceNumber} re-sent to ${to}`, { invoiceId: inv.id, to });
+      return { ok: true, to };
+    } catch (e: any) {
+      throw new BadRequestException(`Failed to send: ${e?.message || 'unknown error'}`);
+    }
   }
 
   async issueRenewalInvoice(sub: SaasSubscription, periodStart: Date, periodEnd: Date, actorId?: string) {

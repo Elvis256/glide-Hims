@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Loader2, Printer, Ban, ArrowLeft, ExternalLink, Plus, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Loader2, Printer, Ban, ArrowLeft, ExternalLink, Plus, AlertTriangle, CheckCircle, Mail } from 'lucide-react';
 import api from '../../services/api';
 import { SaasInvoice, INVOICE_STATUS_STYLES, fmtMoney, fmtDate, unwrap } from './saas/_shared';
 
@@ -18,6 +18,7 @@ export default function SystemInvoiceDetailPage() {
   const [loading, setLoading] = useState(true);
   const [showPay, setShowPay] = useState(false);
   const [voiding, setVoiding] = useState(false);
+  const [sending, setSending] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const load = async () => {
@@ -51,6 +52,21 @@ export default function SystemInvoiceDetailPage() {
       .catch((e) => alert(`Could not open invoice: ${e.message}`));
   };
 
+  const onSend = async () => {
+    if (!inv) return;
+    const def = (inv as any).billingEmail || '';
+    const to = window.prompt('Send invoice to (email):', def);
+    if (to === null) return;
+    setSending(true);
+    try {
+      const res = await api.post(`/saas-revenue/invoices/${inv.id}/send-email`, to.trim() ? { to: to.trim() } : {});
+      const data = unwrap<{ ok: boolean; to: string }>(res);
+      alert(`Sent to ${data?.to || to || '(default recipient)'}`);
+    } catch (e: any) {
+      alert(e?.response?.data?.message || 'Send failed');
+    } finally { setSending(false); }
+  };
+
   if (loading) return <div className="p-6"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>;
   if (!inv) return <div className="p-6 text-rose-700">{err || 'Invoice not found'}</div>;
 
@@ -63,6 +79,7 @@ export default function SystemInvoiceDetailPage() {
         <button onClick={() => nav('/system/saas-invoices')} className="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900"><ArrowLeft className="w-4 h-4" /> Back to invoices</button>
         <div className="flex items-center gap-2">
           <button onClick={onPrint} className="inline-flex items-center gap-2 px-3 py-2 border rounded text-sm hover:bg-gray-50"><Printer className="w-4 h-4" /> Print / PDF</button>
+          <button onClick={onSend} disabled={sending} className="inline-flex items-center gap-2 px-3 py-2 border rounded text-sm hover:bg-gray-50 disabled:opacity-50"><Mail className="w-4 h-4" /> {sending ? 'Sending…' : 'Send by email'}</button>
           {inv.status === 'open' && (
             <button onClick={() => setShowPay(true)} className="inline-flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded text-sm hover:bg-emerald-700"><Plus className="w-4 h-4" /> Record payment</button>
           )}

@@ -894,6 +894,13 @@ const navigationSections: NavSection[] = [
         icon: Settings,
         href: '/downloads',
         permissions: [],
+        systemAdminOnly: false,
+      },
+      {
+        name: 'My Subscription & Billing',
+        icon: CreditCard,
+        href: '/billing-portal',
+        permissions: [],
       },
       {
         name: 'Users & Access',
