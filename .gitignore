@@ -79,3 +79,4 @@ wildcard.crt
 wildcard.key
 *.pem
 packages/frontend/.build-stamp
+packages/backend/uploads
