@@ -178,8 +178,9 @@ export class OrgAdminController {
   // -------- Preview / debug --------
   @Post('approval/preview')
   @AuthWithPermissions('procurement.read')
-  previewApprovalChain(@Body() body: any, @Request() req: any) {
-    return this.resolver.resolveSteps({
+  async previewApprovalChain(@Body() body: any, @Request() req: any) {
+    const tenantId = req.user?.tenantId;
+    const preview = await this.resolver.resolveStepsWithMetadata({
       documentId: 'preview',
       documentType: body.documentType,
       amount: Number(body.amount || 0),
@@ -187,7 +188,29 @@ export class OrgAdminController {
       departmentId: body.departmentId || null,
       category: body.category || null,
       requesterId: body.requesterId || req.user?.id,
-      tenantId: req.user?.tenantId,
+      tenantId,
     });
+
+    const namesByKey = await this.resolver.enrichSteps(preview.steps, tenantId);
+
+    return {
+      source: preview.source,
+      policyId: preview.policyId ?? null,
+      policyName: preview.policyName ?? null,
+      steps: preview.steps.map((s) => {
+        const key = `${s.approverId || ''}|${s.groupId || ''}`;
+        const enriched = namesByKey.get(key) || {};
+        return {
+          approvalLevel: s.approvalLevel,
+          approverId: s.approverId ?? null,
+          approverName: enriched.approverName ?? null,
+          requiredRole: s.requiredRole,
+          groupId: s.groupId ?? null,
+          groupName: enriched.groupName ?? null,
+          quorumType: s.quorumType ?? null,
+          quorumCount: s.quorumCount ?? null,
+        };
+      }),
+    };
   }
 }

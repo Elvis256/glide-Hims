@@ -5,6 +5,7 @@ import api from '../../../services/api';
 import { getFacilityId } from '../../../lib/facility';
 import { CatalogItemPicker, type SelectedItem } from '../../../components/catalog';
 import { CategoryContextBanner, useProcurementCategory } from '../../../components/procurement/CategoryContextBanner';
+import { ApprovalChainTimeline } from '../../../components/procurement/ApprovalChainTimeline';
 import {
   ShoppingCart,
   Plus,
@@ -621,6 +622,12 @@ export default function PurchaseOrdersPage() {
               <div>
                 <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Delivery Address</p>
                 <p className="text-sm text-gray-700">{selectedPO.deliveryAddress}</p>
+              </div>
+
+              {/* Approval chain (real, from policy resolver) */}
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Approval Chain</p>
+                <ApprovalChainTimeline documentId={selectedPO.id} documentType="PO" />
               </div>
 
               {/* Amendments */}

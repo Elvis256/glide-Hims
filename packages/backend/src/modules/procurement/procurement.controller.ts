@@ -228,6 +228,18 @@ export class ProcurementController {
     return this.procurementService.getPurchaseOrder(id, req.user?.tenantId);
   }
 
+  @Get('purchase-orders/:id/approval-chain')
+  @AuthWithPermissions('procurement.read')
+  getPOApprovalChain(@Param('id') id: string, @Request() req: any) {
+    return this.procurementService.getEnrichedApprovalChain(id, req.user?.tenantId);
+  }
+
+  @Get('purchase-requests/:id/approval-chain')
+  @AuthWithPermissions('procurement.read')
+  getPRApprovalChain(@Param('id') id: string, @Request() req: any) {
+    return this.procurementService.getEnrichedApprovalChain(id, req.user?.tenantId);
+  }
+
   @Put('purchase-orders/:id/approve')
   @AuthWithPermissions('procurement.approve')
   approvePurchaseOrder(@Param('id') id: string, @Request() req: any) {

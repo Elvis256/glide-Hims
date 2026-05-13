@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { ProcurementApprovalChain, ApprovalChainStatus } from '../../database/entities/procurement-approval-chain.entity';
 import {
   ApprovalDelegation,
@@ -35,6 +35,13 @@ export interface ResolvedStep {
   quorumCount?: number | null;
 }
 
+export interface ResolvedChainPreview {
+  source: 'policy' | 'default-manager-chain' | 'fallback';
+  policyId?: string | null;
+  policyName?: string | null;
+  steps: ResolvedStep[];
+}
+
 @Injectable()
 export class OrgApprovalResolverService {
   private readonly logger = new Logger(OrgApprovalResolverService.name);
@@ -66,7 +73,8 @@ export class OrgApprovalResolverService {
   async buildAndPersistChain(input: ResolveApprovalChainInput): Promise<ProcurementApprovalChain[]> {
     const { documentId, documentType, tenantId } = input;
 
-    const steps = await this.resolveSteps(input);
+    const preview = await this.resolveStepsWithMetadata(input);
+    const steps = [...preview.steps];
 
     if (steps.length === 0) {
       // Hard fallback: single "manager" role step
@@ -100,7 +108,18 @@ export class OrgApprovalResolverService {
    * Resolve the steps without persisting (preview / unit-test friendly).
    */
   async resolveSteps(input: ResolveApprovalChainInput): Promise<ResolvedStep[]> {
+    return (await this.resolveStepsWithMetadata(input)).steps;
+  }
+
+  /**
+   * Same as resolveSteps but also returns the source label and matched policy
+   * so the UI can show "Using policy X" vs "Falling back to default manager chain".
+   */
+  async resolveStepsWithMetadata(
+    input: ResolveApprovalChainInput,
+  ): Promise<ResolvedChainPreview> {
     const policy = await this.findBestPolicy(input);
+    let source: ResolvedChainPreview['source'] = policy ? 'policy' : 'default-manager-chain';
 
     let rawSteps: Array<Partial<ResolvedStep> & { rawType: ApprovalPolicyStepType; stepRow?: ProcurementApprovalPolicyStep }> = [];
 
@@ -119,6 +138,7 @@ export class OrgApprovalResolverService {
             `Policy ${policy.id} step ${sr.stepOrder} (${sr.approverType}) couldn't resolve approver; falling back to defaults`,
           );
           rawSteps = [];
+          source = 'default-manager-chain';
           break;
         }
       }
@@ -192,7 +212,61 @@ export class OrgApprovalResolverService {
       });
     }
 
-    return finalSteps;
+    return {
+      source: finalSteps.length === 0 ? 'fallback' : source,
+      policyId: source === 'policy' && policy ? policy.id : null,
+      policyName: source === 'policy' && policy ? policy.name : null,
+      steps: finalSteps,
+    };
+  }
+
+  /**
+   * Look up display names for approverIds and groupIds in a chain so the UI
+   * can render "Jane Doe (Manager)" instead of an opaque uuid. Reuses query
+   * batching to avoid N+1 lookups.
+   */
+  async enrichSteps(
+    steps: Array<{ approverId?: string | null; groupId?: string | null }>,
+    tenantId: string,
+  ): Promise<Map<string, { approverName?: string; groupName?: string }>> {
+    const result = new Map<string, { approverName?: string; groupName?: string }>();
+    const userIds = Array.from(
+      new Set(steps.map((s) => s.approverId).filter((v): v is string => !!v)),
+    );
+    const groupIds = Array.from(
+      new Set(steps.map((s) => s.groupId).filter((v): v is string => !!v)),
+    );
+
+    const userNameById = new Map<string, string>();
+    if (userIds.length) {
+      const userRepo = this.chainRepo.manager.getRepository('User');
+      const users = (await userRepo
+        .createQueryBuilder('u')
+        .select(['u.id', 'u.firstName', 'u.lastName', 'u.email'])
+        .where('u.id IN (:...ids)', { ids: userIds })
+        .getMany()) as Array<{ id: string; firstName?: string; lastName?: string; email?: string }>;
+      for (const u of users) {
+        const name = [u.firstName, u.lastName].filter(Boolean).join(' ').trim() || u.email || u.id;
+        userNameById.set(u.id, name);
+      }
+    }
+
+    const groupNameById = new Map<string, string>();
+    if (groupIds.length) {
+      const groups = await this.groupRepo.find({
+        where: { id: In(groupIds), tenantId } as any,
+      });
+      for (const g of groups) groupNameById.set(g.id, g.name);
+    }
+
+    for (const s of steps) {
+      const key = `${s.approverId || ''}|${s.groupId || ''}`;
+      result.set(key, {
+        approverName: s.approverId ? userNameById.get(s.approverId) : undefined,
+        groupName: s.groupId ? groupNameById.get(s.groupId) : undefined,
+      });
+    }
+    return result;
   }
 
   // ---------- Internals ----------

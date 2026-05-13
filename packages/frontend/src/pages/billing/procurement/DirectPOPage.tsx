@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { formatCurrency } from '../../../lib/currency';
 import SearchableSelect, { SelectOption } from '../../../components/SearchableSelect';
+import { ApprovalChainPreview } from '../../../components/procurement/ApprovalChainPreview';
 import {
   CategoryContextBanner,
   useProcurementCategory,
@@ -630,12 +631,12 @@ export function DirectPOPage() {
                 </div>
               </div>
 
-              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <p className="text-sm text-gray-600 mb-1">Approval routing</p>
-                <p className="text-sm text-blue-900">
-                  Routed per your facility&rsquo;s approval policy after submission.
-                </p>
-              </div>
+              <ApprovalChainPreview
+                documentType="PO"
+                amount={total}
+                facilityId={user?.facilityId}
+                departmentId={formData.departmentId}
+              />
             </div>
           </section>
 
