@@ -107,23 +107,39 @@ export default function BillingPortalPage() {
               <th className="text-left">Due</th><th></th>
             </tr></thead>
             <tbody>
-              {data.invoices.map((inv) => (
-                <tr key={inv.id} className="border-t">
-                  <td className="py-2 font-mono text-xs">{inv.invoiceNumber}</td>
-                  <td className="py-2"><span className={`px-2 py-0.5 rounded-full text-xs ${INVOICE_STATUS_STYLES[inv.status]}`}>{inv.status}</span></td>
-                  <td className="py-2 text-right">{fmtMoney(inv.totalMinor, inv.currency)}</td>
-                  <td className="py-2 text-right">{fmtMoney(inv.amountPaidMinor, inv.currency)}</td>
-                  <td className="py-2">{fmtDate(inv.dueAt)}</td>
-                  <td className="py-2 text-right">
-                    <button onClick={() => printInvoice(inv)} className="inline-flex items-center gap-1 px-2 py-1 border text-xs rounded hover:bg-gray-50 mr-1" title="View / print invoice"><Printer className="w-3 h-3" /> View</button>
-                    {inv.status === 'open' && (
-                      <button onClick={() => payInvoice(inv)} disabled={paying === inv.id} className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-600 text-white text-xs rounded hover:bg-emerald-700 disabled:opacity-50">
-                        {paying === inv.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CreditCard className="w-3 h-3" />} Pay now
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {data.invoices.map((inv) => {
+                const hasBreakdown = inv.taxMinor > 0 || inv.discountMinor > 0;
+                const taxBase = inv.subtotalMinor - inv.discountMinor;
+                const taxRate = inv.taxMinor > 0 && taxBase > 0
+                  ? Math.round((inv.taxMinor / taxBase) * 1000) / 10
+                  : 0;
+                return (
+                  <tr key={inv.id} className="border-t align-top">
+                    <td className="py-2 font-mono text-xs">{inv.invoiceNumber}</td>
+                    <td className="py-2"><span className={`px-2 py-0.5 rounded-full text-xs ${INVOICE_STATUS_STYLES[inv.status]}`}>{inv.status}</span></td>
+                    <td className="py-2 text-right">
+                      <div>{fmtMoney(inv.totalMinor, inv.currency)}</div>
+                      {hasBreakdown && (
+                        <div className="text-[10px] text-gray-500 leading-tight mt-1 space-y-0.5">
+                          <div>Subtotal {fmtMoney(inv.subtotalMinor, inv.currency)}</div>
+                          {inv.discountMinor > 0 && <div>− Discount {fmtMoney(inv.discountMinor, inv.currency)}</div>}
+                          {inv.taxMinor > 0 && <div>+ Tax{taxRate > 0 ? ` (${taxRate}%)` : ''} {fmtMoney(inv.taxMinor, inv.currency)}</div>}
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-2 text-right">{fmtMoney(inv.amountPaidMinor, inv.currency)}</td>
+                    <td className="py-2">{fmtDate(inv.dueAt)}</td>
+                    <td className="py-2 text-right">
+                      <button onClick={() => printInvoice(inv)} className="inline-flex items-center gap-1 px-2 py-1 border text-xs rounded hover:bg-gray-50 mr-1" title="View / print invoice"><Printer className="w-3 h-3" /> View</button>
+                      {inv.status === 'open' && (
+                        <button onClick={() => payInvoice(inv)} disabled={paying === inv.id} className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-600 text-white text-xs rounded hover:bg-emerald-700 disabled:opacity-50">
+                          {paying === inv.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CreditCard className="w-3 h-3" />} Pay now
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>}
       </Card>
