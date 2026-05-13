@@ -109,10 +109,12 @@ echo "$PREV" > "$ROOT/.previous-release"
 # 8. PM2 reload
 log "Reloading PM2"
 cd "$ROOT/current"
+ONLY_FLAG=""
+[ -n "${PM2_ONLY:-}" ] && ONLY_FLAG="--only $PM2_ONLY"
 if pm2 jlist 2>/dev/null | grep -q glide-hims-backend; then
-  pm2 reload "$ROOT/current/ecosystem.config.js" --update-env
+  pm2 reload "$ROOT/current/ecosystem.config.js" --update-env $ONLY_FLAG
 else
-  pm2 start "$ROOT/current/ecosystem.config.js"
+  pm2 start "$ROOT/current/ecosystem.config.js" $ONLY_FLAG
 fi
 pm2 save >/dev/null
 
