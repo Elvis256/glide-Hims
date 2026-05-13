@@ -105,6 +105,12 @@ export class SaasRevenueController {
   @Post('invoices/:id/void')
   voidInv(@Req() req: any, @Param('id') id: string) { ensureAdmin(req); return this.svc.voidInvoice(id, req.user?.id); }
 
+  @Post('payments/:id/refund')
+  refundPayment(@Req() req: any, @Param('id') id: string, @Body() dto: { amountMinor?: number; reason?: string }) {
+    ensureAdmin(req);
+    return this.svc.refundPayment(id, dto || {}, req.user?.id);
+  }
+
   @Post('invoices/:id/send-email')
   sendInv(@Req() req: any, @Param('id') id: string, @Body() body: { to?: string }) {
     ensureAdmin(req);

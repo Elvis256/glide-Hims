@@ -743,6 +743,52 @@ export class SaasRevenueService {
     return inv;
   }
 
+  async refundPayment(paymentId: string, dto: { amountMinor?: number; reason?: string }, actorId?: string) {
+    const pay = await this.payments.findOne({ where: { id: paymentId } });
+    if (!pay) throw new NotFoundException('Payment not found');
+    if (pay.status === 'refunded') throw new BadRequestException('Payment already fully refunded');
+    if (pay.status !== 'succeeded') throw new BadRequestException(`Cannot refund a ${pay.status} payment`);
+
+    const meta = (pay.gatewayPayload || {}) as Record<string, any>;
+    const alreadyRefunded = Number(meta.refundedMinor || 0);
+    const refundable = pay.amountMinor - alreadyRefunded;
+    if (refundable <= 0) throw new BadRequestException('Nothing left to refund');
+
+    const amount = dto.amountMinor && dto.amountMinor > 0 ? Math.floor(dto.amountMinor) : refundable;
+    if (amount > refundable) throw new BadRequestException(`Refund exceeds refundable balance (${refundable})`);
+
+    const reason = (dto.reason || '').trim() || null;
+    const refundRecord = { at: new Date().toISOString(), amountMinor: amount, reason, by: actorId || null };
+    const newRefundedTotal = alreadyRefunded + amount;
+    pay.gatewayPayload = {
+      ...meta,
+      refundedMinor: newRefundedTotal,
+      refunds: [...((meta.refunds as any[]) || []), refundRecord],
+    };
+    if (newRefundedTotal >= pay.amountMinor) pay.status = 'refunded';
+    await this.payments.save(pay);
+
+    const inv = await this.invoices.findOne({ where: { id: pay.invoiceId } });
+    if (inv) {
+      inv.amountPaidMinor = Math.max(0, inv.amountPaidMinor - amount);
+      if (inv.status === 'paid' && inv.amountPaidMinor < inv.totalMinor) {
+        inv.status = 'open';
+        inv.paidAt = null;
+      }
+      await this.invoices.save(inv);
+    }
+
+    await this.recordEvent(
+      pay.subscriptionId,
+      'payment_refunded',
+      `Refund ${this.fmtMoney(amount, pay.currency)} on payment ${pay.id}${reason ? ` — ${reason}` : ''}`,
+      { paymentId: pay.id, invoiceId: pay.invoiceId, amountMinor: amount, reason },
+      actorId,
+    );
+
+    return pay;
+  }
+
   // ============================================================
   // REVENUE DASHBOARD
   // ============================================================

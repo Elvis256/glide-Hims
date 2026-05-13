@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Loader2, Printer, Ban, ArrowLeft, ExternalLink, Plus, AlertTriangle, CheckCircle, Mail } from 'lucide-react';
+import { Loader2, Printer, Ban, ArrowLeft, ExternalLink, Plus, AlertTriangle, CheckCircle, Mail, Undo2 } from 'lucide-react';
 import api from '../../services/api';
 import { SaasInvoice, INVOICE_STATUS_STYLES, fmtMoney, fmtDate, unwrap } from './saas/_shared';
 
@@ -8,6 +8,7 @@ interface SaasPayment {
   id: string; invoiceId: string; subscriptionId: string; tenantId: string;
   currency: string; amountMinor: number; status: string; gateway: string;
   gatewayRef: string | null; method: string | null; paidAt: string; notes: string | null;
+  gatewayPayload?: { refundedMinor?: number; refunds?: Array<{ at: string; amountMinor: number; reason: string | null }> } | null;
 }
 interface InvoiceDetail extends SaasInvoice { payments?: SaasPayment[] }
 
@@ -145,13 +146,54 @@ export default function SystemInvoiceDetailPage() {
         <div className="px-6 py-3 border-b font-semibold text-sm text-gray-700">Payment history</div>
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-600">
-            <tr><th className="text-left px-4 py-2">Date</th><th className="text-left px-4 py-2">Gateway</th><th className="text-left px-4 py-2">Method</th><th className="text-left px-4 py-2">Reference</th><th className="text-right px-4 py-2">Amount</th></tr>
+            <tr><th className="text-left px-4 py-2">Date</th><th className="text-left px-4 py-2">Gateway</th><th className="text-left px-4 py-2">Method</th><th className="text-left px-4 py-2">Reference</th><th className="text-right px-4 py-2">Amount</th><th className="text-left px-4 py-2">Status</th><th></th></tr>
           </thead>
           <tbody>
-            {(inv.payments || []).map((p) => (
-              <tr key={p.id} className="border-t"><td className="px-4 py-2">{fmtDate(p.paidAt)}</td><td className="px-4 py-2 capitalize">{p.gateway}</td><td className="px-4 py-2">{p.method || '—'}</td><td className="px-4 py-2 font-mono text-xs text-gray-500">{p.gatewayRef || '—'}</td><td className="px-4 py-2 text-right font-medium">{fmtMoney(p.amountMinor, p.currency)}</td></tr>
-            ))}
-            {(!inv.payments || inv.payments.length === 0) && <tr><td colSpan={5} className="px-4 py-6 text-center text-gray-500">No payments recorded</td></tr>}
+            {(inv.payments || []).map((p) => {
+              const refunded = Number(p.gatewayPayload?.refundedMinor || 0);
+              const refundable = Math.max(0, p.amountMinor - refunded);
+              return (
+                <tr key={p.id} className="border-t align-top">
+                  <td className="px-4 py-2">{fmtDate(p.paidAt)}</td>
+                  <td className="px-4 py-2 capitalize">{p.gateway}</td>
+                  <td className="px-4 py-2">{p.method || '—'}</td>
+                  <td className="px-4 py-2 font-mono text-xs text-gray-500">{p.gatewayRef || '—'}</td>
+                  <td className="px-4 py-2 text-right font-medium">
+                    {fmtMoney(p.amountMinor, p.currency)}
+                    {refunded > 0 && <div className="text-[10px] text-red-600 font-normal">− {fmtMoney(refunded, p.currency)} refunded</div>}
+                  </td>
+                  <td className="px-4 py-2 capitalize">
+                    <span className={`px-2 py-0.5 rounded-full text-xs ${p.status === 'refunded' ? 'bg-red-100 text-red-700' : p.status === 'succeeded' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-700'}`}>{p.status}</span>
+                  </td>
+                  <td className="px-4 py-2 text-right">
+                    {refundable > 0 && p.status === 'succeeded' && (
+                      <button
+                        onClick={async () => {
+                          const amtStr = window.prompt(`Refund amount (max ${fmtMoney(refundable, p.currency)}). Enter full amount in ${p.currency} (not minor units), or leave blank for full refund:`);
+                          if (amtStr === null) return;
+                          const reason = window.prompt('Reason (optional):') || '';
+                          let amountMinor: number | undefined;
+                          if (amtStr.trim()) {
+                            const v = parseFloat(amtStr.trim());
+                            if (!isFinite(v) || v <= 0) { alert('Invalid amount'); return; }
+                            amountMinor = Math.round(v * 100);
+                          }
+                          try {
+                            await api.post(`/saas-revenue/payments/${p.id}/refund`, { amountMinor, reason });
+                            await load();
+                          } catch (e: any) { alert(e?.response?.data?.message || 'Refund failed'); }
+                        }}
+                        className="inline-flex items-center gap-1 px-2 py-1 border border-red-200 text-red-700 text-xs rounded hover:bg-red-50"
+                        title="Refund this payment"
+                      >
+                        <Undo2 className="w-3 h-3" /> Refund
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+            {(!inv.payments || inv.payments.length === 0) && <tr><td colSpan={7} className="px-4 py-6 text-center text-gray-500">No payments recorded</td></tr>}
           </tbody>
         </table>
       </div>
