@@ -807,45 +807,47 @@ export class StoresService {
   }
 
   async getExpiringSoon(facilityId?: string, daysAhead = 90, tenantId?: string) {
+    // Audit Phase 1.7 — previous implementation joined StockBalance (which has no
+    // expiryDate column), so the requiresExpiryTracking filter never narrowed by
+    // actual expiry: every tracked item appeared as "expiring soon". Switched to
+    // join StockLedger so we can filter on its expiryDate, mirroring
+    // InventoryService.getExpiringItems.
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() + daysAhead);
 
     try {
-      const qb = this.itemRepo
-        .createQueryBuilder('item')
-        .leftJoin(StockBalance, 'sb', 'sb.itemId = item.id')
-        .leftJoin('item.itemCategory', 'cat')
-        .select([
-          'item.id',
-          'item.name',
-          'item.code',
-          'item.category',
-          'COALESCE(sb.totalQuantity, 0) as "currentStock"',
-          'COALESCE(sb.availableQuantity, 0) as "availableStock"',
-        ])
-        .where('item.requiresExpiryTracking = true')
-        .andWhere('item.deletedAt IS NULL')
-        .andWhere('COALESCE(sb.totalQuantity, 0) > 0');
+      const qb = this.stockLedgerRepo
+        .createQueryBuilder('sl')
+        .leftJoinAndSelect('sl.item', 'item')
+        .where('sl.expiryDate IS NOT NULL')
+        .andWhere('sl.expiryDate <= :cutoff', { cutoff })
+        .andWhere('sl.quantity > 0');
 
-      if (facilityId) {
-        qb.andWhere('sb.facilityId = :facilityId', { facilityId });
-      }
-      if (tenantId) {
-        qb.andWhere('item.tenantId = :tenantId', { tenantId });
-      }
+      if (facilityId) qb.andWhere('sl.facilityId = :facilityId', { facilityId });
+      if (tenantId) qb.andWhere('sl.tenant_id = :tenantId', { tenantId });
 
-      const rows = await qb.orderBy('item.name', 'ASC').getRawMany();
+      const rows = await qb.orderBy('sl.expiryDate', 'ASC').getMany();
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
 
-      return rows.map((r) => ({
-        id: r.item_id,
-        name: r.item_name,
-        code: r.item_code,
-        category: r.item_category,
-        currentStock: Number(r.currentStock || 0),
-        availableStock: Number(r.availableStock || 0),
-        daysUntilExpiry: null,
-        isExpired: false,
-      }));
+      return rows.map((sl: any) => {
+        const expiry = sl.expiryDate ? new Date(sl.expiryDate) : null;
+        const daysUntilExpiry = expiry
+          ? Math.floor((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+          : null;
+        return {
+          id: sl.item?.id ?? sl.itemId,
+          name: sl.item?.name,
+          code: sl.item?.code,
+          category: sl.item?.category,
+          batchNumber: sl.batchNumber ?? null,
+          expiryDate: sl.expiryDate ?? null,
+          currentStock: Number(sl.quantity || 0),
+          availableStock: Number(sl.quantity || 0),
+          daysUntilExpiry,
+          isExpired: daysUntilExpiry !== null && daysUntilExpiry < 0,
+        };
+      });
     } catch {
       return [];
     }

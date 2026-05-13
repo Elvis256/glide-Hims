@@ -130,7 +130,7 @@ const FacilitiesPage = lazy(() => import('./pages/FacilitiesPage'));
 const RolesPage = lazy(() => import('./pages/RolesPage'));
 const EncountersPage = lazy(() => import('./pages/EncountersPage'));
 const EncounterDetailPage = lazy(() => import('./pages/EncounterDetailPage'));
-const PharmacyPage = lazy(() => import('./pages/PharmacyPage'));
+// PharmacyPage legacy view removed in audit Phase 1.3 — /pharmacy now redirects to /pharmacy/dashboard
 const CashierPage = lazy(() => import('./pages/CashierPage'));
 const InventoryPage = lazy(() => import('./pages/InventoryPage'));
 const LabPage = lazy(() => import('./pages/LabPage'));
@@ -145,7 +145,7 @@ const InsurancePage = lazy(() => import('./pages/InsurancePage'));
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
 const MembershipPage = lazy(() => import('./pages/MembershipPage'));
 const ServicesPage = lazy(() => import('./pages/ServicesPage'));
-const StoresPage = lazy(() => import('./pages/StoresPage'));
+// StoresPage legacy view removed in audit Phase 1.2 (no route bound it; superseded by MainInventoryPage)
 const OrdersPage = lazy(() => import('./pages/OrdersPage'));
 const TenantsPage = lazy(() => import('./pages/TenantsPage'));
 const VitalsPage = lazy(() => import('./pages/VitalsPage'));
@@ -341,7 +341,7 @@ const IPDDischargePage = lazy(() => import('./pages/ipd/DischargePage'));
 const IPDAnalyticsPage = lazy(() => import('./pages/ipd/IPDAnalyticsPage'));
 const MainInventoryPage = lazy(() => import('./pages/stores/MainInventoryPage'));
 const UnitIssuePage = lazy(() => import('./pages/stores/UnitIssuePage'));
-const StoreTransfersPage = lazy(() => import('./pages/stores/StoreTransfersPage'));
+// StoreTransfersPage removed in audit Phase 1.4 (no route bound it; use StockTransferPage)
 const StoresProcurementPage = lazy(() => import('./pages/stores/StoresProcurementPage'));
 const StoresSupplierPage = lazy(() => import('./pages/stores/StoresSupplierPage'));
 const StoresExpiryPage = lazy(() => import('./pages/stores/StoresExpiryPage'));
@@ -1075,14 +1075,15 @@ function AppRoutes() {
                 <Route path="/stores/suppliers/contracts" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresSupplierContractsPage /></StoreKeeperRoute></ModuleRoute>} />
                 <Route path="/stores/payments" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresPaymentsPage /></StoreKeeperRoute></ModuleRoute>} />
                 <Route path="/stores/disposal" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresDisposalPage /></StoreKeeperRoute></ModuleRoute>} />
-                <Route path="/stores/expiry/soon" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresExpiryPage /></StoreKeeperRoute></ModuleRoute>} />
-                <Route path="/stores/expiry/expired" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresExpiryPage /></StoreKeeperRoute></ModuleRoute>} />
+                {/* /stores/expiry/{soon,expired} merged into /stores/expiry — page already filters internally (audit Phase 1.5) */}
+                <Route path="/stores/expiry/soon" element={<Navigate to="/stores/expiry?filter=soon" replace />} />
+                <Route path="/stores/expiry/expired" element={<Navigate to="/stores/expiry?filter=expired" replace />} />
                 <Route path="/settings/classifications" element={<ModuleRoute module="stores"><AdminRoute><ItemClassificationsPage /></AdminRoute></ModuleRoute>} />
                 
                 {/* OPD */}
                 <Route path="/encounters/:id" element={<ModuleRoute module="doctors"><ClinicalRoute><EncounterDetailPage /></ClinicalRoute></ModuleRoute>} />
                 {/* Clinical */}
-                <Route path="/pharmacy" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy" element={<Navigate to="/pharmacy/dashboard" replace />} />
                 <Route path="/cashier" element={<ModuleRoute module="billing"><CashierRoute><CashierPage /></CashierRoute></ModuleRoute>} />
                 <Route path="/inventory" element={<ModuleRoute module="stores"><StoreKeeperRoute><InventoryPage /></StoreKeeperRoute></ModuleRoute>} />
                 <Route path="/lab" element={<ModuleRoute module="diagnostics"><LabTechRoute><LabPage /></LabTechRoute></ModuleRoute>} />
