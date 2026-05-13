@@ -75,6 +75,7 @@ export class SaasSubscription {
   @PrimaryGeneratedColumn('uuid') id: string;
 
   @Column({ type: 'uuid' }) @Index() tenantId: string;
+  @Column({ type: 'uuid', nullable: true, name: 'billing_payer_tenant_id' }) @Index() billingPayerTenantId: string | null;
   @Column({ type: 'uuid', nullable: true }) deploymentId: string | null;
   @Column({ type: 'uuid', nullable: true }) leadId: string | null;
   @Column({ type: 'uuid', name: 'plan_id' }) planId: string;
@@ -127,6 +128,7 @@ export class SaasInvoice {
   @ManyToOne(() => SaasSubscription, (s) => s.invoices) @JoinColumn({ name: 'subscription_id' }) subscription: SaasSubscription;
 
   @Column({ type: 'uuid' }) tenantId: string;
+  @Column({ type: 'uuid', nullable: true, name: 'billing_payer_tenant_id' }) billingPayerTenantId: string | null;
 
   @Column({ type: 'varchar', length: 30, default: 'draft' }) @Index() status: SaasInvoiceStatus;
   @Column({ type: 'varchar', length: 3, default: 'UGX' }) currency: string;
@@ -161,6 +163,7 @@ export class SaasPayment {
   @Column({ type: 'uuid' }) @Index() invoiceId: string;
   @Column({ type: 'uuid' }) subscriptionId: string;
   @Column({ type: 'uuid' }) tenantId: string;
+  @Column({ type: 'uuid', nullable: true, name: 'billing_payer_tenant_id' }) billingPayerTenantId: string | null;
 
   @Column({ type: 'varchar', length: 3, default: 'UGX' }) currency: string;
   @Column({ type: 'integer' }) amountMinor: number;

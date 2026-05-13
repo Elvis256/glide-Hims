@@ -399,7 +399,7 @@ export class SaasRevenueService {
   // ============================================================
   async renderInvoiceHtml(id: string, requireTenantId?: string): Promise<string> {
     const inv = await this.getInvoice(id);
-    if (requireTenantId && inv.tenantId !== requireTenantId) {
+    if (requireTenantId && inv.tenantId !== requireTenantId && inv.billingPayerTenantId !== requireTenantId) {
       throw new ForbiddenException('Invoice does not belong to your tenant');
     }
     const sub = await this.subs.findOne({ where: { id: inv.subscriptionId } });
@@ -902,6 +902,7 @@ export class SaasRevenueService {
       invoiceNumber,
       subscriptionId: sub.id,
       tenantId: sub.tenantId,
+      billingPayerTenantId: sub.billingPayerTenantId ?? null,
       status: 'open',
       currency: billingCcy,
       subtotalMinor: invSubtotal,
@@ -978,6 +979,7 @@ export class SaasRevenueService {
       invoiceId: inv.id,
       subscriptionId: sub.id,
       tenantId: sub.tenantId,
+      billingPayerTenantId: inv.billingPayerTenantId ?? sub.billingPayerTenantId ?? null,
       currency: dto.currency ?? inv.currency,
       amountMinor: dto.amountMinor,
       status: 'succeeded',
@@ -1716,20 +1718,78 @@ export class SaasRevenueService {
   }
 
   async listMyInvoices(tenantId: string, status?: string) {
-    const where: any = { tenantId };
-    if (status) where.status = status;
-    return this.invoices.find({ where, order: { issuedAt: 'DESC' }, take: 200 });
+    const qb = this.invoices.createQueryBuilder('i')
+      .where('(i.tenantId = :tid OR i.billing_payer_tenant_id = :tid)', { tid: tenantId })
+      .orderBy('i.issuedAt', 'DESC')
+      .take(200);
+    if (status) qb.andWhere('i.status = :status', { status });
+    return qb.getMany();
   }
 
   async getMyInvoice(tenantId: string, id: string) {
     const inv = await this.getInvoice(id);
-    if (inv.tenantId !== tenantId) throw new ForbiddenException('Invoice does not belong to your tenant');
+    if (inv.tenantId !== tenantId && inv.billingPayerTenantId !== tenantId) {
+      throw new ForbiddenException('Invoice does not belong to your tenant');
+    }
     return inv;
+  }
+
+  async listMyManagedSubscriptions(payerTenantId: string) {
+    const subs = await this.subs.find({
+      where: { billingPayerTenantId: payerTenantId },
+      order: { createdAt: 'DESC' },
+      take: 500,
+    });
+    if (subs.length === 0) return [];
+    const tenantIds = Array.from(new Set(subs.map((s) => s.tenantId)));
+    const planIds = Array.from(new Set(subs.map((s) => s.planId)));
+    const [tenants, plans] = await Promise.all([
+      this.tenants.find({ where: { id: In(tenantIds) }, select: ['id', 'name', 'slug'] as any }),
+      this.plans.find({ where: { id: In(planIds) } }),
+    ]);
+    const tMap = new Map(tenants.map((t) => [t.id, t]));
+    const pMap = new Map(plans.map((p) => [p.id, p]));
+    return subs.map((s) => ({
+      ...s,
+      tenant: tMap.get(s.tenantId) ?? null,
+      plan: pMap.get(s.planId) ?? null,
+    }));
+  }
+
+  async setSubscriptionPayer(subscriptionId: string, payerTenantId: string | null, actorId?: string) {
+    const sub = await this.subs.findOne({ where: { id: subscriptionId } });
+    if (!sub) throw new NotFoundException('Subscription not found');
+    if (payerTenantId) {
+      if (payerTenantId === sub.tenantId) {
+        throw new BadRequestException('Payer tenant cannot be the same as the consumer tenant');
+      }
+      const payer = await this.tenants.findOne({ where: { id: payerTenantId } });
+      if (!payer) throw new NotFoundException('Payer tenant not found');
+    }
+    const oldPayer = sub.billingPayerTenantId;
+    sub.billingPayerTenantId = payerTenantId;
+    await this.subs.save(sub);
+    // Propagate to all open/draft invoices so the payer immediately sees them.
+    await this.invoices.createQueryBuilder()
+      .update()
+      .set({ billingPayerTenantId: payerTenantId })
+      .where('subscription_id = :sid AND status IN (:...sts)', { sid: sub.id, sts: ['draft', 'open', 'past_due'] })
+      .execute();
+    await this.recordEvent(
+      sub.id,
+      'note',
+      payerTenantId
+        ? `Billing payer set to tenant ${payerTenantId}`
+        : `Billing payer cleared (was ${oldPayer ?? 'self'})`,
+      { oldPayer, newPayer: payerTenantId },
+      actorId,
+    );
+    return sub;
   }
 
   async renderInvoicePdf(id: string, requireTenantId?: string): Promise<Buffer> {
     const inv = await this.getInvoice(id);
-    if (requireTenantId && inv.tenantId !== requireTenantId) {
+    if (requireTenantId && inv.tenantId !== requireTenantId && inv.billingPayerTenantId !== requireTenantId) {
       throw new ForbiddenException('Invoice does not belong to your tenant');
     }
     const sub = await this.subs.findOne({ where: { id: inv.subscriptionId } });

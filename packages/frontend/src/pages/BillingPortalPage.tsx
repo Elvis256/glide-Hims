@@ -223,6 +223,8 @@ export default function BillingPortalPage() {
 
       <StatementCard />
 
+      <ManagedOrgsCard />
+
       <Card title="Payment methods">
         <div className="flex items-center justify-between mb-3">
           <p className="text-xs text-gray-500">Saved methods are used for renewals and one-off payments. We never store full card numbers — only the last 4 digits and metadata for your reference.</p>
@@ -704,6 +706,79 @@ function StatementCard() {
             )}
           </div>
         </>
+      )}
+    </Card>
+  );
+}
+
+function ManagedOrgsCard() {
+  const [items, setItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/saas-revenue/portal/managed-organizations');
+      setItems(res.data ?? []);
+      setErr(null);
+    } catch (e: any) {
+      setErr(e?.response?.data?.message || 'Failed to load managed organizations');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  if (!loading && items.length === 0 && !err) {
+    return null;
+  }
+
+  const fmt = (n: number, c: string) => new Intl.NumberFormat('en-US', { style: 'currency', currency: c, minimumFractionDigits: 2 }).format((n ?? 0) / 100);
+
+  return (
+    <Card title="Managed organizations (multi-org billing)">
+      <p className="text-xs text-gray-500 mb-3">
+        Subscriptions where this organization is the designated billing payer. Open invoices are
+        rolled up here; pay them from the Invoices section above.
+      </p>
+      {loading ? (
+        <div className="text-sm text-gray-500">Loading…</div>
+      ) : err ? (
+        <div className="text-sm text-red-600">{err}</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-gray-500 border-b">
+                <th className="px-2 py-1">Organization</th>
+                <th className="px-2 py-1">Plan</th>
+                <th className="px-2 py-1">Status</th>
+                <th className="px-2 py-1">Seats</th>
+                <th className="px-2 py-1 text-right">Unit price</th>
+                <th className="px-2 py-1">Next renewal</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((s) => (
+                <tr key={s.id} className="border-b last:border-0">
+                  <td className="px-2 py-1">
+                    <div className="font-medium">{s.tenant?.name ?? s.tenantId}</div>
+                    {s.tenant?.slug && <div className="text-xs text-gray-500">/{s.tenant.slug}</div>}
+                  </td>
+                  <td className="px-2 py-1">{s.plan?.name ?? '—'}</td>
+                  <td className="px-2 py-1">
+                    <span className={`inline-block px-2 py-0.5 text-xs rounded ${s.status === 'active' ? 'bg-green-100 text-green-800' : s.status === 'past_due' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800'}`}>{s.status}</span>
+                  </td>
+                  <td className="px-2 py-1">{s.seats}</td>
+                  <td className="px-2 py-1 text-right">{fmt(s.unitPriceMinor, s.billingCurrency || s.currency)}</td>
+                  <td className="px-2 py-1 text-xs text-gray-600">{s.nextRenewalAt ? new Date(s.nextRenewalAt).toISOString().slice(0, 10) : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </Card>
   );

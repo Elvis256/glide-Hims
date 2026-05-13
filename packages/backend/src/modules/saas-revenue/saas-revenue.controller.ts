@@ -370,7 +370,7 @@ export class SaasRevenueController {
   async myInvoicePdf(@Req() req: any, @Param('id') id: string, @Res() res: Response) {
     const tenantId = req.user?.isSystemAdmin ? undefined : ensureTenant(req);
     const inv = await this.svc.getInvoice(id);
-    if (tenantId && inv.tenantId !== tenantId) throw new ForbiddenException('Invoice does not belong to your tenant');
+    if (tenantId && inv.tenantId !== tenantId && inv.billingPayerTenantId !== tenantId) throw new ForbiddenException('Invoice does not belong to your tenant');
     const buf = await this.svc.renderInvoicePdf(id, tenantId);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${inv.invoiceNumber}.pdf"`);
@@ -404,6 +404,24 @@ export class SaasRevenueController {
     res.setHeader('Content-Disposition', `attachment; filename="statement-${stamp}.pdf"`);
     res.setHeader('Content-Length', String(buf.length));
     res.end(buf);
+  }
+
+  // ---------- Multi-org billing (one tenant pays for many) ----------
+  @Get('portal/managed-organizations')
+  myManagedOrgs(@Req() req: any) {
+    const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
+    return this.svc.listMyManagedSubscriptions(tenantId);
+  }
+
+  @Put('subscriptions/:id/billing-payer')
+  setSubscriptionPayer(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: { payerTenantId?: string | null },
+  ) {
+    if (!req.user?.isSystemAdmin) throw new ForbiddenException('System admin required');
+    const v = dto?.payerTenantId ?? null;
+    return this.svc.setSubscriptionPayer(id, v && String(v).length > 0 ? String(v) : null, req.user?.id);
   }
 
   @Get('portal/payment-methods')
