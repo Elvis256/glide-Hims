@@ -133,6 +133,13 @@ export class SaasRevenueController {
   @Put('dunning-rules')
   updateDunningRules(@Req() req: any, @Body() dto: any) { ensureAdmin(req); return this.svc.updateDunningRules(dto || {}); }
 
+  // ---------- VAT / tax rules (system-wide) ----------
+  @Get('vat-rules')
+  getVatRules(@Req() req: any) { ensureAdmin(req); return this.svc.getVatSettings(); }
+
+  @Put('vat-rules')
+  updateVatRules(@Req() req: any, @Body() dto: any) { ensureAdmin(req); return this.svc.updateVatSettings(dto || {}); }
+
   // ---------- Email templates ----------
   @Get('email-templates')
   listEmailTemplates(@Req() req: any) { ensureAdmin(req); return this.mailer.listTemplates(); }

@@ -85,6 +85,33 @@ const DEFAULT_DUNNING_RULES: DunningRules = {
   churnAfterDays: 30,
 };
 
+export const VAT_RULES_KEY = 'vat_rules';
+
+export interface VatRule {
+  country: string;
+  rate: number;            // percent
+  taxNumberLabel?: string; // e.g. 'TIN', 'VAT No.'
+}
+
+export interface VatSettings {
+  enabled: boolean;
+  taxLabel: string;        // default 'VAT' — shown on invoices
+  defaultRate: number;     // applied when no country match
+  rules: VatRule[];
+}
+
+const DEFAULT_VAT_SETTINGS: VatSettings = {
+  enabled: false,
+  taxLabel: 'VAT',
+  defaultRate: 0,
+  rules: [
+    { country: 'Uganda', rate: 18, taxNumberLabel: 'TIN' },
+    { country: 'Kenya', rate: 16, taxNumberLabel: 'KRA PIN' },
+    { country: 'Tanzania', rate: 18, taxNumberLabel: 'TIN' },
+    { country: 'Rwanda', rate: 18, taxNumberLabel: 'TIN' },
+  ],
+};
+
 @Injectable()
 export class SaasRevenueService {
   private readonly logger = new Logger(SaasRevenueService.name);
@@ -157,6 +184,62 @@ export class SaasRevenueService {
     }
     await this.settings.upsert(DUNNING_RULES_KEY, merged, undefined, 'SaaS dunning schedule (grace period, reminder cadence, auto-churn)');
     return merged;
+  }
+
+  // ============================================================
+  // VAT / TAX RULES (system-wide, tenantId NULL)
+  // ============================================================
+  async getVatSettings(): Promise<VatSettings> {
+    try {
+      const s = await this.settings.getByKey(VAT_RULES_KEY);
+      const v = (s.value || {}) as Partial<VatSettings>;
+      return {
+        enabled: v.enabled ?? DEFAULT_VAT_SETTINGS.enabled,
+        taxLabel: v.taxLabel ?? DEFAULT_VAT_SETTINGS.taxLabel,
+        defaultRate: Math.max(0, Number(v.defaultRate ?? DEFAULT_VAT_SETTINGS.defaultRate)),
+        rules: Array.isArray(v.rules) ? v.rules.map((r) => ({
+          country: String(r.country || '').trim(),
+          rate: Math.max(0, Number(r.rate ?? 0)),
+          taxNumberLabel: r.taxNumberLabel?.trim() || undefined,
+        })).filter((r) => r.country.length > 0) : DEFAULT_VAT_SETTINGS.rules,
+      };
+    } catch {
+      return { ...DEFAULT_VAT_SETTINGS, rules: [...DEFAULT_VAT_SETTINGS.rules] };
+    }
+  }
+
+  async updateVatSettings(dto: Partial<VatSettings>): Promise<VatSettings> {
+    const current = await this.getVatSettings();
+    const merged: VatSettings = {
+      enabled: dto.enabled ?? current.enabled,
+      taxLabel: (dto.taxLabel ?? current.taxLabel).trim() || 'VAT',
+      defaultRate: Math.max(0, Number(dto.defaultRate ?? current.defaultRate)),
+      rules: Array.isArray(dto.rules) ? dto.rules.map((r) => ({
+        country: String(r.country || '').trim(),
+        rate: Math.max(0, Number(r.rate ?? 0)),
+        taxNumberLabel: r.taxNumberLabel?.trim() || undefined,
+      })).filter((r) => r.country.length > 0) : current.rules,
+    };
+    if (merged.defaultRate > 100 || merged.rules.some((r) => r.rate > 100)) {
+      throw new BadRequestException('Tax rates must be between 0 and 100');
+    }
+    await this.settings.upsert(VAT_RULES_KEY, merged, undefined, 'SaaS VAT/tax rules per country');
+    return merged;
+  }
+
+  /**
+   * Resolve the tax rate to apply for a tenant. Returns 0 (no tax) when
+   * VAT is globally disabled or no rule matches and defaultRate is 0.
+   */
+  private async resolveTaxForTenant(tenantId: string): Promise<{ rate: number; label: string; country: string }> {
+    const vat = await this.getVatSettings();
+    if (!vat.enabled) return { rate: 0, label: vat.taxLabel, country: '' };
+    const tenant = await this.tenants.findOne({ where: { id: tenantId } });
+    const country = (tenant?.settings as any)?.country?.trim() || '';
+    const match = country
+      ? vat.rules.find((r) => r.country.toLowerCase() === country.toLowerCase())
+      : null;
+    return { rate: match ? match.rate : vat.defaultRate, label: vat.taxLabel, country };
   }
 
   // ============================================================
@@ -246,7 +329,12 @@ export class SaasRevenueService {
   <table class="totals">
     <tr><td class="right" style="width:80%">Subtotal</td><td class="right">${fmt(inv.subtotalMinor)}</td></tr>
     ${inv.discountMinor > 0 ? `<tr><td class="right">Discount</td><td class="right">-${fmt(inv.discountMinor)}</td></tr>` : ''}
-    ${inv.taxMinor > 0 ? `<tr><td class="right">Tax</td><td class="right">${fmt(inv.taxMinor)}</td></tr>` : ''}
+    ${inv.taxMinor > 0 ? (() => {
+      const base = inv.subtotalMinor - inv.discountMinor;
+      const rate = base > 0 ? Math.round((inv.taxMinor / base) * 1000) / 10 : 0;
+      const label = rate > 0 ? `Tax (${rate}%)` : 'Tax';
+      return `<tr><td class="right">${label}</td><td class="right">${fmt(inv.taxMinor)}</td></tr>`;
+    })() : ''}
     <tr class="grand"><td class="right">Total due</td><td class="right">${fmt(inv.totalMinor)}</td></tr>
     ${inv.amountPaidMinor > 0 ? `<tr><td class="right">Paid</td><td class="right">-${fmt(inv.amountPaidMinor)}</td></tr>` : ''}
     ${inv.amountPaidMinor > 0 && inv.amountPaidMinor < inv.totalMinor ? `<tr class="grand"><td class="right">Balance</td><td class="right">${fmt(inv.totalMinor - inv.amountPaidMinor)}</td></tr>` : ''}
@@ -562,8 +650,10 @@ export class SaasRevenueService {
     if (sub.discountPercent > 0) discount = Math.floor((subtotal * sub.discountPercent) / 100);
     if (sub.discountFixedMinor > 0) discount += sub.discountFixedMinor;
     if (discount > subtotal) discount = subtotal;
-    const tax = 0; // VAT calculated downstream / per region in future
-    const total = subtotal - discount + tax;
+    const taxBase = subtotal - discount;
+    const taxInfo = await this.resolveTaxForTenant(sub.tenantId);
+    const tax = taxInfo.rate > 0 ? Math.floor((taxBase * taxInfo.rate) / 100) : 0;
+    const total = taxBase + tax;
     const invoiceNumber = await this.nextInvoiceNumber();
     const inv = this.invoices.create(<Partial<SaasInvoice>>{
       invoiceNumber,

@@ -57,6 +57,7 @@ const SystemInvoiceDetailPage = lazy(() => import('./pages/system/SystemInvoiceD
 const SystemBillingSettingsPage = lazy(() => import('./pages/system/SystemBillingSettingsPage'));
 const SystemEmailTemplatesPage = lazy(() => import('./pages/system/SystemEmailTemplatesPage'));
 const SystemDunningRulesPage = lazy(() => import('./pages/system/SystemDunningRulesPage'));
+const SystemVatRulesPage = lazy(() => import('./pages/system/SystemVatRulesPage'));
 const SystemCouponsPage = lazy(() => import('./pages/system/SystemCouponsPage'));
 const SystemRevenuePage = lazy(() => import('./pages/system/SystemRevenuePage'));
 const PublicPricingPage = lazy(() => import('./pages/PublicPricingPage'));
@@ -681,6 +682,7 @@ function AppRoutes() {
         <Route path="billing-settings" element={<SystemBillingSettingsPage />} />
         <Route path="email-templates" element={<SystemEmailTemplatesPage />} />
         <Route path="dunning-rules" element={<SystemDunningRulesPage />} />
+        <Route path="vat-rules" element={<SystemVatRulesPage />} />
         <Route path="coupons" element={<SystemCouponsPage />} />
         <Route path="revenue" element={<SystemRevenuePage />} />
         <Route path="compliance" element={<SystemComplianceCenterPage />} />

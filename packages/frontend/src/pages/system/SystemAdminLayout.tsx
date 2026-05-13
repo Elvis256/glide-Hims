@@ -28,6 +28,7 @@ import {
   Tag,
   TrendingUp,
   AlertTriangle,
+  Percent,
 } from 'lucide-react';
 
 const sidebarItems = [
@@ -46,6 +47,7 @@ const sidebarItems = [
   { name: 'Billing Identity', href: '/system/billing-settings', icon: Building2 },
   { name: 'Email Templates', href: '/system/email-templates', icon: Mail },
   { name: 'Dunning Rules', href: '/system/dunning-rules', icon: AlertTriangle },
+  { name: 'VAT / Tax Rules', href: '/system/vat-rules', icon: Percent },
   { name: 'Coupons', href: '/system/coupons', icon: Tag },
   { name: 'Revenue', href: '/system/revenue', icon: TrendingUp },
   { name: 'Compliance Center', href: '/system/compliance', icon: ClipboardCheck },
