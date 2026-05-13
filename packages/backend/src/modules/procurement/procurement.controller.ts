@@ -373,87 +373,11 @@ export class ProcurementController {
   }
 
   // ============ APPROVALS ============
-
-  @Get('approvals/pending')
-  @AuthWithPermissions('procurement.approve')
-  async getPendingApprovals(
-    @Query('facilityId') facilityId: string,
-    @Query('role') role?: string,
-  ) {
-    // Return empty pending approvals for now
-    return {
-      data: [],
-    };
-  }
-
-  @Get('approvals/summary')
-  @AuthWithPermissions('procurement.read')
-  async getApprovalSummary(@Query('facilityId') facilityId: string) {
-    let bottlenecksCount = 0;
-    try {
-      const bottlenecks = await this.approvalAnalytics.detectBottlenecks();
-      bottlenecksCount = Array.isArray(bottlenecks) ? bottlenecks.length : 0;
-    } catch (err) {
-      bottlenecksCount = 0;
-    }
-
-    return {
-      // For ApprovalDashboard
-      pending: 0,
-      approved: 0,
-      rejected: 0,
-      avgApprovalDays: 0,
-      bottlenecks: bottlenecksCount,
-      escalations: 0,
-      escalationList: [],
-      // For DirectPOPage (budget information)
-      budgetAvailable: 0,
-      budgetAllocated: 0,
-    };
-  }
-
-  @Get('approvals/bottlenecks')
-  @AuthWithPermissions('procurement.read')
-  async getApprovalBottlenecks(@Query('facilityId') facilityId: string) {
-    const bottlenecks = await this.approvalAnalytics.detectBottlenecks();
-    return {
-      data: bottlenecks || [],
-    };
-  }
-
-  @Get('approvals/escalations')
-  @AuthWithPermissions('procurement.approve')
-  async getApprovalEscalations(
-    @Query('facilityId') facilityId: string,
-    @Query('days') days: number = 5,
-  ) {
-    return {
-      data: [],
-    };
-  }
-
-  @Get('approvals/supplier-risks')
-  @AuthWithPermissions('procurement.read')
-  async getSupplierRisks(@Query('facilityId') facilityId: string) {
-    return {
-      data: [],
-    };
-  }
-
-  @Get('approvals/history/:documentType/:documentId')
-  @AuthWithPermissions('procurement.read')
-  async getApprovalHistory(
-    @Param('documentType') documentType: string,
-    @Param('documentId') documentId: string,
-  ) {
-    return {
-      data: {
-        documentType,
-        documentId,
-        history: [],
-      },
-    };
-  }
+  // The pending/summary/bottlenecks/escalations/history endpoints live in
+  // approval-dashboard.controller.ts (mounted on the same /procurement/approvals
+  // path) — those are the real implementations. Keeping the supplier-risks
+  // route there now too; the legacy stubs that used to live here have been
+  // removed (see audit Phase 1.1).
 
   // ============ ANALYTICS - SUPPLIERS ============
 

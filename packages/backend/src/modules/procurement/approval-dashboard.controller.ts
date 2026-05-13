@@ -111,4 +111,15 @@ export class ApprovalDashboardController {
       };
     }
   }
+
+  /**
+   * Supplier risk summary surfaced on the Approval dashboard.
+   * Currently returns an empty list as the supplier-risk model is being
+   * rebuilt; previously lived as a stub on procurement.controller.ts.
+   */
+  @Get('supplier-risks')
+  @AuthWithPermissions('procurement.read')
+  async getSupplierRisks(@Query('facilityId') _facilityId: string) {
+    return { data: [] };
+  }
 }
