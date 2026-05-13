@@ -41,6 +41,7 @@ import { PharmacyModule } from './modules/pharmacy/pharmacy.module';
 import { PosModule } from './modules/pos/pos.module';
 import { SuppliersModule } from './modules/suppliers/suppliers.module';
 import { ProcurementModule } from './modules/procurement/procurement.module';
+import { ApprovalsModule } from './modules/approvals/approvals.module';
 import { SyncModule } from './modules/sync/sync.module';
 import { DiagnosesModule } from './modules/diagnoses/diagnoses.module';
 import { ProblemsModule } from './modules/problems/problems.module';
@@ -210,6 +211,7 @@ import { EfrisModule } from './modules/efris/efris.module';
     // Phase 12: Supply Chain & Procurement
     SuppliersModule,
     ProcurementModule,
+    ApprovalsModule,
 
     // Phase 13: Offline Sync
     SyncModule,

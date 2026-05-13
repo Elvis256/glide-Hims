@@ -19,6 +19,14 @@ export enum ApprovalChainStatus {
 @Index(['documentId', 'approvalLevel'])
 @Index(['approverId', 'status'])
 export class ProcurementApprovalChain extends BaseEntity {
+  @Column({
+    name: 'module',
+    type: 'varchar',
+    length: 50,
+    default: 'procurement',
+  })
+  module: string;
+
   @Column({ name: 'document_id' })
   documentId: string;
 
@@ -83,6 +91,15 @@ export class ProcurementApprovalChain extends BaseEntity {
     default: ApprovalChainStatus.PENDING,
   })
   status: ApprovalChainStatus;
+
+  @Column({ name: 'group_id', nullable: true })
+  groupId?: string;
+
+  @Column({ name: 'quorum_type', type: 'varchar', length: 20, nullable: true })
+  quorumType?: string;
+
+  @Column({ name: 'quorum_count', type: 'int', nullable: true })
+  quorumCount?: number;
 
   // Relationships
   @ManyToOne(() => User, { nullable: true })
