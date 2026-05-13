@@ -133,7 +133,10 @@ import { EfrisModule } from './modules/efris/efris.module';
         username: configService.get('DB_USERNAME'),
         password: configService.get('DB_PASSWORD'),
         database: configService.get('DB_NAME'),
-        entities: [__dirname + '/**/*.entity{.ts,.js}'],
+        entities: [
+          __dirname + '/**/*.entity{.ts,.js}',
+          __dirname + '/**/*.entities{.ts,.js}',
+        ],
         synchronize: false, // Always use migrations — never auto-sync schema
         logging: configService.get('NODE_ENV') === 'development',
         migrations: [__dirname + '/database/migrations/*{.ts,.js}'],
