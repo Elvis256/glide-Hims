@@ -170,20 +170,6 @@ interface NavSection {
 
 // Comprehensive Level-3 Hospital ERP Navigation
 const navigationSections: NavSection[] = [
-  // 0. Billing & Subscription — always visible to every tenant user (self-service).
-  {
-    title: 'Billing & Subscription',
-    icon: CreditCard,
-    moduleCode: 'admin',
-    items: [
-      {
-        name: 'My Subscription & Billing',
-        icon: CreditCard,
-        href: '/billing-portal',
-        permissions: [],
-      },
-    ],
-  },
   // 1. Registration - Reception/Front Desk (Everything done at reception)
   {
     title: 'Registration',
@@ -888,7 +874,9 @@ const navigationSections: NavSection[] = [
     title: 'Admin',
     icon: Settings,
     moduleCode: 'admin',
-    roles: ['Administrator'],
+    // No section-level role gate: each item has its own `permissions` filter,
+    // so non-Administrators only see the items they're entitled to (e.g. the
+    // self-service billing link, software updates).
     items: [
       {
         name: 'Analytics',
@@ -902,6 +890,12 @@ const navigationSections: NavSection[] = [
         href: '/system/tenants',
         permissions: ['users.read'],
         systemAdminOnly: true,
+      },
+      {
+        name: 'My Subscription & Billing',
+        icon: CreditCard,
+        href: '/billing-portal',
+        permissions: [],
       },
       {
         name: 'Software Updates',
