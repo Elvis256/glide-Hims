@@ -232,7 +232,7 @@ export default function ReturnsPage() {
           <p className="text-gray-600">Process customer returns and refunds</p>
         </div>
         <div className="flex items-center gap-2">
-          <Link to="/pharmacy/expiry/return" className="flex items-center gap-2 px-3 py-2 text-gray-600 border rounded-lg hover:bg-gray-50">
+          <Link to="/expiry/return" className="flex items-center gap-2 px-3 py-2 text-gray-600 border rounded-lg hover:bg-gray-50">
             <ArrowUpRight className="w-4 h-4" />
             Return to Supplier
           </Link>

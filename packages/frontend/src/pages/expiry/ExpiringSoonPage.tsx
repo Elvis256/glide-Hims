@@ -16,10 +16,10 @@ import {
   ChevronRight,
   Loader2,
 } from 'lucide-react';
-import { usePermissions } from '../../../components/PermissionGate';
-import AccessDenied from '../../../components/AccessDenied';
-import { storesService } from '../../../services/stores';
-import { useFacilityId } from '../../../lib/facility';
+import { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
+import { storesService } from '../../services/stores';
+import { useFacilityId } from '../../lib/facility';
 
 interface ExpiringMedication {
   id: string;

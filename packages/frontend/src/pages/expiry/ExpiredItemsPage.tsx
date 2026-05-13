@@ -18,10 +18,10 @@ import {
   Loader2,
   X,
 } from 'lucide-react';
-import { usePermissions } from '../../../components/PermissionGate';
-import AccessDenied from '../../../components/AccessDenied';
-import { storesService } from '../../../services/stores';
-import { useFacilityId } from '../../../lib/facility';
+import { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
+import { storesService } from '../../services/stores';
+import { useFacilityId } from '../../lib/facility';
 
 interface ExpiredMedication {
   id: string;

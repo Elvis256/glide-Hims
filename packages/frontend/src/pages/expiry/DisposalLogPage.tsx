@@ -19,10 +19,10 @@ import {
   Loader2,
   X,
 } from 'lucide-react';
-import { usePermissions } from '../../../components/PermissionGate';
-import AccessDenied from '../../../components/AccessDenied';
-import { api } from '../../../services/api';
-import { useAuthStore } from '../../../store/auth';
+import { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
+import { api } from '../../services/api';
+import { useAuthStore } from '../../store/auth';
 
 interface DisposalRecord {
   id: string;

@@ -22,12 +22,12 @@ import {
   Loader2,
   X,
 } from 'lucide-react';
-import { usePermissions } from '../../../components/PermissionGate';
-import AccessDenied from '../../../components/AccessDenied';
-import supplierReturnsService from '../../../services/supplier-returns';
-import type { SupplierReturn, SupplierReturnStats, ReturnStatus, ReturnReason } from '../../../services/supplier-returns';
-import { useFacilityId } from '../../../lib/facility';
-import { getApiErrorMessage } from '../../../services/api';
+import { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
+import supplierReturnsService from '../../services/supplier-returns';
+import type { SupplierReturn, SupplierReturnStats, ReturnStatus, ReturnReason } from '../../services/supplier-returns';
+import { useFacilityId } from '../../lib/facility';
+import { getApiErrorMessage } from '../../services/api';
 
 const reasonLabels: Record<ReturnReason, string> = {
   expired: 'Expired',
