@@ -30,6 +30,7 @@ import {
   AlertTriangle,
   Percent,
   Coins,
+  Inbox,
 } from 'lucide-react';
 
 const sidebarItems = [
@@ -47,6 +48,7 @@ const sidebarItems = [
   { name: 'SaaS Invoices', href: '/system/saas-invoices', icon: Receipt },
   { name: 'Billing Identity', href: '/system/billing-settings', icon: Building2 },
   { name: 'Email Templates', href: '/system/email-templates', icon: Mail },
+  { name: 'Email Log', href: '/system/email-logs', icon: Inbox },
   { name: 'Dunning Rules', href: '/system/dunning-rules', icon: AlertTriangle },
   { name: 'VAT / Tax Rules', href: '/system/vat-rules', icon: Percent },
   { name: 'Currency Rates', href: '/system/currency-rates', icon: Coins },

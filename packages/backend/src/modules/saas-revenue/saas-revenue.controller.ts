@@ -231,6 +231,42 @@ export class SaasRevenueController {
     return this.mailer.sendTest(key as EmailTemplateKey, body.to.trim(), tenantId);
   }
 
+  // ---------- Email send log ----------
+  @Get('email-logs')
+  listEmailLogs(
+    @Req() req: any,
+    @Query('tenantId') tenantId?: string,
+    @Query('templateKey') templateKey?: string,
+    @Query('status') status?: string,
+    @Query('search') search?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    ensureAdmin(req);
+    return this.mailer.listEmailLogs({
+      tenantId,
+      templateKey,
+      status,
+      search,
+      limit: limit ? parseInt(limit, 10) : undefined,
+      offset: offset ? parseInt(offset, 10) : undefined,
+    });
+  }
+
+  @Get('email-logs/stats')
+  emailLogStats(@Req() req: any, @Query('tenantId') tenantId?: string) {
+    ensureAdmin(req);
+    return this.mailer.emailLogStats(tenantId);
+  }
+
+  @Get('email-logs/:id')
+  async getEmailLog(@Req() req: any, @Param('id') id: string) {
+    ensureAdmin(req);
+    const row = await this.mailer.getEmailLog(id);
+    if (!row) throw new ForbiddenException('Not found');
+    return row;
+  }
+
   // ---------- Revenue dashboard ----------
   @Get('revenue/dashboard')
   dashboard(@Req() req: any) { ensureAdmin(req); return this.svc.getRevenueDashboard(); }

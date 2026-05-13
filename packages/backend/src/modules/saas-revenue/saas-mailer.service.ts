@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
-import { SaasInvoice, SaasPayment, SaasSubscription, SaasPlan } from './saas.entity';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { SaasInvoice, SaasPayment, SaasSubscription, SaasPlan, SaasEmailLog } from './saas.entity';
 import { SystemSettingsService } from '../system-settings/system-settings.service';
 
 export type EmailTemplateKey =
@@ -127,7 +129,10 @@ export class SaasMailerService {
   private transporter: nodemailer.Transporter | null = null;
   private from = process.env.SAAS_MAIL_FROM || process.env.SMTP_FROM || 'billing@glidehims.local';
 
-  constructor(private readonly settings: SystemSettingsService) {
+  constructor(
+    private readonly settings: SystemSettingsService,
+    @InjectRepository(SaasEmailLog) private readonly emailLogRepo: Repository<SaasEmailLog>,
+  ) {
     const host = process.env.SMTP_HOST;
     if (host) {
       this.transporter = nodemailer.createTransport({
@@ -276,21 +281,94 @@ export class SaasMailerService {
       </div></body></html>`;
   }
 
-  private async send(to: string | null | undefined, subject: string, html: string) {
+  private async send(
+    to: string | null | undefined,
+    subject: string,
+    html: string,
+    ctx?: {
+      templateKey?: EmailTemplateKey | 'test' | 'other';
+      tenantId?: string | null;
+      invoiceId?: string | null;
+      subscriptionId?: string | null;
+      isTest?: boolean;
+    },
+  ) {
+    const logEntry: Partial<SaasEmailLog> = {
+      tenantId: ctx?.tenantId ?? null,
+      templateKey: (ctx?.templateKey || 'other') as string,
+      to: to ?? null,
+      subject,
+      invoiceId: ctx?.invoiceId ?? null,
+      subscriptionId: ctx?.subscriptionId ?? null,
+      isTest: !!ctx?.isTest,
+      bodyPreview: html ? html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500) : null,
+    };
     if (!to) {
       this.logger.warn(`Skipping email "${subject}" — no recipient`);
+      await this.persistLog({ ...logEntry, status: 'skipped', error: 'no recipient' });
       return;
     }
     if (!this.transporter) {
       this.logger.log(`[MAIL→${to}] ${subject}`);
+      await this.persistLog({ ...logEntry, status: 'sent', error: 'no SMTP configured (logged only)' });
       return;
     }
     try {
       await this.transporter.sendMail({ from: this.from, to, subject, html });
       this.logger.log(`Sent "${subject}" to ${to}`);
+      await this.persistLog({ ...logEntry, status: 'sent' });
     } catch (e: any) {
       this.logger.error(`Failed to send "${subject}" to ${to}: ${e.message}`);
+      await this.persistLog({ ...logEntry, status: 'failed', error: e?.message?.slice(0, 1000) || 'unknown error' });
     }
+  }
+
+  private async persistLog(entry: Partial<SaasEmailLog>) {
+    try { await this.emailLogRepo.save(this.emailLogRepo.create(entry)); }
+    catch (e: any) { this.logger.warn(`email log persist failed: ${e?.message}`); }
+  }
+
+  // ---------- Email log queries ----------
+  async listEmailLogs(opts: {
+    tenantId?: string;
+    templateKey?: string;
+    status?: string;
+    limit?: number;
+    offset?: number;
+    search?: string;
+  } = {}) {
+    const qb = this.emailLogRepo.createQueryBuilder('l').orderBy('l.createdAt', 'DESC');
+    if (opts.tenantId) qb.andWhere('l.tenantId = :t', { t: opts.tenantId });
+    if (opts.templateKey) qb.andWhere('l.templateKey = :k', { k: opts.templateKey });
+    if (opts.status) qb.andWhere('l.status = :s', { s: opts.status });
+    if (opts.search) qb.andWhere('(l.subject ILIKE :q OR l.to ILIKE :q)', { q: `%${opts.search}%` });
+    const total = await qb.getCount();
+    const limit = Math.min(Math.max(opts.limit || 50, 1), 200);
+    const offset = Math.max(opts.offset || 0, 0);
+    const items = await qb.skip(offset).take(limit).getMany();
+    return { items, total, limit, offset };
+  }
+
+  async getEmailLog(id: string) {
+    return this.emailLogRepo.findOne({ where: { id } });
+  }
+
+  async emailLogStats(tenantId?: string) {
+    const qb = this.emailLogRepo.createQueryBuilder('l');
+    if (tenantId) qb.where('l.tenantId = :t', { t: tenantId });
+    const total = await qb.getCount();
+    const since = new Date(Date.now() - 30 * 86400000);
+    const rows = await this.emailLogRepo
+      .createQueryBuilder('l')
+      .select('l.status', 'status')
+      .addSelect('COUNT(*)', 'count')
+      .where('l.createdAt >= :since', { since })
+      .andWhere(tenantId ? 'l.tenantId = :t' : '1=1', tenantId ? { t: tenantId } : {})
+      .groupBy('l.status')
+      .getRawMany();
+    const byStatus: Record<string, number> = { sent: 0, failed: 0, skipped: 0 };
+    for (const r of rows) byStatus[r.status] = Number(r.count);
+    return { total, last30d: byStatus };
   }
 
   // ---------- Variable builders ----------
@@ -308,7 +386,7 @@ export class SaasMailerService {
   // ---------- Public send methods ----------
   async sendInvoiceIssued(to: string | null, inv: SaasInvoice, plan?: SaasPlan) {
     const { subject, html } = await this.render('invoice_issued', this.varsFromInvoice(inv, plan), inv.tenantId);
-    return this.send(to, subject, html);
+    return this.send(to, subject, html, { templateKey: 'invoice_issued', tenantId: inv.tenantId, invoiceId: inv.id, subscriptionId: inv.subscriptionId });
   }
 
   async sendPaymentReceipt(to: string | null, pay: SaasPayment, inv: SaasInvoice) {
@@ -322,7 +400,7 @@ export class SaasMailerService {
       currency: pay.currency,
     };
     const { subject, html } = await this.render('payment_receipt', vars, inv.tenantId);
-    return this.send(to, subject, html);
+    return this.send(to, subject, html, { templateKey: 'payment_receipt', tenantId: inv.tenantId, invoiceId: inv.id, subscriptionId: inv.subscriptionId });
   }
 
   async sendDunning(to: string | null, _sub: SaasSubscription, inv: SaasInvoice, daysOverdue: number) {
@@ -333,7 +411,7 @@ export class SaasMailerService {
       currency: inv.currency,
     };
     const { subject, html } = await this.render('dunning', vars, inv.tenantId);
-    return this.send(to, subject, html);
+    return this.send(to, subject, html, { templateKey: 'dunning', tenantId: inv.tenantId, invoiceId: inv.id, subscriptionId: _sub?.id ?? inv.subscriptionId });
   }
 
   async sendRenewalReminder(to: string | null, sub: SaasSubscription, daysUntil: number) {
@@ -345,7 +423,7 @@ export class SaasMailerService {
       currency: sub.currency,
     };
     const { subject, html } = await this.render('renewal_reminder', vars, sub.tenantId);
-    return this.send(to, subject, html);
+    return this.send(to, subject, html, { templateKey: 'renewal_reminder', tenantId: sub.tenantId, subscriptionId: sub.id });
   }
 
   async sendTrialEnding(to: string | null, sub: SaasSubscription) {
@@ -354,7 +432,7 @@ export class SaasMailerService {
       trialEndDate: sub.trialEndsAt ? new Date(sub.trialEndsAt).toLocaleDateString() : 'soon',
     };
     const { subject, html } = await this.render('trial_ending', vars, sub.tenantId);
-    return this.send(to, subject, html);
+    return this.send(to, subject, html, { templateKey: 'trial_ending', tenantId: sub.tenantId, subscriptionId: sub.id });
   }
 
   // ---------- Sample data for preview/test ----------
@@ -382,7 +460,7 @@ export class SaasMailerService {
 
   async sendTest(key: EmailTemplateKey, to: string, tenantId?: string) {
     const { subject, html } = await this.previewTemplate(key, undefined, tenantId);
-    await this.send(to, `[TEST] ${subject}`, html);
+    await this.send(to, `[TEST] ${subject}`, html, { templateKey: key, tenantId: tenantId ?? null, isTest: true });
     return { ok: true, to };
   }
 }
