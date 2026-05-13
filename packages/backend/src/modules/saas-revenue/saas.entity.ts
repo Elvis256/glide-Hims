@@ -32,6 +32,7 @@ export type SubscriptionEventType =
   | 'invoice_issued'
   | 'payment_recorded'
   | 'payment_failed'
+  | 'payment_refunded'
   | 'past_due'
   | 'paused'
   | 'resumed'
