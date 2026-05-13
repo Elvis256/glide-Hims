@@ -192,6 +192,22 @@ export class SupportAccessService {
     });
   }
 
+  async listAllRequests(limit = 200): Promise<SupportAccessRequest[]> {
+    return this.requestRepository.find({
+      relations: ['requestedBy', 'reviewedBy', 'tenant'],
+      order: { createdAt: 'DESC' },
+      take: limit,
+    });
+  }
+
+  async listAllGrants(limit = 200): Promise<SupportAccessGrant[]> {
+    return this.grantRepository.find({
+      relations: ['grantedTo', 'grantedBy', 'tenant'],
+      order: { createdAt: 'DESC' },
+      take: limit,
+    });
+  }
+
   async approveRequest(requestId: string, reviewedById: string): Promise<SupportAccessGrant> {
     const request = await this.requestRepository.findOne({
       where: { id: requestId },
