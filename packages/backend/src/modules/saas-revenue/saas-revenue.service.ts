@@ -320,7 +320,39 @@ export class SaasRevenueService {
       order: { paidAt: 'DESC' },
       take: 50,
     });
-    return { ...s, invoices: recentInvoices, events: recentEvents, payments };
+    const tmap = await this.tenantMap([s.tenantId]);
+    const tenant = tmap.get(s.tenantId) ?? null;
+    // Compute current plan price for the same billing interval (for grandfathering UI).
+    const currentPlanUnitPriceMinor = s.billingInterval === 'annual'
+      ? (s.plan?.priceAnnualMinor ?? s.unitPriceMinor)
+      : (s.plan?.priceMonthlyMinor ?? s.unitPriceMinor);
+    const isPriceLockedBelow = currentPlanUnitPriceMinor > s.unitPriceMinor;
+    const isPriceLockedAbove = currentPlanUnitPriceMinor < s.unitPriceMinor;
+    return {
+      ...s,
+      tenant,
+      currentPlanUnitPriceMinor,
+      isPriceLockedBelow,
+      isPriceLockedAbove,
+      invoices: recentInvoices,
+      events: recentEvents,
+      payments,
+    };
+  }
+
+  async syncSubscriptionPrice(id: string, actorId?: string) {
+    const sub = await this.subs.findOne({ where: { id } });
+    if (!sub) throw new NotFoundException('Subscription not found');
+    const plan = await this.getPlan(sub.planId);
+    const newUnit = sub.billingInterval === 'annual' ? plan.priceAnnualMinor : plan.priceMonthlyMinor;
+    if (newUnit === sub.unitPriceMinor) {
+      return { ...(await this.getSubscription(sub.id)), changed: false };
+    }
+    const oldUnit = sub.unitPriceMinor;
+    sub.unitPriceMinor = newUnit;
+    await this.subs.save(sub);
+    await this.recordEvent(sub.id, 'plan_changed', `Unit price synced from ${sub.currency} ${(oldUnit / 100).toLocaleString()} to ${sub.currency} ${(newUnit / 100).toLocaleString()} (${sub.billingInterval})`, { oldUnit, newUnit, source: 'sync-price' }, actorId);
+    return { ...(await this.getSubscription(sub.id)), changed: true, oldUnit, newUnit };
   }
 
   async createSubscription(dto: CreateSubscriptionDto, actorId?: string) {

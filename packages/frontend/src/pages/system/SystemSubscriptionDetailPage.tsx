@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Loader2, ArrowLeft, Pause, Play, Ban, KeyRound, RefreshCw, FileText, DollarSign, Calendar, Tag, AlertTriangle } from 'lucide-react';
+import { Loader2, ArrowLeft, Pause, Play, Ban, KeyRound, RefreshCw, FileText, DollarSign, Calendar, Tag, AlertTriangle, TrendingUp } from 'lucide-react';
 import api from '../../services/api';
 import { Plan, Subscription, SaasInvoice, SaasPayment, INVOICE_STATUS_STYLES, SUB_STATUS_STYLES, fmtMoney, fmtDate, fmtDateTime, unwrap } from './saas/_shared';
 
@@ -8,6 +8,9 @@ interface SubDetail extends Subscription {
   invoices: SaasInvoice[];
   events: Array<{ id: string; type: string; message: string | null; createdAt: string; payload: any }>;
   payments: SaasPayment[];
+  currentPlanUnitPriceMinor?: number;
+  isPriceLockedBelow?: boolean;
+  isPriceLockedAbove?: boolean;
 }
 
 export default function SystemSubscriptionDetailPage() {
@@ -57,7 +60,13 @@ export default function SystemSubscriptionDetailPage() {
             <span className={`px-2 py-0.5 rounded-full text-xs ${SUB_STATUS_STYLES[data.status]}`}>{data.status.replace('_', ' ')}</span>
             {data.cancelAtPeriodEnd && <span className="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700">Cancels at period end</span>}
           </div>
-          <p className="text-sm text-gray-500 mt-1">Tenant <span className="font-mono">{data.tenantId}</span></p>
+          <p className="text-sm text-gray-500 mt-1">
+            Tenant {data.tenant ? (
+              <><span className="font-medium text-gray-700">{data.tenant.name}</span> <span className="font-mono text-xs">({data.tenant.slug})</span></>
+            ) : (
+              <span className="font-mono">{data.tenantId}</span>
+            )}
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button disabled={busy} onClick={() => setChangePlanOpen(true)} className="px-3 py-2 text-sm border rounded hover:bg-gray-50 inline-flex items-center gap-1"><Tag className="w-4 h-4" /> Change plan</button>
@@ -67,6 +76,17 @@ export default function SystemSubscriptionDetailPage() {
             <button disabled={busy} onClick={() => action('pause')} className="px-3 py-2 text-sm border rounded hover:bg-gray-50 inline-flex items-center gap-1"><Pause className="w-4 h-4" /> Pause</button>
           )}
           <button disabled={busy} onClick={() => action('sync-license')} className="px-3 py-2 text-sm border rounded hover:bg-gray-50 inline-flex items-center gap-1"><KeyRound className="w-4 h-4" /> Sync license</button>
+          {data.currentPlanUnitPriceMinor !== undefined && data.currentPlanUnitPriceMinor !== data.unitPriceMinor && (
+            <button disabled={busy} onClick={async () => {
+              const cur = fmtMoney(data.unitPriceMinor, data.currency);
+              const next = fmtMoney(data.currentPlanUnitPriceMinor!, data.currency);
+              if (!confirm(`Sync this subscription's locked price from ${cur} to current plan price ${next}? Existing invoices are unaffected; future renewals will use the new price.`)) return;
+              setBusy(true);
+              try { await api.post(`/saas-revenue/subscriptions/${id}/sync-price`, {}); await load(); }
+              catch (e: any) { alert(e?.response?.data?.message || 'Sync failed'); }
+              finally { setBusy(false); }
+            }} className="px-3 py-2 text-sm border border-blue-300 text-blue-700 rounded hover:bg-blue-50 inline-flex items-center gap-1"><TrendingUp className="w-4 h-4" /> Sync price</button>
+          )}
           {data.status !== 'cancelled' && data.status !== 'churned' && (
             <button disabled={busy} onClick={() => {
               const reason = prompt('Cancellation reason?') ?? undefined;
@@ -82,6 +102,19 @@ export default function SystemSubscriptionDetailPage() {
         <div className="border border-amber-300 bg-amber-50 rounded p-3 text-sm text-amber-800 flex items-start gap-2">
           <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
           <div>This subscription has overdue invoices. Auto-churn happens 30 days after due date if unpaid.</div>
+        </div>
+      )}
+
+      {data.currentPlanUnitPriceMinor !== undefined && data.currentPlanUnitPriceMinor !== data.unitPriceMinor && (
+        <div className={`border rounded p-3 text-sm flex items-start gap-2 ${data.isPriceLockedBelow ? 'border-blue-200 bg-blue-50 text-blue-900' : 'border-emerald-200 bg-emerald-50 text-emerald-900'}`}>
+          <TrendingUp className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <div>
+            <div className="font-medium">{data.isPriceLockedBelow ? 'Price grandfathered' : 'Tenant overpaying current plan'}</div>
+            <div className="text-xs mt-0.5">
+              Locked at <b>{fmtMoney(data.unitPriceMinor, data.currency)}</b> · Current plan price is <b>{fmtMoney(data.currentPlanUnitPriceMinor, data.currency)}</b> ({data.billingInterval}).
+              {data.isPriceLockedBelow ? ' Renewals continue at the locked price until you Sync.' : ' Use Sync price to bring this subscription down to the new lower price.'}
+            </div>
+          </div>
         </div>
       )}
 
