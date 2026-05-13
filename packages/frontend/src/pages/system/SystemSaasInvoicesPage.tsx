@@ -70,7 +70,16 @@ export default function SystemSaasInvoicesPage() {
                       <span className={`px-2 py-0.5 rounded-full text-xs ${INVOICE_STATUS_STYLES[inv.status]}`}>{inv.status}</span>
                       {overdue && <span className="ml-1 inline-flex items-center text-xs text-amber-700"><AlertTriangle className="w-3 h-3 mr-0.5" />overdue</span>}
                     </td>
-                    <td className="px-4 py-2 font-mono text-xs">{inv.tenantId.slice(0, 8)}…</td>
+                    <td className="px-4 py-2">
+                      {inv.tenant ? (
+                        <div>
+                          <div className="font-medium text-gray-900">{inv.tenant.name}</div>
+                          <div className="text-xs text-gray-500 font-mono">{inv.tenant.slug}</div>
+                        </div>
+                      ) : (
+                        <span className="font-mono text-xs text-gray-500" title={inv.tenantId}>{inv.tenantId.slice(0, 8)}…</span>
+                      )}
+                    </td>
                     <td className="px-4 py-2 text-right">{fmtMoney(inv.totalMinor, inv.currency)}</td>
                     <td className="px-4 py-2 text-right">{fmtMoney(inv.amountPaidMinor, inv.currency)}</td>
                     <td className="px-4 py-2">{fmtDate(inv.issuedAt)}</td>
