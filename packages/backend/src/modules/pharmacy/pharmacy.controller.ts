@@ -162,7 +162,7 @@ export class PharmacyController {
   @AuthWithPermissions('pharmacy.create')
   @ApiOperation({ summary: 'Record incoming batch stock' })
   receiveBatch(@Body() dto: ReceiveBatchDto, @Request() req: any) {
-    return this.service.receiveBatch(dto, req.user?.tenantId);
+    return this.service.receiveBatch(dto, req.user?.tenantId, req.user?.id);
   }
 
   // ── Low-Stock Reorder Alerts ──────────────────────────────────────────

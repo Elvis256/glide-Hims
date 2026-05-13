@@ -21,6 +21,7 @@ import {
   ApproveTransferDto,
   ReceiveTransferDto,
 } from './stores.dto';
+import { InventoryService } from '../inventory/inventory.service';
 
 @Injectable()
 export class StoresService {
@@ -32,6 +33,7 @@ export class StoresService {
     @InjectRepository(StockBalance) private stockBalanceRepo: Repository<StockBalance>,
     @InjectRepository(StockLedger) private stockLedgerRepo: Repository<StockLedger>,
     private dataSource: DataSource,
+    private inventoryService: InventoryService,
   ) {}
 
   // Items (Drugs)
@@ -682,74 +684,35 @@ export class StoresService {
       }
     }
 
-    // CRITICAL FIX: Wrap in transaction with pessimistic lock to prevent race conditions
+    // Audit Phase 2.3 — delegate to canonical InventoryService primitive
     return this.dataSource.transaction(async (manager) => {
-      const stockRepo = manager.getRepository(StockBalance);
-
-      // Get or create stock balance (facility-level or store-level) with pessimistic lock
-      const whereClause: any = { itemId, facilityId };
-      if (dto.storeId) {
-        whereClause.storeId = dto.storeId;
-      } else {
-        whereClause.storeId = null as any;
-      }
-      if (tenantId) whereClause.tenantId = tenantId;
-
-      let balance = await stockRepo.findOne({
-        where: whereClause,
-        lock: { mode: 'pessimistic_write' },
-      });
-
-      if (!balance) {
-        balance = stockRepo.create({
-          itemId,
-          facilityId,
-          storeId: dto.storeId || undefined,
-          totalQuantity: 0,
-          reservedQuantity: 0,
-          availableQuantity: 0,
-          ...(tenantId ? { tenantId } : {}),
-        });
-      }
-
-      // Calculate new balance
       const adjustmentQty = dto.type === 'out' ? -Math.abs(dto.quantity) : Math.abs(dto.quantity);
-      const newBalance = balance.totalQuantity + adjustmentQty;
+      const movementType: MovementType =
+        dto.type === 'in'
+          ? MovementType.PURCHASE
+          : dto.type === 'out'
+            ? MovementType.SALE
+            : MovementType.ADJUSTMENT;
 
-      if (newBalance < 0) {
-        throw new BadRequestException('Insufficient stock for this adjustment');
-      }
-
-      // Update balance
-      balance.totalQuantity = newBalance;
-      balance.availableQuantity = newBalance - balance.reservedQuantity;
-      balance.lastMovementAt = new Date();
-      await stockRepo.save(balance);
-
-      // Create ledger entry
-      const movementType =
-        dto.type === 'in' ? 'purchase' : dto.type === 'out' ? 'sale' : 'adjustment';
-      const ledger = this.stockLedgerRepo.create({
+      const ledger = await this.inventoryService.applyStockMovement(manager, {
         itemId,
         facilityId,
-        storeId: dto.storeId || undefined,
+        storeId: dto.storeId || null,
+        signedQuantity: adjustmentQty,
+        movementType,
         batchNumber: dto.batchNumber,
-        expiryDate: dto.expiryDate ? new Date(dto.expiryDate) : undefined,
-        quantity: adjustmentQty,
-        balanceAfter: newBalance,
-        movementType: movementType as any,
+        expiryDate: dto.expiryDate,
         unitCost: Number(item.unitCost) || 0,
         referenceType: dto.type,
         referenceId: dto.reference,
         notes: dto.reason,
-        createdById: userId,
-        ...(tenantId ? { tenantId } : {}),
+        userId,
+        tenantId,
       });
-      await manager.getRepository(StockLedger).save(ledger);
 
       return {
         success: true,
-        newBalance,
+        newBalance: ledger.balanceAfter,
         movement: ledger,
       };
     });

@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, ILike, FindOptionsWhere, DataSource } from 'typeorm';
+import { Repository, Like, ILike, FindOptionsWhere, DataSource, EntityManager, IsNull } from 'typeorm';
 import {
   Item,
   StockLedger,
@@ -199,6 +199,128 @@ export class InventoryService {
     return { data, total, page, limit };
   }
 
+  /**
+   * Canonical stock-movement primitive (Phase 2 audit consolidation).
+   *
+   * Writes ONE StockLedger row + upserts ONE StockBalance row (per facility/store
+   * scope) inside the supplied EntityManager — meaning the caller controls the
+   * transaction boundary and can compose multiple movements (e.g. transfer-out
+   * + transfer-in, store-balance + facility-balance) atomically.
+   *
+   * `signedQuantity` is positive for inbound movements (purchase, transfer-in,
+   * adjustment-up) and negative for outbound (sale, transfer-out, adjustment-down).
+   *
+   * Acquires a pessimistic_write lock on the StockBalance row to prevent
+   * concurrent-update races. If `storeId` is omitted the movement targets the
+   * facility-level balance row (storeId IS NULL).
+   */
+  async applyStockMovement(
+    manager: EntityManager,
+    params: {
+      itemId: string;
+      facilityId: string;
+      storeId?: string | null;
+      signedQuantity?: number;
+      setTotalQuantity?: number;
+      movementType: MovementType;
+      batchNumber?: string;
+      expiryDate?: Date | string;
+      unitCost?: number;
+      referenceType?: string;
+      referenceId?: string;
+      notes?: string;
+      userId?: string;
+      tenantId?: string;
+      allowNegative?: boolean;
+    },
+  ): Promise<StockLedger> {
+    const {
+      itemId,
+      facilityId,
+      storeId,
+      signedQuantity,
+      setTotalQuantity,
+      movementType,
+      batchNumber,
+      expiryDate,
+      unitCost,
+      referenceType,
+      referenceId,
+      notes,
+      userId,
+      tenantId,
+      allowNegative,
+    } = params;
+
+    if (signedQuantity === undefined && setTotalQuantity === undefined) {
+      throw new BadRequestException('Either signedQuantity or setTotalQuantity must be provided');
+    }
+    if (signedQuantity !== undefined && setTotalQuantity !== undefined) {
+      throw new BadRequestException('Provide signedQuantity or setTotalQuantity, not both');
+    }
+
+    const balanceWhere: any = {
+      itemId,
+      facilityId,
+      storeId: storeId ?? IsNull(),
+    };
+    if (tenantId) balanceWhere.tenantId = tenantId;
+
+    let balance = await manager.findOne(StockBalance, {
+      where: balanceWhere,
+      lock: { mode: 'pessimistic_write' },
+    });
+
+    const previousBalance = balance?.totalQuantity || 0;
+    const delta =
+      signedQuantity !== undefined ? signedQuantity : setTotalQuantity! - previousBalance;
+    const newBalance = previousBalance + delta;
+
+    if (newBalance < 0 && !allowNegative) {
+      throw new BadRequestException(
+        `Insufficient stock for movement. Available: ${previousBalance}, requested: ${Math.abs(delta)}`,
+      );
+    }
+
+    const ledger = manager.create(StockLedger, {
+      itemId,
+      facilityId,
+      storeId: storeId || undefined,
+      quantity: delta,
+      balanceAfter: newBalance,
+      movementType,
+      batchNumber,
+      expiryDate: expiryDate ? new Date(expiryDate) : undefined,
+      unitCost,
+      referenceType,
+      referenceId,
+      notes,
+      createdById: userId,
+      ...(tenantId ? { tenantId } : {}),
+    });
+    await manager.save(StockLedger, ledger);
+
+    if (balance) {
+      balance.totalQuantity = newBalance;
+      balance.availableQuantity = newBalance - balance.reservedQuantity;
+      balance.lastMovementAt = new Date();
+    } else {
+      balance = manager.create(StockBalance, {
+        itemId,
+        facilityId,
+        storeId: storeId || undefined,
+        totalQuantity: newBalance,
+        reservedQuantity: 0,
+        availableQuantity: newBalance,
+        lastMovementAt: new Date(),
+        ...(tenantId ? { tenantId } : {}),
+      });
+    }
+    await manager.save(StockBalance, balance);
+
+    return ledger;
+  }
+
   async receiveStock(
     dto: StockReceiveDto,
     userId: string,
@@ -206,57 +328,21 @@ export class InventoryService {
   ): Promise<StockLedger> {
     const item = await this.findItemById(dto.itemId, tenantId);
 
-    return this.dataSource.transaction(async (manager) => {
-      // Get current balance with pessimistic lock
-      let balance = await manager.findOne(StockBalance, {
-        where: {
-          itemId: dto.itemId,
-          facilityId: dto.facilityId,
-          ...(tenantId ? { tenantId } : {}),
-        },
-        lock: { mode: 'pessimistic_write' },
-      });
-      const previousBalance = balance?.totalQuantity || 0;
-      const newBalance = previousBalance + dto.quantity;
-
-      // Create ledger entry
-      const ledger = manager.create(StockLedger, {
+    return this.dataSource.transaction((manager) =>
+      this.applyStockMovement(manager, {
         itemId: dto.itemId,
         facilityId: dto.facilityId,
-        quantity: dto.quantity,
-        balanceAfter: newBalance,
+        signedQuantity: dto.quantity,
         movementType: MovementType.PURCHASE,
         batchNumber: dto.batchNumber,
-        expiryDate: dto.expiryDate ? new Date(dto.expiryDate) : undefined,
-        unitCost: dto.unitCost || item.unitCost,
+        expiryDate: dto.expiryDate,
+        unitCost: dto.unitCost ?? (Number(item.unitCost) || 0),
         referenceType: 'stock_receive',
         notes: dto.notes,
-        createdById: userId,
-        ...(tenantId ? { tenantId } : {}),
-      });
-
-      await manager.save(StockLedger, ledger);
-
-      // Update or create balance
-      if (balance) {
-        balance.totalQuantity = newBalance;
-        balance.availableQuantity = newBalance - balance.reservedQuantity;
-        balance.lastMovementAt = new Date();
-      } else {
-        balance = manager.create(StockBalance, {
-          itemId: dto.itemId,
-          facilityId: dto.facilityId,
-          totalQuantity: newBalance,
-          reservedQuantity: 0,
-          availableQuantity: newBalance,
-          lastMovementAt: new Date(),
-          ...(tenantId ? { tenantId } : {}),
-        });
-      }
-      await manager.save(StockBalance, balance);
-
-      return ledger;
-    });
+        userId,
+        tenantId,
+      }),
+    );
   }
 
   async adjustStock(
@@ -284,54 +370,19 @@ export class InventoryService {
       }
     }
 
-    return this.dataSource.transaction(async (manager) => {
-      // Pessimistic lock to prevent concurrent adjustment conflicts
-      let balance = await manager.findOne(StockBalance, {
-        where: {
-          itemId: dto.itemId,
-          facilityId: dto.facilityId,
-          ...(tenantId ? { tenantId } : {}),
-        },
-        lock: { mode: 'pessimistic_write' },
-      });
-      const previousBalance = balance?.totalQuantity || 0;
-      const difference = dto.newQuantity - previousBalance;
-
-      // Create ledger entry
-      const ledger = manager.create(StockLedger, {
+    return this.dataSource.transaction((manager) =>
+      this.applyStockMovement(manager, {
         itemId: dto.itemId,
         facilityId: dto.facilityId,
-        quantity: difference,
-        balanceAfter: dto.newQuantity,
+        setTotalQuantity: dto.newQuantity,
         movementType: MovementType.ADJUSTMENT,
         referenceType: 'stock_adjustment',
         notes: `Adjustment: ${dto.reason}. ${dto.notes || ''}`,
-        createdById: userId,
-        ...(tenantId ? { tenantId } : {}),
-      });
-
-      await manager.save(StockLedger, ledger);
-
-      // Update or create balance
-      if (balance) {
-        balance.totalQuantity = dto.newQuantity;
-        balance.availableQuantity = dto.newQuantity - balance.reservedQuantity;
-        balance.lastMovementAt = new Date();
-      } else {
-        balance = manager.create(StockBalance, {
-          itemId: dto.itemId,
-          facilityId: dto.facilityId,
-          totalQuantity: dto.newQuantity,
-          reservedQuantity: 0,
-          availableQuantity: dto.newQuantity,
-          lastMovementAt: new Date(),
-          ...(tenantId ? { tenantId } : {}),
-        });
-      }
-      await manager.save(StockBalance, balance);
-
-      return ledger;
-    });
+        userId,
+        tenantId,
+        allowNegative: true,
+      }),
+    );
   }
 
   async transferStock(
@@ -340,82 +391,31 @@ export class InventoryService {
     tenantId?: string,
   ): Promise<{ from: StockLedger; to: StockLedger }> {
     return this.dataSource.transaction(async (manager) => {
-      // Check source has enough stock — with pessimistic lock
-      const fromBalance = await manager.findOne(StockBalance, {
-        where: {
-          itemId: dto.itemId,
-          facilityId: dto.fromFacilityId,
-          ...(tenantId ? { tenantId } : {}),
-        },
-        lock: { mode: 'pessimistic_write' },
-      });
-      if (!fromBalance || fromBalance.availableQuantity < dto.quantity) {
-        throw new BadRequestException('Insufficient stock for transfer');
-      }
-
-      // Deduct from source
-      const fromLedger = manager.create(StockLedger, {
+      const fromLedger = await this.applyStockMovement(manager, {
         itemId: dto.itemId,
         facilityId: dto.fromFacilityId,
-        quantity: -dto.quantity,
-        balanceAfter: fromBalance.totalQuantity - dto.quantity,
+        signedQuantity: -dto.quantity,
         movementType: MovementType.TRANSFER_OUT,
         batchNumber: dto.batchNumber,
         referenceType: 'stock_transfer',
         referenceId: dto.toFacilityId,
         notes: dto.notes,
-        createdById: userId,
-        ...(tenantId ? { tenantId } : {}),
+        userId,
+        tenantId,
       });
-      await manager.save(StockLedger, fromLedger);
 
-      fromBalance.totalQuantity -= dto.quantity;
-      fromBalance.availableQuantity -= dto.quantity;
-      fromBalance.lastMovementAt = new Date();
-      await manager.save(StockBalance, fromBalance);
-
-      // Add to destination — with pessimistic lock
-      let toBalance = await manager.findOne(StockBalance, {
-        where: {
-          itemId: dto.itemId,
-          facilityId: dto.toFacilityId,
-          ...(tenantId ? { tenantId } : {}),
-        },
-        lock: { mode: 'pessimistic_write' },
-      });
-      const toNewBalance = (toBalance?.totalQuantity || 0) + dto.quantity;
-
-      const toLedger = manager.create(StockLedger, {
+      const toLedger = await this.applyStockMovement(manager, {
         itemId: dto.itemId,
         facilityId: dto.toFacilityId,
-        quantity: dto.quantity,
-        balanceAfter: toNewBalance,
+        signedQuantity: dto.quantity,
         movementType: MovementType.TRANSFER_IN,
         batchNumber: dto.batchNumber,
         referenceType: 'stock_transfer',
         referenceId: dto.fromFacilityId,
         notes: dto.notes,
-        createdById: userId,
-        ...(tenantId ? { tenantId } : {}),
+        userId,
+        tenantId,
       });
-      await manager.save(StockLedger, toLedger);
-
-      if (toBalance) {
-        toBalance.totalQuantity = toNewBalance;
-        toBalance.availableQuantity = toNewBalance - toBalance.reservedQuantity;
-        toBalance.lastMovementAt = new Date();
-      } else {
-        toBalance = manager.create(StockBalance, {
-          itemId: dto.itemId,
-          facilityId: dto.toFacilityId,
-          totalQuantity: toNewBalance,
-          reservedQuantity: 0,
-          availableQuantity: toNewBalance,
-          lastMovementAt: new Date(),
-          ...(tenantId ? { tenantId } : {}),
-        });
-      }
-      await manager.save(StockBalance, toBalance);
 
       return { from: fromLedger, to: toLedger };
     });

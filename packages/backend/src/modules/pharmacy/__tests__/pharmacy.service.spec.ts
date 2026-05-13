@@ -13,6 +13,7 @@ import { BatchStockBalance } from '../../../database/entities/batch-stock.entity
 import { Prescription } from '../../../database/entities/prescription.entity';
 import { AuditLog } from '../../../database/entities/audit-log.entity';
 import { FinanceService } from '../../finance/finance.service';
+import { InventoryService } from '../../inventory/inventory.service';
 import { BadRequestException } from '@nestjs/common';
 
 describe('PharmacyService', () => {
@@ -28,6 +29,7 @@ describe('PharmacyService', () => {
   const mockExpiryAlertRepo = {};
   const mockAuditLogRepo = {};
   const mockFinanceService = {};
+  const mockInventoryService = { applyStockMovement: jest.fn().mockResolvedValue({ id: 'ledger-1' }) };
 
   const mockEntityManager = {
     findOne: jest.fn(),
@@ -65,6 +67,7 @@ describe('PharmacyService', () => {
         { provide: getRepositoryToken(ExpiryAlert), useValue: mockExpiryAlertRepo },
         { provide: getRepositoryToken(AuditLog), useValue: mockAuditLogRepo },
         { provide: DataSource, useValue: mockDataSource },
+        { provide: InventoryService, useValue: mockInventoryService },
       ],
     }).compile();
 

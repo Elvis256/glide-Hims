@@ -59,6 +59,7 @@ import { UsersService } from '../users/users.service';
 import { AuditService } from '../compliance/audit.service';
 import { SupplierRiskService } from './supplier-risk.service';
 import { OrgApprovalResolverService } from './org-approval-resolver.service';
+import { InventoryService } from '../inventory/inventory.service';
 import { InvoiceMatch } from '../../database/entities/invoice-match.entity';
 import { ProcurementApprovalThreshold } from '../../database/entities/procurement-approval-threshold.entity';
 import {
@@ -109,6 +110,7 @@ export class ProcurementService {
     private supplierRiskService: SupplierRiskService,
     private orgApprovalResolver: OrgApprovalResolverService,
     private dataSource: DataSource,
+    private inventoryService: InventoryService,
   ) {}
 
   // ============ PURCHASE REQUEST ============
@@ -1695,58 +1697,24 @@ export class ProcurementService {
         const quantityToPost = item.quantityAccepted ?? item.quantityReceived;
         if (quantityToPost <= 0) continue;
 
-        // Pessimistic lock on stock balance to prevent concurrent updates.
-        // Per-store balance when GRN routes to a specific store, otherwise facility-level (storeId IS NULL).
-        let stockBalance = await stockBalanceRepo.findOne({
-          where: {
-            itemId: item.itemId,
-            facilityId: grn.facilityId,
-            storeId: grn.storeId ?? IsNull(),
-            ...(tenantId ? { tenantId } : {}),
-          },
-          lock: { mode: 'pessimistic_write' },
-        });
-
-        const newBalance = (stockBalance?.totalQuantity || 0) + quantityToPost;
-
-        // Create ledger entry
-        const ledgerEntry = stockLedgerRepo.create({
+        // Audit Phase 2.2 — delegate ledger+balance write to canonical
+        // InventoryService.applyStockMovement (which acquires the pessimistic
+        // lock and upserts the balance row in one place).
+        await this.inventoryService.applyStockMovement(manager, {
           itemId: item.itemId,
           facilityId: grn.facilityId,
-          storeId: grn.storeId,
+          storeId: grn.storeId || null,
+          signedQuantity: quantityToPost,
+          movementType: MovementType.PURCHASE,
           batchNumber: item.batchNumber,
           expiryDate: item.expiryDate,
-          quantity: quantityToPost,
-          balanceAfter: newBalance,
-          movementType: MovementType.PURCHASE,
-          unitCost: item.unitCost,
+          unitCost: Number(item.unitCost) || 0,
           referenceType: 'goods_receipt_note',
           referenceId: grn.id,
           notes: `GRN: ${grn.grnNumber}${grn.storeId ? ' (store-routed)' : ''}`,
-          createdById: userId,
-          ...(tenantId ? { tenantId } : {}),
+          userId,
+          tenantId,
         });
-        await stockLedgerRepo.save(ledgerEntry);
-
-        // Update or create stock balance
-        if (stockBalance) {
-          stockBalance.totalQuantity = newBalance;
-          stockBalance.availableQuantity = newBalance - stockBalance.reservedQuantity;
-          stockBalance.lastMovementAt = new Date();
-          await stockBalanceRepo.save(stockBalance);
-        } else {
-          stockBalance = stockBalanceRepo.create({
-            itemId: item.itemId,
-            facilityId: grn.facilityId,
-            storeId: grn.storeId,
-            totalQuantity: quantityToPost,
-            reservedQuantity: 0,
-            availableQuantity: quantityToPost,
-            lastMovementAt: new Date(),
-            ...(tenantId ? { tenantId } : {}),
-          });
-          await stockBalanceRepo.save(stockBalance);
-        }
 
         // Update item's unit cost and pricing from GRN
         const itemUpdate: Partial<Item> = { unitCost: item.unitCost };
