@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Loader2, RefreshCw, TrendingUp, Users, AlertTriangle, Calendar, DollarSign, Activity, PlayCircle } from 'lucide-react';
+import { Loader2, RefreshCw, TrendingUp, Users, AlertTriangle, Calendar, DollarSign, Activity, PlayCircle, BarChart3, X } from 'lucide-react';
 import api from '../../services/api';
 import { fmtMoney, fmtDate, unwrap } from './saas/_shared';
 
@@ -11,7 +11,11 @@ interface Dashboard {
   churnRatePct: number; outstandingMinor: number; overdueCount: number;
   monthlyRevenue: Array<{ month: string; totalMinor: number }>;
   topCustomers: Array<{ tenantId: string; totalMinor: number; tenant?: { id: string; name: string; slug: string } | null }>;
-  planBreakdown: Array<{ planId: string; planName: string; count: number; mrrMinor: number }>;
+  planBreakdown: Array<{
+    planId: string; planName: string; planCode?: string; tier?: string;
+    count: number; trialCount: number; churnedCount: number; pastDueCount: number;
+    mrrMinor: number; arrMinor: number; lifetimeMinor: number; arpaMinor: number; sharePct: number;
+  }>;
   forecast: { d30Minor: number; d60Minor: number; d90Minor: number };
   expiringSoon: Array<{ id: string; tenantId: string; tenant?: { id: string; name: string; slug: string } | null; planName: string; nextRenewalAt: string; amountMinor: number; currency: string; autoRenew: boolean }>;
 }
@@ -20,6 +24,13 @@ export default function SystemRevenuePage() {
   const [data, setData] = useState<Dashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
+  const [planDetail, setPlanDetail] = useState<any | null>(null);
+
+  const openPlan = async (planId: string) => {
+    setPlanDetail({ loading: true });
+    try { const r = await api.get(`/saas-revenue/revenue/plans/${planId}`); setPlanDetail(unwrap<any>(r)); }
+    catch (e: any) { alert(e?.response?.data?.message || 'Failed'); setPlanDetail(null); }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -118,19 +129,57 @@ export default function SystemRevenuePage() {
         )}
       </Card>
 
-      <div className="grid md:grid-cols-2 gap-6">
-        <Card title="Plan breakdown (active)">
-          {data.planBreakdown.length === 0 ? <div className="text-sm text-gray-500">No active subscriptions</div> :
+      <Card title="Plan breakdown">
+        {data.planBreakdown.length === 0 ? <div className="text-sm text-gray-500">No subscriptions</div> :
+          <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="text-gray-500 text-xs"><tr><th className="text-left">Plan</th><th className="text-right">Subs</th><th className="text-right">MRR</th></tr></thead>
+              <thead className="text-gray-500 text-xs">
+                <tr>
+                  <th className="text-left">Plan</th>
+                  <th className="text-right">Active</th>
+                  <th className="text-right">Trial</th>
+                  <th className="text-right">Churned</th>
+                  <th className="text-right">MRR</th>
+                  <th className="text-right">ARR</th>
+                  <th className="text-right">Lifetime</th>
+                  <th className="text-right">Share</th>
+                  <th></th>
+                </tr>
+              </thead>
               <tbody>
                 {data.planBreakdown.map((p) => (
-                  <tr key={p.planId} className="border-t"><td className="py-2">{p.planName}</td><td className="py-2 text-right">{p.count}</td><td className="py-2 text-right font-medium">{fmtMoney(p.mrrMinor, cur)}</td></tr>
+                  <tr key={p.planId} className="border-t hover:bg-gray-50">
+                    <td className="py-2">
+                      <div className="font-medium">{p.planName}</div>
+                      {p.tier && <div className="text-[10px] uppercase text-gray-400">{p.tier}</div>}
+                    </td>
+                    <td className="py-2 text-right">{p.count}</td>
+                    <td className="py-2 text-right text-blue-700">{p.trialCount}</td>
+                    <td className="py-2 text-right text-rose-700">{p.churnedCount}</td>
+                    <td className="py-2 text-right font-medium">{fmtMoney(p.mrrMinor, cur)}</td>
+                    <td className="py-2 text-right">{fmtMoney(p.arrMinor, cur)}</td>
+                    <td className="py-2 text-right text-emerald-700">{fmtMoney(p.lifetimeMinor, cur)}</td>
+                    <td className="py-2 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <div className="w-12 h-1.5 bg-gray-200 rounded overflow-hidden">
+                          <div className="h-full bg-blue-500" style={{ width: `${Math.min(100, p.sharePct)}%` }} />
+                        </div>
+                        <span className="text-xs text-gray-500 w-10 text-right">{p.sharePct.toFixed(1)}%</span>
+                      </div>
+                    </td>
+                    <td className="py-2 text-right">
+                      <button onClick={() => openPlan(p.planId)} className="inline-flex items-center gap-1 px-2 py-1 text-xs border rounded hover:bg-blue-50 text-blue-700">
+                        <BarChart3 className="w-3 h-3" /> Drill in
+                      </button>
+                    </td>
+                  </tr>
                 ))}
               </tbody>
-            </table>}
-        </Card>
+            </table>
+          </div>}
+      </Card>
 
+      <div className="grid md:grid-cols-1 gap-6">
         <Card title="Top customers (lifetime)">
           {data.topCustomers.length === 0 ? <div className="text-sm text-gray-500">No paid invoices yet</div> :
             <ul className="divide-y text-sm">
@@ -180,6 +229,114 @@ export default function SystemRevenuePage() {
           </table>
         )}
       </Card>
+
+      {planDetail && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setPlanDetail(null)}>
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            {planDetail.loading ? (
+              <div className="p-8 flex items-center gap-2 text-gray-500"><Loader2 className="w-5 h-5 animate-spin" /> Loading plan analytics…</div>
+            ) : (
+              <>
+                <div className="px-6 py-4 border-b flex items-center justify-between sticky top-0 bg-white z-10">
+                  <div>
+                    <div className="text-xs text-gray-500 uppercase">{planDetail.plan?.tier} · {planDetail.plan?.code}</div>
+                    <h2 className="text-xl font-bold">{planDetail.plan?.name}</h2>
+                  </div>
+                  <button onClick={() => setPlanDetail(null)} className="p-1 rounded hover:bg-gray-100"><X className="w-5 h-5" /></button>
+                </div>
+                <div className="p-6 space-y-6">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <PStat label="MRR" value={fmtMoney(planDetail.mrrMinor, planDetail.plan?.currency || cur)} accent="emerald" />
+                    <PStat label="ARR" value={fmtMoney(planDetail.arrMinor, planDetail.plan?.currency || cur)} />
+                    <PStat label="ARPA" value={fmtMoney(planDetail.arpaMinor, planDetail.plan?.currency || cur)} />
+                    <PStat label="Lifetime revenue" value={fmtMoney(planDetail.lifetimeMinor, planDetail.plan?.currency || cur)} />
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <PStat label="Active" value={String(planDetail.counts.active)} />
+                    <PStat label="Trial" value={String(planDetail.counts.trial)} />
+                    <PStat label="Churned (30d)" value={String(planDetail.counts.churned30d)} />
+                    <PStat label="Churn rate (30d)" value={`${planDetail.churnRatePct}%`} />
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    <PStat label="Total subs" value={String(planDetail.counts.total)} />
+                    <PStat label="Trial conversion" value={`${planDetail.trialConversionPct}%`} />
+                    <PStat label="Outstanding A/R" value={fmtMoney(planDetail.outstandingMinor, planDetail.plan?.currency || cur)} />
+                  </div>
+
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-700 mb-2">Last 12 months revenue</h3>
+                    {(planDetail.monthlyRevenue || []).length === 0 ? (
+                      <div className="text-sm text-gray-500">No paid invoices yet.</div>
+                    ) : (
+                      <div className="space-y-1">
+                        {(() => {
+                          const max = Math.max(1, ...planDetail.monthlyRevenue.map((m: any) => m.totalMinor));
+                          return planDetail.monthlyRevenue.map((m: any) => (
+                            <div key={m.month} className="flex items-center gap-2 text-xs">
+                              <span className="w-16 text-gray-500 font-mono">{m.month}</span>
+                              <div className="flex-1 h-3 bg-gray-100 rounded overflow-hidden">
+                                <div className="h-full bg-blue-500" style={{ width: `${(m.totalMinor / max) * 100}%` }} />
+                              </div>
+                              <span className="w-28 text-right font-medium">{fmtMoney(m.totalMinor, planDetail.plan?.currency || cur)}</span>
+                            </div>
+                          ));
+                        })()}
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-700 mb-2">Customers on this plan</h3>
+                    {(planDetail.customers || []).length === 0 ? (
+                      <div className="text-sm text-gray-500">No customers on this plan.</div>
+                    ) : (
+                      <table className="w-full text-sm">
+                        <thead className="text-gray-500 text-xs">
+                          <tr><th className="text-left">Tenant</th><th className="text-left">Status</th><th className="text-left">Cycle</th><th className="text-right">Seats</th><th className="text-right">MRR</th><th className="text-left">Renews</th></tr>
+                        </thead>
+                        <tbody>
+                          {planDetail.customers.map((c: any) => (
+                            <tr key={c.subscriptionId} className="border-t">
+                              <td className="py-2">
+                                {c.tenant ? (
+                                  <div>
+                                    <div className="font-medium">{c.tenant.name}</div>
+                                    <div className="text-xs text-gray-500 font-mono">{c.tenant.slug}</div>
+                                  </div>
+                                ) : <span className="font-mono text-xs text-gray-500">{c.tenantId.slice(0, 8)}…</span>}
+                              </td>
+                              <td className="py-2"><span className="text-xs px-2 py-0.5 rounded-full bg-gray-100">{c.status}</span></td>
+                              <td className="py-2 text-xs text-gray-600">{c.billingInterval}</td>
+                              <td className="py-2 text-right">{c.seats}</td>
+                              <td className="py-2 text-right font-medium">{fmtMoney(c.mrrMinor, c.currency)}</td>
+                              <td className="py-2 text-xs">{c.nextRenewalAt ? fmtDate(c.nextRenewalAt) : '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+
+                  <div className="pt-3 border-t flex justify-between">
+                    <Link to={`/system/subscriptions?plan=${planDetail.plan?.id}`} className="text-sm text-blue-600 hover:underline">View all subscriptions on this plan →</Link>
+                    <button onClick={() => setPlanDetail(null)} className="px-3 py-1.5 text-sm border rounded">Close</button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PStat({ label, value, accent }: { label: string; value: string; accent?: 'emerald' | 'blue' }) {
+  const cls = accent === 'emerald' ? 'border-emerald-200 bg-emerald-50' : 'border-gray-200 bg-white';
+  return (
+    <div className={`border rounded-lg p-3 ${cls}`}>
+      <div className="text-xs text-gray-500">{label}</div>
+      <div className="text-lg font-bold mt-0.5">{value}</div>
     </div>
   );
 }
