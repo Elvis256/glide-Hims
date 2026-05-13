@@ -242,11 +242,11 @@ export class OrgApprovalResolverService {
       const userRepo = this.chainRepo.manager.getRepository('User');
       const users = (await userRepo
         .createQueryBuilder('u')
-        .select(['u.id', 'u.firstName', 'u.lastName', 'u.email'])
+        .select(['u.id', 'u.fullName', 'u.email'])
         .where('u.id IN (:...ids)', { ids: userIds })
-        .getMany()) as Array<{ id: string; firstName?: string; lastName?: string; email?: string }>;
+        .getMany()) as Array<{ id: string; fullName?: string; email?: string }>;
       for (const u of users) {
-        const name = [u.firstName, u.lastName].filter(Boolean).join(' ').trim() || u.email || u.id;
+        const name = (u.fullName && u.fullName.trim()) || u.email || u.id;
         userNameById.set(u.id, name);
       }
     }
