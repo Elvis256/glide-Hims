@@ -384,6 +384,7 @@ const ReagentsInventoryPage = lazy(() => import('./pages/admin/lab/ReagentsInven
 const LabPanelsPage = lazy(() => import('./pages/admin/lab/LabPanelsPage'));
 const ApprovalWorkflowPage = lazy(() => import('./pages/admin/procurement/ApprovalWorkflowPage'));
 const OrgApprovalAdminPage = lazy(() => import('./pages/admin/procurement/OrgApprovalAdminPage'));
+const ApprovalsInboxPage = lazy(() => import('./pages/approvals/ApprovalsInboxPage'));
 const BudgetManagementPage = lazy(() => import('./pages/admin/procurement/BudgetManagementPage'));
 const ProcurementPoliciesPage = lazy(() => import('./pages/admin/procurement/ProcurementPoliciesPage'));
 const ItemCategoriesPage = lazy(() => import('./pages/admin/procurement/ItemCategoriesPage'));
@@ -899,6 +900,9 @@ function AppRoutes() {
                 <Route path="/insurance/claims" element={<ModuleRoute module="billing"><InsuranceRoute><ClaimsPage /></InsuranceRoute></ModuleRoute>} />
                 <Route path="/insurance/providers" element={<ModuleRoute module="billing"><InsuranceRoute><InsuranceProvidersPage /></InsuranceRoute></ModuleRoute>} />
                 
+                {/* Cross-cutting Approvals */}
+                <Route path="/approvals/inbox" element={<ApprovalsInboxPage />} />
+
                 {/* Billing - Procurement */}
                 <Route path="/procurement/approvals" element={<ModuleRoute module="stores"><AdminRoute><ApprovalDashboardPage /></AdminRoute></ModuleRoute>} />
                 <Route path="/procurement/direct-po" element={<ModuleRoute module="stores"><StoreKeeperRoute><DirectPOPage /></StoreKeeperRoute></ModuleRoute>} />
