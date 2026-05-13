@@ -286,8 +286,8 @@ const DispenseMedicationPage = lazy(() => import('./pages/pharmacy/DispenseMedic
 const PharmacyQueuePage = lazy(() => import('./pages/pharmacy/PharmacyQueuePage'));
 const PharmacyStockPage = lazy(() => import('./pages/pharmacy/PharmacyStockPage'));
 const PharmacyReturnsPage = lazy(() => import('./pages/pharmacy/ReturnsPage'));
-const PharmacyAdjustmentsPage = lazy(() => import('./pages/pharmacy/AdjustmentsPage'));
-const PharmacyTransfersPage = lazy(() => import('./pages/pharmacy/PharmacyTransfersPage'));
+// PharmacyAdjustmentsPage and PharmacyTransfersPage removed in audit Phase 3.4 — superseded by
+// canonical /inventory/adjustments and /inventory/transfers.
 const PharmacyAnalyticsPage = lazy(() => import('./pages/pharmacy/PharmacyAnalyticsPage'));
 const RetailSalesPage = lazy(() => import('./pages/pharmacy/transactions/RetailSalesPage'));
 const WholesalePage = lazy(() => import('./pages/pharmacy/transactions/WholesalePage'));
@@ -330,7 +330,7 @@ const IPDTheatrePage = lazy(() => import('./pages/ipd/TheatrePage'));
 const IPDMaternityPage = lazy(() => import('./pages/ipd/MaternityPage'));
 const IPDDischargePage = lazy(() => import('./pages/ipd/DischargePage'));
 const IPDAnalyticsPage = lazy(() => import('./pages/ipd/IPDAnalyticsPage'));
-const MainInventoryPage = lazy(() => import('./pages/stores/MainInventoryPage'));
+// MainInventoryPage removed in audit Phase 3.3 — superseded by canonical InventoryPage at /inventory.
 const UnitIssuePage = lazy(() => import('./pages/stores/UnitIssuePage'));
 // StoreTransfersPage removed in audit Phase 1.4 (no route bound it; use StockTransferPage)
 // Stores procurement & supplier pages removed in audit Phase 3.2 — these routes
@@ -963,8 +963,8 @@ function AppRoutes() {
                 <Route path="/pharmacy/queue" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyQueuePage /></PharmacistRoute></ModuleRoute>} />
                 <Route path="/pharmacy/stock" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyStockPage /></PharmacistRoute></ModuleRoute>} />
                 <Route path="/pharmacy/returns" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyReturnsPage /></PharmacistRoute></ModuleRoute>} />
-                <Route path="/pharmacy/adjustments" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyAdjustmentsPage /></PharmacistRoute></ModuleRoute>} />
-                <Route path="/pharmacy/transfers" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyTransfersPage /></PharmacistRoute></ModuleRoute>} />
+                <Route path="/pharmacy/adjustments" element={<Navigate to="/inventory/adjustments" replace />} />
+                <Route path="/pharmacy/transfers" element={<Navigate to="/inventory/transfers" replace />} />
                 <Route path="/pharmacy/analytics" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyAnalyticsPage /></PharmacistRoute></ModuleRoute>} />
                 
                 {/* Pharmacy - Transactions */}
@@ -1033,7 +1033,7 @@ function AppRoutes() {
                 <Route path="/ipd/analytics" element={<ModuleRoute module="ipd"><ClinicalRoute><IPDAnalyticsPage /></ClinicalRoute></ModuleRoute>} />
                 
                 {/* Stores Module */}
-                <Route path="/stores/main" element={<ModuleRoute module="stores"><StoreKeeperRoute><MainInventoryPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/stores/main" element={<Navigate to="/inventory" replace />} />
                 <Route path="/stores/issue" element={<ModuleRoute module="stores"><StoreKeeperRoute><UnitIssuePage /></StoreKeeperRoute></ModuleRoute>} />
                 <Route path="/stores/transfers" element={<Navigate to="/inventory/transfers" replace />} />
                 <Route path="/inventory/transfers" element={<ModuleRoute module="stores"><StoreKeeperRoute><StockTransferPage /></StoreKeeperRoute></ModuleRoute>} />
@@ -1041,7 +1041,8 @@ function AppRoutes() {
                 <Route path="/stores/procurement" element={<Navigate to="/procurement/orders" replace />} />
                 <Route path="/stores/suppliers" element={<Navigate to="/procurement/vendors" replace />} />
                 <Route path="/stores/expiry" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresExpiryPage /></StoreKeeperRoute></ModuleRoute>} />
-                <Route path="/stores/adjustments" element={<ModuleRoute module="stores"><StoreKeeperRoute><StockAdjustmentsPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/stores/adjustments" element={<Navigate to="/inventory/adjustments" replace />} />
+                <Route path="/inventory/adjustments" element={<ModuleRoute module="stores"><StoreKeeperRoute><StockAdjustmentsPage /></StoreKeeperRoute></ModuleRoute>} />
                 <Route path="/stores/stock-take" element={<ModuleRoute module="stores"><StoreKeeperRoute><StockTakePage /></StoreKeeperRoute></ModuleRoute>} />
                 <Route path="/stores/assets" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresAssetRegisterPage /></StoreKeeperRoute></ModuleRoute>} />
                 <Route path="/stores/maintenance" element={<ModuleRoute module="stores"><StoreKeeperRoute><MaintenanceSchedulePage /></StoreKeeperRoute></ModuleRoute>} />
@@ -1102,7 +1103,7 @@ function AppRoutes() {
                 <Route path="/analytics" element={<AdminRoute><AnalyticsPage /></AdminRoute>} />
                 <Route path="/membership" element={<ModuleRoute module="billing"><AdminRoute><MembershipPage /></AdminRoute></ModuleRoute>} />
                 <Route path="/services" element={<AdminRoute><ServicesPage /></AdminRoute>} />
-                <Route path="/stores" element={<ModuleRoute module="stores"><StoreKeeperRoute><MainInventoryPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/stores" element={<Navigate to="/inventory" replace />} />
                 <Route path="/orders" element={<ModuleRoute module="doctors"><DoctorRoute><OrdersPage /></DoctorRoute></ModuleRoute>} />
                 <Route path="/tenants" element={<AdminRoute><TenantsPage /></AdminRoute>} />
                 <Route path="/vitals" element={<ModuleRoute module="nursing"><ClinicalRoute><VitalsPage /></ClinicalRoute></ModuleRoute>} />
