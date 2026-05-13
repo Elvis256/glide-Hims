@@ -88,12 +88,21 @@ export enum ApprovalPolicyStepType {
 @Index(['tenantId'])
 @Index(['documentType'])
 @Index(['priority'])
+@Index(['module', 'tenantId'])
 export class ProcurementApprovalPolicy extends BaseEntity {
   @Column({ length: 150 })
   name: string;
 
   @Column({ type: 'text', nullable: true })
   description?: string;
+
+  @Column({
+    name: 'module',
+    type: 'varchar',
+    length: 50,
+    default: 'procurement',
+  })
+  module: string;
 
   @Column({
     name: 'document_type',
