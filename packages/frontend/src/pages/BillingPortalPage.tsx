@@ -274,6 +274,8 @@ export default function BillingPortalPage() {
           </ul>}
       </Card>
 
+      <WebhooksCard />
+
       {showAddPm && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setShowAddPm(false)}>
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-5" onClick={(e) => e.stopPropagation()}>
@@ -347,5 +349,212 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
       <div className="px-4 py-3 border-b text-sm font-medium text-gray-700">{title}</div>
       <div className="p-4">{children}</div>
     </div>
+  );
+}
+
+interface WebhookEndpoint {
+  id: string; url: string; events: string[]; description?: string | null;
+  enabled: boolean; consecutiveFailures: number; secret: string;
+  lastSuccessAt?: string | null; lastFailureAt?: string | null; disabledAt?: string | null; createdAt: string;
+}
+interface WebhookDelivery {
+  id: string; endpointId: string; eventType: string; status: 'pending' | 'succeeded' | 'failed';
+  attempts: number; responseCode?: number | null; errorMessage?: string | null;
+  nextAttemptAt?: string | null; lastAttemptAt?: string | null; succeededAt?: string | null; createdAt: string;
+}
+
+function WebhooksCard() {
+  const [endpoints, setEndpoints] = useState<WebhookEndpoint[]>([]);
+  const [deliveries, setDeliveries] = useState<WebhookDelivery[]>([]);
+  const [eventTypes, setEventTypes] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState<{ url: string; events: string[]; description: string }>({ url: '', events: ['*'], description: '' });
+  const [busy, setBusy] = useState(false);
+  const [revealedSecret, setRevealedSecret] = useState<{ id: string; secret: string } | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [epR, dlR, etR] = await Promise.all([
+        api.get('/saas-revenue/portal/webhooks'),
+        api.get('/saas-revenue/portal/webhook-deliveries?limit=20'),
+        api.get('/saas-revenue/portal/webhook-event-types'),
+      ]);
+      setEndpoints(unwrap<WebhookEndpoint[]>(epR) || []);
+      setDeliveries(unwrap<WebhookDelivery[]>(dlR) || []);
+      setEventTypes(unwrap<string[]>(etR) || []);
+    } finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, []);
+
+  const submit = async () => {
+    if (!form.url.trim()) { alert('URL is required'); return; }
+    setBusy(true);
+    try {
+      const r = await api.post('/saas-revenue/portal/webhooks', {
+        url: form.url.trim(),
+        events: form.events.length ? form.events : ['*'],
+        description: form.description.trim() || undefined,
+      });
+      const created = unwrap<WebhookEndpoint & { secret: string; secretRevealed: boolean }>(r);
+      setShowAdd(false);
+      setForm({ url: '', events: ['*'], description: '' });
+      if (created?.secretRevealed) setRevealedSecret({ id: created.id, secret: created.secret });
+      await load();
+    } catch (e: any) { alert(e?.response?.data?.message || 'Failed to create endpoint'); }
+    finally { setBusy(false); }
+  };
+
+  const toggle = async (ep: WebhookEndpoint) => {
+    try { await api.put(`/saas-revenue/portal/webhooks/${ep.id}`, { enabled: !ep.enabled }); await load(); }
+    catch (e: any) { alert(e?.response?.data?.message || 'Failed'); }
+  };
+  const remove = async (ep: WebhookEndpoint) => {
+    if (!confirm(`Delete webhook ${ep.url}?`)) return;
+    try { await api.delete(`/saas-revenue/portal/webhooks/${ep.id}`); await load(); }
+    catch (e: any) { alert(e?.response?.data?.message || 'Failed'); }
+  };
+  const test = async (ep: WebhookEndpoint) => {
+    try {
+      const r = await api.post(`/saas-revenue/portal/webhooks/${ep.id}/test`);
+      const d: any = unwrap<any>(r);
+      alert(`Test ping: ${d?.ok ? 'OK' : 'FAILED'}${d?.statusCode ? ` (HTTP ${d.statusCode})` : ''}${d?.error ? `\n${d.error}` : ''}`);
+    } catch (e: any) { alert(e?.response?.data?.message || 'Failed'); }
+  };
+  const rotate = async (ep: WebhookEndpoint) => {
+    if (!confirm('Rotate signing secret? Existing receivers will need the new secret.')) return;
+    try {
+      const r = await api.post(`/saas-revenue/portal/webhooks/${ep.id}/rotate-secret`);
+      const d = unwrap<WebhookEndpoint & { secret: string }>(r);
+      if (d) setRevealedSecret({ id: d.id, secret: d.secret });
+      await load();
+    } catch (e: any) { alert(e?.response?.data?.message || 'Failed'); }
+  };
+  const retryDelivery = async (d: WebhookDelivery) => {
+    try { await api.post(`/saas-revenue/portal/webhook-deliveries/${d.id}/retry`); setTimeout(load, 500); }
+    catch (e: any) { alert(e?.response?.data?.message || 'Failed'); }
+  };
+
+  const toggleEvent = (ev: string) => {
+    if (ev === '*') { setForm({ ...form, events: ['*'] }); return; }
+    const next = form.events.filter((e) => e !== '*');
+    if (next.includes(ev)) setForm({ ...form, events: next.filter((e) => e !== ev) });
+    else setForm({ ...form, events: [...next, ev] });
+  };
+
+  return (
+    <Card title="Webhooks">
+      <div className="flex items-start justify-between mb-3">
+        <div className="text-xs text-gray-600 max-w-2xl">
+          Receive HTTP POSTs when invoices are issued/paid or payments are recorded/refunded. Each request includes
+          an <code className="px-1 bg-gray-100 rounded">X-Glide-Signature: sha256=...</code> header — verify it with
+          your endpoint's signing secret using HMAC-SHA256 over the raw JSON body.
+        </div>
+        <button onClick={() => setShowAdd(true)} className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-1">
+          <Plus className="h-3.5 w-3.5" /> Add endpoint
+        </button>
+      </div>
+
+      {revealedSecret && (
+        <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded text-xs">
+          <div className="font-medium text-amber-900 mb-1">⚠ Save this signing secret — it will only be shown once:</div>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 px-2 py-1 bg-white border rounded break-all">{revealedSecret.secret}</code>
+            <button onClick={() => navigator.clipboard?.writeText(revealedSecret.secret)} className="px-2 py-1 border rounded">Copy</button>
+            <button onClick={() => setRevealedSecret(null)} className="px-2 py-1 border rounded">Dismiss</button>
+          </div>
+        </div>
+      )}
+
+      {loading ? <div className="text-sm text-gray-500">Loading…</div>
+        : endpoints.length === 0 ? <div className="text-sm text-gray-500">No endpoints configured.</div>
+        : <ul className="divide-y text-sm">
+            {endpoints.map((ep) => (
+              <li key={ep.id} className="py-2">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="font-mono text-xs break-all">{ep.url}</div>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {ep.events.map((e) => <span key={e} className="px-1.5 py-0.5 text-[10px] bg-gray-100 rounded">{e}</span>)}
+                    </div>
+                    {ep.description && <div className="text-xs text-gray-500 mt-1">{ep.description}</div>}
+                    <div className="text-[11px] text-gray-500 mt-1">
+                      secret <code>{ep.secret}</code>
+                      {ep.consecutiveFailures > 0 && <span className="ml-2 text-amber-700">{ep.consecutiveFailures} consecutive failures</span>}
+                      {ep.lastSuccessAt && <span className="ml-2">last ok {new Date(ep.lastSuccessAt).toLocaleString()}</span>}
+                      {ep.disabledAt && <span className="ml-2 text-rose-600">auto-disabled {new Date(ep.disabledAt).toLocaleString()}</span>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${ep.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200 text-gray-600'}`}>{ep.enabled ? 'ON' : 'OFF'}</span>
+                    <button onClick={() => test(ep)} className="px-2 py-1 text-xs border rounded">Test</button>
+                    <button onClick={() => toggle(ep)} className="px-2 py-1 text-xs border rounded">{ep.enabled ? 'Disable' : 'Enable'}</button>
+                    <button onClick={() => rotate(ep)} className="px-2 py-1 text-xs border rounded">Rotate</button>
+                    <button onClick={() => remove(ep)} className="px-2 py-1 text-xs border rounded text-rose-600"><Trash2 className="h-3.5 w-3.5" /></button>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>}
+
+      <div className="mt-4 pt-3 border-t">
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-xs font-medium text-gray-700">Recent deliveries</div>
+          <button onClick={load} className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+            <RefreshCw className="h-3 w-3" /> Refresh
+          </button>
+        </div>
+        {deliveries.length === 0 ? <div className="text-xs text-gray-500">No deliveries yet.</div>
+          : <ul className="divide-y text-xs">
+              {deliveries.map((d) => (
+                <li key={d.id} className="py-1.5 flex items-center justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium">{d.eventType}</div>
+                    <div className="text-gray-500">
+                      {new Date(d.createdAt).toLocaleString()}
+                      {d.attempts > 0 && <> · attempt {d.attempts}</>}
+                      {d.responseCode != null && <> · HTTP {d.responseCode}</>}
+                      {d.errorMessage && <span className="text-rose-600"> · {d.errorMessage.slice(0, 80)}</span>}
+                    </div>
+                  </div>
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] ${d.status === 'succeeded' ? 'bg-emerald-100 text-emerald-700' : d.status === 'failed' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>{d.status}</span>
+                  {d.status === 'failed' && <button onClick={() => retryDelivery(d)} className="px-1.5 py-0.5 border rounded">Retry</button>}
+                </li>
+              ))}
+            </ul>}
+      </div>
+
+      {showAdd && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setShowAdd(false)}>
+          <div className="bg-white rounded-lg shadow-xl max-w-lg w-full p-5" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold mb-3">Add webhook endpoint</h3>
+            <div className="space-y-3 text-sm">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">URL</label>
+                <input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://your-app.example.com/webhooks/glide" className="w-full border rounded px-2 py-1.5 font-mono text-xs" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Description (optional)</label>
+                <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="w-full border rounded px-2 py-1.5" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Events</label>
+                <div className="flex flex-wrap gap-1">
+                  <button type="button" onClick={() => toggleEvent('*')} className={`px-2 py-0.5 text-xs rounded border ${form.events.includes('*') ? 'bg-blue-600 text-white border-blue-600' : 'bg-white'}`}>* (all events)</button>
+                  {eventTypes.map((ev) => (
+                    <button key={ev} type="button" onClick={() => toggleEvent(ev)} disabled={form.events.includes('*')} className={`px-2 py-0.5 text-xs rounded border ${form.events.includes(ev) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white'} ${form.events.includes('*') ? 'opacity-40' : ''}`}>{ev}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setShowAdd(false)} className="px-3 py-1.5 text-sm border rounded">Cancel</button>
+              <button onClick={submit} disabled={busy} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">{busy ? 'Saving…' : 'Create'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </Card>
   );
 }
