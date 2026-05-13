@@ -16,6 +16,10 @@ export interface JwtPayload {
   roles: string[];
   facilityId?: string;
   tokenVersion?: number;
+  // Tenant impersonation (system admins only)
+  impersonating?: boolean;
+  originalTenantId?: string | null;
+  impersonationGrantId?: string;
 }
 
 function extractJwtFromCookie(req: Request): string | null {
@@ -80,6 +84,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       roles: payload.roles,
       facilityId: payload.facilityId,
       isSystemAdmin: user.isSystemAdmin || false,
+      impersonating: payload.impersonating || false,
+      originalTenantId: payload.originalTenantId ?? null,
+      impersonationGrantId: payload.impersonationGrantId,
     };
   }
 }

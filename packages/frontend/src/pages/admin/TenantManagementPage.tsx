@@ -7,7 +7,7 @@ import {
   Loader2, Power, PowerOff, Trash2, Pencil,
   Users, Calendar, Shield, Hospital, Activity, AlertTriangle,
   CheckCircle2, Clock, Eye, RefreshCw, X, KeyRound, EyeOff, LogIn, Server,
-  Settings2, ArrowRight,
+  Settings2, ArrowRight, ShieldAlert,
 } from 'lucide-react';
 import { authService } from '../../services/auth';
 import { toast } from 'sonner';
@@ -555,6 +555,31 @@ export default function TenantManagementPage() {
                             className="w-full text-left px-4 py-2 text-sm text-indigo-700 hover:bg-indigo-50 flex items-center gap-2"
                           >
                             <LogIn className="w-4 h-4" /> Enter Organization
+                          </button>
+                          <button
+                            onClick={async () => {
+                              setActionMenuId(null);
+                              const reason = window.prompt(
+                                `Impersonate ${tenant.name}?\n\nThis will switch your session to this tenant. The action will be audited. Enter a reason (optional):`,
+                                ''
+                              );
+                              if (reason === null) return;
+                              try {
+                                const res = await authService.impersonate(tenant.id, reason || undefined);
+                                localStorage.setItem('glide_active_tenant_id', tenant.id);
+                                localStorage.setItem('glide_tenant_slug', tenant.slug);
+                                localStorage.setItem('glide_system_admin_mode', 'true');
+                                const { login: loginFn } = useAuthStore.getState();
+                                loginFn(res.user, res.accessToken, res.refreshToken);
+                                toast.success(`Impersonating ${tenant.name}`);
+                                window.location.assign('/');
+                              } catch (err: any) {
+                                toast.error(err?.response?.data?.message || 'Failed to impersonate');
+                              }
+                            }}
+                            className="w-full text-left px-4 py-2 text-sm text-red-700 hover:bg-red-50 flex items-center gap-2"
+                          >
+                            <ShieldAlert className="w-4 h-4" /> Impersonate (audited)
                           </button>
                           <button
                             onClick={() => {

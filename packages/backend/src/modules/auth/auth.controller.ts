@@ -240,8 +240,49 @@ export class AuthController {
   @Auth()
   @ApiOperation({ summary: 'Get current user info with accessible modules' })
   @ApiResponse({ status: 200, description: 'User info with permissions and accessible modules' })
-  async getMe(@CurrentUser('id') userId: string) {
-    return this.authService.getMe(userId);
+  async getMe(@CurrentUser('id') userId: string, @Req() req: Request) {
+    const me = await this.authService.getMe(userId);
+    const u: any = (req as any).user || {};
+    return {
+      ...me,
+      impersonating: !!u.impersonating,
+      originalTenantId: u.originalTenantId ?? null,
+      activeTenantId: u.tenantId ?? null,
+    };
+  }
+
+  @Post('impersonate')
+  @Auth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'System admin: start impersonating a tenant' })
+  async startImpersonation(
+    @Body() body: { tenantId: string; reason?: string },
+    @CurrentUser('id') userId: string,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const ip = (req as any).ip || (req.socket as any)?.remoteAddress || '';
+    const ua = req.get('user-agent') || '';
+    const result = await this.authService.impersonateTenant(userId, body.tenantId, body.reason, ip, ua);
+    this.setAuthCookies(res, result.accessToken, result.refreshToken, (result as any).expiresIn);
+    return result;
+  }
+
+  @Post('end-impersonation')
+  @Auth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'System admin: end an active tenant impersonation' })
+  async endImpersonation(
+    @CurrentUser('id') userId: string,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const ip = (req as any).ip || (req.socket as any)?.remoteAddress || '';
+    const ua = req.get('user-agent') || '';
+    const u: any = (req as any).user || {};
+    const result = await this.authService.endImpersonation(userId, u, ip, ua);
+    this.setAuthCookies(res, result.accessToken, result.refreshToken, (result as any).expiresIn);
+    return result;
   }
 
   @Patch('profile')
