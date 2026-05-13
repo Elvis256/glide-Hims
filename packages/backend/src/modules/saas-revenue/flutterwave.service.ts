@@ -69,4 +69,48 @@ export class FlutterwaveService {
     const d = json.data;
     return { ok: d?.status === 'successful', amount: Math.round((d?.amount ?? 0) * 100), currency: d?.currency, status: d?.status, tx_ref: d?.tx_ref, raw: d };
   }
+
+  /**
+   * Charge a previously-saved card token via Flutterwave's /tokenized-charges endpoint.
+   * Returns the new transaction id on success so the caller can poll/verify and the
+   * webhook (charge.completed) can finalise the payment.
+   */
+  async chargeTokenized(args: {
+    token: string;
+    txRef: string;
+    amountMinor: number;
+    currency: string;
+    customerEmail: string;
+    customerName?: string;
+    narration?: string;
+    meta?: Record<string, any>;
+  }): Promise<{ ok: boolean; transactionId?: string | number; status?: string; raw?: any }> {
+    if (!this.isConfigured()) {
+      this.logger.warn('FLW_SECRET_KEY not set — returning mock tokenized charge');
+      return { ok: true, transactionId: `MOCK-${Date.now()}`, status: 'successful', raw: { mock: true } };
+    }
+    const body: any = {
+      token: args.token,
+      currency: args.currency,
+      country: args.currency === 'NGN' ? 'NG' : args.currency === 'KES' ? 'KE' : args.currency === 'GHS' ? 'GH' : 'UG',
+      amount: args.amountMinor / 100,
+      email: args.customerEmail,
+      first_name: (args.customerName || '').split(' ')[0] || 'Customer',
+      last_name: (args.customerName || '').split(' ').slice(1).join(' ') || '',
+      tx_ref: args.txRef,
+      narration: args.narration || 'Subscription auto-renewal',
+      meta: args.meta || {},
+    };
+    const res = await fetch(`${this.base}/tokenized-charges`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${this.secretKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const json: any = await res.json();
+    if (!res.ok || json.status !== 'success') {
+      this.logger.error(`Flutterwave tokenized charge failed: ${JSON.stringify(json)}`);
+      return { ok: false, raw: json };
+    }
+    return { ok: json.data?.status === 'successful' || json.data?.status === 'pending', transactionId: json.data?.id, status: json.data?.status, raw: json.data };
+  }
 }
