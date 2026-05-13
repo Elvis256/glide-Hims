@@ -298,17 +298,8 @@ const ExpiryAlertsPage = lazy(() => import('./pages/pharmacy/expiry/ExpiryAlerts
 const DisposalLogPage = lazy(() => import('./pages/pharmacy/expiry/DisposalLogPage'));
 const ReturnToSupplierPage = lazy(() => import('./pages/pharmacy/expiry/ReturnToSupplierPage'));
 const ControlledSubstancesRegisterPage = lazy(() => import('./pages/pharmacy/ControlledSubstancesRegisterPage'));
-const PharmacyRequisitionsPage = lazy(() => import('./pages/pharmacy/procurement/PharmacyRequisitionsPage'));
-const PharmacyRFQPage = lazy(() => import('./pages/pharmacy/procurement/PharmacyRFQPage'));
-const PharmacyCompareQuotesPage = lazy(() => import('./pages/pharmacy/procurement/PharmacyCompareQuotesPage'));
-const PharmacyPOPage = lazy(() => import('./pages/pharmacy/procurement/PharmacyPOPage'));
-const PharmacyGRNPage = lazy(() => import('./pages/pharmacy/procurement/PharmacyGRNPage'));
-const PharmacyInvoiceMatchPage = lazy(() => import('./pages/pharmacy/procurement/PharmacyInvoiceMatchPage'));
-const PharmacySupplierPaymentsPage = lazy(() => import('./pages/pharmacy/procurement/SupplierPaymentsPage'));
-const PharmacySupplierListPage = lazy(() => import('./pages/pharmacy/suppliers/PharmacySupplierListPage'));
-const PharmacyContractsPage = lazy(() => import('./pages/pharmacy/suppliers/PharmacyContractsPage'));
-const PharmacySupplierRatingsPage = lazy(() => import('./pages/pharmacy/suppliers/PharmacySupplierRatingsPage'));
-const PharmacyPriceListsPage = lazy(() => import('./pages/pharmacy/suppliers/PharmacyPriceListsPage'));
+// Pharmacy procurement & supplier pages removed in audit Phase 3.1 — these routes
+// now redirect to the canonical /procurement/* pages.
 const ExpiryManagementPage = lazy(() => import('./pages/pharmacy/ExpiryManagementPage'));
 const MedicationAdherencePage = lazy(() => import('./pages/pharmacy/MedicationAdherencePage'));
 const SupplierRankingsPage = lazy(() => import('./pages/pharmacy/SupplierRankingsPage'));
@@ -342,8 +333,8 @@ const IPDAnalyticsPage = lazy(() => import('./pages/ipd/IPDAnalyticsPage'));
 const MainInventoryPage = lazy(() => import('./pages/stores/MainInventoryPage'));
 const UnitIssuePage = lazy(() => import('./pages/stores/UnitIssuePage'));
 // StoreTransfersPage removed in audit Phase 1.4 (no route bound it; use StockTransferPage)
-const StoresProcurementPage = lazy(() => import('./pages/stores/StoresProcurementPage'));
-const StoresSupplierPage = lazy(() => import('./pages/stores/StoresSupplierPage'));
+// Stores procurement & supplier pages removed in audit Phase 3.2 — these routes
+// now redirect to the canonical /procurement/* pages.
 const StoresExpiryPage = lazy(() => import('./pages/stores/StoresExpiryPage'));
 const StockAdjustmentsPage = lazy(() => import('./pages/stores/StockAdjustmentsPage'));
 const StockTakePage = lazy(() => import('./pages/stores/StockTakePage'));
@@ -353,14 +344,6 @@ const StoresAssetRegisterPage = lazy(() => import('./pages/stores/AssetRegisterP
 const MaintenanceSchedulePage = lazy(() => import('./pages/stores/MaintenanceSchedulePage'));
 const ConsumptionReportsPage = lazy(() => import('./pages/stores/ConsumptionReportsPage'));
 const StoresAnalyticsPage = lazy(() => import('./pages/stores/StoresAnalyticsPage'));
-const StoresRequisitionsPage = lazy(() => import('./pages/stores/StoresRequisitionsPage'));
-const StoresRFQPage = lazy(() => import('./pages/stores/StoresRFQPage'));
-const StoresCompareQuotesPage = lazy(() => import('./pages/stores/StoresCompareQuotesPage'));
-const StoresPOPage = lazy(() => import('./pages/stores/StoresPOPage'));
-const StoresGRNPage = lazy(() => import('./pages/stores/StoresGRNPage'));
-const StoresInvoiceMatchPage = lazy(() => import('./pages/stores/StoresInvoiceMatchPage'));
-const StoresSupplierContractsPage = lazy(() => import('./pages/stores/StoresSupplierContractsPage'));
-const StoresPaymentsPage = lazy(() => import('./pages/stores/StoresPaymentsPage'));
 const StoresDisposalPage = lazy(() => import('./pages/stores/StoresDisposalPage'));
 const ItemClassificationsPage = lazy(() => import('./pages/settings/ItemClassificationsPage'));
 const AdminAnalyticsDashboardPage = lazy(() => import('./pages/admin/AdminAnalyticsDashboardPage'));
@@ -998,20 +981,18 @@ function AppRoutes() {
                 <Route path="/pharmacy/expiry/management" element={<ModuleRoute module="pharmacy"><PharmacistRoute><ExpiryManagementPage /></PharmacistRoute></ModuleRoute>} />
                 <Route path="/pharmacy/controlled-register" element={<ModuleRoute module="pharmacy"><PharmacistRoute><ControlledSubstancesRegisterPage /></PharmacistRoute></ModuleRoute>} />
                 
-                {/* Pharmacy - Procurement */}
-                <Route path="/pharmacy/requisitions" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyRequisitionsPage /></PharmacistRoute></ModuleRoute>} />
-                <Route path="/pharmacy/rfq" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyRFQPage /></PharmacistRoute></ModuleRoute>} />
-                <Route path="/pharmacy/quotes/compare" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyCompareQuotesPage /></PharmacistRoute></ModuleRoute>} />
-                <Route path="/pharmacy/po" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyPOPage /></PharmacistRoute></ModuleRoute>} />
-                <Route path="/pharmacy/grn" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyGRNPage /></PharmacistRoute></ModuleRoute>} />
-                <Route path="/pharmacy/invoices/match" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyInvoiceMatchPage /></PharmacistRoute></ModuleRoute>} />
-                <Route path="/pharmacy/supplier-payments" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacySupplierPaymentsPage /></PharmacistRoute></ModuleRoute>} />
-                
-                {/* Pharmacy - Suppliers */}
-                <Route path="/pharmacy/suppliers" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacySupplierListPage /></PharmacistRoute></ModuleRoute>} />
-                <Route path="/pharmacy/suppliers/contracts" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyContractsPage /></PharmacistRoute></ModuleRoute>} />
-                <Route path="/pharmacy/suppliers/ratings" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacySupplierRatingsPage /></PharmacistRoute></ModuleRoute>} />
-                <Route path="/pharmacy/suppliers/prices" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyPriceListsPage /></PharmacistRoute></ModuleRoute>} />
+                {/* Pharmacy procurement & suppliers — audit Phase 3.1: redirect to canonical /procurement/* */}
+                <Route path="/pharmacy/requisitions" element={<Navigate to="/procurement/requisitions" replace />} />
+                <Route path="/pharmacy/rfq" element={<Navigate to="/procurement/rfq" replace />} />
+                <Route path="/pharmacy/quotes/compare" element={<Navigate to="/procurement/quotes/compare" replace />} />
+                <Route path="/pharmacy/po" element={<Navigate to="/procurement/orders" replace />} />
+                <Route path="/pharmacy/grn" element={<Navigate to="/procurement/grn" replace />} />
+                <Route path="/pharmacy/invoices/match" element={<Navigate to="/procurement/invoices/match" replace />} />
+                <Route path="/pharmacy/supplier-payments" element={<Navigate to="/procurement/vendors/payments" replace />} />
+                <Route path="/pharmacy/suppliers" element={<Navigate to="/procurement/vendors" replace />} />
+                <Route path="/pharmacy/suppliers/contracts" element={<Navigate to="/procurement/vendors/contracts" replace />} />
+                <Route path="/pharmacy/suppliers/ratings" element={<Navigate to="/procurement/vendors/ratings" replace />} />
+                <Route path="/pharmacy/suppliers/prices" element={<Navigate to="/procurement/vendors/prices" replace />} />
                 <Route path="/pharmacy/supplier-rankings" element={<ModuleRoute module="pharmacy"><PharmacistRoute><SupplierRankingsPage /></PharmacistRoute></ModuleRoute>} />
                 
                 {/* Pharmacy - Medication Adherence */}
@@ -1057,8 +1038,8 @@ function AppRoutes() {
                 <Route path="/stores/transfers" element={<Navigate to="/inventory/transfers" replace />} />
                 <Route path="/inventory/transfers" element={<ModuleRoute module="stores"><StoreKeeperRoute><StockTransferPage /></StoreKeeperRoute></ModuleRoute>} />
                 <Route path="/inventory/reorder" element={<ModuleRoute module="stores"><StoreKeeperRoute><ReorderSuggestionsPage /></StoreKeeperRoute></ModuleRoute>} />
-                <Route path="/stores/procurement" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresProcurementPage /></StoreKeeperRoute></ModuleRoute>} />
-                <Route path="/stores/suppliers" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresSupplierPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/stores/procurement" element={<Navigate to="/procurement/orders" replace />} />
+                <Route path="/stores/suppliers" element={<Navigate to="/procurement/vendors" replace />} />
                 <Route path="/stores/expiry" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresExpiryPage /></StoreKeeperRoute></ModuleRoute>} />
                 <Route path="/stores/adjustments" element={<ModuleRoute module="stores"><StoreKeeperRoute><StockAdjustmentsPage /></StoreKeeperRoute></ModuleRoute>} />
                 <Route path="/stores/stock-take" element={<ModuleRoute module="stores"><StoreKeeperRoute><StockTakePage /></StoreKeeperRoute></ModuleRoute>} />
@@ -1066,14 +1047,14 @@ function AppRoutes() {
                 <Route path="/stores/maintenance" element={<ModuleRoute module="stores"><StoreKeeperRoute><MaintenanceSchedulePage /></StoreKeeperRoute></ModuleRoute>} />
                 <Route path="/stores/consumption" element={<ModuleRoute module="stores"><StoreKeeperRoute><ConsumptionReportsPage /></StoreKeeperRoute></ModuleRoute>} />
                 <Route path="/stores/analytics" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresAnalyticsPage /></StoreKeeperRoute></ModuleRoute>} />
-                <Route path="/stores/requisitions" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresRequisitionsPage /></StoreKeeperRoute></ModuleRoute>} />
-                <Route path="/stores/rfq" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresRFQPage /></StoreKeeperRoute></ModuleRoute>} />
-                <Route path="/stores/quotes/compare" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresCompareQuotesPage /></StoreKeeperRoute></ModuleRoute>} />
-                <Route path="/stores/po" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresPOPage /></StoreKeeperRoute></ModuleRoute>} />
-                <Route path="/stores/grn" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresGRNPage /></StoreKeeperRoute></ModuleRoute>} />
-                <Route path="/stores/invoices/match" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresInvoiceMatchPage /></StoreKeeperRoute></ModuleRoute>} />
-                <Route path="/stores/suppliers/contracts" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresSupplierContractsPage /></StoreKeeperRoute></ModuleRoute>} />
-                <Route path="/stores/payments" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresPaymentsPage /></StoreKeeperRoute></ModuleRoute>} />
+                <Route path="/stores/requisitions" element={<Navigate to="/procurement/requisitions" replace />} />
+                <Route path="/stores/rfq" element={<Navigate to="/procurement/rfq" replace />} />
+                <Route path="/stores/quotes/compare" element={<Navigate to="/procurement/quotes/compare" replace />} />
+                <Route path="/stores/po" element={<Navigate to="/procurement/orders" replace />} />
+                <Route path="/stores/grn" element={<Navigate to="/procurement/grn" replace />} />
+                <Route path="/stores/invoices/match" element={<Navigate to="/procurement/invoices/match" replace />} />
+                <Route path="/stores/suppliers/contracts" element={<Navigate to="/procurement/vendors/contracts" replace />} />
+                <Route path="/stores/payments" element={<Navigate to="/procurement/vendors/payments" replace />} />
                 <Route path="/stores/disposal" element={<ModuleRoute module="stores"><StoreKeeperRoute><StoresDisposalPage /></StoreKeeperRoute></ModuleRoute>} />
                 {/* /stores/expiry/{soon,expired} merged into /stores/expiry — page already filters internally (audit Phase 1.5) */}
                 <Route path="/stores/expiry/soon" element={<Navigate to="/stores/expiry?filter=soon" replace />} />
