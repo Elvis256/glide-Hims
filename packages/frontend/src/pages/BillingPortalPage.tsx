@@ -45,14 +45,26 @@ export default function BillingPortalPage() {
     api.get('/saas-revenue/public/gateways').then((r) => setGateways(unwrap<any>(r) || {})).catch(() => {});
   }, []);
 
-  const payInvoice = async (inv: SaasInvoice, gateway?: 'flutterwave' | 'pesapal') => {
+  const payInvoice = async (inv: SaasInvoice, gateway?: 'flutterwave' | 'pesapal', opts?: { enableRecurring?: boolean }) => {
     setPaying(inv.id);
     try {
       const redirectUrl = `${window.location.origin}/billing-portal?status=return&inv=${inv.id}`;
-      const res = await api.post('/saas-revenue/portal/checkout', { invoiceId: inv.id, redirectUrl, gateway });
+      const res = await api.post('/saas-revenue/portal/checkout', { invoiceId: inv.id, redirectUrl, gateway, enableRecurring: opts?.enableRecurring });
       const link = unwrap<any>(res)?.link;
       if (link) window.location.href = link;
       else alert('Could not create checkout link');
+    } catch (e: any) { alert(e?.response?.data?.message || 'Failed'); }
+    finally { setPaying(null); }
+  };
+
+  const chargeSaved = async (inv: SaasInvoice, paymentMethodId: string) => {
+    setPaying(inv.id);
+    try {
+      const redirectUrl = `${window.location.origin}/billing-portal?status=return&inv=${inv.id}`;
+      const res = await api.post('/saas-revenue/portal/charge-saved', { invoiceId: inv.id, paymentMethodId, redirectUrl });
+      const link = unwrap<any>(res)?.link;
+      if (link) window.location.href = link;
+      else alert('Charge submitted — awaiting confirmation');
     } catch (e: any) { alert(e?.response?.data?.message || 'Failed'); }
     finally { setPaying(null); }
   };
@@ -211,6 +223,20 @@ export default function BillingPortalPage() {
                               {paying === inv.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CreditCard className="w-3 h-3" />} Pesapal
                             </button>
                           )}
+                          {gateways.pesapal?.configured && (
+                            <button onClick={() => payInvoice(inv, 'pesapal', { enableRecurring: true })} disabled={paying === inv.id} className="inline-flex items-center gap-1 px-3 py-1 ml-1 bg-indigo-700 text-white text-xs rounded hover:bg-indigo-800 disabled:opacity-50" title="Pay & save token for auto-renewals (Pesapal recurring)">
+                              {paying === inv.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CreditCard className="w-3 h-3" />} Pay & Save
+                            </button>
+                          )}
+                          {(() => {
+                            const savedPesapal = (data.paymentMethods || []).find((pm: any) => (pm.metadata || {}).gateway === 'pesapal' && (pm.metadata || {}).accountNumber);
+                            if (!savedPesapal) return null;
+                            return (
+                              <button onClick={() => chargeSaved(inv, savedPesapal.id)} disabled={paying === inv.id} className="inline-flex items-center gap-1 px-3 py-1 ml-1 bg-purple-600 text-white text-xs rounded hover:bg-purple-700 disabled:opacity-50" title={`Charge saved Pesapal token (${savedPesapal.label})`}>
+                                {paying === inv.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CreditCard className="w-3 h-3" />} Charge saved
+                              </button>
+                            );
+                          })()}
                         </>
                       )}
                     </td>

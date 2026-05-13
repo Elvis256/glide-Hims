@@ -1556,12 +1556,12 @@ export class SaasRevenueService {
 
   async initCheckout(
     invoiceId: string,
-    opts: { redirectUrl: string; customerEmail?: string; customerName?: string; customerPhone?: string; gateway?: 'flutterwave' | 'pesapal'; originUrl?: string },
+    opts: { redirectUrl: string; customerEmail?: string; customerName?: string; customerPhone?: string; gateway?: 'flutterwave' | 'pesapal'; originUrl?: string; savedPaymentMethodId?: string; enableRecurring?: boolean },
     tenantId?: string,
   ) {
     const inv = await this.invoices.findOne({ where: { id: invoiceId } });
     if (!inv) throw new NotFoundException('Invoice not found');
-    if (tenantId && inv.tenantId !== tenantId) throw new ForbiddenException('Cross-tenant access');
+    if (tenantId && inv.tenantId !== tenantId && inv.billingPayerTenantId !== tenantId) throw new ForbiddenException('Cross-tenant access');
     if (inv.status === 'paid') throw new BadRequestException('Invoice already paid');
     const sub = await this.subs.findOne({ where: { id: inv.subscriptionId } });
     const due = inv.totalMinor - inv.amountPaidMinor;
@@ -1569,6 +1569,30 @@ export class SaasRevenueService {
     const txRef = `inv_${inv.id.slice(0, 8)}_${Date.now()}`;
     const gateway = opts.gateway || 'flutterwave';
     if (gateway === 'pesapal') {
+      // Saved-token reuse: if the tenant has a Pesapal payment method, reuse its
+      // accountNumber so Pesapal can debit the saved instrument without re-enrolling.
+      let accountNumber: string | undefined;
+      let pmRecord: SaasPaymentMethod | null = null;
+      if (opts.savedPaymentMethodId) {
+        pmRecord = await this.paymentMethods.findOne({ where: { id: opts.savedPaymentMethodId, tenantId: inv.tenantId } });
+        if (!pmRecord) throw new NotFoundException('Saved payment method not found');
+        accountNumber = (pmRecord.metadata as any)?.accountNumber;
+      } else {
+        // Auto-pick default Pesapal method if any exists.
+        const def = await this.paymentMethods.findOne({ where: { tenantId: inv.tenantId, isDefault: true } });
+        if (def && (def.metadata as any)?.gateway === 'pesapal' && (def.metadata as any)?.accountNumber) {
+          pmRecord = def;
+          accountNumber = (def.metadata as any).accountNumber;
+        }
+      }
+      if (!accountNumber && opts.enableRecurring) {
+        // Generate a stable account number tied to this subscription so future
+        // charges can re-use it.
+        accountNumber = `psp_${inv.tenantId.slice(0, 8)}_${(sub?.id ?? inv.id).slice(0, 8)}`;
+      }
+      const subscription = opts.enableRecurring && sub
+        ? { frequency: (sub.billingInterval === 'annual' ? 'YEARLY' : 'MONTHLY') as 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY' }
+        : undefined;
       const result = await this.pesapal.initCheckout({
         txRef,
         amount: due,
@@ -1578,8 +1602,10 @@ export class SaasRevenueService {
         customerPhone: opts.customerPhone,
         callbackUrl: opts.redirectUrl,
         description: `Invoice ${inv.invoiceNumber}`,
+        accountNumber,
+        subscription,
       }, opts.originUrl);
-      return { ...result, gateway: 'pesapal', invoiceId: inv.id, amountMinor: due, currency: inv.currency, txRef };
+      return { ...result, gateway: 'pesapal', invoiceId: inv.id, amountMinor: due, currency: inv.currency, txRef, accountNumber, recurringEnrolled: !!subscription };
     }
     const result = await this.flw.initCheckout({
       txRef,
@@ -1591,6 +1617,52 @@ export class SaasRevenueService {
       meta: { invoiceId: inv.id, subscriptionId: inv.subscriptionId, tenantId: inv.tenantId, description: `Invoice ${inv.invoiceNumber}` },
     });
     return { ...result, gateway: 'flutterwave', invoiceId: inv.id, amountMinor: due, currency: inv.currency };
+  }
+
+  /**
+   * Headless charge against a saved Pesapal token. Pesapal does not expose a
+   * synchronous server-to-server charge endpoint — this submits a fresh order
+   * with the saved account_number which is auto-debited against the previously
+   * authorised instrument. Returns the order tracking link as a fallback for
+   * SCA / customer confirmation when the saved auth is not sufficient.
+   */
+  async chargeSavedPesapalToken(
+    invoiceId: string,
+    paymentMethodId: string,
+    opts: { redirectUrl: string; originUrl?: string },
+    actorId?: string,
+  ) {
+    const inv = await this.invoices.findOne({ where: { id: invoiceId } });
+    if (!inv) throw new NotFoundException('Invoice not found');
+    if (inv.status === 'paid') throw new BadRequestException('Invoice already paid');
+    const pm = await this.paymentMethods.findOne({ where: { id: paymentMethodId, tenantId: inv.tenantId } });
+    if (!pm) throw new NotFoundException('Saved payment method not found');
+    const meta = (pm.metadata || {}) as any;
+    if (meta.gateway !== 'pesapal' || !meta.accountNumber) {
+      throw new BadRequestException('Saved method is not a Pesapal-tokenised instrument');
+    }
+    const sub = await this.subs.findOne({ where: { id: inv.subscriptionId } });
+    const due = inv.totalMinor - inv.amountPaidMinor;
+    const txRef = `recur_${inv.id.slice(0, 8)}_${Date.now()}`;
+    const customerEmail = sub?.billingEmail || `tenant-${inv.tenantId}@noemail.local`;
+    const result = await this.pesapal.initCheckout({
+      txRef,
+      amount: due,
+      currency: inv.currency,
+      customerEmail,
+      customerName: sub?.billingName || undefined,
+      callbackUrl: opts.redirectUrl,
+      description: `Auto-charge ${inv.invoiceNumber}`,
+      accountNumber: meta.accountNumber,
+    }, opts.originUrl);
+    await this.recordEvent(
+      inv.subscriptionId,
+      'note',
+      `Pesapal saved-token charge initiated for invoice ${inv.invoiceNumber} (account=${String(meta.accountNumber).slice(0, 12)}…)`,
+      { invoiceId: inv.id, paymentMethodId, txRef, orderTrackingId: result.orderTrackingId },
+      actorId,
+    );
+    return { ...result, gateway: 'pesapal' as const, invoiceId: inv.id, amountMinor: due, currency: inv.currency, txRef, paymentMethodId };
   }
 
   async handleFlutterwaveWebhook(rawBody: string, signature: string | undefined) {
@@ -1653,7 +1725,7 @@ export class SaasRevenueService {
     if (existing) return { ok: true, duplicate: true };
     // Locate invoice via merchant reference (txRef like inv_<8>_<ts>)
     const ref = merchantReference || verified.merchantReference || '';
-    const m = ref.match(/^inv_([0-9a-f]{8})_/i);
+    const m = ref.match(/^(?:inv|recur)_([0-9a-f]{8})_/i);
     if (!m) {
       this.logger.warn(`Pesapal IPN tx=${orderTrackingId} unrecognised merchant_ref=${ref}`);
       return { ok: true, ignored: true };
@@ -1676,6 +1748,40 @@ export class SaasRevenueService {
     if (latest) {
       latest.gatewayPayload = verified.raw;
       await this.payments.save(latest);
+    }
+    // Persist saved-token payment method on first successful enrollment.
+    const acct = (verified.raw as any)?.account_number || (verified.raw as any)?.payment_account
+      || (verified.raw as any)?.billing_address?.account_number;
+    if (acct) {
+      const existingPm = await this.paymentMethods.findOne({
+        where: { tenantId: inv.tenantId },
+      });
+      const matched = await this.paymentMethods
+        .createQueryBuilder('pm')
+        .where('pm.tenantId = :tid', { tid: inv.tenantId })
+        .andWhere(`pm.metadata ->> 'accountNumber' = :acct`, { acct: String(acct) })
+        .getOne();
+      if (!matched) {
+        const last4 = (verified.raw as any)?.confirmation_code
+          ? String((verified.raw as any).confirmation_code).slice(-4)
+          : String(acct).slice(-4);
+        const pm = this.paymentMethods.create({
+          tenantId: inv.tenantId,
+          kind: ((verified.raw as any)?.payment_method?.toLowerCase()?.includes('mobile') ? 'mobile_money' : 'card') as any,
+          label: `Pesapal · ${(verified.raw as any)?.payment_method || 'saved'}`,
+          brand: (verified.raw as any)?.payment_method || 'pesapal',
+          last4,
+          isDefault: !existingPm,
+          metadata: {
+            gateway: 'pesapal',
+            accountNumber: String(acct),
+            firstSeenTrackingId: String(orderTrackingId),
+            paymentMethod: (verified.raw as any)?.payment_method,
+          },
+        });
+        await this.paymentMethods.save(pm);
+        this.logger.log(`Saved Pesapal token for tenant=${inv.tenantId} account=${String(acct).slice(0, 12)}…`);
+      }
     }
     return { ok: true };
   }

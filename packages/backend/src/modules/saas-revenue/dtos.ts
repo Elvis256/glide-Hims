@@ -52,6 +52,8 @@ export class InitCheckoutDto {
   @IsOptional() @IsString() customerName?: string;
   @IsOptional() @IsString() customerPhone?: string;
   @IsOptional() @IsEnum(['flutterwave', 'pesapal']) gateway?: 'flutterwave' | 'pesapal';
+  @IsOptional() @IsUUID() savedPaymentMethodId?: string;
+  @IsOptional() @IsBoolean() enableRecurring?: boolean;
 }
 
 export class ChangePlanDto {
