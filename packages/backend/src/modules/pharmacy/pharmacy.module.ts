@@ -8,7 +8,6 @@ import { PharmacyDashboardService } from './pharmacy-dashboard.service';
 import { PrescriptionLookupService } from './prescription-lookup.service';
 import { PrescriptionController } from './prescription.controller';
 import { PharmacySale, PharmacySaleItem } from '../../database/entities/pharmacy-sale.entity';
-import { Store } from '../../database/entities/store.entity';
 import {
   Item,
   StockLedger,
@@ -16,7 +15,6 @@ import {
   ExpiryAlert,
 } from '../../database/entities/inventory.entity';
 import { BatchStockBalance } from '../../database/entities/batch-stock.entity';
-import { Patient } from '../../database/entities/patient.entity';
 import { Prescription, PrescriptionItem } from '../../database/entities/prescription.entity';
 import {
   DrugLabelTemplate,
@@ -42,13 +40,11 @@ import { InventoryModule } from '../inventory/inventory.module';
     TypeOrmModule.forFeature([
       PharmacySale,
       PharmacySaleItem,
-      Store,
       Item,
       StockLedger,
       StockBalance,
       BatchStockBalance,
       ExpiryAlert,
-      Patient,
       Prescription,
       PrescriptionItem,
       DrugLabelTemplate,
