@@ -40,6 +40,17 @@ export default function SystemRevenuePage() {
   const cur = data.currency;
   const maxMonthly = Math.max(1, ...data.monthlyRevenue.map((m) => m.totalMinor));
 
+  // MRR sparkline + MoM delta from monthlyRevenue (oldest → newest)
+  const series = data.monthlyRevenue;
+  const last = series[series.length - 1]?.totalMinor ?? 0;
+  const prev = series[series.length - 2]?.totalMinor ?? 0;
+  const momDeltaPct = prev > 0 ? ((last - prev) / prev) * 100 : (last > 0 ? 100 : 0);
+  const sparkMax = Math.max(1, ...series.map((m) => m.totalMinor));
+  const sparkW = 120, sparkH = 32;
+  const sparkPts = series.length > 1
+    ? series.map((m, i) => `${(i / (series.length - 1)) * sparkW},${sparkH - (m.totalMinor / sparkMax) * (sparkH - 4) - 2}`).join(' ')
+    : '';
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -57,7 +68,17 @@ export default function SystemRevenuePage() {
 
       {/* Hero metrics */}
       <div className="grid md:grid-cols-4 gap-4">
-        <Hero label="MRR" value={fmtMoney(data.mrrMinor, cur)} icon={<TrendingUp className="w-5 h-5" />} accent="emerald" />
+        <Hero
+          label="MRR"
+          value={fmtMoney(data.mrrMinor, cur)}
+          icon={<TrendingUp className="w-5 h-5" />}
+          accent="emerald"
+          spark={sparkPts}
+          sparkW={sparkW}
+          sparkH={sparkH}
+          delta={series.length >= 2 ? momDeltaPct : undefined}
+          deltaLabel={series.length >= 2 ? `vs ${series[series.length - 2].month}` : undefined}
+        />
         <Hero label="ARR" value={fmtMoney(data.arrMinor, cur)} icon={<Activity className="w-5 h-5" />} accent="blue" />
         <Hero label="ARPA" value={fmtMoney(data.arpaMinor, cur)} sub="Avg revenue / account" icon={<DollarSign className="w-5 h-5" />} />
         <Hero label="LTV" value={fmtMoney(data.ltvMinor, cur)} sub="Customer lifetime value" icon={<Users className="w-5 h-5" />} />
@@ -163,12 +184,25 @@ export default function SystemRevenuePage() {
   );
 }
 
-function Hero({ label, value, sub, icon, accent }: { label: string; value: string; sub?: string; icon?: React.ReactNode; accent?: 'emerald' | 'blue' }) {
+function Hero({ label, value, sub, icon, accent, spark, sparkW, sparkH, delta, deltaLabel }: { label: string; value: string; sub?: string; icon?: React.ReactNode; accent?: 'emerald' | 'blue'; spark?: string; sparkW?: number; sparkH?: number; delta?: number; deltaLabel?: string }) {
   const cls = accent === 'emerald' ? 'border-emerald-200 bg-emerald-50' : accent === 'blue' ? 'border-blue-200 bg-blue-50' : 'bg-white';
+  const stroke = accent === 'emerald' ? '#059669' : accent === 'blue' ? '#2563eb' : '#374151';
+  const deltaUp = (delta ?? 0) >= 0;
   return (
     <div className={`border rounded-lg p-5 ${cls}`}>
       <div className="flex items-center justify-between text-gray-600 text-sm">{label}{icon}</div>
       <div className="text-3xl font-bold mt-2">{value}</div>
+      {typeof delta === 'number' && (
+        <div className={`text-xs mt-1 inline-flex items-center gap-1 ${deltaUp ? 'text-emerald-700' : 'text-rose-700'}`}>
+          <span>{deltaUp ? '▲' : '▼'} {Math.abs(delta).toFixed(1)}%</span>
+          {deltaLabel && <span className="text-gray-500">· {deltaLabel}</span>}
+        </div>
+      )}
+      {spark && sparkW && sparkH && (
+        <svg width={sparkW} height={sparkH} className="mt-1 block">
+          <polyline fill="none" stroke={stroke} strokeWidth="1.5" points={spark} />
+        </svg>
+      )}
       {sub && <div className="text-xs text-gray-500 mt-1">{sub}</div>}
     </div>
   );
