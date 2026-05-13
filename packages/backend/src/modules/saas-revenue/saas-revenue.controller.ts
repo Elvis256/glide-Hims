@@ -293,6 +293,11 @@ export class SaasRevenueController {
   @Get('revenue/dashboard')
   dashboard(@Req() req: any) { ensureAdmin(req); return this.svc.getRevenueDashboard(); }
 
+  @Get('revenue/plans/:planId')
+  planAnalytics(@Req() req: any, @Param('planId') planId: string) {
+    ensureAdmin(req); return this.svc.getPlanAnalytics(planId);
+  }
+
   // ---------- Cron triggers (admin manual run) ----------
   @Post('cron/run')
   manualCron(@Req() req: any) { ensureAdmin(req); return this.svc.renewalTick().then(() => ({ ok: true })); }

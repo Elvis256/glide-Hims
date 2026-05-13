@@ -992,17 +992,60 @@ export class SaasRevenueService {
       tenant: topTenantsMap.get(tenantId) ?? null,
     }));
 
-    // Plan breakdown.
-    const byPlan = new Map<string, { planId: string; planName: string; count: number; mrrMinor: number }>();
+    // Plan breakdown — enriched with trials, churned, ARR, lifetime, ARPA.
+    const allInv = allPaid; // alias for clarity
+    const subsByPlanId = new Map<string, typeof subs>();
+    for (const s of subs) {
+      const arr = subsByPlanId.get(s.planId) || [];
+      arr.push(s);
+      subsByPlanId.set(s.planId, arr);
+    }
+    const subToPlan = new Map(subs.map((s) => [s.id, s.planId] as const));
+    const lifetimeByPlan = new Map<string, number>();
+    for (const i of allInv) {
+      const pid = subToPlan.get(i.subscriptionId);
+      if (!pid) continue;
+      lifetimeByPlan.set(pid, (lifetimeByPlan.get(pid) || 0) + (i.amountPaidMinor || i.totalMinor));
+    }
+    const byPlan = new Map<string, {
+      planId: string; planName: string; planCode?: string; tier?: string;
+      count: number; trialCount: number; churnedCount: number; pastDueCount: number;
+      mrrMinor: number; arrMinor: number; lifetimeMinor: number; arpaMinor: number;
+      sharePct: number;
+    }>();
     for (const s of active) {
       const k = s.planId;
       const monthlyAmt = s.billingInterval === 'annual' ? Math.round(s.unitPriceMinor / 12) : s.unitPriceMinor;
       const net = this.applyDiscount(monthlyAmt * s.seats, s);
-      const cur = byPlan.get(k) ?? { planId: k, planName: s.plan?.name ?? '?', count: 0, mrrMinor: 0 };
+      const cur = byPlan.get(k) ?? {
+        planId: k, planName: s.plan?.name ?? '?', planCode: s.plan?.code, tier: s.plan?.tier,
+        count: 0, trialCount: 0, churnedCount: 0, pastDueCount: 0,
+        mrrMinor: 0, arrMinor: 0, lifetimeMinor: 0, arpaMinor: 0, sharePct: 0,
+      };
       cur.count += 1;
       cur.mrrMinor += net;
       byPlan.set(k, cur);
     }
+    // Make sure every plan that has trial/churned/past-due/lifetime shows up too.
+    const allPlanIds = new Set<string>([...byPlan.keys(), ...subsByPlanId.keys(), ...lifetimeByPlan.keys()]);
+    for (const pid of allPlanIds) {
+      const planSubs = subsByPlanId.get(pid) || [];
+      const sample = planSubs[0];
+      const cur = byPlan.get(pid) ?? {
+        planId: pid, planName: sample?.plan?.name ?? '?', planCode: sample?.plan?.code, tier: sample?.plan?.tier,
+        count: 0, trialCount: 0, churnedCount: 0, pastDueCount: 0,
+        mrrMinor: 0, arrMinor: 0, lifetimeMinor: 0, arpaMinor: 0, sharePct: 0,
+      };
+      cur.trialCount = planSubs.filter((s) => s.status === 'trial').length;
+      cur.churnedCount = planSubs.filter((s) => s.status === 'churned' || s.status === 'cancelled').length;
+      cur.pastDueCount = planSubs.filter((s) => s.status === 'past_due').length;
+      cur.arrMinor = cur.mrrMinor * 12;
+      cur.lifetimeMinor = lifetimeByPlan.get(pid) || 0;
+      cur.arpaMinor = cur.count > 0 ? Math.round(cur.mrrMinor / cur.count) : 0;
+      byPlan.set(pid, cur);
+    }
+    const totalPlanMrr = Array.from(byPlan.values()).reduce((a, p) => a + p.mrrMinor, 0) || 1;
+    for (const p of byPlan.values()) p.sharePct = +((p.mrrMinor / totalPlanMrr) * 100).toFixed(1);
 
     // Forecast next 30/60/90 days from nextRenewalAt of active subs.
     const now = new Date();
@@ -1057,6 +1100,98 @@ export class SaasRevenueService {
       planBreakdown: Array.from(byPlan.values()).sort((a, b) => b.mrrMinor - a.mrrMinor),
       forecast,
       expiringSoon,
+    };
+  }
+
+  async getPlanAnalytics(planId: string) {
+    const plan = await this.plans.findOne({ where: { id: planId } });
+    if (!plan) throw new NotFoundException('Plan not found');
+    const subs = await this.subs.find({ where: { planId } });
+    const active = subs.filter((s) => s.status === 'active' || s.status === 'past_due');
+    const trial = subs.filter((s) => s.status === 'trial');
+    const churned = subs.filter((s) => s.status === 'churned' || s.status === 'cancelled');
+    const churned30d = subs.filter((s) => s.churnedAt && s.churnedAt > this.addDays(new Date(), -30));
+
+    const mrrMinor = active.reduce((acc, s) => {
+      const monthly = s.billingInterval === 'annual' ? Math.round(s.unitPriceMinor / 12) : s.unitPriceMinor;
+      return acc + this.applyDiscount(monthly * s.seats, s);
+    }, 0);
+    const arrMinor = mrrMinor * 12;
+    const arpaMinor = active.length ? Math.round(mrrMinor / active.length) : 0;
+
+    // Per-plan invoice/payment metrics.
+    const subIds = subs.map((s) => s.id);
+    const planInv = subIds.length ? await this.invoices.find({ where: { subscriptionId: In(subIds) as any } }) : [];
+    const paid = planInv.filter((i) => i.status === 'paid');
+    const lifetimeMinor = paid.reduce((a, i) => a + (i.amountPaidMinor || i.totalMinor), 0);
+    const outstandingMinor = planInv
+      .filter((i) => ['open', 'past_due', 'uncollectible'].includes(i.status as any))
+      .reduce((a, i) => a + Math.max(0, i.totalMinor - (i.amountPaidMinor || 0)), 0);
+
+    // 12-month revenue trend for this plan.
+    const since = this.addDays(new Date(), -365);
+    const recent = paid.filter((i) => i.paidAt && i.paidAt > since);
+    const monthly = new Map<string, number>();
+    for (const inv of recent) {
+      if (!inv.paidAt) continue;
+      const k = `${inv.paidAt.getFullYear()}-${String(inv.paidAt.getMonth() + 1).padStart(2, '0')}`;
+      monthly.set(k, (monthly.get(k) ?? 0) + (inv.amountPaidMinor || inv.totalMinor));
+    }
+    const monthlyRevenue = Array.from(monthly.entries())
+      .sort(([a], [b]) => (a < b ? -1 : 1))
+      .map(([month, total]) => ({ month, totalMinor: total }));
+
+    // Conversion: trial → active. Use churnedAt-less subs that left trial.
+    const startedTrial = subs.filter((s) => s.trialEndsAt || s.status === 'trial' || s.status === 'active' || s.status === 'churned' || s.status === 'cancelled');
+    const convertedFromTrial = startedTrial.filter((s) => s.status === 'active' || s.status === 'past_due');
+    const trialConversionPct = startedTrial.length > 0 ? +((convertedFromTrial.length / startedTrial.length) * 100).toFixed(1) : 0;
+
+    // Churn (per-plan, 30d).
+    const churnRatePct = active.length + churned30d.length === 0
+      ? 0
+      : +((churned30d.length / (active.length + churned30d.length)) * 100).toFixed(2);
+
+    // Recent customers on this plan.
+    const recentSubs = [...active, ...trial].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)).slice(0, 20);
+    const tmap = await this.tenantMap(recentSubs.map((s) => s.tenantId));
+    const customers = recentSubs.map((s) => ({
+      subscriptionId: s.id,
+      tenantId: s.tenantId,
+      tenant: tmap.get(s.tenantId) ?? null,
+      status: s.status,
+      billingInterval: s.billingInterval,
+      seats: s.seats,
+      mrrMinor: this.applyDiscount(
+        (s.billingInterval === 'annual' ? Math.round(s.unitPriceMinor / 12) : s.unitPriceMinor) * s.seats,
+        s,
+      ),
+      currency: s.currency,
+      nextRenewalAt: s.nextRenewalAt,
+      createdAt: s.createdAt,
+    }));
+
+    return {
+      plan: {
+        id: plan.id, code: plan.code, name: plan.name, tier: plan.tier,
+        priceMonthlyMinor: plan.priceMonthlyMinor, priceAnnualMinor: plan.priceAnnualMinor,
+        currency: plan.currency, isActive: plan.isActive,
+      },
+      counts: {
+        total: subs.length,
+        active: active.length,
+        trial: trial.length,
+        churned: churned.length,
+        churned30d: churned30d.length,
+      },
+      mrrMinor,
+      arrMinor,
+      arpaMinor,
+      lifetimeMinor,
+      outstandingMinor,
+      churnRatePct,
+      trialConversionPct,
+      monthlyRevenue,
+      customers,
     };
   }
 
