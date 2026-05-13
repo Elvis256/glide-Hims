@@ -54,6 +54,7 @@ const sidebarItems = [
   { name: 'Currency Rates', href: '/system/currency-rates', icon: Coins },
   { name: 'Coupons', href: '/system/coupons', icon: Tag },
   { name: 'Revenue', href: '/system/revenue', icon: TrendingUp },
+  { name: 'SaaS Audit', href: '/system/saas-audit', icon: Receipt },
   { name: 'Compliance Center', href: '/system/compliance', icon: ClipboardCheck },
   { name: 'Security & Blocks', href: '/system/security', icon: ShieldAlert },
   { name: 'Audit Logs', href: '/system/audit-logs', icon: ScrollText },

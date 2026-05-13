@@ -84,7 +84,9 @@ export class AuditLogService {
       qb.andWhere('log.action = :action', { action: filters.action });
     }
     if (filters.entityType) {
-      qb.andWhere('log.entityType = :entityType', { entityType: filters.entityType });
+      const types = filters.entityType.split(',').map((s) => s.trim()).filter(Boolean);
+      if (types.length === 1) qb.andWhere('log.entityType = :entityType', { entityType: types[0] });
+      else if (types.length > 1) qb.andWhere('log.entityType IN (:...entityTypes)', { entityTypes: types });
     }
     if (filters.entityId) {
       qb.andWhere('log.entityId = :entityId', { entityId: filters.entityId });

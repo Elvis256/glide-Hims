@@ -46,6 +46,7 @@ const SystemDeploymentsPage = lazy(() => import('./pages/system/SystemDeployment
 const SystemDeploymentDetailPage = lazy(() => import('./pages/system/SystemDeploymentDetailPage'));
 const SystemRolloutsPage = lazy(() => import('./pages/system/SystemRolloutsPage'));
 const SystemAuditLogsPage = lazy(() => import('./pages/system/SystemAuditLogsPage'));
+const SystemSaasAuditPage = lazy(() => import('./pages/system/SystemSaasAuditPage'));
 const SystemLeadsPage = lazy(() => import('./pages/system/SystemLeadsPage'));
 const SystemDownloadsPage = lazy(() => import('./pages/system/SystemDownloadsPage'));
 const SystemLicensesPage = lazy(() => import('./pages/system/SystemLicensesPage'));
@@ -670,6 +671,7 @@ function AppRoutes() {
         <Route path="deployments/:deploymentId" element={<SystemDeploymentDetailPage />} />
         <Route path="rollouts" element={<SystemRolloutsPage />} />
         <Route path="audit-logs" element={<SystemAuditLogsPage />} />
+        <Route path="saas-audit" element={<SystemSaasAuditPage />} />
         <Route path="users" element={<SystemUsersPage />} />
         <Route path="settings" element={<PlatformSettingsPage />} />
         <Route path="support-requests" element={<SystemSupportRequestsPage />} />
