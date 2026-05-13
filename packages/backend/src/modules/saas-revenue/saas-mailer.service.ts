@@ -15,6 +15,19 @@ export interface EmailTemplate {
   body: string; // inner HTML; wrapped by mailer
 }
 
+export interface EmailTemplateVersion {
+  subject: string;
+  body: string;
+  savedAt: string;
+  savedBy: string | null;
+}
+
+export interface EmailTemplateStored extends EmailTemplate {
+  history?: EmailTemplateVersion[];
+  updatedAt?: string;
+  updatedBy?: string | null;
+}
+
 export interface EmailTemplateMeta {
   key: EmailTemplateKey;
   label: string;
@@ -130,11 +143,23 @@ export class SaasMailerService {
   }
 
   // ---------- Template loading & rendering ----------
-  async getTemplate(key: EmailTemplateKey): Promise<EmailTemplate> {
+  /**
+   * Resolve a template for a tenant: tenant-scoped override → global custom → built-in defaults.
+   */
+  async getTemplate(key: EmailTemplateKey, tenantId?: string): Promise<EmailTemplate> {
     const meta = EMAIL_TEMPLATES_META[key];
+    if (tenantId) {
+      try {
+        const row = await this.settings.getByKey(`${TEMPLATE_KEY_PREFIX}${key}`, tenantId);
+        const v = (row?.value || {}) as Partial<EmailTemplateStored>;
+        if (v.subject || v.body) {
+          return { subject: v.subject || meta.defaults.subject, body: v.body || meta.defaults.body };
+        }
+      } catch { /* no tenant override */ }
+    }
     try {
       const row = await this.settings.getByKey(`${TEMPLATE_KEY_PREFIX}${key}`);
-      const v = (row?.value || {}) as Partial<EmailTemplate>;
+      const v = (row?.value || {}) as Partial<EmailTemplateStored>;
       return {
         subject: v.subject || meta.defaults.subject,
         body: v.body || meta.defaults.body,
@@ -144,23 +169,79 @@ export class SaasMailerService {
     }
   }
 
-  async setTemplate(key: EmailTemplateKey, t: EmailTemplate) {
-    if (!EMAIL_TEMPLATES_META[key]) throw new Error(`Unknown template key: ${key}`);
-    return this.settings.upsert(`${TEMPLATE_KEY_PREFIX}${key}`, t, undefined, `SaaS email template: ${key}`);
+  /**
+   * Return the raw stored template (with history) for the requested scope.
+   * Pass tenantId to inspect the tenant-scoped override; omit for the global
+   * template. Returns null if nothing is stored at that scope.
+   */
+  async getStoredTemplate(key: EmailTemplateKey, tenantId?: string): Promise<EmailTemplateStored | null> {
+    try {
+      const row = await this.settings.getByKey(`${TEMPLATE_KEY_PREFIX}${key}`, tenantId);
+      return (row?.value || null) as EmailTemplateStored | null;
+    } catch {
+      return null;
+    }
   }
 
-  async resetTemplate(key: EmailTemplateKey) {
-    try { await this.settings.delete(`${TEMPLATE_KEY_PREFIX}${key}`); } catch { /* not set */ }
+  async getTemplateHistory(key: EmailTemplateKey, tenantId?: string): Promise<EmailTemplateVersion[]> {
+    const stored = await this.getStoredTemplate(key, tenantId);
+    return stored?.history || [];
+  }
+
+  async setTemplate(key: EmailTemplateKey, t: EmailTemplate, opts: { tenantId?: string; actorId?: string } = {}) {
+    if (!EMAIL_TEMPLATES_META[key]) throw new Error(`Unknown template key: ${key}`);
+    const prev = await this.getStoredTemplate(key, opts.tenantId);
+    const history = (prev?.history || []).slice();
+    if (prev && (prev.subject || prev.body)) {
+      history.unshift({
+        subject: prev.subject || '',
+        body: prev.body || '',
+        savedAt: prev.updatedAt || new Date().toISOString(),
+        savedBy: prev.updatedBy || null,
+      });
+    }
+    while (history.length > 10) history.pop();
+    const value: EmailTemplateStored = {
+      subject: t.subject,
+      body: t.body,
+      history,
+      updatedAt: new Date().toISOString(),
+      updatedBy: opts.actorId || null,
+    };
+    return this.settings.upsert(
+      `${TEMPLATE_KEY_PREFIX}${key}`,
+      value,
+      opts.tenantId,
+      opts.tenantId ? `SaaS email template (tenant override): ${key}` : `SaaS email template: ${key}`,
+    );
+  }
+
+  async revertTemplate(key: EmailTemplateKey, versionIndex: number, opts: { tenantId?: string; actorId?: string } = {}) {
+    const stored = await this.getStoredTemplate(key, opts.tenantId);
+    if (!stored?.history || !stored.history[versionIndex]) throw new Error('Version not found');
+    const target = stored.history[versionIndex];
+    return this.setTemplate(key, { subject: target.subject, body: target.body }, opts);
+  }
+
+  async resetTemplate(key: EmailTemplateKey, tenantId?: string) {
+    try { await this.settings.delete(`${TEMPLATE_KEY_PREFIX}${key}`, tenantId); } catch { /* not set */ }
     return EMAIL_TEMPLATES_META[key].defaults;
   }
 
-  async listTemplates() {
-    const out: Array<EmailTemplateMeta & { current: EmailTemplate; isCustom: boolean }> = [];
+  async listTemplates(tenantId?: string) {
+    const out: Array<EmailTemplateMeta & { current: EmailTemplate; isCustom: boolean; hasTenantOverride: boolean; historyCount: number }> = [];
     for (const meta of Object.values(EMAIL_TEMPLATES_META)) {
       let isCustom = false;
       try { await this.settings.getByKey(`${TEMPLATE_KEY_PREFIX}${meta.key}`); isCustom = true; } catch { /* default */ }
-      const current = await this.getTemplate(meta.key);
-      out.push({ ...meta, current, isCustom });
+      let hasTenantOverride = false;
+      if (tenantId) {
+        try { await this.settings.getByKey(`${TEMPLATE_KEY_PREFIX}${meta.key}`, tenantId); hasTenantOverride = true; } catch { /* none */ }
+      }
+      const current = await this.getTemplate(meta.key, tenantId);
+      const globalStored = await this.getStoredTemplate(meta.key);
+      const tenantStored = tenantId ? await this.getStoredTemplate(meta.key, tenantId) : null;
+      const historyCount = (tenantStored?.history?.length || 0) + (globalStored?.history?.length || 0);
+      out.push({ ...meta, current, isCustom, hasTenantOverride, historyCount });
     }
     return out;
   }
@@ -172,8 +253,8 @@ export class SaasMailerService {
     });
   }
 
-  async render(key: EmailTemplateKey, vars: Record<string, any>): Promise<{ subject: string; html: string }> {
-    const t = await this.getTemplate(key);
+  async render(key: EmailTemplateKey, vars: Record<string, any>, tenantId?: string): Promise<{ subject: string; html: string }> {
+    const t = await this.getTemplate(key, tenantId);
     return {
       subject: this.renderString(t.subject, vars),
       html: this.wrap(EMAIL_TEMPLATES_META[key].label, this.renderString(t.body, vars)),
@@ -226,7 +307,7 @@ export class SaasMailerService {
 
   // ---------- Public send methods ----------
   async sendInvoiceIssued(to: string | null, inv: SaasInvoice, plan?: SaasPlan) {
-    const { subject, html } = await this.render('invoice_issued', this.varsFromInvoice(inv, plan));
+    const { subject, html } = await this.render('invoice_issued', this.varsFromInvoice(inv, plan), inv.tenantId);
     return this.send(to, subject, html);
   }
 
@@ -240,7 +321,7 @@ export class SaasMailerService {
       paidAt: new Date(pay.paidAt).toLocaleString(),
       currency: pay.currency,
     };
-    const { subject, html } = await this.render('payment_receipt', vars);
+    const { subject, html } = await this.render('payment_receipt', vars, inv.tenantId);
     return this.send(to, subject, html);
   }
 
@@ -251,7 +332,7 @@ export class SaasMailerService {
       daysOverdue,
       currency: inv.currency,
     };
-    const { subject, html } = await this.render('dunning', vars);
+    const { subject, html } = await this.render('dunning', vars, inv.tenantId);
     return this.send(to, subject, html);
   }
 
@@ -263,7 +344,7 @@ export class SaasMailerService {
       daysUntil,
       currency: sub.currency,
     };
-    const { subject, html } = await this.render('renewal_reminder', vars);
+    const { subject, html } = await this.render('renewal_reminder', vars, sub.tenantId);
     return this.send(to, subject, html);
   }
 
@@ -272,7 +353,7 @@ export class SaasMailerService {
       planName: (sub as any).plan?.name ?? sub.planId,
       trialEndDate: sub.trialEndsAt ? new Date(sub.trialEndsAt).toLocaleDateString() : 'soon',
     };
-    const { subject, html } = await this.render('trial_ending', vars);
+    const { subject, html } = await this.render('trial_ending', vars, sub.tenantId);
     return this.send(to, subject, html);
   }
 
@@ -292,15 +373,15 @@ export class SaasMailerService {
     }
   }
 
-  async previewTemplate(key: EmailTemplateKey, override?: Partial<EmailTemplate>): Promise<{ subject: string; html: string }> {
-    const base = await this.getTemplate(key);
+  async previewTemplate(key: EmailTemplateKey, override?: Partial<EmailTemplate>, tenantId?: string): Promise<{ subject: string; html: string }> {
+    const base = await this.getTemplate(key, tenantId);
     const t: EmailTemplate = { subject: override?.subject ?? base.subject, body: override?.body ?? base.body };
     const vars = this.sampleVarsFor(key);
     return { subject: this.renderString(t.subject, vars), html: this.wrap(EMAIL_TEMPLATES_META[key].label, this.renderString(t.body, vars)) };
   }
 
-  async sendTest(key: EmailTemplateKey, to: string) {
-    const { subject, html } = await this.previewTemplate(key);
+  async sendTest(key: EmailTemplateKey, to: string, tenantId?: string) {
+    const { subject, html } = await this.previewTemplate(key, undefined, tenantId);
     await this.send(to, `[TEST] ${subject}`, html);
     return { ok: true, to };
   }

@@ -147,48 +147,88 @@ export class SaasRevenueController {
   updateVatRules(@Req() req: any, @Body() dto: any) { ensureAdmin(req); return this.svc.updateVatSettings(dto || {}); }
 
   // ---------- Email templates ----------
+  // All endpoints accept an optional `tenantId` query param to act on a
+  // tenant-scoped override; omit for the global system template.
   @Get('email-templates')
-  listEmailTemplates(@Req() req: any) { ensureAdmin(req); return this.mailer.listTemplates(); }
+  listEmailTemplates(@Req() req: any, @Query('tenantId') tenantId?: string) {
+    ensureAdmin(req);
+    return this.mailer.listTemplates(tenantId);
+  }
 
   @Get('email-templates/:key')
-  async getEmailTemplate(@Req() req: any, @Param('key') key: string) {
+  async getEmailTemplate(@Req() req: any, @Param('key') key: string, @Query('tenantId') tenantId?: string) {
     ensureAdmin(req);
     if (!(key in EMAIL_TEMPLATES_META)) throw new ForbiddenException('Unknown template');
     const meta = EMAIL_TEMPLATES_META[key as EmailTemplateKey];
-    const current = await this.mailer.getTemplate(key as EmailTemplateKey);
-    return { ...meta, current };
+    const current = await this.mailer.getTemplate(key as EmailTemplateKey, tenantId);
+    const history = await this.mailer.getTemplateHistory(key as EmailTemplateKey, tenantId);
+    const storedHere = await this.mailer.getStoredTemplate(key as EmailTemplateKey, tenantId);
+    return { ...meta, current, history, hasOverride: !!storedHere, scope: tenantId ? 'tenant' : 'global' };
   }
 
   @Put('email-templates/:key')
-  async putEmailTemplate(@Req() req: any, @Param('key') key: string, @Body() body: { subject: string; body: string }) {
+  async putEmailTemplate(
+    @Req() req: any,
+    @Param('key') key: string,
+    @Body() body: { subject: string; body: string },
+    @Query('tenantId') tenantId?: string,
+  ) {
     ensureAdmin(req);
     if (!(key in EMAIL_TEMPLATES_META)) throw new ForbiddenException('Unknown template');
     if (!body?.subject?.trim() || !body?.body?.trim()) throw new ForbiddenException('subject and body are required');
-    await this.mailer.setTemplate(key as EmailTemplateKey, { subject: body.subject, body: body.body });
+    await this.mailer.setTemplate(
+      key as EmailTemplateKey,
+      { subject: body.subject, body: body.body },
+      { tenantId, actorId: req.user?.id },
+    );
     return { ok: true };
   }
 
   @Delete('email-templates/:key')
-  async resetEmailTemplate(@Req() req: any, @Param('key') key: string) {
+  async resetEmailTemplate(@Req() req: any, @Param('key') key: string, @Query('tenantId') tenantId?: string) {
     ensureAdmin(req);
     if (!(key in EMAIL_TEMPLATES_META)) throw new ForbiddenException('Unknown template');
-    const defaults = await this.mailer.resetTemplate(key as EmailTemplateKey);
+    const defaults = await this.mailer.resetTemplate(key as EmailTemplateKey, tenantId);
     return { ok: true, defaults };
   }
 
-  @Post('email-templates/:key/preview')
-  async previewEmailTemplate(@Req() req: any, @Param('key') key: string, @Body() body: { subject?: string; body?: string }) {
+  @Post('email-templates/:key/revert')
+  async revertEmailTemplate(
+    @Req() req: any,
+    @Param('key') key: string,
+    @Body() body: { versionIndex: number },
+    @Query('tenantId') tenantId?: string,
+  ) {
     ensureAdmin(req);
     if (!(key in EMAIL_TEMPLATES_META)) throw new ForbiddenException('Unknown template');
-    return this.mailer.previewTemplate(key as EmailTemplateKey, body);
+    if (typeof body?.versionIndex !== 'number' || body.versionIndex < 0) throw new ForbiddenException('versionIndex required');
+    await this.mailer.revertTemplate(key as EmailTemplateKey, body.versionIndex, { tenantId, actorId: req.user?.id });
+    return { ok: true };
+  }
+
+  @Post('email-templates/:key/preview')
+  async previewEmailTemplate(
+    @Req() req: any,
+    @Param('key') key: string,
+    @Body() body: { subject?: string; body?: string },
+    @Query('tenantId') tenantId?: string,
+  ) {
+    ensureAdmin(req);
+    if (!(key in EMAIL_TEMPLATES_META)) throw new ForbiddenException('Unknown template');
+    return this.mailer.previewTemplate(key as EmailTemplateKey, body, tenantId);
   }
 
   @Post('email-templates/:key/test')
-  async testEmailTemplate(@Req() req: any, @Param('key') key: string, @Body() body: { to: string }) {
+  async testEmailTemplate(
+    @Req() req: any,
+    @Param('key') key: string,
+    @Body() body: { to: string },
+    @Query('tenantId') tenantId?: string,
+  ) {
     ensureAdmin(req);
     if (!(key in EMAIL_TEMPLATES_META)) throw new ForbiddenException('Unknown template');
     if (!body?.to?.trim()) throw new ForbiddenException('Recipient `to` is required');
-    return this.mailer.sendTest(key as EmailTemplateKey, body.to.trim());
+    return this.mailer.sendTest(key as EmailTemplateKey, body.to.trim(), tenantId);
   }
 
   // ---------- Revenue dashboard ----------
