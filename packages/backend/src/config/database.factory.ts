@@ -4,7 +4,7 @@ import { join } from 'path';
 export function getDatabaseConfig(isDeploy: boolean): any {
   const isStandalone = process.env.DB_TYPE === 'sqlite' || isDeploy;
   const baseConfig = {
-    entities: [join(__dirname, '../**/*.entity{.ts,.js}')],
+    entities: [join(__dirname, '../**/*.entity{.ts,.js}'), join(__dirname, '../**/*.entities{.ts,.js}')],
     migrations: [join(__dirname, '../database/migrations/*{.ts,.js}')],
     synchronize: false,
     logging: process.env.NODE_ENV !== 'production',
