@@ -64,6 +64,7 @@ export interface InitializeSetupData {
   plan?: {
     code: string;
     billingInterval?: 'monthly' | 'annual';
+    couponCode?: string;
   };
 }
 

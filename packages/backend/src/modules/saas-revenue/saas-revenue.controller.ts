@@ -6,7 +6,7 @@ import { Public } from '../auth/decorators/public.decorator';
 import { SaasRevenueService } from './saas-revenue.service';
 import { SaasMailerService, EMAIL_TEMPLATES_META, EmailTemplateKey } from './saas-mailer.service';
 import {
-  CreatePlanDto, UpdatePlanDto, CreateSubscriptionDto, ChangePlanDto, RecordPaymentDto, CreateCouponDto,
+  CreatePlanDto, UpdatePlanDto, CreateSubscriptionDto, ChangePlanDto, RecordPaymentDto, CreateCouponDto, UpdateCouponDto,
   ConvertLeadDto, InitCheckoutDto,
 } from './dtos';
 
@@ -53,8 +53,30 @@ export class SaasRevenueController {
   @Post('coupons')
   createCoupon(@Req() req: any, @Body() dto: CreateCouponDto) { ensureAdmin(req); return this.svc.createCoupon(dto); }
 
+  @Put('coupons/:id')
+  updateCoupon(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateCouponDto) {
+    ensureAdmin(req); return this.svc.updateCoupon(id, dto as any);
+  }
+
   @Delete('coupons/:id')
   deleteCoupon(@Req() req: any, @Param('id') id: string) { ensureAdmin(req); return this.svc.deleteCoupon(id); }
+
+  @Get('coupons/:id/redemptions')
+  couponRedemptions(@Req() req: any, @Param('id') id: string) {
+    ensureAdmin(req); return this.svc.listCouponRedemptions(id);
+  }
+
+  @Public()
+  @Get('public/coupons/preview')
+  previewCoupon(
+    @Query('code') code: string,
+    @Query('planId') planId?: string,
+    @Query('billingInterval') billingInterval?: 'monthly' | 'annual',
+    @Query('seats') seats?: string,
+  ) {
+    if (!code?.trim()) return { valid: false, reason: 'Coupon code required' };
+    return this.svc.previewCoupon(code.trim(), planId, billingInterval || 'monthly', seats ? parseInt(seats, 10) : 1);
+  }
 
   // ---------- Subscriptions ----------
   @Get('subscriptions')

@@ -80,3 +80,16 @@ export class CreateCouponDto {
   @IsOptional() @IsBoolean() isActive?: boolean;
   @IsOptional() @IsString() notes?: string;
 }
+
+export class UpdateCouponDto {
+  @IsOptional() @IsString() code?: string;
+  @IsOptional() @IsEnum(['percent', 'fixed']) discountType?: 'percent' | 'fixed';
+  @IsOptional() @IsInt() @Min(0) amount?: number;
+  @IsOptional() @IsString() currency?: string;
+  @IsOptional() @IsInt() maxRedemptions?: number | null;
+  @IsOptional() @IsInt() durationMonths?: number | null;
+  @IsOptional() expiresAt?: string | null;
+  @IsOptional() @IsArray() appliesToPlanIds?: string[] | null;
+  @IsOptional() @IsBoolean() isActive?: boolean;
+  @IsOptional() @IsString() notes?: string;
+}

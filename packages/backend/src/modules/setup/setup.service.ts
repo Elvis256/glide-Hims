@@ -1075,6 +1075,7 @@ export class SetupService {
                 autoRenew: true,
                 billingEmail: dto.admin.email,
                 billingName: dto.admin.fullName,
+                couponCode: dto.plan.couponCode || undefined,
               } as any,
               user.id,
             );
