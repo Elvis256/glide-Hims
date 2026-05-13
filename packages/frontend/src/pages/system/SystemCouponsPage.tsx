@@ -1,13 +1,16 @@
-import { useEffect, useState } from 'react';
-import { Loader2, Plus, Trash2, Check, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Loader2, Plus, Trash2, Check, X, Tag, CheckCircle, Clock, Activity } from 'lucide-react';
 import api from '../../services/api';
 import { Coupon, fmtMoney, fmtDate, unwrap } from './saas/_shared';
+
+type Filter = 'all' | 'active' | 'inactive' | 'expired' | 'exhausted';
 
 export default function SystemCouponsPage() {
   const [items, setItems] = useState<Coupon[]>([]);
   const [loading, setLoading] = useState(true);
   const [edit, setEdit] = useState<Partial<Coupon> | null>(null);
   const [saving, setSaving] = useState(false);
+  const [filter, setFilter] = useState<Filter>('all');
 
   const load = async () => {
     setLoading(true);
@@ -15,6 +18,32 @@ export default function SystemCouponsPage() {
     finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);
+
+  const now = Date.now();
+  const isExpired = (c: Coupon) => !!c.expiresAt && new Date(c.expiresAt).getTime() < now;
+  const isExhausted = (c: Coupon) => !!c.maxRedemptions && c.timesRedeemed >= c.maxRedemptions;
+
+  const stats = useMemo(() => {
+    const total = items.length;
+    let active = 0, expired = 0, exhausted = 0, redemptions = 0;
+    for (const c of items) {
+      redemptions += c.timesRedeemed || 0;
+      if (isExpired(c)) expired++;
+      else if (isExhausted(c)) exhausted++;
+      else if (c.isActive) active++;
+    }
+    return { total, active, expired, exhausted, redemptions };
+  }, [items]);
+
+  const visible = useMemo(() => items.filter((c) => {
+    switch (filter) {
+      case 'active':    return c.isActive && !isExpired(c) && !isExhausted(c);
+      case 'inactive':  return !c.isActive;
+      case 'expired':   return isExpired(c);
+      case 'exhausted': return isExhausted(c);
+      default:          return true;
+    }
+  }), [items, filter]);
 
   const save = async () => {
     if (!edit) return;
@@ -29,6 +58,22 @@ export default function SystemCouponsPage() {
     await api.delete(`/saas-revenue/coupons/${id}`); await load();
   };
 
+  const StatCard = ({ icon: Icon, label, value, tone }: { icon: any; label: string; value: number | string; tone: string }) => (
+    <div className="bg-white border rounded-lg p-4">
+      <div className="flex items-center justify-between">
+        <div className="text-xs text-gray-500 uppercase tracking-wider">{label}</div>
+        <Icon className={`w-4 h-4 ${tone}`} />
+      </div>
+      <div className="text-2xl font-bold mt-1">{value}</div>
+    </div>
+  );
+
+  const Chip = ({ id, label, count }: { id: Filter; label: string; count: number }) => (
+    <button onClick={() => setFilter(id)} className={`px-3 py-1 rounded-full text-xs border ${filter === id ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>
+      {label} <span className="opacity-70">({count})</span>
+    </button>
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -37,6 +82,21 @@ export default function SystemCouponsPage() {
           <p className="text-sm text-gray-500">Promo codes that discount new subscriptions</p>
         </div>
         <button onClick={() => setEdit({ code: '', discountType: 'percent', amount: 10, currency: 'UGX', isActive: true })} className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"><Plus className="w-4 h-4" /> New coupon</button>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <StatCard icon={Tag} label="Total coupons" value={stats.total} tone="text-gray-400" />
+        <StatCard icon={CheckCircle} label="Active" value={stats.active} tone="text-emerald-600" />
+        <StatCard icon={Clock} label="Expired" value={stats.expired + stats.exhausted} tone="text-amber-600" />
+        <StatCard icon={Activity} label="Total redemptions" value={stats.redemptions} tone="text-blue-600" />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Chip id="all"       label="All"       count={stats.total} />
+        <Chip id="active"    label="Active"    count={stats.active} />
+        <Chip id="inactive"  label="Disabled"  count={items.filter((c) => !c.isActive).length} />
+        <Chip id="expired"   label="Expired"   count={stats.expired} />
+        <Chip id="exhausted" label="Exhausted" count={stats.exhausted} />
       </div>
 
       {loading ? <Loader2 className="w-5 h-5 animate-spin text-gray-400" /> : (
@@ -48,18 +108,26 @@ export default function SystemCouponsPage() {
               <th className="text-left px-4 py-2">Expires</th><th className="text-left px-4 py-2">Status</th><th></th>
             </tr></thead>
             <tbody>
-              {items.map((c) => (
-                <tr key={c.id} className="border-t">
-                  <td className="px-4 py-2 font-mono">{c.code}</td>
-                  <td className="px-4 py-2">{c.discountType === 'percent' ? `${c.amount}%` : fmtMoney(c.amount, c.currency)}</td>
-                  <td className="px-4 py-2">{c.durationMonths ? `${c.durationMonths} mo` : 'Forever'}</td>
-                  <td className="px-4 py-2">{c.timesRedeemed}{c.maxRedemptions ? `/${c.maxRedemptions}` : ''}</td>
-                  <td className="px-4 py-2">{c.expiresAt ? fmtDate(c.expiresAt) : '—'}</td>
-                  <td className="px-4 py-2">{c.isActive ? <span className="text-emerald-700 text-xs">active</span> : <span className="text-gray-500 text-xs">disabled</span>}</td>
-                  <td className="px-4 py-2"><button onClick={() => remove(c.id)} className="text-red-600 hover:text-red-800"><Trash2 className="w-4 h-4" /></button></td>
-                </tr>
-              ))}
-              {items.length === 0 && <tr><td colSpan={7} className="px-4 py-10 text-center text-gray-500">No coupons yet</td></tr>}
+              {visible.map((c) => {
+                const expired = isExpired(c);
+                const exhausted = isExhausted(c);
+                const status = expired ? { t: 'expired',   k: 'text-amber-700' }
+                              : exhausted ? { t: 'exhausted', k: 'text-amber-700' }
+                              : c.isActive ? { t: 'active',  k: 'text-emerald-700' }
+                              : { t: 'disabled', k: 'text-gray-500' };
+                return (
+                  <tr key={c.id} className="border-t">
+                    <td className="px-4 py-2 font-mono">{c.code}</td>
+                    <td className="px-4 py-2">{c.discountType === 'percent' ? `${c.amount}%` : fmtMoney(c.amount, c.currency)}</td>
+                    <td className="px-4 py-2">{c.durationMonths ? `${c.durationMonths} mo` : 'Forever'}</td>
+                    <td className="px-4 py-2">{c.timesRedeemed}{c.maxRedemptions ? `/${c.maxRedemptions}` : ''}</td>
+                    <td className="px-4 py-2">{c.expiresAt ? fmtDate(c.expiresAt) : '—'}</td>
+                    <td className="px-4 py-2"><span className={`text-xs ${status.k}`}>{status.t}</span></td>
+                    <td className="px-4 py-2"><button onClick={() => remove(c.id)} className="text-red-600 hover:text-red-800"><Trash2 className="w-4 h-4" /></button></td>
+                  </tr>
+                );
+              })}
+              {visible.length === 0 && <tr><td colSpan={7} className="px-4 py-10 text-center text-gray-500">No coupons match this filter</td></tr>}
             </tbody>
           </table>
         </div>
