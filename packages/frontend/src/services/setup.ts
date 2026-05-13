@@ -61,6 +61,28 @@ export interface InitializeSetupData {
   facility: FacilityData;
   admin: AdminUserData;
   settings?: SettingsData;
+  plan?: {
+    code: string;
+    billingInterval?: 'monthly' | 'annual';
+  };
+}
+
+export interface PublicPlan {
+  id: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  tier: string;
+  priceMonthlyMinor: number;
+  priceAnnualMinor: number;
+  currency: string;
+  annualDiscountPercent: number;
+  trialDays: number;
+  maxUsers: number | null;
+  maxFacilities: number | null;
+  enabledModules: string[] | null;
+  features?: any;
+  sortOrder: number;
 }
 
 export interface InitializeSetupResponse {
@@ -141,6 +163,14 @@ export const setupService = {
   getPresets: async (): Promise<FacilityPreset[]> => {
     const response = await api.get<FacilityPreset[]>('/setup/presets');
     return response.data;
+  },
+
+  /**
+   * Get public pricing plans for the signup wizard.
+   */
+  getPublicPlans: async (): Promise<PublicPlan[]> => {
+    const response = await api.get<PublicPlan[]>('/saas-revenue/public/plans');
+    return (response.data as any) ?? [];
   },
 };
 

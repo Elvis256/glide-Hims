@@ -194,7 +194,24 @@ export class InitializeSetupDto {
   settings?: SettingsDto;
 }
 
-export class RegisterTenantDto extends InitializeSetupDto {}
+export class PlanSelectionDto {
+  @ApiProperty({ description: 'Plan code (e.g. community, professional, enterprise)' })
+  @IsString()
+  code: string;
+
+  @ApiPropertyOptional({ description: 'Billing interval', enum: ['monthly', 'annual'] })
+  @IsOptional()
+  @IsIn(['monthly', 'annual'])
+  billingInterval?: 'monthly' | 'annual';
+}
+
+export class RegisterTenantDto extends InitializeSetupDto {
+  @ApiPropertyOptional({ description: 'Plan selection for self-serve signup' })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PlanSelectionDto)
+  plan?: PlanSelectionDto;
+}
 
 export class InitializeTenantSetupDto {
   @ApiProperty({ description: 'Main facility details' })
