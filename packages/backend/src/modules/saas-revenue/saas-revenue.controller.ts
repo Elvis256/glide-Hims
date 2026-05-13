@@ -320,6 +320,12 @@ export class SaasRevenueController {
   @Put('currency-rates')
   updateCurrencyRates(@Req() req: any, @Body() dto: any) { ensureAdmin(req); return this.svc.updateCurrencyRates(dto || {}); }
 
+  @Post('currency-rates/refresh')
+  refreshCurrencyRates(@Req() req: any, @Body() dto: any) {
+    ensureAdmin(req);
+    return this.svc.refreshCurrencyRatesFromProvider({ providerUrl: dto?.providerUrl });
+  }
+
   // ---------- Lead conversion ----------
   @Post('leads/:leadId/convert')
   convertLead(@Req() req: any, @Param('leadId') leadId: string, @Body() dto: ConvertLeadDto) {
