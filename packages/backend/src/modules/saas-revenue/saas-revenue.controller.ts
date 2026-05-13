@@ -85,6 +85,9 @@ export class SaasRevenueController {
   @Post('subscriptions/:id/sync-license')
   syncLicense(@Req() req: any, @Param('id') id: string) { ensureAdmin(req); return this.svc.syncLicenseFromSubscription(id).then(() => ({ ok: true })); }
 
+  @Post('subscriptions/:id/sync-price')
+  syncPrice(@Req() req: any, @Param('id') id: string) { ensureAdmin(req); return this.svc.syncSubscriptionPrice(id, req.user?.id); }
+
   // ---------- Invoices ----------
   @Get('invoices')
   listInv(@Req() req: any, @Query('status') status?: string, @Query('tenantId') tenantId?: string, @Query('subscriptionId') sId?: string) {
