@@ -894,6 +894,7 @@ export default function RequisitionsPage() {
                 )}
                 facilityId={facilityId}
                 departmentId={formData.departmentId}
+                hideWhenEmpty={false}
               />
             </div>
             <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-3">
