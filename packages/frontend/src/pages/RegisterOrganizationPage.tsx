@@ -281,6 +281,8 @@ export default function RegisterOrganizationPage() {
   const [searchParams] = useSearchParams();
   const [plans, setPlans] = useState<PublicPlan[]>([]);
   const [plansLoading, setPlansLoading] = useState(true);
+  const [displayCurrency, setDisplayCurrency] = useState<string>(() => searchParams.get('currency')?.toUpperCase() || 'UGX');
+  const [availableCurrencies, setAvailableCurrencies] = useState<string[]>(['UGX']);
   const [currentStep, setCurrentStep] = useState<Step>('business_type');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [presets, setPresets] = useState<FacilityPreset[]>([]);
@@ -301,7 +303,7 @@ export default function RegisterOrganizationPage() {
 
   useEffect(() => {
     setPlansLoading(true);
-    setupService.getPublicPlans()
+    setupService.getPublicPlans(displayCurrency)
       .then((p) => {
         setPlans(p);
         const wantCode = searchParams.get('plan');
@@ -315,6 +317,15 @@ export default function RegisterOrganizationPage() {
       .catch((err) => console.error('Failed to load plans:', err))
       .finally(() => setPlansLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displayCurrency]);
+
+  useEffect(() => {
+    api.get('/saas-revenue/public/currency-rates')
+      .then((r) => {
+        const body = r.data?.data || r.data;
+        if (body?.rates) setAvailableCurrencies(Object.keys(body.rates).sort());
+      })
+      .catch(() => {});
   }, []);
 
   const [formData, setFormData] = useState<InitializeSetupData>({
@@ -571,17 +582,31 @@ export default function RegisterOrganizationPage() {
               <h2 className="text-2xl font-bold text-gray-900">Choose Your Plan</h2>
               <p className="mt-1 text-gray-600">Start with a free trial — no card required. You can upgrade or downgrade anytime.</p>
             </div>
-            <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1 text-sm">
-              {(['monthly', 'annual'] as const).map((iv) => (
-                <button
-                  key={iv}
-                  type="button"
-                  onClick={() => setFormData((p) => ({ ...p, plan: p.plan ? { ...p.plan, billingInterval: iv } : { code: '', billingInterval: iv } }))}
-                  className={`px-4 py-1.5 rounded-md font-medium ${interval === iv ? 'bg-blue-600 text-white' : 'text-gray-600 hover:text-gray-900'}`}
-                >
-                  {iv === 'monthly' ? 'Monthly' : 'Annual · save up to 17%'}
-                </button>
-              ))}
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1 text-sm">
+                {(['monthly', 'annual'] as const).map((iv) => (
+                  <button
+                    key={iv}
+                    type="button"
+                    onClick={() => setFormData((p) => ({ ...p, plan: p.plan ? { ...p.plan, billingInterval: iv } : { code: '', billingInterval: iv } }))}
+                    className={`px-4 py-1.5 rounded-md font-medium ${interval === iv ? 'bg-blue-600 text-white' : 'text-gray-600 hover:text-gray-900'}`}
+                  >
+                    {iv === 'monthly' ? 'Monthly' : 'Annual · save up to 17%'}
+                  </button>
+                ))}
+              </div>
+              {availableCurrencies.length > 1 && (
+                <div className="inline-flex items-center gap-2 text-sm">
+                  <span className="text-gray-600">Show prices in:</span>
+                  <select
+                    value={displayCurrency}
+                    onChange={(e) => setDisplayCurrency(e.target.value)}
+                    className="px-3 py-1.5 border border-gray-200 rounded-md bg-white font-medium"
+                  >
+                    {availableCurrencies.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+              )}
             </div>
             {plansLoading ? (
               <div className="flex items-center gap-2 text-gray-500"><Loader2 className="w-4 h-4 animate-spin" /> Loading plans…</div>

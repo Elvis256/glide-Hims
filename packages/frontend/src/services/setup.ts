@@ -168,8 +168,8 @@ export const setupService = {
   /**
    * Get public pricing plans for the signup wizard.
    */
-  getPublicPlans: async (): Promise<PublicPlan[]> => {
-    const response = await api.get<PublicPlan[]>('/saas-revenue/public/plans');
+  getPublicPlans: async (currency?: string): Promise<PublicPlan[]> => {
+    const response = await api.get<PublicPlan[]>('/saas-revenue/public/plans', { params: currency ? { currency } : undefined });
     return (response.data as any) ?? [];
   },
 };
