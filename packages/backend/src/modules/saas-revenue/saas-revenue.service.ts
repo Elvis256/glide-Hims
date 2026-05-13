@@ -17,6 +17,8 @@ import {
   SaasPayment,
   SaasCoupon,
   SaasSubscriptionEvent,
+  SaasPaymentMethod,
+  SaasPaymentMethodKind,
   BillingInterval,
   SubscriptionStatus,
   SubscriptionEventType,
@@ -147,6 +149,7 @@ export class SaasRevenueService {
     @InjectRepository(License) private readonly licenses: Repository<License>,
     @InjectRepository(Lead) private readonly leads: Repository<Lead>,
     @InjectRepository(Tenant) private readonly tenants: Repository<Tenant>,
+    @InjectRepository(SaasPaymentMethod) private readonly paymentMethods: Repository<SaasPaymentMethod>,
     private readonly mailer: SaasMailerService,
     private readonly flw: FlutterwaveService,
     private readonly settings: SystemSettingsService,
@@ -1254,11 +1257,7 @@ export class SaasRevenueService {
   // TENANT SELF-SERVE BILLING PORTAL
   // ============================================================
   async getMyBilling(tenantId: string) {
-    const subs = await this.subs.find({ where: { tenantId }, relations: ['plan'], order: { createdAt: 'DESC' } });
-    const invoices = await this.invoices.find({ where: { tenantId }, order: { issuedAt: 'DESC' }, take: 100 });
-    const payments = await this.payments.find({ where: { tenantId }, order: { paidAt: 'DESC' }, take: 50 });
-    const outstanding = invoices.filter((i) => i.status === 'open').reduce((a, i) => a + (i.totalMinor - i.amountPaidMinor), 0);
-    return { subscriptions: subs, invoices, payments, outstandingMinor: outstanding };
+    return this.getMyBillingOverview(tenantId);
   }
 
   // ============================================================
@@ -1327,6 +1326,246 @@ export class SaasRevenueService {
     if (latest) {
       latest.gatewayPayload = data;
       await this.payments.save(latest);
+    }
+    return { ok: true };
+  }
+
+  // ============================================================
+  // TENANT-SIDE BILLING PORTAL
+  // ============================================================
+  async getMyBillingOverview(tenantId: string) {
+    const subsRows = await this.subs.find({ where: { tenantId }, order: { createdAt: 'DESC' } });
+    const planIds = Array.from(new Set(subsRows.map((s) => s.planId)));
+    const plansRows = planIds.length ? await this.plans.find({ where: { id: In(planIds) } }) : [];
+    const pmap = new Map(plansRows.map((p) => [p.id, p]));
+    const subscriptions = subsRows.map((s) => ({ ...s, plan: pmap.get(s.planId) ?? null }));
+    const active = subscriptions.find((s) => ['active', 'trial', 'past_due'].includes(s.status)) || subscriptions[0] || null;
+    const invoiceRows = await this.invoices.find({ where: { tenantId }, order: { issuedAt: 'DESC' }, take: 100 });
+    const outstandingMinor = invoiceRows
+      .filter((i) => ['open', 'past_due', 'uncollectible'].includes(i.status as any))
+      .reduce((sum, i) => sum + Math.max(0, i.totalMinor - (i.amountPaidMinor || 0)), 0);
+    const lifetimeMinor = invoiceRows
+      .filter((i) => i.status === 'paid')
+      .reduce((sum, i) => sum + (i.amountPaidMinor || i.totalMinor), 0);
+    const currency = active?.currency || invoiceRows[0]?.currency || 'UGX';
+    const methods = await this.paymentMethods.find({ where: { tenantId }, order: { isDefault: 'DESC', createdAt: 'DESC' } });
+    const paymentsRows = await this.payments.find({ where: { tenantId }, order: { paidAt: 'DESC' }, take: 50 });
+    return {
+      activeSubscription: active,
+      subscriptions,
+      invoices: invoiceRows,
+      payments: paymentsRows,
+      paymentMethods: methods,
+      outstandingMinor,
+      summary: {
+        outstandingMinor,
+        lifetimeMinor,
+        currency,
+        outstandingCount: invoiceRows.filter((i) => ['open', 'past_due', 'uncollectible'].includes(i.status as any)).length,
+        nextRenewal: active?.currentPeriodEnd || null,
+      },
+    };
+  }
+
+  async listMyInvoices(tenantId: string, status?: string) {
+    const where: any = { tenantId };
+    if (status) where.status = status;
+    return this.invoices.find({ where, order: { issuedAt: 'DESC' }, take: 200 });
+  }
+
+  async getMyInvoice(tenantId: string, id: string) {
+    const inv = await this.getInvoice(id);
+    if (inv.tenantId !== tenantId) throw new ForbiddenException('Invoice does not belong to your tenant');
+    return inv;
+  }
+
+  async renderInvoicePdf(id: string, requireTenantId?: string): Promise<Buffer> {
+    const inv = await this.getInvoice(id);
+    if (requireTenantId && inv.tenantId !== requireTenantId) {
+      throw new ForbiddenException('Invoice does not belong to your tenant');
+    }
+    const sub = await this.subs.findOne({ where: { id: inv.subscriptionId } });
+    const plan = sub ? await this.plans.findOne({ where: { id: sub.planId } }) : null;
+    const tenant = await this.tenants.findOne({ where: { id: inv.tenantId }, select: ['id', 'name', 'slug'] as any });
+    const vendor = await this.getVendorBilling();
+    const fmt = (n: number) => this.fmtMoney(n, inv.currency);
+    const fmtD = (d: any) => (d ? new Date(d).toISOString().slice(0, 10) : '—');
+    const lines = (inv.lines || []) as Array<{ description: string; quantity: number; unitPriceMinor: number; amountMinor: number }>;
+    const paidRows = ((inv as any).payments || []) as Array<{ paidAt: any; amountMinor: number; gateway: string; method?: string | null; gatewayRef?: string | null }>;
+
+    const PDFDocumentMod: any = await import('pdfkit');
+    const PDFDocument = PDFDocumentMod.default || PDFDocumentMod;
+    const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    const chunks: Buffer[] = [];
+    doc.on('data', (c: Buffer) => chunks.push(c));
+    const done: Promise<Buffer> = new Promise((resolve) => doc.on('end', () => resolve(Buffer.concat(chunks))));
+
+    // Header — vendor (left) / INVOICE (right)
+    const top = doc.y;
+    doc.fontSize(16).font('Helvetica-Bold').text(vendor.tradingName || vendor.legalName, 40, top);
+    doc.fontSize(9).font('Helvetica').fillColor('#555');
+    if (vendor.legalName && vendor.legalName !== vendor.tradingName) doc.text(vendor.legalName);
+    if (vendor.addressLine1) doc.text(vendor.addressLine1);
+    if (vendor.addressLine2) doc.text(vendor.addressLine2);
+    const cityCountry = [vendor.city, vendor.country].filter(Boolean).join(', ');
+    if (cityCountry) doc.text(cityCountry);
+    if (vendor.taxId) doc.text(`Tax ID: ${vendor.taxId}`);
+    if (vendor.email) doc.text(vendor.email);
+    if (vendor.phone) doc.text(vendor.phone);
+    doc.fillColor('black');
+
+    doc.fontSize(20).font('Helvetica-Bold').text('INVOICE', 380, top, { width: 175, align: 'right' });
+    doc.fontSize(10).font('Helvetica').fillColor('#555')
+      .text(`# ${inv.invoiceNumber}`, 380, top + 24, { width: 175, align: 'right' })
+      .text(`Status: ${inv.status.toUpperCase()}`, 380, top + 38, { width: 175, align: 'right' })
+      .text(`Issued: ${fmtD(inv.issuedAt)}`, 380, top + 52, { width: 175, align: 'right' })
+      .text(`Due: ${fmtD(inv.dueAt)}`, 380, top + 66, { width: 175, align: 'right' });
+    if (inv.paidAt) doc.text(`Paid: ${fmtD(inv.paidAt)}`, 380, top + 80, { width: 175, align: 'right' });
+    doc.fillColor('black');
+
+    doc.y = Math.max(doc.y, top + 110);
+    doc.moveTo(40, doc.y).lineTo(555, doc.y).strokeColor('#ccc').stroke().strokeColor('black');
+    doc.moveDown(0.6);
+
+    // Bill-to + Subscription
+    const blockTop = doc.y;
+    doc.fontSize(8).fillColor('#64748b').font('Helvetica-Bold').text('BILL TO', 40, blockTop);
+    doc.fontSize(10).fillColor('black').font('Helvetica-Bold').text(tenant?.name || inv.tenantId, 40, blockTop + 12);
+    doc.font('Helvetica').fontSize(9).fillColor('#555');
+    if (tenant?.slug) doc.text(tenant.slug, 40);
+    if (sub?.billingName) doc.text(sub.billingName, 40);
+    if (sub?.billingEmail) doc.text(sub.billingEmail, 40);
+
+    doc.fontSize(8).fillColor('#64748b').font('Helvetica-Bold').text('SUBSCRIPTION', 320, blockTop);
+    doc.fontSize(10).fillColor('black').font('Helvetica').text(`${plan?.name || '—'} (${sub?.billingInterval || ''})`, 320, blockTop + 12);
+    if (inv.periodStart || inv.periodEnd) {
+      doc.fontSize(9).fillColor('#555').text(`Period: ${fmtD(inv.periodStart)} → ${fmtD(inv.periodEnd)}`, 320);
+    }
+    doc.fillColor('black');
+
+    doc.y = Math.max(doc.y, blockTop + 70);
+    doc.moveDown(0.6);
+
+    // Line items
+    const tableTop = doc.y;
+    doc.fontSize(9).font('Helvetica-Bold').fillColor('#475569');
+    doc.text('Description', 40, tableTop, { width: 280 });
+    doc.text('Qty', 320, tableTop, { width: 50, align: 'right' });
+    doc.text('Unit price', 380, tableTop, { width: 80, align: 'right' });
+    doc.text('Amount', 470, tableTop, { width: 85, align: 'right' });
+    doc.fillColor('black').font('Helvetica');
+    let y = tableTop + 16;
+    doc.moveTo(40, y - 4).lineTo(555, y - 4).strokeColor('#e2e8f0').stroke().strokeColor('black');
+    for (const ln of lines) {
+      const desc = ln.description || '';
+      doc.text(desc, 40, y, { width: 280 });
+      doc.text(String(ln.quantity || 0), 320, y, { width: 50, align: 'right' });
+      doc.text(fmt(ln.unitPriceMinor || 0), 380, y, { width: 80, align: 'right' });
+      doc.text(fmt(ln.amountMinor || 0), 470, y, { width: 85, align: 'right' });
+      y += 18;
+      if (y > 740) { doc.addPage(); y = 40; }
+    }
+    doc.moveTo(40, y).lineTo(555, y).strokeColor('#cbd5e1').stroke().strokeColor('black');
+    y += 8;
+
+    // Totals
+    const totals: Array<[string, number]> = [
+      ['Subtotal', inv.subtotalMinor],
+      ['Discount', -(inv.discountMinor || 0)],
+      ['Tax', inv.taxMinor || 0],
+    ];
+    for (const [lbl, val] of totals) {
+      doc.fontSize(10).font('Helvetica').text(lbl, 380, y, { width: 80, align: 'right' });
+      doc.text(fmt(val), 470, y, { width: 85, align: 'right' });
+      y += 16;
+    }
+    doc.moveTo(380, y).lineTo(555, y).strokeColor('#0f172a').lineWidth(1.2).stroke().lineWidth(1).strokeColor('black');
+    y += 6;
+    doc.fontSize(12).font('Helvetica-Bold').text('Total', 380, y, { width: 80, align: 'right' });
+    doc.text(fmt(inv.totalMinor), 470, y, { width: 85, align: 'right' });
+    y += 18;
+    doc.fontSize(10).font('Helvetica').fillColor('#065f46').text('Paid', 380, y, { width: 80, align: 'right' });
+    doc.text(fmt(inv.amountPaidMinor || 0), 470, y, { width: 85, align: 'right' });
+    y += 16;
+    const balance = Math.max(0, inv.totalMinor - (inv.amountPaidMinor || 0));
+    doc.fillColor(balance > 0 ? '#b91c1c' : '#0f172a').font('Helvetica-Bold').text('Balance due', 380, y, { width: 80, align: 'right' });
+    doc.text(fmt(balance), 470, y, { width: 85, align: 'right' });
+    doc.fillColor('black').font('Helvetica');
+    y += 24;
+
+    // Payments
+    if (paidRows.length) {
+      if (y > 700) { doc.addPage(); y = 40; }
+      doc.fontSize(10).font('Helvetica-Bold').text('Payments', 40, y);
+      y += 14;
+      doc.fontSize(9).font('Helvetica').fillColor('#475569');
+      for (const p of paidRows) {
+        doc.text(`${fmtD(p.paidAt)}  •  ${p.gateway}${p.method ? ' / ' + p.method : ''}  •  ${fmt(p.amountMinor)}${p.gatewayRef ? '  ref ' + p.gatewayRef : ''}`, 40, y);
+        y += 14;
+        if (y > 760) { doc.addPage(); y = 40; }
+      }
+      doc.fillColor('black');
+    }
+
+    // Footer
+    if (vendor.invoiceFooter) {
+      doc.fontSize(8).fillColor('#64748b').text(vendor.invoiceFooter, 40, 770, { width: 515, align: 'center' });
+    }
+
+    doc.end();
+    return done;
+  }
+
+  // ----- Payment methods (placeholder; gateway integration deferred) -----
+  async listMyPaymentMethods(tenantId: string) {
+    return this.paymentMethods.find({ where: { tenantId }, order: { isDefault: 'DESC', createdAt: 'DESC' } });
+  }
+
+  async addMyPaymentMethod(tenantId: string, dto: { kind?: SaasPaymentMethodKind; label?: string; brand?: string; last4?: string; expMonth?: number; expYear?: number; holderName?: string; isDefault?: boolean }) {
+    const kind = (dto.kind || 'card') as SaasPaymentMethodKind;
+    const label = (dto.label || '').trim() || `${kind === 'card' ? 'Card' : kind === 'mobile_money' ? 'Mobile money' : kind === 'bank' ? 'Bank' : 'Method'}${dto.last4 ? ' •••• ' + dto.last4 : ''}`;
+    const last4 = dto.last4 ? String(dto.last4).replace(/\D/g, '').slice(-4) : null;
+    const pm = this.paymentMethods.create({
+      tenantId,
+      kind,
+      label,
+      brand: dto.brand?.trim() || null,
+      last4,
+      expMonth: dto.expMonth ? Math.max(1, Math.min(12, dto.expMonth)) : null,
+      expYear: dto.expYear ? dto.expYear : null,
+      holderName: dto.holderName?.trim() || null,
+      isDefault: !!dto.isDefault,
+      metadata: null,
+    });
+    const saved = await this.paymentMethods.save(pm);
+    if (saved.isDefault) await this.setDefaultPaymentMethod(tenantId, saved.id);
+    else {
+      const existing = await this.paymentMethods.count({ where: { tenantId } });
+      if (existing === 1) {
+        saved.isDefault = true;
+        await this.paymentMethods.save(saved);
+      }
+    }
+    return saved;
+  }
+
+  async setDefaultPaymentMethod(tenantId: string, id: string) {
+    const pm = await this.paymentMethods.findOne({ where: { id, tenantId } });
+    if (!pm) throw new NotFoundException('Payment method not found');
+    await this.paymentMethods.update({ tenantId }, { isDefault: false });
+    pm.isDefault = true;
+    await this.paymentMethods.save(pm);
+    return pm;
+  }
+
+  async deleteMyPaymentMethod(tenantId: string, id: string) {
+    const pm = await this.paymentMethods.findOne({ where: { id, tenantId } });
+    if (!pm) throw new NotFoundException('Payment method not found');
+    const wasDefault = pm.isDefault;
+    await this.paymentMethods.delete({ id, tenantId });
+    if (wasDefault) {
+      const next = await this.paymentMethods.findOne({ where: { tenantId }, order: { createdAt: 'DESC' } });
+      if (next) { next.isDefault = true; await this.paymentMethods.save(next); }
     }
     return { ok: true };
   }

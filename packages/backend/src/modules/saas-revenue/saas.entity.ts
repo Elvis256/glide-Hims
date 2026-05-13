@@ -229,3 +229,22 @@ export class SaasEmailLog {
   @Column({ type: 'text', nullable: true }) bodyPreview: string | null;
   @CreateDateColumn() @Index() createdAt: Date;
 }
+
+export type SaasPaymentMethodKind = 'card' | 'mobile_money' | 'bank' | 'other';
+
+@Entity('saas_payment_methods')
+export class SaasPaymentMethod {
+  @PrimaryGeneratedColumn('uuid') id: string;
+  @Column({ type: 'uuid' }) @Index() tenantId: string;
+  @Column({ type: 'varchar', length: 30 }) kind: SaasPaymentMethodKind;
+  @Column({ type: 'varchar', length: 100 }) label: string;
+  @Column({ type: 'varchar', length: 30, nullable: true }) brand: string | null;
+  @Column({ type: 'varchar', length: 8, nullable: true }) last4: string | null;
+  @Column({ type: 'int', nullable: true }) expMonth: number | null;
+  @Column({ type: 'int', nullable: true }) expYear: number | null;
+  @Column({ type: 'varchar', length: 150, nullable: true }) holderName: string | null;
+  @Column({ type: 'boolean', default: false }) @Index() isDefault: boolean;
+  @Column({ type: 'jsonb', nullable: true }) metadata: Record<string, any> | null;
+  @CreateDateColumn() createdAt: Date;
+  @UpdateDateColumn() updatedAt: Date;
+}
