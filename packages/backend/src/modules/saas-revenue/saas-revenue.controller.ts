@@ -507,9 +507,26 @@ export class SaasRevenueController {
     const originUrl = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get?.('host') || ''}`;
     return this.svc.initCheckout(
       dto.invoiceId,
-      { redirectUrl, customerEmail: dto.customerEmail, customerName: dto.customerName, customerPhone: dto.customerPhone, gateway: dto.gateway, originUrl },
+      { redirectUrl, customerEmail: dto.customerEmail, customerName: dto.customerName, customerPhone: dto.customerPhone, gateway: dto.gateway, originUrl, savedPaymentMethodId: dto.savedPaymentMethodId, enableRecurring: dto.enableRecurring },
       tenantId,
     );
+  }
+
+  @Post('portal/charge-saved')
+  myChargeSaved(
+    @Req() req: any,
+    @Body() dto: { invoiceId: string; paymentMethodId: string; redirectUrl?: string },
+  ) {
+    const tenantId = req.user?.isSystemAdmin ? undefined : ensureTenant(req);
+    const redirectUrl = dto.redirectUrl || `${process.env.PUBLIC_BASE_URL || ''}/billing-portal/return`;
+    const originUrl = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get?.('host') || ''}`;
+    // Tenant-scope safety: ensure invoice belongs to the caller (or its payer) when not system admin.
+    if (tenantId) {
+      return this.svc.getMyInvoice(tenantId, dto.invoiceId).then(() =>
+        this.svc.chargeSavedPesapalToken(dto.invoiceId, dto.paymentMethodId, { redirectUrl, originUrl }, req.user?.id),
+      );
+    }
+    return this.svc.chargeSavedPesapalToken(dto.invoiceId, dto.paymentMethodId, { redirectUrl, originUrl }, req.user?.id);
   }
 
   @Public()

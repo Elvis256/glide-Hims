@@ -9,6 +9,10 @@ export interface PesapalInitArgs {
   customerPhone?: string;
   callbackUrl: string;
   description?: string;
+  /** When provided, Pesapal links the order to a recurring subscription token tied to this account_number. */
+  accountNumber?: string;
+  /** When provided alongside accountNumber, Pesapal will auto-debit on cycle (DAILY|WEEKLY|MONTHLY|YEARLY). */
+  subscription?: { frequency: 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY'; startDate?: string; endDate?: string };
 }
 
 interface CachedToken { token: string; expiresAt: number }
@@ -81,7 +85,7 @@ export class PesapalService {
     const token = await this.authToken();
     const ipnId = await this.ensureIpnId(token, originUrl);
     const [first, ...rest] = (args.customerName || '').trim().split(/\s+/);
-    const body = {
+    const body: any = {
       id: args.txRef,
       currency: args.currency,
       amount: args.amount / 100,
@@ -95,6 +99,23 @@ export class PesapalService {
         last_name: rest.join(' ') || '',
       },
     };
+    if (args.accountNumber) {
+      // Pesapal token-binding identifier; future orders with the same account_number
+      // get charged against the same saved card / mobile money wallet.
+      body.account_number = args.accountNumber;
+      body.billing_address.account_number = args.accountNumber;
+    }
+    if (args.subscription && args.accountNumber) {
+      const fmt = (d: Date) => `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
+      const start = args.subscription.startDate ? new Date(args.subscription.startDate) : new Date();
+      const end = args.subscription.endDate ? new Date(args.subscription.endDate) : new Date(Date.now() + 5 * 365 * 24 * 60 * 60 * 1000);
+      body.account_number = args.accountNumber;
+      body.subscription_details = {
+        start_date: fmt(start),
+        end_date: fmt(end),
+        frequency: args.subscription.frequency,
+      };
+    }
     const res = await fetch(`${this.base}/api/Transactions/SubmitOrderRequest`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${token}` },
