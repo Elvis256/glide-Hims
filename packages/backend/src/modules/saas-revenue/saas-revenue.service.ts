@@ -112,6 +112,27 @@ const DEFAULT_VAT_SETTINGS: VatSettings = {
   ],
 };
 
+export const CURRENCY_RATES_KEY = 'currency_rates';
+
+export interface CurrencyRates {
+  base: string;                        // e.g. 'UGX'
+  rates: Record<string, number>;       // 1 base unit = N target units (e.g. UGX→KES ≈ 0.034)
+  updatedAt: string | null;
+}
+
+const DEFAULT_CURRENCY_RATES: CurrencyRates = {
+  base: 'UGX',
+  rates: {
+    UGX: 1,
+    KES: 0.034,
+    TZS: 0.71,
+    RWF: 0.36,
+    USD: 0.00027,
+    EUR: 0.00025,
+  },
+  updatedAt: null,
+};
+
 @Injectable()
 export class SaasRevenueService {
   private readonly logger = new Logger(SaasRevenueService.name);
@@ -226,6 +247,72 @@ export class SaasRevenueService {
     await this.settings.upsert(VAT_RULES_KEY, merged, undefined, 'SaaS VAT/tax rules per country');
     return merged;
   }
+
+  // ============================================================
+  // CURRENCY / FX RATES
+  // ============================================================
+  async getCurrencyRates(): Promise<CurrencyRates> {
+    try {
+      const s = await this.settings.getByKey(CURRENCY_RATES_KEY);
+      const v = (s.value || {}) as Partial<CurrencyRates>;
+      return {
+        base: v.base || DEFAULT_CURRENCY_RATES.base,
+        rates: { ...DEFAULT_CURRENCY_RATES.rates, ...(v.rates || {}) },
+        updatedAt: v.updatedAt || null,
+      };
+    } catch {
+      return { ...DEFAULT_CURRENCY_RATES };
+    }
+  }
+
+  async updateCurrencyRates(dto: Partial<CurrencyRates>): Promise<CurrencyRates> {
+    const current = await this.getCurrencyRates();
+    const base = (dto.base || current.base || 'UGX').toUpperCase();
+    const rates: Record<string, number> = {};
+    const src = dto.rates && typeof dto.rates === 'object' ? dto.rates : current.rates;
+    for (const [k, v] of Object.entries(src)) {
+      const ccy = k.toUpperCase();
+      const num = Number(v);
+      if (!isFinite(num) || num <= 0) throw new BadRequestException(`Invalid rate for ${ccy}`);
+      rates[ccy] = num;
+    }
+    rates[base] = 1;
+    const merged: CurrencyRates = { base, rates, updatedAt: new Date().toISOString() };
+    await this.settings.upsert(CURRENCY_RATES_KEY, merged, undefined, 'SaaS plan FX rates relative to base');
+    return merged;
+  }
+
+  /**
+   * Convert a minor-unit price from one currency to another using stored
+   * FX rates. Returns null if the target currency has no rate.
+   */
+  async convertMinor(amountMinor: number, fromCcy: string, toCcy: string): Promise<number | null> {
+    const from = (fromCcy || 'UGX').toUpperCase();
+    const to = (toCcy || from).toUpperCase();
+    if (from === to) return amountMinor;
+    const fx = await this.getCurrencyRates();
+    const fromRate = from === fx.base ? 1 : fx.rates[from];
+    const toRate = to === fx.base ? 1 : fx.rates[to];
+    if (!fromRate || !toRate) return null;
+    // rates table holds value: 1 base = N target, so price_target = price_source / from * to
+    const inBase = amountMinor / fromRate;
+    return Math.round(inBase * toRate);
+  }
+
+  async listPublicPlansLocalized(currency?: string) {
+    const plans = await this.plans.find({ where: { isActive: true, isPublic: true } as any, order: { sortOrder: 'ASC', priceMonthlyMinor: 'ASC' } });
+    if (!currency) return plans;
+    const target = currency.toUpperCase();
+    const fx = await this.getCurrencyRates();
+    return Promise.all(plans.map(async (p) => {
+      if (p.currency === target) return p;
+      const m = await this.convertMinor(p.priceMonthlyMinor, p.currency, target);
+      const a = await this.convertMinor(p.priceAnnualMinor, p.currency, target);
+      if (m === null || a === null) return p;
+      return { ...p, currency: target, priceMonthlyMinor: m, priceAnnualMinor: a, _converted: true, _baseCurrency: p.currency, _fxBase: fx.base } as any;
+    }));
+  }
+
 
   /**
    * Resolve the tax rate to apply for a tenant. Returns 0 (no tax) when

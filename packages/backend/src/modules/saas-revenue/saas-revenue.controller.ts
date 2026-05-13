@@ -202,7 +202,20 @@ export class SaasRevenueController {
   // ---------- Public pricing (no auth) ----------
   @Public()
   @Get('public/plans')
-  publicPlans() { return this.svc.listPublicPlans(); }
+  publicPlans(@Query('currency') currency?: string) {
+    return currency ? this.svc.listPublicPlansLocalized(currency) : this.svc.listPublicPlans();
+  }
+
+  // ---------- Currency / FX rates (system-wide) ----------
+  @Public()
+  @Get('public/currency-rates')
+  getPublicCurrencyRates() { return this.svc.getCurrencyRates(); }
+
+  @Get('currency-rates')
+  getCurrencyRates(@Req() req: any) { ensureAdmin(req); return this.svc.getCurrencyRates(); }
+
+  @Put('currency-rates')
+  updateCurrencyRates(@Req() req: any, @Body() dto: any) { ensureAdmin(req); return this.svc.updateCurrencyRates(dto || {}); }
 
   // ---------- Lead conversion ----------
   @Post('leads/:leadId/convert')
