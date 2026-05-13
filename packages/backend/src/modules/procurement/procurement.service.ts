@@ -2416,6 +2416,54 @@ export class ProcurementService {
   }
 
   /**
+   * Get the persisted approval chain for a document, enriched with approver
+   * and group display names so the UI can render a meaningful timeline.
+   */
+  async getEnrichedApprovalChain(documentId: string, tenantId?: string) {
+    const where: any = { documentId };
+    if (tenantId) where.tenantId = tenantId;
+
+    const rows = await this.approvalChainRepo.find({
+      where,
+      relations: ['approver', 'approvedBy'],
+      order: { approvalLevel: 'ASC', createdAt: 'ASC' },
+    });
+
+    if (rows.length === 0) return [];
+
+    const namesByKey = await this.orgApprovalResolver.enrichSteps(
+      rows.map((r) => ({ approverId: r.approverId, groupId: (r as any).groupId })),
+      tenantId || '',
+    );
+
+    return rows.map((r) => {
+      const key = `${r.approverId || ''}|${(r as any).groupId || ''}`;
+      const enriched = namesByKey.get(key) || {};
+      const approver = (r as any).approver;
+      const approvedBy = (r as any).approvedBy;
+      return {
+        id: r.id,
+        approvalLevel: r.approvalLevel,
+        requiredRole: r.requiredRole,
+        approverId: r.approverId ?? null,
+        approverName:
+          enriched.approverName ||
+          (approver ? [approver.firstName, approver.lastName].filter(Boolean).join(' ') || approver.email : null),
+        groupId: (r as any).groupId ?? null,
+        groupName: enriched.groupName ?? null,
+        status: r.status,
+        approvedById: (r as any).approvedById ?? null,
+        approvedByName: approvedBy
+          ? [approvedBy.firstName, approvedBy.lastName].filter(Boolean).join(' ') || approvedBy.email
+          : null,
+        approvedAt: (r as any).approvedAt ?? null,
+        comments: (r as any).comments ?? null,
+        createdAt: r.createdAt,
+      };
+    });
+  }
+
+  /**
    * Approve at current level
    */
   async approveAtLevel(

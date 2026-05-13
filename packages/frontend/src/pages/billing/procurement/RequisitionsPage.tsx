@@ -24,6 +24,8 @@ import {
 import { asList } from '../../../utils/unwrapResponse';
 import { CategoryContextBanner, useProcurementCategory } from '../../../components/procurement/CategoryContextBanner';
 import SearchableSelect from '../../../components/SearchableSelect';
+import { ApprovalChainPreview } from '../../../components/procurement/ApprovalChainPreview';
+import { ApprovalChainTimeline } from '../../../components/procurement/ApprovalChainTimeline';
 import { formatCurrency } from '../../../lib/currency';
 
 type RequisitionStatus =
@@ -611,48 +613,12 @@ export default function RequisitionsPage() {
                 </div>
               </div>
 
-              {/* Approval Workflow */}
+              {/* Approval Workflow — real chain from policy resolver */}
               {selectedRequisition.status !== 'draft' && (
-              <div>
-                <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Approval Workflow</p>
-                <div className="space-y-2">
-                  {['Submitted', 'Manager Review', 'Finance Review', 'Director Approval', 'Completed'].map(
-                    (stage, idx) => {
-                      const isCompleted =
-                        selectedRequisition.status === 'approved' ||
-                        (selectedRequisition.approvalStage &&
-                          ['Submitted', 'Manager Review', 'Finance Review', 'Director Approval', 'Completed'].indexOf(
-                            selectedRequisition.approvalStage
-                          ) > idx);
-                      const isCurrent = selectedRequisition.approvalStage === stage;
-                      return (
-                        <div key={stage} className="flex items-center gap-2">
-                          <div
-                            className={`w-6 h-6 rounded-full flex items-center justify-center ${
-                              isCompleted
-                                ? 'bg-green-100 text-green-600'
-                                : isCurrent
-                                  ? 'bg-blue-100 text-blue-600'
-                                  : 'bg-gray-100 text-gray-400'
-                            }`}
-                          >
-                            {isCompleted ? (
-                              <CheckCircle className="w-4 h-4" />
-                            ) : (
-                              <span className="text-xs">{idx + 1}</span>
-                            )}
-                          </div>
-                          <span
-                            className={`text-sm ${isCurrent ? 'font-medium text-blue-600' : isCompleted ? 'text-green-600' : 'text-gray-400'}`}
-                          >
-                            {stage}
-                          </span>
-                        </div>
-                      );
-                    }
-                  )}
+                <div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Approval Workflow</p>
+                  <ApprovalChainTimeline documentId={selectedRequisition.id} documentType="PR" />
                 </div>
-              </div>
               )}
 
               {/* Actions */}
@@ -920,6 +886,15 @@ export default function RequisitionsPage() {
                   placeholder="Additional notes or justification"
                 />
               </div>
+              <ApprovalChainPreview
+                documentType="PR"
+                amount={formData.items.reduce(
+                  (sum, it) => sum + (Number(it.quantity) || 0) * (Number(it.estimatedPrice) || 0),
+                  0,
+                )}
+                facilityId={facilityId}
+                departmentId={formData.departmentId}
+              />
             </div>
             <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-3">
               <button
