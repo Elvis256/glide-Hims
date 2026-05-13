@@ -50,6 +50,8 @@ export class InitCheckoutDto {
   @IsOptional() @IsString() redirectUrl?: string;
   @IsOptional() @IsString() customerEmail?: string;
   @IsOptional() @IsString() customerName?: string;
+  @IsOptional() @IsString() customerPhone?: string;
+  @IsOptional() @IsEnum(['flutterwave', 'pesapal']) gateway?: 'flutterwave' | 'pesapal';
 }
 
 export class ChangePlanDto {

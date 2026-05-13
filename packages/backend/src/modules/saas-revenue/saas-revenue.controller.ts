@@ -406,14 +406,39 @@ export class SaasRevenueController {
   myCheckout(@Req() req: any, @Body() dto: InitCheckoutDto) {
     const tenantId = req.user?.isSystemAdmin ? undefined : ensureTenant(req);
     const redirectUrl = dto.redirectUrl || `${process.env.PUBLIC_BASE_URL || ''}/billing-portal/return`;
-    return this.svc.initCheckout(dto.invoiceId, { redirectUrl, customerEmail: dto.customerEmail, customerName: dto.customerName }, tenantId);
+    const originUrl = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get?.('host') || ''}`;
+    return this.svc.initCheckout(
+      dto.invoiceId,
+      { redirectUrl, customerEmail: dto.customerEmail, customerName: dto.customerName, customerPhone: dto.customerPhone, gateway: dto.gateway, originUrl },
+      tenantId,
+    );
   }
 
-  // ---------- Webhook (public, signature-verified) ----------
+  @Public()
+  @Get('public/gateways')
+  publicGateways() { return this.svc.gatewaysStatus(); }
+
+  // ---------- Webhooks (public, signature-verified) ----------
   @Public()
   @Post('webhooks/flutterwave')
   async flwWebhook(@Req() req: RawBodyRequest<any>, @Headers('verif-hash') signature?: string) {
     const raw = (req as any).rawBody?.toString('utf8') || JSON.stringify(req.body || {});
     return this.svc.handleFlutterwaveWebhook(raw, signature);
+  }
+
+  // Pesapal IPN — registered as GET; also accept POST for safety.
+  @Public()
+  @Get('webhooks/pesapal')
+  async pesapalIpnGet(@Req() req: any) {
+    const q = req.query || {};
+    return this.svc.handlePesapalIpn(q.OrderTrackingId || q.orderTrackingId, q.OrderMerchantReference || q.merchantReference);
+  }
+
+  @Public()
+  @Post('webhooks/pesapal')
+  async pesapalIpnPost(@Req() req: any) {
+    const b = req.body || {};
+    const q = req.query || {};
+    return this.svc.handlePesapalIpn(b.OrderTrackingId || q.OrderTrackingId, b.OrderMerchantReference || q.OrderMerchantReference);
   }
 }

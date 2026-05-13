@@ -43,6 +43,7 @@ const TIER_TO_LICENSE: Record<string, License['licenseType']> = {
 
 import { SaasMailerService } from './saas-mailer.service';
 import { FlutterwaveService } from './flutterwave.service';
+import { PesapalService } from './pesapal.service';
 import { Lead } from '../leads/lead.entity';
 import { SystemSettingsService } from '../system-settings/system-settings.service';
 
@@ -152,6 +153,7 @@ export class SaasRevenueService {
     @InjectRepository(SaasPaymentMethod) private readonly paymentMethods: Repository<SaasPaymentMethod>,
     private readonly mailer: SaasMailerService,
     private readonly flw: FlutterwaveService,
+    private readonly pesapal: PesapalService,
     private readonly settings: SystemSettingsService,
   ) {}
 
@@ -1505,9 +1507,20 @@ export class SaasRevenueService {
   }
 
   // ============================================================
-  // GATEWAY (Flutterwave)
+  // GATEWAY (Flutterwave + Pesapal)
   // ============================================================
-  async initCheckout(invoiceId: string, opts: { redirectUrl: string; customerEmail?: string; customerName?: string }, tenantId?: string) {
+  gatewaysStatus() {
+    return {
+      flutterwave: { configured: this.flw.isConfigured() },
+      pesapal: this.pesapal.status(),
+    };
+  }
+
+  async initCheckout(
+    invoiceId: string,
+    opts: { redirectUrl: string; customerEmail?: string; customerName?: string; customerPhone?: string; gateway?: 'flutterwave' | 'pesapal'; originUrl?: string },
+    tenantId?: string,
+  ) {
     const inv = await this.invoices.findOne({ where: { id: invoiceId } });
     if (!inv) throw new NotFoundException('Invoice not found');
     if (tenantId && inv.tenantId !== tenantId) throw new ForbiddenException('Cross-tenant access');
@@ -1515,8 +1528,23 @@ export class SaasRevenueService {
     const sub = await this.subs.findOne({ where: { id: inv.subscriptionId } });
     const due = inv.totalMinor - inv.amountPaidMinor;
     const customerEmail = opts.customerEmail || sub?.billingEmail || `tenant-${inv.tenantId}@noemail.local`;
+    const txRef = `inv_${inv.id.slice(0, 8)}_${Date.now()}`;
+    const gateway = opts.gateway || 'flutterwave';
+    if (gateway === 'pesapal') {
+      const result = await this.pesapal.initCheckout({
+        txRef,
+        amount: due,
+        currency: inv.currency,
+        customerEmail,
+        customerName: opts.customerName || sub?.billingName || undefined,
+        customerPhone: opts.customerPhone,
+        callbackUrl: opts.redirectUrl,
+        description: `Invoice ${inv.invoiceNumber}`,
+      }, opts.originUrl);
+      return { ...result, gateway: 'pesapal', invoiceId: inv.id, amountMinor: due, currency: inv.currency, txRef };
+    }
     const result = await this.flw.initCheckout({
-      txRef: `inv_${inv.id.slice(0, 8)}_${Date.now()}`,
+      txRef,
       amount: due,
       currency: inv.currency,
       customerEmail,
@@ -1524,7 +1552,7 @@ export class SaasRevenueService {
       redirectUrl: opts.redirectUrl,
       meta: { invoiceId: inv.id, subscriptionId: inv.subscriptionId, tenantId: inv.tenantId, description: `Invoice ${inv.invoiceNumber}` },
     });
-    return { ...result, invoiceId: inv.id, amountMinor: due, currency: inv.currency };
+    return { ...result, gateway: 'flutterwave', invoiceId: inv.id, amountMinor: due, currency: inv.currency };
   }
 
   async handleFlutterwaveWebhook(rawBody: string, signature: string | undefined) {
@@ -1569,6 +1597,46 @@ export class SaasRevenueService {
     const latest = await this.payments.findOne({ where: { gatewayRef: String(txId) } });
     if (latest) {
       latest.gatewayPayload = data;
+      await this.payments.save(latest);
+    }
+    return { ok: true };
+  }
+
+  // ---------- Pesapal IPN ----------
+  async handlePesapalIpn(orderTrackingId: string | undefined, merchantReference: string | undefined) {
+    if (!orderTrackingId) return { ok: false, error: 'missing orderTrackingId' };
+    const verified = await this.pesapal.verifyTransaction(orderTrackingId);
+    if (!verified.ok) {
+      this.logger.warn(`Pesapal IPN tx=${orderTrackingId} not completed (status=${verified.status})`);
+      return { ok: true, ignored: true, status: verified.status };
+    }
+    // Idempotency
+    const existing = await this.payments.findOne({ where: { gatewayRef: String(orderTrackingId) } });
+    if (existing) return { ok: true, duplicate: true };
+    // Locate invoice via merchant reference (txRef like inv_<8>_<ts>)
+    const ref = merchantReference || verified.merchantReference || '';
+    const m = ref.match(/^inv_([0-9a-f]{8})_/i);
+    if (!m) {
+      this.logger.warn(`Pesapal IPN tx=${orderTrackingId} unrecognised merchant_ref=${ref}`);
+      return { ok: true, ignored: true };
+    }
+    const inv = await this.invoices
+      .createQueryBuilder('inv')
+      .where('inv.id::text LIKE :prefix', { prefix: `${m[1]}%` })
+      .getOne();
+    if (!inv) return { ok: false, error: 'invoice not found' };
+    await this.recordPayment(inv.id, {
+      amountMinor: verified.amount ?? (inv.totalMinor - inv.amountPaidMinor),
+      currency: verified.currency ?? inv.currency,
+      gateway: 'pesapal',
+      gatewayRef: String(orderTrackingId),
+      method: 'pesapal',
+      paidAt: new Date().toISOString(),
+      notes: `Pesapal merchant_ref=${ref}`,
+    } as any);
+    const latest = await this.payments.findOne({ where: { gatewayRef: String(orderTrackingId) } });
+    if (latest) {
+      latest.gatewayPayload = verified.raw;
       await this.payments.save(latest);
     }
     return { ok: true };

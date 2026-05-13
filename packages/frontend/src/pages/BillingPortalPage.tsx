@@ -32,6 +32,7 @@ export default function BillingPortalPage() {
   const [data, setData] = useState<PortalData | null>(null);
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState<string | null>(null);
+  const [gateways, setGateways] = useState<{ flutterwave?: { configured: boolean }; pesapal?: { configured: boolean } }>({});
   const banner = params.get('status');
 
   const load = async () => {
@@ -39,13 +40,16 @@ export default function BillingPortalPage() {
     try { const r = await api.get('/saas-revenue/portal/me'); setData(unwrap<PortalData>(r)); }
     finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    api.get('/saas-revenue/public/gateways').then((r) => setGateways(unwrap<any>(r) || {})).catch(() => {});
+  }, []);
 
-  const payInvoice = async (inv: SaasInvoice) => {
+  const payInvoice = async (inv: SaasInvoice, gateway?: 'flutterwave' | 'pesapal') => {
     setPaying(inv.id);
     try {
       const redirectUrl = `${window.location.origin}/billing-portal?status=return&inv=${inv.id}`;
-      const res = await api.post('/saas-revenue/portal/checkout', { invoiceId: inv.id, redirectUrl });
+      const res = await api.post('/saas-revenue/portal/checkout', { invoiceId: inv.id, redirectUrl, gateway });
       const link = unwrap<any>(res)?.link;
       if (link) window.location.href = link;
       else alert('Could not create checkout link');
@@ -198,9 +202,16 @@ export default function BillingPortalPage() {
                       <button onClick={() => printInvoice(inv)} className="inline-flex items-center gap-1 px-2 py-1 border text-xs rounded hover:bg-gray-50 mr-1" title="View / print invoice"><Printer className="w-3 h-3" /> View</button>
                       <button onClick={() => downloadPdf(inv)} className="inline-flex items-center gap-1 px-2 py-1 border text-xs rounded hover:bg-gray-50 mr-1" title="Download PDF"><Download className="w-3 h-3" /> PDF</button>
                       {inv.status === 'open' && (
-                        <button onClick={() => payInvoice(inv)} disabled={paying === inv.id} className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-600 text-white text-xs rounded hover:bg-emerald-700 disabled:opacity-50">
-                          {paying === inv.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CreditCard className="w-3 h-3" />} Pay now
-                        </button>
+                        <>
+                          <button onClick={() => payInvoice(inv)} disabled={paying === inv.id} className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-600 text-white text-xs rounded hover:bg-emerald-700 disabled:opacity-50">
+                            {paying === inv.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CreditCard className="w-3 h-3" />} Pay{gateways.pesapal?.configured ? ' (Card)' : ' now'}
+                          </button>
+                          {gateways.pesapal?.configured && (
+                            <button onClick={() => payInvoice(inv, 'pesapal')} disabled={paying === inv.id} className="inline-flex items-center gap-1 px-3 py-1 ml-1 bg-indigo-600 text-white text-xs rounded hover:bg-indigo-700 disabled:opacity-50" title="Pay with Pesapal (mobile money / card)">
+                              {paying === inv.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CreditCard className="w-3 h-3" />} Pesapal
+                            </button>
+                          )}
+                        </>
                       )}
                     </td>
                   </tr>
