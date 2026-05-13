@@ -10,6 +10,7 @@ import { SaasRevenueService } from './saas-revenue.service';
 import { SaasRevenueController } from './saas-revenue.controller';
 import { SaasMailerService } from './saas-mailer.service';
 import { FlutterwaveService } from './flutterwave.service';
+import { PesapalService } from './pesapal.service';
 import { SystemSettingsModule } from '../system-settings/system-settings.module';
 
 @Module({
@@ -18,7 +19,7 @@ import { SystemSettingsModule } from '../system-settings/system-settings.module'
     SystemSettingsModule,
   ],
   controllers: [SaasRevenueController],
-  providers: [SaasRevenueService, SaasMailerService, FlutterwaveService],
+  providers: [SaasRevenueService, SaasMailerService, FlutterwaveService, PesapalService],
   exports: [SaasRevenueService],
 })
 export class SaasRevenueModule {}
