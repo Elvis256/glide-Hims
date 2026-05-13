@@ -178,6 +178,15 @@ export class ProcurementApprovalPolicyStep extends BaseEntity {
 
   @Column({ name: 'skip_if_self', default: true })
   skipIfSelf: boolean;
+
+  @Column({ name: 'condition', type: 'jsonb', nullable: true })
+  condition?: Record<string, unknown> | null;
+
+  @Column({ name: 'sla_hours', type: 'int', nullable: true })
+  slaHours?: number;
+
+  @Column({ name: 'escalate_to_user_id', nullable: true })
+  escalateToUserId?: string;
 }
 
 @Entity('approval_delegations')

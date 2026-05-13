@@ -133,6 +133,10 @@ export class ApprovalsService {
 
     const saved: ProcurementApprovalChain[] = [];
     for (const step of steps) {
+      const slaHours = (step as any).slaHours ?? null;
+      const slaDueAt = slaHours
+        ? new Date(Date.now() + slaHours * 3600 * 1000)
+        : undefined;
       const row = this.chainRepo.create({
         module: input.module,
         documentId: input.documentId,
@@ -144,6 +148,8 @@ export class ApprovalsService {
         groupId: (step as any).groupId || undefined,
         quorumType: (step as any).quorumType || undefined,
         quorumCount: (step as any).quorumCount || undefined,
+        slaHours: slaHours ?? undefined,
+        slaDueAt,
         status: ApprovalChainStatus.PENDING,
       });
       saved.push(await this.chainRepo.save(row));
@@ -293,7 +299,7 @@ export class ApprovalsService {
   /**
    * Returns user IDs who can act on a chain step (used to populate inbox).
    */
-  private async resolvePotentialApprovers(
+  async resolvePotentialApprovers(
     step: ProcurementApprovalChain,
   ): Promise<string[]> {
     const ids = new Set<string>();
@@ -506,6 +512,52 @@ export class ApprovalsService {
       tenantId: rows[0].tenantId,
     });
     return { recalled: rows.length };
+  }
+
+  // ---------- SLA escalation ----------
+
+  /**
+   * Mark a pending step as escalated. Does NOT change `status` (the original
+   * approver can still act); records the timestamp + escalation target so
+   * notifications can fan out and the UI can show an SLA-breached badge.
+   */
+  async escalate(step: ProcurementApprovalChain, escalateToUserId?: string | null) {
+    if (step.status !== ApprovalChainStatus.PENDING) return step;
+    if (step.escalatedAt) return step;
+    const before = { escalatedAt: step.escalatedAt };
+    step.escalatedAt = new Date();
+    await this.chainRepo.save(step);
+    await this.recordAction({
+      tenantId: step.tenantId,
+      chainId: step.id,
+      chainStepId: step.id,
+      module: step.module,
+      documentType: step.documentType,
+      documentId: step.documentId,
+      action: 'escalate',
+      beforeJson: before,
+      afterJson: { escalatedAt: step.escalatedAt, escalateToUserId: escalateToUserId ?? null },
+    });
+    this.events.emit('approval.step.escalated', {
+      documentRef: { module: step.module, documentType: step.documentType, documentId: step.documentId },
+      chainStepId: step.id,
+      escalateToUserId: escalateToUserId ?? null,
+      tenantId: step.tenantId,
+    });
+    return step;
+  }
+
+  /** Find pending steps whose SLA has elapsed and have not yet been escalated. */
+  async findBreachedSteps(limit = 100): Promise<ProcurementApprovalChain[]> {
+    return this.chainRepo
+      .createQueryBuilder('c')
+      .where('c.status = :st', { st: ApprovalChainStatus.PENDING })
+      .andWhere('c.sla_due_at IS NOT NULL')
+      .andWhere('c.sla_due_at < NOW()')
+      .andWhere('c.escalated_at IS NULL')
+      .orderBy('c.sla_due_at', 'ASC')
+      .limit(limit)
+      .getMany();
   }
 
   // ---------- Audit ----------

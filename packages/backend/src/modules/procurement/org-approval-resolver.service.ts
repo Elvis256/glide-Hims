@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
+import * as jsonLogic from 'json-logic-js';
 import { ProcurementApprovalChain, ApprovalChainStatus } from '../../database/entities/procurement-approval-chain.entity';
 import {
   ApprovalDelegation,
@@ -33,6 +34,8 @@ export interface ResolvedStep {
   groupId?: string | null;
   quorumType?: ApproverGroupQuorum;
   quorumCount?: number | null;
+  slaHours?: number | null;
+  escalateToUserId?: string | null;
 }
 
 export interface ResolvedChainPreview {
@@ -87,6 +90,10 @@ export class OrgApprovalResolverService {
 
     const saved: ProcurementApprovalChain[] = [];
     for (const step of steps) {
+      const slaHours = step.slaHours ?? null;
+      const slaDueAt = slaHours
+        ? new Date(Date.now() + slaHours * 3600 * 1000)
+        : undefined;
       const row = this.chainRepo.create({
         documentId,
         documentType,
@@ -94,6 +101,11 @@ export class OrgApprovalResolverService {
         approvalLevel: step.approvalLevel,
         requiredRole: step.requiredRole,
         approverId: step.approverId || undefined,
+        groupId: step.groupId || undefined,
+        quorumType: step.quorumType,
+        quorumCount: step.quorumCount ?? undefined,
+        slaHours: slaHours ?? undefined,
+        slaDueAt,
         status: ApprovalChainStatus.PENDING,
       });
       saved.push(await this.chainRepo.save(row));
@@ -129,9 +141,34 @@ export class OrgApprovalResolverService {
         order: { stepOrder: 'ASC' },
       });
       for (const sr of stepRows) {
+        // JSONLogic condition gate: skip step entirely when rule resolves false.
+        if (sr.condition && Object.keys(sr.condition as object).length > 0) {
+          try {
+            const ctx = {
+              amount: input.amount,
+              documentType: input.documentType,
+              departmentId: input.departmentId,
+              facilityId: input.facilityId,
+              category: input.category,
+              requesterId: input.requesterId,
+            };
+            const ok = jsonLogic.apply(sr.condition as any, ctx);
+            if (!ok) continue;
+          } catch (e) {
+            this.logger.warn(
+              `Bad JSONLogic on policy ${policy.id} step ${sr.stepOrder}: ${(e as Error).message}; skipping condition`,
+            );
+          }
+        }
         const resolved = await this.resolveStep(sr, input);
         if (resolved) {
-          rawSteps.push({ ...resolved, rawType: sr.approverType, stepRow: sr });
+          rawSteps.push({
+            ...resolved,
+            slaHours: sr.slaHours ?? null,
+            escalateToUserId: sr.escalateToUserId ?? null,
+            rawType: sr.approverType,
+            stepRow: sr,
+          });
         } else if (!sr.isOptional) {
           // Couldn't resolve a required step — drop policy and fall back
           this.logger.warn(
@@ -209,6 +246,8 @@ export class OrgApprovalResolverService {
         groupId: s.groupId || null,
         quorumType: s.quorumType,
         quorumCount: s.quorumCount,
+        slaHours: (s as any).slaHours ?? null,
+        escalateToUserId: (s as any).escalateToUserId ?? null,
       });
     }
 
