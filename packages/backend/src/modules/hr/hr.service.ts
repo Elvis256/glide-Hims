@@ -6,9 +6,11 @@ import {
   Logger,
   Inject,
   forwardRef,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, MoreThanOrEqual, LessThanOrEqual, In, IsNull, Not, DataSource } from 'typeorm';
+import { ApprovalsService } from '../approvals/approvals.service';
 import { Employee, EmploymentStatus } from '../../database/entities/employee.entity';
 import { AttendanceRecord } from '../../database/entities/attendance.entity';
 import { LeaveRequest, LeaveStatus, LeaveType } from '../../database/entities/leave-request.entity';
@@ -128,6 +130,9 @@ export class HrService {
     @Inject(forwardRef(() => FinanceService))
     private financeService: FinanceService,
     private dataSource: DataSource,
+    @Optional()
+    @Inject(forwardRef(() => ApprovalsService))
+    private approvalsService?: ApprovalsService,
   ) {}
 
   // ============ STAFF MANAGEMENT (Users as Staff) ============
@@ -814,7 +819,84 @@ export class HrService {
       ...(tenantId ? { tenantId } : {}),
     });
 
-    return this.leaveRepo.save(leave);
+    const saved = await this.leaveRepo.save(leave);
+
+    // Submit through the cross-cutting Approvals engine.
+    // Falls back silently to the legacy approveLeave() flow if the engine
+    // can't resolve a chain (no policy + no manager).
+    if (this.approvalsService && employee.userId) {
+      try {
+        await this.approvalsService.submit({
+          module: 'hr',
+          documentType: 'leave',
+          documentId: saved.id,
+          tenantId: tenantId || (saved as any).tenantId || '',
+          requesterId: employee.userId,
+          amount: daysRequested,
+          departmentId: (employee as any).departmentId || null,
+          category: dto.leaveType,
+        });
+      } catch (e) {
+        this.logger.warn(
+          `Approval submit failed for leave ${saved.id}: ${(e as Error).message}; continuing with legacy flow`,
+        );
+      }
+    }
+
+    return saved;
+  }
+
+  /**
+   * Called by HrApprovalListener when the engine signals approval.completed
+   * for module=hr / documentType=leave. Sets the LeaveRequest to APPROVED and
+   * deducts balances. Idempotent: no-op if already finalized.
+   */
+  async finalizeLeaveFromApproval(
+    leaveId: string,
+    actorUserId: string | undefined,
+    approved: boolean,
+    note?: string,
+  ): Promise<void> {
+    const leave = await this.leaveRepo.findOne({
+      where: { id: leaveId },
+      relations: ['employee'],
+    });
+    if (!leave || leave.status !== LeaveStatus.PENDING) return;
+    leave.status = approved ? LeaveStatus.APPROVED : LeaveStatus.REJECTED;
+    leave.approvedById = actorUserId || (null as unknown as string);
+    leave.approvedAt = new Date();
+    if (note) leave.approvalNotes = note;
+    if (approved && leave.employee) {
+      const employee = leave.employee;
+      if (leave.leaveType === LeaveType.ANNUAL) {
+        if (employee.annualLeaveBalance < leave.daysRequested) {
+          this.logger.warn(
+            `[HR] Auto-approval would overdraw annual balance for employee ${employee.id}; marking REJECTED`,
+          );
+          leave.status = LeaveStatus.REJECTED;
+          leave.approvalNotes =
+            (leave.approvalNotes ? leave.approvalNotes + '\n' : '') +
+            '[Insufficient annual leave balance at approval time]';
+        } else {
+          employee.annualLeaveBalance -= leave.daysRequested;
+          await this.employeeRepo.save(employee);
+        }
+      } else if (leave.leaveType === LeaveType.SICK) {
+        if (employee.sickLeaveBalance < leave.daysRequested) {
+          leave.status = LeaveStatus.REJECTED;
+          leave.approvalNotes =
+            (leave.approvalNotes ? leave.approvalNotes + '\n' : '') +
+            '[Insufficient sick leave balance at approval time]';
+        } else {
+          employee.sickLeaveBalance -= leave.daysRequested;
+          await this.employeeRepo.save(employee);
+        }
+      }
+    }
+    await this.leaveRepo.save(leave);
+    this.logger.log(
+      `[HR_NOTIFY] leave.${leave.status.toLowerCase()} (via approvals) leaveId=${leave.id}`,
+    );
   }
 
   async approveLeave(
