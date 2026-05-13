@@ -203,6 +203,11 @@ export class PlanSelectionDto {
   @IsOptional()
   @IsIn(['monthly', 'annual'])
   billingInterval?: 'monthly' | 'annual';
+
+  @ApiPropertyOptional({ description: 'Optional promo coupon code' })
+  @IsOptional()
+  @IsString()
+  couponCode?: string;
 }
 
 export class RegisterTenantDto extends InitializeSetupDto {

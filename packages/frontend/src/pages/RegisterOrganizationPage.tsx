@@ -283,6 +283,9 @@ export default function RegisterOrganizationPage() {
   const [plansLoading, setPlansLoading] = useState(true);
   const [displayCurrency, setDisplayCurrency] = useState<string>(() => searchParams.get('currency')?.toUpperCase() || 'UGX');
   const [availableCurrencies, setAvailableCurrencies] = useState<string[]>(['UGX']);
+  const [couponInput, setCouponInput] = useState('');
+  const [couponPreview, setCouponPreview] = useState<{ valid: boolean; reason?: string; baseMinor?: number; discountMinor?: number; payableMinor?: number; currency?: string; discountType?: string; amount?: number; durationMonths?: number | null; code?: string } | null>(null);
+  const [couponChecking, setCouponChecking] = useState(false);
   const [currentStep, setCurrentStep] = useState<Step>('business_type');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [presets, setPresets] = useState<FacilityPreset[]>([]);
@@ -651,6 +654,84 @@ export default function RegisterOrganizationPage() {
               </div>
             )}
             {errors['plan'] && <p className="text-sm text-red-500">{errors['plan']}</p>}
+
+            {/* Coupon code */}
+            {formData.plan?.code && (() => {
+              const sp = plans.find((p) => p.code === formData.plan!.code);
+              const planId = sp?.id;
+              const interval = formData.plan?.billingInterval || 'monthly';
+              const fmt = (m?: number, c?: string) => {
+                const cur = c || sp?.currency || displayCurrency;
+                const v = (m || 0) / 100;
+                try { return new Intl.NumberFormat(undefined, { style: 'currency', currency: cur, maximumFractionDigits: 0 }).format(v); }
+                catch { return `${cur} ${v.toLocaleString()}`; }
+              };
+              const apply = async () => {
+                if (!couponInput.trim()) return;
+                setCouponChecking(true);
+                try {
+                  const r = await api.get('/saas-revenue/public/coupons/preview', {
+                    params: { code: couponInput.trim(), planId, billingInterval: interval, seats: 1 },
+                  });
+                  const data = r.data?.data || r.data;
+                  setCouponPreview(data);
+                  if (data?.valid) {
+                    setFormData((prev) => ({ ...prev, plan: prev.plan ? { ...prev.plan, couponCode: couponInput.trim().toUpperCase() } : prev.plan }));
+                  } else {
+                    setFormData((prev) => ({ ...prev, plan: prev.plan ? { ...prev.plan, couponCode: undefined } : prev.plan }));
+                  }
+                } catch { setCouponPreview({ valid: false, reason: 'Could not validate coupon' }); }
+                finally { setCouponChecking(false); }
+              };
+              const clearCoupon = () => {
+                setCouponInput(''); setCouponPreview(null);
+                setFormData((prev) => ({ ...prev, plan: prev.plan ? { ...prev.plan, couponCode: undefined } : prev.plan }));
+              };
+              return (
+                <div className="bg-gray-50 border rounded-lg p-4">
+                  <div className="text-sm font-medium text-gray-700 mb-2">Have a promo code?</div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      type="text"
+                      placeholder="Enter coupon code"
+                      value={couponInput}
+                      onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
+                      className="flex-1 min-w-[180px] rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono uppercase"
+                    />
+                    {couponPreview?.valid ? (
+                      <button type="button" onClick={clearCoupon} className="px-3 py-2 text-sm border rounded hover:bg-white">Remove</button>
+                    ) : (
+                      <button type="button" onClick={apply} disabled={couponChecking || !couponInput.trim()} className="px-3 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">
+                        {couponChecking ? 'Checking…' : 'Apply'}
+                      </button>
+                    )}
+                  </div>
+                  {couponPreview && (
+                    couponPreview.valid ? (
+                      <div className="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded text-sm">
+                        <div className="font-medium text-emerald-800">
+                          ✓ Coupon <span className="font-mono">{couponPreview.code}</span> applied —{' '}
+                          {couponPreview.discountType === 'percent' ? `${couponPreview.amount}% off` : `${fmt(couponPreview.amount, couponPreview.currency)} off`}
+                          {couponPreview.durationMonths ? ` for ${couponPreview.durationMonths} month${couponPreview.durationMonths > 1 ? 's' : ''}` : ' (forever)'}
+                        </div>
+                        {!!couponPreview.baseMinor && (
+                          <div className="mt-2 text-xs text-emerald-900 space-y-0.5">
+                            <div>Subtotal: {fmt(couponPreview.baseMinor, couponPreview.currency)}</div>
+                            <div>Discount: − {fmt(couponPreview.discountMinor, couponPreview.currency)}</div>
+                            <div className="font-bold">First-cycle total: {fmt(couponPreview.payableMinor, couponPreview.currency)}</div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="mt-3 p-3 bg-rose-50 border border-rose-200 rounded text-sm text-rose-800">
+                        ✗ {couponPreview.reason || 'Coupon not valid'}
+                      </div>
+                    )
+                  )}
+                </div>
+              );
+            })()}
+
             <p className="text-xs text-gray-500">You can change plans later from the billing portal. Existing trial subscriptions can be upgraded or cancelled at any time.</p>
           </div>
         );

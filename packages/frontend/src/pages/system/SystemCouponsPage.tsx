@@ -1,16 +1,32 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Loader2, Plus, Trash2, Check, X, Tag, CheckCircle, Clock, Activity } from 'lucide-react';
+import { Loader2, Plus, Trash2, Check, X, Tag, CheckCircle, Clock, Activity, Pencil, Power, Users, ExternalLink } from 'lucide-react';
 import api from '../../services/api';
-import { Coupon, fmtMoney, fmtDate, unwrap } from './saas/_shared';
+import { Coupon, fmtMoney, fmtDate, fmtDateTime, unwrap } from './saas/_shared';
 
 type Filter = 'all' | 'active' | 'inactive' | 'expired' | 'exhausted';
+
+interface RedemptionRow {
+  id: string;
+  tenantId: string;
+  tenant: { id: string; name: string; slug: string } | null;
+  planId: string;
+  billingInterval: string;
+  status: string;
+  discountPercent: number;
+  discountFixedMinor: number;
+  createdAt: string;
+}
 
 export default function SystemCouponsPage() {
   const [items, setItems] = useState<Coupon[]>([]);
   const [loading, setLoading] = useState(true);
-  const [edit, setEdit] = useState<Partial<Coupon> | null>(null);
+  const [edit, setEdit] = useState<(Partial<Coupon> & { id?: string }) | null>(null);
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState<Filter>('all');
+  const [redemptionsOf, setRedemptionsOf] = useState<Coupon | null>(null);
+  const [redemptions, setRedemptions] = useState<RedemptionRow[]>([]);
+  const [redemptionsLoading, setRedemptionsLoading] = useState(false);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -48,14 +64,38 @@ export default function SystemCouponsPage() {
   const save = async () => {
     if (!edit) return;
     setSaving(true);
-    try { await api.post('/saas-revenue/coupons', edit); setEdit(null); await load(); }
-    catch (e: any) { alert(e?.response?.data?.message || 'Save failed'); }
+    try {
+      const payload: any = { ...edit };
+      // strip readonly
+      delete payload.id; delete payload.timesRedeemed; delete payload.createdAt;
+      if (edit.id) await api.put(`/saas-revenue/coupons/${edit.id}`, payload);
+      else await api.post('/saas-revenue/coupons', payload);
+      setEdit(null); await load();
+    } catch (e: any) { alert(e?.response?.data?.message || 'Save failed'); }
     finally { setSaving(false); }
   };
 
   const remove = async (id: string) => {
-    if (!confirm('Delete coupon?')) return;
+    if (!confirm('Delete coupon? This cannot be undone (existing subscriptions keep their discount).')) return;
     await api.delete(`/saas-revenue/coupons/${id}`); await load();
+  };
+
+  const toggleActive = async (c: Coupon) => {
+    setTogglingId(c.id);
+    try {
+      await api.put(`/saas-revenue/coupons/${c.id}`, { isActive: !c.isActive });
+      await load();
+    } catch (e: any) { alert(e?.response?.data?.message || 'Toggle failed'); }
+    finally { setTogglingId(null); }
+  };
+
+  const openRedemptions = async (c: Coupon) => {
+    setRedemptionsOf(c); setRedemptions([]); setRedemptionsLoading(true);
+    try {
+      const r = await api.get(`/saas-revenue/coupons/${c.id}/redemptions`);
+      const data = unwrap<{ subscriptions: RedemptionRow[] }>(r);
+      setRedemptions(data?.subscriptions || []);
+    } finally { setRedemptionsLoading(false); }
   };
 
   const StatCard = ({ icon: Icon, label, value, tone }: { icon: any; label: string; value: number | string; tone: string }) => (
@@ -87,7 +127,7 @@ export default function SystemCouponsPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard icon={Tag} label="Total coupons" value={stats.total} tone="text-gray-400" />
         <StatCard icon={CheckCircle} label="Active" value={stats.active} tone="text-emerald-600" />
-        <StatCard icon={Clock} label="Expired" value={stats.expired + stats.exhausted} tone="text-amber-600" />
+        <StatCard icon={Clock} label="Expired/Exhausted" value={stats.expired + stats.exhausted} tone="text-amber-600" />
         <StatCard icon={Activity} label="Total redemptions" value={stats.redemptions} tone="text-blue-600" />
       </div>
 
@@ -120,10 +160,26 @@ export default function SystemCouponsPage() {
                     <td className="px-4 py-2 font-mono">{c.code}</td>
                     <td className="px-4 py-2">{c.discountType === 'percent' ? `${c.amount}%` : fmtMoney(c.amount, c.currency)}</td>
                     <td className="px-4 py-2">{c.durationMonths ? `${c.durationMonths} mo` : 'Forever'}</td>
-                    <td className="px-4 py-2">{c.timesRedeemed}{c.maxRedemptions ? `/${c.maxRedemptions}` : ''}</td>
+                    <td className="px-4 py-2">
+                      <button onClick={() => openRedemptions(c)} className="text-blue-600 hover:underline inline-flex items-center gap-1">
+                        <Users className="w-3 h-3" /> {c.timesRedeemed}{c.maxRedemptions ? `/${c.maxRedemptions}` : ''}
+                      </button>
+                    </td>
                     <td className="px-4 py-2">{c.expiresAt ? fmtDate(c.expiresAt) : '—'}</td>
                     <td className="px-4 py-2"><span className={`text-xs ${status.k}`}>{status.t}</span></td>
-                    <td className="px-4 py-2"><button onClick={() => remove(c.id)} className="text-red-600 hover:text-red-800"><Trash2 className="w-4 h-4" /></button></td>
+                    <td className="px-4 py-2">
+                      <div className="flex items-center justify-end gap-1">
+                        <button onClick={() => toggleActive(c)} disabled={togglingId === c.id} title={c.isActive ? 'Disable' : 'Enable'} className={`p-1.5 rounded hover:bg-gray-100 ${c.isActive ? 'text-emerald-600' : 'text-gray-400'} disabled:opacity-50`}>
+                          {togglingId === c.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Power className="w-4 h-4" />}
+                        </button>
+                        <button onClick={() => setEdit({ ...c, expiresAt: c.expiresAt ? c.expiresAt.slice(0, 10) : null })} title="Edit" className="p-1.5 rounded hover:bg-gray-100 text-blue-600">
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => remove(c.id)} title="Delete" className="p-1.5 rounded hover:bg-gray-100 text-rose-600">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
@@ -137,7 +193,7 @@ export default function SystemCouponsPage() {
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => !saving && setEdit(null)}>
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">New coupon</h2>
+              <h2 className="text-lg font-semibold">{edit.id ? `Edit coupon ${edit.code}` : 'New coupon'}</h2>
               <button onClick={() => setEdit(null)} className="text-gray-400"><X className="w-5 h-5" /></button>
             </div>
             <div className="space-y-3 text-sm">
@@ -155,7 +211,8 @@ export default function SystemCouponsPage() {
                 <div><div className="text-xs text-gray-500 mb-1">Max redemptions (optional)</div><input type="number" className="input w-full" value={edit.maxRedemptions ?? ''} onChange={(e) => setEdit({ ...edit, maxRedemptions: e.target.value ? parseInt(e.target.value, 10) : null })} /></div>
                 <div><div className="text-xs text-gray-500 mb-1">Duration months (forever if blank)</div><input type="number" className="input w-full" value={edit.durationMonths ?? ''} onChange={(e) => setEdit({ ...edit, durationMonths: e.target.value ? parseInt(e.target.value, 10) : null })} /></div>
               </div>
-              <div><div className="text-xs text-gray-500 mb-1">Expires at (ISO date, optional)</div><input className="input w-full" value={edit.expiresAt || ''} onChange={(e) => setEdit({ ...edit, expiresAt: e.target.value })} placeholder="2026-12-31" /></div>
+              <div><div className="text-xs text-gray-500 mb-1">Expires at (YYYY-MM-DD, optional)</div><input className="input w-full" value={edit.expiresAt || ''} onChange={(e) => setEdit({ ...edit, expiresAt: e.target.value || null })} placeholder="2026-12-31" /></div>
+              <div><div className="text-xs text-gray-500 mb-1">Notes (internal)</div><input className="input w-full" value={edit.notes || ''} onChange={(e) => setEdit({ ...edit, notes: e.target.value })} /></div>
               <label className="flex items-center gap-2"><input type="checkbox" checked={!!edit.isActive} onChange={(e) => setEdit({ ...edit, isActive: e.target.checked })} /> Active</label>
             </div>
             <div className="mt-5 flex justify-end gap-2">
@@ -163,6 +220,47 @@ export default function SystemCouponsPage() {
               <button onClick={save} disabled={saving} className="px-3 py-2 text-sm bg-blue-600 text-white rounded inline-flex items-center gap-2 hover:bg-blue-700 disabled:opacity-50">{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Save</button>
             </div>
             <style>{`.input{border:1px solid #d1d5db;border-radius:6px;padding:6px 10px;font-size:13px}`}</style>
+          </div>
+        </div>
+      )}
+
+      {redemptionsOf && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setRedemptionsOf(null)}>
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="font-semibold">Redemptions for <span className="font-mono">{redemptionsOf.code}</span></h2>
+              <button onClick={() => setRedemptionsOf(null)} className="text-gray-400 hover:text-gray-700"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-4">
+              {redemptionsLoading ? (
+                <div className="text-center py-6 text-gray-400"><Loader2 className="inline w-4 h-4 animate-spin mr-2" />Loading…</div>
+              ) : redemptions.length === 0 ? (
+                <div className="text-center py-6 text-gray-400">No subscriptions have used this coupon yet.</div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="text-xs text-gray-500"><tr>
+                    <th className="text-left py-2">Tenant</th>
+                    <th className="text-left py-2">Plan / cycle</th>
+                    <th className="text-left py-2">Discount</th>
+                    <th className="text-left py-2">Status</th>
+                    <th className="text-left py-2">When</th>
+                    <th></th>
+                  </tr></thead>
+                  <tbody>
+                    {redemptions.map((s) => (
+                      <tr key={s.id} className="border-t">
+                        <td className="py-2">{s.tenant?.name || s.tenantId.slice(0, 8) + '…'}</td>
+                        <td className="py-2 text-xs">{s.planId.slice(0, 8)}… · {s.billingInterval}</td>
+                        <td className="py-2 text-xs">{s.discountPercent ? `${s.discountPercent}%` : fmtMoney(s.discountFixedMinor, redemptionsOf.currency)}</td>
+                        <td className="py-2 text-xs">{s.status}</td>
+                        <td className="py-2 text-xs text-gray-500">{fmtDateTime(s.createdAt)}</td>
+                        <td className="py-2 text-right"><a href={`/system/subscriptions/${s.id}`} className="text-blue-600 hover:underline text-xs inline-flex items-center gap-1"><ExternalLink className="w-3 h-3" /> Open</a></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
           </div>
         </div>
       )}

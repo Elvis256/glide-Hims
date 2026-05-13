@@ -491,6 +491,66 @@ export class SaasRevenueService {
     return { deleted: true };
   }
 
+  async updateCoupon(id: string, dto: Partial<SaasCoupon> & { expiresAt?: any }) {
+    const c = await this.coupons.findOne({ where: { id } });
+    if (!c) throw new BadRequestException('Coupon not found');
+    const next: Partial<SaasCoupon> = { ...dto };
+    if (dto.code) next.code = String(dto.code).toUpperCase().trim();
+    if ('expiresAt' in dto) {
+      next.expiresAt = dto.expiresAt ? new Date(dto.expiresAt as any) : null;
+    }
+    Object.assign(c, next);
+    return this.coupons.save(c);
+  }
+
+  async previewCoupon(code: string, planId?: string, billingInterval: 'monthly' | 'annual' = 'monthly', seats = 1) {
+    const c = await this.findValidCoupon(code, planId);
+    if (!c) return { valid: false, reason: 'Coupon code is invalid, expired, exhausted, or not applicable to this plan.' };
+    let baseMinor = 0; let currency = c.currency;
+    if (planId) {
+      const plan = await this.plans.findOne({ where: { id: planId } });
+      if (plan) {
+        baseMinor = (billingInterval === 'annual' ? plan.priceAnnualMinor : plan.priceMonthlyMinor) * Math.max(seats, 1);
+        currency = plan.currency || currency;
+      }
+    }
+    let discountMinor = 0;
+    if (c.discountType === 'percent') discountMinor = Math.floor((baseMinor * c.amount) / 100);
+    else discountMinor = Math.min(c.amount, baseMinor);
+    return {
+      valid: true,
+      code: c.code,
+      discountType: c.discountType,
+      amount: c.amount,
+      durationMonths: c.durationMonths,
+      currency,
+      baseMinor,
+      discountMinor,
+      payableMinor: Math.max(0, baseMinor - discountMinor),
+    };
+  }
+
+  async listCouponRedemptions(id: string) {
+    const c = await this.coupons.findOne({ where: { id } });
+    if (!c) throw new BadRequestException('Coupon not found');
+    const subs = await this.subs.find({ where: { couponId: id }, order: { createdAt: 'DESC' } });
+    const tmap = await this.tenantMap(subs.map((s) => s.tenantId));
+    return {
+      coupon: c,
+      subscriptions: subs.map((s) => ({
+        id: s.id,
+        tenantId: s.tenantId,
+        tenant: tmap.get(s.tenantId) ?? null,
+        planId: s.planId,
+        billingInterval: s.billingInterval,
+        status: s.status,
+        discountPercent: s.discountPercent,
+        discountFixedMinor: s.discountFixedMinor,
+        createdAt: s.createdAt,
+      })),
+    };
+  }
+
   async findValidCoupon(code: string, planId?: string): Promise<SaasCoupon | null> {
     const c = await this.coupons.findOne({ where: { code: code.toUpperCase().trim(), isActive: true } });
     if (!c) return null;
