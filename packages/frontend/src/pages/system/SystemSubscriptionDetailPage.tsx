@@ -126,6 +126,8 @@ export default function SystemSubscriptionDetailPage() {
 
       <BillingSettingsCard sub={data} onSaved={load} />
 
+      <BillingPayerCard sub={data} onSaved={load} />
+
       <Section title="Invoices" icon={<FileText className="w-4 h-4" />}>
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-600">
@@ -373,6 +375,91 @@ function BillingSettingsCard({ sub, onSaved }: { sub: Subscription; onSaved: () 
       <div className="mt-4 flex justify-end">
         <button disabled={!dirty || saving} onClick={save} className="px-3 py-2 text-sm bg-emerald-600 text-white rounded inline-flex items-center gap-2 hover:bg-emerald-700 disabled:opacity-50">
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save
+        </button>
+      </div>
+    </div>
+  );
+}
+
+interface TenantOpt { id: string; name: string; slug: string }
+
+function BillingPayerCard({ sub, onSaved }: { sub: Subscription; onSaved: () => void }) {
+  const current = (sub as any).billingPayerTenantId as string | null | undefined;
+  const [tenants, setTenants] = useState<TenantOpt[]>([]);
+  const [search, setSearch] = useState('');
+  const [payerId, setPayerId] = useState<string>(current || '');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+
+  useEffect(() => {
+    api.get('/tenants/with-stats')
+      .then((r) => {
+        const list = (r.data?.tenants ?? r.data?.items ?? r.data ?? []) as any[];
+        setTenants((list || []).map((t: any) => ({ id: t.id, name: t.name, slug: t.slug })));
+      })
+      .catch(() => setTenants([]));
+  }, []);
+
+  const dirty = (payerId || '') !== (current || '');
+  const filtered = tenants.filter((t) => t.id !== sub.tenantId && (
+    !search.trim() || t.name.toLowerCase().includes(search.toLowerCase()) || t.slug.toLowerCase().includes(search.toLowerCase())
+  ));
+  const currentName = tenants.find((t) => t.id === current)?.name;
+
+  const save = async () => {
+    setErr(null); setSaving(true);
+    try {
+      await api.put(`/saas-revenue/subscriptions/${sub.id}/billing-payer`, {
+        payerTenantId: payerId || null,
+      });
+      setSavedAt(Date.now()); setTimeout(() => setSavedAt(null), 2500);
+      onSaved();
+    } catch (e: any) {
+      setErr(e?.response?.data?.message || e?.message || 'Save failed');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="bg-white border rounded-lg p-5">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="font-medium inline-flex items-center gap-2"><DollarSign className="w-4 h-4" /> Billing payer (multi-org)</h2>
+        {savedAt && <span className="text-xs text-emerald-700">Saved</span>}
+      </div>
+      <p className="text-xs text-gray-500 mb-3">
+        Optionally route this subscription's invoices to a different organization (e.g. a parent
+        company that pays for several branches). The payer tenant will see and pay these invoices
+        from their own billing portal. Leave blank for self-billing.
+      </p>
+      {current && (
+        <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-800">
+          Current payer: <strong>{currentName || current}</strong>
+        </div>
+      )}
+      {err && <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">{err}</div>}
+      <div className="space-y-3">
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search organizations…"
+          className="w-full px-2 py-1.5 border rounded text-sm"
+        />
+        <select
+          value={payerId}
+          onChange={(e) => setPayerId(e.target.value)}
+          className="w-full px-2 py-1.5 border rounded text-sm"
+          size={Math.min(8, Math.max(3, filtered.length + 1))}
+        >
+          <option value="">— Self-billing (no external payer) —</option>
+          {filtered.map((t) => (
+            <option key={t.id} value={t.id}>{t.name} (/{t.slug})</option>
+          ))}
+        </select>
+      </div>
+      <div className="mt-4 flex justify-end">
+        <button disabled={!dirty || saving} onClick={save} className="px-3 py-2 text-sm bg-emerald-600 text-white rounded inline-flex items-center gap-2 hover:bg-emerald-700 disabled:opacity-50">
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} {payerId ? 'Set payer' : 'Clear payer'}
         </button>
       </div>
     </div>
