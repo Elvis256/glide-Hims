@@ -10,10 +10,10 @@ interface Dashboard {
   mrrMinor: number; arrMinor: number; arpaMinor: number; ltvMinor: number;
   churnRatePct: number; outstandingMinor: number; overdueCount: number;
   monthlyRevenue: Array<{ month: string; totalMinor: number }>;
-  topCustomers: Array<{ tenantId: string; totalMinor: number }>;
+  topCustomers: Array<{ tenantId: string; totalMinor: number; tenant?: { id: string; name: string; slug: string } | null }>;
   planBreakdown: Array<{ planId: string; planName: string; count: number; mrrMinor: number }>;
   forecast: { d30Minor: number; d60Minor: number; d90Minor: number };
-  expiringSoon: Array<{ id: string; tenantId: string; planName: string; nextRenewalAt: string; amountMinor: number; currency: string; autoRenew: boolean }>;
+  expiringSoon: Array<{ id: string; tenantId: string; tenant?: { id: string; name: string; slug: string } | null; planName: string; nextRenewalAt: string; amountMinor: number; currency: string; autoRenew: boolean }>;
 }
 
 export default function SystemRevenuePage() {
@@ -115,7 +115,16 @@ export default function SystemRevenuePage() {
             <ul className="divide-y text-sm">
               {data.topCustomers.map((c) => (
                 <li key={c.tenantId} className="py-2 flex items-center justify-between">
-                  <span className="font-mono text-xs">{c.tenantId}</span>
+                  <div>
+                    {c.tenant ? (
+                      <>
+                        <div className="font-medium">{c.tenant.name}</div>
+                        <div className="text-xs text-gray-500 font-mono">{c.tenant.slug}</div>
+                      </>
+                    ) : (
+                      <span className="font-mono text-xs text-gray-500" title={c.tenantId}>{c.tenantId.slice(0, 8)}…</span>
+                    )}
+                  </div>
                   <span className="font-medium">{fmtMoney(c.totalMinor, cur)}</span>
                 </li>
               ))}
@@ -130,7 +139,16 @@ export default function SystemRevenuePage() {
             <tbody>
               {data.expiringSoon.map((s) => (
                 <tr key={s.id} className="border-t">
-                  <td className="py-2 font-mono text-xs">{s.tenantId.slice(0, 8)}…</td>
+                  <td className="py-2">
+                    {s.tenant ? (
+                      <div>
+                        <div className="font-medium text-gray-900">{s.tenant.name}</div>
+                        <div className="text-xs text-gray-500 font-mono">{s.tenant.slug}</div>
+                      </div>
+                    ) : (
+                      <span className="font-mono text-xs text-gray-500" title={s.tenantId}>{s.tenantId.slice(0, 8)}…</span>
+                    )}
+                  </td>
                   <td className="py-2">{s.planName}</td>
                   <td className="py-2">{fmtDate(s.nextRenewalAt)} {!s.autoRenew && <span className="text-xs text-amber-600">(no auto)</span>}</td>
                   <td className="py-2 text-right font-medium">{fmtMoney(s.amountMinor, s.currency)}</td>

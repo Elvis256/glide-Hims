@@ -22,6 +22,7 @@ import {
   SubscriptionEventType,
 } from './saas.entity';
 import { License } from '../../database/entities/license.entity';
+import { Tenant } from '../../database/entities/tenant.entity';
 import {
   CreatePlanDto,
   UpdatePlanDto,
@@ -55,6 +56,7 @@ export class SaasRevenueService {
     @InjectRepository(SaasSubscriptionEvent) private readonly events: Repository<SaasSubscriptionEvent>,
     @InjectRepository(License) private readonly licenses: Repository<License>,
     @InjectRepository(Lead) private readonly leads: Repository<Lead>,
+    @InjectRepository(Tenant) private readonly tenants: Repository<Tenant>,
     private readonly mailer: SaasMailerService,
     private readonly flw: FlutterwaveService,
   ) {}
@@ -123,13 +125,27 @@ export class SaasRevenueService {
   // ============================================================
   // SUBSCRIPTIONS
   // ============================================================
+  private async tenantMap(ids: string[]): Promise<Map<string, { id: string; name: string; slug: string }>> {
+    const m = new Map<string, { id: string; name: string; slug: string }>();
+    const unique = Array.from(new Set(ids.filter(Boolean)));
+    if (unique.length === 0) return m;
+    const rows = await this.tenants.find({
+      where: { id: In(unique) as any },
+      select: ['id', 'name', 'slug'] as any,
+    });
+    for (const t of rows) m.set(t.id, { id: t.id, name: t.name, slug: t.slug });
+    return m;
+  }
+
   async listSubscriptions(opts: { status?: string; tenantId?: string; q?: string } = {}) {
     const qb = this.subs.createQueryBuilder('s')
       .leftJoinAndSelect('s.plan', 'plan')
       .orderBy('s.createdAt', 'DESC');
     if (opts.status) qb.andWhere('s.status = :status', { status: opts.status });
     if (opts.tenantId) qb.andWhere('s.tenantId = :tid', { tid: opts.tenantId });
-    return qb.getMany();
+    const rows = await qb.getMany();
+    const tmap = await this.tenantMap(rows.map((r) => r.tenantId));
+    return rows.map((r) => ({ ...r, tenant: tmap.get(r.tenantId) ?? null }));
   }
 
   async getSubscription(id: string) {
@@ -276,7 +292,9 @@ export class SaasRevenueService {
     if (opts.status) qb.andWhere('i.status = :st', { st: opts.status });
     if (opts.tenantId) qb.andWhere('i.tenantId = :t', { t: opts.tenantId });
     if (opts.subscriptionId) qb.andWhere('i.subscriptionId = :s', { s: opts.subscriptionId });
-    return qb.limit(500).getMany();
+    const rows = await qb.limit(500).getMany();
+    const tmap = await this.tenantMap(rows.map((r) => r.tenantId));
+    return rows.map((r) => ({ ...r, tenant: tmap.get(r.tenantId) ?? null }));
   }
 
   async getInvoice(id: string) {
@@ -426,10 +444,15 @@ export class SaasRevenueService {
     const allPaid = await this.invoices.find({ where: { status: 'paid' } });
     const byTenant = new Map<string, number>();
     for (const i of allPaid) byTenant.set(i.tenantId, (byTenant.get(i.tenantId) ?? 0) + i.totalMinor);
-    const topCustomers = Array.from(byTenant.entries())
+    const topRaw = Array.from(byTenant.entries())
       .sort(([, a], [, b]) => b - a)
-      .slice(0, 10)
-      .map(([tenantId, totalMinor]) => ({ tenantId, totalMinor }));
+      .slice(0, 10);
+    const topTenantsMap = await this.tenantMap(topRaw.map(([id]) => id));
+    const topCustomers = topRaw.map(([tenantId, totalMinor]) => ({
+      tenantId,
+      totalMinor,
+      tenant: topTenantsMap.get(tenantId) ?? null,
+    }));
 
     // Plan breakdown.
     const byPlan = new Map<string, { planId: string; planName: string; count: number; mrrMinor: number }>();
@@ -455,12 +478,19 @@ export class SaasRevenueService {
     }
 
     // Expiring soon (renewal within 14 days).
-    const expiringSoon = active
-      .filter((s) => s.nextRenewalAt && s.nextRenewalAt <= this.addDays(now, 14))
-      .map((s) => ({
-        id: s.id, tenantId: s.tenantId, planName: s.plan?.name, nextRenewalAt: s.nextRenewalAt,
-        amountMinor: this.applyDiscount(s.unitPriceMinor * s.seats, s), currency: s.currency, autoRenew: s.autoRenew,
-      }));
+    const expiringRaw = active
+      .filter((s) => s.nextRenewalAt && s.nextRenewalAt <= this.addDays(now, 14));
+    const expiringTenants = await this.tenantMap(expiringRaw.map((s) => s.tenantId));
+    const expiringSoon = expiringRaw.map((s) => ({
+      id: s.id,
+      tenantId: s.tenantId,
+      tenant: expiringTenants.get(s.tenantId) ?? null,
+      planName: s.plan?.name,
+      nextRenewalAt: s.nextRenewalAt,
+      amountMinor: this.applyDiscount(s.unitPriceMinor * s.seats, s),
+      currency: s.currency,
+      autoRenew: s.autoRenew,
+    }));
 
     // LTV (avg revenue per customer / monthly churn). Simplified.
     const arpa = active.length > 0 ? mrrMinor / active.length : 0;

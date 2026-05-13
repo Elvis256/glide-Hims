@@ -63,7 +63,16 @@ export default function SystemSubscriptionsPage() {
               {items.map((s) => (
                 <tr key={s.id} className="border-t">
                   <td className="px-4 py-2 font-medium">{s.plan?.name ?? '?'}</td>
-                  <td className="px-4 py-2 font-mono text-xs">{s.tenantId.slice(0, 8)}…</td>
+                  <td className="px-4 py-2">
+                    {s.tenant ? (
+                      <div>
+                        <div className="font-medium text-gray-900">{s.tenant.name}</div>
+                        <div className="text-xs text-gray-500 font-mono">{s.tenant.slug}</div>
+                      </div>
+                    ) : (
+                      <span className="font-mono text-xs text-gray-500" title={s.tenantId}>{s.tenantId.slice(0, 8)}…</span>
+                    )}
+                  </td>
                   <td className="px-4 py-2"><span className={`px-2 py-0.5 rounded-full text-xs ${SUB_STATUS_STYLES[s.status]}`}>{s.status.replace('_', ' ')}</span></td>
                   <td className="px-4 py-2 text-right">{fmtMoney(s.unitPriceMinor * s.seats, s.currency)}</td>
                   <td className="px-4 py-2 capitalize">{s.billingInterval}</td>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { KeyRound, Loader2, Plus, RefreshCw, Ban, CalendarPlus, ShieldCheck, AlertCircle, Pencil, Pause, Play } from 'lucide-react';
+import { KeyRound, Loader2, Plus, RefreshCw, Ban, CalendarPlus, ShieldCheck, AlertCircle, Pencil, Pause, Play, Copy, Check } from 'lucide-react';
 import api from '../../services/api';
 import TierBadge from '../../components/TierBadge';
 
@@ -121,6 +121,17 @@ export default function SystemLicensesPage() {
   const [editing, setEditing] = useState<License | null>(null);
   const [statusActionId, setStatusActionId] = useState<string | null>(null);
   const [extendingId, setExtendingId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const onCopyKey = async (lic: License) => {
+    try {
+      await navigator.clipboard.writeText(lic.licenseKey);
+      setCopiedId(lic.id);
+      setTimeout(() => setCopiedId((cur) => (cur === lic.id ? null : cur)), 2000);
+    } catch {
+      window.prompt('Copy license key', lic.licenseKey);
+    }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -288,49 +299,62 @@ export default function SystemLicensesPage() {
                   </td>
                   <td className="px-4 py-3 font-mono text-xs text-gray-600">{l.licenseKey}</td>
                   <td className="px-4 py-3 text-right">
-                    <div className="inline-flex gap-1">
+                    <div className="inline-flex flex-wrap gap-1 justify-end">
+                      <button
+                        onClick={() => onCopyKey(l)}
+                        className="inline-flex items-center gap-1 px-2 py-1 text-xs text-gray-700 border border-gray-200 rounded hover:bg-gray-50"
+                        title="Copy license key to clipboard"
+                      >
+                        {copiedId === l.id ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                        {copiedId === l.id ? 'Copied' : 'Copy key'}
+                      </button>
                       <button
                         onClick={() => setEditing(l)}
                         disabled={l.status === 'revoked'}
-                        className="p-1.5 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded disabled:opacity-30 disabled:cursor-not-allowed"
+                        className="inline-flex items-center gap-1 px-2 py-1 text-xs text-gray-700 border border-gray-200 rounded hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200 disabled:opacity-30 disabled:cursor-not-allowed"
                         title={l.status === 'revoked' ? 'Cannot edit a revoked license' : 'Edit modules / limits / tier'}
                       >
-                        <Pencil className="w-4 h-4" />
+                        <Pencil className="w-3.5 h-3.5" />
+                        Edit
                       </button>
                       <button
                         onClick={() => onExtend(l)}
-                        disabled={extendingId === l.id}
-                        className="p-1.5 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded"
-                        title="Extend"
+                        disabled={extendingId === l.id || l.status === 'revoked'}
+                        className="inline-flex items-center gap-1 px-2 py-1 text-xs text-gray-700 border border-gray-200 rounded hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200 disabled:opacity-30"
+                        title="Extend expiry date"
                       >
-                        {extendingId === l.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <CalendarPlus className="w-4 h-4" />}
+                        {extendingId === l.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CalendarPlus className="w-3.5 h-3.5" />}
+                        Extend
                       </button>
                       {l.status === 'suspended' ? (
                         <button
                           onClick={() => onReactivate(l)}
                           disabled={statusActionId === l.id}
-                          className="p-1.5 text-gray-500 hover:text-emerald-600 hover:bg-emerald-50 rounded"
+                          className="inline-flex items-center gap-1 px-2 py-1 text-xs text-emerald-700 border border-emerald-200 rounded hover:bg-emerald-50 disabled:opacity-30"
                           title="Reactivate"
                         >
-                          {statusActionId === l.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                          {statusActionId === l.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+                          Reactivate
                         </button>
                       ) : l.status === 'active' ? (
                         <button
                           onClick={() => onSuspend(l)}
                           disabled={statusActionId === l.id}
-                          className="p-1.5 text-gray-500 hover:text-amber-600 hover:bg-amber-50 rounded"
+                          className="inline-flex items-center gap-1 px-2 py-1 text-xs text-amber-700 border border-amber-200 rounded hover:bg-amber-50 disabled:opacity-30"
                           title="Suspend (reversible)"
                         >
-                          {statusActionId === l.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pause className="w-4 h-4" />}
+                          {statusActionId === l.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Pause className="w-3.5 h-3.5" />}
+                          Suspend
                         </button>
                       ) : null}
                       {l.status !== 'revoked' && (
                         <button
                           onClick={() => onRevoke(l)}
-                          className="p-1.5 text-gray-500 hover:text-rose-600 hover:bg-rose-50 rounded"
+                          className="inline-flex items-center gap-1 px-2 py-1 text-xs text-rose-700 border border-rose-200 rounded hover:bg-rose-50"
                           title="Revoke (permanent)"
                         >
-                          <Ban className="w-4 h-4" />
+                          <Ban className="w-3.5 h-3.5" />
+                          Revoke
                         </button>
                       )}
                     </div>

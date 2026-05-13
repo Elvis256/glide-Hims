@@ -14,8 +14,11 @@ export interface Plan {
   createdAt: string; updatedAt: string;
 }
 
+export interface TenantRef { id: string; name: string; slug: string }
+
 export interface Subscription {
-  id: string; tenantId: string; deploymentId: string | null; leadId: string | null;
+  id: string; tenantId: string; tenant?: TenantRef | null;
+  deploymentId: string | null; leadId: string | null;
   planId: string; plan?: Plan; status: SubStatus; billingInterval: BillingInterval;
   currency: string; unitPriceMinor: number; seats: number;
   discountPercent: number; discountFixedMinor: number;
@@ -29,7 +32,7 @@ export interface Subscription {
 }
 
 export interface SaasInvoice {
-  id: string; invoiceNumber: string; subscriptionId: string; tenantId: string;
+  id: string; invoiceNumber: string; subscriptionId: string; tenantId: string; tenant?: TenantRef | null;
   status: InvoiceStatus; currency: string;
   subtotalMinor: number; discountMinor: number; taxMinor: number; totalMinor: number;
   amountPaidMinor: number; issuedAt: string; dueAt: string; paidAt: string | null;
