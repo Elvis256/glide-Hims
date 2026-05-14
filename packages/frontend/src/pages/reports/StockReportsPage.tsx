@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Package,
@@ -10,6 +10,10 @@ import {
   Boxes,
   DollarSign,
   ArrowLeft,
+  RefreshCw,
+  ChevronDown,
+  FileJson,
+  FileText,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import {
@@ -26,7 +30,9 @@ import api from '../../services/api';
 import { useFacilityId } from '../../lib/facility';
 import { formatCurrency } from '../../lib/currency';
 import { printService } from '../../lib/print';
+import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
 import { asList } from '../../utils/unwrapResponse';
+import { num, toCsv, downloadBlob } from './_reportUtils';
 
 interface CategoryStock {
   name: string;
@@ -56,13 +62,24 @@ interface LowStockItem {
 
 export default function StockReportsPage() {
   const facilityId = useFacilityId();
-  const [dateRange, setDateRange] = useState('current');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const inst = useInstitutionInfo();
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
 
-  const { data: stats, isLoading } = useQuery({
-    queryKey: ['stock-reports', dateRange, selectedCategory, facilityId],
+  useEffect(() => {
+    if (!showExportMenu) return;
+    const onClick = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setShowExportMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [showExportMenu]);
+
+  const { data: stats, isLoading, isFetching, refetch } = useQuery({
+    queryKey: ['stock-reports', selectedCategory, facilityId],
     enabled: !!facilityId,
     queryFn: async () => {
       try {
@@ -71,7 +88,6 @@ export default function StockReportsPage() {
         });
         
         const inventory = asList(response.data);
-        const apiStats = response.data?.stats || {};
 
         // Extract all categories before filtering (for the dropdown)
         const allCategories = [...new Set(inventory.map((item: { category?: string }) => item.category || 'Other'))] as string[];
@@ -103,10 +119,10 @@ export default function StockReportsPage() {
           sellingPrice?: number;
           avgDailyConsumption?: number;
         }) => {
-          const currentStock = item.currentStock || 0;
-          const reorderLevel = item.minStock || 10;
+          const currentStock = num(item.currentStock);
+          const reorderLevel = num(item.minStock) || 10;
           // Use cost price for inventory valuation (GAAP/IFRS)
-          const unitPrice = item.unitCost || item.sellingPrice || 0;
+          const unitPrice = num(item.unitCost) || num(item.sellingPrice);
           const totalValue = currentStock * unitPrice;
           const category = item.category || 'Other';
           
@@ -147,7 +163,7 @@ export default function StockReportsPage() {
           // Add low stock alerts
           if (status !== 'ok') {
             // Estimated from reorder level. TODO: Use actual consumption data from /inventory/consumption
-            const avgDailyUsage = item.avgDailyConsumption || Math.max(1, Math.round(reorderLevel / 30));
+            const avgDailyUsage = num(item.avgDailyConsumption) || Math.max(1, Math.round(reorderLevel / 30));
             const daysUntilStockout = currentStock > 0 ? Math.ceil(currentStock / avgDailyUsage) : 0;
             lowStockAlerts.push({
               id: item.id,
@@ -189,37 +205,140 @@ export default function StockReportsPage() {
     },
 });
 
-  const handleExport = () => {
-    const rows = [
-      ['Stock Reports'],
-      [''],
-      ['Summary'],
-      ['Total Stock Value', formatCurrency(stats?.totalStockValue)],
-      ['Total Items', stats?.totalItems],
-      ['Low Stock Items', stats?.lowStockItems],
-      ['Out of Stock Items', stats?.outOfStockItems],
-      [''],
-      ['Category Breakdown'],
-      ['Category', 'Quantity', 'Value'],
-      ...(stats?.categoryBreakdown?.map((c: CategoryStock) => [c.name, c.quantity, formatCurrency(c.value)]) || []),
-      [''],
-      ['Stock Valuation'],
-      ['Item', 'Category', 'Stock', 'Unit Price', 'Total Value', 'Status'],
-      ...(stats?.stockValuation?.map((s: StockItem) => [s.name, s.category, s.currentStock, formatCurrency(s.unitPrice), formatCurrency(s.totalValue), s.status]) || []),
-    ];
-    const csvContent = rows.map(row => row.join(',')).join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'stock-report.csv';
-    a.click();
+  const generatedAt = useMemo(() => new Date(), [stats]);
+
+  const buildCsv = (): string => {
+    const rows: Array<Array<unknown>> = [];
+    rows.push(['Stock Report']);
+    rows.push(['Facility', inst?.name ?? '']);
+    rows.push(['Category', selectedCategory === 'all' ? 'All Categories' : selectedCategory]);
+    rows.push(['Generated', generatedAt.toLocaleString()]);
+    rows.push([]);
+    rows.push(['Summary']);
+    rows.push(['Total Stock Value', stats?.totalStockValue ?? 0]);
+    rows.push(['Total Items', stats?.totalItems ?? 0]);
+    rows.push(['Low Stock Items', stats?.lowStockItems ?? 0]);
+    rows.push(['Out of Stock Items', stats?.outOfStockItems ?? 0]);
+    rows.push([]);
+    rows.push(['Category Breakdown']);
+    rows.push(['Category', 'Quantity', 'Value']);
+    (stats?.categoryBreakdown ?? []).forEach((c: CategoryStock) =>
+      rows.push([c.name, c.quantity, c.value]),
+    );
+    rows.push([]);
+    rows.push(['Low Stock Alerts']);
+    rows.push(['Item', 'Category', 'Current Stock', 'Reorder Level', 'Days Until Stockout']);
+    (stats?.lowStockAlerts ?? []).forEach((a: LowStockItem) =>
+      rows.push([a.name, a.category, a.currentStock, a.reorderLevel, a.daysUntilStockout]),
+    );
+    rows.push([]);
+    rows.push(['Stock Valuation (Top 20)']);
+    rows.push(['Item', 'Category', 'Stock', 'Reorder Level', 'Unit Price', 'Total Value', 'Status']);
+    (stats?.stockValuation ?? []).forEach((s: StockItem) =>
+      rows.push([s.name, s.category, s.currentStock, s.reorderLevel, s.unitPrice, s.totalValue, s.status]),
+    );
+    return toCsv(rows);
+  };
+
+  const handleExportCsv = () => {
+    if (!stats) return;
+    const stamp = new Date().toISOString().slice(0, 10);
+    downloadBlob(`stock-report-${stamp}.csv`, 'text/csv;charset=utf-8', '\ufeff' + buildCsv());
+    setShowExportMenu(false);
+  };
+
+  const handleExportJson = () => {
+    if (!stats) return;
+    const stamp = new Date().toISOString().slice(0, 10);
+    const payload = {
+      report: 'Stock Report',
+      facility: inst?.name ?? null,
+      category: selectedCategory === 'all' ? 'All Categories' : selectedCategory,
+      generatedAt: generatedAt.toISOString(),
+      ...stats,
+    };
+    downloadBlob(`stock-report-${stamp}.json`, 'application/json', JSON.stringify(payload, null, 2));
+    setShowExportMenu(false);
   };
 
   const handlePrint = () => {
-    const el = document.getElementById('report-content');
-    if (!el) return;
-    printService.printDocument(el.innerHTML, { title: 'Stock Reports' });
+    if (!stats) return;
+    const header = printService.buildHeader(inst, 'document');
+    const footer = printService.buildFooter(inst, 'document');
+    const fmt = (v: number) => formatCurrency(v);
+
+    const summaryTable = `
+      <h2 style="font-size:16px;margin:16px 0 8px;color:#1e293b;">Stock Report — ${selectedCategory === 'all' ? 'All Categories' : selectedCategory}</h2>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-size:11px;">
+        <tbody>
+          <tr><td style="border:1px solid #e2e8f0;padding:6px;font-weight:600;width:40%;">Total Stock Value</td><td style="border:1px solid #e2e8f0;padding:6px;">${fmt(stats.totalStockValue)}</td></tr>
+          <tr><td style="border:1px solid #e2e8f0;padding:6px;font-weight:600;">Total Items</td><td style="border:1px solid #e2e8f0;padding:6px;">${stats.totalItems.toLocaleString()}</td></tr>
+          <tr><td style="border:1px solid #e2e8f0;padding:6px;font-weight:600;">Low Stock Items</td><td style="border:1px solid #e2e8f0;padding:6px;">${stats.lowStockItems}</td></tr>
+          <tr><td style="border:1px solid #e2e8f0;padding:6px;font-weight:600;">Out of Stock</td><td style="border:1px solid #e2e8f0;padding:6px;">${stats.outOfStockItems}</td></tr>
+        </tbody>
+      </table>`;
+
+    const catRows = stats.categoryBreakdown ?? [];
+    const catTable = catRows.length ? `
+      <h3 style="font-size:13px;margin:12px 0 6px;color:#334155;">Category Breakdown</h3>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-size:11px;">
+        <thead><tr style="background:#f1f5f9;">
+          <th style="border:1px solid #e2e8f0;padding:6px;text-align:left;">Category</th>
+          <th style="border:1px solid #e2e8f0;padding:6px;text-align:right;">Quantity</th>
+          <th style="border:1px solid #e2e8f0;padding:6px;text-align:right;">Value</th>
+        </tr></thead>
+        <tbody>
+          ${catRows.map((c: CategoryStock) =>
+            `<tr><td style="border:1px solid #e2e8f0;padding:6px;">${c.name}</td><td style="border:1px solid #e2e8f0;padding:6px;text-align:right;">${c.quantity.toLocaleString()}</td><td style="border:1px solid #e2e8f0;padding:6px;text-align:right;">${fmt(c.value)}</td></tr>`,
+          ).join('')}
+        </tbody>
+      </table>` : '';
+
+    const alertRows = stats.lowStockAlerts ?? [];
+    const alertTable = alertRows.length ? `
+      <h3 style="font-size:13px;margin:12px 0 6px;color:#334155;">Low Stock Alerts</h3>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-size:10px;">
+        <thead><tr style="background:#f1f5f9;">
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:left;">Item</th>
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:left;">Category</th>
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:right;">Stock</th>
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:right;">Reorder</th>
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:right;">Days Left</th>
+        </tr></thead>
+        <tbody>
+          ${alertRows.map((a: LowStockItem) =>
+            `<tr><td style="border:1px solid #e2e8f0;padding:5px;">${a.name}</td><td style="border:1px solid #e2e8f0;padding:5px;">${a.category}</td><td style="border:1px solid #e2e8f0;padding:5px;text-align:right;">${a.currentStock}</td><td style="border:1px solid #e2e8f0;padding:5px;text-align:right;">${a.reorderLevel}</td><td style="border:1px solid #e2e8f0;padding:5px;text-align:right;">${a.daysUntilStockout}</td></tr>`,
+          ).join('')}
+        </tbody>
+      </table>` : '';
+
+    const valRows = stats.stockValuation ?? [];
+    const valTable = valRows.length ? `
+      <h3 style="font-size:13px;margin:12px 0 6px;color:#334155;">Stock Valuation (Top 20)</h3>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-size:10px;">
+        <thead><tr style="background:#f1f5f9;">
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:left;">Item</th>
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:left;">Category</th>
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:right;">Stock</th>
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:right;">Unit Price</th>
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:right;">Total Value</th>
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:left;">Status</th>
+        </tr></thead>
+        <tbody>
+          ${valRows.map((s: StockItem) =>
+            `<tr><td style="border:1px solid #e2e8f0;padding:5px;">${s.name}</td><td style="border:1px solid #e2e8f0;padding:5px;">${s.category}</td><td style="border:1px solid #e2e8f0;padding:5px;text-align:right;">${s.currentStock.toLocaleString()}</td><td style="border:1px solid #e2e8f0;padding:5px;text-align:right;">${fmt(s.unitPrice)}</td><td style="border:1px solid #e2e8f0;padding:5px;text-align:right;">${fmt(s.totalValue)}</td><td style="border:1px solid #e2e8f0;padding:5px;">${s.status}</td></tr>`,
+          ).join('')}
+          <tr style="background:#f8fafc;font-weight:600;">
+            <td style="border:1px solid #e2e8f0;padding:5px;" colspan="4">Total Stock Value</td>
+            <td style="border:1px solid #e2e8f0;padding:5px;text-align:right;">${fmt(stats.totalStockValue)}</td>
+            <td style="border:1px solid #e2e8f0;padding:5px;"></td>
+          </tr>
+        </tbody>
+      </table>` : '';
+
+    printService.printDocument(header + summaryTable + catTable + alertTable + valTable + footer, {
+      title: `Stock Report — ${selectedCategory === 'all' ? 'All Categories' : selectedCategory}`,
+    });
   };
 
   const getStatusBadge = (status: string) => {
@@ -240,8 +359,16 @@ export default function StockReportsPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      <div className="space-y-6 animate-pulse">
+        <div className="h-6 w-40 bg-gray-200 rounded" />
+        <div className="h-20 bg-gray-100 rounded-lg" />
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-24 bg-gray-100 rounded-lg" />
+          ))}
+        </div>
+        <div className="h-80 bg-gray-100 rounded-lg" />
+        <div className="h-64 bg-gray-100 rounded-lg" />
       </div>
     );
   }
@@ -275,19 +402,48 @@ export default function StockReportsPage() {
         </div>
         <div className="flex gap-2">
           <button
+            onClick={() => refetch()}
+            disabled={isFetching}
+            className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+            title="Refresh"
+          >
+            <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+          </button>
+          <button
             onClick={handlePrint}
             className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
           >
             <Printer className="h-4 w-4" />
             Print
           </button>
-          <button
-            onClick={handleExport}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            <Download className="h-4 w-4" />
-            Export CSV
-          </button>
+          <div className="relative" ref={exportMenuRef}>
+            <button
+              onClick={() => setShowExportMenu((v) => !v)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              <Download className="h-4 w-4" />
+              Export
+              <ChevronDown className="h-3 w-3" />
+            </button>
+            {showExportMenu && (
+              <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                <button
+                  onClick={handleExportCsv}
+                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-left hover:bg-gray-50"
+                >
+                  <FileText className="h-4 w-4 text-gray-500" />
+                  CSV (.csv)
+                </button>
+                <button
+                  onClick={handleExportJson}
+                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-left hover:bg-gray-50"
+                >
+                  <FileJson className="h-4 w-4 text-gray-500" />
+                  JSON (.json)
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -296,23 +452,9 @@ export default function StockReportsPage() {
         <div className="flex flex-wrap items-center gap-4">
           <Calendar className="h-5 w-5 text-gray-400" />
           <span className="text-sm font-medium text-gray-700">View:</span>
-          <div className="flex gap-2">
-            {[
-              { key: 'current', label: 'Current Stock' },
-            ].map((range) => (
-              <button
-                key={range.key}
-                onClick={() => setDateRange(range.key)}
-                className={`px-3 py-1.5 text-sm rounded-lg font-medium ${
-                  dateRange === range.key
-                    ? 'bg-blue-100 text-blue-700'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                {range.label}
-              </button>
-            ))}
-          </div>
+          <span className="px-3 py-1.5 text-sm rounded-lg font-medium bg-blue-100 text-blue-700">
+            Current Stock
+          </span>
           <div className="border-l pl-4 ml-2">
             <select
               value={selectedCategory}
@@ -326,6 +468,9 @@ export default function StockReportsPage() {
               ))}
             </select>
           </div>
+          <span className="ml-auto text-xs text-gray-500">
+            {stats?.totalItems ?? 0} items · {selectedCategory === 'all' ? 'All Categories' : selectedCategory}
+          </span>
         </div>
       </div>
 

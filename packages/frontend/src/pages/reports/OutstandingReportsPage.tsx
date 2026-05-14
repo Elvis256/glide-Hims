@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -11,6 +11,9 @@ import {
   Building,
   FileText,
   ArrowLeft,
+  RefreshCw,
+  ChevronDown,
+  FileJson,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import {
@@ -29,6 +32,8 @@ import api from '../../services/api';
 import { useFacilityId } from '../../lib/facility';
 import { formatCurrency } from '../../lib/currency';
 import { printService } from '../../lib/print';
+import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
+import { num, toCsv, downloadBlob } from './_reportUtils';
 
 interface AgingBucket {
   range: string;
@@ -46,23 +51,34 @@ interface Debtor {
   daysPastDue: number;
 }
 
-interface InsuranceClaim {
-  id: string;
-  claimNumber: string;
-  patientName: string;
-  insurer: string;
-  amount: number;
-  submittedDate: string;
-  status: string;
-}
+type RangeKey = 'all' | 'month' | 'quarter' | 'year' | 'custom';
 
 export default function OutstandingReportsPage() {
   const facilityId = useFacilityId();
-  const [dateRange, setDateRange] = useState('all');
+  const inst = useInstitutionInfo();
+  const [dateRange, setDateRange] = useState<RangeKey>('all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
 
-  const { data: stats, isLoading } = useQuery({
+  useEffect(() => {
+    if (!showExportMenu) return;
+    const onClick = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setShowExportMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [showExportMenu]);
+
+  const periodLabel = useMemo(() => {
+    if (dateRange === 'custom') return `${startDate || '—'} → ${endDate || '—'}`;
+    return ({ all: 'All Time', month: 'This Month', quarter: 'This Quarter', year: 'This Year' } as const)[dateRange];
+  }, [dateRange, startDate, endDate]);
+
+  const { data: stats, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['outstanding-reports', dateRange, startDate, endDate, facilityId],
     enabled: !!facilityId,
     queryFn: async () => {
@@ -106,14 +122,14 @@ export default function OutstandingReportsPage() {
           
           return {
             range,
-            amount: Number(o.outstanding || 0),
-            count: Number(o.count || 0),
+            amount: num(o.outstanding),
+            count: num(o.count),
             color: agingColors[range.replace(' days', '')] || '#EF4444',
           };
         });
         
         // Calculate totals
-        const totalOutstanding = agingBuckets.reduce((sum: number, b: { amount: number }) => sum + b.amount, 0) || Number(dashboard.outstanding || 0);
+        const totalOutstanding = agingBuckets.reduce((sum: number, b: { amount: number }) => sum + b.amount, 0) || num(dashboard.outstanding);
         const totalInvoices = agingBuckets.reduce((sum: number, b: { count: number }) => sum + b.count, 0);
         
         // Calculate weighted avg days overdue from buckets
@@ -122,8 +138,8 @@ export default function OutstandingReportsPage() {
           sum + b.amount * (bucketMidpoints[b.range] || 45), 0);
         const avgDaysOverdue = totalOutstanding > 0 ? Math.round(weightedDays / totalOutstanding) : 0;
         
-        const totalRevenue = Number(dashboard.revenue?.thisMonth || 0);
-        const totalCollections = Number(dashboard.collections?.thisMonth || 0);
+        const totalRevenue = num(dashboard.revenue?.thisMonth);
+        const totalCollections = num(dashboard.collections?.thisMonth);
         const collectionRate = totalRevenue > 0 ? (totalCollections / totalRevenue * 100) : (totalOutstanding === 0 ? 100 : 0);
         
         // Default empty buckets when no outstanding
@@ -149,52 +165,118 @@ export default function OutstandingReportsPage() {
     },
 });
 
-  const handleExport = () => {
-    const rows = [
-      ['Outstanding Reports'],
-      [''],
-      ['Summary'],
-      ['Total Outstanding', formatCurrency(stats?.totalOutstanding)],
-      ['Total Invoices', stats?.totalInvoices],
-      ['Average Days Overdue', stats?.averageDaysOverdue],
-      [''],
-      ['Aging Analysis'],
-      ['Range', 'Amount', 'Count'],
-      ...(stats?.agingBuckets?.map((b: AgingBucket) => [b.range, formatCurrency(b.amount), b.count]) || []),
-      [''],
-      ['Top Debtors'],
-      ['Name', 'Total Owed', 'Invoice Count', 'Days Past Due'],
-      ...(stats?.topDebtors?.map((d: Debtor) => [d.name, formatCurrency(d.totalOwed), d.invoiceCount, d.daysPastDue]) || []),
-    ];
-    const csvContent = rows.map(row => row.join(',')).join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'outstanding-report.csv';
-    a.click();
+  const buildCsv = (): string => {
+    const rows: Array<Array<unknown>> = [];
+    rows.push(['Outstanding Report']);
+    rows.push(['Facility', inst?.name ?? '']);
+    rows.push(['Period', periodLabel]);
+    rows.push(['Generated', new Date().toLocaleString()]);
+    rows.push([]);
+    rows.push(['Summary']);
+    rows.push(['Total Outstanding', stats?.totalOutstanding ?? 0]);
+    rows.push(['Unpaid Invoices', stats?.totalInvoices ?? 0]);
+    rows.push(['Avg Days Overdue', stats?.averageDaysOverdue ?? 0]);
+    rows.push(['Collection Rate (%)', stats?.collectionRate ?? 0]);
+    rows.push([]);
+    rows.push(['Aging Analysis']);
+    rows.push(['Range', 'Amount', 'Invoices', 'Share %']);
+    const total = stats?.totalOutstanding || 1;
+    (stats?.agingBuckets ?? []).forEach((b: AgingBucket) =>
+      rows.push([b.range, b.amount, b.count, ((b.amount / total) * 100).toFixed(1)]),
+    );
+    if ((stats?.topDebtors?.length ?? 0) > 0) {
+      rows.push([]);
+      rows.push(['Top Debtors']);
+      rows.push(['Name', 'Total Owed', 'Invoice Count', 'Days Past Due']);
+      (stats?.topDebtors ?? []).forEach((d: Debtor) =>
+        rows.push([d.name, d.totalOwed, d.invoiceCount, d.daysPastDue]),
+      );
+    }
+    return toCsv(rows);
+  };
+
+  const handleExportCsv = () => {
+    if (!stats) return;
+    const stamp = new Date().toISOString().slice(0, 10);
+    downloadBlob(`outstanding-report-${dateRange}-${stamp}.csv`, 'text/csv;charset=utf-8', '\ufeff' + buildCsv());
+    setShowExportMenu(false);
+  };
+
+  const handleExportJson = () => {
+    if (!stats) return;
+    const stamp = new Date().toISOString().slice(0, 10);
+    const payload = {
+      report: 'Outstanding Report',
+      facility: inst?.name ?? null,
+      period: periodLabel,
+      generatedAt: new Date().toISOString(),
+      ...stats,
+    };
+    downloadBlob(`outstanding-report-${dateRange}-${stamp}.json`, 'application/json', JSON.stringify(payload, null, 2));
+    setShowExportMenu(false);
   };
 
   const handlePrint = () => {
-    const el = document.getElementById('report-content');
-    if (!el) return;
-    printService.printDocument(el.innerHTML, { title: 'Outstanding Reports' });
-  };
+    if (!stats) return;
+    const header = printService.buildHeader(inst, 'document');
+    const footer = printService.buildFooter(inst, 'document');
+    const fmt = (v: number) => formatCurrency(v);
+    const total = stats.totalOutstanding || 1;
+    const pctStr = (n: number) => ((n / total) * 100).toFixed(1) + '%';
 
-  const getStatusBadge = (status: string) => {
-    const styles: Record<string, string> = {
-      pending: 'bg-yellow-100 text-yellow-800',
-      under_review: 'bg-blue-100 text-blue-800',
-      approved: 'bg-green-100 text-green-800',
-      rejected: 'bg-red-100 text-red-800',
-    };
-    return styles[status] || 'bg-gray-100 text-gray-800';
+    const summaryTable = `
+      <h2 style="font-size:16px;margin:16px 0 8px;color:#1e293b;">Outstanding Report — ${periodLabel}</h2>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-size:11px;">
+        <tbody>
+          <tr><td style="border:1px solid #e2e8f0;padding:6px;font-weight:600;width:40%;">Total Outstanding</td><td style="border:1px solid #e2e8f0;padding:6px;">${fmt(stats.totalOutstanding)}</td></tr>
+          <tr><td style="border:1px solid #e2e8f0;padding:6px;font-weight:600;">Unpaid Invoices</td><td style="border:1px solid #e2e8f0;padding:6px;">${stats.totalInvoices}</td></tr>
+          <tr><td style="border:1px solid #e2e8f0;padding:6px;font-weight:600;">Avg Days Overdue</td><td style="border:1px solid #e2e8f0;padding:6px;">${stats.averageDaysOverdue} days</td></tr>
+          <tr><td style="border:1px solid #e2e8f0;padding:6px;font-weight:600;">Collection Rate</td><td style="border:1px solid #e2e8f0;padding:6px;">${stats.collectionRate}%</td></tr>
+        </tbody>
+      </table>`;
+
+    const ageTable = `
+      <h3 style="font-size:13px;margin:12px 0 6px;color:#334155;">Aging Analysis</h3>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-size:11px;">
+        <thead><tr style="background:#f1f5f9;">
+          <th style="border:1px solid #e2e8f0;padding:6px;text-align:left;">Range</th>
+          <th style="border:1px solid #e2e8f0;padding:6px;text-align:right;">Amount</th>
+          <th style="border:1px solid #e2e8f0;padding:6px;text-align:right;">Invoices</th>
+          <th style="border:1px solid #e2e8f0;padding:6px;text-align:right;">Share</th>
+        </tr></thead>
+        <tbody>
+          ${(stats.agingBuckets ?? []).map((b: AgingBucket) =>
+            `<tr><td style="border:1px solid #e2e8f0;padding:6px;">${b.range}</td><td style="border:1px solid #e2e8f0;padding:6px;text-align:right;">${fmt(b.amount)}</td><td style="border:1px solid #e2e8f0;padding:6px;text-align:right;">${b.count}</td><td style="border:1px solid #e2e8f0;padding:6px;text-align:right;">${pctStr(b.amount)}</td></tr>`,
+          ).join('')}
+          <tr style="background:#f8fafc;font-weight:600;">
+            <td style="border:1px solid #e2e8f0;padding:6px;">Total</td>
+            <td style="border:1px solid #e2e8f0;padding:6px;text-align:right;">${fmt(stats.totalOutstanding)}</td>
+            <td style="border:1px solid #e2e8f0;padding:6px;text-align:right;">${stats.totalInvoices}</td>
+            <td style="border:1px solid #e2e8f0;padding:6px;text-align:right;">100%</td>
+          </tr>
+        </tbody>
+      </table>`;
+
+    printService.printDocument(header + summaryTable + ageTable + footer, {
+      title: `Outstanding Report — ${periodLabel}`,
+    });
   };
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      <div className="space-y-6 animate-pulse">
+        <div className="h-6 w-40 bg-gray-200 rounded" />
+        <div className="h-20 bg-gray-100 rounded-lg" />
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-24 bg-gray-100 rounded-lg" />
+          ))}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="h-72 bg-gray-100 rounded-lg" />
+          <div className="h-72 bg-gray-100 rounded-lg" />
+        </div>
+        <div className="h-48 bg-gray-100 rounded-lg" />
       </div>
     );
   }
@@ -226,19 +308,48 @@ export default function OutstandingReportsPage() {
         </div>
         <div className="flex gap-2">
           <button
+            onClick={() => refetch()}
+            disabled={isFetching}
+            className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+            title="Refresh"
+          >
+            <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+          </button>
+          <button
             onClick={handlePrint}
             className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
           >
             <Printer className="h-4 w-4" />
             Print
           </button>
-          <button
-            onClick={handleExport}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            <Download className="h-4 w-4" />
-            Export CSV
-          </button>
+          <div className="relative" ref={exportMenuRef}>
+            <button
+              onClick={() => setShowExportMenu((v) => !v)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              <Download className="h-4 w-4" />
+              Export
+              <ChevronDown className="h-3 w-3" />
+            </button>
+            {showExportMenu && (
+              <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                <button
+                  onClick={handleExportCsv}
+                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-left hover:bg-gray-50"
+                >
+                  <FileText className="h-4 w-4 text-gray-500" />
+                  CSV (.csv)
+                </button>
+                <button
+                  onClick={handleExportJson}
+                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-left hover:bg-gray-50"
+                >
+                  <FileJson className="h-4 w-4 text-gray-500" />
+                  JSON (.json)
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

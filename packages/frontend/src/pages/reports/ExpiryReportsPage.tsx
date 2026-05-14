@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -11,6 +11,10 @@ import {
   Package,
   DollarSign,
   ArrowLeft,
+  RefreshCw,
+  ChevronDown,
+  FileJson,
+  FileText,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import {
@@ -28,6 +32,8 @@ import { formatCurrency } from '../../lib/currency';
 import { printService } from '../../lib/print';
 import { asList } from '../../utils/unwrapResponse';
 import { useFacilityId } from '../../lib/facility';
+import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
+import { num, toCsv, downloadBlob } from './_reportUtils';
 
 interface ExpiryItem {
   id: string;
@@ -51,14 +57,27 @@ interface ExpirySummary {
 
 export default function ExpiryReportsPage() {
   const facilityId = useFacilityId();
+  const inst = useInstitutionInfo();
   const [dateRange, setDateRange] = useState('all');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
 
-  const { data: stats, isLoading } = useQuery({
-    queryKey: ['expiry-reports', dateRange, selectedCategory, statusFilter],
+  useEffect(() => {
+    if (!showExportMenu) return;
+    const onClick = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setShowExportMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [showExportMenu]);
+
+  const { data: stats, isLoading, isFetching, refetch } = useQuery({
+    queryKey: ['expiry-reports', facilityId],
+    enabled: !!facilityId,
     queryFn: async () => {
       try {
         // Fetch inventory with expiry information
@@ -101,8 +120,8 @@ export default function ExpiryReportsPage() {
           
           const expiryDate = new Date(expiryDateStr);
           const daysUntilExpiry = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-          const quantity = item.quantity || item.currentStock || 0;
-          const unitPrice = item.unitPrice || item.unit_price || item.price || 0;
+          const quantity = num(item.quantity) || num(item.currentStock);
+          const unitPrice = num(item.unitPrice) || num(item.unit_price) || num(item.price);
           const totalValue = quantity * unitPrice;
           
           // Determine status
@@ -168,45 +187,98 @@ export default function ExpiryReportsPage() {
     },
   });
 
-  const handleExport = () => {
-    const rows = [
-      ['Expiry Reports'],
-      [''],
-      ['Summary'],
-      ['Status', 'Count', 'Value'],
-      ['Expired', stats?.expiredCount, formatCurrency(stats?.expiredValue)],
-      ['Expiring in 30 days', stats?.expiring30Count, formatCurrency(stats?.expiring30Value)],
-      ['Expiring in 60 days', stats?.expiring60Count, formatCurrency(stats?.expiring60Value)],
-      ['Expiring in 90 days', stats?.expiring90Count, formatCurrency(stats?.expiring90Value)],
-      ['Total At Risk', '', formatCurrency(stats?.totalAtRisk)],
-      [''],
-      ['Expiry Items'],
-      ['Item', 'Category', 'Batch', 'Expiry Date', 'Quantity', 'Unit Price', 'Total Value', 'Days Until Expiry', 'Status'],
-      ...(stats?.expiryItems?.map((item: ExpiryItem) => [
-        item.name,
-        item.category,
-        item.batchNumber,
-        item.expiryDate,
-        item.quantity,
-        formatCurrency(item.unitPrice),
-        formatCurrency(item.totalValue),
-        item.daysUntilExpiry,
-        item.status,
-      ]) || []),
-    ];
-    const csvContent = rows.map(row => row.join(',')).join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'expiry-report.csv';
-    a.click();
+  const buildCsv = (): string => {
+    const rows: Array<Array<unknown>> = [];
+    rows.push(['Expiry Report']);
+    rows.push(['Facility', inst?.name ?? '']);
+    rows.push(['Generated', new Date().toLocaleString()]);
+    rows.push([]);
+    rows.push(['Summary']);
+    rows.push(['Status', 'Count', 'Value']);
+    rows.push(['Expired', stats?.expiredCount ?? 0, stats?.expiredValue ?? 0]);
+    rows.push(['Expiring in 30 days', stats?.expiring30Count ?? 0, stats?.expiring30Value ?? 0]);
+    rows.push(['Expiring in 60 days', stats?.expiring60Count ?? 0, stats?.expiring60Value ?? 0]);
+    rows.push(['Expiring in 90 days', stats?.expiring90Count ?? 0, stats?.expiring90Value ?? 0]);
+    rows.push(['Total At Risk', '', stats?.totalAtRisk ?? 0]);
+    rows.push([]);
+    rows.push(['Expiry Items']);
+    rows.push(['Item', 'Category', 'Batch', 'Expiry Date', 'Quantity', 'Unit Price', 'Total Value', 'Days Until Expiry', 'Status']);
+    (stats?.expiryItems ?? []).forEach((item: ExpiryItem) =>
+      rows.push([item.name, item.category, item.batchNumber, item.expiryDate, item.quantity, item.unitPrice, item.totalValue, item.daysUntilExpiry, item.status]),
+    );
+    return toCsv(rows);
+  };
+
+  const handleExportCsv = () => {
+    if (!stats) return;
+    const stamp = new Date().toISOString().slice(0, 10);
+    downloadBlob(`expiry-report-${stamp}.csv`, 'text/csv;charset=utf-8', '\ufeff' + buildCsv());
+    setShowExportMenu(false);
+  };
+
+  const handleExportJson = () => {
+    if (!stats) return;
+    const stamp = new Date().toISOString().slice(0, 10);
+    const payload = {
+      report: 'Expiry Report',
+      facility: inst?.name ?? null,
+      generatedAt: new Date().toISOString(),
+      ...stats,
+    };
+    downloadBlob(`expiry-report-${stamp}.json`, 'application/json', JSON.stringify(payload, null, 2));
+    setShowExportMenu(false);
   };
 
   const handlePrint = () => {
-    const el = document.getElementById('report-content');
-    if (!el) return;
-    printService.printDocument(el.innerHTML, { title: 'Expiry Reports' });
+    if (!stats) return;
+    const header = printService.buildHeader(inst, 'document');
+    const footer = printService.buildFooter(inst, 'document');
+    const fmt = (v: number) => formatCurrency(v);
+
+    const summaryTable = `
+      <h2 style="font-size:16px;margin:16px 0 8px;color:#1e293b;">Expiry Report</h2>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-size:11px;">
+        <thead><tr style="background:#f1f5f9;">
+          <th style="border:1px solid #e2e8f0;padding:6px;text-align:left;">Status</th>
+          <th style="border:1px solid #e2e8f0;padding:6px;text-align:right;">Count</th>
+          <th style="border:1px solid #e2e8f0;padding:6px;text-align:right;">Value at Risk</th>
+        </tr></thead>
+        <tbody>
+          <tr><td style="border:1px solid #e2e8f0;padding:6px;">Expired</td><td style="border:1px solid #e2e8f0;padding:6px;text-align:right;">${stats.expiredCount}</td><td style="border:1px solid #e2e8f0;padding:6px;text-align:right;">${fmt(stats.expiredValue)}</td></tr>
+          <tr><td style="border:1px solid #e2e8f0;padding:6px;">Expiring in 30 days</td><td style="border:1px solid #e2e8f0;padding:6px;text-align:right;">${stats.expiring30Count}</td><td style="border:1px solid #e2e8f0;padding:6px;text-align:right;">${fmt(stats.expiring30Value)}</td></tr>
+          <tr><td style="border:1px solid #e2e8f0;padding:6px;">Expiring in 60 days</td><td style="border:1px solid #e2e8f0;padding:6px;text-align:right;">${stats.expiring60Count}</td><td style="border:1px solid #e2e8f0;padding:6px;text-align:right;">${fmt(stats.expiring60Value)}</td></tr>
+          <tr><td style="border:1px solid #e2e8f0;padding:6px;">Expiring in 90 days</td><td style="border:1px solid #e2e8f0;padding:6px;text-align:right;">${stats.expiring90Count}</td><td style="border:1px solid #e2e8f0;padding:6px;text-align:right;">${fmt(stats.expiring90Value)}</td></tr>
+          <tr style="background:#f8fafc;font-weight:600;">
+            <td style="border:1px solid #e2e8f0;padding:6px;">Total At Risk</td>
+            <td style="border:1px solid #e2e8f0;padding:6px;text-align:right;">${stats.expiredCount + stats.expiring30Count + stats.expiring60Count + stats.expiring90Count}</td>
+            <td style="border:1px solid #e2e8f0;padding:6px;text-align:right;">${fmt(stats.totalAtRisk)}</td>
+          </tr>
+        </tbody>
+      </table>`;
+
+    const items = stats.expiryItems ?? [];
+    const itemsTable = items.length ? `
+      <h3 style="font-size:13px;margin:12px 0 6px;color:#334155;">Expiry Items</h3>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-size:10px;">
+        <thead><tr style="background:#f1f5f9;">
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:left;">Item</th>
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:left;">Category</th>
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:left;">Batch</th>
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:left;">Expiry Date</th>
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:right;">Qty</th>
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:right;">Value</th>
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:right;">Days</th>
+        </tr></thead>
+        <tbody>
+          ${items.map((it: ExpiryItem) =>
+            `<tr><td style="border:1px solid #e2e8f0;padding:5px;">${it.name}</td><td style="border:1px solid #e2e8f0;padding:5px;">${it.category}</td><td style="border:1px solid #e2e8f0;padding:5px;">${it.batchNumber}</td><td style="border:1px solid #e2e8f0;padding:5px;">${new Date(it.expiryDate).toLocaleDateString()}</td><td style="border:1px solid #e2e8f0;padding:5px;text-align:right;">${it.quantity}</td><td style="border:1px solid #e2e8f0;padding:5px;text-align:right;">${fmt(it.totalValue)}</td><td style="border:1px solid #e2e8f0;padding:5px;text-align:right;">${it.daysUntilExpiry}</td></tr>`,
+          ).join('')}
+        </tbody>
+      </table>` : '';
+
+    printService.printDocument(header + summaryTable + itemsTable + footer, {
+      title: 'Expiry Report',
+    });
   };
 
   const getStatusColor = (status: string) => {
@@ -237,10 +309,29 @@ export default function ExpiryReportsPage() {
     }
   };
 
+  if (!facilityId) {
+    return (
+      <div className="p-6">
+        <div className="rounded-lg border border-dashed border-gray-300 bg-white p-12 text-center">
+          <p className="text-lg font-medium text-gray-900">Select a facility</p>
+          <p className="mt-2 text-sm text-gray-500">Pick a facility from the top bar to view this report.</p>
+        </div>
+      </div>
+    );
+  }
+
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      <div className="space-y-6 animate-pulse">
+        <div className="h-6 w-40 bg-gray-200 rounded" />
+        <div className="h-20 bg-gray-100 rounded-lg" />
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="h-24 bg-gray-100 rounded-lg" />
+          ))}
+        </div>
+        <div className="h-80 bg-gray-100 rounded-lg" />
+        <div className="h-64 bg-gray-100 rounded-lg" />
       </div>
     );
   }
@@ -270,7 +361,15 @@ export default function ExpiryReportsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Expiry Reports</h1>
           <p className="text-gray-600">Items nearing or past expiry date</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          <button
+            onClick={() => refetch()}
+            disabled={isFetching}
+            className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+            title="Refresh"
+          >
+            <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+          </button>
           <button
             onClick={handlePrint}
             className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
@@ -278,13 +377,26 @@ export default function ExpiryReportsPage() {
             <Printer className="h-4 w-4" />
             Print
           </button>
-          <button
-            onClick={handleExport}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            <Download className="h-4 w-4" />
-            Export CSV
-          </button>
+          <div className="relative" ref={exportMenuRef}>
+            <button
+              onClick={() => setShowExportMenu((v) => !v)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              <Download className="h-4 w-4" />
+              Export
+              <ChevronDown className="h-4 w-4" />
+            </button>
+            {showExportMenu && (
+              <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                <button onClick={handleExportCsv} className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2">
+                  <FileText className="h-4 w-4" /> Export as CSV
+                </button>
+                <button onClick={handleExportJson} className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2">
+                  <FileJson className="h-4 w-4" /> Export as JSON
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

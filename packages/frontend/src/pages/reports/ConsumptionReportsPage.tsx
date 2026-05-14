@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   TrendingUp,
@@ -10,6 +10,10 @@ import {
   BarChart3,
   Activity,
   ArrowLeft,
+  RefreshCw,
+  ChevronDown,
+  FileJson,
+  FileText,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import {
@@ -31,6 +35,8 @@ import api from '../../services/api';
 import { useFacilityId } from '../../lib/facility';
 import { formatCurrency } from '../../lib/currency';
 import { printService } from '../../lib/print';
+import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
+import { num, toCsv, downloadBlob } from './_reportUtils';
 
 interface ConsumptionTrend {
   date: string;
@@ -58,27 +64,72 @@ interface DepartmentConsumption {
 
 export default function ConsumptionReportsPage() {
   const facilityId = useFacilityId();
+  const inst = useInstitutionInfo();
   const [dateRange, setDateRange] = useState('month');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState('all');
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
 
-  const { data: stats, isLoading } = useQuery({
-    queryKey: ['consumption-reports', dateRange, selectedDepartment, selectedCategory, facilityId],
+  useEffect(() => {
+    if (!showExportMenu) return;
+    const onClick = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setShowExportMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [showExportMenu]);
+
+  const { data: stats, isLoading, isFetching, refetch } = useQuery({
+    queryKey: ['consumption-reports', dateRange, startDate, endDate, selectedDepartment, selectedCategory, facilityId],
     enabled: !!facilityId,
     queryFn: async () => {
-      try {
-        // Try to fetch consumption data if endpoint exists
-        const response = await api.get('/inventory/consumption', {
-          params: { period: dateRange, department: selectedDepartment, category: selectedCategory },
-        });
-        return response.data;
-      } catch (error) {
-        throw error;
+      const params: Record<string, string> = {
+        period: dateRange,
+        department: selectedDepartment,
+        category: selectedCategory,
+      };
+      if (dateRange === 'custom' && startDate && endDate) {
+        params.startDate = new Date(startDate).toISOString();
+        params.endDate = new Date(endDate + 'T23:59:59').toISOString();
       }
+      const response = await api.get('/inventory/consumption', { params });
+      const data = response.data ?? {};
+      return {
+        ...data,
+        totalConsumption: num(data.totalConsumption),
+        totalValue: num(data.totalValue),
+        avgDailyConsumption: num(data.avgDailyConsumption),
+        avgDailyValue: num(data.avgDailyValue),
+        topConsumedItems: (data.topConsumedItems ?? []).map((it: TopConsumedItem) => ({
+          ...it,
+          totalQuantity: num(it.totalQuantity),
+          totalValue: num(it.totalValue),
+          avgDailyConsumption: num(it.avgDailyConsumption),
+        })),
+        departmentConsumption: (data.departmentConsumption ?? []).map((d: DepartmentConsumption) => ({
+          ...d,
+          quantity: num(d.quantity),
+          value: num(d.value),
+          percentage: num(d.percentage),
+        })),
+        consumptionTrend: (data.consumptionTrend ?? []).map((t: ConsumptionTrend) => ({
+          ...t,
+          quantity: num(t.quantity),
+          value: num(t.value),
+        })),
+        monthlyTrend: (data.monthlyTrend ?? []).map((t: ConsumptionTrend) => ({
+          ...t,
+          quantity: num(t.quantity),
+          value: num(t.value),
+        })),
+      };
     },
-});
+  });
 
   // Calculate trend from monthlyTrend data instead of using backend's hardcoded value
   const computedTrend = useMemo(() => {
@@ -92,49 +143,122 @@ export default function ConsumptionReportsPage() {
     return 'stable';
   }, [stats?.monthlyTrend]);
 
-  const handleExport = () => {
-    const rows = [
-      ['Consumption Reports'],
-      [''],
-      ['Summary'],
-      ['Total Items Consumed', stats?.totalConsumption],
-      ['Total Value', formatCurrency(stats?.totalValue)],
-      ['Avg Daily Consumption', stats?.avgDailyConsumption],
-      ['Avg Daily Value', formatCurrency(stats?.avgDailyValue)],
-      [''],
-      ['Top Consumed Items'],
-      ['Item', 'Category', 'Total Quantity', 'Total Value', 'Avg Daily', 'Trend'],
-      ...(stats?.topConsumedItems?.map((item: TopConsumedItem) => [
-        item.name,
-        item.category,
-        item.totalQuantity,
-        formatCurrency(item.totalValue),
-        item.avgDailyConsumption,
-        item.trend,
-      ]) || []),
-      [''],
-      ['Department Consumption'],
-      ['Department', 'Quantity', 'Value', 'Percentage'],
-      ...(stats?.departmentConsumption?.map((d: DepartmentConsumption) => [
-        d.department,
-        d.quantity,
-        formatCurrency(d.value),
-        `${d.percentage}%`,
-      ]) || []),
-    ];
-    const csvContent = rows.map(row => row.join(',')).join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'consumption-report.csv';
-    a.click();
+  const periodLabel = useMemo(() => {
+    if (dateRange === 'custom' && startDate && endDate) {
+      return `${new Date(startDate).toLocaleDateString()} – ${new Date(endDate).toLocaleDateString()}`;
+    }
+    return ({ week: 'This Week', month: 'This Month', quarter: 'This Quarter', year: 'This Year', custom: 'Custom Range' } as Record<string, string>)[dateRange] ?? dateRange;
+  }, [dateRange, startDate, endDate]);
+
+  const buildCsv = (): string => {
+    const rows: Array<Array<unknown>> = [];
+    rows.push(['Consumption Report']);
+    rows.push(['Facility', inst?.name ?? '']);
+    rows.push(['Period', periodLabel]);
+    rows.push(['Generated', new Date().toLocaleString()]);
+    rows.push([]);
+    rows.push(['Summary']);
+    rows.push(['Total Items Consumed', stats?.totalConsumption ?? 0]);
+    rows.push(['Total Value', stats?.totalValue ?? 0]);
+    rows.push(['Avg Daily Consumption', stats?.avgDailyConsumption ?? 0]);
+    rows.push(['Avg Daily Value', stats?.avgDailyValue ?? 0]);
+    rows.push([]);
+    rows.push(['Top Consumed Items']);
+    rows.push(['Item', 'Category', 'Total Quantity', 'Total Value', 'Avg Daily', 'Trend']);
+    (stats?.topConsumedItems ?? []).forEach((item: TopConsumedItem) =>
+      rows.push([item.name, item.category, item.totalQuantity, item.totalValue, item.avgDailyConsumption, item.trend]),
+    );
+    rows.push([]);
+    rows.push(['Department Consumption']);
+    rows.push(['Department', 'Quantity', 'Value', 'Percentage']);
+    (stats?.departmentConsumption ?? []).forEach((d: DepartmentConsumption) =>
+      rows.push([d.department, d.quantity, d.value, `${d.percentage}%`]),
+    );
+    return toCsv(rows);
+  };
+
+  const handleExportCsv = () => {
+    if (!stats) return;
+    const stamp = new Date().toISOString().slice(0, 10);
+    downloadBlob(`consumption-report-${stamp}.csv`, 'text/csv;charset=utf-8', '\ufeff' + buildCsv());
+    setShowExportMenu(false);
+  };
+
+  const handleExportJson = () => {
+    if (!stats) return;
+    const stamp = new Date().toISOString().slice(0, 10);
+    const payload = {
+      report: 'Consumption Report',
+      facility: inst?.name ?? null,
+      period: periodLabel,
+      generatedAt: new Date().toISOString(),
+      ...stats,
+    };
+    downloadBlob(`consumption-report-${stamp}.json`, 'application/json', JSON.stringify(payload, null, 2));
+    setShowExportMenu(false);
   };
 
   const handlePrint = () => {
-    const el = document.getElementById('report-content');
-    if (!el) return;
-    printService.printDocument(el.innerHTML, { title: 'Consumption Reports' });
+    if (!stats) return;
+    const header = printService.buildHeader(inst, 'document');
+    const footer = printService.buildFooter(inst, 'document');
+    const fmt = (v: number) => formatCurrency(v);
+
+    const summaryTable = `
+      <h2 style="font-size:16px;margin:16px 0 8px;color:#1e293b;">Consumption Report</h2>
+      <p style="font-size:11px;color:#64748b;margin:0 0 12px;">Period: ${periodLabel}</p>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-size:11px;">
+        <thead><tr style="background:#f1f5f9;">
+          <th style="border:1px solid #e2e8f0;padding:6px;text-align:left;">Metric</th>
+          <th style="border:1px solid #e2e8f0;padding:6px;text-align:right;">Value</th>
+        </tr></thead>
+        <tbody>
+          <tr><td style="border:1px solid #e2e8f0;padding:6px;">Total Items Consumed</td><td style="border:1px solid #e2e8f0;padding:6px;text-align:right;">${(stats.totalConsumption ?? 0).toLocaleString()}</td></tr>
+          <tr><td style="border:1px solid #e2e8f0;padding:6px;">Total Value</td><td style="border:1px solid #e2e8f0;padding:6px;text-align:right;">${fmt(stats.totalValue ?? 0)}</td></tr>
+          <tr><td style="border:1px solid #e2e8f0;padding:6px;">Avg Daily Consumption</td><td style="border:1px solid #e2e8f0;padding:6px;text-align:right;">${(stats.avgDailyConsumption ?? 0).toLocaleString()}</td></tr>
+          <tr><td style="border:1px solid #e2e8f0;padding:6px;">Avg Daily Value</td><td style="border:1px solid #e2e8f0;padding:6px;text-align:right;">${fmt(stats.avgDailyValue ?? 0)}</td></tr>
+        </tbody>
+      </table>`;
+
+    const top = (stats.topConsumedItems ?? []) as TopConsumedItem[];
+    const topTable = top.length ? `
+      <h3 style="font-size:13px;margin:12px 0 6px;color:#334155;">Top Consumed Items</h3>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-size:10px;">
+        <thead><tr style="background:#f1f5f9;">
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:left;">Item</th>
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:left;">Category</th>
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:right;">Quantity</th>
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:right;">Value</th>
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:right;">Avg Daily</th>
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:left;">Trend</th>
+        </tr></thead>
+        <tbody>
+          ${top.map((it) =>
+            `<tr><td style="border:1px solid #e2e8f0;padding:5px;">${it.name}</td><td style="border:1px solid #e2e8f0;padding:5px;">${it.category}</td><td style="border:1px solid #e2e8f0;padding:5px;text-align:right;">${it.totalQuantity.toLocaleString()}</td><td style="border:1px solid #e2e8f0;padding:5px;text-align:right;">${fmt(it.totalValue)}</td><td style="border:1px solid #e2e8f0;padding:5px;text-align:right;">${it.avgDailyConsumption.toLocaleString()}</td><td style="border:1px solid #e2e8f0;padding:5px;">${it.trend}</td></tr>`,
+          ).join('')}
+        </tbody>
+      </table>` : '';
+
+    const dept = (stats.departmentConsumption ?? []) as DepartmentConsumption[];
+    const deptTable = dept.length ? `
+      <h3 style="font-size:13px;margin:12px 0 6px;color:#334155;">Department Consumption</h3>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-size:10px;">
+        <thead><tr style="background:#f1f5f9;">
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:left;">Department</th>
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:right;">Quantity</th>
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:right;">Value</th>
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:right;">% of Total</th>
+        </tr></thead>
+        <tbody>
+          ${dept.map((d) =>
+            `<tr><td style="border:1px solid #e2e8f0;padding:5px;">${d.department}</td><td style="border:1px solid #e2e8f0;padding:5px;text-align:right;">${d.quantity.toLocaleString()}</td><td style="border:1px solid #e2e8f0;padding:5px;text-align:right;">${fmt(d.value)}</td><td style="border:1px solid #e2e8f0;padding:5px;text-align:right;">${d.percentage.toFixed(1)}%</td></tr>`,
+          ).join('')}
+        </tbody>
+      </table>` : '';
+
+    printService.printDocument(header + summaryTable + topTable + deptTable + footer, {
+      title: 'Consumption Report',
+    });
   };
 
   const getTrendIcon = (trend: string) => {
@@ -159,17 +283,6 @@ export default function ConsumptionReportsPage() {
     }
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
-
-  const departments = ['all', ...new Set(stats?.departmentConsumption?.map((d: DepartmentConsumption) => d.department) || [])];
-  const categories = ['all', ...new Set(stats?.topConsumedItems?.map((i: TopConsumedItem) => i.category) || [])];
-
   if (!facilityId) {
     return (
       <div className="p-6">
@@ -180,6 +293,25 @@ export default function ConsumptionReportsPage() {
       </div>
     );
   }
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6 animate-pulse">
+        <div className="h-6 w-40 bg-gray-200 rounded" />
+        <div className="h-20 bg-gray-100 rounded-lg" />
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-24 bg-gray-100 rounded-lg" />
+          ))}
+        </div>
+        <div className="h-80 bg-gray-100 rounded-lg" />
+        <div className="h-64 bg-gray-100 rounded-lg" />
+      </div>
+    );
+  }
+
+  const departments = ['all', ...new Set(stats?.departmentConsumption?.map((d: DepartmentConsumption) => d.department) || [])];
+  const categories = ['all', ...new Set(stats?.topConsumedItems?.map((i: TopConsumedItem) => i.category) || [])];
 
   return (
     <div id="report-content" className="space-y-6">
@@ -195,7 +327,15 @@ export default function ConsumptionReportsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Consumption Reports</h1>
           <p className="text-gray-600">Usage patterns and consumption trends</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          <button
+            onClick={() => refetch()}
+            disabled={isFetching}
+            className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+            title="Refresh"
+          >
+            <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+          </button>
           <button
             onClick={handlePrint}
             className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
@@ -203,13 +343,26 @@ export default function ConsumptionReportsPage() {
             <Printer className="h-4 w-4" />
             Print
           </button>
-          <button
-            onClick={handleExport}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            <Download className="h-4 w-4" />
-            Export CSV
-          </button>
+          <div className="relative" ref={exportMenuRef}>
+            <button
+              onClick={() => setShowExportMenu((v) => !v)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              <Download className="h-4 w-4" />
+              Export
+              <ChevronDown className="h-4 w-4" />
+            </button>
+            {showExportMenu && (
+              <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                <button onClick={handleExportCsv} className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2">
+                  <FileText className="h-4 w-4" /> Export as CSV
+                </button>
+                <button onClick={handleExportJson} className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2">
+                  <FileJson className="h-4 w-4" /> Export as JSON
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
