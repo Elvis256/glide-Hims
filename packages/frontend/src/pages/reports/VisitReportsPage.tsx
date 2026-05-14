@@ -28,13 +28,16 @@ import {
   Line,
 } from 'recharts';
 import api from '../../services/api';
+import { useFacilityId } from '../../lib/facility';
 import { printService } from '../../lib/print';
 
 export default function VisitReportsPage() {
+  const facilityId = useFacilityId();
   const [dateRange, setDateRange] = useState('month');
 
   const { data: stats, isLoading } = useQuery({
-    queryKey: ['visit-statistics', dateRange],
+    queryKey: ['visit-statistics', dateRange, facilityId],
+    enabled: !!facilityId,
     queryFn: async () => {
       try {
         // Fetch clinical analytics and dashboard data
@@ -105,7 +108,7 @@ export default function VisitReportsPage() {
         throw error;
       }
     },
-  });
+});
 
   const COLORS = ['#10B981', '#F59E0B', '#EF4444'];
 
@@ -139,6 +142,17 @@ export default function VisitReportsPage() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  if (!facilityId) {
+    return (
+      <div className="p-6">
+        <div className="rounded-lg border border-dashed border-gray-300 bg-white p-12 text-center">
+          <p className="text-lg font-medium text-gray-900">Select a facility</p>
+          <p className="mt-2 text-sm text-gray-500">Pick a facility from the top bar to view this report.</p>
+        </div>
       </div>
     );
   }

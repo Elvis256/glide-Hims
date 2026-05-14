@@ -94,6 +94,18 @@ export class Encounter extends BaseEntity {
   })
   payerType: PayerType;
 
+  /**
+   * Billing mode chosen at OPD token issue.
+   *  - 'pre_pay'  : patient must clear consultation invoice BEFORE being seen.
+   *                 Sign & Complete is gated by unpaid balance.
+   *  - 'post_pay' : patient is seen first; consultation, labs, pharmacy roll
+   *                 into one bill at checkout. Doctor can Sign & Complete with
+   *                 an unpaid invoice — the encounter completion event is what
+   *                 sends the patient to the billing counter.
+   */
+  @Column({ name: 'billing_mode', type: 'varchar', length: 16, default: 'post_pay' })
+  billingMode: 'pre_pay' | 'post_pay';
+
   @Column({ type: 'jsonb', nullable: true })
   metadata: Record<string, any>;
 

@@ -104,7 +104,7 @@ export class PrescriptionsController {
     @Body() dto: AddWitnessDto,
     @Request() req: any,
   ) {
-    return this.prescriptionsService.addWitness(logId, dto, req.user?.tenantId);
+    return this.prescriptionsService.addWitness(logId, dto, req.user?.id, req.user?.tenantId);
   }
 
   @Post('controlled/:logId/double-check')
@@ -115,7 +115,7 @@ export class PrescriptionsController {
     @Body() dto: DoubleCheckDto,
     @Request() req: any,
   ) {
-    return this.prescriptionsService.doubleCheck(logId, dto, req.user?.tenantId);
+    return this.prescriptionsService.doubleCheck(logId, dto, req.user?.id, req.user?.tenantId);
   }
 
   // ─── Parameterized routes ───

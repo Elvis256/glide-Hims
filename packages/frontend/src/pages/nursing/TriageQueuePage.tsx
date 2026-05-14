@@ -68,6 +68,8 @@ interface TriagePatient {
   allergies?: string[];
   medications?: string[];
   patientId?: string;
+  triageData?: Record<string, any> | null;
+  triageDataUpdatedAt?: string | null;
 }
 
 // ESI Levels for triage
@@ -160,6 +162,34 @@ const calculateWaitTime = (createdAt: string): number => {
   return Math.round((now.getTime() - created.getTime()) / 60000);
 };
 
+// "as of HH:MM (12 min ago)" label for a vital reading
+const formatRecordedAt = (recordedAt?: string): string => {
+  if (!recordedAt) return '';
+  const d = new Date(recordedAt);
+  if (isNaN(d.getTime())) return '';
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const diffMs = Date.now() - d.getTime();
+  const diffMin = Math.round(diffMs / 60000);
+  let ago: string;
+  if (diffMin < 1) ago = 'just now';
+  else if (diffMin < 60) ago = `${diffMin} min ago`;
+  else if (diffMin < 24 * 60) ago = `${Math.round(diffMin / 60)} h ago`;
+  else ago = `${Math.round(diffMin / (60 * 24))} d ago`;
+  return `${hh}:${mm} · ${ago}`;
+};
+
+// Friendly label for the canonical Vital.source enum
+const VITAL_SOURCE_LABELS: Record<string, string> = {
+  OPD_ENCOUNTER: 'OPD',
+  EMERGENCY_TRIAGE: 'ER triage',
+  IPD_WARD_ROUND: 'Ward round',
+  DISCHARGE: 'Discharge',
+  NURSING: 'Nursing',
+  TRIAGE: 'Triage',
+};
+const sourceLabel = (s?: string): string => (s ? VITAL_SOURCE_LABELS[s] || s : '');
+
 // Transform API queue entry to UI format
 const transformQueueEntry = (entry: QueueEntry & { patient?: { fullName: string; mrn: string; dateOfBirth?: string; gender?: string; id?: string }; encounter?: { chiefComplaint?: string }; arrivalMode?: string }): TriagePatient => ({
   id: entry.id,
@@ -177,6 +207,8 @@ const transformQueueEntry = (entry: QueueEntry & { patient?: { fullName: string;
   waitTime: calculateWaitTime(entry.createdAt),
   arrivalMode: (entry.arrivalMode as 'walk-in' | 'ambulance' | 'referral') || 'walk-in',
   patientId: entry.patient?.id || entry.patientId,
+  triageData: entry.triageData ?? null,
+  triageDataUpdatedAt: entry.triageDataUpdatedAt ?? null,
 });
 
 const priorityColors: Record<string, { bg: string; border: string; text: string; label: string; pulse: string }> = {
@@ -240,16 +272,19 @@ export default function TriageQueuePage() {
     enabled: canReadTriage,
   });
 
-  // Fetch vitals for selected patient
+  // Fetch vitals for selected patient — recent 10 readings so we can show a
+  // mini timeline (latest + earlier with timestamps + source).
   const { data: patientVitals } = useQuery({
     queryKey: ['patient-vitals-triage', selectedPatient?.patientId],
-    queryFn: () => vitalsService.getPatientHistory(selectedPatient!.patientId!, 1),
+    queryFn: () => vitalsService.getPatientHistory(selectedPatient!.patientId!, 10),
     enabled: !!selectedPatient?.patientId,
     staleTime: 10000,
   });
 
-  // Get the latest vitals for the selected patient
+  // Latest reading (back-end returns DESC by recordedAt)
   const latestVitals = patientVitals?.[0];
+  const earlierVitals = (patientVitals || []).slice(1, 4);
+  const [showVitalsHistory, setShowVitalsHistory] = useState(false);
 
   // Start triage mutation - first call, then start service
   const startTriageMutation = useMutation({
@@ -269,10 +304,33 @@ export default function TriageQueuePage() {
     },
   });
 
-  // Complete triage mutation
+  // Complete triage mutation — persists the full assessment alongside the
+  // disposition so chief complaint, ESI level, onset, duration and nursing
+  // notes survive the transfer (no longer thrown away).
   const completeTriageMutation = useMutation({
-    mutationFn: ({ id, nextServicePoint }: { id: string; nextServicePoint: string }) =>
-      queueService.transfer(id, nextServicePoint),
+    mutationFn: ({ id, disposition }: { id: string; disposition: string }) =>
+      queueService.completeTriage(id, disposition, {
+        chiefComplaint: triageForm.chiefComplaint,
+        onset: triageForm.onset,
+        duration: triageForm.duration,
+        esiLevel: triageForm.esiLevel,
+        acuityColor: triageForm.acuityColor,
+        nursingNotes: triageForm.nursingNotes,
+        vitalsAtTriage: latestVitals
+          ? {
+              vitalId: latestVitals.id,
+              recordedAt: latestVitals.recordedAt || latestVitals.createdAt,
+              source: latestVitals.source,
+              temperature: latestVitals.temperature,
+              pulse: latestVitals.pulse,
+              bpSystolic: latestVitals.bpSystolic,
+              bpDiastolic: latestVitals.bpDiastolic,
+              respiratoryRate: latestVitals.respiratoryRate,
+              oxygenSaturation: latestVitals.oxygenSaturation,
+              painScale: latestVitals.painScale,
+            }
+          : null,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['triage-queue'] });
       setShowTriageModal(false);
@@ -280,8 +338,29 @@ export default function TriageQueuePage() {
       setSelectedPatient(null);
       toast.success('Triage completed, patient transferred');
     },
-    onError: () => {
-      toast.error('Failed to complete triage');
+    onError: (err: Error & { response?: { data?: { message?: string } } }) => {
+      toast.error(err.response?.data?.message || 'Failed to complete triage');
+    },
+  });
+
+  // Save Draft — persist partial assessment without changing queue state.
+  const saveDraftMutation = useMutation({
+    mutationFn: (id: string) =>
+      queueService.saveTriageData(id, {
+        chiefComplaint: triageForm.chiefComplaint,
+        onset: triageForm.onset,
+        duration: triageForm.duration,
+        esiLevel: triageForm.esiLevel,
+        acuityColor: triageForm.acuityColor,
+        disposition: triageForm.disposition,
+        nursingNotes: triageForm.nursingNotes,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['triage-queue'] });
+      toast.success('Triage draft saved');
+    },
+    onError: (err: Error & { response?: { data?: { message?: string } } }) => {
+      toast.error(err.response?.data?.message || 'Failed to save draft');
     },
   });
 
@@ -459,11 +538,21 @@ export default function TriageQueuePage() {
       return;
     }
     setSelectedPatient(patient);
+    // Hydrate the form from any previously-saved draft so a returning nurse
+    // (or shift-handover) can resume rather than re-type.
+    const draft = patient.triageData || {};
     setTriageForm({
-      ...triageForm,
-      chiefComplaint: patient.chiefComplaint,
-      acuityColor: patient.priority,
-      esiLevel: acuityToESI(patient.priority),
+      chiefComplaint:
+        (draft.chiefComplaint as string) || patient.chiefComplaint || '',
+      onset: (draft.onset as string) || '',
+      duration: (draft.duration as string) || '',
+      esiLevel:
+        (typeof draft.esiLevel === 'number' ? draft.esiLevel : null) ??
+        acuityToESI(patient.priority),
+      acuityColor:
+        (draft.acuityColor as TriagePatient['priority']) || patient.priority,
+      disposition: (draft.disposition as string) || 'opd',
+      nursingNotes: (draft.nursingNotes as string) || '',
     });
     // Only call the patient if they're not already in triage
     if (patient.status !== 'in-triage') {
@@ -478,40 +567,37 @@ export default function TriageQueuePage() {
       return;
     }
     setSelectedPatient(patient);
+    const draft = patient.triageData || {};
     setTriageForm({
-      ...triageForm,
-      chiefComplaint: patient.chiefComplaint,
-      acuityColor: patient.priority,
-      esiLevel: acuityToESI(patient.priority),
+      chiefComplaint:
+        (draft.chiefComplaint as string) || patient.chiefComplaint || '',
+      onset: (draft.onset as string) || '',
+      duration: (draft.duration as string) || '',
+      esiLevel:
+        (typeof draft.esiLevel === 'number' ? draft.esiLevel : null) ??
+        acuityToESI(patient.priority),
+      acuityColor:
+        (draft.acuityColor as TriagePatient['priority']) || patient.priority,
+      disposition: (draft.disposition as string) || 'opd',
+      nursingNotes: (draft.nursingNotes as string) || '',
     });
     setShowQuickTriageModal(true);
   };
 
   const handleCompleteTriage = () => {
     if (!selectedPatient) return;
-    
-    // Map disposition to correct service points (configurable via facility service config)
-    let nextServicePoint = 'consultation';
-    
-    if (triageForm.disposition === 'opd') {
-      nextServicePoint = 'consultation';
-    } else if (triageForm.disposition === 'emergency') {
-      nextServicePoint = 'emergency';
-    } else if (triageForm.disposition === 'direct-admit') {
-      // Direct admission → IPD (not billing)
-      nextServicePoint = 'ipd';
-    } else if (triageForm.disposition === 'observation') {
-      nextServicePoint = 'consultation';
-    } else if (triageForm.disposition === 'lab-only') {
-      nextServicePoint = 'laboratory';
-    } else if (triageForm.disposition === 'pharmacy-only') {
-      nextServicePoint = 'pharmacy';
-    }
-    
+
+    // Map UI disposition to backend service-config disposition value.
+    const disposition = triageForm.disposition || 'opd';
     completeTriageMutation.mutate({
       id: selectedPatient.id,
-      nextServicePoint,
+      disposition,
     });
+  };
+
+  const handleSaveDraft = () => {
+    if (!selectedPatient) return;
+    saveDraftMutation.mutate(selectedPatient.id);
   };
 
   const handleRecordVitals = () => {
@@ -992,7 +1078,7 @@ export default function TriageQueuePage() {
                   <div className="grid grid-cols-3 gap-2 text-sm">
                     <div><span className="text-gray-500">Temp:</span> {latestVitals.temperature || 'N/A'}°C</div>
                     <div><span className="text-gray-500">Pulse:</span> {latestVitals.pulse || 'N/A'}</div>
-                    <div><span className="text-gray-500">BP:</span> {latestVitals.systolicBp || '-'}/{latestVitals.diastolicBp || '-'}</div>
+                    <div><span className="text-gray-500">BP:</span> {latestVitals.bpSystolic ?? '-'}/{latestVitals.bpDiastolic ?? '-'}</div>
                     <div><span className="text-gray-500">RR:</span> {latestVitals.respiratoryRate || 'N/A'}</div>
                     <div><span className="text-gray-500">SpO2:</span> {latestVitals.oxygenSaturation || 'N/A'}%</div>
                     <div><span className="text-gray-500">Pain:</span> {latestVitals.painScale || 'N/A'}/10</div>
@@ -1108,36 +1194,115 @@ export default function TriageQueuePage() {
                 {/* Left Column - Vitals */}
                 <div className="space-y-4">
                   <div className="bg-white border border-gray-200 rounded-lg p-4">
-                    <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
-                      <Heart className="w-4 h-4 text-red-500" />
-                      Vital Signs
-                    </h4>
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                        <Heart className="w-4 h-4 text-red-500" />
+                        Vital Signs
+                      </h4>
+                      <button
+                        onClick={handleRecordVitals}
+                        className="text-xs text-blue-600 hover:underline"
+                        title="Record a new set of vitals"
+                      >
+                        + New
+                      </button>
+                    </div>
                     {latestVitals ? (
                       <div className="space-y-2">
+                        <div className="text-[11px] text-gray-500 flex items-center justify-between">
+                          <span>
+                            {formatRecordedAt(
+                              latestVitals.recordedAt || latestVitals.createdAt,
+                            )}
+                          </span>
+                          {latestVitals.source && (
+                            <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded text-[10px] font-medium">
+                              {sourceLabel(latestVitals.source)}
+                            </span>
+                          )}
+                        </div>
                         <div className="flex justify-between p-2 bg-gray-50 rounded">
                           <span className="text-gray-600">Temperature</span>
-                          <span className="font-medium">{latestVitals.temperature || 'N/A'}°C</span>
+                          <span className="font-medium">{latestVitals.temperature ?? 'N/A'}°C</span>
                         </div>
                         <div className="flex justify-between p-2 bg-gray-50 rounded">
                           <span className="text-gray-600">Pulse</span>
-                          <span className="font-medium">{latestVitals.pulse || 'N/A'} bpm</span>
+                          <span className="font-medium">{latestVitals.pulse ?? 'N/A'} bpm</span>
                         </div>
                         <div className="flex justify-between p-2 bg-gray-50 rounded">
                           <span className="text-gray-600">Blood Pressure</span>
-                          <span className="font-medium">{latestVitals.systolicBp || '-'}/{latestVitals.diastolicBp || '-'} mmHg</span>
+                          <span className="font-medium">
+                            {latestVitals.bpSystolic ?? '-'}/{latestVitals.bpDiastolic ?? '-'} mmHg
+                          </span>
                         </div>
                         <div className="flex justify-between p-2 bg-gray-50 rounded">
                           <span className="text-gray-600">Respiratory Rate</span>
-                          <span className="font-medium">{latestVitals.respiratoryRate || 'N/A'} /min</span>
+                          <span className="font-medium">{latestVitals.respiratoryRate ?? 'N/A'} /min</span>
                         </div>
                         <div className="flex justify-between p-2 bg-gray-50 rounded">
                           <span className="text-gray-600">SpO2</span>
-                          <span className="font-medium">{latestVitals.oxygenSaturation || 'N/A'}%</span>
+                          <span className="font-medium">{latestVitals.oxygenSaturation ?? 'N/A'}%</span>
                         </div>
                         <div className="flex justify-between p-2 bg-gray-50 rounded">
                           <span className="text-gray-600">Pain Scale</span>
-                          <span className="font-medium">{latestVitals.painScale || 'N/A'}/10</span>
+                          <span className="font-medium">{latestVitals.painScale ?? 'N/A'}/10</span>
                         </div>
+
+                        {earlierVitals.length > 0 && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setShowVitalsHistory((v) => !v)}
+                              className="w-full mt-2 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50 rounded flex items-center justify-center gap-1"
+                            >
+                              <TrendingUp className="w-3 h-3" />
+                              {showVitalsHistory
+                                ? 'Hide earlier readings'
+                                : `Show ${earlierVitals.length} earlier reading${earlierVitals.length === 1 ? '' : 's'}`}
+                            </button>
+                            {showVitalsHistory && (
+                              <ul className="space-y-1 pt-2 border-t border-gray-100">
+                                {earlierVitals.map((v) => (
+                                  <li
+                                    key={v.id}
+                                    className="text-[11px] text-gray-600 px-2 py-1 bg-gray-50 rounded"
+                                  >
+                                    <div className="flex items-center justify-between mb-0.5">
+                                      <span className="font-medium text-gray-700">
+                                        {formatRecordedAt(v.recordedAt || v.createdAt)}
+                                      </span>
+                                      {v.source && (
+                                        <span className="text-[10px] text-blue-600">
+                                          {sourceLabel(v.source)}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                                      {v.temperature != null && (
+                                        <span>T {v.temperature}°C</span>
+                                      )}
+                                      {v.pulse != null && <span>HR {v.pulse}</span>}
+                                      {(v.bpSystolic != null || v.bpDiastolic != null) && (
+                                        <span>
+                                          BP {v.bpSystolic ?? '-'}/{v.bpDiastolic ?? '-'}
+                                        </span>
+                                      )}
+                                      {v.respiratoryRate != null && (
+                                        <span>RR {v.respiratoryRate}</span>
+                                      )}
+                                      {v.oxygenSaturation != null && (
+                                        <span>SpO₂ {v.oxygenSaturation}%</span>
+                                      )}
+                                      {v.painScale != null && (
+                                        <span>Pain {v.painScale}/10</span>
+                                      )}
+                                    </div>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </>
+                        )}
                       </div>
                     ) : (
                       <div className="text-center py-4">
@@ -1309,12 +1474,15 @@ export default function TriageQueuePage() {
                 Cancel
               </button>
               <button
-                onClick={() => {
-                  toast.success('Triage saved as draft');
-                }}
-                className="px-6 py-2 border border-teal-600 text-teal-600 rounded-lg hover:bg-teal-50 flex items-center gap-2"
+                onClick={handleSaveDraft}
+                disabled={saveDraftMutation.isPending}
+                className="px-6 py-2 border border-teal-600 text-teal-600 rounded-lg hover:bg-teal-50 disabled:opacity-50 flex items-center gap-2"
               >
-                <Save className="w-4 h-4" />
+                {saveDraftMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Save className="w-4 h-4" />
+                )}
                 Save Draft
               </button>
               <button

@@ -74,6 +74,7 @@ const SetupWizardPage = lazy(() => import('./pages/SetupWizardPage'));
 const TenantSetupWizardPage = lazy(() => import('./pages/TenantSetupWizardPage'));
 const RegisterOrganizationPage = lazy(() => import('./pages/RegisterOrganizationPage'));
 const ChangePasswordPage = lazy(() => import('./pages/ChangePasswordPage'));
+const MyProfilePage = lazy(() => import('./pages/MyProfilePage'));
 const FirstRunOnboardingPage = lazy(() => import('./pages/Onboarding/FirstRunOnboardingPage'));
 const AdminDashboard = lazy(() => import('./pages/Admin/AdminDashboard'));
 const PublicLandingPage = lazy(() => import('./pages/Public/PublicLandingPage'));
@@ -197,6 +198,7 @@ const WaitingPatientsPage = lazy(() => import('./pages/doctor/queue/WaitingPatie
 const CallNextPage = lazy(() => import('./pages/doctor/queue/CallNextPage'));
 const TodaySchedulePage = lazy(() => import('./pages/doctor/queue/TodaySchedulePage'));
 const PendingReviewsPage = lazy(() => import('./pages/doctor/queue/PendingReviewsPage'));
+const CriticalResultsPage = lazy(() => import('./pages/doctor/CriticalResultsPage'));
 const NewConsultationPage = lazy(() => import('./pages/doctor/NewConsultationPage'));
 const SOAPNotesPage = lazy(() => import('./pages/doctor/SOAPNotesPage'));
 const ICD10CodingPage = lazy(() => import('./pages/doctor/diagnosis/ICD10CodingPage'));
@@ -279,6 +281,7 @@ const LabReportsPage = lazy(() => import('./pages/lab/LabReportsPage'));
 const LabAnalyticsPage = lazy(() => import('./pages/lab/LabAnalyticsPage'));
 const SampleReferralPage = lazy(() => import('./pages/lab/SampleReferralPage'));
 const RadiologyQueuePage = lazy(() => import('./pages/radiology/RadiologyQueuePage'));
+const CriticalResultsReadOnlyPage = lazy(() => import('./components/CriticalResultsReadOnlyPage'));
 const ImagingOrdersPage = lazy(() => import('./pages/radiology/ImagingOrdersPage'));
 const RadiologyResultsPage = lazy(() => import('./pages/radiology/RadiologyResultsPage'));
 const RadiologyAnalyticsPage = lazy(() => import('./pages/radiology/RadiologyAnalyticsPage'));
@@ -378,12 +381,14 @@ const HRLettersPage = lazy(() => import('./pages/admin/hr/HRLettersPage'));
 const DisciplinaryPage = lazy(() => import('./pages/admin/hr/DisciplinaryPage'));
 const OnboardingPage = lazy(() => import('./pages/admin/hr/OnboardingPage'));
 const PayrollReportsPage = lazy(() => import('./pages/admin/hr/PayrollReportsPage'));
+const AuditLogViewerPage = lazy(() => import('./pages/admin/AuditLogViewerPage'));
 const TestCatalogPage = lazy(() => import('./pages/admin/lab/TestCatalogPage'));
 const LabEquipmentPage = lazy(() => import('./pages/admin/lab/LabEquipmentPage'));
 const ReagentsInventoryPage = lazy(() => import('./pages/admin/lab/ReagentsInventoryPage'));
 const LabPanelsPage = lazy(() => import('./pages/admin/lab/LabPanelsPage'));
 const ApprovalWorkflowPage = lazy(() => import('./pages/admin/procurement/ApprovalWorkflowPage'));
 const OrgApprovalAdminPage = lazy(() => import('./pages/admin/procurement/OrgApprovalAdminPage'));
+const HROrganisationPage = lazy(() => import('./pages/admin/hr/HROrganisationPage'));
 const ApprovalsInboxPage = lazy(() => import('./pages/approvals/ApprovalsInboxPage'));
 const BudgetManagementPage = lazy(() => import('./pages/admin/procurement/BudgetManagementPage'));
 const ProcurementPoliciesPage = lazy(() => import('./pages/admin/procurement/ProcurementPoliciesPage'));
@@ -452,6 +457,7 @@ const StockReportsPage = lazy(() => import('./pages/reports/StockReportsPage'));
 const ExpiryReportsPage = lazy(() => import('./pages/reports/ExpiryReportsPage'));
 const InventoryConsumptionReportsPage = lazy(() => import('./pages/reports/ConsumptionReportsPage'));
 const HMIS105ReportPage = lazy(() => import('./pages/reports/HMIS105ReportPage'));
+const StatutoryReportsPage = lazy(() => import('./pages/reports/StatutoryReportsPage'));
 const DrugDatabasePage = lazy(() => import('./pages/integrations/DrugDatabasePage'));
 const LabReferencePage = lazy(() => import('./pages/integrations/LabReferencePage'));
 const SMSNotificationsPage = lazy(() => import('./pages/integrations/SMSNotificationsPage'));
@@ -650,6 +656,10 @@ function AppRoutes() {
         element={isAuthenticated ? <ChangePasswordPage /> : <Navigate to="/login" replace />}
       />
       <Route
+        path="/me"
+        element={isAuthenticated ? <DashboardLayout><MyProfilePage /></DashboardLayout> : <Navigate to="/login" replace />}
+      />
+      <Route
         path="/system"
         element={isAuthenticated ? <SystemAdminRoute><SystemAdminLayout /></SystemAdminRoute> : <Navigate to="/system/login" replace />}
       >
@@ -831,6 +841,7 @@ function AppRoutes() {
                 <Route path="/doctor/queue/call" element={<ModuleRoute module="doctors"><DoctorRoute><CallNextPage /></DoctorRoute></ModuleRoute>} />
                 <Route path="/doctor/schedule" element={<ModuleRoute module="doctors"><DoctorRoute><TodaySchedulePage /></DoctorRoute></ModuleRoute>} />
                 <Route path="/doctor/pending" element={<ModuleRoute module="doctors"><DoctorRoute><PendingReviewsPage /></DoctorRoute></ModuleRoute>} />
+                <Route path="/doctor/critical-results" element={<ModuleRoute module="doctors"><DoctorRoute><CriticalResultsPage /></DoctorRoute></ModuleRoute>} />
                 
                 {/* Doctors - Consultation (legacy routes redirect) */}
                 <Route path="/encounters/new" element={<ModuleRoute module="doctors"><RoleRoute roles={[ROLES.DOCTOR, ROLES.NURSE, ROLES.RECEPTIONIST]}><NewConsultationPage /></RoleRoute></ModuleRoute>} />
@@ -895,6 +906,7 @@ function AppRoutes() {
                 <Route path="/billing/patient-tab/:patientId" element={<ModuleRoute module="billing"><BillingRoute><PatientTabPage /></BillingRoute></ModuleRoute>} />
                 <Route path="/billing/doctor-fees" element={<ModuleRoute module="billing"><BillingRoute><DoctorFeesPage /></BillingRoute></ModuleRoute>} />
                 <Route path="/admin/services/doctor-fees" element={<AdminRoute><DoctorFeesPage /></AdminRoute>} />
+                <Route path="/admin/audit-log" element={<AdminRoute><AuditLogViewerPage /></AdminRoute>} />
                 
                 {/* Billing - Insurance */}
                 <Route path="/insurance/claims" element={<ModuleRoute module="billing"><InsuranceRoute><ClaimsPage /></InsuranceRoute></ModuleRoute>} />
@@ -956,12 +968,14 @@ function AppRoutes() {
                 <Route path="/lab/reports" element={<ModuleRoute module="diagnostics"><LabTechRoute><LabReportsPage /></LabTechRoute></ModuleRoute>} />
                 <Route path="/lab/analytics" element={<ModuleRoute module="diagnostics"><LabTechRoute><LabAnalyticsPage /></LabTechRoute></ModuleRoute>} />
                 <Route path="/lab/sample-referrals" element={<ModuleRoute module="diagnostics"><LabTechRoute><SampleReferralPage /></LabTechRoute></ModuleRoute>} />
+                <Route path="/lab/critical-results" element={<ModuleRoute module="diagnostics"><LabTechRoute><CriticalResultsReadOnlyPage resourceType="lab" /></LabTechRoute></ModuleRoute>} />
                 
                 {/* Radiology Module */}
                 <Route path="/radiology/queue" element={<ModuleRoute module="diagnostics"><RadiologyRoute><RadiologyQueuePage /></RadiologyRoute></ModuleRoute>} />
                 <Route path="/radiology/orders" element={<ModuleRoute module="diagnostics"><RadiologyRoute><ImagingOrdersPage /></RadiologyRoute></ModuleRoute>} />
                 <Route path="/radiology/results" element={<ModuleRoute module="diagnostics"><RadiologyRoute><RadiologyResultsPage /></RadiologyRoute></ModuleRoute>} />
                 <Route path="/radiology/analytics" element={<ModuleRoute module="diagnostics"><RadiologyRoute><RadiologyAnalyticsPage /></RadiologyRoute></ModuleRoute>} />
+                <Route path="/radiology/critical-results" element={<ModuleRoute module="diagnostics"><RadiologyRoute><CriticalResultsReadOnlyPage resourceType="radiology" /></RadiologyRoute></ModuleRoute>} />
                 
                 {/* Pharmacy - Core */}
                 <Route path="/pharmacy/dashboard" element={<ModuleRoute module="pharmacy"><PharmacistRoute><PharmacyDashboardPage /></PharmacistRoute></ModuleRoute>} />
@@ -1172,6 +1186,7 @@ function AppRoutes() {
                 {/* Admin - Procurement Settings */}
                 <Route path="/admin/procurement/approvals" element={<AdminRoute><ApprovalWorkflowPage /></AdminRoute>} />
                 <Route path="/admin/procurement/org-approvals" element={<AdminRoute><OrgApprovalAdminPage /></AdminRoute>} />
+                <Route path="/admin/hr/organisation" element={<AdminRoute><HROrganisationPage /></AdminRoute>} />
                 <Route path="/admin/procurement/budgets" element={<AdminRoute><BudgetManagementPage /></AdminRoute>} />
                 <Route path="/admin/procurement/policies" element={<AdminRoute><ProcurementPoliciesPage /></AdminRoute>} />
                 <Route path="/admin/procurement/categories" element={<AdminRoute><ItemCategoriesPage /></AdminRoute>} />
@@ -1294,6 +1309,7 @@ function AppRoutes() {
                 <Route path="/reports/expiry" element={<ModuleRoute module="reports"><StoreKeeperRoute><ExpiryReportsPage /></StoreKeeperRoute></ModuleRoute>} />
                 <Route path="/reports/consumption" element={<ModuleRoute module="reports"><StoreKeeperRoute><InventoryConsumptionReportsPage /></StoreKeeperRoute></ModuleRoute>} />
                 <Route path="/reports/hmis-105" element={<ModuleRoute module="reports"><AdminRoute><HMIS105ReportPage /></AdminRoute></ModuleRoute>} />
+                <Route path="/reports/statutory" element={<ModuleRoute module="reports"><AdminRoute><StatutoryReportsPage /></AdminRoute></ModuleRoute>} />
                 
                 {/* 404 Catch-all */}
                 <Route path="*" element={<NotFoundPage />} />

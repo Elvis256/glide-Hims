@@ -235,7 +235,8 @@ export interface Prescription {
 
 // Billing types
 export type InvoiceStatus = 'draft' | 'pending' | 'partially_paid' | 'paid' | 'cancelled' | 'refunded';
-export type PaymentMethod = 'cash' | 'card' | 'mobile_money' | 'bank_transfer' | 'insurance' | 'cheque';
+import type { PaymentMethod } from '../shared/payment-methods';
+export type { PaymentMethod };
 
 export interface InvoiceItem {
   id: string;

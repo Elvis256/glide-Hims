@@ -76,7 +76,7 @@ interface BillItem {
 }
 
 type PayerType = 'cash' | 'insurance';
-type PaymentMethod = 'cash' | 'card' | 'mobile_money';
+import type { PaymentMethod } from '../../../shared/payment-methods';
 type DiscountType = 'percentage' | 'fixed';
 
 export default function NewOPDBillPage() {
@@ -283,35 +283,65 @@ export default function NewOPDBillPage() {
 
   const subtotal = billItems.reduce((sum, item) => sum + item.lineTotal, 0);
 
-  const billingCalculations = useMemo(() => {
-    let manualDiscount = 0;
+  // Server-side preview is the source of truth for VAT, copay and coverage —
+  // never recompute tax on the client (was hardcoded 18%).
+  const manualDiscountAmount = useMemo(() => {
     if (discountType === 'percentage') {
-      manualDiscount = Math.round(subtotal * (discountValue / 100));
-    } else {
-      manualDiscount = discountValue;
+      return Math.round(subtotal * (discountValue / 100));
     }
+    return Math.max(0, Math.min(discountValue, subtotal));
+  }, [discountType, discountValue, subtotal]);
 
-    const afterManualDiscount = subtotal - manualDiscount;
+  const previewPayload = useMemo(() => {
+    if (!selectedPatient || billItems.length === 0) return null;
+    return {
+      patientId: selectedPatient.id,
+      paymentType: payerType === 'insurance' ? ('insurance' as const) : ('cash' as const),
+      insurancePolicyId:
+        payerType === 'insurance' && selectedPolicy ? selectedPolicy.id : undefined,
+      discountAmount: manualDiscountAmount > 0 ? manualDiscountAmount : undefined,
+      items: billItems.map((item) => ({
+        serviceCode: item.serviceId,
+        description: item.name,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+      })),
+    };
+  }, [selectedPatient, billItems, payerType, selectedPolicy, manualDiscountAmount]);
 
-    if (payerType === 'insurance' && selectedPolicy) {
-      const copayPercent = Number(selectedPolicy.copayPercent) || 20;
-      const remaining = (Number(selectedPolicy.coverageLimit) || 0) - (Number(selectedPolicy.usedAmount) || 0);
-      const patientCopay = Math.round(afterManualDiscount * (copayPercent / 100));
-      const insuranceAmount = remaining > 0 ? Math.min(afterManualDiscount - patientCopay, remaining) : 0;
-      const actualPatientPay = afterManualDiscount - insuranceAmount;
+  const previewQuery = useQuery({
+    queryKey: ['opd-invoice-preview', previewPayload],
+    queryFn: () => billingService.invoices.preview(previewPayload as any),
+    enabled: !!previewPayload,
+    staleTime: 0,
+    retry: false,
+  });
+
+  const billingCalculations = useMemo(() => {
+    const p = previewQuery.data;
+    if (!p) {
       return {
-        manualDiscount,
-        insuranceCovers: insuranceAmount,
-        patientCopay: actualPatientPay,
+        manualDiscount: manualDiscountAmount,
+        insuranceCovers: 0,
+        patientCopay: 0,
         membershipDiscount: 0,
+        taxPercent: 0,
         tax: 0,
-        totalDue: actualPatientPay,
+        totalDue: Math.max(0, subtotal - manualDiscountAmount),
+        warnings: [] as string[],
       };
     }
-
-    const tax = Math.round(afterManualDiscount * 0.18);
-    return { manualDiscount, insuranceCovers: 0, patientCopay: 0, membershipDiscount: 0, tax, totalDue: afterManualDiscount + tax };
-  }, [subtotal, discountType, discountValue, payerType, selectedPolicy]);
+    return {
+      manualDiscount: p.discountAmount || manualDiscountAmount,
+      insuranceCovers: p.insuranceCovers || 0,
+      patientCopay: p.patientCopay || 0,
+      membershipDiscount: p.membershipDiscount || 0,
+      taxPercent: p.taxPercent || 0,
+      tax: p.taxAmount || 0,
+      totalDue: p.patientPortion ?? p.totalAmount ?? 0,
+      warnings: p.warnings || [],
+    };
+  }, [previewQuery.data, manualDiscountAmount, subtotal]);
 
   const handleSaveDraft = () => {
     if (!selectedPatient || billItems.length === 0) {
@@ -355,7 +385,8 @@ export default function NewOPDBillPage() {
         unitPrice: item.unitPrice,
         discountPercent: discountType === 'percentage' ? discountValue : undefined,
       })),
-      taxPercent: payerType === 'insurance' ? 0 : 18,
+      // taxPercent omitted — backend applies tenant default (currently 18%);
+      // server-side preview already drove what the user saw on screen.
       paymentType: payerType === 'insurance' ? 'insurance' : 'cash',
       insurancePolicyId: payerType === 'insurance' && selectedPolicy ? selectedPolicy.id : undefined,
       discountAmount: discountAmount > 0 ? discountAmount : undefined,
@@ -411,7 +442,7 @@ export default function NewOPDBillPage() {
       <hr style="border-top:1px dashed #ccc"/>
       ${printService.kvRow('Subtotal', formatCurrency(subtotal))}
       ${discountRows}
-      ${billingCalculations.tax > 0 ? printService.kvRow('Tax (18%)', formatCurrency(billingCalculations.tax)) : ''}
+      ${billingCalculations.tax > 0 ? printService.kvRow(`Tax (${billingCalculations.taxPercent}%)`, formatCurrency(billingCalculations.tax)) : ''}
       <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:bold;margin:8px 0;padding-top:8px;border-top:2px solid #333">
         <span>Total Due</span><span>${formatCurrency(billingCalculations.totalDue)}</span>
       </div>
@@ -458,7 +489,7 @@ export default function NewOPDBillPage() {
             )}
             {billingCalculations.tax > 0 && (
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Tax (18%)</span>
+                <span className="text-gray-500">Tax ({billingCalculations.taxPercent}%)</span>
                 <span className="font-medium">{formatCurrency(billingCalculations.tax)}</span>
               </div>
             )}
@@ -982,7 +1013,7 @@ export default function NewOPDBillPage() {
                 )}
                 {billingCalculations.tax > 0 && (
                   <div className="flex justify-between">
-                    <span className="text-gray-500">Tax (18%)</span>
+                    <span className="text-gray-500">Tax ({billingCalculations.taxPercent}%)</span>
                     <span className="font-medium">{formatCurrency(billingCalculations.tax)}</span>
                   </div>
                 )}

@@ -28,6 +28,7 @@ import {
   Cell,
 } from 'recharts';
 import api from '../../services/api';
+import { useFacilityId } from '../../lib/facility';
 import { formatCurrency } from '../../lib/currency';
 import { printService } from '../../lib/print';
 
@@ -56,6 +57,7 @@ interface DepartmentConsumption {
 }
 
 export default function ConsumptionReportsPage() {
+  const facilityId = useFacilityId();
   const [dateRange, setDateRange] = useState('month');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -63,7 +65,8 @@ export default function ConsumptionReportsPage() {
   const [selectedCategory, setSelectedCategory] = useState('all');
 
   const { data: stats, isLoading } = useQuery({
-    queryKey: ['consumption-reports', dateRange, selectedDepartment, selectedCategory],
+    queryKey: ['consumption-reports', dateRange, selectedDepartment, selectedCategory, facilityId],
+    enabled: !!facilityId,
     queryFn: async () => {
       try {
         // Try to fetch consumption data if endpoint exists
@@ -75,7 +78,7 @@ export default function ConsumptionReportsPage() {
         throw error;
       }
     },
-  });
+});
 
   // Calculate trend from monthlyTrend data instead of using backend's hardcoded value
   const computedTrend = useMemo(() => {
@@ -166,6 +169,17 @@ export default function ConsumptionReportsPage() {
 
   const departments = ['all', ...new Set(stats?.departmentConsumption?.map((d: DepartmentConsumption) => d.department) || [])];
   const categories = ['all', ...new Set(stats?.topConsumedItems?.map((i: TopConsumedItem) => i.category) || [])];
+
+  if (!facilityId) {
+    return (
+      <div className="p-6">
+        <div className="rounded-lg border border-dashed border-gray-300 bg-white p-12 text-center">
+          <p className="text-lg font-medium text-gray-900">Select a facility</p>
+          <p className="mt-2 text-sm text-gray-500">Pick a facility from the top bar to view this report.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div id="report-content" className="space-y-6">

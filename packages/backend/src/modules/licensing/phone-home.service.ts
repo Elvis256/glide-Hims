@@ -265,7 +265,7 @@ export class PhoneHomeService {
   /**
    * Periodic phone home for on-premise installations
    */
-  @Cron(CronExpression.EVERY_DAY_AT_6AM)
+  @Cron(CronExpression.EVERY_DAY_AT_6AM, { name: 'license-phone-home' })
   async periodicPhoneHome() {
     const deploymentMode = this.configService.get<string>('DEPLOYMENT_MODE');
     if (deploymentMode !== 'on-premise') return;

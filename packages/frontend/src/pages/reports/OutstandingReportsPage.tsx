@@ -26,6 +26,7 @@ import {
   Cell,
 } from 'recharts';
 import api from '../../services/api';
+import { useFacilityId } from '../../lib/facility';
 import { formatCurrency } from '../../lib/currency';
 import { printService } from '../../lib/print';
 
@@ -56,12 +57,14 @@ interface InsuranceClaim {
 }
 
 export default function OutstandingReportsPage() {
+  const facilityId = useFacilityId();
   const [dateRange, setDateRange] = useState('all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
   const { data: stats, isLoading } = useQuery({
-    queryKey: ['outstanding-reports', dateRange, startDate, endDate],
+    queryKey: ['outstanding-reports', dateRange, startDate, endDate, facilityId],
+    enabled: !!facilityId,
     queryFn: async () => {
       try {
         // Fetch financial analytics for outstanding data
@@ -144,7 +147,7 @@ export default function OutstandingReportsPage() {
         throw error;
       }
     },
-  });
+});
 
   const handleExport = () => {
     const rows = [
@@ -192,6 +195,17 @@ export default function OutstandingReportsPage() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  if (!facilityId) {
+    return (
+      <div className="p-6">
+        <div className="rounded-lg border border-dashed border-gray-300 bg-white p-12 text-center">
+          <p className="text-lg font-medium text-gray-900">Select a facility</p>
+          <p className="mt-2 text-sm text-gray-500">Pick a facility from the top bar to view this report.</p>
+        </div>
       </div>
     );
   }

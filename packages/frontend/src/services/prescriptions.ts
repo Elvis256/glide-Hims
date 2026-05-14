@@ -114,11 +114,39 @@ export interface ControlledSubstanceQueryParams {
   limit?: number;
 }
 
+export interface SafetyAlert {
+  kind: 'allergy' | 'interaction' | 'duplicate-therapy';
+  severity: 'moderate' | 'major' | 'severe' | 'contraindicated';
+  drugId?: string;
+  drugName: string;
+  pairedDrugId?: string;
+  pairedDrugName?: string;
+  matchedAllergen?: string;
+  matchedAllergyId?: string;
+  description: string;
+  recommendation?: string;
+}
+
+export interface SafetyOverrideDto {
+  reason: string;
+  cosignerId?: string;
+}
+
+/** Shape of the 409 response when prescriptions.create is blocked. */
+export interface SafetyBlockedError {
+  code: 'SAFETY_BLOCKED';
+  message: string;
+  alerts: SafetyAlert[];
+  degraded: boolean;
+  degradedReasons: string[];
+}
+
 export interface CreatePrescriptionDto {
   encounterId: string;
   items: CreatePrescriptionItemDto[];
   notes?: string;
   prescriberSignature?: string;
+  safetyOverride?: SafetyOverrideDto;
 }
 
 export interface RxTemplateItem {

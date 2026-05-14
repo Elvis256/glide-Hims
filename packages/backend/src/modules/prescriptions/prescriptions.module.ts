@@ -24,6 +24,7 @@ import { InAppNotificationsModule } from '../in-app-notifications/in-app-notific
 import { QueueManagementModule } from '../queue-management/queue-management.module';
 import { IntegrationsModule } from '../integrations/integrations.module';
 import { DrugManagementModule } from '../drug-management/drug-management.module';
+import { AllergiesModule } from '../allergies/allergies.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { DrugManagementModule } from '../drug-management/drug-management.module'
     QueueManagementModule,
     IntegrationsModule,
     DrugManagementModule,
+    AllergiesModule,
   ],
   controllers: [PrescriptionsController, DURReportsController, RxTemplateNotificationController],
   providers: [PrescriptionsService, DURReportsService, RxTemplateService, RxNotificationService],

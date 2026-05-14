@@ -4,7 +4,57 @@ import { Facility } from './facility.entity';
 import { Department } from './department.entity';
 import { User } from './user.entity';
 
-export enum AssetCategory {
+export enum AssetClass {
+  MEDICAL = 'medical',
+  IT = 'it',
+  FURNITURE = 'furniture',
+  VEHICLE = 'vehicle',
+  UTILITY = 'utility',
+  BUILDING = 'building',
+  OTHER = 'other',
+}
+
+export enum AssetCriticality {
+  LIFE_SUPPORT = 'life_support',
+  HIGH = 'high',
+  MEDIUM = 'medium',
+  LOW = 'low',
+}
+
+export enum TransferApprovalStage {
+  ORIGIN_DEPT_HEAD = 'origin_dept_head',
+  RECEIVING_DEPT_HEAD = 'receiving_dept_head',
+  STORE_KEEPER = 'store_keeper',
+}
+
+export enum DisposalMethod {
+  SALE = 'sale',
+  SCRAP = 'scrap',
+  DONATION = 'donation',
+  TRADE_IN = 'trade_in',
+  WRITE_OFF = 'write_off',
+}
+
+export enum DisposalStatus {
+  REQUESTED = 'requested',
+  BIOMED_REVIEW = 'biomed_review',
+  COMMITTEE_APPROVAL = 'committee_approval',
+  APPROVED = 'approved',
+  REJECTED = 'rejected',
+  COMPLETED = 'completed',
+  CANCELLED = 'cancelled',
+}
+
+export enum AllocationStatus {
+  REQUESTED = 'requested',
+  DEPT_HEAD_APPROVED = 'dept_head_approved',
+  ALLOCATED = 'allocated',
+  RETURNED = 'returned',
+  REJECTED = 'rejected',
+  CANCELLED = 'cancelled',
+}
+
+export enum AssetCategoryEnum {
   MEDICAL_EQUIPMENT = 'medical_equipment',
   LABORATORY_EQUIPMENT = 'laboratory_equipment',
   IMAGING_EQUIPMENT = 'imaging_equipment',
@@ -78,9 +128,9 @@ export class FixedAsset extends BaseEntity {
 
   @Column({
     type: 'enum',
-    enum: AssetCategory,
+    enum: AssetCategoryEnum,
   })
-  category: AssetCategory;
+  category: AssetCategoryEnum;
 
   @Column({ type: 'varchar', length: 100, nullable: true, name: 'sub_category' })
   subCategory?: string;
@@ -222,6 +272,92 @@ export class FixedAsset extends BaseEntity {
   @Column({ type: 'text', nullable: true })
   notes?: string;
 
+  // ========== HOSPITAL-SPECIFIC FIELDS ==========
+
+  @Column({ type: 'enum', enum: AssetClass, nullable: true, name: 'asset_class' })
+  assetClass?: AssetClass;
+
+  @Column({
+    type: 'enum',
+    enum: AssetCriticality,
+    nullable: true,
+    name: 'criticality_level',
+  })
+  criticalityLevel?: AssetCriticality;
+
+  @Column({ type: 'uuid', nullable: true, name: 'category_id' })
+  categoryId?: string;
+
+  @Column({ type: 'uuid', nullable: true, name: 'parent_asset_id' })
+  parentAssetId?: string;
+
+  @ManyToOne(() => FixedAsset, { nullable: true })
+  @JoinColumn({ name: 'parent_asset_id' })
+  parentAsset?: FixedAsset;
+
+  @Column({ type: 'uuid', nullable: true, name: 'building_id' })
+  buildingId?: string;
+
+  @Column({ type: 'uuid', nullable: true, name: 'floor_id' })
+  floorId?: string;
+
+  @Column({ type: 'uuid', nullable: true, name: 'room_id' })
+  roomId?: string;
+
+  // calibration (medical equipment)
+  @Column({ type: 'int', nullable: true, name: 'calibration_interval_days' })
+  calibrationIntervalDays?: number;
+
+  @Column({ type: 'date', nullable: true, name: 'last_calibration_date' })
+  lastCalibrationDate?: Date;
+
+  @Column({ type: 'date', nullable: true, name: 'next_calibration_due' })
+  nextCalibrationDue?: Date;
+
+  @Column({ type: 'uuid', nullable: true, name: 'biomed_engineer_id' })
+  biomedEngineerId?: string;
+
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'biomed_engineer_id' })
+  biomedEngineer?: User;
+
+  // AMC contract
+  @Column({ type: 'varchar', length: 255, nullable: true, name: 'amc_vendor' })
+  amcVendor?: string;
+
+  @Column({ type: 'date', nullable: true, name: 'amc_start_date' })
+  amcStartDate?: Date;
+
+  @Column({ type: 'date', nullable: true, name: 'amc_end_date' })
+  amcEndDate?: Date;
+
+  @Column({ type: 'varchar', length: 100, nullable: true, name: 'amc_contract_ref' })
+  amcContractRef?: string;
+
+  // identification
+  @Column({ type: 'varchar', length: 100, nullable: true, name: 'barcode_qr' })
+  barcodeQr?: string;
+
+  @Column({ type: 'varchar', length: 100, nullable: true, name: 'rfid_tag' })
+  rfidTag?: string;
+
+  @Column({ type: 'varchar', length: 100, nullable: true, name: 'asset_tag' })
+  assetTag?: string;
+
+  // financial classification
+  @Column({ type: 'boolean', default: true, name: 'is_capex' })
+  isCapex: boolean;
+
+  @Column({ type: 'decimal', precision: 15, scale: 2, nullable: true, name: 'replacement_cost' })
+  replacementCost?: number;
+
+  // procurement linkage
+  @Column({ type: 'uuid', nullable: true, name: 'purchase_order_id' })
+  purchaseOrderId?: string;
+
+  @Column({ type: 'uuid', nullable: true, name: 'grn_id' })
+  grnId?: string;
+
   @OneToMany(() => AssetDepreciation, (dep) => dep.asset)
   depreciationRecords: AssetDepreciation[];
 
@@ -325,6 +461,9 @@ export class AssetTransfer extends BaseEntity {
   @JoinColumn({ name: 'asset_id' })
   asset: FixedAsset;
 
+  @Column({ type: 'varchar', length: 50, nullable: true, name: 'transfer_number' })
+  transferNumber?: string;
+
   @Column({ type: 'uuid', name: 'from_facility_id' })
   fromFacilityId: string;
 
@@ -336,6 +475,9 @@ export class AssetTransfer extends BaseEntity {
 
   @Column({ type: 'uuid', nullable: true, name: 'to_department_id' })
   toDepartmentId?: string;
+
+  @Column({ type: 'uuid', nullable: true, name: 'to_custodian_id' })
+  toCustodianId?: string;
 
   @Column({ type: 'date', name: 'transfer_date' })
   transferDate: Date;
@@ -352,6 +494,271 @@ export class AssetTransfer extends BaseEntity {
   @Column({ type: 'date', nullable: true, name: 'received_date' })
   receivedDate?: Date;
 
+  // pending | origin_approved | receiving_approved | in_transit | completed | rejected | cancelled
   @Column({ type: 'varchar', length: 50, default: 'pending' })
   status: string;
+
+  @OneToMany(() => AssetTransferApproval, (a) => a.transfer)
+  approvals: AssetTransferApproval[];
+}
+
+@Entity('asset_transfer_approvals')
+export class AssetTransferApproval extends BaseEntity {
+  @Column({ type: 'uuid', name: 'transfer_id' })
+  transferId: string;
+
+  @ManyToOne(() => AssetTransfer, (t) => t.approvals, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'transfer_id' })
+  transfer: AssetTransfer;
+
+  @Column({
+    type: 'enum',
+    enum: TransferApprovalStage,
+    name: 'stage',
+  })
+  stage: TransferApprovalStage;
+
+  @Column({ type: 'varchar', length: 20, default: 'pending' })
+  decision: 'pending' | 'approved' | 'rejected';
+
+  @Column({ type: 'uuid', nullable: true, name: 'decided_by' })
+  decidedBy?: string;
+
+  @Column({ type: 'timestamp', nullable: true, name: 'decided_at' })
+  decidedAt?: Date;
+
+  @Column({ type: 'text', nullable: true })
+  comments?: string;
+}
+
+// ====================================================================
+// ASSET CATEGORIES (tenant-managed taxonomy beyond enum)
+// ====================================================================
+@Entity('asset_categories')
+@Index(['tenantId', 'code'], { unique: true, where: 'deleted_at IS NULL' })
+export class AssetCategory extends BaseEntity {
+  @Column({ type: 'varchar', length: 50 })
+  code: string;
+
+  @Column({ type: 'varchar', length: 150 })
+  name: string;
+
+  @Column({ type: 'enum', enum: AssetClass, name: 'asset_class' })
+  assetClass: AssetClass;
+
+  @Column({ type: 'uuid', nullable: true, name: 'parent_id' })
+  parentId?: string;
+
+  @ManyToOne(() => AssetCategory, { nullable: true })
+  @JoinColumn({ name: 'parent_id' })
+  parent?: AssetCategory;
+
+  @Column({ type: 'int', nullable: true, name: 'default_useful_life_months' })
+  defaultUsefulLifeMonths?: number;
+
+  @Column({
+    type: 'enum',
+    enum: DepreciationMethod,
+    nullable: true,
+    name: 'default_depreciation_method',
+  })
+  defaultDepreciationMethod?: DepreciationMethod;
+
+  @Column({ type: 'decimal', precision: 5, scale: 2, nullable: true, name: 'default_depreciation_rate' })
+  defaultDepreciationRate?: number;
+
+  @Column({ type: 'int', nullable: true, name: 'default_calibration_interval_days' })
+  defaultCalibrationIntervalDays?: number;
+
+  @Column({ type: 'int', nullable: true, name: 'default_maintenance_interval_days' })
+  defaultMaintenanceIntervalDays?: number;
+
+  @Column({ type: 'boolean', default: true, name: 'is_active' })
+  isActive: boolean;
+
+  @Column({ type: 'text', nullable: true })
+  description?: string;
+}
+
+// ====================================================================
+// ASSET DISPOSAL (full request → biomed → committee → completion)
+// ====================================================================
+@Entity('asset_disposals')
+@Index(['tenantId', 'disposalNumber'], { unique: true, where: 'deleted_at IS NULL' })
+export class AssetDisposal extends BaseEntity {
+  @Column({ type: 'varchar', length: 50, name: 'disposal_number' })
+  disposalNumber: string;
+
+  @Column({ type: 'uuid', name: 'asset_id' })
+  assetId: string;
+
+  @ManyToOne(() => FixedAsset)
+  @JoinColumn({ name: 'asset_id' })
+  asset: FixedAsset;
+
+  @Column({ type: 'uuid', name: 'facility_id' })
+  facilityId: string;
+
+  @Column({ type: 'enum', enum: DisposalMethod, name: 'method' })
+  method: DisposalMethod;
+
+  @Column({ type: 'enum', enum: DisposalStatus, default: DisposalStatus.REQUESTED })
+  status: DisposalStatus;
+
+  @Column({ type: 'text' })
+  reason: string;
+
+  @Column({ type: 'decimal', precision: 15, scale: 2, default: 0, name: 'expected_value' })
+  expectedValue: number;
+
+  @Column({ type: 'decimal', precision: 15, scale: 2, default: 0, name: 'actual_value' })
+  actualValue: number;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  buyer?: string;
+
+  @Column({ type: 'date', name: 'requested_date' })
+  requestedDate: Date;
+
+  @Column({ type: 'uuid', name: 'requested_by' })
+  requestedBy: string;
+
+  // biomed engineering review (for medical equipment)
+  @Column({ type: 'uuid', nullable: true, name: 'biomed_reviewed_by' })
+  biomedReviewedBy?: string;
+
+  @Column({ type: 'timestamp', nullable: true, name: 'biomed_reviewed_at' })
+  biomedReviewedAt?: Date;
+
+  @Column({ type: 'text', nullable: true, name: 'biomed_assessment' })
+  biomedAssessment?: string;
+
+  // committee approval (auditor + admin)
+  @Column({ type: 'jsonb', nullable: true, name: 'committee_approvals' })
+  committeeApprovals?: { userId: string; role: string; decision: string; at: string; comments?: string }[];
+
+  @Column({ type: 'date', nullable: true, name: 'disposal_date' })
+  disposalDate?: Date;
+
+  @Column({ type: 'uuid', nullable: true, name: 'completed_by' })
+  completedBy?: string;
+
+  @Column({ type: 'uuid', nullable: true, name: 'journal_entry_id' })
+  journalEntryId?: string;
+
+  @Column({ type: 'jsonb', nullable: true })
+  attachments?: string[];
+
+  @Column({ type: 'text', nullable: true })
+  notes?: string;
+}
+
+// ====================================================================
+// ASSET ALLOCATION (assign asset to a custodian / department)
+// ====================================================================
+@Entity('asset_allocations')
+@Index(['tenantId', 'allocationNumber'], { unique: true, where: 'deleted_at IS NULL' })
+export class AssetAllocation extends BaseEntity {
+  @Column({ type: 'varchar', length: 50, name: 'allocation_number' })
+  allocationNumber: string;
+
+  @Column({ type: 'uuid', name: 'asset_id' })
+  assetId: string;
+
+  @ManyToOne(() => FixedAsset)
+  @JoinColumn({ name: 'asset_id' })
+  asset: FixedAsset;
+
+  @Column({ type: 'uuid', name: 'facility_id' })
+  facilityId: string;
+
+  @Column({ type: 'uuid', nullable: true, name: 'department_id' })
+  departmentId?: string;
+
+  @Column({ type: 'uuid', name: 'custodian_id' })
+  custodianId: string;
+
+  @ManyToOne(() => User)
+  @JoinColumn({ name: 'custodian_id' })
+  custodian: User;
+
+  @Column({ type: 'uuid', nullable: true, name: 'room_id' })
+  roomId?: string;
+
+  @Column({ type: 'date', name: 'allocation_date' })
+  allocationDate: Date;
+
+  @Column({ type: 'date', nullable: true, name: 'expected_return_date' })
+  expectedReturnDate?: Date;
+
+  @Column({ type: 'date', nullable: true, name: 'actual_return_date' })
+  actualReturnDate?: Date;
+
+  @Column({ type: 'enum', enum: AllocationStatus, default: AllocationStatus.REQUESTED })
+  status: AllocationStatus;
+
+  @Column({ type: 'text', nullable: true })
+  purpose?: string;
+
+  @Column({ type: 'uuid', name: 'requested_by' })
+  requestedBy: string;
+
+  @Column({ type: 'uuid', nullable: true, name: 'approved_by' })
+  approvedBy?: string;
+
+  @Column({ type: 'timestamp', nullable: true, name: 'approved_at' })
+  approvedAt?: Date;
+
+  @Column({ type: 'text', nullable: true, name: 'condition_on_issue' })
+  conditionOnIssue?: string;
+
+  @Column({ type: 'text', nullable: true, name: 'condition_on_return' })
+  conditionOnReturn?: string;
+
+  @Column({ type: 'text', nullable: true })
+  notes?: string;
+}
+
+// ====================================================================
+// ASSET LOCATION HISTORY (tracking)
+// ====================================================================
+@Entity('asset_location_history')
+@Index(['assetId', 'movedAt'])
+export class AssetLocationHistory extends BaseEntity {
+  @Column({ type: 'uuid', name: 'asset_id' })
+  assetId: string;
+
+  @ManyToOne(() => FixedAsset)
+  @JoinColumn({ name: 'asset_id' })
+  asset: FixedAsset;
+
+  @Column({ type: 'uuid', name: 'facility_id' })
+  facilityId: string;
+
+  @Column({ type: 'uuid', nullable: true, name: 'department_id' })
+  departmentId?: string;
+
+  @Column({ type: 'uuid', nullable: true, name: 'room_id' })
+  roomId?: string;
+
+  @Column({ type: 'varchar', length: 255, nullable: true, name: 'location_label' })
+  locationLabel?: string;
+
+  @Column({ type: 'uuid', nullable: true, name: 'custodian_id' })
+  custodianId?: string;
+
+  @Column({ type: 'timestamp', name: 'moved_at' })
+  movedAt: Date;
+
+  @Column({ type: 'uuid', nullable: true, name: 'moved_by' })
+  movedBy?: string;
+
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  reason?: string; // 'transfer','allocation','disposal','maintenance','manual'
+
+  @Column({ type: 'uuid', nullable: true, name: 'reference_id' })
+  referenceId?: string;
+
+  @Column({ type: 'text', nullable: true })
+  notes?: string;
 }

@@ -35,7 +35,7 @@ const maintenanceTypes = [
 export default function AssetMaintenancePage() {
   const facilityId = useFacilityId();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<'due' | 'history'>('due');
+  const [activeTab, setActiveTab] = useState<'due' | 'history' | 'calibration' | 'amc'>('due');
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<FixedAsset | null>(null);
@@ -49,16 +49,36 @@ export default function AssetMaintenancePage() {
 
   // Get maintenance due
   const { data: maintenanceDue = [], isLoading: dueLoading } = useQuery({
-    queryKey: ['maintenance-due', facilityId],
-    queryFn: () => assetsService.getMaintenanceDue(facilityId, 60),
+    queryKey: ['asset-maintenance-due', facilityId],
+    queryFn: () => assetsService.getMaintenanceDue(facilityId, 30),
+    enabled: !!facilityId,
+  });
+
+  // Get calibration due
+  const { data: calibrationDue = [], isLoading: calibrationLoading } = useQuery({
+    queryKey: ['asset-calibration-due', facilityId],
+    queryFn: () => assetsService.getCalibrationDue(facilityId, 30),
+    enabled: !!facilityId,
+  });
+
+  // Get AMC expiring
+  const { data: amcExpiring = [], isLoading: amcLoading } = useQuery({
+    queryKey: ['asset-amc-expiring', facilityId],
+    queryFn: () => assetsService.getAmcExpiring(facilityId, 60),
     enabled: !!facilityId,
   });
 
   const recordMutation = useMutation({
-    mutationFn: (data: Partial<AssetMaintenance>) => assetsService.recordMaintenance(data),
-    onSuccess: () => {
+    mutationFn: (payload: {
+      assetId: string;
+      data: Partial<AssetMaintenance> & { maintenanceType?: string; nextMaintenanceDate?: string };
+    }) => assetsService.recordMaintenance(payload.assetId, payload.data),
+    onSuccess: (_data, variables) => {
       toast.success('Maintenance recorded successfully');
-      queryClient.invalidateQueries({ queryKey: ['maintenance-due'] });
+      queryClient.invalidateQueries({ queryKey: ['asset-maintenance-due', facilityId] });
+      queryClient.invalidateQueries({ queryKey: ['asset-calibration-due', facilityId] });
+      queryClient.invalidateQueries({ queryKey: ['asset-amc-expiring', facilityId] });
+      queryClient.invalidateQueries({ queryKey: ['asset-maintenance-history', variables.assetId] });
       queryClient.invalidateQueries({ queryKey: ['assets'] });
       setShowModal(false);
       setSelectedAsset(null);
@@ -71,7 +91,7 @@ export default function AssetMaintenancePage() {
     if (!selectedAsset) return;
 
     const formData = new FormData(e.currentTarget);
-    const data: Partial<AssetMaintenance> = {
+    const data: Partial<AssetMaintenance> & { maintenanceType?: string; nextMaintenanceDate?: string } = {
       assetId: selectedAsset.id,
       facilityId,
       type: formData.get('type') as string,
@@ -80,12 +100,12 @@ export default function AssetMaintenancePage() {
       performedBy: formData.get('performedBy') as string,
       serviceProvider: formData.get('serviceProvider') as string,
       cost: Number(formData.get('cost') || 0),
-      nextDueDate: formData.get('nextDueDate') as string || undefined,
+      nextDueDate: (formData.get('nextDueDate') as string) || undefined,
       findings: formData.get('findings') as string,
       recommendations: formData.get('recommendations') as string,
     };
 
-    recordMutation.mutate(data);
+    recordMutation.mutate({ assetId: selectedAsset.id, data });
   };
 
   // Categorize due maintenance
@@ -174,12 +194,28 @@ export default function AssetMaintenancePage() {
           Maintenance Due ({maintenanceDue.length})
         </button>
         <button
+          onClick={() => setActiveTab('calibration')}
+          className={`px-4 py-2 border-b-2 transition-colors ${
+            activeTab === 'calibration' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500'
+          }`}
+        >
+          Calibration Due ({calibrationDue.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('amc')}
+          className={`px-4 py-2 border-b-2 transition-colors ${
+            activeTab === 'amc' ? 'border-purple-600 text-purple-600' : 'border-transparent text-gray-500'
+          }`}
+        >
+          AMC Expiring ({amcExpiring.length})
+        </button>
+        <button
           onClick={() => setActiveTab('history')}
           className={`px-4 py-2 border-b-2 transition-colors ${
             activeTab === 'history' ? 'border-orange-600 text-orange-600' : 'border-transparent text-gray-500'
           }`}
         >
-          All Assets
+          Maintenance History
         </button>
       </div>
 
@@ -241,6 +277,135 @@ export default function AssetMaintenancePage() {
                           >
                             Record
                           </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'calibration' && (
+        <div className="space-y-4">
+          {calibrationLoading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+            </div>
+          ) : calibrationDue.length === 0 ? (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-8 text-center">
+              <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-3" />
+              <p className="text-green-800 font-medium">No calibration due in the next 30 days.</p>
+            </div>
+          ) : (
+            <div className="bg-white rounded-lg border overflow-hidden">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Code</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Asset</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Department</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Last Calibration</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Next Due</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Days Remaining</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {calibrationDue.map((asset) => {
+                    const next = asset.nextCalibrationDue ? new Date(asset.nextCalibrationDue) : null;
+                    const days = next ? Math.ceil((next.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : null;
+                    const overdue = days !== null && days < 0;
+                    return (
+                      <tr key={asset.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 text-sm font-mono text-gray-700">{asset.assetCode}</td>
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-gray-900">{asset.name}</div>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600">{asset.department?.name || '-'}</td>
+                        <td className="px-4 py-3 text-sm">
+                          {asset.lastCalibrationDate ? format(new Date(asset.lastCalibrationDate), 'dd/MM/yyyy') : '-'}
+                        </td>
+                        <td className="px-4 py-3 text-sm">
+                          {asset.nextCalibrationDue ? format(new Date(asset.nextCalibrationDue), 'dd/MM/yyyy') : '-'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            overdue ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'
+                          }`}>
+                            {days === null ? '-' : overdue ? `${Math.abs(days)} days overdue` : `${days} days`}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            onClick={() => { setSelectedAsset(asset); setShowModal(true); }}
+                            className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+                          >
+                            Record
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'amc' && (
+        <div className="space-y-4">
+          {amcLoading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+            </div>
+          ) : amcExpiring.length === 0 ? (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-8 text-center">
+              <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-3" />
+              <p className="text-green-800 font-medium">No AMC contracts expiring in the next 60 days.</p>
+            </div>
+          ) : (
+            <div className="bg-white rounded-lg border overflow-hidden">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Code</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Asset</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Department</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">AMC Vendor</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Start</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">End</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Days Remaining</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {amcExpiring.map((asset) => {
+                    const end = asset.amcEndDate ? new Date(asset.amcEndDate) : null;
+                    const days = end ? Math.ceil((end.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : null;
+                    const expired = days !== null && days < 0;
+                    return (
+                      <tr key={asset.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 text-sm font-mono text-gray-700">{asset.assetCode}</td>
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-gray-900">{asset.name}</div>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600">{asset.department?.name || '-'}</td>
+                        <td className="px-4 py-3 text-sm">{asset.amcVendor || '-'}</td>
+                        <td className="px-4 py-3 text-sm">
+                          {asset.amcStartDate ? format(new Date(asset.amcStartDate), 'dd/MM/yyyy') : '-'}
+                        </td>
+                        <td className="px-4 py-3 text-sm">
+                          {asset.amcEndDate ? format(new Date(asset.amcEndDate), 'dd/MM/yyyy') : '-'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            expired ? 'bg-red-100 text-red-800' : 'bg-purple-100 text-purple-800'
+                          }`}>
+                            {days === null ? '-' : expired ? `${Math.abs(days)} days expired` : `${days} days`}
+                          </span>
                         </td>
                       </tr>
                     );

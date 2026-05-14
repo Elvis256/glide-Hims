@@ -72,6 +72,12 @@ export class CheckInDto {
   @IsOptional()
   @IsString()
   roomNumber?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  maxPatients?: number;
 }
 
 export class CheckOutDto {

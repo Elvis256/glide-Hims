@@ -200,10 +200,9 @@ export class PatientsService {
           entityId: savedPatient.id,
           newValue: {
             mrn: savedPatient.mrn,
-            fullName: savedPatient.fullName,
-            dateOfBirth: savedPatient.dateOfBirth,
-            nationalId: savedPatient.nationalId,
-            phone: savedPatient.phone,
+            patientId: savedPatient.id,
+            hasNationalId: !!savedPatient.nationalId,
+            hasPhone: !!savedPatient.phone,
           },
         });
       } catch (auditError) {
@@ -343,7 +342,7 @@ export class PatientsService {
       .where('DATE(patient.dateOfBirth) = DATE(:dob)', {
         dob: new Date(dto.dateOfBirth).toISOString().split('T')[0],
       });
-    if (tenantId) byDobQb.andWhere('patient.tenant_id = :tenantId', { tenantId });
+    if (tenantId) byDobQb.andWhere('patient.tenantId = :tenantId', { tenantId });
     const byDob = await byDobQb.getMany();
     candidates.push(...byDob);
 
@@ -353,7 +352,7 @@ export class PatientsService {
       const byNameQb = this.patientRepository
         .createQueryBuilder('patient')
         .where('SIMILARITY(patient.fullName, :name) > 0.3', { name: dto.fullName });
-      if (tenantId) byNameQb.andWhere('patient.tenant_id = :tenantId', { tenantId });
+      if (tenantId) byNameQb.andWhere('patient.tenantId = :tenantId', { tenantId });
       const byName = await byNameQb.getMany();
       candidates.push(...byName);
     } catch (error) {
@@ -361,7 +360,7 @@ export class PatientsService {
       const byNameFallbackQb = this.patientRepository
         .createQueryBuilder('patient')
         .where('patient.fullName ILIKE :name', { name: `%${dto.fullName}%` });
-      if (tenantId) byNameFallbackQb.andWhere('patient.tenant_id = :tenantId', { tenantId });
+      if (tenantId) byNameFallbackQb.andWhere('patient.tenantId = :tenantId', { tenantId });
       const byNameFallback = await byNameFallbackQb.getMany();
       candidates.push(...byNameFallback);
     }

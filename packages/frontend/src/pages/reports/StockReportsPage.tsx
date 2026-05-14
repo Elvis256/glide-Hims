@@ -23,6 +23,7 @@ import {
   Legend,
 } from 'recharts';
 import api from '../../services/api';
+import { useFacilityId } from '../../lib/facility';
 import { formatCurrency } from '../../lib/currency';
 import { printService } from '../../lib/print';
 import { asList } from '../../utils/unwrapResponse';
@@ -54,13 +55,15 @@ interface LowStockItem {
 }
 
 export default function StockReportsPage() {
+  const facilityId = useFacilityId();
   const [dateRange, setDateRange] = useState('current');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
 
   const { data: stats, isLoading } = useQuery({
-    queryKey: ['stock-reports', dateRange, selectedCategory],
+    queryKey: ['stock-reports', dateRange, selectedCategory, facilityId],
+    enabled: !!facilityId,
     queryFn: async () => {
       try {
         const response = await api.get('/stores/inventory', {
@@ -184,7 +187,7 @@ export default function StockReportsPage() {
         throw error;
       }
     },
-  });
+});
 
   const handleExport = () => {
     const rows = [
@@ -244,6 +247,17 @@ export default function StockReportsPage() {
   }
 
   const categories = ['all', ...(stats?.allCategories || [])];
+
+  if (!facilityId) {
+    return (
+      <div className="p-6">
+        <div className="rounded-lg border border-dashed border-gray-300 bg-white p-12 text-center">
+          <p className="text-lg font-medium text-gray-900">Select a facility</p>
+          <p className="mt-2 text-sm text-gray-500">Pick a facility from the top bar to view this report.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div id="report-content" className="space-y-6">

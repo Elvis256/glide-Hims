@@ -47,6 +47,7 @@ export class DoctorDutyService {
       existing.checkInTime = new Date().toTimeString().split(' ')[0];
       existing.roomNumber = dto.roomNumber || existing.roomNumber;
       existing.departmentId = dto.departmentId || existing.departmentId;
+      if (dto.maxPatients != null) existing.maxPatients = dto.maxPatients;
       return this.doctorDutyRepo.save(existing);
     }
 
@@ -59,6 +60,7 @@ export class DoctorDutyService {
       status: DutyStatus.ON_DUTY,
       checkInTime: new Date().toTimeString().split(' ')[0],
       roomNumber: dto.roomNumber,
+      ...(dto.maxPatients != null ? { maxPatients: dto.maxPatients } : {}),
       markedById,
       ...(tenantId ? { tenantId } : {}),
     });

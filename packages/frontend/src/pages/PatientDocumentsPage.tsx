@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import api from '../services/api';
@@ -74,8 +74,8 @@ interface PatientDocument {
   uploadedAt: string;
   uploadedBy: string;
   uploadedByName: string;
+  /** Always empty in this codebase; the file MUST be fetched with auth. */
   url: string;
-  thumbnailUrl?: string;
 }
 
 // Document category configuration
@@ -141,6 +141,9 @@ export default function PatientDocumentsPage() {
   const [previewIndex, setPreviewIndex] = useState(0);
   const [previewZoom, setPreviewZoom] = useState(100);
   const [previewRotation, setPreviewRotation] = useState(0);
+  const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   
   // Edit metadata state
   const [editingDoc, setEditingDoc] = useState<PatientDocument | null>(null);
@@ -170,39 +173,115 @@ export default function PatientDocumentsPage() {
   });
 
   // Fetch patient documents
+  // Backend returns the raw `patient_documents` row (documentName, fileType,
+  // createdAt, uploader, etc.). Normalize it to the FE shape so the renderer
+  // doesn't crash on undefined fields. URLs are intentionally NOT pre-built —
+  // the file must be fetched with the bearer token, see `usePreviewBlob` and
+  // `handleDownload` below.
   const { data: documentsData, isLoading: docsLoading, refetch: refetchDocs } = useQuery({
     queryKey: ['patient-documents', selectedPatient?.id],
     queryFn: async () => {
       const response = await api.get(`/patients/${selectedPatient?.id}/documents`);
-      return response.data?.data as PatientDocument[] || response.data as PatientDocument[] || [];
+      const raw: any[] = Array.isArray(response.data)
+        ? response.data
+        : response.data?.data || [];
+      return raw.map((r: any): PatientDocument => {
+        const uploader = r.uploader || {};
+        const uploaderName =
+          [uploader.firstName, uploader.lastName].filter(Boolean).join(' ').trim() ||
+          uploader.username ||
+          uploader.email ||
+          '—';
+        const mt: string = r.mimeType || r.fileType || 'application/octet-stream';
+        return {
+          id: r.id,
+          patientId: r.patientId,
+          name: r.documentName || r.originalFilename || r.name || 'Untitled',
+          title: r.title || r.description || r.documentName || 'Untitled',
+          description: r.description,
+          category: r.category,
+          fileType: mt,
+          mimeType: mt,
+          fileSize: r.fileSize ?? 0,
+          uploadedAt: r.createdAt || r.uploadedAt,
+          uploadedBy: r.uploadedBy || uploader.id || '',
+          uploadedByName: uploaderName,
+          // Built lazily — fetched via authenticated blob below.
+          url: '',
+        };
+      });
     },
     enabled: !!selectedPatient,
   });
 
   const documents = documentsData || [];
 
-  // Upload mutation
+  // Upload mutation — backend accepts ONE file per request (FileInterceptor('file'))
+  // so we POST each selected file individually with its own progress tracker.
   const uploadMutation = useMutation({
-    mutationFn: async (formData: FormData) => {
-      const response = await api.post(`/patients/${selectedPatient?.id}/documents`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        onUploadProgress: (progressEvent) => {
-          const percentCompleted = Math.round((progressEvent.loaded * 100) / (progressEvent.total || 1));
-          setUploadFiles((prev) =>
-            prev.map((f) => ({ ...f, progress: percentCompleted, status: 'uploading' }))
+    mutationFn: async (files: typeof uploadFiles) => {
+      const results: any[] = [];
+      const errors: { name: string; message: string }[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const uf = files[i];
+        const fd = new FormData();
+        fd.append('file', uf.file);
+        fd.append('category', uploadCategory);
+        if (uploadDescription) fd.append('description', uploadDescription);
+        try {
+          const response = await api.post(
+            `/patients/${selectedPatient?.id}/documents`,
+            fd,
+            {
+              headers: { 'Content-Type': 'multipart/form-data' },
+              onUploadProgress: (progressEvent) => {
+                const pct = Math.round(
+                  (progressEvent.loaded * 100) / (progressEvent.total || 1),
+                );
+                setUploadFiles((prev) =>
+                  prev.map((f, idx) =>
+                    idx === i ? { ...f, progress: pct, status: 'uploading' } : f,
+                  ),
+                );
+              },
+            },
           );
-        },
-      });
-      return response.data;
+          results.push(response.data);
+          setUploadFiles((prev) =>
+            prev.map((f, idx) => (idx === i ? { ...f, progress: 100, status: 'success' } : f)),
+          );
+        } catch (err: any) {
+          const msg =
+            err?.response?.data?.message || err?.message || 'Upload failed';
+          errors.push({ name: uf.file.name, message: msg });
+          setUploadFiles((prev) =>
+            prev.map((f, idx) =>
+              idx === i ? { ...f, status: 'error', error: msg } : f,
+            ),
+          );
+        }
+      }
+      if (errors.length > 0 && results.length === 0) {
+        throw new Error(errors.map((e) => `${e.name}: ${e.message}`).join('; '));
+      }
+      return { results, errors };
     },
-    onSuccess: () => {
-      toast.success('Document(s) uploaded successfully');
+    onSuccess: ({ results, errors }) => {
+      if (results.length > 0) {
+        toast.success(
+          `${results.length} document${results.length === 1 ? '' : 's'} uploaded`,
+        );
+      }
+      if (errors.length > 0) {
+        toast.error(
+          `${errors.length} upload${errors.length === 1 ? '' : 's'} failed`,
+        );
+      }
       queryClient.invalidateQueries({ queryKey: ['patient-documents', selectedPatient?.id] });
-      resetUploadModal();
+      if (errors.length === 0) resetUploadModal();
     },
     onError: (error: Error) => {
       toast.error(`Upload failed: ${error.message}`);
-      setUploadFiles((prev) => prev.map((f) => ({ ...f, status: 'error', error: error.message })));
     },
   });
 
@@ -252,6 +331,52 @@ export default function PatientDocumentsPage() {
   });
 
   // Helpers
+  // Fetch the file as an authenticated blob whenever the previewed doc changes,
+  // and turn it into an object URL the <img>/<iframe> can read locally.
+  // This is required because the file endpoint needs the bearer token, which
+  // the browser can't attach to a plain `src=` link.
+  useEffect(() => {
+    if (!previewDoc) {
+      if (previewBlobUrl) {
+        window.URL.revokeObjectURL(previewBlobUrl);
+        setPreviewBlobUrl(null);
+      }
+      setPreviewError(null);
+      return;
+    }
+    let revoked = false;
+    let createdUrl: string | null = null;
+    setPreviewLoading(true);
+    setPreviewError(null);
+    api
+      .get(`/patients/documents/${previewDoc.id}/download?inline=1`, {
+        responseType: 'blob',
+      })
+      .then((response) => {
+        if (revoked) return;
+        const mt = previewDoc.mimeType || previewDoc.fileType || 'application/octet-stream';
+        createdUrl = window.URL.createObjectURL(new Blob([response.data], { type: mt }));
+        setPreviewBlobUrl(createdUrl);
+      })
+      .catch((err: any) => {
+        if (revoked) return;
+        setPreviewError(
+          err?.response?.data?.message || err?.message || 'Could not load preview',
+        );
+      })
+      .finally(() => {
+        if (!revoked) setPreviewLoading(false);
+      });
+    return () => {
+      revoked = true;
+      if (createdUrl) window.URL.revokeObjectURL(createdUrl);
+      setPreviewBlobUrl((prev) => {
+        if (prev && prev !== createdUrl) window.URL.revokeObjectURL(prev);
+        return null;
+      });
+    };
+  }, [previewDoc?.id]);
+
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -270,12 +395,13 @@ export default function PatientDocumentsPage() {
     return documentCategories.find((c) => c.value === category) || documentCategories[documentCategories.length - 1];
   };
 
-  const isImageFile = (mimeType: string) => mimeType.startsWith('image/');
-  const isPdfFile = (mimeType: string) => mimeType === 'application/pdf';
+  const isImageFile = (mimeType?: string | null) => !!mimeType && mimeType.startsWith('image/');
+  const isPdfFile = (mimeType?: string | null) => mimeType === 'application/pdf';
 
   const getFileIcon = (doc: PatientDocument) => {
-    if (isImageFile(doc.mimeType)) return Image;
-    if (isPdfFile(doc.mimeType)) return FileText;
+    const mt = doc.mimeType || doc.fileType;
+    if (isImageFile(mt)) return Image;
+    if (isPdfFile(mt)) return FileText;
     const catInfo = getCategoryInfo(doc.category);
     return catInfo.icon;
   };
@@ -403,16 +529,7 @@ export default function PatientDocumentsPage() {
       toast.error('Please select at least one file');
       return;
     }
-
-    const formData = new FormData();
-    uploadFiles.forEach((uf, index) => {
-      formData.append('files', uf.file);
-    });
-    formData.append('category', uploadCategory);
-    formData.append('title', uploadTitle || uploadFiles[0].file.name);
-    formData.append('description', uploadDescription);
-
-    uploadMutation.mutate(formData);
+    uploadMutation.mutate(uploadFiles);
   };
 
   // Selection handlers
@@ -447,7 +564,7 @@ export default function PatientDocumentsPage() {
 
   const handleDownload = async (doc: PatientDocument) => {
     try {
-      const response = await api.get(`/patients/${selectedPatient?.id}/documents/${doc.id}/download`, {
+      const response = await api.get(`/patients/documents/${doc.id}/download`, {
         responseType: 'blob',
       });
       const url = window.URL.createObjectURL(new Blob([response.data]));
@@ -464,18 +581,34 @@ export default function PatientDocumentsPage() {
     }
   };
 
-  const handlePrint = (doc: PatientDocument) => {
-    if (doc.mimeType.startsWith('image/')) {
-      printService.printDocument(
-        `<div style="text-align:center;"><img src="${doc.url}" alt="${doc.name}" style="max-width:100%;max-height:90vh;" /></div>`,
-        { title: doc.name },
+  const handlePrint = async (doc: PatientDocument) => {
+    const mt = doc.mimeType || doc.fileType;
+    try {
+      const response = await api.get(
+        `/patients/documents/${doc.id}/download?inline=1`,
+        { responseType: 'blob' },
       );
-    } else {
-      // PDFs and other file types — open in new tab for native print
-      const w = window.open(doc.url, '_blank');
-      if (w) {
-        w.addEventListener('load', () => { w.print(); });
+      const blobUrl = window.URL.createObjectURL(
+        new Blob([response.data], { type: mt }),
+      );
+      if (isImageFile(mt)) {
+        printService.printDocument(
+          `<div style="text-align:center;"><img src="${blobUrl}" alt="${doc.name}" style="max-width:100%;max-height:90vh;" /></div>`,
+          { title: doc.name },
+        );
+        // Revoke after print dialog has had time to render the image.
+        setTimeout(() => window.URL.revokeObjectURL(blobUrl), 60_000);
+      } else {
+        const w = window.open(blobUrl, '_blank');
+        if (w) {
+          w.addEventListener('load', () => {
+            w.print();
+          });
+        }
+        setTimeout(() => window.URL.revokeObjectURL(blobUrl), 60_000);
       }
+    } catch {
+      toast.error('Print failed');
     }
   };
 
@@ -984,20 +1117,13 @@ export default function PatientDocumentsPage() {
                             )}
                           </button>
 
-                          {/* Thumbnail / Preview */}
+                          {/* Thumbnail / Preview — backend has no thumbnails;
+                              show a category icon instead. */}
                           <div
                             className="aspect-square bg-gray-100 flex items-center justify-center cursor-pointer"
                             onClick={() => handleView(doc)}
                           >
-                            {doc.thumbnailUrl && isImageFile(doc.mimeType) ? (
-                              <img
-                                src={doc.thumbnailUrl}
-                                alt={doc.name}
-                                className="w-full h-full object-cover"
-                              />
-                            ) : (
-                              <DocIcon className="w-12 h-12 text-gray-400" />
-                            )}
+                            <DocIcon className="w-12 h-12 text-gray-400" />
                           </div>
 
                           {/* Info */}
@@ -1243,8 +1369,9 @@ export default function PatientDocumentsPage() {
                 <Printer className="w-5 h-5" />
               </button>
               <button
-                onClick={() => window.open(previewDoc.url, '_blank')}
-                className="p-2 hover:bg-white/10 rounded-lg"
+                onClick={() => previewBlobUrl && window.open(previewBlobUrl, '_blank')}
+                disabled={!previewBlobUrl}
+                className="p-2 hover:bg-white/10 rounded-lg disabled:opacity-40"
                 title="Open in New Tab"
               >
                 <ExternalLink className="w-5 h-5" />
@@ -1254,18 +1381,33 @@ export default function PatientDocumentsPage() {
 
           {/* Preview Content */}
           <div className="flex-1 flex items-center justify-center overflow-auto p-4">
-            {isImageFile(previewDoc.mimeType) ? (
+            {previewLoading ? (
+              <div className="text-white text-center">
+                <div className="animate-spin w-8 h-8 border-2 border-white border-t-transparent rounded-full mx-auto mb-3" />
+                <p>Loading preview…</p>
+              </div>
+            ) : previewError ? (
+              <div className="text-center text-white">
+                <File className="w-24 h-24 mx-auto mb-4 text-red-400" />
+                <p className="text-lg mb-2">Preview failed</p>
+                <p className="text-sm text-gray-300 mb-4">{previewError}</p>
+                <button onClick={() => handleDownload(previewDoc)} className="btn-primary">
+                  <Download className="w-4 h-4 mr-2" />
+                  Download instead
+                </button>
+              </div>
+            ) : previewBlobUrl && isImageFile(previewDoc.mimeType || previewDoc.fileType) ? (
               <img
-                src={previewDoc.url}
+                src={previewBlobUrl}
                 alt={previewDoc.name}
                 className="max-w-full max-h-full object-contain transition-transform"
                 style={{
                   transform: `scale(${previewZoom / 100}) rotate(${previewRotation}deg)`,
                 }}
               />
-            ) : isPdfFile(previewDoc.mimeType) ? (
+            ) : previewBlobUrl && isPdfFile(previewDoc.mimeType || previewDoc.fileType) ? (
               <iframe
-                src={previewDoc.url}
+                src={previewBlobUrl}
                 className="w-full h-full bg-white rounded-lg"
                 style={{
                   transform: `scale(${previewZoom / 100})`,

@@ -21,6 +21,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import api from '../../services/api';
+import { useFacilityId } from '../../lib/facility';
 import { formatCurrency } from '../../lib/currency';
 import { printService } from '../../lib/print';
 
@@ -79,13 +80,15 @@ function trackReportVisit(name: string, href: string, category: string) {
 }
 
 export default function ReportsDashboardPage() {
+  const facilityId = useFacilityId();
   const [period, setPeriod] = useState<Period>('month');
   const [apiErrors, setApiErrors] = useState<string[]>([]);
   const dateRange = useMemo(() => getDateRange(period), [period]);
 
   // Fetch summary statistics
   const { data: stats } = useQuery({
-    queryKey: ['reports-dashboard-stats', period],
+    queryKey: ['reports-dashboard-stats', period, facilityId],
+    enabled: !!facilityId,
     queryFn: async () => {
       setApiErrors([]);
       const [patients, encounters, billing, revenue] = await Promise.all([
@@ -106,7 +109,7 @@ export default function ReportsDashboardPage() {
         collectionRate: totalRevenue > 0 ? parseFloat((totalCollections / totalRevenue * 100).toFixed(1)) : 0,
       };
     },
-  });
+});
 
   const [recentReports, setRecentReports] = useState<RecentReport[]>([]);
   useEffect(() => {
@@ -187,6 +190,17 @@ export default function ReportsDashboardPage() {
     { label: 'Total Revenue', value: formatCurrency(stats?.totalRevenue || 0), icon: DollarSign, color: 'text-emerald-600', bg: 'bg-emerald-100', href: '/reports/revenue', isFormatted: true },
   ];
 
+  if (!facilityId) {
+    return (
+      <div className="p-6">
+        <div className="rounded-lg border border-dashed border-gray-300 bg-white p-12 text-center">
+          <p className="text-lg font-medium text-gray-900">Select a facility</p>
+          <p className="mt-2 text-sm text-gray-500">Pick a facility from the top bar to view this report.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div id="report-content" className="space-y-6">
       {apiErrors.length > 0 && (
@@ -250,7 +264,11 @@ export default function ReportsDashboardPage() {
       {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {quickStats.map((stat) => (
-          <Link key={stat.label} to={stat.href} className="bg-white rounded-lg shadow p-6 hover:shadow-md transition-shadow group">
+          <Link
+            key={stat.label}
+            to={`${stat.href}?startDate=${dateRange.from}&endDate=${dateRange.to}`}
+            className="bg-white rounded-lg shadow p-6 hover:shadow-md transition-shadow group"
+          >
             <div className="flex items-center gap-4">
               <div className={`p-3 rounded-lg ${stat.bg}`}>
                 <stat.icon className={`h-6 w-6 ${stat.color}`} />

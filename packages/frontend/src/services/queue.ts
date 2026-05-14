@@ -34,6 +34,9 @@ export interface QueueEntry {
   onHold?: boolean;
   holdReason?: string;
   previousServicePoint?: string;
+  /** Persisted triage assessment (Save Draft / on completion). */
+  triageData?: Record<string, any> | null;
+  triageDataUpdatedAt?: string | null;
 }
 
 export type VisitType =
@@ -233,6 +236,25 @@ export const queueService = {
 
   transfer: async (id: string, nextServicePoint: string, transferReason?: string): Promise<QueueEntry> => {
     const response = await api.post<QueueEntry>(`/queue/${id}/transfer`, { nextServicePoint, transferReason });
+    return response.data;
+  },
+
+  /** Persist a partial triage assessment (Save Draft) — does not change queue state. */
+  saveTriageData: async (id: string, triageData: Record<string, any>): Promise<QueueEntry> => {
+    const response = await api.post<QueueEntry>(`/queue/${id}/triage-data`, { triageData });
+    return response.data;
+  },
+
+  /** Complete triage with a disposition AND persist the full triage form. */
+  completeTriage: async (
+    id: string,
+    disposition: string,
+    triageData?: Record<string, any>,
+  ): Promise<QueueEntry> => {
+    const response = await api.post<QueueEntry>(`/queue/${id}/triage-disposition`, {
+      disposition,
+      triageData,
+    });
     return response.data;
   },
 

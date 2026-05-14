@@ -14,6 +14,7 @@ import { Patient } from '../../database/entities/patient.entity';
 import { PrescriptionItem } from '../../database/entities/prescription.entity';
 import { BillingModule } from '../billing/billing.module';
 import { AuditModule } from '../../common/interceptors/audit.module';
+import { VitalsModule } from '../vitals/vitals.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { AuditModule } from '../../common/interceptors/audit.module';
     ]),
     forwardRef(() => BillingModule),
     AuditModule,
+    VitalsModule,
   ],
   controllers: [IpdController],
   providers: [IpdService, BedBoardService],

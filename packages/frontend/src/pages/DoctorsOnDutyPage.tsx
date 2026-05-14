@@ -156,6 +156,7 @@ export default function DoctorsOnDutyPage() {
       checkInMutation.mutate({
         doctorId: checkInModal.doctor.id,
         roomNumber: roomNumber || undefined,
+        maxPatients: maxPatients,
       });
     }
   };

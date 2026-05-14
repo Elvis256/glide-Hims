@@ -134,7 +134,10 @@ interface RecentPurchase {
   paymentMethod: string;
 }
 
-type PaymentMethod = 'cash' | 'mobile_money' | 'card';
+import type { PaymentMethod } from '../../shared/payment-methods';
+import PaymentMethodPicker from '../../components/PaymentMethodPicker';
+
+const POS_METHODS: readonly PaymentMethod[] = ['cash', 'mobile_money', 'card'];
 
 interface QuickKey {
   id: string;
@@ -1318,30 +1321,23 @@ export default function POSSalePage() {
             </div>
 
             {/* Payment method */}
-            <div className="mt-4 grid grid-cols-3 gap-2">
-              {([
-                { key: 'cash' as PaymentMethod, icon: Banknote, label: 'Cash', disabled: false },
-                { key: 'mobile_money' as PaymentMethod, icon: Smartphone, label: 'Mobile', disabled: !isOnline },
-                { key: 'card' as PaymentMethod, icon: CreditCard, label: 'Card', disabled: !isOnline },
-              ]).map(({ key, icon: Icon, label, disabled }) => (
-                <button
-                  key={key}
-                  onClick={() => { if (!disabled) setPaymentMethod(key); }}
-                  disabled={disabled}
-                  title={disabled ? 'Not available offline' : undefined}
-                  className={`flex flex-col items-center gap-1 rounded-lg border p-2 text-xs font-medium transition-colors ${
-                    disabled
-                      ? 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed'
-                      : paymentMethod === key
-                      ? 'border-blue-500 bg-blue-50 text-blue-700'
-                      : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                  }`}
-                >
-                  <Icon className="h-4 w-4" />
-                  {label}
-                  {disabled && <span className="text-[9px] text-gray-300">offline</span>}
-                </button>
-              ))}
+            <div className="mt-4">
+              <PaymentMethodPicker
+                value={paymentMethod}
+                onChange={(m) => {
+                  if (!isOnline && m !== 'cash') {
+                    return;
+                  }
+                  setPaymentMethod(m);
+                }}
+                allow={POS_METHODS}
+                compact
+              />
+              {!isOnline && paymentMethod !== 'cash' && (
+                <p className="mt-1 text-[10px] text-amber-600">
+                  Only cash is available while offline.
+                </p>
+              )}
             </div>
 
             <button

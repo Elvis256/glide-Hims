@@ -207,3 +207,227 @@ export class DisposeAssetDto {
   @IsString()
   notes?: string;
 }
+
+// ============ NEW: TRANSFER APPROVALS ============
+export class ApproveTransferDto {
+  @IsString()
+  stage: 'origin_dept_head' | 'receiving_dept_head' | 'store_keeper';
+
+  @IsString()
+  decision: 'approved' | 'rejected';
+
+  @IsOptional()
+  @IsString()
+  comments?: string;
+}
+
+export class CompleteTransferReceiptDto {
+  @IsOptional()
+  @IsUUID()
+  receivedBy?: string;
+
+  @IsOptional()
+  @IsString()
+  conditionOnReceipt?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
+
+// ============ NEW: ALLOCATION ============
+export class CreateAllocationDto {
+  @IsUUID()
+  assetId: string;
+
+  @IsUUID()
+  facilityId: string;
+
+  @IsOptional()
+  @IsUUID()
+  departmentId?: string;
+
+  @IsUUID()
+  custodianId: string;
+
+  @IsOptional()
+  @IsUUID()
+  roomId?: string;
+
+  @IsDateString()
+  allocationDate: string;
+
+  @IsOptional()
+  @IsDateString()
+  expectedReturnDate?: string;
+
+  @IsOptional()
+  @IsString()
+  purpose?: string;
+
+  @IsOptional()
+  @IsString()
+  conditionOnIssue?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
+
+export class ApproveAllocationDto {
+  @IsString()
+  decision: 'approved' | 'rejected';
+
+  @IsOptional()
+  @IsString()
+  comments?: string;
+}
+
+export class ReturnAllocationDto {
+  @IsDateString()
+  returnDate: string;
+
+  @IsOptional()
+  @IsString()
+  conditionOnReturn?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
+
+// ============ NEW: DISPOSAL WORKFLOW ============
+export class CreateDisposalRequestDto {
+  @IsUUID()
+  assetId: string;
+
+  @IsUUID()
+  facilityId: string;
+
+  @IsString()
+  method: string; // sale|scrap|donation|trade_in|write_off
+
+  @IsString()
+  reason: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  expectedValue?: number;
+
+  @IsOptional()
+  @IsString()
+  buyer?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  @IsOptional()
+  attachments?: string[];
+}
+
+export class BiomedReviewDto {
+  @IsString()
+  assessment: string;
+
+  @IsString()
+  recommendation: 'approve' | 'reject';
+}
+
+export class CommitteeDecisionDto {
+  @IsString()
+  role: string; // 'Auditor' | 'Administrator' | 'Facility Manager'
+
+  @IsString()
+  decision: 'approved' | 'rejected';
+
+  @IsOptional()
+  @IsString()
+  comments?: string;
+}
+
+export class CompleteDisposalDto {
+  @IsDateString()
+  disposalDate: string;
+
+  @IsNumber()
+  @Type(() => Number)
+  actualValue: number;
+
+  @IsOptional()
+  @IsString()
+  buyer?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
+
+// ============ NEW: CATEGORY CRUD ============
+export class CreateAssetCategoryDto {
+  @IsString()
+  code: string;
+
+  @IsString()
+  name: string;
+
+  @IsString()
+  assetClass: string;
+
+  @IsOptional()
+  @IsUUID()
+  parentId?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  defaultUsefulLifeMonths?: number;
+
+  @IsOptional()
+  @IsString()
+  defaultDepreciationMethod?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  defaultDepreciationRate?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  defaultCalibrationIntervalDays?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  defaultMaintenanceIntervalDays?: number;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+}
+
+export class UpdateAssetCategoryDto {
+  @IsOptional() @IsString() name?: string;
+  @IsOptional() @IsString() assetClass?: string;
+  @IsOptional() @IsUUID() parentId?: string;
+  @IsOptional() @IsNumber() @Type(() => Number) defaultUsefulLifeMonths?: number;
+  @IsOptional() @IsString() defaultDepreciationMethod?: string;
+  @IsOptional() @IsNumber() @Type(() => Number) defaultDepreciationRate?: number;
+  @IsOptional() @IsNumber() @Type(() => Number) defaultCalibrationIntervalDays?: number;
+  @IsOptional() @IsNumber() @Type(() => Number) defaultMaintenanceIntervalDays?: number;
+  @IsOptional() @IsString() description?: string;
+  @IsOptional() isActive?: boolean;
+}
+
+// ============ NEW: LOCATION HISTORY ============
+export class RecordLocationDto {
+  @IsOptional() @IsUUID() departmentId?: string;
+  @IsOptional() @IsUUID() roomId?: string;
+  @IsOptional() @IsString() locationLabel?: string;
+  @IsOptional() @IsUUID() custodianId?: string;
+  @IsOptional() @IsString() reason?: string;
+  @IsOptional() @IsString() notes?: string;
+}
+

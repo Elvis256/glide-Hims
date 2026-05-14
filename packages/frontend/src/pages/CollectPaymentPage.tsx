@@ -3,9 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
-  Banknote,
   Search,
-  CreditCard,
   Smartphone,
   CheckCircle,
   ArrowLeft,
@@ -14,18 +12,15 @@ import {
   Loader2,
   AlertCircle,
   Trash2,
+  Banknote,
 } from 'lucide-react';
 import { billingService, type Invoice } from '../services/billing';
 import { api } from '../services/api';
 import { formatCurrency } from '../lib/currency';
 import { usePermissions } from '../components/PermissionGate';
 import AccessDenied from '../components/AccessDenied';
-
-const paymentMethods = [
-  { id: 'cash', name: 'Cash', icon: Banknote },
-  { id: 'card', name: 'Card', icon: CreditCard },
-  { id: 'mobile_money', name: 'Mobile Money', icon: Smartphone },
-];
+import PaymentMethodPicker from '../components/PaymentMethodPicker';
+import type { PaymentMethod } from '../shared/payment-methods';
 
 export default function CollectPaymentPage() {
   const { hasPermission } = usePermissions();
@@ -33,7 +28,7 @@ export default function CollectPaymentPage() {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedBill, setSelectedBill] = useState<Invoice | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<string>('cash');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [amountReceived, setAmountReceived] = useState<string>('');
   const [transactionRef, setTransactionRef] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
@@ -458,22 +453,12 @@ export default function CollectPaymentPage() {
 
               {/* Payment Method */}
               <h3 className="text-sm font-semibold mb-2 flex-shrink-0">Payment Method</h3>
-              <div className="grid grid-cols-3 gap-2 mb-4 flex-shrink-0">
-                {paymentMethods.map((method) => (
-                  <button
-                    key={method.id}
-                    onClick={() => setPaymentMethod(method.id)}
-                    className={`p-3 rounded-lg border text-center ${
-                      paymentMethod === method.id
-                        ? 'border-blue-500 bg-blue-50 text-blue-700'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <method.icon className="w-6 h-6 mx-auto mb-1" />
-                    <span className="text-sm">{method.name}</span>
-                  </button>
-                ))}
-              </div>
+              <PaymentMethodPicker
+                value={paymentMethod}
+                onChange={setPaymentMethod}
+                className="mb-4 flex-shrink-0"
+                compact
+              />
 
               {/* Amount */}
               <div className="flex-1 overflow-y-auto space-y-3">

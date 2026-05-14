@@ -1,0 +1,106 @@
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+  Req,
+} from '@nestjs/common';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Request } from 'express';
+import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import {
+  AcknowledgeCriticalResultDto,
+  CriticalResultsService,
+} from './critical-results.service';
+
+@ApiTags('critical-results')
+@Controller('critical-results')
+export class CriticalResultsController {
+  constructor(private readonly svc: CriticalResultsService) {}
+
+  @Get()
+  @AuthWithPermissions('critical-results.read')
+  @ApiOperation({ summary: 'List critical-result alerts (filterable)' })
+  list(
+    @Req() req: Request,
+    @Query('status') status?: string,
+    @Query('assignedToMe') assignedToMe?: string,
+    @Query('flaggedByMe') flaggedByMe?: string,
+    @Query('resourceType') resourceType?: 'lab' | 'radiology',
+    @Query('patientId') patientId?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const user = (req as any).user || {};
+    return this.svc.list({
+      tenantId: user.tenantId,
+      status,
+      assignedToId: assignedToMe === 'true' ? user.id : undefined,
+      flaggedById: flaggedByMe === 'true' ? user.id : undefined,
+      resourceType,
+      patientId,
+      limit: limit ? parseInt(limit, 10) : undefined,
+    });
+  }
+
+  @Get('stats')
+  @AuthWithPermissions('critical-results.read')
+  @ApiOperation({ summary: 'Aggregate stats (for Lab/Radiology dashboards)' })
+  stats(
+    @Req() req: Request,
+    @Query('flaggedByMe') flaggedByMe?: string,
+    @Query('resourceType') resourceType?: 'lab' | 'radiology',
+    @Query('sinceDays') sinceDays?: string,
+  ) {
+    const user = (req as any).user || {};
+    return this.svc.stats({
+      tenantId: user.tenantId,
+      flaggedById: flaggedByMe === 'true' ? user.id : undefined,
+      resourceType,
+      sinceDays: sinceDays ? parseInt(sinceDays, 10) : 30,
+    });
+  }
+
+  @Get('count')
+  @AuthWithPermissions('critical-results.read')
+  @ApiOperation({ summary: 'Pending critical-result count (for badge)' })
+  async count(@Req() req: Request, @Query('assignedToMe') assignedToMe?: string) {
+    const user = (req as any).user || {};
+    const total = await this.svc.countPending(user.tenantId);
+    const mine = await this.svc.countPending(
+      user.tenantId,
+      assignedToMe === 'true' ? user.id : undefined,
+    );
+    return { total, mine };
+  }
+
+  @Get(':id')
+  @AuthWithPermissions('critical-results.read')
+  @ApiOperation({ summary: 'Get a critical-result alert by id' })
+  getOne(@Param('id', ParseUUIDPipe) id: string, @Req() req: Request) {
+    const user = (req as any).user || {};
+    return this.svc.getById(id, user.tenantId);
+  }
+
+  @Post(':id/acknowledge')
+  @AuthWithPermissions('critical-results.acknowledge')
+  @ApiOperation({ summary: 'Acknowledge a critical result with note + action' })
+  acknowledge(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: AcknowledgeCriticalResultDto,
+    @Req() req: Request,
+  ) {
+    const user = (req as any).user || {};
+    return this.svc.acknowledge(id, user.id, body, user.tenantId);
+  }
+
+  @Post(':id/cancel')
+  @AuthWithPermissions('critical-results.acknowledge')
+  @ApiOperation({ summary: 'Cancel a critical-result alert (e.g., result amended away)' })
+  cancel(@Param('id', ParseUUIDPipe) id: string, @Req() req: Request) {
+    const user = (req as any).user || {};
+    return this.svc.cancel(id, user.tenantId);
+  }
+}

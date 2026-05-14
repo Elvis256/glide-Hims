@@ -193,7 +193,12 @@ export class QueueManagementController {
   @Post(':id/recall')
   @AuthWithPermissions('queue.update')
   async recallPatient(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
-    return this.queueService.recallPatient(id, req.user.sub, req.user?.tenantId);
+    return this.queueService.recallPatient(
+      id,
+      req.user.sub,
+      req.user?.tenantId,
+      req.user?.facilityId,
+    );
   }
 
   @Post(':id/start-service')
@@ -254,15 +259,35 @@ export class QueueManagementController {
   @AuthWithPermissions('queue.update')
   async triageDisposition(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body('disposition') disposition: string,
+    @Body() body: { disposition?: string; triageData?: Record<string, any> },
     @Request() req: any,
   ) {
+    const disposition = body?.disposition;
     if (!disposition) {
       throw new BadRequestException('disposition is required');
     }
     return this.queueService.completeTriageWithDisposition(
       id,
       disposition,
+      req.user.sub,
+      req.user?.tenantId,
+      body?.triageData,
+    );
+  }
+
+  @Post(':id/triage-data')
+  @AuthWithPermissions('queue.update')
+  async saveTriageData(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { triageData: Record<string, any> },
+    @Request() req: any,
+  ) {
+    if (!body?.triageData || typeof body.triageData !== 'object') {
+      throw new BadRequestException('triageData is required');
+    }
+    return this.queueService.saveTriageData(
+      id,
+      body.triageData,
       req.user.sub,
       req.user?.tenantId,
     );

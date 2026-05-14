@@ -213,7 +213,7 @@ export class PosMomoService {
     };
   }
 
-  @Cron(CronExpression.EVERY_MINUTE)
+  @Cron(CronExpression.EVERY_MINUTE, { name: 'pos-momo-reconcile-pending' })
   async reconcilePending() {
     const cutoff = new Date(Date.now() - MOMO_MIN_POLL_AGE_MS);
     const timeoutCutoff = new Date(Date.now() - MOMO_TIMEOUT_MS);

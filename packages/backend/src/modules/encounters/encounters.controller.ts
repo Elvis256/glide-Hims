@@ -134,7 +134,8 @@ export class EncountersController {
     return this.encountersService.updateStatus(
       id,
       dto.status,
-      dto.providerId || req.user.id,
+      req.user.id,
+      dto.attendingProviderId ?? dto.providerId,
       dto.reason,
       req.user?.tenantId,
     );

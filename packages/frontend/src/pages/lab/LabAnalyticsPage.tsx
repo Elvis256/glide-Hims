@@ -1,5 +1,6 @@
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
+import CriticalResultsOverviewWidget from '../../components/CriticalResultsOverviewWidget';
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { labService } from '../../services/lab';
@@ -225,6 +226,11 @@ export default function LabAnalyticsPage() {
       </div>
 
       <div className="grid grid-cols-5 gap-4 mb-4">
+        <div className="col-span-5">
+          {hasPermission('critical-results.read') && (
+            <CriticalResultsOverviewWidget resourceType="lab" flaggedByMe={false} sinceDays={30} recentLimit={5} />
+          )}
+        </div>
         <div className="bg-white p-4 rounded-lg border border-gray-200">
           <div className="flex items-center justify-between mb-2">
             <FlaskConical className="w-8 h-8 p-1.5 bg-blue-100 text-blue-600 rounded-lg" />

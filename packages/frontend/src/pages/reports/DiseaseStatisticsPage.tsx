@@ -24,13 +24,16 @@ import {
   Cell,
 } from 'recharts';
 import api from '../../services/api';
+import { useFacilityId } from '../../lib/facility';
 import { printService } from '../../lib/print';
 
 export default function DiseaseStatisticsPage() {
+  const facilityId = useFacilityId();
   const [dateRange, setDateRange] = useState('month');
 
   const { data: stats, isLoading } = useQuery({
-    queryKey: ['disease-statistics', dateRange],
+    queryKey: ['disease-statistics', dateRange, facilityId],
+    enabled: !!facilityId,
     queryFn: async () => {
       try {
         // Fetch clinical analytics for disease statistics
@@ -129,7 +132,7 @@ export default function DiseaseStatisticsPage() {
         throw error;
       }
     },
-  });
+});
 
   const COLORS = ['#8B5CF6', '#10B981'];
 
@@ -165,6 +168,17 @@ export default function DiseaseStatisticsPage() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  if (!facilityId) {
+    return (
+      <div className="p-6">
+        <div className="rounded-lg border border-dashed border-gray-300 bg-white p-12 text-center">
+          <p className="text-lg font-medium text-gray-900">Select a facility</p>
+          <p className="mt-2 text-sm text-gray-500">Pick a facility from the top bar to view this report.</p>
+        </div>
       </div>
     );
   }

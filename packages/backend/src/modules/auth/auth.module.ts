@@ -138,6 +138,11 @@ export class AuthModule implements OnModuleInit {
           'orders.read',
           'patients.read',
           'patients.update',
+          'allergies.write',
+          'allergies.delete',
+          'critical-results.read',
+          'critical-results.acknowledge',
+          'audit.patient.read',
           'prescriptions.create',
           'prescriptions.read',
           'lab.read',
@@ -165,8 +170,10 @@ export class AuthModule implements OnModuleInit {
           'queue.manage',
           'patients.read',
           'patients.update',
+          'allergies.write',
           'encounters.read',
           'encounters.update',
+          'audit.patient.read',
           'triage.read',
           'triage.update',
           'radiology.view',
@@ -185,6 +192,7 @@ export class AuthModule implements OnModuleInit {
           'patients.read',
           'reports.read',
           'labqc.view',
+          'critical-results.read',
         ],
         Pharmacist: [
           'attendance.create',
@@ -202,6 +210,7 @@ export class AuthModule implements OnModuleInit {
           'prescriptions.update',
           'stores.read',
           'patients.read',
+          'allergies.write',
           'reports.read',
           'billing.read',
           'billing.create',
@@ -225,6 +234,7 @@ export class AuthModule implements OnModuleInit {
           'radiology.results.create',
           'radiology.results.read',
           'radiology.reports.read',
+          'critical-results.read',
           'patients.read',
           'reports.read',
         ],
@@ -277,6 +287,38 @@ export class AuthModule implements OnModuleInit {
           'procurement.read',
         ],
       };
+
+      // Idempotently ensure any permission codes referenced in rolePerms
+      // exist in the DB. This lets us add new fine-grained permissions
+      // (e.g., 'allergies.write') without a separate migration / re-seed.
+      const referencedCodes = new Set<string>();
+      Object.values(rolePerms).forEach((codes) => codes.forEach((c) => referencedCodes.add(c)));
+      const missingCodes = [...referencedCodes].filter((c) => !permByCode.has(c));
+      if (missingCodes.length > 0) {
+        const created = await this.permissionRepo.save(
+          missingCodes.map((code) =>
+            this.permissionRepo.create({
+              code,
+              name: code
+                .split('.')
+                .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+                .join(' '),
+              module: code.split('.')[0],
+            }),
+          ),
+        );
+        created.forEach((p) => permByCode.set(p.code, p.id));
+        // Also grant new perms to Super Admin so the auto-grant block above
+        // (which already ran) doesn't leave SA missing them.
+        if (superAdmin) {
+          await this.rolePermRepo.save(
+            created.map((p) =>
+              this.rolePermRepo.create({ roleId: superAdmin.id, permissionId: p.id }),
+            ),
+          );
+        }
+        this.logger.log(`Created ${created.length} new permission(s): ${missingCodes.join(', ')}`);
+      }
 
       for (const [roleName, codes] of Object.entries(rolePerms)) {
         const role = await this.roleRepo.findOne({ where: { name: roleName } });

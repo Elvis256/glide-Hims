@@ -447,7 +447,7 @@ export class LicenseService implements OnModuleInit {
   /**
    * Periodic license check (for on-premise)
    */
-  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, { name: 'license-periodic-check' })
   async periodicLicenseCheck() {
     const deploymentMode = this.configService.get<string>('DEPLOYMENT_MODE');
     if (deploymentMode !== 'on-premise') return;

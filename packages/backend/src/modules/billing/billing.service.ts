@@ -19,8 +19,10 @@ import {
   AddInvoiceItemDto,
   CreatePaymentDto,
   InvoiceQueryDto,
+  PreviewInvoiceDto,
 } from './billing.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
 import { SystemSettingsService } from '../system-settings/system-settings.service';
 import { FinanceService } from '../finance/finance.service';
 import { PricingEngineService } from '../pricing-engine/pricing-engine.service';
@@ -30,6 +32,7 @@ import { InventoryService } from '../inventory/inventory.service';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
 import { PreAuthorization, PreAuthStatus } from '../../database/entities/pre-authorization.entity';
 import { InsurancePolicy, PolicyStatus } from '../../database/entities/insurance-policy.entity';
+import { MembershipScheme, PatientMembership } from '../../database/entities/membership.entity';
 import { multiply, add, subtract } from '../../common/utils/currency';
 
 @Injectable()
@@ -47,6 +50,7 @@ export class BillingService {
     private encounterRepository: Repository<Encounter>,
     private dataSource: DataSource,
     private notificationsService: NotificationsService,
+    private inAppNotifications: InAppNotificationsService,
     private settingsService: SystemSettingsService,
     private financeService: FinanceService,
     private pricingEngineService: PricingEngineService,
@@ -270,7 +274,168 @@ export class BillingService {
       this.logger.warn(`Auto-deduct consumables failed for ${saved.invoiceNumber}: ${err?.message || err}`);
     });
 
-    return this.findInvoice(saved.id, tenantId);
+    // Notify cashiers/billing staff that a new bill is awaiting payment.
+    // Best-effort: never block invoice creation on notification failures.
+    const fullForNotif = await this.findInvoice(saved.id, tenantId);
+    try {
+      await this.inAppNotifications.notifyInvoiceCreated({
+        invoiceId: fullForNotif.id,
+        invoiceNumber: fullForNotif.invoiceNumber,
+        patientName: (fullForNotif as any)?.patient?.fullName,
+        totalAmount: Number(fullForNotif.totalAmount) || 0,
+        facilityId: (fullForNotif as any)?.encounter?.facilityId,
+        tenantId,
+      });
+    } catch (err: any) {
+      this.logger.warn(`notifyInvoiceCreated failed for ${fullForNotif.invoiceNumber}: ${err?.message || err}`);
+    }
+
+    return fullForNotif;
+  }
+
+  /**
+   * Compute invoice totals WITHOUT persisting anything. The single source
+   * of truth for tax / coverage / membership math — every billing UI must
+   * call this instead of approximating client-side (Math.round, hardcoded
+   * 20% copay, 10% member discount).
+   *
+   * Surface-level validation: items must be positive; we do NOT enforce
+   * pre-auth / policy-status here because callers may be drafting an
+   * invoice before the policy is fully set up. Those rules fire at
+   * createInvoice() time.
+   */
+  async previewInvoice(dto: PreviewInvoiceDto, tenantId?: string) {
+    const warnings: string[] = [];
+
+    if (!dto.items || dto.items.length === 0) {
+      return {
+        items: [],
+        subtotal: 0,
+        taxPercent: dto.taxPercent ?? 18,
+        taxAmount: 0,
+        discountAmount: dto.discountAmount || 0,
+        insuranceCovers: 0,
+        membershipDiscount: 0,
+        patientCopay: 0,
+        totalAmount: 0,
+        patientPortion: 0,
+        warnings: ['No items'],
+      };
+    }
+
+    for (const it of dto.items) {
+      if (it.quantity <= 0) {
+        throw new BadRequestException(`Quantity must be positive: ${it.description}`);
+      }
+      if (it.unitPrice < 0) {
+        throw new BadRequestException(`Unit price cannot be negative: ${it.description}`);
+      }
+    }
+
+    // 1. Resolve policy / membership ONCE
+    let copayPercent = 0;
+    let copayFixed = 0;
+    let policyActive = true;
+    if (dto.paymentType === PaymentType.INSURANCE && dto.insurancePolicyId) {
+      const policy = await this.dataSource.getRepository(InsurancePolicy).findOne({
+        where: { id: dto.insurancePolicyId, ...(tenantId ? { tenantId } : {}) },
+      });
+      if (!policy) {
+        warnings.push('Insurance policy not found — treating as cash for preview.');
+      } else {
+        if (policy.status !== PolicyStatus.ACTIVE) {
+          policyActive = false;
+          warnings.push(
+            `Policy ${policy.policyNumber} is ${policy.status}; insurance will not be applied on creation.`,
+          );
+        }
+        copayPercent = Number(policy.copayPercentage || 0);
+        copayFixed = Number(policy.copayAmount || 0);
+      }
+    }
+
+    let membershipDiscountPercent = 0;
+    if (dto.membershipId) {
+      const mem = await this.dataSource.getRepository(PatientMembership).findOne({
+        where: { id: dto.membershipId, ...(tenantId ? { tenantId } : {}) },
+        relations: ['scheme'],
+      });
+      if (mem) {
+        if (mem.status !== 'active') {
+          warnings.push(`Membership is ${mem.status} — discount not applied.`);
+        } else {
+          membershipDiscountPercent = Number(mem.scheme?.discountPercent || 0);
+        }
+      } else {
+        warnings.push('Membership not found — discount not applied.');
+      }
+    }
+
+    // 2. Per-line math
+    let subtotal = 0;
+    const lines = dto.items.map((it) => {
+      const lineSubtotal = multiply(it.quantity, it.unitPrice);
+      subtotal = add(subtotal, lineSubtotal);
+      return {
+        serviceCode: it.serviceCode,
+        description: it.description,
+        quantity: it.quantity,
+        unitPrice: it.unitPrice,
+        lineSubtotal,
+      };
+    });
+
+    // 3. Tax (default 18% VAT, same rule as createInvoice)
+    const taxPercent = dto.taxPercent ?? 18;
+    const taxAmount = Math.round((subtotal * taxPercent) / 100);
+
+    // 4. Membership discount applies BEFORE coverage (covers fewer items)
+    const membershipDiscount =
+      membershipDiscountPercent > 0
+        ? Math.round((subtotal * membershipDiscountPercent) / 100)
+        : 0;
+
+    const taxedTotal = subtract(add(subtotal, taxAmount), membershipDiscount);
+
+    // 5. Insurance coverage split (only when policy is usable)
+    let insuranceCovers = 0;
+    let patientCopay = taxedTotal;
+    if (dto.paymentType === PaymentType.INSURANCE && policyActive && (copayPercent || copayFixed)) {
+      if (copayPercent > 0 && copayPercent <= 100) {
+        patientCopay = Math.round((taxedTotal * copayPercent) / 100);
+      } else if (copayFixed > 0) {
+        patientCopay = Math.min(copayFixed, taxedTotal);
+      }
+      insuranceCovers = subtract(taxedTotal, patientCopay);
+    } else if (dto.paymentType === PaymentType.INSURANCE && policyActive) {
+      // Active policy with no copay rule on file → assume 100% covered, patient owes 0
+      insuranceCovers = taxedTotal;
+      patientCopay = 0;
+      warnings.push('Policy has no copay configured — assuming 100% coverage.');
+    }
+
+    // 6. Final adjustments (manual discount on the bill)
+    const manualDiscount = dto.discountAmount || 0;
+    const totalAmount = subtract(taxedTotal, 0); // invoice total stored on the invoice
+    const patientPortion = Math.max(0, subtract(patientCopay, manualDiscount));
+
+    return {
+      items: lines,
+      subtotal,
+      taxPercent,
+      taxAmount,
+      membershipDiscount,
+      membershipDiscountPercent,
+      discountAmount: manualDiscount,
+      insuranceCovers,
+      patientCopay,
+      copayPercent,
+      copayFixed,
+      totalAmount,
+      patientPortion,
+      paymentType: dto.paymentType,
+      warnings,
+    };
   }
 
   /** For each invoice item with a serviceCode, deduct any linked consumables from stock. */
@@ -814,6 +979,57 @@ export class BillingService {
               }
             })
             .catch((err) => this.logger.warn(`Thank you message failed: ${err.message}`));
+        }
+      }
+
+      // Audit log: every successful payment must be traceable to the cashier.
+      await this.auditLogService.log({
+        userId,
+        action: 'PAYMENT_RECORDED',
+        entityType: 'Payment',
+        entityId: savedPayment.id,
+        newValue: {
+          receiptNumber,
+          invoiceId: invoice.id,
+          amount: Number(savedPayment.amount),
+          method: savedPayment.method,
+          status: savedPayment.status,
+          invoiceFullyPaid,
+        },
+        ...(tenantId ? { tenantId } : {}),
+      }).catch((err) =>
+        this.logger.error(`Audit log failed for recordPayment ${savedPayment.id}: ${err.message}`),
+      );
+
+      // Notify the assigned doctor that the patient has cleared billing and is
+      // now back in the queue. Fire-and-forget; never block the cashier.
+      if (invoiceFullyPaid && invoice.encounterId) {
+        try {
+          const queueEntry = await manager.findOne(Queue, {
+            where: { encounterId: invoice.encounterId },
+            relations: ['patient'],
+            order: { createdAt: 'DESC' } as any,
+          });
+          if (queueEntry?.assignedDoctorId) {
+            this.inAppNotifications
+              .notifyPaymentCleared({
+                doctorUserId: queueEntry.assignedDoctorId,
+                patientName: (queueEntry.patient as any)?.fullName || 'Patient',
+                invoiceNumber: invoice.invoiceNumber,
+                amount: Number(invoice.totalAmount) || 0,
+                facilityId: queueEntry.facilityId,
+                tenantId,
+              })
+              .catch((err) =>
+                this.logger.warn(
+                  `notifyPaymentCleared failed for ${invoice.invoiceNumber}: ${err?.message || err}`,
+                ),
+              );
+          }
+        } catch (err: any) {
+          this.logger.warn(
+            `notifyPaymentCleared lookup failed for ${invoice.invoiceNumber}: ${err?.message || err}`,
+          );
         }
       }
 

@@ -467,6 +467,7 @@ const navigationSections: NavSection[] = [
     icon: HeartPulse,
     moduleCode: 'chronic-care',
     roles: ['Doctor', 'Nurse'],
+    permissions: ['chronic.read'],
     items: [
       { name: 'Dashboard', href: '/chronic-care/dashboard', icon: BarChart3, permissions: ['patients.read'] },
       { name: 'Chronic Care Registry', href: '/chronic-care/registry', icon: ClipboardList, permissions: ['patients.read'] },
@@ -480,6 +481,7 @@ const navigationSections: NavSection[] = [
     icon: Siren,
     moduleCode: 'emergency',
     roles: ['Doctor', 'Nurse', 'Receptionist'],
+    permissions: ['emergency.read', 'emergency.create'],
     items: [
       { name: 'Emergency Queue', href: '/emergency', icon: Siren, permissions: ['emergency.read'] },
       { name: 'Ambulance Tracking', href: '/emergency/ambulance', icon: Ambulance, permissions: ['emergency.read'] },
@@ -627,6 +629,7 @@ const navigationSections: NavSection[] = [
     icon: Bed,
     moduleCode: 'ipd',
     roles: ['Doctor', 'Nurse', 'Receptionist'],
+    permissions: ['ipd.read', 'admissions.read'],
     items: [
       { name: 'Admissions', href: '/ipd/admissions', icon: ClipboardPlus, permissions: ['ipd.create'] },
       { name: 'Wards & Beds', href: '/ipd/wards', icon: Bed, permissions: ['ipd.read'] },
@@ -717,7 +720,6 @@ const navigationSections: NavSection[] = [
     icon: Calculator,
     moduleCode: 'finance',
     roles: ['Accountant', 'Administrator', 'Finance Manager', 'CFO'],
-    permissions: ['finance.read', 'finance.create'],
     items: [
       { name: 'Accounts', href: '/finance/accounts', icon: Calculator, permissions: ['finance.read'] },
       { name: 'Journal Entries', href: '/finance/journals', icon: BookOpen, permissions: ['finance.create'] },
@@ -812,6 +814,17 @@ const navigationSections: NavSection[] = [
           { name: 'Consumption', href: '/reports/consumption', icon: BarChart3, permissions: ['inventory.read'] },
         ],
       },
+      {
+        name: 'Statutory Reports',
+        icon: FileText,
+        permissions: ['reports.statutory.read'],
+        children: [
+          { name: 'HMIS 108 (OPD)', href: '/reports/statutory?tab=hmis108', icon: ClipboardList, permissions: ['reports.statutory.read'] },
+          { name: 'HMIS 122 (Lab)', href: '/reports/statutory?tab=hmis122', icon: ClipboardList, permissions: ['reports.statutory.read'] },
+          { name: 'eIDSR (Weekly)', href: '/reports/statutory?tab=eidsr', icon: Activity, permissions: ['reports.statutory.read'] },
+          { name: 'mTrac (Weekly)', href: '/reports/statutory?tab=mtrac', icon: Boxes, permissions: ['reports.statutory.read'] },
+        ],
+      },
     ],
   },
   // 11. HR
@@ -820,6 +833,7 @@ const navigationSections: NavSection[] = [
     icon: Briefcase,
     moduleCode: 'hr',
     roles: ['HR Manager', 'Administrator'],
+    permissions: ['employees.read'],
     items: [
       { name: 'Staff Records', href: '/hr/staff', icon: Users, permissions: ['employees.read', 'employees.create'] },
       { name: 'Payroll', href: '/hr/payroll', icon: Banknote, permissions: ['payroll.read', 'payroll.create'] },
@@ -830,7 +844,7 @@ const navigationSections: NavSection[] = [
       { name: 'My Attendance', href: '/hr/my-attendance', icon: ClipboardCheck, permissions: ['attendance.view-own'] },
       { name: 'Recruitment', href: '/hr/recruitment', icon: UserPlus, permissions: ['hr.create', 'recruitment.read'] },
       { name: 'Appraisals', href: '/hr/appraisals', icon: BadgeCheck, permissions: ['hr.read', 'appraisals.read'] },
-      { name: 'My Appraisals', href: '/hr/my-appraisals', icon: Star, permissions: [] },
+      { name: 'My Appraisals', href: '/hr/my-appraisals', icon: Star, permissions: ['employees.read', 'hr.read'] },
       { name: 'Training', href: '/hr/training', icon: BookOpen, permissions: ['training.read', 'training.create'] },
       { name: 'Disciplinary', href: '/hr/disciplinary', icon: AlertTriangle, permissions: ['hr.read', 'hr.create'] },
       { name: 'Onboarding', href: '/hr/onboarding', icon: ClipboardList, permissions: ['hr.read', 'hr.create'] },
@@ -845,6 +859,7 @@ const navigationSections: NavSection[] = [
     icon: FolderKanban,
     moduleCode: 'assets',
     roles: ['Store Keeper', 'Administrator'],
+    permissions: ['assets.read'],
     items: [
       { name: 'Asset Register', href: '/assets', icon: FolderKanban, permissions: ['assets.read'] },
       { name: 'Asset Allocation', href: '/assets/allocation', icon: ArrowRightLeft, permissions: ['assets.update'] },
@@ -862,6 +877,7 @@ const navigationSections: NavSection[] = [
     icon: Database,
     moduleCode: 'integrations',
     roles: ['Administrator'],
+    permissions: ['settings.read', 'settings.manage'],
     items: [
       { name: 'Drug Database', href: '/integrations/drugs', icon: Pill, permissions: ['pharmacy.read'] },
       { name: 'Lab Reference', href: '/integrations/lab-reference', icon: TestTube, permissions: ['lab.read'] },
@@ -882,7 +898,7 @@ const navigationSections: NavSection[] = [
         name: 'Analytics',
         icon: BarChart3,
         href: '/admin/analytics',
-        permissions: ['analytics.read'],
+        permissions: ['settings.read'],
       },
       {
         name: 'Tenant Management',
@@ -895,13 +911,13 @@ const navigationSections: NavSection[] = [
         name: 'My Subscription & Billing',
         icon: CreditCard,
         href: '/billing-portal',
-        permissions: [],
+        permissions: ['settings.read'],
       },
       {
         name: 'Software Updates',
         icon: Settings,
         href: '/downloads',
-        permissions: [],
+        permissions: ['settings.read'],
         systemAdminOnly: false,
       },
       {
@@ -913,6 +929,7 @@ const navigationSections: NavSection[] = [
           { name: 'Roles & Permissions', href: '/admin/roles', icon: Shield, permissions: ['roles.read'] },
           { name: 'Department Access', href: '/admin/users/departments', icon: Layers, permissions: ['users.read'] },
           { name: 'Activity Log', href: '/admin/users/activity', icon: ScrollText, permissions: ['admin.audit'] },
+          { name: 'Audit Log', href: '/admin/audit-log', icon: ScrollText, permissions: ['audit.read'] },
           { name: 'Active Sessions', href: '/admin/users/sessions', icon: MonitorSmartphone, permissions: ['users.read'] },
           { name: 'Bulk Import', href: '/admin/users/bulk-import', icon: FileSpreadsheet, permissions: ['users.create'] },
         ],
@@ -920,11 +937,11 @@ const navigationSections: NavSection[] = [
       {
         name: 'Services & Pricing',
         icon: DollarSign,
-        permissions: ['services.read', 'services.create'],
+        permissions: ['services.create', 'services.update'],
         children: [
-          { name: 'Service Catalog', href: '/admin/services', icon: Layers, permissions: ['services.read'] },
+          { name: 'Service Catalog', href: '/admin/services', icon: Layers, permissions: ['services.update'] },
           { name: 'Pricing Management', href: '/admin/services/pricing', icon: DollarSign, permissions: ['services.update'] },
-          { name: 'Doctor Consultation Fees', href: '/admin/services/doctor-fees', icon: Stethoscope, permissions: ['services.update', 'billing.update'] },
+          { name: 'Doctor Consultation Fees', href: '/admin/services/doctor-fees', icon: Stethoscope, permissions: ['services.update'] },
           { name: 'Service Packages', href: '/admin/services/packages', icon: Package, permissions: ['services.create'] },
           { name: 'Discount Schemes', href: '/admin/services/discounts', icon: Percent, permissions: ['services.update'] },
           { name: 'Tax Configuration', href: '/admin/services/tax', icon: Calculator, permissions: ['services.update'] },
@@ -933,73 +950,74 @@ const navigationSections: NavSection[] = [
       {
         name: 'HR Management',
         icon: UserCog,
-        permissions: ['hr.read', 'employees.read'],
+        permissions: ['employees.read', 'hr.update'],
         children: [
           { name: 'Staff Directory', href: '/admin/hr/staff', icon: Users, permissions: ['employees.read'] },
-          { name: 'Departments', href: '/admin/hr/departments', icon: Building, permissions: ['hr.read'] },
-          { name: 'Designations', href: '/admin/hr/designations', icon: Briefcase, permissions: ['hr.read'] },
+          { name: 'Departments', href: '/admin/hr/departments', icon: Building, permissions: ['hr.update', 'employees.read'] },
+          { name: 'Designations', href: '/admin/hr/designations', icon: Briefcase, permissions: ['hr.update', 'employees.read'] },
           { name: 'Shift Management', href: '/admin/hr/shifts', icon: Clock, permissions: ['hr.update'] },
-          { name: 'Leave Management', href: '/admin/hr/leave', icon: Calendar, permissions: ['leave.read'] },
-          { name: 'Leave Dashboard', href: '/admin/hr/leave-dashboard', icon: Calendar, permissions: ['leave.read'] },
+          { name: 'Leave Management', href: '/admin/hr/leave', icon: Calendar, permissions: ['hr.update', 'employees.read'] },
+          { name: 'Leave Dashboard', href: '/admin/hr/leave-dashboard', icon: Calendar, permissions: ['hr.update', 'employees.read'] },
           { name: 'Staff Credentials', href: '/admin/hr/credentials', icon: Award, permissions: ['employees.read'] },
-          { name: 'Org Chart', href: '/admin/hr/org-chart', icon: Building, permissions: ['hr.read'] },
-          { name: 'Goals & OKRs', href: '/admin/hr/goals', icon: Award, permissions: ['hr.read'] },
+          { name: 'Organisation & Reporting', href: '/admin/hr/organisation', icon: Building, permissions: ['hr.update', 'employees.read'] },
+          { name: 'Org Chart', href: '/admin/hr/org-chart', icon: Building, permissions: ['hr.update', 'employees.read'] },
+          { name: 'Goals & OKRs', href: '/admin/hr/goals', icon: Award, permissions: ['hr.update', 'employees.read'] },
           { name: 'Performance PIPs', href: '/admin/hr/pips', icon: FileText, permissions: ['hr.update'] },
-          { name: 'Letter Templates', href: '/admin/hr/letter-templates', icon: FileText, permissions: ['hr.read'] },
+          { name: 'Letter Templates', href: '/admin/hr/letter-templates', icon: FileText, permissions: ['hr.update', 'employees.read'] },
         ],
       },
       {
         name: 'Lab Services',
         icon: FlaskConical,
-        permissions: ['lab.read', 'settings.read'],
+        permissions: ['lab.update', 'settings.update'],
         children: [
-          { name: 'Test Catalog', href: '/admin/lab/tests', icon: TestTube, permissions: ['lab.read'] },
-          { name: 'Lab Equipment', href: '/admin/lab/equipment', icon: MonitorSmartphone, permissions: ['lab.read'] },
-          { name: 'Reagents Inventory', href: '/admin/lab/reagents', icon: Beaker, permissions: ['inventory.read'] },
-          { name: 'Test Panels', href: '/admin/lab/panels', icon: LayoutGrid, permissions: ['lab.read'] },
+          { name: 'Test Catalog', href: '/admin/lab/tests', icon: TestTube, permissions: ['lab.update', 'settings.update'] },
+          { name: 'Lab Equipment', href: '/admin/lab/equipment', icon: MonitorSmartphone, permissions: ['lab.update', 'settings.update'] },
+          { name: 'Reagents Inventory', href: '/admin/lab/reagents', icon: Beaker, permissions: ['inventory.update', 'lab.update'] },
+          { name: 'Test Panels', href: '/admin/lab/panels', icon: LayoutGrid, permissions: ['lab.update', 'settings.update'] },
         ],
       },
       {
         name: 'Procurement Settings',
         icon: ShoppingCart,
-        permissions: ['procurement.read', 'settings.read'],
+        permissions: ['procurement.update', 'settings.update'],
         children: [
           { name: 'Approval Workflows', href: '/admin/procurement/approvals', icon: GitBranch, permissions: ['settings.update'] },
-          { name: 'Org & Approval Routing', href: '/admin/procurement/org-approvals', icon: GitBranch, permissions: ['settings.update'] },
-          { name: 'Budget Management', href: '/admin/procurement/budgets', icon: Wallet, permissions: ['finance.read'] },
-          { name: 'Procurement Policies', href: '/admin/procurement/policies', icon: FileText, permissions: ['settings.read'] },
-          { name: 'Item Categories', href: '/admin/procurement/categories', icon: FolderTree, permissions: ['inventory.read'] },
+          { name: 'Approval Routing', href: '/admin/procurement/org-approvals', icon: GitBranch, permissions: ['settings.update'] },
+          { name: 'Budget Management', href: '/admin/procurement/budgets', icon: Wallet, permissions: ['finance.manage', 'procurement.update'] },
+          { name: 'Procurement Policies', href: '/admin/procurement/policies', icon: FileText, permissions: ['settings.update'] },
+          { name: 'Item Categories', href: '/admin/procurement/categories', icon: FolderTree, permissions: ['inventory.update', 'settings.update'] },
         ],
       },
       {
         name: 'Stores Management',
         icon: Warehouse,
-        permissions: ['stores.read', 'inventory.read'],
+        permissions: ['stores.update', 'inventory.update'],
         children: [
-          { name: 'Store Locations', href: '/admin/stores/locations', icon: MapPin, permissions: ['stores.read'] },
-          { name: 'Item Master', href: '/admin/stores/items', icon: Package, permissions: ['inventory.read'] },
-          { name: 'Item Classifications', href: '/settings/classifications', icon: FolderTree, permissions: ['inventory.read'] },
-          { name: 'Units of Measure', href: '/admin/inventory/units', icon: Ruler, permissions: ['settings.read'] },
-          { name: 'Expiry Policies', href: '/admin/inventory/expiry', icon: AlertTriangle, permissions: ['settings.read'] },
+          { name: 'Store Locations', href: '/admin/stores/locations', icon: MapPin, permissions: ['stores.update', 'settings.update'] },
+          { name: 'Item Master', href: '/admin/stores/items', icon: Package, permissions: ['inventory.update', 'settings.update'] },
+          { name: 'Item Classifications', href: '/settings/classifications', icon: FolderTree, permissions: ['inventory.update', 'settings.update'] },
+          { name: 'Units of Measure', href: '/admin/inventory/units', icon: Ruler, permissions: ['settings.update'] },
+          { name: 'Expiry Policies', href: '/admin/inventory/expiry', icon: AlertTriangle, permissions: ['settings.update'] },
         ],
       },
       {
         name: 'Pharmacy Settings',
         icon: Pill,
-        permissions: ['pharmacy.read', 'settings.read'],
+        permissions: ['pharmacy.update', 'settings.update'],
         children: [
-          { name: 'Drug Formulary', href: '/admin/pharmacy/formulary', icon: BookOpen, permissions: ['pharmacy.read'] },
-          { name: 'Drug Categories', href: '/admin/pharmacy/categories', icon: FolderTree, permissions: ['pharmacy.read'] },
+          { name: 'Drug Formulary', href: '/admin/pharmacy/formulary', icon: BookOpen, permissions: ['pharmacy.update', 'settings.update'] },
+          { name: 'Drug Categories', href: '/admin/pharmacy/categories', icon: FolderTree, permissions: ['pharmacy.update', 'settings.update'] },
         ],
       },
       {
         name: 'Institution',
         icon: Building,
-        permissions: ['settings.read', 'facilities.read'],
+        permissions: ['settings.update', 'facilities.update'],
         children: [
-          { name: 'Institution Profile', href: '/admin/site/profile', icon: Building, permissions: ['facilities.read'] },
-          { name: 'Branches', href: '/admin/site/branches', icon: GitBranch, permissions: ['facilities.read'] },
-          { name: 'Buildings & Floors', href: '/admin/site/buildings', icon: Landmark, permissions: ['facilities.read'] },
+          { name: 'Institution Profile', href: '/admin/site/profile', icon: Building, permissions: ['facilities.update', 'settings.update'] },
+          { name: 'Branches', href: '/admin/site/branches', icon: GitBranch, permissions: ['facilities.update', 'settings.update'] },
+          { name: 'Buildings & Floors', href: '/admin/site/buildings', icon: Landmark, permissions: ['facilities.update', 'settings.update'] },
           { name: 'System Settings', href: '/admin/site/settings', icon: Settings, permissions: ['settings.update'] },
           { name: 'Facility & Modules', href: '/admin/site/facility-mode', icon: Layers, permissions: ['settings.update'] },
           { name: 'Integrations', href: '/admin/site/integrations', icon: Link2, permissions: ['settings.update'] },
@@ -1020,10 +1038,11 @@ const navigationSections: NavSection[] = [
       {
         name: 'Finance Settings',
         icon: CircleDollarSign,
+        permissions: ['finance.manage', 'settings.update'],
         children: [
-          { name: 'Currencies', href: '/admin/finance/currencies', icon: Coins },
-          { name: 'Exchange Rates', href: '/admin/finance/exchange-rates', icon: ArrowRightLeft },
-          { name: 'Payment Methods', href: '/admin/finance/payment-methods', icon: CreditCard },
+          { name: 'Currencies', href: '/admin/finance/currencies', icon: Coins, permissions: ['finance.manage', 'settings.update'] },
+          { name: 'Exchange Rates', href: '/admin/finance/exchange-rates', icon: ArrowRightLeft, permissions: ['finance.manage', 'settings.update'] },
+          { name: 'Payment Methods', href: '/admin/finance/payment-methods', icon: CreditCard, permissions: ['finance.manage', 'settings.update'] },
         ],
       },
       {
@@ -1441,10 +1460,13 @@ export default function DashboardLayout({ children }: LayoutProps) {
   const isSuperAdmin = user?.roles?.includes('Super Admin');
   
   // Debug: Log user permissions once
-  // Helper to check if user has permission for a nav item
+  // Helper to check if user has permission for a nav item.
+  // Default-DENY: items must explicitly declare at least one permission to be
+  // visible. The only exception is `systemAdminOnly` items (handled in the
+  // section filter above) and Super Admin (always sees everything).
   const hasItemPermission = (item: NavSubItem | NavLeafItem): boolean => {
     if (isSuperAdmin) return true;
-    if (!item.permissions || item.permissions.length === 0) return true; // No restriction
+    if (!item.permissions || item.permissions.length === 0) return false;
     return hasAnyPermission(item.permissions);
   };
 
@@ -1651,6 +1673,23 @@ export default function DashboardLayout({ children }: LayoutProps) {
                       <p className="text-sm font-medium text-gray-900">{user?.fullName}</p>
                       <p className="text-xs text-gray-500">{user?.email}</p>
                     </div>
+                    <Link
+                      to="/me"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                    >
+                      <UserCircle className="w-4 h-4" />
+                      My Profile
+                    </Link>
+                    <Link
+                      to="/change-password"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                    >
+                      <KeyRound className="w-4 h-4" />
+                      Change Password
+                    </Link>
+                    <div className="border-t my-1" />
                     <button
                       onClick={handleLogout}
                       className="flex items-center gap-2 w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50"

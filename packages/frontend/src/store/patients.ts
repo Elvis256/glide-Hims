@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
-export type PaymentType = 'cash' | 'insurance' | 'membership' | 'corporate';
+import type { PaymentMethod } from '../shared/payment-methods';
+export type PaymentType = PaymentMethod;
 
 export interface InsuranceInfo {
   provider: string;

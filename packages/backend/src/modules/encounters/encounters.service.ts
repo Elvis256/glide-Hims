@@ -30,6 +30,7 @@ import { BillingService } from '../billing/billing.service';
 import { QueueManagementService } from '../queue-management/queue-management.service';
 import { InsuranceService } from '../insurance/insurance.service';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
+import { IdentityGuardService } from '../../common/services/identity-guard.service';
 
 @Injectable()
 export class EncountersService {
@@ -54,6 +55,7 @@ export class EncountersService {
     private insuranceService: InsuranceService,
     private dataSource: DataSource,
     private auditLogService: AuditLogService,
+    private identityGuard: IdentityGuardService,
   ) {}
 
   private async generateVisitNumber(manager: EntityManager, tenantId?: string): Promise<string> {
@@ -437,10 +439,17 @@ export class EncountersService {
   async updateStatus(
     id: string,
     status: EncounterStatus,
-    providerId?: string,
+    actorUserId: string,
+    attendingProviderId?: string,
     reason?: string,
     tenantId?: string,
   ): Promise<Encounter> {
+    // If a different provider is being assigned, validate they exist + are a doctor
+    // before opening the transaction (cheap fail-fast).
+    if (attendingProviderId && attendingProviderId !== actorUserId) {
+      await this.identityGuard.assertAssignableProvider(attendingProviderId, tenantId);
+    }
+
     const saved = await this.dataSource.transaction(async (manager) => {
       // Lock row first without relations (FOR UPDATE can't apply to outer joins)
       const encounter = await manager.findOne(Encounter, {
@@ -456,8 +465,11 @@ export class EncountersService {
       this.validateStatusTransition(encounter.status, status);
       encounter.status = status;
 
-      if (providerId && status === EncounterStatus.IN_CONSULTATION) {
-        encounter.attendingProviderId = providerId;
+      // Resolve assignee: explicit attendingProviderId wins; otherwise default to
+      // the acting user when transitioning into IN_CONSULTATION (doctor self-pickup).
+      const assignee = attendingProviderId || actorUserId;
+      if (assignee && status === EncounterStatus.IN_CONSULTATION) {
+        encounter.attendingProviderId = assignee;
       }
 
       if (reason && status === EncounterStatus.RETURN_TO_DOCTOR) {
@@ -484,12 +496,17 @@ export class EncountersService {
 
       this.auditLogService
         .log({
-          userId: providerId || 'system',
+          userId: actorUserId || 'system',
           action: 'STATUS_CHANGE',
           entityType: 'encounter',
           entityId: id,
           oldValue: { status: oldStatus },
-          newValue: { status, reason },
+          newValue: {
+            status,
+            reason,
+            attendingProviderId: encounter.attendingProviderId,
+            patientId: encounter.patientId,
+          },
         })
         .catch((err) => this.logger.warn(`Audit log failed: ${err.message}`));
 
@@ -791,9 +808,18 @@ export class EncountersService {
         (sum, inv) => sum + Number(inv.balanceDue),
         0,
       );
-      reasons.push(
-        `Patient has UGX ${unpaidBalance.toLocaleString()} unpaid balance across ${unpaidInvoices.length} invoice(s). Move to pending payment first.`,
-      );
+      // In **post_pay** mode (Pay at Checkout) the consultation invoice is
+      // intentionally pending — the patient settles consultation + labs +
+      // pharmacy in one bill at checkout. Sign & Complete is exactly what
+      // routes the patient to billing, so blocking it here is a deadlock.
+      // We block only in **pre_pay** mode (or when the encounter has no
+      // explicit billingMode — defensive default = treat as gated).
+      const isPostPay = (encounter as any).billingMode === 'post_pay';
+      if (!isPostPay) {
+        reasons.push(
+          `Patient has UGX ${unpaidBalance.toLocaleString()} unpaid balance across ${unpaidInvoices.length} invoice(s). Move to pending payment first.`,
+        );
+      }
     }
 
     return {
@@ -908,8 +934,17 @@ export class EncountersService {
 
       if (unpaidInvoices.length > 0) {
         const totalOwed = unpaidInvoices.reduce((sum, inv) => sum + Number(inv.balanceDue), 0);
-        throw new BadRequestException(
-          `Cannot complete: patient has UGX ${totalOwed.toLocaleString()} unpaid balance across ${unpaidInvoices.length} invoice(s). Please move to Pending Payment via the status endpoint first.`,
+        const isPostPay = (encounter as any).billingMode === 'post_pay';
+        if (!isPostPay) {
+          throw new BadRequestException(
+            `Cannot complete: patient has UGX ${totalOwed.toLocaleString()} unpaid balance across ${unpaidInvoices.length} invoice(s). Please move to Pending Payment via the status endpoint first.`,
+          );
+        }
+        // post_pay: completion is intended to send the patient to billing
+        // checkout. We allow the transition; downstream the queue/billing
+        // module routes the encounter accordingly.
+        this.logger.log(
+          `Encounter ${encounterId} completing with UGX ${totalOwed.toLocaleString()} pending (post-pay flow)`,
         );
       }
 
