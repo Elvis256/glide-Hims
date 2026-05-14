@@ -11,39 +11,55 @@ import {
   X,
   Loader2,
   Package,
-  Building2,
 } from 'lucide-react';
-import { useFacilityId } from '../../lib/facility';
 import api from '../../services/api';
+
+// Asset class enum (matches backend AssetClass — lowercase string literals)
+const assetClasses = [
+  { value: 'medical', label: 'Medical' },
+  { value: 'it', label: 'IT' },
+  { value: 'furniture', label: 'Furniture' },
+  { value: 'vehicle', label: 'Vehicle' },
+  { value: 'utility', label: 'Utility' },
+  { value: 'building', label: 'Building' },
+  { value: 'other', label: 'Other' },
+] as const;
 
 interface AssetCategory {
   id: string;
   code: string;
   name: string;
+  assetClass: string;
   description?: string;
-  usefulLifeYears: number;
-  depreciationRate: number;
-  depreciationMethod: string;
-  glAccountCode?: string;
+  defaultUsefulLifeMonths?: number | null;
+  defaultDepreciationRate?: number | string | null;
+  defaultDepreciationMethod?: string | null;
   isActive: boolean;
-  assetCount?: number;
 }
 
-// Default categories that come with the system
-const defaultCategories: Omit<AssetCategory, 'id'>[] = [
-  { code: 'medical_equipment', name: 'Medical Equipment', usefulLifeYears: 10, depreciationRate: 10, depreciationMethod: 'straight_line', isActive: true },
-  { code: 'laboratory_equipment', name: 'Laboratory Equipment', usefulLifeYears: 8, depreciationRate: 12.5, depreciationMethod: 'straight_line', isActive: true },
-  { code: 'imaging_equipment', name: 'Imaging Equipment', usefulLifeYears: 10, depreciationRate: 10, depreciationMethod: 'straight_line', isActive: true },
-  { code: 'surgical_equipment', name: 'Surgical Equipment', usefulLifeYears: 7, depreciationRate: 14.3, depreciationMethod: 'straight_line', isActive: true },
-  { code: 'furniture', name: 'Furniture', usefulLifeYears: 10, depreciationRate: 10, depreciationMethod: 'straight_line', isActive: true },
-  { code: 'it_equipment', name: 'IT Equipment', usefulLifeYears: 4, depreciationRate: 25, depreciationMethod: 'straight_line', isActive: true },
-  { code: 'vehicles', name: 'Vehicles', usefulLifeYears: 5, depreciationRate: 20, depreciationMethod: 'declining_balance', isActive: true },
-  { code: 'buildings', name: 'Buildings', usefulLifeYears: 40, depreciationRate: 2.5, depreciationMethod: 'straight_line', isActive: true },
-  { code: 'land', name: 'Land', usefulLifeYears: 0, depreciationRate: 0, depreciationMethod: 'straight_line', isActive: true, description: 'Land does not depreciate' },
-  { code: 'office_equipment', name: 'Office Equipment', usefulLifeYears: 5, depreciationRate: 20, depreciationMethod: 'straight_line', isActive: true },
-  { code: 'electrical_equipment', name: 'Electrical Equipment', usefulLifeYears: 10, depreciationRate: 10, depreciationMethod: 'straight_line', isActive: true },
-  { code: 'hvac', name: 'HVAC Systems', usefulLifeYears: 15, depreciationRate: 6.67, depreciationMethod: 'straight_line', isActive: true },
-  { code: 'other', name: 'Other', usefulLifeYears: 5, depreciationRate: 20, depreciationMethod: 'straight_line', isActive: true },
+interface SeedCategory {
+  code: string;
+  name: string;
+  assetClass: string;
+  defaultUsefulLifeMonths: number;
+  defaultDepreciationRate: number;
+  defaultDepreciationMethod: string;
+  description?: string;
+}
+
+// Suggested seed categories (used by the "Seed defaults" empty-state button).
+const seedCategories: SeedCategory[] = [
+  { code: 'medical_equipment', name: 'Medical Equipment', assetClass: 'medical', defaultUsefulLifeMonths: 120, defaultDepreciationRate: 10, defaultDepreciationMethod: 'straight_line' },
+  { code: 'laboratory_equipment', name: 'Laboratory Equipment', assetClass: 'medical', defaultUsefulLifeMonths: 96, defaultDepreciationRate: 12.5, defaultDepreciationMethod: 'straight_line' },
+  { code: 'imaging_equipment', name: 'Imaging Equipment', assetClass: 'medical', defaultUsefulLifeMonths: 120, defaultDepreciationRate: 10, defaultDepreciationMethod: 'straight_line' },
+  { code: 'surgical_equipment', name: 'Surgical Equipment', assetClass: 'medical', defaultUsefulLifeMonths: 84, defaultDepreciationRate: 14.3, defaultDepreciationMethod: 'straight_line' },
+  { code: 'furniture', name: 'Furniture', assetClass: 'furniture', defaultUsefulLifeMonths: 120, defaultDepreciationRate: 10, defaultDepreciationMethod: 'straight_line' },
+  { code: 'it_equipment', name: 'IT Equipment', assetClass: 'it', defaultUsefulLifeMonths: 48, defaultDepreciationRate: 25, defaultDepreciationMethod: 'straight_line' },
+  { code: 'vehicles', name: 'Vehicles', assetClass: 'vehicle', defaultUsefulLifeMonths: 60, defaultDepreciationRate: 20, defaultDepreciationMethod: 'declining_balance' },
+  { code: 'buildings', name: 'Buildings', assetClass: 'building', defaultUsefulLifeMonths: 480, defaultDepreciationRate: 2.5, defaultDepreciationMethod: 'straight_line' },
+  { code: 'office_equipment', name: 'Office Equipment', assetClass: 'other', defaultUsefulLifeMonths: 60, defaultDepreciationRate: 20, defaultDepreciationMethod: 'straight_line' },
+  { code: 'electrical_equipment', name: 'Electrical Equipment', assetClass: 'utility', defaultUsefulLifeMonths: 120, defaultDepreciationRate: 10, defaultDepreciationMethod: 'straight_line' },
+  { code: 'hvac', name: 'HVAC Systems', assetClass: 'utility', defaultUsefulLifeMonths: 180, defaultDepreciationRate: 6.67, defaultDepreciationMethod: 'straight_line' },
 ];
 
 const depreciationMethods = [
@@ -53,87 +69,126 @@ const depreciationMethods = [
   { value: 'sum_of_years', label: 'Sum of Years Digits' },
 ];
 
+type FormState = {
+  code: string;
+  name: string;
+  assetClass: string;
+  description: string;
+  usefulLifeYears: number;
+  depreciationRate: number;
+  depreciationMethod: string;
+  isActive: boolean;
+};
+
+const emptyForm: FormState = {
+  code: '',
+  name: '',
+  assetClass: 'medical',
+  description: '',
+  usefulLifeYears: 5,
+  depreciationRate: 20,
+  depreciationMethod: 'straight_line',
+  isActive: true,
+};
+
+function toBackendPayload(f: FormState) {
+  return {
+    code: f.code,
+    name: f.name,
+    assetClass: f.assetClass,
+    description: f.description || undefined,
+    defaultUsefulLifeMonths: f.usefulLifeYears > 0 ? Math.round(f.usefulLifeYears * 12) : undefined,
+    defaultDepreciationRate: f.depreciationRate || undefined,
+    defaultDepreciationMethod: f.depreciationMethod || undefined,
+    isActive: f.isActive,
+  };
+}
+
 export default function AssetCategoriesPage() {
-  const facilityId = useFacilityId();
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingCategory, setEditingCategory] = useState<AssetCategory | null>(null);
-  const [formData, setFormData] = useState({
-    code: '',
-    name: '',
-    description: '',
-    usefulLifeYears: 5,
-    depreciationRate: 20,
-    depreciationMethod: 'straight_line',
-    glAccountCode: '',
-    isActive: true,
-  });
+  const [formData, setFormData] = useState<FormState>(emptyForm);
 
-  // Get categories from API or use defaults
-  const { data: categories = [], isLoading } = useQuery({
-    queryKey: ['asset-categories', facilityId],
+  const { data: categories = [], isLoading, error } = useQuery<AssetCategory[]>({
+    queryKey: ['asset-categories'],
     queryFn: async () => {
-      try {
-        const { data } = await api.get('/asset-categories', { params: { facilityId } });
-        return data.length > 0 ? data : defaultCategories.map((c, i) => ({ ...c, id: `default-${i}` }));
-      } catch {
-        // Return default categories if API fails
-        return defaultCategories.map((c, i) => ({ ...c, id: `default-${i}` }));
-      }
+      const { data } = await api.get('/assets/categories');
+      return Array.isArray(data) ? data : [];
     },
-    enabled: !!facilityId,
   });
 
   const saveMutation = useMutation({
-    mutationFn: async (data: typeof formData) => {
+    mutationFn: async (data: FormState) => {
+      const payload = toBackendPayload(data);
       if (editingCategory) {
-        return api.put(`/asset-categories/${editingCategory.id}`, { ...data, facilityId });
+        return api.put(`/assets/categories/${editingCategory.id}`, payload);
       }
-      return api.post('/asset-categories', { ...data, facilityId });
+      return api.post('/assets/categories', payload);
     },
     onSuccess: () => {
       toast.success(editingCategory ? 'Category updated' : 'Category created');
       queryClient.invalidateQueries({ queryKey: ['asset-categories'] });
       closeModal();
     },
-    onError: () => toast.error('Failed to save category'),
+    onError: (err: any) => {
+      const msg = err?.response?.data?.message;
+      toast.error(Array.isArray(msg) ? msg.join(', ') : msg || 'Failed to save category');
+    },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => api.delete(`/asset-categories/${id}`),
+    mutationFn: (id: string) => {
+      if (!id) return Promise.reject(new Error('Missing category id'));
+      return api.delete(`/assets/categories/${id}`);
+    },
     onSuccess: () => {
       toast.success('Category deleted');
       queryClient.invalidateQueries({ queryKey: ['asset-categories'] });
     },
-    onError: () => toast.error('Cannot delete category with assets'),
+    onError: (err: any) => {
+      const msg = err?.response?.data?.message;
+      toast.error(Array.isArray(msg) ? msg.join(', ') : msg || 'Cannot delete category with assets');
+    },
+  });
+
+  const seedDefaultsMutation = useMutation({
+    mutationFn: async () => {
+      const existingCodes = new Set(categories.map((c) => c.code));
+      const toCreate = seedCategories.filter((c) => !existingCodes.has(c.code));
+      for (const c of toCreate) {
+        await api.post('/assets/categories', c);
+      }
+      return toCreate.length;
+    },
+    onSuccess: (count) => {
+      toast.success(`Seeded ${count} default categor${count === 1 ? 'y' : 'ies'}`);
+      queryClient.invalidateQueries({ queryKey: ['asset-categories'] });
+    },
+    onError: (err: any) => {
+      const msg = err?.response?.data?.message;
+      toast.error(Array.isArray(msg) ? msg.join(', ') : msg || 'Failed to seed categories');
+    },
   });
 
   const openModal = (category?: AssetCategory) => {
     if (category) {
       setEditingCategory(category);
+      const months = category.defaultUsefulLifeMonths ?? 0;
       setFormData({
         code: category.code,
         name: category.name,
+        assetClass: category.assetClass || 'medical',
         description: category.description || '',
-        usefulLifeYears: category.usefulLifeYears,
-        depreciationRate: category.depreciationRate,
-        depreciationMethod: category.depreciationMethod,
-        glAccountCode: category.glAccountCode || '',
+        usefulLifeYears: months > 0 ? Math.round((months / 12) * 100) / 100 : 0,
+        depreciationRate: category.defaultDepreciationRate != null ? Number(category.defaultDepreciationRate) : 0,
+        depreciationMethod: category.defaultDepreciationMethod || 'straight_line',
         isActive: category.isActive,
       });
     } else {
       setEditingCategory(null);
-      setFormData({
-        code: '',
-        name: '',
-        description: '',
-        usefulLifeYears: 5,
-        depreciationRate: 20,
-        depreciationMethod: 'straight_line',
-        glAccountCode: '',
-        isActive: true,
-      });
+      setFormData(emptyForm);
     }
     setShowModal(true);
   };
@@ -204,12 +259,40 @@ export default function AssetCategoriesPage() {
           <div className="flex justify-center py-12">
             <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
           </div>
+        ) : error ? (
+          <div className="px-6 py-12 text-center text-red-600">
+            Failed to load categories. Please retry.
+          </div>
+        ) : filteredCategories.length === 0 ? (
+          <div className="px-6 py-12 text-center space-y-4">
+            <Package className="w-10 h-10 text-gray-300 mx-auto" />
+            <p className="text-sm text-gray-500">
+              {categories.length === 0
+                ? 'No asset categories defined yet.'
+                : 'No categories match your search.'}
+            </p>
+            {categories.length === 0 && (
+              <button
+                onClick={() => seedDefaultsMutation.mutate()}
+                disabled={seedDefaultsMutation.isPending}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                {seedDefaultsMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Plus className="w-4 h-4" />
+                )}
+                Seed default categories
+              </button>
+            )}
+          </div>
         ) : (
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Code</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Class</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Useful Life</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Dep. Rate</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Method</th>
@@ -218,47 +301,52 @@ export default function AssetCategoriesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {filteredCategories.map((category: AssetCategory) => (
-                <tr key={category.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <Package className="w-4 h-4 text-gray-400" />
-                      <div>
-                        <p className="font-medium text-gray-900">{category.name}</p>
-                        {category.description && (
-                          <p className="text-xs text-gray-500">{category.description}</p>
-                        )}
+              {filteredCategories.map((category: AssetCategory) => {
+                const months = category.defaultUsefulLifeMonths ?? 0;
+                const years = months > 0 ? Math.round((months / 12) * 10) / 10 : 0;
+                return (
+                  <tr key={category.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <Package className="w-4 h-4 text-gray-400" />
+                        <div>
+                          <p className="font-medium text-gray-900">{category.name}</p>
+                          {category.description && (
+                            <p className="text-xs text-gray-500">{category.description}</p>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-600 font-mono">{category.code}</td>
-                  <td className="px-4 py-3 text-sm text-right">
-                    {category.usefulLifeYears > 0 ? `${category.usefulLifeYears} years` : 'N/A'}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-right">{category.depreciationRate}%</td>
-                  <td className="px-4 py-3 text-sm capitalize">
-                    {category.depreciationMethod.replace(/_/g, ' ')}
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <span className={`px-2 py-1 text-xs rounded-full ${
-                      category.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
-                    }`}>
-                      {category.isActive ? 'Active' : 'Inactive'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <button
-                        onClick={() => openModal(category)}
-                        className="p-1 hover:bg-gray-100 rounded"
-                        title="Edit"
-                      >
-                        <Edit2 className="w-4 h-4 text-gray-500" />
-                      </button>
-                      {!category.id.startsWith('default-') && (
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-600 font-mono">{category.code}</td>
+                    <td className="px-4 py-3 text-sm capitalize">{category.assetClass || '—'}</td>
+                    <td className="px-4 py-3 text-sm text-right">
+                      {years > 0 ? `${years} years` : 'N/A'}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-right">
+                      {category.defaultDepreciationRate != null ? `${Number(category.defaultDepreciationRate)}%` : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-sm capitalize">
+                      {(category.defaultDepreciationMethod || '').replace(/_/g, ' ') || '—'}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`px-2 py-1 text-xs rounded-full ${
+                        category.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+                      }`}>
+                        {category.isActive ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => openModal(category)}
+                          className="p-1 hover:bg-gray-100 rounded"
+                          title="Edit"
+                        >
+                          <Edit2 className="w-4 h-4 text-gray-500" />
+                        </button>
                         <button
                           onClick={() => {
-                            if (confirm('Delete this category?')) {
+                            if (confirm(`Delete category "${category.name}"?`)) {
                               deleteMutation.mutate(category.id);
                             }
                           }}
@@ -267,11 +355,11 @@ export default function AssetCategoriesPage() {
                         >
                           <Trash2 className="w-4 h-4 text-red-500" />
                         </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
@@ -335,14 +423,15 @@ export default function AssetCategoriesPage() {
                     value={formData.usefulLifeYears}
                     onChange={(e) => {
                       const years = Number(e.target.value);
-                      setFormData({ 
-                        ...formData, 
+                      setFormData({
+                        ...formData,
                         usefulLifeYears: years,
-                        depreciationRate: years > 0 ? Math.round(100 / years * 100) / 100 : 0
+                        depreciationRate: years > 0 ? Math.round((100 / years) * 100) / 100 : 0,
                       });
                     }}
                     className="w-full px-3 py-2 border rounded-lg"
                     min="0"
+                    step="0.5"
                     required
                   />
                 </div>
@@ -368,20 +457,23 @@ export default function AssetCategoriesPage() {
                     onChange={(e) => setFormData({ ...formData, depreciationMethod: e.target.value })}
                     className="w-full px-3 py-2 border rounded-lg"
                   >
-                    {depreciationMethods.map(m => (
+                    {depreciationMethods.map((m) => (
                       <option key={m.value} value={m.value}>{m.label}</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">GL Account Code</label>
-                  <input
-                    type="text"
-                    value={formData.glAccountCode}
-                    onChange={(e) => setFormData({ ...formData, glAccountCode: e.target.value })}
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Asset Class *</label>
+                  <select
+                    value={formData.assetClass}
+                    onChange={(e) => setFormData({ ...formData, assetClass: e.target.value })}
                     className="w-full px-3 py-2 border rounded-lg"
-                    placeholder="e.g., 1510"
-                  />
+                    required
+                  >
+                    {assetClasses.map((c) => (
+                      <option key={c.value} value={c.value}>{c.label}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 

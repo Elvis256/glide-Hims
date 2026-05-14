@@ -406,6 +406,9 @@ export class CreateAssetCategoryDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  isActive?: boolean;
 }
 
 export class UpdateAssetCategoryDto {

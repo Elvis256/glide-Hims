@@ -5,6 +5,7 @@ import {
   Put,
   Delete,
   Param,
+  ParseUUIDPipe,
   Body,
   Query,
   UseGuards,
@@ -167,7 +168,7 @@ export class AssetsController {
   @Put('categories/:id')
   @AuthWithPermissions('assets.categories.manage')
   async updateCategory(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() data: UpdateAssetCategoryDto,
     @Request() req: any,
   ) {
@@ -176,7 +177,7 @@ export class AssetsController {
 
   @Delete('categories/:id')
   @AuthWithPermissions('assets.categories.manage')
-  async deleteCategory(@Param('id') id: string, @Request() req: any) {
+  async deleteCategory(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     await this.assetsService.deleteCategory(id, actorCtx(req));
     return { ok: true };
   }
@@ -208,7 +209,7 @@ export class AssetsController {
   @Put('allocations/:id/approve')
   @AuthWithPermissions('assets.allocation.approve')
   async approveAllocation(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() data: ApproveAllocationDto,
     @Request() req: any,
   ) {
@@ -217,14 +218,14 @@ export class AssetsController {
 
   @Put('allocations/:id/issue')
   @AuthWithPermissions('assets.allocation.issue')
-  async issueAllocation(@Param('id') id: string, @Request() req: any) {
+  async issueAllocation(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     return this.assetsService.issueAllocation(id, actorCtx(req));
   }
 
   @Put('allocations/:id/return')
   @AuthWithPermissions('assets.allocation.return')
   async returnAllocation(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() data: ReturnAllocationDto,
     @Request() req: any,
   ) {
@@ -259,7 +260,7 @@ export class AssetsController {
   @Put('disposals/:id/biomed-review')
   @AuthWithPermissions('assets.disposal.biomed_review')
   async biomedReview(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() data: BiomedReviewDto,
     @Request() req: any,
   ) {
@@ -269,7 +270,7 @@ export class AssetsController {
   @Put('disposals/:id/committee-decision')
   @AuthWithPermissions('assets.disposal.committee')
   async committeeDecision(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() data: CommitteeDecisionDto,
     @Request() req: any,
   ) {
@@ -285,7 +286,7 @@ export class AssetsController {
   @Put('disposals/:id/complete')
   @AuthWithPermissions('assets.disposal.complete')
   async completeDisposal(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() data: CompleteDisposalDto,
     @Request() req: any,
   ) {
@@ -307,7 +308,7 @@ export class AssetsController {
   @Post(':id/transfer')
   @AuthWithPermissions('assets.transfer.initiate')
   async initiateTransfer(
-    @Param('id') assetId: string,
+    @Param('id', ParseUUIDPipe) assetId: string,
     @Body() data: InitiateTransferDto,
     @Request() req: any,
   ) {
@@ -317,7 +318,7 @@ export class AssetsController {
   @Put('transfers/:transferId/approve')
   @AuthWithPermissions('assets.transfer.approve')
   async approveTransferStage(
-    @Param('transferId') transferId: string,
+    @Param('transferId', ParseUUIDPipe) transferId: string,
     @Body() data: ApproveTransferDto,
     @Request() req: any,
   ) {
@@ -333,7 +334,7 @@ export class AssetsController {
   @Post('transfers/:transferId/complete')
   @AuthWithPermissions('assets.transfer.complete')
   async completeTransfer(
-    @Param('transferId') transferId: string,
+    @Param('transferId', ParseUUIDPipe) transferId: string,
     @Body() data: CompleteTransferReceiptDto,
     @Request() req: any,
   ) {
@@ -349,7 +350,7 @@ export class AssetsController {
   @Put('transfers/:transferId/complete')
   @AuthWithPermissions('assets.transfer.complete')
   async completeTransferAlias(
-    @Param('transferId') transferId: string,
+    @Param('transferId', ParseUUIDPipe) transferId: string,
     @Body() data: CompleteTransferReceiptDto,
     @Request() req: any,
   ) {
@@ -358,7 +359,7 @@ export class AssetsController {
 
   @Get(':id/transfers')
   @AuthWithPermissions('assets.read')
-  async getTransferHistory(@Param('id') assetId: string, @Request() req: any) {
+  async getTransferHistory(@Param('id', ParseUUIDPipe) assetId: string, @Request() req: any) {
     return this.assetsService.getTransferHistory(assetId, req.user?.tenantId);
   }
 
@@ -366,7 +367,7 @@ export class AssetsController {
 
   @Post(':id/dispose')
   @AuthWithPermissions('assets.disposal.complete')
-  async disposeAsset(@Param('id') id: string, @Body() data: DisposeAssetDto, @Request() req: any) {
+  async disposeAsset(@Param('id', ParseUUIDPipe) id: string, @Body() data: DisposeAssetDto, @Request() req: any) {
     return this.assetsService.disposeAsset(
       id,
       {
@@ -409,7 +410,7 @@ export class AssetsController {
 
   @Get(':id/depreciation')
   @AuthWithPermissions('assets.read')
-  async getDepreciationSchedule(@Param('id') assetId: string, @Request() req: any) {
+  async getDepreciationSchedule(@Param('id', ParseUUIDPipe) assetId: string, @Request() req: any) {
     return this.assetsService.getDepreciationSchedule(assetId, req.user?.tenantId);
   }
 
@@ -481,7 +482,7 @@ export class AssetsController {
   @Post(':id/maintenance')
   @AuthWithPermissions('assets.maintenance.record')
   async recordMaintenance(
-    @Param('id') assetId: string,
+    @Param('id', ParseUUIDPipe) assetId: string,
     @Body() data: RecordAssetMaintenanceDto,
     @Request() req: any,
   ) {
@@ -503,7 +504,7 @@ export class AssetsController {
 
   @Get(':id/maintenance')
   @AuthWithPermissions('assets.read')
-  async getMaintenanceHistory(@Param('id') assetId: string, @Request() req: any) {
+  async getMaintenanceHistory(@Param('id', ParseUUIDPipe) assetId: string, @Request() req: any) {
     return this.assetsService.getMaintenanceHistory(assetId, req.user?.tenantId);
   }
 
@@ -511,14 +512,14 @@ export class AssetsController {
 
   @Get(':id/location-history')
   @AuthWithPermissions('assets.read')
-  async getLocationHistory(@Param('id') assetId: string, @Request() req: any) {
+  async getLocationHistory(@Param('id', ParseUUIDPipe) assetId: string, @Request() req: any) {
     return this.assetsService.getLocationHistory(assetId, req.user?.tenantId);
   }
 
   @Post(':id/location')
   @AuthWithPermissions('assets.update')
   async recordLocation(
-    @Param('id') assetId: string,
+    @Param('id', ParseUUIDPipe) assetId: string,
     @Body() data: RecordLocationDto,
     @Request() req: any,
   ) {
@@ -529,19 +530,19 @@ export class AssetsController {
 
   @Get(':id')
   @AuthWithPermissions('assets.read')
-  async getAsset(@Param('id') id: string, @Request() req: any) {
+  async getAsset(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     return this.assetsService.getAsset(id, req.user?.tenantId);
   }
 
   @Put(':id')
   @AuthWithPermissions('assets.update')
-  async updateAsset(@Param('id') id: string, @Body() data: UpdateAssetDto, @Request() req: any) {
+  async updateAsset(@Param('id', ParseUUIDPipe) id: string, @Body() data: UpdateAssetDto, @Request() req: any) {
     return this.assetsService.updateAsset(id, data as any, actorCtx(req));
   }
 
   @Delete(':id')
   @AuthWithPermissions('assets.delete')
-  async deleteAsset(@Param('id') id: string, @Request() req: any) {
+  async deleteAsset(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     await this.assetsService.deleteAsset(id, actorCtx(req));
     return { ok: true };
   }
