@@ -45,13 +45,17 @@ export default function StatutoryReportsPage() {
 
   const activeTab = TABS.find((t) => t.id === tab)!;
   const period = activeTab.periodKind === 'month' ? periodMonth : periodWeek;
+  // Backend param naming is asymmetric: HmisMonthlyDto expects `period`
+  // (YYYY-MM), HmisWeeklyDto expects `week` (YYYY-WW). The previous code sent
+  // `period` for both, which 400'd on eIDSR/mTrac.
+  const periodParamKey = activeTab.periodKind === 'month' ? 'period' : 'week';
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['statutory', tab, period, facilityId],
     enabled: !!facilityId && !!period,
     queryFn: async () => {
       const res = await api.get(`/reports/statutory/${tab}`, {
-        params: { facilityId, period, format: 'json' },
+        params: { facilityId, [periodParamKey]: period, format: 'json' },
       });
       return res.data;
     },
@@ -78,7 +82,7 @@ export default function StatutoryReportsPage() {
   const handleExport = async (format: 'csv' | 'xlsx') => {
     if (!facilityId || !period) return;
     const res = await api.get(`/reports/statutory/${tab}`, {
-      params: { facilityId, period, format },
+      params: { facilityId, [periodParamKey]: period, format },
       responseType: 'blob',
     });
     const blob = new Blob([res.data]);
