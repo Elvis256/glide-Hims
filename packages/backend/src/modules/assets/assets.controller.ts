@@ -365,7 +365,7 @@ export class AssetsController {
   // ==================== LEGACY QUICK-DISPOSE ====================
 
   @Post(':id/dispose')
-  @AuthWithPermissions('assets.create')
+  @AuthWithPermissions('assets.disposal.complete')
   async disposeAsset(@Param('id') id: string, @Body() data: DisposeAssetDto, @Request() req: any) {
     return this.assetsService.disposeAsset(
       id,
@@ -382,7 +382,7 @@ export class AssetsController {
   // ==================== DEPRECIATION ====================
 
   @Post('depreciation/run')
-  @AuthWithPermissions('assets.create')
+  @AuthWithPermissions('assets.depreciation.run')
   async runDepreciation(@Body() data: RunDepreciationDto, @Request() req: any) {
     return this.assetsService.runDepreciation(data.facilityId, data.year, data.month, actorCtx(req));
   }
@@ -479,7 +479,7 @@ export class AssetsController {
   // ==================== MAINTENANCE ====================
 
   @Post(':id/maintenance')
-  @AuthWithPermissions('assets.create')
+  @AuthWithPermissions('assets.maintenance.record')
   async recordMaintenance(
     @Param('id') assetId: string,
     @Body() data: RecordAssetMaintenanceDto,
