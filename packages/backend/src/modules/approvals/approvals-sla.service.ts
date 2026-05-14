@@ -29,7 +29,7 @@ export class ApprovalsSlaService {
     private readonly stepRepo: Repository<ProcurementApprovalPolicyStep>,
   ) {}
 
-  @Cron(CronExpression.EVERY_MINUTE)
+  @Cron(CronExpression.EVERY_MINUTE, { name: 'approvals-sla-scan' })
   async scanForBreaches(): Promise<void> {
     if (!this.enabled) return;
     let breached: ProcurementApprovalChain[] = [];

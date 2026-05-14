@@ -1,636 +1,1086 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { formatCurrency } from '../../lib/currency';
-import api from '../../services/api';
+import { format } from 'date-fns';
+import { toast } from 'sonner';
 import {
   Trash2,
   Plus,
   Search,
   Filter,
-  ChevronDown,
   Loader2,
   Eye,
   CheckCircle,
   Clock,
   XCircle,
-  Building2,
-  Calendar,
-  DollarSign,
-  FileText,
-  AlertTriangle,
+  X,
 } from 'lucide-react';
+import { formatCurrency } from '../../lib/currency';
+import { useFacilityId } from '../../lib/facility';
+import { useAuthStore } from '../../store/auth';
+import assetsService from '../../services/assets';
+import type {
+  FixedAsset,
+  AssetDisposal,
+  DisposalMethod,
+  DisposalStatus,
+} from '../../services/assets';
 
-interface AssetDisposal {
-  id: string;
-  disposalNumber: string;
-  assetCode: string;
-  assetName: string;
-  category: string;
-  department: string;
-  purchaseDate: string;
-  purchaseCost: number;
-  currentValue: number;
-  disposalMethod: 'SALE' | 'SCRAP' | 'DONATION' | 'TRADE_IN' | 'WRITE_OFF';
-  disposalValue: number;
-  reason: string;
-  requestedBy: string;
-  requestedDate: string;
-  approvedBy?: string;
-  approvedDate?: string;
-  disposalDate?: string;
-  status: 'PENDING' | 'APPROVED' | 'COMPLETED' | 'REJECTED';
-  notes?: string;
-  buyer?: string;
+const DISPOSAL_STATUSES: DisposalStatus[] = [
+  'requested',
+  'biomed_review',
+  'committee_approval',
+  'approved',
+  'rejected',
+  'completed',
+  'cancelled',
+];
+
+const DISPOSAL_METHODS: DisposalMethod[] = [
+  'sale',
+  'scrap',
+  'donation',
+  'trade_in',
+  'write_off',
+];
+
+const STATUS_BADGE: Record<DisposalStatus, string> = {
+  requested: 'bg-yellow-100 text-yellow-800',
+  biomed_review: 'bg-indigo-100 text-indigo-800',
+  committee_approval: 'bg-purple-100 text-purple-800',
+  approved: 'bg-blue-100 text-blue-800',
+  rejected: 'bg-red-100 text-red-800',
+  completed: 'bg-green-100 text-green-800',
+  cancelled: 'bg-gray-100 text-gray-800',
+};
+
+const METHOD_BADGE: Record<DisposalMethod, string> = {
+  sale: 'bg-green-100 text-green-800',
+  scrap: 'bg-gray-100 text-gray-800',
+  donation: 'bg-blue-100 text-blue-800',
+  trade_in: 'bg-indigo-100 text-indigo-800',
+  write_off: 'bg-red-100 text-red-800',
+};
+
+function fmtDate(d?: string) {
+  if (!d) return '—';
+  try {
+    return format(new Date(d), 'PP');
+  } catch {
+    return d;
+  }
 }
 
-// Fetch disposals from API
-const methods = ['All', 'SALE', 'SCRAP', 'DONATION', 'TRADE_IN', 'WRITE_OFF'];
-const statuses = ['All', 'PENDING', 'APPROVED', 'COMPLETED', 'REJECTED'];
-const categories = ['Vehicles', 'Medical Equipment', 'IT Equipment', 'Lab Equipment', 'Furniture', 'Building'];
+function decisionBadge(decision: string) {
+  if (decision === 'approved') return 'bg-green-100 text-green-800';
+  if (decision === 'rejected') return 'bg-red-100 text-red-800';
+  return 'bg-gray-100 text-gray-800';
+}
 
 export default function AssetDisposalPage() {
   const queryClient = useQueryClient();
+  const facilityId = useFacilityId();
+  const user = useAuthStore((s) => s.user);
+
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedMethod, setSelectedMethod] = useState('All');
-  const [selectedStatus, setSelectedStatus] = useState('All');
+  const [selectedMethod, setSelectedMethod] = useState<'All' | DisposalMethod>('All');
+  const [selectedStatus, setSelectedStatus] = useState<'All' | DisposalStatus>('All');
   const [showFilters, setShowFilters] = useState(false);
-  const [showModal, setShowModal] = useState(false);
-  const [selectedDisposal, setSelectedDisposal] = useState<AssetDisposal | null>(null);
 
-  const [formData, setFormData] = useState({
-    assetCode: '',
-    assetName: '',
-    category: '',
-    department: '',
-    purchaseCost: 0,
-    currentValue: 0,
-    disposalMethod: 'SALE' as const,
-    disposalValue: 0,
-    reason: '',
-    buyer: '',
+  const [showRequestModal, setShowRequestModal] = useState(false);
+  const [viewing, setViewing] = useState<AssetDisposal | null>(null);
+
+  const disposalsQuery = useQuery({
+    queryKey: ['asset-disposals', facilityId, selectedStatus, selectedMethod],
+    queryFn: () =>
+      assetsService.listDisposals(facilityId, {
+        status: selectedStatus === 'All' ? undefined : selectedStatus,
+        method: selectedMethod === 'All' ? undefined : selectedMethod,
+      }),
+    enabled: !!facilityId,
   });
 
-  const { data: disposals, isLoading } = useQuery({
-    queryKey: ['asset-disposals', selectedMethod, selectedStatus],
-    queryFn: async () => {
-      const params: Record<string, string> = {};
-      if (selectedMethod !== 'All') params.method = selectedMethod;
-      if (selectedStatus !== 'All') params.status = selectedStatus;
-      const { data } = await api.get<AssetDisposal[]>('/disposal', { params });
-      return data;
-    },
+  const assetsQuery = useQuery({
+    queryKey: ['assets', facilityId],
+    queryFn: () => assetsService.list(facilityId),
+    enabled: !!facilityId,
   });
 
+  const disposals = disposalsQuery.data ?? [];
+  const assets = assetsQuery.data ?? [];
+  const assetById = useMemo(() => {
+    const m = new Map<string, FixedAsset>();
+    for (const a of assets) m.set(a.id, a);
+    return m;
+  }, [assets]);
+
+  const activeAssets = useMemo(
+    () => assets.filter((a) => a.status !== 'disposed'),
+    [assets],
+  );
+
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: ['asset-disposals', facilityId] });
+
+  // Stats
+  const stats = useMemo(() => {
+    const total = disposals.length;
+    const pendingReview = disposals.filter((d) =>
+      ['requested', 'biomed_review', 'committee_approval'].includes(d.status),
+    ).length;
+    const approved = disposals.filter((d) => d.status === 'approved').length;
+    const completed = disposals.filter((d) => d.status === 'completed').length;
+    return { total, pendingReview, approved, completed };
+  }, [disposals]);
+
+  // Client-side search
+  const filtered = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    if (!term) return disposals;
+    return disposals.filter((d) => {
+      const asset = d.asset ?? assetById.get(d.assetId);
+      const haystack = [
+        d.disposalNumber,
+        asset?.name ?? '',
+        asset?.assetCode ?? '',
+      ]
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(term);
+    });
+  }, [disposals, assetById, searchTerm]);
+
+  // Refresh "viewing" disposal from latest data so panels update after mutation
+  const viewingFresh = useMemo(() => {
+    if (!viewing) return null;
+    return disposals.find((d) => d.id === viewing.id) ?? viewing;
+  }, [viewing, disposals]);
+
+  // ===== Mutations =====
   const createMutation = useMutation({
-    mutationFn: async (data: typeof formData) => {
-      const { data: result } = await api.post('/disposal', data);
-      return result;
-    },
+    mutationFn: (body: {
+      assetId: string;
+      method: DisposalMethod;
+      reason: string;
+      expectedValue?: number;
+      attachments?: string[];
+    }) =>
+      assetsService.createDisposalRequest({
+        ...body,
+        facilityId,
+      }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['asset-disposals'] });
-      setShowModal(false);
-      resetForm();
+      toast.success('Disposal request created');
+      invalidate();
+      setShowRequestModal(false);
     },
+    onError: (e: any) => toast.error(e?.message || 'Failed to create request'),
   });
 
-  const approveMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { data } = await api.put(`/disposal/${id}/approve`);
-      return data;
-    },
+  const biomedMutation = useMutation({
+    mutationFn: (body: {
+      id: string;
+      assessment: string;
+      recommendation: 'approve' | 'reject';
+    }) =>
+      assetsService.biomedReview(body.id, {
+        assessment: body.assessment,
+        recommendation: body.recommendation,
+      }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['asset-disposals'] });
+      toast.success('Biomed review submitted');
+      invalidate();
+      setViewing(null);
     },
+    onError: (e: any) => toast.error(e?.message || 'Failed to submit review'),
+  });
+
+  const committeeMutation = useMutation({
+    mutationFn: (body: {
+      id: string;
+      role: string;
+      decision: 'approved' | 'rejected';
+      comments?: string;
+    }) =>
+      assetsService.committeeDecision(body.id, {
+        role: body.role,
+        decision: body.decision,
+        comments: body.comments,
+      }),
+    onSuccess: () => {
+      toast.success('Committee decision recorded');
+      invalidate();
+    },
+    onError: (e: any) => toast.error(e?.message || 'Failed to record decision'),
   });
 
   const completeMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { data } = await api.put(`/disposal/${id}`, { status: 'COMPLETED' });
-      return data;
-    },
+    mutationFn: (body: {
+      id: string;
+      disposalDate: string;
+      actualValue: number;
+      buyer?: string;
+      notes?: string;
+    }) =>
+      assetsService.completeDisposal(body.id, {
+        disposalDate: body.disposalDate,
+        actualValue: body.actualValue,
+        buyer: body.buyer,
+        notes: body.notes,
+      }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['asset-disposals'] });
+      toast.success('Disposal completed');
+      invalidate();
+      setViewing(null);
     },
+    onError: (e: any) => toast.error(e?.message || 'Failed to complete disposal'),
   });
 
-  const resetForm = () => {
-    setFormData({
-      assetCode: '',
-      assetName: '',
-      category: '',
-      department: '',
-      purchaseCost: 0,
-      currentValue: 0,
-      disposalMethod: 'SALE',
-      disposalValue: 0,
-      reason: '',
-      buyer: '',
-    });
-  };
-
-  const filteredDisposals = disposals?.filter((d) => {
-    const matchesSearch =
-      d.assetName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      d.disposalNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      d.assetCode.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesMethod = selectedMethod === 'All' || d.disposalMethod === selectedMethod;
-    const matchesStatus = selectedStatus === 'All' || d.status === selectedStatus;
-    return matchesSearch && matchesMethod && matchesStatus;
-  });
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'PENDING':
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-700 rounded-full">
-            <Clock className="w-3 h-3" /> Pending
-          </span>
-        );
-      case 'APPROVED':
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded-full">
-            <CheckCircle className="w-3 h-3" /> Approved
-          </span>
-        );
-      case 'COMPLETED':
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-full">
-            <CheckCircle className="w-3 h-3" /> Completed
-          </span>
-        );
-      case 'REJECTED':
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-red-100 text-red-700 rounded-full">
-            <XCircle className="w-3 h-3" /> Rejected
-          </span>
-        );
-      default:
-        return null;
-    }
-  };
-
-  const getMethodBadge = (method: string) => {
-    const colors: Record<string, string> = {
-      SALE: 'bg-green-100 text-green-700',
-      SCRAP: 'bg-gray-100 text-gray-700',
-      DONATION: 'bg-blue-100 text-blue-700',
-      TRADE_IN: 'bg-purple-100 text-purple-700',
-      WRITE_OFF: 'bg-red-100 text-red-700',
-    };
-    return (
-      <span className={`px-2 py-1 text-xs font-medium rounded ${colors[method] || 'bg-gray-100'}`}>
-        {method.replace('_', ' ')}
-      </span>
-    );
-  };
-
-  const pendingCount = disposals?.filter((d) => d.status === 'PENDING').length || 0;
-  const totalDisposalValue = disposals?.filter((d) => d.status === 'COMPLETED').reduce((sum, d) => sum + d.disposalValue, 0) || 0;
+  const isLoading = disposalsQuery.isLoading || assetsQuery.isLoading;
 
   return (
-    <div className="space-y-6">
+    <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Asset Disposal</h1>
-          <p className="text-gray-600">Manage asset disposal requests and tracking</p>
+          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+            <Trash2 className="w-6 h-6 text-red-600" />
+            Asset Disposal
+          </h1>
+          <p className="text-sm text-gray-600 mt-1">
+            Manage asset disposal requests and approval workflow
+          </p>
         </div>
         <button
-          onClick={() => setShowModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          onClick={() => setShowRequestModal(true)}
+          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
         >
-          <Plus className="w-4 h-4" />
-          New Disposal
+          <Plus className="w-4 h-4" /> New Request
         </button>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-xl border shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <Trash2 className="w-5 h-5 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Total Disposals</p>
-              <p className="text-xl font-bold text-gray-900">{disposals?.length || 0}</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white p-4 rounded-xl border shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-yellow-100 rounded-lg">
-              <Clock className="w-5 h-5 text-yellow-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Pending Approval</p>
-              <p className="text-xl font-bold text-yellow-600">{pendingCount}</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white p-4 rounded-xl border shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-green-100 rounded-lg">
-              <CheckCircle className="w-5 h-5 text-green-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Completed</p>
-              <p className="text-xl font-bold text-green-600">
-                {disposals?.filter((d) => d.status === 'COMPLETED').length || 0}
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white p-4 rounded-xl border shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-purple-100 rounded-lg">
-              <DollarSign className="w-5 h-5 text-purple-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Total Recovered</p>
-              <p className="text-lg font-bold text-purple-600">{formatCurrency(totalDisposalValue)}</p>
-            </div>
-          </div>
-        </div>
+        <StatCard
+          label="Total"
+          value={stats.total}
+          icon={<Trash2 className="w-5 h-5 text-gray-600" />}
+        />
+        <StatCard
+          label="Pending Review"
+          value={stats.pendingReview}
+          icon={<Clock className="w-5 h-5 text-yellow-600" />}
+        />
+        <StatCard
+          label="Awaiting Completion"
+          value={stats.approved}
+          icon={<CheckCircle className="w-5 h-5 text-blue-600" />}
+        />
+        <StatCard
+          label="Completed"
+          value={stats.completed}
+          icon={<CheckCircle className="w-5 h-5 text-green-600" />}
+        />
       </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-xl border shadow-sm">
-        <div className="p-4 border-b flex flex-wrap items-center gap-4">
-          <div className="relative flex-1 min-w-[200px]">
+      <div className="bg-white border rounded-lg p-4 space-y-3">
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Search by disposal number, asset..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+              placeholder="Search by asset name, code or disposal #"
+              className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm"
             />
           </div>
-
           <button
-            onClick={() => setShowFilters(!showFilters)}
-            className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50"
+            onClick={() => setShowFilters((v) => !v)}
+            className="inline-flex items-center gap-2 px-3 py-2 border rounded-lg text-sm"
           >
-            <Filter className="w-4 h-4" />
-            Filters
-            <ChevronDown className={`w-4 h-4 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
+            <Filter className="w-4 h-4" /> Filters
           </button>
         </div>
-
         {showFilters && (
-          <div className="p-4 bg-gray-50 border-b flex flex-wrap gap-4">
-            <select
-              value={selectedMethod}
-              onChange={(e) => setSelectedMethod(e.target.value)}
-              className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-            >
-              {methods.map((method) => (
-                <option key={method} value={method}>
-                  {method === 'All' ? 'All Methods' : method.replace('_', ' ')}
-                </option>
-              ))}
-            </select>
-
-            <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
-              className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-            >
-              {statuses.map((status) => (
-                <option key={status} value={status}>
-                  {status === 'All' ? 'All Statuses' : status}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        {/* Disposals List */}
-        {isLoading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-          </div>
-        ) : filteredDisposals && filteredDisposals.length > 0 ? (
-          <div className="divide-y">
-            {filteredDisposals.map((disposal) => (
-              <div key={disposal.id} className="p-4 hover:bg-gray-50">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <span className="font-medium text-gray-900">{disposal.disposalNumber}</span>
-                      {getStatusBadge(disposal.status)}
-                      {getMethodBadge(disposal.disposalMethod)}
-                    </div>
-                    <p className="text-sm text-gray-700 mb-2">
-                      <span className="font-medium">{disposal.assetName}</span>
-                      <span className="text-gray-500"> ({disposal.assetCode})</span>
-                    </p>
-                    <div className="flex items-center gap-4 text-sm text-gray-500">
-                      <span className="flex items-center gap-1">
-                        <Building2 className="w-4 h-4" />
-                        {disposal.department}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <DollarSign className="w-4 h-4" />
-                        Book Value: {formatCurrency(disposal.currentValue)}
-                      </span>
-                      {disposal.disposalValue > 0 && (
-                        <span className="flex items-center gap-1 text-green-600">
-                          <DollarSign className="w-4 h-4" />
-                          Disposal: {formatCurrency(disposal.disposalValue)}
-                        </span>
-                      )}
-                    </div>
-                    <p className="mt-2 text-sm text-gray-600">{disposal.reason}</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setSelectedDisposal(disposal)}
-                      className="p-2 hover:bg-gray-100 rounded-lg"
-                      title="View Details"
-                    >
-                      <Eye className="w-5 h-5 text-gray-500" />
-                    </button>
-                    {disposal.status === 'PENDING' && (
-                      <button
-                        onClick={() => approveMutation.mutate(disposal.id)}
-                        disabled={approveMutation.isPending}
-                        className="px-3 py-1 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700"
-                      >
-                        Approve
-                      </button>
-                    )}
-                    {disposal.status === 'APPROVED' && (
-                      <button
-                        onClick={() => completeMutation.mutate(disposal.id)}
-                        disabled={completeMutation.isPending}
-                        className="px-3 py-1 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700"
-                      >
-                        Complete
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-12">
-            <Trash2 className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-            <p className="text-gray-500">No disposal records found</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Status
+              </label>
+              <select
+                value={selectedStatus}
+                onChange={(e) =>
+                  setSelectedStatus(e.target.value as 'All' | DisposalStatus)
+                }
+                className="w-full border rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="All">All</option>
+                {DISPOSAL_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Method
+              </label>
+              <select
+                value={selectedMethod}
+                onChange={(e) =>
+                  setSelectedMethod(e.target.value as 'All' | DisposalMethod)
+                }
+                className="w-full border rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="All">All</option>
+                {DISPOSAL_METHODS.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         )}
       </div>
 
-      {/* New Disposal Modal */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl w-full max-w-lg max-h-[90vh] overflow-auto">
-            <div className="p-6 border-b">
-              <h2 className="text-xl font-bold text-gray-900">New Asset Disposal</h2>
-            </div>
-            <div className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Asset Code <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.assetCode}
-                    onChange={(e) => setFormData({ ...formData, assetCode: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Category
-                  </label>
-                  <select
-                    value={formData.category}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">Select...</option>
-                    {categories.map((cat) => (
-                      <option key={cat} value={cat}>
-                        {cat}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Asset Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={formData.assetName}
-                  onChange={(e) => setFormData({ ...formData, assetName: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Purchase Cost
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.purchaseCost}
-                    onChange={(e) => setFormData({ ...formData, purchaseCost: Number(e.target.value) })}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Current Book Value
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.currentValue}
-                    onChange={(e) => setFormData({ ...formData, currentValue: Number(e.target.value) })}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Disposal Method <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    value={formData.disposalMethod}
-                    onChange={(e) => setFormData({ ...formData, disposalMethod: e.target.value as any })}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="SALE">Sale</option>
-                    <option value="SCRAP">Scrap</option>
-                    <option value="DONATION">Donation</option>
-                    <option value="TRADE_IN">Trade-In</option>
-                    <option value="WRITE_OFF">Write-Off</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Disposal Value
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.disposalValue}
-                    onChange={(e) => setFormData({ ...formData, disposalValue: Number(e.target.value) })}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-
-              {formData.disposalMethod === 'SALE' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Buyer
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.buyer}
-                    onChange={(e) => setFormData({ ...formData, buyer: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Reason for Disposal <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  value={formData.reason}
-                  onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
-                  rows={3}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              {formData.currentValue > formData.disposalValue && (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 flex items-start gap-2">
-                  <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0" />
-                  <div className="text-sm text-yellow-800">
-                    <p className="font-medium">Potential Loss</p>
-                    <p>Disposal value is less than book value. Loss: {formatCurrency(formData.currentValue - formData.disposalValue)}</p>
-                  </div>
-                </div>
-              )}
-            </div>
-            <div className="p-6 border-t flex justify-end gap-3">
-              <button
-                onClick={() => {
-                  setShowModal(false);
-                  resetForm();
-                }}
-                className="px-4 py-2 border rounded-lg hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => createMutation.mutate(formData)}
-                disabled={
-                  !formData.assetCode ||
-                  !formData.assetName ||
-                  !formData.reason ||
-                  createMutation.isPending
-                }
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
-              >
-                {createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                Submit Request
-              </button>
-            </div>
+      {/* Table */}
+      <div className="bg-white border rounded-lg overflow-hidden">
+        {isLoading ? (
+          <div className="p-12 flex items-center justify-center">
+            <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
           </div>
-        </div>
+        ) : filtered.length === 0 ? (
+          <div className="p-12 text-center text-sm text-gray-500">
+            No disposal records found.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-gray-50 text-xs uppercase text-gray-600">
+                <tr>
+                  <th className="px-4 py-3 text-left">Disposal #</th>
+                  <th className="px-4 py-3 text-left">Asset</th>
+                  <th className="px-4 py-3 text-left">Method</th>
+                  <th className="px-4 py-3 text-left">Reason</th>
+                  <th className="px-4 py-3 text-right">Expected</th>
+                  <th className="px-4 py-3 text-right">Actual</th>
+                  <th className="px-4 py-3 text-left">Status</th>
+                  <th className="px-4 py-3 text-left">Requested</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {filtered.map((d) => {
+                  const asset = d.asset ?? assetById.get(d.assetId);
+                  return (
+                    <tr key={d.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 font-mono text-xs">
+                        {d.disposalNumber}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-gray-900">
+                          {asset?.name ?? '—'}
+                        </div>
+                        <div className="text-xs text-gray-500 font-mono">
+                          {asset?.assetCode ?? d.assetId}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-xs font-medium ${METHOD_BADGE[d.method]}`}
+                        >
+                          {d.method}
+                        </span>
+                      </td>
+                      <td
+                        className="px-4 py-3 max-w-xs truncate"
+                        title={d.reason}
+                      >
+                        {d.reason}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {formatCurrency(d.expectedValue || 0)}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {formatCurrency(d.actualValue || 0)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_BADGE[d.status]}`}
+                        >
+                          {d.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {fmtDate(d.requestedDate)}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          onClick={() => setViewing(d)}
+                          className="inline-flex items-center gap-1 text-blue-600 hover:underline text-xs"
+                        >
+                          <Eye className="w-3.5 h-3.5" /> View
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Request modal */}
+      {showRequestModal && (
+        <RequestDisposalModal
+          assets={activeAssets}
+          onClose={() => setShowRequestModal(false)}
+          onSubmit={(body) => createMutation.mutate(body)}
+          submitting={createMutation.isPending}
+        />
       )}
 
-      {/* Disposal Details Modal */}
-      {selectedDisposal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl w-full max-w-lg">
-            <div className="p-6 border-b flex items-center justify-between">
-              <h2 className="text-xl font-bold text-gray-900">{selectedDisposal.disposalNumber}</h2>
-              <div className="flex items-center gap-2">
-                {getMethodBadge(selectedDisposal.disposalMethod)}
-                {getStatusBadge(selectedDisposal.status)}
-              </div>
-            </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <p className="text-sm text-gray-500">Asset</p>
-                <p className="font-medium">{selectedDisposal.assetName}</p>
-                <p className="text-sm text-gray-600">{selectedDisposal.assetCode} • {selectedDisposal.category}</p>
-              </div>
-
-              <div className="grid grid-cols-3 gap-4 text-sm">
-                <div>
-                  <p className="text-gray-500">Purchase Cost</p>
-                  <p className="font-medium">{formatCurrency(selectedDisposal.purchaseCost)}</p>
-                </div>
-                <div>
-                  <p className="text-gray-500">Book Value</p>
-                  <p className="font-medium">{formatCurrency(selectedDisposal.currentValue)}</p>
-                </div>
-                <div>
-                  <p className="text-gray-500">Disposal Value</p>
-                  <p className="font-medium text-green-600">{formatCurrency(selectedDisposal.disposalValue)}</p>
-                </div>
-              </div>
-
-              <div>
-                <p className="text-sm text-gray-500">Reason</p>
-                <p className="text-gray-700">{selectedDisposal.reason}</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <p className="text-gray-500">Requested By</p>
-                  <p className="font-medium">{selectedDisposal.requestedBy}</p>
-                  <p className="text-gray-500">{new Date(selectedDisposal.requestedDate).toLocaleDateString()}</p>
-                </div>
-                {selectedDisposal.approvedBy && (
-                  <div>
-                    <p className="text-gray-500">Approved By</p>
-                    <p className="font-medium">{selectedDisposal.approvedBy}</p>
-                    <p className="text-gray-500">{new Date(selectedDisposal.approvedDate!).toLocaleDateString()}</p>
-                  </div>
-                )}
-              </div>
-
-              {selectedDisposal.buyer && (
-                <div>
-                  <p className="text-sm text-gray-500">Buyer</p>
-                  <p className="font-medium">{selectedDisposal.buyer}</p>
-                </div>
-              )}
-
-              {selectedDisposal.notes && (
-                <div className="bg-gray-50 p-3 rounded-lg">
-                  <p className="text-sm text-gray-500">Notes</p>
-                  <p className="text-gray-700">{selectedDisposal.notes}</p>
-                </div>
-              )}
-            </div>
-            <div className="p-6 border-t flex justify-end">
-              <button
-                onClick={() => setSelectedDisposal(null)}
-                className="px-4 py-2 border rounded-lg hover:bg-gray-50"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* View / actions modal */}
+      {viewingFresh && (
+        <DisposalDetailModal
+          disposal={viewingFresh}
+          asset={viewingFresh.asset ?? assetById.get(viewingFresh.assetId)}
+          currentUserId={user?.id}
+          onClose={() => setViewing(null)}
+          biomedSubmit={(b) =>
+            biomedMutation.mutate({ id: viewingFresh.id, ...b })
+          }
+          biomedSubmitting={biomedMutation.isPending}
+          committeeSubmit={(b) =>
+            committeeMutation.mutate({ id: viewingFresh.id, ...b })
+          }
+          committeeSubmitting={committeeMutation.isPending}
+          completeSubmit={(b) =>
+            completeMutation.mutate({ id: viewingFresh.id, ...b })
+          }
+          completeSubmitting={completeMutation.isPending}
+        />
       )}
     </div>
+  );
+}
+
+// ============= Sub-components =============
+
+function StatCard({
+  label,
+  value,
+  icon,
+}: {
+  label: string;
+  value: number;
+  icon: React.ReactNode;
+}) {
+  return (
+    <div className="bg-white border rounded-lg p-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-xs text-gray-500 uppercase">{label}</div>
+          <div className="text-2xl font-semibold text-gray-900 mt-1">
+            {value}
+          </div>
+        </div>
+        {icon}
+      </div>
+    </div>
+  );
+}
+
+function ModalShell({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between border-b px-5 py-3">
+          <h2 className="text-lg font-semibold">{title}</h2>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="p-5 space-y-4">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function RequestDisposalModal({
+  assets,
+  onClose,
+  onSubmit,
+  submitting,
+}: {
+  assets: FixedAsset[];
+  onClose: () => void;
+  onSubmit: (body: {
+    assetId: string;
+    method: DisposalMethod;
+    reason: string;
+    expectedValue?: number;
+    attachments?: string[];
+  }) => void;
+  submitting: boolean;
+}) {
+  const [assetId, setAssetId] = useState('');
+  const [method, setMethod] = useState<DisposalMethod>('sale');
+  const [reason, setReason] = useState('');
+  const [expectedValue, setExpectedValue] = useState<string>('');
+  const [attachmentsText, setAttachmentsText] = useState('');
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!assetId || !reason.trim()) {
+      toast.error('Asset and reason are required');
+      return;
+    }
+    const attachments = attachmentsText
+      .split(/[\n,]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    onSubmit({
+      assetId,
+      method,
+      reason: reason.trim(),
+      expectedValue: expectedValue ? Number(expectedValue) : undefined,
+      attachments: attachments.length ? attachments : undefined,
+    });
+  };
+
+  return (
+    <ModalShell title="Request Disposal" onClose={onClose}>
+      <form onSubmit={submit} className="space-y-4">
+        <Field label="Asset" required>
+          <select
+            value={assetId}
+            onChange={(e) => setAssetId(e.target.value)}
+            className="w-full border rounded-lg px-3 py-2 text-sm"
+            required
+          >
+            <option value="">Select asset…</option>
+            {assets.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.assetCode} — {a.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Method" required>
+          <select
+            value={method}
+            onChange={(e) => setMethod(e.target.value as DisposalMethod)}
+            className="w-full border rounded-lg px-3 py-2 text-sm"
+          >
+            {DISPOSAL_METHODS.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Reason" required>
+          <textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            rows={3}
+            className="w-full border rounded-lg px-3 py-2 text-sm"
+            required
+          />
+        </Field>
+        <Field label="Expected Value">
+          <input
+            type="number"
+            value={expectedValue}
+            onChange={(e) => setExpectedValue(e.target.value)}
+            className="w-full border rounded-lg px-3 py-2 text-sm"
+            min={0}
+          />
+        </Field>
+        <Field label="Attachments (comma or newline-separated URLs)">
+          <textarea
+            value={attachmentsText}
+            onChange={(e) => setAttachmentsText(e.target.value)}
+            rows={2}
+            placeholder="https://… , https://…"
+            className="w-full border rounded-lg px-3 py-2 text-sm"
+          />
+        </Field>
+        <div className="flex justify-end gap-2 pt-2 border-t">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 text-sm border rounded-lg"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={submitting}
+            className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 inline-flex items-center gap-2"
+          >
+            {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+            Submit Request
+          </button>
+        </div>
+      </form>
+    </ModalShell>
+  );
+}
+
+function Field({
+  label,
+  required,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-gray-700 mb-1">
+        {label} {required && <span className="text-red-500">*</span>}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+function DisposalDetailModal({
+  disposal,
+  asset,
+  onClose,
+  biomedSubmit,
+  biomedSubmitting,
+  committeeSubmit,
+  committeeSubmitting,
+  completeSubmit,
+  completeSubmitting,
+}: {
+  disposal: AssetDisposal;
+  asset?: FixedAsset;
+  currentUserId?: string;
+  onClose: () => void;
+  biomedSubmit: (b: { assessment: string; recommendation: 'approve' | 'reject' }) => void;
+  biomedSubmitting: boolean;
+  committeeSubmit: (b: {
+    role: string;
+    decision: 'approved' | 'rejected';
+    comments?: string;
+  }) => void;
+  committeeSubmitting: boolean;
+  completeSubmit: (b: {
+    disposalDate: string;
+    actualValue: number;
+    buyer?: string;
+    notes?: string;
+  }) => void;
+  completeSubmitting: boolean;
+}) {
+  return (
+    <ModalShell
+      title={`Disposal ${disposal.disposalNumber}`}
+      onClose={onClose}
+    >
+      {/* Summary */}
+      <div className="grid grid-cols-2 gap-3 text-sm">
+        <Info label="Asset" value={asset ? `${asset.name} (${asset.assetCode})` : disposal.assetId} />
+        <Info label="Asset Class" value={asset?.assetClass ?? '—'} />
+        <Info
+          label="Method"
+          value={
+            <span
+              className={`px-2 py-0.5 rounded-full text-xs font-medium ${METHOD_BADGE[disposal.method]}`}
+            >
+              {disposal.method}
+            </span>
+          }
+        />
+        <Info
+          label="Status"
+          value={
+            <span
+              className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_BADGE[disposal.status]}`}
+            >
+              {disposal.status}
+            </span>
+          }
+        />
+        <Info label="Expected Value" value={formatCurrency(disposal.expectedValue || 0)} />
+        <Info label="Actual Value" value={formatCurrency(disposal.actualValue || 0)} />
+        <Info label="Requested" value={fmtDate(disposal.requestedDate)} />
+        <Info label="Requested By" value={disposal.requestedBy} />
+        <Info label="Buyer" value={disposal.buyer ?? '—'} />
+        <Info label="Disposal Date" value={fmtDate(disposal.disposalDate)} />
+        <Info label="Biomed Reviewed By" value={disposal.biomedReviewedBy ?? '—'} />
+        <Info label="Biomed Reviewed At" value={fmtDate(disposal.biomedReviewedAt)} />
+        <Info label="Completed By" value={disposal.completedBy ?? '—'} />
+        <Info label="Journal Entry" value={disposal.journalEntryId ?? '—'} />
+      </div>
+
+      <div>
+        <div className="text-xs font-medium text-gray-700">Reason</div>
+        <p className="text-sm text-gray-900 whitespace-pre-wrap">{disposal.reason}</p>
+      </div>
+
+      {disposal.biomedAssessment && (
+        <div>
+          <div className="text-xs font-medium text-gray-700">Biomed Assessment</div>
+          <p className="text-sm text-gray-900 whitespace-pre-wrap">
+            {disposal.biomedAssessment}
+          </p>
+        </div>
+      )}
+
+      {disposal.notes && (
+        <div>
+          <div className="text-xs font-medium text-gray-700">Notes</div>
+          <p className="text-sm text-gray-900 whitespace-pre-wrap">{disposal.notes}</p>
+        </div>
+      )}
+
+      {/* Committee approvals list */}
+      {disposal.committeeApprovals && disposal.committeeApprovals.length > 0 && (
+        <div>
+          <div className="text-xs font-medium text-gray-700 mb-2">
+            Committee Approvals
+          </div>
+          <ul className="space-y-2">
+            {disposal.committeeApprovals.map((c, i) => (
+              <li
+                key={`${c.userId}-${i}`}
+                className="border rounded-lg p-3 text-sm flex items-start justify-between gap-3"
+              >
+                <div>
+                  <div className="font-medium">{c.role}</div>
+                  {c.comments && (
+                    <div className="text-gray-600 mt-1">{c.comments}</div>
+                  )}
+                  <div className="text-xs text-gray-500 mt-1">
+                    {fmtDate(c.at)} · {c.userId}
+                  </div>
+                </div>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-xs font-medium ${decisionBadge(c.decision)}`}
+                >
+                  {c.decision}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Attachments */}
+      {disposal.attachments && disposal.attachments.length > 0 && (
+        <div>
+          <div className="text-xs font-medium text-gray-700 mb-1">Attachments</div>
+          <ul className="space-y-1 text-sm">
+            {disposal.attachments.map((url, i) => (
+              <li key={i}>
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-blue-600 hover:underline break-all"
+                >
+                  {url}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Action panels */}
+      {disposal.status === 'biomed_review' && (
+        <BiomedReviewPanel
+          submit={biomedSubmit}
+          submitting={biomedSubmitting}
+        />
+      )}
+
+      {disposal.status === 'committee_approval' && (
+        <CommitteeDecisionPanel
+          submit={committeeSubmit}
+          submitting={committeeSubmitting}
+        />
+      )}
+
+      {disposal.status === 'approved' && (
+        <CompleteDisposalPanel
+          defaultActualValue={disposal.expectedValue || 0}
+          submit={completeSubmit}
+          submitting={completeSubmitting}
+        />
+      )}
+
+      {disposal.status === 'rejected' && (
+        <div className="border border-red-200 bg-red-50 text-red-800 rounded-lg p-3 text-sm flex items-center gap-2">
+          <XCircle className="w-4 h-4" /> This disposal request was rejected.
+        </div>
+      )}
+
+      {disposal.status === 'completed' && (
+        <div className="border border-green-200 bg-green-50 text-green-800 rounded-lg p-3 text-sm flex items-center gap-2">
+          <CheckCircle className="w-4 h-4" /> Disposal completed.
+        </div>
+      )}
+    </ModalShell>
+  );
+}
+
+function Info({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div>
+      <div className="text-xs text-gray-500">{label}</div>
+      <div className="text-sm text-gray-900 mt-0.5">{value}</div>
+    </div>
+  );
+}
+
+function BiomedReviewPanel({
+  submit,
+  submitting,
+}: {
+  submit: (b: { assessment: string; recommendation: 'approve' | 'reject' }) => void;
+  submitting: boolean;
+}) {
+  const [assessment, setAssessment] = useState('');
+  const [recommendation, setRecommendation] = useState<'approve' | 'reject'>('approve');
+
+  const onSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!assessment.trim()) {
+      toast.error('Assessment is required');
+      return;
+    }
+    submit({ assessment: assessment.trim(), recommendation });
+  };
+
+  return (
+    <form
+      onSubmit={onSubmit}
+      className="border rounded-lg p-4 bg-indigo-50 border-indigo-200 space-y-3"
+    >
+      <div className="font-medium text-indigo-900">Biomed Review</div>
+      <Field label="Assessment" required>
+        <textarea
+          value={assessment}
+          onChange={(e) => setAssessment(e.target.value)}
+          rows={3}
+          className="w-full border rounded-lg px-3 py-2 text-sm"
+          required
+        />
+      </Field>
+      <div className="flex items-center gap-4 text-sm">
+        <label className="flex items-center gap-2">
+          <input
+            type="radio"
+            checked={recommendation === 'approve'}
+            onChange={() => setRecommendation('approve')}
+          />
+          Approve
+        </label>
+        <label className="flex items-center gap-2">
+          <input
+            type="radio"
+            checked={recommendation === 'reject'}
+            onChange={() => setRecommendation('reject')}
+          />
+          Reject
+        </label>
+      </div>
+      <button
+        type="submit"
+        disabled={submitting}
+        className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 inline-flex items-center gap-2"
+      >
+        {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+        Submit Review
+      </button>
+    </form>
+  );
+}
+
+function CommitteeDecisionPanel({
+  submit,
+  submitting,
+}: {
+  submit: (b: { role: string; decision: 'approved' | 'rejected'; comments?: string }) => void;
+  submitting: boolean;
+}) {
+  const [role, setRole] = useState('');
+  const [decision, setDecision] = useState<'approved' | 'rejected'>('approved');
+  const [comments, setComments] = useState('');
+
+  const onSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!role.trim()) {
+      toast.error('Role is required');
+      return;
+    }
+    submit({
+      role: role.trim(),
+      decision,
+      comments: comments.trim() || undefined,
+    });
+  };
+
+  return (
+    <form
+      onSubmit={onSubmit}
+      className="border rounded-lg p-4 bg-purple-50 border-purple-200 space-y-3"
+    >
+      <div className="font-medium text-purple-900">Add Committee Decision</div>
+      <Field label="Role" required>
+        <input
+          value={role}
+          onChange={(e) => setRole(e.target.value)}
+          placeholder="e.g. cfo, ceo, biomed_director"
+          className="w-full border rounded-lg px-3 py-2 text-sm"
+          required
+        />
+      </Field>
+      <div className="flex items-center gap-4 text-sm">
+        <label className="flex items-center gap-2">
+          <input
+            type="radio"
+            checked={decision === 'approved'}
+            onChange={() => setDecision('approved')}
+          />
+          Approved
+        </label>
+        <label className="flex items-center gap-2">
+          <input
+            type="radio"
+            checked={decision === 'rejected'}
+            onChange={() => setDecision('rejected')}
+          />
+          Rejected
+        </label>
+      </div>
+      <Field label="Comments">
+        <textarea
+          value={comments}
+          onChange={(e) => setComments(e.target.value)}
+          rows={2}
+          className="w-full border rounded-lg px-3 py-2 text-sm"
+        />
+      </Field>
+      <button
+        type="submit"
+        disabled={submitting}
+        className="px-4 py-2 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 inline-flex items-center gap-2"
+      >
+        {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+        Record Decision
+      </button>
+    </form>
+  );
+}
+
+function CompleteDisposalPanel({
+  defaultActualValue,
+  submit,
+  submitting,
+}: {
+  defaultActualValue: number;
+  submit: (b: {
+    disposalDate: string;
+    actualValue: number;
+    buyer?: string;
+    notes?: string;
+  }) => void;
+  submitting: boolean;
+}) {
+  const [disposalDate, setDisposalDate] = useState(
+    new Date().toISOString().slice(0, 10),
+  );
+  const [actualValue, setActualValue] = useState<string>(
+    String(defaultActualValue ?? 0),
+  );
+  const [buyer, setBuyer] = useState('');
+  const [notes, setNotes] = useState('');
+
+  const onSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!disposalDate) {
+      toast.error('Disposal date is required');
+      return;
+    }
+    submit({
+      disposalDate,
+      actualValue: Number(actualValue) || 0,
+      buyer: buyer.trim() || undefined,
+      notes: notes.trim() || undefined,
+    });
+  };
+
+  return (
+    <form
+      onSubmit={onSubmit}
+      className="border rounded-lg p-4 bg-blue-50 border-blue-200 space-y-3"
+    >
+      <div className="font-medium text-blue-900">Complete Disposal</div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Disposal Date" required>
+          <input
+            type="date"
+            value={disposalDate}
+            onChange={(e) => setDisposalDate(e.target.value)}
+            className="w-full border rounded-lg px-3 py-2 text-sm"
+            required
+          />
+        </Field>
+        <Field label="Actual Value" required>
+          <input
+            type="number"
+            value={actualValue}
+            onChange={(e) => setActualValue(e.target.value)}
+            className="w-full border rounded-lg px-3 py-2 text-sm"
+            min={0}
+            required
+          />
+        </Field>
+      </div>
+      <Field label="Buyer">
+        <input
+          value={buyer}
+          onChange={(e) => setBuyer(e.target.value)}
+          className="w-full border rounded-lg px-3 py-2 text-sm"
+        />
+      </Field>
+      <Field label="Notes">
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={2}
+          className="w-full border rounded-lg px-3 py-2 text-sm"
+        />
+      </Field>
+      <button
+        type="submit"
+        disabled={submitting}
+        className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 inline-flex items-center gap-2"
+      >
+        {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+        Complete Disposal
+      </button>
+    </form>
   );
 }

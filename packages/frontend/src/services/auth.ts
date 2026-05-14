@@ -34,6 +34,17 @@ export const authService = {
     await api.post('/auth/change-password', { currentPassword, newPassword });
   },
 
+  updateProfile: async (dto: {
+    email?: string;
+    phone?: string;
+    address?: string;
+    emergencyContactName?: string;
+    emergencyContactPhone?: string;
+  }): Promise<{ message: string; data: any }> => {
+    const response = await api.patch('/auth/profile', dto);
+    return response.data;
+  },
+
   enterTenant: async (tenantId: string): Promise<LoginResponse> => {
     const response = await api.post<LoginResponse>('/auth/enter-tenant', { tenantId });
     return response.data;

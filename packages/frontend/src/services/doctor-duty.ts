@@ -47,6 +47,7 @@ export interface CheckInDto {
   doctorId: string;
   departmentId?: string;
   roomNumber?: string;
+  maxPatients?: number;
 }
 
 export interface CheckOutDto {

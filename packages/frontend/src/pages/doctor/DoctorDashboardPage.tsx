@@ -28,6 +28,7 @@ import {
 import { queueService, type QueueEntry } from '../../services/queue';
 import { labService, type LabOrder } from '../../services/lab';
 import { encountersService, type Encounter } from '../../services/encounters';
+import { criticalResultsService } from '../../services/critical-results';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 import { useAuthStore } from '../../store/auth';
@@ -182,6 +183,12 @@ export default function DoctorDashboardPage() {
     queryKey: ['today-schedule', user?.id],
     queryFn: () => encountersService.getQueue({ doctorId: user?.id }),
     enabled: !!user?.id,
+  });
+
+  const { data: criticalAlerts = [] } = useQuery({
+    queryKey: ['dashboard-critical-results'],
+    queryFn: () => criticalResultsService.list({ status: 'pending', limit: 10 }),
+    refetchInterval: 30_000,
   });
 
   // ===================== MUTATIONS =====================
@@ -520,6 +527,67 @@ export default function DoctorDashboardPage() {
 
         {/* Right Sidebar */}
         <div className="space-y-4">
+          {/* Critical Results — Closed-loop acknowledgement */}
+          <div className={`bg-white rounded-xl border ${criticalAlerts.length > 0 ? 'border-red-300 ring-2 ring-red-100' : 'border-gray-200'}`}>
+            <div className="p-4 border-b border-gray-100">
+              <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                <AlertTriangle className={`w-4 h-4 ${criticalAlerts.length > 0 ? 'text-red-600' : 'text-gray-400'}`} />
+                Critical Results
+                {criticalAlerts.length > 0 && (
+                  <span className="ml-auto px-2 py-0.5 text-xs font-bold bg-red-600 text-white rounded-full">
+                    {criticalAlerts.length}
+                  </span>
+                )}
+              </h3>
+            </div>
+            {criticalAlerts.length > 0 ? (
+              <div className="divide-y divide-gray-100 max-h-72 overflow-y-auto">
+                {criticalAlerts.slice(0, 5).map((a) => {
+                  const overdue = new Date(a.slaDeadline).getTime() < Date.now();
+                  return (
+                    <button
+                      key={a.id}
+                      onClick={() => navigate('/doctor/critical-results')}
+                      className={`w-full p-3 text-left hover:bg-gray-50 ${overdue ? 'bg-red-50/50' : ''}`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-gray-900 text-sm truncate">
+                            {a.patient?.fullName || 'Patient'}
+                          </p>
+                          <p className="text-xs text-gray-500 truncate">
+                            <span className="uppercase font-semibold mr-1">{a.resourceType}</span>
+                            · {a.severity.replace('_', ' ')}
+                          </p>
+                          {a.summary && (
+                            <p className="text-xs text-gray-400 mt-0.5 line-clamp-1">{a.summary}</p>
+                          )}
+                        </div>
+                        {overdue && (
+                          <span className="flex-shrink-0 px-1.5 py-0.5 text-[10px] font-bold bg-red-600 text-white rounded">
+                            SLA
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="p-4 text-center text-gray-500 text-sm">
+                No pending critical results
+              </div>
+            )}
+            <div className="p-3 border-t border-gray-100">
+              <button
+                onClick={() => navigate('/doctor/critical-results')}
+                className="w-full text-sm text-red-600 hover:text-red-700 font-medium"
+              >
+                Open worklist →
+              </button>
+            </div>
+          </div>
+
           {/* Pending Reviews */}
           <div className="bg-white rounded-xl border border-gray-200">
             <div className="p-4 border-b border-gray-100">

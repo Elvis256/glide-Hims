@@ -28,10 +28,11 @@ import {
 } from 'lucide-react';
 import { billingService, type Payment } from '../../services';
 import api from '../../services/api';
+import PaymentMethodPicker from '../../components/PaymentMethodPicker';
 import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
 import { asList } from '../../utils/unwrapResponse';
 
-type PaymentMethod = 'cash' | 'card' | 'mobile_money' | 'insurance';
+import type { PaymentMethod } from '../../shared/payment-methods';
 
 const methodConfig: Record<PaymentMethod, { label: string; icon: React.ElementType; color: string }> = {
   cash: { label: 'Cash', icon: Banknote, color: 'bg-green-100 text-green-700' },
@@ -721,27 +722,7 @@ export default function PaymentsPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Payment Method</label>
-                <div className="grid grid-cols-4 gap-2">
-                  {(['cash', 'card', 'mobile_money', 'insurance'] as PaymentMethod[]).map((method) => {
-                    const config = methodConfig[method];
-                    const Icon = config.icon;
-                    return (
-                      <button
-                        key={method}
-                        type="button"
-                        onClick={() => setSelectedMethod(method)}
-                        className={`flex flex-col items-center gap-1 p-3 border rounded-lg transition-colors ${
-                          selectedMethod === method
-                            ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-500'
-                            : 'hover:bg-gray-50'
-                        }`}
-                      >
-                        <Icon className={`w-5 h-5 ${selectedMethod === method ? 'text-blue-600' : 'text-gray-600'}`} />
-                        <span className="text-xs font-medium">{config.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+                <PaymentMethodPicker value={selectedMethod} onChange={setSelectedMethod} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Reference Number</label>

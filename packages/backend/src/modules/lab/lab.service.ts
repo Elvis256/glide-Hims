@@ -30,6 +30,7 @@ import { BillingService } from '../billing/billing.service';
 import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EncountersService } from '../encounters/encounters.service';
+import { CriticalResultsService } from '../critical-results/critical-results.service';
 
 @Injectable()
 export class LabService {
@@ -50,6 +51,7 @@ export class LabService {
     private notificationsService: NotificationsService,
     @Inject(forwardRef(() => EncountersService))
     private encountersService: EncountersService,
+    private criticalResultsService: CriticalResultsService,
   ) {}
 
   private async generateSampleNumber(manager: EntityManager, tenantId?: string): Promise<string> {
@@ -666,7 +668,7 @@ export class LabService {
     const savedResult = await this.resultRepo.save(result);
     this.logger.log(`Lab result validated: ${id} by user ${userId}`);
 
-    // Notify ordering doctor
+    // Notify ordering doctor + raise a critical-result alert if abnormal/critical
     try {
       const sample = await this.sampleRepo.findOne({
         where: { id: savedResult.sampleId, ...(tenantId ? { tenantId } : {}) },
@@ -681,6 +683,23 @@ export class LabService {
           sample.order.encounter?.facilityId,
           tenantId,
         );
+      }
+
+      // Closed-loop critical-result acknowledgement
+      const sev = this.toCriticalSeverity(savedResult.abnormalFlag);
+      if (sev && sample?.order) {
+        await this.criticalResultsService.flag({
+          resourceType: 'lab',
+          resourceId: savedResult.id,
+          orderId: sample.orderId,
+          patientId: sample.patientId || sample.order.encounter?.patient?.id || '',
+          encounterId: sample.order.encounterId,
+          severity: sev,
+          summary: `${savedResult.parameter || 'Lab result'}: ${savedResult.value ?? ''}${savedResult.unit ? ' ' + savedResult.unit : ''} (${savedResult.abnormalFlag})`,
+          flaggedById: userId,
+          assignedToId: sample.order.orderedById,
+          tenantId,
+        });
       }
     } catch (e) {
       this.logger.warn(`Failed to send lab result notification: ${e.message}`);
@@ -799,58 +818,112 @@ export class LabService {
     userId: string,
     tenantId?: string,
   ): Promise<LabResult> {
-    const result = await this.resultRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
-    });
-    if (!result) throw new NotFoundException('Result not found');
+    // Concurrent amendments on the same result must not silently clobber
+    // each other. We open a transaction and acquire a pessimistic write lock
+    // on the row before reading-modifying-writing, so the second amender
+    // observes the first amender's `previousValues` and value.
+    return this.dataSource.transaction(async (manager) => {
+      const resultRepo = manager.getRepository(LabResult);
 
-    // Store previous value
-    const previousValues = result.previousValues || [];
-    previousValues.push({
-      value: result.value,
-      date: new Date(),
-      amendedBy: userId,
-      reason: dto.amendmentReason,
-    });
+      const qb = resultRepo
+        .createQueryBuilder('lr')
+        .setLock('pessimistic_write')
+        .where('lr.id = :id', { id });
+      if (tenantId) qb.andWhere('lr.tenant_id = :tenantId', { tenantId });
+      const result = await qb.getOne();
+      if (!result) throw new NotFoundException('Result not found');
 
-    result.value = dto.newValue;
-    if (dto.numericValue !== undefined) result.numericValue = dto.numericValue;
+      // Store previous value (append to history acquired under the lock)
+      const previousValues = result.previousValues || [];
+      previousValues.push({
+        value: result.value,
+        date: new Date(),
+        amendedBy: userId,
+        reason: dto.amendmentReason,
+      });
 
-    // Recalculate abnormal flag if numericValue changed
-    if (
-      dto.numericValue !== undefined &&
-      result.referenceMin !== undefined &&
-      result.referenceMax !== undefined
-    ) {
-      let critLow: number | undefined;
-      let critHigh: number | undefined;
-      const sample = await this.getSample(result.sampleId, tenantId);
-      if (sample.labTest?.referenceRanges && result.parameter) {
-        const refRange = (sample.labTest.referenceRanges as any[]).find(
-          (r: any) => r.parameter === result.parameter,
-        );
-        if (refRange) {
-          critLow = refRange.criticalLow !== undefined ? Number(refRange.criticalLow) : undefined;
-          critHigh =
-            refRange.criticalHigh !== undefined ? Number(refRange.criticalHigh) : undefined;
+      result.value = dto.newValue;
+      if (dto.numericValue !== undefined) result.numericValue = dto.numericValue;
+
+      // Recalculate abnormal flag if numericValue changed
+      if (
+        dto.numericValue !== undefined &&
+        result.referenceMin !== undefined &&
+        result.referenceMax !== undefined
+      ) {
+        let critLow: number | undefined;
+        let critHigh: number | undefined;
+        const sample = await this.getSample(result.sampleId, tenantId);
+        if (sample.labTest?.referenceRanges && result.parameter) {
+          const refRange = (sample.labTest.referenceRanges as any[]).find(
+            (r: any) => r.parameter === result.parameter,
+          );
+          if (refRange) {
+            critLow = refRange.criticalLow !== undefined ? Number(refRange.criticalLow) : undefined;
+            critHigh =
+              refRange.criticalHigh !== undefined ? Number(refRange.criticalHigh) : undefined;
+          }
         }
+        result.abnormalFlag = this.calculateAbnormalFlag(
+          dto.numericValue,
+          result.referenceMin,
+          result.referenceMax,
+          critLow,
+          critHigh,
+        );
       }
-      result.abnormalFlag = this.calculateAbnormalFlag(
-        dto.numericValue,
-        result.referenceMin,
-        result.referenceMax,
-        critLow,
-        critHigh,
+
+      result.amendmentReason = dto.amendmentReason;
+      result.previousValues = previousValues;
+      result.status = ResultStatus.AMENDED;
+
+      const savedResult = await resultRepo.save(result);
+      this.logger.warn(
+        `Lab result amended: ${id} by user ${userId}, reason: ${dto.amendmentReason}`,
       );
+
+      // Re-flag (or bump) critical-result alert if the amendment moved into a
+      // critical band. Idempotent: flag() de-dupes by (resourceType,resourceId).
+      try {
+        const sev = this.toCriticalSeverity(savedResult.abnormalFlag);
+        if (sev) {
+          const sample = await this.getSample(savedResult.sampleId, tenantId);
+          if (sample?.order) {
+            await this.criticalResultsService.flag({
+              resourceType: 'lab',
+              resourceId: savedResult.id,
+              orderId: sample.orderId,
+              patientId: sample.patientId || '',
+              encounterId: sample.order.encounterId,
+              severity: sev,
+              summary: `[AMENDED] ${savedResult.parameter || 'Lab result'}: ${savedResult.value ?? ''}${savedResult.unit ? ' ' + savedResult.unit : ''} (${savedResult.abnormalFlag})`,
+              flaggedById: userId,
+              assignedToId: sample.order.orderedById,
+              tenantId,
+            });
+          }
+        }
+      } catch (e) {
+        this.logger.warn(`Failed to flag amended critical result: ${e.message}`);
+      }
+
+      return savedResult;
+    });
+  }
+
+  private toCriticalSeverity(
+    flag?: AbnormalFlag,
+  ): 'critical' | 'critical_low' | 'critical_high' | 'abnormal' | null {
+    switch (flag) {
+      case AbnormalFlag.CRITICAL_LOW:
+        return 'critical_low';
+      case AbnormalFlag.CRITICAL_HIGH:
+        return 'critical_high';
+      case AbnormalFlag.ABNORMAL:
+        return 'abnormal';
+      default:
+        return null;
     }
-
-    result.amendmentReason = dto.amendmentReason;
-    result.previousValues = previousValues;
-    result.status = ResultStatus.AMENDED;
-
-    const savedResult = await this.resultRepo.save(result);
-    this.logger.warn(`Lab result amended: ${id} by user ${userId}, reason: ${dto.amendmentReason}`);
-    return savedResult;
   }
 
   // ========== LAB QUEUE & DASHBOARD ==========

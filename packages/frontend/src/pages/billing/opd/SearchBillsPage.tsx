@@ -35,7 +35,7 @@ import PrintFormatSelector from '../../../components/PrintFormatSelector';
 import { asList } from '../../../utils/unwrapResponse';
 
 type BillStatus = 'paid' | 'pending' | 'partial' | 'cancelled';
-type PaymentMethod = 'cash' | 'card' | 'mobile_money' | 'insurance';
+import type { PaymentMethod } from '../../../shared/payment-methods';
 
 interface Bill {
   id: string;

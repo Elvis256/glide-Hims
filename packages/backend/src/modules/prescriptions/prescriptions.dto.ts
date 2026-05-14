@@ -41,6 +41,15 @@ class PrescriptionItemDto {
   instructions?: string;
 }
 
+export class SafetyOverrideDto {
+  @IsString()
+  reason: string;
+
+  @IsOptional()
+  @IsUUID()
+  cosignerId?: string;
+}
+
 export class CreatePrescriptionDto {
   @IsUUID()
   encounterId: string;
@@ -57,6 +66,15 @@ export class CreatePrescriptionDto {
   @IsString()
   @IsOptional()
   prescriberSignature?: string;
+
+  /**
+   * Required if prior call returned 409 SAFETY_BLOCKED. Records an audit
+   * trail row in `prescription_safety_overrides`.
+   */
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => SafetyOverrideDto)
+  safetyOverride?: SafetyOverrideDto;
 }
 
 export class DispenseItemDto {

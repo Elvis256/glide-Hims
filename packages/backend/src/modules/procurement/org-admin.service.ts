@@ -78,14 +78,42 @@ export class OrgAdminService {
   }
 
   async createPosition(data: Partial<Position>, tenantId: string) {
-    const p = this.positionRepo.create({ ...data, tenantId } as any);
+    const name = String((data as any)?.name || '').trim();
+    if (!name) throw new BadRequestException('Position name is required');
+    const code = String((data as any)?.code || '').trim() || null;
+    const rank = Number((data as any)?.rank ?? 0) || 0;
+    if (code) {
+      const dupCode = await this.positionRepo.findOne({
+        where: { tenantId, code } as any,
+      });
+      if (dupCode) throw new BadRequestException(`Position code "${code}" already exists`);
+    }
+    const dupName = await this.positionRepo.findOne({
+      where: { tenantId, name } as any,
+    });
+    if (dupName) throw new BadRequestException(`Position "${name}" already exists`);
+    const p = this.positionRepo.create({
+      ...(data as any),
+      name,
+      code,
+      rank,
+      tenantId,
+    } as any);
     return this.positionRepo.save(p as any);
   }
 
   async updatePosition(id: string, data: Partial<Position>, tenantId: string) {
     const p = await this.positionRepo.findOne({ where: { id, tenantId } as any });
     if (!p) throw new NotFoundException('Position not found');
-    Object.assign(p, data);
+    const next: any = { ...data };
+    if (next.name !== undefined) {
+      next.name = String(next.name || '').trim();
+      if (!next.name) throw new BadRequestException('Position name is required');
+    }
+    if (next.code !== undefined) {
+      next.code = String(next.code || '').trim() || null;
+    }
+    Object.assign(p, next);
     return this.positionRepo.save(p);
   }
 

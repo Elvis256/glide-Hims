@@ -20,8 +20,12 @@ interface Props {
 
 export default function FacilitySwitcher({ onlyIfMultiSite = true }: Props) {
   const { user } = useAuthStore();
-  const userRoles = user?.roles || [];
-  const canSwitch = userRoles.includes('Super Admin') || userRoles.includes('System Administrator');
+  const userRoles = (user?.roles || []) as Array<string | { role?: string; name?: string }>;
+  const hasRole = (r: string) => userRoles.some((ur: any) => ur === r || ur?.role === r || ur?.name === r);
+  const canSwitch =
+    !!user?.isSystemAdmin ||
+    hasRole('Super Admin') ||
+    hasRole('Administrator');
 
   const [facilities, setFacilities] = useState<Facility[]>([]);
   const [active, setActive] = useState<Facility | null>(null);

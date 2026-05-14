@@ -42,6 +42,8 @@ import {
 import { BillingService } from '../billing/billing.service';
 import { BedBoardService } from './bed-board.service';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
+import { VitalsService } from '../vitals/vitals.service';
+import { VitalSource } from '../../database/entities/vital.entity';
 
 @Injectable()
 export class IpdService {
@@ -63,6 +65,7 @@ export class IpdService {
     private billingService: BillingService,
     private bedBoardService: BedBoardService,
     private auditLogService: AuditLogService,
+    private vitalsService: VitalsService,
   ) {}
 
   // ========== WARD MANAGEMENT ==========
@@ -611,6 +614,30 @@ export class IpdService {
     this.logger.log(
       `Nursing note created: ${saved.id} type ${dto.type} for admission ${dto.admissionId} by user ${userId}`,
     );
+
+    // Mirror inline `vitals` blob into the canonical `vitals` table so
+    // ward-round vitals show on the patient timeline + drive critical alerts.
+    if (dto.vitals) {
+      await this.vitalsService.recordFromSource({
+        source: VitalSource.IPD_WARD_ROUND,
+        sourceRefId: saved.id,
+        patientId: admission.patientId,
+        encounterId: admission.encounterId ?? null,
+        recordedById: userId,
+        tenantId,
+        recordedAt: saved.noteTime ?? new Date(),
+        vitals: {
+          temperature: dto.vitals.temperature,
+          pulse: dto.vitals.pulse,
+          bpSystolic: dto.vitals.bpSystolic,
+          bpDiastolic: dto.vitals.bpDiastolic,
+          respiratoryRate: dto.vitals.respiratoryRate,
+          oxygenSaturation: dto.vitals.oxygenSaturation,
+          painScale: dto.vitals.painLevel,
+        },
+      });
+    }
+
     return saved;
   }
 

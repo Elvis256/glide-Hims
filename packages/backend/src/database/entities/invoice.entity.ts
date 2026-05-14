@@ -199,6 +199,10 @@ export enum PaymentMethod {
   BANK_TRANSFER = 'bank_transfer',
   INSURANCE = 'insurance',
   CHEQUE = 'cheque',
+  MEMBERSHIP = 'membership',
+  HOSPITAL_SCHEME = 'hospital_scheme',
+  STAFF = 'staff',
+  CREDIT = 'credit',
 }
 
 export enum PaymentStatus {

@@ -55,7 +55,7 @@ export class WebhookDispatcherService {
     return rows.length;
   }
 
-  @Cron(CronExpression.EVERY_MINUTE)
+  @Cron(CronExpression.EVERY_MINUTE, { name: 'saas-webhook-dispatcher' })
   async cronTick(): Promise<void> {
     if (!this.cronEnabled) return;
     try { await this.flush(); }

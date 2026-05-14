@@ -25,6 +25,7 @@ import {
 import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { FinanceService } from '../finance/finance.service';
+import { CriticalResultsService } from '../critical-results/critical-results.service';
 
 @Injectable()
 export class RadiologyService {
@@ -43,6 +44,7 @@ export class RadiologyService {
     private notificationsService: NotificationsService,
     @Inject(forwardRef(() => FinanceService))
     private financeService: FinanceService,
+    private criticalResultsService: CriticalResultsService,
   ) {}
 
   // ============ MODALITIES ============
@@ -380,6 +382,33 @@ export class RadiologyService {
       }
     } catch (e) {
       this.logger.warn(`Failed to send radiology notification: ${e.message}`);
+    }
+
+    // Closed-loop critical-result acknowledgement (radiology)
+    try {
+      const isCrit = dto.isCritical || dto.findingCategory === FindingCategory.CRITICAL;
+      const isAbnormal = dto.findingCategory === FindingCategory.ABNORMAL;
+      if ((isCrit || isAbnormal) && order.orderedById) {
+        await this.criticalResultsService.flag({
+          resourceType: 'radiology',
+          resourceId: result.id,
+          orderId: order.id,
+          patientId: order.patientId,
+          encounterId: (order as any).encounterId,
+          severity: isCrit ? 'critical' : 'abnormal',
+          summary: `${order.studyType || 'Imaging'}: ${dto.impression || dto.findings || 'Critical finding'}`.slice(0, 500),
+          flaggedById: userId,
+          assignedToId: order.orderedById,
+          tenantId,
+        });
+        if (isCrit) {
+          result.criticalNotified = true;
+          result.criticalNotifiedAt = new Date();
+          await this.resultRepo.save(result);
+        }
+      }
+    } catch (e) {
+      this.logger.warn(`Failed to flag critical radiology result: ${e.message}`);
     }
 
     return result;

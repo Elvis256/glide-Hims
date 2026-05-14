@@ -494,7 +494,7 @@ export class PosRetailService {
   }
 
   /** Cron: remove expired held sales */
-  @Cron(CronExpression.EVERY_HOUR)
+  @Cron(CronExpression.EVERY_HOUR, { name: 'pos-purge-expired-holds' })
   async purgeExpiredHolds(): Promise<number> {
     const result = await this.heldSaleRepo
       .createQueryBuilder()

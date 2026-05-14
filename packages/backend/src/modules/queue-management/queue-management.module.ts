@@ -13,6 +13,7 @@ import { QueueManagementService } from './queue-management.service';
 import { QueueManagementController } from './queue-management.controller';
 import { AfricasTalkingService } from '../integrations/africas-talking.service';
 import { DoctorFeesModule } from '../doctor-fees/doctor-fees.module';
+import { InAppNotificationsModule } from '../in-app-notifications/in-app-notifications.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { DoctorFeesModule } from '../doctor-fees/doctor-fees.module';
     ]),
     HttpModule.register({ timeout: 10000 }),
     DoctorFeesModule,
+    InAppNotificationsModule,
   ],
   controllers: [QueueManagementController],
   providers: [QueueManagementService, AfricasTalkingService],

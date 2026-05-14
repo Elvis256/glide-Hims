@@ -101,9 +101,10 @@ export class PatientsController {
 
   @Get('documents/:documentId/download')
   @AuthWithPermissions('patients.read')
-  @ApiOperation({ summary: 'Download document file' })
+  @ApiOperation({ summary: 'Download or inline-preview document file' })
   async downloadDocument(
     @Param('documentId', ParseUUIDPipe) documentId: string,
+    @Query('inline') inline: string | undefined,
     @Req() req: Request,
     @Res() res: Response,
   ) {
@@ -133,8 +134,10 @@ export class PatientsController {
       .replace(/\.{2,}/g, '.') // collapse consecutive dots
       .slice(0, 200); // cap length
 
+    const disposition =
+      inline === '1' || inline === 'true' ? 'inline' : 'attachment';
     res.setHeader('Content-Type', document.fileType || 'application/octet-stream');
-    res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
+    res.setHeader('Content-Disposition', `${disposition}; filename="${safeName}"`);
 
     const fileStream = createReadStream(document.filePath);
     fileStream.pipe(res);

@@ -27,7 +27,9 @@ import {
 } from 'lucide-react';
 
 type PaymentStatus = 'pending' | 'scheduled' | 'processing' | 'completed' | 'failed';
-type PaymentMethod = 'bank_transfer' | 'check' | 'cash';
+import type { PaymentMethod } from '../../../shared/payment-methods';
+import { normalisePaymentMethod, VENDOR_PAYMENT_METHODS } from '../../../shared/payment-methods';
+import PaymentMethodPicker from '../../../components/PaymentMethodPicker';
 
 interface Payment {
   id: string;
@@ -73,16 +75,9 @@ const mapBackendStatus = (status: string): PaymentStatus => {
   return statusMap[status] || 'pending';
 };
 
-// Map backend payment method to frontend
+// Map backend payment method to frontend (handles legacy slugs like credit_card)
 const mapBackendPaymentMethod = (method: string): PaymentMethod | null => {
-  const methodMap: Record<string, PaymentMethod> = {
-    bank_transfer: 'bank_transfer',
-    cash: 'cash',
-    cheque: 'check',
-    mobile_money: 'bank_transfer',
-    credit_card: 'bank_transfer',
-  };
-  return methodMap[method] || null;
+  return normalisePaymentMethod(method);
 };
 
 // Calculate aging from due date
@@ -102,10 +97,12 @@ const statusConfig: Record<PaymentStatus, { label: string; color: string; icon: 
   failed: { label: 'Failed', color: 'bg-red-100 text-red-700', icon: AlertCircle },
 };
 
-const paymentMethodConfig: Record<PaymentMethod, { label: string; icon: React.ElementType }> = {
+const paymentMethodConfig: Partial<Record<PaymentMethod, { label: string; icon: React.ElementType }>> = {
   bank_transfer: { label: 'Bank Transfer', icon: Landmark },
-  check: { label: 'Check', icon: FileText },
+  cheque: { label: 'Cheque', icon: FileText },
   cash: { label: 'Cash', icon: Banknote },
+  mobile_money: { label: 'Mobile Money', icon: Banknote },
+  card: { label: 'Card', icon: FileText },
 };
 
 export default function VendorPaymentsPage() {
@@ -232,7 +229,7 @@ export default function VendorPaymentsPage() {
       id: selectedPayment.id,
       data: {
         bankReference: paymentFormData.method === 'bank_transfer' ? paymentFormData.reference : undefined,
-        chequeNumber: paymentFormData.method === 'check' ? paymentFormData.reference : undefined,
+        chequeNumber: paymentFormData.method === 'cheque' ? paymentFormData.reference : undefined,
       },
     });
   };
@@ -641,26 +638,11 @@ export default function VendorPaymentsPage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Payment Method</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {(Object.keys(paymentMethodConfig) as PaymentMethod[]).map((method) => {
-                    const config = paymentMethodConfig[method];
-                    const Icon = config.icon;
-                    return (
-                      <button
-                        key={method}
-                        onClick={() => setPaymentFormData({ ...paymentFormData, method })}
-                        className={`p-3 border rounded-lg flex flex-col items-center gap-1 ${
-                          paymentFormData.method === method ? 'border-blue-500 bg-blue-50' : 'hover:bg-gray-50'
-                        }`}
-                      >
-                        <Icon className={`w-5 h-5 ${paymentFormData.method === method ? 'text-blue-600' : 'text-gray-400'}`} />
-                        <span className={`text-xs ${paymentFormData.method === method ? 'text-blue-600' : 'text-gray-600'}`}>
-                          {config.label}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
+                <PaymentMethodPicker
+                  value={paymentFormData.method as PaymentMethod}
+                  onChange={(method) => setPaymentFormData({ ...paymentFormData, method })}
+                  allow={VENDOR_PAYMENT_METHODS}
+                />
               </div>
 
               <div>

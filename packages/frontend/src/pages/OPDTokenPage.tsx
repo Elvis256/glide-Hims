@@ -43,6 +43,7 @@ import {
   FlaskConical,
   Pill,
   MessageSquare,
+  Wallet,
 } from 'lucide-react';
 
 interface Doctor {
@@ -70,8 +71,9 @@ interface InsuranceProviderInfo {
 }
 
 
-// Enhanced payment types
-type PaymentType = 'cash' | 'mobile_money' | 'card' | 'membership' | 'insurance' | 'hospital_scheme' | 'staff';
+// Use canonical shared payment-method type for the entire platform.
+import type { PaymentMethod as PaymentType } from '../shared/payment-methods';
+import PaymentMethodPicker from '../components/PaymentMethodPicker';
 
 export default function OPDTokenPage() {
   const navigate = useNavigate();
@@ -266,6 +268,71 @@ export default function OPDTokenPage() {
     ) || null;
   }, [selectedPatient, todayQueue]);
 
+  // Derived queue analytics — single source of truth so counters & banners agree.
+  const NON_CLINICAL_DEPT_PATTERN =
+    /\b(admin|administration|procure|procurement|it|i\.?t\.?|information\s*tech|hr|human\s*resources?|finance|accounting?|billing\s*office|management|directors?|board)\b/i;
+  const clinicalDepartments = useMemo(
+    () =>
+      (departments || []).filter(
+        (d) => d.status !== 'inactive' && !NON_CLINICAL_DEPT_PATTERN.test(d.name || ''),
+      ),
+    [departments],
+  );
+
+  const queueAnalytics = useMemo(() => {
+    const list = todayQueue || [];
+    const byStatus = (s: string | string[]) =>
+      list.filter((t: any) => (Array.isArray(s) ? s : [s]).includes(t.status));
+    const pendingPayment = byStatus('pending_payment');
+    const waiting = byStatus('waiting');
+    const called = byStatus('called');
+    const inService = byStatus('in_service');
+    const completed = byStatus('completed');
+    const active = [...pendingPayment, ...waiting, ...called, ...inService];
+    const sortedByTicket = [...list].sort((a: any, b: any) => {
+      const numA = parseInt(String(a.ticketNumber).replace(/\D/g, ''), 10) || 0;
+      const numB = parseInt(String(b.ticketNumber).replace(/\D/g, ''), 10) || 0;
+      return numB - numA;
+    });
+    const lastIssued = sortedByTicket[0] || null;
+    const nowServing = called[0] || inService[0] || null;
+    // Estimated wait = (waiting + pending payment) × avg consultation (15m)
+    // Cap at backend value if reasonable; otherwise compute from queue length.
+    const avgPerPatient = 15;
+    const computedWait = (waiting.length + pendingPayment.length) * avgPerPatient;
+    const rawBackendWait = queueStats?.averageWaitMinutes;
+    const estimatedWait =
+      rawBackendWait && rawBackendWait > 0 && rawBackendWait < 120
+        ? Math.round(rawBackendWait)
+        : computedWait;
+    return {
+      pendingPayment,
+      waiting,
+      called,
+      inService,
+      completed,
+      active,
+      totalToday: list.length,
+      lastIssued,
+      nowServing,
+      estimatedWait,
+    };
+  }, [todayQueue, queueStats]);
+
+  // Patient age helper
+  const patientAge = useMemo(() => {
+    if (!selectedPatient?.dateOfBirth) return null;
+    const dob = new Date(selectedPatient.dateOfBirth);
+    if (Number.isNaN(dob.getTime())) return null;
+    const diff = Date.now() - dob.getTime();
+    const years = Math.floor(diff / (365.25 * 24 * 60 * 60 * 1000));
+    if (years < 2) {
+      const months = Math.floor(diff / (30.44 * 24 * 60 * 60 * 1000));
+      return `${months}mo`;
+    }
+    return `${years}y`;
+  }, [selectedPatient]);
+
   // Fetch doctors on duty (from doctor-duty service)
   const { data: doctorsOnDuty, isLoading: doctorsLoading } = useQuery({
     queryKey: ['doctors-on-duty'],
@@ -392,6 +459,21 @@ export default function OPDTokenPage() {
       setError(errorMessage);
     }
   };
+
+  // Keyboard shortcut: Ctrl/⌘+Enter to issue token from anywhere on the page
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        if (selectedPatient && !existingQueueEntry && !issueTokenMutation.isPending) {
+          e.preventDefault();
+          handleIssueToken();
+        }
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPatient, existingQueueEntry, chiefComplaint, selectedDepartment, selectedDoctor, visitType, conditionFlags, paymentType]);
   
   // Handle biometric verification for scheme/staff payments
   const handleStartBiometricVerification = async () => {
@@ -507,9 +589,14 @@ export default function OPDTokenPage() {
           </div>
           
           <h2 className="text-2xl font-bold text-gray-900 mb-1">Token Issued!</h2>
-          
-          {/* Queue Status Badge — changes based on payment type */}
-          {['cash', 'mobile_money', 'card'].includes(paymentType) ? (
+
+          {/*
+           * Truth source = backend-issued queue status:
+           *   pending_payment → patient must clear billing counter first (pre-pay flows)
+           *   anything else (waiting/called/in_service) → patient is already in queue
+           *     (post-pay flows, or coverage methods that bypass the counter)
+           */}
+          {issuedToken.status === 'pending_payment' ? (
             <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-sm font-medium mb-4">
               <Banknote className="w-4 h-4" />
               Proceed to Billing Counter to pay
@@ -557,16 +644,34 @@ export default function OPDTokenPage() {
             </div>
           </div>
 
-          {/* Payment Instructions Section */}
-          {['cash', 'mobile_money', 'card'].includes(paymentType) && (
+          {/* Payment Instructions Section — only when backend marked the entry pending_payment. */}
+          {issuedToken.status === 'pending_payment' && (
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4 text-center">
               <Banknote className="w-8 h-8 text-amber-600 mx-auto mb-2" />
               <p className="text-sm font-semibold text-amber-800 mb-1">Billing Required</p>
               <p className="text-xs text-amber-700 mb-3">
-                Invoice <span className="font-mono font-medium">{(issuedToken as any).invoiceNumber || ''}</span> for UGX {Number((issuedToken as any).invoiceAmount || 50000).toLocaleString()} has been created.
+                Invoice <span className="font-mono font-medium">{(issuedToken as any).invoiceNumber || ''}</span> for UGX {Number((issuedToken as any).invoiceAmount || 0).toLocaleString()} has been created.
               </p>
               <p className="text-xs text-amber-600">
                 Direct patient to <strong>Billing Counter</strong> to pay. Patient will join the waiting queue after payment is confirmed.
+              </p>
+            </div>
+          )}
+
+          {/* Post-pay flow with a counter-payable method — let cashier know charges accrue to a checkout bill. */}
+          {issuedToken.status !== 'pending_payment' && ['cash', 'mobile_money', 'card'].includes(paymentType) && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4 text-center">
+              <Wallet className="w-8 h-8 text-blue-600 mx-auto mb-2" />
+              <p className="text-sm font-semibold text-blue-800 mb-1">Pay at Checkout</p>
+              {(issuedToken as any).invoiceNumber ? (
+                <p className="text-xs text-blue-700 mb-1">
+                  Consultation logged to invoice{' '}
+                  <span className="font-mono font-medium">{(issuedToken as any).invoiceNumber}</span>
+                  {' '}(UGX {Number((issuedToken as any).invoiceAmount || 0).toLocaleString()}).
+                </p>
+              ) : null}
+              <p className="text-xs text-blue-700">
+                Consultation, labs and pharmacy will be settled together when the patient checks out.
               </p>
             </div>
           )}
@@ -596,7 +701,7 @@ export default function OPDTokenPage() {
           )}
 
           <p className="text-sm text-gray-500 mb-4">
-            {['cash', 'mobile_money', 'card'].includes(paymentType)
+            {issuedToken.status === 'pending_payment'
               ? 'Patient will join waiting queue after payment'
               : 'Please wait for your number to be called'}
           </p>
@@ -649,7 +754,37 @@ export default function OPDTokenPage() {
                     </div>
                     <div>
                       <p className="font-medium text-gray-900 text-sm">{selectedPatient.fullName}</p>
-                      <p className="text-xs text-gray-500">{selectedPatient.mrn}</p>
+                      <div className="flex items-center gap-2 text-xs text-gray-500 mt-0.5 flex-wrap">
+                        <span>{selectedPatient.mrn}</span>
+                        {patientAge && (
+                          <>
+                            <span className="text-gray-300">·</span>
+                            <span>{patientAge}</span>
+                          </>
+                        )}
+                        {selectedPatient.gender && (
+                          <>
+                            <span className="text-gray-300">·</span>
+                            <span className="capitalize">{selectedPatient.gender}</span>
+                          </>
+                        )}
+                        {selectedPatient.phone && (
+                          <>
+                            <span className="text-gray-300">·</span>
+                            <span className="font-mono">{selectedPatient.phone}</span>
+                          </>
+                        )}
+                        {selectedPatient.bloodGroup && (
+                          <span className="px-1.5 py-0.5 bg-red-50 text-red-600 rounded">
+                            {selectedPatient.bloodGroup}
+                          </span>
+                        )}
+                      </div>
+                      {selectedPatient.allergies && (
+                        <p className="text-[10px] text-amber-700 mt-1 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" /> Allergies: {selectedPatient.allergies}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <button onClick={() => { setSelectedPatient(null); setSearchParams({}); setError(null); }} className="text-xs text-blue-600 hover:underline">
@@ -756,7 +891,7 @@ export default function OPDTokenPage() {
               >
                 General OPD <span className="text-gray-400">(no dept)</span>
               </button>
-              {(departments || []).filter(d => d.status !== 'inactive').map((dept) => (
+              {clinicalDepartments.map((dept) => (
                 <button
                   key={dept.id}
                   onClick={() => { setSelectedDepartment(dept.id); setSelectedDoctor('any'); }}
@@ -771,6 +906,12 @@ export default function OPDTokenPage() {
               ))}
               {(!departments || departments.length === 0) && (
                 <p className="text-xs text-gray-400 col-span-2 text-center py-4">No departments configured</p>
+              )}
+              {departments && departments.length > 0 && clinicalDepartments.length === 0 && (
+                <p className="text-xs text-gray-400 col-span-2 text-center py-2">
+                  No clinical departments — use General OPD or set up departments under
+                  <Link to="/admin/hr/organisation" className="ml-1 text-blue-600 hover:underline">HR · Organisation</Link>
+                </p>
               )}
             </div>
           </div>
@@ -981,19 +1122,48 @@ export default function OPDTokenPage() {
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-sm font-semibold">Today's Queue</h2>
               <div className="flex items-center gap-2 text-xs text-gray-500">
-                <span title="Total today">
-                  <span className="font-medium text-gray-700">{todayQueue?.length || 0}</span> total
+                <span title="Active in queue today (waiting + serving + billing)">
+                  <span className="font-medium text-gray-700">{queueAnalytics.active.length}</span> active
+                  {queueAnalytics.totalToday > queueAnalytics.active.length && (
+                    <span className="text-gray-400"> / {queueAnalytics.totalToday}</span>
+                  )}
                 </span>
                 <span className="text-gray-300">|</span>
-                <span title="Average wait time">
-                  ⏱ {queueStats?.averageWaitMinutes ? `~${Math.round(queueStats.averageWaitMinutes)}m` : '~15m'}
+                <span title={queueAnalytics.estimatedWait > 0 ? `Based on ${queueAnalytics.waiting.length + queueAnalytics.pendingPayment.length} ahead × ~15m` : 'No wait'}>
+                  ⏱ {queueAnalytics.estimatedWait > 0 ? `~${queueAnalytics.estimatedWait}m` : '0m'}
                 </span>
                 <span className="text-gray-300">|</span>
                 <span title="Now serving" className="font-mono text-blue-600 font-medium">
-                  #{todayQueue?.find(t => t.status === 'called')?.ticketNumber || '---'}
+                  #{queueAnalytics.nowServing?.ticketNumber || '---'}
                 </span>
               </div>
             </div>
+
+            {/* Currently-serving banner */}
+            {queueAnalytics.nowServing && (
+              <div className="mb-2 px-2 py-1.5 bg-blue-50 border border-blue-200 rounded flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-mono font-bold text-blue-700">#{queueAnalytics.nowServing.ticketNumber}</span>
+                  <span className="truncate text-gray-700">
+                    {queueAnalytics.nowServing.patient?.fullName || 'Patient'}
+                  </span>
+                </div>
+                <span className="text-[10px] uppercase tracking-wide text-blue-600 font-medium">
+                  {queueAnalytics.nowServing.status === 'called' ? 'Called' : 'In service'}
+                </span>
+              </div>
+            )}
+
+            {/* Last issued ticket */}
+            {queueAnalytics.lastIssued && (
+              <div className="mb-2 text-[11px] text-gray-500 flex items-center justify-between">
+                <span>Last issued</span>
+                <span className="font-mono font-medium text-gray-700">
+                  #{queueAnalytics.lastIssued.ticketNumber}
+                </span>
+              </div>
+            )}
+
             <div className="space-y-1.5 flex-shrink-0">
               <div className="flex items-center justify-between px-2 py-1 bg-amber-50 rounded">
                 <div className="flex items-center gap-1.5">
@@ -1001,7 +1171,7 @@ export default function OPDTokenPage() {
                   <span className="text-xs text-amber-700">At Billing</span>
                 </div>
                 <span className="text-base font-bold text-amber-700">
-                  {todayQueue?.filter((t) => t.status === 'pending_payment').length || 0}
+                  {queueAnalytics.pendingPayment.length}
                 </span>
               </div>
               <div className="flex items-center justify-between px-2 py-1 bg-yellow-50 rounded">
@@ -1010,7 +1180,7 @@ export default function OPDTokenPage() {
                   <span className="text-xs text-yellow-700">Waiting</span>
                 </div>
                 <span className="text-base font-bold text-yellow-700">
-                  {queueStats?.waiting || todayQueue?.filter((t) => t.status === 'waiting').length || 0}
+                  {queueAnalytics.waiting.length}
                 </span>
               </div>
               <div className="flex items-center justify-between px-2 py-1 bg-blue-50 rounded">
@@ -1019,7 +1189,7 @@ export default function OPDTokenPage() {
                   <span className="text-xs text-blue-700">Serving</span>
                 </div>
                 <span className="text-base font-bold text-blue-700">
-                  {queueStats?.inService || todayQueue?.filter((t) => t.status === 'in_service').length || 0}
+                  {queueAnalytics.inService.length + queueAnalytics.called.length}
                 </span>
               </div>
               <div className="flex items-center justify-between px-2 py-1 bg-green-50 rounded">
@@ -1028,7 +1198,7 @@ export default function OPDTokenPage() {
                   <span className="text-xs text-green-700">Done</span>
                 </div>
                 <span className="text-base font-bold text-green-700">
-                  {queueStats?.completed || todayQueue?.filter((t) => t.status === 'completed').length || 0}
+                  {queueAnalytics.completed.length}
                 </span>
               </div>
             </div>
@@ -1037,19 +1207,28 @@ export default function OPDTokenPage() {
             <div className="mt-2 pt-2 border-t">
               <p className="text-xs text-gray-500 mb-1">Patients in Queue:</p>
               <div className="overflow-y-auto space-y-1 max-h-[100px]">
-                {todayQueue && todayQueue.filter(t => t.status === 'pending_payment' || t.status === 'waiting' || t.status === 'called').length > 0 ? (
-                  todayQueue
-                    .filter(t => t.status === 'pending_payment' || t.status === 'waiting' || t.status === 'called')
+                {queueAnalytics.active.length > 0 ? (
+                  queueAnalytics.active
                     .slice(0, 10)
                     .map((entry) => (
                       <div 
                         key={entry.id} 
                         className={`flex items-center justify-between p-1.5 rounded text-xs group ${
-                          entry.status === 'called' ? 'bg-blue-100' : entry.status === 'pending_payment' ? 'bg-amber-50' : 'bg-gray-50 hover:bg-gray-100'
+                          entry.status === 'called' || entry.status === 'in_service'
+                            ? 'bg-blue-100'
+                            : entry.status === 'pending_payment'
+                            ? 'bg-amber-50'
+                            : 'bg-gray-50 hover:bg-gray-100'
                         }`}
                       >
                         <div className="flex items-center gap-2 min-w-0 flex-1">
-                          <span className={`font-mono font-bold ${entry.status === 'called' ? 'text-blue-700' : entry.status === 'pending_payment' ? 'text-amber-700' : 'text-gray-700'}`}>
+                          <span className={`font-mono font-bold ${
+                            entry.status === 'called' || entry.status === 'in_service'
+                              ? 'text-blue-700'
+                              : entry.status === 'pending_payment'
+                              ? 'text-amber-700'
+                              : 'text-gray-700'
+                          }`}>
                             {entry.ticketNumber}
                           </span>
                           <span className="truncate text-gray-600">
@@ -1060,6 +1239,11 @@ export default function OPDTokenPage() {
                           {entry.status === 'called' && (
                             <span className="text-xs bg-blue-600 text-white px-1.5 py-0.5 rounded">
                               Now
+                            </span>
+                          )}
+                          {entry.status === 'in_service' && (
+                            <span className="text-xs bg-blue-500 text-white px-1.5 py-0.5 rounded">
+                              Serving
                             </span>
                           )}
                           {entry.status === 'pending_payment' && (
@@ -1080,9 +1264,9 @@ export default function OPDTokenPage() {
                 ) : (
                   <p className="text-xs text-gray-400 text-center py-2">No patients waiting</p>
                 )}
-                {todayQueue && todayQueue.filter(t => t.status === 'waiting').length > 10 && (
+                {queueAnalytics.active.length > 10 && (
                   <p className="text-xs text-gray-400 text-center">
-                    +{todayQueue.filter(t => t.status === 'waiting').length - 10} more...
+                    +{queueAnalytics.active.length - 10} more...
                   </p>
                 )}
               </div>
@@ -1094,79 +1278,14 @@ export default function OPDTokenPage() {
             <div className="card p-3 flex-shrink-0">
               <h2 className="text-sm font-semibold mb-2">4. Payment Method</h2>
               
-              {/* Primary payment options */}
-              <div className="grid grid-cols-3 gap-1.5 mb-3">
-                <button
-                  type="button"
-                  onClick={() => setPaymentType('cash')}
-                  className={`py-2 px-2 text-xs font-medium rounded-lg transition-colors flex flex-col items-center gap-1 ${
-                    paymentType === 'cash' ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  <Banknote className="w-4 h-4" />
-                  Cash
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPaymentType('mobile_money')}
-                  className={`py-2 px-2 text-xs font-medium rounded-lg transition-colors flex flex-col items-center gap-1 ${
-                    paymentType === 'mobile_money' ? 'bg-yellow-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  <Smartphone className="w-4 h-4" />
-                  Mobile
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPaymentType('card')}
-                  className={`py-2 px-2 text-xs font-medium rounded-lg transition-colors flex flex-col items-center gap-1 ${
-                    paymentType === 'card' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  <CreditCard className="w-4 h-4" />
-                  Card
-                </button>
-              </div>
-              
-              {/* Secondary payment options */}
-              <div className="grid grid-cols-4 gap-1 mb-3">
-                <button
-                  type="button"
-                  onClick={() => setPaymentType('membership')}
-                  className={`py-1.5 px-1 text-[10px] font-medium rounded transition-colors ${
-                    paymentType === 'membership' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  Member
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPaymentType('insurance')}
-                  className={`py-1.5 px-1 text-[10px] font-medium rounded transition-colors ${
-                    paymentType === 'insurance' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  Insurance
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPaymentType('hospital_scheme')}
-                  className={`py-1.5 px-1 text-[10px] font-medium rounded transition-colors ${
-                    paymentType === 'hospital_scheme' ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  Scheme
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPaymentType('staff')}
-                  className={`py-1.5 px-1 text-[10px] font-medium rounded transition-colors ${
-                    paymentType === 'staff' ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  Staff
-                </button>
-              </div>
+              {/* Canonical payment-method picker — driven by Admin → Finance → Payment Methods.
+                  Replaces the previous bespoke two-row chip grid so every payment surface
+                  (OPD, POS, billing, vendors) renders identical options. */}
+              <PaymentMethodPicker
+                value={paymentType}
+                onChange={(m) => setPaymentType(m)}
+                className="mb-3"
+              />
 
               {/* Mobile Money Options */}
               {paymentType === 'mobile_money' && (
@@ -1407,13 +1526,44 @@ export default function OPDTokenPage() {
                       placeholder={feePreview?.fee != null ? String(feePreview.fee) : (defaultConsultationFee != null ? String(defaultConsultationFee) : 'Configure default in Settings')}
                       className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
-                    {feePreview && (
-                      <p className="text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded px-2 py-1">
-                        Resolved: <strong>{feePreview.fee.toLocaleString()} UGX</strong> · {feePreview.source}
-                        {feePreview.feeMode === 'split' && ' (revenue-share)'}
-                        {feePreview.isFollowUp && ' · follow-up'}
-                      </p>
-                    )}
+                    {feePreview && (() => {
+                      const docName =
+                        availableDoctors.find((d) => d.id === selectedDoctor)?.name ||
+                        'Selected doctor';
+                      const empMap: Record<string, string> = {
+                        permanent: 'Permanent staff',
+                        visiting: 'Visiting consultant',
+                        locum: 'Locum',
+                        contract: 'Contract',
+                      };
+                      let basis = '';
+                      switch (feePreview.feeMode) {
+                        case 'flat':
+                          basis = `${docName}'s flat rate`;
+                          break;
+                        case 'percent_of_specialty':
+                          basis = `${docName} — % of specialty rate`;
+                          break;
+                        case 'split':
+                          basis = `${docName} — revenue share`;
+                          break;
+                        default:
+                          basis = feePreview.isFollowUp
+                            ? `${docName} — follow-up rate`
+                            : `${docName}'s rate`;
+                      }
+                      const empLabel = feePreview.employmentType
+                        ? empMap[feePreview.employmentType] || feePreview.employmentType
+                        : null;
+                      return (
+                        <p className="text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded px-2 py-1">
+                          Resolved: <strong>{feePreview.fee.toLocaleString()} UGX</strong>
+                          {' · '}{basis}
+                          {feePreview.isFollowUp && feePreview.feeMode !== undefined && ' · follow-up'}
+                          {empLabel && <span className="text-blue-600/70"> · {empLabel}</span>}
+                        </p>
+                      );
+                    })()}
                     {!feePreview && defaultConsultationFee == null && (
                       <p className="text-xs text-amber-600">
                         No default consultation fee configured. Set service <code>OPD-CONSULT</code> in the Service Catalog
@@ -1494,6 +1644,7 @@ export default function OPDTokenPage() {
             onClick={handleIssueToken}
             disabled={!selectedPatient || !!existingQueueEntry || issueTokenMutation.isPending}
             className="btn-primary py-3 flex items-center justify-center gap-2 disabled:opacity-50 mt-2 flex-shrink-0"
+            title="Tip: Ctrl/⌘+Enter to issue"
           >
             {issueTokenMutation.isPending ? (
               <Loader2 className="w-5 h-5 animate-spin" />
@@ -1501,6 +1652,11 @@ export default function OPDTokenPage() {
               <>
                 <Receipt className="w-5 h-5" />
                 {existingQueueEntry ? 'Already in Queue' : 'Issue Token'}
+                {selectedPatient && !existingQueueEntry && (
+                  <kbd className="hidden sm:inline ml-2 px-1.5 py-0.5 text-[10px] font-mono bg-white/20 border border-white/30 rounded">
+                    Ctrl+↵
+                  </kbd>
+                )}
               </>
             )}
           </button>

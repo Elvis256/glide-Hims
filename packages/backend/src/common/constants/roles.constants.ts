@@ -15,6 +15,10 @@ export const SYSTEM_ROLES = {
   ACCOUNTANT: 'Accountant',
   HR_MANAGER: 'HR Manager',
   RADIOLOGIST: 'Radiologist',
+  BIOMED_ENGINEER: 'Biomed Engineer',
+  FACILITY_MANAGER: 'Facility Manager',
+  AUDITOR: 'Auditor',
+  DEPT_HEAD: 'Department Head',
 } as const;
 
 export type SystemRole = (typeof SYSTEM_ROLES)[keyof typeof SYSTEM_ROLES];

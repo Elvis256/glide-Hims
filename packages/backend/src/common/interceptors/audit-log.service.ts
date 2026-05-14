@@ -117,6 +117,42 @@ export class AuditLogService {
     };
   }
 
+  /**
+   * Aggregate audit events that touch a given patient. Looks up:
+   *  - rows where entityType='patients' AND entityId = patientId
+   *  - rows where new_value->>'patientId' = patientId (clinical mutations
+   *    that include patientId in their structured payload — Rx safety
+   *    overrides, critical-result alerts, allergies, etc.)
+   *  - rows where old_value->>'patientId' = patientId (deletes of patient-
+   *    linked rows where the original snapshot had patientId)
+   */
+  async findForPatient(opts: {
+    patientId: string;
+    limit?: number;
+    action?: string;
+    tenantId?: string;
+  }) {
+    const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500);
+    const qb = this.auditLogRepository
+      .createQueryBuilder('log')
+      .leftJoinAndSelect('log.user', 'user')
+      .where(
+        '((log.entityType = :patients AND log.entityId = :pid) ' +
+          " OR log.new_value->>'patientId' = :pid " +
+          " OR log.old_value->>'patientId' = :pid)",
+        { patients: 'patients', pid: opts.patientId },
+      );
+    if (opts.tenantId) {
+      qb.andWhere('log.tenantId = :tenantId', { tenantId: opts.tenantId });
+    }
+    if (opts.action) {
+      qb.andWhere('log.action = :action', { action: opts.action });
+    }
+    qb.orderBy('log.createdAt', 'DESC').limit(limit);
+    const data = await qb.getMany();
+    return { data, total: data.length, patientId: opts.patientId };
+  }
+
   async getStats(tenantId?: string) {
     const where = tenantId ? { tenantId } : {};
     const total = await this.auditLogRepository.count({ where });

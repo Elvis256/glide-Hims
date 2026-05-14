@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
+import CriticalResultsOverviewWidget from '../../components/CriticalResultsOverviewWidget';
 import {
   BarChart3,
   TrendingUp,
@@ -301,6 +302,13 @@ export default function RadiologyAnalyticsPage() {
           </select>
         </div>
       </div>
+
+      {/* Critical findings widget (read-only — radiologist's own flags) */}
+      {hasPermission('critical-results.read') && (
+        <div className="mb-6">
+          <CriticalResultsOverviewWidget resourceType="radiology" flaggedByMe={false} sinceDays={30} recentLimit={5} />
+        </div>
+      )}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-5 gap-4 mb-6">

@@ -172,6 +172,34 @@ export const billingService = {
       const response = await api.post('/billing/invoices', data);
       return normalizeInvoice(response.data);
     },
+    preview: async (data: {
+      patientId?: string;
+      items: Array<{ serviceCode: string; description: string; quantity: number; unitPrice: number }>;
+      taxPercent?: number;
+      discountAmount?: number;
+      paymentType?: 'cash' | 'insurance' | 'corporate' | 'membership';
+      insurancePolicyId?: string;
+      membershipId?: string;
+    }): Promise<{
+      items: Array<{ serviceCode: string; description: string; quantity: number; unitPrice: number; lineSubtotal: number }>;
+      subtotal: number;
+      taxPercent: number;
+      taxAmount: number;
+      discountAmount: number;
+      membershipDiscount: number;
+      membershipDiscountPercent: number;
+      insuranceCovers: number;
+      patientCopay: number;
+      copayPercent: number;
+      copayFixed: number;
+      totalAmount: number;
+      patientPortion: number;
+      paymentType?: string;
+      warnings: string[];
+    }> => {
+      const response = await api.post('/billing/invoice-preview', data);
+      return response.data;
+    },
     addItem: async (invoiceId: string, item: AddInvoiceItemDto): Promise<InvoiceItem> => {
       const response = await api.post<InvoiceItem>(`/billing/invoices/${invoiceId}/items`, item);
       return response.data;

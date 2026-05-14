@@ -4,9 +4,10 @@ import { DischargeSummary } from '../../database/entities/discharge-summary.enti
 import { Encounter } from '../../database/entities/encounter.entity';
 import { DischargeService } from './discharge.service';
 import { DischargeController } from './discharge.controller';
+import { VitalsModule } from '../vitals/vitals.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([DischargeSummary, Encounter])],
+  imports: [TypeOrmModule.forFeature([DischargeSummary, Encounter]), VitalsModule],
   controllers: [DischargeController],
   providers: [DischargeService],
   exports: [DischargeService],

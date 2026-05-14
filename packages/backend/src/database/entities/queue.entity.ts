@@ -194,6 +194,18 @@ export class Queue extends BaseEntity {
   @Column({ name: 'patient_condition_flags', type: 'jsonb', nullable: true })
   patientConditionFlags: string[];
 
+  // Triage assessment captured by nursing — partial drafts allowed.
+  // Shape: { chiefComplaint, onset, duration, esiLevel, acuityColor,
+  //          disposition, nursingNotes, vitalsSummary, ... }
+  @Column({ name: 'triage_data', type: 'jsonb', nullable: true })
+  triageData: Record<string, any> | null;
+
+  @Column({ name: 'triage_data_updated_at', type: 'timestamptz', nullable: true })
+  triageDataUpdatedAt: Date | null;
+
+  @Column({ name: 'triage_data_updated_by_id', type: 'uuid', nullable: true })
+  triageDataUpdatedById: string | null;
+
   // Hold/pause queue entry without cancelling
   @Column({ name: 'on_hold', default: false })
   onHold: boolean;

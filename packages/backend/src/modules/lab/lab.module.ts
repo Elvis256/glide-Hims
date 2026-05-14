@@ -15,6 +15,7 @@ import { BillingModule } from '../billing/billing.module';
 import { InAppNotificationsModule } from '../in-app-notifications/in-app-notifications.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { EncountersModule } from '../encounters/encounters.module';
+import { CriticalResultsModule } from '../critical-results/critical-results.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { EncountersModule } from '../encounters/encounters.module';
     forwardRef(() => EncountersModule),
     InAppNotificationsModule,
     NotificationsModule,
+    CriticalResultsModule,
   ],
   controllers: [LabController, SampleReferralController],
   providers: [LabService, SampleReferralService],

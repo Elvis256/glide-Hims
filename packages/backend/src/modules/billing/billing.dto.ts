@@ -100,6 +100,50 @@ export class CreateInvoiceDto {
   insurancePolicyId?: string;
 }
 
+/**
+ * Mirrors CreateInvoiceDto but every field is optional so the frontend can
+ * call it on every keystroke / line-edit. Used by /billing/invoice-preview
+ * to get authoritative subtotal / tax / coverage / patient-portion numbers
+ * without persisting anything.
+ */
+export class PreviewInvoiceDto {
+  @IsUUID()
+  @IsOptional()
+  patientId?: string;
+
+  @IsUUID()
+  @IsOptional()
+  encounterId?: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => InvoiceItemDto)
+  items: InvoiceItemDto[];
+
+  @Type(() => Number)
+  @IsNumber()
+  @IsOptional()
+  taxPercent?: number;
+
+  @Type(() => Number)
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  discountAmount?: number;
+
+  @IsEnum(PaymentType)
+  @IsOptional()
+  paymentType?: PaymentType;
+
+  @IsUUID()
+  @IsOptional()
+  insurancePolicyId?: string;
+
+  @IsUUID()
+  @IsOptional()
+  membershipId?: string;
+}
+
 export class AddInvoiceItemDto {
   @IsString()
   serviceCode: string;

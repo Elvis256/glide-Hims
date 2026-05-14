@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, In, Between, Like, EntityManager } from 'typeorm';
+import { Repository, DataSource, In, Between, Like, EntityManager, IsNull } from 'typeorm';
 import {
   Queue,
   QueueDisplay,
@@ -30,6 +30,7 @@ import { AuditLog } from '../../database/entities/audit-log.entity';
 import { SystemSetting } from '../../database/entities/system-setting.entity';
 import { AfricasTalkingService } from '../integrations/africas-talking.service';
 import { DoctorFeesService } from '../doctor-fees/doctor-fees.service';
+import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
 import {
   CreateQueueDto,
   CallNextDto,
@@ -40,6 +41,7 @@ import {
   CreateQueueDisplayDto,
   ServiceConfigDto,
 } from './dto/queue.dto';
+import { COVERAGE_METHODS } from '../../shared/payment-methods';
 
 const SERVICE_CONFIG_KEY = 'queue.serviceConfig';
 
@@ -70,6 +72,7 @@ export class QueueManagementService {
     private departmentRepository: Repository<Department>,
     private readonly smsService: AfricasTalkingService,
     private readonly doctorFeesService: DoctorFeesService,
+    private readonly inAppNotifications: InAppNotificationsService,
     private dataSource: DataSource,
   ) {}
 
@@ -85,6 +88,7 @@ export class QueueManagementService {
     requiresPayment: boolean;
     initialQueueStatus: QueueStatus;
     servicePointCapacityLimit: number | null;
+    billingMode: 'pre_pay' | 'post_pay';
   }> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -143,6 +147,39 @@ export class QueueManagementService {
       );
     }
 
+    // Also catch the orphan-encounter case: a prior token went to NO_SHOW /
+    // SKIPPED but the encounter never reached COMPLETED/CANCELLED. Without this
+    // guard the system silently piles up duplicate encounters + invoices for
+    // the same patient (one per visit attempt), which is what the audit
+    // surfaced for patient HOSP202605025210.
+    const openEncounter = await this.encounterRepository.findOne({
+      where: {
+        patientId: dto.patientId,
+        facilityId,
+        status: In([
+          EncounterStatus.REGISTERED,
+          EncounterStatus.TRIAGE,
+          EncounterStatus.WAITING,
+          EncounterStatus.IN_CONSULTATION,
+          EncounterStatus.PENDING_LAB,
+          EncounterStatus.PENDING_PHARMACY,
+          EncounterStatus.PENDING_PAYMENT,
+          EncounterStatus.RETURN_TO_DOCTOR,
+          EncounterStatus.RETURN_TO_PHARMACY,
+          EncounterStatus.RETURN_TO_LAB,
+        ]),
+        ...(tenantId ? { tenantId } : {}),
+      },
+      order: { createdAt: 'DESC' },
+    });
+
+    if (openEncounter) {
+      throw new BadRequestException(
+        `Patient already has an open visit ${openEncounter.visitNumber} (status: ${openEncounter.status}). ` +
+          `Please complete or cancel that visit before issuing a new token.`,
+      );
+    }
+
     const config = await this.getServiceConfig(facilityId, tenantId);
     const capacityLimits: Record<string, number> = config.capacityLimits || {};
     const limit = capacityLimits[dto.servicePoint];
@@ -166,7 +203,7 @@ export class QueueManagementService {
     }
 
     const resolvedPriority = this.resolvePriority(dto.priority, dto.patientConditionFlags, config);
-    const skipPaymentTypes = ['insurance', 'hospital_scheme', 'staff'];
+    const skipPaymentTypes = COVERAGE_METHODS;
     const isEmergency =
       dto.visitType === 'emergency' || resolvedPriority === QueuePriority.EMERGENCY;
 
@@ -180,7 +217,7 @@ export class QueueManagementService {
     const requiresPayment =
       billingMode === 'pre_pay' &&
       !!dto.paymentType &&
-      !skipPaymentTypes.includes(dto.paymentType) &&
+      !(skipPaymentTypes as readonly string[]).includes(dto.paymentType) &&
       !isEmergency;
     const initialQueueStatus = requiresPayment ? QueueStatus.PENDING_PAYMENT : QueueStatus.WAITING;
 
@@ -190,6 +227,7 @@ export class QueueManagementService {
       requiresPayment,
       initialQueueStatus,
       servicePointCapacityLimit: limit || null,
+      billingMode,
     };
   }
 
@@ -374,6 +412,11 @@ export class QueueManagementService {
             chiefComplaint: dto.chiefComplaintAtToken || 'OPD Visit',
             queueNumber: sequenceNumber,
             payerType: this.mapPaymentTypeToPayer(dto.paymentType),
+            // Persist the billing mode resolved during validation so the
+            // doctor's Sign & Complete gate can distinguish post-pay
+            // (pay at checkout) from pre-pay (clear before being seen).
+            billingMode:
+              dto.billingMode || (validation as any).billingMode || 'post_pay',
             ...(tenantId ? { tenantId } : {}),
           });
           const txEncounter = (await manager.save(encounter)) as Encounter;
@@ -418,6 +461,19 @@ export class QueueManagementService {
             this.logger.warn(
               `Failed to auto-create invoice for token ${ticketNumber}: ${err.message}`,
             );
+          }
+
+          // Mirror the resolved doctor onto the encounter so doctor-scoped
+          // queries ("My Patients", attending reports, audit) and the
+          // consultation page see the assignment without having to JOIN
+          // through the queue. Without this, queue.assigned_doctor_id is
+          // populated but encounter.attending_provider_id stays NULL — the
+          // bug surfaced for patient HOSP202605025210.
+          if (resolvedAssignedDoctorId) {
+            await manager.update(Encounter, txEncounter.id, {
+              attendingProviderId: resolvedAssignedDoctorId,
+            });
+            txEncounter.attendingProviderId = resolvedAssignedDoctorId;
           }
 
           const queue = this.queueRepository.create({
@@ -500,6 +556,40 @@ export class QueueManagementService {
       (result as any).invoiceId = savedInvoice.id;
       (result as any).invoiceNumber = savedInvoice.invoiceNumber;
       (result as any).invoiceAmount = savedInvoice.totalAmount;
+    }
+
+    // Notify the assigned doctor (or department doctors) that a patient is queued.
+    // Best-effort: failures must not block ticket issuance.
+    try {
+      const patientName = (result?.patient as any)?.fullName || 'Patient';
+      await this.inAppNotifications.notifyPatientQueued({
+        patientName,
+        ticketNumber: result?.ticketNumber,
+        queueId: result?.id || saved.id,
+        servicePoint: result?.servicePoint || dto.servicePoint || 'queue',
+        assignedDoctorId: finalAssignedDoctorId || null,
+        facilityId,
+        tenantId,
+      });
+    } catch (err: any) {
+      this.logger.warn(`notifyPatientQueued failed: ${err?.message || err}`);
+    }
+
+    // If a billable invoice was created (pay-at-billing flow), ping cashiers.
+    if (savedInvoice) {
+      try {
+        const patientName = (result?.patient as any)?.fullName || 'Patient';
+        await this.inAppNotifications.notifyInvoiceCreated({
+          invoiceId: savedInvoice.id,
+          invoiceNumber: savedInvoice.invoiceNumber,
+          patientName,
+          totalAmount: Number(savedInvoice.totalAmount) || 0,
+          facilityId,
+          tenantId,
+        });
+      } catch (err: any) {
+        this.logger.warn(`notifyInvoiceCreated failed: ${err?.message || err}`);
+      }
     }
 
     return result as Queue;
@@ -930,7 +1020,7 @@ export class QueueManagementService {
 
     // If already called, treat as recall (re-call) instead of rejecting
     if (queue.status === QueueStatus.CALLED) {
-      return this.recallPatient(id, userId, tenantId);
+      return this.recallPatient(id, userId, tenantId, facilityId);
     }
 
     // If already in service, just return the current queue entry
@@ -966,11 +1056,13 @@ export class QueueManagementService {
     if (roomNumber) {
       queue.roomNumber = roomNumber;
     } else if (!queue.roomNumber) {
-      const todayStr = new Date().toISOString().split('T')[0];
-      const duty = await this.doctorDutyRepository.findOne({
-        where: { doctorId: userId, facilityId, dutyDate: new Date(todayStr) },
-      });
-      if (duty?.roomNumber) queue.roomNumber = duty.roomNumber;
+      // Resolve the doctor's room from today's on-duty record.
+      // Priority: explicit assignedDoctorId on the queue → calling user (if
+      // they themselves are a doctor on duty) → the single on-duty doctor for
+      // this department (only when unambiguous).
+      queue.roomNumber =
+        (await this.resolveRoomFromDuty(queue, userId, facilityId, tenantId)) ||
+        queue.roomNumber;
     }
 
     const saved = await this.queueRepository.save(queue);
@@ -984,10 +1076,26 @@ export class QueueManagementService {
       this.logger.warn('SMS notification failed: ' + e.message),
     );
 
+    // In-app notification to waiting-room display channels / reception.
+    this.inAppNotifications
+      .notifyPatientCalled({
+        queueId: saved.id,
+        patientName: (queue.patient as any)?.fullName || 'Patient',
+        ticketNumber: queue.ticketNumber,
+        servicePoint: queue.servicePoint,
+        counterNumber: queue.counterNumber || undefined,
+        roomNumber: queue.roomNumber || undefined,
+        facilityId,
+        tenantId,
+      })
+      .catch((e) =>
+        this.logger.warn('notifyPatientCalled failed: ' + (e?.message || e)),
+      );
+
     return saved;
   }
 
-  async recallPatient(id: string, userId: string, tenantId?: string): Promise<Queue> {
+  async recallPatient(id: string, userId: string, tenantId?: string, facilityId?: string): Promise<Queue> {
     const queue = await this.findOne(id, tenantId);
     const recallableStatuses = [
       QueueStatus.CALLED,
@@ -1004,12 +1112,85 @@ export class QueueManagementService {
     queue.callCount = (queue.callCount || 0) + 1;
     queue.calledAt = new Date();
     queue.servingUserId = userId;
+
+    // Refresh room from the doctor's on-duty record so a doctor who switched
+    // rooms between calls is announced correctly.
+    const fid = facilityId || (queue as any).facilityId || (queue.facility as any)?.id;
+    if (fid) {
+      const room = await this.resolveRoomFromDuty(queue, userId, fid, tenantId);
+      if (room) queue.roomNumber = room;
+    }
+
     const saved = await this.queueRepository.save(queue);
     await this.writeAuditLog(id, 'PATIENT_RECALLED', userId, prevStatus, QueueStatus.CALLED);
     this.sendCallNotification(queue).catch((e) =>
       this.logger.warn('SMS notification failed: ' + e.message),
     );
+    this.inAppNotifications
+      .notifyPatientCalled({
+        queueId: saved.id,
+        patientName: (queue.patient as any)?.fullName || 'Patient',
+        ticketNumber: queue.ticketNumber,
+        servicePoint: queue.servicePoint,
+        counterNumber: queue.counterNumber || undefined,
+        roomNumber: queue.roomNumber || undefined,
+        facilityId: fid,
+        tenantId,
+      })
+      .catch((e) =>
+        this.logger.warn('notifyPatientCalled (recall) failed: ' + (e?.message || e)),
+      );
     return saved;
+  }
+
+  /**
+   * Resolve the room number to announce when a queue entry is called.
+   * Looks up today's on-duty record. Order:
+   *   1. queue.assignedDoctorId (explicit assignment)
+   *   2. callerUserId (caller is the doctor themselves)
+   *   3. queue.departmentId (the single on-duty doctor for that department)
+   * Returns undefined when nothing unambiguous is found — callers preserve
+   * any existing room rather than blanking it.
+   */
+  private async resolveRoomFromDuty(
+    queue: Queue,
+    callerUserId: string,
+    facilityId: string,
+    tenantId?: string,
+  ): Promise<string | undefined> {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const dutyDate = new Date(todayStr);
+    const baseWhere: any = { facilityId, dutyDate };
+    if (tenantId) baseWhere.tenantId = tenantId;
+
+    const candidates: string[] = [];
+    if (queue.assignedDoctorId) candidates.push(queue.assignedDoctorId);
+    if (callerUserId && !candidates.includes(callerUserId)) candidates.push(callerUserId);
+
+    for (const doctorId of candidates) {
+      const duty = await this.doctorDutyRepository.findOne({
+        where: { ...baseWhere, doctorId },
+      });
+      if (duty?.roomNumber) return duty.roomNumber;
+    }
+
+    if (queue.departmentId) {
+      const duties = await this.doctorDutyRepository.find({
+        where: {
+          ...baseWhere,
+          departmentId: queue.departmentId,
+          status: In([
+            DutyStatus.ON_DUTY,
+            DutyStatus.IN_CONSULTATION,
+            DutyStatus.ON_BREAK,
+          ]),
+        },
+      });
+      const withRoom = duties.filter((d) => !!d.roomNumber);
+      if (withRoom.length === 1) return withRoom[0].roomNumber;
+    }
+
+    return undefined;
   }
 
   // ─── Start / Complete Service ─────────────────────────────────────────────
@@ -1052,6 +1233,16 @@ export class QueueManagementService {
 
     const saved = await this.queueRepository.save(queue);
     await this.syncEncounterStatus(queue.encounterId, EncounterStatus.IN_CONSULTATION);
+    // The user who actually starts the service is the de-facto attending
+    // provider for the encounter. Persist them on the encounter if not yet
+    // set (auto-assignment may have picked someone else, or no one) so
+    // downstream attribution / clinical-note authorship is correct.
+    if (queue.encounterId) {
+      await this.encounterRepository.update(
+        { id: queue.encounterId, attendingProviderId: IsNull() } as any,
+        { attendingProviderId: userId },
+      );
+    }
     await this.writeAuditLog(id, 'SERVICE_STARTED', userId, prevStatus, QueueStatus.IN_SERVICE);
     return saved;
   }
@@ -1096,6 +1287,7 @@ export class QueueManagementService {
     dispositionValue: string,
     userId: string,
     tenantId?: string,
+    triageData?: Record<string, any>,
   ): Promise<Queue> {
     const queue = await this.findOne(id, tenantId);
 
@@ -1118,13 +1310,31 @@ export class QueueManagementService {
       );
     }
 
+    // Persist the triage assessment alongside the disposition so the record
+    // survives the transfer (downstream service points + audit can read it).
+    if (triageData && Object.keys(triageData).length > 0) {
+      queue.triageData = {
+        ...(queue.triageData || {}),
+        ...triageData,
+        disposition: dispositionValue,
+        completedAt: new Date().toISOString(),
+        completedById: userId,
+      };
+      queue.triageDataUpdatedAt = new Date();
+      queue.triageDataUpdatedById = userId;
+      // Mirror the chief complaint into a top-level column for easy filtering.
+      if (triageData.chiefComplaint && !queue.chiefComplaintAtToken) {
+        queue.chiefComplaintAtToken = String(triageData.chiefComplaint).slice(0, 1000);
+      }
+    }
+
     // If triage hasn't started service yet, start it first so transfer is valid
     if (queue.status === QueueStatus.WAITING || queue.status === QueueStatus.CALLED) {
       queue.status = QueueStatus.IN_SERVICE;
       queue.serviceStartedAt = new Date();
       queue.servingUserId = userId;
-      await this.queueRepository.save(queue);
     }
+    await this.queueRepository.save(queue);
 
     this.logger.log(
       `Triage disposition: queue=${id}, disposition=${dispositionValue}, next=${disposition.servicePoint}`,
@@ -1139,6 +1349,29 @@ export class QueueManagementService {
       userId,
       tenantId,
     );
+  }
+
+  /**
+   * Persist a partial triage assessment without changing queue state.
+   * Used by the nurse "Save Draft" action so the form survives navigation,
+   * page refresh, or shift handover.
+   */
+  async saveTriageData(
+    id: string,
+    triageData: Record<string, any>,
+    userId: string,
+    tenantId?: string,
+  ): Promise<Queue> {
+    const queue = await this.findOne(id, tenantId);
+    queue.triageData = {
+      ...(queue.triageData || {}),
+      ...triageData,
+      savedAt: new Date().toISOString(),
+      savedById: userId,
+    };
+    queue.triageDataUpdatedAt = new Date();
+    queue.triageDataUpdatedById = userId;
+    return this.queueRepository.save(queue);
   }
 
   // ─── Transfer ─────────────────────────────────────────────────────────────
@@ -1223,6 +1456,7 @@ export class QueueManagementService {
         dto.transferReason,
       );
 
+      this.fireTransferNotification(saved, prevServicePoint, dto, tenantId);
       return saved;
     } catch (error) {
       // Retry once on unique constraint violation (race condition on ticket number)
@@ -1251,10 +1485,36 @@ export class QueueManagementService {
           QueueStatus.WAITING,
           dto.transferReason,
         );
+        this.fireTransferNotification(saved, prevServicePoint, dto, tenantId);
         return saved;
       }
       throw error;
     }
+  }
+
+  /** Best-effort in-app notification to staff at the destination service point. */
+  private fireTransferNotification(
+    saved: Queue,
+    prevServicePoint: string,
+    dto: TransferQueueDto,
+    tenantId?: string,
+  ) {
+    this.queueRepository
+      .findOne({ where: { id: saved.id }, relations: ['patient'] })
+      .then((withPatient) =>
+        this.inAppNotifications.notifyPatientTransferred({
+          queueId: saved.id,
+          patientName: (withPatient?.patient as any)?.fullName || 'Patient',
+          fromServicePoint: prevServicePoint,
+          toServicePoint: dto.nextServicePoint,
+          reason: dto.transferReason,
+          facilityId: saved.facilityId,
+          tenantId,
+        }),
+      )
+      .catch((e) =>
+        this.logger.warn('notifyPatientTransferred failed: ' + (e?.message || e)),
+      );
   }
 
   // ─── System-driven service point move (no transition validation) ─────────

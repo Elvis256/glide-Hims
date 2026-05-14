@@ -17,6 +17,7 @@ import { encountersService, type Encounter } from '../services/encounters';
 import { facilitiesService } from '../services';
 import integrationsService from '../services/integrations';
 import { usePermissions } from '../components/PermissionGate';
+import PatientActivityTimeline from '../components/PatientActivityTimeline';
 import { printService } from '../lib/print';
 import { asList } from '../utils/unwrapResponse';
 
@@ -59,7 +60,7 @@ const getInitials = (name: string) => {
 };
 
 // Tab types
-type TabType = 'overview' | 'visits' | 'billing' | 'documents' | 'notes';
+type TabType = 'overview' | 'visits' | 'billing' | 'documents' | 'notes' | 'activity';
 
 export default function PatientDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -447,6 +448,7 @@ export default function PatientDetailPage() {
     { id: 'billing', label: 'Billing', icon: <CreditCard className="w-4 h-4" />, permission: canViewBilling },
     { id: 'documents', label: 'Documents', icon: <FolderOpen className="w-4 h-4" /> },
     { id: 'notes', label: 'Notes', icon: <StickyNote className="w-4 h-4" /> },
+    { id: 'activity', label: 'Activity', icon: <Activity className="w-4 h-4" />, permission: hasPermission('audit.patient.read') },
   ];
 
   const visibleTabs = tabs.filter(tab => tab.permission !== false);
@@ -1216,6 +1218,11 @@ export default function PatientDetailPage() {
                 </div>
               )}
             </div>
+          )}
+
+          {/* Activity Tab */}
+          {activeTab === 'activity' && id && (
+            <PatientActivityTimeline patientId={id} limit={150} />
           )}
         </div>
       </div>

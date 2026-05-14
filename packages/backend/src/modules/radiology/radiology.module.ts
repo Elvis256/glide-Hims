@@ -8,6 +8,7 @@ import { ImagingResult } from '../../database/entities/imaging-result.entity';
 import { InAppNotificationsModule } from '../in-app-notifications/in-app-notifications.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { FinanceModule } from '../finance/finance.module';
+import { CriticalResultsModule } from '../critical-results/critical-results.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { FinanceModule } from '../finance/finance.module';
     InAppNotificationsModule,
     NotificationsModule,
     forwardRef(() => FinanceModule),
+    CriticalResultsModule,
   ],
   controllers: [RadiologyController],
   providers: [RadiologyService],

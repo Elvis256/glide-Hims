@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
-import { Vital } from '../../database/entities/vital.entity';
+import { Vital, VitalSource } from '../../database/entities/vital.entity';
 import { Encounter, EncounterStatus } from '../../database/entities/encounter.entity';
 import { CreateVitalDto, UpdateVitalDto } from './vitals.dto';
 import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
@@ -124,6 +124,8 @@ export class VitalsService {
     const vital = this.vitalRepository.create({
       ...dto,
       bmi,
+      patientId: encounter.patientId,
+      source: VitalSource.OPD_ENCOUNTER,
       recordedById: userId,
       ...(tenantId ? { tenantId } : {}),
     });
@@ -260,15 +262,170 @@ export class VitalsService {
 
   // Get patient's vital history across encounters
   async getPatientVitalHistory(patientId: string, limit = 10, tenantId?: string): Promise<Vital[]> {
+    // Prefer the denormalized patient_id column (covers mirrored rows that
+    // have no encounter), but also include legacy rows where it was null
+    // by joining through the encounter.
     const qb = this.vitalRepository
       .createQueryBuilder('vital')
       .leftJoinAndSelect('vital.encounter', 'encounter')
-      .where('encounter.patient_id = :patientId', { patientId });
+      .leftJoinAndSelect('vital.recordedBy', 'recordedBy')
+      .where('(vital.patient_id = :patientId OR encounter.patient_id = :patientId)', { patientId });
 
     if (tenantId) {
       qb.andWhere('vital.tenant_id = :tenantId', { tenantId });
     }
 
     return qb.orderBy('vital.recordedAt', 'DESC').take(limit).getMany();
+  }
+
+  /**
+   * Mirror vitals captured by another module (emergency triage, IPD nursing
+   * round, discharge summary, maternity visit) into the canonical `vitals`
+   * table so the patient timeline + critical-vital alerting see them too.
+   *
+   * Best-effort: failures are logged but never thrown, because the source
+   * record's transaction has already committed and we must not roll it back.
+   */
+  async recordFromSource(params: {
+    source: VitalSource;
+    sourceRefId: string;
+    patientId: string;
+    encounterId?: string | null;
+    recordedById: string;
+    tenantId?: string;
+    facilityId?: string;
+    recordedAt?: Date;
+    vitals: Partial<
+      Pick<
+        Vital,
+        | 'temperature'
+        | 'pulse'
+        | 'bpSystolic'
+        | 'bpDiastolic'
+        | 'respiratoryRate'
+        | 'oxygenSaturation'
+        | 'weight'
+        | 'height'
+        | 'bmi'
+        | 'bloodGlucose'
+        | 'painScale'
+        | 'notes'
+      >
+    >;
+  }): Promise<Vital | null> {
+    try {
+      const v = params.vitals;
+      // Skip if every clinically-meaningful field is null/undefined.
+      const meaningful = [
+        v.temperature,
+        v.pulse,
+        v.bpSystolic,
+        v.bpDiastolic,
+        v.respiratoryRate,
+        v.oxygenSaturation,
+        v.weight,
+        v.height,
+        v.bloodGlucose,
+        v.painScale,
+      ].some((x) => x != null);
+      if (!meaningful) return null;
+
+      const bmi = v.bmi ?? this.calculateBMI(v.weight ?? 0, v.height ?? 0) ?? undefined;
+
+      const vital = this.vitalRepository.create({
+        ...v,
+        bmi,
+        patientId: params.patientId,
+        encounterId: params.encounterId ?? null,
+        source: params.source,
+        sourceRefId: params.sourceRefId,
+        recordedById: params.recordedById,
+        recordedAt: params.recordedAt ?? new Date(),
+        ...(params.tenantId ? { tenantId: params.tenantId } : {}),
+      } as Partial<Vital>);
+
+      const saved = await this.vitalRepository.save(vital);
+
+      // Run alerting + audit on mirrored rows too — a critical SpO2 captured
+      // at triage is just as urgent as one captured in OPD.
+      const alerts = this.checkVitalAlerts(saved);
+      const criticals = alerts.filter((a) => a.severity === 'critical');
+      if (criticals.length > 0) {
+        this.logger.warn(
+          `CRITICAL VITAL ALERTS [${params.source}] patient ${params.patientId}: ${criticals
+            .map((a) => a.message)
+            .join('; ')}`,
+        );
+
+        try {
+          const targets: string[] = [];
+          if (params.facilityId) {
+            const nurseIds = await this.inAppNotifications
+              .getUserIdsByRole(
+                ['charge_nurse', 'nurse_supervisor', 'nurse'],
+                params.facilityId,
+                params.tenantId,
+              )
+              .catch(() => [] as string[]);
+            targets.push(...nurseIds);
+          }
+          const unique = [...new Set(targets)].filter(Boolean);
+          if (unique.length > 0) {
+            await this.inAppNotifications.notifyMany(
+              unique,
+              {
+                facilityId: params.facilityId!,
+                senderUserId: params.recordedById,
+                type: InAppNotificationType.GENERAL,
+                title: `Critical vital sign (${params.source})`,
+                message: criticals.map((a) => a.message).join('; '),
+                metadata: {
+                  kind: 'critical_vital',
+                  source: params.source,
+                  sourceRefId: params.sourceRefId,
+                  patientId: params.patientId,
+                  encounterId: params.encounterId ?? null,
+                  vitalId: saved.id,
+                  alerts: criticals,
+                },
+              },
+              params.tenantId,
+            );
+          }
+        } catch (err: any) {
+          this.logger.error(
+            `Failed to fan out mirrored critical vital alert (${params.source} ${params.sourceRefId}): ${err?.message || err}`,
+          );
+        }
+
+        await this.auditLogService
+          .log({
+            userId: params.recordedById,
+            action: 'VITAL_CRITICAL_RECORDED',
+            entityType: 'Vital',
+            entityId: saved.id,
+            newValue: {
+              alerts: criticals,
+              source: params.source,
+              sourceRefId: params.sourceRefId,
+              patientId: params.patientId,
+              encounterId: params.encounterId ?? null,
+            },
+            ...(params.tenantId ? { tenantId: params.tenantId } : {}),
+          })
+          .catch((err) =>
+            this.logger.error(
+              `Audit log failed for mirrored critical vital ${saved.id}: ${err.message}`,
+            ),
+          );
+      }
+
+      return saved;
+    } catch (err: any) {
+      this.logger.error(
+        `recordFromSource(${params.source}) failed for ref ${params.sourceRefId}: ${err?.message || err}`,
+      );
+      return null;
+    }
   }
 }

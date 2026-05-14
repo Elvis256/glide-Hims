@@ -170,42 +170,62 @@ export default function NewBillPage() {
   };
 
   const subtotal = billItems.reduce((sum, item) => sum + item.total, 0);
-  
-  // Calculate amounts based on payment type - simplified for now
+
+  // Server-driven invoice preview (single source of truth for tax/coverage math).
+  const effectivePaymentType: 'cash' | 'insurance' | 'membership' | 'corporate' | undefined =
+    selectedPatient?.paymentType === 'insurance' && !billToInsurance
+      ? 'cash'
+      : selectedPatient?.paymentType;
+
+  const previewPayload = useMemo(() => {
+    if (!selectedPatient || billItems.length === 0) return null;
+    return {
+      patientId: selectedPatient.id,
+      paymentType: effectivePaymentType,
+      insurancePolicyId: (selectedPatient as any).insurancePolicyId,
+      membershipId: (selectedPatient as any).membershipId,
+      items: billItems.map((item) => ({
+        serviceCode: item.serviceId,
+        description: item.name,
+        quantity: item.quantity,
+        unitPrice: item.price,
+      })),
+    };
+  }, [selectedPatient, billItems, effectivePaymentType]);
+
+  const previewQuery = useQuery({
+    queryKey: ['invoice-preview', previewPayload],
+    queryFn: () => billingService.invoices.preview(previewPayload as any),
+    enabled: !!previewPayload,
+    staleTime: 0,
+    retry: false,
+  });
+
   const billingCalculations = useMemo(() => {
-    if (!selectedPatient) {
-      return { insuranceCovers: 0, patientCopay: 0, discount: 0, totalDue: subtotal };
-    }
-
-    if (selectedPatient.paymentType === 'insurance' && billToInsurance) {
-      // Default 20% copay for insurance if not specified - would come from insurance API
-      const copayPercent = 20;
-      const patientCopay = Math.round(subtotal * (copayPercent / 100));
-      const insuranceAmount = subtotal - patientCopay;
-      return {
-        insuranceCovers: insuranceAmount,
-        patientCopay: patientCopay,
-        copayPercent,
-        discount: 0,
-        totalDue: patientCopay,
-      };
-    }
-
-    if (selectedPatient.paymentType === 'membership') {
-      // Default 10% discount for membership - would come from membership API
-      const discountPercent = 10;
-      const discount = Math.round(subtotal * (discountPercent / 100));
+    const p = previewQuery.data;
+    if (!p) {
       return {
         insuranceCovers: 0,
         patientCopay: 0,
-        discount,
-        discountPercent,
-        totalDue: subtotal - discount,
+        copayPercent: 0,
+        discount: 0,
+        discountPercent: 0,
+        tax: 0,
+        totalDue: subtotal,
+        warnings: [] as string[],
       };
     }
-
-    return { insuranceCovers: 0, patientCopay: 0, discount: 0, totalDue: subtotal };
-  }, [selectedPatient, subtotal, billToInsurance]);
+    return {
+      insuranceCovers: p.insuranceCovers,
+      patientCopay: p.patientCopay,
+      copayPercent: p.copayPercent,
+      discount: p.membershipDiscount + (p.discountAmount || 0),
+      discountPercent: p.membershipDiscountPercent,
+      tax: p.taxAmount,
+      totalDue: p.patientPortion,
+      warnings: p.warnings || [],
+    };
+  }, [previewQuery.data, subtotal]);
 
   const grandTotal = billingCalculations.totalDue;
 
@@ -235,6 +255,12 @@ export default function NewBillPage() {
               <span className="text-gray-600">Subtotal</span>
               <span>UGX {subtotal.toLocaleString()}</span>
             </div>
+            {billingCalculations.tax > 0 && (
+              <div className="flex justify-between text-gray-600">
+                <span>VAT</span>
+                <span>UGX {billingCalculations.tax.toLocaleString()}</span>
+              </div>
+            )}
             {selectedPatient?.paymentType === 'insurance' && billToInsurance && (
               <>
                 <div className="flex justify-between text-green-600">
@@ -242,14 +268,14 @@ export default function NewBillPage() {
                   <span>-UGX {billingCalculations.insuranceCovers.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Patient Co-pay (20%)</span>
+                  <span>Patient Co-pay{billingCalculations.copayPercent ? ` (${billingCalculations.copayPercent}%)` : ''}</span>
                   <span>UGX {billingCalculations.patientCopay.toLocaleString()}</span>
                 </div>
               </>
             )}
             {selectedPatient?.paymentType === 'membership' && (
               <div className="flex justify-between text-green-600">
-                <span>Membership Discount (10%)</span>
+                <span>Membership Discount{billingCalculations.discountPercent ? ` (${billingCalculations.discountPercent}%)` : ''}</span>
                 <span>-UGX {billingCalculations.discount.toLocaleString()}</span>
               </div>
             )}
@@ -470,7 +496,14 @@ export default function NewBillPage() {
                   <span className="text-gray-500">Subtotal</span>
                   <span>UGX {subtotal.toLocaleString()}</span>
                 </div>
-                
+
+                {billingCalculations.tax > 0 && (
+                  <div className="flex justify-between text-gray-500">
+                    <span>VAT</span>
+                    <span>UGX {billingCalculations.tax.toLocaleString()}</span>
+                  </div>
+                )}
+
                 {/* Insurance billing */}
                 {selectedPatient?.paymentType === 'insurance' && billToInsurance && (
                   <>
@@ -479,24 +512,39 @@ export default function NewBillPage() {
                       <span>-UGX {billingCalculations.insuranceCovers.toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between text-gray-600">
-                      <span>Patient Co-pay (20%)</span>
+                      <span>Patient Co-pay{billingCalculations.copayPercent ? ` (${billingCalculations.copayPercent}%)` : ''}</span>
                       <span>UGX {billingCalculations.patientCopay.toLocaleString()}</span>
                     </div>
                   </>
                 )}
-                
+
                 {/* Membership discount */}
                 {selectedPatient?.paymentType === 'membership' && (
                   <div className="flex justify-between text-green-600">
-                    <span>Membership (10%)</span>
+                    <span>Membership{billingCalculations.discountPercent ? ` (${billingCalculations.discountPercent}%)` : ''}</span>
                     <span>-UGX {billingCalculations.discount.toLocaleString()}</span>
                   </div>
                 )}
-                
+
                 <div className="flex justify-between text-base font-bold pt-1">
                   <span>Total Due</span>
-                  <span className="text-blue-600">UGX {grandTotal.toLocaleString()}</span>
+                  <span className="text-blue-600">
+                    {previewQuery.isFetching ? (
+                      <span className="inline-flex items-center gap-1 text-gray-400">
+                        <Loader2 className="w-3 h-3 animate-spin" /> …
+                      </span>
+                    ) : (
+                      `UGX ${grandTotal.toLocaleString()}`
+                    )}
+                  </span>
                 </div>
+                {billingCalculations.warnings.length > 0 && (
+                  <div className="mt-2 rounded bg-amber-50 border border-amber-200 p-2 text-[11px] text-amber-800 space-y-0.5">
+                    {billingCalculations.warnings.map((w, i) => (
+                      <div key={i}>⚠ {w}</div>
+                    ))}
+                  </div>
+                )}
               </div>
               
               {/* Insurance Toggle */}

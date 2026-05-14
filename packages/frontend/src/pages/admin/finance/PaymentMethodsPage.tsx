@@ -6,11 +6,6 @@ import {
   Edit2,
   Save,
   X,
-  CreditCard,
-  Banknote,
-  Smartphone,
-  Building2,
-  Shield,
   Settings,
   Check,
   Percent,
@@ -20,14 +15,25 @@ import {
   ChevronUp,
   Wallet,
   Loader2,
+  Building2,
+  Sparkles,
 } from 'lucide-react';
 import { financeService } from '../../../services';
+import {
+  PAYMENT_METHODS,
+  PAYMENT_METHOD_LABELS,
+  PAYMENT_METHOD_ICONS,
+  PAYMENT_METHOD_COLORS,
+  DEFAULT_ENABLED_METHODS,
+  normalisePaymentMethod,
+  type PaymentMethod as PaymentMethodSlug,
+} from '../../../shared/payment-methods';
 
 interface PaymentMethod {
   id: string;
   name: string;
-  type: 'Cash' | 'Card' | 'Mobile Money' | 'Bank Transfer' | 'Insurance';
-  icon: 'cash' | 'card' | 'mobile' | 'bank' | 'insurance';
+  /** Canonical slug from shared/payment-methods (e.g. 'cash', 'mobile_money'). */
+  type: PaymentMethodSlug;
   isActive: boolean;
   processingFee: number;
   feeType: 'percentage' | 'fixed';
@@ -38,22 +44,6 @@ interface PaymentMethod {
 
 const paymentMethodsData: PaymentMethod[] = [];
 
-const iconMap = {
-  cash: Banknote,
-  card: CreditCard,
-  mobile: Smartphone,
-  bank: Building2,
-  insurance: Shield,
-};
-
-const typeColors = {
-  Cash: 'bg-green-100 text-green-700',
-  Card: 'bg-blue-100 text-blue-700',
-  'Mobile Money': 'bg-yellow-100 text-yellow-700',
-  'Bank Transfer': 'bg-purple-100 text-purple-700',
-  Insurance: 'bg-red-100 text-red-700',
-};
-
 export default function PaymentMethodsPage() {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
@@ -62,7 +52,7 @@ export default function PaymentMethodsPage() {
   const [filterType, setFilterType] = useState<string>('all');
   const [showAddModal, setShowAddModal] = useState(false);
   const [newMethodForm, setNewMethodForm] = useState({
-    name: '', type: 'Cash' as PaymentMethod['type'],
+    name: '', type: 'cash' as PaymentMethodSlug,
     processingFee: 0, feeType: 'percentage' as 'percentage' | 'fixed',
     settlementAccount: '', settlementDays: 0,
   });
@@ -75,10 +65,13 @@ export default function PaymentMethodsPage() {
     retry: 1,
   });
 
-  // Use API data when available
+  // Use API data when available — normalise legacy Title-Case `type` values to slugs.
   const paymentMethods: PaymentMethod[] = useMemo(() => {
-    if (Array.isArray(apiMethods)) return apiMethods as PaymentMethod[];
-    return paymentMethodsData;
+    const raw = Array.isArray(apiMethods) ? (apiMethods as any[]) : paymentMethodsData;
+    return raw.map((m) => ({
+      ...m,
+      type: (normalisePaymentMethod(m.type) || normalisePaymentMethod(m.slug) || 'cash') as PaymentMethodSlug,
+    }));
   }, [apiMethods]);
 
   // Toggle method status mutation
@@ -95,9 +88,28 @@ export default function PaymentMethodsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['payment-methods'] });
       setShowAddModal(false);
-      setNewMethodForm({ name: '', type: 'Cash', processingFee: 0, feeType: 'percentage', settlementAccount: '', settlementDays: 0 });
+      setNewMethodForm({ name: '', type: 'cash', processingFee: 0, feeType: 'percentage', settlementAccount: '', settlementDays: 0 });
     },
   });
+
+  // One-click seed of the canonical default-enabled methods.
+  const seedDefaults = async () => {
+    for (const slug of DEFAULT_ENABLED_METHODS) {
+      if (paymentMethods.some((p) => p.type === slug)) continue;
+      await financeService.paymentMethods.create({
+        name: PAYMENT_METHOD_LABELS[slug],
+        type: slug,
+        isActive: true,
+        processingFee: 0,
+        feeType: 'percentage',
+        settlementAccount: '',
+        settlementDays: 0,
+        settings: {},
+      } as any);
+    }
+    queryClient.invalidateQueries({ queryKey: ['payment-methods'] });
+    queryClient.invalidateQueries({ queryKey: ['enabled-payment-methods'] });
+  };
 
   const types = useMemo(() => {
     const uniqueTypes = [...new Set(paymentMethods.map(p => p.type))];
@@ -106,9 +118,10 @@ export default function PaymentMethodsPage() {
 
   const filteredMethods = useMemo(() => {
     return paymentMethods.filter(p => {
-      const matchesSearch = 
+      const label = PAYMENT_METHOD_LABELS[p.type] || p.type;
+      const matchesSearch =
         p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.type.toLowerCase().includes(searchTerm.toLowerCase());
+        label.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesType = filterType === 'all' || p.type === filterType;
       return matchesSearch && matchesType;
     });
@@ -121,13 +134,10 @@ export default function PaymentMethodsPage() {
   const stats = useMemo(() => ({
     total: paymentMethods.length,
     active: paymentMethods.filter(p => p.isActive).length,
-    byType: {
-      cash: paymentMethods.filter(p => p.type === 'Cash').length,
-      card: paymentMethods.filter(p => p.type === 'Card').length,
-      mobile: paymentMethods.filter(p => p.type === 'Mobile Money').length,
-      bank: paymentMethods.filter(p => p.type === 'Bank Transfer').length,
-      insurance: paymentMethods.filter(p => p.type === 'Insurance').length,
-    },
+    bySlug: PAYMENT_METHODS.reduce<Record<string, number>>((acc, slug) => {
+      acc[slug] = paymentMethods.filter((p) => p.type === slug).length;
+      return acc;
+    }, {}),
   }), [paymentMethods]);
 
   const renderSettingsFields = (method: PaymentMethod) => {
@@ -162,13 +172,25 @@ export default function PaymentMethodsPage() {
             <h1 className="text-2xl font-bold text-gray-900">Payment Methods</h1>
             <p className="text-sm text-gray-500">Configure payment methods and processing settings</p>
           </div>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700"
-          >
-            <Plus className="w-4 h-4" />
-            Add Payment Method
-          </button>
+          <div className="flex items-center gap-2">
+            {paymentMethods.length === 0 && !isLoading && !isError && (
+              <button
+                onClick={seedDefaults}
+                title="One-click create the default-enabled payment methods (cash, mobile money, card, insurance)."
+                className="flex items-center gap-2 px-4 py-2 text-white bg-emerald-600 rounded-lg hover:bg-emerald-700"
+              >
+                <Sparkles className="w-4 h-4" />
+                Seed Defaults
+              </button>
+            )}
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+            >
+              <Plus className="w-4 h-4" />
+              Add Payment Method
+            </button>
+          </div>
         </div>
 
         {/* API Status Banner */}
@@ -185,13 +207,13 @@ export default function PaymentMethodsPage() {
         ) : null}
 
         {/* Stats */}
-        <div className="grid grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
           <div className="bg-gray-50 rounded-lg p-3 flex items-center gap-3">
             <div className="p-2 bg-blue-100 rounded-lg">
               <Wallet className="w-5 h-5 text-blue-600" />
             </div>
             <div>
-              <div className="text-sm text-gray-500">Total Methods</div>
+              <div className="text-sm text-gray-500">Total</div>
               <div className="text-xl font-bold text-gray-900">{stats.total}</div>
             </div>
           </div>
@@ -204,33 +226,20 @@ export default function PaymentMethodsPage() {
               <div className="text-xl font-bold text-green-600">{stats.active}</div>
             </div>
           </div>
-          <div className="bg-gray-50 rounded-lg p-3 flex items-center gap-3">
-            <div className="p-2 bg-yellow-100 rounded-lg">
-              <Smartphone className="w-5 h-5 text-yellow-600" />
-            </div>
-            <div>
-              <div className="text-sm text-gray-500">Mobile Money</div>
-              <div className="text-xl font-bold text-yellow-600">{stats.byType.mobile}</div>
-            </div>
-          </div>
-          <div className="bg-gray-50 rounded-lg p-3 flex items-center gap-3">
-            <div className="p-2 bg-red-100 rounded-lg">
-              <Shield className="w-5 h-5 text-red-600" />
-            </div>
-            <div>
-              <div className="text-sm text-gray-500">Insurance</div>
-              <div className="text-xl font-bold text-red-600">{stats.byType.insurance}</div>
-            </div>
-          </div>
-          <div className="bg-gray-50 rounded-lg p-3 flex items-center gap-3">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <CreditCard className="w-5 h-5 text-blue-600" />
-            </div>
-            <div>
-              <div className="text-sm text-gray-500">Card</div>
-              <div className="text-xl font-bold text-blue-600">{stats.byType.card}</div>
-            </div>
-          </div>
+          {PAYMENT_METHODS.filter((s) => stats.bySlug[s] > 0).slice(0, 4).map((slug) => {
+            const Icon = PAYMENT_METHOD_ICONS[slug];
+            return (
+              <div key={slug} className="bg-gray-50 rounded-lg p-3 flex items-center gap-3">
+                <div className="p-2 bg-gray-100 rounded-lg">
+                  <Icon className="w-5 h-5 text-gray-700" />
+                </div>
+                <div>
+                  <div className="text-sm text-gray-500">{PAYMENT_METHOD_LABELS[slug]}</div>
+                  <div className="text-xl font-bold text-gray-900">{stats.bySlug[slug]}</div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -253,13 +262,13 @@ export default function PaymentMethodsPage() {
               <button
                 key={type}
                 onClick={() => setFilterType(type)}
-                className={`px-3 py-1.5 rounded-full text-sm capitalize ${
+                className={`px-3 py-1.5 rounded-full text-sm ${
                   filterType === type
                     ? 'bg-blue-100 text-blue-700'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
               >
-                {type}
+                {type === 'all' ? 'All' : (PAYMENT_METHOD_LABELS[type as PaymentMethodSlug] || type)}
               </button>
             ))}
           </div>
@@ -286,7 +295,8 @@ export default function PaymentMethodsPage() {
         ) : (
         <div className="space-y-3">
           {filteredMethods.map(method => {
-            const Icon = iconMap[method.icon];
+            const Icon = PAYMENT_METHOD_ICONS[method.type] || Wallet;
+            const colors = PAYMENT_METHOD_COLORS[method.type];
             const isExpanded = expandedId === method.id;
             
             return (
@@ -298,30 +308,18 @@ export default function PaymentMethodsPage() {
                 <div className="p-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                      <div className={`p-3 rounded-lg ${
-                        method.type === 'Cash' ? 'bg-green-100' :
-                        method.type === 'Card' ? 'bg-blue-100' :
-                        method.type === 'Mobile Money' ? 'bg-yellow-100' :
-                        method.type === 'Bank Transfer' ? 'bg-purple-100' :
-                        'bg-red-100'
-                      }`}>
-                        <Icon className={`w-6 h-6 ${
-                          method.type === 'Cash' ? 'text-green-600' :
-                          method.type === 'Card' ? 'text-blue-600' :
-                          method.type === 'Mobile Money' ? 'text-yellow-600' :
-                          method.type === 'Bank Transfer' ? 'text-purple-600' :
-                          'text-red-600'
-                        }`} />
+                      <div className={`p-3 rounded-lg ${colors?.active || 'bg-gray-100 text-gray-700'}`}>
+                        <Icon className="w-6 h-6" />
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
                           <h3 className="font-semibold text-gray-900">{method.name}</h3>
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${typeColors[method.type]}`}>
-                            {method.type}
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${colors?.idle || 'bg-gray-100 text-gray-700'}`}>
+                            {PAYMENT_METHOD_LABELS[method.type] || method.type}
                           </span>
                         </div>
                         <div className="text-sm text-gray-500 mt-0.5">
-                          Settlement: {method.settlementAccount}
+                          Settlement: {method.settlementAccount || '—'}
                         </div>
                       </div>
                     </div>
@@ -464,14 +462,12 @@ export default function PaymentMethodsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
                 <select
                   value={newMethodForm.type}
-                  onChange={(e) => setNewMethodForm(p => ({ ...p, type: e.target.value as PaymentMethod['type'] }))}
+                  onChange={(e) => setNewMethodForm(p => ({ ...p, type: e.target.value as PaymentMethodSlug }))}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="Cash">Cash</option>
-                  <option value="Card">Card</option>
-                  <option value="Mobile Money">Mobile Money</option>
-                  <option value="Bank Transfer">Bank Transfer</option>
-                  <option value="Insurance">Insurance</option>
+                  {PAYMENT_METHODS.map((slug) => (
+                    <option key={slug} value={slug}>{PAYMENT_METHOD_LABELS[slug]}</option>
+                  ))}
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -528,7 +524,6 @@ export default function PaymentMethodsPage() {
                 disabled={!newMethodForm.name.trim() || createMutation.isPending}
                 onClick={() => createMutation.mutate({
                   ...newMethodForm,
-                  icon: newMethodForm.type === 'Cash' ? 'cash' : newMethodForm.type === 'Card' ? 'card' : newMethodForm.type === 'Mobile Money' ? 'mobile' : newMethodForm.type === 'Bank Transfer' ? 'bank' : 'insurance',
                   isActive: true,
                   settings: {},
                 })}

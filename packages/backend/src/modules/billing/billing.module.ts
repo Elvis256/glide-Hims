@@ -6,6 +6,7 @@ import { Invoice, InvoiceItem, Payment } from '../../database/entities/invoice.e
 import { Encounter } from '../../database/entities/encounter.entity';
 import { Queue } from '../../database/entities/queue.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { InAppNotificationsModule } from '../in-app-notifications/in-app-notifications.module';
 import { SystemSettingsModule } from '../system-settings/system-settings.module';
 import { FinanceModule } from '../finance/finance.module';
 import { PricingEngineModule } from '../pricing-engine/pricing-engine.module';
@@ -18,6 +19,7 @@ import { AuditModule } from '../../common/interceptors/audit.module';
   imports: [
     TypeOrmModule.forFeature([Invoice, InvoiceItem, Payment, Encounter, Queue]),
     NotificationsModule,
+    InAppNotificationsModule,
     SystemSettingsModule,
     FinanceModule,
     PricingEngineModule,

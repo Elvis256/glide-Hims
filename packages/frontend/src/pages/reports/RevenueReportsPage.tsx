@@ -37,14 +37,17 @@ import {
   Area,
 } from 'recharts';
 import api from '../../services/api';
+import { useFacilityId } from '../../lib/facility';
 import { formatCurrency } from '../../lib/currency';
 import { printService } from '../../lib/print';
 
 export default function RevenueReportsPage() {
+  const facilityId = useFacilityId();
   const [dateRange, setDateRange] = useState('month');
 
   const { data: stats, isLoading } = useQuery({
-    queryKey: ['revenue-statistics', dateRange],
+    queryKey: ['revenue-statistics', dateRange, facilityId],
+    enabled: !!facilityId,
     queryFn: async () => {
       const [financialRes, dashboardRes] = await Promise.all([
         api.get('/analytics/financial', { params: { period: dateRange } }),
@@ -159,7 +162,7 @@ export default function RevenueReportsPage() {
         recentTransactions,
       };
     },
-  });
+});
 
   const PAYMENT_COLORS = ['#10B981', '#3B82F6', '#F59E0B', '#8B5CF6', '#EF4444'];
   const AGING_COLORS = ['#10B981', '#F59E0B', '#F97316', '#EF4444'];
@@ -220,6 +223,17 @@ export default function RevenueReportsPage() {
   }
 
   const growthPositive = (stats?.revenueGrowth || 0) >= 0;
+
+  if (!facilityId) {
+    return (
+      <div className="p-6">
+        <div className="rounded-lg border border-dashed border-gray-300 bg-white p-12 text-center">
+          <p className="text-lg font-medium text-gray-900">Select a facility</p>
+          <p className="mt-2 text-sm text-gray-500">Pick a facility from the top bar to view this report.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div id="report-content" className="space-y-6">

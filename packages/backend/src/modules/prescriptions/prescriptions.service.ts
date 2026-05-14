@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   Inject,
   forwardRef,
   Logger,
@@ -40,6 +41,8 @@ import { BillingService } from '../billing/billing.service';
 import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
 import { QueueManagementService } from '../queue-management/queue-management.service';
 import { DrugManagementService } from '../drug-management/drug-management.service';
+import { MedicationSafetyService } from '../allergies/medication-safety.service';
+import { IdentityGuardService } from '../../common/services/identity-guard.service';
 
 @Injectable()
 export class PrescriptionsService {
@@ -70,6 +73,8 @@ export class PrescriptionsService {
     private inAppNotificationsService: InAppNotificationsService,
     private queueManagementService: QueueManagementService,
     private drugManagementService: DrugManagementService,
+    private medicationSafety: MedicationSafetyService,
+    private identityGuard: IdentityGuardService,
     private dataSource: DataSource,
   ) {}
 
@@ -119,6 +124,60 @@ export class PrescriptionsService {
       throw new BadRequestException(
         `Cannot create prescription for encounter in '${encounter.status}' status. Encounter must be active (in consultation, admitted, etc.).`,
       );
+    }
+
+    // ─── Medication-safety pre-flight (DDI + allergy) ─────────────────────
+    // Resolve drug IDs against inventory so DM service can match. Drug not
+    // found in inventory falls through (no DDI/allergy check possible) but
+    // is still allowed — caller may be prescribing free-text.
+    const drugIds: string[] = [];
+    const linesLite: { drugId?: string; drugCode?: string; drugName: string; dose?: string; frequency?: string }[] = [];
+    for (const item of dto.items) {
+      const inv = await this.inventoryRepo.findOne({
+        where: [
+          { code: item.drugCode, ...(tenantId ? { tenantId } : {}) },
+          { name: ILike(`%${item.drugName}%`), ...(tenantId ? { tenantId } : {}) },
+        ],
+      });
+      if (inv) {
+        drugIds.push(inv.id);
+        linesLite.push({
+          drugId: inv.id,
+          drugCode: item.drugCode,
+          drugName: item.drugName,
+          dose: item.dose,
+          frequency: item.frequency,
+        });
+      } else {
+        linesLite.push({
+          drugCode: item.drugCode,
+          drugName: item.drugName,
+          dose: item.dose,
+          frequency: item.frequency,
+        });
+      }
+    }
+
+    const patientIdForSafety = (encounter as any).patientId as string | undefined;
+    const safety = await this.medicationSafety.runSafetyChecks({
+      patientId: patientIdForSafety,
+      drugIds,
+      lines: linesLite,
+      tenantId,
+    });
+
+    if (safety.blocked && !dto.safetyOverride) {
+      // Caller must re-submit with safetyOverride { reason } to proceed.
+      throw new ConflictException({
+        code: 'SAFETY_BLOCKED',
+        message:
+          safety.blockingAlerts.length > 0
+            ? `Medication-safety alert: ${safety.blockingAlerts.length} blocking issue(s). Override required.`
+            : `Medication-safety check is degraded (${safety.degradedReasons.join('; ')}). Override required.`,
+        alerts: safety.alerts,
+        degraded: safety.degraded,
+        degradedReasons: safety.degradedReasons,
+      });
     }
 
     const prescriptionNumber = await this.generatePrescriptionNumber(tenantId);
@@ -190,6 +249,24 @@ export class PrescriptionsService {
 
       return savedPrescription;
     });
+
+    // Persist safety-override audit row if checks were bypassed.
+    if (safety.blocked && dto.safetyOverride) {
+      try {
+        await this.medicationSafety.recordOverride({
+          prescriptionId: saved.id,
+          patientId: patientIdForSafety,
+          encounterId: dto.encounterId,
+          alerts: safety.alerts,
+          reason: dto.safetyOverride.reason,
+          overriddenById: userId,
+          cosignerId: dto.safetyOverride.cosignerId,
+          tenantId,
+        });
+      } catch (err: any) {
+        this.logger.error(`Safety-override audit write failed: ${err?.message}`, err?.stack);
+      }
+    }
 
     // Update encounter status
     if (encounter.status === EncounterStatus.IN_CONSULTATION) {
@@ -391,6 +468,27 @@ export class PrescriptionsService {
       throw new BadRequestException(`Cannot dispense more than ${remainingQty} units`);
     }
 
+    // Server-derived price ONLY: never trust client-supplied unitPrice.
+    let resolvedPrice = 0;
+    const inv = await this.inventoryRepo.findOne({
+      where: [
+        { code: item.drugCode, ...(tenantId ? { tenantId } : {}) },
+        { name: ILike(`%${item.drugName}%`), ...(tenantId ? { tenantId } : {}) },
+      ],
+    });
+    if (inv) {
+      resolvedPrice =
+        Number((inv as any).retailPrice) ||
+        Number((inv as any).sellingPrice) ||
+        Number((inv as any).unitCost) ||
+        0;
+    }
+    if (resolvedPrice <= 0) {
+      this.logger.warn(
+        `dispenseItem price fallback to 0 for ${item.drugName} — no inventory price available`,
+      );
+    }
+
     // Create dispensation record
     const dispensation = this.dispensationRepository.create({
       prescriptionId: item.prescriptionId,
@@ -398,8 +496,8 @@ export class PrescriptionsService {
       quantity: dto.quantity,
       batchNumber: dto.batchNumber,
       expiryDate: dto.expiryDate,
-      unitPrice: dto.unitPrice || 0,
-      totalPrice: (dto.unitPrice || 0) * dto.quantity,
+      unitPrice: resolvedPrice,
+      totalPrice: resolvedPrice * dto.quantity,
       dispensedById: userId,
       ...(tenantId ? { tenantId } : {}),
     });
@@ -472,11 +570,26 @@ export class PrescriptionsService {
         throw new BadRequestException('Cannot dispense a cancelled prescription');
       }
 
-      // === MEDICATION SAFETY CHECKS ===
+      // === IDENTITY GUARDRAIL ===
+      // If the caller submitted a witnessId, validate it server-side before any
+      // controlled-substance log can rely on it (assertWitness throws on misuse:
+      // self-witness, wrong tenant, inactive user, ineligible role).
+      if (dto.witnessId) {
+        await this.identityGuard.assertWitness({
+          witnessId: dto.witnessId,
+          actorUserId: userId,
+          tenantId,
+          context: 'prescription dispense',
+        });
+      }
+      // === END IDENTITY GUARDRAIL ===
+
+      // === MEDICATION SAFETY CHECKS (centralised + fail-closed) ===
 
       // Resolve drug IDs for all prescription items
       const drugIds: string[] = [];
       const drugIdMap = new Map<string, string>(); // prescriptionItemId -> inventoryItemId
+      const linesLite: { drugId?: string; drugCode?: string; drugName: string; dose?: string; frequency?: string }[] = [];
       for (const item of prescription.items) {
         const inventoryItem = await inventoryRepo.findOne({
           where: [
@@ -487,66 +600,51 @@ export class PrescriptionsService {
         if (inventoryItem) {
           drugIds.push(inventoryItem.id);
           drugIdMap.set(item.id, inventoryItem.id);
+          linesLite.push({
+            drugId: inventoryItem.id,
+            drugCode: item.drugCode,
+            drugName: item.drugName,
+            dose: item.dose,
+            frequency: item.frequency,
+          });
+        } else {
+          linesLite.push({
+            drugCode: item.drugCode,
+            drugName: item.drugName,
+            dose: item.dose,
+            frequency: item.frequency,
+          });
         }
       }
 
-      // Check drug-drug interactions
-      if (drugIds.length >= 2) {
-        try {
-          const interactionResult = await this.drugManagementService.checkInteractions(
-            drugIds,
-            tenantId,
-          );
-          if (interactionResult.hasInteractions) {
-            const severe = interactionResult.interactions.filter(
-              (i) => i.severity === 'major' || i.severity === 'contraindicated',
-            );
-            if (severe.length > 0) {
-              const details = severe.map((i) => `${i.description} (${i.severity})`).join('; ');
-              throw new BadRequestException(
-                `DRUG INTERACTION ALERT: ${severe.length} major/contraindicated interaction(s) detected. ${details}. Review required before dispensing.`,
-              );
-            }
-            // Log moderate interactions as warnings but allow dispensing
-            const moderate = interactionResult.interactions.filter(
-              (i) => i.severity === 'moderate',
-            );
-            if (moderate.length > 0) {
-              this.logger.warn(
-                `Drug interaction warning for Rx ${prescription.prescriptionNumber}: ${moderate.length} moderate interaction(s)`,
-              );
-            }
-          }
-        } catch (err) {
-          if (err instanceof BadRequestException) throw err;
-          this.logger.warn(`Drug interaction check failed (non-blocking): ${err.message}`);
-        }
+      const patientIdForSafety = (prescription.encounter as any)?.patientId as string | undefined;
+      const safety = await this.medicationSafety.runSafetyChecks({
+        patientId: patientIdForSafety,
+        drugIds,
+        lines: linesLite,
+        tenantId,
+      });
+
+      if (safety.blocked) {
+        const summary =
+          safety.blockingAlerts.length > 0
+            ? safety.blockingAlerts
+                .map((a) => `${a.kind.toUpperCase()} (${a.severity}): ${a.description}`)
+                .join('; ')
+            : `Safety check degraded: ${safety.degradedReasons.join('; ')}`;
+        // Fail-closed: dispense is refused. An override at dispense time
+        // requires going through pharmacy POS override flow (recordInteractionOverride),
+        // not this path.
+        throw new BadRequestException(
+          `MEDICATION SAFETY BLOCK for Rx ${prescription.prescriptionNumber}: ${summary}. Override at pharmacy POS required to proceed.`,
+        );
       }
 
-      // Check patient allergies against prescribed drugs
-      if (prescription.encounter?.patient) {
-        const patient = prescription.encounter.patient as any;
-        const allergies: string[] = patient.allergies || patient.knownAllergies || [];
-        if (allergies.length > 0) {
-          for (const [itemId, drugId] of drugIdMap.entries()) {
-            try {
-              const allergyResult = await this.drugManagementService.checkAllergyRisk(
-                drugId,
-                allergies,
-                tenantId,
-              );
-              if (allergyResult.hasRisk && allergyResult.directMatch) {
-                const item = prescription.items.find((i) => i.id === itemId);
-                throw new BadRequestException(
-                  `ALLERGY ALERT: ${item?.drugName || 'Drug'} matches patient allergy. Matched classes: ${allergyResult.matchedClasses.join(', ')}. Cannot dispense without allergy override.`,
-                );
-              }
-            } catch (err) {
-              if (err instanceof BadRequestException) throw err;
-              this.logger.warn(`Allergy check failed (non-blocking): ${err.message}`);
-            }
-          }
-        }
+      // Non-blocking moderate alerts → log only.
+      for (const a of safety.alerts.filter((x) => !safety.blockingAlerts.includes(x))) {
+        this.logger.warn(
+          `Rx ${prescription.prescriptionNumber} ${a.kind} (${a.severity}): ${a.description}`,
+        );
       }
       // === END MEDICATION SAFETY CHECKS ===
 
@@ -658,20 +756,24 @@ export class PrescriptionsService {
         }
 
         // Create dispensation record
-        // Resolve price: frontend price → inventory retail/selling price → unit cost → 0
-        let resolvedPrice = Number(itemDto.unitPrice) || 0;
-        if (resolvedPrice <= 0) {
-          const invItemId = drugIdMap.get(item.id);
-          if (invItemId) {
-            const invItem = await inventoryRepo.findOne({ where: { id: invItemId } });
-            if (invItem) {
-              resolvedPrice =
-                Number(invItem.retailPrice) ||
-                Number(invItem.sellingPrice) ||
-                Number(invItem.unitCost) ||
-                0;
-            }
+        // Server-derived price ONLY: never trust client-supplied unitPrice.
+        // Resolve from inventory: retail → selling → unit cost → 0 (with warning).
+        let resolvedPrice = 0;
+        const invItemId = drugIdMap.get(item.id);
+        if (invItemId) {
+          const invItem = await inventoryRepo.findOne({ where: { id: invItemId } });
+          if (invItem) {
+            resolvedPrice =
+              Number(invItem.retailPrice) ||
+              Number(invItem.sellingPrice) ||
+              Number(invItem.unitCost) ||
+              0;
           }
+        }
+        if (resolvedPrice <= 0) {
+          this.logger.warn(
+            `Dispense price fallback to 0 for ${item.drugName} (Rx ${prescription.prescriptionNumber}) — no inventory price available`,
+          );
         }
 
         const dispensation = dispensationRepo.create({
@@ -1203,6 +1305,15 @@ export class PrescriptionsService {
     });
     if (!item) throw new NotFoundException('Prescription item not found');
 
+    if (dto.witnessId) {
+      await this.identityGuard.assertWitness({
+        witnessId: dto.witnessId,
+        actorUserId: userId,
+        tenantId,
+        context: 'medication administration',
+      });
+    }
+
     const record = this.adminRepository.create({
       prescriptionId: item.prescriptionId,
       prescriptionItemId: item.id,
@@ -1343,6 +1454,7 @@ export class PrescriptionsService {
   async addWitness(
     logId: string,
     dto: AddWitnessDto,
+    actorUserId: string,
     tenantId?: string,
   ): Promise<ControlledSubstanceLog> {
     const log = await this.controlledSubstanceLogRepository.findOne({
@@ -1354,6 +1466,15 @@ export class PrescriptionsService {
     if (log.witnessId) {
       throw new BadRequestException('Witness already recorded for this entry');
     }
+    if (log.dispensedById && dto.witnessId === log.dispensedById) {
+      throw new BadRequestException('Witness must differ from the dispenser');
+    }
+    await this.identityGuard.assertWitness({
+      witnessId: dto.witnessId,
+      actorUserId: log.dispensedById || actorUserId,
+      tenantId,
+      context: 'controlled-substance witness',
+    });
     log.witnessId = dto.witnessId;
     log.witnessSignature = dto.witnessSignature ?? log.witnessSignature;
     log.witnessedAt = new Date();
@@ -1363,6 +1484,7 @@ export class PrescriptionsService {
   async doubleCheck(
     logId: string,
     dto: DoubleCheckDto,
+    actorUserId: string,
     tenantId?: string,
   ): Promise<ControlledSubstanceLog> {
     const log = await this.controlledSubstanceLogRepository.findOne({
@@ -1379,6 +1501,12 @@ export class PrescriptionsService {
         'Double-check cannot be performed by the same person who dispensed',
       );
     }
+    await this.identityGuard.assertWitness({
+      witnessId: dto.checkerId,
+      actorUserId: log.dispensedById || actorUserId,
+      tenantId,
+      context: 'controlled-substance double-check',
+    });
     log.doubleCheckById = dto.checkerId;
     log.doubleCheckedAt = new Date();
     return this.controlledSubstanceLogRepository.save(log);

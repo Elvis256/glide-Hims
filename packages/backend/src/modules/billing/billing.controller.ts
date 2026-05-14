@@ -19,6 +19,7 @@ import {
   CreatePaymentDto,
   InvoiceQueryDto,
   UpdateInvoiceItemDto,
+  PreviewInvoiceDto,
 } from './billing.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
@@ -37,6 +38,16 @@ export class BillingController {
   @ApiOperation({ summary: 'Create invoice' })
   createInvoice(@Body() dto: CreateInvoiceDto, @Request() req: any) {
     return this.billingService.createInvoice(dto, req.user.id, req.user?.tenantId);
+  }
+
+  @Post('invoice-preview')
+  @AuthWithPermissions('billing.read')
+  @ApiOperation({
+    summary:
+      'Preview invoice totals (subtotal, tax, coverage split, patient portion) WITHOUT persisting. Frontend billing screens must call this instead of computing totals locally.',
+  })
+  previewInvoice(@Body() dto: PreviewInvoiceDto, @Request() req: any) {
+    return this.billingService.previewInvoice(dto, req.user?.tenantId);
   }
 
   @Get('invoices')

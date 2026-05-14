@@ -60,7 +60,8 @@ import { queueService, type QueueEntry } from '../../services/queue';
 import { encountersService } from '../../services/encounters';
 import { vitalsService } from '../../services/vitals';
 import { ordersService, type CreateOrderDto, type Order } from '../../services/orders';
-import { prescriptionsService, type CreatePrescriptionDto, type Prescription } from '../../services/prescriptions';
+import { prescriptionsService, type CreatePrescriptionDto, type Prescription, type SafetyBlockedError } from '../../services/prescriptions';
+import { allergiesService, type PatientAllergy as PatientAllergyRecord } from '../../services/allergies';
 import { storesService, type Drug } from '../../services/stores';
 import { patientsService } from '../../services/patients';
 import { labService } from '../../services/lab';
@@ -74,6 +75,7 @@ import { useAuthStore } from '../../store/auth';
 import { useFacilityId } from '../../lib/facility';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
+import PrescriptionSafetyModal from '../../components/PrescriptionSafetyModal';
 import { printService } from '../../lib/print';
 
 // Types
@@ -450,6 +452,13 @@ export default function NewConsultationPage() {
     currentStock?: number;
   } | null>(null);
 
+  // Medication-safety override modal (triggered by 409 SAFETY_BLOCKED)
+  const [safetyBlocked, setSafetyBlocked] = useState<{
+    open: boolean;
+    payload: SafetyBlockedError | null;
+    pendingDto: CreatePrescriptionDto | null;
+  }>({ open: false, payload: null, pendingDto: null });
+
   // Auto-calculate prescription quantity from dose, frequency, duration, and drug strength
   const calcRxQuantity = (dose: string, frequency: string, duration: string, strength: string, maxStock?: number): number => {
     // Parse frequency to doses per day
@@ -539,6 +548,32 @@ export default function NewConsultationPage() {
     enabled: !!selectedPatient?.patientId,
   });
 
+  // Fetch structured patient allergies (FHIR AllergyIntolerance) — used by the
+  // safety banner so the prescriber sees them BEFORE writing an Rx (rather
+  // than only being blocked by the 409 modal at submit time).
+  const { data: patientAllergies = [] } = useQuery({
+    queryKey: ['patient-allergies', selectedPatient?.patientId],
+    queryFn: async () => {
+      if (!selectedPatient?.patientId) return [] as PatientAllergyRecord[];
+      try {
+        return await allergiesService.list(selectedPatient.patientId);
+      } catch {
+        return [] as PatientAllergyRecord[];
+      }
+    },
+    enabled: !!selectedPatient?.patientId,
+    staleTime: 30_000,
+  });
+
+  const activeAllergies = useMemo(
+    () => (patientAllergies || []).filter((a) => a.status === 'active'),
+    [patientAllergies],
+  );
+  const hasLifeThreateningAllergy = useMemo(
+    () => activeAllergies.some((a) => a.criticality === 'high' || a.severity === 'severe'),
+    [activeAllergies],
+  );
+
   // Fetch vitals for selected patient
   const { data: patientVitals } = useQuery({
     queryKey: ['vitals', selectedPatient?.patientId],
@@ -550,8 +585,8 @@ export default function NewConsultationPage() {
         return {
           temperature: String(latest.temperature || '-'),
           pulse: String(latest.pulse || '-'),
-          bp: latest.bloodPressureSystolic && latest.bloodPressureDiastolic 
-            ? `${latest.bloodPressureSystolic}/${latest.bloodPressureDiastolic}` 
+          bp: latest.bpSystolic != null && latest.bpDiastolic != null
+            ? `${latest.bpSystolic}/${latest.bpDiastolic}`
             : '-/-',
           respiratoryRate: String(latest.respiratoryRate || '-'),
           spo2: String(latest.oxygenSaturation || '-'),
@@ -1004,22 +1039,34 @@ export default function NewConsultationPage() {
       // ===== Step 2: Auto-create orders/prescriptions from plan items =====
       const rxItems = form.planItems.filter(p => p.type === 'prescription');
       if (rxItems.length > 0) {
+        const rxDto: CreatePrescriptionDto = {
+          encounterId,
+          items: rxItems.map(item => ({
+            drugCode: (item.details?.drugCode as string) || (item.details?.drugId as string) || 'generic',
+            drugName: (item.details?.drugName as string) || item.description,
+            dose: (item.details?.dose as string) || (item.details?.strength as string) || '',
+            frequency: (item.details?.frequency as string) || 'TDS',
+            duration: (item.details?.duration as string) || '5 days',
+            quantity: (item.details?.quantity as number) || 15,
+            instructions: (item.details?.instructions as string) || '',
+          })),
+          notes: form.clinicalImpression,
+        };
         try {
-          await prescriptionsService.create({
-            encounterId,
-            items: rxItems.map(item => ({
-              drugCode: (item.details?.drugCode as string) || (item.details?.drugId as string) || 'generic',
-              drugName: (item.details?.drugName as string) || item.description,
-              dose: (item.details?.dose as string) || (item.details?.strength as string) || '',
-              frequency: (item.details?.frequency as string) || 'TDS',
-              duration: (item.details?.duration as string) || '5 days',
-              quantity: (item.details?.quantity as number) || 15,
-              instructions: (item.details?.instructions as string) || '',
-            })),
-            notes: form.clinicalImpression,
-          });
+          await prescriptionsService.create(rxDto);
         } catch (e: any) {
-          if (!e.response?.data?.message?.includes?.('already')) {
+          const status = e?.response?.status;
+          const data = e?.response?.data;
+          if (status === 409 && data?.code === 'SAFETY_BLOCKED') {
+            // Surface the safety modal — clinician must override before
+            // the prescription is sent. Encounter is otherwise complete.
+            setSafetyBlocked({
+              open: true,
+              payload: data as SafetyBlockedError,
+              pendingDto: rxDto,
+            });
+            toast.error('Prescription blocked by safety check — review alert and override to send.', { duration: 8000 });
+          } else if (!data?.message?.includes?.('already')) {
             toast.error('Failed to auto-create prescription');
           }
         }
@@ -1372,16 +1419,42 @@ export default function NewConsultationPage() {
       // Refresh sent prescriptions + drug stock
       queryClient.invalidateQueries({ queryKey: ['encounter-prescriptions', encounterId] });
       queryClient.invalidateQueries({ queryKey: ['drug-search'] });
+      // Close safety modal if it was open from a previous attempt.
+      setSafetyBlocked({ open: false, payload: null, pendingDto: null });
     },
-    onError: (error: any) => {
-      const message = error?.response?.data?.message || error?.message || 'Failed to create prescription';
-      if (message.includes('Insufficient stock')) {
+    onError: (error: any, variables) => {
+      const status = error?.response?.status;
+      const data = error?.response?.data;
+      // Backend returns 409 with code: 'SAFETY_BLOCKED' when DDI/allergy
+      // checks fire. Pop the modal so the prescriber can override with reason.
+      if (status === 409 && data?.code === 'SAFETY_BLOCKED') {
+        setSafetyBlocked({
+          open: true,
+          payload: data as SafetyBlockedError,
+          pendingDto: variables as CreatePrescriptionDto,
+        });
+        return;
+      }
+      const message = data?.message || error?.message || 'Failed to create prescription';
+      if (typeof message === 'string' && message.includes('Insufficient stock')) {
         toast.error(`🚫 ${message}`, { duration: 8000 });
       } else {
-        toast.error(message);
+        toast.error(typeof message === 'string' ? message : 'Failed to create prescription');
       }
     },
   });
+
+  const handleSafetyOverride = (reason: string) => {
+    if (!safetyBlocked.pendingDto) return;
+    createPrescriptionMutation.mutate({
+      ...safetyBlocked.pendingDto,
+      safetyOverride: { reason },
+    });
+  };
+
+  const handleSafetyCancel = () => {
+    setSafetyBlocked({ open: false, payload: null, pendingDto: null });
+  };
 
   // Cancel prescription mutation
   const cancelPrescriptionMutation = useMutation({
@@ -2037,11 +2110,58 @@ export default function NewConsultationPage() {
             </div>
           )}
 
-          {/* Prominent full-width Allergy Banner */}
-          {patientSummary.allergies.length > 0 && (
-            <div className="flex items-center gap-2 mt-2 px-3 py-2 bg-red-600 text-white rounded-lg">
-              <AlertTriangle className="w-5 h-5 flex-shrink-0" />
-              <span className="text-sm font-bold">⚠️ ALLERGIES: {patientSummary.allergies.join(', ')}</span>
+          {/* Prominent full-width Allergy Banner — sourced from FHIR
+              AllergyIntolerance records (real-time). Falls back to legacy
+              patient.allergies string array only if no structured records exist. */}
+          {(activeAllergies.length > 0 || patientSummary.allergies.length > 0) && (
+            <div
+              className={`flex items-start gap-2 mt-2 px-3 py-2 rounded-lg text-white ${
+                hasLifeThreateningAllergy ? 'bg-red-700' : 'bg-red-600'
+              }`}
+            >
+              <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-bold uppercase tracking-wide opacity-90">
+                  {hasLifeThreateningAllergy
+                    ? '⚠️ LIFE-THREATENING ALLERGIES'
+                    : '⚠️ Active Allergies'}
+                </div>
+                {activeAllergies.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5 mt-1">
+                    {activeAllergies.map((a) => {
+                      const lifeThreat = a.criticality === 'high' || a.severity === 'severe';
+                      return (
+                        <span
+                          key={a.id}
+                          title={[
+                            a.reaction ? `Reaction: ${a.reaction}` : null,
+                            `Severity: ${a.severity || 'n/a'}`,
+                            `Criticality: ${a.criticality}`,
+                            `Verification: ${a.verification}`,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
+                          className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                            lifeThreat
+                              ? 'bg-white text-red-800 ring-1 ring-red-200'
+                              : 'bg-red-800/40 text-white ring-1 ring-white/30'
+                          }`}
+                        >
+                          {a.allergen}
+                          {a.reaction ? ` (${a.reaction})` : ''}
+                        </span>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-sm font-bold mt-0.5">
+                    {patientSummary.allergies.join(', ')}
+                    <span className="ml-2 text-xs font-normal opacity-80">
+                      (legacy — please re-record as structured allergy)
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -2720,14 +2840,14 @@ export default function NewConsultationPage() {
                               {vs.status !== 'normal' && <span className={`block text-[10px] mt-0.5 ${vs.status === 'critical' ? 'text-red-600' : 'text-yellow-600'}`}>⚠ {vs.label}</span>}
                             </div>);
                           })()}
-                          {encounterVitals.bloodPressureSystolic != null && encounterVitals.bloodPressureDiastolic != null && (() => {
-                            const sysVs = getVitalStatus('systolic', encounterVitals.bloodPressureSystolic);
-                            const diaVs = getVitalStatus('diastolic', encounterVitals.bloodPressureDiastolic);
+                          {encounterVitals.bpSystolic != null && encounterVitals.bpDiastolic != null && (() => {
+                            const sysVs = getVitalStatus('systolic', encounterVitals.bpSystolic);
+                            const diaVs = getVitalStatus('diastolic', encounterVitals.bpDiastolic);
                             const vs = sysVs.status === 'critical' || diaVs.status === 'critical' ? { status: 'critical' as const, label: sysVs.label || diaVs.label } : sysVs.status === 'warning' || diaVs.status === 'warning' ? { status: 'warning' as const, label: sysVs.label || diaVs.label } : { status: 'normal' as const, label: '' };
                             return (
                             <div className={`p-2 rounded border text-center ${vitalCellClass(vs.status)}`} title={vs.label}>
                               <Droplets className="w-3 h-3 text-blue-500 mx-auto mb-0.5" />
-                              <span className={`block ${vitalTextClass(vs.status)}`}>{encounterVitals.bloodPressureSystolic}/{encounterVitals.bloodPressureDiastolic}</span>
+                              <span className={`block ${vitalTextClass(vs.status)}`}>{encounterVitals.bpSystolic}/{encounterVitals.bpDiastolic}</span>
                               <span className="text-gray-500">BP</span>
                               {vs.status !== 'normal' && <span className={`block text-[10px] mt-0.5 ${vs.status === 'critical' ? 'text-red-600' : 'text-yellow-600'}`}>⚠ {vs.label}</span>}
                             </div>);
@@ -4660,6 +4780,17 @@ export default function NewConsultationPage() {
           </div>
         </div>
       )}
+
+      <PrescriptionSafetyModal
+        open={safetyBlocked.open}
+        alerts={safetyBlocked.payload?.alerts ?? []}
+        degraded={safetyBlocked.payload?.degraded}
+        degradedReasons={safetyBlocked.payload?.degradedReasons}
+        message={safetyBlocked.payload?.message}
+        onCancel={handleSafetyCancel}
+        onOverride={handleSafetyOverride}
+        submitting={createPrescriptionMutation.isPending}
+      />
     </div>
   );
 }

@@ -72,6 +72,17 @@ export class UpdateStatusDto {
   @IsEnum(EncounterStatus)
   status: EncounterStatus;
 
+  /**
+   * Optional UUID of the provider this encounter should be ASSIGNED to
+   * (e.g. nurse forwarding a patient to a specific doctor for IN_CONSULTATION).
+   * The acting user is always taken from the authenticated session — never
+   * from the request body — to prevent actor spoofing in the audit log.
+   */
+  @IsUUID()
+  @IsOptional()
+  attendingProviderId?: string;
+
+  /** @deprecated Use `attendingProviderId`. Accepted for backward compatibility. */
   @IsUUID()
   @IsOptional()
   providerId?: string;

@@ -14,25 +14,41 @@ import {
   Eye,
 } from 'lucide-react';
 
-type Tab = 'structure' | 'policies' | 'groups' | 'delegations';
+import { Link } from 'react-router-dom';
+
+type Tab = 'policies' | 'groups' | 'delegations';
 
 const TABS: { id: Tab; label: string; icon: any }[] = [
-  { id: 'structure', label: 'Organisation', icon: Building2 },
   { id: 'policies', label: 'Approval Policies', icon: Workflow },
   { id: 'groups', label: 'Approver Groups', icon: Users },
   { id: 'delegations', label: 'Delegations', icon: CalendarClock },
 ];
 
 export default function OrgApprovalAdminPage() {
-  const [tab, setTab] = useState<Tab>('structure');
+  const [tab, setTab] = useState<Tab>('policies');
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Organisation & Approvals</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Procurement Approvals</h1>
         <p className="text-sm text-gray-500 mt-1">
-          Configure your reporting structure and how procurement approvals are routed.
+          Define how procurement requests are routed for approval. Reporting lines, departments
+          and positions are managed under HR.
         </p>
+      </div>
+
+      <div className="mb-6 flex items-start gap-3 rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+        <Building2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
+        <div className="flex-1">
+          Departments, Positions and Employee reporting lines have moved to{' '}
+          <Link
+            to="/admin/hr/organisation"
+            className="font-medium underline hover:text-blue-900"
+          >
+            HR &rsaquo; Organisation
+          </Link>
+          . Approval policies on this page reference those records.
+        </div>
       </div>
 
       <div className="border-b border-gray-200 mb-6">
@@ -54,7 +70,6 @@ export default function OrgApprovalAdminPage() {
         </nav>
       </div>
 
-      {tab === 'structure' && <StructureTab />}
       {tab === 'policies' && <PoliciesTab />}
       {tab === 'groups' && <GroupsTab />}
       {tab === 'delegations' && <DelegationsTab />}
@@ -85,7 +100,7 @@ function userLabel(u: any) {
 }
 
 // ============== STRUCTURE TAB ==============
-function StructureTab() {
+export function StructureTab() {
   const qc = useQueryClient();
   const usersQ = useUsers();
   const deptsQ = useQuery({
@@ -131,6 +146,8 @@ function StructureTab() {
   });
 
   const [newPos, setNewPos] = useState({ name: '', code: '', rank: 0 });
+  const [inlineCreate, setInlineCreate] = useState<{ empId: string; name: string } | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const users = usersQ.data || [];
   const depts = deptsQ.data || [];
@@ -138,6 +155,76 @@ function StructureTab() {
   const positions = positionsQ.data || [];
 
   const userById = useMemo(() => Object.fromEntries(users.map((u: any) => [u.id, u])), [users]);
+
+  const importJobTitlesAsPositions = async () => {
+    const existing = new Set(
+      positions.map((p: any) => String(p.name || '').trim().toLowerCase()),
+    );
+    const titleToEmps = new Map<string, any[]>();
+    for (const e of emps) {
+      const t = String(e.jobTitle || '').trim();
+      if (!t) continue;
+      const key = t.toLowerCase();
+      if (existing.has(key)) continue;
+      const arr = titleToEmps.get(t) || [];
+      arr.push(e);
+      titleToEmps.set(t, arr);
+    }
+    if (titleToEmps.size === 0) return;
+    setBulkBusy(true);
+    try {
+      let rank = (positions.reduce((m: number, p: any) => Math.max(m, p.rank || 0), 0) || 0) + 1;
+      for (const [name, list] of titleToEmps) {
+        try {
+          const created: any = await createPos.mutateAsync({ name, rank: rank++ } as any);
+          const newId = created?.data?.id || created?.id;
+          if (!newId) continue;
+          for (const e of list) {
+            if (!e.positionId) {
+              await setPos.mutateAsync({ id: e.id, positionId: newId });
+            }
+          }
+        } catch (err) {
+          console.error('Failed to create position', name, getApiErrorMessage(err));
+        }
+      }
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['org-admin-positions'] }),
+        qc.invalidateQueries({ queryKey: ['org-admin-employees'] }),
+      ]);
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const distinctMissingTitles = useMemo(() => {
+    const existing = new Set(
+      positions.map((p: any) => String(p.name || '').trim().toLowerCase()),
+    );
+    const set = new Set<string>();
+    for (const e of emps) {
+      const t = String(e.jobTitle || '').trim();
+      if (t && !existing.has(t.toLowerCase())) set.add(t);
+    }
+    return Array.from(set);
+  }, [emps, positions]);
+
+  const submitInlineCreate = async () => {
+    if (!inlineCreate) return;
+    const name = inlineCreate.name.trim();
+    if (!name) return;
+    const rank = (positions.reduce((m: number, p: any) => Math.max(m, p.rank || 0), 0) || 0) + 1;
+    try {
+      const created: any = await createPos.mutateAsync({ name, rank } as any);
+      const newId = created?.data?.id || created?.id;
+      if (newId) {
+        await setPos.mutateAsync({ id: inlineCreate.empId, positionId: newId });
+      }
+      setInlineCreate(null);
+    } catch (err) {
+      alert(getApiErrorMessage(err) || 'Failed to create position');
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -217,9 +304,26 @@ function StructureTab() {
 
       {/* Positions */}
       <section className="bg-white rounded-lg border border-gray-200">
-        <div className="px-4 py-3 border-b flex items-center justify-between">
+        <div className="px-4 py-3 border-b flex items-center justify-between gap-3 flex-wrap">
           <h2 className="font-semibold text-gray-900">Positions / Job Titles</h2>
-          <span className="text-xs text-gray-500">Higher rank = more senior</span>
+          <div className="flex items-center gap-3">
+            {distinctMissingTitles.length > 0 && positions.length > 0 && (
+              <button
+                onClick={importJobTitlesAsPositions}
+                disabled={bulkBusy}
+                className="inline-flex items-center gap-1 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded px-2 py-1"
+                title={distinctMissingTitles.join(', ')}
+              >
+                {bulkBusy ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Plus className="w-3 h-3" />
+                )}
+                Import {distinctMissingTitles.length} from job titles
+              </button>
+            )}
+            <span className="text-xs text-gray-500">Higher rank = more senior</span>
+          </div>
         </div>
         <div className="px-4 py-3 grid grid-cols-1 sm:grid-cols-4 gap-2 border-b">
           <input
@@ -243,9 +347,15 @@ function StructureTab() {
           />
           <button
             onClick={() => {
-              if (!newPos.name) return;
-              createPos.mutate(newPos, {
+              const name = newPos.name.trim();
+              if (!name) return;
+              const payload: any = { name, rank: Number(newPos.rank) || 0 };
+              const code = String(newPos.code || '').trim();
+              if (code) payload.code = code;
+              createPos.mutate(payload, {
                 onSuccess: () => setNewPos({ name: '', code: '', rank: 0 }),
+                onError: (err: any) =>
+                  alert(getApiErrorMessage(err) || 'Failed to create position'),
               });
             }}
             className="bg-blue-600 text-white rounded text-sm px-3 py-1 inline-flex items-center justify-center gap-1"
@@ -281,7 +391,28 @@ function StructureTab() {
             {!positionsQ.isLoading && positions.length === 0 && (
               <tr>
                 <td colSpan={4} className="px-4 py-6 text-center text-gray-400">
-                  No positions defined.
+                  <div>No positions defined.</div>
+                  {distinctMissingTitles.length > 0 && (
+                    <div className="mt-3">
+                      <button
+                        onClick={importJobTitlesAsPositions}
+                        disabled={bulkBusy}
+                        className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm rounded px-3 py-1.5"
+                      >
+                        {bulkBusy ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Plus className="w-4 h-4" />
+                        )}
+                        Create {distinctMissingTitles.length} position
+                        {distinctMissingTitles.length === 1 ? '' : 's'} from existing job titles
+                      </button>
+                      <div className="mt-1 text-xs text-gray-400">
+                        {distinctMissingTitles.slice(0, 6).join(', ')}
+                        {distinctMissingTitles.length > 6 ? '…' : ''}
+                      </div>
+                    </div>
+                  )}
                 </td>
               </tr>
             )}
@@ -344,9 +475,14 @@ function StructureTab() {
                     <select
                       className="border rounded px-2 py-1 text-sm w-full max-w-xs"
                       value={e.positionId || ''}
-                      onChange={(ev) =>
-                        setPos.mutate({ id: e.id, positionId: ev.target.value || null })
-                      }
+                      onChange={(ev) => {
+                        const v = ev.target.value;
+                        if (v === '__create__') {
+                          setInlineCreate({ empId: e.id, name: e.jobTitle || '' });
+                          return;
+                        }
+                        setPos.mutate({ id: e.id, positionId: v || null });
+                      }}
                     >
                       <option value="">— None —</option>
                       {positions.map((p: any) => (
@@ -354,7 +490,38 @@ function StructureTab() {
                           {p.name}
                         </option>
                       ))}
+                      <option value="__create__">➕ Create new position…</option>
                     </select>
+                    {inlineCreate?.empId === e.id && (
+                      <div className="mt-2 flex items-center gap-1">
+                        <input
+                          autoFocus
+                          value={inlineCreate.name}
+                          onChange={(ev) =>
+                            setInlineCreate({ ...inlineCreate, name: ev.target.value })
+                          }
+                          onKeyDown={(ev) => {
+                            if (ev.key === 'Enter') submitInlineCreate();
+                            if (ev.key === 'Escape') setInlineCreate(null);
+                          }}
+                          placeholder="Position name"
+                          className="border rounded px-2 py-1 text-sm flex-1 min-w-0"
+                        />
+                        <button
+                          onClick={submitInlineCreate}
+                          disabled={!inlineCreate.name.trim() || createPos.isPending}
+                          className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-xs rounded px-2 py-1"
+                        >
+                          Add
+                        </button>
+                        <button
+                          onClick={() => setInlineCreate(null)}
+                          className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}

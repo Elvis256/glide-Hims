@@ -4,6 +4,8 @@ import { Repository, Between, DataSource } from 'typeorm';
 import { DischargeSummary, DischargeType } from '../../database/entities/discharge-summary.entity';
 import { Encounter, EncounterStatus } from '../../database/entities/encounter.entity';
 import { CreateDischargeSummaryDto, DischargeSummaryFilterDto } from './dto/discharge.dto';
+import { VitalsService } from '../vitals/vitals.service';
+import { VitalSource } from '../../database/entities/vital.entity';
 
 const DISCHARGEABLE_STATUSES: EncounterStatus[] = [
   EncounterStatus.ADMITTED,
@@ -18,6 +20,7 @@ export class DischargeService {
     @InjectRepository(Encounter)
     private encounterRepository: Repository<Encounter>,
     private dataSource: DataSource,
+    private vitalsService: VitalsService,
   ) {}
 
   async create(
@@ -73,6 +76,49 @@ export class DischargeService {
           endTime: new Date(dto.dischargeDate),
         },
       );
+
+      // Mirror vitalSignsAtDischarge into the canonical `vitals` timeline.
+      // Done after the txn block (best-effort + outside the discharge txn).
+      const v = (dto as any).vitalSignsAtDischarge as
+        | {
+            temperature?: number;
+            pulse?: number;
+            bloodPressure?: string;
+            respiratoryRate?: number;
+            oxygenSaturation?: number;
+            weight?: number;
+          }
+        | undefined;
+      if (v && encounter.patientId) {
+        let bpSystolic: number | undefined;
+        let bpDiastolic: number | undefined;
+        if (typeof v.bloodPressure === 'string') {
+          const m = v.bloodPressure.match(/^\s*(\d{2,3})\s*\/\s*(\d{2,3})\s*$/);
+          if (m) {
+            bpSystolic = Number(m[1]);
+            bpDiastolic = Number(m[2]);
+          }
+        }
+        await this.vitalsService.recordFromSource({
+          source: VitalSource.DISCHARGE,
+          sourceRefId: savedSummary.id,
+          patientId: encounter.patientId,
+          encounterId: dto.encounterId,
+          recordedById: userId,
+          tenantId,
+          facilityId,
+          recordedAt: savedSummary.dischargeDate ?? new Date(),
+          vitals: {
+            temperature: v.temperature,
+            pulse: v.pulse,
+            bpSystolic,
+            bpDiastolic,
+            respiratoryRate: v.respiratoryRate,
+            oxygenSaturation: v.oxygenSaturation,
+            weight: v.weight,
+          },
+        });
+      }
 
       return savedSummary;
     });

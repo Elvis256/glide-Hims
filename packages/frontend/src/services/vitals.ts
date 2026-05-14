@@ -2,18 +2,25 @@ import api from './api';
 
 export interface VitalRecord {
   id: string;
-  encounterId: string;
+  encounterId?: string | null;
+  patientId?: string | null;
+  source?: string;
+  sourceRefId?: string | null;
   temperature?: number;
   pulse?: number;
-  bloodPressureSystolic?: number;
-  bloodPressureDiastolic?: number;
+  /** Backend column `bp_systolic`. The legacy `bloodPressureSystolic` alias
+   *  is no longer emitted by the API. */
+  bpSystolic?: number;
+  bpDiastolic?: number;
   respiratoryRate?: number;
   oxygenSaturation?: number;
   weight?: number;
   height?: number;
+  bmi?: number;
   bloodGlucose?: number;
   painScale?: number;
   notes?: string;
+  recordedAt?: string;
   recordedById: string;
   recordedBy?: {
     id: string;

@@ -18,6 +18,8 @@ import { EncountersModule } from './modules/encounters/encounters.module';
 import { VitalsModule } from './modules/vitals/vitals.module';
 import { ClinicalNotesModule } from './modules/clinical-notes/clinical-notes.module';
 import { PrescriptionsModule } from './modules/prescriptions/prescriptions.module';
+import { AllergiesModule } from './modules/allergies/allergies.module';
+import { CriticalResultsModule } from './modules/critical-results/critical-results.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { DoctorFeesModule } from './modules/doctor-fees/doctor-fees.module';
 import { PaymentGatewayModule } from './modules/payment-gateway/payment-gateway.module';
@@ -34,6 +36,7 @@ import { FinanceModule } from './modules/finance/finance.module';
 import { RadiologyModule } from './modules/radiology/radiology.module';
 import { InsuranceModule } from './modules/insurance/insurance.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { ReportsModule } from './modules/reports/reports.module';
 import { MembershipModule } from './modules/membership/membership.module';
 import { ServicesModule } from './modules/services/services.module';
 import { StoresModule } from './modules/stores/stores.module';
@@ -78,6 +81,7 @@ import { SetupModule } from './modules/setup/setup.module';
 import { SystemSettingsModule } from './modules/system-settings/system-settings.module';
 import { BiometricsModule } from './modules/biometrics/biometrics.module';
 import { AuditModule } from './common/interceptors/audit.module';
+import { IdentityGuardModule } from './common/services/identity-guard.module';
 import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
 import { InAppNotificationsModule } from './modules/in-app-notifications/in-app-notifications.module';
 import { LeadsModule } from './modules/leads/leads.module';
@@ -147,6 +151,7 @@ import { EfrisModule } from './modules/efris/efris.module';
 
     // Core Modules
     AuditModule,
+    IdentityGuardModule,
     TenantModule,
     HealthModule,
     SetupModule,
@@ -166,6 +171,8 @@ import { EfrisModule } from './modules/efris/efris.module';
     VitalsModule,
     ClinicalNotesModule,
     PrescriptionsModule,
+    AllergiesModule,
+    CriticalResultsModule,
     BillingModule,
     DoctorFeesModule,
     PaymentGatewayModule,
@@ -202,6 +209,7 @@ import { EfrisModule } from './modules/efris/efris.module';
 
     // Analytics & BI (Phase 10)
     AnalyticsModule,
+    ReportsModule,
 
     // Phase 11: Hospital Workflow Enhancements
     MembershipModule,

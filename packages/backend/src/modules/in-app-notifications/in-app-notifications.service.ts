@@ -282,4 +282,212 @@ export class InAppNotificationsService {
       tenantId,
     );
   }
+
+  /** Patient added to a queue — notify the assigned doctor, or all on-duty
+   * doctors of the target department if no specific doctor was picked. */
+  async notifyPatientQueued(opts: {
+    patientName: string;
+    ticketNumber?: string;
+    queueId: string;
+    servicePoint: string;
+    assignedDoctorId?: string | null;
+    departmentRoleHints?: string[];
+    facilityId?: string;
+    tenantId?: string;
+  }) {
+    const {
+      patientName,
+      ticketNumber,
+      queueId,
+      servicePoint,
+      assignedDoctorId,
+      departmentRoleHints,
+      facilityId,
+      tenantId,
+    } = opts;
+
+    const title = ticketNumber
+      ? `New Patient in Queue (${ticketNumber})`
+      : 'New Patient in Queue';
+    const message = `${patientName} is waiting at ${servicePoint}`;
+    const base = {
+      facilityId,
+      type: InAppNotificationType.PATIENT_QUEUED,
+      title,
+      message,
+      metadata: { referenceType: 'queue', referenceId: queueId, ticketNumber, servicePoint },
+    };
+
+    if (assignedDoctorId) {
+      await this.create({ ...base, targetUserId: assignedDoctorId }, tenantId);
+      return;
+    }
+    const roles = departmentRoleHints && departmentRoleHints.length
+      ? departmentRoleHints
+      : ['doctor'];
+    const userIds = await this.getUserIdsByRole(roles, facilityId, tenantId);
+    if (userIds.length === 0) return;
+    await this.notifyMany(userIds, base, tenantId);
+  }
+
+  /** New invoice created — notify cashiers on duty (used for pay-at-billing). */
+  async notifyInvoiceCreated(opts: {
+    invoiceId: string;
+    invoiceNumber: string;
+    patientName?: string;
+    totalAmount: number;
+    facilityId?: string;
+    tenantId?: string;
+  }) {
+    const { invoiceId, invoiceNumber, patientName, totalAmount, facilityId, tenantId } = opts;
+    const userIds = await this.getUserIdsByRole(
+      ['cashier', 'billing', 'reception'],
+      facilityId,
+      tenantId,
+    );
+    if (userIds.length === 0) return;
+    await this.notifyMany(
+      userIds,
+      {
+        facilityId,
+        type: InAppNotificationType.INVOICE_CREATED,
+        title: `New Bill: ${invoiceNumber}`,
+        message: patientName
+          ? `${patientName} — UGX ${Number(totalAmount || 0).toLocaleString()}`
+          : `Amount UGX ${Number(totalAmount || 0).toLocaleString()}`,
+        metadata: { referenceType: 'invoice', referenceId: invoiceId, invoiceNumber },
+      },
+      tenantId,
+    );
+  }
+
+  /** Payment received — tell the queued doctor the patient has cleared billing. */
+  async notifyPaymentCleared(opts: {
+    doctorUserId: string;
+    patientName: string;
+    invoiceNumber: string;
+    amount: number;
+    facilityId?: string;
+    tenantId?: string;
+  }) {
+    const { doctorUserId, patientName, invoiceNumber, amount, facilityId, tenantId } = opts;
+    await this.create(
+      {
+        targetUserId: doctorUserId,
+        facilityId,
+        type: InAppNotificationType.ENCOUNTER_STATUS_CHANGED,
+        title: 'Patient Cleared Billing',
+        message: `${patientName} paid UGX ${Number(amount || 0).toLocaleString()} (${invoiceNumber}) and is now in your queue.`,
+        metadata: { referenceType: 'invoice', invoiceNumber, amount },
+      },
+      tenantId,
+    );
+  }
+
+  /** Patient transferred to another service point — notify staff there. */
+  async notifyPatientTransferred(opts: {
+    queueId: string;
+    patientName: string;
+    fromServicePoint: string;
+    toServicePoint: string;
+    reason?: string;
+    facilityId?: string;
+    tenantId?: string;
+  }) {
+    const {
+      queueId,
+      patientName,
+      fromServicePoint,
+      toServicePoint,
+      reason,
+      facilityId,
+      tenantId,
+    } = opts;
+    const roleMap: Record<string, string[]> = {
+      laboratory: ['lab technician', 'lab', 'laboratory'],
+      radiology: ['radiologist', 'radiology', 'radiographer'],
+      pharmacy: ['pharmacist', 'pharmacy'],
+      billing: ['cashier', 'billing', 'reception'],
+      cashier: ['cashier', 'billing'],
+      triage: ['nurse', 'triage'],
+      vitals: ['nurse', 'triage'],
+      consultation: ['doctor'],
+      injection: ['nurse'],
+      dressing: ['nurse'],
+    };
+    const roles = roleMap[toServicePoint.toLowerCase()] || ['nurse', 'doctor'];
+    const userIds = await this.getUserIdsByRole(roles, facilityId, tenantId);
+    if (userIds.length === 0) return;
+    await this.notifyMany(
+      userIds,
+      {
+        facilityId,
+        type: InAppNotificationType.PATIENT_TRANSFERRED,
+        title: `Incoming: ${patientName}`,
+        message: reason
+          ? `Transferred from ${fromServicePoint} → ${toServicePoint}. Reason: ${reason}`
+          : `Transferred from ${fromServicePoint} → ${toServicePoint}.`,
+        metadata: {
+          referenceType: 'queue',
+          referenceId: queueId,
+          fromServicePoint,
+          toServicePoint,
+        },
+      },
+      tenantId,
+    );
+  }
+
+  /** Patient called — broadcast to waiting-room display users (and counter staff
+   * subscribed to the service point). */
+  async notifyPatientCalled(opts: {
+    queueId: string;
+    patientName: string;
+    ticketNumber?: string;
+    servicePoint: string;
+    counterNumber?: string;
+    roomNumber?: string;
+    facilityId?: string;
+    tenantId?: string;
+  }) {
+    const {
+      queueId,
+      patientName,
+      ticketNumber,
+      servicePoint,
+      counterNumber,
+      roomNumber,
+      facilityId,
+      tenantId,
+    } = opts;
+    const location = roomNumber
+      ? `Room ${roomNumber}`
+      : counterNumber
+        ? `Counter ${counterNumber}`
+        : servicePoint;
+    const userIds = await this.getUserIdsByRole(
+      ['queue display', 'receptionist', 'reception'],
+      facilityId,
+      tenantId,
+    );
+    if (userIds.length === 0) return;
+    await this.notifyMany(
+      userIds,
+      {
+        facilityId,
+        type: InAppNotificationType.PATIENT_CALLED,
+        title: ticketNumber ? `Now Serving ${ticketNumber}` : 'Now Serving',
+        message: `${patientName} → ${location}`,
+        metadata: {
+          referenceType: 'queue',
+          referenceId: queueId,
+          ticketNumber,
+          servicePoint,
+          counterNumber,
+          roomNumber,
+        },
+      },
+      tenantId,
+    );
+  }
 }

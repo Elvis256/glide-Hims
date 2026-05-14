@@ -21,6 +21,8 @@ import {
   AdmitFromEmergencyDto,
   EmergencyQueryDto,
 } from './dto/emergency.dto';
+import { VitalsService } from '../vitals/vitals.service';
+import { VitalSource } from '../../database/entities/vital.entity';
 
 @Injectable()
 export class EmergencyService {
@@ -31,33 +33,36 @@ export class EmergencyService {
     @InjectRepository(Encounter) private encounterRepo: Repository<Encounter>,
     @InjectRepository(Patient) private patientRepo: Repository<Patient>,
     private dataSource: DataSource,
+    private vitalsService: VitalsService,
   ) {}
 
-  private async generateCaseNumber(tenantId?: string): Promise<string> {
+  /**
+   * Generate the next case number for today. MUST be invoked from inside an
+   * active transaction (`manager` is required) so the pessimistic lock taken
+   * on today's rows is held until the new EmergencyCase is actually inserted
+   * — otherwise two concurrent registrations can read the same count and
+   * produce duplicate case numbers.
+   */
+  private async generateCaseNumber(
+    manager: import('typeorm').EntityManager,
+    tenantId?: string,
+  ): Promise<string> {
     const now = new Date();
     const prefix = `EM${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
 
-    // Use a transaction with pessimistic locking to prevent race conditions
-    const result = await this.dataSource.transaction(async (manager) => {
-      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-      const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    const qb = manager
+      .createQueryBuilder(EmergencyCase, 'ec')
+      .setLock('pessimistic_write')
+      .where('ec.arrivalTime BETWEEN :startOfDay AND :endOfDay', { startOfDay, endOfDay });
 
-      // Lock the table for counting to prevent race conditions
-      const qb = manager
-        .createQueryBuilder(EmergencyCase, 'ec')
-        .setLock('pessimistic_write')
-        .where('ec.arrivalTime BETWEEN :startOfDay AND :endOfDay', { startOfDay, endOfDay });
+    if (tenantId) {
+      qb.andWhere('ec.tenant_id = :tenantId', { tenantId });
+    }
 
-      if (tenantId) {
-        qb.andWhere('ec.tenant_id = :tenantId', { tenantId });
-      }
-
-      const count = await qb.getCount();
-
-      return `${prefix}-${String(count + 1).padStart(4, '0')}`;
-    });
-
-    return result;
+    const count = await qb.getCount();
+    return `${prefix}-${String(count + 1).padStart(4, '0')}`;
   }
 
   // ========== CASE REGISTRATION ==========
@@ -67,52 +72,59 @@ export class EmergencyService {
     userId: string,
     tenantId?: string,
   ): Promise<EmergencyCase> {
-    const patientWhere: any = { id: dto.patientId };
-    if (tenantId) patientWhere.tenantId = tenantId;
-    const patient = await this.patientRepo.findOne({ where: patientWhere });
-    if (!patient) throw new NotFoundException('Patient not found');
+    // Wrap encounter + case creation in a single transaction so that a failure
+    // of either insert rolls both back. Previously the two `save()` calls were
+    // independent: a crash between them left an orphaned Encounter with no
+    // EmergencyCase, corrupting the ER record on every admission.
+    return this.dataSource.transaction(async (manager) => {
+      const patientWhere: any = { id: dto.patientId };
+      if (tenantId) patientWhere.tenantId = tenantId;
+      const patient = await manager.findOne(Patient, { where: patientWhere });
+      if (!patient) throw new NotFoundException('Patient not found');
 
-    // Create emergency encounter
-    const visitNumber = `EMV-${Date.now()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
-    const encounter = this.encounterRepo.create({
-      visitNumber,
-      type: EncounterType.EMERGENCY,
-      status: EncounterStatus.TRIAGE,
-      chiefComplaint: dto.chiefComplaint,
-      patientId: dto.patientId,
-      facilityId,
-      createdById: userId,
-      startTime: new Date(),
-      ...(tenantId ? { tenantId } : {}),
+      // Create emergency encounter
+      const visitNumber = `EMV-${Date.now()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
+      const encounter = manager.create(Encounter, {
+        visitNumber,
+        type: EncounterType.EMERGENCY,
+        status: EncounterStatus.TRIAGE,
+        chiefComplaint: dto.chiefComplaint,
+        patientId: dto.patientId,
+        facilityId,
+        createdById: userId,
+        startTime: new Date(),
+        ...(tenantId ? { tenantId } : {}),
+      });
+      await manager.save(encounter);
+
+      // Generate case number using the SAME transaction so the pessimistic
+      // lock on today's rows is held until the new case is inserted below.
+      const caseNumber = await this.generateCaseNumber(manager, tenantId);
+      const emergencyCase = manager.create(EmergencyCase, {
+        caseNumber,
+        chiefComplaint: dto.chiefComplaint,
+        presentingSymptoms: dto.presentingSymptoms,
+        mechanismOfInjury: dto.mechanismOfInjury,
+        allergies: dto.allergies,
+        currentMedications: dto.currentMedications,
+        pastMedicalHistory: dto.pastMedicalHistory,
+        arrivalMode: dto.arrivalMode || ArrivalMode.WALK_IN,
+        arrivalTime: new Date(),
+        triageLevel: TriageLevel.LESS_URGENT, // Default, to be updated during triage
+        status: TriageStatus.PENDING,
+        encounterId: encounter.id,
+        facilityId,
+        ...(tenantId ? { tenantId } : {}),
+      });
+
+      const savedCase = await manager.save(emergencyCase);
+
+      this.logger.log(
+        `[AUDIT] Emergency case registered: ${caseNumber}, patientId: ${dto.patientId}, userId: ${userId}, facilityId: ${facilityId}`,
+      );
+
+      return savedCase;
     });
-    await this.encounterRepo.save(encounter);
-
-    // Create emergency case
-    const caseNumber = await this.generateCaseNumber(tenantId);
-    const emergencyCase = this.caseRepo.create({
-      caseNumber,
-      chiefComplaint: dto.chiefComplaint,
-      presentingSymptoms: dto.presentingSymptoms,
-      mechanismOfInjury: dto.mechanismOfInjury,
-      allergies: dto.allergies,
-      currentMedications: dto.currentMedications,
-      pastMedicalHistory: dto.pastMedicalHistory,
-      arrivalMode: dto.arrivalMode || ArrivalMode.WALK_IN,
-      arrivalTime: new Date(),
-      triageLevel: TriageLevel.LESS_URGENT, // Default, to be updated during triage
-      status: TriageStatus.PENDING,
-      encounterId: encounter.id,
-      facilityId,
-      ...(tenantId ? { tenantId } : {}),
-    });
-
-    const savedCase = await this.caseRepo.save(emergencyCase);
-
-    this.logger.log(
-      `[AUDIT] Emergency case registered: ${caseNumber}, patientId: ${dto.patientId}, userId: ${userId}, facilityId: ${facilityId}`,
-    );
-
-    return savedCase;
   }
 
   // ========== TRIAGE ==========
@@ -161,6 +173,42 @@ export class EmergencyService {
     this.logger.log(
       `[AUDIT] Emergency case triaged: ${emergencyCase.caseNumber}, level: ${dto.triageLevel}, nurseId: ${nurseId}`,
     );
+
+    // Mirror triage vitals into the canonical `vitals` table so the patient
+    // timeline and critical-vital alerting see them. Best-effort: failures
+    // are swallowed inside recordFromSource so triage cannot be rolled back
+    // by a downstream notification glitch.
+    let triagePatientId: string | null = null;
+    if (savedCase.encounterId) {
+      const enc = await this.encounterRepo.findOne({
+        where: { id: savedCase.encounterId, ...(tenantId ? { tenantId } : {}) },
+        select: ['id', 'patientId'],
+      });
+      triagePatientId = enc?.patientId ?? null;
+    }
+    if (triagePatientId) {
+      await this.vitalsService.recordFromSource({
+        source: VitalSource.EMERGENCY_TRIAGE,
+        sourceRefId: savedCase.id,
+        patientId: triagePatientId,
+        encounterId: savedCase.encounterId ?? null,
+        recordedById: nurseId,
+        tenantId,
+        facilityId: savedCase.facilityId,
+        recordedAt: savedCase.triageTime ?? new Date(),
+        vitals: {
+          temperature: dto.temperature,
+          pulse: dto.heartRate,
+          bpSystolic: dto.bloodPressureSystolic,
+          bpDiastolic: dto.bloodPressureDiastolic,
+          respiratoryRate: dto.respiratoryRate,
+          oxygenSaturation: dto.oxygenSaturation,
+          bloodGlucose: dto.bloodGlucose,
+          painScale: dto.painScore,
+          notes: dto.triageNotes,
+        },
+      });
+    }
 
     return savedCase;
   }

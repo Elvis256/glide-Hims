@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Headers, Request, Res } from '@nestjs/common';
+import { Controller, Get, Param, ParseUUIDPipe, Query, Headers, Request, Res } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { Response } from 'express';
 import { AuthWithPermissions } from '../../modules/auth/decorators/auth.decorator';
@@ -90,5 +90,34 @@ export class AuditLogController {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="audit-log-${new Date().toISOString().slice(0, 10)}.csv"`);
     res.send(lines.join('\n'));
+  }
+
+  /**
+   * Patient-scoped activity timeline. Aggregates audit rows that touch a given
+   * patient, including:
+   *  - rows with `entityType='patients'` and `entityId=patientId`
+   *  - rows with `newValue->>patientId = patientId` (clinical events that
+   *    record patientId in their structured payload — e.g. critical-result
+   *    flagged/acknowledged, Rx safety overrides, allergies).
+   *
+   * Tenant-scoped for non-system-admin callers.
+   */
+  @Get('patient/:patientId')
+  @AuthWithPermissions('audit.patient.read')
+  @ApiOperation({ summary: 'Patient activity timeline (clinical audit events)' })
+  async forPatient(
+    @Param('patientId', ParseUUIDPipe) patientId: string,
+    @Query('limit') limit = '100',
+    @Query('action') action?: string,
+    @Request() req?: any,
+  ) {
+    const isSystemAdmin = !!req?.user?.isSystemAdmin;
+    const tenantId = isSystemAdmin ? undefined : req?.user?.tenantId;
+    return this.auditLogService.findForPatient({
+      patientId,
+      limit: Math.min(parseInt(limit, 10) || 100, 500),
+      action,
+      tenantId,
+    });
   }
 }

@@ -351,7 +351,7 @@ export class SaasRevenueService {
     return { ...out, _refreshed: { provider: url, updated, missing } } as any;
   }
 
-  @Cron(CronExpression.EVERY_DAY_AT_3AM)
+  @Cron(CronExpression.EVERY_DAY_AT_3AM, { name: 'saas-fx-refresh-rates' })
   async cronRefreshFxRates() {
     try {
       if (process.env.SAAS_FX_AUTOREFRESH === 'off') return;
@@ -1347,7 +1347,7 @@ export class SaasRevenueService {
   // ============================================================
   // CRON: nightly renewal + dunning + trial expiry
   // ============================================================
-  @Cron(CronExpression.EVERY_HOUR)
+  @Cron(CronExpression.EVERY_HOUR, { name: 'saas-renewals-dunning-trial' })
   async renewalTick() {
     try {
       await this.processTrialExpiry();

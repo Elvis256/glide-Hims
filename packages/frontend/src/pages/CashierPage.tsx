@@ -30,6 +30,8 @@ import AccessDenied from '../components/AccessDenied';
 import { printService } from '../lib/print';
 import { useInstitutionInfo } from '../lib/useInstitutionInfo';
 import { usePrintFormat } from '../lib/usePrintFormat';
+import PaymentMethodPicker from '../components/PaymentMethodPicker';
+import type { PaymentMethod } from '../shared/payment-methods';
 
 interface InvoiceItem {
   id: string;
@@ -97,13 +99,6 @@ const statusLabels = {
   cancelled: 'Cancelled',
 };
 
-const paymentMethods = [
-  { value: 'cash', label: 'Cash', icon: Banknote },
-  { value: 'card', label: 'Card', icon: CreditCard },
-  { value: 'mobile_money', label: 'Mobile Money', icon: Smartphone },
-  { value: 'insurance', label: 'Insurance', icon: Receipt },
-];
-
 export default function CashierPage() {
   const { hasPermission } = usePermissions();
   const navigate = useNavigate();
@@ -114,7 +109,7 @@ export default function CashierPage() {
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
-  const [paymentMethod, setPaymentMethod] = useState<string>('cash');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [paymentReference, setPaymentReference] = useState<string>('');
   const [showReturnModal, setShowReturnModal] = useState(false);
   const [returnReason, setReturnReason] = useState('');
@@ -848,26 +843,8 @@ export default function CashierPage() {
                   {/* Payment Method */}
                   <div className="mb-4">
                     <label className="block text-sm font-medium text-gray-700 mb-2">Payment Method</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {paymentMethods.map((method) => {
-                        const Icon = method.icon;
-                        return (
-                          <button
-                            key={method.value}
-                            onClick={() => setPaymentMethod(method.value)}
-                            className={`flex items-center gap-2 p-3 rounded-lg border transition-all ${
-                              paymentMethod === method.value
-                                ? 'border-blue-500 bg-blue-50 text-blue-700 ring-2 ring-blue-200'
-                                : 'border-gray-200 hover:bg-gray-50'
-                            }`}
-                          >
-                            <Icon className="w-5 h-5" />
-                            <span className="text-sm font-medium">{method.label}</span>
-                          </button>
-                        );
-                      })}
+                    <PaymentMethodPicker value={paymentMethod} onChange={setPaymentMethod} />
                   </div>
-                </div>
 
                   {/* Payment Amount */}
                   <div className="mb-4">
