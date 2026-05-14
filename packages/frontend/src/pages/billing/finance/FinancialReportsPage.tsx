@@ -4,6 +4,8 @@ import api from '../../../services/api';
 import { formatCurrency } from '../../../lib/currency';
 import { useFacilityId } from '../../../lib/facility';
 import { printService } from '../../../lib/print';
+import { useInstitutionInfo } from '../../../lib/useInstitutionInfo';
+import { num, toCsv, downloadBlob } from '../../reports/_reportUtils';
 import {
   FileText,
   Download,
@@ -80,6 +82,7 @@ const reportTypeConfig: Record<ReportType, { label: string; description: string;
 
 export default function FinancialReportsPage() {
   const facilityId = useFacilityId();
+  const inst = useInstitutionInfo();
   const currentYear = new Date().getFullYear();
   const [selectedType, setSelectedType] = useState<ReportType | 'all'>('all');
   const [dateFrom, setDateFrom] = useState(`${currentYear}-01-01`);
@@ -215,79 +218,143 @@ export default function FinancialReportsPage() {
   const balanceSheetData = balanceSheetQuery.data as BalanceSheetData | undefined;
   const cashFlowData = cashFlowQuery.data as any;
 
-  // Export to Excel
+  // Export to CSV (RFC-4180 escaped, UTF-8 BOM for Excel)
   const handleExportExcel = useCallback(() => {
     if (!previewReport) return;
-    
-    let csvContent = '';
     const reportName = reportTypeConfig[previewReport.type].label;
-    
+    const rows: Array<Array<unknown>> = [];
+    rows.push([reportName]);
+    rows.push(['Facility', inst?.name ?? '']);
+    rows.push(['Period', previewReport.dateRange]);
+    rows.push(['Generated', new Date().toLocaleString()]);
+    rows.push([]);
+
     if (previewReport.type === 'trial_balance' && trialBalanceData) {
-      csvContent = 'Account Code,Account Name,Debit,Credit\n';
+      rows.push(['Account Code', 'Account Name', 'Debit', 'Credit']);
       trialBalanceData.forEach((item) => {
-        csvContent += `${item.accountCode},"${item.accountName}",${item.debit || 0},${item.credit || 0}\n`;
+        rows.push([item.accountCode, item.accountName, num(item.debit), num(item.credit)]);
       });
     } else if (previewReport.type === 'income_statement' && incomeStatementData) {
-      csvContent = 'Category,Account,Amount\n';
-      incomeStatementData.revenue?.forEach((item) => {
-        csvContent += `Revenue,"${item.account}",${item.amount}\n`;
-      });
-      incomeStatementData.expenses?.forEach((item) => {
-        csvContent += `Expense,"${item.account}",${item.amount}\n`;
-      });
+      rows.push(['Category', 'Account', 'Amount']);
+      incomeStatementData.revenue?.forEach((item) => rows.push(['Revenue', item.account, num(item.amount)]));
+      incomeStatementData.expenses?.forEach((item) => rows.push(['Expense', item.account, num(item.amount)]));
     } else if (previewReport.type === 'balance_sheet' && balanceSheetData) {
-      csvContent = 'Category,Account,Amount\n';
-      balanceSheetData.assets?.forEach((item) => {
-        csvContent += `Asset,"${item.account}",${item.amount}\n`;
-      });
-      balanceSheetData.liabilities?.forEach((item) => {
-        csvContent += `Liability,"${item.account}",${item.amount}\n`;
-      });
-      balanceSheetData.equity?.forEach((item) => {
-        csvContent += `Equity,"${item.account}",${item.amount}\n`;
-      });
+      rows.push(['Category', 'Account', 'Amount']);
+      balanceSheetData.assets?.forEach((item) => rows.push(['Asset', item.account, num(item.amount)]));
+      balanceSheetData.liabilities?.forEach((item) => rows.push(['Liability', item.account, num(item.amount)]));
+      balanceSheetData.equity?.forEach((item) => rows.push(['Equity', item.account, num(item.amount)]));
     } else if (previewReport.type === 'cash_flow' && cashFlowData) {
-      csvContent = 'Section,Description,Amount\n';
-      (cashFlowData.operatingActivities?.items || []).forEach((item: any) => {
-        csvContent += `Operating,"${item.description || item.account}",${item.amount}\n`;
-      });
-      (cashFlowData.investingActivities?.items || []).forEach((item: any) => {
-        csvContent += `Investing,"${item.description || item.account}",${item.amount}\n`;
-      });
-      (cashFlowData.financingActivities?.items || []).forEach((item: any) => {
-        csvContent += `Financing,"${item.description || item.account}",${item.amount}\n`;
-      });
-      csvContent += `\nOpening Cash Balance,,${Number(cashFlowData.openingCash || 0)}\n`;
-      csvContent += `Net Change in Cash,,${Number(cashFlowData.netChange || 0)}\n`;
-      csvContent += `Closing Cash Balance,,${Number(cashFlowData.closingCash || 0)}\n`;
+      rows.push(['Section', 'Description', 'Amount']);
+      (cashFlowData.operatingActivities?.items || []).forEach((item: any) =>
+        rows.push(['Operating', item.description || item.account, num(item.amount)]),
+      );
+      (cashFlowData.investingActivities?.items || []).forEach((item: any) =>
+        rows.push(['Investing', item.description || item.account, num(item.amount)]),
+      );
+      (cashFlowData.financingActivities?.items || []).forEach((item: any) =>
+        rows.push(['Financing', item.description || item.account, num(item.amount)]),
+      );
+      rows.push([]);
+      rows.push(['Opening Cash Balance', '', num(cashFlowData.openingCash)]);
+      rows.push(['Net Change in Cash', '', num(cashFlowData.netChange)]);
+      rows.push(['Closing Cash Balance', '', num(cashFlowData.closingCash)]);
     }
-    
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${reportName.replace(/\s+/g, '_')}_${previewReport.dateRange.replace(/\s+/g, '_')}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+
+    const filename = `${reportName.replace(/\s+/g, '_')}_${previewReport.dateRange.replace(/\s+/g, '_')}.csv`;
+    downloadBlob(filename, 'text/csv;charset=utf-8', '\ufeff' + toCsv(rows));
+  }, [previewReport, trialBalanceData, incomeStatementData, balanceSheetData, cashFlowData, inst]);
+
+  // Build branded printable HTML for the active preview report
+  const buildPrintHtml = useCallback((): string => {
+    if (!previewReport) return '';
+    const reportName = reportTypeConfig[previewReport.type].label;
+    const fmt = (v: unknown) => formatCurrency(num(v));
+    const headerSection = `
+      <h2 style="font-size:16px;margin:16px 0 4px;color:#1e293b;">${reportName}</h2>
+      <p style="font-size:11px;color:#64748b;margin:0 0 12px;">Period: ${previewReport.dateRange}</p>`;
+
+    const tdNum = 'style="border:1px solid #e2e8f0;padding:5px;text-align:right;"';
+    const tdTxt = 'style="border:1px solid #e2e8f0;padding:5px;text-align:left;"';
+    const th = 'style="border:1px solid #e2e8f0;padding:6px;text-align:left;background:#f1f5f9;"';
+    const thNum = 'style="border:1px solid #e2e8f0;padding:6px;text-align:right;background:#f1f5f9;"';
+
+    if (previewReport.type === 'trial_balance' && trialBalanceData) {
+      const totalDr = trialBalanceData.reduce((s, i) => s + num(i.debit), 0);
+      const totalCr = trialBalanceData.reduce((s, i) => s + num(i.credit), 0);
+      return headerSection + `
+        <table style="width:100%;border-collapse:collapse;font-size:11px;">
+          <thead><tr><th ${th}>Code</th><th ${th}>Account</th><th ${thNum}>Debit</th><th ${thNum}>Credit</th></tr></thead>
+          <tbody>
+            ${trialBalanceData.map((i) => `<tr><td ${tdTxt}>${i.accountCode}</td><td ${tdTxt}>${i.accountName}</td><td ${tdNum}>${fmt(i.debit)}</td><td ${tdNum}>${fmt(i.credit)}</td></tr>`).join('')}
+            <tr style="font-weight:600;background:#f8fafc;"><td ${tdTxt} colspan="2">Totals</td><td ${tdNum}>${fmt(totalDr)}</td><td ${tdNum}>${fmt(totalCr)}</td></tr>
+          </tbody>
+        </table>`;
+    }
+    if (previewReport.type === 'income_statement' && incomeStatementData) {
+      const rev = incomeStatementData.revenue ?? [];
+      const exp = incomeStatementData.expenses ?? [];
+      const totRev = rev.reduce((s, i) => s + num(i.amount), 0);
+      const totExp = exp.reduce((s, i) => s + num(i.amount), 0);
+      return headerSection + `
+        <table style="width:100%;border-collapse:collapse;font-size:11px;">
+          <thead><tr><th ${th}>Category</th><th ${th}>Account</th><th ${thNum}>Amount</th></tr></thead>
+          <tbody>
+            ${rev.map((i) => `<tr><td ${tdTxt}>Revenue</td><td ${tdTxt}>${i.account}</td><td ${tdNum}>${fmt(i.amount)}</td></tr>`).join('')}
+            <tr style="font-weight:600;background:#f8fafc;"><td ${tdTxt} colspan="2">Total Revenue</td><td ${tdNum}>${fmt(totRev)}</td></tr>
+            ${exp.map((i) => `<tr><td ${tdTxt}>Expense</td><td ${tdTxt}>${i.account}</td><td ${tdNum}>${fmt(i.amount)}</td></tr>`).join('')}
+            <tr style="font-weight:600;background:#f8fafc;"><td ${tdTxt} colspan="2">Total Expenses</td><td ${tdNum}>${fmt(totExp)}</td></tr>
+            <tr style="font-weight:700;background:#eff6ff;"><td ${tdTxt} colspan="2">Net Income</td><td ${tdNum}>${fmt(totRev - totExp)}</td></tr>
+          </tbody>
+        </table>`;
+    }
+    if (previewReport.type === 'balance_sheet' && balanceSheetData) {
+      const assets = balanceSheetData.assets ?? [];
+      const liab = balanceSheetData.liabilities ?? [];
+      const eq = balanceSheetData.equity ?? [];
+      return headerSection + `
+        <table style="width:100%;border-collapse:collapse;font-size:11px;">
+          <thead><tr><th ${th}>Category</th><th ${th}>Account</th><th ${thNum}>Amount</th></tr></thead>
+          <tbody>
+            ${assets.map((i) => `<tr><td ${tdTxt}>Asset</td><td ${tdTxt}>${i.account}</td><td ${tdNum}>${fmt(i.amount)}</td></tr>`).join('')}
+            ${liab.map((i) => `<tr><td ${tdTxt}>Liability</td><td ${tdTxt}>${i.account}</td><td ${tdNum}>${fmt(i.amount)}</td></tr>`).join('')}
+            ${eq.map((i) => `<tr><td ${tdTxt}>Equity</td><td ${tdTxt}>${i.account}</td><td ${tdNum}>${fmt(i.amount)}</td></tr>`).join('')}
+          </tbody>
+        </table>`;
+    }
+    if (previewReport.type === 'cash_flow' && cashFlowData) {
+      const section = (label: string, items: any[]) => items.map((i: any) =>
+        `<tr><td ${tdTxt}>${label}</td><td ${tdTxt}>${i.description || i.account}</td><td ${tdNum}>${fmt(i.amount)}</td></tr>`,
+      ).join('');
+      return headerSection + `
+        <table style="width:100%;border-collapse:collapse;font-size:11px;">
+          <thead><tr><th ${th}>Section</th><th ${th}>Description</th><th ${thNum}>Amount</th></tr></thead>
+          <tbody>
+            ${section('Operating', cashFlowData.operatingActivities?.items || [])}
+            ${section('Investing', cashFlowData.investingActivities?.items || [])}
+            ${section('Financing', cashFlowData.financingActivities?.items || [])}
+            <tr style="background:#f8fafc;"><td ${tdTxt} colspan="2">Opening Cash Balance</td><td ${tdNum}>${fmt(cashFlowData.openingCash)}</td></tr>
+            <tr style="background:#f8fafc;"><td ${tdTxt} colspan="2">Net Change in Cash</td><td ${tdNum}>${fmt(cashFlowData.netChange)}</td></tr>
+            <tr style="font-weight:700;background:#eff6ff;"><td ${tdTxt} colspan="2">Closing Cash Balance</td><td ${tdNum}>${fmt(cashFlowData.closingCash)}</td></tr>
+          </tbody>
+        </table>`;
+    }
+    return headerSection + '<p style="font-size:11px;color:#94a3b8;">No data available for this report.</p>';
   }, [previewReport, trialBalanceData, incomeStatementData, balanceSheetData, cashFlowData]);
 
   // Print report
   const handlePrint = useCallback(() => {
-    const el = document.getElementById('financial-reports-content');
-    if (el) {
-      printService.printDocument(el.innerHTML, { title: 'Financial Report' });
-    }
-  }, []);
+    if (!previewReport) return;
+    const header = printService.buildHeader(inst, 'document');
+    const footer = printService.buildFooter(inst, 'document');
+    printService.printDocument(header + buildPrintHtml() + footer, {
+      title: reportTypeConfig[previewReport.type].label,
+    });
+  }, [previewReport, buildPrintHtml, inst]);
 
   // Download PDF (uses browser print to PDF)
   // NOTE: Currently identical to handlePrint — no dedicated PDF library is available,
   // so this falls back to the browser's print-to-PDF dialog.
-  const handleDownloadPDF = useCallback(() => {
-    const el = document.getElementById('financial-reports-content');
-    if (el) {
-      printService.printDocument(el.innerHTML, { title: 'Financial Report' });
-    }
-  }, []);
+  const handleDownloadPDF = handlePrint;
 
   const renderIncomeStatement = () => {
     if (incomeStatementQuery.isLoading) {

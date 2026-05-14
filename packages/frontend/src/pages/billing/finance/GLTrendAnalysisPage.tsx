@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { formatCurrency } from '../../../lib/currency';
 import api from '../../../services/api';
+import { toCsv, downloadBlob } from '../../reports/_reportUtils';
 
 interface TrendLine {
   period: string;
@@ -70,7 +71,11 @@ const GLTrendAnalysisPage: React.FC = () => {
 
   const handleExport = () => {
     if (!trendData) return;
-    const csv = [
+    const rows: Array<Array<unknown>> = [
+      ['GL Trend Analysis'],
+      ['Account', `${trendData.accountCode} – ${trendData.accountName}`],
+      ['Generated', new Date().toLocaleString()],
+      [],
       ['Period', 'Debit', 'Credit', 'Net', 'Balance'],
       ...trendData.trends.map((t) => [
         t.period,
@@ -79,16 +84,12 @@ const GLTrendAnalysisPage: React.FC = () => {
         t.netAmount.toFixed(2),
         t.balance.toFixed(2),
       ]),
-    ]
-      .map((row) => row.join(','))
-      .join('\n');
-
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `trend-${trendData.accountCode}-${Date.now()}.csv`;
-    a.click();
+    ];
+    downloadBlob(
+      `trend-${trendData.accountCode}-${Date.now()}.csv`,
+      'text/csv;charset=utf-8',
+      '\ufeff' + toCsv(rows),
+    );
   };
 
   return (

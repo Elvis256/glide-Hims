@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { formatCurrency } from '../../../lib/currency';
 import api from '../../../services/api';
+import { toCsv, downloadBlob } from '../../reports/_reportUtils';
 
 interface BudgetVarianceItem {
   accountId: string;
@@ -87,7 +88,11 @@ const BudgetVsActualPage: React.FC = () => {
   const handleExport = () => {
     if (!variances) return;
 
-    const csv = [
+    const rows: Array<Array<unknown>> = [
+      ['Budget vs Actual'],
+      ['Period', period],
+      ['Generated', new Date().toLocaleString()],
+      [],
       [
         'Account Code',
         'Account Name',
@@ -108,16 +113,12 @@ const BudgetVsActualPage: React.FC = () => {
         v.status,
         v.severity,
       ]),
-    ]
-      .map((row) => row.join(','))
-      .join('\n');
-
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `budget-variance-${period}-${Date.now()}.csv`;
-    a.click();
+    ];
+    downloadBlob(
+      `budget-variance-${period}-${Date.now()}.csv`,
+      'text/csv;charset=utf-8',
+      '\ufeff' + toCsv(rows),
+    );
   };
 
   const getSeverityColor = (severity: string) => {
