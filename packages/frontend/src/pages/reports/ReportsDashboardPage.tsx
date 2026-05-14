@@ -173,13 +173,18 @@ interface SummaryWithComparison extends SummaryStats {
 }
 
 async function fetchSummary(range: DateRange): Promise<SummaryStats> {
-  const params = `&startDate=${encodeURIComponent(range.from)}&endDate=${encodeURIComponent(range.to)}`;
+  const from = encodeURIComponent(range.from);
+  const to = encodeURIComponent(range.to);
   const [patients, encounters, billing, revenue] = await Promise.all([
-    api.get(`/patients?limit=1${params}`).catch(() => ({ data: { meta: { total: 0 }, total: 0 } })),
-    api.get(`/encounters?limit=1${params}`).catch(() => ({ data: { total: 0 } })),
-    api.get(`/billing/invoices?limit=1${params}`).catch(() => ({ data: { total: 0, totalAmount: 0 } })),
+    // /patients does not accept date filters server-side — returns the lifetime
+    // facility-scoped total. Trend deltas are suppressed for this stat.
+    api.get(`/patients?limit=1`).catch(() => ({ data: { meta: { total: 0 }, total: 0 } })),
+    api.get(`/encounters?limit=1&dateFrom=${from}&dateTo=${to}`).catch(() => ({ data: { total: 0 } })),
     api
-      .get(`/analytics/financial?startDate=${encodeURIComponent(range.from)}&endDate=${encodeURIComponent(range.to)}`)
+      .get(`/billing/invoices?limit=1&dateFrom=${from}&dateTo=${to}`)
+      .catch(() => ({ data: { total: 0, totalAmount: 0 } })),
+    api
+      .get(`/analytics/financial?startDate=${from}&endDate=${to}`)
       .catch(() => ({ data: { totalRevenue: 0, collectionsTotal: 0 } })),
   ]);
   const totalRevenue =
@@ -372,7 +377,7 @@ export default function ReportsDashboardPage() {
     };
 
     const rows = [
-      ['Total Patients', String(stats?.totalPatients ?? 0), pct(stats?.totalPatients ?? 0, meta?.totalPatients)],
+      ['Total Patients', String(stats?.totalPatients ?? 0), '—'],
       ['Total Encounters', String(stats?.totalEncounters ?? 0), pct(stats?.totalEncounters ?? 0, meta?.totalEncounters)],
       ['Total Invoices', String(stats?.totalInvoices ?? 0), pct(stats?.totalInvoices ?? 0, meta?.totalInvoices)],
       ['Total Revenue', formatCurrency(stats?.totalRevenue ?? 0), pct(stats?.totalRevenue ?? 0, meta?.totalRevenue)],
@@ -450,7 +455,7 @@ export default function ReportsDashboardPage() {
       ['Generated', new Date().toLocaleString()],
       [],
       ['Metric', 'Value', 'Previous', 'Change'],
-      ['Total Patients', stats?.totalPatients ?? 0, meta?.totalPatients ?? '', pct(stats?.totalPatients ?? 0, meta?.totalPatients)],
+      ['Total Patients (lifetime)', stats?.totalPatients ?? 0, '', ''],
       ['Total Encounters', stats?.totalEncounters ?? 0, meta?.totalEncounters ?? '', pct(stats?.totalEncounters ?? 0, meta?.totalEncounters)],
       ['Total Invoices', stats?.totalInvoices ?? 0, meta?.totalInvoices ?? '', pct(stats?.totalInvoices ?? 0, meta?.totalInvoices)],
       ['Total Revenue', stats?.totalRevenue ?? 0, meta?.totalRevenue ?? '', pct(stats?.totalRevenue ?? 0, meta?.totalRevenue)],
@@ -527,8 +532,11 @@ export default function ReportsDashboardPage() {
     href: string;
     isCurrency?: boolean;
     prev?: number;
+    /** Hide the period-over-period delta (use for stats that are not actually period-scoped). */
+    suppressTrend?: boolean;
+    note?: string;
   }> = [
-    { label: 'Total Patients', value: stats?.totalPatients ?? 0, icon: Users, color: 'text-blue-600', bg: 'bg-blue-100', href: '/reports/patients', prev: stats?.prev?.totalPatients },
+    { label: 'Total Patients', value: stats?.totalPatients ?? 0, icon: Users, color: 'text-blue-600', bg: 'bg-blue-100', href: '/reports/patients', suppressTrend: true, note: 'lifetime' },
     { label: 'Total Encounters', value: stats?.totalEncounters ?? 0, icon: ClipboardList, color: 'text-green-600', bg: 'bg-green-100', href: '/reports/visits', prev: stats?.prev?.totalEncounters },
     { label: 'Total Invoices', value: stats?.totalInvoices ?? 0, icon: FileText, color: 'text-purple-600', bg: 'bg-purple-100', href: '/reports/revenue', prev: stats?.prev?.totalInvoices },
     { label: 'Total Revenue', value: stats?.totalRevenue ?? 0, icon: DollarSign, color: 'text-emerald-600', bg: 'bg-emerald-100', href: '/reports/revenue', isCurrency: true, prev: stats?.prev?.totalRevenue },
@@ -645,7 +653,7 @@ export default function ReportsDashboardPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {quickStats.map((stat) => {
           const change =
-            stat.prev !== undefined && stat.prev !== 0
+            !stat.suppressTrend && stat.prev !== undefined && stat.prev !== 0
               ? ((stat.value - stat.prev) / stat.prev) * 100
               : null;
           const positive = (change ?? 0) >= 0;
@@ -676,6 +684,9 @@ export default function ReportsDashboardPage() {
                         {change.toFixed(1)}% vs previous
                       </span>
                     </div>
+                  )}
+                  {stat.suppressTrend && stat.note && !isLoading && (
+                    <div className="mt-1 text-xs text-gray-400">{stat.note}</div>
                   )}
                 </div>
                 <ArrowRight className="h-4 w-4 text-gray-300 group-hover:text-blue-500 transition-colors" />
