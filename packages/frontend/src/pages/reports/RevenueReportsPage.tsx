@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Calendar,
@@ -6,7 +6,6 @@ import {
   Printer,
   DollarSign,
   TrendingUp,
-  TrendingDown,
   Building2,
   CreditCard,
   ArrowLeft,
@@ -17,6 +16,10 @@ import {
   Banknote,
   ArrowUpRight,
   ArrowDownRight,
+  RefreshCw,
+  FileJson,
+  FileText,
+  ChevronDown,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import {
@@ -40,17 +43,58 @@ import api from '../../services/api';
 import { useFacilityId } from '../../lib/facility';
 import { formatCurrency } from '../../lib/currency';
 import { printService } from '../../lib/print';
+import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
+import {
+  num,
+  toCsv,
+  downloadBlob,
+  fmtDateISODay,
+  periodLabelFor,
+  type DateRange,
+} from './_reportUtils';
+
+type RangeKey = DateRange;
 
 export default function RevenueReportsPage() {
   const facilityId = useFacilityId();
-  const [dateRange, setDateRange] = useState('month');
+  const inst = useInstitutionInfo();
+  const [dateRange, setDateRange] = useState<RangeKey>('month');
+  const today = new Date();
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const [customFrom, setCustomFrom] = useState(fmtDateISODay(monthStart));
+  const [customTo, setCustomTo] = useState(fmtDateISODay(today));
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
 
-  const { data: stats, isLoading } = useQuery({
-    queryKey: ['revenue-statistics', dateRange, facilityId],
+  useEffect(() => {
+    if (!showExportMenu) return;
+    const onClick = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setShowExportMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [showExportMenu]);
+
+  const periodLabel = useMemo(
+    () => periodLabelFor(dateRange, customFrom, customTo),
+    [dateRange, customFrom, customTo],
+  );
+
+  const { data: stats, isLoading, isFetching, refetch } = useQuery({
+    queryKey: ['revenue-statistics', dateRange, customFrom, customTo, facilityId],
     enabled: !!facilityId,
     queryFn: async () => {
+      const financialParams: Record<string, string> = {};
+      if (dateRange === 'custom') {
+        financialParams.startDate = customFrom;
+        financialParams.endDate = customTo;
+      } else {
+        financialParams.period = dateRange;
+      }
       const [financialRes, dashboardRes] = await Promise.all([
-        api.get('/analytics/financial', { params: { period: dateRange } }),
+        api.get('/analytics/financial', { params: financialParams }),
         api.get('/analytics/dashboard'),
       ]);
       
@@ -61,22 +105,23 @@ export default function RevenueReportsPage() {
       const collectionsMap = new Map<string, number>();
       financial.collectionsTrend?.forEach((c: { period: string; collections: number }) => {
         const key = c.period;
-        collectionsMap.set(key, (collectionsMap.get(key) || 0) + Number(c.collections || 0));
+        collectionsMap.set(key, (collectionsMap.get(key) || 0) + num(c.collections));
       });
 
       const revenueTrend = financial.revenueTrend?.map((t: { period: string; revenue: number; invoice_count: number }) => {
-        const periodLabel = dateRange === 'year' 
-          ? new Date(t.period).toLocaleDateString('en-US', { month: 'short' })
-          : dateRange === 'month'
-          ? new Date(t.period).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        const d = new Date(t.period);
+        const periodLabelTick = dateRange === 'year'
+          ? d.toLocaleDateString('en-US', { month: 'short' })
+          : dateRange === 'month' || dateRange === 'custom'
+          ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
           : dateRange === 'week'
-          ? new Date(t.period).toLocaleDateString('en-US', { weekday: 'short' })
-          : new Date(t.period).toLocaleDateString('en-US', { hour: 'numeric' });
+          ? d.toLocaleDateString('en-US', { weekday: 'short' })
+          : d.toLocaleDateString('en-US', { hour: 'numeric' });
         return {
-          period: periodLabel,
-          revenue: Number(t.revenue || 0),
+          period: periodLabelTick,
+          revenue: num(t.revenue),
           collections: collectionsMap.get(t.period) || 0,
-          invoices: Number(t.invoice_count || 0),
+          invoices: num(t.invoice_count),
         };
       }) || [];
       
@@ -119,14 +164,16 @@ export default function RevenueReportsPage() {
         mrn: t.mrn || '',
       })) || [];
       
-      const totalRevenue = revenueTrend.reduce((sum: number, t: { revenue: number }) => sum + t.revenue, 0) || dashboard.revenue?.thisMonth || 0;
-      const totalCollections = Number(financial.collectionsTotal || 0);
-      const previousPeriod = dashboard.revenue?.lastMonth || 0;
+      const totalRevenue = revenueTrend.reduce((sum: number, t: { revenue: number }) => sum + t.revenue, 0) || num(dashboard.revenue?.thisMonth);
+      const totalCollections = num(financial.collectionsTotal);
+      const previousPeriod = num(dashboard.revenue?.lastMonth);
       const revenueGrowth = previousPeriod > 0 ? ((totalRevenue - previousPeriod) / previousPeriod * 100) : 0;
       // Calculate actual days in the selected period
       const now = new Date();
       let periodStart: Date;
-      if (dateRange === 'year') {
+      if (dateRange === 'custom') {
+        periodStart = new Date(customFrom);
+      } else if (dateRange === 'year') {
         periodStart = new Date(now.getFullYear(), 0, 1);
       } else if (dateRange === 'quarter') {
         const quarterMonth = Math.floor(now.getMonth() / 3) * 3;
@@ -140,7 +187,8 @@ export default function RevenueReportsPage() {
         // today
         periodStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       }
-      const daysInPeriod = Math.max(1, Math.ceil((now.getTime() - periodStart.getTime()) / (1000 * 60 * 60 * 24)));
+      const periodEnd = dateRange === 'custom' ? new Date(customTo) : now;
+      const daysInPeriod = Math.max(1, Math.ceil((periodEnd.getTime() - periodStart.getTime()) / (1000 * 60 * 60 * 24)));
       const averageDaily = totalRevenue / daysInPeriod;
       const collectionRate = totalRevenue > 0 ? (totalCollections / totalRevenue * 100) : 0;
       const totalOutstanding = outstandingByAge.reduce((sum: number, a: { amount: number }) => sum + a.amount, 0);
@@ -167,57 +215,182 @@ export default function RevenueReportsPage() {
   const PAYMENT_COLORS = ['#10B981', '#3B82F6', '#F59E0B', '#8B5CF6', '#EF4444'];
   const AGING_COLORS = ['#10B981', '#F59E0B', '#F97316', '#EF4444'];
 
-  const handleExport = () => {
-    const csvContent = [
-      'Revenue Statistics Report',
-      `Period: ${dateRange}`,
-      `Generated: ${new Date().toLocaleDateString()}`,
-      '',
-      'Summary',
-      `Total Revenue,${stats?.totalRevenue}`,
-      `Total Collections,${stats?.totalCollections}`,
-      `Collection Rate,${stats?.collectionRate}%`,
-      `Revenue Growth,${stats?.revenueGrowth}%`,
-      `Average Daily,${stats?.averageDaily}`,
-      `Outstanding Balance,${stats?.totalOutstanding}`,
-      `Total Invoices,${stats?.totalInvoices}`,
-      '',
-      'Department Revenue',
-      'Department,Revenue,Invoices',
-      ...(stats?.departmentRevenue?.map((d: { department: string; revenue: number; count: number }) => 
-        `${d.department},${d.revenue},${d.count}`
-      ) || []),
-      '',
-      'Payment Methods',
-      'Method,Amount,Transactions',
-      ...(stats?.paymentMethods?.map((p: { name: string; value: number; count: number }) => 
-        `${p.name},${p.value},${p.count}`
-      ) || []),
-      '',
-      'Outstanding by Age',
-      'Age Bucket,Amount,Count',
-      ...(stats?.outstandingByAge?.map((a: { bucket: string; amount: number; count: number }) =>
-        `${a.bucket},${a.amount},${a.count}`
-      ) || []),
-      '',
-      'Recent Transactions',
-      'Invoice,Patient,Amount,Paid,Balance,Status,Date',
-      ...(stats?.recentTransactions?.map((t: { invoiceNumber: string; patientName: string; totalAmount: number; amountPaid: number; balanceDue: number; status: string; createdAt: string }) =>
-        `${t.invoiceNumber},${t.patientName},${t.totalAmount},${t.amountPaid},${t.balanceDue},${t.status},${new Date(t.createdAt).toLocaleDateString()}`
-      ) || []),
-    ].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `revenue-report-${dateRange}-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
+  const buildCsv = (): string => {
+    const rows: Array<Array<unknown>> = [];
+    rows.push(['Revenue Report']);
+    rows.push(['Facility', inst?.name ?? '']);
+    rows.push(['Period', periodLabel]);
+    rows.push(['Generated', new Date().toLocaleString()]);
+    rows.push([]);
+    rows.push(['Summary']);
+    rows.push(['Total Revenue', stats?.totalRevenue ?? 0]);
+    rows.push(['Total Collections', stats?.totalCollections ?? 0]);
+    rows.push(['Collection Rate (%)', stats?.collectionRate ?? 0]);
+    rows.push(['Revenue Growth (%)', stats?.revenueGrowth ?? 0]);
+    rows.push(['Average Daily', stats?.averageDaily ?? 0]);
+    rows.push(['Outstanding Balance', stats?.totalOutstanding ?? 0]);
+    rows.push(['Total Invoices', stats?.totalInvoices ?? 0]);
+    rows.push([]);
+    rows.push(['Department Revenue']);
+    rows.push(['Department', 'Revenue', 'Invoices']);
+    (stats?.departmentRevenue ?? []).forEach((d: { department: string; revenue: number; count: number }) =>
+      rows.push([d.department, d.revenue, d.count]),
+    );
+    rows.push([]);
+    rows.push(['Payment Methods']);
+    rows.push(['Method', 'Amount', 'Transactions']);
+    (stats?.paymentMethods ?? []).forEach((p: { name: string; value: number; count: number }) =>
+      rows.push([p.name, p.value, p.count]),
+    );
+    rows.push([]);
+    rows.push(['Outstanding by Age']);
+    rows.push(['Age Bucket', 'Amount', 'Count']);
+    (stats?.outstandingByAge ?? []).forEach((a: { bucket: string; amount: number; count: number }) =>
+      rows.push([a.bucket, a.amount, a.count]),
+    );
+    rows.push([]);
+    rows.push(['Recent Transactions']);
+    rows.push(['Invoice', 'Patient', 'MRN', 'Amount', 'Paid', 'Balance', 'Status', 'Date']);
+    (stats?.recentTransactions ?? []).forEach((t: { invoiceNumber: string; patientName: string; mrn: string; totalAmount: number; amountPaid: number; balanceDue: number; status: string; createdAt: string }) =>
+      rows.push([t.invoiceNumber, t.patientName, t.mrn, t.totalAmount, t.amountPaid, t.balanceDue, t.status, new Date(t.createdAt).toLocaleDateString()]),
+    );
+    return toCsv(rows);
+  };
+
+  const handleExportCsv = () => {
+    if (!stats) return;
+    const stamp = new Date().toISOString().slice(0, 10);
+    downloadBlob(`revenue-report-${dateRange}-${stamp}.csv`, 'text/csv;charset=utf-8', '\ufeff' + buildCsv());
+    setShowExportMenu(false);
+  };
+
+  const handleExportJson = () => {
+    if (!stats) return;
+    const stamp = new Date().toISOString().slice(0, 10);
+    const payload = {
+      report: 'Revenue Report',
+      facility: inst?.name ?? null,
+      period: periodLabel,
+      generatedAt: new Date().toISOString(),
+      ...stats,
+    };
+    downloadBlob(`revenue-report-${dateRange}-${stamp}.json`, 'application/json', JSON.stringify(payload, null, 2));
+    setShowExportMenu(false);
+  };
+
+  const handlePrint = () => {
+    if (!stats) return;
+    const header = printService.buildHeader(inst, 'document');
+    const footer = printService.buildFooter(inst, 'document');
+    const fmt = (v: number) => formatCurrency(v);
+    const pctStr = (n: number, d: number) => (d > 0 ? ((n / d) * 100).toFixed(1) + '%' : '—');
+
+    const summaryTable = `
+      <h2 style="font-size:16px;margin:16px 0 8px;color:#1e293b;">Revenue Report — ${periodLabel}</h2>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-size:11px;">
+        <tbody>
+          <tr><td style="border:1px solid #e2e8f0;padding:6px;font-weight:600;width:40%;">Total Revenue</td><td style="border:1px solid #e2e8f0;padding:6px;">${fmt(stats.totalRevenue)}</td></tr>
+          <tr><td style="border:1px solid #e2e8f0;padding:6px;font-weight:600;">Total Collections</td><td style="border:1px solid #e2e8f0;padding:6px;">${fmt(stats.totalCollections)}</td></tr>
+          <tr><td style="border:1px solid #e2e8f0;padding:6px;font-weight:600;">Collection Rate</td><td style="border:1px solid #e2e8f0;padding:6px;">${stats.collectionRate}%</td></tr>
+          <tr><td style="border:1px solid #e2e8f0;padding:6px;font-weight:600;">Revenue Growth</td><td style="border:1px solid #e2e8f0;padding:6px;">${stats.revenueGrowth >= 0 ? '+' : ''}${stats.revenueGrowth}%</td></tr>
+          <tr><td style="border:1px solid #e2e8f0;padding:6px;font-weight:600;">Average Daily</td><td style="border:1px solid #e2e8f0;padding:6px;">${fmt(stats.averageDaily)}</td></tr>
+          <tr><td style="border:1px solid #e2e8f0;padding:6px;font-weight:600;">Outstanding Balance</td><td style="border:1px solid #e2e8f0;padding:6px;">${fmt(stats.totalOutstanding)}</td></tr>
+          <tr><td style="border:1px solid #e2e8f0;padding:6px;font-weight:600;">Total Invoices</td><td style="border:1px solid #e2e8f0;padding:6px;">${stats.totalInvoices}</td></tr>
+        </tbody>
+      </table>`;
+
+    const deptRows = stats.departmentRevenue ?? [];
+    const deptTotal = deptRows.reduce((s: number, d: { revenue: number }) => s + d.revenue, 0);
+    const deptTable = deptRows.length ? `
+      <h3 style="font-size:13px;margin:12px 0 6px;color:#334155;">Revenue by Department</h3>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-size:11px;">
+        <thead><tr style="background:#f1f5f9;">
+          <th style="border:1px solid #e2e8f0;padding:6px;text-align:left;">Department</th>
+          <th style="border:1px solid #e2e8f0;padding:6px;text-align:right;">Revenue</th>
+          <th style="border:1px solid #e2e8f0;padding:6px;text-align:right;">Invoices</th>
+          <th style="border:1px solid #e2e8f0;padding:6px;text-align:right;">Share</th>
+        </tr></thead>
+        <tbody>
+          ${deptRows.map((d: { department: string; revenue: number; count: number }) =>
+            `<tr><td style="border:1px solid #e2e8f0;padding:6px;">${d.department}</td><td style="border:1px solid #e2e8f0;padding:6px;text-align:right;">${fmt(d.revenue)}</td><td style="border:1px solid #e2e8f0;padding:6px;text-align:right;">${d.count}</td><td style="border:1px solid #e2e8f0;padding:6px;text-align:right;">${pctStr(d.revenue, deptTotal)}</td></tr>`,
+          ).join('')}
+        </tbody>
+      </table>` : '';
+
+    const payRows = stats.paymentMethods ?? [];
+    const payTotal = payRows.reduce((s: number, p: { value: number }) => s + p.value, 0);
+    const payTable = payRows.length ? `
+      <h3 style="font-size:13px;margin:12px 0 6px;color:#334155;">Payment Methods</h3>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-size:11px;">
+        <thead><tr style="background:#f1f5f9;">
+          <th style="border:1px solid #e2e8f0;padding:6px;text-align:left;">Method</th>
+          <th style="border:1px solid #e2e8f0;padding:6px;text-align:right;">Amount</th>
+          <th style="border:1px solid #e2e8f0;padding:6px;text-align:right;">Transactions</th>
+          <th style="border:1px solid #e2e8f0;padding:6px;text-align:right;">Share</th>
+        </tr></thead>
+        <tbody>
+          ${payRows.map((p: { name: string; value: number; count: number }) =>
+            `<tr><td style="border:1px solid #e2e8f0;padding:6px;">${p.name}</td><td style="border:1px solid #e2e8f0;padding:6px;text-align:right;">${fmt(p.value)}</td><td style="border:1px solid #e2e8f0;padding:6px;text-align:right;">${p.count}</td><td style="border:1px solid #e2e8f0;padding:6px;text-align:right;">${pctStr(p.value, payTotal)}</td></tr>`,
+          ).join('')}
+        </tbody>
+      </table>` : '';
+
+    const ageRows = stats.outstandingByAge ?? [];
+    const ageTable = ageRows.length ? `
+      <h3 style="font-size:13px;margin:12px 0 6px;color:#334155;">Outstanding by Age</h3>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-size:11px;">
+        <thead><tr style="background:#f1f5f9;">
+          <th style="border:1px solid #e2e8f0;padding:6px;text-align:left;">Age Bucket</th>
+          <th style="border:1px solid #e2e8f0;padding:6px;text-align:right;">Amount</th>
+          <th style="border:1px solid #e2e8f0;padding:6px;text-align:right;">Invoices</th>
+        </tr></thead>
+        <tbody>
+          ${ageRows.map((a: { bucket: string; amount: number; count: number }) =>
+            `<tr><td style="border:1px solid #e2e8f0;padding:6px;">${a.bucket}</td><td style="border:1px solid #e2e8f0;padding:6px;text-align:right;">${fmt(a.amount)}</td><td style="border:1px solid #e2e8f0;padding:6px;text-align:right;">${a.count}</td></tr>`,
+          ).join('')}
+        </tbody>
+      </table>` : '';
+
+    const txnRows = stats.recentTransactions ?? [];
+    const txnTable = txnRows.length ? `
+      <h3 style="font-size:13px;margin:12px 0 6px;color:#334155;">Recent Transactions</h3>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-size:10px;">
+        <thead><tr style="background:#f1f5f9;">
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:left;">Invoice</th>
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:left;">Patient</th>
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:right;">Amount</th>
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:right;">Paid</th>
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:right;">Balance</th>
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:left;">Status</th>
+          <th style="border:1px solid #e2e8f0;padding:5px;text-align:right;">Date</th>
+        </tr></thead>
+        <tbody>
+          ${txnRows.map((t: { invoiceNumber: string; patientName: string; totalAmount: number; amountPaid: number; balanceDue: number; status: string; createdAt: string }) =>
+            `<tr><td style="border:1px solid #e2e8f0;padding:5px;">${t.invoiceNumber || ''}</td><td style="border:1px solid #e2e8f0;padding:5px;">${t.patientName}</td><td style="border:1px solid #e2e8f0;padding:5px;text-align:right;">${fmt(t.totalAmount)}</td><td style="border:1px solid #e2e8f0;padding:5px;text-align:right;">${fmt(t.amountPaid)}</td><td style="border:1px solid #e2e8f0;padding:5px;text-align:right;">${fmt(t.balanceDue)}</td><td style="border:1px solid #e2e8f0;padding:5px;">${t.status?.replace(/_/g, ' ')}</td><td style="border:1px solid #e2e8f0;padding:5px;text-align:right;">${new Date(t.createdAt).toLocaleDateString()}</td></tr>`,
+          ).join('')}
+        </tbody>
+      </table>` : '';
+
+    printService.printDocument(header + summaryTable + deptTable + payTable + ageTable + txnTable + footer, {
+      title: `Revenue Report — ${periodLabel}`,
+    });
   };
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      <div className="space-y-6 animate-pulse">
+        <div className="h-6 w-40 bg-gray-200 rounded" />
+        <div className="h-20 bg-gray-100 rounded-lg" />
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-28 bg-gray-100 rounded-lg" />
+          ))}
+        </div>
+        <div className="h-72 bg-gray-100 rounded-lg" />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="h-72 bg-gray-100 rounded-lg" />
+          <div className="h-72 bg-gray-100 rounded-lg" />
+        </div>
       </div>
     );
   }
@@ -251,33 +424,60 @@ export default function RevenueReportsPage() {
         </div>
         <div className="flex gap-2">
           <button
-            onClick={() => {
-              const el = document.getElementById('report-content');
-              if (!el) return;
-              printService.printDocument(el.innerHTML, { title: 'Revenue Reports' });
-            }}
+            onClick={() => refetch()}
+            disabled={isFetching}
+            className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+            title="Refresh"
+          >
+            <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+          </button>
+          <button
+            onClick={handlePrint}
             className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
           >
             <Printer className="h-4 w-4" />
             Print
           </button>
-          <button
-            onClick={handleExport}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            <Download className="h-4 w-4" />
-            Export CSV
-          </button>
+          <div className="relative" ref={exportMenuRef}>
+            <button
+              onClick={() => setShowExportMenu((v) => !v)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              <Download className="h-4 w-4" />
+              Export
+              <ChevronDown className="h-3 w-3" />
+            </button>
+            {showExportMenu && (
+              <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                <button
+                  onClick={handleExportCsv}
+                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-left hover:bg-gray-50"
+                >
+                  <FileText className="h-4 w-4 text-gray-500" />
+                  CSV (.csv)
+                </button>
+                <button
+                  onClick={handleExportJson}
+                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-left hover:bg-gray-50"
+                >
+                  <FileJson className="h-4 w-4 text-gray-500" />
+                  JSON (.json)
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Date Range Filter */}
       <div className="bg-white rounded-lg shadow p-4">
-        <div className="flex items-center gap-4">
-          <Calendar className="h-5 w-5 text-gray-400" />
-          <span className="text-sm font-medium text-gray-700">Period:</span>
-          <div className="flex gap-2">
-            {['today', 'week', 'month', 'year'].map((range) => (
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Calendar className="h-5 w-5 text-gray-400" />
+            <span className="text-sm font-medium text-gray-700">Period:</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {(['today', 'week', 'month', 'year', 'custom'] as RangeKey[]).map((range) => (
               <button
                 key={range}
                 onClick={() => setDateRange(range)}
@@ -287,10 +487,28 @@ export default function RevenueReportsPage() {
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
               >
-                {range === 'today' ? 'Today' : range === 'week' ? 'This Week' : range === 'month' ? 'This Month' : 'This Year'}
+                {range === 'today' ? 'Today' : range === 'week' ? 'This Week' : range === 'month' ? 'This Month' : range === 'year' ? 'This Year' : 'Custom'}
               </button>
             ))}
           </div>
+          {dateRange === 'custom' && (
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={customFrom}
+                onChange={(e) => setCustomFrom(e.target.value)}
+                className="px-2 py-1 text-sm border border-gray-300 rounded"
+              />
+              <span className="text-sm text-gray-500">to</span>
+              <input
+                type="date"
+                value={customTo}
+                onChange={(e) => setCustomTo(e.target.value)}
+                className="px-2 py-1 text-sm border border-gray-300 rounded"
+              />
+            </div>
+          )}
+          <span className="ml-auto text-xs text-gray-500">{periodLabel}</span>
         </div>
       </div>
 
