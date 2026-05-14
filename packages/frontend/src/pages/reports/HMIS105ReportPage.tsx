@@ -111,12 +111,167 @@ function totalColumn(chapters: DiagnosisChapter[], key: keyof DiagnosisChapter):
   return chapters.reduce((sum, c) => sum + (Number(c[key]) || 0), 0);
 }
 
+// ---------------------------------------------------------------------------
+// Backend → Frontend normalizer
+// ---------------------------------------------------------------------------
+//
+// The /analytics/hmis-105 endpoint returns a flat sectionA..sectionE shape
+// that does not match the nested `sections.opdDiagnoses / laboratory /
+// pharmacy / maternalHealth / summary` shape the page was built around.
+// This adapter bridges the two so the page renders without crashing while
+// the BE response is still also useful as-is for the DHIS2 push integration.
+
+const ICD10_CHAPTER_NAMES: Record<string, string> = {
+  A: 'A — Certain infectious & parasitic diseases',
+  B: 'B — Certain infectious & parasitic diseases',
+  C: 'C — Neoplasms',
+  D: 'D — Diseases of the blood / immune system',
+  E: 'E — Endocrine, nutritional & metabolic',
+  F: 'F — Mental & behavioural disorders',
+  G: 'G — Diseases of the nervous system',
+  H: 'H — Eye, ear & adnexa',
+  I: 'I — Diseases of the circulatory system',
+  J: 'J — Diseases of the respiratory system',
+  K: 'K — Diseases of the digestive system',
+  L: 'L — Diseases of the skin & subcutaneous tissue',
+  M: 'M — Diseases of the musculoskeletal system',
+  N: 'N — Diseases of the genitourinary system',
+  O: 'O — Pregnancy, childbirth & puerperium',
+  P: 'P — Conditions originating in the perinatal period',
+  Q: 'Q — Congenital malformations',
+  R: 'R — Symptoms, signs & abnormal findings',
+  S: 'S — Injury, poisoning, external causes',
+  T: 'T — Injury, poisoning, external causes',
+  V: 'V — External causes of morbidity',
+  W: 'W — External causes of morbidity',
+  X: 'X — External causes of morbidity',
+  Y: 'Y — External causes of morbidity',
+  Z: 'Z — Factors influencing health status',
+  '?': '? — Unclassified',
+};
+
+interface BackendChapter {
+  chapter: string;
+  totalCount: number;
+  ageSexBreakdown?: Record<string, { M?: number; F?: number }>;
+}
+
+function flattenChapter(c: BackendChapter): DiagnosisChapter {
+  const ab = c.ageSexBreakdown || {};
+  const get = (band: string, sex: 'M' | 'F') => Number(ab[band]?.[sex] || 0);
+  return {
+    chapter: c.chapter,
+    chapterName: ICD10_CHAPTER_NAMES[c.chapter] || c.chapter,
+    male_0_28d: get('0-28d', 'M'),
+    female_0_28d: get('0-28d', 'F'),
+    male_29d_4y: get('29d-4y', 'M'),
+    female_29d_4y: get('29d-4y', 'F'),
+    male_5_12y: get('5-12y', 'M'),
+    female_5_12y: get('5-12y', 'F'),
+    male_13_19y: get('13-19y', 'M'),
+    female_13_19y: get('13-19y', 'F'),
+    male_20_59y: get('20-59y', 'M'),
+    female_20_59y: get('20-59y', 'F'),
+    male_60plus: get('60+', 'M'),
+    female_60plus: get('60+', 'F'),
+    total: Number(c.totalCount || 0),
+  };
+}
+
+function normalizeHmis105(raw: any, month: number, year: number): HMIS105Data {
+  // Already in FE shape (forward-compatible if BE is changed later)
+  if (raw && raw.sections && raw.sections.opdDiagnoses) {
+    return raw as HMIS105Data;
+  }
+
+  const sectionA = raw?.sectionA || {};
+  const sectionB = raw?.sectionB || {};
+  const sectionC = raw?.sectionC || {};
+  const sectionD = raw?.sectionD || {};
+  const sectionE = raw?.sectionE || {};
+
+  const byChapter: DiagnosisChapter[] = Array.isArray(sectionA.diagnosisByChapter)
+    ? sectionA.diagnosisByChapter.map(flattenChapter)
+    : [];
+  const totalOPDCases = byChapter.reduce((s, c) => s + c.total, 0);
+
+  const topDiagnoses: TopDiagnosis[] = Array.isArray(sectionA.top20Diagnoses)
+    ? sectionA.top20Diagnoses.map((d: any) => ({
+        code: d.code || '',
+        name: d.diagnosis || d.name || d.code || 'Unknown',
+        count: Number(d.totalCount || d.count || 0),
+        percentage:
+          totalOPDCases > 0
+            ? Number(((Number(d.totalCount || d.count || 0) / totalOPDCases) * 100).toFixed(1))
+            : 0,
+      }))
+    : [];
+
+  const labByCategory: LabCategory[] = Array.isArray(sectionB.byCategory)
+    ? sectionB.byCategory.map((c: any) => ({
+        category: c.category || 'Uncategorised',
+        totalTests: Number(c.totalResults ?? c.totalSamples ?? 0),
+        positiveOrAbnormal: Number(c.positiveAbnormal ?? 0),
+      }))
+    : [];
+
+  const topMedicines: TopMedicine[] = Array.isArray(sectionC.top20Medicines)
+    ? sectionC.top20Medicines.map((m: any) => ({
+        name: m.drugName || m.name || m.drugCode || 'Unknown',
+        quantity: Number(m.totalDispensed ?? m.quantity ?? 0),
+        unit: m.unit || '',
+      }))
+    : [];
+  const stockOutDays = Array.isArray(sectionC.stockOutItems)
+    ? sectionC.stockOutItems.reduce((s: number, x: any) => s + Number(x.stockoutDays || 0), 0)
+    : 0;
+
+  const deliveries = sectionD.deliveries || {};
+  const birth = sectionD.birthOutcomes || {};
+
+  const facilityNameRaw = raw?.facilityName || (typeof raw?.facility === 'string' ? '' : raw?.facility?.name) || '';
+
+  return {
+    facilityName: facilityNameRaw || 'This Facility',
+    reportMonth: `${MONTHS[Math.max(0, Math.min(11, month - 1))]} ${year}`,
+    sections: {
+      opdDiagnoses: { byChapter, topDiagnoses, totalOPDCases },
+      laboratory: {
+        byCategory: labByCategory,
+        totalTests: Number(sectionB.totalResults ?? sectionB.totalSamples ?? 0),
+      },
+      pharmacy: {
+        topMedicines,
+        totalPrescriptions: Number(sectionC.prescriptionsFilled ?? sectionC.prescriptionsTotal ?? 0),
+        stockOutDays,
+      },
+      maternalHealth: {
+        ancFirstVisits: Number(sectionD.ancFirstVisits || 0),
+        ancReturnVisits: Number(sectionD.ancReturnVisits || 0),
+        normalDeliveries: Number(deliveries.svd || 0) + Number(deliveries.assisted || 0),
+        caesareanDeliveries: Number(deliveries.caesarean || 0),
+        liveBirths: Number(birth.live_birth || 0),
+        stillBirths: Number(birth.stillbirth || 0),
+        maternalDeaths: 0, // not surfaced by the backend response yet
+      },
+      summary: {
+        totalOPDAttendance: Number(sectionE.totalOPDAttendance || 0),
+        newPatients: Number(sectionE.newVisits || 0),
+        returnPatients: Number(sectionE.returnVisits || 0),
+        totalAdmissions: Number(sectionE.totalAdmissions || 0),
+        totalDischarges: Number(sectionE.totalDischarges || 0),
+        totalDeaths: Number(sectionE.deaths || 0),
+        referralsOut: Number(sectionE.referralsOut || 0),
+      },
+    },
+  };
+}
+
 /** Build a DHIS2-compatible CSV export. */
 function buildDHIS2Csv(data: HMIS105Data, orgUnit: string, period: string): string {
   const lines: string[] = ['dataElement,period,orgUnit,value'];
 
   const { sections } = data;
-
   // OPD diagnoses by chapter age/sex
   for (const ch of sections.opdDiagnoses.byChapter) {
     const prefix = `OPD_${ch.chapter.replace(/[^A-Z0-9]/gi, '_')}`;
@@ -185,7 +340,7 @@ export default function HMIS105ReportPage() {
       const res = await api.get('/analytics/hmis-105', {
         params: { month, year, facilityId },
       });
-      return res.data;
+      return normalizeHmis105(res.data, month, year);
     },
     enabled,
   });
