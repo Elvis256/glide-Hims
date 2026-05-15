@@ -2,7 +2,6 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import DOMPurify from 'dompurify';
 import {
   Search,
   Pill,
@@ -34,6 +33,7 @@ import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 import { prescriptionsService, type Prescription, type PrescriptionItem } from '../../services/prescriptions';
 import { storesService } from '../../services/stores';
+import { printService } from '../../lib/print';
 import { pharmacyService, type BatchStock } from '../../services/pharmacy';
 import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
 import { useFacilityId } from '../../lib/facility';
@@ -539,26 +539,7 @@ export default function DispenseMedicationPage() {
     const batchNo = batch?.batchNumber || '-';
     const expiryStr = batch?.expiryDate ? new Date(batch.expiryDate).toLocaleDateString() : '-';
 
-    const win = window.open('', '_blank', 'width=500,height=400');
-    if (!win) return;
-    win.document.write(DOMPurify.sanitize(`
-      <html><head><title>Medication Label — ${item.drugName}</title>
-      <style>
-        @page { size: 100mm 70mm; margin: 0; }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: Arial, Helvetica, sans-serif; padding: 8px 12px; font-size: 11px; width: 100mm; }
-        .facility { font-weight: bold; font-size: 13px; text-align: center; border-bottom: 2px solid #000; padding-bottom: 4px; margin-bottom: 6px; text-transform: uppercase; }
-        .row { display: flex; justify-content: space-between; margin: 2px 0; }
-        .row span { font-size: 10px; }
-        .drug { font-size: 16px; font-weight: bold; text-align: center; margin: 6px 0 4px; padding: 4px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; }
-        .dosage { text-align: center; font-size: 13px; font-weight: bold; margin: 4px 0; }
-        .instructions { font-size: 10px; margin: 4px 0; padding: 4px; border: 1px dashed #999; border-radius: 3px; }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; margin: 4px 0; font-size: 10px; }
-        .grid b { font-size: 9px; color: #555; text-transform: uppercase; }
-        .warn { color: #c00; font-weight: bold; text-align: center; font-size: 11px; margin: 4px 0; border: 2px solid #c00; padding: 2px; }
-        .footer { border-top: 1px solid #999; margin-top: 6px; padding-top: 4px; font-size: 8px; color: #666; text-align: center; }
-        @media print { body { padding: 4px 8px; } }
-      </style></head><body>
+    const body = `
       <div class="facility">${inst.name}</div>
       <div class="row">
         <span><b>Patient:</b> ${patientName}</span>
@@ -581,11 +562,24 @@ export default function DispenseMedicationPage() {
       <div class="footer">
         Keep out of reach of children. Store as directed. Dispensed by ${inst.name}.<br/>
         Complete the full course of medication unless advised otherwise by your doctor.
-      </div>
-      </body></html>
-    `, { WHOLE_DOCUMENT: true, ADD_TAGS: ['style'], ADD_ATTR: ['class'] }));
-    win.document.close();
-    win.print();
+      </div>`;
+    const extraCss = `
+      .facility { font-weight: bold; font-size: 13px; text-align: center; border-bottom: 2px solid #000; padding-bottom: 4px; margin-bottom: 6px; text-transform: uppercase; }
+      .row { display: flex; justify-content: space-between; margin: 2px 0; }
+      .row span { font-size: 10px; }
+      .drug { font-size: 16px; font-weight: bold; text-align: center; margin: 6px 0 4px; padding: 4px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; }
+      .dosage { text-align: center; font-size: 13px; font-weight: bold; margin: 4px 0; }
+      .instructions { font-size: 10px; margin: 4px 0; padding: 4px; border: 1px dashed #999; border-radius: 3px; }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; margin: 4px 0; font-size: 10px; }
+      .grid b { font-size: 9px; color: #555; text-transform: uppercase; }
+      .warn { color: #c00; font-weight: bold; text-align: center; font-size: 11px; margin: 4px 0; border: 2px solid #c00; padding: 2px; }
+      .footer { border-top: 1px solid #999; margin-top: 6px; padding-top: 4px; font-size: 8px; color: #666; text-align: center; }`;
+    printService.printCustom(body, {
+      title: `Medication Label — ${item.drugName}`,
+      pageSize: '100mm 70mm',
+      margin: '0',
+      extraCss,
+    });
   };
 
   return (
