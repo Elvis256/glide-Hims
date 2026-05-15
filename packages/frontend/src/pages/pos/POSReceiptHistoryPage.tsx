@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Receipt,
@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { api, getApiErrorMessage } from '../../services/api';
 import { formatCurrency } from '../../lib/currency';
 import { asList } from '../../utils/unwrapResponse';
+import { printService } from '../../lib/print';
 
 interface SaleHistory {
   id: string;
@@ -66,8 +67,14 @@ export default function POSReceiptHistoryPage() {
     }
   }
 
+  const receiptRef = useRef<HTMLDivElement>(null);
   function printReceipt() {
-    window.print();
+    if (receiptRef.current) {
+      printService.printElement(receiptRef.current, {
+        title: receiptData?.sale?.saleNumber || 'Receipt',
+        preset: 'receipt',
+      });
+    }
   }
 
   return (
@@ -121,6 +128,7 @@ export default function POSReceiptHistoryPage() {
       {receiptData && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6 space-y-4 print:shadow-none">
+            <div ref={receiptRef} className="space-y-4">
             {receiptData.isDuplicate && (
               <div className="text-center py-2 border-4 border-red-500 text-red-500 font-bold text-xl tracking-widest">
                 *** DUPLICATE ***
@@ -147,6 +155,7 @@ export default function POSReceiptHistoryPage() {
             {receiptData.reprintCount > 0 && (
               <p className="text-xs text-gray-500 text-center">Reprint #{receiptData.reprintCount}</p>
             )}
+            </div>
             <div className="flex gap-2 print:hidden">
               <button
                 className="flex-1 flex items-center justify-center gap-2 border rounded-lg px-3 py-2 text-sm hover:bg-gray-50"
