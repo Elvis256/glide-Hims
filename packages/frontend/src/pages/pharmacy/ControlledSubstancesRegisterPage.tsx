@@ -22,6 +22,7 @@ import AccessDenied from '../../components/AccessDenied';
 import { useFacilityId } from '../../lib/facility';
 import { prescriptionsService, type ControlledSubstanceLog } from '../../services/prescriptions';
 import { asList } from '../../utils/unwrapResponse';
+import { toCsv, downloadBlob } from '../reports/_reportUtils';
 
 export default function ControlledSubstancesRegisterPage() {
   const { hasPermission } = usePermissions();
@@ -102,26 +103,25 @@ export default function ControlledSubstancesRegisterPage() {
   const scheduleOptions = ['all', 'schedule_1', 'schedule_2', 'schedule_3', 'schedule_4', 'schedule_5'];
 
   const handleExport = () => {
-    const csv = [
-      ['Date', 'Drug', 'Schedule', 'Qty', 'Running Balance', 'Dispensed By', 'Witness', 'Double-Check', 'Notes'].join(','),
-      ...filtered.map((e) =>
-        [
-          new Date(e.createdAt).toLocaleString(),
-          e.prescriptionItem?.drugName || '-',
-          e.drugSchedule,
-          e.quantityDispensed,
-          e.runningBalance,
-          e.dispensedBy?.fullName || '-',
-          e.witness?.fullName || 'Not witnessed',
-          e.doubleCheckBy?.fullName || 'Not checked',
-          e.notes || '',
-        ].join(','),
-      ),
-    ].join('\n');
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-    a.download = `controlled-register-${dateFrom}-${dateTo}.csv`;
-    a.click();
+    const rows: Array<Array<unknown>> = [
+      ['Date', 'Drug', 'Schedule', 'Qty', 'Running Balance', 'Dispensed By', 'Witness', 'Double-Check', 'Notes'],
+      ...filtered.map((e) => [
+        new Date(e.createdAt).toLocaleString(),
+        e.prescriptionItem?.drugName || '-',
+        e.drugSchedule,
+        e.quantityDispensed,
+        e.runningBalance,
+        e.dispensedBy?.fullName || '-',
+        e.witness?.fullName || 'Not witnessed',
+        e.doubleCheckBy?.fullName || 'Not checked',
+        e.notes || '',
+      ]),
+    ];
+    downloadBlob(
+      `controlled-register-${dateFrom}-${dateTo}.csv`,
+      'text/csv;charset=utf-8',
+      '\ufeff' + toCsv(rows),
+    );
   };
 
   const needsAttention = (entry: ControlledSubstanceLog) => {

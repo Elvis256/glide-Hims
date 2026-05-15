@@ -31,6 +31,7 @@ import api from '../../services/api';
 import PaymentMethodPicker from '../../components/PaymentMethodPicker';
 import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
 import { asList } from '../../utils/unwrapResponse';
+import { toCsv, downloadBlob } from '../reports/_reportUtils';
 
 import type { PaymentMethod } from '../../shared/payment-methods';
 
@@ -244,14 +245,8 @@ export default function PaymentsPage() {
       ];
     });
 
-    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `payments-report-${dateFilter}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const csvContent = '\ufeff' + toCsv([headers, ...rows]);
+    downloadBlob(`payments-report-${dateFilter}.csv`, 'text/csv;charset=utf-8', csvContent);
   };
 
   const handleVoidPayment = () => {

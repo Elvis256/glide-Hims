@@ -26,6 +26,7 @@ import { insuranceService, type Claim, type InsuranceProvider, type AwaitingClai
 import api from '../../../services/api';
 import { patientsService, type Patient } from '../../../services/patients';
 import { formatCurrency } from '../../../lib/currency';
+import { toCsv, downloadBlob } from '../../reports/_reportUtils';
 
 // Debounce hook
 function useDebounce<T>(value: T, delay: number): T {
@@ -267,14 +268,12 @@ export default function ClaimsPage() {
       c.amount,
       c.status,
     ]);
-    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `insurance-claims-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const csvContent = '\ufeff' + toCsv([headers, ...rows]);
+    downloadBlob(
+      `insurance-claims-${new Date().toISOString().split('T')[0]}.csv`,
+      'text/csv;charset=utf-8',
+      csvContent,
+    );
   };
 
   // Server-side payer-formatted (NHIS-style) batch CSV export. Pulls real claim

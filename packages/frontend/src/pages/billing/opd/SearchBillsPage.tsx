@@ -30,6 +30,7 @@ import { billingService, type Invoice } from '../../../services';
 import api from '../../../services/api';
 import { useInstitutionInfo } from '../../../lib/useInstitutionInfo';
 import { printService } from '../../../lib/print';
+import { toCsv, downloadBlob } from '../../reports/_reportUtils';
 import { usePrintFormat } from '../../../lib/usePrintFormat';
 import PrintFormatSelector from '../../../components/PrintFormatSelector';
 import { asList } from '../../../utils/unwrapResponse';
@@ -285,16 +286,12 @@ export default function SearchBillsPage() {
       bill.paymentMethod.replace('_', ' ')
     ]);
     
-    const csvContent = [headers, ...rows]
-      .map(row => row.map(cell => `"${cell}"`).join(','))
-      .join('\n');
-    
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `bills_export_${new Date().toISOString().split('T')[0]}.csv`;
-    link.click();
-    URL.revokeObjectURL(link.href);
+    const csvContent = '\ufeff' + toCsv([headers, ...rows]);
+    downloadBlob(
+      `bills_export_${new Date().toISOString().split('T')[0]}.csv`,
+      'text/csv;charset=utf-8',
+      csvContent,
+    );
   };
 
   const handleExportPDF = () => {
