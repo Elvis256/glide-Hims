@@ -101,7 +101,7 @@ export default function NursingDailyReportPage() {
 
   const handlePrint = () => {
     const el = document.getElementById('daily-report-content');
-    if (el) printService.printDocument(el.innerHTML, { title: 'Daily Nursing Report' });
+    if (el) printService.printElement(el, { title: 'Daily Nursing Report' });
   };
 
   const handleExport = () => {

@@ -163,7 +163,7 @@ export default function DrugFormularyPage() {
   const handlePrintList = useCallback(() => {
     const el = document.getElementById('drug-formulary-content');
     if (el) {
-      printService.printDocument(el.innerHTML, { title: 'Drug Formulary' });
+      printService.printElement(el, { title: 'Drug Formulary' });
     }
   }, []);
 

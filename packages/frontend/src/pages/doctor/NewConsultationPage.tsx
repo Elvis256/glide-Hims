@@ -77,6 +77,7 @@ import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 import PrescriptionSafetyModal from '../../components/PrescriptionSafetyModal';
 import { printService } from '../../lib/print';
+import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
 
 // Types
 interface Vitals {
@@ -380,6 +381,7 @@ function vitalTextClass(status: 'normal' | 'warning' | 'critical'): string {
 }
 
 export default function NewConsultationPage() {
+  const inst = useInstitutionInfo();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const facilityId = useFacilityId();
@@ -1977,7 +1979,7 @@ export default function NewConsultationPage() {
 
   const handlePrint = () => {
     const el = document.getElementById('consultation-content');
-    if (el) printService.printDocument(el.innerHTML, { title: 'New Consultation' });
+    if (el) printService.printElement(el, { title: 'New Consultation', inst });
   };
 
   // Use local ICD search results only (no mock data)

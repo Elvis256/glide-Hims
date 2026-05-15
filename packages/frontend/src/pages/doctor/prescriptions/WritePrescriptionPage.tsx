@@ -15,6 +15,7 @@ import { pharmacyService } from '../../../services/pharmacy';
 import { queueService } from '../../../services/queue';
 import { useAuthStore } from '../../../store/auth';
 import { printService } from '../../../lib/print';
+import { useInstitutionInfo } from '../../../lib/useInstitutionInfo';
 
 interface PrescriptionItem {
   id: string;
@@ -40,6 +41,7 @@ const routes = ['PO (Oral)', 'IV (Intravenous)', 'IM (Intramuscular)', 'SC (Subc
 const durations = ['3 days', '5 days', '7 days', '10 days', '14 days', '21 days', '30 days', '60 days', '90 days', 'Ongoing'];
 
 export default function WritePrescriptionPage() {
+  const inst = useInstitutionInfo();
   const { hasPermission } = usePermissions();
   const navigate = useNavigate();
   const location = useLocation();
@@ -355,7 +357,7 @@ export default function WritePrescriptionPage() {
               <button
                 onClick={() => {
                   const el = document.getElementById('write-prescription-content');
-                  if (el) printService.printDocument(el.innerHTML, { title: `Prescription Rx #${createdPrescription.prescriptionNumber}` });
+                  if (el) printService.printElement(el, { title: `Prescription Rx #${createdPrescription.prescriptionNumber}`, inst });
                 }}
                 className="px-4 py-2 border border-green-600 text-green-700 rounded-lg flex items-center gap-2 hover:bg-green-100 text-sm"
               >

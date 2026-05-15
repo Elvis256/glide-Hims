@@ -366,7 +366,7 @@ export default function HMIS105ReportPage() {
   const handlePrint = () => {
     const el = document.getElementById('hmis105-report-content');
     if (!el) return;
-    printService.printDocument(el.innerHTML, {
+    printService.printElement(el, {
       title: `HMIS 105 — ${data?.reportMonth ?? ''}`,
     });
   };

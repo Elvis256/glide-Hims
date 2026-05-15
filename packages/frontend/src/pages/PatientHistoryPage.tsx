@@ -51,6 +51,7 @@ import { vitalsService, type VitalRecord } from '../services/vitals';
 import { queueService } from '../services/queue';
 import { usePermissions } from '../components/PermissionGate';
 import { printService } from '../lib/print';
+import { useInstitutionInfo } from '../lib/useInstitutionInfo';
 import { asList } from '../utils/unwrapResponse';
 
 // Types
@@ -156,6 +157,7 @@ const getStatusStyle = (status: string) => {
 };
 
 export default function PatientHistoryPage() {
+  const inst = useInstitutionInfo();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
@@ -453,7 +455,7 @@ export default function PatientHistoryPage() {
   const handlePrintSummary = useCallback(() => {
     const el = document.getElementById('patient-history-content');
     if (el) {
-      printService.printDocument(el.innerHTML, { title: 'Patient History' });
+      printService.printElement(el, { title: 'Patient History', inst });
     }
     toast.success('Print dialog opened');
   }, []);

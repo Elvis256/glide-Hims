@@ -35,6 +35,7 @@ import { patientsService } from '../../services/patients';
 import { ipdService, type CreateNursingNoteDto } from '../../services/ipd';
 import { usePermissions } from '../../components/PermissionGate';
 import { printService } from '../../lib/print';
+import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
 
 interface Patient {
   id: string;
@@ -305,6 +306,7 @@ const CARE_PLAN_TEMPLATES: CarePlanTemplate[] = [
 const generateId = () => crypto.randomUUID().replace(/-/g, '').slice(0, 9);
 
 export default function CarePlansPage() {
+  const inst = useInstitutionInfo();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { hasPermission } = usePermissions();
@@ -713,7 +715,7 @@ export default function CarePlansPage() {
   // Print care plan
   const handlePrint = useCallback(() => {
     const el = document.getElementById('care-plans-content');
-    if (el) printService.printDocument(el.innerHTML, { title: 'Care Plans' });
+    if (el) printService.printElement(el, { title: 'Care Plans', inst });
   }, []);
 
   // Update care plan status
