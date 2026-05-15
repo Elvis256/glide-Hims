@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { Loading } from '../../../components/Loading';
 import { hrService, type Employee, type CreateEmployeeDto } from '../../../services/hr';
+import { toCsv, downloadBlob } from '../../reports/_reportUtils';
 import { facilitiesService, rolesService } from '../../../services';
 import { api } from '../../../services/api';
 import SearchableSelect from '../../../components/SearchableSelect';
@@ -467,14 +468,8 @@ function StaffDirectoryPageContent() {
       s.status || s.staffCategory || 'active',
       s.hireDate ? new Date(s.hireDate).toLocaleDateString() : '',
     ]);
-    const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${c}"`).join(','))].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `staff-directory-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const csv = '\ufeff' + toCsv([headers, ...rows]);
+    downloadBlob(`staff-directory-${new Date().toISOString().split('T')[0]}.csv`, 'text/csv;charset=utf-8', csv);
   };
 
   const handleDownloadTemplate = () => {
@@ -533,14 +528,8 @@ function StaffDirectoryPageContent() {
       '# ',
       '',
     ];
-    const csv = [...notes, headers.join(','), example.map(c => `"${c}"`).join(',')].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'staff-import-template.csv';
-    a.click();
-    URL.revokeObjectURL(url);
+    const csv = [...notes, toCsv([headers, example])].join('\n');
+    downloadBlob('staff-import-template.csv', 'text/csv;charset=utf-8', '\ufeff' + csv);
   };
 
   const [showImportModal, setShowImportModal] = useState(false);

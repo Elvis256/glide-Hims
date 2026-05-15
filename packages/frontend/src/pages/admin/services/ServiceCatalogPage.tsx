@@ -17,6 +17,7 @@ import {
 } from '../../../services/pricing';
 import { insuranceService, type InsuranceProvider } from '../../../services/insurance';
 import { facilitiesService, type Department } from '../../../services/facilities';
+import { toCsv, downloadBlob } from '../../reports/_reportUtils';
 
 // ─── Default seed data ──────────────────────────────────────────────────────
 const DEFAULT_CATEGORIES = [
@@ -837,11 +838,8 @@ export default function ServiceCatalogPage() {
       });
       return [s.code, s.name, s.category?.name || '', s.department || '', s.basePrice, ...insurancePrices, s.isActive ? 'Active' : 'Inactive'];
     });
-    const csv = [header, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = 'services-pricing.csv'; a.click();
-    URL.revokeObjectURL(url);
+    const csv = '\ufeff' + toCsv([header, ...rows]);
+    downloadBlob('services-pricing.csv', 'text/csv;charset=utf-8', csv);
   };
 
   // ── Derived ───────────────────────────────────────────────────────────────

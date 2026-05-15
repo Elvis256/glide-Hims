@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { labService, type LabTest as APILabTest } from '../../../services';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
+import { toCsv, downloadBlob } from '../../reports/_reportUtils';
 
 interface LabTest {
   id: string;
@@ -300,21 +301,14 @@ export default function TestCatalogPage() {
   const handleExportCSV = () => {
     const headers = ['Name', 'Category', 'Price', 'TurnaroundTime', 'SampleType', 'Status'];
     const rows = filteredTests.map((t) => [
-      `"${t.name.replace(/"/g, '""')}"`,
+      t.name,
       t.category,
       t.price,
       t.turnaroundTime,
       t.sampleType,
       t.isActive ? 'active' : 'inactive',
     ]);
-    const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'lab-tests.csv';
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob('lab-tests.csv', 'text/csv;charset=utf-8', '\ufeff' + toCsv([headers, ...rows]));
   };
 
   const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {

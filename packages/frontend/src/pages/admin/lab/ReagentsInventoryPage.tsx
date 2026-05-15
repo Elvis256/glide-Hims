@@ -5,6 +5,7 @@ import { api, getApiErrorMessage } from '../../../services/api';
 import { labSuppliesService } from '../../../services';
 import { useFacilityId } from '../../../lib/facility';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
+import { toCsv, downloadBlob } from '../../reports/_reportUtils';
 import {
   Search,
   Plus,
@@ -268,14 +269,8 @@ export default function ReagentsInventoryPage() {
   const handleExportCSV = () => {
     const header = ['Name', 'Category', 'Unit', 'Stock', 'Reorder Level', 'Expiry Date'];
     const rows = reagents.map(r => [r.name, r.category, r.unit, r.stockQuantity, r.reorderLevel, r.expiryDate ?? '']);
-    const csv = [header, ...rows].map(row => row.map(v => `"${v}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `reagents-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const csv = '\ufeff' + toCsv([header, ...rows]);
+    downloadBlob(`reagents-${new Date().toISOString().split('T')[0]}.csv`, 'text/csv;charset=utf-8', csv);
   };
 
   const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
