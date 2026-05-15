@@ -1,9 +1,11 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, useSearchParams, Link } from 'react-router-dom';
 import { Loader2, Printer, Search, FileText, ArrowLeft, RefreshCw } from 'lucide-react';
 import api from '../../services/api';
 import { formatCurrency } from '../../lib/currency';
+import { printService } from '../../lib/print';
+import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
 
 interface TabItem {
   id: string;
@@ -112,8 +114,16 @@ export default function PatientTabPage() {
     }));
   }, [tab]);
 
+  const printRef = useRef<HTMLDivElement>(null);
+  const inst = useInstitutionInfo();
   const handlePrint = () => {
-    window.print();
+    if (printRef.current) {
+      printService.printElement(printRef.current, {
+        title: 'Interim Bill',
+        inst: inst ?? undefined,
+        preset: 'a4',
+      });
+    }
   };
 
   if (!activePatientId) {
@@ -178,6 +188,7 @@ export default function PatientTabPage() {
         </div>
       </div>
 
+      <div ref={printRef}>
       <div className="bg-white border rounded-lg p-6 mb-4">
         <div className="flex justify-between items-start">
           <div>
@@ -313,6 +324,7 @@ export default function PatientTabPage() {
           </p>
         </>
       )}
+      </div>
     </div>
   );
 }
