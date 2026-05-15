@@ -7,6 +7,7 @@ import { encountersService } from '../services/encounters';
 import { usePatientStore } from '../store/patients';
 import { useAuthStore } from '../store/auth';
 import { printService } from '../lib/print';
+import { toCsv, downloadBlob } from './reports/_reportUtils';
 import {
   Search,
   UserCircle,
@@ -227,16 +228,11 @@ export default function PatientSearchPage() {
       formatDate(p.createdAt),
     ]);
 
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `patients-${new Date().toISOString().split('T')[0]}.csv`;
-    link.click();
+    downloadBlob(
+      `patients-${new Date().toISOString().split('T')[0]}.csv`,
+      'text/csv;charset=utf-8',
+      '\ufeff' + toCsv([headers, ...rows]),
+    );
     toast.success(`Exported ${patients.length} patients to CSV`);
   };
 

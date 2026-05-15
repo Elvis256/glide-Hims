@@ -186,12 +186,7 @@ export default function AssetTrackingPage() {
       a.status,
       String(a.acquisitionCost || 0),
     ]);
-    const csv = [headers, ...rows].map((r) => r.join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = 'asset_tracking.csv';
-    link.click();
+    downloadBlob('asset_tracking.csv', 'text/csv;charset=utf-8', '\ufeff' + toCsv([headers, ...rows]));
   };
 
   // Location history for selected asset
