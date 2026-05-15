@@ -18,6 +18,7 @@ import {
 import { format } from 'date-fns';
 import api from '../../../services/api';
 import { useFacilityId } from '../../../lib/facility';
+import { toCsv, downloadBlob } from '../../reports/_reportUtils';
 
 interface Reminder {
   id: string;
@@ -127,16 +128,11 @@ export default function NotificationHistoryPage() {
       typeLabels[r.type] || r.type,
       r.channel,
       r.status,
-      r.message.replace(/,/g, ';'),
+      r.message,
     ]);
     
-    const csv = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `notification-history-${format(new Date(), 'yyyy-MM-dd')}.csv`;
-    a.click();
+    const csv = '\ufeff' + toCsv([headers, ...rows]);
+    downloadBlob(`notification-history-${format(new Date(), 'yyyy-MM-dd')}.csv`, 'text/csv;charset=utf-8', csv);
   };
 
   return (

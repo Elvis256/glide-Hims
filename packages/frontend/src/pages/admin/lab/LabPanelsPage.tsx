@@ -23,6 +23,7 @@ import {
 import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 import { toast } from 'sonner';
 import api from '../../../services/api';
+import { toCsv, downloadBlob } from '../../reports/_reportUtils';
 import { labService } from '../../../services/lab';
 import type { LabTest } from '../../../services/lab';
 
@@ -205,18 +206,12 @@ export default function LabPanelsPage() {
   };
 
   const handleExport = () => {
-    const csv = [
-      ['Code', 'Name', 'Category', 'Tests', 'Panel Price', 'Individual Total', 'Status'].join(','),
-      ...panels.map(p => [
-        p.code, p.name, p.category, p.tests.length,
-        p.panelPrice, calculateIndividualTotal(p.tests), p.isActive ? 'Active' : 'Inactive',
-      ].join(',')),
-    ].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'lab_panels.csv'; a.click();
-    URL.revokeObjectURL(url);
+    const headers = ['Code', 'Name', 'Category', 'Tests', 'Panel Price', 'Individual Total', 'Status'];
+    const rows = panels.map(p => [
+      p.code, p.name, p.category, p.tests.length,
+      p.panelPrice, calculateIndividualTotal(p.tests), p.isActive ? 'Active' : 'Inactive',
+    ]);
+    downloadBlob('lab_panels.csv', 'text/csv;charset=utf-8', '\ufeff' + toCsv([headers, ...rows]));
   };
 
   return (

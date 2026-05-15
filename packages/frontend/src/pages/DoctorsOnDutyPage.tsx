@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { doctorDutyService, type DoctorWithDutyStatus, type DutyStatus } from '../services/doctor-duty';
+import { toCsv, downloadBlob } from './reports/_reportUtils';
 
 const statusConfig: Record<DutyStatus, { label: string; color: string; bgColor: string; borderColor: string; icon: any }> = {
   on_duty: { label: 'On Duty', color: 'text-green-700', bgColor: 'bg-green-100', borderColor: 'border-l-green-500', icon: UserCheck },
@@ -187,12 +188,11 @@ export default function DoctorsOnDutyPage() {
       d.roomNumber || '', formatTime(d.checkInTime), formatTime(d.checkOutTime),
       d.currentQueueCount, d.maxPatients,
     ]);
-    const csv = [headers, ...rows].map((r) => r.join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `doctors-on-duty-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click(); URL.revokeObjectURL(url);
+    downloadBlob(
+      `doctors-on-duty-${new Date().toISOString().split('T')[0]}.csv`,
+      'text/csv;charset=utf-8',
+      '\ufeff' + toCsv([headers, ...rows]),
+    );
     toast.success('Exported to CSV');
   };
 

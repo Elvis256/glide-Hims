@@ -6,6 +6,7 @@ import AccessDenied from '../../components/AccessDenied';
 import { labSuppliesService, labService } from '../../services';
 import { useFacilityId } from '../../lib/facility';
 import { useAuthStore } from '../../store/auth';
+import { toCsv, downloadBlob } from '../reports/_reportUtils';
 import {
   FlaskConical,
   TrendingUp,
@@ -510,14 +511,8 @@ export default function LabQCDashboardPage() {
       r.sd.toFixed(2), r.zscore.toFixed(2), r.status, r.equipment,
       new Date(r.runDate).toLocaleString(), r.runBy,
     ]);
-    const csv = [header, ...rows].map(row => row.map(v => `"${v}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `qc-data-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const csv = '\ufeff' + toCsv([header, ...rows]);
+    downloadBlob(`qc-data-${new Date().toISOString().split('T')[0]}.csv`, 'text/csv;charset=utf-8', csv);
   };
 
   const getStatusBadge = (status: string) => {

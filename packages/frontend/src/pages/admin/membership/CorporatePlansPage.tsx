@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 import { api, getApiErrorMessage } from '../../../services/api';
 import { useFacilityId } from '../../../lib/facility';
+import { toCsv, downloadBlob } from '../../reports/_reportUtils';
 import {
   Search,
   Plus,
@@ -190,16 +191,9 @@ export default function CorporatePlansPage() {
   };
 
   const handleExport = () => {
-    const csv = [
-      ['Code', 'Name', 'Type', 'Discount %', 'Credit Limit', 'Valid Days', 'Requires Approval', 'Active'].join(','),
-      ...schemes.map(s => [s.code, s.name, s.type, s.discountPercent, s.creditLimit, s.validDays, s.requiresApproval, s.isActive].join(','))
-    ].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'corporate_schemes.csv';
-    a.click();
+    const headers = ['Code', 'Name', 'Type', 'Discount %', 'Credit Limit', 'Valid Days', 'Requires Approval', 'Active'];
+    const rows = schemes.map(s => [s.code, s.name, s.type, s.discountPercent, s.creditLimit, s.validDays, s.requiresApproval, s.isActive]);
+    downloadBlob('corporate_schemes.csv', 'text/csv;charset=utf-8', '\ufeff' + toCsv([headers, ...rows]));
   };
 
   const filteredPlans = useMemo(() => {
