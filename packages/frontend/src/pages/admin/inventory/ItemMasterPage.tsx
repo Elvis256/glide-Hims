@@ -18,6 +18,7 @@ import {
 import { toast } from 'sonner';
 import { api } from '../../../services/api';
 import { useFacilityId } from '../../../lib/facility';
+import { toCsv, downloadBlob } from '../../reports/_reportUtils';
 
 interface ItemRecord {
   id: string;
@@ -100,14 +101,8 @@ export default function ItemMasterPage() {
       i.code, i.name, i.itemCategory?.name || i.category || '', i.unit,
       i.isDrug ? 'Yes' : 'No', i.reorderLevel, i.unitCost, i.sellingPrice, i.status,
     ]);
-    const csv = [headers, ...rows].map((r) => r.join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `item-master-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const csv = '\ufeff' + toCsv([headers, ...rows]);
+    downloadBlob(`item-master-${new Date().toISOString().slice(0, 10)}.csv`, 'text/csv;charset=utf-8', csv);
     toast.success(`Exported ${items.length} items`);
   }, [items]);
 

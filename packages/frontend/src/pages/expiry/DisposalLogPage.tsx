@@ -23,6 +23,7 @@ import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 import { api } from '../../services/api';
 import { useAuthStore } from '../../store/auth';
+import { toCsv, downloadBlob } from '../reports/_reportUtils';
 
 interface DisposalRecord {
   id: string;
@@ -204,11 +205,8 @@ export default function DisposalLogPage() {
     if (disposalRecords.length === 0) { toast.error('No data to export'); return; }
     const headers = ['Medication', 'Batch', 'Quantity', 'Total Value', 'Disposal Date', 'Method', 'Disposed By', 'Witness', 'Certificate', 'Compliance', 'Reason'];
     const rows = disposalRecords.map(r => [r.item?.name || r.itemId, r.batchNumber || '-', r.quantity, Number(r.totalValue).toFixed(2), r.disposalDate, r.disposalMethod, r.disposedBy?.fullName || '-', r.witness || '-', r.certificateNumber || '-', r.complianceStatus, r.reason || '-']);
-    const csv = [headers, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `disposal-log-${new Date().toISOString().split('T')[0]}.csv`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    const csv = '\ufeff' + toCsv([headers, ...rows]);
+    downloadBlob(`disposal-log-${new Date().toISOString().split('T')[0]}.csv`, 'text/csv;charset=utf-8', csv);
     toast.success('Log exported');
   }, [disposalRecords]);
 
