@@ -33,6 +33,7 @@ import api from '../services/api';
 import { formatCurrency } from '../lib/currency';
 import { usePermissions } from '../components/PermissionGate';
 import { printService } from '../lib/print';
+import { useInstitutionInfo } from '../lib/useInstitutionInfo';
 
 interface DailySummary {
   totalRegistrations: number;
@@ -52,6 +53,7 @@ const PAYMENT_COLORS = ['#10B981', '#3B82F6', '#F59E0B', '#8B5CF6'];
 const GENDER_COLORS = ['#3B82F6', '#EC4899', '#6B7280'];
 
 export default function RegistrationDailySummaryPage() {
+  const inst = useInstitutionInfo();
   const navigate = useNavigate();
   const { hasPermission } = usePermissions();
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
@@ -231,7 +233,7 @@ export default function RegistrationDailySummaryPage() {
   const handlePrint = () => {
     const el = document.getElementById('registration-summary-content');
     if (el) {
-      printService.printDocument(el.innerHTML, { title: 'Daily Summary Report' });
+      printService.printElement(el, { title: 'Daily Summary Report', inst });
     }
   };
 

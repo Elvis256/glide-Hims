@@ -40,6 +40,7 @@ import { patientsService } from '../../services/patients';
 import { ipdService, type CreateNursingNoteDto } from '../../services/ipd';
 import { usePermissions } from '../../components/PermissionGate';
 import { printService } from '../../lib/print';
+import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
 
 interface Patient {
   id: string;
@@ -216,6 +217,7 @@ const auditTrail: AuditEntry[] = [];
 type ViewMode = 'dashboard' | 'new' | 'view' | 'edit';
 
 export default function IncidentReportPage() {
+  const inst = useInstitutionInfo();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { hasPermission } = usePermissions();
@@ -492,7 +494,7 @@ export default function IncidentReportPage() {
 
   const handlePrint = () => {
     const el = document.getElementById('incident-report-content');
-    if (el) printService.printDocument(el.innerHTML, { title: 'Incident Report' });
+    if (el) printService.printElement(el, { title: 'Incident Report', inst });
     toast.success('Print dialog opened');
   };
 

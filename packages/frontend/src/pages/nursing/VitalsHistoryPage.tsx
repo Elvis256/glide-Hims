@@ -340,7 +340,7 @@ export default function VitalsHistoryPage() {
 
   const handlePrint = useCallback(() => {
     const el = document.getElementById('vitals-history-content');
-    if (el) printService.printDocument(el.innerHTML, { title: 'Vitals History' });
+    if (el) printService.printElement(el, { title: 'Vitals History' });
     setShowExportMenu(false);
   }, []);
 

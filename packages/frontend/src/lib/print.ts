@@ -349,6 +349,44 @@ export const printService = {
 
   /** Available presets for reference. */
   presets: PAGE_PRESETS,
+
+  /**
+   * Print the contents of a live DOM element after stripping interactive
+   * controls (buttons, inputs, selects), chart canvases, and elements
+   * marked .no-print / [data-no-print]. Optionally wraps the cleaned
+   * content with the institution branded header/footer.
+   *
+   * Use this in preference to `printDocument(el.innerHTML, ...)` which
+   * would dump live UI chrome (buttons, dropdowns, recharts SVG) into
+   * the printout.
+   */
+  printElement(
+    el: HTMLElement,
+    opts: PrintOptions & { inst?: InstitutionInfo; preset?: PagePreset } = {},
+  ) {
+    const clone = el.cloneNode(true) as HTMLElement;
+    clone
+      .querySelectorAll(
+        'button, input, select, textarea, script, ' +
+          '[data-no-print], .no-print, ' +
+          '.recharts-wrapper, .recharts-responsive-container, ' +
+          '[role="tablist"], [role="dialog"], [role="menu"], [role="listbox"]',
+      )
+      .forEach((n) => n.remove());
+    // Strip inline event handlers
+    clone.querySelectorAll('*').forEach((node) => {
+      Array.from(node.attributes).forEach((a) => {
+        if (a.name.startsWith('on')) node.removeAttribute(a.name);
+      });
+    });
+    const body = clone.innerHTML;
+    const branded = opts.inst
+      ? buildHeader(opts.inst, 'document') + body + buildFooter(opts.inst, 'document')
+      : body;
+    const preset = opts.preset || 'a4';
+    const html = buildHtmlDocument(branded, preset, { title: 'Document', ...opts });
+    printViaIframe(html, opts);
+  },
 };
 
 // Legacy exports for backward compatibility

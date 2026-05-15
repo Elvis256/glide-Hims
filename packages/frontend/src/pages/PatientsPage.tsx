@@ -7,6 +7,7 @@ import { queueService } from '../services/queue';
 import type { Patient } from '../types';
 import { usePermissions } from '../components/PermissionGate';
 import { printService } from '../lib/print';
+import { useInstitutionInfo } from '../lib/useInstitutionInfo';
 import { toCsv, downloadBlob } from './reports/_reportUtils';
 import { useEntityName } from '../hooks/useBusinessConfig';
 import ExportButton from '../components/ExportButton';
@@ -115,6 +116,7 @@ function SortIcon({ field, sortField, sortOrder }: { field: SortField; sortField
 }
 
 export default function PatientsPage() {
+  const inst = useInstitutionInfo();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { hasPermission } = usePermissions();
@@ -286,7 +288,7 @@ export default function PatientsPage() {
   const handlePrint = () => {
     const el = document.getElementById('patients-page-content');
     if (el) {
-      printService.printDocument(el.innerHTML, { title: `${entityName.singular} Registry` });
+      printService.printElement(el, { title: `${entityName.singular} Registry`, inst });
     }
     toast.success('Print dialog opened');
   };

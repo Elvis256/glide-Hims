@@ -42,6 +42,7 @@ import { ipdService, type CreateNursingNoteDto, type NursingNoteType } from '../
 import PermissionGate, { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 import { printService } from '../../lib/print';
+import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
 
 // Extended Note Types
 type ExtendedNoteType = 
@@ -282,6 +283,7 @@ const formatTimestamp = (date: Date): string => {
 };
 
 export default function NursingNotesPage() {
+  const inst = useInstitutionInfo();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { hasPermission } = usePermissions();
@@ -570,7 +572,7 @@ export default function NursingNotesPage() {
 
   const handlePrint = () => {
     const el = document.getElementById('nursing-notes-content');
-    if (el) printService.printDocument(el.innerHTML, { title: 'Nursing Notes' });
+    if (el) printService.printElement(el, { title: 'Nursing Notes', inst });
     toast.success('Print dialog opened');
   };
 
