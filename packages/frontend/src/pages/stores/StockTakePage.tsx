@@ -23,6 +23,7 @@ import { toast } from 'sonner';
 import { storesService } from '../../services/stores';
 import { useFacilityId } from '../../lib/facility';
 import { formatCurrency } from '../../lib/currency';
+import { toCsv, downloadBlob } from '../reports/_reportUtils';
 
 export default function StockTakePage() {
   const facilityId = useFacilityId();
@@ -74,14 +75,8 @@ export default function StockTakePage() {
       item.currentStock,
       physicalCounts[item.id] ?? '',
     ]);
-    const csv = [headers, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `stock-count-sheet-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const csv = '\ufeff' + toCsv([headers, ...rows]);
+    downloadBlob(`stock-count-sheet-${new Date().toISOString().slice(0, 10)}.csv`, 'text/csv;charset=utf-8', csv);
     toast.success('Count sheet exported successfully');
   }, [items, filteredItems, physicalCounts]);
 

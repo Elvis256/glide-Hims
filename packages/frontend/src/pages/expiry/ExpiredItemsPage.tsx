@@ -22,6 +22,7 @@ import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 import { storesService } from '../../services/stores';
 import { useFacilityId } from '../../lib/facility';
+import { toCsv, downloadBlob } from '../reports/_reportUtils';
 
 interface ExpiredMedication {
   id: string;
@@ -122,11 +123,8 @@ export default function ExpiredItemsPage() {
     if (filteredMedications.length === 0) { toast.error('No data to export'); return; }
     const headers = ['Name', 'Batch', 'Expiry Date', 'Days Expired', 'Quantity', 'Value', 'Category', 'Supplier', 'Quarantine Status', 'Root Cause'];
     const rows = filteredMedications.map(m => [m.name, m.batch, m.expiryDate, m.daysExpired, m.quantity, m.value.toFixed(2), m.category, m.supplier, m.quarantineStatus, m.rootCause]);
-    const csv = [headers, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `expired-items-${new Date().toISOString().split('T')[0]}.csv`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    const csv = '\ufeff' + toCsv([headers, ...rows]);
+    downloadBlob(`expired-items-${new Date().toISOString().split('T')[0]}.csv`, 'text/csv;charset=utf-8', csv);
     toast.success('Report exported');
   }, [filteredMedications]);
 
