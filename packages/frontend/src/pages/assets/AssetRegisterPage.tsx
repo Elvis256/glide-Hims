@@ -304,14 +304,11 @@ export default function AssetRegisterPage() {
       a.acquisitionCost ?? '',
       a.status,
     ]);
-    const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `asset-register-${format(new Date(), 'yyyy-MM-dd')}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(
+      `asset-register-${format(new Date(), 'yyyy-MM-dd')}.csv`,
+      'text/csv;charset=utf-8',
+      '\ufeff' + toCsv([headers, ...rows]),
+    );
   }
 
   const stats = {

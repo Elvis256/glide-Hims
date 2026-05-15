@@ -7,6 +7,7 @@ import { queueService } from '../services/queue';
 import type { Patient } from '../types';
 import { usePermissions } from '../components/PermissionGate';
 import { printService } from '../lib/print';
+import { toCsv, downloadBlob } from './reports/_reportUtils';
 import { useEntityName } from '../hooks/useBusinessConfig';
 import ExportButton from '../components/ExportButton';
 import {
@@ -274,14 +275,11 @@ export default function PatientsPage() {
       p.address || '',
     ]);
     
-    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `patients_export_${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(
+      `patients_export_${new Date().toISOString().split('T')[0]}.csv`,
+      'text/csv;charset=utf-8',
+      '\ufeff' + toCsv([headers, ...rows]),
+    );
     toast.success(`Exported ${patientsToExport.length} patients`);
   };
 
