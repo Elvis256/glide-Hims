@@ -368,6 +368,7 @@ export class RFQService {
       .leftJoinAndSelect('approval.quotation', 'quotation')
       .leftJoinAndSelect('quotation.supplier', 'supplier')
       .leftJoinAndSelect('quotation.rfq', 'rfq')
+      .leftJoinAndSelect('rfq.items', 'rfqItems')
       .leftJoinAndSelect('quotation.items', 'items')
       .where('approval.status = :status', { status: QuotationApprovalStatus.PENDING })
       .andWhere('rfq.facilityId = :facilityId', { facilityId });
