@@ -20,6 +20,7 @@ import {
   UpdateChronicConditionDto,
   ChronicPatientsQueryDto,
   SendBulkReminderDto,
+  RecordVisitDto,
 } from './dto/chronic-care.dto';
 import { ChronicStatus } from '../../database/entities/patient-chronic-condition.entity';
 import { RequireModule } from '../auth/decorators/module.decorator';
@@ -116,10 +117,10 @@ export class ChronicCareController {
   @ApiOperation({ summary: 'Record a visit and update next follow-up' })
   async recordVisit(
     @Param('id') id: string,
-    @Body('nextFollowUpDate') nextFollowUpDate?: Date,
+    @Body() dto: RecordVisitDto,
     @Request() req?: any,
   ) {
-    return this.chronicCareService.recordVisit(id, nextFollowUpDate, req?.user?.tenantId);
+    return this.chronicCareService.recordVisit(id, dto?.nextFollowUpDate, req?.user?.tenantId);
   }
 
   @Post(':id/send-reminder')
