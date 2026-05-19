@@ -6,7 +6,11 @@ import {
   IsDateString,
   IsUUID,
   IsArray,
+  ArrayNotEmpty,
   ValidateNested,
+  Min,
+  Max,
+  IsPositive,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ReturnStatus, ReturnReason } from '../../database/entities/supplier-return.entity';
@@ -23,10 +27,11 @@ export class CreateReturnItemDto {
   @IsOptional()
   expiryDate?: string;
 
-  @IsNumber()
+  @IsPositive()
   quantity: number;
 
   @IsNumber()
+  @Min(0)
   @IsOptional()
   unitValue?: number;
 
@@ -50,6 +55,7 @@ export class CreateSupplierReturnDto {
   facilityId: string;
 
   @IsArray()
+  @ArrayNotEmpty()
   @ValidateNested({ each: true })
   @Type(() => CreateReturnItemDto)
   items: CreateReturnItemDto[];
@@ -69,6 +75,7 @@ export class UpdateSupplierReturnDto {
   creditNoteNumber?: string;
 
   @IsNumber()
+  @Min(0)
   @IsOptional()
   actualCredit?: number;
 
@@ -110,11 +117,17 @@ export class SupplierReturnQueryDto {
   @IsOptional()
   endDate?: string;
 
-  @IsNumber()
   @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  @Max(100000)
   page?: number;
 
-  @IsNumber()
   @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  @Max(500)
   limit?: number;
 }

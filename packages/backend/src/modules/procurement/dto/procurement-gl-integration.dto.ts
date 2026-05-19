@@ -1,4 +1,4 @@
-import { IsString, IsNumber, IsDate, IsOptional, IsEnum } from 'class-validator';
+import { IsString, IsNumber, IsDate, IsOptional, IsEnum, IsUUID, Min } from 'class-validator';
 
 export enum EncumbranceStatusType {
   ACTIVE = 'active',
@@ -14,11 +14,11 @@ export enum MatchStatus {
 
 // Request DTOs
 export class PostReceiptToGLDto {
-  @IsString()
+  @IsUUID()
   grnId: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   userId?: string;
 
   @IsOptional()
@@ -30,12 +30,13 @@ export class PostReceiptToGLDto {
 }
 
 export class EncumbranceDto {
-  @IsString()
+  @IsUUID()
   poId: string;
 
-  @IsString()
+  @IsUUID()
   departmentId: string;
 
+  @Min(0)
   @IsNumber()
   amount: number;
 
@@ -49,7 +50,7 @@ export class EncumbranceDto {
 }
 
 export class ReleaseEncumbranceDto {
-  @IsString()
+  @IsUUID()
   grnId: string;
 
   @IsOptional()
@@ -58,17 +59,18 @@ export class ReleaseEncumbranceDto {
 }
 
 export class PostInvoiceToGLDto {
-  @IsString()
+  @IsUUID()
   invoiceId: string;
 
-  @IsString()
+  @IsUUID()
   supplierId: string;
 
+  @Min(0)
   @IsNumber()
   amount: number;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   poId?: string;
 
   @IsOptional()
