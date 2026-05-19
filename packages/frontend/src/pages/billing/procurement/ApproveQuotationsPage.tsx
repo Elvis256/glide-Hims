@@ -393,14 +393,54 @@ export default function ApproveQuotationsPage() {
               <div>
                 <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Items</p>
                 <div className="space-y-2">
-                  {(selectedApproval.items || []).map((item: any, idx: number) => (
-                    <div key={idx} className="flex justify-between text-sm bg-gray-50 p-2 rounded">
-                      <span>{item.name}</span>
-                      <span className="text-gray-600">
-                        {item.quantity} × ${item.unitPrice}
-                      </span>
-                    </div>
-                  ))}
+                  {(() => {
+                    const quotationItems =
+                      selectedApproval.items ||
+                      selectedApproval.quotation?.items ||
+                      [];
+                    const rfqItems: any[] =
+                      (selectedApproval.quotation as any)?.rfq?.items || [];
+                    if (quotationItems.length === 0) {
+                      return (
+                        <p className="text-sm italic text-gray-400">No items.</p>
+                      );
+                    }
+                    return quotationItems.map((item: any, idx: number) => {
+                      const rfqItem = rfqItems.find((ri) => ri.id === item.rfqItemId);
+                      const name =
+                        item.itemName ||
+                        item.name ||
+                        rfqItem?.itemName ||
+                        rfqItem?.name ||
+                        rfqItem?.itemCode ||
+                        '—';
+                      const qty = Number(
+                        item.quantity ??
+                          item.quantityRequested ??
+                          rfqItem?.quantity ??
+                          rfqItem?.quantityRequested ??
+                          0,
+                      );
+                      const unit =
+                        item.itemUnit || item.unit || rfqItem?.itemUnit || rfqItem?.unit || '';
+                      const unitPrice = Number(item.unitPrice ?? item.unitPriceEstimated ?? 0);
+                      const lineTotal = Number(
+                        item.totalPrice ?? item.subtotal ?? qty * unitPrice,
+                      );
+                      return (
+                        <div
+                          key={item.id || idx}
+                          className="flex justify-between text-sm bg-gray-50 p-2 rounded"
+                        >
+                          <span>{name}</span>
+                          <span className="text-gray-600 tabular-nums">
+                            {qty} {unit} × ${unitPrice.toLocaleString()} ={' '}
+                            <strong>${lineTotal.toLocaleString()}</strong>
+                          </span>
+                        </div>
+                      );
+                    });
+                  })()}
                 </div>
               </div>
 
