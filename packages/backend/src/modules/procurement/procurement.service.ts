@@ -1022,6 +1022,7 @@ export class ProcurementService {
           discountPercent: item.discountPercent || 0,
           lineTotal: item.lineTotal,
           notes: item.notes,
+          ...(tenantId ? { tenantId } : {}),
         }),
       );
 
@@ -1048,7 +1049,15 @@ export class ProcurementService {
         );
       }
 
-      return this.getPurchaseOrder((savedPO as PurchaseOrder).id, tenantId);
+      // Re-fetch within the active transaction so relations are loaded
+      // from the same connection that just wrote the rows (otherwise a
+      // default-pool read can miss the uncommitted insert and 404).
+      const fetched = await poRepo.findOne({
+        where: { id: (savedPO as PurchaseOrder).id, deletedAt: IsNull() },
+        relations: ['items', 'supplier', 'purchaseRequest', 'createdBy', 'approvedBy', 'facility'],
+      });
+      if (!fetched) throw new NotFoundException('Purchase order not found');
+      return fetched;
       }),
     );
   }
@@ -2289,6 +2298,7 @@ export class ProcurementService {
             quantityRequested: it.quantityRequested,
             unitPriceEstimated: it.unitPriceEstimated,
             notes: it.notes,
+            ...(tenantId ? { tenantId } : {}),
           }),
         );
         await this.prItemRepo.save(prItems);
