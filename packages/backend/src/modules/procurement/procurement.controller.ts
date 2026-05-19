@@ -396,10 +396,12 @@ export class ProcurementController {
   @Get('analytics/suppliers/metrics')
   @AuthWithPermissions('procurement.analytics')
   async getSupplierMetrics(
+    @Request() req: any,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
   ): Promise<any> {
     return this.supplierAnalytics.getSupplierMetrics(
+      req.user?.tenantId,
       startDate ? new Date(startDate) : undefined,
       endDate ? new Date(endDate) : undefined,
     );
@@ -408,51 +410,57 @@ export class ProcurementController {
   @Get('analytics/suppliers/spend-trends')
   @AuthWithPermissions('procurement.analytics')
   async getSupplierSpendTrends(
+    @Request() req: any,
     @Query('supplierId') supplierId: string,
     @Query('months') months: number = 12,
   ): Promise<any> {
     if (!supplierId) {
       return { error: 'supplierId is required' };
     }
-    return this.supplierAnalytics.getSupplierSpendTrends(supplierId, months);
+    return this.supplierAnalytics.getSupplierSpendTrends(req.user?.tenantId, supplierId, months);
   }
 
   @Get('analytics/suppliers/top-suppliers')
   @AuthWithPermissions('procurement.analytics')
-  async getTopSuppliers(@Query('limit') limit: number = 10): Promise<any> {
-    return this.supplierAnalytics.getTopSuppliers(limit);
+  async getTopSuppliers(@Request() req: any, @Query('limit') limit: number = 10): Promise<any> {
+    return this.supplierAnalytics.getTopSuppliers(req.user?.tenantId, limit);
   }
 
   @Get('analytics/suppliers/performance-comparison')
   @AuthWithPermissions('procurement.analytics')
-  async getSupplierPerformanceComparison(): Promise<any> {
-    return this.supplierAnalytics.getSupplierPerformanceComparison();
+  async getSupplierPerformanceComparison(@Request() req: any): Promise<any> {
+    return this.supplierAnalytics.getSupplierPerformanceComparison(req.user?.tenantId);
   }
 
   @Get('analytics/suppliers/risk-score')
   @AuthWithPermissions('procurement.analytics')
-  async getSupplierRiskScore(@Query('supplierId') supplierId: string): Promise<any> {
+  async getSupplierRiskScore(
+    @Request() req: any,
+    @Query('supplierId') supplierId: string,
+  ): Promise<any> {
     if (!supplierId) {
       return { error: 'supplierId is required' };
     }
-    return this.supplierAnalytics.getSupplierRiskScore(supplierId);
+    return this.supplierAnalytics.getSupplierRiskScore(req.user?.tenantId, supplierId);
   }
 
   // ============ ANALYTICS - APPROVALS ============
 
   @Get('analytics/approvals/bottlenecks')
   @AuthWithPermissions('procurement.analytics')
-  async detectApprovalBottlenecks(): Promise<any> {
-    return this.approvalAnalytics.detectBottlenecks();
+  async detectApprovalBottlenecks(@Request() req: any): Promise<any> {
+    return this.approvalAnalytics.detectBottlenecks(req.user?.tenantId);
   }
 
   @Get('analytics/approvals/time-metrics')
   @AuthWithPermissions('procurement.analytics')
   async getApprovalTimeMetrics(
+    @Request() req: any,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
   ): Promise<any> {
     return this.approvalAnalytics.getApprovalTimeMetrics(
+      req.user?.tenantId,
       startDate ? new Date(startDate) : undefined,
       endDate ? new Date(endDate) : undefined,
     );
@@ -460,20 +468,20 @@ export class ProcurementController {
 
   @Get('analytics/approvals/trends')
   @AuthWithPermissions('procurement.analytics')
-  async getApprovalTrends(@Query('days') days: number = 30): Promise<any> {
-    return this.approvalAnalytics.getApprovalTrends(days);
+  async getApprovalTrends(@Request() req: any, @Query('days') days: number = 30): Promise<any> {
+    return this.approvalAnalytics.getApprovalTrends(req.user?.tenantId, days);
   }
 
   @Get('analytics/approvals/sla-compliance')
   @AuthWithPermissions('procurement.analytics')
-  async getApprovalSLACompliance(): Promise<any> {
-    return this.approvalAnalytics.getApprovalSLACompliance();
+  async getApprovalSLACompliance(@Request() req: any): Promise<any> {
+    return this.approvalAnalytics.getApprovalSLACompliance(req.user?.tenantId);
   }
 
   @Get('analytics/approvals/workload')
   @AuthWithPermissions('procurement.analytics')
-  async getApprovalWorkload(): Promise<any> {
-    return this.approvalAnalytics.getApprovalWorkload();
+  async getApprovalWorkload(@Request() req: any): Promise<any> {
+    return this.approvalAnalytics.getApprovalWorkload(req.user?.tenantId);
   }
 
   // ============ ANALYTICS - SPEND ============
@@ -481,10 +489,12 @@ export class ProcurementController {
   @Get('analytics/spend/by-category')
   @AuthWithPermissions('procurement.analytics')
   async getSpendByCategory(
+    @Request() req: any,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
   ): Promise<any> {
     return this.spendAnalytics.getCategorySpend(
+      req.user?.tenantId,
       startDate ? new Date(startDate) : undefined,
       endDate ? new Date(endDate) : undefined,
     );
@@ -493,10 +503,12 @@ export class ProcurementController {
   @Get('analytics/spend/by-department')
   @AuthWithPermissions('procurement.analytics')
   async getSpendByDepartment(
+    @Request() req: any,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
   ): Promise<any> {
     return this.spendAnalytics.getDepartmentSpend(
+      req.user?.tenantId,
       startDate ? new Date(startDate) : undefined,
       endDate ? new Date(endDate) : undefined,
     );
@@ -504,25 +516,25 @@ export class ProcurementController {
 
   @Get('analytics/spend/trends')
   @AuthWithPermissions('procurement.analytics')
-  async getSpendTrends(@Query('months') months: number = 12): Promise<any> {
-    return this.spendAnalytics.getSpendTrends(months);
+  async getSpendTrends(@Request() req: any, @Query('months') months: number = 12): Promise<any> {
+    return this.spendAnalytics.getSpendTrends(req.user?.tenantId, months);
   }
 
   @Get('analytics/spend/budget-utilization')
   @AuthWithPermissions('procurement.analytics')
-  async getBudgetUtilization(): Promise<any> {
-    return this.spendAnalytics.getBudgetUtilization();
+  async getBudgetUtilization(@Request() req: any): Promise<any> {
+    return this.spendAnalytics.getBudgetUtilization(req.user?.tenantId);
   }
 
   @Get('analytics/spend/forecast')
   @AuthWithPermissions('procurement.analytics')
-  async getSpendForecast(@Query('months') months: number = 3): Promise<any> {
-    return this.spendAnalytics.getSpendForecast(months);
+  async getSpendForecast(@Request() req: any, @Query('months') months: number = 3): Promise<any> {
+    return this.spendAnalytics.getSpendForecast(req.user?.tenantId, months);
   }
 
   @Get('analytics/spend/top-items')
   @AuthWithPermissions('procurement.analytics')
-  async getTopSpendItems(@Query('limit') limit: number = 10): Promise<any> {
-    return this.spendAnalytics.getTopSpendItems(limit);
+  async getTopSpendItems(@Request() req: any, @Query('limit') limit: number = 10): Promise<any> {
+    return this.spendAnalytics.getTopSpendItems(req.user?.tenantId, limit);
   }
 }

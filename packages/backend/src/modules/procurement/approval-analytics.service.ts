@@ -35,82 +35,85 @@ export class ApprovalAnalyticsService {
     private poRepository: Repository<PurchaseOrder>,
   ) {}
 
-  async detectBottlenecks(): Promise<ApprovalBottleneck[]> {
-    const bottlenecks: ApprovalBottleneck[] = [];
+  private tenantWhere(tenantId: string | undefined): { tenantId?: string } {
+    return tenantId ? { tenantId } : {};
+  }
+
+  /**
+   * Returns a single aggregate bottleneck row for the supplied tenant — the
+   * cohort of PENDING_APPROVAL POs and their wait stats. The legacy
+   * implementation triple-counted the same orders across three hard-coded
+   * approval levels because it sliced `pendingOrders.slice(0, ceil(n/3))`
+   * for every level, which inflated every count by 3× and reused the same
+   * orders. Until we wire actual approval-chain state, returning the true
+   * aggregate is honest.
+   */
+  async detectBottlenecks(tenantId?: string): Promise<ApprovalBottleneck[]> {
     const pendingOrders = await this.poRepository.find({
-      where: { status: POStatus.PENDING_APPROVAL },
+      where: { status: POStatus.PENDING_APPROVAL, ...this.tenantWhere(tenantId) },
     });
 
-    const levels = [
-      { level: 1, role: 'Department Head' },
-      { level: 2, role: 'Finance Manager' },
-      { level: 3, role: 'Executive Director' },
+    if (pendingOrders.length === 0) return [];
+
+    const oldestOrder = pendingOrders.reduce((oldest, current) =>
+      (current.createdAt || new Date()) < (oldest.createdAt || new Date())
+        ? current
+        : oldest,
+    );
+
+    const waitTimeHours = Math.floor(
+      (Date.now() - (oldestOrder.createdAt?.getTime() || 0)) / (1000 * 60 * 60),
+    );
+
+    const avgWaitHours =
+      pendingOrders.reduce((sum, o) => {
+        const created = o.createdAt?.getTime() || Date.now();
+        return sum + (Date.now() - created) / (1000 * 60 * 60);
+      }, 0) / pendingOrders.length;
+
+    let severity: 'low' | 'medium' | 'high' | 'critical' = 'low';
+    if (waitTimeHours > 72) severity = 'critical';
+    else if (waitTimeHours > 48) severity = 'high';
+    else if (waitTimeHours > 24) severity = 'medium';
+
+    return [
+      {
+        level: 0,
+        approverRole: 'pending',
+        pendingCount: pendingOrders.length,
+        avgWaitTime: Math.floor(avgWaitHours),
+        oldestPendingDate: oldestOrder.createdAt || new Date(),
+        severity,
+      },
     ];
-
-    for (const levelConfig of levels) {
-      const levelOrders = pendingOrders.slice(0, Math.ceil(pendingOrders.length / 3));
-
-      if (levelOrders.length > 0) {
-        const oldestOrder = levelOrders.reduce((oldest, current) =>
-          (current.createdAt || new Date()) < (oldest.createdAt || new Date())
-            ? current
-            : oldest,
-        );
-
-        const waitTime = Math.floor(
-          (Date.now() - (oldestOrder.createdAt?.getTime() || 0)) / (1000 * 60 * 60),
-        );
-
-        let severity: 'low' | 'medium' | 'high' | 'critical' = 'low';
-        if (waitTime > 72) severity = 'critical';
-        else if (waitTime > 48) severity = 'high';
-        else if (waitTime > 24) severity = 'medium';
-
-        if (severity !== 'low') {
-          bottlenecks.push({
-            level: levelConfig.level,
-            approverRole: levelConfig.role,
-            pendingCount: levelOrders.length,
-            avgWaitTime: waitTime,
-            oldestPendingDate: oldestOrder.createdAt || new Date(),
-            severity,
-          });
-        }
-      }
-    }
-
-    return bottlenecks.sort((a, b) => b.avgWaitTime - a.avgWaitTime);
   }
 
   async getApprovalTimeMetrics(
+    tenantId?: string,
     startDate?: Date,
     endDate?: Date,
   ): Promise<ApprovalTimeMetric[]> {
     const metrics: ApprovalTimeMetric[] = [];
-
     const actualStartDate = startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const actualEndDate = endDate || new Date();
 
     const approvedOrders = await this.poRepository.find({
       where: {
+        ...this.tenantWhere(tenantId),
         status: POStatus.APPROVED as any,
         updatedAt: Between(actualStartDate, actualEndDate),
       },
     });
 
-    const groupedByMonth = new Map<string, any[]>();
-
+    const groupedByMonth = new Map<string, PurchaseOrder[]>();
     for (const order of approvedOrders) {
       const month = (order.updatedAt || new Date()).toISOString().slice(0, 7);
-      if (!groupedByMonth.has(month)) {
-        groupedByMonth.set(month, []);
-      }
-      groupedByMonth.get(month)?.push(order);
+      if (!groupedByMonth.has(month)) groupedByMonth.set(month, []);
+      groupedByMonth.get(month)!.push(order);
     }
 
     for (const [period, orders] of groupedByMonth) {
       if (orders.length === 0) continue;
-
       const approvalTimes = orders
         .map((o) => {
           const created = o.createdAt?.getTime() || 0;
@@ -133,29 +136,24 @@ export class ApprovalAnalyticsService {
         slowApprovals: slowCount,
       });
     }
-
     return metrics;
   }
 
-  async getApprovalTrends(days: number = 30): Promise<ApprovalTrend[]> {
+  async getApprovalTrends(tenantId?: string, days: number = 30): Promise<ApprovalTrend[]> {
+    const d = Math.max(1, Math.min(365, Math.floor(Number(days) || 30)));
     const trends: ApprovalTrend[] = [];
     const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
+    startDate.setDate(startDate.getDate() - d);
 
     const orders = await this.poRepository.find({
-      where: {
-        updatedAt: Between(startDate, new Date()),
-      },
+      where: { ...this.tenantWhere(tenantId), updatedAt: Between(startDate, new Date()) },
     });
 
-    const groupedByDate = new Map<string, any[]>();
-
+    const groupedByDate = new Map<string, PurchaseOrder[]>();
     for (const order of orders) {
       const date = (order.updatedAt || new Date()).toISOString().slice(0, 10);
-      if (!groupedByDate.has(date)) {
-        groupedByDate.set(date, []);
-      }
-      groupedByDate.get(date)?.push(order);
+      if (!groupedByDate.has(date)) groupedByDate.set(date, []);
+      groupedByDate.get(date)!.push(order);
     }
 
     for (const [date, dayOrders] of groupedByDate) {
@@ -181,11 +179,10 @@ export class ApprovalAnalyticsService {
         rejectionRate: total > 0 ? (cancelled / total) * 100 : 0,
       });
     }
-
     return trends.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }
 
-  async getApprovalSLACompliance(): Promise<{
+  async getApprovalSLACompliance(tenantId?: string): Promise<{
     slaTarget: number;
     compliantCount: number;
     nonCompliantCount: number;
@@ -197,6 +194,7 @@ export class ApprovalAnalyticsService {
 
     const recentOrders = await this.poRepository.find({
       where: {
+        ...this.tenantWhere(tenantId),
         status: POStatus.APPROVED as any,
         updatedAt: Between(last30Days, new Date()),
       },
@@ -209,15 +207,11 @@ export class ApprovalAnalyticsService {
       const timeToApprove =
         ((order.updatedAt?.getTime() || 0) - (order.createdAt?.getTime() || 0)) /
         (1000 * 60 * 60);
-      if (timeToApprove <= slaTarget) {
-        compliant++;
-      } else {
-        nonCompliant++;
-      }
+      if (timeToApprove <= slaTarget) compliant++;
+      else nonCompliant++;
     }
 
     const total = compliant + nonCompliant;
-
     return {
       slaTarget,
       compliantCount: compliant,
@@ -226,23 +220,23 @@ export class ApprovalAnalyticsService {
     };
   }
 
-  async getApprovalWorkload(): Promise<{
-    byApprover: Map<string, number>;
-    byStatus: Map<string, number>;
+  /**
+   * Workload breakdown. byApprover is intentionally empty until approval-
+   * chain assignments are persisted on the PO; the legacy implementation
+   * hard-coded every order under 'Department Head', which was misleading.
+   */
+  async getApprovalWorkload(tenantId?: string): Promise<{
+    byApprover: Record<string, number>;
+    byStatus: Record<string, number>;
   }> {
-    const allOrders = await this.poRepository.find();
+    const allOrders = await this.poRepository.find({ where: this.tenantWhere(tenantId) });
 
-    const byApprover = new Map<string, number>();
-    const byStatus = new Map<string, number>();
-
+    const byStatus: Record<string, number> = {};
     for (const order of allOrders) {
-      const status = order.status || 'UNKNOWN';
-      byStatus.set(String(status), (byStatus.get(String(status)) || 0) + 1);
-
-      const approverRole = 'Department Head';
-      byApprover.set(approverRole, (byApprover.get(approverRole) || 0) + 1);
+      const status = String(order.status || 'UNKNOWN');
+      byStatus[status] = (byStatus[status] || 0) + 1;
     }
 
-    return { byApprover, byStatus };
+    return { byApprover: {}, byStatus };
   }
 }
