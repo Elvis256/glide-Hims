@@ -190,42 +190,49 @@ export class ProcurementService {
         return sum + item.quantityRequested * (item.unitPriceEstimated || 0);
       }, 0);
 
-      const pr = this.prRepo.create({
-        requestNumber,
-        facilityId: dto.facilityId,
-        departmentId: dto.departmentId,
-        priority: dto.priority || PRPriority.NORMAL,
-        justification: dto.justification,
-        requiredDate: dto.requiredDate ? new Date(dto.requiredDate) : undefined,
-        totalEstimated,
-        notes: dto.notes,
-        status: PRStatus.DRAFT,
-        requestedById: userId,
-        ...(tenantId ? { tenantId } : {}),
+      // Wrap PR + PR items in a single transaction so we never persist a
+      // PR with no line items (audit BUG-002).
+      const createdPR = await this.dataSource.transaction(async (manager) => {
+        const prRepo = manager.getRepository(PurchaseRequest);
+        const prItemRepo = manager.getRepository(PurchaseRequestItem);
+
+        const pr = prRepo.create({
+          requestNumber,
+          facilityId: dto.facilityId,
+          departmentId: dto.departmentId,
+          priority: dto.priority || PRPriority.NORMAL,
+          justification: dto.justification,
+          requiredDate: dto.requiredDate ? new Date(dto.requiredDate) : undefined,
+          totalEstimated,
+          notes: dto.notes,
+          status: PRStatus.DRAFT,
+          requestedById: userId,
+          ...(tenantId ? { tenantId } : {}),
+        });
+
+        const savedPR = await prRepo.save(pr);
+        this.logger.log(`Created PR ${(savedPR as PurchaseRequest).requestNumber}`);
+
+        const items = dto.items.map((item) =>
+          prItemRepo.create({
+            purchaseRequestId: (savedPR as PurchaseRequest).id,
+            itemId: item.itemId,
+            itemCode: item.itemCode,
+            itemName: item.itemName,
+            itemUnit: item.itemUnit || 'unit',
+            quantityRequested: item.quantityRequested,
+            unitPriceEstimated: item.unitPriceEstimated || 0,
+            specifications: item.specifications,
+            notes: item.notes,
+            ...(tenantId ? { tenantId } : {}),
+          }),
+        );
+
+        await prItemRepo.save(items);
+        return savedPR as PurchaseRequest;
       });
 
-      const savedPR = await this.prRepo.save(pr);
-      this.logger.log(`Created PR ${(savedPR as PurchaseRequest).requestNumber}`);
-
-      // Create items
-      const items = dto.items.map((item) =>
-        this.prItemRepo.create({
-          purchaseRequestId: (savedPR as PurchaseRequest).id,
-          itemId: item.itemId,
-          itemCode: item.itemCode,
-          itemName: item.itemName,
-          itemUnit: item.itemUnit || 'unit',
-          quantityRequested: item.quantityRequested,
-          unitPriceEstimated: item.unitPriceEstimated || 0,
-          specifications: item.specifications,
-          notes: item.notes,
-          ...(tenantId ? { tenantId } : {}),
-        }),
-      );
-
-      await this.prItemRepo.save(items);
-
-      return this.getPurchaseRequest((savedPR as PurchaseRequest).id, tenantId);
+      return this.getPurchaseRequest(createdPR.id, tenantId);
     } catch (error) {
       this.logger.error(`Error creating PR: ${error.message}`, error.stack);
       throw error;
@@ -1060,21 +1067,29 @@ export class ProcurementService {
 
     const po = await this.createPurchaseOrder(poDto, userId, tenantId);
 
-    // Update PR items with ordered quantities
-    for (const poItem of po.items) {
-      const prItem = pr.items.find((i) => i.itemId === poItem.itemId);
-      if (prItem) {
-        prItem.quantityOrdered += poItem.quantityOrdered;
-        await this.prItemRepo.save(prItem);
-      }
-    }
+    // Wrap PR item-quantity backfill + PR status update so we never end up
+    // with PR.quantityOrdered drift if one of the saves fails (audit
+    // BUG-005). createPurchaseOrder itself is already transactional and
+    // committed at this point — we open a second transaction for the PR
+    // mutations so they atomically reflect the new PO.
+    await this.dataSource.transaction(async (manager) => {
+      const prRepo = manager.getRepository(PurchaseRequest);
+      const prItemRepo = manager.getRepository(PurchaseRequestItem);
 
-    // Update PR status
-    const allOrdered = pr.items.every(
-      (i) => i.quantityOrdered >= (i.quantityApproved || i.quantityRequested),
-    );
-    pr.status = allOrdered ? PRStatus.FULLY_ORDERED : PRStatus.PARTIALLY_ORDERED;
-    await this.prRepo.save(pr);
+      for (const poItem of po.items) {
+        const prItem = pr.items.find((i) => i.itemId === poItem.itemId);
+        if (prItem) {
+          prItem.quantityOrdered += poItem.quantityOrdered;
+          await prItemRepo.save(prItem);
+        }
+      }
+
+      const allOrdered = pr.items.every(
+        (i) => i.quantityOrdered >= (i.quantityApproved || i.quantityRequested),
+      );
+      pr.status = allOrdered ? PRStatus.FULLY_ORDERED : PRStatus.PARTIALLY_ORDERED;
+      await prRepo.save(pr);
+    });
 
     return po;
   }
@@ -1461,50 +1476,60 @@ export class ProcurementService {
       }
     }
 
-    const grn = this.grnRepo.create({
-      grnNumber,
-      facilityId: dto.facilityId,
-      storeId: dto.storeId,
-      supplierId: dto.supplierId,
-      purchaseOrderId: dto.purchaseOrderId,
-      receivedAt: new Date(),
-      deliveryNoteNumber: dto.deliveryNoteNumber,
-      invoiceNumber: dto.invoiceNumber,
-      invoiceDate: dto.invoiceDate ? new Date(dto.invoiceDate) : undefined,
-      invoiceAmount: dto.invoiceAmount,
-      totalQuantityReceived,
-      totalValue,
-      notes: dto.notes,
-      status: GRNStatus.DRAFT,
-      receivedById: userId,
-      ...(tenantId ? { tenantId } : {}),
+    // Wrap GRN header + line items in a single transaction (audit BUG-001).
+    // Without this, a failure on grnItemRepo.save() leaves a header row with
+    // no items — corrupting the receipt list and breaking downstream
+    // invoice-matching / stock posting.
+    const createdGRN = await this.dataSource.transaction(async (manager) => {
+      const grnRepo = manager.getRepository(GoodsReceiptNote);
+      const grnItemRepo = manager.getRepository(GoodsReceiptItem);
+
+      const grn = grnRepo.create({
+        grnNumber,
+        facilityId: dto.facilityId,
+        storeId: dto.storeId,
+        supplierId: dto.supplierId,
+        purchaseOrderId: dto.purchaseOrderId,
+        receivedAt: new Date(),
+        deliveryNoteNumber: dto.deliveryNoteNumber,
+        invoiceNumber: dto.invoiceNumber,
+        invoiceDate: dto.invoiceDate ? new Date(dto.invoiceDate) : undefined,
+        invoiceAmount: dto.invoiceAmount,
+        totalQuantityReceived,
+        totalValue,
+        notes: dto.notes,
+        status: GRNStatus.DRAFT,
+        receivedById: userId,
+        ...(tenantId ? { tenantId } : {}),
+      });
+
+      const savedGRN = await grnRepo.save(grn);
+
+      const items = itemsWithTotals.map((item) =>
+        grnItemRepo.create({
+          goodsReceiptNoteId: (savedGRN as GoodsReceiptNote).id,
+          itemId: item.itemId,
+          itemCode: item.itemCode,
+          itemName: item.itemName,
+          itemUnit: item.itemUnit || 'unit',
+          quantityExpected: item.quantityExpected,
+          quantityReceived: item.quantityReceived,
+          unitCost: item.unitCost,
+          lineTotal: item.lineTotal,
+          batchNumber: item.batchNumber,
+          expiryDate: item.expiryDate ? new Date(item.expiryDate) : undefined,
+          manufactureDate: item.manufactureDate ? new Date(item.manufactureDate) : undefined,
+          purchaseOrderItemId: item.purchaseOrderItemId,
+          notes: item.notes,
+          ...(tenantId ? { tenantId } : {}),
+        }),
+      );
+
+      await grnItemRepo.save(items);
+      return savedGRN as GoodsReceiptNote;
     });
 
-    const savedGRN = await this.grnRepo.save(grn);
-
-    // Create items
-    const items = itemsWithTotals.map((item) =>
-      this.grnItemRepo.create({
-        goodsReceiptNoteId: (savedGRN as GoodsReceiptNote).id,
-        itemId: item.itemId,
-        itemCode: item.itemCode,
-        itemName: item.itemName,
-        itemUnit: item.itemUnit || 'unit',
-        quantityExpected: item.quantityExpected,
-        quantityReceived: item.quantityReceived,
-        unitCost: item.unitCost,
-        lineTotal: item.lineTotal,
-        batchNumber: item.batchNumber,
-        expiryDate: item.expiryDate ? new Date(item.expiryDate) : undefined,
-        manufactureDate: item.manufactureDate ? new Date(item.manufactureDate) : undefined,
-        purchaseOrderItemId: item.purchaseOrderItemId,
-        notes: item.notes,
-      }),
-    );
-
-    await this.grnItemRepo.save(items);
-
-    return this.getGoodsReceipt((savedGRN as GoodsReceiptNote).id);
+    return this.getGoodsReceipt(createdGRN.id);
   }
 
   async createGRNFromPO(

@@ -7,7 +7,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, LessThanOrEqual } from 'typeorm';
+import { Repository, Between, LessThanOrEqual, DataSource } from 'typeorm';
 import {
   SupplierPayment,
   SupplierPaymentItem,
@@ -44,12 +44,17 @@ export class SupplierFinanceService {
     @Inject(forwardRef(() => FinanceService))
     private financeService: FinanceService,
     private budgetService: BudgetService,
+    private dataSource: DataSource,
   ) {}
 
   // ==================== SUPPLIER PAYMENTS ====================
 
-  private async generateVoucherNumber(facilityId: string): Promise<string> {
-    const count = await this.paymentRepo.count({ where: { facilityId } });
+  private async generateVoucherNumber(facilityId: string, tenantId?: string): Promise<string> {
+    // audit BUG-014: count was global per facility — collided across tenants
+    // when two tenants shared a facility id. Scope by tenant when supplied.
+    const where: any = { facilityId };
+    if (tenantId) where.tenantId = tenantId;
+    const count = await this.paymentRepo.count({ where });
     const date = new Date();
     return `PV${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(count + 1).padStart(5, '0')}`;
   }
@@ -81,52 +86,60 @@ export class SupplierFinanceService {
     userId: string,
     tenantId?: string,
   ): Promise<SupplierPayment> {
-    const voucherNumber = await this.generateVoucherNumber(data.facilityId);
+    const voucherNumber = await this.generateVoucherNumber(data.facilityId, tenantId);
 
     const withholdingTax = data.withholdingTax || 0;
     const otherDeductions = data.otherDeductions || 0;
     const netAmount = data.grossAmount - withholdingTax - otherDeductions;
 
-    const payment = this.paymentRepo.create({
-      facilityId: data.facilityId,
-      voucherNumber,
-      supplierId: data.supplierId,
-      purchaseOrderId: data.purchaseOrderId,
-      paymentDate: data.paymentDate,
-      grossAmount: data.grossAmount,
-      withholdingTax,
-      otherDeductions,
-      netAmount,
-      paymentMethod: data.paymentMethod,
-      chequeNumber: data.chequeNumber,
-      bankReference: data.bankReference,
-      bankName: data.bankName,
-      accountNumber: data.accountNumber,
-      description: data.description,
-      remarks: data.remarks,
-      status: PaymentVoucherStatus.DRAFT,
-      preparedBy: userId,
-      ...(tenantId ? { tenantId } : {}),
+    // Wrap header + items in one transaction (audit BUG-003). Previously a
+    // saved voucher without its items could appear in lists, fail to match
+    // invoices, and leave A/P balances incorrect.
+    const savedPayment = await this.dataSource.transaction(async (manager) => {
+      const paymentRepo = manager.getRepository(SupplierPayment);
+      const paymentItemRepo = manager.getRepository(SupplierPaymentItem);
+
+      const payment = paymentRepo.create({
+        facilityId: data.facilityId,
+        voucherNumber,
+        supplierId: data.supplierId,
+        purchaseOrderId: data.purchaseOrderId,
+        paymentDate: data.paymentDate,
+        grossAmount: data.grossAmount,
+        withholdingTax,
+        otherDeductions,
+        netAmount,
+        paymentMethod: data.paymentMethod,
+        chequeNumber: data.chequeNumber,
+        bankReference: data.bankReference,
+        bankName: data.bankName,
+        accountNumber: data.accountNumber,
+        description: data.description,
+        remarks: data.remarks,
+        status: PaymentVoucherStatus.DRAFT,
+        preparedBy: userId,
+        ...(tenantId ? { tenantId } : {}),
+      });
+
+      const saved = (await paymentRepo.save(payment)) as SupplierPayment;
+
+      if (data.items?.length) {
+        const items = data.items.map((item) =>
+          paymentItemRepo.create({
+            paymentId: saved.id,
+            description: item.description,
+            invoiceNumber: item.invoiceNumber,
+            invoiceDate: item.invoiceDate,
+            amount: item.amount,
+            grnId: item.grnId,
+          }),
+        );
+        await paymentItemRepo.save(items);
+      }
+      return saved;
     });
 
-    const savedPayment = await this.paymentRepo.save(payment);
-
-    // Create items
-    if (data.items?.length) {
-      const items = data.items.map((item) =>
-        this.paymentItemRepo.create({
-          paymentId: (savedPayment as SupplierPayment).id,
-          description: item.description,
-          invoiceNumber: item.invoiceNumber,
-          invoiceDate: item.invoiceDate,
-          amount: item.amount,
-          grnId: item.grnId,
-        }),
-      );
-      await this.paymentItemRepo.save(items);
-    }
-
-    return this.getPaymentVoucher((savedPayment as SupplierPayment).id, tenantId);
+    return this.getPaymentVoucher(savedPayment.id, tenantId);
   }
 
   async getPaymentVoucher(id: string, tenantId?: string): Promise<SupplierPayment> {
@@ -296,8 +309,10 @@ export class SupplierFinanceService {
 
   // ==================== CREDIT/DEBIT NOTES ====================
 
-  private async generateNoteNumber(facilityId: string, type: CreditNoteType): Promise<string> {
-    const count = await this.creditNoteRepo.count({ where: { facilityId, noteType: type } });
+  private async generateNoteNumber(facilityId: string, type: CreditNoteType, tenantId?: string): Promise<string> {
+    const where: any = { facilityId, noteType: type };
+    if (tenantId) where.tenantId = tenantId;
+    const count = await this.creditNoteRepo.count({ where });
     const date = new Date();
     const prefix = type === CreditNoteType.CREDIT_NOTE ? 'CN' : 'DN';
     return `${prefix}${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(count + 1).padStart(5, '0')}`;
@@ -327,7 +342,7 @@ export class SupplierFinanceService {
     userId: string,
     tenantId?: string,
   ): Promise<SupplierCreditNote> {
-    const noteNumber = await this.generateNoteNumber(data.facilityId, data.noteType);
+    const noteNumber = await this.generateNoteNumber(data.facilityId, data.noteType, tenantId);
 
     let subtotalAmount = 0;
     let taxAmount = 0;
@@ -349,47 +364,55 @@ export class SupplierFinanceService {
 
     const totalAmount = subtotalAmount + taxAmount;
 
-    const creditNote = this.creditNoteRepo.create({
-      facilityId: data.facilityId,
-      noteNumber,
-      noteType: data.noteType,
-      supplierId: data.supplierId,
-      noteDate: data.noteDate,
-      supplierInvoiceNumber: data.supplierInvoiceNumber,
-      grnId: data.grnId,
-      reason: data.reason,
-      reasonDetails: data.reasonDetails,
-      subtotalAmount,
-      taxAmount,
-      totalAmount,
-      appliedAmount: 0,
-      balanceAmount: totalAmount,
-      status: CreditNoteStatus.DRAFT,
-      createdBy: userId,
-      notes: data.notes,
-      ...(tenantId ? { tenantId } : {}),
+    // Wrap header + items in one transaction (audit BUG-004). Prevents
+    // orphan credit/debit notes with no lines from contaminating the
+    // supplier ledger.
+    const savedNote = await this.dataSource.transaction(async (manager) => {
+      const noteRepo = manager.getRepository(SupplierCreditNote);
+      const noteItemRepo = manager.getRepository(SupplierCreditNoteItem);
+
+      const creditNote = noteRepo.create({
+        facilityId: data.facilityId,
+        noteNumber,
+        noteType: data.noteType,
+        supplierId: data.supplierId,
+        noteDate: data.noteDate,
+        supplierInvoiceNumber: data.supplierInvoiceNumber,
+        grnId: data.grnId,
+        reason: data.reason,
+        reasonDetails: data.reasonDetails,
+        subtotalAmount,
+        taxAmount,
+        totalAmount,
+        appliedAmount: 0,
+        balanceAmount: totalAmount,
+        status: CreditNoteStatus.DRAFT,
+        createdBy: userId,
+        notes: data.notes,
+        ...(tenantId ? { tenantId } : {}),
+      });
+
+      const saved = (await noteRepo.save(creditNote)) as SupplierCreditNote;
+
+      const items = itemsWithTotals.map((item) =>
+        noteItemRepo.create({
+          creditNoteId: saved.id,
+          itemId: item.itemId,
+          description: item.description,
+          quantity: item.quantity,
+          unit: item.unit,
+          unitPrice: item.unitPrice,
+          taxRate: item.taxRate || 0,
+          taxAmount: item.taxAmount,
+          totalAmount: item.totalAmount,
+          batchNumber: item.batchNumber,
+        }),
+      );
+      await noteItemRepo.save(items);
+      return saved;
     });
 
-    const savedNote = await this.creditNoteRepo.save(creditNote);
-
-    // Create items
-    const items = itemsWithTotals.map((item) =>
-      this.creditNoteItemRepo.create({
-        creditNoteId: (savedNote as SupplierCreditNote).id,
-        itemId: item.itemId,
-        description: item.description,
-        quantity: item.quantity,
-        unit: item.unit,
-        unitPrice: item.unitPrice,
-        taxRate: item.taxRate || 0,
-        taxAmount: item.taxAmount,
-        totalAmount: item.totalAmount,
-        batchNumber: item.batchNumber,
-      }),
-    );
-    await this.creditNoteItemRepo.save(items);
-
-    return this.getCreditNote((savedNote as SupplierCreditNote).id, tenantId);
+    return this.getCreditNote(savedNote.id, tenantId);
   }
 
   async getCreditNote(id: string, tenantId?: string): Promise<SupplierCreditNote> {
