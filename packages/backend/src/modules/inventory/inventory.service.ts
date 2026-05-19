@@ -529,37 +529,61 @@ export class InventoryService {
     tenantId?: string,
   ): Promise<void> {
     await this.dataSource.transaction(async (manager) => {
-      // Pessimistic lock prevents concurrent deduction race conditions
-      const balance = await manager.findOne(StockBalance, {
-        where: { itemId, facilityId, ...(tenantId ? { tenantId } : {}) },
-        lock: { mode: 'pessimistic_write' },
-      });
-      if (!balance || balance.availableQuantity < quantity) {
-        throw new BadRequestException('Insufficient stock');
-      }
-
-      const newBalance = balance.totalQuantity - quantity;
-
-      await manager.save(
-        StockLedger,
-        manager.create(StockLedger, {
-          itemId,
-          facilityId,
-          quantity: -quantity,
-          balanceAfter: newBalance,
-          movementType: MovementType.SALE,
-          referenceType,
-          referenceId,
-          createdById: userId,
-          ...(tenantId ? { tenantId } : {}),
-        }),
+      await this.deductStockInManager(
+        manager,
+        itemId,
+        facilityId,
+        quantity,
+        referenceType,
+        referenceId,
+        userId,
+        tenantId,
       );
-
-      balance.totalQuantity = newBalance;
-      balance.availableQuantity = newBalance - balance.reservedQuantity;
-      balance.lastMovementAt = new Date();
-      await manager.save(StockBalance, balance);
     });
+  }
+
+  // Same logic as deductStock but uses a caller-supplied EntityManager so
+  // multiple deductions (e.g. all items in a supplier return) can share one
+  // transaction and roll back together on failure.
+  async deductStockInManager(
+    manager: EntityManager,
+    itemId: string,
+    facilityId: string,
+    quantity: number,
+    referenceType: string,
+    referenceId: string,
+    userId: string,
+    tenantId?: string,
+  ): Promise<void> {
+    const balance = await manager.findOne(StockBalance, {
+      where: { itemId, facilityId, ...(tenantId ? { tenantId } : {}) },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (!balance || balance.availableQuantity < quantity) {
+      throw new BadRequestException('Insufficient stock');
+    }
+
+    const newBalance = balance.totalQuantity - quantity;
+
+    await manager.save(
+      StockLedger,
+      manager.create(StockLedger, {
+        itemId,
+        facilityId,
+        quantity: -quantity,
+        balanceAfter: newBalance,
+        movementType: MovementType.SALE,
+        referenceType,
+        referenceId,
+        createdById: userId,
+        ...(tenantId ? { tenantId } : {}),
+      }),
+    );
+
+    balance.totalQuantity = newBalance;
+    balance.availableQuantity = newBalance - balance.reservedQuantity;
+    balance.lastMovementAt = new Date();
+    await manager.save(StockBalance, balance);
   }
 
   async getConsumptionReport(

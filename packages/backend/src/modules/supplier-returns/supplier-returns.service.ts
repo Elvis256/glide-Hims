@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, FindOptionsWhere } from 'typeorm';
+import { Repository, FindOptionsWhere, DataSource } from 'typeorm';
 import {
   SupplierReturn,
   SupplierReturnItem,
@@ -21,6 +21,7 @@ export class SupplierReturnsService {
     @InjectRepository(SupplierReturnItem)
     private returnItemRepository: Repository<SupplierReturnItem>,
     private inventoryService: InventoryService,
+    private dataSource: DataSource,
   ) {}
 
   private generateReturnNumber(): string {
@@ -55,23 +56,27 @@ export class SupplierReturnsService {
       ...(tenantId ? { tenantId } : {}),
     });
 
-    const saved = await this.returnRepository.save(supplierReturn);
+    const saved = await this.dataSource.transaction(async (manager) => {
+      const returnRepo = manager.getRepository(SupplierReturn);
+      const itemRepo = manager.getRepository(SupplierReturnItem);
 
-    // Create return items
-    const items = itemsWithValue.map((item) =>
-      this.returnItemRepository.create({
-        supplierReturnId: saved.id,
-        itemId: item.itemId,
-        batchNumber: item.batchNumber,
-        expiryDate: item.expiryDate ? new Date(item.expiryDate) : undefined,
-        quantity: item.quantity,
-        unitValue: item.unitValue || 0,
-        totalValue: item.totalValue,
-        notes: item.notes,
-      }),
-    );
-
-    await this.returnItemRepository.save(items);
+      const header = (await returnRepo.save(supplierReturn)) as SupplierReturn;
+      const items = itemsWithValue.map((item) =>
+        itemRepo.create({
+          supplierReturnId: header.id,
+          itemId: item.itemId,
+          batchNumber: item.batchNumber,
+          expiryDate: item.expiryDate ? new Date(item.expiryDate) : undefined,
+          quantity: item.quantity,
+          unitValue: item.unitValue || 0,
+          totalValue: item.totalValue,
+          notes: item.notes,
+          ...(tenantId ? { tenantId } : {}),
+        }),
+      );
+      await itemRepo.save(items);
+      return header;
+    });
 
     return this.findOne(saved.id, tenantId);
   }
@@ -140,22 +145,30 @@ export class SupplierReturnsService {
     const previousStatus = record.status;
     record.status = status;
 
-    // If authorizing, deduct stock
+    // If authorizing, deduct stock for every item AND save the new status
+    // in a single transaction (audit BUG-006). Previously each deductStock
+    // ran its own transaction, so a failure on item N left items 1..N-1
+    // deducted while the return stayed PENDING — silently corrupting stock.
     if (status === ReturnStatus.AUTHORIZED && previousStatus === ReturnStatus.PENDING) {
-      for (const item of record.items) {
-        try {
-          await this.inventoryService.deductStock(
-            item.itemId,
-            record.facilityId,
-            item.quantity,
-            'supplier_return',
-            id,
-            userId,
-          );
-        } catch (error) {
-          throw new BadRequestException(`Failed to deduct stock for item: ${error.message}`);
+      return this.dataSource.transaction(async (manager) => {
+        for (const item of record.items) {
+          try {
+            await this.inventoryService.deductStockInManager(
+              manager,
+              item.itemId,
+              record.facilityId,
+              item.quantity,
+              'supplier_return',
+              id,
+              userId,
+              tenantId,
+            );
+          } catch (error) {
+            throw new BadRequestException(`Failed to deduct stock for item: ${error.message}`);
+          }
         }
-      }
+        return manager.getRepository(SupplierReturn).save(record);
+      });
     }
 
     return this.returnRepository.save(record);
