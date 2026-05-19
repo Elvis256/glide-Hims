@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
   Logger,
   Inject,
   forwardRef,
@@ -1366,12 +1367,27 @@ export class ProcurementService {
           );
         }
       } else {
-        // No multi-level approval chain configured
-        // For high-value POs, require additional justification
+        // audit BUG-013: a missing approval chain previously let any user
+        // with procurement.approve nod through an arbitrary-value PO with
+        // just a warning log. Now: above the level-1 single-approver cap
+        // we REFUSE to approve until a chain is configured + persisted.
         const totalAmount = Number(po.totalAmount) || 0;
+        const isSuperAdminUser = userRoles?.some((r) => r.toLowerCase() === 'super admin');
+
+        const thresholds = await this.getApprovalThreshold(po.facilityId, tenantId);
+        const level1Cap = Number(thresholds.level1MaxAmount) || 0;
+
+        if (totalAmount > level1Cap && !isSuperAdminUser) {
+          throw new ForbiddenException(
+            `PO amount (${totalAmount.toLocaleString()}) requires a multi-level approval chain ` +
+              `but none is configured. Configure an approval policy/chain for facility ` +
+              `${po.facilityId} or re-submit the PO so the chain is rebuilt.`,
+          );
+        }
+
         if (totalAmount > 50000000) {
           this.logger.warn(
-            `HIGH-VALUE PO ${po.orderNumber}: ${totalAmount.toLocaleString()} UGX. Approved by ${userId}`,
+            `HIGH-VALUE PO ${po.orderNumber}: ${totalAmount.toLocaleString()} approved by ${userId} via single-step path`,
           );
         }
 
