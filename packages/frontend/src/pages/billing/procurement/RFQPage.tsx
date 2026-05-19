@@ -126,6 +126,83 @@ export default function RFQPage() {
     setShowVendorModal(true);
   };
 
+  // ── Record Quotation modal ─────────────────────────────
+  type QuoteLine = { rfqItemId: string; itemName: string; quantity: number; unit: string; unitPrice: number; deliveryDays?: number; inStock: boolean; notes?: string };
+  const [showQuoteModal, setShowQuoteModal] = useState(false);
+  const [quoteSupplierId, setQuoteSupplierId] = useState('');
+  const [quoteNumber, setQuoteNumber] = useState('');
+  const [quoteValidUntil, setQuoteValidUntil] = useState('');
+  const [quoteDeliveryDays, setQuoteDeliveryDays] = useState(7);
+  const [quotePaymentTerms, setQuotePaymentTerms] = useState('');
+  const [quoteWarranty, setQuoteWarranty] = useState('');
+  const [quoteNotes, setQuoteNotes] = useState('');
+  const [quoteLines, setQuoteLines] = useState<QuoteLine[]>([]);
+
+  const openQuoteModal = () => {
+    if (!selectedRFQ) return;
+    const lines: QuoteLine[] = (selectedRFQ.items || []).map((it: any) => ({
+      rfqItemId: it.id,
+      itemName: it.itemName || it.name || it.itemCode,
+      quantity: Number(it.quantity ?? 0),
+      unit: it.unit || '',
+      unitPrice: 0,
+      deliveryDays: undefined,
+      inStock: true,
+    }));
+    setQuoteLines(lines);
+    const validUntil = new Date();
+    validUntil.setDate(validUntil.getDate() + 30);
+    setQuoteValidUntil(validUntil.toISOString().slice(0, 10));
+    setQuoteDeliveryDays(7);
+    setQuotePaymentTerms('');
+    setQuoteWarranty('');
+    setQuoteNotes('');
+    setQuoteSupplierId('');
+    setQuoteNumber(`QT-${selectedRFQ.rfqNumber}-${Date.now().toString().slice(-6)}`);
+    setShowQuoteModal(true);
+  };
+
+  const quoteTotal = useMemo(
+    () => quoteLines.reduce((sum, l) => sum + Number(l.unitPrice || 0) * Number(l.quantity || 0), 0),
+    [quoteLines],
+  );
+
+  const receiveQuoteMutation = useMutation({
+    mutationFn: () => {
+      if (!selectedRFQ || !quoteSupplierId) throw new Error('Select a vendor');
+      if (quoteLines.some((l) => Number(l.unitPrice) <= 0)) {
+        throw new Error('Every line item needs a unit price greater than 0');
+      }
+      return rfqService.quotations.receive({
+        rfqId: selectedRFQ.id,
+        supplierId: quoteSupplierId,
+        quotationNumber: quoteNumber,
+        totalAmount: quoteTotal,
+        deliveryDays: quoteDeliveryDays,
+        paymentTerms: quotePaymentTerms || undefined,
+        warranty: quoteWarranty || undefined,
+        validUntil: new Date(quoteValidUntil).toISOString(),
+        notes: quoteNotes || undefined,
+        items: quoteLines.map((l) => ({
+          rfqItemId: l.rfqItemId,
+          unitPrice: Number(l.unitPrice),
+          totalPrice: Number(l.unitPrice) * Number(l.quantity),
+          deliveryDays: l.deliveryDays ?? undefined,
+          inStock: l.inStock,
+          notes: l.notes || undefined,
+        })),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rfqs'] });
+      toast.success('Quotation recorded');
+      setShowQuoteModal(false);
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || err?.message || 'Failed to record quotation');
+    },
+  });
+
   const filteredRFQs = useMemo(() => {
     return rfqs.filter((rfq) => {
       const matchesSearch =
@@ -423,6 +500,17 @@ export default function RFQPage() {
                     </button>
                   </>
                 )}
+                {(selectedRFQ.status === 'sent' ||
+                  selectedRFQ.status === 'pending_responses' ||
+                  selectedRFQ.status === 'responses_received') && (
+                  <button
+                    onClick={openQuoteModal}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+                  >
+                    <MessageSquare className="w-4 h-4" />
+                    Record Quotation
+                  </button>
+                )}
                 {selectedRFQ.quotations && selectedRFQ.quotations.length >= 2 && selectedRFQ.status !== 'closed' && (
                   <button
                     onClick={() => navigate(`/procurement/quotes/compare?rfqId=${selectedRFQ.id}`)}
@@ -609,6 +697,173 @@ export default function RFQPage() {
                   <Loader2 className="w-4 h-4 animate-spin inline" />
                 ) : (
                   'Save Vendors'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Record Quotation Modal */}
+      {showQuoteModal && selectedRFQ && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Record Quotation for {selectedRFQ.rfqNumber}</h2>
+              <button onClick={() => setShowQuoteModal(false)} className="p-1 hover:bg-gray-100 rounded">
+                <XCircle className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4 overflow-y-auto flex-1">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Vendor *</label>
+                  <select
+                    value={quoteSupplierId}
+                    onChange={(e) => setQuoteSupplierId(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                  >
+                    <option value="">— Select vendor —</option>
+                    {(selectedRFQ.vendors || []).map((v: any) => (
+                      <option key={v.id} value={v.supplierId || v.supplier?.id} disabled={v.hasResponded}>
+                        {v.supplier?.name || v.supplierId}
+                        {v.hasResponded ? ' (already quoted)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Quotation Number *</label>
+                  <input
+                    value={quoteNumber}
+                    onChange={(e) => setQuoteNumber(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg text-sm font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Valid Until *</label>
+                  <input
+                    type="date"
+                    value={quoteValidUntil}
+                    onChange={(e) => setQuoteValidUntil(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Delivery (days) *</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={quoteDeliveryDays}
+                    onChange={(e) => setQuoteDeliveryDays(Number(e.target.value))}
+                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Payment Terms</label>
+                  <input
+                    value={quotePaymentTerms}
+                    onChange={(e) => setQuotePaymentTerms(e.target.value)}
+                    placeholder="e.g. Net 30"
+                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Warranty</label>
+                  <input
+                    value={quoteWarranty}
+                    onChange={(e) => setQuoteWarranty(e.target.value)}
+                    placeholder="e.g. 12 months"
+                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                  />
+                </div>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-gray-700 mb-2">Line Items</p>
+                <div className="border rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 text-xs text-gray-600">
+                      <tr>
+                        <th className="px-3 py-2 text-left">Item</th>
+                        <th className="px-3 py-2 text-right">Qty</th>
+                        <th className="px-3 py-2 text-right">Unit Price</th>
+                        <th className="px-3 py-2 text-right">Line Total</th>
+                        <th className="px-3 py-2 text-center">In Stock</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {quoteLines.map((line, idx) => (
+                        <tr key={line.rfqItemId} className="border-t">
+                          <td className="px-3 py-2">
+                            {line.itemName}
+                            <span className="text-xs text-gray-500"> ({line.unit})</span>
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums">{line.quantity}</td>
+                          <td className="px-3 py-2 text-right">
+                            <input
+                              type="number"
+                              min={0}
+                              step="0.01"
+                              value={line.unitPrice}
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                setQuoteLines((prev) => prev.map((l, i) => (i === idx ? { ...l, unitPrice: val } : l)));
+                              }}
+                              className="w-28 px-2 py-1 border rounded text-right tabular-nums"
+                            />
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums">
+                            {(Number(line.unitPrice || 0) * Number(line.quantity || 0)).toLocaleString()}
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            <input
+                              type="checkbox"
+                              checked={line.inStock}
+                              onChange={(e) =>
+                                setQuoteLines((prev) =>
+                                  prev.map((l, i) => (i === idx ? { ...l, inStock: e.target.checked } : l)),
+                                )
+                              }
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-gray-50 font-medium">
+                      <tr>
+                        <td colSpan={3} className="px-3 py-2 text-right">Total</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{quoteTotal.toLocaleString()}</td>
+                        <td />
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Notes</label>
+                <textarea
+                  value={quoteNotes}
+                  onChange={(e) => setQuoteNotes(e.target.value)}
+                  rows={2}
+                  className="w-full px-3 py-2 border rounded-lg text-sm"
+                />
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-3">
+              <button
+                onClick={() => setShowQuoteModal(false)}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => receiveQuoteMutation.mutate()}
+                disabled={receiveQuoteMutation.isPending || !quoteSupplierId || quoteTotal <= 0}
+                className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {receiveQuoteMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin inline" />
+                ) : (
+                  'Save Quotation'
                 )}
               </button>
             </div>
