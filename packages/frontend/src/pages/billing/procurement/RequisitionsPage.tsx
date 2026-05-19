@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import api from '../../../services/api';
 import { useFacilityId } from '../../../lib/facility';
 import { CatalogItemPicker, type SelectedItem } from '../../../components/catalog';
@@ -262,6 +263,49 @@ export default function RequisitionsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchase-requests'] });
       setSelectedRequisition(null);
+    },
+  });
+
+  // Convert approved requisition → RFQ
+  const navigate = useNavigate();
+  const convertToRfqMutation = useMutation({
+    mutationFn: async (req: any) => {
+      const rawItems = (req.items || []) as any[];
+      const items = rawItems
+        .map((it) => ({
+          itemCode: it.itemCode || it.code || '',
+          itemName: it.itemName || it.name || '',
+          quantity: Math.max(1, Number(it.quantityRequested ?? it.quantity ?? 0)),
+          unit: it.itemUnit || it.unit || undefined,
+          specifications: it.specifications || undefined,
+        }))
+        .filter((i) => i.itemCode && i.itemName);
+      if (items.length === 0) {
+        throw new Error('Requisition has no items with code/name to convert');
+      }
+      const deadline = new Date();
+      deadline.setDate(deadline.getDate() + 7);
+      const payload = {
+        title: `RFQ for ${req.requestNumber || req.id}`,
+        facilityId: req.facilityId || facilityId,
+        purchaseRequestId: req.id,
+        deadline: deadline.toISOString(),
+        notes: req.justification || undefined,
+        items,
+      };
+      const response = await api.post('/rfq', payload);
+      return response.data?.data || response.data;
+    },
+    onSuccess: (rfq: any) => {
+      queryClient.invalidateQueries({ queryKey: ['purchase-requests'] });
+      queryClient.invalidateQueries({ queryKey: ['rfqs'] });
+      setSelectedRequisition(null);
+      navigate('/procurement/rfq', { state: { newRfqId: rfq?.id } });
+    },
+    onError: (err: any) => {
+      alert(
+        `Could not convert to RFQ: ${err?.response?.data?.message || err?.message || 'Unknown error'}`,
+      );
     },
   });
 
@@ -669,8 +713,16 @@ export default function RequisitionsPage() {
                   </>
                 )}
                 {selectedRequisition.status === 'approved' && (
-                  <button className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
-                    <ArrowRight className="w-4 h-4" />
+                  <button
+                    onClick={() => convertToRfqMutation.mutate(selectedRequisition)}
+                    disabled={convertToRfqMutation.isPending}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                  >
+                    {convertToRfqMutation.isPending ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <ArrowRight className="w-4 h-4" />
+                    )}
                     Convert to RFQ
                   </button>
                 )}
