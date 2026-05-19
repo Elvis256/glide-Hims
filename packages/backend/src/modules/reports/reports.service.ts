@@ -157,6 +157,51 @@ export class ReportsService {
     if (!row) throw new NotFoundException('Department not found');
   }
 
+  /**
+   * Verify the optional store UUID belongs to the requested facility (and
+   * transitively the tenant). Same-class fix as `requireFacility`: without
+   * it, a caller can pass any UUID to scope getStock and either probe across
+   * tenants or just receive a misleadingly-empty report from another tenant.
+   */
+  private async requireStore(
+    tenantId: string,
+    facilityId: string,
+    storeId?: string,
+  ): Promise<void> {
+    if (!storeId) return;
+    const [row] = await this.ds.query(
+      `SELECT 1 FROM stores
+       WHERE id = $1 AND facility_id = $2 AND tenant_id = $3
+       LIMIT 1`,
+      [storeId, facilityId, tenantId],
+    );
+    if (!row) throw new NotFoundException('Store not found');
+  }
+
+  /**
+   * Verify the optional item UUID belongs to the caller's tenant. Items in
+   * this schema are a tenant-scoped catalog (items.facility_id is nullable
+   * for shared/parent-catalog rows), so we scope on tenant only and accept
+   * either NULL facility_id (shared catalog) or a row tied to the supplied
+   * facility.
+   */
+  private async requireItem(
+    tenantId: string,
+    facilityId: string,
+    itemId?: string,
+  ): Promise<void> {
+    if (!itemId) return;
+    const [row] = await this.ds.query(
+      `SELECT 1 FROM items
+       WHERE id = $1 AND tenant_id = $2
+         AND (facility_id IS NULL OR facility_id = $3)
+         AND deleted_at IS NULL
+       LIMIT 1`,
+      [itemId, tenantId, facilityId],
+    );
+    if (!row) throw new NotFoundException('Item not found');
+  }
+
   // ---------------------------------------------------------------------
   // 1. Composite KPI dashboard
   // ---------------------------------------------------------------------
@@ -641,6 +686,7 @@ export class ReportsService {
   async getStock(q: StockQueryDto, tenantId?: string) {
     const tid = this.requireTenant(tenantId);
     await this.requireFacility(tid, q.facilityId);
+    await this.requireStore(tid, q.facilityId, q.storeId);
     const params: any[] = [tid, q.facilityId];
     let storeClause = '';
     if (q.storeId) {
@@ -682,6 +728,7 @@ export class ReportsService {
   async getConsumption(q: ConsumptionQueryDto, tenantId?: string) {
     const tid = this.requireTenant(tenantId);
     await this.requireFacility(tid, q.facilityId);
+    await this.requireItem(tid, q.facilityId, q.itemId);
     const { start, end } = this.resolveRange(q.startDate, q.endDate);
     const params: any[] = [tid, q.facilityId, start, end];
     let itemClause = '';
