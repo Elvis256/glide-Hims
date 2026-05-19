@@ -129,6 +129,13 @@ export default function LoginPage() {
 
       const response = await authService.login(loginPayload);
 
+      // Drop any facility id left over from a previous session. The active
+      // facility will be re-selected by FacilitySwitcher (or auto-set to the
+      // user's own facility) on next render. Keeping a stale id here would
+      // make every subsequent API call send an x-facility-id from another
+      // tenant and trip the tenant-context interceptor (403).
+      sessionStorage.removeItem('glide_active_facility_id');
+
       if (tenant) {
         localStorage.setItem('glide_active_tenant_id', tenant.id);
         localStorage.setItem('glide_tenant_slug', tenant.slug);
