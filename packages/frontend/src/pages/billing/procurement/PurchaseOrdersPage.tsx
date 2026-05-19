@@ -6,6 +6,7 @@ import { getFacilityId } from '../../../lib/facility';
 import { CatalogItemPicker, type SelectedItem } from '../../../components/catalog';
 import { CategoryContextBanner, useProcurementCategory } from '../../../components/procurement/CategoryContextBanner';
 import { ApprovalChainTimeline } from '../../../components/procurement/ApprovalChainTimeline';
+import { rfqService, type VendorQuotation } from '../../../services/rfq';
 import {
   ShoppingCart,
   Plus,
@@ -186,6 +187,11 @@ export default function PurchaseOrdersPage() {
   const [statusFilter, setStatusFilter] = useState<POStatus | 'All'>('All');
   const [selectedPO, setSelectedPO] = useState<PurchaseOrder | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showFromQuoteModal, setShowFromQuoteModal] = useState(false);
+  const [fromQuoteSelectedId, setFromQuoteSelectedId] = useState<string | null>(null);
+  const [fromQuoteExpectedDelivery, setFromQuoteExpectedDelivery] = useState('');
+  const [fromQuoteDeliveryAddress, setFromQuoteDeliveryAddress] = useState('');
+  const [fromQuoteNotes, setFromQuoteNotes] = useState('');
   const [showAmendModal, setShowAmendModal] = useState(false);
   const [createFormData, setCreateFormData] = useState<Partial<CreatePurchaseOrderData>>({});
   const [poLineItems, setPoLineItems] = useState<Array<{ rowId: string; itemId: string; itemCode: string; itemName: string; itemUnit: string; quantityOrdered: number; unitPrice: number }>>([
@@ -223,6 +229,38 @@ export default function PurchaseOrdersPage() {
       setShowCreateModal(false);
       setCreateFormData({});
       setPoLineItems([{ rowId: '1', itemId: '', itemCode: '', itemName: '', itemUnit: 'unit', quantityOrdered: 1, unitPrice: 0 }]);
+    },
+  });
+
+  // Approved (selected) quotations available for PO conversion
+  const { data: selectedQuotations = [], isLoading: selectedQuotesLoading } = useQuery<VendorQuotation[]>({
+    queryKey: ['selected-quotations', facilityId],
+    queryFn: () => rfqService.quotations.listSelected(facilityId),
+    enabled: !!facilityId && showFromQuoteModal,
+  });
+
+  const createFromQuotationMutation = useMutation({
+    mutationFn: async (payload: {
+      quotationId: string;
+      expectedDelivery?: string;
+      deliveryAddress?: string;
+      notes?: string;
+    }) => {
+      const response = await api.post('/procurement/purchase-orders/from-quotation', payload);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['selected-quotations'] });
+      setShowFromQuoteModal(false);
+      setFromQuoteSelectedId(null);
+      setFromQuoteExpectedDelivery('');
+      setFromQuoteDeliveryAddress('');
+      setFromQuoteNotes('');
+      toast.success('Purchase order created from approved quotation');
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Failed to create PO from quotation');
     },
   });
 
@@ -362,13 +400,23 @@ export default function PurchaseOrdersPage() {
               <p className="text-sm text-gray-500">Manage and track purchase orders</p>
             </div>
           </div>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            Create PO
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowFromQuoteModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+              title="Convert an approved quotation into a Purchase Order"
+            >
+              <FileText className="w-4 h-4" />
+              From Quotation
+            </button>
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              Create PO
+            </button>
+          </div>
         </div>
 
         {/* Status Summary */}
@@ -981,6 +1029,187 @@ export default function PurchaseOrdersPage() {
               <button className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700">
                 <RefreshCw className="w-4 h-4" />
                 Submit Amendment
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create PO From Approved Quotation Modal */}
+      {showFromQuoteModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+            <div className="px-6 py-4 border-b flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold">Create PO from Approved Quotation</h2>
+                <p className="text-sm text-gray-500">
+                  Pick a quotation that has cleared the approval workflow.
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowFromQuoteModal(false);
+                  setFromQuoteSelectedId(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto flex-1 space-y-4">
+              {selectedQuotesLoading ? (
+                <div className="flex items-center justify-center py-12 text-gray-500">
+                  <Loader2 className="w-6 h-6 animate-spin mr-2" /> Loading approved
+                  quotations…
+                </div>
+              ) : selectedQuotations.length === 0 ? (
+                <div className="text-center py-12">
+                  <FileText className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                  <p className="text-sm font-medium text-gray-900">
+                    No approved quotations awaiting PO conversion
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Quotations appear here once they have passed all required
+                    approval levels.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    {selectedQuotations.map((q) => {
+                      const isSelected = fromQuoteSelectedId === q.id;
+                      return (
+                        <div
+                          key={q.id}
+                          onClick={() => setFromQuoteSelectedId(q.id)}
+                          className={`border rounded-lg p-3 cursor-pointer transition-colors ${
+                            isSelected
+                              ? 'border-green-500 ring-2 ring-green-500 bg-green-50'
+                              : 'hover:bg-gray-50'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="font-mono text-sm font-medium text-green-700">
+                                  {q.quotationNumber}
+                                </span>
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                                  Approved
+                                </span>
+                              </div>
+                              <div className="text-sm text-gray-900 font-medium">
+                                {q.supplier?.name || 'Unknown supplier'}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                RFQ {(q as any).rfq?.rfqNumber} ·{' '}
+                                {q.items?.length || 0} items · {q.deliveryDays}d
+                                delivery
+                              </div>
+                              {q.validUntil && (
+                                <div className="text-xs text-gray-500 mt-0.5">
+                                  Valid until{' '}
+                                  {new Date(q.validUntil).toLocaleDateString()}
+                                </div>
+                              )}
+                            </div>
+                            <div className="text-right">
+                              <p className="text-lg font-bold text-gray-900">
+                                UGX {Number(q.totalAmount).toLocaleString()}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {q.paymentTerms}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {fromQuoteSelectedId && (
+                    <div className="border-t pt-4 space-y-3">
+                      <h3 className="text-sm font-semibold text-gray-900">
+                        Purchase Order Details
+                      </h3>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                            Expected Delivery
+                          </label>
+                          <input
+                            type="date"
+                            value={fromQuoteExpectedDelivery}
+                            onChange={(e) =>
+                              setFromQuoteExpectedDelivery(e.target.value)
+                            }
+                            className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                            Delivery Address
+                          </label>
+                          <input
+                            type="text"
+                            value={fromQuoteDeliveryAddress}
+                            onChange={(e) =>
+                              setFromQuoteDeliveryAddress(e.target.value)
+                            }
+                            placeholder="Facility default if blank"
+                            className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Notes
+                        </label>
+                        <textarea
+                          value={fromQuoteNotes}
+                          onChange={(e) => setFromQuoteNotes(e.target.value)}
+                          rows={2}
+                          placeholder="Optional notes for the supplier"
+                          className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowFromQuoteModal(false);
+                  setFromQuoteSelectedId(null);
+                }}
+                disabled={createFromQuotationMutation.isPending}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (!fromQuoteSelectedId) return;
+                  createFromQuotationMutation.mutate({
+                    quotationId: fromQuoteSelectedId,
+                    expectedDelivery: fromQuoteExpectedDelivery || undefined,
+                    deliveryAddress: fromQuoteDeliveryAddress || undefined,
+                    notes: fromQuoteNotes || undefined,
+                  });
+                }}
+                disabled={
+                  !fromQuoteSelectedId || createFromQuotationMutation.isPending
+                }
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+              >
+                {createFromQuotationMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <CheckCircle className="w-4 h-4" />
+                )}
+                Create Purchase Order
               </button>
             </div>
           </div>

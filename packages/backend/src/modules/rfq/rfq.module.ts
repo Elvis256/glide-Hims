@@ -12,6 +12,7 @@ import {
 } from '../../database/entities/rfq.entity';
 import { Supplier } from '../../database/entities/supplier.entity';
 import { User } from '../../database/entities/user.entity';
+import { PurchaseOrder } from '../../database/entities/purchase-order.entity';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { User } from '../../database/entities/user.entity';
       QuotationApproval,
       Supplier,
       User,
+      PurchaseOrder,
     ]),
   ],
   controllers: [RFQController],

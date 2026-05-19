@@ -15,6 +15,7 @@ import {
 } from '../../database/entities/rfq.entity';
 import { Supplier } from '../../database/entities/supplier.entity';
 import { User } from '../../database/entities/user.entity';
+import { PurchaseOrder } from '../../database/entities/purchase-order.entity';
 import {
   CreateRFQDto,
   UpdateRFQDto,
@@ -42,6 +43,7 @@ export class RFQService {
     @InjectRepository(QuotationApproval) private approvalRepo: Repository<QuotationApproval>,
     @InjectRepository(Supplier) private supplierRepo: Repository<Supplier>,
     @InjectRepository(User) private userRepo: Repository<User>,
+    @InjectRepository(PurchaseOrder) private poRepo: Repository<PurchaseOrder>,
   ) {}
 
   private getRequiredApprovals(totalAmount: number): number {
@@ -310,6 +312,38 @@ export class RFQService {
       relations: ['items', 'supplier'],
       order: { totalAmount: 'ASC' },
     });
+  }
+
+  /**
+   * Quotations that have been approved (SELECTED) and not yet converted into a
+   * Purchase Order. These are the ones a procurement officer can convert next.
+   */
+  async getSelectedQuotations(facilityId: string, tenantId?: string) {
+    const qb = this.quotationRepo
+      .createQueryBuilder('quotation')
+      .leftJoinAndSelect('quotation.supplier', 'supplier')
+      .leftJoinAndSelect('quotation.rfq', 'rfq')
+      .leftJoinAndSelect('rfq.items', 'rfqItems')
+      .leftJoinAndSelect('quotation.items', 'items')
+      .where('quotation.status = :status', { status: QuotationStatus.SELECTED })
+      .andWhere('rfq.facilityId = :facilityId', { facilityId });
+
+    if (tenantId) {
+      qb.andWhere('quotation.tenantId = :tenantId', { tenantId });
+    }
+
+    const candidates = await qb.orderBy('quotation.createdAt', 'DESC').getMany();
+    if (candidates.length === 0) return [];
+
+    // Exclude quotations that have already been converted to a PO
+    const ids = candidates.map((q) => q.id);
+    const existingPOs = await this.poRepo
+      .createQueryBuilder('po')
+      .select('po.quotationId', 'quotationId')
+      .where('po.quotationId IN (:...ids)', { ids })
+      .getRawMany<{ quotationId: string }>();
+    const converted = new Set(existingPOs.map((r) => r.quotationId));
+    return candidates.filter((q) => !converted.has(q.id));
   }
 
   async selectWinner(

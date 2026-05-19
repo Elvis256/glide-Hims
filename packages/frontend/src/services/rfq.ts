@@ -180,6 +180,12 @@ export const rfqService = {
       const response = await api.post<VendorQuotation>(`/rfq/quotations/${quotationId}/select`);
       return response.data;
     },
+    listSelected: async (facilityId: string): Promise<VendorQuotation[]> => {
+      const response = await api.get<VendorQuotation[]>('/rfq/quotations-selected', {
+        params: { facilityId },
+      });
+      return response.data;
+    },
   },
 
   // Approvals
