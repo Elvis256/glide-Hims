@@ -4,9 +4,11 @@ import {
   IsEnum,
   IsNumber,
   IsArray,
+  ArrayNotEmpty,
   ValidateNested,
   IsDateString,
   IsPositive,
+  IsUUID,
   Min,
   Max,
 } from 'class-validator';
@@ -14,7 +16,7 @@ import { Type } from 'class-transformer';
 import { PRPriority } from '../../../database/entities/purchase-request.entity';
 
 export class CreatePRItemDto {
-  @IsString()
+  @IsUUID()
   itemId: string;
 
   @IsString()
@@ -45,11 +47,11 @@ export class CreatePRItemDto {
 }
 
 export class CreatePurchaseRequestDto {
-  @IsString()
+  @IsUUID()
   facilityId: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   departmentId?: string;
 
   @IsOptional()
@@ -69,6 +71,7 @@ export class CreatePurchaseRequestDto {
   notes?: string;
 
   @IsArray()
+  @ArrayNotEmpty()
   @ValidateNested({ each: true })
   @Type(() => CreatePRItemDto)
   items: CreatePRItemDto[];
@@ -76,7 +79,7 @@ export class CreatePurchaseRequestDto {
 
 export class UpdatePurchaseRequestDto {
   @IsOptional()
-  @IsString()
+  @IsUUID()
   departmentId?: string;
 
   @IsOptional()
@@ -103,7 +106,7 @@ export class UpdatePurchaseRequestDto {
 }
 
 export class ApprovedItemDto {
-  @IsString()
+  @IsUUID()
   itemId: string;
 
   @IsPositive()
@@ -129,7 +132,7 @@ export class RejectPRDto {
 
 // Purchase Order DTOs
 export class CreatePOItemDto {
-  @IsString()
+  @IsUUID()
   itemId: string;
 
   @IsString()
@@ -167,22 +170,22 @@ export class CreatePOItemDto {
 }
 
 export class CreatePurchaseOrderDto {
-  @IsString()
+  @IsUUID()
   facilityId: string;
 
-  @IsString()
+  @IsUUID()
   supplierId: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   departmentId?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   costCenterId?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   purchaseRequestId?: string;
 
   @IsOptional()
@@ -214,16 +217,26 @@ export class CreatePurchaseOrderDto {
   emergencyJustification?: string;
 
   @IsArray()
+  @ArrayNotEmpty()
   @ValidateNested({ each: true })
   @Type(() => CreatePOItemDto)
   items: CreatePOItemDto[];
 }
 
+export class POFromPRItemPriceDto {
+  @IsUUID()
+  itemId: string;
+
+  @Min(0)
+  @IsNumber()
+  unitPrice: number;
+}
+
 export class CreatePOFromPRDto {
-  @IsString()
+  @IsUUID()
   purchaseRequestId: string;
 
-  @IsString()
+  @IsUUID()
   supplierId: string;
 
   @IsOptional()
@@ -236,11 +249,13 @@ export class CreatePOFromPRDto {
 
   @IsOptional()
   @IsArray()
-  itemPrices?: { itemId: string; unitPrice: number }[];
+  @ValidateNested({ each: true })
+  @Type(() => POFromPRItemPriceDto)
+  itemPrices?: POFromPRItemPriceDto[];
 }
 
 export class CreatePOFromQuotationDto {
-  @IsString()
+  @IsUUID()
   quotationId: string;
 
   @IsOptional()
@@ -262,7 +277,7 @@ export class CreatePOFromQuotationDto {
 
 // Goods Receipt Note DTOs
 export class CreateGRNItemDto {
-  @IsString()
+  @IsUUID()
   itemId: string;
 
   @IsString()
@@ -275,12 +290,15 @@ export class CreateGRNItemDto {
   @IsString()
   itemUnit?: string;
 
+  @Min(0)
   @IsNumber()
   quantityExpected: number;
 
+  @Min(0)
   @IsNumber()
   quantityReceived: number;
 
+  @Min(0)
   @IsNumber()
   unitCost: number;
 
@@ -297,7 +315,7 @@ export class CreateGRNItemDto {
   manufactureDate?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   purchaseOrderItemId?: string;
 
   @IsOptional()
@@ -305,35 +323,40 @@ export class CreateGRNItemDto {
   notes?: string;
 
   @IsOptional()
+  @Min(0)
   @IsNumber()
   sellingPrice?: number;
 
   @IsOptional()
+  @Min(0)
+  @Max(1000)
   @IsNumber()
   markupPercentage?: number;
 
   @IsOptional()
+  @Min(0)
   @IsNumber()
   retailPrice?: number;
 
   @IsOptional()
+  @Min(0)
   @IsNumber()
   wholesalePrice?: number;
 }
 
 export class CreateGoodsReceiptDto {
-  @IsString()
+  @IsUUID()
   facilityId: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   storeId?: string;
 
-  @IsString()
+  @IsUUID()
   supplierId: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   purchaseOrderId?: string;
 
   @IsOptional()
@@ -349,6 +372,7 @@ export class CreateGoodsReceiptDto {
   invoiceDate?: string;
 
   @IsOptional()
+  @Min(0)
   @IsNumber()
   invoiceAmount?: number;
 
@@ -357,15 +381,17 @@ export class CreateGoodsReceiptDto {
   notes?: string;
 
   @IsArray()
+  @ArrayNotEmpty()
   @ValidateNested({ each: true })
   @Type(() => CreateGRNItemDto)
   items: CreateGRNItemDto[];
 }
 
 export class CreateGRNFromPOReceivedItemDto {
-  @IsString()
+  @IsUUID()
   itemId: string;
 
+  @Min(0)
   @IsNumber()
   quantityReceived: number;
 
@@ -374,32 +400,48 @@ export class CreateGRNFromPOReceivedItemDto {
   batchNumber?: string;
 
   @IsOptional()
-  @IsString()
+  @IsDateString()
   expiryDate?: string;
 }
 
 export class CreateGRNFromPODto {
-  @IsString()
+  @IsUUID()
   purchaseOrderId: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   storeId?: string;
 
   @IsArray()
+  @ArrayNotEmpty()
   @ValidateNested({ each: true })
   @Type(() => CreateGRNFromPOReceivedItemDto)
   receivedItems: CreateGRNFromPOReceivedItemDto[];
 }
 
+export class InspectedGRNItemDto {
+  @IsUUID()
+  itemId: string;
+
+  @Min(0)
+  @IsNumber()
+  quantityAccepted: number;
+
+  @Min(0)
+  @IsNumber()
+  quantityRejected: number;
+
+  @IsOptional()
+  @IsString()
+  rejectionReason?: string;
+}
+
 export class InspectGRNDto {
   @IsArray()
-  inspectedItems: {
-    itemId: string;
-    quantityAccepted: number;
-    quantityRejected: number;
-    rejectionReason?: string;
-  }[];
+  @ArrayNotEmpty()
+  @ValidateNested({ each: true })
+  @Type(() => InspectedGRNItemDto)
+  inspectedItems: InspectedGRNItemDto[];
 
   @IsOptional()
   @IsString()
