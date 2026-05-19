@@ -858,17 +858,21 @@ const navigationSections: NavSection[] = [
     title: 'Assets',
     icon: FolderKanban,
     moduleCode: 'assets',
-    roles: ['Store Keeper', 'Administrator'],
+    // Perm-based gate (OR semantics): any asset perm grants section visibility.
+    // The seeded roles Store Keeper / Biomed Engineer / Facility Manager /
+    // Auditor / Department Head all hold at least assets.read, so dropping
+    // the previous role-name list lets them in without manual enumeration.
     permissions: ['assets.read'],
     items: [
-      { name: 'Asset Register', href: '/assets', icon: FolderKanban, permissions: ['assets.read'] },
-      { name: 'Asset Allocation', href: '/assets/allocation', icon: ArrowRightLeft, permissions: ['assets.update'] },
+      { name: 'Asset Register', href: '/assets/register', icon: FolderKanban, permissions: ['assets.read'] },
+      { name: 'Asset Allocation', href: '/assets/allocation', icon: ArrowRightLeft, permissions: ['assets.allocation.request', 'assets.allocation.approve', 'assets.allocation.issue', 'assets.allocation.return', 'assets.audit.read'] },
       { name: 'Asset Tracking', href: '/assets/tracking', icon: MapPin, permissions: ['assets.read'] },
-      { name: 'Maintenance', href: '/assets/maintenance', icon: Wrench, permissions: ['assets.read'] },
-      { name: 'Depreciation', href: '/assets/depreciation', icon: TrendingUp, permissions: ['assets.read'] },
-      { name: 'Transfers', href: '/assets/transfers', icon: ArrowRightLeft, permissions: ['assets.update'] },
-      { name: 'Asset Reports', href: '/assets/reports', icon: FileText, permissions: ['assets.read', 'reports.read'] },
-      { name: 'Categories', href: '/assets/categories', icon: Settings, permissions: ['admin', 'assets.create'] },
+      { name: 'Maintenance', href: '/assets/maintenance', icon: Wrench, permissions: ['assets.maintenance.record', 'assets.calibration.record', 'assets.read'] },
+      { name: 'Depreciation', href: '/assets/depreciation', icon: TrendingUp, permissions: ['assets.depreciation.run', 'assets.reports.read'] },
+      { name: 'Transfers', href: '/assets/transfers', icon: ArrowRightLeft, permissions: ['assets.transfer.initiate', 'assets.transfer.approve', 'assets.transfer.approve.origin', 'assets.transfer.approve.receiving', 'assets.transfer.approve.store', 'assets.transfer.complete', 'assets.audit.read'] },
+      { name: 'Disposal', href: '/assets/disposal', icon: Trash2, permissions: ['assets.disposal.request', 'assets.disposal.biomed_review', 'assets.disposal.committee', 'assets.disposal.complete', 'assets.audit.read'] },
+      { name: 'Asset Reports', href: '/assets/reports', icon: FileText, permissions: ['assets.reports.read'] },
+      { name: 'Categories', href: '/assets/categories', icon: Settings, permissions: ['assets.categories.manage'] },
     ],
   },
   // 13. External Integrations
