@@ -1,6 +1,13 @@
-import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  Inject,
+  forwardRef,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource, Between } from 'typeorm';
 import { 
   GoodsReceiptNote,
   GoodsReceiptItem,
@@ -12,12 +19,12 @@ import {
 } from '../../database/entities/purchase-order.entity';
 import { ChartOfAccount } from '../../database/entities/chart-of-account.entity';
 import { JournalEntry, JournalStatus } from '../../database/entities/journal-entry.entity';
+import { JournalEntryLine } from '../../database/entities/journal-entry-line.entity';
 import { Supplier } from '../../database/entities/supplier.entity';
 import { Item } from '../../database/entities/inventory.entity';
 import { FinanceService } from '../finance/finance.service';
 import { BudgetService } from '../finance/budget.service';
 import { 
-  PostReceiptToGLDto,
   EncumbranceDto,
   EncumbranceStatus,
   ThreeWayMatchDto,
@@ -58,147 +65,159 @@ export class ProcurementGLIntegrationService {
     private financeService: FinanceService,
     @Inject(forwardRef(() => BudgetService))
     private budgetService: BudgetService,
+    private dataSource: DataSource,
   ) {}
 
   /**
-   * Post GRN receipt to GL as: Debit Inventory/Expense, Credit AP
+   * Post GRN receipt to GL as: Debit Inventory, Credit AP.
+   * Header + balanced line items written in one transaction (audit BUG-017).
    */
-  async postGRNReceiptToGL(grnId: string, userId: string): Promise<any> {
-    try {
-      const grn = await this.grnRepo.findOne({
-        where: { id: grnId },
-        relations: ['purchaseOrder', 'purchaseOrder.supplier'],
-      });
+  async postGRNReceiptToGL(grnId: string, userId: string, tenantId?: string): Promise<any> {
+    // audit BUG-010: GRN fetch was tenant-blind, so any user could post any
+    // tenant's GRN to its own tenant's GL.
+    const grnWhere: any = { id: grnId };
+    if (tenantId) grnWhere.tenantId = tenantId;
 
-      if (!grn) {
-        throw new Error(`GRN ${grnId} not found`);
-      }
+    const grn = await this.grnRepo.findOne({
+      where: grnWhere,
+      relations: ['purchaseOrder', 'purchaseOrder.supplier'],
+    });
 
-      const po = grn.purchaseOrder;
-      const supplier = po.supplier;
+    if (!grn) {
+      throw new NotFoundException(`GRN ${grnId} not found`);
+    }
 
-      // Get GL accounts
-      const inventoryAccount = await this.chartOfAccountRepo.findOne({
-        where: { accountCode: String(this.ACCOUNT_MAPPINGS.inventory) },
-      });
-      const apAccount = await this.chartOfAccountRepo.findOne({
-        where: { accountCode: String(this.ACCOUNT_MAPPINGS.accountsPayable) },
-      });
+    const po = grn.purchaseOrder;
+    const supplier = po?.supplier;
 
-      if (!inventoryAccount || !apAccount) {
-        throw new Error('Required GL accounts not configured');
-      }
+    const accountWhere = (code: string): any => {
+      const w: any = { accountCode: code };
+      if (tenantId) w.tenantId = tenantId;
+      return w;
+    };
+    const inventoryAccount = await this.chartOfAccountRepo.findOne({
+      where: accountWhere(String(this.ACCOUNT_MAPPINGS.inventory)),
+    });
+    const apAccount = await this.chartOfAccountRepo.findOne({
+      where: accountWhere(String(this.ACCOUNT_MAPPINGS.accountsPayable)),
+    });
 
-      // Estimate total based on GRN
-      const totalDebitAmount = grn.totalValue || 0;
+    if (!inventoryAccount || !apAccount) {
+      throw new BadRequestException('Required GL accounts (inventory / accounts payable) not configured');
+    }
 
-      // Create journal entry header
-      const batchNumber = `GRN-${grnId.substring(0, 8)}-${Date.now()}`;
-      const journalEntry = this.journalEntryRepo.create({
+    const totalAmount = Number(grn.totalValue || 0);
+    if (totalAmount <= 0) {
+      throw new BadRequestException(`GRN ${grnId} has no value to post to GL`);
+    }
+
+    const batchNumber = `GRN-${grnId.substring(0, 8)}-${Date.now()}`;
+
+    return this.dataSource.transaction(async (manager) => {
+      const entryRepo = manager.getRepository(JournalEntry);
+      const lineRepo = manager.getRepository(JournalEntryLine);
+
+      const journalEntry = entryRepo.create({
         journalNumber: batchNumber,
         journalDate: grn.receivedAt ? new Date(grn.receivedAt) : new Date(),
         description: `GRN ${grn.grnNumber} from ${supplier?.name || 'Unknown Supplier'}`,
-        totalDebit: totalDebitAmount,
-        totalCredit: totalDebitAmount,
+        totalDebit: totalAmount,
+        totalCredit: totalAmount,
         status: JournalStatus.POSTED,
         reference: grnId,
         createdById: userId,
+        ...(tenantId ? { tenantId } : {}),
       });
+      const savedEntry = (await entryRepo.save(journalEntry)) as JournalEntry;
 
-      const savedEntry = await this.journalEntryRepo.save(journalEntry);
+      // audit BUG-017: previously only the header was written. Without lines
+      // the trial balance is unaffected and the journal is meaningless. Write
+      // the standard procurement entry: Dr Inventory / Cr A/P.
+      const lines = [
+        lineRepo.create({
+          journalEntryId: savedEntry.id,
+          accountId: inventoryAccount.id,
+          description: `Inventory received via ${grn.grnNumber}`,
+          debit: totalAmount,
+          credit: 0,
+          lineNumber: 1,
+          ...(tenantId ? { tenantId } : {}),
+        }),
+        lineRepo.create({
+          journalEntryId: savedEntry.id,
+          accountId: apAccount.id,
+          description: `A/P to ${supplier?.name || 'supplier'} for ${grn.grnNumber}`,
+          debit: 0,
+          credit: totalAmount,
+          lineNumber: 2,
+          ...(tenantId ? { tenantId } : {}),
+        }),
+      ];
+      await lineRepo.save(lines);
 
       this.logger.log(
-        `Posted GRN ${grnId} to GL. Entry ID: ${savedEntry.id}, Amount: ${totalDebitAmount}`,
+        `Posted GRN ${grnId} to GL. Entry: ${savedEntry.id}, Amount: ${totalAmount}`,
       );
 
       return {
         success: true,
         journalEntryId: savedEntry.id,
-        amount: totalDebitAmount,
-        message: `GRN posted to GL successfully`,
+        amount: totalAmount,
+        message: 'GRN posted to GL successfully',
       };
-    } catch (error) {
-      this.logger.error(`Failed to post GRN to GL: ${error.message}`, error.stack);
-      throw error;
-    }
+    });
   }
 
   /**
    * Encumber budget on PO creation
    */
-  async encumberBudgetForPO(poId: string, departmentId: string): Promise<any> {
-    try {
-      const po = await this.poRepo.findOne({
-        where: { id: poId },
-        relations: ['items'],
-      });
+  async encumberBudgetForPO(
+    poId: string,
+    departmentId: string,
+    tenantId?: string,
+  ): Promise<any> {
+    const where: any = { id: poId };
+    if (tenantId) where.tenantId = tenantId;
+    const po = await this.poRepo.findOne({ where, relations: ['items'] });
+    if (!po) throw new NotFoundException(`PO ${poId} not found`);
 
-      if (!po) {
-        throw new Error(`PO ${poId} not found`);
-      }
+    const totalAmount = Number(po.totalAmount || 0);
+    await this.budgetService.reserveBudget(po.facilityId, po.id, 'PO', totalAmount);
 
-      // Reserve budget via BudgetService
-      const totalAmount = po.totalAmount || 0;
-      
-      await this.budgetService.reserveBudget(
-        po.facilityId,
-        po.id,
-        'PO',
-        totalAmount,
-      );
+    this.logger.log(
+      `Reserved budget for PO ${poId}. Department: ${departmentId}, Amount: ${totalAmount}`,
+    );
 
-      this.logger.log(
-        `Reserved budget for PO ${poId}. Department: ${departmentId}, Amount: ${totalAmount}`,
-      );
-
-      return {
-        success: true,
-        encumbranceId: po.id,
-        amount: totalAmount,
-        departmentId,
-        poId,
-        status: 'reserved',
-      };
-    } catch (error) {
-      this.logger.error(`Failed to reserve budget: ${error.message}`, error.stack);
-      throw error;
-    }
+    return {
+      success: true,
+      encumbranceId: po.id,
+      amount: totalAmount,
+      departmentId,
+      poId,
+      status: 'reserved',
+    };
   }
 
   /**
    * Mark budget reservation as spent on GRN receipt
    */
-  async markGRNBudgetSpent(grnId: string): Promise<any> {
-    try {
-      const grn = await this.grnRepo.findOne({
-        where: { id: grnId },
-        relations: ['purchaseOrder'],
-      });
+  async markGRNBudgetSpent(grnId: string, tenantId?: string): Promise<any> {
+    const where: any = { id: grnId };
+    if (tenantId) where.tenantId = tenantId;
+    const grn = await this.grnRepo.findOne({ where, relations: ['purchaseOrder'] });
+    if (!grn) throw new NotFoundException(`GRN ${grnId} not found`);
 
-      if (!grn) {
-        throw new Error(`GRN ${grnId} not found`);
-      }
+    const po = grn.purchaseOrder;
+    if (!po) throw new BadRequestException(`GRN ${grnId} has no purchase order`);
+    const totalAmount = Number(grn.totalValue || 0);
 
-      const po = grn.purchaseOrder;
-      const totalAmount = grn.totalValue || 0;
+    await this.budgetService.markReservationSpent(po.id);
 
-      // Mark budget reservation as spent
-      await this.budgetService.markReservationSpent(po.id);
+    this.logger.log(
+      `Marked budget as spent for GRN ${grnId}. PO: ${po.orderNumber}, Amount: ${totalAmount}`,
+    );
 
-      this.logger.log(
-        `Marked budget as spent for GRN ${grnId}. PO: ${po.orderNumber}, Amount: ${totalAmount}`,
-      );
-
-      return {
-        success: true,
-        grnId,
-        amount: totalAmount,
-        status: 'spent',
-      };
-    } catch (error) {
-      this.logger.error(`Failed to mark budget as spent: ${error.message}`, error.stack);
-      throw error;
-    }
+    return { success: true, grnId, amount: totalAmount, status: 'spent' };
   }
 
   /**
@@ -208,76 +227,69 @@ export class ProcurementGLIntegrationService {
     poId: string,
     grnId: string,
     invoiceId: string,
+    tenantId?: string,
   ): Promise<ThreeWayMatchDto> {
-    try {
-      const po = await this.poRepo.findOne({
-        where: { id: poId },
-        relations: ['items'],
-      });
-      const grn = await this.grnRepo.findOne({
-        where: { id: grnId },
-        relations: ['items'],
-      });
-
-      if (!po || !grn) {
-        throw new Error('PO or GRN not found');
-      }
-
-      // Calculate totals
-      const poTotal = po.items.reduce((sum, item) => sum + (item.quantityOrdered * item.unitPrice), 0);
-      const grnTotal = grn.items.reduce((sum, item) => sum + (item.quantityReceived * item.unitCost), 0);
-
-      // Verify quantities match
-      const quantitiesMatch = po.items.length === grn.items.length &&
-        po.items.every((poItem, idx) => poItem.quantityOrdered === grn.items[idx].quantityReceived);
-
-      // Verify amounts match
-      const amountsMatch = Math.abs(poTotal - grnTotal) < 0.01; // Allow 0.01 rounding difference
-
-      return {
-        poId,
-        grnId,
-        invoiceId,
-        poAmount: poTotal,
-        grnAmount: grnTotal,
-        variance: poTotal - grnTotal,
-        quantitiesMatch,
-        amountsMatch,
-        isMatched: quantitiesMatch && amountsMatch,
-        matchStatus: quantitiesMatch && amountsMatch ? MatchStatus.MATCHED : MatchStatus.VARIANCE,
-      };
-    } catch (error) {
-      this.logger.error(`Failed to validate three-way match: ${error.message}`, error.stack);
-      throw error;
+    const poWhere: any = { id: poId };
+    const grnWhere: any = { id: grnId };
+    if (tenantId) {
+      poWhere.tenantId = tenantId;
+      grnWhere.tenantId = tenantId;
     }
+    const po = await this.poRepo.findOne({ where: poWhere, relations: ['items'] });
+    const grn = await this.grnRepo.findOne({ where: grnWhere, relations: ['items'] });
+
+    if (!po || !grn) throw new NotFoundException('PO or GRN not found');
+
+    const poTotal = po.items.reduce(
+      (sum, item) => sum + Number(item.quantityOrdered) * Number(item.unitPrice),
+      0,
+    );
+    const grnTotal = grn.items.reduce(
+      (sum, item) => sum + Number(item.quantityReceived) * Number(item.unitCost),
+      0,
+    );
+
+    const quantitiesMatch =
+      po.items.length === grn.items.length &&
+      po.items.every(
+        (poItem, idx) => Number(poItem.quantityOrdered) === Number(grn.items[idx].quantityReceived),
+      );
+    const amountsMatch = Math.abs(poTotal - grnTotal) < 0.01;
+
+    return {
+      poId,
+      grnId,
+      invoiceId,
+      poAmount: poTotal,
+      grnAmount: grnTotal,
+      variance: poTotal - grnTotal,
+      quantitiesMatch,
+      amountsMatch,
+      isMatched: quantitiesMatch && amountsMatch,
+      matchStatus: quantitiesMatch && amountsMatch ? MatchStatus.MATCHED : MatchStatus.VARIANCE,
+    };
   }
 
   /**
    * Get all encumbrances for a department
    */
-  async getDepartmentEncumbrances(departmentId: string): Promise<EncumbranceStatus[]> {
-    try {
-      // Get all active POs for the department
-      const pos = await this.poRepo.find({
-        where: { departmentId },
-      });
+  async getDepartmentEncumbrances(
+    departmentId: string,
+    tenantId?: string,
+  ): Promise<EncumbranceStatus[]> {
+    const where: any = { departmentId };
+    if (tenantId) where.tenantId = tenantId;
+    const pos = await this.poRepo.find({ where });
 
-      return pos.map((po) => ({
-        encumbranceId: po.id,
-        poNumber: po.orderNumber,
-        amount: po.totalAmount || 0,
-        departmentId,
-        status: 'active' as any,
-        createdDate: po.createdAt,
-        releasedDate: undefined,
-      }));
-    } catch (error) {
-      this.logger.error(
-        `Failed to get encumbrances for department ${departmentId}: ${error.message}`,
-        error.stack,
-      );
-      throw error;
-    }
+    return pos.map((po) => ({
+      encumbranceId: po.id,
+      poNumber: po.orderNumber,
+      amount: Number(po.totalAmount || 0),
+      departmentId,
+      status: 'active' as any,
+      createdDate: po.createdAt,
+      releasedDate: undefined,
+    }));
   }
 
   /**
@@ -287,79 +299,63 @@ export class ProcurementGLIntegrationService {
     startDate: Date,
     endDate: Date,
     facilityId?: string,
+    tenantId?: string,
   ): Promise<ReconciliationReportDto> {
-    try {
-      // Get all GRNs in period
-      const grns = await this.grnRepo.find({
-        where: facilityId ? { facilityId } : {},
-      });
+    const where: any = {};
+    if (facilityId) where.facilityId = facilityId;
+    if (tenantId) where.tenantId = tenantId;
+    // Date filtering — receivedAt for GRNs, createdAt for POs
+    const grnWhere = { ...where, receivedAt: Between(startDate, endDate) };
+    const poWhere = { ...where, createdAt: Between(startDate, endDate) };
 
-      // Get all POs in period
-      const pos = await this.poRepo.find({
-        where: facilityId ? { facilityId } : {},
-      });
+    const grns = await this.grnRepo.find({ where: grnWhere });
+    const pos = await this.poRepo.find({ where: poWhere });
 
-      // Calculate totals
-      const totalPOAmount = pos.reduce((sum, po) => sum + (po.totalAmount || 0), 0);
-      const totalGRNAmount = grns.reduce((sum, grn) => sum + (grn.totalValue || 0), 0);
-      const unmatchedPOs = pos.length - grns.length;
+    const totalPOAmount = pos.reduce((sum, po) => sum + Number(po.totalAmount || 0), 0);
+    const totalGRNAmount = grns.reduce((sum, grn) => sum + Number(grn.totalValue || 0), 0);
+    const unmatchedPOs = pos.length - grns.length;
 
-      return {
-        period: `${startDate.toISOString()} to ${endDate.toISOString()}`,
-        departmentId: facilityId || 'all',
-        totalPOAmount,
-        totalGRNAmount,
-        totalEncumbered: totalPOAmount,
-        totalActual: totalGRNAmount,
-        variance: totalPOAmount - totalGRNAmount,
-        grnCount: grns.length,
-        poCount: pos.length,
-        matchedCount: grns.length,
-        unmatchedCount: unmatchedPOs,
-      };
-    } catch (error) {
-      this.logger.error(
-        `Failed to get reconciliation report: ${error.message}`,
-        error.stack,
-      );
-      throw error;
-    }
+    return {
+      period: `${startDate.toISOString()} to ${endDate.toISOString()}`,
+      departmentId: facilityId || 'all',
+      totalPOAmount,
+      totalGRNAmount,
+      totalEncumbered: totalPOAmount,
+      totalActual: totalGRNAmount,
+      variance: totalPOAmount - totalGRNAmount,
+      grnCount: grns.length,
+      poCount: pos.length,
+      matchedCount: grns.length,
+      unmatchedCount: unmatchedPOs,
+    };
   }
 
   /**
    * Get integration dashboard summary
    */
-  async getIntegrationSummary(): Promise<any> {
-    try {
-      // Get pending GRNs (not yet posted to GL)
-      const pendingGRNs = await this.grnRepo.find({
-        where: { status: GRNStatus.APPROVED },
-      });
+  async getIntegrationSummary(tenantId?: string): Promise<any> {
+    const tenantWhere: any = tenantId ? { tenantId } : {};
 
-      // Get all POs and GRNs
-      const allPOs = await this.poRepo.find();
-      const allGRNs = await this.grnRepo.find({
-        relations: ['purchaseOrder'],
-      });
+    const pendingGRNs = await this.grnRepo.find({
+      where: { status: GRNStatus.APPROVED, ...tenantWhere },
+    });
+    const allPOs = await this.poRepo.find({ where: tenantWhere });
+    const allGRNs = await this.grnRepo.find({
+      where: tenantWhere,
+      relations: ['purchaseOrder'],
+    });
 
-      const matchedPOIds = new Set(allGRNs.map((grn) => grn.purchaseOrderId));
-      const unmatchedPOs = allPOs.filter((po) => !matchedPOIds.has(po.id));
+    const matchedPOIds = new Set(allGRNs.map((grn) => grn.purchaseOrderId));
+    const unmatchedPOs = allPOs.filter((po) => !matchedPOIds.has(po.id));
 
-      return {
-        pendingGRNCount: pendingGRNs.length,
-        pendingGRNAmount: pendingGRNs.reduce((sum, grn) => sum + (grn.totalValue || 0), 0),
-        activeEncumbrances: allPOs.length,
-        totalEncumbered: allPOs.reduce((sum, po) => sum + (po.totalAmount || 0), 0),
-        unmatchedPOCount: unmatchedPOs.length,
-        unmatchedPOAmount: unmatchedPOs.reduce((sum, po) => sum + (po.totalAmount || 0), 0),
-        status: 'operational',
-      };
-    } catch (error) {
-      this.logger.error(
-        `Failed to get integration summary: ${error.message}`,
-        error.stack,
-      );
-      throw error;
-    }
+    return {
+      pendingGRNCount: pendingGRNs.length,
+      pendingGRNAmount: pendingGRNs.reduce((sum, grn) => sum + Number(grn.totalValue || 0), 0),
+      activeEncumbrances: allPOs.length,
+      totalEncumbered: allPOs.reduce((sum, po) => sum + Number(po.totalAmount || 0), 0),
+      unmatchedPOCount: unmatchedPOs.length,
+      unmatchedPOAmount: unmatchedPOs.reduce((sum, po) => sum + Number(po.totalAmount || 0), 0),
+      status: 'operational',
+    };
   }
 }
