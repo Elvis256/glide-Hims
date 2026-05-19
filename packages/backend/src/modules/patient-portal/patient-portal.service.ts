@@ -62,7 +62,9 @@ export class PatientPortalService {
       return { ok: true, expiresInSeconds: OTP_TTL_SECONDS };
     }
 
-    const code = String(Math.floor(100000 + Math.random() * 900000));
+    // F-05: use CSPRNG so OTP cannot be predicted by observing earlier codes.
+    const { randomInt } = await import('crypto');
+    const code = String(randomInt(100000, 1000000));
     const entry: OtpEntry = {
       code,
       patientId: patient.id,

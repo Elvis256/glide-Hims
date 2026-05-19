@@ -4,6 +4,7 @@ import {
   Get,
   Post,
   Req,
+  Res,
   UseGuards,
   HttpCode,
 } from '@nestjs/common';
@@ -13,6 +14,10 @@ import { PatientPortalService } from './patient-portal.service';
 import { PatientPortalGuard } from './patient-portal.guard';
 import { RequestOtpDto, VerifyOtpDto } from './dto/portal.dto';
 import { Throttle } from '@nestjs/throttler';
+import { Response } from 'express';
+
+const PORTAL_COOKIE = 'portalToken';
+const PORTAL_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 @ApiTags('patient-portal')
 @Controller('portal')
@@ -33,8 +38,29 @@ export class PatientPortalController {
   @HttpCode(200)
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiOperation({ summary: 'Verify the OTP and receive a patient access token' })
-  verifyOtp(@Body() dto: VerifyOtpDto) {
-    return this.service.verifyOtp(dto.phone, dto.code);
+  async verifyOtp(
+    @Body() dto: VerifyOtpDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { accessToken, patient } = await this.service.verifyOtp(dto.phone, dto.code);
+    // F-04: token is set as an httpOnly cookie so XSS cannot exfiltrate it.
+    res.cookie(PORTAL_COOKIE, accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      path: '/api/v1/portal',
+      maxAge: PORTAL_TTL_SECONDS * 1000,
+    });
+    return { patient };
+  }
+
+  @Public()
+  @Post('logout')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Clear the patient portal session cookie' })
+  logout(@Res({ passthrough: true }) res: Response) {
+    res.clearCookie(PORTAL_COOKIE, { path: '/api/v1/portal' });
+    return { ok: true };
   }
 
   @UseGuards(PatientPortalGuard)

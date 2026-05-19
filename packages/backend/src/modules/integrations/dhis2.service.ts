@@ -3,6 +3,7 @@ import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { SystemSettingsService } from '../system-settings/system-settings.service';
+import { encryptPii, decryptPii } from '../../common/crypto/pii-crypto';
 
 // ---------------------------------------------------------------------------
 // DHIS2 Data Element Mapping
@@ -100,7 +101,7 @@ export class DHIS2Service {
             defaults.username = s.value;
             break;
           case 'dhis2.password':
-            defaults.password = s.value;
+            defaults.password = decryptPii(s.value);
             break;
           case 'dhis2.orgUnitId':
             defaults.orgUnitId = s.value;
@@ -159,12 +160,12 @@ export class DHIS2Service {
       );
     }
     if (config.password !== undefined && config.password !== '••••••••') {
-      // TODO: encrypt password before storing — system-settings doesn't have encryption yet
+      // F-06: encrypt at rest with PII_ENCRYPTION_KEY (AES-256-GCM).
       await this.systemSettingsService.upsert(
         'dhis2.password',
-        config.password,
+        encryptPii(config.password),
         tenantId,
-        'DHIS2 API password (stored as-is)',
+        'DHIS2 API password (AES-256-GCM, see PII_ENCRYPTION_KEY)',
       );
     }
     if (config.orgUnitId !== undefined) {

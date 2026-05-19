@@ -44,8 +44,8 @@ export default function PortalDashboardPage() {
     enabled: tab === 'rx',
   });
 
-  const signOut = () => {
-    portalAuth.signOut();
+  const signOut = async () => {
+    await portalAuth.signOut();
     navigate('/portal/login', { replace: true });
   };
 

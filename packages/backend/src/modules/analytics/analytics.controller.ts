@@ -1,6 +1,8 @@
 import {
   Controller,
+  ForbiddenException,
   Get,
+  Logger,
   Query,
   Request,
   ParseIntPipe,
@@ -16,13 +18,35 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 @ApiBearerAuth()
 @Controller('analytics')
 export class AnalyticsController {
+  private readonly logger = new Logger(AnalyticsController.name);
   constructor(private readonly analyticsService: AnalyticsService) {}
 
   @Get('admin-dashboard')
   @AuthWithPermissions('analytics.read')
-  @ApiOperation({ summary: 'Get admin dashboard analytics' })
+  @ApiOperation({
+    summary:
+      'Admin dashboard analytics. Cross-tenant aggregation requires system-admin; tenant users only see their own tenant.',
+  })
   async getAdminDashboard(@Request() req: any) {
-    return this.analyticsService.getAdminDashboard(req.user?.tenantId);
+    // F-10: only system admins may view cross-tenant aggregates. For tenant
+    // users we require a tenant context, falling back to the JWT tenantId.
+    const user = req.user;
+    if (!user?.tenantId) {
+      if (!user?.isSystemAdmin) {
+        throw new ForbiddenException(
+          'Tenant context required for admin dashboard analytics',
+        );
+      }
+      this.logger.warn(
+        JSON.stringify({
+          type: 'CROSS_TENANT_ANALYTICS_ACCESS',
+          userId: user?.id,
+          username: user?.username,
+          path: req.url,
+        }),
+      );
+    }
+    return this.analyticsService.getAdminDashboard(user.tenantId);
   }
 
   @Get('dashboard')

@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike, DataSource } from 'typeorm';
+import { randomBytes } from 'crypto';
 import { Store } from '../../database/entities/store.entity';
 import {
   StockTransfer,
@@ -121,7 +122,8 @@ export class StoresService {
 
   // Transfers
   async createTransfer(dto: CreateTransferDto, userId: string, tenantId?: string) {
-    const transferNumber = `TRF-${Date.now()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
+    // F-13: CSPRNG suffix prevents transfer-number enumeration.
+    const transferNumber = `TRF-${Date.now()}-${randomBytes(3).toString('hex').toUpperCase()}`;
 
     // Validate transfer items have positive quantities
     for (const item of dto.items) {
