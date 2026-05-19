@@ -27,7 +27,6 @@ import {
   Printer,
   Download,
   AlertCircle,
-  RefreshCw,
   MoreVertical,
   Loader2,
 } from 'lucide-react';
@@ -85,11 +84,6 @@ interface PurchaseOrder {
   deliveryAddress: string;
   paymentTerms: string;
   notes?: string;
-  amendments: {
-    date: string;
-    description: string;
-    by: string;
-  }[];
 }
 
 interface BackendPurchaseOrder {
@@ -167,7 +161,6 @@ const transformBackendPO = (po: BackendPurchaseOrder): PurchaseOrder => ({
   deliveryAddress: po.deliveryAddress || '',
   paymentTerms: po.paymentTerms || 'Net 30',
   notes: po.notes,
-  amendments: [],
 });
 
 const statusConfig: Record<POStatus, { color: string; bg: string; icon: React.ReactNode }> = {
@@ -192,7 +185,6 @@ export default function PurchaseOrdersPage() {
   const [fromQuoteExpectedDelivery, setFromQuoteExpectedDelivery] = useState('');
   const [fromQuoteDeliveryAddress, setFromQuoteDeliveryAddress] = useState('');
   const [fromQuoteNotes, setFromQuoteNotes] = useState('');
-  const [showAmendModal, setShowAmendModal] = useState(false);
   const [createFormData, setCreateFormData] = useState<Partial<CreatePurchaseOrderData>>({});
   const [poLineItems, setPoLineItems] = useState<Array<{ rowId: string; itemId: string; itemCode: string; itemName: string; itemUnit: string; quantityOrdered: number; unitPrice: number }>>([
     { rowId: '1', itemId: '', itemCode: '', itemName: '', itemUnit: 'unit', quantityOrdered: 1, unitPrice: 0 },
@@ -515,12 +507,6 @@ export default function PurchaseOrdersPage() {
                             Overdue
                           </span>
                         )}
-                        {po.amendments.length > 0 && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-600">
-                            <RefreshCw className="w-3 h-3" />
-                            Amended
-                          </span>
-                        )}
                       </div>
                       <div className="flex items-center gap-2 mb-1">
                         <Building2 className="w-4 h-4 text-gray-400" />
@@ -678,21 +664,6 @@ export default function PurchaseOrdersPage() {
                 <ApprovalChainTimeline documentId={selectedPO.id} documentType="PO" />
               </div>
 
-              {/* Amendments */}
-              {selectedPO.amendments.length > 0 && (
-                <div>
-                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Amendments</p>
-                  <div className="space-y-2">
-                    {selectedPO.amendments.map((amendment, idx) => (
-                      <div key={idx} className="bg-orange-50 border border-orange-200 rounded-lg p-2 text-sm">
-                        <p className="text-gray-900">{amendment.description}</p>
-                        <p className="text-xs text-gray-500 mt-1">{amendment.date} by {amendment.by}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {/* Actions */}
               <div className="pt-4 space-y-2">
                 {selectedPO.status === 'Draft' && (
@@ -729,17 +700,6 @@ export default function PurchaseOrdersPage() {
                 )}
                 {(selectedPO.status === 'Sent' || selectedPO.status === 'Partial') && (
                   <>
-                    <button className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
-                      <Package className="w-4 h-4" />
-                      Record Delivery
-                    </button>
-                    <button
-                      onClick={() => setShowAmendModal(true)}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-orange-300 text-orange-600 rounded-lg hover:bg-orange-50"
-                    >
-                      <RefreshCw className="w-4 h-4" />
-                      Amend PO
-                    </button>
                     <button
                       onClick={handleCancelPO}
                       disabled={isActionLoading}
@@ -985,50 +945,6 @@ export default function PurchaseOrdersPage() {
                   <Send className="w-4 h-4" />
                 )}
                 Create & Send
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Amend Modal */}
-      {showAmendModal && selectedPO && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
-            <div className="px-6 py-4 border-b">
-              <h2 className="text-lg font-semibold">Amend Purchase Order</h2>
-              <p className="text-sm text-gray-500">{selectedPO.poNumber}</p>
-            </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Amendment Type</label>
-                <select className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500">
-                  <option>Quantity Change</option>
-                  <option>Delivery Date Change</option>
-                  <option>Delivery Address Change</option>
-                  <option>Price Adjustment</option>
-                  <option>Other</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                <textarea
-                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  rows={3}
-                  placeholder="Describe the amendment..."
-                />
-              </div>
-            </div>
-            <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-3">
-              <button
-                onClick={() => setShowAmendModal(false)}
-                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100"
-              >
-                Cancel
-              </button>
-              <button className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700">
-                <RefreshCw className="w-4 h-4" />
-                Submit Amendment
               </button>
             </div>
           </div>
