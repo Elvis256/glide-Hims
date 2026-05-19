@@ -4,6 +4,7 @@ import {
   IsString,
   IsOptional,
   IsArray,
+  ArrayNotEmpty,
   ValidateNested,
   IsDateString,
   IsEnum,
@@ -107,6 +108,7 @@ export class CreatePaymentVoucherDto {
   remarks?: string;
 
   @IsArray()
+  @ArrayNotEmpty()
   @ValidateNested({ each: true })
   @Type(() => PaymentVoucherItemDto)
   items: PaymentVoucherItemDto[];
@@ -177,6 +179,7 @@ export class CreateSupplierCreditNoteDto {
   notes?: string;
 
   @IsArray()
+  @ArrayNotEmpty()
   @ValidateNested({ each: true })
   @Type(() => CreditNoteItemDto)
   items: CreditNoteItemDto[];
