@@ -1,4 +1,4 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import {
@@ -87,11 +87,28 @@ export class ReportsService {
   // ---------------------------------------------------------------------
   // helpers
   // ---------------------------------------------------------------------
+
+  /**
+   * Maximum span of a report query window. 5 years is generous for any
+   * realistic clinical/financial report and bounds the worst-case row scan.
+   * Returning 400 here is far better UX than letting the DB run for minutes.
+   */
+  private static readonly MAX_RANGE_DAYS = 365 * 5;
+
   private resolveRange(start?: string, end?: string): { start: Date; end: Date } {
     const e = end ? new Date(end) : new Date();
     const s = start ? new Date(start) : new Date(e.getFullYear(), e.getMonth(), 1);
     if (isNaN(s.getTime()) || isNaN(e.getTime())) {
       throw new BadRequestException('Invalid startDate/endDate');
+    }
+    if (s.getTime() > e.getTime()) {
+      throw new BadRequestException('startDate must be on or before endDate');
+    }
+    const spanDays = Math.floor((e.getTime() - s.getTime()) / 86400000);
+    if (spanDays > ReportsService.MAX_RANGE_DAYS) {
+      throw new BadRequestException(
+        `Date range too large (${spanDays} days). Maximum allowed is ${ReportsService.MAX_RANGE_DAYS} days.`,
+      );
     }
     return { start: s, end: e };
   }
@@ -101,11 +118,52 @@ export class ReportsService {
     return tenantId;
   }
 
+  /**
+   * Verify the requested facility belongs to the caller's tenant. Without
+   * this check every report endpoint silently accepts any UUID — same-tenant
+   * users could probe other facilities they should not have visibility into,
+   * and cross-tenant probing would just return zero rows (information leak
+   * via timing / aggregate shape). Throwing NotFound is intentional: it
+   * doesn't disclose whether the facility exists in another tenant.
+   */
+  private async requireFacility(tenantId: string, facilityId: string): Promise<void> {
+    const [row] = await this.ds.query(
+      `SELECT 1 FROM facilities WHERE id = $1 AND tenant_id = $2 LIMIT 1`,
+      [facilityId, tenantId],
+    );
+    if (!row) throw new NotFoundException('Facility not found');
+  }
+
+  /**
+   * Verify the optional department UUID belongs to the requested facility
+   * (and transitively the tenant). Mirrors `requireFacility` and stops a
+   * caller from using a department from another facility/tenant to scope
+   * the report.
+   */
+  private async requireDepartment(
+    tenantId: string,
+    facilityId: string,
+    departmentId?: string,
+  ): Promise<void> {
+    if (!departmentId) return;
+    const [row] = await this.ds.query(
+      `SELECT 1
+       FROM departments d
+       JOIN facilities f ON f.id = d.facility_id
+       WHERE d.id = $1 AND d.facility_id = $2 AND f.tenant_id = $3
+       LIMIT 1`,
+      [departmentId, facilityId, tenantId],
+    );
+    if (!row) throw new NotFoundException('Department not found');
+  }
+
   // ---------------------------------------------------------------------
   // 1. Composite KPI dashboard
   // ---------------------------------------------------------------------
   async getDashboard(q: DashboardQueryDto, tenantId?: string) {
     const tid = this.requireTenant(tenantId);
+    await this.requireFacility(tid, q.facilityId);
+    if (q.departmentId) await this.requireDepartment(tid, q.facilityId, q.departmentId);
     const { start, end } = this.resolveRange(q.startDate, q.endDate);
 
     const params: any[] = [tid, q.facilityId, start, end];
@@ -203,6 +261,8 @@ export class ReportsService {
   // ---------------------------------------------------------------------
   async getVisits(q: VisitsQueryDto, tenantId?: string) {
     const tid = this.requireTenant(tenantId);
+    await this.requireFacility(tid, q.facilityId);
+    if (q.departmentId) await this.requireDepartment(tid, q.facilityId, q.departmentId);
     const { start, end } = this.resolveRange(q.startDate, q.endDate);
     const groupBy = q.groupBy || 'day';
     const trunc = groupBy === 'week' ? 'week' : groupBy === 'month' ? 'month' : 'day';
@@ -259,6 +319,7 @@ export class ReportsService {
   // ---------------------------------------------------------------------
   async getPatientStatistics(q: PatientStatsQueryDto, tenantId?: string) {
     const tid = this.requireTenant(tenantId);
+    await this.requireFacility(tid, q.facilityId);
     const period = q.period || 'month';
     const days = period === 'week' ? 7 : period === 'month' ? 30 : period === 'quarter' ? 90 : 365;
     const since = new Date(Date.now() - days * 86400000);
@@ -323,6 +384,7 @@ export class ReportsService {
   // ---------------------------------------------------------------------
   async getDiseaseStatistics(q: DiseaseStatsQueryDto, tenantId?: string) {
     const tid = this.requireTenant(tenantId);
+    await this.requireFacility(tid, q.facilityId);
     const { start, end } = this.resolveRange(q.startDate, q.endDate);
 
     const top = await this.ds.query(
@@ -360,6 +422,7 @@ export class ReportsService {
   // ---------------------------------------------------------------------
   async getMortality(q: MortalityQueryDto, tenantId?: string) {
     const tid = this.requireTenant(tenantId);
+    await this.requireFacility(tid, q.facilityId);
     const { start, end } = this.resolveRange(q.startDate, q.endDate);
 
     const [summary, trend, byCause, byAge] = await Promise.all([
@@ -421,6 +484,7 @@ export class ReportsService {
   // ---------------------------------------------------------------------
   async getRevenue(q: RevenueQueryDto, tenantId?: string) {
     const tid = this.requireTenant(tenantId);
+    await this.requireFacility(tid, q.facilityId);
     const { start, end } = this.resolveRange(q.startDate, q.endDate);
     const groupBy = q.groupBy || 'day';
     const trunc = groupBy === 'week' ? 'week' : groupBy === 'month' ? 'month' : 'day';
@@ -469,6 +533,7 @@ export class ReportsService {
   // ---------------------------------------------------------------------
   async getCollections(q: CollectionsQueryDto, tenantId?: string) {
     const tid = this.requireTenant(tenantId);
+    await this.requireFacility(tid, q.facilityId);
     const { start, end } = this.resolveRange(q.startDate, q.endDate);
 
     const params: any[] = [tid, q.facilityId, start, end];
@@ -521,6 +586,7 @@ export class ReportsService {
   // ---------------------------------------------------------------------
   async getOutstanding(q: OutstandingQueryDto, tenantId?: string) {
     const tid = this.requireTenant(tenantId);
+    await this.requireFacility(tid, q.facilityId);
     const asOf = q.asOf ? new Date(q.asOf) : new Date();
 
     const aging = await this.ds.query(
@@ -574,6 +640,7 @@ export class ReportsService {
   // ---------------------------------------------------------------------
   async getStock(q: StockQueryDto, tenantId?: string) {
     const tid = this.requireTenant(tenantId);
+    await this.requireFacility(tid, q.facilityId);
     const params: any[] = [tid, q.facilityId];
     let storeClause = '';
     if (q.storeId) {
@@ -614,6 +681,7 @@ export class ReportsService {
   // ---------------------------------------------------------------------
   async getConsumption(q: ConsumptionQueryDto, tenantId?: string) {
     const tid = this.requireTenant(tenantId);
+    await this.requireFacility(tid, q.facilityId);
     const { start, end } = this.resolveRange(q.startDate, q.endDate);
     const params: any[] = [tid, q.facilityId, start, end];
     let itemClause = '';
@@ -658,6 +726,7 @@ export class ReportsService {
   // ---------------------------------------------------------------------
   async getExpiry(q: ExpiryQueryDto, tenantId?: string) {
     const tid = this.requireTenant(tenantId);
+    await this.requireFacility(tid, q.facilityId);
     const days = q.daysAhead ?? 90;
 
     const items = await this.ds.query(
@@ -696,6 +765,9 @@ export class ReportsService {
 
   private parsePeriodMonth(period: string): { start: Date; end: Date } {
     const [y, m] = period.split('-').map(Number);
+    if (!Number.isInteger(y) || !Number.isInteger(m) || y < 2000 || y > 2099 || m < 1 || m > 12) {
+      throw new BadRequestException(`Invalid period "${period}" — expected YYYY-MM with year 2000-2099`);
+    }
     const start = new Date(Date.UTC(y, m - 1, 1));
     const end = new Date(Date.UTC(y, m, 1));
     return { start, end };
@@ -703,6 +775,9 @@ export class ReportsService {
 
   private parsePeriodWeek(week: string): { start: Date; end: Date } {
     const [y, w] = week.split('-').map(Number);
+    if (!Number.isInteger(y) || !Number.isInteger(w) || y < 2000 || y > 2099 || w < 1 || w > 53) {
+      throw new BadRequestException(`Invalid week "${week}" — expected YYYY-WW with year 2000-2099`);
+    }
     // ISO week: Monday is day 1
     const jan4 = new Date(Date.UTC(y, 0, 4));
     const jan4Day = jan4.getUTCDay() || 7;
@@ -720,6 +795,7 @@ export class ReportsService {
    */
   async getHmis108(q: HmisMonthlyDto, tenantId?: string) {
     const tid = this.requireTenant(tenantId);
+    await this.requireFacility(tid, q.facilityId);
     const { start, end } = this.parsePeriodMonth(q.period);
 
     const rows = await this.ds.query(
@@ -757,6 +833,7 @@ export class ReportsService {
    */
   async getHmis122(q: HmisMonthlyDto, tenantId?: string) {
     const tid = this.requireTenant(tenantId);
+    await this.requireFacility(tid, q.facilityId);
     const { start, end } = this.parsePeriodMonth(q.period);
 
     const rows = await this.ds.query(
@@ -790,6 +867,7 @@ export class ReportsService {
    */
   async getEidsr(q: HmisWeeklyDto, tenantId?: string) {
     const tid = this.requireTenant(tenantId);
+    await this.requireFacility(tid, q.facilityId);
     const { start, end } = this.parsePeriodWeek(q.week);
 
     const rows = await this.ds.query(
@@ -842,6 +920,7 @@ export class ReportsService {
    */
   async getMtrac(q: HmisWeeklyDto, tenantId?: string) {
     const tid = this.requireTenant(tenantId);
+    await this.requireFacility(tid, q.facilityId);
     const { start, end } = this.parsePeriodWeek(q.week);
 
     const tracerLikes = MTRAC_TRACER_ITEMS.map((_, i) => `i.name ILIKE $${3 + i} OR i.generic_name ILIKE $${3 + i}`).join(' OR ');
