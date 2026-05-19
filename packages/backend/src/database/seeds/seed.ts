@@ -864,6 +864,12 @@ export async function seed(dataSource: DataSource) {
       'insurance.claims.read',
       'insurance.claims.create',
       'insurance.policies.read',
+      // Procurement visibility + invoice-match / AP approval
+      // (3-way matching and PO/invoice approval are an AP-side
+      //  responsibility; without this Accountants can only view
+      //  finance journals, not the procurement docs they post.)
+      'procurement.read',
+      'procurement.approve',
       // HR / payroll context
       'hr.read',
       'payroll.read',
@@ -913,6 +919,10 @@ export async function seed(dataSource: DataSource) {
       'analytics.read',
       'reports.read',
       'data.export',
+      // Facility-level PO approval (without this nobody but Super
+      // Admin/Administrator can approve POs in a fresh tenant)
+      'procurement.read',
+      'procurement.approve',
     ],
     Auditor: [
       'facilities.read',
@@ -964,6 +974,10 @@ export async function seed(dataSource: DataSource) {
       'stores.read',
       'analytics.read',
       'reports.read',
+      // Department-level PR approval (Department Head is the first
+      // step of the procurement approval workflow)
+      'procurement.read',
+      'procurement.approve',
     ],
   };
 

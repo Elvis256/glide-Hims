@@ -58,7 +58,11 @@ export class InvoiceMatchingController {
     return this.service.approve(id, dto, req.user?.id || 'system', req.user?.tenantId);
   }
 
-  @AuthWithPermissions('procurement.create')
+  // mark-paid is the AP cash disbursement step (sits AFTER approve).
+  // Gating it under procurement.create meant requisition-creators could
+  // disburse but invoice approvers (Accountant) could not — wrong
+  // segregation of duties. Aligned with the approve gate.
+  @AuthWithPermissions('procurement.approve')
   @Post(':id/paid')
   markAsPaid(@Param('id') id: string, @Request() req: any) {
     return this.service.markAsPaid(id, req.user?.tenantId);
