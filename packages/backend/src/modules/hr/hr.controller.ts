@@ -295,24 +295,34 @@ export class HrController {
 
   @Post('attendance/clock-in')
   @AuthWithPermissions('hr.create')
-  @ApiOperation({ summary: 'Clock in employee' })
+  @ApiOperation({ summary: 'Clock in (self or, for managers, another employee)' })
   async clockIn(
-    @Body('employeeId') employeeId: string,
+    @Body('employeeId') employeeId: string | undefined,
     @Query('facilityId') facilityId: string,
     @Request() req: any,
   ) {
-    return this.hrService.clockIn(employeeId, facilityId, req.user?.tenantId);
+    const targetId = await this.hrService.resolveAttendanceTarget(
+      employeeId,
+      req.user,
+      'clock-in',
+    );
+    return this.hrService.clockIn(targetId, facilityId, req.user?.tenantId);
   }
 
   @Post('attendance/clock-out')
   @AuthWithPermissions('hr.update')
-  @ApiOperation({ summary: 'Clock out employee' })
+  @ApiOperation({ summary: 'Clock out (self or, for managers, another employee)' })
   async clockOut(
-    @Body('employeeId') employeeId: string,
+    @Body('employeeId') employeeId: string | undefined,
     @Query('facilityId') facilityId: string,
     @Request() req: any,
   ) {
-    return this.hrService.clockOut(employeeId, facilityId, req.user?.tenantId);
+    const targetId = await this.hrService.resolveAttendanceTarget(
+      employeeId,
+      req.user,
+      'clock-out',
+    );
+    return this.hrService.clockOut(targetId, facilityId, req.user?.tenantId);
   }
 
   @Get('attendance')
@@ -403,21 +413,21 @@ export class HrController {
   }
 
   @Post('payroll/:id/reset')
-  @AuthWithPermissions('payroll.process')
+  @AuthWithPermissions('payroll.reset')
   @ApiOperation({ summary: 'Reset payroll run to draft' })
   async resetPayrollRun(@Param('id') id: string, @Request() req: any) {
     return this.hrService.resetPayrollRun(id, req.user?.tenantId);
   }
 
   @Post('payroll/:id/approve')
-  @AuthWithPermissions('payroll.process')
+  @AuthWithPermissions('payroll.approve')
   @ApiOperation({ summary: 'Approve payroll run (Draft → Approved)' })
   async approvePayrollRun(@Param('id') id: string, @Request() req: any) {
     return this.hrService.approvePayrollRun(id, req.user?.id, req.user?.tenantId);
   }
 
   @Post('payroll/:id/mark-paid')
-  @AuthWithPermissions('payroll.process')
+  @AuthWithPermissions('payroll.mark_paid')
   @ApiOperation({ summary: 'Mark payroll run as paid (Completed → Paid)' })
   async markPayrollPaid(@Param('id') id: string, @Request() req: any) {
     return this.hrService.markPayrollPaid(id, req.user?.tenantId);
@@ -641,7 +651,7 @@ export class HrController {
   @AuthWithPermissions('hr.read')
   @ApiOperation({ summary: 'Get appraisal by ID' })
   async getAppraisalById(@Param('id') id: string, @Request() req: any) {
-    return this.hrService.getAppraisalById(id);
+    return this.hrService.getAppraisalById(id, req.user?.tenantId);
   }
 
   @Patch('appraisals/:id')
@@ -652,14 +662,14 @@ export class HrController {
     @Body() dto: UpdateAppraisalDto,
     @Request() req: any,
   ) {
-    return this.hrService.updateAppraisal(id, dto);
+    return this.hrService.updateAppraisal(id, dto, req.user?.tenantId);
   }
 
   @Delete('appraisals/:id')
   @AuthWithPermissions('hr.delete')
   @ApiOperation({ summary: 'Delete draft appraisal' })
   async deleteAppraisal(@Param('id') id: string, @Request() req: any) {
-    return this.hrService.deleteAppraisal(id);
+    return this.hrService.deleteAppraisal(id, req.user?.tenantId);
   }
 
   @Post('appraisals/:id/submit-self-review')
@@ -670,7 +680,7 @@ export class HrController {
     @Body() dto: SubmitSelfReviewDto,
     @Request() req: any,
   ) {
-    return this.hrService.submitSelfReview(id, dto);
+    return this.hrService.submitSelfReview(id, dto, req.user?.tenantId);
   }
 
   @Post('appraisals/:id/submit-manager-review')
@@ -681,14 +691,14 @@ export class HrController {
     @Body() dto: SubmitManagerReviewDto,
     @Request() req: any,
   ) {
-    return this.hrService.submitManagerReview(id, dto);
+    return this.hrService.submitManagerReview(id, dto, req.user?.tenantId);
   }
 
   @Post('appraisals/:id/acknowledge')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Employee acknowledges completed appraisal' })
   async acknowledgeAppraisal(@Param('id') id: string, @Request() req: any) {
-    return this.hrService.acknowledgeAppraisal(id);
+    return this.hrService.acknowledgeAppraisal(id, req.user?.tenantId);
   }
 
   // ============ TRAINING PROGRAMS ============

@@ -346,6 +346,9 @@ const defaultPermissions = [
 
   // Additional Payroll
   { code: 'payroll.process', name: 'Process Payroll', module: 'payroll' },
+  { code: 'payroll.approve', name: 'Approve Payroll Run', module: 'payroll' },
+  { code: 'payroll.mark_paid', name: 'Mark Payroll Paid', module: 'payroll' },
+  { code: 'payroll.reset', name: 'Reset Draft Payroll', module: 'payroll' },
 
   // Additional Services
   { code: 'services.delete', name: 'Delete Services', module: 'services' },
@@ -798,6 +801,9 @@ export async function seed(dataSource: DataSource) {
       'payroll.create',
       'payroll.update',
       'payroll.process',
+      'payroll.approve',
+      'payroll.reset',
+      'payroll.mark_paid',
       // Users - Can manage users (create employees as users)
       'users.read',
       'users.create',
@@ -873,6 +879,7 @@ export async function seed(dataSource: DataSource) {
       // HR / payroll context
       'hr.read',
       'payroll.read',
+      'payroll.mark_paid',
       // Audit
       'audit.read',
       // Reporting / analytics
@@ -947,6 +954,7 @@ export async function seed(dataSource: DataSource) {
       'stores.read',
       'hr.read',
       'payroll.read',
+      'payroll.approve',
       'reports.read',
       'analytics.read',
       'data.export',

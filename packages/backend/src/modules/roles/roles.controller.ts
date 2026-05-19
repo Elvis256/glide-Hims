@@ -32,7 +32,7 @@ export class RolesController {
   @AuthWithPermissions('roles.create')
   @ApiOperation({ summary: 'Create role' })
   async createRole(@Body() dto: CreateRoleDto, @Request() req: any) {
-    const role = await this.rolesService.createRole(dto, req.user?.tenantId);
+    const role = await this.rolesService.createRole(dto, req.user?.tenantId, req.user);
     return { message: 'Role created', data: role };
   }
 
@@ -65,7 +65,7 @@ export class RolesController {
     @Body() dto: UpdateRoleDto,
     @Request() req: any,
   ) {
-    const role = await this.rolesService.updateRole(id, dto, req.user?.tenantId);
+    const role = await this.rolesService.updateRole(id, dto, req.user?.tenantId, req.user);
     return { message: 'Role updated', data: role };
   }
 
@@ -102,7 +102,7 @@ export class RolesController {
     @Body() dto: AssignPermissionDto,
     @Request() req: any,
   ) {
-    await this.rolesService.assignPermission(id, dto, req.user?.tenantId);
+    await this.rolesService.assignPermission(id, dto, req.user?.tenantId, req.user);
     return { message: 'Permission assigned' };
   }
 
@@ -114,7 +114,12 @@ export class RolesController {
     @Body() dto: BulkUpdatePermissionsDto,
     @Request() req: any,
   ) {
-    await this.rolesService.bulkUpdatePermissions(id, dto.permissions, req.user?.tenantId);
+    await this.rolesService.bulkUpdatePermissions(
+      id,
+      dto.permissions,
+      req.user?.tenantId,
+      req.user,
+    );
     return { message: 'Permissions updated' };
   }
 
@@ -152,7 +157,11 @@ export class PermissionsController {
   @AuthWithPermissions('roles.create')
   @ApiOperation({ summary: 'Create permission' })
   async createPermission(@Body() dto: CreatePermissionDto, @Request() req: any) {
-    const permission = await this.rolesService.createPermission(dto, req.user?.tenantId);
+    const permission = await this.rolesService.createPermission(
+      dto,
+      req.user?.tenantId,
+      req.user,
+    );
     return { message: 'Permission created', data: permission };
   }
 

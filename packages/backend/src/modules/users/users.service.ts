@@ -536,7 +536,12 @@ export class UsersService {
     await this.userRepository.softRemove(user);
   }
 
-  async assignRole(userId: string, dto: AssignRoleDto, tenantId?: string): Promise<UserRole> {
+  async assignRole(
+    userId: string,
+    dto: AssignRoleDto,
+    tenantId?: string,
+    caller?: { id?: string; userId?: string; isSystemAdmin?: boolean; roles?: string[] },
+  ): Promise<UserRole> {
     const user = await this.findOne(userId, tenantId);
     let role: Role | null;
     if (tenantId) {
@@ -551,6 +556,66 @@ export class UsersService {
 
     if (!role) {
       throw new NotFoundException('Role not found');
+    }
+
+    // SECURITY: privilege escalation guard.
+    const callerIsSysAdmin = !!caller?.isSystemAdmin;
+    const callerIsSuperAdmin = (caller?.roles || []).includes('Super Admin');
+
+    // (1) Only platform/super admins may assign global system roles. Without
+    // this, a tenant admin with `users.update` could attach the platform
+    // "Super Admin" / "Administrator" system role to themselves or anyone
+    // else and inherit blanket permissions across the tenant.
+    if (role.isSystemRole && !(callerIsSysAdmin || callerIsSuperAdmin)) {
+      throw new BadRequestException(
+        `You may not assign the system role '${role.name}'. ` +
+          `System roles can only be granted by a platform or super administrator.`,
+      );
+    }
+
+    // (2) The grantee cannot end up with permissions the caller does not
+    // currently hold. Anything else is privilege escalation.
+    if (!(callerIsSysAdmin || callerIsSuperAdmin)) {
+      const callerId = caller?.id || caller?.userId;
+      if (!callerId) {
+        throw new BadRequestException('Authenticated caller context required to assign roles');
+      }
+      const rolePerms: Array<{ code: string }> = await this.dataSource.query(
+        `
+        WITH RECURSIVE chain(id, parent_role_id) AS (
+          SELECT id, parent_role_id FROM roles WHERE id = $1
+          UNION ALL
+          SELECT r.id, r.parent_role_id
+            FROM roles r INNER JOIN chain c ON r.id = c.parent_role_id
+        )
+        SELECT DISTINCT p.code
+          FROM permissions p
+          INNER JOIN role_permissions rp ON rp.permission_id = p.id
+          INNER JOIN chain c ON c.id = rp.role_id
+        `,
+        [dto.roleId],
+      );
+      const callerPerms: Array<{ code: string }> = await this.dataSource.query(
+        `
+        SELECT DISTINCT p.code FROM permissions p
+          INNER JOIN role_permissions rp ON rp.permission_id = p.id
+          INNER JOIN user_roles ur ON ur.role_id = rp.role_id
+          WHERE ur.user_id = $1 AND ur.deleted_at IS NULL
+        UNION
+        SELECT DISTINCT p.code FROM permissions p
+          INNER JOIN user_permissions up ON up.permission_id = p.id
+          WHERE up.user_id = $1
+        `,
+        [callerId],
+      );
+      const held = new Set(callerPerms.map((r) => r.code));
+      const missing = rolePerms.map((r) => r.code).filter((c) => !held.has(c));
+      if (missing.length) {
+        throw new BadRequestException(
+          `Cannot assign role '${role.name}': it carries permissions you do not hold ` +
+            `(${missing.slice(0, 5).join(', ')}${missing.length > 5 ? ', …' : ''}).`,
+        );
+      }
     }
 
     // Check if role is already assigned with same scope
@@ -584,7 +649,12 @@ export class UsersService {
           action: 'ROLE_ASSIGNED',
           entityType: 'UserRole',
           entityId: savedUserRole.id,
-          newValue: { roleId: dto.roleId, roleName: role.name, facilityId: dto.facilityId },
+          newValue: {
+            roleId: dto.roleId,
+            roleName: role.name,
+            facilityId: dto.facilityId,
+            grantedBy: caller?.id || caller?.userId || 'system',
+          },
           tenantId,
         }),
       );

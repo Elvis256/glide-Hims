@@ -225,7 +225,7 @@ export class UsersController {
     if (!tenantId && !req.user?.isSystemAdmin) {
       throw new ForbiddenException('Tenant context required');
     }
-    const userRole = await this.usersService.assignRole(id, assignRoleDto, tenantId);
+    const userRole = await this.usersService.assignRole(id, assignRoleDto, tenantId, req.user);
     return { message: 'Role assigned successfully', data: userRole };
   }
 
