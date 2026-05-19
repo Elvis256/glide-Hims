@@ -26,6 +26,7 @@ import RoleRoute, {
   BillingRoute,
   InsuranceRoute,
   RadiologyRoute,
+  AssetsRoute,
   ROLES,
 } from './components/RoleRoute';
 import DashboardLayout from './components/DashboardLayout';
@@ -1267,16 +1268,16 @@ function AppRoutes() {
                 <Route path="/lab-qc/consumables" element={<ModuleRoute module="diagnostics"><LabTechRoute><LabConsumablesPage /></LabTechRoute></ModuleRoute>} />
                 
                 {/* Assets Module */}
-                <Route path="/assets" element={<ModuleRoute module="assets"><StoreKeeperRoute><AssetRegisterPage /></StoreKeeperRoute></ModuleRoute>} />
-                <Route path="/assets/register" element={<ModuleRoute module="assets"><StoreKeeperRoute><AssetRegisterPage /></StoreKeeperRoute></ModuleRoute>} />
-                <Route path="/assets/allocation" element={<ModuleRoute module="assets"><StoreKeeperRoute><AssetAllocationPage /></StoreKeeperRoute></ModuleRoute>} />
-                <Route path="/assets/tracking" element={<ModuleRoute module="assets"><StoreKeeperRoute><AssetTrackingPage /></StoreKeeperRoute></ModuleRoute>} />
-                <Route path="/assets/maintenance" element={<ModuleRoute module="assets"><StoreKeeperRoute><AssetMaintenancePage /></StoreKeeperRoute></ModuleRoute>} />
-                <Route path="/assets/depreciation" element={<ModuleRoute module="assets"><FinanceRoute><AssetDepreciationPage /></FinanceRoute></ModuleRoute>} />
-                <Route path="/assets/reports" element={<ModuleRoute module="assets"><FinanceRoute><AssetReportsPage /></FinanceRoute></ModuleRoute>} />
-                <Route path="/assets/transfers" element={<ModuleRoute module="assets"><StoreKeeperRoute><AssetTransfersPage /></StoreKeeperRoute></ModuleRoute>} />
-                <Route path="/assets/disposal" element={<ModuleRoute module="assets"><StoreKeeperRoute><AssetDisposalPage /></StoreKeeperRoute></ModuleRoute>} />
-                <Route path="/assets/categories" element={<ModuleRoute module="assets"><AdminRoute><AssetCategoriesPage /></AdminRoute></ModuleRoute>} />
+                <Route path="/assets" element={<ModuleRoute module="assets"><AssetsRoute perms={['assets.read']}><AssetRegisterPage /></AssetsRoute></ModuleRoute>} />
+                <Route path="/assets/register" element={<ModuleRoute module="assets"><AssetsRoute perms={['assets.read']}><AssetRegisterPage /></AssetsRoute></ModuleRoute>} />
+                <Route path="/assets/allocation" element={<ModuleRoute module="assets"><AssetsRoute perms={['assets.allocation.request', 'assets.allocation.approve', 'assets.allocation.issue', 'assets.allocation.return', 'assets.audit.read']}><AssetAllocationPage /></AssetsRoute></ModuleRoute>} />
+                <Route path="/assets/tracking" element={<ModuleRoute module="assets"><AssetsRoute perms={['assets.read']}><AssetTrackingPage /></AssetsRoute></ModuleRoute>} />
+                <Route path="/assets/maintenance" element={<ModuleRoute module="assets"><AssetsRoute perms={['assets.maintenance.record', 'assets.calibration.record', 'assets.read']}><AssetMaintenancePage /></AssetsRoute></ModuleRoute>} />
+                <Route path="/assets/depreciation" element={<ModuleRoute module="assets"><AssetsRoute perms={['assets.depreciation.run', 'assets.reports.read']}><AssetDepreciationPage /></AssetsRoute></ModuleRoute>} />
+                <Route path="/assets/reports" element={<ModuleRoute module="assets"><AssetsRoute perms={['assets.reports.read']}><AssetReportsPage /></AssetsRoute></ModuleRoute>} />
+                <Route path="/assets/transfers" element={<ModuleRoute module="assets"><AssetsRoute perms={['assets.transfer.initiate', 'assets.transfer.approve', 'assets.transfer.approve.origin', 'assets.transfer.approve.receiving', 'assets.transfer.approve.store', 'assets.transfer.complete', 'assets.audit.read']}><AssetTransfersPage /></AssetsRoute></ModuleRoute>} />
+                <Route path="/assets/disposal" element={<ModuleRoute module="assets"><AssetsRoute perms={['assets.disposal.request', 'assets.disposal.biomed_review', 'assets.disposal.committee', 'assets.disposal.complete', 'assets.audit.read']}><AssetDisposalPage /></AssetsRoute></ModuleRoute>} />
+                <Route path="/assets/categories" element={<ModuleRoute module="assets"><AssetsRoute perms={['assets.categories.manage']}><AssetCategoriesPage /></AssetsRoute></ModuleRoute>} />
 
                 {/* Chronic Care Module */}
                 <Route path="/chronic-care/dashboard" element={<ModuleRoute module="chronic-care"><ClinicalRoute><ChronicCareDashboardPage /></ClinicalRoute></ModuleRoute>} />

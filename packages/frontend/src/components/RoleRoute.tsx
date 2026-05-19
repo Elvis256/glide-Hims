@@ -85,6 +85,27 @@ export function FinanceRoute({ children }: { children: ReactNode }) {
   return <RoleRoute roles={[ROLES.ACCOUNTANT, ROLES.ADMIN]}>{children}</RoleRoute>;
 }
 
+/**
+ * Permission-based gate for the Assets module. Use this instead of a
+ * role-name list so the four asset-adjacent roles seeded in
+ * database/seeds/seed.ts — Biomed Engineer, Facility Manager, Auditor,
+ * Department Head — can reach asset pages without being added to every
+ * convenience route component.
+ *
+ * Default `perms` (read-only access) is the loosest gate the page should
+ * accept; pages that require action perms (e.g. transfer.approve)
+ * supply the OR-list relevant to their actions.
+ */
+export function AssetsRoute({
+  children,
+  perms = ['assets.read'],
+}: {
+  children: ReactNode;
+  perms?: string[];
+}) {
+  return <ProtectedRoute requiredPermissions={perms}>{children}</ProtectedRoute>;
+}
+
 export function HRRoute({ children }: { children: ReactNode }) {
   return <RoleRoute roles={[ROLES.ADMIN, ROLES.HR_MANAGER, ROLES.SUPER_ADMIN]}>{children}</RoleRoute>;
 }
