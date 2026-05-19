@@ -7,10 +7,17 @@ import {
   IsUUID,
   IsDate,
   IsArray,
+  IsInt,
+  Min,
+  Max,
+  MaxLength,
+  ArrayMaxSize,
+  ArrayNotEmpty,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import { ChronicStatus } from '../../../database/entities/patient-chronic-condition.entity';
+import { ReminderChannel } from '../../../database/entities/patient-reminder.entity';
 
 export class RegisterChronicConditionDto {
   @ApiProperty()
@@ -34,6 +41,7 @@ export class RegisterChronicConditionDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(2000)
   notes?: string;
 
   @ApiPropertyOptional()
@@ -42,9 +50,12 @@ export class RegisterChronicConditionDto {
   @IsDate()
   nextFollowUp?: Date;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ minimum: 1, maximum: 365 })
   @IsOptional()
-  @IsNumber()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(365)
   followUpIntervalDays?: number;
 
   @ApiPropertyOptional()
@@ -52,9 +63,12 @@ export class RegisterChronicConditionDto {
   @IsBoolean()
   reminderEnabled?: boolean;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ minimum: 0, maximum: 60 })
   @IsOptional()
-  @IsNumber()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(60)
   reminderDaysBefore?: number;
 
   @ApiPropertyOptional()
@@ -62,10 +76,12 @@ export class RegisterChronicConditionDto {
   @IsUUID()
   primaryDoctorId?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ type: [String], maxItems: 50 })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(50)
   @IsString({ each: true })
+  @MaxLength(200, { each: true })
   currentMedications?: string[];
 }
 
@@ -78,6 +94,7 @@ export class UpdateChronicConditionDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(2000)
   notes?: string;
 
   @ApiPropertyOptional()
@@ -86,9 +103,12 @@ export class UpdateChronicConditionDto {
   @IsDate()
   nextFollowUp?: Date;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ minimum: 1, maximum: 365 })
   @IsOptional()
-  @IsNumber()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(365)
   followUpIntervalDays?: number;
 
   @ApiPropertyOptional()
@@ -96,9 +116,12 @@ export class UpdateChronicConditionDto {
   @IsBoolean()
   reminderEnabled?: boolean;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ minimum: 0, maximum: 60 })
   @IsOptional()
-  @IsNumber()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(60)
   reminderDaysBefore?: number;
 
   @ApiPropertyOptional()
@@ -106,10 +129,12 @@ export class UpdateChronicConditionDto {
   @IsUUID()
   primaryDoctorId?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ type: [String], maxItems: 50 })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(50)
   @IsString({ each: true })
+  @MaxLength(200, { each: true })
   currentMedications?: string[];
 }
 
@@ -132,6 +157,7 @@ export class ChronicPatientsQueryDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(120)
   search?: string;
 
   @ApiPropertyOptional()
@@ -140,35 +166,51 @@ export class ChronicPatientsQueryDto {
   @IsBoolean()
   overdueFollowUp?: boolean;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ minimum: 1, maximum: 10000 })
   @IsOptional()
   @Transform(({ value }) => parseInt(value, 10))
-  @IsNumber()
+  @IsInt()
+  @Min(1)
+  @Max(10000)
   page?: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ minimum: 1, maximum: 200 })
   @IsOptional()
   @Transform(({ value }) => parseInt(value, 10))
-  @IsNumber()
+  @IsInt()
+  @Min(1)
+  @Max(200)
   limit?: number;
 }
 
 export class SendBulkReminderDto {
-  @ApiProperty()
+  @ApiProperty({ type: [String], maxItems: 500 })
   @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(500)
   @IsUUID('4', { each: true })
   patientIds: string[];
 
   @ApiProperty()
   @IsString()
+  @MaxLength(200)
   subject: string;
 
   @ApiProperty()
   @IsString()
+  @MaxLength(2000)
   message: string;
 
+  @ApiPropertyOptional({ enum: ReminderChannel })
+  @IsOptional()
+  @IsEnum(ReminderChannel)
+  channel?: ReminderChannel;
+}
+
+export class RecordVisitDto {
   @ApiPropertyOptional()
   @IsOptional()
-  @IsString()
-  channel?: 'email' | 'sms' | 'both';
+  @Type(() => Date)
+  @IsDate()
+  nextFollowUpDate?: Date;
 }
