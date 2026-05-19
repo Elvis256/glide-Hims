@@ -329,19 +329,22 @@ export class ProcurementController {
   @Post('grn/:id/post-to-gl')
   @AuthWithPermissions('procurement.post_to_gl')
   async postGRNToGL(@Param('id') id: string, @Request() req: any) {
-    return this.glIntegrationService.postGRNReceiptToGL(id, req.user.id);
+    return this.glIntegrationService.postGRNReceiptToGL(id, req.user.id, req.user?.tenantId);
   }
 
   @Get('budget/encumbrances')
   @AuthWithPermissions('procurement.read')
-  async getEncumbrances() {
-    return this.glIntegrationService.getIntegrationSummary();
+  async getEncumbrances(@Request() req: any) {
+    return this.glIntegrationService.getIntegrationSummary(req.user?.tenantId);
   }
 
   @Get('budget/encumbrances/:departmentId')
   @AuthWithPermissions('procurement.read')
-  async getDepartmentEncumbrances(@Param('departmentId') departmentId: string) {
-    return this.glIntegrationService.getDepartmentEncumbrances(departmentId);
+  async getDepartmentEncumbrances(
+    @Param('departmentId') departmentId: string,
+    @Request() req: any,
+  ) {
+    return this.glIntegrationService.getDepartmentEncumbrances(departmentId, req.user?.tenantId);
   }
 
   @Post('po/:id/encumber')
@@ -351,7 +354,7 @@ export class ProcurementController {
     @Body() dto: EncumbranceDto,
     @Request() req: any,
   ) {
-    return this.glIntegrationService.encumberBudgetForPO(poId, dto.departmentId);
+    return this.glIntegrationService.encumberBudgetForPO(poId, dto.departmentId, req.user?.tenantId);
   }
 
   @Get('reconciliation/three-way-match')
@@ -360,14 +363,15 @@ export class ProcurementController {
     @Query('poId') poId: string,
     @Query('grnId') grnId: string,
     @Query('invoiceId') invoiceId: string,
+    @Request() req: any,
   ) {
-    return this.glIntegrationService.validateThreeWayMatch(poId, grnId, invoiceId);
+    return this.glIntegrationService.validateThreeWayMatch(poId, grnId, invoiceId, req.user?.tenantId);
   }
 
   @Get('gl-integration/summary')
   @AuthWithPermissions('procurement.read')
-  async getGLIntegrationSummary() {
-    return this.glIntegrationService.getIntegrationSummary();
+  async getGLIntegrationSummary(@Request() req: any) {
+    return this.glIntegrationService.getIntegrationSummary(req.user?.tenantId);
   }
 
   @Get('reconciliation/report')
@@ -375,12 +379,14 @@ export class ProcurementController {
   async getReconciliationReport(
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
+    @Request() req: any,
     @Query('departmentId') departmentId?: string,
   ) {
     return this.glIntegrationService.getReconciliationReport(
       new Date(startDate),
       new Date(endDate),
       departmentId,
+      req.user?.tenantId,
     );
   }
 
