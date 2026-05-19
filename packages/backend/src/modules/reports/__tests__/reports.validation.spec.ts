@@ -171,6 +171,58 @@ describe('Reports validation', () => {
         svc.getDashboard({ facilityId: FACILITY } as any, undefined),
       ).rejects.toThrow(/Missing tenant context/);
     });
+
+    it('getStock rejects a store that does not belong to facility/tenant', async () => {
+      const STORE = 'b1b2c3d4-e5f6-4789-9abc-def012345678';
+      dsQueryMock
+        .mockResolvedValueOnce([{ ok: 1 }]) // requireFacility
+        .mockResolvedValueOnce([]); // requireStore -> empty
+      await expect(
+        svc.getStock({ facilityId: FACILITY, storeId: STORE } as any, TENANT),
+      ).rejects.toThrow(NotFoundException);
+      // Confirm the second call was the store check (not an accidental skip).
+      expect(dsQueryMock.mock.calls[1][0]).toMatch(/FROM stores/);
+    });
+
+    it('getStock accepts when both facility and store belong to the tenant', async () => {
+      const STORE = 'b1b2c3d4-e5f6-4789-9abc-def012345678';
+      dsQueryMock
+        .mockResolvedValueOnce([{ ok: 1 }]) // requireFacility
+        .mockResolvedValueOnce([{ ok: 1 }]) // requireStore
+        .mockResolvedValueOnce([]); // stock query
+      const res = await svc.getStock(
+        { facilityId: FACILITY, storeId: STORE } as any,
+        TENANT,
+      );
+      expect(res).toMatchObject({ totalItems: 0, totalValue: 0, lowStock: 0 });
+    });
+
+    it('getConsumption rejects an item that does not belong to the tenant', async () => {
+      const ITEM = 'c1c2c3d4-e5f6-4789-9abc-def012345678';
+      dsQueryMock
+        .mockResolvedValueOnce([{ ok: 1 }]) // requireFacility
+        .mockResolvedValueOnce([]); // requireItem -> empty
+      await expect(
+        svc.getConsumption(
+          { facilityId: FACILITY, itemId: ITEM, startDate: '2025-01-01', endDate: '2025-02-01' } as any,
+          TENANT,
+        ),
+      ).rejects.toThrow(NotFoundException);
+      expect(dsQueryMock.mock.calls[1][0]).toMatch(/FROM items/);
+    });
+
+    it('getConsumption accepts when both facility and item belong to the tenant', async () => {
+      const ITEM = 'c1c2c3d4-e5f6-4789-9abc-def012345678';
+      dsQueryMock
+        .mockResolvedValueOnce([{ ok: 1 }]) // requireFacility
+        .mockResolvedValueOnce([{ ok: 1 }]) // requireItem
+        .mockResolvedValue([]); // consumption sub-queries
+      const res = await svc.getConsumption(
+        { facilityId: FACILITY, itemId: ITEM, startDate: '2025-01-01', endDate: '2025-02-01' } as any,
+        TENANT,
+      );
+      expect(res).toHaveProperty('byItem');
+    });
   });
 
   // ---------- parsePeriod* ----------------------------------------------
