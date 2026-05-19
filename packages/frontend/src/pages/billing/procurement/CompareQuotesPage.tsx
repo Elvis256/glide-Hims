@@ -23,6 +23,10 @@ import {
 import { rfqService, type RFQ, type VendorQuotation } from '../../../services/rfq';
 import { useAuthStore } from '../../../store/auth';
 import { CategoryContextBanner } from '../../../components/procurement/CategoryContextBanner';
+import { toast } from 'sonner';
+
+const fmtUGX = (n: number) =>
+  `UGX ${Number(n || 0).toLocaleString('en-UG', { maximumFractionDigits: 0 })}`;
 
 export default function CompareQuotesPage() {
   const queryClient = useQueryClient();
@@ -30,7 +34,7 @@ export default function CompareQuotesPage() {
   const [searchParams] = useSearchParams();
   const rfqId = searchParams.get('rfqId') || '';
 
-  const [selectedVendor, setSelectedVendor] = useState<string | null>(null);
+  const [selectedQuotationId, setSelectedQuotationId] = useState<string | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   // Fetch RFQ details
@@ -53,46 +57,56 @@ export default function CompareQuotesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rfq'] });
       queryClient.invalidateQueries({ queryKey: ['rfq-quotations'] });
+      queryClient.invalidateQueries({ queryKey: ['pending-approvals'] });
       setShowConfirmModal(false);
+      toast.success('Winner selected. Quotation sent for approval.');
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Failed to select winner');
     },
   });
 
   const isLoading = rfqLoading || quotesLoading;
 
   const bestPrices = useMemo(() => {
-    const prices: Record<string, { vendorId: string; price: number }> = {};
+    const prices: Record<string, { quotationId: string; price: number }> = {};
     if (!rfq?.items) return prices;
-    
+
     rfq.items.forEach((item) => {
       let bestPrice = Infinity;
-      let bestVendor = '';
+      let bestQuoteId = '';
       quotes.forEach((quote) => {
         const quoteItem = quote.items?.find((qi) => qi.rfqItemId === item.id);
         if (quoteItem && quoteItem.unitPrice < bestPrice) {
           bestPrice = quoteItem.unitPrice;
-          bestVendor = quote.supplierId;
+          bestQuoteId = quote.id;
         }
       });
-      prices[item.id] = { vendorId: bestVendor, price: bestPrice };
+      prices[item.id] = { quotationId: bestQuoteId, price: bestPrice };
     });
     return prices;
   }, [rfq, quotes]);
 
   const lowestTotal = useMemo(() => {
     if (quotes.length === 0) return 0;
-    return Math.min(...quotes.map((q) => q.totalAmount));
-  }, []);
+    return Math.min(...quotes.map((q) => Number(q.totalAmount) || 0));
+  }, [quotes]);
 
   const fastestDelivery = useMemo(() => {
     if (quotes.length === 0) return 0;
-    return Math.min(...quotes.map((q) => q.deliveryDays));
-  }, []);
+    return Math.min(...quotes.map((q) => q.deliveryDays || 0));
+  }, [quotes]);
 
   const getScoreColor = (quote: VendorQuotation) => {
-    if (quote.totalAmount === lowestTotal) return 'text-green-600';
-    if (quote.totalAmount <= lowestTotal * 1.05) return 'text-yellow-600';
+    if (Number(quote.totalAmount) === lowestTotal) return 'text-green-600';
+    if (Number(quote.totalAmount) <= lowestTotal * 1.05) return 'text-yellow-600';
     return 'text-gray-600';
   };
+
+  const selectedQuote = useMemo(
+    () => quotes.find((q) => q.id === selectedQuotationId) || null,
+    [quotes, selectedQuotationId],
+  );
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50">
@@ -122,9 +136,9 @@ export default function CompareQuotesPage() {
             </button>
             <button
               onClick={() => setShowConfirmModal(true)}
-              disabled={!selectedVendor}
+              disabled={!selectedQuotationId || selectWinnerMutation.isPending}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-                selectedVendor
+                selectedQuotationId
                   ? 'bg-green-600 text-white hover:bg-green-700'
                   : 'bg-gray-200 text-gray-400 cursor-not-allowed'
               }`}
@@ -151,7 +165,7 @@ export default function CompareQuotesPage() {
               <TrendingDown className="w-4 h-4" />
               <span className="text-sm">Lowest Quote</span>
             </div>
-            <p className="text-2xl font-bold text-green-600">${lowestTotal.toLocaleString()}</p>
+            <p className="text-2xl font-bold text-green-600">{fmtUGX(lowestTotal)}</p>
           </div>
           <div className="bg-white rounded-lg border p-4">
             <div className="flex items-center gap-2 text-gray-500 mb-2">
@@ -159,7 +173,7 @@ export default function CompareQuotesPage() {
               <span className="text-sm">Highest Quote</span>
             </div>
             <p className="text-2xl font-bold text-red-500">
-              ${quotes.length > 0 ? Math.max(...quotes.map((q) => q.totalAmount)).toLocaleString() : 0}
+              {fmtUGX(quotes.length > 0 ? Math.max(...quotes.map((q) => Number(q.totalAmount) || 0)) : 0)}
             </p>
           </div>
           <div className="bg-white rounded-lg border p-4">
@@ -193,11 +207,11 @@ export default function CompareQuotesPage() {
                   <th
                     key={quote.supplierId}
                     className={`text-center px-4 py-3 font-medium border-b cursor-pointer transition-colors ${
-                      selectedVendor === quote.supplierId
+                      selectedQuotationId === quote.id
                         ? 'bg-green-50 border-green-200'
                         : 'hover:bg-gray-100'
                     }`}
-                    onClick={() => setSelectedVendor(quote.supplierId)}
+                    onClick={() => setSelectedQuotationId(quote.id)}
                   >
                     <div className="flex flex-col items-center gap-1">
                       <div className="flex items-center gap-2">
@@ -206,7 +220,7 @@ export default function CompareQuotesPage() {
                         )}
                         <span className="text-gray-900">{quote.supplier?.name}</span>
                       </div>
-                      {selectedVendor === quote.supplierId && (
+                      {selectedQuotationId === quote.id && (
                         <span className="text-xs text-green-600 font-normal flex items-center gap-1">
                           <CheckCircle className="w-3 h-3" />
                           Selected
@@ -231,12 +245,12 @@ export default function CompareQuotesPage() {
                   </td>
                   {quotes.map((quote) => {
                     const quoteItem = quote.items.find((qi) => qi.rfqItemId === item.id);
-                    const isBest = bestPrices[item.id]?.vendorId === quote.supplierId;
+                    const isBest = bestPrices[item.id]?.quotationId === quote.id;
                     return (
                       <td
                         key={quote.supplierId}
                         className={`px-4 py-3 text-center ${
-                          selectedVendor === quote.supplierId ? 'bg-green-50' : ''
+                          selectedQuotationId === quote.id ? 'bg-green-50' : ''
                         }`}
                       >
                         {quoteItem && (
@@ -247,10 +261,10 @@ export default function CompareQuotesPage() {
                               }`}
                             >
                               {isBest && <Award className="w-4 h-4" />}
-                              <span>${quoteItem.unitPrice.toFixed(2)}</span>
+                              <span>{fmtUGX(quoteItem.unitPrice)}</span>
                             </div>
                             <p className="text-xs text-gray-500">
-                              Total: ${quoteItem.totalPrice.toLocaleString()}
+                              Total: {fmtUGX(quoteItem.totalPrice)}
                             </p>
                             <div className="flex items-center justify-center gap-1">
                               {quoteItem.inStock ? (
@@ -282,13 +296,13 @@ export default function CompareQuotesPage() {
                   <td
                     key={quote.supplierId}
                     className={`px-4 py-3 text-center ${
-                      selectedVendor === quote.supplierId ? 'bg-green-100' : ''
+                      selectedQuotationId === quote.id ? 'bg-green-100' : ''
                     }`}
                   >
                     <span className={`text-lg ${getScoreColor(quote)}`}>
-                      ${quote.totalAmount.toLocaleString()}
+                      {fmtUGX(quote.totalAmount)}
                     </span>
-                    {quote.totalAmount === lowestTotal && (
+                    {Number(quote.totalAmount) === lowestTotal && (
                       <span className="ml-2 text-xs bg-green-500 text-white px-2 py-0.5 rounded-full">
                         Best Price
                       </span>
@@ -309,7 +323,7 @@ export default function CompareQuotesPage() {
                   <td
                     key={quote.supplierId}
                     className={`px-4 py-3 text-center ${
-                      selectedVendor === quote.supplierId ? 'bg-green-50' : ''
+                      selectedQuotationId === quote.id ? 'bg-green-50' : ''
                     }`}
                   >
                     <span
@@ -342,7 +356,7 @@ export default function CompareQuotesPage() {
                   <td
                     key={quote.supplierId}
                     className={`px-4 py-3 text-center ${
-                      selectedVendor === quote.supplierId ? 'bg-green-50' : ''
+                      selectedQuotationId === quote.id ? 'bg-green-50' : ''
                     }`}
                   >
                     {quote.paymentTerms}
@@ -362,7 +376,7 @@ export default function CompareQuotesPage() {
                   <td
                     key={quote.supplierId}
                     className={`px-4 py-3 text-center ${
-                      selectedVendor === quote.supplierId ? 'bg-green-50' : ''
+                      selectedQuotationId === quote.id ? 'bg-green-50' : ''
                     }`}
                   >
                     {quote.warranty}
@@ -382,7 +396,7 @@ export default function CompareQuotesPage() {
                   <td
                     key={quote.supplierId}
                     className={`px-4 py-3 text-center ${
-                      selectedVendor === quote.supplierId ? 'bg-green-50' : ''
+                      selectedQuotationId === quote.id ? 'bg-green-50' : ''
                     }`}
                   >
                     <div className="flex items-center justify-center gap-1">
@@ -406,7 +420,7 @@ export default function CompareQuotesPage() {
                   <td
                     key={quote.supplierId}
                     className={`px-4 py-3 text-center ${
-                      selectedVendor === quote.supplierId ? 'bg-green-50' : ''
+                      selectedQuotationId === quote.id ? 'bg-green-50' : ''
                     }`}
                   >
                     {quote.validUntil}
@@ -433,7 +447,7 @@ export default function CompareQuotesPage() {
       </div>
 
       {/* Confirm Modal */}
-      {showConfirmModal && selectedVendor && (
+      {showConfirmModal && selectedQuote && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
             <div className="px-6 py-4 border-b">
@@ -446,7 +460,7 @@ export default function CompareQuotesPage() {
                 </div>
                 <div>
                   <p className="font-medium text-gray-900">
-                    {quotes.find((q) => q.supplierId === selectedVendor)?.supplier?.name}
+                    {selectedQuote.supplier?.name}
                   </p>
                   <p className="text-sm text-gray-500">Selected as winning vendor</p>
                 </div>
@@ -456,30 +470,40 @@ export default function CompareQuotesPage() {
                   <div>
                     <span className="text-gray-500">Total Amount:</span>
                     <span className="ml-2 font-medium">
-                      ${quotes.find((q) => q.supplierId === selectedVendor)?.totalAmount.toLocaleString()}
+                      {fmtUGX(selectedQuote.totalAmount)}
                     </span>
                   </div>
                   <div>
                     <span className="text-gray-500">Delivery:</span>
                     <span className="ml-2 font-medium">
-                      {quotes.find((q) => q.supplierId === selectedVendor)?.deliveryDays} days
+                      {selectedQuote.deliveryDays} days
                     </span>
                   </div>
                 </div>
               </div>
               <p className="text-sm text-gray-600">
-                This will proceed to the approval workflow. Do you want to continue?
+                All other quotations for this RFQ will be rejected and an approval
+                workflow will be started. Do you want to continue?
               </p>
             </div>
             <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-3">
               <button
                 onClick={() => setShowConfirmModal(false)}
-                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100"
+                disabled={selectWinnerMutation.isPending}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50"
               >
                 Cancel
               </button>
-              <button className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
-                <ArrowRight className="w-4 h-4" />
+              <button
+                onClick={() => selectWinnerMutation.mutate(selectedQuote.id)}
+                disabled={selectWinnerMutation.isPending}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+              >
+                {selectWinnerMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <ArrowRight className="w-4 h-4" />
+                )}
                 Proceed to Approval
               </button>
             </div>

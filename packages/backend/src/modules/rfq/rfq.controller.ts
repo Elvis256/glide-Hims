@@ -62,6 +62,12 @@ export class RFQController {
     return this.rfqService.getQuotation(id, req.user?.tenantId);
   }
 
+  @AuthWithPermissions('procurement.read')
+  @Get('quotations-selected')
+  getSelectedQuotations(@Query('facilityId') facilityId: string, @Request() req: any) {
+    return this.rfqService.getSelectedQuotations(facilityId, req.user?.tenantId);
+  }
+
   @AuthWithPermissions('procurement.approve')
   @Post('quotations/:id/select')
   selectWinner(@Param('id') quotationId: string, @Request() req: any) {
