@@ -54,6 +54,9 @@ export default function InvoiceMatchingPage() {
   const [statusFilter, setStatusFilter] = useState<MatchStatus | 'all'>('all');
   const [selectedMatch, setSelectedMatch] = useState<InvoiceMatch | null>(null);
   const [showApproveModal, setShowApproveModal] = useState(false);
+  const [approveNotes, setApproveNotes] = useState('');
+  const [showFlagModal, setShowFlagModal] = useState(false);
+  const [flagReason, setFlagReason] = useState('');
   const [expandedItems, setExpandedItems] = useState<string | null>(null);
 
   // Create-match modal state
@@ -86,8 +89,22 @@ export default function InvoiceMatchingPage() {
     mutationFn: ({ id, notes }: { id: string; notes?: string }) => invoiceMatchingService.approve(id, notes),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['invoice-matches'] });
+      queryClient.invalidateQueries({ queryKey: ['invoice-matches-stats'] });
       setShowApproveModal(false);
+      toast.success('Invoice approved for payment');
     },
+    onError: (err: any) => toast.error(err?.response?.data?.message || 'Failed to approve invoice'),
+  });
+
+  // Mark-as-paid mutation
+  const markAsPaidMutation = useMutation({
+    mutationFn: (id: string) => invoiceMatchingService.markAsPaid(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoice-matches'] });
+      queryClient.invalidateQueries({ queryKey: ['invoice-matches-stats'] });
+      toast.success('Invoice marked as paid');
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || 'Failed to mark as paid'),
   });
 
   // Flag mutation
@@ -95,7 +112,12 @@ export default function InvoiceMatchingPage() {
     mutationFn: ({ id, reason }: { id: string; reason: string }) => invoiceMatchingService.flag(id, reason),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['invoice-matches'] });
+      queryClient.invalidateQueries({ queryKey: ['invoice-matches-stats'] });
+      setShowFlagModal(false);
+      setFlagReason('');
+      toast.success('Invoice flagged for follow-up');
     },
+    onError: (err: any) => toast.error(err?.response?.data?.message || 'Failed to flag invoice'),
   });
 
   // GRNs eligible for invoice matching (approved/posted, linked to a PO)
@@ -640,26 +662,46 @@ export default function InvoiceMatchingPage() {
                 )}
                 {(selectedMatch.status === 'mismatch' || selectedMatch.status === 'flagged') && (
                   <>
-                    <button className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700">
+                    <button
+                      onClick={() => setShowApproveModal(true)}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700"
+                    >
                       <Eye className="w-4 h-4" />
                       Review Discrepancies
                     </button>
-                    <button className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-orange-300 text-orange-600 rounded-lg hover:bg-orange-50">
-                      <Flag className="w-4 h-4" />
-                      Flag for Follow-up
-                    </button>
+                    {selectedMatch.status === 'mismatch' && (
+                      <button
+                        onClick={() => setShowFlagModal(true)}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-orange-300 text-orange-600 rounded-lg hover:bg-orange-50"
+                      >
+                        <Flag className="w-4 h-4" />
+                        Flag for Follow-up
+                      </button>
+                    )}
                   </>
                 )}
                 {selectedMatch.status === 'pending' && !selectedMatch.grn?.grnNumber && (
-                  <button className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50">
+                  <button
+                    disabled
+                    title="Re-create the match against a GRN"
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 text-gray-400 rounded-lg cursor-not-allowed"
+                  >
                     <Link2 className="w-4 h-4" />
-                    Link GRN
+                    Link GRN (recreate match)
                   </button>
                 )}
                 {selectedMatch.status === 'approved' && (
-                  <button className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                  <button
+                    onClick={() => {
+                      if (confirm(`Mark invoice ${selectedMatch.invoiceNumber} as PAID? This cannot be undone.`)) {
+                        markAsPaidMutation.mutate(selectedMatch.id);
+                      }
+                    }}
+                    disabled={markAsPaidMutation.isPending}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  >
                     <CreditCard className="w-4 h-4" />
-                    Schedule Payment
+                    {markAsPaidMutation.isPending ? 'Marking…' : 'Mark as Paid'}
                   </button>
                 )}
                 <button className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
@@ -691,18 +733,21 @@ export default function InvoiceMatchingPage() {
                 </div>
                 <div className="flex justify-between pt-2 border-t">
                   <span className="text-gray-600">Amount</span>
-                  <span className="text-xl font-bold">${selectedMatch.invoiceAmount.toLocaleString()}</span>
+                  <span className="text-xl font-bold">{fmtUGX(selectedMatch.invoiceAmount)}</span>
                 </div>
               </div>
-              
+
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Payment Date</label>
-                <input
-                  type="date"
+                <label className="block text-sm font-medium text-gray-700 mb-1">Approval Notes (optional)</label>
+                <textarea
+                  value={approveNotes}
+                  onChange={(e) => setApproveNotes(e.target.value)}
+                  rows={3}
+                  placeholder="Any notes for the finance team..."
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
                 />
               </div>
-              
+
               <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 p-3 rounded-lg">
                 <CheckCircle className="w-5 h-5" />
                 <span>3-way match verified. Ready for payment processing.</span>
@@ -710,14 +755,63 @@ export default function InvoiceMatchingPage() {
             </div>
             <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-3">
               <button
-                onClick={() => setShowApproveModal(false)}
+                onClick={() => { setShowApproveModal(false); setApproveNotes(''); }}
                 className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100"
               >
                 Cancel
               </button>
-              <button className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
+              <button
+                onClick={() =>
+                  approveMutation.mutate({
+                    id: selectedMatch.id,
+                    notes: approveNotes.trim() || undefined,
+                  })
+                }
+                disabled={approveMutation.isPending}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+              >
                 <ArrowRight className="w-4 h-4" />
-                Approve & Schedule
+                {approveMutation.isPending ? 'Approving…' : 'Approve for Payment'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Flag Modal */}
+      {showFlagModal && selectedMatch && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+            <div className="px-6 py-4 border-b">
+              <h2 className="text-lg font-semibold">Flag Invoice for Follow-up</h2>
+              <p className="text-sm text-gray-500 mt-1">Invoice {selectedMatch.invoiceNumber}</p>
+            </div>
+            <div className="p-6">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Reason <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                value={flagReason}
+                onChange={(e) => setFlagReason(e.target.value)}
+                rows={4}
+                placeholder="Describe the discrepancy or reason for flagging..."
+                className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+              />
+            </div>
+            <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-3">
+              <button
+                onClick={() => { setShowFlagModal(false); setFlagReason(''); }}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => flagMutation.mutate({ id: selectedMatch.id, reason: flagReason.trim() })}
+                disabled={flagMutation.isPending || !flagReason.trim()}
+                className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50"
+              >
+                <Flag className="w-4 h-4" />
+                {flagMutation.isPending ? 'Flagging…' : 'Flag Invoice'}
               </button>
             </div>
           </div>
