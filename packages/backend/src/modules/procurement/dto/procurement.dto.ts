@@ -13,7 +13,9 @@ import {
   Max,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { PRPriority } from '../../../database/entities/purchase-request.entity';
+import { PRPriority, PRStatus } from '../../../database/entities/purchase-request.entity';
+import { POStatus } from '../../../database/entities/purchase-order.entity';
+import { GRNStatus } from '../../../database/entities/goods-receipt.entity';
 
 export class CreatePRItemDto {
   @IsUUID()
@@ -446,4 +448,179 @@ export class InspectGRNDto {
   @IsOptional()
   @IsString()
   inspectionNotes?: string;
+}
+
+// ============ QUERY DTOs ============
+
+export class ListPurchaseRequestsQueryDto {
+  @IsUUID()
+  facilityId: string;
+
+  @IsOptional()
+  @IsEnum(PRStatus)
+  status?: PRStatus;
+
+  @IsOptional()
+  @IsEnum(PRPriority)
+  priority?: PRPriority;
+
+  @IsOptional()
+  @IsDateString()
+  startDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  endDate?: string;
+}
+
+export class ListPurchaseOrdersQueryDto {
+  @IsUUID()
+  facilityId: string;
+
+  @IsOptional()
+  @IsEnum(POStatus)
+  status?: POStatus;
+
+  @IsOptional()
+  @IsUUID()
+  supplierId?: string;
+
+  @IsOptional()
+  @IsDateString()
+  startDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  endDate?: string;
+}
+
+export class ListGoodsReceiptsQueryDto {
+  @IsUUID()
+  facilityId: string;
+
+  @IsOptional()
+  @IsEnum(GRNStatus)
+  status?: GRNStatus;
+
+  @IsOptional()
+  @IsUUID()
+  supplierId?: string;
+
+  @IsOptional()
+  @IsDateString()
+  startDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  endDate?: string;
+}
+
+export class FacilityIdQueryDto {
+  @IsUUID()
+  facilityId: string;
+}
+
+export class OptionalFacilityIdQueryDto {
+  @IsOptional()
+  @IsUUID()
+  facilityId?: string;
+}
+
+export class TraceSearchQueryDto {
+  @IsString()
+  q: string;
+}
+
+export class RunReorderBodyDto {
+  @IsOptional()
+  @IsUUID()
+  facilityId?: string;
+}
+
+export class ThreeWayMatchQueryDto {
+  @IsUUID()
+  poId: string;
+
+  @IsUUID()
+  grnId: string;
+
+  @IsUUID()
+  invoiceId: string;
+}
+
+export class ReconciliationReportQueryDto {
+  @IsDateString()
+  startDate: string;
+
+  @IsDateString()
+  endDate: string;
+
+  @IsOptional()
+  @IsUUID()
+  departmentId?: string;
+}
+
+export class DateRangeQueryDto {
+  @IsOptional()
+  @IsDateString()
+  startDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  endDate?: string;
+}
+
+export class SupplierSpendTrendsQueryDto {
+  @IsUUID()
+  supplierId: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  @Max(120)
+  months?: number;
+}
+
+export class SupplierIdQueryDto {
+  @IsUUID()
+  supplierId: string;
+}
+
+export class LimitQueryDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  @Max(500)
+  limit?: number;
+}
+
+export class MonthsQueryDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  @Max(120)
+  months?: number;
+}
+
+export class DaysQueryDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  @Max(3650)
+  days?: number;
+}
+
+export class UpdatePRItemBodyDto {
+  @IsOptional()
+  @IsPositive()
+  quantityRequested?: number;
+
+  @IsOptional()
+  @Min(0)
+  @IsNumber()
+  unitPriceEstimated?: number;
 }

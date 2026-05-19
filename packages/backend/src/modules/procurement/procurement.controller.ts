@@ -17,6 +17,22 @@ import {
   CreateGoodsReceiptDto,
   InspectGRNDto,
   CreateGRNFromPODto,
+  ListPurchaseRequestsQueryDto,
+  ListPurchaseOrdersQueryDto,
+  ListGoodsReceiptsQueryDto,
+  FacilityIdQueryDto,
+  OptionalFacilityIdQueryDto,
+  TraceSearchQueryDto,
+  RunReorderBodyDto,
+  ThreeWayMatchQueryDto,
+  ReconciliationReportQueryDto,
+  DateRangeQueryDto,
+  SupplierSpendTrendsQueryDto,
+  SupplierIdQueryDto,
+  LimitQueryDto,
+  MonthsQueryDto,
+  DaysQueryDto,
+  UpdatePRItemBodyDto,
 } from './dto/procurement.dto';
 import {
   PostReceiptToGLDto,
@@ -45,15 +61,16 @@ export class ProcurementController {
 
   @Get('dashboard')
   @AuthWithPermissions('procurement.read')
-  getDashboard(@Query('facilityId') facilityId: string, @Request() req: any) {
-    return this.procurementService.getDashboard(facilityId, req.user?.tenantId);
+  getDashboard(@Query() query: FacilityIdQueryDto, @Request() req: any) {
+    return this.procurementService.getDashboard(query.facilityId, req.user?.tenantId);
   }
 
   // ============ TRACE (PR -> PO -> GRN -> Invoice) ============
 
   @Get('trace/search')
   @AuthWithPermissions('procurement.read')
-  searchTraceDocuments(@Query('q') q: string, @Request() req: any) {
+  searchTraceDocuments(@Query() query: TraceSearchQueryDto, @Request() req: any) {
+    const q = query.q;
     if (!q || q.trim().length < 2) return [];
     return this.procurementService.searchTraceDocuments(q.trim(), req.user?.tenantId);
   }
@@ -72,17 +89,17 @@ export class ProcurementController {
 
   @Get('reorder/preview')
   @AuthWithPermissions('procurement.read')
-  previewReorder(@Query('facilityId') facilityId: string | undefined, @Request() req: any) {
+  previewReorder(@Query() query: OptionalFacilityIdQueryDto, @Request() req: any) {
     return this.procurementService.runAutoReorderDraftPRs({
       tenantId: req.user?.tenantId,
-      facilityId,
+      facilityId: query.facilityId,
       dryRun: true,
     });
   }
 
   @Post('reorder/run')
   @AuthWithPermissions('procurement.create')
-  runReorder(@Body() body: { facilityId?: string }, @Request() req: any) {
+  runReorder(@Body() body: RunReorderBodyDto, @Request() req: any) {
     return this.procurementService.runAutoReorderDraftPRs({
       tenantId: req.user?.tenantId,
       facilityId: body?.facilityId,
@@ -101,13 +118,10 @@ export class ProcurementController {
   @Get('purchase-requests')
   @AuthWithPermissions('procurement.read')
   getPurchaseRequests(
-    @Query('facilityId') facilityId: string,
-    @Query('status') status?: PRStatus,
-    @Query('priority') priority?: PRPriority,
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
+    @Query() query: ListPurchaseRequestsQueryDto,
     @Request() req?: any,
   ) {
+    const { facilityId, status, priority, startDate, endDate } = query;
     return this.procurementService.getPurchaseRequests(
       facilityId,
       { status, priority, startDate, endDate },
@@ -146,7 +160,7 @@ export class ProcurementController {
   updatePurchaseRequestItem(
     @Param('id') id: string,
     @Param('itemId') itemId: string,
-    @Body() body: { quantityRequested?: number; unitPriceEstimated?: number },
+    @Body() body: UpdatePRItemBodyDto,
     @Request() req: any,
   ) {
     return this.procurementService.updatePurchaseRequestItem(
@@ -208,13 +222,10 @@ export class ProcurementController {
   @Get('purchase-orders')
   @AuthWithPermissions('procurement.read')
   getPurchaseOrders(
-    @Query('facilityId') facilityId: string,
-    @Query('status') status?: POStatus,
-    @Query('supplierId') supplierId?: string,
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
+    @Query() query: ListPurchaseOrdersQueryDto,
     @Request() req?: any,
   ) {
+    const { facilityId, status, supplierId, startDate, endDate } = query;
     return this.procurementService.getPurchaseOrders(
       facilityId,
       { status, supplierId, startDate, endDate },
@@ -286,13 +297,10 @@ export class ProcurementController {
   @Get('goods-receipts')
   @AuthWithPermissions('procurement.read')
   getGoodsReceipts(
-    @Query('facilityId') facilityId: string,
-    @Query('status') status?: GRNStatus,
-    @Query('supplierId') supplierId?: string,
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
+    @Query() query: ListGoodsReceiptsQueryDto,
     @Request() req?: any,
   ) {
+    const { facilityId, status, supplierId, startDate, endDate } = query;
     return this.procurementService.getGoodsReceipts(
       facilityId,
       { status, supplierId, startDate, endDate },
@@ -360,12 +368,15 @@ export class ProcurementController {
   @Get('reconciliation/three-way-match')
   @AuthWithPermissions('procurement.read')
   async getThreeWayMatches(
-    @Query('poId') poId: string,
-    @Query('grnId') grnId: string,
-    @Query('invoiceId') invoiceId: string,
+    @Query() query: ThreeWayMatchQueryDto,
     @Request() req: any,
   ) {
-    return this.glIntegrationService.validateThreeWayMatch(poId, grnId, invoiceId, req.user?.tenantId);
+    return this.glIntegrationService.validateThreeWayMatch(
+      query.poId,
+      query.grnId,
+      query.invoiceId,
+      req.user?.tenantId,
+    );
   }
 
   @Get('gl-integration/summary')
@@ -377,15 +388,13 @@ export class ProcurementController {
   @Get('reconciliation/report')
   @AuthWithPermissions('procurement.read')
   async getReconciliationReport(
-    @Query('startDate') startDate: string,
-    @Query('endDate') endDate: string,
+    @Query() query: ReconciliationReportQueryDto,
     @Request() req: any,
-    @Query('departmentId') departmentId?: string,
   ) {
     return this.glIntegrationService.getReconciliationReport(
-      new Date(startDate),
-      new Date(endDate),
-      departmentId,
+      new Date(query.startDate),
+      new Date(query.endDate),
+      query.departmentId,
       req.user?.tenantId,
     );
   }
@@ -403,13 +412,12 @@ export class ProcurementController {
   @AuthWithPermissions('procurement.analytics')
   async getSupplierMetrics(
     @Request() req: any,
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
+    @Query() query: DateRangeQueryDto,
   ): Promise<any> {
     return this.supplierAnalytics.getSupplierMetrics(
       req.user?.tenantId,
-      startDate ? new Date(startDate) : undefined,
-      endDate ? new Date(endDate) : undefined,
+      query.startDate ? new Date(query.startDate) : undefined,
+      query.endDate ? new Date(query.endDate) : undefined,
     );
   }
 
@@ -417,19 +425,19 @@ export class ProcurementController {
   @AuthWithPermissions('procurement.analytics')
   async getSupplierSpendTrends(
     @Request() req: any,
-    @Query('supplierId') supplierId: string,
-    @Query('months') months: number = 12,
+    @Query() query: SupplierSpendTrendsQueryDto,
   ): Promise<any> {
-    if (!supplierId) {
-      return { error: 'supplierId is required' };
-    }
-    return this.supplierAnalytics.getSupplierSpendTrends(req.user?.tenantId, supplierId, months);
+    return this.supplierAnalytics.getSupplierSpendTrends(
+      req.user?.tenantId,
+      query.supplierId,
+      query.months ?? 12,
+    );
   }
 
   @Get('analytics/suppliers/top-suppliers')
   @AuthWithPermissions('procurement.analytics')
-  async getTopSuppliers(@Request() req: any, @Query('limit') limit: number = 10): Promise<any> {
-    return this.supplierAnalytics.getTopSuppliers(req.user?.tenantId, limit);
+  async getTopSuppliers(@Request() req: any, @Query() query: LimitQueryDto): Promise<any> {
+    return this.supplierAnalytics.getTopSuppliers(req.user?.tenantId, query.limit ?? 10);
   }
 
   @Get('analytics/suppliers/performance-comparison')
@@ -442,12 +450,9 @@ export class ProcurementController {
   @AuthWithPermissions('procurement.analytics')
   async getSupplierRiskScore(
     @Request() req: any,
-    @Query('supplierId') supplierId: string,
+    @Query() query: SupplierIdQueryDto,
   ): Promise<any> {
-    if (!supplierId) {
-      return { error: 'supplierId is required' };
-    }
-    return this.supplierAnalytics.getSupplierRiskScore(req.user?.tenantId, supplierId);
+    return this.supplierAnalytics.getSupplierRiskScore(req.user?.tenantId, query.supplierId);
   }
 
   // ============ ANALYTICS - APPROVALS ============
@@ -462,20 +467,19 @@ export class ProcurementController {
   @AuthWithPermissions('procurement.analytics')
   async getApprovalTimeMetrics(
     @Request() req: any,
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
+    @Query() query: DateRangeQueryDto,
   ): Promise<any> {
     return this.approvalAnalytics.getApprovalTimeMetrics(
       req.user?.tenantId,
-      startDate ? new Date(startDate) : undefined,
-      endDate ? new Date(endDate) : undefined,
+      query.startDate ? new Date(query.startDate) : undefined,
+      query.endDate ? new Date(query.endDate) : undefined,
     );
   }
 
   @Get('analytics/approvals/trends')
   @AuthWithPermissions('procurement.analytics')
-  async getApprovalTrends(@Request() req: any, @Query('days') days: number = 30): Promise<any> {
-    return this.approvalAnalytics.getApprovalTrends(req.user?.tenantId, days);
+  async getApprovalTrends(@Request() req: any, @Query() query: DaysQueryDto): Promise<any> {
+    return this.approvalAnalytics.getApprovalTrends(req.user?.tenantId, query.days ?? 30);
   }
 
   @Get('analytics/approvals/sla-compliance')
@@ -496,13 +500,12 @@ export class ProcurementController {
   @AuthWithPermissions('procurement.analytics')
   async getSpendByCategory(
     @Request() req: any,
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
+    @Query() query: DateRangeQueryDto,
   ): Promise<any> {
     return this.spendAnalytics.getCategorySpend(
       req.user?.tenantId,
-      startDate ? new Date(startDate) : undefined,
-      endDate ? new Date(endDate) : undefined,
+      query.startDate ? new Date(query.startDate) : undefined,
+      query.endDate ? new Date(query.endDate) : undefined,
     );
   }
 
@@ -510,20 +513,19 @@ export class ProcurementController {
   @AuthWithPermissions('procurement.analytics')
   async getSpendByDepartment(
     @Request() req: any,
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
+    @Query() query: DateRangeQueryDto,
   ): Promise<any> {
     return this.spendAnalytics.getDepartmentSpend(
       req.user?.tenantId,
-      startDate ? new Date(startDate) : undefined,
-      endDate ? new Date(endDate) : undefined,
+      query.startDate ? new Date(query.startDate) : undefined,
+      query.endDate ? new Date(query.endDate) : undefined,
     );
   }
 
   @Get('analytics/spend/trends')
   @AuthWithPermissions('procurement.analytics')
-  async getSpendTrends(@Request() req: any, @Query('months') months: number = 12): Promise<any> {
-    return this.spendAnalytics.getSpendTrends(req.user?.tenantId, months);
+  async getSpendTrends(@Request() req: any, @Query() query: MonthsQueryDto): Promise<any> {
+    return this.spendAnalytics.getSpendTrends(req.user?.tenantId, query.months ?? 12);
   }
 
   @Get('analytics/spend/budget-utilization')
@@ -534,13 +536,13 @@ export class ProcurementController {
 
   @Get('analytics/spend/forecast')
   @AuthWithPermissions('procurement.analytics')
-  async getSpendForecast(@Request() req: any, @Query('months') months: number = 3): Promise<any> {
-    return this.spendAnalytics.getSpendForecast(req.user?.tenantId, months);
+  async getSpendForecast(@Request() req: any, @Query() query: MonthsQueryDto): Promise<any> {
+    return this.spendAnalytics.getSpendForecast(req.user?.tenantId, query.months ?? 3);
   }
 
   @Get('analytics/spend/top-items')
   @AuthWithPermissions('procurement.analytics')
-  async getTopSpendItems(@Request() req: any, @Query('limit') limit: number = 10): Promise<any> {
-    return this.spendAnalytics.getTopSpendItems(req.user?.tenantId, limit);
+  async getTopSpendItems(@Request() req: any, @Query() query: LimitQueryDto): Promise<any> {
+    return this.spendAnalytics.getTopSpendItems(req.user?.tenantId, query.limit ?? 10);
   }
 }
