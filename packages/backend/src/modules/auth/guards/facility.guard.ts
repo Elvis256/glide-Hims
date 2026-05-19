@@ -34,7 +34,10 @@ export class FacilityGuard implements CanActivate {
     const { user } = request;
 
     if (!user || !user.id) {
-      return false;
+      // Auth guard hasn't populated request.user yet (APP_GUARD execution
+      // ordering quirk). Let the JWT guard reject the request — denying here
+      // would surface as a misleading 403 "Forbidden resource".
+      return true;
     }
 
     const facilityId = this.extractFacilityId(request);

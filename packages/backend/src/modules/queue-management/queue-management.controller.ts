@@ -24,9 +24,11 @@ import {
   CreateQueueDisplayDto,
   ServiceConfigDto,
 } from './dto/queue.dto';
+import { RequireFacilityAccess } from '../auth/decorators/facility-access.decorator';
 
 @Controller('queue')
 @UseGuards(AuthGuard('jwt'))
+@RequireFacilityAccess()
 export class QueueManagementController {
   constructor(private readonly queueService: QueueManagementService) {}
 

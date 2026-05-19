@@ -5,6 +5,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { FacilityGuard } from './modules/auth/guards/facility.guard';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { AuthModule } from './modules/auth/auth.module';
@@ -314,6 +315,10 @@ import { EfrisModule } from './modules/efris/efris.module';
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: FacilityGuard,
     },
     {
       provide: APP_INTERCEPTOR,

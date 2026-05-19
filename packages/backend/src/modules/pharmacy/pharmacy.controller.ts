@@ -30,11 +30,13 @@ import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { SaleStatus } from '../../database/entities/pharmacy-sale.entity';
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
+import { RequireFacilityAccess } from '../auth/decorators/facility-access.decorator';
 
 @ApiTags('Pharmacy POS')
 @ApiBearerAuth()
 @UseGuards(ModuleGuard)
 @RequireModule('pharmacy')
+@RequireFacilityAccess()
 @Controller('pharmacy')
 export class PharmacyController {
   constructor(

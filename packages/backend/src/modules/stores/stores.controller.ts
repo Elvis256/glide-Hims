@@ -26,11 +26,13 @@ import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { TransferStatus } from '../../database/entities/stock-transfer.entity';
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
+import { RequireFacilityAccess } from '../auth/decorators/facility-access.decorator';
 
 @ApiTags('Stores')
 @ApiBearerAuth()
 @UseGuards(ModuleGuard)
 @RequireModule('stores')
+@RequireFacilityAccess()
 @Controller('stores')
 export class StoresController {
   constructor(private readonly service: StoresService) {}
