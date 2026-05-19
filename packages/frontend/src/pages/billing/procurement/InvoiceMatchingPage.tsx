@@ -25,8 +25,14 @@ import {
   Loader2,
 } from 'lucide-react';
 import { invoiceMatchingService, type InvoiceMatch, type InvoiceMatchStatus as MatchStatusType, type CreateInvoiceMatchDto } from '../../../services/invoice-matching';
+import { procurementService, type GoodsReceipt } from '../../../services/procurement';
 import { useAuthStore } from '../../../store/auth';
 import { CategoryContextBanner } from '../../../components/procurement/CategoryContextBanner';
+import { toast } from 'sonner';
+import { Plus } from 'lucide-react';
+
+const fmtUGX = (n: number) =>
+  `UGX ${Number(n || 0).toLocaleString('en-UG', { maximumFractionDigits: 0 })}`;
 
 type MatchStatus = 'pending' | 'matched' | 'mismatch' | 'approved' | 'flagged' | 'paid';
 
@@ -49,6 +55,17 @@ export default function InvoiceMatchingPage() {
   const [selectedMatch, setSelectedMatch] = useState<InvoiceMatch | null>(null);
   const [showApproveModal, setShowApproveModal] = useState(false);
   const [expandedItems, setExpandedItems] = useState<string | null>(null);
+
+  // Create-match modal state
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createGrnId, setCreateGrnId] = useState('');
+  const [createInvoiceNumber, setCreateInvoiceNumber] = useState('');
+  const [createInvoiceDate, setCreateInvoiceDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [createDueDate, setCreateDueDate] = useState('');
+  const [createInvoiceAmount, setCreateInvoiceAmount] = useState<number>(0);
+  const [createItemLines, setCreateItemLines] = useState<
+    Array<{ itemId: string; itemName: string; poQty: number; poPrice: number; grnQty: number; invoiceQty: number; invoicePrice: number }>
+  >([]);
 
   // Fetch invoice matches
   const { data: invoiceMatches = [], isLoading } = useQuery({
@@ -80,6 +97,123 @@ export default function InvoiceMatchingPage() {
       queryClient.invalidateQueries({ queryKey: ['invoice-matches'] });
     },
   });
+
+  // GRNs eligible for invoice matching (approved/posted, linked to a PO)
+  const { data: eligibleGRNs = [], isLoading: grnsLoading } = useQuery<GoodsReceipt[]>({
+    queryKey: ['grns-for-match', facilityId],
+    queryFn: async () => {
+      const [approved, posted] = await Promise.all([
+        procurementService.goodsReceipts.list({ facilityId, status: 'approved' as any }),
+        procurementService.goodsReceipts.list({ facilityId, status: 'posted' as any }),
+      ]);
+      const all = [...(approved || []), ...(posted || [])];
+      const seen = new Set<string>();
+      return all.filter((g) => {
+        if (seen.has(g.id) || !g.purchaseOrderId) return false;
+        seen.add(g.id);
+        return true;
+      });
+    },
+    enabled: !!facilityId && showCreateModal,
+  });
+
+  // Full PO details (for unit prices) once a GRN is picked
+  const selectedGrnObj = useMemo(
+    () => eligibleGRNs.find((g) => g.id === createGrnId) || null,
+    [eligibleGRNs, createGrnId],
+  );
+
+  const { data: linkedPO } = useQuery({
+    queryKey: ['po-for-match', selectedGrnObj?.purchaseOrderId],
+    queryFn: () => procurementService.purchaseOrders.getById(selectedGrnObj!.purchaseOrderId!),
+    enabled: !!selectedGrnObj?.purchaseOrderId,
+  });
+
+  // When PO loads, populate item lines (PO qty/price + GRN qty)
+  React.useEffect(() => {
+    if (!linkedPO || !selectedGrnObj) {
+      setCreateItemLines([]);
+      return;
+    }
+    const grnByItem = new Map(
+      (selectedGrnObj.items || []).map((g) => [g.itemId, g]),
+    );
+    const lines = (linkedPO.items || []).map((p) => {
+      const grnLine = grnByItem.get(p.itemId);
+      const grnQty = Number(grnLine?.quantityReceived || 0);
+      const poPrice = Number(p.unitPrice || 0);
+      return {
+        itemId: p.itemId,
+        itemName: p.itemName,
+        poQty: Number(p.quantityOrdered || 0),
+        poPrice,
+        grnQty,
+        invoiceQty: grnQty,
+        invoicePrice: poPrice,
+      };
+    });
+    setCreateItemLines(lines);
+    const total = lines.reduce((s, l) => s + l.invoiceQty * l.invoicePrice, 0);
+    setCreateInvoiceAmount(Math.round(total));
+  }, [linkedPO, selectedGrnObj]);
+
+  // Recompute total whenever the user edits an invoice qty / price
+  React.useEffect(() => {
+    if (createItemLines.length === 0) return;
+    const total = createItemLines.reduce((s, l) => s + l.invoiceQty * l.invoicePrice, 0);
+    setCreateInvoiceAmount(Math.round(total));
+  }, [createItemLines]);
+
+  const createMatchMutation = useMutation({
+    mutationFn: (dto: CreateInvoiceMatchDto) => invoiceMatchingService.create(dto),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoice-matches'] });
+      queryClient.invalidateQueries({ queryKey: ['invoice-matches-stats'] });
+      setShowCreateModal(false);
+      setCreateGrnId('');
+      setCreateInvoiceNumber('');
+      setCreateDueDate('');
+      setCreateInvoiceAmount(0);
+      setCreateItemLines([]);
+      toast.success('Invoice match created');
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Failed to create invoice match');
+    },
+  });
+
+  const submitCreateMatch = () => {
+    if (!facilityId || !createGrnId || !selectedGrnObj?.purchaseOrderId) {
+      toast.error('Pick a GRN first');
+      return;
+    }
+    if (!createInvoiceNumber.trim()) {
+      toast.error('Invoice number is required');
+      return;
+    }
+    if (createItemLines.length === 0) {
+      toast.error('No items to match');
+      return;
+    }
+    createMatchMutation.mutate({
+      facilityId,
+      purchaseOrderId: selectedGrnObj.purchaseOrderId,
+      grnId: createGrnId,
+      invoiceNumber: createInvoiceNumber.trim(),
+      invoiceDate: createInvoiceDate,
+      dueDate: createDueDate || undefined,
+      invoiceAmount: createInvoiceAmount,
+      items: createItemLines.map((l) => ({
+        itemId: l.itemId,
+        itemName: l.itemName,
+        poQty: l.poQty,
+        poPrice: l.poPrice,
+        grnQty: l.grnQty,
+        invoiceQty: l.invoiceQty,
+        invoicePrice: l.invoicePrice,
+      })),
+    });
+  };
 
   const filteredMatches = useMemo(() => {
     return invoiceMatches.filter((match) => {
@@ -116,6 +250,13 @@ export default function InvoiceMatchingPage() {
               <p className="text-sm text-gray-500">3-way matching: PO, GRN, Invoice</p>
             </div>
           </div>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700"
+          >
+            <Plus className="w-4 h-4" />
+            New Match
+          </button>
         </div>
 
         {/* Stats */}
@@ -139,7 +280,7 @@ export default function InvoiceMatchingPage() {
               <DollarSign className="w-4 h-4" />
               <span className="text-sm">Total Invoice Value</span>
             </div>
-            <p className="text-2xl font-bold text-gray-900">${(stats?.totalVarianceAmount || 0).toLocaleString()}</p>
+            <p className="text-2xl font-bold text-gray-900">{fmtUGX(stats?.totalVarianceAmount || 0)}</p>
           </div>
           <div className="bg-green-50 border border-green-200 rounded-lg p-3">
             <div className="flex items-center gap-2 text-green-600 mb-1">
@@ -577,6 +718,165 @@ export default function InvoiceMatchingPage() {
               <button className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
                 <ArrowRight className="w-4 h-4" />
                 Approve & Schedule
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Invoice Match Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] flex flex-col">
+            <div className="px-6 py-4 border-b flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold">Create Invoice Match</h2>
+                <p className="text-sm text-gray-500">Match a vendor invoice to a posted GRN + PO</p>
+              </div>
+              <button onClick={() => setShowCreateModal(false)} className="text-gray-400 hover:text-gray-600">
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Goods Received Note <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={createGrnId}
+                  onChange={(e) => setCreateGrnId(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500"
+                >
+                  <option value="">
+                    {grnsLoading ? 'Loading GRNs…' : `Select GRN (${eligibleGRNs.length} available)`}
+                  </option>
+                  {eligibleGRNs.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.grnNumber} — PO {g.purchaseOrder?.orderNumber || ''} — {g.supplier?.name || ''} ({g.status})
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">Only approved or posted GRNs linked to a PO are listed.</p>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Vendor Invoice # <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={createInvoiceNumber}
+                    onChange={(e) => setCreateInvoiceNumber(e.target.value)}
+                    placeholder="INV-12345"
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Invoice Date</label>
+                  <input
+                    type="date"
+                    value={createInvoiceDate}
+                    onChange={(e) => setCreateInvoiceDate(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Due Date</label>
+                  <input
+                    type="date"
+                    value={createDueDate}
+                    onChange={(e) => setCreateDueDate(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500"
+                  />
+                </div>
+              </div>
+
+              {createItemLines.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-medium text-gray-700 mb-2">Line Items</h3>
+                  <div className="border rounded-lg overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 text-xs uppercase text-gray-600">
+                        <tr>
+                          <th className="text-left px-3 py-2">Item</th>
+                          <th className="text-right px-3 py-2">PO Qty</th>
+                          <th className="text-right px-3 py-2">GRN Qty</th>
+                          <th className="text-right px-3 py-2">PO Price</th>
+                          <th className="text-right px-3 py-2">Inv Qty</th>
+                          <th className="text-right px-3 py-2">Inv Price</th>
+                          <th className="text-right px-3 py-2">Line Total</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {createItemLines.map((line, idx) => (
+                          <tr key={line.itemId}>
+                            <td className="px-3 py-2">{line.itemName}</td>
+                            <td className="px-3 py-2 text-right">{line.poQty}</td>
+                            <td className="px-3 py-2 text-right">{line.grnQty}</td>
+                            <td className="px-3 py-2 text-right">{fmtUGX(line.poPrice)}</td>
+                            <td className="px-3 py-2 text-right">
+                              <input
+                                type="number"
+                                min={0}
+                                step="0.01"
+                                value={line.invoiceQty}
+                                onChange={(e) => {
+                                  const v = Number(e.target.value) || 0;
+                                  setCreateItemLines((prev) =>
+                                    prev.map((l, i) => (i === idx ? { ...l, invoiceQty: v } : l)),
+                                  );
+                                }}
+                                className="w-20 px-2 py-1 border rounded text-right"
+                              />
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <input
+                                type="number"
+                                min={0}
+                                step="0.01"
+                                value={line.invoicePrice}
+                                onChange={(e) => {
+                                  const v = Number(e.target.value) || 0;
+                                  setCreateItemLines((prev) =>
+                                    prev.map((l, i) => (i === idx ? { ...l, invoicePrice: v } : l)),
+                                  );
+                                }}
+                                className="w-24 px-2 py-1 border rounded text-right"
+                              />
+                            </td>
+                            <td className="px-3 py-2 text-right font-medium">
+                              {fmtUGX(line.invoiceQty * line.invoicePrice)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="bg-gray-50">
+                        <tr>
+                          <td colSpan={6} className="px-3 py-2 text-right font-semibold">Total Invoice Amount</td>
+                          <td className="px-3 py-2 text-right font-bold text-violet-700">{fmtUGX(createInvoiceAmount)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-3">
+              <button
+                onClick={() => setShowCreateModal(false)}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitCreateMatch}
+                disabled={createMatchMutation.isPending || !createGrnId || !createInvoiceNumber.trim() || createItemLines.length === 0}
+                className="px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {createMatchMutation.isPending ? 'Creating…' : 'Create Match'}
               </button>
             </div>
           </div>
