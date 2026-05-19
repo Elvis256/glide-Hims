@@ -1,6 +1,7 @@
 import { Controller, Get, Inject, Optional } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Public } from './modules/auth/decorators/public.decorator';
+import { AuthWithPermissions } from './modules/auth/decorators/auth.decorator';
 import { TenantsService } from './modules/tenants/tenants.service';
 import { DataSource } from 'typeorm';
 import { CacheService } from './modules/cache/cache.service';
@@ -28,8 +29,28 @@ export class AppController {
 
   @Get('health')
   @Public()
-  @ApiOperation({ summary: 'Health check endpoint (deep: API + DB + cache)' })
+  @ApiOperation({ summary: 'Health check endpoint (liveness/readiness)' })
   async getHealth() {
+    // F-12: keep the public response minimal. Probe DB so readiness checks still
+    // work, but do NOT expose uptime, memory, or cache state to anonymous callers.
+    let dbOk = false;
+    if (this.dataSource) {
+      try {
+        await this.dataSource.query('SELECT 1');
+        dbOk = true;
+      } catch {
+        dbOk = false;
+      }
+    } else {
+      dbOk = true;
+    }
+    return { status: dbOk ? 'ok' : 'degraded' };
+  }
+
+  @Get('health/details')
+  @AuthWithPermissions('admin.read')
+  @ApiOperation({ summary: 'Detailed health: DB, cache, uptime, memory (admin only)' })
+  async getHealthDetails() {
     const checks: { db: 'ok' | 'fail'; cache: 'ok' | 'fail' | 'skipped' } = {
       db: 'fail',
       cache: 'skipped',
@@ -73,26 +94,18 @@ export class AppController {
 
   @Get('system/initialized')
   @Public()
-  @ApiOperation({ summary: 'Check if system is initialized (has any tenants)' })
+  @ApiOperation({ summary: 'Check if system is initialized (boolean only)' })
   async getSystemInitialized() {
+    // F-08: only report the boolean; do not leak the exact tenant count to
+    // anonymous callers.
     try {
       if (!this.tenantService) {
-        return {
-          initialized: false,
-          tenant_count: 0,
-        };
+        return { initialized: false };
       }
       const tenants = await this.tenantService.findAll();
-      return {
-        initialized: tenants && tenants.length > 0,
-        tenant_count: tenants ? tenants.length : 0,
-      };
-    } catch (error) {
-      return {
-        initialized: false,
-        tenant_count: 0,
-        error: 'Could not check system status',
-      };
+      return { initialized: !!(tenants && tenants.length > 0) };
+    } catch {
+      return { initialized: false };
     }
   }
 }

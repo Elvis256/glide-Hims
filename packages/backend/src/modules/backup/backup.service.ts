@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, NotImplementedException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, NotImplementedException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -108,6 +108,17 @@ export class BackupService {
 
     if (!backup) {
       throw new NotFoundException('Backup not found');
+    }
+
+    // F-09: prevent path-traversal / arbitrary-file-read via tampered file_path.
+    // Resolve and confirm the stored path is contained within backupsDir/<tenantId>/.
+    const expectedRoot = path.resolve(this.backupsDir, tenantId);
+    const resolved = path.resolve(backup.filePath);
+    if (!resolved.startsWith(expectedRoot + path.sep) && resolved !== expectedRoot) {
+      this.logger.warn(
+        `Refusing to serve backup ${id}: filePath ${backup.filePath} escapes ${expectedRoot}`,
+      );
+      throw new ForbiddenException('Invalid backup path');
     }
 
     return backup;

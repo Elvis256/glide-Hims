@@ -38,7 +38,7 @@ export default function PortalLoginPage() {
     try {
       setBusy(true);
       const { data } = await portalApi.post('/portal/otp/verify', { phone, code });
-      portalAuth.setSession(data.accessToken, data.patient);
+      portalAuth.setSession(data.patient);
       toast.success(`Welcome ${data.patient.fullName}`);
       navigate('/portal/dashboard');
     } catch (err: any) {

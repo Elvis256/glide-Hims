@@ -18,8 +18,11 @@ export class PatientPortalGuard implements CanActivate {
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest();
-    const auth = req.headers.authorization || '';
-    const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+    // F-04: prefer the httpOnly cookie; fall back to Bearer for API clients.
+    const cookieToken = req.cookies?.portalToken as string | undefined;
+    const auth = (req.headers.authorization as string) || '';
+    const bearer = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+    const token = cookieToken || bearer;
     if (!token) throw new UnauthorizedException('Patient access token required');
 
     let payload: PatientTokenPayload;

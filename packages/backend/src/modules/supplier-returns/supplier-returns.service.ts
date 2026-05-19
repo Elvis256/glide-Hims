@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, FindOptionsWhere, DataSource } from 'typeorm';
+import { randomBytes } from 'crypto';
 import {
   SupplierReturn,
   SupplierReturnItem,
@@ -25,8 +26,9 @@ export class SupplierReturnsService {
   ) {}
 
   private generateReturnNumber(): string {
+    // F-13: use a CSPRNG so document numbers cannot be predicted/enumerated.
     const timestamp = Date.now().toString(36).toUpperCase();
-    const random = Math.random().toString(36).substring(2, 6).toUpperCase();
+    const random = randomBytes(3).toString('hex').toUpperCase();
     return `RET-${timestamp}-${random}`;
   }
 
