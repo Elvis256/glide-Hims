@@ -597,14 +597,20 @@ export default function RequisitionsPage() {
                   <p className="text-sm italic text-gray-400">No items added.</p>
                 ) : (
                   <div className="space-y-2">
-                    {(selectedRequisition.items || []).map((item) => (
-                      <div key={item.id} className="flex justify-between text-sm bg-gray-50 p-2 rounded">
-                        <span>{item.name}</span>
-                        <span className="text-gray-600 tabular-nums">
-                          {item.quantity} {item.unit} × {formatCurrency(item.estimatedPrice || 0)}
-                        </span>
-                      </div>
-                    ))}
+                    {(selectedRequisition.items || []).map((item: any, idx: number) => {
+                      const name = item.itemName || item.name || item.itemCode || '—';
+                      const qty = Number(item.quantityRequested ?? item.quantity ?? 0);
+                      const unit = item.itemUnit || item.unit || '';
+                      const price = Number(item.unitPriceEstimated ?? item.estimatedPrice ?? 0);
+                      return (
+                        <div key={item.id || idx} className="flex justify-between text-sm bg-gray-50 p-2 rounded">
+                          <span>{name}</span>
+                          <span className="text-gray-600 tabular-nums">
+                            {qty} {unit} × {formatCurrency(price)}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
                 <div className="flex justify-between mt-2 pt-2 border-t font-medium">
