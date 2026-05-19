@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   FileQuestion,
@@ -26,6 +27,7 @@ import {
 import { rfqService, type RFQ, type RFQStatus as RFQStatusType, type CreateRFQDto } from '../../../services/rfq';
 import { useAuthStore } from '../../../store/auth';
 import { CategoryContextBanner } from '../../../components/procurement/CategoryContextBanner';
+import api from '../../../services/api';
 
 type RFQStatus = 'draft' | 'sent' | 'pending_responses' | 'responses_received' | 'closed' | 'cancelled';
 
@@ -52,17 +54,31 @@ export default function RFQPage() {
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
   const facilityId = user?.facilityId || '';
+  const navigate = useNavigate();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<RFQStatus | 'all'>('all');
   const [selectedRFQ, setSelectedRFQ] = useState<RFQ | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedVendors, setSelectedVendors] = useState<string[]>([]);
+  const [showVendorModal, setShowVendorModal] = useState(false);
+  const [vendorPickIds, setVendorPickIds] = useState<string[]>([]);
 
   // Fetch RFQs
   const { data: rfqs = [], isLoading, error } = useQuery({
     queryKey: ['rfqs', facilityId, statusFilter],
     queryFn: () => rfqService.list(facilityId, statusFilter === 'all' ? undefined : statusFilter as RFQStatusType),
+    enabled: !!facilityId,
+  });
+
+  // Real suppliers (replaces the hard-coded availableVendors stub)
+  const { data: suppliers = [] } = useQuery({
+    queryKey: ['suppliers-active', facilityId],
+    queryFn: async () => {
+      const res = await api.get('/suppliers/active', { params: { facilityId } });
+      const list = res.data?.data ?? res.data ?? [];
+      return Array.isArray(list) ? list : [];
+    },
     enabled: !!facilityId,
   });
 
@@ -80,8 +96,35 @@ export default function RFQPage() {
     mutationFn: (id: string) => rfqService.send(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rfqs'] });
+      toast.success('RFQ sent to vendors');
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || err?.message || 'Failed to send RFQ');
     },
   });
+
+  // Add vendors mutation
+  const addVendorsMutation = useMutation({
+    mutationFn: ({ rfqId, vendorIds }: { rfqId: string; vendorIds: string[] }) =>
+      rfqService.addVendors(rfqId, vendorIds),
+    onSuccess: (updated) => {
+      queryClient.invalidateQueries({ queryKey: ['rfqs'] });
+      setSelectedRFQ(updated);
+      setShowVendorModal(false);
+      toast.success('Vendors added to RFQ');
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || err?.message || 'Failed to add vendors');
+    },
+  });
+
+  const openVendorModal = () => {
+    const already = (selectedRFQ?.vendors || [])
+      .map((v: any) => v.supplierId || v.supplier?.id)
+      .filter(Boolean) as string[];
+    setVendorPickIds(already);
+    setShowVendorModal(true);
+  };
 
   const filteredRFQs = useMemo(() => {
     return rfqs.filter((rfq) => {
@@ -363,16 +406,17 @@ export default function RFQPage() {
                 {selectedRFQ.status === 'draft' && (
                   <>
                     <button
-                      onClick={() => toast.info('Vendor selection — coming soon')}
+                      onClick={openVendorModal}
                       className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
                     >
                       <Users className="w-4 h-4" />
-                      Select Vendors
+                      Select Vendors{selectedRFQ.vendors?.length ? ` (${selectedRFQ.vendors.length})` : ''}
                     </button>
                     <button 
                       onClick={() => sendRFQMutation.mutate(selectedRFQ.id)}
-                      disabled={sendRFQMutation.isPending}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                      disabled={sendRFQMutation.isPending || (selectedRFQ.vendors?.length || 0) < 3}
+                      title={(selectedRFQ.vendors?.length || 0) < 3 ? 'Need at least 3 vendors for competitive bidding' : ''}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {sendRFQMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                       Send to Vendors
@@ -381,7 +425,7 @@ export default function RFQPage() {
                 )}
                 {selectedRFQ.quotations && selectedRFQ.quotations.length >= 2 && selectedRFQ.status !== 'closed' && (
                   <button
-                    onClick={() => toast.info('Quotation comparison — coming soon')}
+                    onClick={() => navigate(`/procurement/quotes/compare?rfqId=${selectedRFQ.id}`)}
                     className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
                   >
                     <ExternalLink className="w-4 h-4" />
@@ -482,19 +526,90 @@ export default function RFQPage() {
                 onClick={() => setShowCreateModal(false)}
                 className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100"
               >
-                Cancel
+                Close
               </button>
               <button
-                onClick={() => { toast.info('RFQ saved as draft'); setShowCreateModal(false); }}
-                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                disabled
+                title="Use 'Convert to RFQ' from an approved requisition instead"
+                className="px-4 py-2 bg-gray-300 text-gray-500 rounded-lg cursor-not-allowed"
               >
                 Save as Draft
               </button>
               <button
-                onClick={() => { toast.success('RFQ created and sent'); setShowCreateModal(false); }}
-                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                disabled
+                title="Use 'Convert to RFQ' from an approved requisition instead"
+                className="px-4 py-2 bg-purple-300 text-white rounded-lg cursor-not-allowed"
               >
                 Create & Send RFQ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Select Vendors Modal */}
+      {showVendorModal && selectedRFQ && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-xl max-h-[85vh] overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Select Vendors for {selectedRFQ.rfqNumber}</h2>
+              <button onClick={() => setShowVendorModal(false)} className="p-1 hover:bg-gray-100 rounded">
+                <XCircle className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+            <div className="p-6 space-y-3 overflow-y-auto flex-1">
+              <p className="text-xs text-gray-500">
+                At least 3 vendors are required for competitive bidding. {vendorPickIds.length} selected.
+              </p>
+              {suppliers.length === 0 ? (
+                <p className="text-sm italic text-gray-400">No active suppliers found for this facility.</p>
+              ) : (
+                <div className="border rounded-lg divide-y">
+                  {suppliers.map((s: any) => {
+                    const checked = vendorPickIds.includes(s.id);
+                    return (
+                      <label key={s.id} className="flex items-center gap-3 p-3 hover:bg-gray-50 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            setVendorPickIds((prev) =>
+                              e.target.checked ? [...prev, s.id] : prev.filter((x) => x !== s.id),
+                            );
+                          }}
+                          className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
+                        />
+                        <div className="flex-1">
+                          <p className="font-medium text-sm">{s.name}</p>
+                          <p className="text-xs text-gray-500">
+                            {s.code} · {s.type || 'general'} · {s.email || s.phone || '—'}
+                          </p>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-3">
+              <button
+                onClick={() => setShowVendorModal(false)}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() =>
+                  addVendorsMutation.mutate({ rfqId: selectedRFQ.id, vendorIds: vendorPickIds })
+                }
+                disabled={addVendorsMutation.isPending || vendorPickIds.length === 0}
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
+              >
+                {addVendorsMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin inline" />
+                ) : (
+                  'Save Vendors'
+                )}
               </button>
             </div>
           </div>
