@@ -2133,9 +2133,9 @@ export class ProcurementService {
         .getMany(),
       this.invoiceMatchRepo
         .createQueryBuilder('inv')
-        .where('LOWER(inv.invoiceNumber) LIKE :term', { term })
+        .where('(LOWER(inv.vendorInvoiceNumber) LIKE :term OR LOWER(inv.matchNumber) LIKE :term)', { term })
         .andWhere(tenantId ? 'inv.tenantId = :tenantId' : '1=1', { tenantId })
-        .select(['inv.id', 'inv.invoiceNumber', 'inv.status', 'inv.createdAt'])
+        .select(['inv.id', 'inv.vendorInvoiceNumber', 'inv.matchNumber', 'inv.status', 'inv.createdAt'])
         .limit(10)
         .getMany(),
     ]);
@@ -2144,7 +2144,7 @@ export class ProcurementService {
       ...prs.map((p) => ({ type: 'pr' as const, id: p.id, number: p.requestNumber, status: p.status, createdAt: p.createdAt })),
       ...pos.map((p) => ({ type: 'po' as const, id: p.id, number: p.orderNumber, status: p.status, createdAt: p.createdAt })),
       ...grns.map((g) => ({ type: 'grn' as const, id: g.id, number: g.grnNumber, status: g.status, createdAt: g.createdAt })),
-      ...invoices.map((i: any) => ({ type: 'invoice' as const, id: i.id, number: i.invoiceNumber, status: i.status, createdAt: i.createdAt })),
+      ...invoices.map((i: any) => ({ type: 'invoice' as const, id: i.id, number: i.vendorInvoiceNumber || i.matchNumber, status: i.status, createdAt: i.createdAt })),
     ].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
   }
 
