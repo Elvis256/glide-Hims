@@ -1128,10 +1128,13 @@ export class AuthService {
         }
       }
 
-      // Always merge in any modules granted by the tenant's active license.
-      // The license is the commercial source of truth — system_settings/tenant.settings
-      // are operational caches that can drift behind license edits. Merging here
-      // means license edits propagate to /auth/me without requiring a backfill.
+      // Apply the tenant's active license as an UPPER BOUND.
+      // The license is the commercial source of truth and ModuleGuard
+      // (auth/guards/module.guard.ts) treats it as a hard cap — settings can
+      // only narrow the licensed set, never broaden it. Mirror that here so
+      // /auth/me's accessibleModules cannot promise the frontend access that
+      // the backend ModuleGuard will then 403 on. If the tenant has no
+      // settings yet, fall back to the license as the enabled set.
       try {
         const licenseRows = await this.userRoleRepository.manager.query(
           `SELECT enabled_modules FROM licenses
@@ -1146,9 +1149,11 @@ export class AuthService {
             ? (JSON.parse(lic) as string[])
             : [];
         if (licMods.length > 0) {
-          tenantEnabledModules = Array.from(
-            new Set([...(tenantEnabledModules || []), ...licMods]),
-          );
+          const licSet = new Set(licMods);
+          tenantEnabledModules =
+            tenantEnabledModules && tenantEnabledModules.length > 0
+              ? tenantEnabledModules.filter((m) => licSet.has(m))
+              : licMods;
         }
       } catch {
         // licenses table may not exist in some deployments — ignore
