@@ -16,9 +16,11 @@ import { CreateDischargeSummaryDto, DischargeSummaryFilterDto } from './dto/disc
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
+import { RequireFacilityAccess } from '../auth/decorators/facility-access.decorator';
 
 @UseGuards(ModuleGuard)
 @RequireModule('ipd')
+@RequireFacilityAccess()
 @Controller('discharge')
 @UseGuards(AuthGuard('jwt'))
 export class DischargeController {

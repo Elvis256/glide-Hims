@@ -37,10 +37,16 @@ export class CacheService implements OnModuleInit, OnModuleDestroy {
       return;
     }
     try {
-      const password =
-        this.options.password && this.options.password !== 'CHANGE_ME_redis_password'
-          ? this.options.password
-          : undefined;
+      const isProd = (process.env.NODE_ENV || '').toLowerCase() === 'production';
+      const rawPassword = this.options.password;
+      const isSentinel = rawPassword === 'CHANGE_ME_redis_password';
+      if (isProd && (!rawPassword || isSentinel)) {
+        throw new Error(
+          'REDIS_PASSWORD is unset or still set to the placeholder ' +
+            "'CHANGE_ME_redis_password'. Refusing to connect to Redis without auth in production.",
+        );
+      }
+      const password = rawPassword && !isSentinel ? rawPassword : undefined;
       this.redis = url
         ? new Redis(url, { lazyConnect: true, maxRetriesPerRequest: 2 })
         : new Redis({
