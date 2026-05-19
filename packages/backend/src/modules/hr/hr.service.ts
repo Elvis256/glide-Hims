@@ -713,6 +713,69 @@ export class HrService {
     );
   }
 
+  /**
+   * Resolve the target employee for a clock-in / clock-out request.
+   *
+   * Default behaviour: the caller clocks themselves in/out (target is derived
+   * from req.user.id, not from the request body). This blocks attendance
+   * impersonation, where a user could previously POST any employeeId and
+   * fabricate attendance for them.
+   *
+   * A manager-tier caller (HR Manager, Facility Manager, Department Head,
+   * Super Admin) MAY pass an explicit employeeId in the body to record
+   * attendance on someone else's behalf — that's the legitimate "manager
+   * clocks team in" path. The target must be in the same tenant.
+   */
+  async resolveAttendanceTarget(
+    bodyEmployeeId: string | undefined,
+    user: { id?: string; userId?: string; tenantId?: string; roles?: string[] } | undefined,
+    op: 'clock-in' | 'clock-out',
+  ): Promise<string> {
+    const callerUserId = user?.id || user?.userId;
+    if (!callerUserId) {
+      throw new BadRequestException('Authenticated user context required');
+    }
+
+    const tenantWhere = user?.tenantId ? { tenantId: user.tenantId } : {};
+    const selfEmp = await this.employeeRepo.findOne({
+      where: { userId: callerUserId, ...tenantWhere },
+    });
+
+    if (!bodyEmployeeId || bodyEmployeeId === selfEmp?.id) {
+      if (!selfEmp) {
+        throw new BadRequestException(
+          `No employee record linked to your user account; cannot ${op} for self`,
+        );
+      }
+      return selfEmp.id;
+    }
+
+    // Proxy clock-in/out for another employee → manager-tier only.
+    const managerRoles = new Set([
+      'Super Admin',
+      'Administrator',
+      'HR Manager',
+      'Facility Manager',
+      'Department Head',
+    ]);
+    const isManager = (user?.roles || []).some((r) => managerRoles.has(r));
+    if (!isManager) {
+      throw new BadRequestException(
+        `You can only ${op} for yourself; managers may record attendance on behalf of others`,
+      );
+    }
+
+    // Verify target exists in the same tenant (defence-in-depth — controller
+    // RBAC already requires hr.create/hr.update).
+    const target = await this.employeeRepo.findOne({
+      where: { id: bodyEmployeeId, ...tenantWhere },
+    });
+    if (!target) {
+      throw new NotFoundException('Target employee not found in your tenant');
+    }
+    return target.id;
+  }
+
   async clockOut(
     employeeId: string,
     facilityId: string,
@@ -1245,23 +1308,35 @@ export class HrService {
     });
     if (!payroll) throw new NotFoundException('Payroll run not found');
 
-    if (payroll.status === PayrollStatus.PAID) {
-      throw new BadRequestException('Cannot reset a paid payroll run');
+    // Reset is destructive — only allowed BEFORE a manager has approved the
+    // run. Once a run is APPROVED, PROCESSING, COMPLETED, PAID or CANCELLED,
+    // it is part of the audit trail and may have triggered downstream
+    // bank/PAYE/NSSF exports. Resetting it would silently destroy the
+    // payslips and let payroll be re-fabricated without re-approval.
+    if (payroll.status !== PayrollStatus.DRAFT) {
+      throw new BadRequestException(
+        `Cannot reset a payroll run in status '${payroll.status}'. ` +
+          `Only DRAFT runs can be reset. Cancel and create a new run instead.`,
+      );
     }
 
-    // Delete associated payslips
-    await this.payslipRepo.delete({ payrollRunId: payroll.id });
+    return this.dataSource.transaction(async (manager) => {
+      // Tenant-scoped delete (defence in depth — payrollRunId is unique but
+      // we never want a runaway DELETE if the join is ever loosened).
+      await manager.delete(Payslip, {
+        payrollRunId: payroll.id,
+        ...(tenantId ? { tenantId } : {}),
+      });
 
-    // Reset to draft
-    payroll.status = PayrollStatus.DRAFT;
-    payroll.employeeCount = 0;
-    payroll.totalGross = 0;
-    payroll.totalDeductions = 0;
-    payroll.totalNet = 0;
-    payroll.totalPaye = 0;
-    payroll.totalNssf = 0;
-
-    return this.payrollRunRepo.save(payroll);
+      payroll.employeeCount = 0;
+      payroll.totalGross = 0;
+      payroll.totalDeductions = 0;
+      payroll.totalNet = 0;
+      payroll.totalPaye = 0;
+      payroll.totalNssf = 0;
+      this.logger.log(`[HR_NOTIFY] payroll.reset id=${payroll.id}`);
+      return manager.save(payroll);
+    });
   }
 
   private calculatePaye(grossSalary: number): number {

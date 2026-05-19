@@ -22,29 +22,46 @@ export class PasswordPoliciesController {
   @Get()
   @AuthWithPermissions('settings.read')
   @ApiOperation({ summary: 'List password policies' })
-  async list(@Query('facilityId') facilityId?: string) {
-    return this.authService.getPasswordPolicies(facilityId);
+  async list(@Request() req: any, @Query('facilityId') facilityId?: string) {
+    return this.authService.getPasswordPolicies(
+      facilityId,
+      req.user?.tenantId,
+      req.user?.isSystemAdmin,
+    );
   }
 
   @Post()
   @AuthWithPermissions('settings.update')
   @ApiOperation({ summary: 'Create password policy' })
-  async create(@Body() dto: any) {
-    return this.authService.createPasswordPolicy(dto);
+  async create(@Body() dto: any, @Request() req: any) {
+    return this.authService.createPasswordPolicy(
+      dto,
+      req.user?.tenantId,
+      req.user?.isSystemAdmin,
+    );
   }
 
   @Patch(':id')
   @AuthWithPermissions('settings.update')
   @ApiOperation({ summary: 'Update password policy' })
-  async update(@Param('id') id: string, @Body() dto: any) {
-    return this.authService.updatePasswordPolicy(id, dto);
+  async update(@Param('id') id: string, @Body() dto: any, @Request() req: any) {
+    return this.authService.updatePasswordPolicy(
+      id,
+      dto,
+      req.user?.tenantId,
+      req.user?.isSystemAdmin,
+    );
   }
 
   @Delete(':id')
   @AuthWithPermissions('settings.update')
   @ApiOperation({ summary: 'Delete password policy' })
-  async remove(@Param('id') id: string) {
-    await this.authService.deletePasswordPolicy(id);
+  async remove(@Param('id') id: string, @Request() req: any) {
+    await this.authService.deletePasswordPolicy(
+      id,
+      req.user?.tenantId,
+      req.user?.isSystemAdmin,
+    );
     return { success: true };
   }
 }

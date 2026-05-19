@@ -797,28 +797,135 @@ export class AuthService {
     });
   }
 
-  async createPasswordPolicy(data: Partial<PasswordPolicy>): Promise<PasswordPolicy> {
+  /**
+   * Platform-minimum password policy floor. No tenant policy is allowed to
+   * weaken below these values — they define the contractually-required
+   * minimum security posture across every customer. Strengthening is OK,
+   * weakening throws BadRequestException.
+   */
+  private static readonly PASSWORD_POLICY_FLOOR = {
+    minLength: 8,
+    requireUppercase: true,
+    requireLowercase: true,
+    requireNumbers: true,
+    requireSpecialChars: true,
+    maxFailedAttempts: 10,
+    lockoutDurationMinutes: 5,
+    passwordHistoryCount: 3,
+    expiryDays: 365,
+  } as const;
+
+  private enforcePasswordPolicyFloor(data: Partial<PasswordPolicy>): void {
+    const floor = AuthService.PASSWORD_POLICY_FLOOR;
+    if (data.minLength != null && data.minLength < floor.minLength) {
+      throw new BadRequestException(
+        `minLength cannot be below platform minimum of ${floor.minLength}`,
+      );
+    }
+    if (data.requireUppercase === false && floor.requireUppercase) {
+      throw new BadRequestException('requireUppercase cannot be disabled');
+    }
+    if (data.requireLowercase === false && floor.requireLowercase) {
+      throw new BadRequestException('requireLowercase cannot be disabled');
+    }
+    if (data.requireNumbers === false && floor.requireNumbers) {
+      throw new BadRequestException('requireNumbers cannot be disabled');
+    }
+    if (data.requireSpecialChars === false && floor.requireSpecialChars) {
+      throw new BadRequestException('requireSpecialChars cannot be disabled');
+    }
+    if (data.maxFailedAttempts != null && data.maxFailedAttempts > floor.maxFailedAttempts) {
+      throw new BadRequestException(
+        `maxFailedAttempts cannot exceed platform max of ${floor.maxFailedAttempts}`,
+      );
+    }
+    if (
+      data.lockoutDurationMinutes != null &&
+      data.lockoutDurationMinutes < floor.lockoutDurationMinutes
+    ) {
+      throw new BadRequestException(
+        `lockoutDurationMinutes cannot be below ${floor.lockoutDurationMinutes}`,
+      );
+    }
+    if (
+      data.passwordHistoryCount != null &&
+      data.passwordHistoryCount < floor.passwordHistoryCount
+    ) {
+      throw new BadRequestException(
+        `passwordHistoryCount cannot be below ${floor.passwordHistoryCount}`,
+      );
+    }
+    if (data.expiryDays != null && data.expiryDays > floor.expiryDays) {
+      throw new BadRequestException(`expiryDays cannot exceed ${floor.expiryDays}`);
+    }
+  }
+
+  private buildPolicyTenantWhere(tenantId?: string, isSystemAdmin?: boolean) {
+    // System admins (no tenant context) may CRUD any policy. Tenant users
+    // can only ever see/touch policies bound to their own tenant.
+    if (isSystemAdmin && !tenantId) return {};
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context required for password policy management');
+    }
+    return { tenantId };
+  }
+
+  async createPasswordPolicy(
+    data: Partial<PasswordPolicy>,
+    tenantId?: string,
+    isSystemAdmin?: boolean,
+  ): Promise<PasswordPolicy> {
+    this.enforcePasswordPolicyFloor(data);
+    // Tenant users are locked into their tenant. System admins can target
+    // any tenant explicitly via the body (kept for platform-admin tooling).
+    const effectiveTenantId = isSystemAdmin ? data.tenantId ?? tenantId : tenantId;
+    if (!effectiveTenantId && !isSystemAdmin) {
+      throw new ForbiddenException('Tenant context required to create a password policy');
+    }
     const policy = this.passwordPolicyRepository.create({
       ...data,
+      tenantId: effectiveTenantId,
       isActive: true,
     });
     return this.passwordPolicyRepository.save(policy);
   }
 
-  async getPasswordPolicies(facilityId?: string): Promise<PasswordPolicy[]> {
-    const where: any = { isActive: true };
+  async getPasswordPolicies(
+    facilityId?: string,
+    tenantId?: string,
+    isSystemAdmin?: boolean,
+  ): Promise<PasswordPolicy[]> {
+    const where: any = { isActive: true, ...this.buildPolicyTenantWhere(tenantId, isSystemAdmin) };
     if (facilityId) where.facilityId = facilityId;
     return this.passwordPolicyRepository.find({ where });
   }
 
-  async updatePasswordPolicy(id: string, data: Partial<PasswordPolicy>): Promise<PasswordPolicy> {
-    const policy = await this.passwordPolicyRepository.findOne({ where: { id } });
+  async updatePasswordPolicy(
+    id: string,
+    data: Partial<PasswordPolicy>,
+    tenantId?: string,
+    isSystemAdmin?: boolean,
+  ): Promise<PasswordPolicy> {
+    this.enforcePasswordPolicyFloor(data);
+    const policy = await this.passwordPolicyRepository.findOne({
+      where: { id, ...this.buildPolicyTenantWhere(tenantId, isSystemAdmin) },
+    });
     if (!policy) throw new BadRequestException('Policy not found');
-    Object.assign(policy, data);
+    // Don't allow tenant rebinding via update (cross-tenant move).
+    const { tenantId: _bodyTenant, ...safe } = data as any;
+    Object.assign(policy, safe);
     return this.passwordPolicyRepository.save(policy);
   }
 
-  async deletePasswordPolicy(id: string): Promise<void> {
+  async deletePasswordPolicy(
+    id: string,
+    tenantId?: string,
+    isSystemAdmin?: boolean,
+  ): Promise<void> {
+    const policy = await this.passwordPolicyRepository.findOne({
+      where: { id, ...this.buildPolicyTenantWhere(tenantId, isSystemAdmin) },
+    });
+    if (!policy) throw new BadRequestException('Policy not found');
     await this.passwordPolicyRepository.delete(id);
   }
 

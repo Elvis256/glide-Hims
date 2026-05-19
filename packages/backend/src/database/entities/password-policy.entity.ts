@@ -4,6 +4,9 @@ import { Facility } from './facility.entity';
 
 @Entity('password_policies')
 export class PasswordPolicy extends BaseEntity {
+  @Column({ type: 'uuid', nullable: true, name: 'tenant_id' })
+  tenantId?: string;
+
   @Column({ type: 'uuid', nullable: true, name: 'facility_id' })
   facilityId?: string;
 

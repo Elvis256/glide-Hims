@@ -4,12 +4,27 @@ import { Repository, DataSource } from 'typeorm';
 import { Role } from '../../database/entities/role.entity';
 import { Permission } from '../../database/entities/permission.entity';
 import { RolePermission } from '../../database/entities/role-permission.entity';
+import { isSuperAdmin } from '../../common/constants/roles.constants';
 import {
   CreateRoleDto,
   UpdateRoleDto,
   CreatePermissionDto,
   AssignPermissionDto,
 } from './dto/role.dto';
+
+/**
+ * Authenticated caller context used to gate privileged role/permission mutations.
+ * Passed from controllers as `req.user` so the service can decide whether the
+ * caller is allowed to escalate role flags (isSystemRole) or grant permission
+ * codes the caller does not already hold (the classic "tenant admin promotes
+ * self to Super Admin" path).
+ */
+export interface RoleMutationCaller {
+  id?: string;
+  userId?: string;
+  isSystemAdmin?: boolean;
+  roles?: string[];
+}
 
 @Injectable()
 export class RolesService {
@@ -24,17 +39,31 @@ export class RolesService {
   ) {}
 
   // Roles
-  async createRole(dto: CreateRoleDto, tenantId?: string): Promise<Role> {
+  async createRole(
+    dto: CreateRoleDto,
+    tenantId?: string,
+    caller?: RoleMutationCaller,
+  ): Promise<Role> {
     const existing = await this.roleRepository.findOne({
       where: { name: dto.name, ...(tenantId ? { tenantId } : {}) },
     });
     if (existing) throw new ConflictException('Role name already exists');
+    // SECURITY: isSystemRole on the DTO is user-controlled. Only a platform
+    // system administrator may flag a role as a global "system role" — that
+    // flag makes the role visible/assignable across every tenant and exempts
+    // it from tenant-scoped mutation guards. Silently drop the flag for
+    // anyone else.
+    const sanitized: any = { ...dto };
+    if (sanitized.isSystemRole && !caller?.isSystemAdmin) {
+      sanitized.isSystemRole = false;
+    }
     const role = this.roleRepository.create({
-      ...dto,
+      ...sanitized,
       status: 'active',
       ...(tenantId ? { tenantId } : {}),
     });
-    return this.roleRepository.save(role);
+    const saved = await this.roleRepository.save(role);
+    return Array.isArray(saved) ? saved[0] : saved;
   }
 
   /**
@@ -160,14 +189,85 @@ export class RolesService {
     };
   }
 
-  async updateRole(id: string, dto: UpdateRoleDto, tenantId?: string): Promise<Role> {
+  async updateRole(
+    id: string,
+    dto: UpdateRoleDto,
+    tenantId?: string,
+    caller?: RoleMutationCaller,
+  ): Promise<Role> {
     const role = await this.findOneRole(id, tenantId);
     this.assertMutable(role, tenantId);
     if (role.isSystemRole && dto.name && dto.name !== role.name) {
       throw new ConflictException('Cannot rename system roles');
     }
-    Object.assign(role, dto);
+    // Strip privilege-escalation flags unless caller is a platform admin.
+    const sanitized: any = { ...dto };
+    if ('isSystemRole' in sanitized && !caller?.isSystemAdmin) {
+      delete sanitized.isSystemRole;
+    }
+    Object.assign(role, sanitized);
     return this.roleRepository.save(role);
+  }
+
+  /**
+   * Returns the set of permission codes the caller currently holds (direct +
+   * role-derived, including inheritance). Used to prevent privilege
+   * escalation: a caller may not grant a permission they do not already hold.
+   * System admins and tenant-level Super Admin bypass this check.
+   */
+  async resolveUserEffectivePermissions(userId: string): Promise<Set<string>> {
+    const rows: Array<{ code: string }> = await this.dataSource.query(
+      `
+      SELECT DISTINCT p.code FROM permissions p
+        INNER JOIN role_permissions rp ON rp.permission_id = p.id
+        INNER JOIN user_roles ur ON ur.role_id = rp.role_id
+        WHERE ur.user_id = $1 AND ur.deleted_at IS NULL
+      UNION
+      SELECT DISTINCT p.code FROM permissions p
+        INNER JOIN role_permissions rp ON rp.permission_id = p.id
+        INNER JOIN roles r ON r.id = rp.role_id
+        INNER JOIN user_roles ur ON ur.role_id IN (
+          WITH RECURSIVE chain(id, parent_role_id) AS (
+            SELECT id, parent_role_id FROM roles WHERE id = r.id
+            UNION ALL
+            SELECT rr.id, rr.parent_role_id
+              FROM roles rr INNER JOIN chain c ON rr.id = c.parent_role_id
+          ) SELECT id FROM chain
+        )
+        WHERE ur.user_id = $1 AND ur.deleted_at IS NULL
+      UNION
+      SELECT DISTINCT p.code FROM permissions p
+        INNER JOIN user_permissions up ON up.permission_id = p.id
+        WHERE up.user_id = $1
+      `,
+      [userId],
+    );
+    return new Set(rows.map((r) => r.code));
+  }
+
+  /**
+   * Throws ForbiddenException if `caller` does not already hold every
+   * permission code in `requested`. System admins and tenant-level Super
+   * Admins bypass — they are the privileged authorities for their tier.
+   */
+  private async assertCallerCanGrant(
+    caller: RoleMutationCaller | undefined,
+    requested: string[],
+  ): Promise<void> {
+    if (!requested.length) return;
+    if (caller?.isSystemAdmin) return;
+    if (isSuperAdmin(caller?.roles)) return;
+    const callerId = caller?.id || caller?.userId;
+    if (!callerId) {
+      throw new ForbiddenException('Cannot grant permissions without an authenticated caller');
+    }
+    const held = await this.resolveUserEffectivePermissions(callerId);
+    const missing = requested.filter((code) => !held.has(code));
+    if (missing.length) {
+      throw new ForbiddenException(
+        `You cannot grant permissions you do not already hold: ${missing.join(', ')}`,
+      );
+    }
   }
 
   async setParentRole(id: string, parentRoleId: string | null, tenantId?: string): Promise<Role> {
@@ -239,12 +339,21 @@ export class RolesService {
     await this.roleRepository.softRemove(role);
   }
 
-  async assignPermission(roleId: string, dto: AssignPermissionDto, tenantId?: string) {
+  async assignPermission(
+    roleId: string,
+    dto: AssignPermissionDto,
+    tenantId?: string,
+    caller?: RoleMutationCaller,
+  ) {
     const role = await this.findOneRole(roleId, tenantId);
     this.assertMutable(role, tenantId);
     // Permissions are shared (NULL tenant_id), so don't filter by tenant
     const permission = await this.permissionRepository.findOne({ where: { id: dto.permissionId } });
     if (!permission) throw new NotFoundException('Permission not found');
+
+    // SECURITY: prevent privilege escalation — caller cannot grant a code
+    // they do not already hold.
+    await this.assertCallerCanGrant(caller, [permission.code]);
 
     const existing = await this.rolePermissionRepository.findOne({
       where: { roleId, permissionId: dto.permissionId },
@@ -270,9 +379,17 @@ export class RolesService {
     roleId: string,
     permissions: Record<string, boolean>,
     tenantId?: string,
+    caller?: RoleMutationCaller,
   ): Promise<void> {
     const role = await this.findOneRole(roleId, tenantId);
     this.assertMutable(role, tenantId);
+
+    // Only check codes the caller is trying to ENABLE — disabling is allowed
+    // for anyone with roles.update (it strips privileges, not grants them).
+    const toGrant = Object.entries(permissions)
+      .filter(([, enabled]) => !!enabled)
+      .map(([code]) => code);
+    await this.assertCallerCanGrant(caller, toGrant);
 
     await this.dataSource.transaction(async (manager) => {
       for (const [permCode, enabled] of Object.entries(permissions)) {
@@ -296,11 +413,22 @@ export class RolesService {
   }
 
   // Permissions
-  async createPermission(dto: CreatePermissionDto, tenantId?: string): Promise<Permission> {
+  async createPermission(
+    dto: CreatePermissionDto,
+    tenantId?: string,
+    caller?: RoleMutationCaller,
+  ): Promise<Permission> {
+    // Permission catalog defines the privilege vocabulary the RBAC system
+    // checks against. Allowing tenant users to mint new permission codes is
+    // a privilege-escalation surface — they could create codes that later
+    // logic comes to trust, or shadow existing codes.
+    if (!caller?.isSystemAdmin) {
+      throw new ForbiddenException(
+        'Only platform administrators may create permission codes',
+      );
+    }
     const existing = await this.permissionRepository.findOne({ where: { code: dto.code } });
     if (existing) throw new ConflictException('Permission code already exists');
-    // Tenant admins create tenant-scoped permissions; only platform admins
-    // (no tenantId) can create globally-shared permission codes.
     return this.permissionRepository.save(
       this.permissionRepository.create({ ...dto, ...(tenantId ? { tenantId } : {}) }),
     );
