@@ -117,6 +117,36 @@ export class ProcurementService {
     private inventoryService: InventoryService,
   ) {}
 
+  // Retry helper for the PR/PO/GRN number-generation race (audit BUG-007/008).
+  // Two concurrent creates that compute their next sequence number via
+  // count()+1 will collide on the unique index. Catch the Postgres
+  // unique_violation (23505) and retry a small number of times.
+  private async retryOnUniqueViolation<T>(
+    label: string,
+    fn: () => Promise<T>,
+    max = 3,
+  ): Promise<T> {
+    let lastErr: any;
+    for (let attempt = 1; attempt <= max; attempt++) {
+      try {
+        return await fn();
+      } catch (e: any) {
+        const isUnique =
+          e?.code === '23505' ||
+          e?.driverError?.code === '23505' ||
+          /duplicate key value/i.test(e?.message || '');
+        if (!isUnique || attempt === max) {
+          throw e;
+        }
+        lastErr = e;
+        this.logger.warn(
+          `${label}: unique-violation on attempt ${attempt}/${max}, retrying. ${e?.message || ''}`,
+        );
+      }
+    }
+    throw lastErr;
+  }
+
   // ============ PURCHASE REQUEST ============
 
   private async generatePRNumber(facilityId: string, tenantId?: string): Promise<string> {
@@ -184,54 +214,58 @@ export class ProcurementService {
         }
       }
 
-      const requestNumber = await this.generatePRNumber(dto.facilityId, tenantId);
-
       // Calculate total estimated
       const totalEstimated = dto.items.reduce((sum, item) => {
         return sum + item.quantityRequested * (item.unitPriceEstimated || 0);
       }, 0);
 
-      // Wrap PR + PR items in a single transaction so we never persist a
-      // PR with no line items (audit BUG-002).
-      const createdPR = await this.dataSource.transaction(async (manager) => {
-        const prRepo = manager.getRepository(PurchaseRequest);
-        const prItemRepo = manager.getRepository(PurchaseRequestItem);
+      // Wrap PR header + items in a single transaction so we never persist a
+      // PR with no line items (audit BUG-002). Generate the requestNumber
+      // INSIDE the transaction and retry on unique-violation to absorb the
+      // count()+1 race against concurrent PR creates (audit BUG-007).
+      const createdPR = await this.retryOnUniqueViolation('createPR', () =>
+        this.dataSource.transaction(async (manager) => {
+          const prRepo = manager.getRepository(PurchaseRequest);
+          const prItemRepo = manager.getRepository(PurchaseRequestItem);
 
-        const pr = prRepo.create({
-          requestNumber,
-          facilityId: dto.facilityId,
-          departmentId: dto.departmentId,
-          priority: dto.priority || PRPriority.NORMAL,
-          justification: dto.justification,
-          requiredDate: dto.requiredDate ? new Date(dto.requiredDate) : undefined,
-          totalEstimated,
-          notes: dto.notes,
-          status: PRStatus.DRAFT,
-          requestedById: userId,
-          ...(tenantId ? { tenantId } : {}),
-        });
+          const requestNumber = await this.generatePRNumber(dto.facilityId, tenantId);
 
-        const savedPR = await prRepo.save(pr);
-        this.logger.log(`Created PR ${(savedPR as PurchaseRequest).requestNumber}`);
-
-        const items = dto.items.map((item) =>
-          prItemRepo.create({
-            purchaseRequestId: (savedPR as PurchaseRequest).id,
-            itemId: item.itemId,
-            itemCode: item.itemCode,
-            itemName: item.itemName,
-            itemUnit: item.itemUnit || 'unit',
-            quantityRequested: item.quantityRequested,
-            unitPriceEstimated: item.unitPriceEstimated || 0,
-            specifications: item.specifications,
-            notes: item.notes,
+          const pr = prRepo.create({
+            requestNumber,
+            facilityId: dto.facilityId,
+            departmentId: dto.departmentId,
+            priority: dto.priority || PRPriority.NORMAL,
+            justification: dto.justification,
+            requiredDate: dto.requiredDate ? new Date(dto.requiredDate) : undefined,
+            totalEstimated,
+            notes: dto.notes,
+            status: PRStatus.DRAFT,
+            requestedById: userId,
             ...(tenantId ? { tenantId } : {}),
-          }),
-        );
+          });
 
-        await prItemRepo.save(items);
-        return savedPR as PurchaseRequest;
-      });
+          const savedPR = await prRepo.save(pr);
+          this.logger.log(`Created PR ${(savedPR as PurchaseRequest).requestNumber}`);
+
+          const items = dto.items.map((item) =>
+            prItemRepo.create({
+              purchaseRequestId: (savedPR as PurchaseRequest).id,
+              itemId: item.itemId,
+              itemCode: item.itemCode,
+              itemName: item.itemName,
+              itemUnit: item.itemUnit || 'unit',
+              quantityRequested: item.quantityRequested,
+              unitPriceEstimated: item.unitPriceEstimated || 0,
+              specifications: item.specifications,
+              notes: item.notes,
+              ...(tenantId ? { tenantId } : {}),
+            }),
+          );
+
+          await prItemRepo.save(items);
+          return savedPR as PurchaseRequest;
+        }),
+      );
 
       return this.getPurchaseRequest(createdPR.id, tenantId);
     } catch (error) {
@@ -846,12 +880,13 @@ export class ProcurementService {
     userId: string,
     tenantId?: string,
   ): Promise<PurchaseOrder> {
-    return this.dataSource.transaction(async (manager) => {
-      const facilityRepo = manager.getRepository('Facility');
-      const deptRepo = manager.getRepository('Department');
-      const poRepo = manager.getRepository(PurchaseOrder);
-      const poItemRepo = manager.getRepository(PurchaseOrderItem);
-      const chainRepo = manager.getRepository(ProcurementApprovalChain);
+    return this.retryOnUniqueViolation('createPO', () =>
+      this.dataSource.transaction(async (manager) => {
+        const facilityRepo = manager.getRepository('Facility');
+        const deptRepo = manager.getRepository('Department');
+        const poRepo = manager.getRepository(PurchaseOrder);
+        const poItemRepo = manager.getRepository(PurchaseOrderItem);
+        const chainRepo = manager.getRepository(ProcurementApprovalChain);
 
       // Validate facility exists
       const facilityWhere: any = { id: dto.facilityId };
@@ -1014,7 +1049,8 @@ export class ProcurementService {
       }
 
       return this.getPurchaseOrder((savedPO as PurchaseOrder).id, tenantId);
-    });
+      }),
+    );
   }
 
   async createPOFromPR(
@@ -1434,56 +1470,15 @@ export class ProcurementService {
     userId: string,
     tenantId?: string,
   ): Promise<GoodsReceiptNote> {
-    // Validate PO status — prevent receiving on fully received/closed/cancelled POs
-    if (dto.purchaseOrderId) {
-      const po = await this.poRepo.findOne({
-        where: { id: dto.purchaseOrderId, ...(tenantId ? { tenantId } : {}) },
-      });
-      if (!po) throw new NotFoundException('Purchase Order not found');
-      if ([POStatus.FULLY_RECEIVED, POStatus.CLOSED, POStatus.CANCELLED].includes(po.status)) {
-        throw new BadRequestException(
-          `Cannot receive delivery for PO ${po.orderNumber} — status is ${po.status.replace('_', ' ')}. Each delivery should be received only once per PO.`,
-        );
-      }
-      if (![POStatus.SENT, POStatus.PARTIALLY_RECEIVED].includes(po.status)) {
-        throw new BadRequestException(
-          `PO ${po.orderNumber} is not ready for delivery (status: ${po.status}). PO must be sent to the supplier first.`,
-        );
-      }
-
-      // Crit 1: Validate GRN item quantities don't exceed PO allowance
-      const poItems = await this.poItemRepo.find({ where: { purchaseOrderId: po.id } });
-      for (const grnItem of dto.items) {
-        const poItem = poItems.find((pi) => pi.itemId === grnItem.itemId);
-        if (!poItem) {
-          throw new BadRequestException(
-            `Item ${grnItem.itemName || grnItem.itemId} is not on PO ${po.orderNumber}.`,
-          );
-        }
-        const alreadyReceived = poItem.quantityReceived || 0;
-        const maxAllowed = poItem.quantityOrdered - alreadyReceived;
-        if (grnItem.quantityReceived > maxAllowed) {
-          throw new BadRequestException(
-            `Cannot receive ${grnItem.quantityReceived} units of "${grnItem.itemName}". PO line allows max ${maxAllowed} more units (ordered: ${poItem.quantityOrdered}, already received: ${alreadyReceived}).`,
-          );
-        }
-      }
-    }
-
-    const grnNumber = await this.generateGRNNumber(dto.facilityId, tenantId);
-
-    // Calculate totals
+    // Calculate totals + expiry validation up front (purely in-memory work).
     let totalQuantityReceived = 0;
     let totalValue = 0;
-
     const itemsWithTotals = dto.items.map((item) => {
       const lineTotal = item.quantityReceived * item.unitCost;
       totalQuantityReceived += item.quantityReceived;
       totalValue += lineTotal;
       return { ...item, lineTotal };
     });
-
-    // Validate no items have past expiry dates
     for (const item of itemsWithTotals) {
       if (item.expiryDate && new Date(item.expiryDate) < new Date()) {
         throw new BadRequestException(
@@ -1492,58 +1487,108 @@ export class ProcurementService {
       }
     }
 
-    // Wrap GRN header + line items in a single transaction (audit BUG-001).
-    // Without this, a failure on grnItemRepo.save() leaves a header row with
-    // no items — corrupting the receipt list and breaking downstream
-    // invoice-matching / stock posting.
-    const createdGRN = await this.dataSource.transaction(async (manager) => {
-      const grnRepo = manager.getRepository(GoodsReceiptNote);
-      const grnItemRepo = manager.getRepository(GoodsReceiptItem);
+    // The whole GRN create (PO/items lock → validation → number → header → lines)
+    // runs in one transaction. The PO + its line items are taken with a
+    // pessimistic_write lock so two concurrent GRNs against the same PO
+    // can never each see "remaining quantity" and both pass validation
+    // (audit BUG-009 over-receipt race). The transaction itself is wrapped
+    // in retryOnUniqueViolation so concurrent GRNs racing to claim the
+    // next grnNumber (audit BUG-008) recover cleanly instead of 500ing.
+    const createdGRN = await this.retryOnUniqueViolation('createGRN', () =>
+      this.dataSource.transaction(async (manager) => {
+        const grnRepo = manager.getRepository(GoodsReceiptNote);
+        const grnItemRepo = manager.getRepository(GoodsReceiptItem);
+        const poRepoTx = manager.getRepository(PurchaseOrder);
+        const poItemRepoTx = manager.getRepository(PurchaseOrderItem);
 
-      const grn = grnRepo.create({
-        grnNumber,
-        facilityId: dto.facilityId,
-        storeId: dto.storeId,
-        supplierId: dto.supplierId,
-        purchaseOrderId: dto.purchaseOrderId,
-        receivedAt: new Date(),
-        deliveryNoteNumber: dto.deliveryNoteNumber,
-        invoiceNumber: dto.invoiceNumber,
-        invoiceDate: dto.invoiceDate ? new Date(dto.invoiceDate) : undefined,
-        invoiceAmount: dto.invoiceAmount,
-        totalQuantityReceived,
-        totalValue,
-        notes: dto.notes,
-        status: GRNStatus.DRAFT,
-        receivedById: userId,
-        ...(tenantId ? { tenantId } : {}),
-      });
+        if (dto.purchaseOrderId) {
+          const po = await poRepoTx.findOne({
+            where: { id: dto.purchaseOrderId, ...(tenantId ? { tenantId } : {}) },
+            lock: { mode: 'pessimistic_write' },
+          });
+          if (!po) throw new NotFoundException('Purchase Order not found');
+          if ([POStatus.FULLY_RECEIVED, POStatus.CLOSED, POStatus.CANCELLED].includes(po.status)) {
+            throw new BadRequestException(
+              `Cannot receive delivery for PO ${po.orderNumber} — status is ${po.status.replace('_', ' ')}. Each delivery should be received only once per PO.`,
+            );
+          }
+          if (![POStatus.SENT, POStatus.PARTIALLY_RECEIVED].includes(po.status)) {
+            throw new BadRequestException(
+              `PO ${po.orderNumber} is not ready for delivery (status: ${po.status}). PO must be sent to the supplier first.`,
+            );
+          }
 
-      const savedGRN = await grnRepo.save(grn);
+          // Re-fetch PO items under the same transaction so quantityReceived
+          // reflects any concurrent (now-blocked-by-our-lock) GRN that just
+          // committed against the same PO.
+          const poItems = await poItemRepoTx.find({
+            where: { purchaseOrderId: po.id },
+            lock: { mode: 'pessimistic_write' },
+          });
+          for (const grnItem of dto.items) {
+            const poItem = poItems.find((pi) => pi.itemId === grnItem.itemId);
+            if (!poItem) {
+              throw new BadRequestException(
+                `Item ${grnItem.itemName || grnItem.itemId} is not on PO ${po.orderNumber}.`,
+              );
+            }
+            const alreadyReceived = poItem.quantityReceived || 0;
+            const maxAllowed = poItem.quantityOrdered - alreadyReceived;
+            if (grnItem.quantityReceived > maxAllowed) {
+              throw new BadRequestException(
+                `Cannot receive ${grnItem.quantityReceived} units of "${grnItem.itemName}". PO line allows max ${maxAllowed} more units (ordered: ${poItem.quantityOrdered}, already received: ${alreadyReceived}).`,
+              );
+            }
+          }
+        }
 
-      const items = itemsWithTotals.map((item) =>
-        grnItemRepo.create({
-          goodsReceiptNoteId: (savedGRN as GoodsReceiptNote).id,
-          itemId: item.itemId,
-          itemCode: item.itemCode,
-          itemName: item.itemName,
-          itemUnit: item.itemUnit || 'unit',
-          quantityExpected: item.quantityExpected,
-          quantityReceived: item.quantityReceived,
-          unitCost: item.unitCost,
-          lineTotal: item.lineTotal,
-          batchNumber: item.batchNumber,
-          expiryDate: item.expiryDate ? new Date(item.expiryDate) : undefined,
-          manufactureDate: item.manufactureDate ? new Date(item.manufactureDate) : undefined,
-          purchaseOrderItemId: item.purchaseOrderItemId,
-          notes: item.notes,
+        const grnNumber = await this.generateGRNNumber(dto.facilityId, tenantId);
+
+        const grn = grnRepo.create({
+          grnNumber,
+          facilityId: dto.facilityId,
+          storeId: dto.storeId,
+          supplierId: dto.supplierId,
+          purchaseOrderId: dto.purchaseOrderId,
+          receivedAt: new Date(),
+          deliveryNoteNumber: dto.deliveryNoteNumber,
+          invoiceNumber: dto.invoiceNumber,
+          invoiceDate: dto.invoiceDate ? new Date(dto.invoiceDate) : undefined,
+          invoiceAmount: dto.invoiceAmount,
+          totalQuantityReceived,
+          totalValue,
+          notes: dto.notes,
+          status: GRNStatus.DRAFT,
+          receivedById: userId,
           ...(tenantId ? { tenantId } : {}),
-        }),
-      );
+        });
 
-      await grnItemRepo.save(items);
-      return savedGRN as GoodsReceiptNote;
-    });
+        const savedGRN = await grnRepo.save(grn);
+
+        const items = itemsWithTotals.map((item) =>
+          grnItemRepo.create({
+            goodsReceiptNoteId: (savedGRN as GoodsReceiptNote).id,
+            itemId: item.itemId,
+            itemCode: item.itemCode,
+            itemName: item.itemName,
+            itemUnit: item.itemUnit || 'unit',
+            quantityExpected: item.quantityExpected,
+            quantityReceived: item.quantityReceived,
+            unitCost: item.unitCost,
+            lineTotal: item.lineTotal,
+            batchNumber: item.batchNumber,
+            expiryDate: item.expiryDate ? new Date(item.expiryDate) : undefined,
+            manufactureDate: item.manufactureDate ? new Date(item.manufactureDate) : undefined,
+            purchaseOrderItemId: item.purchaseOrderItemId,
+            notes: item.notes,
+            ...(tenantId ? { tenantId } : {}),
+          }),
+        );
+
+        await grnItemRepo.save(items);
+        return savedGRN as GoodsReceiptNote;
+      }),
+    );
 
     return this.getGoodsReceipt(createdGRN.id);
   }
