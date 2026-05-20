@@ -63,6 +63,14 @@ export default function RFQPage() {
   const [selectedVendors, setSelectedVendors] = useState<string[]>([]);
   const [showVendorModal, setShowVendorModal] = useState(false);
   const [vendorPickIds, setVendorPickIds] = useState<string[]>([]);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+
+  // Full RFQ payload for the details modal (vendors, quotations, approvals…)
+  const { data: rfqDetails, isLoading: detailsLoading } = useQuery({
+    queryKey: ['rfq-detail', selectedRFQ?.id],
+    queryFn: () => rfqService.getById(selectedRFQ!.id),
+    enabled: !!selectedRFQ && showDetailsModal,
+  });
 
   // Fetch RFQs
   const { data: rfqs = [], isLoading, error } = useQuery({
@@ -530,7 +538,7 @@ export default function RFQPage() {
                   </button>
                 )}
                 <button
-                  onClick={() => toast.info('Full details view — coming soon')}
+                  onClick={() => setShowDetailsModal(true)}
                   className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
                 >
                   <Eye className="w-4 h-4" />
@@ -865,6 +873,245 @@ export default function RFQPage() {
                 ) : (
                   'Save Quotation'
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* RFQ Full Details Modal */}
+      {showDetailsModal && selectedRFQ && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-5xl max-h-[92vh] overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold">RFQ {selectedRFQ.rfqNumber}</h2>
+                <p className="text-xs text-gray-500">{selectedRFQ.title}</p>
+              </div>
+              <button
+                onClick={() => setShowDetailsModal(false)}
+                className="p-1 hover:bg-gray-100 rounded"
+              >
+                <XCircle className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto space-y-6">
+              {detailsLoading && (
+                <div className="flex items-center justify-center py-8 text-gray-500">
+                  <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading details…
+                </div>
+              )}
+              {!detailsLoading && (() => {
+                const r: any = rfqDetails || selectedRFQ;
+                const items: any[] = r.items || [];
+                const vendors: any[] = r.vendors || [];
+                const quotations: any[] = r.quotations || [];
+                return (
+                  <>
+                    {/* Header summary */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                      <div>
+                        <div className="text-xs text-gray-500">Status</div>
+                        <div className="font-medium capitalize">{r.status}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-gray-500">Requisition</div>
+                        <div className="font-medium">{r.purchaseRequest?.requestNumber || '—'}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-gray-500">Created</div>
+                        <div className="font-medium">{r.createdAt ? new Date(r.createdAt).toLocaleString() : '—'}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-gray-500">Deadline</div>
+                        <div className="font-medium">{r.deadline ? new Date(r.deadline).toLocaleDateString() : '—'}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-gray-500">Created By</div>
+                        <div className="font-medium">{r.createdBy?.fullName || r.createdBy?.username || '—'}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-gray-500">Sent Date</div>
+                        <div className="font-medium">{r.sentDate ? new Date(r.sentDate).toLocaleDateString() : '—'}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-gray-500">Closed Date</div>
+                        <div className="font-medium">{r.closedDate ? new Date(r.closedDate).toLocaleDateString() : '—'}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-gray-500">Responses</div>
+                        <div className="font-medium">{quotations.length}/{vendors.length}</div>
+                      </div>
+                    </div>
+
+                    {(r.notes || r.instructions) && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                        {r.notes && (
+                          <div>
+                            <div className="text-xs font-medium text-gray-500 mb-1">Notes</div>
+                            <div className="p-3 bg-gray-50 rounded border border-gray-200 whitespace-pre-wrap">{r.notes}</div>
+                          </div>
+                        )}
+                        {r.instructions && (
+                          <div>
+                            <div className="text-xs font-medium text-gray-500 mb-1">Instructions</div>
+                            <div className="p-3 bg-gray-50 rounded border border-gray-200 whitespace-pre-wrap">{r.instructions}</div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Items */}
+                    <div>
+                      <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                        <Package className="w-4 h-4" /> Items ({items.length})
+                      </h3>
+                      <div className="border rounded-lg overflow-hidden">
+                        <table className="w-full text-sm">
+                          <thead className="bg-gray-50 text-xs text-gray-600">
+                            <tr>
+                              <th className="px-3 py-2 text-left">Code</th>
+                              <th className="px-3 py-2 text-left">Item</th>
+                              <th className="px-3 py-2 text-right">Qty</th>
+                              <th className="px-3 py-2 text-left">Unit</th>
+                              <th className="px-3 py-2 text-left">Specifications</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {items.length === 0 && (
+                              <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400">No items</td></tr>
+                            )}
+                            {items.map((it: any) => (
+                              <tr key={it.id} className="border-t">
+                                <td className="px-3 py-2 font-mono text-xs">{it.itemCode}</td>
+                                <td className="px-3 py-2">{it.itemName}</td>
+                                <td className="px-3 py-2 text-right">{it.quantity}</td>
+                                <td className="px-3 py-2">{it.unit || '—'}</td>
+                                <td className="px-3 py-2 text-xs text-gray-600">{it.specifications || '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Vendors */}
+                    <div>
+                      <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                        <Users className="w-4 h-4" /> Selected Vendors ({vendors.length})
+                      </h3>
+                      {vendors.length === 0 ? (
+                        <div className="text-sm text-gray-400 p-3 border rounded-lg bg-gray-50">
+                          No vendors selected.
+                        </div>
+                      ) : (
+                        <div className="border rounded-lg overflow-hidden">
+                          <table className="w-full text-sm">
+                            <thead className="bg-gray-50 text-xs text-gray-600">
+                              <tr>
+                                <th className="px-3 py-2 text-left">Vendor</th>
+                                <th className="px-3 py-2 text-left">Email</th>
+                                <th className="px-3 py-2 text-left">Phone</th>
+                                <th className="px-3 py-2 text-left">Sent</th>
+                                <th className="px-3 py-2 text-left">Responded</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {vendors.map((v: any) => (
+                                <tr key={v.id} className="border-t">
+                                  <td className="px-3 py-2 font-medium">{v.supplier?.name || v.supplierId}</td>
+                                  <td className="px-3 py-2">{v.supplier?.email || '—'}</td>
+                                  <td className="px-3 py-2">{v.supplier?.phone || '—'}</td>
+                                  <td className="px-3 py-2 text-xs">{v.sentDate ? new Date(v.sentDate).toLocaleDateString() : '—'}</td>
+                                  <td className="px-3 py-2 text-xs">{v.responseDate ? new Date(v.responseDate).toLocaleDateString() : '—'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Quotations */}
+                    <div>
+                      <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                        <MessageSquare className="w-4 h-4" /> Received Quotations ({quotations.length})
+                      </h3>
+                      {quotations.length === 0 ? (
+                        <div className="text-sm text-gray-400 p-3 border rounded-lg bg-gray-50">
+                          No quotations received yet.
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {quotations.map((q: any) => (
+                            <div key={q.id} className="border rounded-lg p-3">
+                              <div className="flex items-center justify-between mb-2">
+                                <div>
+                                  <div className="font-medium text-sm">{q.supplier?.name || q.supplierId}</div>
+                                  <div className="text-xs text-gray-500">
+                                    {q.quotationNumber} · {q.submittedDate ? new Date(q.submittedDate).toLocaleDateString() : '—'}
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <div className="font-semibold">{Number(q.totalAmount || 0).toLocaleString()}</div>
+                                  <span className={`inline-block px-2 py-0.5 rounded text-xs ${
+                                    q.status === 'selected' ? 'bg-green-100 text-green-700' :
+                                    q.status === 'approved' ? 'bg-blue-100 text-blue-700' :
+                                    q.status === 'rejected' ? 'bg-red-100 text-red-700' :
+                                    'bg-gray-100 text-gray-700'
+                                  }`}>{q.status}</span>
+                                </div>
+                              </div>
+                              {q.items?.length > 0 && (
+                                <table className="w-full text-xs mt-2">
+                                  <thead className="text-gray-500">
+                                    <tr>
+                                      <th className="text-left py-1">Item</th>
+                                      <th className="text-right py-1">Qty</th>
+                                      <th className="text-right py-1">Unit Price</th>
+                                      <th className="text-right py-1">Subtotal</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {q.items.map((qi: any) => (
+                                      <tr key={qi.id} className="border-t">
+                                        <td className="py-1">{qi.itemName || qi.itemCode}</td>
+                                        <td className="py-1 text-right">{qi.quantity}</td>
+                                        <td className="py-1 text-right">{Number(qi.unitPrice || 0).toLocaleString()}</td>
+                                        <td className="py-1 text-right">{Number(qi.totalPrice || 0).toLocaleString()}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              )}
+                              {q.approvals?.length > 0 && (
+                                <div className="mt-2 pt-2 border-t text-xs text-gray-600">
+                                  <div className="font-medium mb-1">Approvals</div>
+                                  {q.approvals.map((a: any) => (
+                                    <div key={a.id} className="flex justify-between">
+                                      <span>{a.level} — {a.approver?.fullName || a.approverId || '—'}</span>
+                                      <span className={
+                                        a.status === 'approved' ? 'text-green-600' :
+                                        a.status === 'rejected' ? 'text-red-600' : 'text-gray-500'
+                                      }>{a.status}{a.approvedDate ? ` · ${new Date(a.approvedDate).toLocaleDateString()}` : ''}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+            <div className="px-6 py-3 border-t bg-gray-50 flex justify-end">
+              <button
+                onClick={() => setShowDetailsModal(false)}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100"
+              >
+                Close
               </button>
             </div>
           </div>
