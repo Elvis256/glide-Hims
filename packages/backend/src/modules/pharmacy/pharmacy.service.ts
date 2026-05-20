@@ -401,6 +401,20 @@ export class PharmacyService {
 
         return saved.id;
       })
+      .catch(async (err: any) => {
+        // P0 — offline idempotency: if a concurrent sync inserted the same
+        // clientSaleId between our pre-check and our INSERT, Postgres surfaces
+        // a unique-violation (23505) on the partial unique index added by
+        // migration 1782900000035 (pharmacy_sales_tenant_client_sale_uniq).
+        // Treat that as the idempotent path and return the winning row.
+        if (dto.clientSaleId && err?.code === '23505') {
+          const dup = await this.saleRepo.findOne({
+            where: { clientSaleId: dto.clientSaleId, ...(tenantId ? { tenantId } : {}) },
+          });
+          if (dup) return dup.id;
+        }
+        throw err;
+      })
       .then((id) => this.findSale(id, tenantId));
   }
 
@@ -511,23 +525,52 @@ export class PharmacyService {
   }
 
   async completeSale(id: string, dto: CompleteSaleDto, userId: string, tenantId?: string) {
-    const sale = await this.findSale(id, tenantId);
-    if (sale.status !== SaleStatus.PENDING) {
-      throw new BadRequestException('Sale is not pending');
-    }
+    // Validate and deduct stock within a single transaction for full consistency.
+    // The sale itself is row-locked inside the txn so two concurrent
+    // completeSale calls on the same sale id cannot both pass the
+    // status==PENDING check and double-deduct stock (P0).
+    const txnResult = await this.dataSource.transaction(async (manager) => {
+      const sale = await manager.findOne(PharmacySale, {
+        where: { id, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!sale) throw new NotFoundException('Sale not found');
 
-    if (dto.amountPaid < Number(sale.totalAmount)) {
-      throw new BadRequestException('Insufficient payment amount');
-    }
+      // Idempotency: a second completion request on an already-completed sale
+      // is a no-op (caller gets the already-settled sale back, no stock
+      // double-deduct, no second event emit / EFRIS enqueue).
+      if (sale.status === SaleStatus.COMPLETED) {
+        return { alreadyCompleted: true as const };
+      }
 
-    // Get facility ID from the sale's store
-    const facilityId = sale.store?.facilityId;
-    if (!facilityId) {
-      throw new BadRequestException('Sale store does not have a facility assigned');
-    }
+      if (sale.status !== SaleStatus.PENDING) {
+        throw new BadRequestException('Sale is not pending');
+      }
 
-    // Validate and deduct stock within a single transaction for full consistency
-    await this.dataSource.transaction(async (manager) => {
+      if (dto.amountPaid < Number(sale.totalAmount)) {
+        throw new BadRequestException('Insufficient payment amount');
+      }
+
+      // Load items + store separately to avoid Postgres
+      // "FOR UPDATE cannot be applied to the nullable side of an outer join".
+      sale.items = (await manager.find(PharmacySaleItem, {
+        where: { saleId: sale.id, deletedAt: IsNull() },
+      })) as any;
+      if (sale.storeId) {
+        sale.store = (await manager
+          .query(
+            `SELECT id, facility_id AS "facilityId" FROM pharmacy_stores WHERE id = $1 LIMIT 1`,
+            [sale.storeId],
+          )
+          .then((rows: any[]) => rows?.[0])) as any;
+      }
+
+      // Get facility ID from the sale's store
+      const facilityId = sale.store?.facilityId;
+      if (!facilityId) {
+        throw new BadRequestException('Sale store does not have a facility assigned');
+      }
+
       const inventoryRepo = manager.getRepository(Item);
       const stockBalanceRepo = manager.getRepository(StockBalance);
       const stockLedgerRepo = manager.getRepository(StockLedger);
@@ -538,6 +581,14 @@ export class PharmacyService {
       // Manual batch selections are respected but expired batches are still rejected below.
       for (const item of sale.items as any[]) {
         if (item.batchNumber) continue;
+
+        // Resolve whether this item demands batch/expiry tracking; we need to
+        // know now because failure to pick a batch for such an item must be
+        // fatal rather than silently falling through to facility-level balance.
+        const inventoryRow = await inventoryRepo.findOne({
+          where: { id: item.itemId, ...(tenantId ? { tenantId } : {}) },
+        });
+
         const candidates = await batchStockRepo
           .createQueryBuilder('bs')
           .where('bs.itemId = :itemId', { itemId: item.itemId })
@@ -555,12 +606,21 @@ export class PharmacyService {
           item.batchNumber = chosen.batchNumber;
           if (chosen.expiryDate) item.expiryDate = chosen.expiryDate;
           // Persist on the saved sale item so the audit/print reflects the batch
-          await this.saleItemRepo.update(
+          await manager.update(
+            PharmacySaleItem,
             { id: item.id },
             { batchNumber: chosen.batchNumber, expiryDate: chosen.expiryDate },
           );
+        } else if (inventoryRow?.requiresBatchTracking || inventoryRow?.requiresExpiryTracking) {
+          // Fail-closed: items configured to require batch/expiry tracking must
+          // not be dispensed against a generic facility balance. Surface a
+          // clear error so the user picks/receives a valid batch (P0 fix).
+          throw new BadRequestException(
+            `"${inventoryRow.name}" requires batch tracking. No non-expired batch with sufficient stock was found at this facility — select a batch explicitly or receive one before dispensing.`,
+          );
         }
-        // If no candidates, fall through; later validation will surface the stock issue.
+        // If batch tracking is NOT required and no candidates exist, fall
+        // through; later stock-balance validation will surface the issue.
       }
 
       // Acquire ALL stock balance locks upfront in consistent order to prevent deadlocks
@@ -936,7 +996,15 @@ export class PharmacyService {
           err.stack,
         );
       }
+
+      return { alreadyCompleted: false as const, sale };
     });
+
+    // Already-completed idempotent return: skip event/retail-upsert/etc.
+    if (txnResult.alreadyCompleted) {
+      return this.findSale(id, tenantId);
+    }
+    const sale = txnResult.sale;
 
     // After-commit: notify async listeners (SMS receipt, analytics, etc.).
     this.eventEmitter.emit('pharmacy.sale.completed', {
