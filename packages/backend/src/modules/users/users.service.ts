@@ -616,8 +616,15 @@ export class UsersService {
 
     const previousEmployeeId = employee.id;
     const previousEmployeeNumber = employee.employeeNumber;
-    employee.userId = undefined;
-    await this.employeeRepository.save(employee);
+    // Set user_id to NULL via QueryBuilder. Using .save() with userId=undefined
+    // is a no-op in TypeORM (undefined fields are ignored), and assigning null
+    // to a typed property triggers TS errors against the non-null entity type.
+    await this.employeeRepository
+      .createQueryBuilder()
+      .update(Employee)
+      .set({ userId: null as any })
+      .where('id = :id', { id: employee.id })
+      .execute();
 
     try {
       await this.auditLogRepository.save(
