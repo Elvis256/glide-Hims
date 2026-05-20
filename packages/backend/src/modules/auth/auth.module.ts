@@ -191,8 +191,18 @@ export class AuthModule implements OnModuleInit {
           'lab.update',
           'patients.read',
           'reports.read',
+          // P1-RBAC: labqc.view intentionally NOT granted here so the
+          // two-person rule actually bites — validate/release/amend
+          // require a Senior Lab Officer (or Super Admin).
+          'critical-results.read',
+        ],
+        'Senior Lab Officer': [
+          'lab.read',
+          'lab.update',
           'labqc.view',
           'critical-results.read',
+          'patients.read',
+          'reports.read',
         ],
         Pharmacist: [
           'attendance.create',
@@ -321,16 +331,29 @@ export class AuthModule implements OnModuleInit {
       }
 
       for (const [roleName, codes] of Object.entries(rolePerms)) {
-        const role = await this.roleRepo.findOne({ where: { name: roleName } });
+        let role = await this.roleRepo.findOne({ where: { name: roleName } });
+        if (!role) {
+          const created = await this.roleRepo.save(
+            this.roleRepo.create({
+              name: roleName,
+              description: `Auto-seeded role: ${roleName}`,
+              isSystemRole: true,
+              status: 'active' as any,
+            } as any),
+          );
+          role = Array.isArray(created) ? created[0] : (created as any);
+          this.logger.log(`Auto-created missing role: ${roleName}`);
+        }
         if (!role) continue;
-        const existing = await this.rolePermRepo.find({ where: { roleId: role.id } });
+        const r = role;
+        const existing = await this.rolePermRepo.find({ where: { roleId: r.id } });
         const existingPermIds = new Set(existing.map((rp) => rp.permissionId));
         const toAdd = codes
           .map((code) => permByCode.get(code))
           .filter((id): id is string => !!id && !existingPermIds.has(id));
         if (toAdd.length > 0) {
           await this.rolePermRepo.save(
-            toAdd.map((pid) => this.rolePermRepo.create({ roleId: role.id, permissionId: pid })),
+            toAdd.map((pid) => this.rolePermRepo.create({ roleId: r.id, permissionId: pid })),
           );
           this.logger.log(`Auto-assigned ${toAdd.length} permissions to ${roleName}`);
         }
