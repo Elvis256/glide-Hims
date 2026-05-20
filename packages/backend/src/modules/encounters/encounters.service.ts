@@ -305,6 +305,15 @@ export class EncountersService {
     }
 
     if (dateTo) {
+      // P2: reject from > to so callers get a clean 400 instead of a
+      // silently-empty result set from an inverted window.
+      if (dateFrom) {
+        const f = new Date(dateFrom).getTime();
+        const t = new Date(dateTo).getTime();
+        if (Number.isFinite(f) && Number.isFinite(t) && f > t) {
+          throw new BadRequestException('dateFrom must be on or before dateTo.');
+        }
+      }
       // Add 1 day so '2026-03-21' covers the entire day (up to 2026-03-22 00:00:00)
       const endOfDay = new Date(dateTo);
       endOfDay.setDate(endOfDay.getDate() + 1);
@@ -360,6 +369,16 @@ export class EncountersService {
 
     if (EncountersService.TERMINAL_STATUSES.includes(encounter.status)) {
       throw new BadRequestException(`Cannot edit encounter in '${encounter.status}' status`);
+    }
+
+    // P1: when reassigning the attending provider, validate the target is an
+    // actual assignable provider in this tenant — closes the actor-spoof
+    // hole that already exists on updateStatus().
+    if (
+      dto.attendingProviderId &&
+      dto.attendingProviderId !== encounter.attendingProviderId
+    ) {
+      await this.identityGuard.assertAssignableProvider(dto.attendingProviderId, tenantId);
     }
 
     Object.assign(encounter, dto);
@@ -477,6 +496,16 @@ export class EncountersService {
           ...encounter.metadata,
           returnReason: reason,
           returnedAt: new Date().toISOString(),
+        };
+      }
+
+      // P1: previously omitted — reason was silently dropped when a nurse
+      // routed via /status with target RETURN_TO_PHARMACY.
+      if (reason && status === EncounterStatus.RETURN_TO_PHARMACY) {
+        encounter.metadata = {
+          ...encounter.metadata,
+          pharmacyReturnReason: reason,
+          pharmacyReturnedAt: new Date().toISOString(),
         };
       }
 
@@ -737,10 +766,18 @@ export class EncountersService {
     }
 
     if (doctorId) {
+      // P0: column is attending_provider_id, not doctor_id (which doesn't
+      // exist). Previously this 500'd on every /queue?doctorId= call.
       // Show patients assigned to this doctor + unassigned waiting patients
       // (so an idle doctor can still see and pick up the unassigned queue).
-      qb.andWhere('(encounter.doctor_id = :doctorId OR encounter.doctor_id IS NULL)', { doctorId });
+      qb.andWhere(
+        '(encounter.attending_provider_id = :doctorId OR encounter.attending_provider_id IS NULL)',
+        { doctorId },
+      );
     }
+
+    // P1: cap queue size to defend against unbounded reads on large facilities.
+    qb.limit(500);
 
     // Priority: RETURN_TO_DOCTOR patients first, then by queue number
     qb.orderBy(
@@ -866,16 +903,30 @@ export class EncountersService {
 
     const result = await qb.getRawOne();
 
+    const inConsultation = parseInt(result.inConsultation, 10) || 0;
     return {
       total: parseInt(result.total, 10) || 0,
       waiting: parseInt(result.waiting, 10) || 0,
-      inConsultation: parseInt(result.inConsultation, 10) || 0,
+      inConsultation,
+      // Alias kept for legacy FE callers that expect the controller default
+      // shape ({total, waiting, inProgress, completed}).
+      inProgress: inConsultation,
       completed: parseInt(result.completed, 10) || 0,
-    };
+    } as any;
   }
 
   async delete(id: string, userId: string, tenantId?: string): Promise<void> {
     const encounter = await this.findOne(id, tenantId);
+
+    // P1: refuse to delete terminal encounters — they have downstream
+    // foreign references (clinical notes, invoices, claims) and soft-removing
+    // them silently breaks audit trails. Cancellation is the correct path.
+    if (EncountersService.TERMINAL_STATUSES.includes(encounter.status)) {
+      throw new BadRequestException(
+        `Cannot delete encounter in terminal status '${encounter.status}'. Cancel via status update or contact a system administrator.`,
+      );
+    }
+
     await this.encounterRepository.softRemove(encounter);
 
     this.auditLogService
