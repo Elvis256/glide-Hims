@@ -14,6 +14,7 @@ import { LabResult, ResultStatus, AbnormalFlag } from '../../database/entities/l
 import { Order, OrderStatus, OrderType } from '../../database/entities/order.entity';
 import { Patient } from '../../database/entities/patient.entity';
 import { Facility } from '../../database/entities/facility.entity';
+import { AuditLog } from '../../database/entities/audit-log.entity';
 import {
   CreateLabTestDto,
   UpdateLabTestDto,
@@ -449,45 +450,101 @@ export class LabService {
     userId: string,
     tenantId?: string,
   ): Promise<LabSample> {
-    const sample = await this.getSample(id, tenantId);
-    // Idempotent: if already past collected, return as-is
-    if (
-      [SampleStatus.RECEIVED, SampleStatus.PROCESSING, SampleStatus.COMPLETED].includes(
-        sample.status as SampleStatus,
-      )
-    ) {
-      return sample;
-    }
-    if (sample.status !== SampleStatus.COLLECTED) {
-      throw new BadRequestException('Sample is not in collected status');
-    }
+    // P1-3: lock the sample row inside a transaction and re-check status,
+    // otherwise two concurrent receive calls both observe COLLECTED, both
+    // pass the guard, and the second silently overwrites receivedTime.
+    return this.dataSource.transaction(async (manager) => {
+      const qb = manager
+        .getRepository(LabSample)
+        .createQueryBuilder('s')
+        .setLock('pessimistic_write')
+        .where('s.id = :id', { id });
+      if (tenantId) qb.andWhere('s.tenant_id = :tenantId', { tenantId });
+      const sample = await qb.getOne();
+      if (!sample) throw new NotFoundException('Sample not found');
 
-    sample.status = SampleStatus.RECEIVED;
-    sample.receivedTime = new Date();
-    if (dto.notes) sample.collectionNotes = (sample.collectionNotes || '') + '\n' + dto.notes;
+      // Idempotent: if already past collected, return as-is
+      if (
+        [SampleStatus.RECEIVED, SampleStatus.PROCESSING, SampleStatus.COMPLETED].includes(
+          sample.status as SampleStatus,
+        )
+      ) {
+        return sample;
+      }
+      if (sample.status !== SampleStatus.COLLECTED) {
+        throw new BadRequestException('Sample is not in collected status');
+      }
 
-    const savedSample = await this.sampleRepo.save(sample);
-    this.logger.log(`Sample received: ${sample.sampleNumber} by user ${userId}`);
-    return savedSample;
+      const previousStatus = sample.status;
+      sample.status = SampleStatus.RECEIVED;
+      sample.receivedTime = new Date();
+      if (dto.notes) sample.collectionNotes = (sample.collectionNotes || '') + '\n' + dto.notes;
+
+      const savedSample = await manager.save(sample);
+
+      await this.writeLabAudit(manager, {
+        action: 'LAB_SAMPLE_RECEIVED',
+        entityId: savedSample.id,
+        userId,
+        tenantId,
+        previousStatus,
+        newValue: {
+          sampleNumber: savedSample.sampleNumber,
+          status: savedSample.status,
+          receivedTime: savedSample.receivedTime,
+          notes: dto.notes || null,
+        },
+      });
+
+      this.logger.log(`Sample received: ${sample.sampleNumber} by user ${userId}`);
+      return savedSample;
+    });
   }
 
   async startProcessing(id: string, userId: string, tenantId?: string): Promise<LabSample> {
-    const sample = await this.getSample(id, tenantId);
-    // Idempotent: if already past received, return as-is
-    if ([SampleStatus.PROCESSING, SampleStatus.COMPLETED].includes(sample.status as SampleStatus)) {
-      return sample;
-    }
-    if (sample.status !== SampleStatus.RECEIVED) {
-      throw new BadRequestException('Sample must be received before processing');
-    }
+    // P1-3: lock + re-check inside txn (same rationale as receiveSample).
+    return this.dataSource.transaction(async (manager) => {
+      const qb = manager
+        .getRepository(LabSample)
+        .createQueryBuilder('s')
+        .setLock('pessimistic_write')
+        .where('s.id = :id', { id });
+      if (tenantId) qb.andWhere('s.tenant_id = :tenantId', { tenantId });
+      const sample = await qb.getOne();
+      if (!sample) throw new NotFoundException('Sample not found');
 
-    sample.status = SampleStatus.PROCESSING;
-    sample.processedById = userId;
-    sample.processedTime = new Date();
+      if (
+        [SampleStatus.PROCESSING, SampleStatus.COMPLETED].includes(sample.status as SampleStatus)
+      ) {
+        return sample;
+      }
+      if (sample.status !== SampleStatus.RECEIVED) {
+        throw new BadRequestException('Sample must be received before processing');
+      }
 
-    const savedSample = await this.sampleRepo.save(sample);
-    this.logger.log(`Sample processing started: ${sample.sampleNumber} by user ${userId}`);
-    return savedSample;
+      const previousStatus = sample.status;
+      sample.status = SampleStatus.PROCESSING;
+      sample.processedById = userId;
+      sample.processedTime = new Date();
+
+      const savedSample = await manager.save(sample);
+
+      await this.writeLabAudit(manager, {
+        action: 'LAB_SAMPLE_PROCESSING_STARTED',
+        entityId: savedSample.id,
+        userId,
+        tenantId,
+        previousStatus,
+        newValue: {
+          sampleNumber: savedSample.sampleNumber,
+          status: savedSample.status,
+          processedTime: savedSample.processedTime,
+        },
+      });
+
+      this.logger.log(`Sample processing started: ${sample.sampleNumber} by user ${userId}`);
+      return savedSample;
+    });
   }
 
   async rejectSample(
@@ -496,41 +553,160 @@ export class LabService {
     userId: string,
     tenantId?: string,
   ): Promise<LabSample> {
-    const sample = await this.getSample(id, tenantId);
+    // P1-4: TOCTOU — guard + status save must happen under one txn with
+    // a row lock; otherwise a concurrent releaseResult can insert a
+    // RELEASED row between the guard and the save, leaving the sample
+    // in REJECTED with a released result attached.
+    // P1-9: on rejection, revert the parent order to PENDING so the
+    // clinical workflow knows a re-collect is required (otherwise the
+    // order stays IN_PROGRESS forever and the dropped sample is silent).
+    return this.dataSource.transaction(async (manager) => {
+      const qb = manager
+        .getRepository(LabSample)
+        .createQueryBuilder('s')
+        .setLock('pessimistic_write')
+        .where('s.id = :id', { id });
+      if (tenantId) qb.andWhere('s.tenant_id = :tenantId', { tenantId });
+      const sample = await qb.getOne();
+      if (!sample) throw new NotFoundException('Sample not found');
 
-    // Don't allow rejecting completed samples that have released results
-    if (sample.status === SampleStatus.COMPLETED) {
-      const releasedResults = await this.resultRepo.find({
-        where: { sampleId: id, status: ResultStatus.RELEASED, ...(tenantId ? { tenantId } : {}) },
-      });
-      if (releasedResults.length > 0) {
+      if (sample.status === SampleStatus.COMPLETED) {
+        const releasedResults = await manager.getRepository(LabResult).find({
+          where: {
+            sampleId: id,
+            status: ResultStatus.RELEASED,
+            ...(tenantId ? { tenantId } : {}),
+          },
+        });
+        if (releasedResults.length > 0) {
+          throw new BadRequestException(
+            'Cannot reject a completed sample with released results. Amend the results instead.',
+          );
+        }
+      }
+
+      const rejectableStatuses = [
+        SampleStatus.PENDING_COLLECTION,
+        SampleStatus.COLLECTED,
+        SampleStatus.RECEIVED,
+        SampleStatus.PROCESSING,
+      ];
+      if (!rejectableStatuses.includes(sample.status as SampleStatus)) {
         throw new BadRequestException(
-          'Cannot reject a completed sample with released results. Amend the results instead.',
+          `Cannot reject sample in '${sample.status}' status. Only pending, collected, received, or processing samples can be rejected.`,
         );
       }
-    }
 
-    // Valid transitions to REJECTED: PENDING_COLLECTION, COLLECTED, RECEIVED, PROCESSING
-    const rejectableStatuses = [
-      SampleStatus.PENDING_COLLECTION,
-      SampleStatus.COLLECTED,
-      SampleStatus.RECEIVED,
-      SampleStatus.PROCESSING,
-    ];
-    if (!rejectableStatuses.includes(sample.status as SampleStatus)) {
-      throw new BadRequestException(
-        `Cannot reject sample in '${sample.status}' status. Only pending, collected, received, or processing samples can be rejected.`,
+      const previousStatus = sample.status;
+      sample.status = SampleStatus.REJECTED;
+      sample.rejectionReason = dto.rejectionReason;
+
+      const savedSample = await manager.save(sample);
+
+      // P1-9: revert parent order so re-collection is signalled.
+      let revertedOrderId: string | null = null;
+      if (sample.orderId) {
+        const order = await manager.getRepository(Order).findOne({
+          where: { id: sample.orderId, ...(tenantId ? { tenantId } : {}) },
+        });
+        if (order && order.status === OrderStatus.IN_PROGRESS) {
+          order.status = OrderStatus.PENDING;
+          await manager.save(order);
+          revertedOrderId = order.id;
+        }
+      }
+
+      await this.writeLabAudit(manager, {
+        action: 'LAB_SAMPLE_REJECTED',
+        entityId: savedSample.id,
+        userId,
+        tenantId,
+        previousStatus,
+        newValue: {
+          sampleNumber: savedSample.sampleNumber,
+          status: savedSample.status,
+          rejectionReason: dto.rejectionReason,
+          revertedOrderId,
+        },
+      });
+
+      this.logger.warn(
+        `Sample rejected: ${sample.sampleNumber} by user ${userId}, reason: ${dto.rejectionReason}` +
+          (revertedOrderId ? ` (order ${revertedOrderId} reverted to PENDING for re-collection)` : ''),
       );
+
+      // Notify ordering doctor (outside critical path; failure non-fatal)
+      if (revertedOrderId) {
+        try {
+          const fullSample = await manager.getRepository(LabSample).findOne({
+            where: { id: savedSample.id },
+            relations: ['order', 'order.encounter', 'order.encounter.patient'],
+          });
+          const orderedById = fullSample?.order?.orderedById;
+          const patientName = fullSample?.order?.encounter?.patient?.fullName || 'Patient';
+          if (orderedById) {
+            await this.inAppNotificationsService
+              .create(
+                {
+                  targetUserId: orderedById,
+                  facilityId: sample.facilityId,
+                  type: 'LAB_SAMPLE_REJECTED' as any,
+                  title: 'Lab Sample Rejected — Re-collect Required',
+                  message: `Sample ${savedSample.sampleNumber} for ${patientName} was rejected: ${dto.rejectionReason}. Please re-collect.`,
+                  metadata: {
+                    sampleId: savedSample.id,
+                    sampleNumber: savedSample.sampleNumber,
+                    orderId: revertedOrderId,
+                    rejectionReason: dto.rejectionReason,
+                  },
+                },
+                tenantId,
+              )
+              .catch(() => undefined);
+          }
+        } catch (err) {
+          this.logger.warn(
+            `Failed to send rejection notification for ${savedSample.sampleNumber}: ${(err as Error).message}`,
+          );
+        }
+      }
+
+      return savedSample;
+    });
+  }
+
+  // P1-1: write a structured audit_logs row for state-mutating lab
+  // operations. Errors here MUST NOT roll back the parent txn (we log
+  // and swallow) — but because the call site passes the txn manager,
+  // a successful insert participates in the same commit as the state
+  // change, so we never log "validated" for a row that never persisted.
+  private async writeLabAudit(
+    manager: EntityManager,
+    payload: {
+      action: string;
+      entityId: string;
+      userId: string;
+      tenantId?: string;
+      previousStatus?: string;
+      newValue: Record<string, any>;
+    },
+  ): Promise<void> {
+    try {
+      const repo = manager.getRepository(AuditLog);
+      await repo.save(
+        repo.create({
+          action: payload.action,
+          entityType: 'LabSample',
+          entityId: payload.entityId,
+          userId: payload.userId,
+          oldValue: payload.previousStatus ? { status: payload.previousStatus } : undefined,
+          newValue: payload.newValue,
+          ...(payload.tenantId ? { tenantId: payload.tenantId } : {}),
+        } as any),
+      );
+    } catch (err) {
+      this.logger.warn(`Lab audit write failed (${payload.action}): ${(err as Error).message}`);
     }
-
-    sample.status = SampleStatus.REJECTED;
-    sample.rejectionReason = dto.rejectionReason;
-
-    const savedSample = await this.sampleRepo.save(sample);
-    this.logger.warn(
-      `Sample rejected: ${sample.sampleNumber} by user ${userId}, reason: ${dto.rejectionReason}`,
-    );
-    return savedSample;
   }
 
   // ========== LAB SAMPLE STATE MACHINE ==========
@@ -719,7 +895,24 @@ export class LabService {
       result.validatedAt = new Date();
       if (dto.comments) result.comments = dto.comments;
 
-      return manager.save(result);
+      const saved = await manager.save(result);
+
+      await this.writeLabAudit(manager, {
+        action: 'LAB_RESULT_VALIDATED',
+        entityId: saved.id,
+        userId,
+        tenantId,
+        previousStatus: ResultStatus.ENTERED,
+        newValue: {
+          resultId: saved.id,
+          sampleId: saved.sampleId,
+          parameter: saved.parameter,
+          status: saved.status,
+          comments: dto.comments || null,
+        },
+      });
+
+      return saved;
     });
 
     this.logger.log(`Lab result validated: ${id} by user ${userId}`);
@@ -798,6 +991,21 @@ export class LabService {
       result.releasedAt = new Date();
 
       const savedResult = await manager.save(result);
+
+      await this.writeLabAudit(manager, {
+        action: 'LAB_RESULT_RELEASED',
+        entityId: savedResult.id,
+        userId,
+        tenantId,
+        previousStatus: ResultStatus.VALIDATED,
+        newValue: {
+          resultId: savedResult.id,
+          sampleId: savedResult.sampleId,
+          parameter: savedResult.parameter,
+          status: savedResult.status,
+          abnormalFlag: savedResult.abnormalFlag,
+        },
+      });
 
       // Check if all results for sample are released
       const allResults = await manager.find(LabResult, {
@@ -970,6 +1178,27 @@ export class LabService {
       result.status = ResultStatus.AMENDED;
 
       const savedResult = await resultRepo.save(result);
+
+      await this.writeLabAudit(manager, {
+        action: 'LAB_RESULT_AMENDED',
+        entityId: savedResult.id,
+        userId,
+        tenantId,
+        previousStatus: ResultStatus.RELEASED,
+        newValue: {
+          resultId: savedResult.id,
+          sampleId: savedResult.sampleId,
+          parameter: savedResult.parameter,
+          status: savedResult.status,
+          value: savedResult.value,
+          numericValue: savedResult.numericValue,
+          unit: savedResult.unit,
+          abnormalFlag: savedResult.abnormalFlag,
+          amendmentReason: dto.amendmentReason,
+          previousValuesCount: previousValues.length,
+        },
+      });
+
       this.logger.warn(
         `Lab result amended: ${id} by user ${userId}, reason: ${dto.amendmentReason}`,
       );
