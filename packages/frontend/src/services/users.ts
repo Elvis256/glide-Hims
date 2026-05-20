@@ -153,6 +153,48 @@ export const usersService = {
     return response.data;
   },
 
+  // Employee link management
+  backfillEmployees: async (): Promise<BackfillResult> => {
+    const response = await api.post<{ message: string; data: BackfillResult } | BackfillResult>(
+      '/users/backfill-employees'
+    );
+    if (response.data && typeof response.data === 'object' && 'data' in response.data) {
+      return (response.data as { message: string; data: BackfillResult }).data;
+    }
+    return response.data as BackfillResult;
+  },
+
+  listWithoutEmployee: async (
+    params?: { search?: string; limit?: number; offset?: number }
+  ): Promise<{ data: UnlinkedUser[]; meta: { total: number; limit: number; offset: number } }> => {
+    const response = await api.get('/users/without-employee', { params });
+    return response.data;
+  },
+
+  listUnlinkedEmployees: async (
+    params?: { facilityId?: string; search?: string; limit?: number; offset?: number }
+  ): Promise<{ data: UnlinkedEmployee[]; meta: { total: number; limit: number; offset: number } }> => {
+    const response = await api.get('/users/employees/unlinked', { params });
+    return response.data;
+  },
+
+  linkEmployee: async (userId: string, employeeId: string): Promise<UnlinkedEmployee> => {
+    const response = await api.post<{ message: string; data: UnlinkedEmployee }>(
+      `/users/${userId}/link-employee`,
+      { employeeId }
+    );
+    return response.data?.data ?? (response.data as unknown as UnlinkedEmployee);
+  },
+
+  unlinkEmployee: async (userId: string): Promise<void> => {
+    await api.delete(`/users/${userId}/unlink-employee`);
+  },
+
+  getLinkedEmployee: async (userId: string): Promise<UnlinkedEmployee | null> => {
+    const response = await api.get<{ data: UnlinkedEmployee | null }>(`/users/${userId}/employee`);
+    return response.data?.data ?? null;
+  },
+
   // Activity logs
   activityLogs: {
     list: async (params?: { userId?: string; action?: string; module?: string; from?: string; to?: string }): Promise<ActivityLog[]> => {
@@ -228,6 +270,35 @@ export const usersService = {
     },
   },
 };
+
+// Employee-link picker types
+export interface UnlinkedUser {
+  id: string;
+  username: string;
+  fullName: string;
+  email: string;
+  status: string;
+  createdAt: string;
+}
+
+export interface UnlinkedEmployee {
+  id: string;
+  employeeNumber: string;
+  firstName: string;
+  lastName: string;
+  fullName?: string;
+  email?: string;
+  jobTitle?: string;
+  department?: string;
+  departmentId?: string | null;
+  facilityId?: string;
+  status?: string;
+}
+
+export interface BackfillResult {
+  created: number;
+  skipped: number;
+}
 
 export interface ActivityLog {
   id: string;

@@ -27,9 +27,13 @@ import {
   Unlock,
   Briefcase,
   Users2,
+  Link2,
+  LinkIcon,
+  Unlink,
+  RefreshCw,
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
-import { usersService, type User, type CreateUserDto, type UpdateUserDto, type EmployeeProfileDto } from '../../../services/users';
+import { usersService, type User, type CreateUserDto, type UpdateUserDto, type EmployeeProfileDto, type UnlinkedEmployee } from '../../../services/users';
 import { rolesService, type Role } from '../../../services/roles';
 import { facilitiesService } from '../../../services/facilities';
 import { useFacilityId } from '../../../lib/facility';
@@ -80,6 +84,13 @@ export default function UserListPage() {
   const [showViewModal, setShowViewModal] = useState(false);
   const [viewingUser, setViewingUser] = useState<User | null>(null);
   const [permissionsUser, setPermissionsUser] = useState<User | null>(null);
+
+  // Link-employee picker state
+  const [showLinkEmployeeModal, setShowLinkEmployeeModal] = useState(false);
+  const [linkingUser, setLinkingUser] = useState<User | null>(null);
+  const [empPickerSearch, setEmpPickerSearch] = useState('');
+  const [showUnlinkConfirm, setShowUnlinkConfirm] = useState(false);
+  const [unlinkingUser, setUnlinkingUser] = useState<User | null>(null);
 
   // Fetch users from API
   const { data: usersData, isLoading, error } = useQuery({
@@ -293,6 +304,81 @@ export default function UserListPage() {
     },
   });
 
+  // Backfill employees mutation
+  const backfillEmployeesMutation = useMutation({
+    mutationFn: () => usersService.backfillEmployees(),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      queryClient.invalidateQueries({ queryKey: ['unlinked-employees'] });
+      toast.success(
+        `Backfill complete: ${result.created} employee record(s) created, ${result.skipped} skipped`,
+      );
+    },
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Backfill failed'));
+    },
+  });
+
+  // Unlinked-employee picker (only fetched while modal is open)
+  const { data: unlinkedEmpData, isLoading: isLoadingUnlinkedEmployees } = useQuery({
+    queryKey: ['unlinked-employees', empPickerSearch],
+    queryFn: () =>
+      usersService.listUnlinkedEmployees({
+        search: empPickerSearch.trim() || undefined,
+        limit: 100,
+      }),
+    enabled: showLinkEmployeeModal,
+    staleTime: 15000,
+  });
+  const unlinkedEmployees: UnlinkedEmployee[] = unlinkedEmpData?.data || [];
+
+  // Link / unlink mutations
+  const linkEmployeeMutation = useMutation({
+    mutationFn: ({ userId, employeeId }: { userId: string; employeeId: string }) =>
+      usersService.linkEmployee(userId, employeeId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      queryClient.invalidateQueries({ queryKey: ['unlinked-employees'] });
+      setShowLinkEmployeeModal(false);
+      setLinkingUser(null);
+      setEmpPickerSearch('');
+      toast.success('Employee linked to user');
+    },
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to link employee'));
+    },
+  });
+
+  const unlinkEmployeeMutation = useMutation({
+    mutationFn: (userId: string) => usersService.unlinkEmployee(userId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      queryClient.invalidateQueries({ queryKey: ['unlinked-employees'] });
+      setShowUnlinkConfirm(false);
+      setUnlinkingUser(null);
+      toast.success('Employee unlinked from user');
+    },
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to unlink employee'));
+    },
+  });
+
+  const handleOpenLinkEmployee = (user: User) => {
+    setLinkingUser(user);
+    setEmpPickerSearch('');
+    setShowLinkEmployeeModal(true);
+  };
+
+  const handleConfirmLinkEmployee = (employeeId: string) => {
+    if (!linkingUser) return;
+    linkEmployeeMutation.mutate({ userId: linkingUser.id, employeeId });
+  };
+
+  const handleOpenUnlinkEmployee = (user: User) => {
+    setUnlinkingUser(user);
+    setShowUnlinkConfirm(true);
+  };
+
   // Bulk actions
   const handleBulkActivate = async () => {
     for (const userId of selectedUsers) {
@@ -417,6 +503,19 @@ export default function UserListPage() {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => {
+              if (backfillEmployeesMutation.isPending) return;
+              if (!confirm('Create employee records for any active user that does not yet have one? Idempotent — existing links are not touched.')) return;
+              backfillEmployeesMutation.mutate();
+            }}
+            disabled={backfillEmployeesMutation.isPending}
+            title="Create employee records for users without one"
+            className="flex items-center gap-2 px-3 py-2 text-sm border border-purple-200 text-purple-700 bg-purple-50 rounded-lg hover:bg-purple-100 disabled:opacity-60"
+          >
+            <RefreshCw className={`w-4 h-4 ${backfillEmployeesMutation.isPending ? 'animate-spin' : ''}`} />
+            Backfill Employees
+          </button>
           <Link
             to="/admin/hr/staff"
             className="flex items-center gap-2 px-3 py-2 text-sm border border-green-200 text-green-700 bg-green-50 rounded-lg hover:bg-green-100"
@@ -709,6 +808,25 @@ export default function UserListPage() {
                               <Shield className="w-4 h-4 text-purple-500" />
                               Direct Permissions
                             </button>
+                            <hr className="my-1" />
+                            {user.employeeNumber ? (
+                              <button
+                                onClick={() => { handleOpenUnlinkEmployee(user); setShowActionsMenu(null); }}
+                                className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                                title={`Currently linked to ${user.employeeNumber}`}
+                              >
+                                <Unlink className="w-4 h-4 text-orange-500" />
+                                Unlink Employee
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => { handleOpenLinkEmployee(user); setShowActionsMenu(null); }}
+                                className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                              >
+                                <LinkIcon className="w-4 h-4 text-blue-500" />
+                                Link to Employee
+                              </button>
+                            )}
                             <hr className="my-1" />
                             <button
                               onClick={() => { handleDeleteUser(user); setShowActionsMenu(null); }}
@@ -1430,6 +1548,136 @@ export default function UserListPage() {
           user={permissionsUser}
           onClose={() => setPermissionsUser(null)}
         />
+      )}
+
+      {/* Link Employee Picker Modal */}
+      {showLinkEmployeeModal && linkingUser && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl mx-4 max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b shrink-0">
+              <div>
+                <h2 className="text-lg font-semibold flex items-center gap-2">
+                  <Link2 className="w-5 h-5 text-blue-600" />
+                  Link to Employee
+                </h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Pick an HR employee record to associate with <span className="font-medium text-gray-800">{linkingUser.fullName}</span>
+                </p>
+              </div>
+              <button
+                onClick={() => { setShowLinkEmployeeModal(false); setLinkingUser(null); setEmpPickerSearch(''); }}
+                className="p-1 hover:bg-gray-100 rounded"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 border-b shrink-0">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  autoFocus
+                  placeholder="Search by name, employee number, email…"
+                  value={empPickerSearch}
+                  onChange={(e) => setEmpPickerSearch(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {isLoadingUnlinkedEmployees ? (
+                <div className="p-8 flex items-center justify-center text-gray-500">
+                  <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading employees…
+                </div>
+              ) : unlinkedEmployees.length === 0 ? (
+                <div className="p-8 text-center text-sm text-gray-500">
+                  No unlinked employees found. Use <span className="font-medium">Backfill Employees</span> to create new records for users without one.
+                </div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Employee #</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Job Title</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Department</th>
+                      <th className="px-4 py-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {unlinkedEmployees.map((emp) => (
+                      <tr key={emp.id} className="hover:bg-blue-50">
+                        <td className="px-4 py-2 font-mono text-blue-700 text-xs">{emp.employeeNumber}</td>
+                        <td className="px-4 py-2">
+                          <div className="font-medium text-gray-900">{emp.fullName || `${emp.firstName ?? ''} ${emp.lastName ?? ''}`.trim()}</div>
+                          {emp.email && <div className="text-xs text-gray-500">{emp.email}</div>}
+                        </td>
+                        <td className="px-4 py-2 text-gray-700">{emp.jobTitle || '—'}</td>
+                        <td className="px-4 py-2 text-gray-700">{emp.department || '—'}</td>
+                        <td className="px-4 py-2 text-right">
+                          <button
+                            onClick={() => handleConfirmLinkEmployee(emp.id)}
+                            disabled={linkEmployeeMutation.isPending}
+                            className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 inline-flex items-center gap-1"
+                          >
+                            {linkEmployeeMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <LinkIcon className="w-3 h-3" />}
+                            Link
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <div className="p-3 border-t bg-gray-50 text-xs text-gray-500 flex items-center justify-between shrink-0">
+              <span>
+                {unlinkedEmpData?.meta ? `${unlinkedEmployees.length} of ${unlinkedEmpData.meta.total}` : ''}
+              </span>
+              <span>
+                Can't find one? Use <span className="font-medium text-purple-700">Backfill Employees</span> to auto-create.
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Unlink Employee Confirm */}
+      {showUnlinkConfirm && unlinkingUser && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
+            <div className="p-5 border-b">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <Unlink className="w-5 h-5 text-orange-500" />
+                Unlink Employee
+              </h2>
+            </div>
+            <div className="p-5 text-sm text-gray-700 space-y-2">
+              <p>
+                Unlink <span className="font-medium">{unlinkingUser.fullName}</span> from employee <span className="font-mono text-blue-700">{unlinkingUser.employeeNumber}</span>?
+              </p>
+              <p className="text-xs text-gray-500">
+                The employee record will remain in the HR module but will no longer be reachable from this user's account.
+              </p>
+            </div>
+            <div className="p-4 border-t bg-gray-50 flex items-center justify-end gap-2">
+              <button
+                onClick={() => { setShowUnlinkConfirm(false); setUnlinkingUser(null); }}
+                className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-white"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => unlinkEmployeeMutation.mutate(unlinkingUser.id)}
+                disabled={unlinkEmployeeMutation.isPending}
+                className="px-4 py-2 text-sm bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {unlinkEmployeeMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                Unlink
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
