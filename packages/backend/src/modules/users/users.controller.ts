@@ -164,6 +164,18 @@ export class UsersController {
     return this.usersService.findAll(query, tenantId);
   }
 
+  @Get('me')
+  @AuthWithPermissions()
+  @ApiOperation({ summary: 'Get current authenticated user with roles' })
+  @ApiResponse({ status: 200, description: 'Current user details' })
+  async findMe(@Request() req: any) {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new ForbiddenException('Authentication required');
+    }
+    return this.usersService.findOneWithRoles(userId, req.user?.tenantId);
+  }
+
   @Get(':id')
   @AuthWithPermissions('users.read')
   @ApiOperation({ summary: 'Get user by ID with roles' })
