@@ -7,9 +7,10 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, LessThan, MoreThan, IsNull, DataSource } from 'typeorm';
+import { Repository, Between, LessThan, MoreThan, IsNull, DataSource, Not } from 'typeorm';
 import { FinanceService } from '../finance/finance.service';
 import { BillingService } from '../billing/billing.service';
+import { AuditLogService } from '../../common/interceptors/audit-log.service';
 import { InsuranceProvider } from '../../database/entities/insurance-provider.entity';
 import { InsurancePolicy, PolicyStatus } from '../../database/entities/insurance-policy.entity';
 import { InsuranceClaim, ClaimStatus } from '../../database/entities/insurance-claim.entity';
@@ -58,6 +59,7 @@ export class InsuranceService {
     private billingService: BillingService,
     private claimExportService: ClaimExportService,
     private dataSource: DataSource,
+    private auditLogService: AuditLogService,
   ) {}
 
   // ============ DASHBOARD ============
@@ -582,103 +584,252 @@ export class InsuranceService {
     dto: ProcessClaimDto,
     approve: boolean,
     tenantId?: string,
+    userId?: string,
   ): Promise<InsuranceClaim> {
-    const claim = await this.getClaim(id, tenantId);
+    return this.dataSource.transaction(async (manager) => {
+      const claim = await manager.findOne(InsuranceClaim, {
+        where: { id, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!claim) throw new NotFoundException('Claim not found');
 
-    if (claim.status !== ClaimStatus.SUBMITTED && claim.status !== ClaimStatus.IN_REVIEW) {
-      throw new BadRequestException('Claim cannot be processed in current status');
-    }
+      if (claim.status !== ClaimStatus.SUBMITTED && claim.status !== ClaimStatus.IN_REVIEW) {
+        throw new BadRequestException('Claim cannot be processed in current status');
+      }
 
-    claim.reviewedAt = new Date();
+      // Segregation of duties: the user who submitted the claim cannot also
+      // approve / reject it. Mirrors billing's refund / cancel checks.
+      if (userId && claim.submittedById && claim.submittedById === userId) {
+        throw new BadRequestException(
+          'Segregation of duties violation: the user who submitted the claim cannot also process it',
+        );
+      }
 
-    if (approve) {
-      claim.totalApproved = dto.approvedAmount;
-      claim.patientResponsibility = Number(claim.totalClaimed) - dto.approvedAmount;
+      const previousStatus = claim.status;
+      const previousApproved = Number(claim.totalApproved || 0);
+      claim.reviewedAt = new Date();
 
-      if (dto.approvedAmount >= Number(claim.totalClaimed)) {
-        claim.status = ClaimStatus.APPROVED;
-      } else if (dto.approvedAmount > 0) {
-        claim.status = ClaimStatus.PARTIALLY_APPROVED;
+      if (approve) {
+        const approvedAmount = Number(dto.approvedAmount || 0);
+        if (approvedAmount < 0) {
+          throw new BadRequestException('Approved amount cannot be negative');
+        }
+        if (approvedAmount > Number(claim.totalClaimed)) {
+          throw new BadRequestException(
+            `Approved amount ${approvedAmount} exceeds claimed amount ${claim.totalClaimed}`,
+          );
+        }
+
+        // Cumulative usage / annual-limit enforcement against the policy.
+        // policy.usedAmount only moves on actual payment; reserve headroom by
+        // also summing approved-but-unpaid amounts on prior claims so the
+        // approver cannot authorize over the ceiling.
+        const policy = await manager.findOne(InsurancePolicy, {
+          where: { id: claim.policyId, ...(tenantId ? { tenantId } : {}) },
+          lock: { mode: 'pessimistic_read' },
+        });
+        if (!policy) throw new NotFoundException('Policy not found');
+        const annualLimit = Number(policy.annualLimit || 0);
+        if (annualLimit > 0) {
+          const used = Number(policy.usedAmount || 0);
+          const otherApproved = await manager
+            .createQueryBuilder(InsuranceClaim, 'c')
+            .select('COALESCE(SUM(c.total_approved - c.total_paid), 0)', 'sum')
+            .where('c.policy_id = :pid', { pid: claim.policyId })
+            .andWhere('c.id != :cid', { cid: claim.id })
+            .andWhere('c.status IN (:...statuses)', {
+              statuses: [ClaimStatus.APPROVED, ClaimStatus.PARTIALLY_APPROVED],
+            })
+            .getRawOne<{ sum: string }>();
+          const reserved = Number(otherApproved?.sum || 0);
+          const headroom = Math.max(0, annualLimit - used - reserved);
+          if (approvedAmount > headroom) {
+            throw new BadRequestException(
+              `Approved amount ${approvedAmount} exceeds remaining policy headroom of ${headroom} ` +
+                `(annual limit ${annualLimit}, used ${used}, reserved by other open claims ${reserved}).`,
+            );
+          }
+        }
+
+        claim.totalApproved = approvedAmount;
+        claim.patientResponsibility = Number(claim.totalClaimed) - approvedAmount;
+
+        if (approvedAmount >= Number(claim.totalClaimed)) {
+          claim.status = ClaimStatus.APPROVED;
+        } else if (approvedAmount > 0) {
+          claim.status = ClaimStatus.PARTIALLY_APPROVED;
+        } else {
+          claim.status = ClaimStatus.REJECTED;
+          claim.denialReason = dto.denialReason;
+          claim.denialCode = dto.denialCode;
+        }
       } else {
         claim.status = ClaimStatus.REJECTED;
         claim.denialReason = dto.denialReason;
         claim.denialCode = dto.denialCode;
+        claim.totalApproved = 0;
+        claim.patientResponsibility = Number(claim.totalClaimed);
       }
-    } else {
-      claim.status = ClaimStatus.REJECTED;
-      claim.denialReason = dto.denialReason;
-      claim.denialCode = dto.denialCode;
-      claim.totalApproved = 0;
-      claim.patientResponsibility = Number(claim.totalClaimed);
-    }
 
-    if (dto.notes) claim.notes = dto.notes;
+      if (dto.notes) claim.notes = dto.notes;
 
-    return this.claimRepo.save(claim);
+      const saved = await manager.save(InsuranceClaim, claim);
+
+      await this.auditLogService
+        .log({
+          userId,
+          action: approve ? 'INSURANCE_CLAIM_APPROVED' : 'INSURANCE_CLAIM_REJECTED',
+          entityType: 'InsuranceClaim',
+          entityId: saved.id,
+          oldValue: { status: previousStatus, totalApproved: previousApproved },
+          newValue: {
+            status: saved.status,
+            totalApproved: Number(saved.totalApproved),
+            patientResponsibility: Number(saved.patientResponsibility),
+            denialReason: saved.denialReason || null,
+            denialCode: saved.denialCode || null,
+          },
+          reason: dto.notes,
+          ...(tenantId ? { tenantId } : {}),
+        })
+        .catch((err) =>
+          this.logger.error(`Audit log failed for processClaim ${saved.id}: ${err.message}`),
+        );
+
+      return saved;
+    });
   }
 
   async recordPayment(
     id: string,
     dto: RecordPaymentDto,
     tenantId?: string,
+    userId?: string,
   ): Promise<InsuranceClaim> {
-    const claim = await this.getClaim(id, tenantId);
-
-    if (claim.status !== ClaimStatus.APPROVED && claim.status !== ClaimStatus.PARTIALLY_APPROVED) {
-      throw new BadRequestException('Claim must be approved to record payment');
+    const paidAmount = Number(dto.paidAmount || 0);
+    if (paidAmount <= 0) {
+      throw new BadRequestException('Paid amount must be positive');
     }
 
-    claim.totalPaid = dto.paidAmount;
-    claim.paymentReference = dto.paymentReference;
-    claim.paidAt = dto.paymentDate ? new Date(dto.paymentDate) : new Date();
-    claim.status = ClaimStatus.PAID;
+    const { saved, settledInBilling } = await this.dataSource.transaction(async (manager) => {
+      const claim = await manager.findOne(InsuranceClaim, {
+        where: { id, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!claim) throw new NotFoundException('Claim not found');
 
-    // Update policy used amount
-    const policy = await this.getPolicy(claim.policyId, tenantId);
-    policy.usedAmount = Number(policy.usedAmount) + dto.paidAmount;
-    await this.policyRepo.save(policy);
-
-    const saved = await this.claimRepo.save(claim);
-
-    // Also reflect the insurance payment on the underlying invoice so the invoice
-    // balance closes (or goes to PARTIALLY_PAID if patient still owes a copay).
-    if (claim.invoiceId && dto.paidAmount > 0) {
-      await this.billingService
-        .recordInsuranceClaimPayment(
-          claim.invoiceId,
-          dto.paidAmount,
-          claim.claimNumber,
-          dto.paymentReference,
-          'system',
-          tenantId,
-        )
-        .catch((err: any) =>
-          this.logger.warn(
-            `Failed to mirror claim payment ${claim.claimNumber} onto invoice ${claim.invoiceId}: ${err.message}`,
-          ),
+      if (claim.status !== ClaimStatus.APPROVED && claim.status !== ClaimStatus.PARTIALLY_APPROVED) {
+        throw new BadRequestException(
+          'Claim must be approved (or partially approved) to record payment',
         );
-    }
+      }
 
-    // Auto-post GL entry: DR Cash/Bank, CR Accounts Receivable
-    if (claim.facilityId) {
+      // Segregation of duties: neither the submitter nor the user who recorded
+      // the previous payment can post a new payment on the same claim.
+      if (userId && claim.submittedById && claim.submittedById === userId) {
+        throw new BadRequestException(
+          'Segregation of duties violation: the user who submitted the claim cannot also record the payment',
+        );
+      }
+
+      // Idempotency + cap: paidAmount is treated as the cumulative paid total
+      // for this claim. We reject duplicates and amounts that exceed the
+      // approved ceiling, so calling recordPayment twice (or with an inflated
+      // value) cannot inflate policy.usedAmount beyond what was approved.
+      const previouslyPaid = Number(claim.totalPaid || 0);
+      const approvedCeiling = Number(claim.totalApproved || 0);
+      if (paidAmount > approvedCeiling) {
+        throw new BadRequestException(
+          `Paid amount ${paidAmount} exceeds approved amount ${approvedCeiling}`,
+        );
+      }
+      if (paidAmount <= previouslyPaid) {
+        throw new BadRequestException(
+          `Paid amount ${paidAmount} is not greater than already recorded ${previouslyPaid}; nothing to post`,
+        );
+      }
+      const delta = paidAmount - previouslyPaid;
+
+      const policy = await manager.findOne(InsurancePolicy, {
+        where: { id: claim.policyId, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!policy) throw new NotFoundException('Policy not found');
+
+      claim.totalPaid = paidAmount;
+      claim.paymentReference = dto.paymentReference;
+      claim.paidAt = dto.paymentDate ? new Date(dto.paymentDate) : new Date();
+      claim.status = ClaimStatus.PAID;
+
+      policy.usedAmount = Number(policy.usedAmount || 0) + delta;
+      await manager.save(InsurancePolicy, policy);
+
+      const savedClaim = await manager.save(InsuranceClaim, claim);
+
+      // Mirror the settlement onto the invoice inside the SAME txn so a
+      // billing failure rolls back the claim flip and the policy increment.
+      // recordInsuranceClaimPayment is idempotent on transactionReference,
+      // so retries are safe even if upstream calls this method more than once.
+      let mirror: any = null;
+      if (savedClaim.invoiceId && delta > 0) {
+        mirror = await this.billingService.recordInsuranceClaimPayment(
+          savedClaim.invoiceId,
+          delta,
+          savedClaim.claimNumber,
+          dto.paymentReference,
+          userId || 'system',
+          tenantId,
+        );
+      }
+
+      await this.auditLogService
+        .log({
+          userId,
+          action: 'INSURANCE_CLAIM_PAYMENT_RECORDED',
+          entityType: 'InsuranceClaim',
+          entityId: savedClaim.id,
+          oldValue: { totalPaid: previouslyPaid, status: ClaimStatus.APPROVED },
+          newValue: {
+            totalPaid: paidAmount,
+            delta,
+            status: savedClaim.status,
+            policyUsedAmount: Number(policy.usedAmount),
+            paymentReference: dto.paymentReference,
+            mirrored: Boolean(mirror),
+          },
+          ...(tenantId ? { tenantId } : {}),
+        })
+        .catch((err) =>
+          this.logger.error(`Audit log failed for recordPayment ${savedClaim.id}: ${err.message}`),
+        );
+
+      return { saved: savedClaim, settledInBilling: Boolean(mirror) };
+    });
+
+    // GL posting runs on its own connection and is best-effort — outside the
+    // txn so a GL failure does not roll back the claim/policy/invoice writes,
+    // mirroring billing's autoPost* behavior. The audit log above flags whether
+    // billing mirroring succeeded so reconciliation can detect drift.
+    if (saved.facilityId) {
       this.financeService
         .autoPostInsurancePaymentJournal(
           {
-            facilityId: claim.facilityId,
-            claimNumber: claim.claimNumber,
-            amount: dto.paidAmount,
-            paymentReference: dto.paymentReference,
-            userId: 'system',
+            facilityId: saved.facilityId,
+            claimNumber: saved.claimNumber,
+            amount: Number(saved.totalPaid),
+            paymentReference: saved.paymentReference,
+            userId: userId || 'system',
           },
           tenantId,
         )
         .catch((err) => {
           this.logger.warn(
-            `GL auto-post failed for insurance claim ${claim.claimNumber}: ${err.message}`,
+            `GL auto-post failed for insurance claim ${saved.claimNumber}: ${err.message}`,
           );
         });
     }
 
+    void settledInBilling;
     return saved;
   }
 
@@ -704,11 +855,29 @@ export class InsuranceService {
       throw new BadRequestException('Estimated cost must be positive');
     }
 
-    // Validate against policy coverage limit
-    if (policy.annualLimit && dto.estimatedCost > Number(policy.annualLimit)) {
-      throw new BadRequestException(
-        `Estimated cost ${dto.estimatedCost} exceeds policy annual limit of ${policy.annualLimit}. Adjust the estimated cost or contact the insurer.`,
-      );
+    // Validate against policy coverage limit, INCLUDING already-used amount.
+    // Without this, a single policy could issue multiple full-limit pre-auths
+    // because each is compared against the gross annual limit instead of the
+    // remaining headroom (mirrors the cumulative-usage check in billing).
+    if (policy.annualLimit && dto.estimatedCost !== undefined) {
+      const used = Number(policy.usedAmount || 0);
+      const limit = Number(policy.annualLimit);
+      const outstanding = await this.preAuthRepo
+        .createQueryBuilder('pa')
+        .select('COALESCE(SUM(pa.approved_amount), 0)', 'sum')
+        .where('pa.policy_id = :pid', { pid: policy.id })
+        .andWhere('pa.status IN (:...statuses)', {
+          statuses: [PreAuthStatus.APPROVED, PreAuthStatus.PARTIALLY_APPROVED],
+        })
+        .getRawOne<{ sum: string }>();
+      const reserved = Number(outstanding?.sum || 0);
+      const remaining = Math.max(0, limit - used - reserved);
+      if (dto.estimatedCost > remaining) {
+        throw new BadRequestException(
+          `Estimated cost ${dto.estimatedCost} exceeds remaining policy headroom of ${remaining} ` +
+            `(annual limit ${limit}, used ${used}, reserved by other pre-auths ${reserved}).`,
+        );
+      }
     }
 
     // Validate policy is active
@@ -784,6 +953,7 @@ export class InsuranceService {
     dto: ProcessPreAuthDto,
     approve: boolean,
     tenantId?: string,
+    userId?: string,
   ): Promise<PreAuthorization> {
     const preAuth = await this.getPreAuth(id, tenantId);
 
@@ -791,6 +961,16 @@ export class InsuranceService {
       throw new BadRequestException('Pre-authorization cannot be processed');
     }
 
+    // Segregation of duties: the user who requested the pre-auth cannot also
+    // approve / deny it.
+    if (userId && preAuth.requestedById && preAuth.requestedById === userId) {
+      throw new BadRequestException(
+        'Segregation of duties violation: the user who requested the pre-authorization cannot also process it',
+      );
+    }
+
+    const previousStatus = preAuth.status;
+    const previousApproved = Number(preAuth.approvedAmount || 0);
     preAuth.approvedAt = new Date();
 
     if (approve) {
@@ -815,7 +995,29 @@ export class InsuranceService {
 
     if (dto.notes) preAuth.notes = dto.notes;
 
-    return this.preAuthRepo.save(preAuth);
+    const saved = await this.preAuthRepo.save(preAuth);
+
+    await this.auditLogService
+      .log({
+        userId,
+        action: approve ? 'PREAUTH_APPROVED' : 'PREAUTH_DENIED',
+        entityType: 'PreAuthorization',
+        entityId: saved.id,
+        oldValue: { status: previousStatus, approvedAmount: previousApproved },
+        newValue: {
+          status: saved.status,
+          approvedAmount: Number(saved.approvedAmount),
+          insurerReference: saved.insurerReference || null,
+          denialReason: saved.denialReason || null,
+        },
+        reason: dto.notes,
+        ...(tenantId ? { tenantId } : {}),
+      })
+      .catch((err) =>
+        this.logger.error(`Audit log failed for processPreAuth ${saved.id}: ${err.message}`),
+      );
+
+    return saved;
   }
 
   // ============ REPORTS ============

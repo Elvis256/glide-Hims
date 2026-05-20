@@ -7,6 +7,7 @@ import { InsuranceController } from './insurance.controller';
 import { CoverageCheckService } from './coverage-check.service';
 import { CoverageCheckController } from './coverage-check.controller';
 import { ClaimExportService } from './claim-export.service';
+import { AuditModule } from '../../common/interceptors/audit.module';
 import { InsuranceProvider } from '../../database/entities/insurance-provider.entity';
 import { InsurancePolicy } from '../../database/entities/insurance-policy.entity';
 import { InsuranceClaim } from '../../database/entities/insurance-claim.entity';
@@ -28,6 +29,7 @@ import { Invoice } from '../../database/entities/invoice.entity';
     ]),
     forwardRef(() => FinanceModule),
     forwardRef(() => BillingModule),
+    AuditModule,
   ],
   controllers: [InsuranceController, CoverageCheckController],
   providers: [InsuranceService, CoverageCheckService, ClaimExportService],
