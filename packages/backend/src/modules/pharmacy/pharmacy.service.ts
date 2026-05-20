@@ -1332,6 +1332,24 @@ export class PharmacyService {
   async receiveBatch(dto: ReceiveBatchDto, tenantId?: string, userId?: string) {
     const { itemId, facilityId, batchNumber, expiryDate, quantity, storeId } = dto;
 
+    // P1: validate input BEFORE doing DB lookups so a clearly-bad request
+    // (past expiry, zero quantity) fails fast and uniformly regardless of
+    // whether the item happens to exist.
+    const parsedExpiry = new Date(expiryDate);
+    if (Number.isNaN(parsedExpiry.getTime())) {
+      throw new BadRequestException('expiryDate is not a valid date');
+    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (parsedExpiry < today) {
+      throw new BadRequestException(
+        `Cannot receive stock with a past expiry date (${parsedExpiry.toISOString().slice(0, 10)}). Expired stock requires the remediation workflow.`,
+      );
+    }
+    if (quantity <= 0) {
+      throw new BadRequestException('Receive quantity must be positive');
+    }
+
     // Validate item exists
     const itemWhere: any = { id: itemId };
     if (tenantId) itemWhere.tenantId = tenantId;
@@ -1345,6 +1363,12 @@ export class PharmacyService {
     // because pharmacy receipts weren't visible to inventory low-stock / movement
     // queries. Now we write all three inside one transaction via the canonical
     // InventoryService.applyStockMovement primitive.
+    //
+    // P1: re-receipt of an expired-batch row is only allowed if the NEW
+    // expiry is in the future (already enforced by the guard above); the
+    // explicit comparison below preserves the previous reactivation
+    // semantics for the in-window case.
+
     return this.dataSource.transaction(async (manager) => {
       const batchRepo = manager.getRepository(BatchStockBalance);
 
@@ -1357,9 +1381,12 @@ export class PharmacyService {
       if (existing) {
         existing.quantity = Number(existing.quantity) + quantity;
         if (existing.status === 'expired') {
-          const newExpiry = new Date(expiryDate);
-          if (newExpiry > existing.expiryDate) {
-            existing.expiryDate = newExpiry;
+          // Re-receipt of an expired-batch row is only allowed if the NEW
+          // expiry is in the future; the past-date guard above already
+          // enforces this, but keep the explicit comparison so the
+          // reactivation intent is local & readable.
+          if (parsedExpiry > existing.expiryDate) {
+            existing.expiryDate = parsedExpiry;
           }
           existing.status = 'active';
         }
@@ -1370,7 +1397,7 @@ export class PharmacyService {
           facilityId,
           storeId: storeId || undefined,
           batchNumber,
-          expiryDate: new Date(expiryDate),
+          expiryDate: parsedExpiry,
           quantity,
           reservedQuantity: 0,
           status: 'active',

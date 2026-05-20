@@ -5,6 +5,8 @@ import {
   IsBoolean,
   IsEnum,
   Min,
+  Max,
+  NotEquals,
   IsUUID,
   IsDateString,
 } from 'class-validator';
@@ -284,6 +286,14 @@ export class StockMovementDto {
   facilityId: string;
 
   @IsNumber()
+  @Min(-1_000_000_000)
+  @Max(1_000_000_000)
+  @NotEquals(0)
+  // Sign convention: positive for inflow (receive/return), negative for
+  // outflow (issue/dispense/transfer-out). Zero is never a valid stock
+  // movement and would either be a no-op or signal a caller bug;
+  // services consuming this DTO should additionally verify the sign
+  // matches the movementType.
   quantity: number;
 
   @IsEnum(MovementType)
