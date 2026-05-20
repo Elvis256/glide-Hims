@@ -10,6 +10,7 @@ import {
   Request,
   ParseUUIDPipe,
   UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { BillingService } from './billing.service';
@@ -20,6 +21,9 @@ import {
   InvoiceQueryDto,
   UpdateInvoiceItemDto,
   PreviewInvoiceDto,
+  ReasonDto,
+  RefundPaymentDto,
+  ListPaymentsQueryDto,
 } from './billing.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
@@ -82,6 +86,9 @@ export class BillingController {
   @AuthWithPermissions('billing.read')
   @ApiOperation({ summary: 'Get invoice by number' })
   findByNumber(@Param('invoiceNumber') invoiceNumber: string, @Request() req: any) {
+    if (!invoiceNumber || invoiceNumber.length < 3 || invoiceNumber.length > 64) {
+      throw new BadRequestException('invoiceNumber must be 3-64 characters');
+    }
     return this.billingService.findByInvoiceNumber(invoiceNumber, req.user?.tenantId);
   }
 
@@ -142,10 +149,10 @@ export class BillingController {
   @ApiOperation({ summary: 'Cancel invoice' })
   cancelInvoice(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body('reason') reason?: string,
+    @Body() body: ReasonDto,
     @Request() req?: any,
   ) {
-    return this.billingService.cancelInvoice(id, reason, req?.user?.id, req?.user?.tenantId);
+    return this.billingService.cancelInvoice(id, body.reason, req?.user?.id, req?.user?.tenantId);
   }
 
   @Patch('invoices/:id/refund')
@@ -153,10 +160,10 @@ export class BillingController {
   @ApiOperation({ summary: 'Refund invoice' })
   refundInvoice(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body('reason') reason?: string,
+    @Body() body: ReasonDto,
     @Request() req?: any,
   ) {
-    return this.billingService.refundInvoice(id, reason, req?.user?.id, req?.user?.tenantId);
+    return this.billingService.refundInvoice(id, body.reason, req?.user?.id, req?.user?.tenantId);
   }
 
   @Get('invoices/:id/payments')
@@ -169,13 +176,22 @@ export class BillingController {
   @Get('payments')
   @AuthWithPermissions('billing.read')
   @ApiOperation({ summary: 'List all payments' })
-  listPayments(
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
-    @Query('method') method?: string,
-    @Request() req?: any,
-  ) {
-    return this.billingService.listPayments({ startDate, endDate, method }, req?.user?.tenantId);
+  listPayments(@Query() query: ListPaymentsQueryDto, @Request() req?: any) {
+    if (query.startDate && query.endDate) {
+      const a = new Date(query.startDate);
+      const b = new Date(query.endDate);
+      if (b < a) {
+        throw new BadRequestException('endDate must be on or after startDate');
+      }
+      const days = Math.floor((b.getTime() - a.getTime()) / 86_400_000);
+      if (days > 366) {
+        throw new BadRequestException('Date range exceeds 366 days');
+      }
+    }
+    return this.billingService.listPayments(
+      { startDate: query.startDate, endDate: query.endDate, method: query.method },
+      req?.user?.tenantId,
+    );
   }
 
   @Get('payments/:id')
@@ -197,10 +213,10 @@ export class BillingController {
   @ApiOperation({ summary: 'Void a payment' })
   voidPayment(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body('reason') reason: string,
+    @Body() body: ReasonDto,
     @Request() req?: any,
   ) {
-    return this.billingService.voidPayment(id, reason, req?.user?.id, req?.user?.tenantId);
+    return this.billingService.voidPayment(id, body.reason, req?.user?.id, req?.user?.tenantId);
   }
 
   @Post('payments/:id/refund')
@@ -208,7 +224,7 @@ export class BillingController {
   @ApiOperation({ summary: 'Issue a partial or full refund against a payment' })
   refundPayment(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() body: { amount: number; reason: string },
+    @Body() body: RefundPaymentDto,
     @Request() req?: any,
   ) {
     return this.billingService.refundPayment(
@@ -224,7 +240,15 @@ export class BillingController {
   @AuthWithPermissions('billing.read')
   @ApiOperation({ summary: 'Get daily revenue summary' })
   getDailyRevenue(@Query('date') date?: string, @Request() req?: any) {
-    const reportDate = date ? new Date(date) : new Date();
+    let reportDate: Date;
+    if (date) {
+      reportDate = new Date(date);
+      if (Number.isNaN(reportDate.getTime())) {
+        throw new BadRequestException('date must be ISO format (YYYY-MM-DD)');
+      }
+    } else {
+      reportDate = new Date();
+    }
     return this.billingService.getDailyRevenue(reportDate, req?.user?.tenantId);
   }
 
@@ -238,6 +262,13 @@ export class BillingController {
     @Query('period') period?: 'daily' | 'weekly' | 'monthly',
     @Request() req?: any,
   ) {
+    if (!facilityId) {
+      throw new BadRequestException('facilityId is required');
+    }
+    const allowed = ['daily', 'weekly', 'monthly'] as const;
+    if (period && !allowed.includes(period as any)) {
+      throw new BadRequestException(`period must be one of: ${allowed.join(', ')}`);
+    }
     return this.billingService.getRevenueDashboard(
       facilityId,
       period || 'monthly',
@@ -251,14 +282,14 @@ export class BillingController {
   @ApiOperation({ summary: 'Write off an unpaid invoice as bad debt' })
   writeOffInvoice(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body('reason') reason: string,
+    @Body() body: ReasonDto,
     @Request() req: any,
   ) {
     const userRoles = req.user?.roles || [];
     const userPermissions = req.user?.permissions || [];
     return this.billingService.writeOffInvoice(
       id,
-      reason,
+      body.reason,
       req.user.id,
       req?.user?.tenantId,
       userRoles,
