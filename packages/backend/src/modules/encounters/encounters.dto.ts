@@ -6,11 +6,14 @@ import {
   IsDateString,
   IsNumber,
   Min,
+  Max,
+  MaxLength,
   IsArray,
   ValidateNested,
   IsIn,
   IsNotEmpty,
   ArrayMinSize,
+  ArrayMaxSize,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import {
@@ -35,6 +38,7 @@ export class CreateEncounterDto {
   type?: EncounterType = EncounterType.OPD;
 
   @IsString()
+  @MaxLength(2000)
   @IsOptional()
   chiefComplaint?: string;
 
@@ -52,10 +56,12 @@ export class UpdateEncounterDto {
   // to ensure transitions are validated against VALID_TRANSITIONS.
 
   @IsString()
+  @MaxLength(2000)
   @IsOptional()
   chiefComplaint?: string;
 
   @IsString()
+  @MaxLength(4000)
   @IsOptional()
   notes?: string;
 
@@ -88,12 +94,14 @@ export class UpdateStatusDto {
   providerId?: string;
 
   @IsString()
+  @MaxLength(1000)
   @IsOptional()
   reason?: string;
 }
 
 export class EncounterQueryDto {
   @IsString()
+  @MaxLength(128)
   @IsOptional()
   search?: string;
 
@@ -126,23 +134,27 @@ export class EncounterQueryDto {
   dateTo?: string;
 
   @Type(() => Number)
-  @IsNumber()
+  @IsNumber({ allowNaN: false, allowInfinity: false })
   @Min(1)
+  @Max(10000)
   @IsOptional()
   page?: number = 1;
 
   @Type(() => Number)
-  @IsNumber()
+  @IsNumber({ allowNaN: false, allowInfinity: false })
   @Min(1)
+  @Max(200)
   @IsOptional()
   limit?: number = 20;
 }
 
 class DiagnosisDto {
   @IsString()
+  @MaxLength(32)
   code: string;
 
   @IsString()
+  @MaxLength(512)
   description: string;
 
   @IsIn(['primary', 'secondary', 'differential'])
@@ -151,37 +163,45 @@ class DiagnosisDto {
 
 export class ReturnReasonDto {
   @IsString()
+  @MaxLength(1000)
   @IsNotEmpty({ message: 'Reason is required' })
   reason: string;
 }
 
 export class CompleteConsultationDto {
   @IsString()
+  @MaxLength(2000)
   @IsOptional()
   chiefComplaint?: string;
 
   @IsString()
+  @MaxLength(4000)
   @IsOptional()
   notes?: string;
 
   @IsString()
+  @MaxLength(8000)
   @IsOptional()
   subjective?: string;
 
   @IsString()
+  @MaxLength(8000)
   @IsOptional()
   objective?: string;
 
   @IsString()
+  @MaxLength(8000)
   @IsNotEmpty({ message: 'Assessment is required to complete consultation' })
   assessment: string;
 
   @IsString()
+  @MaxLength(8000)
   @IsNotEmpty({ message: 'Plan is required to complete consultation' })
   plan: string;
 
   @IsArray()
   @ArrayMinSize(1, { message: 'At least one diagnosis is required' })
+  @ArrayMaxSize(50)
   @ValidateNested({ each: true })
   @Type(() => DiagnosisDto)
   diagnoses: DiagnosisDto[];
@@ -191,6 +211,7 @@ export class CompleteConsultationDto {
   followUpDate?: string;
 
   @IsString()
+  @MaxLength(2000)
   @IsOptional()
   followUpNotes?: string;
 }
