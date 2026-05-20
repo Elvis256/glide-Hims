@@ -24,10 +24,11 @@ import {
 import { AuthWithPermissions, AuthWithOwnership } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
+import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
 
 @ApiTags('Encounters')
 @ApiBearerAuth()
-@UseGuards(ModuleGuard)
+@UseGuards(ModuleGuard, TenantContextGuard)
 @RequireModule('doctors')
 @Controller('encounters')
 export class EncountersController {
