@@ -710,7 +710,7 @@ export class HrService {
   }
 
   async getEmployees(
-    facilityId: string,
+    facilityId: string | undefined,
     options: {
       status?: EmploymentStatus;
       department?: string;
@@ -720,7 +720,8 @@ export class HrService {
     },
     tenantId?: string,
   ) {
-    const where: any = { facilityId };
+    const where: any = {};
+    if (facilityId) where.facilityId = facilityId;
     if (tenantId) where.tenantId = tenantId;
     if (options.status) where.status = options.status;
     // departmentId (FK) is preferred when both are supplied

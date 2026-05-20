@@ -250,14 +250,14 @@ export class HrController {
   @ApiOperation({
     summary: 'Get employees list (canonical)',
   })
-  @ApiQuery({ name: 'facilityId', required: true })
+  @ApiQuery({ name: 'facilityId', required: false })
   @ApiQuery({ name: 'status', required: false, enum: EmploymentStatus })
   @ApiQuery({ name: 'department', required: false })
   @ApiQuery({ name: 'limit', required: false })
   @ApiQuery({ name: 'offset', required: false })
   @ApiQuery({ name: 'departmentId', required: false, type: 'string' })
   async getEmployees(
-    @Query('facilityId') facilityId: string,
+    @Query('facilityId') facilityId?: string,
     @Query('status') status?: EmploymentStatus,
     @Query('department') department?: string,
     @Query('departmentId') departmentId?: string,
@@ -266,7 +266,7 @@ export class HrController {
     @Request() req?: any,
   ) {
     return this.hrService.getEmployees(
-      facilityId,
+      this.scopeFacilityId(req, facilityId),
       { status, department, departmentId, limit, offset },
       req?.user?.tenantId,
     );
