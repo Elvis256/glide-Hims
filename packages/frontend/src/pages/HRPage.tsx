@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../services/api';
+import { hrService } from '../services/hr';
 import { useFacilityId } from '../lib/facility';
 import { toast } from 'sonner';
 import {
@@ -114,8 +115,8 @@ export default function HRPage() {
         const res = await api.get('/hr/dashboard');
         setDashboard(res.data);
       } else if (activeTab === 'employees') {
-        const res = await api.get('/hr/staff');
-        setStaff(res.data || []);
+        const list = await hrService.employees.list({ facilityId });
+        setStaff((list as unknown as StaffMember[]) || []);
       } else if (activeTab === 'leave') {
         const res = await api.get(`/hr/leave?facilityId=${facilityId}`);
         setLeaveRequests(res.data || []);
@@ -141,7 +142,7 @@ export default function HRPage() {
     if (!editingStaff) return;
     setSaving(true);
     try {
-      await api.patch(`/hr/staff/${editingStaff.id}`, {
+      await hrService.employees.update(editingStaff.id, {
         jobTitle: editingStaff.jobTitle,
         staffCategory: editingStaff.staffCategory,
         employmentType: editingStaff.employmentType,
@@ -150,7 +151,7 @@ export default function HRPage() {
         gender: editingStaff.gender,
         hireDate: editingStaff.hireDate,
         basicSalary: editingStaff.basicSalary,
-      });
+      } as any);
       toast.success('Staff updated successfully');
       setShowEditModal(false);
       setEditingStaff(null);

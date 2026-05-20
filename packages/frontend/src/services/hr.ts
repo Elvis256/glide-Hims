@@ -1,6 +1,16 @@
 import api from './api';
 import type { Department } from './facilities';
 
+// Synthesize fullName from firstName/lastName for callers expecting User-style
+// shape when the source endpoint (/hr/employees) returns Employee rows.
+const synthFullName = (e: any): any => {
+  if (!e || typeof e !== 'object') return e;
+  if (e.fullName) return e;
+  const parts = [e.firstName, e.otherNames, e.lastName].filter(Boolean);
+  if (parts.length > 0) e.fullName = parts.join(' ');
+  return e;
+};
+
 // Employee / Staff (users with HR fields)
 export interface Employee {
   id: string;
@@ -315,28 +325,29 @@ export const hrService = {
     },
   },
 
-  // Employees (legacy - use staff instead)
+  // Employees (canonical — backed by /hr/employees, the Employee table)
   employees: {
     list: async (params?: EmployeeListParams): Promise<Employee[]> => {
-      const response = await api.get<{ data: Employee[]; meta: { total: number } }>('/hr/staff', { params });
-      const data = response.data;
-      return Array.isArray(data) ? data : (data?.data || []);
+      const response = await api.get<{ data: Employee[]; meta: { total: number } } | Employee[]>('/hr/employees', { params });
+      const raw = response.data;
+      const list: Employee[] = Array.isArray(raw) ? raw : (raw?.data || []);
+      return list.map(synthFullName);
     },
     getById: async (id: string): Promise<Employee> => {
-      const response = await api.get<Employee>(`/hr/staff/${id}`);
-      return response.data;
+      const response = await api.get<Employee>(`/hr/employees/${id}`);
+      return synthFullName(response.data);
     },
     create: async (data: CreateEmployeeDto): Promise<Employee> => {
       const response = await api.post<Employee>('/hr/employees', data);
-      return response.data;
+      return synthFullName(response.data);
     },
     update: async (id: string, data: UpdateEmployeeDto): Promise<Employee> => {
-      const response = await api.patch<Employee>(`/hr/staff/${id}`, data);
-      return response.data;
+      const response = await api.patch<Employee>(`/hr/employees/${id}`, data);
+      return synthFullName(response.data);
     },
-    terminate: async (id: string): Promise<Employee> => {
-      const response = await api.post<Employee>(`/hr/employees/${id}/terminate`);
-      return response.data;
+    terminate: async (id: string, reason?: string): Promise<Employee> => {
+      const response = await api.post<Employee>(`/hr/employees/${id}/terminate`, { reason });
+      return synthFullName(response.data);
     },
   },
 
