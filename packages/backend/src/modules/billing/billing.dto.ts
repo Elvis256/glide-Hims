@@ -3,12 +3,18 @@ import {
   IsOptional,
   IsUUID,
   IsArray,
+  ArrayMinSize,
+  ArrayMaxSize,
   ValidateNested,
   ValidateIf,
   IsNumber,
+  IsInt,
   IsDateString,
   IsEnum,
   Min,
+  Max,
+  MaxLength,
+  MinLength,
   IsNotEmpty,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -19,11 +25,19 @@ import {
   PaymentType,
 } from '../../database/entities/invoice.entity';
 
+const MAX_QTY = 1_000_000;
+const MAX_MONEY = 100_000_000;
+const NUMBER_OPTS = { allowNaN: false, allowInfinity: false } as const;
+
 class InvoiceItemDto {
   @IsString()
+  @MinLength(1)
+  @MaxLength(64)
   serviceCode: string;
 
   @IsString()
+  @MinLength(1)
+  @MaxLength(500)
   description: string;
 
   @IsEnum(ChargeType)
@@ -31,27 +45,32 @@ class InvoiceItemDto {
   chargeType?: ChargeType = ChargeType.OTHER;
 
   @Type(() => Number)
-  @IsNumber()
+  @IsNumber(NUMBER_OPTS)
   @Min(0.01)
+  @Max(MAX_QTY)
   quantity: number;
 
   @Type(() => Number)
-  @IsNumber()
+  @IsNumber(NUMBER_OPTS)
   @Min(0.01)
+  @Max(MAX_MONEY)
   unitPrice: number;
 
   @Type(() => Number)
-  @IsNumber()
+  @IsNumber(NUMBER_OPTS)
   @IsOptional()
   @Min(0)
+  @Max(100)
   discountPercent?: number;
 
   @IsString()
   @IsOptional()
+  @MaxLength(64)
   referenceType?: string;
 
   @IsString()
   @IsOptional()
+  @MaxLength(64)
   referenceId?: string;
 }
 
@@ -64,27 +83,34 @@ export class CreateInvoiceDto {
   encounterId?: string;
 
   @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(500)
   @ValidateNested({ each: true })
   @Type(() => InvoiceItemDto)
   items: InvoiceItemDto[];
 
   @Type(() => Number)
-  @IsNumber()
+  @IsNumber(NUMBER_OPTS)
   @IsOptional()
+  @Min(0)
+  @Max(100)
   taxPercent?: number;
 
   @IsString()
   @IsOptional()
+  @MaxLength(500)
   taxExemptReason?: string;
 
   @Type(() => Number)
-  @IsNumber()
+  @IsNumber(NUMBER_OPTS)
   @IsOptional()
   @Min(0)
+  @Max(MAX_MONEY)
   discountAmount?: number;
 
   @IsString()
   @IsOptional()
+  @MaxLength(4_000)
   notes?: string;
 
   @IsDateString()
@@ -116,19 +142,23 @@ export class PreviewInvoiceDto {
   encounterId?: string;
 
   @IsArray()
+  @ArrayMaxSize(500)
   @ValidateNested({ each: true })
   @Type(() => InvoiceItemDto)
   items: InvoiceItemDto[];
 
   @Type(() => Number)
-  @IsNumber()
+  @IsNumber(NUMBER_OPTS)
   @IsOptional()
+  @Min(0)
+  @Max(100)
   taxPercent?: number;
 
   @Type(() => Number)
-  @IsNumber()
+  @IsNumber(NUMBER_OPTS)
   @IsOptional()
   @Min(0)
+  @Max(MAX_MONEY)
   discountAmount?: number;
 
   @IsEnum(PaymentType)
@@ -146,9 +176,13 @@ export class PreviewInvoiceDto {
 
 export class AddInvoiceItemDto {
   @IsString()
+  @MinLength(1)
+  @MaxLength(64)
   serviceCode: string;
 
   @IsString()
+  @MinLength(1)
+  @MaxLength(500)
   description: string;
 
   @IsEnum(ChargeType)
@@ -156,13 +190,15 @@ export class AddInvoiceItemDto {
   chargeType?: ChargeType;
 
   @Type(() => Number)
-  @IsNumber()
+  @IsNumber(NUMBER_OPTS)
   @Min(0.01)
+  @Max(MAX_QTY)
   quantity: number;
 
   @Type(() => Number)
-  @IsNumber()
+  @IsNumber(NUMBER_OPTS)
   @Min(0.01)
+  @Max(MAX_MONEY)
   unitPrice: number;
 }
 
@@ -171,8 +207,9 @@ export class CreatePaymentDto {
   invoiceId: string;
 
   @Type(() => Number)
-  @IsNumber()
+  @IsNumber(NUMBER_OPTS)
   @Min(0.01)
+  @Max(MAX_MONEY)
   amount: number;
 
   @IsEnum(PaymentMethod)
@@ -185,18 +222,62 @@ export class CreatePaymentDto {
   @ValidateIf((o) => o.method !== PaymentMethod.CASH)
   @IsString()
   @IsNotEmpty({ message: 'Transaction reference is required for non-cash payments' })
+  @MaxLength(128)
   transactionReference?: string;
 
   @IsString()
   @IsOptional()
+  @MaxLength(2_000)
   notes?: string;
 }
 
 export class UpdateInvoiceItemDto {
   @Type(() => Number)
-  @IsNumber()
+  @IsNumber(NUMBER_OPTS)
   @Min(0.01)
+  @Max(MAX_MONEY)
   unitPrice: number;
+}
+
+/**
+ * Shared shape for cancel / refund / void / write-off bodies — was previously
+ * raw `@Body('reason')` with no validation, allowing arbitrarily long blobs
+ * (or empty strings) to be persisted as audit reasons on financial actions.
+ */
+export class ReasonDto {
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(3)
+  @MaxLength(2_000)
+  reason: string;
+}
+
+export class RefundPaymentDto {
+  @Type(() => Number)
+  @IsNumber(NUMBER_OPTS)
+  @Min(0.01)
+  @Max(MAX_MONEY)
+  amount: number;
+
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(3)
+  @MaxLength(2_000)
+  reason: string;
+}
+
+export class ListPaymentsQueryDto {
+  @IsDateString()
+  @IsOptional()
+  startDate?: string;
+
+  @IsDateString()
+  @IsOptional()
+  endDate?: string;
+
+  @IsEnum(PaymentMethod)
+  @IsOptional()
+  method?: PaymentMethod;
 }
 
 export class InvoiceQueryDto {
@@ -214,18 +295,22 @@ export class InvoiceQueryDto {
 
   @IsString()
   @IsOptional()
+  @MaxLength(64)
   type?: string;
 
-  @IsString()
+  @IsEnum(PaymentType)
   @IsOptional()
-  paymentType?: string;
+  paymentType?: PaymentType;
 
   @IsString()
   @IsOptional()
+  @MinLength(2)
+  @MaxLength(100)
   search?: string;
 
   @IsString()
   @IsOptional()
+  @MaxLength(64)
   patientMrn?: string;
 
   @IsDateString()
@@ -237,14 +322,16 @@ export class InvoiceQueryDto {
   dateTo?: string;
 
   @Type(() => Number)
-  @IsNumber()
+  @IsInt()
   @Min(1)
+  @Max(100_000)
   @IsOptional()
   page?: number = 1;
 
   @Type(() => Number)
-  @IsNumber()
+  @IsInt()
   @Min(1)
+  @Max(200)
   @IsOptional()
   limit?: number = 20;
 }
