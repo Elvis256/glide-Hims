@@ -5,11 +5,12 @@ import { SupportAccessRequest } from './support-access-request.entity';
 import { SupportAccessService } from './support-access.service';
 import { SupportAccessController } from './support-access.controller';
 import { InAppNotificationsModule } from '../in-app-notifications/in-app-notifications.module';
+import { AuditLog } from '../../database/entities/audit-log.entity';
 
 @Global()
 @Module({
   imports: [
-    TypeOrmModule.forFeature([SupportAccessGrant, SupportAccessRequest]),
+    TypeOrmModule.forFeature([SupportAccessGrant, SupportAccessRequest, AuditLog]),
     InAppNotificationsModule,
   ],
   controllers: [SupportAccessController],
