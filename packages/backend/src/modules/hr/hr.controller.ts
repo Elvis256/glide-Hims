@@ -90,10 +90,16 @@ export class HrController {
     return this.hrService.getStaffDashboard(scopedFacilityId, req?.user?.tenantId);
   }
 
-  // ============ STAFF (Users as Staff) ============
+  // ============ STAFF (Users as Staff) — DEPRECATED, use /hr/employees ============
   @Get('staff')
   @AuthWithPermissions('hr.read')
-  @ApiOperation({ summary: 'Get staff list (users)' })
+  @Header('Deprecation', 'true')
+  @Header('Sunset', '2026-09-01')
+  @Header('Link', '</api/v1/hr/employees>; rel="successor-version"')
+  @ApiOperation({
+    deprecated: true,
+    summary: 'Get staff list (deprecated — use GET /hr/employees)',
+  })
   @ApiQuery({ name: 'facilityId', required: false })
   @ApiQuery({ name: 'status', required: false })
   @ApiQuery({ name: 'departmentId', required: false })
@@ -126,28 +132,52 @@ export class HrController {
 
   @Get('staff/:id')
   @AuthWithPermissions('hr.read')
-  @ApiOperation({ summary: 'Get staff member by ID' })
+  @Header('Deprecation', 'true')
+  @Header('Sunset', '2026-09-01')
+  @Header('Link', '</api/v1/hr/employees/{id}>; rel="successor-version"')
+  @ApiOperation({
+    deprecated: true,
+    summary: 'Get staff member by ID (deprecated — use GET /hr/employees/:id)',
+  })
   async getStaffById(@Param('id') id: string, @Request() req: any) {
     return this.hrService.getStaffById(id, req.user?.tenantId);
   }
 
   @Patch('staff/:id')
   @AuthWithPermissions('hr.update')
-  @ApiOperation({ summary: 'Update staff member HR details' })
+  @Header('Deprecation', 'true')
+  @Header('Sunset', '2026-09-01')
+  @Header('Link', '</api/v1/hr/employees/{id}>; rel="successor-version"')
+  @ApiOperation({
+    deprecated: true,
+    summary: 'Update staff member HR details (deprecated — use PATCH /hr/employees/:id)',
+  })
   async updateStaff(@Param('id') id: string, @Body() dto: UpdateStaffDto, @Request() req: any) {
     return this.hrService.updateStaff(id, dto, req.user?.tenantId);
   }
 
   @Post('staff')
   @AuthWithPermissions('hr.create')
-  @ApiOperation({ summary: 'Create new staff member (user with HR profile)' })
+  @Header('Deprecation', 'true')
+  @Header('Sunset', '2026-09-01')
+  @Header('Link', '</api/v1/hr/employees>; rel="successor-version"')
+  @ApiOperation({
+    deprecated: true,
+    summary: 'Create new staff member (deprecated — use POST /users with employeeProfile, or POST /hr/employees)',
+  })
   async createStaff(@Body() dto: CreateStaffDto, @Request() req: any) {
     return this.hrService.createStaff(dto as any, req.user?.tenantId);
   }
 
   @Post('staff/:id/deactivate')
   @AuthWithPermissions('hr.update')
-  @ApiOperation({ summary: 'Deactivate a staff member' })
+  @Header('Deprecation', 'true')
+  @Header('Sunset', '2026-09-01')
+  @Header('Link', '</api/v1/hr/employees/{id}/terminate>; rel="successor-version"')
+  @ApiOperation({
+    deprecated: true,
+    summary: 'Deactivate a staff member (deprecated — use POST /hr/employees/:id/terminate)',
+  })
   async deactivateStaff(
     @Param('id') id: string,
     @Body() body: DeactivateStaffDto,
@@ -158,15 +188,24 @@ export class HrController {
 
   @Post('staff/:id/reactivate')
   @AuthWithPermissions('hr.update')
-  @ApiOperation({ summary: 'Reactivate a staff member' })
+  @Header('Deprecation', 'true')
+  @Header('Sunset', '2026-09-01')
+  @ApiOperation({
+    deprecated: true,
+    summary: 'Reactivate a staff member (deprecated — manage employment status via /hr/employees)',
+  })
   async reactivateStaff(@Param('id') id: string, @Request() req: any) {
     return this.hrService.reactivateStaff(id, req.user?.tenantId);
   }
 
   @Post('staff/:id/offboard')
   @AuthWithPermissions('hr.update')
+  @Header('Deprecation', 'true')
+  @Header('Sunset', '2026-09-01')
+  @Header('Link', '</api/v1/hr/employees/{id}/terminate>; rel="successor-version"')
   @ApiOperation({
-    summary: 'Offboard a staff member (deactivate, revoke access, record termination)',
+    deprecated: true,
+    summary: 'Offboard a staff member (deprecated — use POST /hr/employees/:id/terminate)',
   })
   async offboardStaff(@Param('id') id: string, @Body() dto: OffboardStaffDto, @Request() req: any) {
     return this.hrService.offboardEmployee(
@@ -186,20 +225,21 @@ export class HrController {
 
   @Get('staff/category/:category')
   @AuthWithPermissions('hr.read')
-  @ApiOperation({ summary: 'Get staff by category (consultant, specialist, etc.)' })
+  @Header('Deprecation', 'true')
+  @Header('Sunset', '2026-09-01')
+  @ApiOperation({
+    deprecated: true,
+    summary: 'Get staff by category (deprecated — filter /hr/employees by staffCategory)',
+  })
   async getStaffByCategory(@Param('category') category: string, @Request() req: any) {
     return this.hrService.getStaffByCategory(category, req.user?.tenantId);
   }
 
-  // ============ EMPLOYEES (Legacy) ============
+  // ============ EMPLOYEES (Canonical) ============
   @Post('employees')
   @AuthWithPermissions('employees.create')
-  @Header('Deprecation', 'true')
-  @Header('Sunset', '2026-06-01')
-  @Header('Link', '</api/v1/hr/staff>; rel="successor-version"')
   @ApiOperation({
-    deprecated: true,
-    summary: 'Create new employee (deprecated — use POST /hr/staff)',
+    summary: 'Create new employee (canonical)',
   })
   async createEmployee(@Body() dto: CreateEmployeeDto, @Request() req: any) {
     return this.hrService.createEmployee(dto, req.user?.tenantId);
@@ -207,12 +247,8 @@ export class HrController {
 
   @Get('employees')
   @AuthWithPermissions('employees.read')
-  @Header('Deprecation', 'true')
-  @Header('Sunset', '2026-06-01')
-  @Header('Link', '</api/v1/hr/staff>; rel="successor-version"')
   @ApiOperation({
-    deprecated: true,
-    summary: 'Get employees list (deprecated — use GET /hr/staff)',
+    summary: 'Get employees list (canonical)',
   })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'status', required: false, enum: EmploymentStatus })
@@ -238,12 +274,8 @@ export class HrController {
 
   @Get('employees/:id')
   @AuthWithPermissions('employees.read')
-  @Header('Deprecation', 'true')
-  @Header('Sunset', '2026-06-01')
-  @Header('Link', '</api/v1/hr/staff>; rel="successor-version"')
   @ApiOperation({
-    deprecated: true,
-    summary: 'Get employee by ID (deprecated — use GET /hr/staff/:id)',
+    summary: 'Get employee by ID (canonical)',
   })
   async getEmployeeById(@Param('id') id: string, @Request() req: any) {
     return this.hrService.getEmployeeById(id, req.user?.tenantId);
@@ -251,12 +283,8 @@ export class HrController {
 
   @Patch('employees/:id')
   @AuthWithPermissions('employees.update')
-  @Header('Deprecation', 'true')
-  @Header('Sunset', '2026-06-01')
-  @Header('Link', '</api/v1/hr/staff>; rel="successor-version"')
   @ApiOperation({
-    deprecated: true,
-    summary: 'Update employee (deprecated — use PATCH /hr/staff/:id)',
+    summary: 'Update employee (canonical)',
   })
   async updateEmployee(
     @Param('id') id: string,
@@ -268,12 +296,8 @@ export class HrController {
 
   @Post('employees/:id/terminate')
   @AuthWithPermissions('employees.delete')
-  @Header('Deprecation', 'true')
-  @Header('Sunset', '2026-06-01')
-  @Header('Link', '</api/v1/hr/staff>; rel="successor-version"')
   @ApiOperation({
-    deprecated: true,
-    summary: 'Terminate employee (deprecated — use POST /hr/staff/:id/offboard)',
+    summary: 'Terminate employee (canonical)',
   })
   async terminateEmployee(
     @Param('id') id: string,
