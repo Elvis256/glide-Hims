@@ -23,7 +23,7 @@ import { patientsService } from '../../../services/patients';
 import { printContent, printService } from '../../../lib/print';
 import { useInstitutionInfo } from '../../../lib/useInstitutionInfo';
 import { useDoctorCertPrefs } from '../../../lib/useDoctorCertPrefs';
-import { escapeHtml } from '../../../lib/sanitize';
+import { escapeHtml, safeImageUrl } from '../../../lib/sanitize';
 import { asList } from '../../../utils/unwrapResponse';
 
 interface Patient {
@@ -126,8 +126,9 @@ export default function FitnessCertificatePage() {
   }, [validityMonths]);
 
   const buildCertificateHtml = (): string => {
-    const logoHtml = inst.logo
-      ? `<img src="${inst.logo}" alt="" style="height:80px;object-fit:contain;margin:0 auto 8px;" />`
+    const safeLogo = safeImageUrl(inst.logo);
+    const logoHtml = safeLogo
+      ? `<img src="${safeLogo}" alt="" style="height:80px;object-fit:contain;margin:0 auto 8px;" />`
       : '';
     const conclusionColors: Record<string, string> = {
       'Fit': 'background:#f0fdf4;border:2px solid #22c55e;color:#15803d;',

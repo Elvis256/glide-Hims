@@ -690,7 +690,7 @@ export default function InstitutionProfilePage() {
                             className="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                           />
                         ) : (profile.social as any)[key] ? (
-                          <a href={(profile.social as any)[key]} target="_blank" rel="noreferrer"
+                          <a href={(profile.social as any)[key]} target="_blank" rel="noopener noreferrer"
                             className="text-sm text-blue-600 hover:underline truncate">
                             {(profile.social as any)[key]}
                           </a>

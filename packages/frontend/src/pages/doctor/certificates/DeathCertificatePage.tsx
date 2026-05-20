@@ -23,7 +23,7 @@ import { patientsService } from '../../../services/patients';
 import { printContent, printService } from '../../../lib/print';
 import { useInstitutionInfo } from '../../../lib/useInstitutionInfo';
 import { useDoctorCertPrefs } from '../../../lib/useDoctorCertPrefs';
-import { escapeHtml } from '../../../lib/sanitize';
+import { escapeHtml, safeImageUrl } from '../../../lib/sanitize';
 
 interface LocalPatient {
   id: string;
@@ -99,8 +99,9 @@ export default function DeathCertificatePage() {
   }, [selectedPatient, dateOfDeath]);
 
   const buildCertificateHtml = (): string => {
-    const logoHtml = inst.logo
-      ? `<img src="${inst.logo}" alt="" style="height:80px;object-fit:contain;margin:0 auto 8px;" />`
+    const safeLogo = safeImageUrl(inst.logo);
+    const logoHtml = safeLogo
+      ? `<img src="${safeLogo}" alt="" style="height:80px;object-fit:contain;margin:0 auto 8px;" />`
       : '';
     return `
       <div style="font-family:'Times New Roman',Times,serif;max-width:700px;margin:0 auto;padding:24px;color:#111;">

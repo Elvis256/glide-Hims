@@ -17,6 +17,7 @@
  */
 
 import DOMPurify from 'dompurify';
+import { escapeHtml, safeImageUrl } from './sanitize';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -217,8 +218,9 @@ function buildHeader(
   inst: InstitutionInfo,
   variant: 'receipt' | 'document' = 'document',
 ): string {
-  const logoHtml = inst.logo
-    ? `<img src="${inst.logo}" alt="logo" style="max-height:${variant === 'receipt' ? '60' : '80'}px; margin: 0 auto 4px;" />`
+  const safeLogo = safeImageUrl(inst.logo);
+  const logoHtml = safeLogo
+    ? `<img src="${safeLogo}" alt="logo" style="max-height:${variant === 'receipt' ? '60' : '80'}px; margin: 0 auto 4px;" />`
     : '';
 
   const meta = [

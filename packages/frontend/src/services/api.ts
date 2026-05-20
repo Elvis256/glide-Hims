@@ -244,13 +244,19 @@ api.interceptors.response.use(
       toast.error('Access Denied', { description: message });
     }
 
-    // Log all API errors (except 401 which is handled above)
+    // Log all API errors (except 401 which is handled above).
+    // We deliberately do NOT pass `error.response.data` here: response
+    // bodies routinely contain PHI (patient names, MRNs, claim payloads,
+    // validation error messages echoing back submitted fields) and the
+    // logger holds a 200-entry circular buffer that can be scraped via
+    // DevTools. Status + method + URL is enough for triage; full
+    // payloads stay in the network panel only.
     if (error.response?.status !== 401) {
       logger.apiError(
         originalRequest?.method || 'UNKNOWN',
         originalRequest?.url || 'unknown',
         error.response?.status,
-        error.response?.data,
+        undefined,
         error,
       );
     }

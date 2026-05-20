@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useAuthStore } from '../../store/auth';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../lib/currency';
+import { safeImageUrl } from '../../lib/sanitize';
 import {
   CreditCard,
   Banknote,
@@ -108,7 +109,7 @@ export default function PaymentsPage() {
     if (!d) return;
     const invoice = d.invoice;
     const body = `
-      ${inst.logo ? `<img src="${inst.logo}" alt="logo" class="logo" />` : ''}
+      ${safeImageUrl(inst.logo) ? `<img src="${safeImageUrl(inst.logo)}" alt="logo" class="logo" />` : ''}
       <h2 class="text-center font-bold" style="font-size:16px;margin:0 0 4px;">${inst.name}</h2>
       <p class="text-center" style="margin:0 0 6px;">PAYMENT RECEIPT</p>
       <hr/>

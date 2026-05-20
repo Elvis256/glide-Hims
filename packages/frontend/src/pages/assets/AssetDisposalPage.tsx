@@ -795,7 +795,7 @@ function DisposalDetailModal({
                 <a
                   href={url}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className="text-blue-600 hover:underline break-all"
                 >
                   {url}

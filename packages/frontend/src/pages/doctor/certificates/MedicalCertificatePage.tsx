@@ -26,7 +26,7 @@ import { patientsService } from '../../../services/patients';
 import { printService } from '../../../lib/print';
 import { useInstitutionInfo } from '../../../lib/useInstitutionInfo';
 import { useDoctorCertPrefs } from '../../../lib/useDoctorCertPrefs';
-import { escapeHtml } from '../../../lib/sanitize';
+import { escapeHtml, safeImageUrl } from '../../../lib/sanitize';
 
 interface Patient {
   id: string;
@@ -186,8 +186,8 @@ export default function MedicalCertificatePage() {
     const certSerial = serial || generateSerial();
     if (!serial) setSerial(certSerial);
 
-    const logoHtml = inst.logo
-      ? `<img src="${inst.logo}" alt="" style="height:80px;object-fit:contain;margin:0 auto 8px;" />`
+    const logoHtml = safeImageUrl(inst.logo)
+      ? `<img src="${safeImageUrl(inst.logo)}" alt="" style="height:80px;object-fit:contain;margin:0 auto 8px;" />`
       : '';
 
     return `
