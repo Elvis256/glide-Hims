@@ -4,6 +4,7 @@ import { User } from '../../database/entities/user.entity';
 import { UserRole } from '../../database/entities/user-role.entity';
 import { Role } from '../../database/entities/role.entity';
 import { Employee } from '../../database/entities/employee.entity';
+import { Department } from '../../database/entities/department.entity';
 import { UserPermission } from '../../database/entities/user-permission.entity';
 import { Permission } from '../../database/entities/permission.entity';
 import { AuditLog } from '../../database/entities/audit-log.entity';
@@ -18,6 +19,7 @@ import { AuthModule } from '../auth/auth.module';
       UserRole,
       Role,
       Employee,
+      Department,
       UserPermission,
       Permission,
       AuditLog,

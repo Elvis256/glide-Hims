@@ -6,7 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, ILike, DataSource, IsNull, In } from 'typeorm';
+import { Repository, Like, ILike, DataSource, IsNull, In, EntityManager } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { User } from '../../database/entities/user.entity';
@@ -19,6 +19,7 @@ import {
   Gender,
 } from '../../database/entities/employee.entity';
 import { UserPermission } from '../../database/entities/user-permission.entity';
+import { Department } from '../../database/entities/department.entity';
 import { Permission } from '../../database/entities/permission.entity';
 import { AuditLog } from '../../database/entities/audit-log.entity';
 import {
@@ -64,6 +65,8 @@ export class UsersService {
     private roleRepository: Repository<Role>,
     @InjectRepository(Employee)
     private employeeRepository: Repository<Employee>,
+    @InjectRepository(Department)
+    private departmentRepository: Repository<Department>,
     @InjectRepository(UserPermission)
     private userPermissionRepository: Repository<UserPermission>,
     @InjectRepository(Permission)
@@ -254,42 +257,99 @@ export class UsersService {
         const shouldCreateEmployee = employeeProfile || !isSuperAdmin;
 
         if (shouldCreateEmployee) {
+          // facilityId may come from the DTO root, from the employeeProfile,
+          // or (later) from the role being assigned. Auto-create requires a
+          // facility because employees.facility_id is NOT NULL.
+          const effectiveFacilityId = employeeProfile?.facilityId || facilityId;
+          if (!effectiveFacilityId) {
+            throw new BadRequestException(
+              'facilityId is required to create an employee profile for a non-system-admin user',
+            );
+          }
+
           const nameParts = userData.fullName.split(' ');
           const firstName = nameParts[0];
           const lastName = nameParts.slice(1).join(' ') || firstName;
-
-          // Generate employee number
-          const employeeCount = await queryRunner.manager.count(Employee);
-          const employeeNumber = `EMP${String(employeeCount + 1).padStart(5, '0')}`;
 
           const autoStaffCategory = roleName
             ? mapRoleToStaffCategory(roleName)
             : StaffCategory.OTHER;
 
-          employee = this.employeeRepository.create({
-            employeeNumber,
-            userId: savedUser.id,
-            firstName,
-            lastName,
-            email: userData.email,
-            phone: userData.phone,
-            dateOfBirth: employeeProfile?.dateOfBirth
-              ? new Date(employeeProfile.dateOfBirth)
-              : new Date('1990-01-01'),
-            gender: employeeProfile?.gender || Gender.OTHER,
-            jobTitle: employeeProfile?.jobTitle || roleName || 'Staff',
-            department: employeeProfile?.department,
-            staffCategory: employeeProfile?.staffCategory || autoStaffCategory,
-            licenseNumber: employeeProfile?.licenseNumber,
-            specialization: employeeProfile?.specialization,
-            employmentType: employeeProfile?.employmentType || EmploymentType.PERMANENT,
-            hireDate: employeeProfile?.hireDate ? new Date(employeeProfile.hireDate) : new Date(),
-            basicSalary: employeeProfile?.basicSalary || 0,
-            facilityId: employeeProfile?.facilityId || facilityId,
-            tenantId: tenantId || undefined,
-          });
+          // Resolve department FK from the free-text department on the
+          // employeeProfile so the row is FK-linked from day one.
+          const { departmentId: resolvedDeptId, department: resolvedDeptText } =
+            await this.resolveDepartmentForTenant(
+              employeeProfile?.department,
+              tenantId,
+              queryRunner.manager,
+            );
 
-          await queryRunner.manager.save(employee);
+          // Per-facility numbering + retry on 23505 (matches backfill /
+          // createEmployee paths so concurrent inserts don't collide).
+          let lastErr: any;
+          for (let attempt = 0; attempt < 5 && !employee; attempt++) {
+            try {
+              const employeeNumber = await this.nextEmployeeNumberForFacility(
+                effectiveFacilityId,
+                queryRunner.manager,
+              );
+              const draft = this.employeeRepository.create({
+                employeeNumber,
+                userId: savedUser.id,
+                firstName,
+                lastName,
+                email: userData.email,
+                phone: userData.phone,
+                dateOfBirth: employeeProfile?.dateOfBirth
+                  ? new Date(employeeProfile.dateOfBirth)
+                  : new Date('1990-01-01'),
+                gender: employeeProfile?.gender || Gender.OTHER,
+                jobTitle: employeeProfile?.jobTitle || roleName || 'Staff',
+                department: resolvedDeptText,
+                departmentId: resolvedDeptId,
+                staffCategory: employeeProfile?.staffCategory || autoStaffCategory,
+                licenseNumber: employeeProfile?.licenseNumber,
+                specialization: employeeProfile?.specialization,
+                employmentType: employeeProfile?.employmentType || EmploymentType.PERMANENT,
+                hireDate: employeeProfile?.hireDate ? new Date(employeeProfile.hireDate) : new Date(),
+                basicSalary: employeeProfile?.basicSalary || 0,
+                facilityId: effectiveFacilityId,
+                tenantId: tenantId || undefined,
+              });
+              employee = await queryRunner.manager.save(draft);
+            } catch (e: any) {
+              lastErr = e;
+              if (e?.code !== '23505') throw e;
+              await new Promise((r) => setTimeout(r, 10 + Math.random() * 30));
+            }
+          }
+          if (!employee) {
+            throw lastErr ?? new Error('Failed to allocate employee_number after 5 attempts');
+          }
+
+          // Audit the auto-create so it's traceable alongside backfills.
+          try {
+            await queryRunner.manager.save(
+              this.auditLogRepository.create({
+                userId: caller?.id || caller?.userId || savedUser.id,
+                action: 'EMPLOYEE_AUTO_CREATED',
+                entityType: 'Employee',
+                entityId: employee.id,
+                newValue: {
+                  employeeId: employee.id,
+                  employeeNumber: employee.employeeNumber,
+                  userId: savedUser.id,
+                  roleName: roleName ?? null,
+                  facilityId: effectiveFacilityId,
+                },
+                tenantId: tenantId || undefined,
+              }),
+            );
+          } catch (auditErr) {
+            this.logger.warn(
+              `Failed to audit employee auto-create for user ${savedUser.id}: ${(auditErr as Error).message}`,
+            );
+          }
         }
       }
 
@@ -681,8 +741,12 @@ export class UsersService {
    * so deletes don't collapse the sequence into existing rows. Callers must
    * still retry on Postgres unique-violation (code 23505) under concurrency.
    */
-  private async nextEmployeeNumberForFacility(facilityId: string): Promise<string> {
-    const row = await this.employeeRepository
+  private async nextEmployeeNumberForFacility(
+    facilityId: string,
+    manager?: EntityManager,
+  ): Promise<string> {
+    const repo = manager ? manager.getRepository(Employee) : this.employeeRepository;
+    const row = await repo
       .createQueryBuilder('e')
       .select(
         "COALESCE(MAX(NULLIF(regexp_replace(e.employee_number, '\\D', '', 'g'), '')::int), 0)",
@@ -692,6 +756,28 @@ export class UsersService {
       .getRawOne();
     const next = Number(row?.max ?? 0) + 1;
     return `EMP${String(next).padStart(5, '0')}`;
+  }
+
+  // Resolve a free-text department name into both the canonical text and
+  // the matching departments.id FK, scoped to the caller's tenant.
+  // Falls back to (text, null) when there's no name match — same contract
+  // as HrService.resolveDepartmentFields so the two paths stay in sync.
+  private async resolveDepartmentForTenant(
+    departmentText: string | undefined,
+    tenantId: string | undefined,
+    manager?: EntityManager,
+  ): Promise<{ departmentId?: string; department?: string }> {
+    if (!departmentText || !departmentText.trim()) {
+      return { departmentId: undefined, department: undefined };
+    }
+    const trimmed = departmentText.trim();
+    const repo = manager ? manager.getRepository(Department) : this.departmentRepository;
+    const qb = repo
+      .createQueryBuilder('d')
+      .where('LOWER(TRIM(d.name)) = LOWER(:name)', { name: trimmed });
+    if (tenantId) qb.andWhere('d.tenant_id = :tenantId', { tenantId });
+    const match = await qb.getOne();
+    return { departmentId: match?.id, department: trimmed };
   }
 
   async getEmployeeByUserId(userId: string, tenantId?: string): Promise<Employee | null> {
