@@ -1,5 +1,18 @@
-import { IsString, IsOptional, IsUUID, IsEnum, IsNumber, IsDateString } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsUUID,
+  IsEnum,
+  IsNumber,
+  IsDateString,
+  IsIn,
+  Min,
+  Max,
+  MaxLength,
+} from 'class-validator';
 import { ReferralPriority, ReferralStage } from '../../../database/entities/sample-referral.entity';
+
+const FINITE = { allowNaN: false, allowInfinity: false } as const;
 
 export class CreateSampleReferralDto {
   @IsUUID()
@@ -12,10 +25,12 @@ export class CreateSampleReferralDto {
   toFacilityId: string;
 
   @IsString()
+  @MaxLength(255)
   @IsOptional()
   testRequested?: string;
 
   @IsString()
+  @MaxLength(2000)
   @IsOptional()
   clinicalInfo?: string;
 
@@ -24,18 +39,22 @@ export class CreateSampleReferralDto {
   priority?: ReferralPriority;
 
   @IsString()
+  @MaxLength(64)
   @IsOptional()
   transportMethod?: string;
 
   @IsString()
+  @MaxLength(128)
   @IsOptional()
   transporterName?: string;
 
   @IsString()
+  @MaxLength(32)
   @IsOptional()
   transporterPhone?: string;
 
   @IsString()
+  @MaxLength(1000)
   @IsOptional()
   notes?: string;
 }
@@ -44,21 +63,26 @@ export class UpdateStageDto {
   @IsEnum(ReferralStage)
   stage: ReferralStage;
 
-  @IsNumber()
+  @IsNumber(FINITE)
+  @Min(-50)
+  @Max(100)
   @IsOptional()
   temperatureOnArrival?: number;
 
   @IsString()
+  @MaxLength(255)
   @IsOptional()
   sampleConditionOnArrival?: string;
 
   @IsString()
+  @MaxLength(1000)
   @IsOptional()
   notes?: string;
 }
 
 export class RejectReferralDto {
   @IsString()
+  @MaxLength(1000)
   rejectionReason: string;
 }
 
@@ -67,7 +91,7 @@ export class SampleReferralQueryDto {
   @IsOptional()
   stage?: ReferralStage;
 
-  @IsString()
+  @IsIn(['incoming', 'outgoing'])
   @IsOptional()
   direction?: 'incoming' | 'outgoing';
 
@@ -88,6 +112,7 @@ export class SampleReferralQueryDto {
   toDate?: string;
 
   @IsString()
+  @MaxLength(128)
   @IsOptional()
   search?: string;
 }

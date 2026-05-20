@@ -82,8 +82,49 @@ export class LabService {
     return `LAB${dateStr}${sequence.toString().padStart(5, '0')}`;
   }
 
+  // P2: shared plausibility guards for ranges + date windows.
+  private validateReferenceRanges(ranges?: any[] | null): void {
+    if (!Array.isArray(ranges)) return;
+    for (const r of ranges) {
+      if (!r) continue;
+      const { normalMin, normalMax, criticalLow, criticalHigh } = r;
+      if (normalMin !== undefined && normalMax !== undefined && normalMin > normalMax) {
+        throw new BadRequestException(
+          `Reference range for '${r.parameter}': normalMin (${normalMin}) must be <= normalMax (${normalMax}).`,
+        );
+      }
+      if (criticalLow !== undefined && criticalHigh !== undefined && criticalLow > criticalHigh) {
+        throw new BadRequestException(
+          `Reference range for '${r.parameter}': criticalLow (${criticalLow}) must be <= criticalHigh (${criticalHigh}).`,
+        );
+      }
+      if (criticalLow !== undefined && normalMin !== undefined && criticalLow > normalMin) {
+        throw new BadRequestException(
+          `Reference range for '${r.parameter}': criticalLow (${criticalLow}) must be <= normalMin (${normalMin}).`,
+        );
+      }
+      if (criticalHigh !== undefined && normalMax !== undefined && criticalHigh < normalMax) {
+        throw new BadRequestException(
+          `Reference range for '${r.parameter}': criticalHigh (${criticalHigh}) must be >= normalMax (${normalMax}).`,
+        );
+      }
+    }
+  }
+
+  private validateDateRange(fromDate?: string | Date, toDate?: string | Date): void {
+    if (!fromDate || !toDate) return;
+    const f = new Date(fromDate as any).getTime();
+    const t = new Date(toDate as any).getTime();
+    if (!Number.isFinite(f) || !Number.isFinite(t)) return;
+    if (f > t) {
+      throw new BadRequestException('fromDate must be on or before toDate.');
+    }
+  }
+
   // ========== LAB TEST CATALOG ==========
   async createLabTest(dto: CreateLabTestDto, tenantId?: string): Promise<LabTest> {
+    this.validateReferenceRanges(dto.referenceRanges as any[]);
+
     const existing = await this.labTestRepo.findOne({
       where: { code: dto.code, ...(tenantId ? { tenantId } : {}) },
     });
@@ -117,6 +158,7 @@ export class LabService {
   }
 
   async updateLabTest(id: string, dto: UpdateLabTestDto, tenantId?: string): Promise<LabTest> {
+    this.validateReferenceRanges(dto.referenceRanges as any[]);
     const test = await this.getLabTest(id, tenantId);
     Object.assign(test, dto);
     return this.labTestRepo.save(test);
@@ -421,6 +463,7 @@ export class LabService {
       qb.andWhere('sample.status = :status', { status: query.status });
     }
     if (query.priority) qb.andWhere('sample.priority = :priority', { priority: query.priority });
+    this.validateDateRange(query.fromDate, query.toDate);
     if (query.fromDate && query.toDate) {
       qb.andWhere('sample.createdAt BETWEEN :from AND :to', {
         from: query.fromDate,
@@ -737,6 +780,17 @@ export class LabService {
     tenantId?: string,
   ): Promise<LabResult> {
     const sample = await this.getSample(sampleId, tenantId);
+
+    // P2: numeric plausibility on per-result reference bounds.
+    if (
+      dto.referenceMin !== undefined &&
+      dto.referenceMax !== undefined &&
+      dto.referenceMin > dto.referenceMax
+    ) {
+      throw new BadRequestException(
+        `referenceMin (${dto.referenceMin}) must be <= referenceMax (${dto.referenceMax}).`,
+      );
+    }
 
     // Wrap all status transitions and result save in a single transaction
     return this.dataSource.transaction(async (manager) => {

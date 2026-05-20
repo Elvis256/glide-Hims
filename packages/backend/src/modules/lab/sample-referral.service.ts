@@ -141,6 +141,13 @@ export class SampleReferralService {
       });
     }
 
+    if (query?.fromDate && query?.toDate) {
+      const f = new Date(query.fromDate).getTime();
+      const t = new Date(query.toDate).getTime();
+      if (Number.isFinite(f) && Number.isFinite(t) && f > t) {
+        throw new BadRequestException('fromDate must be on or before toDate.');
+      }
+    }
     if (query?.fromDate) {
       qb.andWhere('ref.created_at >= :fromDate', { fromDate: query.fromDate });
     }
@@ -396,6 +403,13 @@ export class SampleReferralService {
       });
     }
 
+    if (query?.fromDate && query?.toDate) {
+      const f = new Date(query.fromDate).getTime();
+      const t = new Date(query.toDate).getTime();
+      if (Number.isFinite(f) && Number.isFinite(t) && f > t) {
+        throw new BadRequestException('fromDate must be on or before toDate.');
+      }
+    }
     if (query?.fromDate) qb.andWhere('ref.created_at >= :fromDate', { fromDate: query.fromDate });
     if (query?.toDate) qb.andWhere('ref.created_at <= :toDate', { toDate: query.toDate });
 
