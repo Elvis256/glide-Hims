@@ -94,7 +94,7 @@ export class UsersController {
       createUserDto.isSystemAdmin = false;
     }
     const tenantId = req.user?.tenantId;
-    const user = await this.usersService.create(createUserDto, tenantId);
+    const user = await this.usersService.create(createUserDto, tenantId, req.user);
     return { message: 'User created successfully', data: user };
   }
 

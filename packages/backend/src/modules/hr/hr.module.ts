@@ -34,6 +34,7 @@ import { HrExtrasController } from './hr-extras.controller';
 import { SystemSettingsModule } from '../system-settings/system-settings.module';
 import { FinanceModule } from '../finance/finance.module';
 import { ApprovalsModule } from '../approvals/approvals.module';
+import { TenantsModule } from '../tenants/tenants.module';
 import { HrApprovalListener } from './hr-approval.listener';
 
 @Module({
@@ -67,6 +68,7 @@ import { HrApprovalListener } from './hr-approval.listener';
     SystemSettingsModule,
     forwardRef(() => FinanceModule),
     forwardRef(() => ApprovalsModule),
+    forwardRef(() => TenantsModule),
     MulterModule.register({
       storage: diskStorage({
         destination: './uploads/staff-documents',

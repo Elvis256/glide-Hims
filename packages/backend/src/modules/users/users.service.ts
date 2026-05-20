@@ -74,9 +74,74 @@ export class UsersService {
     private dataSource: DataSource,
   ) {}
 
+  /**
+   * Privilege-escalation guard shared by user-create (initial role)
+   * and assignRole. Refuses to grant a role whose effective permission
+   * set isn't already held by the caller, and refuses to grant system
+   * roles unless caller is a platform / super admin.
+   */
+  private async assertCallerCanGrantRole(
+    role: Role,
+    caller?: { id?: string; userId?: string; isSystemAdmin?: boolean; roles?: string[] },
+  ): Promise<void> {
+    const callerIsSysAdmin = !!caller?.isSystemAdmin;
+    const callerIsSuperAdmin = (caller?.roles || []).includes('Super Admin');
+
+    if (role.isSystemRole && !(callerIsSysAdmin || callerIsSuperAdmin)) {
+      throw new BadRequestException(
+        `You may not assign the system role '${role.name}'. ` +
+          `System roles can only be granted by a platform or super administrator.`,
+      );
+    }
+
+    if (callerIsSysAdmin || callerIsSuperAdmin) return;
+
+    const callerId = caller?.id || caller?.userId;
+    if (!callerId) {
+      throw new BadRequestException('Authenticated caller context required to assign roles');
+    }
+    const rolePerms: Array<{ code: string }> = await this.dataSource.query(
+      `
+      WITH RECURSIVE chain(id, parent_role_id) AS (
+        SELECT id, parent_role_id FROM roles WHERE id = $1
+        UNION ALL
+        SELECT r.id, r.parent_role_id
+          FROM roles r INNER JOIN chain c ON r.id = c.parent_role_id
+      )
+      SELECT DISTINCT p.code
+        FROM permissions p
+        INNER JOIN role_permissions rp ON rp.permission_id = p.id
+        INNER JOIN chain c ON c.id = rp.role_id
+      `,
+      [role.id],
+    );
+    const callerPerms: Array<{ code: string }> = await this.dataSource.query(
+      `
+      SELECT DISTINCT p.code FROM permissions p
+        INNER JOIN role_permissions rp ON rp.permission_id = p.id
+        INNER JOIN user_roles ur ON ur.role_id = rp.role_id
+        WHERE ur.user_id = $1 AND ur.deleted_at IS NULL
+      UNION
+      SELECT DISTINCT p.code FROM permissions p
+        INNER JOIN user_permissions up ON up.permission_id = p.id
+        WHERE up.user_id = $1
+      `,
+      [callerId],
+    );
+    const held = new Set(callerPerms.map((r) => r.code));
+    const missing = rolePerms.map((r) => r.code).filter((c) => !held.has(c));
+    if (missing.length) {
+      throw new BadRequestException(
+        `Cannot assign role '${role.name}': it carries permissions you do not hold ` +
+          `(${missing.slice(0, 5).join(', ')}${missing.length > 5 ? ', …' : ''}).`,
+      );
+    }
+  }
+
   async create(
     createUserDto: CreateUserDto,
     tenantId?: string,
+    caller?: { id?: string; userId?: string; isSystemAdmin?: boolean; roles?: string[] },
   ): Promise<User & { employee?: Employee }> {
     const { employeeProfile, employeeId, roleId, facilityId, ...userData } = createUserDto;
 
@@ -111,6 +176,23 @@ export class UsersService {
       if (!role) {
         throw new NotFoundException('Role not found');
       }
+      // Privilege-escalation guard: the initial role on a new user is
+      // functionally identical to an assignRole call, so enforce the
+      // same caller-authority subset check. Without this, a tenant
+      // admin could create a brand-new user pre-stamped with Super
+      // Admin and side-step the assignRole hardening entirely.
+      if (caller) {
+        await this.assertCallerCanGrantRole(role, caller);
+      }
+    }
+
+    // Same idea for the isSystemAdmin flag: belt-and-suspenders on top
+    // of the controller's check, so service-internal callers also can't
+    // mint platform admins by accident.
+    if (createUserDto.isSystemAdmin && caller && !caller.isSystemAdmin) {
+      throw new BadRequestException(
+        'Only platform administrators may create system-admin users',
+      );
     }
 
     // If linking to existing employee, verify it exists and isn't already linked
@@ -558,65 +640,8 @@ export class UsersService {
       throw new NotFoundException('Role not found');
     }
 
-    // SECURITY: privilege escalation guard.
-    const callerIsSysAdmin = !!caller?.isSystemAdmin;
-    const callerIsSuperAdmin = (caller?.roles || []).includes('Super Admin');
-
-    // (1) Only platform/super admins may assign global system roles. Without
-    // this, a tenant admin with `users.update` could attach the platform
-    // "Super Admin" / "Administrator" system role to themselves or anyone
-    // else and inherit blanket permissions across the tenant.
-    if (role.isSystemRole && !(callerIsSysAdmin || callerIsSuperAdmin)) {
-      throw new BadRequestException(
-        `You may not assign the system role '${role.name}'. ` +
-          `System roles can only be granted by a platform or super administrator.`,
-      );
-    }
-
-    // (2) The grantee cannot end up with permissions the caller does not
-    // currently hold. Anything else is privilege escalation.
-    if (!(callerIsSysAdmin || callerIsSuperAdmin)) {
-      const callerId = caller?.id || caller?.userId;
-      if (!callerId) {
-        throw new BadRequestException('Authenticated caller context required to assign roles');
-      }
-      const rolePerms: Array<{ code: string }> = await this.dataSource.query(
-        `
-        WITH RECURSIVE chain(id, parent_role_id) AS (
-          SELECT id, parent_role_id FROM roles WHERE id = $1
-          UNION ALL
-          SELECT r.id, r.parent_role_id
-            FROM roles r INNER JOIN chain c ON r.id = c.parent_role_id
-        )
-        SELECT DISTINCT p.code
-          FROM permissions p
-          INNER JOIN role_permissions rp ON rp.permission_id = p.id
-          INNER JOIN chain c ON c.id = rp.role_id
-        `,
-        [dto.roleId],
-      );
-      const callerPerms: Array<{ code: string }> = await this.dataSource.query(
-        `
-        SELECT DISTINCT p.code FROM permissions p
-          INNER JOIN role_permissions rp ON rp.permission_id = p.id
-          INNER JOIN user_roles ur ON ur.role_id = rp.role_id
-          WHERE ur.user_id = $1 AND ur.deleted_at IS NULL
-        UNION
-        SELECT DISTINCT p.code FROM permissions p
-          INNER JOIN user_permissions up ON up.permission_id = p.id
-          WHERE up.user_id = $1
-        `,
-        [callerId],
-      );
-      const held = new Set(callerPerms.map((r) => r.code));
-      const missing = rolePerms.map((r) => r.code).filter((c) => !held.has(c));
-      if (missing.length) {
-        throw new BadRequestException(
-          `Cannot assign role '${role.name}': it carries permissions you do not hold ` +
-            `(${missing.slice(0, 5).join(', ')}${missing.length > 5 ? ', …' : ''}).`,
-        );
-      }
-    }
+    // SECURITY: privilege escalation guard (shared with create()).
+    await this.assertCallerCanGrantRole(role, caller);
 
     // Check if role is already assigned with same scope
     const existing = await this.userRoleRepository.findOne({
