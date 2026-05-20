@@ -7,7 +7,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, Like, DataSource, EntityManager, ILike } from 'typeorm';
+import { Repository, Between, Like, DataSource, EntityManager, ILike, In } from 'typeorm';
 import { LabTest, LabTestStatus } from '../../database/entities/lab-test.entity';
 import { LabSample, SampleStatus } from '../../database/entities/lab-sample.entity';
 import { LabResult, ResultStatus, AbnormalFlag } from '../../database/entities/lab-result.entity';
@@ -664,9 +664,19 @@ export class LabService {
     }); // end transaction
   }
 
-  async getResults(sampleId: string, tenantId?: string): Promise<LabResult[]> {
+  async getResults(
+    sampleId: string,
+    tenantId?: string,
+    opts: { canSeeUnreleased?: boolean } = {},
+  ): Promise<LabResult[]> {
+    const where: any = { sampleId, ...(tenantId ? { tenantId } : {}) };
+    // P1-RBAC: clinicians without labqc.view see only released/amended
+    // results — pending/entered/validated stay invisible until QC release.
+    if (!opts.canSeeUnreleased) {
+      where.status = In([ResultStatus.RELEASED, ResultStatus.AMENDED]);
+    }
     return this.resultRepo.find({
-      where: { sampleId, ...(tenantId ? { tenantId } : {}) },
+      where,
       relations: ['enteredBy', 'validatedBy', 'releasedBy'],
       order: { createdAt: 'ASC' },
     });
@@ -694,6 +704,14 @@ export class LabService {
 
       if (result.status !== ResultStatus.ENTERED) {
         throw new BadRequestException('Result must be entered before validation');
+      }
+
+      // P1-RBAC: enforce two-person rule — the validator must be a
+      // different user than the technician who entered the result.
+      if (result.enteredById && result.enteredById === userId) {
+        throw new BadRequestException(
+          'Validator must differ from the technician who entered the result',
+        );
       }
 
       result.status = ResultStatus.VALIDATED;

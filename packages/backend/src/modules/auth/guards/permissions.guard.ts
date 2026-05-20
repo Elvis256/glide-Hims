@@ -129,6 +129,15 @@ export class PermissionsGuard implements CanActivate {
       userPermissionCodes.includes(perm),
     );
 
+    // P1-RBAC: expose resolved permission codes to downstream handlers
+    // (e.g. lab.getResults uses presence of `labqc.view` to decide
+    // whether to surface pending/entered/validated results).
+    try {
+      (user as any).permissions = userPermissionCodes;
+    } catch {
+      /* noop */
+    }
+
     if (!hasAllPermissions) {
       this.logAccessDenied(request, requiredPermissions, 'MISSING_PERMISSIONS');
     }

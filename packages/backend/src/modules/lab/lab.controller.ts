@@ -137,26 +137,32 @@ export class LabController {
   @AuthWithPermissions('lab.read')
   @ApiOperation({ summary: 'Get results for a sample' })
   getResults(@Param('sampleId') sampleId: string, @Request() req: any) {
-    return this.labService.getResults(sampleId, req.user?.tenantId);
+    // P1-RBAC: callers without labqc.view only see released/amended
+    // results; pending/entered/validated stay invisible until QC release.
+    // System admins (cross-tenant ops) always see everything.
+    const userPerms: string[] = req.user?.permissions || [];
+    const canSeeUnreleased =
+      !!req.user?.isSystemAdmin || userPerms.includes('labqc.view');
+    return this.labService.getResults(sampleId, req.user?.tenantId, { canSeeUnreleased });
   }
 
   @Put('results/:id/validate')
-  @AuthWithPermissions('lab.update')
-  @ApiOperation({ summary: 'Validate a result' })
+  @AuthWithPermissions('lab.update', 'labqc.view')
+  @ApiOperation({ summary: 'Validate a result (requires QC permission)' })
   validateResult(@Param('id') id: string, @Body() dto: ValidateResultDto, @Request() req: any) {
     return this.labService.validateResult(id, dto, req.user.id, req.user?.tenantId);
   }
 
   @Put('results/:id/release')
-  @AuthWithPermissions('lab.update')
-  @ApiOperation({ summary: 'Release a result' })
+  @AuthWithPermissions('lab.update', 'labqc.view')
+  @ApiOperation({ summary: 'Release a result (requires QC permission)' })
   releaseResult(@Param('id') id: string, @Request() req: any) {
     return this.labService.releaseResult(id, req.user.id, req.user?.tenantId);
   }
 
   @Put('results/:id/amend')
-  @AuthWithPermissions('lab.update')
-  @ApiOperation({ summary: 'Amend a released result' })
+  @AuthWithPermissions('lab.update', 'labqc.view')
+  @ApiOperation({ summary: 'Amend a released result (requires QC permission)' })
   amendResult(@Param('id') id: string, @Body() dto: AmendResultDto, @Request() req: any) {
     return this.labService.amendResult(id, dto, req.user.id, req.user?.tenantId);
   }
