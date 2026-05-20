@@ -8,6 +8,10 @@ import {
   IsArray,
   ValidateNested,
   IsDateString,
+  IsIn,
+  Min,
+  Max,
+  MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import {
@@ -18,51 +22,68 @@ import {
 import { SampleStatus, SamplePriority } from '../../../database/entities/lab-sample.entity';
 import { AbnormalFlag } from '../../../database/entities/lab-result.entity';
 
+const FINITE = { allowNaN: false, allowInfinity: false } as const;
+
 // Lab Test DTOs
 export class ReferenceRangeDto {
   @IsString()
+  @MaxLength(128)
   parameter: string;
 
   @IsString()
+  @MaxLength(32)
   unit: string;
 
-  @IsNumber()
+  @IsNumber(FINITE)
+  @Min(-1_000_000_000)
+  @Max(1_000_000_000)
   @IsOptional()
   normalMin?: number;
 
-  @IsNumber()
+  @IsNumber(FINITE)
+  @Min(-1_000_000_000)
+  @Max(1_000_000_000)
   @IsOptional()
   normalMax?: number;
 
-  @IsNumber()
+  @IsNumber(FINITE)
+  @Min(-1_000_000_000)
+  @Max(1_000_000_000)
   @IsOptional()
   criticalLow?: number;
 
-  @IsNumber()
+  @IsNumber(FINITE)
+  @Min(-1_000_000_000)
+  @Max(1_000_000_000)
   @IsOptional()
   criticalHigh?: number;
 
   @IsString()
+  @MaxLength(255)
   @IsOptional()
   textNormal?: string;
 
   @IsString()
+  @MaxLength(64)
   @IsOptional()
   ageGroup?: string;
 
-  @IsString()
+  @IsIn(['male', 'female', 'all'])
   @IsOptional()
   gender?: 'male' | 'female' | 'all';
 }
 
 export class CreateLabTestDto {
   @IsString()
+  @MaxLength(32)
   code: string;
 
   @IsString()
+  @MaxLength(255)
   name: string;
 
   @IsString()
+  @MaxLength(2000)
   @IsOptional()
   description?: string;
 
@@ -74,11 +95,15 @@ export class CreateLabTestDto {
   @IsOptional()
   sampleType?: SampleType;
 
-  @IsNumber()
+  @IsNumber(FINITE)
+  @Min(0)
+  @Max(1_000_000)
   @IsOptional()
   price?: number;
 
-  @IsNumber()
+  @IsNumber(FINITE)
+  @Min(0)
+  @Max(43_200)
   @IsOptional()
   turnaroundTimeMinutes?: number;
 
@@ -90,6 +115,7 @@ export class CreateLabTestDto {
 
   @IsArray()
   @IsString({ each: true })
+  @MaxLength(128, { each: true })
   @IsOptional()
   components?: string[];
 
@@ -98,16 +124,19 @@ export class CreateLabTestDto {
   requiresFasting?: boolean;
 
   @IsString()
+  @MaxLength(2000)
   @IsOptional()
   specialInstructions?: string;
 }
 
 export class UpdateLabTestDto {
   @IsString()
+  @MaxLength(255)
   @IsOptional()
   name?: string;
 
   @IsString()
+  @MaxLength(2000)
   @IsOptional()
   description?: string;
 
@@ -119,11 +148,15 @@ export class UpdateLabTestDto {
   @IsOptional()
   status?: LabTestStatus;
 
-  @IsNumber()
+  @IsNumber(FINITE)
+  @Min(0)
+  @Max(1_000_000)
   @IsOptional()
   price?: number;
 
-  @IsNumber()
+  @IsNumber(FINITE)
+  @Min(0)
+  @Max(43_200)
   @IsOptional()
   turnaroundTimeMinutes?: number;
 
@@ -147,6 +180,7 @@ export class CollectSampleDto {
   labTestId?: string;
 
   @IsString()
+  @MaxLength(64)
   @IsOptional()
   labTestCode?: string;
 
@@ -161,18 +195,21 @@ export class CollectSampleDto {
   priority?: SamplePriority;
 
   @IsString()
+  @MaxLength(1000)
   @IsOptional()
   collectionNotes?: string;
 }
 
 export class ReceiveSampleDto {
   @IsString()
+  @MaxLength(1000)
   @IsOptional()
   notes?: string;
 }
 
 export class RejectSampleDto {
   @IsString()
+  @MaxLength(1000)
   rejectionReason: string;
 }
 
@@ -186,6 +223,7 @@ export class SampleQueryDto {
   status?: SampleStatus;
 
   @IsString()
+  @MaxLength(512)
   @IsOptional()
   statuses?: string;
 
@@ -209,28 +247,38 @@ export class SampleQueryDto {
 // Result DTOs
 export class EnterResultDto {
   @IsString()
+  @MaxLength(128)
   parameter: string;
 
   @IsString()
+  @MaxLength(1000)
   value: string;
 
-  @IsNumber()
+  @IsNumber(FINITE)
+  @Min(-1_000_000_000)
+  @Max(1_000_000_000)
   @IsOptional()
   numericValue?: number;
 
   @IsString()
+  @MaxLength(32)
   @IsOptional()
   unit?: string;
 
-  @IsNumber()
+  @IsNumber(FINITE)
+  @Min(-1_000_000_000)
+  @Max(1_000_000_000)
   @IsOptional()
   referenceMin?: number;
 
-  @IsNumber()
+  @IsNumber(FINITE)
+  @Min(-1_000_000_000)
+  @Max(1_000_000_000)
   @IsOptional()
   referenceMax?: number;
 
   @IsString()
+  @MaxLength(255)
   @IsOptional()
   referenceRange?: string;
 
@@ -239,29 +287,36 @@ export class EnterResultDto {
   abnormalFlag?: AbnormalFlag;
 
   @IsString()
+  @MaxLength(2000)
   @IsOptional()
   interpretation?: string;
 
   @IsString()
+  @MaxLength(2000)
   @IsOptional()
   comments?: string;
 }
 
 export class ValidateResultDto {
   @IsString()
+  @MaxLength(2000)
   @IsOptional()
   comments?: string;
 }
 
 export class AmendResultDto {
   @IsString()
+  @MaxLength(1000)
   newValue: string;
 
-  @IsNumber()
+  @IsNumber(FINITE)
+  @Min(-1_000_000_000)
+  @Max(1_000_000_000)
   @IsOptional()
   numericValue?: number;
 
   @IsString()
+  @MaxLength(1000)
   amendmentReason: string;
 }
 
@@ -275,6 +330,7 @@ export class LabTestQueryDto {
   status?: LabTestStatus;
 
   @IsString()
+  @MaxLength(128)
   @IsOptional()
   search?: string;
 }
