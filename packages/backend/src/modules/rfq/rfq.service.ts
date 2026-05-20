@@ -52,31 +52,57 @@ export class RFQService {
     return 3;
   }
 
-  private async generateRFQNumber(facilityId: string, tenantId?: string): Promise<string> {
-    const count = await this.rfqRepo.count({
-      where: { facilityId, ...(tenantId ? { tenantId } : {}) },
-    });
+  private async generateRFQNumber(_facilityId: string, _tenantId?: string): Promise<string> {
+    // rfq_number has a GLOBAL unique constraint, so we derive the next suffix
+    // from the highest existing number that matches this month's prefix
+    // (rather than count(*) which is both wrong cross-tenant and race-prone).
     const date = new Date();
-    return `RFQ${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(count + 1).padStart(5, '0')}`;
+    const prefix = `RFQ${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}`;
+    const row = await this.rfqRepo
+      .createQueryBuilder('rfq')
+      .select('MAX(rfq.rfq_number)', 'max')
+      .where('rfq.rfq_number LIKE :p', { p: `${prefix}%` })
+      .withDeleted()
+      .getRawOne<{ max: string | null }>();
+    const lastSuffix = row?.max ? parseInt(row.max.slice(prefix.length), 10) : 0;
+    const next = Number.isFinite(lastSuffix) ? lastSuffix + 1 : 1;
+    return `${prefix}${String(next).padStart(5, '0')}`;
   }
 
   async create(dto: CreateRFQDto, userId: string, tenantId?: string): Promise<RFQ> {
-    const rfqNumber = await this.generateRFQNumber(dto.facilityId, tenantId);
-
-    const rfq = this.rfqRepo.create({
-      rfqNumber,
-      title: dto.title,
-      facilityId: dto.facilityId,
-      purchaseRequestId: dto.purchaseRequestId,
-      deadline: new Date(dto.deadline),
-      notes: dto.notes,
-      instructions: dto.instructions,
-      status: RFQStatus.DRAFT,
-      createdById: userId,
-      ...(tenantId ? { tenantId } : {}),
-    });
-
-    const savedRFQ = await this.rfqRepo.save(rfq);
+    let savedRFQ: RFQ | null = null;
+    let lastErr: any = null;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const rfqNumber = await this.generateRFQNumber(dto.facilityId, tenantId);
+      const rfq = this.rfqRepo.create({
+        rfqNumber,
+        title: dto.title,
+        facilityId: dto.facilityId,
+        purchaseRequestId: dto.purchaseRequestId,
+        deadline: new Date(dto.deadline),
+        notes: dto.notes,
+        instructions: dto.instructions,
+        status: RFQStatus.DRAFT,
+        createdById: userId,
+        ...(tenantId ? { tenantId } : {}),
+      });
+      try {
+        savedRFQ = await this.rfqRepo.save(rfq);
+        break;
+      } catch (err: any) {
+        lastErr = err;
+        // 23505 = unique_violation. Retry with a fresh number.
+        if (err?.code !== '23505' || !String(err?.detail || '').includes('rfq_number')) {
+          throw err;
+        }
+        this.logger.warn(
+          `RFQ number collision on ${rfqNumber} (attempt ${attempt + 1}/5), retrying`,
+        );
+      }
+    }
+    if (!savedRFQ) {
+      throw lastErr ?? new BadRequestException('Failed to allocate RFQ number');
+    }
 
     // Create items
     const items = dto.items.map((item) =>
