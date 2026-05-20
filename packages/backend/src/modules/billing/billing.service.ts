@@ -613,35 +613,48 @@ export class BillingService {
     userId?: string,
     tenantId?: string,
   ): Promise<Invoice> {
-    const invoice = await this.findInvoice(invoiceId, tenantId);
+    // Lock + validate + insert + recalc in one transaction so a concurrent
+    // recordPayment cannot observe a stale subtotal between the item save
+    // and the recalculation.
+    return this.dataSource.transaction(async (manager) => {
+      const where: any = { id: invoiceId };
+      if (tenantId) where.tenantId = tenantId;
 
-    if (invoice.status === InvoiceStatus.PAID) {
-      throw new BadRequestException('Cannot add items to a paid invoice');
-    }
-    if (invoice.status === InvoiceStatus.PARTIALLY_PAID) {
-      throw new BadRequestException(
-        'Cannot add items to a partially paid invoice — refund or void the existing payments first',
+      const invoice = await manager.findOne(Invoice, {
+        where,
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!invoice) {
+        throw new NotFoundException('Invoice not found');
+      }
+
+      if (invoice.status === InvoiceStatus.PAID) {
+        throw new BadRequestException('Cannot add items to a paid invoice');
+      }
+      if (invoice.status === InvoiceStatus.PARTIALLY_PAID) {
+        throw new BadRequestException(
+          'Cannot add items to a partially paid invoice — refund or void the existing payments first',
+        );
+      }
+      if (invoice.status === InvoiceStatus.CANCELLED || invoice.status === InvoiceStatus.REFUNDED) {
+        throw new BadRequestException(`Cannot add items to a ${invoice.status} invoice`);
+      }
+
+      const amount = multiply(dto.quantity, dto.unitPrice);
+      const item = manager.create(InvoiceItem, {
+        ...dto,
+        invoiceId,
+        amount,
+        ...(tenantId ? { tenantId } : {}),
+      });
+      await manager.save(item);
+
+      this.logger.log(
+        `Invoice item added to ${invoiceId} by ${userId || 'unknown'}: ${dto.description || dto.serviceCode || 'item'} amount=${amount}`,
       );
-    }
-    if (invoice.status === InvoiceStatus.CANCELLED || invoice.status === InvoiceStatus.REFUNDED) {
-      throw new BadRequestException(`Cannot add items to a ${invoice.status} invoice`);
-    }
 
-    const amount = multiply(dto.quantity, dto.unitPrice);
-    const item = this.itemRepository.create({
-      ...dto,
-      invoiceId,
-      amount,
+      return this.recalculateInvoiceInTxn(manager, invoiceId, tenantId);
     });
-
-    await this.itemRepository.save(item);
-
-    this.logger.log(
-      `Invoice item added to ${invoiceId} by ${userId || 'unknown'}: ${dto.description || dto.serviceCode || 'item'} amount=${amount}`,
-    );
-
-    // Recalculate invoice totals
-    return this.recalculateInvoice(invoiceId, tenantId);
   }
 
   async updateItemPrice(
@@ -651,28 +664,44 @@ export class BillingService {
     userId?: string,
     tenantId?: string,
   ): Promise<Invoice> {
-    const invoice = await this.findInvoice(invoiceId, tenantId);
+    return this.dataSource.transaction(async (manager) => {
+      const where: any = { id: invoiceId };
+      if (tenantId) where.tenantId = tenantId;
 
-    if (invoice.status === InvoiceStatus.PAID || invoice.status === InvoiceStatus.PARTIALLY_PAID) {
-      throw new BadRequestException('Cannot update item price on a paid or partially paid invoice');
-    }
+      const invoice = await manager.findOne(Invoice, {
+        where,
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!invoice) {
+        throw new NotFoundException('Invoice not found');
+      }
 
-    const item = await this.itemRepository.findOne({
-      where: { id: itemId, invoiceId },
+      if (invoice.status === InvoiceStatus.PAID || invoice.status === InvoiceStatus.PARTIALLY_PAID) {
+        throw new BadRequestException(
+          'Cannot update item price on a paid or partially paid invoice',
+        );
+      }
+      if (invoice.status === InvoiceStatus.CANCELLED || invoice.status === InvoiceStatus.REFUNDED) {
+        throw new BadRequestException(`Cannot update item price on a ${invoice.status} invoice`);
+      }
+
+      const item = await manager.findOne(InvoiceItem, {
+        where: { id: itemId, invoiceId },
+      });
+      if (!item) {
+        throw new NotFoundException('Invoice item not found');
+      }
+
+      item.unitPrice = unitPrice;
+      item.amount = multiply(item.quantity, unitPrice);
+      await manager.save(item);
+
+      this.logger.log(
+        `Invoice item ${itemId} price updated to ${unitPrice} on ${invoiceId} by ${userId || 'unknown'}`,
+      );
+
+      return this.recalculateInvoiceInTxn(manager, invoiceId, tenantId);
     });
-    if (!item) {
-      throw new NotFoundException('Invoice item not found');
-    }
-
-    item.unitPrice = unitPrice;
-    item.amount = multiply(item.quantity, unitPrice);
-    await this.itemRepository.save(item);
-
-    this.logger.log(
-      `Invoice item ${itemId} price updated to ${unitPrice} on ${invoiceId} by ${userId || 'unknown'}`,
-    );
-
-    return this.recalculateInvoice(invoiceId, tenantId);
   }
 
   async removeItemById(
@@ -681,33 +710,98 @@ export class BillingService {
     userId?: string,
     tenantId?: string,
   ): Promise<Invoice> {
-    const invoice = await this.findInvoice(invoiceId, tenantId);
+    return this.dataSource.transaction(async (manager) => {
+      const where: any = { id: invoiceId };
+      if (tenantId) where.tenantId = tenantId;
 
-    if (invoice.status === InvoiceStatus.PAID) {
-      throw new BadRequestException('Cannot remove items from a paid invoice');
-    }
-    if (invoice.status === InvoiceStatus.PARTIALLY_PAID) {
-      throw new BadRequestException(
-        'Cannot remove items from a partially paid invoice — refund or void the existing payments first',
+      const invoice = await manager.findOne(Invoice, {
+        where,
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!invoice) {
+        throw new NotFoundException('Invoice not found');
+      }
+
+      if (invoice.status === InvoiceStatus.PAID) {
+        throw new BadRequestException('Cannot remove items from a paid invoice');
+      }
+      if (invoice.status === InvoiceStatus.PARTIALLY_PAID) {
+        throw new BadRequestException(
+          'Cannot remove items from a partially paid invoice — refund or void the existing payments first',
+        );
+      }
+      if (invoice.status === InvoiceStatus.CANCELLED || invoice.status === InvoiceStatus.REFUNDED) {
+        throw new BadRequestException(`Cannot remove items from a ${invoice.status} invoice`);
+      }
+
+      const item = await manager.findOne(InvoiceItem, {
+        where: { id: itemId, invoiceId },
+      });
+      if (!item) {
+        throw new NotFoundException('Invoice item not found');
+      }
+
+      await manager.remove(item);
+      this.logger.log(
+        `Invoice item ${itemId} (${item.description}) removed from ${invoiceId} by ${userId || 'unknown'}`,
       );
-    }
-    if (invoice.status === InvoiceStatus.CANCELLED || invoice.status === InvoiceStatus.REFUNDED) {
-      throw new BadRequestException(`Cannot remove items from a ${invoice.status} invoice`);
-    }
 
-    const item = await this.itemRepository.findOne({
-      where: { id: itemId, invoiceId },
+      return this.recalculateInvoiceInTxn(manager, invoiceId, tenantId);
     });
-    if (!item) {
-      throw new NotFoundException('Invoice item not found');
+  }
+
+  /**
+   * In-transaction variant of recalculateInvoice — used by addItem /
+   * updateItemPrice / removeItemById which already hold a pessimistic_write
+   * lock on the invoice row. Avoids re-locking inside a nested transaction.
+   */
+  private async recalculateInvoiceInTxn(
+    manager: EntityManager,
+    invoiceId: string,
+    tenantId?: string,
+  ): Promise<Invoice> {
+    const where: any = { id: invoiceId };
+    if (tenantId) where.tenantId = tenantId;
+
+    const invoice = await manager.findOne(Invoice, {
+      where,
+      relations: ['items', 'payments', 'patient', 'encounter', 'createdBy'],
+    });
+    if (!invoice) {
+      throw new NotFoundException('Invoice not found');
     }
 
-    await this.itemRepository.remove(item);
-    this.logger.log(
-      `Invoice item ${itemId} (${item.description}) removed from ${invoiceId} by ${userId || 'unknown'}`,
-    );
+    const subtotal = invoice.items.reduce((sum, item) => sum + Number(item.amount), 0);
+    const totalAmount = subtotal + Number(invoice.taxAmount) - Number(invoice.discountAmount);
+    const balanceDue = totalAmount - Number(invoice.amountPaid);
 
-    return this.recalculateInvoice(invoiceId, tenantId);
+    const insuranceAmount = invoice.items.reduce(
+      (sum, item) => sum + Number(item.insuranceAmount || 0),
+      0,
+    );
+    const copayAmount = invoice.items.reduce(
+      (sum, item) => sum + Number(item.copayAmount || 0),
+      0,
+    );
+    const uncoveredAmount = invoice.items
+      .filter((item) => !item.insuranceCovered)
+      .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    const patientResponsibility = copayAmount + uncoveredAmount;
+
+    invoice.subtotal = subtotal;
+    invoice.totalAmount = totalAmount;
+    invoice.balanceDue = balanceDue;
+    invoice.insuranceAmount = insuranceAmount;
+    invoice.copayAmount = copayAmount;
+    invoice.patientResponsibility = patientResponsibility;
+
+    if (balanceDue <= 0) {
+      invoice.status = InvoiceStatus.PAID;
+    } else if (Number(invoice.amountPaid) > 0) {
+      invoice.status = InvoiceStatus.PARTIALLY_PAID;
+    }
+
+    return manager.save(Invoice, invoice);
   }
 
   private async recalculateInvoice(invoiceId: string, tenantId?: string): Promise<Invoice> {
@@ -1627,7 +1721,7 @@ export class BillingService {
   ): Promise<Invoice> {
     const invoice = await this.invoiceRepository.findOne({
       where: { id, ...(tenantId ? { tenantId } : {}) },
-      relations: ['patient', 'encounter'],
+      relations: ['patient', 'encounter', 'payments'],
     });
 
     if (!invoice) {
@@ -1639,6 +1733,20 @@ export class BillingService {
       throw new BadRequestException(
         'Segregation of duties violation: the user who created the invoice cannot cancel it',
       );
+    }
+
+    // Segregation of duties: a user who collected any completed payment on this
+    // invoice cannot also cancel it. Mirrors the refundInvoice / refundPayment
+    // checks so a cashier can't quietly cancel an invoice they took money on.
+    if (userId) {
+      const collectorOverlap = (invoice.payments || []).some(
+        (p) => p.status === PaymentStatus.COMPLETED && p.receivedById === userId,
+      );
+      if (collectorOverlap) {
+        throw new BadRequestException(
+          'Segregation of duties violation: a user who collected payment on this invoice cannot also cancel it',
+        );
+      }
     }
 
     if (invoice.status === InvoiceStatus.PAID) {
@@ -2321,8 +2429,19 @@ export class BillingService {
 
   // ============ WRITE-OFFS ============
 
-  /** Configurable write-off threshold (in UGX). Amounts above this require supervisor role. */
+  /**
+   * Configurable write-off threshold (in tenant currency, default UGX).
+   * Amounts above this require the `finance.write_off_large` permission, or
+   * (back-compat) one of the supervisor/admin/finance_manager roles.
+   */
   private static readonly WRITE_OFF_LIMIT = 5_000_000;
+  private static readonly WRITE_OFF_SUPERVISOR_ROLES = [
+    'supervisor',
+    'admin',
+    'finance_manager',
+    'Finance Manager',
+    'Super Admin',
+  ];
 
   async writeOffInvoice(
     invoiceId: string,
@@ -2330,72 +2449,106 @@ export class BillingService {
     userId: string,
     tenantId?: string,
     userRoles?: string[],
+    userPermissions?: string[],
   ): Promise<Invoice> {
-    const invoice = await this.invoiceRepository.findOne({
-      where: { id: invoiceId, ...(tenantId ? { tenantId } : {}) },
-      relations: ['encounter'],
-    });
-    if (!invoice) throw new NotFoundException('Invoice not found');
-    if (invoice.status === InvoiceStatus.PAID)
-      throw new BadRequestException('Cannot write off a paid invoice');
-    if (invoice.status === InvoiceStatus.CANCELLED)
-      throw new BadRequestException('Cannot write off a cancelled invoice');
+    if (!reason || !reason.trim()) {
+      throw new BadRequestException('Write-off reason is required');
+    }
 
-    const writeOffAmount = Number(invoice.balanceDue);
+    return this.dataSource.transaction(async (manager) => {
+      // Lock the invoice row so a concurrent payment / cancel / write-off
+      // cannot race against us between status check and status flip.
+      const invoice = await manager.findOne(Invoice, {
+        where: { id: invoiceId, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!invoice) throw new NotFoundException('Invoice not found');
+      // Encounter is loaded separately because pessimistic locks cannot be
+      // combined with relations (FOR UPDATE on nullable side of outer join).
+      if (invoice.encounterId) {
+        const enc = await manager.findOne(Encounter, {
+          where: { id: invoice.encounterId },
+        });
+        if (enc) invoice.encounter = enc;
+      }
+      if (invoice.status === InvoiceStatus.PAID)
+        throw new BadRequestException('Cannot write off a paid invoice');
+      if (invoice.status === InvoiceStatus.CANCELLED)
+        throw new BadRequestException('Cannot write off a cancelled invoice');
+      if (invoice.status === InvoiceStatus.REFUNDED)
+        throw new BadRequestException('Cannot write off a refunded invoice');
 
-    // Enforce write-off limit — amounts above threshold require supervisor role
-    if (writeOffAmount > BillingService.WRITE_OFF_LIMIT) {
-      const roles = userRoles || [];
-      const isSupervisor = roles.some((r) =>
-        ['supervisor', 'admin', 'finance_manager'].includes(r),
+      const writeOffAmount = Number(invoice.balanceDue);
+      if (writeOffAmount <= 0) {
+        throw new BadRequestException('Nothing to write off — invoice has no outstanding balance');
+      }
+
+      // Enforce threshold via permission first, then back-compat role list.
+      if (writeOffAmount > BillingService.WRITE_OFF_LIMIT) {
+        const perms = userPermissions || [];
+        const roles = userRoles || [];
+        const hasLargeWriteOffPerm =
+          perms.includes('finance.write_off_large') || perms.includes('finance.manage_large');
+        const isSupervisor = roles.some((r) =>
+          BillingService.WRITE_OFF_SUPERVISOR_ROLES.includes(r),
+        );
+        if (!hasLargeWriteOffPerm && !isSupervisor) {
+          throw new BadRequestException(
+            `Write-off amount (${writeOffAmount.toLocaleString()}) exceeds the limit of ` +
+              `${BillingService.WRITE_OFF_LIMIT.toLocaleString()}. ` +
+              `The 'finance.write_off_large' permission (or supervisor / finance-manager role) is required.`,
+          );
+        }
+      }
+
+      invoice.status = InvoiceStatus.CANCELLED;
+      invoice.notes =
+        `${invoice.notes || ''}\nWRITTEN OFF (${new Date().toISOString().slice(0, 10)}): ${reason} — Amount: ${writeOffAmount}`.trim();
+      const saved = await manager.save(Invoice, invoice);
+
+      // GL: DR Bad Debt Expense (5503), CR Accounts Receivable (1200).
+      // financeService manages its own connection; failures are logged
+      // loudly but do NOT roll back the invoice flip — operational policy
+      // is that a written-off invoice must not silently revert to OPEN.
+      // The audit log entry below records the discrepancy so reconciliation
+      // can detect a missing GL leg.
+      let glPosted = true;
+      if (invoice.encounter?.facilityId) {
+        try {
+          await this.financeService.autoPostInvoiceJournal(
+            {
+              facilityId: invoice.encounter.facilityId,
+              invoiceNumber: `WRITEOFF-${invoice.invoiceNumber}`,
+              totalAmount: writeOffAmount,
+              revenueCategory: 'write_off',
+              userId,
+            },
+            tenantId,
+          );
+        } catch (err) {
+          glPosted = false;
+          this.logger.error(
+            `GL write-off posting failed for ${invoice.invoiceNumber}: ${err.message}`,
+            err.stack,
+          );
+        }
+      }
+
+      await this.auditLogService.log({
+        userId,
+        action: 'INVOICE_WRITTEN_OFF',
+        entityType: 'Invoice',
+        entityId: invoice.id,
+        oldValue: { balanceDue: writeOffAmount, status: 'previous', invoiceNumber: invoice.invoiceNumber },
+        newValue: { status: InvoiceStatus.CANCELLED, writeOffAmount, glPosted },
+        reason,
+        ...(tenantId ? { tenantId } : {}),
+      }).catch((err) =>
+        this.logger.error(`Audit log failed for writeOffInvoice ${invoice.id}: ${err.message}`),
       );
-      if (!isSupervisor) {
-        throw new BadRequestException(
-          `Write-off amount (${writeOffAmount}) exceeds the limit of ${BillingService.WRITE_OFF_LIMIT}. Supervisor approval is required.`,
-        );
-      }
-    }
 
-    invoice.status = InvoiceStatus.CANCELLED;
-    invoice.notes =
-      `${invoice.notes || ''}\nWRITTEN OFF (${new Date().toISOString().slice(0, 10)}): ${reason} — Amount: ${writeOffAmount}`.trim();
-    const saved = await this.invoiceRepository.save(invoice);
-
-    // GL: DR Bad Debt Expense (5503), CR Accounts Receivable (1200)
-    if (invoice.encounter?.facilityId) {
-      try {
-        await this.financeService.autoPostInvoiceJournal(
-          {
-            facilityId: invoice.encounter.facilityId,
-            invoiceNumber: `WRITEOFF-${invoice.invoiceNumber}`,
-            totalAmount: writeOffAmount,
-            revenueCategory: 'write_off',
-            userId,
-          },
-          tenantId,
-        );
-      } catch (err) {
-        this.logger.error(
-          `GL write-off posting failed for ${invoice.invoiceNumber}: ${err.message}`,
-          err.stack,
-        );
-      }
-    }
-
-    await this.auditLogService.log({
-      userId,
-      action: 'INVOICE_WRITTEN_OFF',
-      entityType: 'Invoice',
-      entityId: invoice.id,
-      oldValue: { balanceDue: writeOffAmount, status: 'previous', invoiceNumber: invoice.invoiceNumber },
-      newValue: { status: InvoiceStatus.CANCELLED, writeOffAmount },
-      reason,
-      ...(tenantId ? { tenantId } : {}),
-    }).catch((err) =>
-      this.logger.error(`Audit log failed for writeOffInvoice ${invoice.id}: ${err.message}`),
-    );
-
-    return saved;
+      return saved;
+    });
   }
 
   // ============ RECEIPT PRINT DATA ============

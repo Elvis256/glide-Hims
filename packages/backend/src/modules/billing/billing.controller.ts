@@ -255,12 +255,14 @@ export class BillingController {
     @Request() req: any,
   ) {
     const userRoles = req.user?.roles || [];
+    const userPermissions = req.user?.permissions || [];
     return this.billingService.writeOffInvoice(
       id,
       reason,
       req.user.id,
       req?.user?.tenantId,
       userRoles,
+      userPermissions,
     );
   }
 
