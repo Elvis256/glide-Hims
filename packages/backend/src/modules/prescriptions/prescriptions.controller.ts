@@ -10,6 +10,7 @@ import {
   Request,
   ParseUUIDPipe,
   UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { PrescriptionsService } from './prescriptions.service';
@@ -24,6 +25,7 @@ import {
   AddWitnessDto,
   DoubleCheckDto,
   NarcoticsRegisterQueryDto,
+  TimingAnalyticsQueryDto,
 } from './prescriptions.dto';
 import { AuthWithPermissions, AuthWithOwnership } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
@@ -62,18 +64,21 @@ export class PrescriptionsController {
   @AuthWithPermissions('prescriptions.read')
   @ApiOperation({ summary: 'Search prescriptions by patient name, MRN or Rx number' })
   search(@Query('q') q: string, @Request() req: any) {
-    return this.prescriptionsService.search(q || '', req.user?.tenantId);
+    const term = (q || '').trim();
+    if (term.length < 2) {
+      throw new BadRequestException('Search query must be at least 2 characters');
+    }
+    if (term.length > 100) {
+      throw new BadRequestException('Search query too long');
+    }
+    return this.prescriptionsService.search(term, req.user?.tenantId);
   }
 
   @Get('analytics/timing')
   @AuthWithPermissions('prescriptions.read')
   @ApiOperation({ summary: 'Get prescription dispensing time analytics' })
-  getTimingAnalytics(
-    @Query('dateFrom') dateFrom?: string,
-    @Query('dateTo') dateTo?: string,
-    @Request() req?: any,
-  ) {
-    return this.prescriptionsService.getTimingAnalytics(dateFrom, dateTo, req?.user?.tenantId);
+  getTimingAnalytics(@Query() q: TimingAnalyticsQueryDto, @Request() req: any) {
+    return this.prescriptionsService.getTimingAnalytics(q.dateFrom, q.dateTo, req?.user?.tenantId);
   }
 
   // ─── Controlled Substance Endpoints (static routes before :id) ───
@@ -124,6 +129,9 @@ export class PrescriptionsController {
   @AuthWithPermissions('prescriptions.read')
   @ApiOperation({ summary: 'Get prescription by prescription number' })
   findByNumber(@Param('prescriptionNumber') prescriptionNumber: string, @Request() req: any) {
+    if (!prescriptionNumber || prescriptionNumber.length > 64) {
+      throw new BadRequestException('Invalid prescription number');
+    }
     return this.prescriptionsService.findByNumber(prescriptionNumber, req.user?.tenantId);
   }
 
@@ -178,7 +186,7 @@ export class PrescriptionsController {
   @AuthWithPermissions('nursing.update')
   @ApiOperation({ summary: 'Record medication administration by nursing staff' })
   administerMedication(
-    @Param('id') prescriptionItemId: string,
+    @Param('id', ParseUUIDPipe) prescriptionItemId: string,
     @Body() dto: AdministerMedicationDto,
     @Request() req: any,
   ) {

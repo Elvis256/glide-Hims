@@ -1340,18 +1340,40 @@ export class PrescriptionsService {
   }
 
   async getTimingAnalytics(dateFrom?: string, dateTo?: string, tenantId?: string) {
+    // Defence-in-depth: cap the analytics window even if a caller bypasses
+    // the controller-level DTO. Without this an attacker (or a UI bug) can
+    // request a multi-decade window and force getMany() to load every
+    // prescription row into memory for in-process aggregation below.
+    const MAX_RANGE_DAYS = 366; // one year + leap day
+    let from: Date | undefined;
+    let to: Date | undefined;
+    if (dateFrom) {
+      from = new Date(dateFrom);
+      if (isNaN(from.getTime())) throw new BadRequestException('Invalid dateFrom');
+    }
+    if (dateTo) {
+      to = new Date(dateTo);
+      if (isNaN(to.getTime())) throw new BadRequestException('Invalid dateTo');
+      to.setDate(to.getDate() + 1);
+    }
+    if (from && to) {
+      const days = (to.getTime() - from.getTime()) / 86_400_000;
+      if (days < 0) throw new BadRequestException('dateTo must be after dateFrom');
+      if (days > MAX_RANGE_DAYS) {
+        throw new BadRequestException(
+          `Date range exceeds maximum of ${MAX_RANGE_DAYS} days`,
+        );
+      }
+    }
+
     const qb = this.prescriptionRepository
       .createQueryBuilder('p')
       .where('p.dispensedAt IS NOT NULL')
       .andWhere('p.dispensingStartedAt IS NOT NULL');
 
     if (tenantId) qb.andWhere('p.tenant_id = :tenantId', { tenantId });
-    if (dateFrom) qb.andWhere('p.createdAt >= :dateFrom', { dateFrom: new Date(dateFrom) });
-    if (dateTo) {
-      const end = new Date(dateTo);
-      end.setDate(end.getDate() + 1);
-      qb.andWhere('p.createdAt < :dateTo', { dateTo: end });
-    }
+    if (from) qb.andWhere('p.createdAt >= :dateFrom', { dateFrom: from });
+    if (to) qb.andWhere('p.createdAt < :dateTo', { dateTo: to });
 
     const prescriptions = await qb.getMany();
 
