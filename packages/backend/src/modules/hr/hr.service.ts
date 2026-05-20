@@ -45,14 +45,14 @@ import {
   DisciplinaryType,
   DisciplinaryStatus,
 } from '../../database/entities/disciplinary-action.entity';
-import { SalaryHistory, SalaryChangeType } from '../../database/entities/salary-history.entity';
-import {
+import { SalaryHistory, SalaryChangeType } from '../../database/entities/salary-history.entity';import {
   OnboardingTask,
   OnboardingCategory,
   OnboardingTaskStatus,
 } from '../../database/entities/onboarding-task.entity';
 import { Role } from '../../database/entities/role.entity';
 import { UserRole } from '../../database/entities/user-role.entity';
+import { AuditLog } from '../../database/entities/audit-log.entity';
 import { FinanceService } from '../finance/finance.service';
 import * as bcrypt from 'bcrypt';
 import {
@@ -127,6 +127,8 @@ export class HrService {
     private roleRepo: Repository<Role>,
     @InjectRepository(UserRole)
     private userRoleRepo: Repository<UserRole>,
+    @InjectRepository(AuditLog)
+    private auditLogRepo: Repository<AuditLog>,
     @Inject(forwardRef(() => FinanceService))
     private financeService: FinanceService,
     private dataSource: DataSource,
@@ -134,6 +136,39 @@ export class HrService {
     @Inject(forwardRef(() => ApprovalsService))
     private approvalsService?: ApprovalsService,
   ) {}
+
+  /**
+   * Persist a row into audit_logs. Failures are swallowed so that an
+   * audit-insert error never blocks the HR action itself (the action's
+   * own tx commits or rolls back independently).
+   */
+  private async writeAudit(params: {
+    action: string;
+    entityType: string;
+    entityId: string;
+    actorUserId?: string;
+    tenantId?: string;
+    newValue?: any;
+    oldValue?: any;
+  }): Promise<void> {
+    try {
+      await this.auditLogRepo.save(
+        this.auditLogRepo.create({
+          userId: params.actorUserId,
+          action: params.action,
+          entityType: params.entityType,
+          entityId: params.entityId,
+          tenantId: params.tenantId,
+          newValue: params.newValue,
+          oldValue: params.oldValue,
+        }),
+      );
+    } catch (err: any) {
+      this.logger.warn(
+        `audit log insert failed for ${params.action} ${params.entityType}:${params.entityId}: ${err?.message}`,
+      );
+    }
+  }
 
   // ============ STAFF MANAGEMENT (Users as Staff) ============
 
@@ -566,43 +601,66 @@ export class HrService {
   // ============ EMPLOYEE MANAGEMENT (Legacy) ============
 
   private async generateEmployeeNumber(facilityId: string): Promise<string> {
-    const count = await this.employeeRepo.count({ where: { facilityId } });
-    return `EMP${String(count + 1).padStart(5, '0')}`;
+    // Use MAX(numeric suffix)+1 instead of COUNT()+1 so that deletes don't
+    // collapse the sequence and clash with existing rows. Caller still needs
+    // retry-on-unique-violation to be safe under concurrent inserts.
+    const row = await this.employeeRepo
+      .createQueryBuilder('e')
+      .select(
+        "COALESCE(MAX(NULLIF(regexp_replace(e.employee_number, '\\D', '', 'g'), '')::int), 0)",
+        'max',
+      )
+      .where('e.facility_id = :facilityId', { facilityId })
+      .getRawOne();
+    const next = Number(row?.max ?? 0) + 1;
+    return `EMP${String(next).padStart(5, '0')}`;
   }
 
   async createEmployee(dto: CreateEmployeeDto, tenantId?: string): Promise<Employee> {
-    const employeeNumber = await this.generateEmployeeNumber(dto.facilityId);
-
-    const employee = this.employeeRepo.create({
-      employeeNumber,
-      facilityId: dto.facilityId,
-      userId: dto.userId,
-      firstName: dto.firstName,
-      lastName: dto.lastName,
-      otherNames: dto.otherNames,
-      dateOfBirth: new Date(dto.dateOfBirth),
-      gender: dto.gender,
-      maritalStatus: dto.maritalStatus,
-      nationalId: dto.nationalId,
-      nssfNumber: dto.nssfNumber,
-      tinNumber: dto.tinNumber,
-      phone: dto.phone,
-      email: dto.email,
-      address: dto.address,
-      jobTitle: dto.jobTitle,
-      department: dto.department,
-      employmentType: dto.employmentType,
-      hireDate: new Date(dto.hireDate),
-      salaryGrade: dto.salaryGrade,
-      basicSalary: dto.basicSalary,
-      allowances: dto.allowances,
-      bankName: dto.bankName,
-      bankAccountNumber: dto.bankAccountNumber,
-      status: EmploymentStatus.ACTIVE,
-      ...(tenantId ? { tenantId } : {}),
-    });
-
-    return this.employeeRepo.save(employee);
+    // employees.employee_number has a UNIQUE constraint. Two concurrent
+    // creates can both compute the same number and collide. Retry up to 5x
+    // on unique-violation (Postgres error code 23505) before giving up.
+    let lastErr: any;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        const employeeNumber = await this.generateEmployeeNumber(dto.facilityId);
+        const employee = this.employeeRepo.create({
+          employeeNumber,
+          facilityId: dto.facilityId,
+          userId: dto.userId,
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          otherNames: dto.otherNames,
+          dateOfBirth: new Date(dto.dateOfBirth),
+          gender: dto.gender,
+          maritalStatus: dto.maritalStatus,
+          nationalId: dto.nationalId,
+          nssfNumber: dto.nssfNumber,
+          tinNumber: dto.tinNumber,
+          phone: dto.phone,
+          email: dto.email,
+          address: dto.address,
+          jobTitle: dto.jobTitle,
+          department: dto.department,
+          employmentType: dto.employmentType,
+          hireDate: new Date(dto.hireDate),
+          salaryGrade: dto.salaryGrade,
+          basicSalary: dto.basicSalary,
+          allowances: dto.allowances,
+          bankName: dto.bankName,
+          bankAccountNumber: dto.bankAccountNumber,
+          status: EmploymentStatus.ACTIVE,
+          ...(tenantId ? { tenantId } : {}),
+        });
+        return await this.employeeRepo.save(employee);
+      } catch (err: any) {
+        lastErr = err;
+        if (err?.code !== '23505') throw err;
+        // brief jitter to break ties on the next attempt
+        await new Promise((r) => setTimeout(r, 10 + Math.random() * 30));
+      }
+    }
+    throw lastErr;
   }
 
   async getEmployees(
@@ -1213,6 +1271,22 @@ export class HrService {
         `[HR_NOTIFY] payroll.processed payrollId=${saved.id} number=${saved.payrollNumber} employees=${paidStaff.length} totalNet=${totalNet}`,
       );
 
+      await this.writeAudit({
+        action: 'PAYROLL_PROCESSED',
+        entityType: 'PayrollRun',
+        entityId: saved.id,
+        tenantId,
+        newValue: {
+          status: PayrollStatus.COMPLETED,
+          payrollNumber: saved.payrollNumber,
+          employeeCount: paidStaff.length,
+          totalGross,
+          totalNet,
+          totalPaye,
+          totalNssf,
+        },
+      });
+
       return saved;
     });
   }
@@ -1229,7 +1303,22 @@ export class HrService {
     (payroll as any).approvedById = userId;
     (payroll as any).approvedAt = new Date();
     this.logger.log(`[HR_NOTIFY] payroll.approved id=${id} approver=${userId}`);
-    return this.payrollRunRepo.save(payroll);
+    const saved = await this.payrollRunRepo.save(payroll);
+    await this.writeAudit({
+      action: 'PAYROLL_APPROVED',
+      entityType: 'PayrollRun',
+      entityId: id,
+      actorUserId: userId,
+      tenantId,
+      newValue: {
+        status: PayrollStatus.APPROVED,
+        payrollNumber: payroll.payrollNumber,
+        totalNet: payroll.totalNet,
+        totalGross: payroll.totalGross,
+      },
+      oldValue: { status: PayrollStatus.DRAFT },
+    });
+    return saved;
   }
 
   async markPayrollPaid(id: string, tenantId?: string): Promise<PayrollRun> {
@@ -1257,6 +1346,18 @@ export class HrService {
       payroll.status = PayrollStatus.PAID;
       const saved = await manager.save(payroll);
       this.logger.log(`[HR_NOTIFY] payroll.paid id=${id}`);
+      await this.writeAudit({
+        action: 'PAYROLL_MARKED_PAID',
+        entityType: 'PayrollRun',
+        entityId: id,
+        tenantId,
+        newValue: {
+          status: PayrollStatus.PAID,
+          payrollNumber: payroll.payrollNumber,
+          totalNet: payroll.totalNet,
+        },
+        oldValue: { status: PayrollStatus.COMPLETED },
+      });
       return saved;
     });
   }
@@ -1350,7 +1451,15 @@ export class HrService {
       payroll.totalPaye = 0;
       payroll.totalNssf = 0;
       this.logger.log(`[HR_NOTIFY] payroll.reset id=${payroll.id}`);
-      return manager.save(payroll);
+      const saved = await manager.save(payroll);
+      await this.writeAudit({
+        action: 'PAYROLL_RESET',
+        entityType: 'PayrollRun',
+        entityId: payroll.id,
+        tenantId,
+        newValue: { status: payroll.status, payrollNumber: payroll.payrollNumber },
+      });
+      return saved;
     });
   }
 
@@ -2745,7 +2854,23 @@ export class HrService {
       ...(tenantId ? { tenantId } : {}),
     });
     const saved = await this.salaryHistoryRepo.save(record);
-    return Array.isArray(saved) ? saved[0] : saved;
+    const result = Array.isArray(saved) ? saved[0] : saved;
+    await this.writeAudit({
+      action: 'EMPLOYEE_SALARY_CHANGED',
+      entityType: 'Employee',
+      entityId: (dto?.employeeId as string) || (result as any)?.employeeId,
+      actorUserId: userId,
+      tenantId,
+      newValue: {
+        salaryHistoryId: (result as any)?.id,
+        newSalary: dto?.newSalary,
+        previousSalary: dto?.previousSalary,
+        changeType: dto?.changeType,
+        effectiveDate: dto?.effectiveDate,
+        reason: dto?.reason,
+      },
+    });
+    return result;
   }
 
   async getSalaryHistory(employeeId: string, tenantId?: string): Promise<SalaryHistory[]> {

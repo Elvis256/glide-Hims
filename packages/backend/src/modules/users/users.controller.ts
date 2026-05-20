@@ -437,8 +437,19 @@ export class UsersController {
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiQuery({ name: 'limit', required: false, description: 'Number of records (default 50)' })
   @ApiResponse({ status: 200, description: 'Login history' })
-  async getLoginHistory(@Param('id', ParseUUIDPipe) id: string, @Query('limit') limit?: number) {
-    const history = await this.authService.getLoginHistoryForUser(id, limit || 50);
+  async getLoginHistory(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Request() req: any,
+    @Query('limit') limit?: string,
+  ) {
+    const parsed = parseInt(String(limit ?? ''), 10);
+    const safeLimit = Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 500) : 50;
+    const history = await this.authService.getLoginHistoryForUser(
+      id,
+      safeLimit,
+      req.user?.tenantId,
+      !!req.user?.isSystemAdmin,
+    );
     return { data: history };
   }
 }

@@ -44,10 +44,12 @@ export class PriceAgreementsController {
   @Get('expiring')
   getExpiring(
     @Query('facilityId') facilityId: string,
-    @Query('daysAhead') daysAhead?: number,
+    @Query('daysAhead') daysAhead?: string,
     @Request() req?: any,
   ) {
-    return this.service.checkExpiringAgreements(facilityId, daysAhead, req?.user?.tenantId);
+    const parsed = parseInt(String(daysAhead ?? ''), 10);
+    const days = Number.isFinite(parsed) && parsed > 0 ? parsed : 30;
+    return this.service.checkExpiringAgreements(facilityId, days, req?.user?.tenantId);
   }
 
   @AuthWithPermissions('procurement.create')
@@ -65,10 +67,12 @@ export class PriceAgreementsController {
   getBestPrice(
     @Query('facilityId') facilityId: string,
     @Param('itemCode') itemCode: string,
-    @Query('quantity') quantity?: number,
+    @Query('quantity') quantity?: string,
     @Request() req?: any,
   ) {
-    return this.service.getBestPrice(facilityId, itemCode, quantity, req?.user?.tenantId);
+    const parsed = parseInt(String(quantity ?? ''), 10);
+    const qty = Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+    return this.service.getBestPrice(facilityId, itemCode, qty, req?.user?.tenantId);
   }
 
   @AuthWithPermissions('procurement.read')

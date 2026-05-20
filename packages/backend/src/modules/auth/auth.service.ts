@@ -1491,9 +1491,19 @@ export class AuthService {
     });
   }
 
-  async getLoginHistoryForUser(targetUserId: string, limit = 50): Promise<LoginHistory[]> {
+  async getLoginHistoryForUser(
+    targetUserId: string,
+    limit = 50,
+    callerTenantId?: string,
+    callerIsSystemAdmin = false,
+  ): Promise<LoginHistory[]> {
     const user = await this.userRepository.findOne({ where: { id: targetUserId } });
     if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    // Tenant scoping — non-system admins cannot read login history for users in
+    // other tenants.
+    if (!callerIsSystemAdmin && callerTenantId && user.tenantId !== callerTenantId) {
       throw new NotFoundException('User not found');
     }
     return this.loginHistoryRepository.find({
