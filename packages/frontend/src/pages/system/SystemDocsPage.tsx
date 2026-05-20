@@ -101,7 +101,7 @@ export default function SystemDocsPage() {
           <a
             href={iframeSrc}
             target="_blank"
-            rel="noreferrer"
+            rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
           >
             <ExternalLink className="h-3.5 w-3.5" /> Open in new tab

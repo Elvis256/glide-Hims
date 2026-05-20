@@ -164,7 +164,7 @@ AFRICASTALKING_USERNAME=your_username
 AFRICASTALKING_SANDBOX=true`}
           </pre>
           <p className="text-sm text-amber-700 mt-2">
-            Register at <a href="https://africastalking.com" target="_blank" className="underline">africastalking.com</a> (free sandbox available)
+            Register at <a href="https://africastalking.com" target="_blank" rel="noopener noreferrer" className="underline">africastalking.com</a> (free sandbox available)
           </p>
         </div>
       )}
