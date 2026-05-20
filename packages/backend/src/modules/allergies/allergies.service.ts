@@ -1,6 +1,8 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -16,6 +18,7 @@ import {
   AllergySource,
 } from '../../database/entities/patient-allergy.entity';
 import { Patient } from '../../database/entities/patient.entity';
+import { AuditLogService } from '../../common/interceptors/audit-log.service';
 
 export interface CreatePatientAllergyDto {
   patientId: string;
@@ -39,15 +42,61 @@ export interface UpdatePatientAllergyDto extends Partial<Omit<CreatePatientAller
 
 @Injectable()
 export class AllergiesService {
+  private readonly logger = new Logger(AllergiesService.name);
+
   constructor(
     @InjectRepository(PatientAllergy)
     private readonly allergyRepo: Repository<PatientAllergy>,
     @InjectRepository(Patient)
     private readonly patientRepo: Repository<Patient>,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   private normalize(s: string): string {
     return (s || '').trim().toLowerCase();
+  }
+
+  private async loadScoped(
+    id: string,
+    tenantId?: string,
+    patientId?: string,
+  ): Promise<PatientAllergy> {
+    const row = await this.allergyRepo.findOne({
+      where: { id, ...(tenantId ? { tenantId } : {}) },
+    });
+    if (!row) throw new NotFoundException('Allergy not found');
+    if (patientId && row.patientId !== patientId) {
+      throw new ForbiddenException('Allergy does not belong to this patient');
+    }
+    return row;
+  }
+
+  private async writeAudit(
+    action: string,
+    row: PatientAllergy,
+    userId?: string,
+    tenantId?: string,
+    extra?: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      await this.auditLogService.log({
+        userId,
+        action,
+        entityType: 'PatientAllergy',
+        entityId: row.id,
+        newValue: {
+          patientId: row.patientId,
+          allergen: row.allergen,
+          status: row.status,
+          criticality: row.criticality,
+          severity: row.severity,
+          ...(extra || {}),
+        },
+        ...(tenantId ? { tenantId } : {}),
+      });
+    } catch (err: any) {
+      this.logger.error(`Audit log failed for allergy ${row.id}: ${err?.message || err}`);
+    }
   }
 
   async list(patientId: string, tenantId?: string): Promise<PatientAllergy[]> {
@@ -127,18 +176,25 @@ export class AllergiesService {
       status: 'active',
       ...(tenantId ? { tenantId } : {}),
     });
-    return this.allergyRepo.save(row);
+    const saved = await this.allergyRepo.save(row);
+    await this.writeAudit('ALLERGY_CREATED', saved, userId, tenantId);
+    return saved;
   }
 
   async update(
     id: string,
     dto: UpdatePatientAllergyDto,
     tenantId?: string,
+    patientId?: string,
+    userId?: string,
   ): Promise<PatientAllergy> {
-    const row = await this.allergyRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
-    });
-    if (!row) throw new NotFoundException('Allergy not found');
+    const row = await this.loadScoped(id, tenantId, patientId);
+    const before = {
+      allergen: row.allergen,
+      status: row.status,
+      criticality: row.criticality,
+      severity: row.severity,
+    };
     if (dto.allergen) {
       row.allergen = dto.allergen.trim();
       row.allergenNormalized = this.normalize(dto.allergen);
@@ -157,19 +213,29 @@ export class AllergiesService {
       onsetDate: dto.onsetDate ? new Date(dto.onsetDate) : row.onsetDate,
       notes: dto.notes ?? row.notes,
     });
-    return this.allergyRepo.save(row);
+    const saved = await this.allergyRepo.save(row);
+    await this.writeAudit('ALLERGY_UPDATED', saved, userId, tenantId, { before });
+    return saved;
   }
 
-  async inactivate(id: string, tenantId?: string): Promise<PatientAllergy> {
-    return this.update(id, { status: 'inactive' }, tenantId);
+  async inactivate(
+    id: string,
+    tenantId?: string,
+    patientId?: string,
+    userId?: string,
+  ): Promise<PatientAllergy> {
+    return this.update(id, { status: 'inactive' }, tenantId, patientId, userId);
   }
 
-  async remove(id: string, tenantId?: string): Promise<void> {
-    const row = await this.allergyRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
-    });
-    if (!row) throw new NotFoundException('Allergy not found');
+  async remove(
+    id: string,
+    tenantId?: string,
+    patientId?: string,
+    userId?: string,
+  ): Promise<void> {
+    const row = await this.loadScoped(id, tenantId, patientId);
     await this.allergyRepo.softRemove(row);
+    await this.writeAudit('ALLERGY_DELETED', row, userId, tenantId);
   }
 
   async findByIds(ids: string[], tenantId?: string): Promise<PatientAllergy[]> {

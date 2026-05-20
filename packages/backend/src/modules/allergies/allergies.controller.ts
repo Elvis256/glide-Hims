@@ -11,11 +11,11 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
+import { AllergiesService } from './allergies.service';
 import {
-  AllergiesService,
-  CreatePatientAllergyDto,
-  UpdatePatientAllergyDto,
-} from './allergies.service';
+  CreatePatientAllergyBodyDto,
+  UpdatePatientAllergyBodyDto,
+} from './allergies.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 
 @ApiTags('allergies')
@@ -36,7 +36,7 @@ export class AllergiesController {
   @ApiOperation({ summary: 'Record a new allergy for a patient' })
   create(
     @Param('patientId', ParseUUIDPipe) patientId: string,
-    @Body() body: Omit<CreatePatientAllergyDto, 'patientId'>,
+    @Body() body: CreatePatientAllergyBodyDto,
     @Req() req: Request,
   ) {
     const userId = (req as any).user?.id;
@@ -48,37 +48,40 @@ export class AllergiesController {
   @AuthWithPermissions('allergies.write')
   @ApiOperation({ summary: 'Update an allergy record' })
   update(
-    @Param('patientId', ParseUUIDPipe) _patientId: string,
+    @Param('patientId', ParseUUIDPipe) patientId: string,
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() body: UpdatePatientAllergyDto,
+    @Body() body: UpdatePatientAllergyBodyDto,
     @Req() req: Request,
   ) {
+    const userId = (req as any).user?.id;
     const tenantId = (req as any).user?.tenantId;
-    return this.allergies.update(id, body, tenantId);
+    return this.allergies.update(id, body, tenantId, patientId, userId);
   }
 
   @Patch(':id/inactivate')
   @AuthWithPermissions('allergies.write')
   @ApiOperation({ summary: 'Mark allergy inactive (preferred over delete)' })
   inactivate(
-    @Param('patientId', ParseUUIDPipe) _patientId: string,
+    @Param('patientId', ParseUUIDPipe) patientId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: Request,
   ) {
+    const userId = (req as any).user?.id;
     const tenantId = (req as any).user?.tenantId;
-    return this.allergies.inactivate(id, tenantId);
+    return this.allergies.inactivate(id, tenantId, patientId, userId);
   }
 
   @Delete(':id')
   @AuthWithPermissions('allergies.delete')
   @ApiOperation({ summary: 'Soft-delete an allergy (admin/clinician-lead only; prefer inactivate)' })
   async remove(
-    @Param('patientId', ParseUUIDPipe) _patientId: string,
+    @Param('patientId', ParseUUIDPipe) patientId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: Request,
   ) {
+    const userId = (req as any).user?.id;
     const tenantId = (req as any).user?.tenantId;
-    await this.allergies.remove(id, tenantId);
+    await this.allergies.remove(id, tenantId, patientId, userId);
     return { ok: true };
   }
 }

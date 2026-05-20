@@ -14,8 +14,22 @@ export class ClinicalNotesService {
     private encounterRepository: Repository<Encounter>,
   ) {}
 
+  // Roles that are permitted to amend/delete another author's clinical note.
+  // Match against the exact role slug — substring/`includes('admin')` is
+  // unsafe because role names like `admin_assistant` would qualify.
+  private static readonly NOTE_ADMIN_ROLES = new Set<string>([
+    'system_admin',
+    'super_admin',
+    'tenant_admin',
+    'hospital_admin',
+    'clinical_admin',
+    'medical_director',
+  ]);
+
   private assertOwnerOrAdmin(note: ClinicalNote, userId: string, roles: string[] = []): void {
-    const isAdmin = roles.some((r) => r.toLowerCase().includes('admin'));
+    const isAdmin = roles.some((r) =>
+      ClinicalNotesService.NOTE_ADMIN_ROLES.has(String(r).toLowerCase()),
+    );
     if (note.providerId !== userId && !isAdmin) {
       throw new ForbiddenException('Only the note author or an admin can modify this note');
     }
