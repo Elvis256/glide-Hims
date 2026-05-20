@@ -29,7 +29,7 @@ export function useSessionTimeout(options: UseSessionTimeoutOptions = {}) {
   const warningRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastActivityRef = useRef<number>(Date.now());
 
-  const handleTimeout = useCallback(() => {
+  const handleTimeout = useCallback(async () => {
     console.log('[SESSION] Session timed out due to inactivity');
     if (onTimeout) {
       onTimeout();
@@ -40,7 +40,7 @@ export function useSessionTimeout(options: UseSessionTimeoutOptions = {}) {
       localStorage.removeItem('glide_active_tenant_id');
       sessionStorage.removeItem('glide_active_tenant_id');
       sessionStorage.removeItem('glide_active_facility_id');
-      logout();
+      await logout();
       if (kind === 'system') {
         window.location.href = '/system/login?expired=true';
       } else {
