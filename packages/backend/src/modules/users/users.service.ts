@@ -483,6 +483,7 @@ export class UsersService {
     userId: string,
     employeeId: string,
     tenantId?: string,
+    caller?: any,
   ): Promise<Employee> {
     const user = await this.findOne(userId, tenantId);
 
@@ -494,11 +495,16 @@ export class UsersService {
       throw new NotFoundException('Employee not found');
     }
 
+    // Belt-and-braces: when caller is a system admin (no tenantId filter
+    // applied above) make sure we are not linking across tenants.
+    if (user.tenantId && employee.tenantId && user.tenantId !== employee.tenantId) {
+      throw new ConflictException('User and employee belong to different tenants');
+    }
+
     if (employee.userId && employee.userId !== userId) {
       throw new ConflictException('Employee is already linked to another user account');
     }
 
-    // Check if user is already linked to another employee
     const existingLink = await this.employeeRepository.findOne({
       where: { userId, ...(tenantId ? { tenantId } : {}) },
     });
@@ -508,10 +514,38 @@ export class UsersService {
     }
 
     employee.userId = userId;
-    return this.employeeRepository.save(employee);
+    const saved = await this.employeeRepository.save(employee);
+
+    try {
+      await this.auditLogRepository.save(
+        this.auditLogRepository.create({
+          userId,
+          action: 'USER_LINKED_TO_EMPLOYEE',
+          entityType: 'Employee',
+          entityId: saved.id,
+          newValue: {
+            employeeId: saved.id,
+            employeeNumber: saved.employeeNumber,
+            linkedBy: caller?.id || caller?.userId || 'system',
+          },
+          tenantId: tenantId || saved.tenantId,
+        }),
+      );
+    } catch (e) {
+      this.logger.warn(`Failed to audit user→employee link: ${(e as Error).message}`);
+    }
+
+    return saved;
   }
 
-  async unlinkUserFromEmployee(userId: string, tenantId?: string): Promise<void> {
+  async unlinkUserFromEmployee(
+    userId: string,
+    tenantId?: string,
+    caller?: any,
+  ): Promise<void> {
+    // Make sure the target user is in the caller's tenant (404s on mismatch).
+    await this.findOne(userId, tenantId);
+
     const employee = await this.employeeRepository.findOne({
       where: { userId, ...(tenantId ? { tenantId } : {}) },
     });
@@ -520,8 +554,144 @@ export class UsersService {
       throw new NotFoundException('No employee profile linked to this user');
     }
 
+    const previousEmployeeId = employee.id;
+    const previousEmployeeNumber = employee.employeeNumber;
     employee.userId = undefined;
     await this.employeeRepository.save(employee);
+
+    try {
+      await this.auditLogRepository.save(
+        this.auditLogRepository.create({
+          userId,
+          action: 'USER_UNLINKED_FROM_EMPLOYEE',
+          entityType: 'Employee',
+          entityId: previousEmployeeId,
+          oldValue: {
+            employeeId: previousEmployeeId,
+            employeeNumber: previousEmployeeNumber,
+            unlinkedBy: caller?.id || caller?.userId || 'system',
+          },
+          tenantId: tenantId || employee.tenantId,
+        }),
+      );
+    } catch (e) {
+      this.logger.warn(`Failed to audit user→employee unlink: ${(e as Error).message}`);
+    }
+  }
+
+  /**
+   * List users in the tenant that are NOT linked to any employee profile.
+   * Used by the admin UI to populate a "user → employee" picker.
+   */
+  async listUsersWithoutEmployee(
+    tenantId: string | undefined,
+    options: { search?: string; limit?: number; offset?: number } = {},
+  ): Promise<{ data: any[]; total: number }> {
+    const limit = Math.min(Math.max(options.limit ?? 50, 1), 500);
+    const offset = Math.max(options.offset ?? 0, 0);
+
+    const qb = this.userRepository
+      .createQueryBuilder('user')
+      .leftJoin(Employee, 'emp', 'emp.user_id = user.id')
+      .where('emp.id IS NULL');
+
+    if (tenantId) {
+      qb.andWhere('user.tenant_id = :tenantId', { tenantId });
+    }
+    if (options.search) {
+      qb.andWhere(
+        '(user.username ILIKE :q OR user.full_name ILIKE :q OR user.email ILIKE :q)',
+        { q: `%${options.search}%` },
+      );
+    }
+
+    const total = await qb.getCount();
+    const rows = await qb
+      .orderBy('user.full_name', 'ASC')
+      .limit(limit)
+      .offset(offset)
+      .getMany();
+
+    return {
+      data: rows.map((u) => ({
+        id: u.id,
+        username: u.username,
+        fullName: u.fullName,
+        email: u.email,
+        status: u.status,
+        facilityId: u.facilityId,
+      })),
+      total,
+    };
+  }
+
+  /**
+   * List employees in the tenant that are NOT linked to any user account.
+   * Used by the admin UI to populate the "Link to Employee" dropdown.
+   */
+  async listEmployeesWithoutUser(
+    tenantId: string | undefined,
+    options: { facilityId?: string; search?: string; limit?: number; offset?: number } = {},
+  ): Promise<{ data: any[]; total: number }> {
+    const limit = Math.min(Math.max(options.limit ?? 50, 1), 500);
+    const offset = Math.max(options.offset ?? 0, 0);
+
+    const qb = this.employeeRepository
+      .createQueryBuilder('emp')
+      .where('emp.user_id IS NULL');
+
+    if (tenantId) {
+      qb.andWhere('emp.tenant_id = :tenantId', { tenantId });
+    }
+    if (options.facilityId) {
+      qb.andWhere('emp.facility_id = :facilityId', { facilityId: options.facilityId });
+    }
+    if (options.search) {
+      qb.andWhere(
+        '(emp.employee_number ILIKE :q OR emp.first_name ILIKE :q OR emp.last_name ILIKE :q OR emp.email ILIKE :q)',
+        { q: `%${options.search}%` },
+      );
+    }
+
+    const total = await qb.getCount();
+    const rows = await qb
+      .orderBy('emp.last_name', 'ASC')
+      .addOrderBy('emp.first_name', 'ASC')
+      .limit(limit)
+      .offset(offset)
+      .getMany();
+
+    return {
+      data: rows.map((e) => ({
+        id: e.id,
+        employeeNumber: e.employeeNumber,
+        firstName: e.firstName,
+        lastName: e.lastName,
+        email: e.email,
+        jobTitle: e.jobTitle,
+        facilityId: e.facilityId,
+        status: e.status,
+      })),
+      total,
+    };
+  }
+
+  /**
+   * Compute the next per-facility employee number using MAX(numeric suffix)+1
+   * so deletes don't collapse the sequence into existing rows. Callers must
+   * still retry on Postgres unique-violation (code 23505) under concurrency.
+   */
+  private async nextEmployeeNumberForFacility(facilityId: string): Promise<string> {
+    const row = await this.employeeRepository
+      .createQueryBuilder('e')
+      .select(
+        "COALESCE(MAX(NULLIF(regexp_replace(e.employee_number, '\\D', '', 'g'), '')::int), 0)",
+        'max',
+      )
+      .where('e.facility_id = :facilityId', { facilityId })
+      .getRawOne();
+    const next = Number(row?.max ?? 0) + 1;
+    return `EMP${String(next).padStart(5, '0')}`;
   }
 
   async getEmployeeByUserId(userId: string, tenantId?: string): Promise<Employee | null> {
@@ -941,9 +1111,6 @@ export class UsersService {
         const firstName = nameParts[0];
         const lastName = nameParts.slice(1).join(' ') || firstName;
 
-        const employeeCount = await this.employeeRepository.count();
-        const employeeNumber = `EMP${String(employeeCount + created + 1).padStart(5, '0')}`;
-
         const staffCategory = roleName ? mapRoleToStaffCategory(roleName) : StaffCategory.OTHER;
 
         // Determine facility from user's role assignment or user's facilityId
@@ -956,26 +1123,63 @@ export class UsersService {
           continue;
         }
 
-        const employee = this.employeeRepository.create({
-          employeeNumber,
-          userId: user.id,
-          firstName,
-          lastName,
-          email: user.email,
-          phone: user.phone,
-          dateOfBirth: new Date('1990-01-01'),
-          gender: Gender.OTHER,
-          jobTitle: roleName || 'Staff',
-          staffCategory,
-          employmentType: EmploymentType.PERMANENT,
-          hireDate: user.createdAt || new Date(),
-          basicSalary: 0,
-          facilityId,
-          tenantId: user.tenantId || tenantId,
-        });
-
-        await this.employeeRepository.save(employee);
+        // Retry on unique-violation: MAX+1 + concurrent backfill calls or a
+        // racing createEmployee can both compute the same employee_number.
+        let saved: Employee | null = null;
+        let lastErr: any;
+        for (let attempt = 0; attempt < 5 && !saved; attempt++) {
+          try {
+            const employeeNumber = await this.nextEmployeeNumberForFacility(facilityId);
+            const employee = this.employeeRepository.create({
+              employeeNumber,
+              userId: user.id,
+              firstName,
+              lastName,
+              email: user.email,
+              phone: user.phone,
+              dateOfBirth: new Date('1990-01-01'),
+              gender: Gender.OTHER,
+              jobTitle: roleName || 'Staff',
+              staffCategory,
+              employmentType: EmploymentType.PERMANENT,
+              hireDate: user.createdAt || new Date(),
+              basicSalary: 0,
+              facilityId,
+              tenantId: user.tenantId || tenantId,
+            });
+            saved = await this.employeeRepository.save(employee);
+          } catch (e: any) {
+            lastErr = e;
+            if (e?.code !== '23505') throw e;
+            await new Promise((r) => setTimeout(r, 10 + Math.random() * 30));
+          }
+        }
+        if (!saved) {
+          throw lastErr ?? new Error('Failed to allocate employee_number after 5 attempts');
+        }
         created++;
+
+        try {
+          await this.auditLogRepository.save(
+            this.auditLogRepository.create({
+              userId: user.id,
+              action: 'EMPLOYEE_BACKFILLED',
+              entityType: 'Employee',
+              entityId: saved.id,
+              newValue: {
+                employeeId: saved.id,
+                employeeNumber: saved.employeeNumber,
+                roleName: roleName ?? null,
+                facilityId,
+              },
+              tenantId: user.tenantId || tenantId,
+            }),
+          );
+        } catch (auditErr) {
+          this.logger.warn(
+            `Failed to audit employee backfill for user ${user.id}: ${(auditErr as Error).message}`,
+          );
+        }
       } catch (e) {
         this.logger.warn(
           `Failed to backfill employee for user ${user.id}: ${(e as Error).message}`,

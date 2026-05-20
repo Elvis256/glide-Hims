@@ -82,6 +82,59 @@ export class UsersController {
     };
   }
 
+  @Get('without-employee')
+  @AuthWithPermissions('users.read')
+  @ApiOperation({ summary: 'List users not linked to any employee profile (admin picker)' })
+  @ApiQuery({ name: 'search', required: false, type: 'string' })
+  @ApiQuery({ name: 'limit', required: false, type: 'number' })
+  @ApiQuery({ name: 'offset', required: false, type: 'number' })
+  async usersWithoutEmployee(
+    @Query('search') search: string | undefined,
+    @Query('limit') limit: string | undefined,
+    @Query('offset') offset: string | undefined,
+    @Request() req: any,
+  ) {
+    const parsedLimit = parseInt(String(limit ?? ''), 10);
+    const parsedOffset = parseInt(String(offset ?? ''), 10);
+    const tenantId = req.user?.tenantId;
+    if (!tenantId && !req.user?.isSystemAdmin) {
+      throw new ForbiddenException('Tenant context required');
+    }
+    return this.usersService.listUsersWithoutEmployee(tenantId, {
+      search: search?.trim() || undefined,
+      limit: Number.isFinite(parsedLimit) ? parsedLimit : undefined,
+      offset: Number.isFinite(parsedOffset) ? parsedOffset : undefined,
+    });
+  }
+
+  @Get('employees/unlinked')
+  @AuthWithPermissions('users.read')
+  @ApiOperation({ summary: 'List employees not linked to any user account (admin picker)' })
+  @ApiQuery({ name: 'facilityId', required: false, type: 'string' })
+  @ApiQuery({ name: 'search', required: false, type: 'string' })
+  @ApiQuery({ name: 'limit', required: false, type: 'number' })
+  @ApiQuery({ name: 'offset', required: false, type: 'number' })
+  async employeesWithoutUser(
+    @Query('facilityId') facilityId: string | undefined,
+    @Query('search') search: string | undefined,
+    @Query('limit') limit: string | undefined,
+    @Query('offset') offset: string | undefined,
+    @Request() req: any,
+  ) {
+    const parsedLimit = parseInt(String(limit ?? ''), 10);
+    const parsedOffset = parseInt(String(offset ?? ''), 10);
+    const tenantId = req.user?.tenantId;
+    if (!tenantId && !req.user?.isSystemAdmin) {
+      throw new ForbiddenException('Tenant context required');
+    }
+    return this.usersService.listEmployeesWithoutUser(tenantId, {
+      facilityId: facilityId || undefined,
+      search: search?.trim() || undefined,
+      limit: Number.isFinite(parsedLimit) ? parsedLimit : undefined,
+      offset: Number.isFinite(parsedOffset) ? parsedOffset : undefined,
+    });
+  }
+
   @Post()
   @AuthWithPermissions('users.create')
   @Throttle({ default: { ttl: 60000, limit: 10 } })
@@ -306,6 +359,7 @@ export class UsersController {
       id,
       linkEmployeeDto.employeeId,
       req.user?.tenantId,
+      req.user,
     );
     return { message: 'User linked to employee successfully', data: employee };
   }
@@ -317,7 +371,7 @@ export class UsersController {
   @ApiResponse({ status: 200, description: 'User unlinked from employee successfully' })
   @ApiResponse({ status: 404, description: 'No employee profile linked to this user' })
   async unlinkEmployee(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
-    await this.usersService.unlinkUserFromEmployee(id, req.user?.tenantId);
+    await this.usersService.unlinkUserFromEmployee(id, req.user?.tenantId, req.user);
     return { message: 'User unlinked from employee successfully' };
   }
 
