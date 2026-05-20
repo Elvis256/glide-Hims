@@ -70,6 +70,21 @@ export class RFQService {
   }
 
   async create(dto: CreateRFQDto, userId: string, tenantId?: string): Promise<RFQ> {
+    if (dto.purchaseRequestId) {
+      const existing = await this.rfqRepo.findOne({
+        where: {
+          purchaseRequestId: dto.purchaseRequestId,
+          status: Not(RFQStatus.CANCELLED),
+          ...(tenantId ? { tenantId } : {}),
+        },
+      });
+      if (existing) {
+        throw new BadRequestException(
+          `An RFQ (${existing.rfqNumber}) already exists for this requisition. ` +
+            `Cancel it first if you need to create a new one.`,
+        );
+      }
+    }
     let savedRFQ: RFQ | null = null;
     let lastErr: any = null;
     for (let attempt = 0; attempt < 5; attempt++) {
