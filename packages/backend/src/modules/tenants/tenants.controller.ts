@@ -17,6 +17,7 @@ import { CreateTenantDto, UpdateTenantDto } from './dto/tenant.dto';
 import { ChangeFacilityModeDto } from './dto/change-facility-mode.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { Public } from '../auth/decorators/public.decorator';
+import { Throttle } from '@nestjs/throttler';
 
 @ApiTags('tenants')
 @Controller('tenants')
@@ -25,6 +26,7 @@ export class TenantsController {
 
   @Get('public/list')
   @Public()
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
   @ApiOperation({ summary: 'List active tenants (public - for login page)' })
   async publicList() {
     return this.tenantsService.findAllPublic();
@@ -32,6 +34,7 @@ export class TenantsController {
 
   @Get('public/by-slug/:slug')
   @Public()
+  @Throttle({ default: { ttl: 60_000, limit: 20 } })
   @ApiOperation({ summary: 'Resolve tenant by slug (public - for login page)' })
   async publicBySlug(@Param('slug') slug: string) {
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) || slug.length < 3 || slug.length > 100) {

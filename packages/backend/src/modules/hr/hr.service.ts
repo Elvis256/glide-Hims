@@ -1233,17 +1233,32 @@ export class HrService {
   }
 
   async markPayrollPaid(id: string, tenantId?: string): Promise<PayrollRun> {
-    const payroll = await this.payrollRunRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+    // Wrap status flip + payslip update in one tx with a row lock on
+    // the run, otherwise two concurrent "Mark Paid" clicks could each
+    // see status=COMPLETED, write conflicting rows, and we could end up
+    // with payslips.isPaid=true while the run is still in COMPLETED
+    // (or vice versa) if the payslip update fails after the run save.
+    return this.dataSource.transaction(async (manager) => {
+      const payroll = await manager
+        .getRepository(PayrollRun)
+        .createQueryBuilder('p')
+        .setLock('pessimistic_write')
+        .where('p.id = :id', { id })
+        .andWhere(tenantId ? 'p.tenantId = :tenantId' : '1=1', tenantId ? { tenantId } : {})
+        .getOne();
+      if (!payroll) throw new NotFoundException('Payroll run not found');
+      if (payroll.status !== PayrollStatus.COMPLETED) {
+        throw new BadRequestException('Only completed payroll runs can be marked paid');
+      }
+      await manager.getRepository(Payslip).update(
+        { payrollRunId: id, ...(tenantId ? { tenantId } : {}) },
+        { isPaid: true },
+      );
+      payroll.status = PayrollStatus.PAID;
+      const saved = await manager.save(payroll);
+      this.logger.log(`[HR_NOTIFY] payroll.paid id=${id}`);
+      return saved;
     });
-    if (!payroll) throw new NotFoundException('Payroll run not found');
-    if (payroll.status !== PayrollStatus.COMPLETED) {
-      throw new BadRequestException('Only completed payroll runs can be marked paid');
-    }
-    payroll.status = PayrollStatus.PAID;
-    await this.payslipRepo.update({ payrollRunId: id }, { isPaid: true });
-    this.logger.log(`[HR_NOTIFY] payroll.paid id=${id}`);
-    return this.payrollRunRepo.save(payroll);
   }
 
   // ============ PAYROLL EXPORTS ============
@@ -1956,14 +1971,17 @@ export class HrService {
 
   // ============ RECRUITMENT - APPLICATIONS ============
 
-  async getPublishedJobs(facilityId?: string): Promise<JobPosting[]> {
+  async getPublishedJobs(facilityId?: string, tenantId?: string): Promise<JobPosting[]> {
     const where: any = { status: JobStatus.OPEN };
+    if (tenantId) where.tenantId = tenantId;
     if (facilityId) where.facilityId = facilityId;
     return this.jobPostingRepo.find({ where, order: { createdAt: 'DESC' } });
   }
 
-  async getPublishedJobById(id: string): Promise<JobPosting> {
-    const posting = await this.jobPostingRepo.findOne({ where: { id, status: JobStatus.OPEN } });
+  async getPublishedJobById(id: string, tenantId?: string): Promise<JobPosting> {
+    const where: any = { id, status: JobStatus.OPEN };
+    if (tenantId) where.tenantId = tenantId;
+    const posting = await this.jobPostingRepo.findOne({ where });
     if (!posting) throw new NotFoundException('Job posting not found');
     return posting;
   }

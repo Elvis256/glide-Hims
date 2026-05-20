@@ -82,7 +82,14 @@ export class TrashController {
     if (tenantId) where.tenantId = tenantId;
     const found = await repo.findOne({ where, withDeleted: true });
     if (!found) throw new NotFoundException(`${meta.label} not found`);
-    await repo.restore(id);
+    // Restore must include the tenant predicate too. Without it, the
+    // unscoped repo.restore() emits a single-PK UPDATE that would
+    // happily un-delete a row we already verified, but it is also the
+    // wrong semantics: future refactors that re-use the criteria
+    // builder would silently drop tenant isolation. Keep the explicit
+    // tenant filter so the SQL itself is safe in isolation.
+    const restoreCriteria: any = tenantId ? { id, tenantId } : { id };
+    await repo.restore(restoreCriteria);
     return { success: true, type, id, label: meta.label };
   }
 }
