@@ -219,17 +219,19 @@ export class HrController {
   @ApiQuery({ name: 'department', required: false })
   @ApiQuery({ name: 'limit', required: false })
   @ApiQuery({ name: 'offset', required: false })
+  @ApiQuery({ name: 'departmentId', required: false, type: 'string' })
   async getEmployees(
     @Query('facilityId') facilityId: string,
     @Query('status') status?: EmploymentStatus,
     @Query('department') department?: string,
+    @Query('departmentId') departmentId?: string,
     @Query('limit') limit?: number,
     @Query('offset') offset?: number,
     @Request() req?: any,
   ) {
     return this.hrService.getEmployees(
       facilityId,
-      { status, department, limit, offset },
+      { status, department, departmentId, limit, offset },
       req?.user?.tenantId,
     );
   }

@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { Facility } from './facility.entity';
 import { User } from './user.entity';
+import { Department } from './department.entity';
 
 export enum EmploymentType {
   PERMANENT = 'permanent',
@@ -126,6 +127,15 @@ export class Employee {
 
   @Column({ length: 100, nullable: true })
   department: string;
+
+  // FK to departments. Nullable while text column is still authoritative
+  // for unmigrated tenants; service-layer writes keep both in sync.
+  @Column({ type: 'uuid', nullable: true, name: 'department_id' })
+  departmentId?: string;
+
+  @ManyToOne(() => Department, { nullable: true })
+  @JoinColumn({ name: 'department_id' })
+  departmentRef?: Department;
 
   @Column({ type: 'enum', enum: StaffCategory, nullable: true, name: 'staff_category' })
   staffCategory: StaffCategory;
