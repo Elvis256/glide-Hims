@@ -178,10 +178,13 @@ export class CreatePaymentDto {
   @IsEnum(PaymentMethod)
   method: PaymentMethod;
 
+  // For non-cash payments a transaction reference is mandatory (mobile-money
+  // confirmation code, card terminal ref, bank slip, insurance claim number).
+  // Cash payments may omit it — recordPayment() stamps the receipt number as
+  // the reference so every payment row is still traceable.
   @ValidateIf((o) => o.method !== PaymentMethod.CASH)
   @IsString()
   @IsNotEmpty({ message: 'Transaction reference is required for non-cash payments' })
-  @IsOptional()
   transactionReference?: string;
 
   @IsString()

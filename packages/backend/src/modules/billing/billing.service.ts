@@ -187,23 +187,40 @@ export class BillingService {
             );
           }
 
-          // Check if invoice amount exceeds pre-auth approved amount
+          // Cumulative-usage check: subtract amounts already invoiced against
+          // this same pre-auth (excluding cancelled/refunded). Without this a
+          // single approved pre-auth could be split across multiple invoices
+          // each at the full ceiling.
           const approvedAmount = Number(preAuth.approvedAmount) || 0;
-          if (approvedAmount > 0 && estimatedTotal > approvedAmount) {
-            throw new BadRequestException(
-              `Invoice total (${estimatedTotal.toLocaleString()}) exceeds pre-authorization approved amount (${approvedAmount.toLocaleString()}) for ${preAuth.authNumber}. ` +
-                `Please request a pre-auth extension or reduce the invoice amount.`,
-            );
+          if (approvedAmount > 0) {
+            const usedRow = await this.dataSource
+              .getRepository(Invoice)
+              .createQueryBuilder('inv')
+              .select('COALESCE(SUM(inv.total_amount), 0)', 'used')
+              .where('inv.insurance_policy_id = :policyId', { policyId: dto.insurancePolicyId })
+              .andWhere('inv.patient_id = :patientId', { patientId: dto.patientId })
+              .andWhere('inv.status NOT IN (:...excluded)', {
+                excluded: [InvoiceStatus.CANCELLED, InvoiceStatus.REFUNDED],
+              })
+              .andWhere(tenantId ? 'inv.tenant_id = :tenantId' : '1=1', { tenantId })
+              .getRawOne<{ used: string }>();
+            const alreadyUsed = Number(usedRow?.used || 0);
+            const remaining = approvedAmount - alreadyUsed;
+            if (estimatedTotal > remaining) {
+              throw new BadRequestException(
+                `Invoice total (${estimatedTotal.toLocaleString()}) exceeds remaining pre-authorization balance ` +
+                  `(${remaining.toLocaleString()} of ${approvedAmount.toLocaleString()} on ${preAuth.authNumber}; ` +
+                  `${alreadyUsed.toLocaleString()} already invoiced). ` +
+                  `Please request a pre-auth extension or reduce the invoice amount.`,
+              );
+            }
           }
         }
       }
     }
 
-    const invoiceNumber = await this.dataSource.transaction((manager) =>
-      this.generateInvoiceNumber(manager, tenantId),
-    );
-
-    // Calculate totals from items
+    // Calculate totals from items (must happen before the transaction so the
+    // values are captured by closure and used both in the Invoice row and the GL post).
     let subtotal = 0;
     const items = dto.items.map((item) => {
       const amount = multiply(item.quantity, item.unitPrice);
@@ -211,6 +228,10 @@ export class BillingService {
       return this.itemRepository.create({
         ...item,
         amount,
+        // Stamp tenant_id explicitly: cascading inserts run under a fresh
+        // queryRunner inside dataSource.transaction() that does not inherit
+        // the request's queryRunner.data, so TenantSubscriber cannot fill it in.
+        ...(tenantId ? { tenantId } : {}),
       });
     });
 
@@ -219,26 +240,32 @@ export class BillingService {
     const discountAmount = dto.discountAmount || 0;
     const totalAmount = subtract(add(subtotal, taxAmount), discountAmount);
 
-    const invoice = this.invoiceRepository.create({
-      invoiceNumber,
-      patientId: dto.patientId,
-      encounterId: dto.encounterId,
-      createdById: userId,
-      subtotal,
-      taxAmount,
-      discountAmount,
-      totalAmount,
-      balanceDue: totalAmount,
-      notes: dto.notes,
-      dueDate: dto.dueDate,
-      paymentType: dto.paymentType,
-      insurancePolicyId: dto.insurancePolicyId,
-      items,
-      ...(tenantId ? { tenantId } : {}),
-    });
+    // Wrap invoice number generation, save, GL posting, and encounter update
+     // in a single transaction. The advisory lock taken by generateInvoiceNumber
+     // (pg_advisory_xact_lock) is released at THIS transaction's commit, which
+     // is also when the invoice row becomes visible — so concurrent createInvoice
+     // calls cannot race to claim the same INV number.
+     const saved = await this.dataSource.transaction(async (manager) => {
+      const invoiceNumber = await this.generateInvoiceNumber(manager, tenantId);
 
-    // Wrap invoice save, GL posting, and encounter update in a single transaction
-    const saved = await this.dataSource.transaction(async (manager) => {
+      const invoice = this.invoiceRepository.create({
+        invoiceNumber,
+        patientId: dto.patientId,
+        encounterId: dto.encounterId,
+        createdById: userId,
+        subtotal,
+        taxAmount,
+        discountAmount,
+        totalAmount,
+        balanceDue: totalAmount,
+        notes: dto.notes,
+        dueDate: dto.dueDate,
+        paymentType: dto.paymentType,
+        insurancePolicyId: dto.insurancePolicyId,
+        items,
+        ...(tenantId ? { tenantId } : {}),
+      });
+
       const savedInvoice = await manager.save(Invoice, invoice);
 
       // Auto-post to General Ledger: DR Accounts Receivable, CR Revenue
@@ -591,6 +618,14 @@ export class BillingService {
     if (invoice.status === InvoiceStatus.PAID) {
       throw new BadRequestException('Cannot add items to a paid invoice');
     }
+    if (invoice.status === InvoiceStatus.PARTIALLY_PAID) {
+      throw new BadRequestException(
+        'Cannot add items to a partially paid invoice — refund or void the existing payments first',
+      );
+    }
+    if (invoice.status === InvoiceStatus.CANCELLED || invoice.status === InvoiceStatus.REFUNDED) {
+      throw new BadRequestException(`Cannot add items to a ${invoice.status} invoice`);
+    }
 
     const amount = multiply(dto.quantity, dto.unitPrice);
     const item = this.itemRepository.create({
@@ -650,6 +685,14 @@ export class BillingService {
 
     if (invoice.status === InvoiceStatus.PAID) {
       throw new BadRequestException('Cannot remove items from a paid invoice');
+    }
+    if (invoice.status === InvoiceStatus.PARTIALLY_PAID) {
+      throw new BadRequestException(
+        'Cannot remove items from a partially paid invoice — refund or void the existing payments first',
+      );
+    }
+    if (invoice.status === InvoiceStatus.CANCELLED || invoice.status === InvoiceStatus.REFUNDED) {
+      throw new BadRequestException(`Cannot remove items from a ${invoice.status} invoice`);
     }
 
     const item = await this.itemRepository.findOne({
@@ -1681,6 +1724,21 @@ export class BillingService {
         throw new BadRequestException(
           'Segregation of duties violation: the user who created the invoice cannot process a refund',
         );
+      }
+
+      // Segregation of duties: a user who collected any completed payment on this
+      // invoice cannot also process the refund. Mirrors the per-payment check in
+      // refundPayment(); without it a cashier could close their own day's float
+      // by refunding the very payments they took.
+      if (userId) {
+        const collectorOverlap = (invoice.payments || []).some(
+          (p) => p.status === PaymentStatus.COMPLETED && p.receivedById === userId,
+        );
+        if (collectorOverlap) {
+          throw new BadRequestException(
+            'Segregation of duties violation: a user who collected payment on this invoice cannot also process its refund',
+          );
+        }
       }
 
       if (
