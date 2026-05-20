@@ -603,14 +603,20 @@ export class HrController {
   @Get('appraisals/stats')
   @AuthWithPermissions('hr.read')
   @ApiOperation({ summary: 'Get appraisal stats' })
-  @ApiQuery({ name: 'facilityId', required: true })
-  @ApiQuery({ name: 'year', required: true })
+  @ApiQuery({ name: 'facilityId', required: false })
+  @ApiQuery({ name: 'year', required: false })
   async getAppraisalStats(
     @Query('facilityId') facilityId: string,
-    @Query('year') year: number,
+    @Query('year') year: string,
     @Request() req?: any,
   ) {
-    return this.hrService.getAppraisalStats(facilityId, year, req?.user?.tenantId);
+    const effectiveFacility = facilityId || req?.user?.facilityId;
+    if (!effectiveFacility) {
+      return { total: 0, pending: 0, completed: 0, averageRating: 0 };
+    }
+    const parsed = parseInt(String(year), 10);
+    const effectiveYear = Number.isFinite(parsed) ? parsed : new Date().getFullYear();
+    return this.hrService.getAppraisalStats(effectiveFacility, effectiveYear, req?.user?.tenantId);
   }
 
   @Get('appraisals/employee/:employeeId/history')
