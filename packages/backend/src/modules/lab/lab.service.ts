@@ -350,16 +350,28 @@ export class LabService {
       throw new NotFoundException(`Facility not found: ${dto.facilityId}`);
     }
 
-    const existingSample = await this.sampleRepo.findOne({
-      where: { orderId: dto.orderId, labTestId },
-    });
-    if (existingSample) {
-      throw new BadRequestException(
-        `Sample already collected for this order/test combination (Sample: ${existingSample.sampleNumber})`,
-      );
-    }
+    // P0: duplicate check moved INSIDE the transaction (below) under an
+    // advisory lock so two concurrent collect calls cannot both observe a
+    // null pre-check and both insert. A non-locked pre-check here would
+    // provide false confidence.
 
     return this.dataSource.transaction(async (manager) => {
+      // P0: re-check duplicate INSIDE the transaction under an advisory lock
+      // keyed by (order, test). Without this, two concurrent collect calls
+      // both observe `existing=null` outside the txn, both pass the guard,
+      // and both insert — there is no DB UNIQUE on (orderId, labTestId).
+      const dupLockKey = `lab_sample_dup_${dto.orderId}_${labTestId}_${tenantId || 'global'}`;
+      await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [dupLockKey]);
+
+      const dupWhere: any = { orderId: dto.orderId, labTestId };
+      if (tenantId) dupWhere.tenantId = tenantId;
+      const duplicate = await manager.findOne(LabSample, { where: dupWhere });
+      if (duplicate) {
+        throw new BadRequestException(
+          `Sample already collected for this order/test combination (Sample: ${duplicate.sampleNumber})`,
+        );
+      }
+
       const sampleNumber = await this.generateSampleNumber(manager, tenantId);
 
       const sample = manager.create(LabSample, {
@@ -594,16 +606,25 @@ export class LabService {
         }
       }
 
-      // Calculate abnormal flag if numeric value provided
+      // Calculate abnormal flag if numeric value provided.
+      //
+      // P0 (clinical safety): if numericValue is provided but the lab test
+      // or its referenceRanges row cannot be resolved (deactivated test,
+      // cross-tenant mismatch, missing config), we must NOT silently default
+      // to NORMAL — a critically low haemoglobin would never raise an
+      // alert. Fail-closed: flag as ABNORMAL and surface a warning so the
+      // validator catches the misconfiguration.
       let abnormalFlag = dto.abnormalFlag || AbnormalFlag.NORMAL;
       if (dto.numericValue !== undefined && refMin !== undefined && refMax !== undefined) {
         let critLow: number | undefined;
         let critHigh: number | undefined;
+        let rangeResolved = false;
         if (sample.labTest?.referenceRanges && dto.parameter) {
           const refRange = (sample.labTest.referenceRanges as any[]).find(
             (r: any) => r.parameter === dto.parameter,
           );
           if (refRange) {
+            rangeResolved = true;
             critLow = refRange.criticalLow !== undefined ? Number(refRange.criticalLow) : undefined;
             critHigh =
               refRange.criticalHigh !== undefined ? Number(refRange.criticalHigh) : undefined;
@@ -616,6 +637,12 @@ export class LabService {
           critLow,
           critHigh,
         );
+        if (!rangeResolved && abnormalFlag === AbnormalFlag.NORMAL) {
+          this.logger.warn(
+            `enterResult: reference ranges not resolved for sample ${sample.sampleNumber}, parameter=${dto.parameter}. Flagging ABNORMAL fail-closed.`,
+          );
+          abnormalFlag = AbnormalFlag.ABNORMAL;
+        }
       }
 
       const result = this.resultRepo.create({
@@ -651,21 +678,32 @@ export class LabService {
     userId: string,
     tenantId?: string,
   ): Promise<LabResult> {
-    const result = await this.resultRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+    // P0: lock the result row INSIDE a transaction before checking status,
+    // otherwise two concurrent reviewers can both observe status=ENTERED,
+    // both pass the guard, and both stamp validatedBy — defeating the
+    // two-person rule and silently overwriting each other's metadata.
+    const savedResult = await this.dataSource.transaction(async (manager) => {
+      const qb = manager
+        .getRepository(LabResult)
+        .createQueryBuilder('lr')
+        .setLock('pessimistic_write')
+        .where('lr.id = :id', { id });
+      if (tenantId) qb.andWhere('lr.tenant_id = :tenantId', { tenantId });
+      const result = await qb.getOne();
+      if (!result) throw new NotFoundException('Result not found');
+
+      if (result.status !== ResultStatus.ENTERED) {
+        throw new BadRequestException('Result must be entered before validation');
+      }
+
+      result.status = ResultStatus.VALIDATED;
+      result.validatedById = userId;
+      result.validatedAt = new Date();
+      if (dto.comments) result.comments = dto.comments;
+
+      return manager.save(result);
     });
-    if (!result) throw new NotFoundException('Result not found');
 
-    if (result.status !== ResultStatus.ENTERED) {
-      throw new BadRequestException('Result must be entered before validation');
-    }
-
-    result.status = ResultStatus.VALIDATED;
-    result.validatedById = userId;
-    result.validatedAt = new Date();
-    if (dto.comments) result.comments = dto.comments;
-
-    const savedResult = await this.resultRepo.save(result);
     this.logger.log(`Lab result validated: ${id} by user ${userId}`);
 
     // Notify ordering doctor + raise a critical-result alert if abnormal/critical
@@ -709,26 +747,33 @@ export class LabService {
   }
 
   async releaseResult(id: string, userId: string, tenantId?: string): Promise<LabResult> {
-    const result = await this.resultRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
-    });
-    if (!result) throw new NotFoundException('Result not found');
-
-    if (result.status !== ResultStatus.VALIDATED) {
-      throw new BadRequestException('Result must be validated before release');
-    }
-
-    const sample = await this.getSample(result.sampleId, tenantId);
-    if (sample.status === SampleStatus.REJECTED) {
-      throw new BadRequestException('Cannot release results for a rejected sample');
-    }
-
+    // P0: lock the result row INSIDE the transaction and re-check status.
+    // The previous implementation read the result OUTSIDE the txn so two
+    // concurrent release calls could both observe status=VALIDATED, both
+    // pass the guard, and both fire patient SMS + encounter return-to-doctor
+    // side effects. We also keep the sample lock for the cascade write.
     return this.dataSource.transaction(async (manager) => {
+      const resultQb = manager
+        .getRepository(LabResult)
+        .createQueryBuilder('lr')
+        .setLock('pessimistic_write')
+        .where('lr.id = :id', { id });
+      if (tenantId) resultQb.andWhere('lr.tenant_id = :tenantId', { tenantId });
+      const result = await resultQb.getOne();
+      if (!result) throw new NotFoundException('Result not found');
+
+      if (result.status !== ResultStatus.VALIDATED) {
+        throw new BadRequestException('Result must be validated before release');
+      }
+
       // Lock the sample row to prevent concurrent modifications
       const lockedSample = await manager.findOne(LabSample, {
         where: { id: result.sampleId },
         lock: { mode: 'pessimistic_write' },
       });
+      if (lockedSample && lockedSample.status === SampleStatus.REJECTED) {
+        throw new BadRequestException('Cannot release results for a rejected sample');
+      }
 
       result.status = ResultStatus.RELEASED;
       result.releasedById = userId;
@@ -753,11 +798,11 @@ export class LabService {
         // counters and audit trails work correctly — the orders endpoint
         // sets this when status is updated, but the lab result-release
         // path bypasses that and writes directly).
-        await manager.update(Order, sample.orderId, {
+        await manager.update(Order, lockedSample.orderId, {
           status: OrderStatus.COMPLETED,
           completedAt: new Date(),
         });
-        this.logger.log(`Sample completed: ${sample.sampleNumber}`);
+        this.logger.log(`Sample completed: ${lockedSample.sampleNumber}`);
 
         // Notify patient via SMS that lab results are ready (fire-and-forget)
         try {
@@ -791,15 +836,19 @@ export class LabService {
         // Do NOT bill again here to avoid duplicate invoice items.
 
         // Return patient to doctor for results review
-        if (sample.order?.encounterId) {
+        const fullSampleForOrder = await manager.findOne(LabSample, {
+          where: { id: result.sampleId },
+          relations: ['order'],
+        });
+        if (fullSampleForOrder?.order?.encounterId) {
           try {
             await this.encountersService.returnToDoctor(
-              sample.order.encounterId,
+              fullSampleForOrder.order.encounterId,
               'Lab results ready for review',
               userId,
             );
             this.logger.log(
-              `Encounter ${sample.order.encounterId} returned to doctor for lab results review`,
+              `Encounter ${fullSampleForOrder.order.encounterId} returned to doctor for lab results review`,
             );
           } catch (e) {
             this.logger.warn(`Failed to return encounter to doctor: ${e.message}`);
@@ -833,6 +882,21 @@ export class LabService {
       const result = await qb.getOne();
       if (!result) throw new NotFoundException('Result not found');
 
+      // P0: only allow amendments to results that have actually been
+      // released (or previously amended). Without this guard, a tech could
+      // amend a PENDING/ENTERED/VALIDATED result and the unreviewed value
+      // would be silently archived into `previousValues` as if it had been
+      // a released-then-amended value, polluting the chain-of-custody.
+      const amendableStatuses: ResultStatus[] = [
+        ResultStatus.RELEASED,
+        ResultStatus.AMENDED,
+      ];
+      if (!amendableStatuses.includes(result.status as ResultStatus)) {
+        throw new BadRequestException(
+          `Cannot amend a result in '${result.status}' status. Only released or already-amended results may be amended.`,
+        );
+      }
+
       // Store previous value (append to history acquired under the lock)
       const previousValues = result.previousValues || [];
       previousValues.push({
@@ -845,7 +909,9 @@ export class LabService {
       result.value = dto.newValue;
       if (dto.numericValue !== undefined) result.numericValue = dto.numericValue;
 
-      // Recalculate abnormal flag if numericValue changed
+      // Recalculate abnormal flag if numericValue changed.
+      // P0 fail-closed (see enterResult): if reference ranges cannot be
+      // resolved, never silently default to NORMAL.
       if (
         dto.numericValue !== undefined &&
         result.referenceMin !== undefined &&
@@ -853,12 +919,14 @@ export class LabService {
       ) {
         let critLow: number | undefined;
         let critHigh: number | undefined;
+        let rangeResolved = false;
         const sample = await this.getSample(result.sampleId, tenantId);
         if (sample.labTest?.referenceRanges && result.parameter) {
           const refRange = (sample.labTest.referenceRanges as any[]).find(
             (r: any) => r.parameter === result.parameter,
           );
           if (refRange) {
+            rangeResolved = true;
             critLow = refRange.criticalLow !== undefined ? Number(refRange.criticalLow) : undefined;
             critHigh =
               refRange.criticalHigh !== undefined ? Number(refRange.criticalHigh) : undefined;
@@ -871,6 +939,12 @@ export class LabService {
           critLow,
           critHigh,
         );
+        if (!rangeResolved && result.abnormalFlag === AbnormalFlag.NORMAL) {
+          this.logger.warn(
+            `amendResult: reference ranges not resolved for result ${result.id}, parameter=${result.parameter}. Flagging ABNORMAL fail-closed.`,
+          );
+          result.abnormalFlag = AbnormalFlag.ABNORMAL;
+        }
       }
 
       result.amendmentReason = dto.amendmentReason;
@@ -1049,7 +1123,11 @@ export class LabService {
       .take(200);
 
     if (tenantId) {
-      qb.andWhere('sample.tenant_id = :tenantId', { tenantId });
+      // P0: filter on the result row's own tenant_id, not the joined
+      // sample's. A NULL sample (orphaned/soft-deleted) would otherwise
+      // make the join-side filter pass silently and leak cross-tenant
+      // critical results.
+      qb.andWhere('result.tenant_id = :tenantId', { tenantId });
     }
     if (facilityId) {
       qb.andWhere('sample.facilityId = :facilityId', { facilityId });
