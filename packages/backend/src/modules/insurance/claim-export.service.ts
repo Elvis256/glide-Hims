@@ -34,6 +34,19 @@ export class ClaimExportService {
     dateTo: string,
     tenantId?: string,
   ): Promise<{ filename: string; csv: string; count: number }> {
+    const from = new Date(dateFrom);
+    const to = new Date(dateTo);
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+      throw new BadRequestException('dateFrom and dateTo must be ISO dates (YYYY-MM-DD)');
+    }
+    if (to < from) {
+      throw new BadRequestException('dateTo must be on or after dateFrom');
+    }
+    const MAX_RANGE_DAYS = 366;
+    const days = Math.floor((to.getTime() - from.getTime()) / 86_400_000);
+    if (days > MAX_RANGE_DAYS) {
+      throw new BadRequestException(`Date range exceeds ${MAX_RANGE_DAYS} days`);
+    }
     const provider = await this.providerRepo.findOne({
       where: { id: providerId, ...(tenantId ? { tenantId } : {}) },
     });
@@ -43,7 +56,7 @@ export class ClaimExportService {
       where: {
         providerId,
         ...(tenantId ? { tenantId } : {}),
-        serviceDate: Between(new Date(dateFrom), new Date(dateTo)) as any,
+        serviceDate: Between(from, to) as any,
       },
       relations: ['patient', 'policy', 'items', 'encounter'],
       order: { serviceDate: 'ASC' },
@@ -105,6 +118,11 @@ export class ClaimExportService {
     }
 
     const csv = [header, ...rows].map((r) => r.map(this.csvEscape).join(',')).join('\n');
+    if (rows.length > ClaimExportService.MAX_EXPORT_ROWS) {
+      throw new BadRequestException(
+        `Export exceeds ${ClaimExportService.MAX_EXPORT_ROWS} rows; narrow the date range.`,
+      );
+    }
     const filename = `claims_${provider.code || provider.id.slice(0, 8)}_${dateFrom}_${dateTo}.csv`;
     return { filename, csv, count: eligible.length };
   }
@@ -304,9 +322,15 @@ export class ClaimExportService {
 
   // ── helpers ────────────────────────────────────────────────────────────────
 
+  private static readonly MAX_EXPORT_ROWS = 50_000;
+  private static readonly FORMULA_LEADERS = /^[=+\-@\t\r]/;
+
   private csvEscape = (v: string): string => {
-    const s = String(v ?? '');
-    if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+    let s = String(v ?? '');
+    if (s.length && ClaimExportService.FORMULA_LEADERS.test(s)) {
+      s = `'${s}`;
+    }
+    if (/[,"\n\r]/.test(s)) {
       return `"${s.replace(/"/g, '""')}"`;
     }
     return s;

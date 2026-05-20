@@ -85,7 +85,7 @@ export class CreateProviderDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
+  @IsNumber({ allowNaN: false, allowInfinity: false })
   @Min(0)
   @Max(365)
   paymentTermsDays?: number;
@@ -145,21 +145,21 @@ export class CreatePolicyDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
+  @IsNumber({ allowNaN: false, allowInfinity: false })
   @Min(0)
   @Max(1_000_000_000)
   annualLimit?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
+  @IsNumber({ allowNaN: false, allowInfinity: false })
   @Min(0)
   @Max(100)
   copayPercentage?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
+  @IsNumber({ allowNaN: false, allowInfinity: false })
   @Min(0)
   @Max(1_000_000_000)
   copayAmount?: number;
@@ -272,13 +272,13 @@ export class CreateClaimItemDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
+  @IsNumber({ allowNaN: false, allowInfinity: false })
   @Min(1)
   @Max(10_000)
   quantity?: number;
 
   @ApiProperty()
-  @IsNumber()
+  @IsNumber({ allowNaN: false, allowInfinity: false })
   @Min(0)
   @Max(1_000_000_000)
   unitPrice: number;
@@ -304,7 +304,7 @@ export class SubmitClaimDto {
 
 export class ProcessClaimDto {
   @ApiProperty()
-  @IsNumber()
+  @IsNumber({ allowNaN: false, allowInfinity: false })
   @Min(0)
   @Max(1_000_000_000)
   approvedAmount: number;
@@ -330,7 +330,7 @@ export class ProcessClaimDto {
 
 export class RecordPaymentDto {
   @ApiProperty()
-  @IsNumber()
+  @IsNumber({ allowNaN: false, allowInfinity: false })
   @Min(0)
   @Max(1_000_000_000)
   paidAmount: number;
@@ -386,7 +386,7 @@ export class CreatePreAuthDto {
   proposedTreatment: string;
 
   @ApiProperty()
-  @IsNumber()
+  @IsNumber({ allowNaN: false, allowInfinity: false })
   @Min(0)
   @Max(1_000_000_000)
   estimatedCost: number;
@@ -403,8 +403,9 @@ export class CreatePreAuthDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
+  @IsNumber({ allowNaN: false, allowInfinity: false })
   @Min(1)
+  @Max(3650)
   expectedLosDays?: number;
 }
 
@@ -412,13 +413,14 @@ export class BatchSubmitClaimsDto {
   @ApiProperty({ type: [String] })
   @IsArray()
   @ArrayNotEmpty()
-  @IsString({ each: true })
+  @ArrayMaxSize(500)
+  @IsUUID('4', { each: true })
   encounterIds: string[];
 }
 
 export class ProcessPreAuthDto {
   @ApiProperty()
-  @IsNumber()
+  @IsNumber({ allowNaN: false, allowInfinity: false })
   @Min(0)
   @Max(1_000_000_000)
   approvedAmount: number;

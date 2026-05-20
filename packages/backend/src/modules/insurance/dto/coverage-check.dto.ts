@@ -4,10 +4,14 @@ import {
   IsOptional,
   IsUUID,
   IsArray,
+  ArrayMaxSize,
+  ArrayNotEmpty,
   IsNumber,
   IsEnum,
   IsDateString,
   Min,
+  Max,
+  MaxLength,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -16,12 +20,13 @@ import { Type } from 'class-transformer';
 
 export class CoverageCheckItemDto {
   @ApiProperty()
-  @IsString()
+  @IsUUID()
   drugId: string;
 
   @ApiProperty()
-  @IsNumber()
+  @IsNumber({ allowNaN: false, allowInfinity: false })
   @Min(1)
+  @Max(100_000)
   quantity: number;
 }
 
@@ -32,6 +37,8 @@ export class CheckCoverageDto {
 
   @ApiProperty({ type: [CoverageCheckItemDto] })
   @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(200)
   @ValidateNested({ each: true })
   @Type(() => CoverageCheckItemDto)
   items: CoverageCheckItemDto[];
@@ -60,6 +67,7 @@ export class RecordAdherenceDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(2000)
   skipReason?: string;
 }
 

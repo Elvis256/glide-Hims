@@ -5,9 +5,11 @@ import {
   Patch,
   Body,
   Param,
+  ParseUUIDPipe,
   Query,
   Request,
   UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import type { Response } from 'express';
@@ -44,6 +46,30 @@ export class InsuranceController {
     private readonly claimExportService: ClaimExportService,
   ) {}
 
+  private static readonly MAX_RANGE_DAYS = 366;
+  private assertDateRange(startDate?: string, endDate?: string, required = true) {
+    if (!startDate || !endDate) {
+      if (required) {
+        throw new BadRequestException('startDate and endDate are required (YYYY-MM-DD)');
+      }
+      return;
+    }
+    const a = new Date(startDate);
+    const b = new Date(endDate);
+    if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) {
+      throw new BadRequestException('startDate/endDate must be ISO dates (YYYY-MM-DD)');
+    }
+    if (b < a) {
+      throw new BadRequestException('endDate must be on or after startDate');
+    }
+    const days = Math.floor((b.getTime() - a.getTime()) / 86_400_000);
+    if (days > InsuranceController.MAX_RANGE_DAYS) {
+      throw new BadRequestException(
+        `Date range exceeds ${InsuranceController.MAX_RANGE_DAYS} days`,
+      );
+    }
+  }
+
   // ============ DASHBOARD ============
   @Get('dashboard')
   @AuthWithPermissions('insurance.read')
@@ -77,7 +103,7 @@ export class InsuranceController {
   @Get('providers/:id')
   @AuthWithPermissions('insurance.providers.read')
   @ApiOperation({ summary: 'Get provider by ID' })
-  async getProvider(@Param('id') id: string, @Request() req: any) {
+  async getProvider(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     return this.insuranceService.getProvider(id, req.user?.tenantId);
   }
 
@@ -85,7 +111,7 @@ export class InsuranceController {
   @AuthWithPermissions('insurance.providers.update')
   @ApiOperation({ summary: 'Update provider' })
   async updateProvider(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateProviderDto,
     @Request() req: any,
   ) {
@@ -121,21 +147,21 @@ export class InsuranceController {
   @Get('policies/:id')
   @AuthWithPermissions('insurance.policies.read')
   @ApiOperation({ summary: 'Get policy by ID' })
-  async getPolicy(@Param('id') id: string, @Request() req: any) {
+  async getPolicy(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     return this.insuranceService.getPolicy(id, req.user?.tenantId);
   }
 
   @Get('patients/:patientId/policies')
   @AuthWithPermissions('insurance.policies.read')
   @ApiOperation({ summary: 'Get patient active policies' })
-  async getPatientPolicies(@Param('patientId') patientId: string, @Request() req: any) {
+  async getPatientPolicies(@Param('patientId', ParseUUIDPipe) patientId: string, @Request() req: any) {
     return this.insuranceService.getPatientActivePolicies(patientId, req.user?.tenantId);
   }
 
   @Post('policies/:id/verify')
   @AuthWithPermissions('insurance.policies.update')
   @ApiOperation({ summary: 'Verify policy' })
-  async verifyPolicy(@Param('id') id: string, @Request() req: any) {
+  async verifyPolicy(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     return this.insuranceService.verifyPolicy(id, req.user?.tenantId);
   }
 
@@ -143,10 +169,15 @@ export class InsuranceController {
   @AuthWithPermissions('insurance.policies.update')
   @ApiOperation({ summary: 'Update policy status' })
   async updatePolicyStatus(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body('status') status: PolicyStatus,
     @Request() req?: any,
   ) {
+    if (!status || !Object.values(PolicyStatus).includes(status)) {
+      throw new BadRequestException(
+        `status must be one of: ${Object.values(PolicyStatus).join(', ')}`,
+      );
+    }
     return this.insuranceService.updatePolicyStatus(id, status, req?.user?.tenantId);
   }
 
@@ -176,6 +207,7 @@ export class InsuranceController {
     @Query('endDate') endDate?: string,
     @Request() req?: any,
   ) {
+    this.assertDateRange(startDate, endDate, false);
     return this.insuranceService.getClaims(
       facilityId,
       { status, providerId, patientId, startDate, endDate },
@@ -186,7 +218,7 @@ export class InsuranceController {
   @Get('claims/:id')
   @AuthWithPermissions('insurance.claims.read')
   @ApiOperation({ summary: 'Get claim by ID' })
-  async getClaim(@Param('id') id: string, @Request() req: any) {
+  async getClaim(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     return this.insuranceService.getClaim(id, req.user?.tenantId);
   }
 
@@ -194,7 +226,7 @@ export class InsuranceController {
   @AuthWithPermissions('insurance.claims.update')
   @ApiOperation({ summary: 'Add item to claim' })
   async addClaimItem(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CreateClaimItemDto,
     @Request() req: any,
   ) {
@@ -204,14 +236,14 @@ export class InsuranceController {
   @Post('claims/:id/submit')
   @AuthWithPermissions('insurance.claims.update')
   @ApiOperation({ summary: 'Submit claim' })
-  async submitClaim(@Param('id') id: string, @Request() req: any) {
+  async submitClaim(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     return this.insuranceService.submitClaim(id, req.user.id, req.user?.tenantId);
   }
 
   @Get('claims/:id/pdf')
   @AuthWithPermissions('insurance.claims.read')
   @ApiOperation({ summary: 'Download printable claim form (PDF)' })
-  async claimPdf(@Param('id') id: string, @Request() req: any, @Res() res: Response) {
+  async claimPdf(@Param('id', ParseUUIDPipe) id: string, @Request() req: any, @Res() res: Response) {
     const { filename, pdf } = await this.claimExportService.generateClaimPdf(id, req.user?.tenantId);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
@@ -247,21 +279,21 @@ export class InsuranceController {
   @Post('claims/:id/approve')
   @AuthWithPermissions('insurance.claims.process')
   @ApiOperation({ summary: 'Approve claim' })
-  async approveClaim(@Param('id') id: string, @Body() dto: ProcessClaimDto, @Request() req: any) {
+  async approveClaim(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ProcessClaimDto, @Request() req: any) {
     return this.insuranceService.processClaim(id, dto, true, req.user?.tenantId, req.user?.id);
   }
 
   @Post('claims/:id/reject')
   @AuthWithPermissions('insurance.claims.process')
   @ApiOperation({ summary: 'Reject claim' })
-  async rejectClaim(@Param('id') id: string, @Body() dto: ProcessClaimDto, @Request() req: any) {
+  async rejectClaim(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ProcessClaimDto, @Request() req: any) {
     return this.insuranceService.processClaim(id, dto, false, req.user?.tenantId, req.user?.id);
   }
 
   @Post('claims/:id/payment')
   @AuthWithPermissions('insurance.claims.process')
   @ApiOperation({ summary: 'Record payment' })
-  async recordPayment(@Param('id') id: string, @Body() dto: RecordPaymentDto, @Request() req: any) {
+  async recordPayment(@Param('id', ParseUUIDPipe) id: string, @Body() dto: RecordPaymentDto, @Request() req: any) {
     return this.insuranceService.recordPayment(id, dto, req.user?.tenantId, req.user?.id);
   }
 
@@ -297,14 +329,14 @@ export class InsuranceController {
   @Get('pre-auth/:id')
   @AuthWithPermissions('insurance.preauth.read')
   @ApiOperation({ summary: 'Get pre-authorization by ID' })
-  async getPreAuth(@Param('id') id: string, @Request() req: any) {
+  async getPreAuth(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     return this.insuranceService.getPreAuth(id, req.user?.tenantId);
   }
 
   @Post('pre-auth/:id/submit')
   @AuthWithPermissions('insurance.preauth.update')
   @ApiOperation({ summary: 'Submit pre-authorization' })
-  async submitPreAuth(@Param('id') id: string, @Request() req: any) {
+  async submitPreAuth(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     return this.insuranceService.submitPreAuth(id, req.user?.tenantId);
   }
 
@@ -312,7 +344,7 @@ export class InsuranceController {
   @AuthWithPermissions('insurance.preauth.process')
   @ApiOperation({ summary: 'Approve pre-authorization' })
   async approvePreAuth(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ProcessPreAuthDto,
     @Request() req: any,
   ) {
@@ -322,7 +354,7 @@ export class InsuranceController {
   @Post('pre-auth/:id/deny')
   @AuthWithPermissions('insurance.preauth.process')
   @ApiOperation({ summary: 'Deny pre-authorization' })
-  async denyPreAuth(@Param('id') id: string, @Body() dto: ProcessPreAuthDto, @Request() req: any) {
+  async denyPreAuth(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ProcessPreAuthDto, @Request() req: any) {
     return this.insuranceService.processPreAuth(id, dto, false, req.user?.tenantId, req.user?.id);
   }
 
@@ -339,6 +371,7 @@ export class InsuranceController {
     @Query('endDate') endDate: string,
     @Request() req?: any,
   ) {
+    this.assertDateRange(startDate, endDate);
     return this.insuranceService.getDenialsAnalysis(
       facilityId,
       startDate,
@@ -359,6 +392,7 @@ export class InsuranceController {
     @Query('endDate') endDate: string,
     @Request() req?: any,
   ) {
+    this.assertDateRange(startDate, endDate);
     return this.insuranceService.getClaimStatusReport(
       facilityId,
       startDate,
@@ -379,6 +413,7 @@ export class InsuranceController {
     @Query('endDate') endDate: string,
     @Request() req?: any,
   ) {
+    this.assertDateRange(startDate, endDate);
     return this.insuranceService.getDenialsAnalysis(
       facilityId,
       startDate,
@@ -399,6 +434,7 @@ export class InsuranceController {
     @Query('endDate') endDate: string,
     @Request() req?: any,
   ) {
+    this.assertDateRange(startDate, endDate);
     return this.insuranceService.getProviderPerformance(
       facilityId,
       startDate,
@@ -440,6 +476,7 @@ export class InsuranceController {
     @Query('endDate') endDate?: string,
     @Request() req?: any,
   ) {
+    this.assertDateRange(startDate, endDate, false);
     return this.insuranceService.getEncountersAwaitingClaims(
       facilityId,
       {
@@ -456,7 +493,7 @@ export class InsuranceController {
   @ApiOperation({ summary: 'Create a claim from an encounter' })
   @ApiQuery({ name: 'facilityId', required: true })
   async createClaimFromEncounter(
-    @Param('encounterId') encounterId: string,
+    @Param('encounterId', ParseUUIDPipe) encounterId: string,
     @Query('facilityId') facilityId: string,
     @Request() req?: any,
   ) {
