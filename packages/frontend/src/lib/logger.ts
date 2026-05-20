@@ -26,12 +26,16 @@ const MAX_ENTRIES = 200;
 let nextId = 1;
 const entries: LogEntry[] = [];
 
+// Late-bound getter — set by store/auth.ts to avoid a circular import.
+// Default returns undefined so log entries are still useful even before
+// the auth store is loaded.
+let userIdGetter: () => string | undefined = () => undefined;
+export function setLoggerUserIdGetter(fn: () => string | undefined) {
+  userIdGetter = fn;
+}
 function getCurrentUserId(): string | undefined {
   try {
-    const raw = localStorage.getItem('glide-hims-auth');
-    if (!raw) return undefined;
-    const parsed = JSON.parse(raw);
-    return parsed?.state?.user?.id;
+    return userIdGetter();
   } catch {
     return undefined;
   }

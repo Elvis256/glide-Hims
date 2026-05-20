@@ -2,12 +2,13 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { User, AuthState } from '../types';
 import { clearAllData } from '../lib/sync';
+import { setLoggerUserIdGetter } from '../lib/logger';
 
 interface AuthActions {
   setUser: (user: User) => void;
   setTokens: (accessToken: string, refreshToken: string) => void;
   login: (user: User, accessToken: string, refreshToken: string) => void;
-  logout: () => void;
+  logout: () => Promise<void>;
   setLoading: (isLoading: boolean) => void;
   hasPermission: (permission: string) => boolean;
   hasAnyPermission: (permissions: string[]) => boolean;
@@ -39,7 +40,7 @@ export const useAuthStore = create<AuthState & AuthActions>()(
           isLoading: false,
         }),
 
-      logout: () => {
+      logout: async () => {
         set({
           user: null,
           accessToken: null,
@@ -50,9 +51,19 @@ export const useAuthStore = create<AuthState & AuthActions>()(
 
         // Clear browser storage to prevent patient data leaking between users
         sessionStorage.clear();
+        try {
+          localStorage.removeItem('glide-hims-auth');
+        } catch {
+          // ignore
+        }
 
-        // Clear offline database (fire and forget — don't block logout)
-        clearAllData().catch(() => {});
+        // Clear offline database BEFORE returning so caller can safely
+        // redirect to the login page without leaving PHI on disk.
+        try {
+          await clearAllData();
+        } catch {
+          // best-effort — never block logout on a storage error
+        }
       },
 
       setLoading: (isLoading) => set({ isLoading }),
@@ -135,10 +146,18 @@ export const useAuthStore = create<AuthState & AuthActions>()(
     }),
     {
       name: 'glide-hims-auth',
+      // Persist only the "is this tab authenticated?" flag. The user object
+      // (roles, permissions, email) is intentionally NOT written to
+      // localStorage — it is re-fetched from /auth/profile + /auth/me on
+      // page load via the httpOnly auth cookie, so XSS cannot harvest it.
       partialize: (state) => ({
-        user: state.user,
         isAuthenticated: state.isAuthenticated,
       }),
     }
   )
 );
+
+// Wire the logger to read user.id straight from the in-memory store, so
+// we no longer have to keep the user object in localStorage just to tag
+// log entries.
+setLoggerUserIdGetter(() => useAuthStore.getState().user?.id);

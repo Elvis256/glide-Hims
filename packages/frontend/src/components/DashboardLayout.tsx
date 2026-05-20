@@ -1452,7 +1452,7 @@ export default function DashboardLayout({ children }: LayoutProps) {
     localStorage.removeItem('glide_tenant_slug');
     localStorage.removeItem('glide_login_kind');
     await authService.logout();
-    logout();
+    await logout();
     if (kind === 'system') {
       navigate('/system/login');
     } else {

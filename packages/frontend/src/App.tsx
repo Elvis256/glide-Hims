@@ -552,46 +552,35 @@ function AppRoutes() {
         return;
       }
 
-      // If user is authenticated, validate token or refresh it
-      if (isAuthenticated && accessToken && refreshToken) {
+      // If user is authenticated (per persisted flag), rehydrate the user
+      // object from the backend using the httpOnly auth cookie. We no
+      // longer persist the user object (or any in-memory tokens) to
+      // localStorage, so this rehydrate is required for any reloaded tab.
+      if (isAuthenticated) {
         try {
-          // Validate token and fetch accessible modules
           const { authService } = await import('./services/auth');
-          await authService.getProfile();
-          
-          // Fetch accessible modules from /auth/me
+          const { useAuthStore } = await import('./store/auth');
+
+          // /auth/profile returns the full User; populate the store first
+          // so route-guards have something to read while /auth/me lands.
+          const profile = await authService.getProfile();
+          useAuthStore.getState().setUser(profile);
+
+          // /auth/me returns the effective permissions/roles/modules.
           try {
             const meData = await authService.getMe();
-            const { useAuthStore } = await import('./store/auth');
             useAuthStore.getState().updateFromMe(meData);
           } catch {
             // Non-critical: navigation will fall back to role-based filtering
           }
-          
-          console.log('[App] Token valid, setup complete');
-        } catch (err) {
-          console.log('[App] Token expired, attempting refresh...');
-          try {
-            // Token expired, try to refresh
-            const { authService } = await import('./services/auth');
-            const tokens = await authService.refreshToken(refreshToken);
-            setTokens(tokens.accessToken, tokens.refreshToken);
-            console.log('[App] Token refreshed successfully');
 
-            // Re-validate with new token and load user profile
-            try {
-              await authService.getProfile();
-              const meData = await authService.getMe();
-              const { useAuthStore } = await import('./store/auth');
-              useAuthStore.getState().updateFromMe(meData);
-              console.log('[App] Profile reloaded after refresh');
-            } catch {
-              // Profile fetch failed even with new token — non-critical
-            }
-          } catch (refreshErr) {
-            console.error('[App] Token refresh failed, logging out');
-            logout();
-          }
+          console.log('[App] Auth rehydrated from cookie');
+        } catch (err) {
+          // Cookie missing or refresh failed — fall back to logout. The
+          // axios interceptor already attempts a refresh on 401, so a
+          // hard error here means the session is truly gone.
+          console.log('[App] Auth rehydrate failed, logging out', err);
+          await logout();
         }
         setIsSetupComplete(true);
         setSetupChecked(true);
@@ -606,7 +595,7 @@ function AppRoutes() {
         // If setup not complete, clear any stale auth
         if (!status.isSetupComplete) {
           console.log('[App] Setup not complete, clearing auth');
-          logout();
+          await logout();
         }
       } catch (err) {
         console.error('[App] Setup check error:', err);

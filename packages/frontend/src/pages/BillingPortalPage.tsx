@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Loader2, RefreshCw, AlertTriangle, CheckCircle, CreditCard, Printer, Download, Plus, Trash2, Star } from 'lucide-react';
 import api from '../services/api';
+import { safeRedirect } from '../lib/safeRedirect';
 import { fmtMoney, fmtDate, INVOICE_STATUS_STYLES, SUB_STATUS_STYLES, unwrap, SaasInvoice, Subscription, SaasPayment } from './system/saas/_shared';
 
 interface PaymentMethod {
@@ -51,7 +52,9 @@ export default function BillingPortalPage() {
       const redirectUrl = `${window.location.origin}/billing-portal?status=return&inv=${inv.id}`;
       const res = await api.post('/saas-revenue/portal/checkout', { invoiceId: inv.id, redirectUrl, gateway, enableRecurring: opts?.enableRecurring });
       const link = unwrap<any>(res)?.link;
-      if (link) window.location.href = link;
+      if (link) {
+        if (!safeRedirect(link)) alert('Refusing to redirect to an unrecognised payment gateway.');
+      }
       else alert('Could not create checkout link');
     } catch (e: any) { alert(e?.response?.data?.message || 'Failed'); }
     finally { setPaying(null); }
@@ -63,7 +66,9 @@ export default function BillingPortalPage() {
       const redirectUrl = `${window.location.origin}/billing-portal?status=return&inv=${inv.id}`;
       const res = await api.post('/saas-revenue/portal/charge-saved', { invoiceId: inv.id, paymentMethodId, redirectUrl });
       const link = unwrap<any>(res)?.link;
-      if (link) window.location.href = link;
+      if (link) {
+        if (!safeRedirect(link)) alert('Refusing to redirect to an unrecognised payment gateway.');
+      }
       else alert('Charge submitted — awaiting confirmation');
     } catch (e: any) { alert(e?.response?.data?.message || 'Failed'); }
     finally { setPaying(null); }
@@ -74,9 +79,14 @@ export default function BillingPortalPage() {
     fetch(`${baseURL}/saas-revenue/portal/invoices/${inv.id}/print`, { credentials: 'include' })
       .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); })
       .then((html) => {
-        const w = window.open('', '_blank');
-        if (!w) { alert('Pop-up blocked. Allow pop-ups to view invoices.'); return; }
-        w.document.open(); w.document.write(html); w.document.close();
+        // Use an opaque blob URL instead of document.write() — the
+        // print template loads into an isolated origin and cannot
+        // touch window.opener / the parent app.
+        const blob = new Blob([html], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        const w = window.open(url, '_blank', 'noopener,noreferrer');
+        if (!w) { URL.revokeObjectURL(url); alert('Pop-up blocked. Allow pop-ups to view invoices.'); return; }
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
       })
       .catch((e) => alert(`Could not open invoice: ${e.message}`));
   };

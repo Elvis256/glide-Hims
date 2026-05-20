@@ -46,9 +46,16 @@ export default function SystemInvoiceDetailPage() {
     fetch(`${baseURL}/saas-revenue/invoices/${inv.id}/print`, { credentials: 'include' })
       .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); })
       .then((html) => {
-        const w = window.open('', '_blank');
-        if (!w) { alert('Pop-up blocked. Allow pop-ups to print invoices.'); return; }
-        w.document.open(); w.document.write(html); w.document.close();
+        // Load the print template via an opaque blob URL instead of
+        // document.write(): the blob lives in an isolated origin, the
+        // opener cannot reach into it, and any <script> that ships in
+        // the template runs in a sandbox that has no access to
+        // window.opener / parent — neutralising the XSS-via-API risk.
+        const blob = new Blob([html], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        const w = window.open(url, '_blank', 'noopener,noreferrer');
+        if (!w) { URL.revokeObjectURL(url); alert('Pop-up blocked. Allow pop-ups to print invoices.'); return; }
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
       })
       .catch((e) => alert(`Could not open invoice: ${e.message}`));
   };
