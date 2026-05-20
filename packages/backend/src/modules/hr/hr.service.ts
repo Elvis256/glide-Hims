@@ -616,10 +616,55 @@ export class HrService {
     return `EMP${String(next).padStart(5, '0')}`;
   }
 
+  /**
+   * Resolve the user-supplied department fields to a coherent
+   * (departmentId, departmentName) pair. Either field may be provided
+   * (or both, or neither):
+   *
+   *   - If departmentId is given, the row is looked up in the same
+   *     tenant; the canonical name from `departments` overrides any
+   *     free-text the caller sent (single source of truth).
+   *   - If only free-text is given, we try a case-insensitive match
+   *     against `departments.name` in the same tenant. On a hit we
+   *     populate departmentId; the text is preserved verbatim either
+   *     way.
+   *   - Cross-tenant departmentIds throw BadRequestException.
+   */
+  private async resolveDepartmentFields(
+    departmentId: string | undefined,
+    departmentText: string | undefined,
+    tenantId: string | undefined,
+  ): Promise<{ departmentId?: string; department?: string }> {
+    if (departmentId) {
+      const dept = await this.departmentRepo.findOne({
+        where: { id: departmentId, ...(tenantId ? { tenantId } : {}) } as any,
+      });
+      if (!dept) {
+        throw new BadRequestException('Department not found in this tenant');
+      }
+      return { departmentId: dept.id, department: dept.name };
+    }
+    if (departmentText && departmentText.trim()) {
+      const trimmed = departmentText.trim();
+      const match = await this.departmentRepo
+        .createQueryBuilder('d')
+        .where('LOWER(TRIM(d.name)) = LOWER(:name)', { name: trimmed })
+        .andWhere(tenantId ? 'd.tenant_id = :tenantId' : '1=1', { tenantId })
+        .getOne();
+      return { departmentId: match?.id, department: trimmed };
+    }
+    return { departmentId: undefined, department: departmentText };
+  }
+
   async createEmployee(dto: CreateEmployeeDto, tenantId?: string): Promise<Employee> {
     // employees.employee_number has a UNIQUE constraint. Two concurrent
     // creates can both compute the same number and collide. Retry up to 5x
     // on unique-violation (Postgres error code 23505) before giving up.
+    const resolvedDept = await this.resolveDepartmentFields(
+      (dto as any).departmentId,
+      dto.department,
+      tenantId,
+    );
     let lastErr: any;
     for (let attempt = 0; attempt < 5; attempt++) {
       try {
@@ -641,7 +686,8 @@ export class HrService {
           email: dto.email,
           address: dto.address,
           jobTitle: dto.jobTitle,
-          department: dto.department,
+          department: resolvedDept.department,
+          departmentId: resolvedDept.departmentId,
           employmentType: dto.employmentType,
           hireDate: new Date(dto.hireDate),
           salaryGrade: dto.salaryGrade,
@@ -665,16 +711,25 @@ export class HrService {
 
   async getEmployees(
     facilityId: string,
-    options: { status?: EmploymentStatus; department?: string; limit?: number; offset?: number },
+    options: {
+      status?: EmploymentStatus;
+      department?: string;
+      departmentId?: string;
+      limit?: number;
+      offset?: number;
+    },
     tenantId?: string,
   ) {
     const where: any = { facilityId };
     if (tenantId) where.tenantId = tenantId;
     if (options.status) where.status = options.status;
-    if (options.department) where.department = options.department;
+    // departmentId (FK) is preferred when both are supplied
+    if (options.departmentId) where.departmentId = options.departmentId;
+    else if (options.department) where.department = options.department;
 
     const [data, total] = await this.employeeRepo.findAndCount({
       where,
+      relations: ['departmentRef'],
       order: { lastName: 'ASC', firstName: 'ASC' },
       take: options.limit || 50,
       skip: options.offset || 0,
@@ -686,7 +741,7 @@ export class HrService {
   async getEmployeeById(id: string, tenantId?: string): Promise<Employee> {
     const employee = await this.employeeRepo.findOne({
       where: { id, ...(tenantId ? { tenantId } : {}) },
-      relations: ['facility', 'user'],
+      relations: ['facility', 'user', 'departmentRef'],
     });
     if (!employee) throw new NotFoundException('Employee not found');
     return employee;
@@ -694,7 +749,31 @@ export class HrService {
 
   async updateEmployee(id: string, dto: UpdateEmployeeDto, tenantId?: string): Promise<Employee> {
     const employee = await this.getEmployeeById(id, tenantId);
-    Object.assign(employee, dto);
+    const incomingDeptId = (dto as any).departmentId;
+    const incomingDeptText = dto.department;
+    // Only re-resolve when the caller actually touched a department field.
+    // departmentId, when present, is canonical; otherwise text is the source
+    // of truth and we must NOT fall back to the existing FK (that would
+    // silently ignore a text-only update).
+    if (incomingDeptId !== undefined || incomingDeptText !== undefined) {
+      const resolved = await this.resolveDepartmentFields(
+        incomingDeptId,
+        incomingDeptText,
+        tenantId,
+      );
+      employee.departmentId = (resolved.departmentId ?? null) as any;
+      employee.department = (resolved.department ?? null) as any;
+      // Important: clear the loaded relation object so TypeORM doesn't
+      // overwrite our direct departmentId write with the stale FK from
+      // the previously-loaded Department.
+      (employee as any).departmentRef = resolved.departmentId
+        ? ({ id: resolved.departmentId } as any)
+        : null;
+    }
+    // Remove department fields from dto so Object.assign below doesn't
+    // re-overwrite the resolved values with raw input.
+    const { department: _d, departmentId: _di, ...rest } = dto as any;
+    Object.assign(employee, rest);
     return this.employeeRepo.save(employee);
   }
 
@@ -2195,7 +2274,7 @@ export class HrService {
 
     return this.appraisalRepo.find({
       where,
-      relations: ['employee', 'employee.department', 'reviewer'],
+      relations: ['employee', 'employee.departmentRef', 'reviewer'],
       order: { createdAt: 'DESC' },
     });
   }
@@ -2203,7 +2282,7 @@ export class HrService {
   async getAppraisalById(id: string, tenantId?: string): Promise<PerformanceAppraisal> {
     const appraisal = await this.appraisalRepo.findOne({
       where: { id, ...(tenantId ? { tenantId } : {}) },
-      relations: ['employee', 'employee.department', 'reviewer'],
+      relations: ['employee', 'employee.departmentRef', 'reviewer'],
     });
     if (!appraisal) throw new NotFoundException('Appraisal not found');
     return appraisal;
@@ -2318,7 +2397,7 @@ export class HrService {
     // employeeId now references users table directly
     return this.appraisalRepo.find({
       where: { employeeId: userId, ...(tenantId ? { tenantId } : {}) },
-      relations: ['employee', 'employee.department', 'reviewer'],
+      relations: ['employee', 'employee.departmentRef', 'reviewer'],
       order: { year: 'DESC', createdAt: 'DESC' },
     });
   }

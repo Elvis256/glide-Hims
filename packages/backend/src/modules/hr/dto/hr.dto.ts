@@ -97,6 +97,11 @@ export class CreateEmployeeDto {
   @IsString()
   department?: string;
 
+  @ApiPropertyOptional({ description: 'FK to departments.id (preferred over free-text department)' })
+  @IsOptional()
+  @IsUUID()
+  departmentId?: string;
+
   @ApiProperty({ enum: EmploymentType })
   @IsEnum(EmploymentType)
   employmentType: EmploymentType;
@@ -156,6 +161,11 @@ export class UpdateEmployeeDto {
   @IsOptional()
   @IsString()
   department?: string;
+
+  @ApiPropertyOptional({ description: 'FK to departments.id (preferred over free-text department)' })
+  @IsOptional()
+  @IsUUID()
+  departmentId?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
