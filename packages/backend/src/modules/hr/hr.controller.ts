@@ -18,7 +18,15 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiConsumes } from '@nestjs/swagger';
+import { isUUID } from 'class-validator';
 import { HrService } from './hr.service';
+
+function requireUUID(value: string | undefined, field: string): string {
+  if (!value || !isUUID(value)) {
+    throw new BadRequestException(`${field} must be a valid UUID`);
+  }
+  return value;
+}
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -316,7 +324,11 @@ export class HrController {
     @Query('facilityId') facilityId: string,
     @Request() req: any,
   ) {
-    return this.hrService.recordAttendance(dto, facilityId, req.user?.tenantId);
+    const effectiveFacility = requireUUID(
+      facilityId || req.user?.facilityId,
+      'facilityId',
+    );
+    return this.hrService.recordAttendance(dto, effectiveFacility, req.user?.tenantId);
   }
 
   @Post('attendance/clock-in')
@@ -332,7 +344,11 @@ export class HrController {
       req.user,
       'clock-in',
     );
-    return this.hrService.clockIn(targetId, facilityId, req.user?.tenantId);
+    const effectiveFacility = requireUUID(
+      facilityId || req.user?.facilityId,
+      'facilityId',
+    );
+    return this.hrService.clockIn(targetId, effectiveFacility, req.user?.tenantId);
   }
 
   @Post('attendance/clock-out')
@@ -348,7 +364,11 @@ export class HrController {
       req.user,
       'clock-out',
     );
-    return this.hrService.clockOut(targetId, facilityId, req.user?.tenantId);
+    const effectiveFacility = requireUUID(
+      facilityId || req.user?.facilityId,
+      'facilityId',
+    );
+    return this.hrService.clockOut(targetId, effectiveFacility, req.user?.tenantId);
   }
 
   @Get('attendance')
