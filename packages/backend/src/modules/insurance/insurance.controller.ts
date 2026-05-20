@@ -17,6 +17,7 @@ import { ClaimExportService } from './claim-export.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import {
   CreateProviderDto,
+  UpdateProviderDto,
   CreatePolicyDto,
   CreateClaimDto,
   CreateClaimItemDto,
@@ -85,7 +86,7 @@ export class InsuranceController {
   @ApiOperation({ summary: 'Update provider' })
   async updateProvider(
     @Param('id') id: string,
-    @Body() dto: Partial<CreateProviderDto>,
+    @Body() dto: UpdateProviderDto,
     @Request() req: any,
   ) {
     return this.insuranceService.updateProvider(id, dto, req.user?.tenantId);
