@@ -8,9 +8,16 @@ import {
   IsUUID,
   IsBoolean,
   IsArray,
+  IsEmail,
   Min,
+  Max,
+  MaxLength,
+  MinLength,
   ArrayNotEmpty,
+  ArrayMaxSize,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import {
   ProviderType,
   ClaimSubmissionMethod,
@@ -32,10 +39,14 @@ export class CreateProviderDto {
 
   @ApiProperty()
   @IsString()
+  @MinLength(1)
+  @MaxLength(255)
   name: string;
 
   @ApiProperty()
   @IsString()
+  @MinLength(1)
+  @MaxLength(64)
   code: string;
 
   @ApiPropertyOptional({ enum: ProviderType })
@@ -46,21 +57,25 @@ export class CreateProviderDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(120)
   contactPerson?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsString()
+  @IsEmail()
+  @MaxLength(254)
   email?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(40)
   phone?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(500)
   address?: string;
 
   @ApiPropertyOptional({ enum: ClaimSubmissionMethod })
@@ -71,6 +86,8 @@ export class CreateProviderDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
+  @Min(0)
+  @Max(365)
   paymentTermsDays?: number;
 }
 
@@ -86,10 +103,14 @@ export class CreatePolicyDto {
 
   @ApiProperty()
   @IsString()
+  @MinLength(1)
+  @MaxLength(64)
   policyNumber: string;
 
   @ApiProperty()
   @IsString()
+  @MinLength(1)
+  @MaxLength(64)
   memberNumber: string;
 
   @ApiPropertyOptional({ enum: MemberType })
@@ -100,16 +121,19 @@ export class CreatePolicyDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(64)
   principalMemberNumber?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(255)
   employerName?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(64)
   employerCode?: string;
 
   @ApiPropertyOptional({ enum: CoverageType })
@@ -121,18 +145,21 @@ export class CreatePolicyDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
+  @Max(1_000_000_000)
   annualLimit?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
   @Min(0)
+  @Max(100)
   copayPercentage?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
   @Min(0)
+  @Max(1_000_000_000)
   copayAmount?: number;
 
   @ApiProperty()
@@ -191,26 +218,36 @@ export class CreateClaimDto {
 
   @ApiProperty()
   @IsString()
+  @MinLength(1)
+  @MaxLength(500)
   primaryDiagnosis: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(64)
   diagnosisCode?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  @MaxLength(500, { each: true })
   secondaryDiagnoses?: string[];
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(4_000)
   notes?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => CreateClaimItemDto)
   items?: CreateClaimItemDto[];
 }
 
@@ -222,21 +259,26 @@ export class CreateClaimItemDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(64)
   serviceCode?: string;
 
   @ApiProperty()
   @IsString()
+  @MinLength(1)
+  @MaxLength(500)
   description: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
   @Min(1)
+  @Max(10_000)
   quantity?: number;
 
   @ApiProperty()
   @IsNumber()
   @Min(0)
+  @Max(1_000_000_000)
   unitPrice: number;
 
   @ApiProperty()
@@ -246,6 +288,7 @@ export class CreateClaimItemDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(2_000)
   providerNotes?: string;
 }
 
@@ -253,6 +296,7 @@ export class SubmitClaimDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(2_000)
   notes?: string;
 }
 
@@ -260,21 +304,25 @@ export class ProcessClaimDto {
   @ApiProperty()
   @IsNumber()
   @Min(0)
+  @Max(1_000_000_000)
   approvedAmount: number;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(2_000)
   denialReason?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(64)
   denialCode?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(4_000)
   notes?: string;
 }
 
@@ -282,10 +330,13 @@ export class RecordPaymentDto {
   @ApiProperty()
   @IsNumber()
   @Min(0)
+  @Max(1_000_000_000)
   paidAmount: number;
 
   @ApiProperty()
   @IsString()
+  @MinLength(1)
+  @MaxLength(128)
   paymentReference: string;
 
   @ApiPropertyOptional()
@@ -310,24 +361,32 @@ export class CreatePreAuthDto {
 
   @ApiProperty()
   @IsString()
+  @MinLength(1)
+  @MaxLength(500)
   primaryDiagnosis: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(64)
   diagnosisCode?: string;
 
   @ApiProperty()
   @IsString()
+  @MinLength(1)
+  @MaxLength(4_000)
   clinicalJustification: string;
 
   @ApiProperty()
   @IsString()
+  @MinLength(1)
+  @MaxLength(4_000)
   proposedTreatment: string;
 
   @ApiProperty()
   @IsNumber()
   @Min(0)
+  @Max(1_000_000_000)
   estimatedCost: number;
 
   @ApiPropertyOptional()
@@ -359,6 +418,7 @@ export class ProcessPreAuthDto {
   @ApiProperty()
   @IsNumber()
   @Min(0)
+  @Max(1_000_000_000)
   approvedAmount: number;
 
   @ApiPropertyOptional()
@@ -374,15 +434,18 @@ export class ProcessPreAuthDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(128)
   insurerReference?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(2_000)
   denialReason?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(4_000)
   notes?: string;
 }
