@@ -30,23 +30,40 @@ export class InventoryService {
   // ============ ITEM MANAGEMENT ============
 
   async createItem(dto: CreateItemDto, tenantId?: string): Promise<Item> {
-    const code = dto.code?.trim() || (await this.generateItemCode(dto.isDrug, tenantId));
+    // Wrap auto-code generation + uniqueness check + insert in a single
+    // transaction so two concurrent createItem calls cannot both read the
+    // same max-suffix and produce duplicate item codes (P1).
+    return this.dataSource.transaction(async (manager) => {
+      const code =
+        dto.code?.trim() ||
+        (await this.generateItemCode(manager, dto.isDrug, tenantId));
 
-    const existing = await this.itemRepository.findOne({
-      where: { code, ...(tenantId ? { tenantId } : {}) },
+      const existing = await manager.findOne(Item, {
+        where: { code, ...(tenantId ? { tenantId } : {}) },
+      });
+      if (existing) {
+        throw new BadRequestException(`Item with code ${code} already exists`);
+      }
+
+      const item = manager.create(Item, { ...dto, code, ...(tenantId ? { tenantId } : {}) });
+      return manager.save(Item, item);
     });
-    if (existing) {
-      throw new BadRequestException(`Item with code ${code} already exists`);
-    }
-
-    const item = this.itemRepository.create({ ...dto, code, ...(tenantId ? { tenantId } : {}) });
-    return this.itemRepository.save(item);
   }
 
-  private async generateItemCode(isDrug?: boolean, tenantId?: string): Promise<string> {
+  private async generateItemCode(
+    manager: EntityManager,
+    isDrug?: boolean,
+    tenantId?: string,
+  ): Promise<string> {
     const prefix = isDrug ? 'DRG' : 'ITM';
-    const qb = this.itemRepository
-      .createQueryBuilder('item')
+    // Advisory lock keyed by tenant+prefix prevents two concurrent
+    // createItem calls from each reading the same DRG-00042 row and
+    // producing duplicate codes. Released on txn commit/rollback.
+    const lockKey = `inventory:item-code:${tenantId || 'global'}:${prefix}`;
+    await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [lockKey]);
+
+    const qb = manager
+      .createQueryBuilder(Item, 'item')
       .select('item.code', 'code')
       .where('item.code LIKE :codePrefix', { codePrefix: `${prefix}-%` })
       .orderBy('item.code', 'DESC')
