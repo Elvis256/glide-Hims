@@ -189,6 +189,33 @@ export class SampleReferralService {
       throw new BadRequestException('Referral is already fully delivered');
     }
 
+    // P1-7: enforce forward-only stage transitions. Without this guard, a
+    // user can move a referral from RESULT_READY back to PACKAGED, which
+    // clobbers `packagedAt` (the PACKAGED case unconditionally overwrites
+    // it) and breaks the TAT calculation. Stages are listed in workflow
+    // order in the enum; we compare ordinal positions.
+    const stageOrder: ReferralStage[] = [
+      ReferralStage.COLLECTED,
+      ReferralStage.PACKAGED,
+      ReferralStage.IN_TRANSIT,
+      ReferralStage.RECEIVED_AT_HUB,
+      ReferralStage.PROCESSING,
+      ReferralStage.RESULT_READY,
+      ReferralStage.RESULT_DELIVERED,
+    ];
+    const currentIdx = stageOrder.indexOf(referral.stage);
+    const targetIdx = stageOrder.indexOf(dto.stage);
+    if (
+      targetIdx !== -1 &&
+      currentIdx !== -1 &&
+      targetIdx <= currentIdx &&
+      dto.stage !== ReferralStage.REJECTED
+    ) {
+      throw new BadRequestException(
+        `Cannot move referral backward from '${referral.stage}' to '${dto.stage}'`,
+      );
+    }
+
     const now = new Date();
     referral.stage = dto.stage;
 
@@ -285,50 +312,68 @@ export class SampleReferralService {
   }
 
   async getDashboard(tenantId?: string, facilityId?: string): Promise<Record<string, any>> {
-    const qb = this.referralRepo.createQueryBuilder('ref');
-    if (tenantId) qb.andWhere('ref.tenant_id = :tenantId', { tenantId });
+    // P1-8: previous impl loaded every referral row into memory then
+    // counted/averaged in JS — unbounded DoS vector on multi-facility
+    // deployments. Push counts + TAT aggregation into SQL.
+    const stageQb = this.referralRepo
+      .createQueryBuilder('ref')
+      .select('ref.stage', 'stage')
+      .addSelect('COUNT(*)', 'count')
+      .groupBy('ref.stage');
+    if (tenantId) stageQb.andWhere('ref.tenant_id = :tenantId', { tenantId });
     if (facilityId) {
-      qb.andWhere('(ref.fromFacilityId = :fid OR ref.toFacilityId = :fid)', { fid: facilityId });
+      stageQb.andWhere('(ref.fromFacilityId = :fid OR ref.toFacilityId = :fid)', {
+        fid: facilityId,
+      });
     }
+    const stageRows = await stageQb.getRawMany<{ stage: string; count: string }>();
+    const byStage = new Map(stageRows.map((r) => [r.stage, parseInt(r.count, 10)]));
 
-    const all = await qb.getMany();
-
-    const inTransit = all.filter((r) => r.stage === ReferralStage.IN_TRANSIT).length;
-    const pendingAtHub = all.filter(
-      (r) => r.stage === ReferralStage.RECEIVED_AT_HUB || r.stage === ReferralStage.PROCESSING,
-    ).length;
-    const resultsReady = all.filter((r) => r.stage === ReferralStage.RESULT_READY).length;
-    const rejected = all.filter((r) => r.stage === ReferralStage.REJECTED).length;
-
-    // Calculate average TAT (collected → result_ready) in days for completed referrals
-    const completed = all.filter((r) => r.collectedAt && r.resultReadyAt);
-    let avgTATDays = 0;
-    if (completed.length > 0) {
-      const totalMs = completed.reduce((sum, r) => {
-        return sum + (new Date(r.resultReadyAt).getTime() - new Date(r.collectedAt).getTime());
-      }, 0);
-      avgTATDays = Math.round((totalMs / completed.length / (1000 * 60 * 60 * 24)) * 10) / 10;
+    const tatQb = this.referralRepo
+      .createQueryBuilder('ref')
+      .select(
+        'AVG(EXTRACT(EPOCH FROM (ref.resultReadyAt - ref.collectedAt)) / 86400.0)',
+        'avgDays',
+      )
+      .addSelect('COUNT(*)', 'completed')
+      .addSelect(
+        `SUM(CASE WHEN EXTRACT(EPOCH FROM (ref.resultReadyAt - ref.collectedAt)) / 86400.0 <= 7 THEN 1 ELSE 0 END)`,
+        'meeting7',
+      )
+      .where('ref.collectedAt IS NOT NULL')
+      .andWhere('ref.resultReadyAt IS NOT NULL');
+    if (tenantId) tatQb.andWhere('ref.tenant_id = :tenantId', { tenantId });
+    if (facilityId) {
+      tatQb.andWhere('(ref.fromFacilityId = :fid OR ref.toFacilityId = :fid)', { fid: facilityId });
     }
+    const tatRow = await tatQb.getRawOne<{
+      avgDays: string | null;
+      completed: string;
+      meeting7: string | null;
+    }>();
 
-    // % meeting 7-day target
-    const meeting7Day = completed.filter((r) => {
-      const days =
-        (new Date(r.resultReadyAt).getTime() - new Date(r.collectedAt).getTime()) /
-        (1000 * 60 * 60 * 24);
-      return days <= 7;
-    }).length;
-    const pctMeeting7Day =
-      completed.length > 0 ? Math.round((meeting7Day / completed.length) * 100) : 0;
+    const total = Array.from(byStage.values()).reduce((a, b) => a + b, 0);
+    const inTransit = byStage.get(ReferralStage.IN_TRANSIT) || 0;
+    const pendingAtHub =
+      (byStage.get(ReferralStage.RECEIVED_AT_HUB) || 0) +
+      (byStage.get(ReferralStage.PROCESSING) || 0);
+    const resultsReady = byStage.get(ReferralStage.RESULT_READY) || 0;
+    const rejected = byStage.get(ReferralStage.REJECTED) || 0;
+
+    const completedCount = parseInt(tatRow?.completed || '0', 10);
+    const avgTATDays = tatRow?.avgDays ? Math.round(parseFloat(tatRow.avgDays) * 10) / 10 : 0;
+    const meeting7 = parseInt(tatRow?.meeting7 || '0', 10);
+    const pctMeeting7Day = completedCount > 0 ? Math.round((meeting7 / completedCount) * 100) : 0;
 
     return {
-      total: all.length,
+      total,
       inTransit,
       pendingAtHub,
       resultsReady,
       rejected,
       avgTATDays,
       pctMeeting7Day,
-      completedCount: completed.length,
+      completedCount,
     };
   }
 
@@ -354,7 +399,19 @@ export class SampleReferralService {
     if (query?.fromDate) qb.andWhere('ref.created_at >= :fromDate', { fromDate: query.fromDate });
     if (query?.toDate) qb.andWhere('ref.created_at <= :toDate', { toDate: query.toDate });
 
+    // P1-8: cap the dataset. Without a window/limit this loads every
+    // referral into memory and is a DoS lever for any lab.read caller.
+    // Default to the last 90 days when no fromDate provided, and hard
+    // cap at 10000 rows for the per-stage TAT calc.
+    if (!query?.fromDate) {
+      const ninetyDaysAgo = new Date();
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+      qb.andWhere('ref.created_at >= :defaultFrom', { defaultFrom: ninetyDaysAgo });
+    }
+    qb.orderBy('ref.created_at', 'DESC').limit(10000);
+
     const all = await qb.getMany();
+    const truncated = all.length >= 10000;
 
     // Per-stage average durations (in hours)
     const stageDurations: Record<string, { total: number; count: number }> = {
@@ -448,6 +505,8 @@ export class SampleReferralService {
       completedCount: completed.length,
       totalReferrals: all.length,
       routeBreakdown,
+      truncated,
+      windowDays: query?.fromDate ? null : 90,
     };
   }
 }

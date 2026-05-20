@@ -3,6 +3,7 @@ import { BaseEntity } from './base.entity';
 import { LabSample } from './lab-sample.entity';
 import { Patient } from './patient.entity';
 import { Facility } from './facility.entity';
+import { User } from './user.entity';
 
 export enum ReferralStage {
   COLLECTED = 'collected',
@@ -128,6 +129,17 @@ export class SampleReferral extends BaseEntity {
   @Column({ type: 'uuid', nullable: true })
   collectedById: string;
 
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'collectedById' })
+  collectedBy: User;
+
   @Column({ type: 'uuid', nullable: true })
   receivedById: string;
+
+  // P1-10: expose the receiving technician as a real relation so callers
+  // can resolve the user via TypeORM joins (audit trails, dashboards) and
+  // so that FK semantics make the gap surface-able if the user is deleted.
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'receivedById' })
+  receivedBy: User;
 }
