@@ -25,6 +25,7 @@ import { Invoice } from '../../database/entities/invoice.entity';
 import { ClaimExportService } from './claim-export.service';
 import {
   CreateProviderDto,
+  UpdateProviderDto,
   CreatePolicyDto,
   CreateClaimDto,
   CreateClaimItemDto,
@@ -264,7 +265,7 @@ export class InsuranceService {
 
   async updateProvider(
     id: string,
-    dto: Partial<CreateProviderDto>,
+    dto: UpdateProviderDto,
     tenantId?: string,
   ): Promise<InsuranceProvider> {
     const provider = await this.getProvider(id, tenantId);
@@ -274,10 +275,31 @@ export class InsuranceService {
 
   // ============ POLICIES ============
   async createPolicy(dto: CreatePolicyDto, tenantId?: string): Promise<InsurancePolicy> {
+    const effective = new Date(dto.effectiveDate);
+    const expiry = new Date(dto.expiryDate);
+    if (Number.isNaN(effective.getTime()) || Number.isNaN(expiry.getTime())) {
+      throw new BadRequestException('Invalid effectiveDate or expiryDate');
+    }
+    if (expiry <= effective) {
+      throw new BadRequestException('expiryDate must be after effectiveDate');
+    }
+    if (dto.annualLimit !== undefined && Number(dto.annualLimit) < 0) {
+      throw new BadRequestException('annualLimit cannot be negative');
+    }
+    if (dto.copayAmount !== undefined && Number(dto.copayAmount) < 0) {
+      throw new BadRequestException('copayAmount cannot be negative');
+    }
+    if (
+      dto.copayPercentage !== undefined &&
+      (Number(dto.copayPercentage) < 0 || Number(dto.copayPercentage) > 100)
+    ) {
+      throw new BadRequestException('copayPercentage must be between 0 and 100');
+    }
+
     const policy = this.policyRepo.create({
       ...dto,
-      effectiveDate: new Date(dto.effectiveDate),
-      expiryDate: new Date(dto.expiryDate),
+      effectiveDate: effective,
+      expiryDate: expiry,
       ...(tenantId ? { tenantId } : {}),
     });
     return this.policyRepo.save(policy);
@@ -344,10 +366,19 @@ export class InsuranceService {
   }
 
   // ============ CLAIMS ============
-  private async generateClaimNumber(facilityId: string): Promise<string> {
+  // Generates the next claim number under a transactional advisory lock so
+  // concurrent createClaim calls within the same facility+month cannot collide
+  // on the count(...)+1 pattern. The lock is released when the caller's
+  // transaction commits or rolls back. Format: CLM<YYYY><MM><4-digit-seq>.
+  private async generateClaimNumber(
+    manager: import('typeorm').EntityManager,
+    facilityId: string,
+  ): Promise<string> {
     const today = new Date();
     const prefix = `CLM${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}`;
-    const count = await this.claimRepo.count({
+    const lockKey = `insurance:claim-number:${facilityId}:${prefix}`;
+    await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [lockKey]);
+    const count = await manager.count(InsuranceClaim, {
       where: { facilityId, claimNumber: Between(`${prefix}0001`, `${prefix}9999`) as any },
     });
     return `${prefix}${String(count + 1).padStart(4, '0')}`;
@@ -370,9 +401,8 @@ export class InsuranceService {
       );
     }
 
-    const claimNumber = await this.generateClaimNumber(dto.facilityId);
-
     const savedClaim = await this.dataSource.transaction(async (manager) => {
+      const claimNumber = await this.generateClaimNumber(manager, dto.facilityId);
       const claim = manager.create(InsuranceClaim, {
         ...dto,
         claimNumber,
@@ -538,45 +568,63 @@ export class InsuranceService {
   }
 
   async submitClaim(id: string, userId: string, tenantId?: string): Promise<InsuranceClaim> {
-    const claim = await this.getClaim(id, tenantId);
+    // Lock the claim row inside a txn so two concurrent submitClaim calls
+    // cannot both flip DRAFT → SUBMITTED and double-dispatch the electronic
+    // transmission.
+    return this.dataSource.transaction(async (manager) => {
+      const claim = await manager.findOne(InsuranceClaim, {
+        where: { id, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!claim) throw new NotFoundException('Claim not found');
 
-    if (claim.status !== ClaimStatus.DRAFT) {
-      throw new BadRequestException('Claim is not in draft status');
-    }
-
-    if (!claim.items?.length) {
-      throw new BadRequestException('Claim must have at least one item');
-    }
-
-    claim.status = ClaimStatus.SUBMITTED;
-    claim.submittedAt = new Date();
-    claim.submittedById = userId;
-
-    const saved = await this.claimRepo.save(claim);
-
-    // Dispatch electronic transmission if the provider supports it. Failures are
-    // captured in metadata; the claim itself stays SUBMITTED so a clerk can retry
-    // via the same endpoint or fall back to manual export (CSV / PDF).
-    if (claim.provider?.apiEndpoint) {
-      const result = await this.claimExportService.submitElectronically(saved, claim.provider);
-      saved.metadata = {
-        ...(saved.metadata || {}),
-        electronicSubmission: {
-          attemptedAt: new Date().toISOString(),
-          transmitted: result.transmitted,
-          ack: result.ack ?? null,
-          error: result.error ?? null,
-        },
-      };
-      if (result.transmitted) {
-        saved.status = ClaimStatus.ACKNOWLEDGED;
-        const externalId = result.ack?.claimId || result.ack?.id || result.ack?.referenceId;
-        if (externalId) saved.metadata.externalClaimId = externalId;
+      if (claim.status !== ClaimStatus.DRAFT) {
+        throw new BadRequestException('Claim is not in draft status');
       }
-      await this.claimRepo.save(saved);
-    }
 
-    return saved;
+      // Items + provider need to be loaded separately because pessimistic
+      // locking + relations against a nullable join produces a Postgres
+      // "FOR UPDATE cannot be applied to the nullable side of an outer join".
+      const items = await manager.find(ClaimItem, { where: { claimId: claim.id } });
+      if (!items.length) {
+        throw new BadRequestException('Claim must have at least one item');
+      }
+
+      claim.status = ClaimStatus.SUBMITTED;
+      claim.submittedAt = new Date();
+      claim.submittedById = userId;
+      claim.items = items;
+
+      const saved = await manager.save(InsuranceClaim, claim);
+
+      const provider = saved.providerId
+        ? await manager.findOne(InsuranceProvider, { where: { id: saved.providerId } })
+        : null;
+
+      // Dispatch electronic transmission if the provider supports it. Failures
+      // are captured in metadata; the claim itself stays SUBMITTED so a clerk
+      // can retry via the same endpoint or fall back to manual export.
+      if (provider?.apiEndpoint) {
+        const result = await this.claimExportService.submitElectronically(saved, provider);
+        saved.metadata = {
+          ...(saved.metadata || {}),
+          electronicSubmission: {
+            attemptedAt: new Date().toISOString(),
+            transmitted: result.transmitted,
+            ack: result.ack ?? null,
+            error: result.error ?? null,
+          },
+        };
+        if (result.transmitted) {
+          saved.status = ClaimStatus.ACKNOWLEDGED;
+          const externalId = result.ack?.claimId || result.ack?.id || result.ack?.referenceId;
+          if (externalId) saved.metadata.externalClaimId = externalId;
+        }
+        await manager.save(InsuranceClaim, saved);
+      }
+
+      return saved;
+    });
   }
 
   async processClaim(
@@ -834,10 +882,16 @@ export class InsuranceService {
   }
 
   // ============ PRE-AUTHORIZATIONS ============
-  private async generatePreAuthNumber(facilityId: string): Promise<string> {
+  // Pre-auth number generator — same advisory-lock pattern as claims above.
+  private async generatePreAuthNumber(
+    manager: import('typeorm').EntityManager,
+    facilityId: string,
+  ): Promise<string> {
     const today = new Date();
     const prefix = `PA${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}`;
-    const count = await this.preAuthRepo.count({
+    const lockKey = `insurance:preauth-number:${facilityId}:${prefix}`;
+    await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [lockKey]);
+    const count = await manager.count(PreAuthorization, {
       where: { facilityId, authNumber: Between(`${prefix}0001`, `${prefix}9999`) as any },
     });
     return `${prefix}${String(count + 1).padStart(4, '0')}`;
@@ -887,23 +941,25 @@ export class InsuranceService {
       );
     }
 
-    const authNumber = await this.generatePreAuthNumber(dto.facilityId);
+    return this.dataSource.transaction(async (manager) => {
+      const authNumber = await this.generatePreAuthNumber(manager, dto.facilityId);
 
-    const preAuth = this.preAuthRepo.create({
-      ...dto,
-      authNumber,
-      patientId: policy.patientId,
-      requestedById: userId,
-      expectedAdmissionDate: dto.expectedAdmissionDate
-        ? new Date(dto.expectedAdmissionDate)
-        : undefined,
-      expectedDischargeDate: dto.expectedDischargeDate
-        ? new Date(dto.expectedDischargeDate)
-        : undefined,
-      ...(tenantId ? { tenantId } : {}),
+      const preAuth = manager.create(PreAuthorization, {
+        ...dto,
+        authNumber,
+        patientId: policy.patientId,
+        requestedById: userId,
+        expectedAdmissionDate: dto.expectedAdmissionDate
+          ? new Date(dto.expectedAdmissionDate)
+          : undefined,
+        expectedDischargeDate: dto.expectedDischargeDate
+          ? new Date(dto.expectedDischargeDate)
+          : undefined,
+        ...(tenantId ? { tenantId } : {}),
+      });
+
+      return manager.save(PreAuthorization, preAuth);
     });
-
-    return this.preAuthRepo.save(preAuth);
   }
 
   async getPreAuths(
@@ -1394,14 +1450,6 @@ export class InsuranceService {
       throw new BadRequestException('No invoice found for this encounter');
     }
 
-    // Generate claim number
-    const today = new Date();
-    const prefix = `CLM${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}`;
-    const count = await this.claimRepo.count({
-      where: { facilityId, ...(tenantId ? { tenantId } : {}) },
-    });
-    const claimNumber = `${prefix}${String(count + 1).padStart(5, '0')}`;
-
     // Get the policy to get provider info
     const policy = await this.policyRepo.findOne({
       where: { id: encounter.insurancePolicyId, ...(tenantId ? { tenantId } : {}) },
@@ -1439,51 +1487,57 @@ export class InsuranceService {
       return sum + (insuranceAmt > 0 ? insuranceAmt : Number(item.amount || 0));
     }, 0);
 
-    // Create the claim
-    const claim = this.claimRepo.create({
-      claimNumber,
-      facilityId,
-      providerId: policy.providerId,
-      policyId: encounter.insurancePolicyId,
-      patientId: encounter.patientId,
-      encounterId,
-      invoiceId: invoice.id,
-      claimType,
-      primaryDiagnosis: encounter.chiefComplaint || 'General Consultation',
-      totalClaimed,
-      patientResponsibility: Number(invoice.patientResponsibility || 0),
-      status: ClaimStatus.DRAFT,
-      serviceDate: encounter.startTime,
-      ...(tenantId ? { tenantId } : {}),
+    return this.dataSource.transaction(async (manager) => {
+      // Use the shared generator under advisory lock so this path produces
+      // the SAME number format (4-digit padded) as createClaim, and so the
+      // count(...)+1 race between concurrent encounter-billing flows is
+      // closed.
+      const claimNumber = await this.generateClaimNumber(manager, facilityId);
+
+      const claim = manager.create(InsuranceClaim, {
+        claimNumber,
+        facilityId,
+        providerId: policy.providerId,
+        policyId: encounter.insurancePolicyId,
+        patientId: encounter.patientId,
+        encounterId,
+        invoiceId: invoice.id,
+        claimType,
+        primaryDiagnosis: encounter.chiefComplaint || 'General Consultation',
+        totalClaimed,
+        patientResponsibility: Number(invoice.patientResponsibility || 0),
+        status: ClaimStatus.DRAFT,
+        serviceDate: encounter.startTime,
+        ...(tenantId ? { tenantId } : {}),
+      });
+
+      const savedClaim = await manager.save(InsuranceClaim, claim);
+
+      if (coveredItems.length > 0) {
+        const claimItems = coveredItems.map((item) =>
+          manager.create(ClaimItem, {
+            claimId: savedClaim.id,
+            itemType: chargeToClaimType[item.chargeType] || ClaimItemType.OTHER,
+            serviceCode: item.serviceCode || 'SVC',
+            description: item.description,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            claimedAmount:
+              Number(item.insuranceAmount || 0) > 0
+                ? Number(item.insuranceAmount)
+                : Number(item.amount),
+            serviceDate: encounter.startTime,
+            status: ClaimItemStatus.PENDING,
+            providerNotes: item.coverageNote || undefined,
+            ...(tenantId ? { tenantId } : {}),
+          }),
+        );
+
+        await manager.save(ClaimItem, claimItems);
+      }
+
+      return savedClaim;
     });
-
-    const savedClaim = await this.claimRepo.save(claim);
-
-    // Create claim items from insurance-covered invoice items
-    if (coveredItems.length > 0) {
-      const claimItems = coveredItems.map((item) =>
-        this.claimItemRepo.create({
-          claimId: savedClaim.id,
-          itemType: chargeToClaimType[item.chargeType] || ClaimItemType.OTHER,
-          serviceCode: item.serviceCode || 'SVC',
-          description: item.description,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          claimedAmount:
-            Number(item.insuranceAmount || 0) > 0
-              ? Number(item.insuranceAmount)
-              : Number(item.amount),
-          serviceDate: encounter.startTime,
-          status: ClaimItemStatus.PENDING,
-          providerNotes: item.coverageNote || undefined,
-          ...(tenantId ? { tenantId } : {}),
-        }),
-      );
-
-      await this.claimItemRepo.save(claimItems);
-    }
-
-    return savedClaim;
   }
 
   // ============ BATCH SUBMISSION ============

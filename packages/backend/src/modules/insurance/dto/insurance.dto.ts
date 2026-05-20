@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import {
   IsString,
   IsOptional,
@@ -90,6 +90,8 @@ export class CreateProviderDto {
   @Max(365)
   paymentTermsDays?: number;
 }
+
+export class UpdateProviderDto extends PartialType(CreateProviderDto) {}
 
 // Policy DTOs
 export class CreatePolicyDto {
