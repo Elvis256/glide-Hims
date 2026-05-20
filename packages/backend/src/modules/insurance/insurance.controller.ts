@@ -247,21 +247,21 @@ export class InsuranceController {
   @AuthWithPermissions('insurance.claims.process')
   @ApiOperation({ summary: 'Approve claim' })
   async approveClaim(@Param('id') id: string, @Body() dto: ProcessClaimDto, @Request() req: any) {
-    return this.insuranceService.processClaim(id, dto, true, req.user?.tenantId);
+    return this.insuranceService.processClaim(id, dto, true, req.user?.tenantId, req.user?.id);
   }
 
   @Post('claims/:id/reject')
   @AuthWithPermissions('insurance.claims.process')
   @ApiOperation({ summary: 'Reject claim' })
   async rejectClaim(@Param('id') id: string, @Body() dto: ProcessClaimDto, @Request() req: any) {
-    return this.insuranceService.processClaim(id, dto, false, req.user?.tenantId);
+    return this.insuranceService.processClaim(id, dto, false, req.user?.tenantId, req.user?.id);
   }
 
   @Post('claims/:id/payment')
   @AuthWithPermissions('insurance.claims.process')
   @ApiOperation({ summary: 'Record payment' })
   async recordPayment(@Param('id') id: string, @Body() dto: RecordPaymentDto, @Request() req: any) {
-    return this.insuranceService.recordPayment(id, dto, req.user?.tenantId);
+    return this.insuranceService.recordPayment(id, dto, req.user?.tenantId, req.user?.id);
   }
 
   // ============ PRE-AUTHORIZATIONS ============
@@ -315,14 +315,14 @@ export class InsuranceController {
     @Body() dto: ProcessPreAuthDto,
     @Request() req: any,
   ) {
-    return this.insuranceService.processPreAuth(id, dto, true, req.user?.tenantId);
+    return this.insuranceService.processPreAuth(id, dto, true, req.user?.tenantId, req.user?.id);
   }
 
   @Post('pre-auth/:id/deny')
   @AuthWithPermissions('insurance.preauth.process')
   @ApiOperation({ summary: 'Deny pre-authorization' })
   async denyPreAuth(@Param('id') id: string, @Body() dto: ProcessPreAuthDto, @Request() req: any) {
-    return this.insuranceService.processPreAuth(id, dto, false, req.user?.tenantId);
+    return this.insuranceService.processPreAuth(id, dto, false, req.user?.tenantId, req.user?.id);
   }
 
   // ============ REPORTS ============
