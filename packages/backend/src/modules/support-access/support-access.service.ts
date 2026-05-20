@@ -13,6 +13,7 @@ import {
 } from '../../database/entities/support-access-grant.entity';
 import { SupportAccessRequest, SupportAccessRequestStatus } from './support-access-request.entity';
 import { User } from '../../database/entities/user.entity';
+import { AuditLog } from '../../database/entities/audit-log.entity';
 import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
 import { InAppNotificationType } from '../../database/entities/in-app-notification.entity';
 
@@ -25,9 +26,47 @@ export class SupportAccessService {
     private readonly grantRepository: Repository<SupportAccessGrant>,
     @InjectRepository(SupportAccessRequest)
     private readonly requestRepository: Repository<SupportAccessRequest>,
+    @InjectRepository(AuditLog)
+    private readonly auditLogRepository: Repository<AuditLog>,
     private readonly dataSource: DataSource,
     private readonly notificationsService: InAppNotificationsService,
   ) {}
+
+  /**
+   * Centralized writer for support-access audit rows. We always write
+   * to audit_logs (in addition to the structured logger.warn) so that
+   * grants/revocations/approvals/denials live alongside the rest of
+   * the tenant's audit trail and inherit the append-only DB triggers.
+   * Failures are swallowed to a warn — we never block a security
+   * action because an audit insert failed, but we surface it loudly.
+   */
+  private async writeAudit(params: {
+    action: string;
+    entityType: string;
+    entityId: string;
+    actorUserId: string;
+    tenantId?: string;
+    newValue?: unknown;
+    oldValue?: unknown;
+  }): Promise<void> {
+    try {
+      await this.auditLogRepository.save(
+        this.auditLogRepository.create({
+          userId: params.actorUserId,
+          action: params.action,
+          entityType: params.entityType,
+          entityId: params.entityId,
+          newValue: params.newValue as any,
+          oldValue: params.oldValue as any,
+          tenantId: params.tenantId,
+        }),
+      );
+    } catch (e) {
+      this.logger.warn(
+        `Failed to write support-access audit log (${params.action} ${params.entityId}): ${(e as Error).message}`,
+      );
+    }
+  }
 
   async grantAccess(dto: {
     grantedToId: string;
@@ -60,6 +99,20 @@ export class SupportAccessService {
     this.logger.warn(
       `Support access granted: user=${dto.grantedToId} tenant=${dto.tenantId} tier=${dto.accessTier} hours=${dto.durationHours} by=${dto.grantedById}`,
     );
+    await this.writeAudit({
+      action: 'SUPPORT_ACCESS_GRANTED',
+      entityType: 'SupportAccessGrant',
+      entityId: saved.id,
+      actorUserId: dto.grantedById,
+      tenantId: dto.tenantId,
+      newValue: {
+        grantedToId: dto.grantedToId,
+        accessTier: dto.accessTier,
+        durationHours: dto.durationHours,
+        expiresAt: saved.expiresAt,
+        reason: dto.reason,
+      },
+    });
     return saved;
   }
 
@@ -71,6 +124,15 @@ export class SupportAccessService {
     grant.revokedById = revokedById;
     await this.grantRepository.save(grant);
     this.logger.warn(`Support access revoked: grant=${grantId} by=${revokedById}`);
+    await this.writeAudit({
+      action: 'SUPPORT_ACCESS_REVOKED',
+      entityType: 'SupportAccessGrant',
+      entityId: grantId,
+      actorUserId: revokedById,
+      tenantId: grant.tenantId,
+      oldValue: { grantedToId: grant.grantedToId, accessTier: grant.accessTier },
+      newValue: { revokedAt: grant.revokedAt },
+    });
   }
 
   async revokeAllForUserTenant(
@@ -235,6 +297,14 @@ export class SupportAccessService {
     });
 
     this.logger.warn(`Support access request approved: request=${requestId} by=${reviewedById}`);
+    await this.writeAudit({
+      action: 'SUPPORT_ACCESS_REQUEST_APPROVED',
+      entityType: 'SupportAccessRequest',
+      entityId: requestId,
+      actorUserId: reviewedById,
+      tenantId: request.tenantId,
+      newValue: { grantId: grant.id, requestedTier: request.requestedTier },
+    });
 
     // Notify the requester
     await this.notificationsService.create(
@@ -274,6 +344,14 @@ export class SupportAccessService {
     const saved = await this.requestRepository.save(request);
 
     this.logger.warn(`Support access request denied: request=${requestId} by=${reviewedById}`);
+    await this.writeAudit({
+      action: 'SUPPORT_ACCESS_REQUEST_DENIED',
+      entityType: 'SupportAccessRequest',
+      entityId: requestId,
+      actorUserId: reviewedById,
+      tenantId: request.tenantId,
+      newValue: { reviewNotes: reviewNotes ?? null },
+    });
 
     // Notify the requester
     await this.notificationsService.create(

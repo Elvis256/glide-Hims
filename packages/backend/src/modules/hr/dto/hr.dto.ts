@@ -5,16 +5,21 @@ import {
   IsDateString,
   IsInt,
   Min,
+  Max,
   IsEnum,
   IsNumber,
   IsArray,
   IsBoolean,
   IsEmail,
   IsNotEmpty,
+  IsUrl,
+  MaxLength,
+  MinLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { EmploymentType, Gender, MaritalStatus } from '../../../database/entities/employee.entity';
 import { LeaveType } from '../../../database/entities/leave-request.entity';
+import { ApplicationStatus } from '../../../database/entities/job-application.entity';
 
 // ============ EMPLOYEE ============
 export class CreateEmployeeDto {
@@ -504,45 +509,56 @@ export class CreateJobApplicationDto {
 
   @ApiProperty()
   @IsString()
+  @MinLength(1)
+  @MaxLength(120)
   firstName: string;
 
   @ApiProperty()
   @IsString()
+  @MinLength(1)
+  @MaxLength(120)
   lastName: string;
 
   @ApiProperty()
   @IsEmail()
+  @MaxLength(254)
   email: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(40)
   phone?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(10_000)
   coverLetter?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsString()
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
+  @MaxLength(2_000)
   resumeUrl?: string;
 }
 
 export class UpdateApplicationStatusDto {
-  @ApiProperty()
-  @IsString()
-  status: string;
+  @ApiProperty({ enum: ApplicationStatus })
+  @IsEnum(ApplicationStatus)
+  status: ApplicationStatus;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(4_000)
   notes?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsInt()
+  @Min(1)
+  @Max(5)
   rating?: number;
 
   @ApiPropertyOptional()
@@ -567,10 +583,14 @@ export class CreateAppraisalDto {
 
   @ApiProperty()
   @IsString()
+  @MinLength(1)
+  @MaxLength(60)
   appraisalPeriod: string;
 
   @ApiProperty()
   @IsInt()
+  @Min(2000)
+  @Max(2100)
   year: number;
 
   @ApiPropertyOptional({ description: 'Custom questions for the employee to answer' })
@@ -583,36 +603,50 @@ export class UpdateAppraisalDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
+  @Min(1)
+  @Max(5)
   jobKnowledgeRating?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
+  @Min(1)
+  @Max(5)
   workQualityRating?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
+  @Min(1)
+  @Max(5)
   attendanceRating?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
+  @Min(1)
+  @Max(5)
   communicationRating?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
+  @Min(1)
+  @Max(5)
   teamworkRating?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
+  @Min(1)
+  @Max(5)
   initiativeRating?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
+  @Min(1)
+  @Max(5)
   overallRating?: number;
 
   @ApiPropertyOptional()
