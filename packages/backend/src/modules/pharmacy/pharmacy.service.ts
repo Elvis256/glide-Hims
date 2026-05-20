@@ -1424,6 +1424,49 @@ export class PharmacyService {
         tenantId,
       });
 
+      // P1: controlled-substance receipt audit. Narcotics inspectors require a
+      // chain-of-custody record from receipt → dispense; we already log
+      // dispenses to controlled_substance_logs, but until now receipts left no
+      // structured trail. Write to the generic audit_logs table (no schema
+      // change) keyed by the batch id so reconciliation reports can join.
+      if (item.isControlled) {
+        const classification = await manager.findOne(DrugClassification, {
+          where: { itemId, ...(tenantId ? { tenantId } : {}) },
+        });
+        const schedule = classification?.schedule || null;
+        const auditRepo = manager.getRepository(AuditLog);
+        await auditRepo
+          .save(
+            auditRepo.create({
+              action: 'CONTROLLED_SUBSTANCE_RECEIVED',
+              entityType: 'BatchStockBalance',
+              entityId: batch.id,
+              userId,
+              newValue: {
+                itemId,
+                itemCode: item.code,
+                itemName: item.name,
+                schedule,
+                facilityId,
+                storeId: storeId || null,
+                batchNumber,
+                quantity,
+                expiryDate: parsedExpiry.toISOString().slice(0, 10),
+                unitCost: Number(item.unitCost) || 0,
+              },
+              ...(tenantId ? { tenantId } : {}),
+            }),
+          )
+          .catch((err) =>
+            this.logger.error(
+              `Controlled-substance receipt audit failed for batch ${batch.id}: ${err.message}`,
+            ),
+          );
+        this.logger.warn(
+          `CONTROLLED SUBSTANCE RECEIVED: item=${item.name}, schedule=${schedule || 'unclassified'}, batch=${batchNumber}, qty=${quantity}, user=${userId}, facility=${facilityId}`,
+        );
+      }
+
       return batch;
     });
   }
