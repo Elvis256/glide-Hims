@@ -29,6 +29,7 @@ import { OnboardingTask } from '../../database/entities/onboarding-task.entity';
 import { PerformanceImprovementPlan } from '../../database/entities/performance-improvement-plan.entity';
 import { EmployeeGoal } from '../../database/entities/employee-goal.entity';
 import { LetterTemplate } from '../../database/entities/letter-template.entity';
+import { AuditLog } from '../../database/entities/audit-log.entity';
 import { CareersPublicController } from './careers-public.controller';
 import { HrExtrasController } from './hr-extras.controller';
 import { SystemSettingsModule } from '../system-settings/system-settings.module';
@@ -64,6 +65,7 @@ import { HrApprovalListener } from './hr-approval.listener';
       PerformanceImprovementPlan,
       EmployeeGoal,
       LetterTemplate,
+      AuditLog,
     ]),
     SystemSettingsModule,
     forwardRef(() => FinanceModule),

@@ -313,8 +313,10 @@ export class AuthController {
     required: false,
     description: 'Number of records to return (default 50)',
   })
-  async getLoginHistory(@CurrentUser('id') userId: string, @Query('limit') limit?: number) {
-    const history = await this.authService.getLoginHistory(userId, limit || 50);
+  async getLoginHistory(@CurrentUser('id') userId: string, @Query('limit') limit?: string) {
+    const parsed = parseInt(String(limit ?? ''), 10);
+    const safeLimit = Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 500) : 50;
+    const history = await this.authService.getLoginHistory(userId, safeLimit);
     return { data: history };
   }
 

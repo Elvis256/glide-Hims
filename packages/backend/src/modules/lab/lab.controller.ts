@@ -196,12 +196,15 @@ export class LabController {
   @ApiQuery({ name: 'days', required: false, description: 'Number of days for stats (1-365)' })
   getTurnaroundStats(
     @Query('facilityId') facilityId: string,
-    @Query('days') days: number | undefined,
+    @Query('days') days: string | undefined,
     @Request() req: any,
   ) {
     if (!facilityId || !UUID_REGEX.test(facilityId)) {
       throw new BadRequestException('Valid facilityId UUID is required');
     }
-    return this.labService.getTurnaroundStats(facilityId, days, req.user?.tenantId);
+    const parsed = parseInt(String(days ?? ''), 10);
+    const safeDays =
+      Number.isFinite(parsed) && parsed >= 1 && parsed <= 365 ? parsed : undefined;
+    return this.labService.getTurnaroundStats(facilityId, safeDays, req.user?.tenantId);
   }
 }

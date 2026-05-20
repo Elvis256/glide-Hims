@@ -395,7 +395,11 @@ export class HrController {
     @Query('facilityId') facilityId?: string,
     @Request() req?: any,
   ) {
-    return this.hrService.getTaxReport(parseInt(year), facilityId, req?.user?.tenantId);
+    const parsed = parseInt(String(year), 10);
+    if (!Number.isFinite(parsed) || parsed < 2000 || parsed > 2100) {
+      throw new BadRequestException('Invalid year');
+    }
+    return this.hrService.getTaxReport(parsed, facilityId, req?.user?.tenantId);
   }
 
   @Get('payroll/:id/report')
@@ -471,11 +475,17 @@ export class HrController {
   @ApiQuery({ name: 'status', required: false, enum: PayrollStatus })
   async getPayrollRuns(
     @Query('facilityId') facilityId: string,
-    @Query('year') year?: number,
+    @Query('year') year?: string,
     @Query('status') status?: PayrollStatus,
     @Request() req?: any,
   ) {
-    return this.hrService.getPayrollRuns(facilityId, { year, status }, req?.user?.tenantId);
+    const parsed = parseInt(String(year ?? ''), 10);
+    const safeYear = Number.isFinite(parsed) ? parsed : undefined;
+    return this.hrService.getPayrollRuns(
+      facilityId,
+      { year: safeYear, status },
+      req?.user?.tenantId,
+    );
   }
 
   @Get('payroll/:id/payslips')
@@ -496,8 +506,10 @@ export class HrController {
   @AuthWithPermissions() // Any authenticated user can view their own payslips
   @ApiOperation({ summary: 'Get current user payslips' })
   @ApiQuery({ name: 'year', required: false })
-  async getMyPayslips(@Request() req: any, @Query('year') year?: number) {
-    return this.hrService.getMyPayslips(req.user.id, year, req.user?.tenantId);
+  async getMyPayslips(@Request() req: any, @Query('year') year?: string) {
+    const parsed = parseInt(String(year ?? ''), 10);
+    const safeYear = Number.isFinite(parsed) ? parsed : undefined;
+    return this.hrService.getMyPayslips(req.user.id, safeYear, req.user?.tenantId);
   }
 
   // ============ RECRUITMENT - JOB POSTINGS ============

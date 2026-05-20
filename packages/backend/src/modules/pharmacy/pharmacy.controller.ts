@@ -182,13 +182,11 @@ export class PharmacyController {
   @Get('expiry/alerts')
   @AuthWithPermissions('pharmacy.read')
   @ApiOperation({ summary: 'Get items expiring within a given threshold (default 90 days)' })
-  getExpiringItems(@Query('daysThreshold') daysThreshold?: number, @Request() req?: any) {
+  getExpiringItems(@Query('daysThreshold') daysThreshold?: string, @Request() req?: any) {
     const facilityId = req.headers['x-facility-id'] || req.user?.facilityId;
-    return this.service.checkExpiringItems(
-      req.user?.tenantId,
-      facilityId,
-      daysThreshold ? Number(daysThreshold) : 90,
-    );
+    const parsed = parseInt(String(daysThreshold ?? ''), 10);
+    const days = Number.isFinite(parsed) && parsed > 0 ? parsed : 90;
+    return this.service.checkExpiringItems(req.user?.tenantId, facilityId, days);
   }
 
   @Post('expiry/quarantine')
