@@ -1,4 +1,15 @@
-import { IsUUID, IsOptional, IsString, IsDateString, IsEnum, MaxLength } from 'class-validator';
+import {
+  IsUUID,
+  IsOptional,
+  IsString,
+  IsDateString,
+  IsEnum,
+  IsInt,
+  MaxLength,
+  Min,
+  Max,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { ProblemStatus, ProblemSeverity } from '../../../database/entities/patient-problem.entity';
 
@@ -45,6 +56,7 @@ export class CreateProblemDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(5000)
   notes?: string;
 
   @ApiPropertyOptional()
@@ -59,6 +71,11 @@ export class ProblemSearchDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsUUID()
+  facilityId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
   patientId?: string;
 
   @ApiPropertyOptional({ enum: ProblemStatus })
@@ -69,14 +86,23 @@ export class ProblemSearchDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(200)
   search?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(10000)
   page?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(200)
   limit?: number;
 }
 
@@ -89,5 +115,6 @@ export class MarkResolvedDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(5000)
   notes?: string;
 }
