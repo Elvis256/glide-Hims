@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Param, Body, Query, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Put, Param, Body, Query, UseGuards, Request, ParseUUIDPipe, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { DrugManagementService } from './drug-management.service';
@@ -91,7 +91,14 @@ export class DrugManagementController {
   @AuthWithPermissions('pharmacy.read')
   @ApiOperation({ summary: 'Search drugs' })
   async searchDrugs(@Query('q') query: string, @Request() req: any) {
-    return this.drugService.searchDrugs(query, req.user?.tenantId);
+    const term = (query || '').trim();
+    if (term.length < 2) {
+      throw new BadRequestException('Search query must be at least 2 characters');
+    }
+    if (term.length > 100) {
+      throw new BadRequestException('Search query too long');
+    }
+    return this.drugService.searchDrugs(term, req.user?.tenantId);
   }
 
   @Get('classifications/by-therapeutic-class/:class')
@@ -107,14 +114,14 @@ export class DrugManagementController {
   @Get('classifications/item/:itemId')
   @AuthWithPermissions('pharmacy.read')
   @ApiOperation({ summary: 'Get classification by item ID' })
-  async getClassificationByItem(@Param('itemId') itemId: string, @Request() req: any) {
+  async getClassificationByItem(@Param('itemId', ParseUUIDPipe) itemId: string, @Request() req: any) {
     return this.drugService.getClassification(itemId, req.user?.tenantId);
   }
 
   @Get('classifications/:id')
   @AuthWithPermissions('pharmacy.read')
   @ApiOperation({ summary: 'Get classification by ID' })
-  async getClassification(@Param('id') id: string, @Request() req: any) {
+  async getClassification(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     return this.drugService.getClassificationById(id, req.user?.tenantId);
   }
 
@@ -122,7 +129,7 @@ export class DrugManagementController {
   @AuthWithPermissions('pharmacy.update')
   @ApiOperation({ summary: 'Update drug classification' })
   async updateClassification(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateDrugClassificationDto,
     @Request() req: any,
   ) {
@@ -141,7 +148,7 @@ export class DrugManagementController {
   @Get('interactions/drug/:drugId')
   @AuthWithPermissions('pharmacy.read')
   @ApiOperation({ summary: 'Get interactions for a drug' })
-  async getInteractionsForDrug(@Param('drugId') drugId: string, @Request() req: any) {
+  async getInteractionsForDrug(@Param('drugId', ParseUUIDPipe) drugId: string, @Request() req: any) {
     return this.drugService.getInteractionsForDrug(drugId, req.user?.tenantId);
   }
 
@@ -163,7 +170,7 @@ export class DrugManagementController {
   @AuthWithPermissions('pharmacy.update')
   @ApiOperation({ summary: 'Update drug interaction' })
   async updateInteraction(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateDrugInteractionDto,
     @Request() req: any,
   ) {
