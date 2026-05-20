@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, Between, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
+import { Repository, DataSource, EntityManager, Between, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
 import {
   SampleReferral,
   ReferralStage,
@@ -32,12 +32,25 @@ export class SampleReferralService {
     private inAppNotificationsService: InAppNotificationsService,
   ) {}
 
-  private async generateReferralNumber(tenantId?: string): Promise<string> {
+  private async generateReferralNumber(
+    manager: EntityManager,
+    tenantId?: string,
+  ): Promise<string> {
     const now = new Date();
     const prefix = `SRF-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-    const qb = this.referralRepo.createQueryBuilder('ref');
-    qb.where('ref.referralNumber LIKE :prefix', { prefix: `${prefix}%` });
+    // P0: serialise referral-number generation per (month,tenant). Without
+    // the advisory lock, two concurrent create() calls both observe the
+    // same count and produce identical SRF-YYYYMM-NNNNN values; the second
+    // insert then throws on the entity's `unique` constraint and surfaces
+    // as an unhandled 500.
+    const lockKey = `sample_referral_num_${prefix}_${tenantId || 'global'}`;
+    await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [lockKey]);
+
+    const qb = manager
+      .getRepository(SampleReferral)
+      .createQueryBuilder('ref')
+      .where('ref.referralNumber LIKE :prefix', { prefix: `${prefix}%` });
     if (tenantId) qb.andWhere('ref.tenant_id = :tenantId', { tenantId });
     const count = await qb.getCount();
 
@@ -66,28 +79,33 @@ export class SampleReferralService {
       throw new BadRequestException('Source and destination facilities must be different');
     }
 
-    const referralNumber = await this.generateReferralNumber(tenantId);
+    // P0: number generation + insert MUST share one transaction so the
+    // advisory lock taken inside generateReferralNumber actually serialises
+    // the (count → insert) sequence.
+    return this.dataSource.transaction(async (manager) => {
+      const referralNumber = await this.generateReferralNumber(manager, tenantId);
 
-    const referral = this.referralRepo.create({
-      referralNumber,
-      sampleId: dto.sampleId,
-      patientId: sample.patientId,
-      fromFacilityId: dto.fromFacilityId,
-      toFacilityId: dto.toFacilityId,
-      stage: ReferralStage.COLLECTED,
-      testRequested: dto.testRequested,
-      clinicalInfo: dto.clinicalInfo,
-      priority: dto.priority || ReferralPriority.ROUTINE,
-      transportMethod: dto.transportMethod,
-      transporterName: dto.transporterName,
-      transporterPhone: dto.transporterPhone,
-      notes: dto.notes,
-      collectedAt: new Date(),
-      collectedById: userId,
-      ...(tenantId ? { tenantId } : {}),
+      const referral = manager.create(SampleReferral, {
+        referralNumber,
+        sampleId: dto.sampleId,
+        patientId: sample.patientId,
+        fromFacilityId: dto.fromFacilityId,
+        toFacilityId: dto.toFacilityId,
+        stage: ReferralStage.COLLECTED,
+        testRequested: dto.testRequested,
+        clinicalInfo: dto.clinicalInfo,
+        priority: dto.priority || ReferralPriority.ROUTINE,
+        transportMethod: dto.transportMethod,
+        transporterName: dto.transporterName,
+        transporterPhone: dto.transporterPhone,
+        notes: dto.notes,
+        collectedAt: new Date(),
+        collectedById: userId,
+        ...(tenantId ? { tenantId } : {}),
+      });
+
+      return manager.save(referral);
     });
-
-    return this.referralRepo.save(referral);
   }
 
   async findAll(
