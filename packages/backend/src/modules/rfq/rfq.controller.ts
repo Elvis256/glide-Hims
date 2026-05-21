@@ -4,6 +4,7 @@ import {
   Post,
   Put,
   Patch,
+  Delete,
   Body,
   Param,
   Query,
@@ -127,6 +128,18 @@ export class RFQController {
   @Post(':id/close')
   closeRFQ(@Param('id') id: string, @Request() req: any) {
     return this.rfqService.closeRFQ(id, req.user?.tenantId);
+  }
+
+  @AuthWithPermissions('procurement.update')
+  @Post(':id/cancel')
+  cancelRFQ(@Param('id') id: string, @Request() req: any) {
+    return this.rfqService.cancelRFQ(id, req.user?.tenantId);
+  }
+
+  @AuthWithPermissions('procurement.delete')
+  @Delete(':id')
+  deleteRFQ(@Param('id') id: string, @Request() req: any) {
+    return this.rfqService.deleteRFQ(id, req.user?.tenantId);
   }
 
   @AuthWithPermissions('procurement.read')
