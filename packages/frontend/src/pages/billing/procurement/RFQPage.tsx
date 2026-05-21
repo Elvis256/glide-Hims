@@ -23,6 +23,8 @@ import {
   Mail,
   FileText,
   Loader2,
+  Trash2,
+  Ban,
 } from 'lucide-react';
 import { rfqService, type RFQ, type RFQStatus as RFQStatusType, type CreateRFQDto } from '../../../services/rfq';
 import { useAuthStore } from '../../../store/auth';
@@ -70,6 +72,33 @@ export default function RFQPage() {
     queryKey: ['rfq-detail', selectedRFQ?.id],
     queryFn: () => rfqService.getById(selectedRFQ!.id),
     enabled: !!selectedRFQ && showDetailsModal,
+  });
+
+  const cancelRfqMutation = useMutation({
+    mutationFn: (id: string) => rfqService.cancel(id),
+    onSuccess: () => {
+      toast.success('RFQ cancelled');
+      queryClient.invalidateQueries({ queryKey: ['rfqs'] });
+      queryClient.invalidateQueries({ queryKey: ['rfq-detail'] });
+      setShowDetailsModal(false);
+      setSelectedRFQ(null);
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || err?.message || 'Failed to cancel RFQ');
+    },
+  });
+
+  const deleteRfqMutation = useMutation({
+    mutationFn: (id: string) => rfqService.remove(id),
+    onSuccess: () => {
+      toast.success('RFQ deleted');
+      queryClient.invalidateQueries({ queryKey: ['rfqs'] });
+      setShowDetailsModal(false);
+      setSelectedRFQ(null);
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || err?.message || 'Failed to delete RFQ');
+    },
   });
 
   // Fetch RFQs
@@ -1106,7 +1135,46 @@ export default function RFQPage() {
                 );
               })()}
             </div>
-            <div className="px-6 py-3 border-t bg-gray-50 flex justify-end">
+            <div className="px-6 py-3 border-t bg-gray-50 flex justify-between gap-2">
+              <div className="flex gap-2">
+                {(() => {
+                  const r: any = rfqDetails || selectedRFQ;
+                  const status = r?.status;
+                  const hasQuotations = (r?.quotations || []).length > 0;
+                  const canCancel = status && status !== 'closed' && status !== 'cancelled';
+                  const canDelete = (status === 'draft' || status === 'cancelled') && !hasQuotations;
+                  return (
+                    <>
+                      {canCancel && (
+                        <button
+                          onClick={() => {
+                            if (window.confirm(`Cancel ${r.rfqNumber}? Vendors will no longer be able to respond.`)) {
+                              cancelRfqMutation.mutate(r.id);
+                            }
+                          }}
+                          disabled={cancelRfqMutation.isPending}
+                          className="px-4 py-2 border border-orange-300 text-orange-700 rounded-lg hover:bg-orange-50 flex items-center gap-2 disabled:opacity-50"
+                        >
+                          <Ban className="w-4 h-4" /> Cancel RFQ
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button
+                          onClick={() => {
+                            if (window.confirm(`Permanently delete ${r.rfqNumber}? This cannot be undone.`)) {
+                              deleteRfqMutation.mutate(r.id);
+                            }
+                          }}
+                          disabled={deleteRfqMutation.isPending}
+                          className="px-4 py-2 border border-red-300 text-red-700 rounded-lg hover:bg-red-50 flex items-center gap-2 disabled:opacity-50"
+                        >
+                          <Trash2 className="w-4 h-4" /> Delete
+                        </button>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
               <button
                 onClick={() => setShowDetailsModal(false)}
                 className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100"

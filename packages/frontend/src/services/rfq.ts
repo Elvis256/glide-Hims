@@ -161,6 +161,14 @@ export const rfqService = {
     const response = await api.post<RFQ>(`/rfq/${id}/close`);
     return response.data;
   },
+  cancel: async (id: string): Promise<RFQ> => {
+    const response = await api.post<RFQ>(`/rfq/${id}/cancel`);
+    return response.data;
+  },
+  remove: async (id: string): Promise<{ deleted: true; id: string }> => {
+    const response = await api.delete<{ deleted: true; id: string }>(`/rfq/${id}`);
+    return response.data;
+  },
 
   // Quotations
   quotations: {

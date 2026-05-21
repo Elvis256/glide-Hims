@@ -600,4 +600,42 @@ export class RFQService {
     await this.rfqRepo.save(rfq);
     return this.findOne(id, tenantId);
   }
+
+  async cancelRFQ(id: string, tenantId?: string): Promise<RFQ> {
+    const rfq = await this.findOne(id, tenantId);
+    if (rfq.status === RFQStatus.CLOSED) {
+      throw new BadRequestException('Cannot cancel a closed RFQ');
+    }
+    if (rfq.status === RFQStatus.CANCELLED) {
+      return rfq;
+    }
+    const hasSelectedQuotation = (rfq.quotations || []).some(
+      (q) => q.status === QuotationStatus.SELECTED,
+    );
+    if (hasSelectedQuotation) {
+      throw new BadRequestException(
+        'Cannot cancel an RFQ that already has a selected quotation',
+      );
+    }
+    rfq.status = RFQStatus.CANCELLED;
+    await this.rfqRepo.save(rfq);
+    return this.findOne(id, tenantId);
+  }
+
+  async deleteRFQ(id: string, tenantId?: string): Promise<{ deleted: true; id: string }> {
+    const rfq = await this.findOne(id, tenantId);
+    if (rfq.status !== RFQStatus.DRAFT && rfq.status !== RFQStatus.CANCELLED) {
+      throw new BadRequestException(
+        'Only draft or cancelled RFQs can be deleted. Cancel it first.',
+      );
+    }
+    const hasQuotations = (rfq.quotations || []).length > 0;
+    if (hasQuotations) {
+      throw new BadRequestException(
+        'Cannot delete an RFQ that already has quotations attached',
+      );
+    }
+    await this.rfqRepo.softRemove(rfq);
+    return { deleted: true, id };
+  }
 }
