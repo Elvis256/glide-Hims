@@ -1,9 +1,10 @@
-import { Controller, Get, Post, Put, Delete, Param, Body, Req, Res, HttpCode, HttpStatus, ForbiddenException, NotFoundException, BadRequestException, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Param, Body, Req, Res, Query, HttpCode, HttpStatus, ForbiddenException, NotFoundException, BadRequestException, UseInterceptors, UploadedFile } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import * as fs from 'fs';
 import * as path from 'path';
+import { spawn } from 'child_process';
 import { DeploymentService } from './deployment.service';
 import { UpdateManagementService } from './update-management.service';
 import { FeatureFlagService } from './feature-flag.service';
@@ -181,6 +182,64 @@ export class DeploymentController {
   async getRolloutSummary(@Req() req: Request, @Param('rolloutId') rolloutId: string) {
     if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
     return this.updateService.getRolloutSummary(rolloutId);
+  }
+
+  /**
+   * License-gated source bundle for bootstrap installers. This avoids requiring
+   * customer hosts to authenticate against the private GitHub repository.
+   */
+  @Get('source-bundle')
+  @Public()
+  async serveSourceBundle(
+    @Query('licenseKey') licenseKey: string,
+    @Res() res: Response,
+  ) {
+    await this.deploymentService.assertValidInstallerLicense(licenseKey);
+
+    const projectRoot = path.resolve(__dirname, '..', '..', '..', '..', '..');
+    const filename = `glide-hims-source-${new Date().toISOString().slice(0, 10)}.tar.gz`;
+    const tar = spawn('tar', [
+      '--exclude=./.git',
+      '--exclude=./node_modules',
+      '--exclude=./packages/*/node_modules',
+      '--exclude=./packages/backend/dist',
+      '--exclude=./packages/*/.env',
+      '--exclude=./packages/backend/uploads*',
+      '--exclude=./packages/backend/backups*',
+      '--exclude=./packages/frontend/dist',
+      '--exclude=./packages/*/coverage',
+      '--exclude=./.env',
+      '--exclude=./backups*',
+      '--exclude=./coverage',
+      '--exclude=./*.log',
+      '--exclude=./deployment/dist',
+      '--exclude=./wildcard.key',
+      '--exclude=./wildcard.crt',
+      '-czf',
+      '-',
+      '-C',
+      projectRoot,
+      '.',
+    ], { stdio: ['ignore', 'pipe', 'pipe'] });
+
+    res.setHeader('Content-Type', 'application/gzip');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Cache-Control', 'no-store');
+
+    tar.stderr.on('data', (chunk) => {
+      // eslint-disable-next-line no-console
+      console.warn(`source-bundle tar: ${chunk.toString().trim()}`);
+    });
+    tar.on('error', (err) => {
+      res.destroy(err);
+    });
+    tar.on('close', (code) => {
+      if (code !== 0 && !res.destroyed) {
+        res.destroy(new Error(`source bundle failed with exit code ${code}`));
+      }
+    });
+
+    tar.stdout.pipe(res);
   }
 
   /**

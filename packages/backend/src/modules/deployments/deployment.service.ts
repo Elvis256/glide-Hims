@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { randomBytes } from 'crypto';
@@ -356,6 +356,17 @@ export class DeploymentService {
     deployment.pollRequestedAt = now;
     await this.deploymentRepository.save(deployment);
     return { deploymentId, pollRequestedAt: now.toISOString() };
+  }
+
+  async assertValidInstallerLicense(licenseKey?: string): Promise<void> {
+    if (!licenseKey?.trim()) {
+      throw new BadRequestException('licenseKey is required');
+    }
+
+    const result = await this.licenseService.validateLicense(licenseKey.trim());
+    if (!result.valid) {
+      throw new ForbiddenException(result.error || 'Invalid license');
+    }
   }
 
   async syncMetadataFromLicense(deploymentId: string): Promise<{ deploymentId: string; tier: string; maxUsers: number; previous: { tier: any; maxUsers: any } }> {
