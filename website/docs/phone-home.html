@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phone Home - Glide HIMS Documentation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        :root { --primary-color: #0d6efd; --sidebar-bg: #1a1d21; --sidebar-text: #8b949e; --sidebar-active: #ffffff; --code-bg: #161b22; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 280px; height: 100vh; background: var(--sidebar-bg); padding: 1.5rem; overflow-y: auto; z-index: 1000; }
+        .sidebar .logo { color: #fff; font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem; }
+        .sidebar .version { color: var(--sidebar-text); font-size: 0.85rem; margin-bottom: 2rem; }
+        .sidebar .nav-section { margin-bottom: 1.5rem; }
+        .sidebar .nav-section-title { color: var(--sidebar-text); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.75rem; }
+        .sidebar .nav-link { color: var(--sidebar-text); padding: 0.5rem 0.75rem; border-radius: 6px; display: block; text-decoration: none; font-size: 0.9rem; }
+        .sidebar .nav-link:hover, .sidebar .nav-link.active { color: var(--sidebar-active); background: rgba(255,255,255,0.1); }
+        .sidebar .nav-link i { margin-right: 0.5rem; width: 18px; }
+        .main-content { margin-left: 280px; padding: 2rem 3rem; min-height: 100vh; background: #f8f9fa; }
+        .doc-header { border-bottom: 1px solid #dee2e6; padding-bottom: 1.5rem; margin-bottom: 2rem; }
+        .doc-header h1 { font-size: 2.5rem; font-weight: 700; color: #1a1d21; }
+        .card { border: none; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-radius: 12px; margin-bottom: 1.5rem; }
+        .card-header { background: #fff; border-bottom: 1px solid #e9ecef; font-weight: 600; padding: 1rem 1.5rem; }
+        .card-body { padding: 1.5rem; }
+        pre { background: var(--code-bg); border-radius: 8px; padding: 1rem; overflow-x: auto; color: #e6edf3; }
+        code { background: var(--code-bg); color: #e6edf3; padding: 0.2rem 0.4rem; border-radius: 4px; font-size: 0.85em; }
+        pre code { padding: 0; background: none; }
+        .api-method { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; margin-right: 0.5rem; }
+        .api-method.get { background: #dbeafe; color: #1e40af; }
+        .api-method.post { background: #d1fae5; color: #065f46; }
+        .api-method.put { background: #fef3c7; color: #92400e; }
+        .api-method.delete { background: #fee2e2; color: #991b1b; }
+        .endpoint-path { font-family: monospace; color: #6c757d; }
+        .alert-tip { background: #d1fae5; border-left: 4px solid #10b981; color: #065f46; }
+        .alert-warning { background: #fef3c7; border-left: 4px solid #f59e0b; color: #92400e; }
+        .alert-info { background: #dbeafe; border-left: 4px solid #3b82f6; color: #1e40af; }
+    </style>
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="logo"><i class="bi bi-heart-pulse"></i> Glide HIMS</div>
+        <div class="version">Enterprise Edition v1.0.0</div>
+        <div class="nav-section">
+            <div class="nav-section-title">Getting Started</div>
+            <a href="index.html" class="nav-link"><i class="bi bi-house"></i> Home</a>
+            <a href="quickstart.html" class="nav-link"><i class="bi bi-rocket-takeoff"></i> Quick Start</a>
+            <a href="architecture.html" class="nav-link"><i class="bi bi-diagram-3"></i> Architecture</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Deployment</div>
+            <a href="deployment-cloud.html" class="nav-link"><i class="bi bi-cloud"></i> Cloud Deployment</a>
+            <a href="deployment-onpremise.html" class="nav-link"><i class="bi bi-server"></i> On-Premise</a>
+            <a href="docker.html" class="nav-link"><i class="bi bi-box"></i> Docker Guide</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Enterprise Features</div>
+            <a href="licensing.html" class="nav-link"><i class="bi bi-key"></i> Licensing</a>
+            <a href="feature-flags.html" class="nav-link"><i class="bi bi-toggles"></i> Feature Flags</a>
+            <a href="phone-home.html" class="nav-link active"><i class="bi bi-telephone"></i> Phone Home</a>
+            <a href="updates.html" class="nav-link"><i class="bi bi-arrow-repeat"></i> Updates</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">API Reference</div>
+            <a href="api-overview.html" class="nav-link"><i class="bi bi-braces"></i> API Overview</a>
+            <a href="api-auth.html" class="nav-link"><i class="bi bi-shield-lock"></i> Authentication</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Operations</div>
+            <a href="monitoring.html" class="nav-link"><i class="bi bi-graph-up"></i> Monitoring</a>
+            <a href="backup.html" class="nav-link"><i class="bi bi-archive"></i> Backup</a>
+            <a href="troubleshooting.html" class="nav-link"><i class="bi bi-bug"></i> Troubleshooting</a>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <div class="doc-header">
+            <h1><i class="bi bi-telephone me-2"></i>Phone Home</h1>
+            <p class="lead text-muted">Periodic heartbeat from on-premise deployments to the control plane</p>
+        </div>
+
+        <div class="alert alert-info border-0 shadow-sm">
+            <strong><i class="bi bi-info-circle me-1"></i> Overview</strong> &mdash;
+            The phone-home system sends a periodic heartbeat from each on-premise or hybrid
+            deployment back to the central Glide HIMS control plane. This enables license
+            validation, health monitoring, update checks, and usage telemetry &mdash; all without
+            requiring inbound network access to the customer's infrastructure.
+        </div>
+
+        <!-- How it works -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-gear me-2"></i>How It Works</div>
+            <div class="card-body">
+                <p>On a configurable interval (default: every 6 hours), the on-premise instance sends an HTTPS
+                <code>POST</code> request to the control plane with:</p>
+                <ul>
+                    <li><strong>License key</strong> &mdash; so the control plane can verify the deployment is still licensed</li>
+                    <li><strong>Hardware ID</strong> &mdash; a fingerprint of the server hardware (CPU, MAC address, etc.)</li>
+                    <li><strong>Current version</strong> &mdash; which version of Glide HIMS is running</li>
+                    <li><strong>System metrics</strong> &mdash; CPU, memory, and disk utilization</li>
+                    <li><strong>Active user count</strong> &mdash; how many users logged in during the interval</li>
+                </ul>
+                <p>The control plane responds with:</p>
+                <ul>
+                    <li><strong>License status</strong> &mdash; whether the license is still valid, approaching expiry, or revoked</li>
+                    <li><strong>Available updates</strong> &mdash; newer versions the deployment can upgrade to</li>
+                    <li><strong>Feature flags</strong> &mdash; any remotely-toggled feature flags for this tenant</li>
+                    <li><strong>Poll request</strong> &mdash; whether the control plane wants an immediate health report</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- API Endpoint -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-braces me-2"></i>API Endpoint</div>
+            <div class="card-body">
+                <h6><span class="api-method post">POST</span> <code>/api/v1/phone-home</code></h6>
+                <p class="text-muted mt-2 mb-3">Public endpoint &mdash; authenticated by the license key in the request body.</p>
+
+                <h6>Request Body</h6>
+                <pre><code class="language-json">{
+  "licenseKey": "GLIDE-A1B2-C3D4-E5F6-G7H8",
+  "hardwareId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "version": "1.2.0",
+  "systemInfo": {
+    "hostname": "hims-server-01",
+    "platform": "linux",
+    "cpus": 8,
+    "totalMemory": 17179869184,
+    "freeMemory": 8589934592,
+    "uptime": 864000
+  },
+  "metrics": {
+    "cpuUsagePercent": 35.2,
+    "memoryUsagePercent": 49.8,
+    "diskUsagePercent": 62.1,
+    "activeUsers": 12,
+    "totalPatients": 4520
+  }
+}</code></pre>
+
+                <h6 class="mt-4">Response (200 OK)</h6>
+                <pre><code class="language-json">{
+  "status": "ok",
+  "license": {
+    "valid": true,
+    "expiresAt": "2027-06-15T00:00:00.000Z",
+    "expiresInDays": 387,
+    "licenseType": "professional",
+    "maxUsers": 100
+  },
+  "updates": {
+    "available": true,
+    "latestVersion": "1.3.0",
+    "releaseNotes": "Bug fixes and performance improvements",
+    "downloadUrl": "/api/v1/downloads/abc123/file"
+  },
+  "featureFlags": {
+    "telemedicine": true,
+    "advancedReporting": false
+  },
+  "pollRequested": false,
+  "serverTime": "2026-05-24T10:30:00.000Z"
+}</code></pre>
+            </div>
+        </div>
+
+        <!-- Configuration -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-sliders me-2"></i>Configuration</div>
+            <div class="card-body">
+                <p>Phone-home behaviour is controlled by environment variables on the on-premise deployment:</p>
+                <table class="table">
+                    <thead>
+                        <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>PHONE_HOME_URL</code></td>
+                            <td><code>https://hmisdemo.itsolutionsuganda.com</code></td>
+                            <td>Base URL of the Glide HIMS control plane. The heartbeat is sent to <code>{PHONE_HOME_URL}/api/v1/phone-home</code>.</td>
+                        </tr>
+                        <tr>
+                            <td><code>PHONE_HOME_INTERVAL</code></td>
+                            <td><code>21600</code> (6 hours)</td>
+                            <td>Interval in seconds between heartbeats. Minimum recommended: 3600 (1 hour).</td>
+                        </tr>
+                        <tr>
+                            <td><code>PHONE_HOME_ENABLED</code></td>
+                            <td><code>true</code></td>
+                            <td>Set to <code>false</code> to completely disable phone-home (see <em>Air-Gapped Deployments</em> below).</td>
+                        </tr>
+                        <tr>
+                            <td><code>LICENSE_KEY</code></td>
+                            <td>&mdash;</td>
+                            <td>The license key sent with each heartbeat for validation.</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h6 class="mt-3">Example <code>.env</code> configuration</h6>
+                <pre><code class="language-bash"># Phone-home settings
+PHONE_HOME_URL=https://hmisdemo.itsolutionsuganda.com
+PHONE_HOME_INTERVAL=21600
+PHONE_HOME_ENABLED=true
+LICENSE_KEY=GLIDE-A1B2-C3D4-E5F6-G7H8</code></pre>
+            </div>
+        </div>
+
+        <!-- License Validation -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-shield-check me-2"></i>License Validation</div>
+            <div class="card-body">
+                <p>Each phone-home heartbeat doubles as a license validation check. The control plane:</p>
+                <ol>
+                    <li>Looks up the license by key in its database</li>
+                    <li>Verifies the cryptographic signature has not been tampered with</li>
+                    <li>Checks expiration date and revocation status</li>
+                    <li>Optionally verifies hardware binding (if the license is hardware-locked)</li>
+                    <li>Returns the validation result in the response</li>
+                </ol>
+                <p>If the license is <strong>expired</strong> or <strong>revoked</strong>, the on-premise deployment
+                enters a <em>restricted mode</em>: existing data remains accessible in read-only mode, but new
+                records cannot be created until a valid license is installed.</p>
+
+                <div class="alert alert-warning mt-3">
+                    <strong><i class="bi bi-exclamation-triangle me-1"></i> Grace Period</strong> &mdash;
+                    If the control plane is unreachable, the deployment continues to operate normally for
+                    up to <strong>30 days</strong> using the last cached validation result. After 30 days
+                    without a successful phone-home, the system enters restricted mode.
+                </div>
+            </div>
+        </div>
+
+        <!-- Update Checks -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-arrow-repeat me-2"></i>Update Checks</div>
+            <div class="card-body">
+                <p>The phone-home response includes information about available updates. When an update
+                is available, the on-premise deployment can:</p>
+                <ul>
+                    <li>Display a notification to system administrators</li>
+                    <li>Download the update package via the provided <code>downloadUrl</code></li>
+                    <li>Apply the update automatically (if configured) or wait for manual approval</li>
+                </ul>
+                <p>Updates are distributed through the <a href="updates.html">Updates &amp; Rollouts</a> system,
+                which supports canary, staged, and immediate rollout strategies.</p>
+            </div>
+        </div>
+
+        <!-- Air-Gapped Deployments -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-wifi-off me-2"></i>Air-Gapped Deployments</div>
+            <div class="card-body">
+                <p>For deployments in environments without internet access (government facilities,
+                military installations, remote clinics), phone-home can be completely disabled:</p>
+
+                <pre><code class="language-bash"># Disable phone-home for air-gapped environments
+PHONE_HOME_ENABLED=false</code></pre>
+
+                <p class="mt-3">When phone-home is disabled:</p>
+                <ul>
+                    <li><strong>License validation</strong> &mdash; uses an offline signature file
+                        (<code>/etc/glide-hims/license.sig</code>) bundled in the installer bootstrap.
+                        The signature is verified locally using the embedded public key.</li>
+                    <li><strong>Updates</strong> &mdash; must be applied manually via USB drive or
+                        local network transfer. See <a href="updates.html">Offline Updates</a>.</li>
+                    <li><strong>Feature flags</strong> &mdash; defaults are compiled into the build.
+                        Remote toggling is unavailable.</li>
+                    <li><strong>Monitoring</strong> &mdash; health data is only available locally
+                        via the admin dashboard. No telemetry is sent externally.</li>
+                </ul>
+
+                <div class="alert alert-tip mt-3">
+                    <strong><i class="bi bi-lightbulb me-1"></i> Tip</strong> &mdash;
+                    For air-gapped deployments, ensure the <code>OFFLINE_LICENSE_SIGNATURE_FILE</code>
+                    environment variable points to the license signature file. The bootstrap installer
+                    sets this up automatically when you provision a standalone deployment.
+                </div>
+            </div>
+        </div>
+
+        <!-- Security & Privacy -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-lock me-2"></i>Security &amp; Privacy</div>
+            <div class="card-body">
+                <ul>
+                    <li>All phone-home traffic uses <strong>HTTPS/TLS 1.2+</strong></li>
+                    <li>No patient data (PII/PHI) is ever transmitted &mdash; only aggregate metrics</li>
+                    <li>The license key authenticates each request; no additional credentials are needed</li>
+                    <li>Hardware IDs are one-way hashes &mdash; the actual hardware details cannot be recovered</li>
+                    <li>Phone-home can be fully disabled with a single environment variable</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Troubleshooting -->
+        <div class="card">
+            <div class="card-header"><i class="bi bi-bug me-2"></i>Troubleshooting</div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <thead>
+                        <tr><th>Symptom</th><th>Cause</th><th>Solution</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>"Phone home failed" in logs</td>
+                            <td>Control plane unreachable</td>
+                            <td>Check network connectivity and <code>PHONE_HOME_URL</code>. Verify DNS resolution and firewall rules allow outbound HTTPS.</td>
+                        </tr>
+                        <tr>
+                            <td>License shows as invalid</td>
+                            <td>Expired or revoked key</td>
+                            <td>Check the license status on the control plane admin panel. Renew or issue a new key.</td>
+                        </tr>
+                        <tr>
+                            <td>Restricted mode after 30 days</td>
+                            <td>No successful phone-home for 30 days</td>
+                            <td>Restore network access or switch to air-gapped mode with an offline license signature.</td>
+                        </tr>
+                        <tr>
+                            <td>Hardware mismatch error</td>
+                            <td>Server hardware changed (VM migration, new NIC)</td>
+                            <td>Re-bind the license to the new hardware via the admin API or contact support.</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div class="alert alert-info mt-3">
+                    <strong><i class="bi bi-headset me-2"></i>Need Help?</strong><br>
+                    Contact IT Solutions Uganda support:<br>
+                    Email: support@itsolutionsuganda.com<br>
+                    Phone: +256 XXX XXX XXX
+                </div>
+            </div>
+        </div>
+
+        <footer class="mt-5 pt-4 border-top text-muted">
+            <p class="small">&copy; 2026 IT Solutions Uganda. Last updated: May 2026</p>
+        </footer>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-bash.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-json.min.js"></script>
+</body>
+</html>

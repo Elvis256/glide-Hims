@@ -1,8 +1,9 @@
-import { Controller, Get, Post, Put, Delete, Param, Body, Req, Res, HttpCode, HttpStatus, ForbiddenException, NotFoundException, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Param, Body, Req, Res, HttpCode, HttpStatus, ForbiddenException, NotFoundException, BadRequestException, UseInterceptors, UploadedFile } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import * as fs from 'fs';
+import * as path from 'path';
 import { DeploymentService } from './deployment.service';
 import { UpdateManagementService } from './update-management.service';
 import { FeatureFlagService } from './feature-flag.service';
@@ -167,6 +168,35 @@ export class DeploymentController {
   async getRolloutSummary(@Req() req: Request, @Param('rolloutId') rolloutId: string) {
     if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
     return this.updateService.getRolloutSummary(rolloutId);
+  }
+
+  /**
+   * Serve installer scripts (install-hybrid.sh / install-standalone.sh) from the
+   * project root.  Public so that bootstrap scripts on fresh servers can fetch
+   * them without authentication.
+   */
+  @Get('installers/:type')
+  @Public()
+  async serveInstallerScript(
+    @Param('type') type: string,
+    @Res() res: Response,
+  ) {
+    const allowed = ['hybrid', 'standalone'];
+    if (!allowed.includes(type)) {
+      throw new BadRequestException(`Unknown installer type "${type}". Allowed: ${allowed.join(', ')}`);
+    }
+
+    // Walk up from dist/modules/deployments → project root
+    const projectRoot = path.resolve(__dirname, '..', '..', '..', '..', '..');
+    const scriptPath = path.join(projectRoot, `install-${type}.sh`);
+
+    if (!fs.existsSync(scriptPath)) {
+      throw new NotFoundException(`Installer script install-${type}.sh not found on server`);
+    }
+
+    res.setHeader('Content-Type', 'application/x-sh');
+    res.setHeader('Content-Disposition', `attachment; filename="install-${type}.sh"`);
+    fs.createReadStream(scriptPath).pipe(res);
   }
 
   @Get('snapshots/:snapshotId/download')

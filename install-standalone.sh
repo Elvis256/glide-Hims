@@ -79,16 +79,21 @@ check_prerequisites() {
 configure_installation() {
   log_info "Configuring installation..."
 
-  # Prompt for license key
-  while true; do
-    read -p "Enter your license key (GLI-STD-XXXXX): " LICENSE_KEY
-    if [[ $LICENSE_KEY =~ ^GLI-STD-[0-9]{8}-[A-Z0-9]{5}-[A-Z0-9]{8}$ ]]; then
-      log_success "License key validated: $LICENSE_KEY"
-      break
-    else
-      log_error "Invalid license key format. Expected: GLI-STD-XXXXXXXX-XXXXX-XXXXXXXX"
-    fi
-  done
+  # Prompt for license key (skip if already set by bootstrap)
+  if [ -n "${LICENSE_KEY:-}" ]; then
+    log_success "License key pre-configured"
+  else
+    while true; do
+      read -p "Enter your license key: " LICENSE_KEY
+      if [[ $LICENSE_KEY =~ ^GLIDE-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}$ ]] || \
+         [[ $LICENSE_KEY =~ ^GLI-STD-[0-9]{8}-[A-Z0-9]{5}-[A-Z0-9]{8}$ ]]; then
+        log_success "License key validated: $LICENSE_KEY"
+        break
+      else
+        log_error "Invalid license key format. Expected: GLIDE-XXXX-XXXX-XXXX-XXXX"
+      fi
+    done
+  fi
 
   # Prompt for admin password
   while true; do
