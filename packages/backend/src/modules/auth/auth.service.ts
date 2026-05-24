@@ -390,6 +390,28 @@ export class AuthService {
     // Combine role permissions + direct permissions (remove duplicates)
     permissions = [...new Set([...permissions, ...directPermissionCodes])];
 
+    // Enforce MFA via password policy: if the policy requires MFA and the user
+    // hasn't enrolled, block full login and signal the client to prompt enrollment.
+    const mfaPolicy = await this.getPasswordPolicy(facilityId);
+    if (mfaPolicy?.requireMfa && !user.mfaEnabled) {
+      this.logger.warn(
+        `Login blocked for user ${user.id}: password policy requires MFA but user has not enrolled`,
+      );
+      await this.recordLoginHistory(
+        user.id,
+        ipAddress,
+        userAgent,
+        false,
+        'MFA enrollment required by policy',
+        user.tenantId,
+      );
+      throw new BadRequestException({
+        message: 'MFA enrollment required',
+        mustEnrollMfa: true,
+        userId: user.id,
+      });
+    }
+
     // Update last login
     user.lastLoginAt = new Date();
     await this.userRepository.save(user);
@@ -459,7 +481,7 @@ export class AuthService {
       refreshToken,
       expiresIn: expiresInSeconds,
       mustChangePassword: user.mustChangePassword || undefined,
-      mustEnrollMfa: user.isSystemAdmin && !user.mfaEnabled ? true : undefined,
+      mustEnrollMfa: !user.mfaEnabled && (user.isSystemAdmin || mfaPolicy?.requireMfa) ? true : undefined,
       user: {
         id: user.id,
         username: user.username,

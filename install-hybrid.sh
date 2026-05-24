@@ -209,6 +209,12 @@ configure_installation() {
     fi
     print_success "License key configured"
 
+    # Generate encryption keys for production
+    MFA_ENCRYPTION_KEY=$(openssl rand -hex 32)
+    PII_ENCRYPTION_KEY=$(openssl rand -hex 32)
+    PII_HASH_KEY=$(openssl rand -hex 32)
+    JWT_REFRESH_SECRET=$(openssl rand -base64 48 | tr -d '\n')
+
     # Create .env file
     print_info "Creating environment configuration..."
     cat > "$INSTALL_DIR/.env" << EOF
@@ -219,8 +225,11 @@ configure_installation() {
 DOMAIN_NAME=$DOMAIN_NAME
 
 # Database Configuration
-DB_USER=hims_admin
+DB_HOST=postgres
+DB_USERNAME=hims_admin
 DB_PASSWORD=$DB_PASSWORD
+DB_NAME=glide_hims
+DB_USER=hims_admin
 
 # Redis Configuration
 REDIS_PASSWORD=$REDIS_PASSWORD
@@ -228,8 +237,14 @@ REDIS_PASSWORD=$REDIS_PASSWORD
 # JWT Configuration
 JWT_SECRET=$JWT_SECRET
 JWT_EXPIRES_IN=24h
-REFRESH_TOKEN_SECRET=$JWT_SECRET
+JWT_REFRESH_SECRET=$JWT_REFRESH_SECRET
+REFRESH_TOKEN_SECRET=$JWT_REFRESH_SECRET
 REFRESH_TOKEN_EXPIRES_IN=7d
+
+# Encryption Keys (required in production)
+MFA_ENCRYPTION_KEY=$MFA_ENCRYPTION_KEY
+PII_ENCRYPTION_KEY=$PII_ENCRYPTION_KEY
+PII_HASH_KEY=$PII_HASH_KEY
 
 # Environment
 NODE_ENV=production
