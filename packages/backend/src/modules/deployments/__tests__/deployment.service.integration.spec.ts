@@ -6,6 +6,9 @@ import { DeploymentService } from '../deployment.service';
 import { Deployment, DeploymentType, DeploymentStatus } from '../../../database/entities/deployment.entity';
 import { DeploymentVersion } from '../../../database/entities/deployment-version.entity';
 import { DeploymentConfig } from '../../../database/entities/deployment-config.entity';
+import { License } from '../../../database/entities/license.entity';
+import { TenantsService } from '../../tenants/tenants.service';
+import { LicenseService } from '../../licensing/license.service';
 
 describe('DeploymentService Integration Tests', () => {
   let service: DeploymentService;
@@ -32,6 +35,22 @@ describe('DeploymentService Integration Tests', () => {
     findOne: jest.fn(),
   };
 
+  const mockLicenseRepository = {
+    find: jest.fn(),
+    findOne: jest.fn(),
+  };
+
+  const mockTenantsService = {
+    findOne: jest.fn(),
+    findBySlug: jest.fn(),
+    create: jest.fn(),
+  };
+
+  const mockLicenseService = {
+    generateLicense: jest.fn(),
+    updateLicense: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -48,6 +67,18 @@ describe('DeploymentService Integration Tests', () => {
           provide: getRepositoryToken(DeploymentConfig),
           useValue: mockConfigRepository,
         },
+        {
+          provide: getRepositoryToken(License),
+          useValue: mockLicenseRepository,
+        },
+        {
+          provide: TenantsService,
+          useValue: mockTenantsService,
+        },
+        {
+          provide: LicenseService,
+          useValue: mockLicenseService,
+        },
       ],
     }).compile();
 
@@ -62,7 +93,61 @@ describe('DeploymentService Integration Tests', () => {
       getRepositoryToken(DeploymentConfig),
     );
 
-    jest.clearAllMocks();
+    jest.resetAllMocks();
+    mockLicenseRepository.find.mockResolvedValue([]);
+    mockLicenseService.generateLicense.mockResolvedValue({});
+    mockLicenseService.updateLicense.mockResolvedValue({});
+  });
+
+  describe('provisionDeployment', () => {
+    it('should provision against an existing tenant without requiring a form name', async () => {
+      const tenant = {
+        id: 'tenant-123',
+        name: 'DEVELOPMENT ENVIROMENT',
+        slug: 'development-enviroment',
+      };
+      const createdAt = new Date();
+      const updatedAt = new Date();
+
+      mockTenantsService.findOne.mockResolvedValue(tenant);
+      mockDeploymentRepository.create.mockImplementation((entity) => ({
+        id: 'deploy-1',
+        createdAt,
+        updatedAt,
+        ...entity,
+      }));
+      mockDeploymentRepository.save.mockImplementation(async (entity) => entity);
+
+      const result = await service.provisionDeployment({
+        tenantId: tenant.id,
+        organizationName: '',
+        type: 'hybrid',
+        tier: 'enterprise',
+        maxUsers: 50,
+      });
+
+      expect(result.id).toBe('deploy-1');
+      expect(result.name).toBe(tenant.name);
+      expect(mockTenantsService.findOne).toHaveBeenCalledWith(tenant.id);
+      expect(mockTenantsService.create).not.toHaveBeenCalled();
+      expect(mockDeploymentRepository.create).toHaveBeenCalledWith(expect.objectContaining({
+        tenantId: tenant.id,
+        name: tenant.name,
+        deploymentType: DeploymentType.HYBRID,
+        status: DeploymentStatus.PENDING,
+        config: expect.objectContaining({
+          userFacingType: 'hybrid',
+          tier: 'enterprise',
+          maxUsers: 50,
+        }),
+      }));
+      expect(mockLicenseService.generateLicense).toHaveBeenCalledWith(expect.objectContaining({
+        tenantId: tenant.id,
+        organizationName: tenant.name,
+        licenseType: 'enterprise',
+        maxUsers: 50,
+      }));
+    });
   });
 
   describe('createDeployment', () => {
