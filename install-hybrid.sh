@@ -18,7 +18,7 @@
 #   INSTALL_DIR        - Installation directory (default: /opt/glide-hims)
 ###############################################################################
 
-set -e
+set -euo pipefail
 
 # Colors for output
 RED='\033[0;31m'
@@ -37,6 +37,7 @@ REDIS_PASSWORD="${REDIS_PASSWORD:-}"
 LICENSE_KEY="${LICENSE_KEY:-}"
 CONTROL_PLANE_URL="${CONTROL_PLANE_URL:-}"
 GIT_REPO_URL="${GIT_REPO_URL:-https://github.com/Elvis256/glide-Hims.git}"
+COMPOSE_CMD=()
 
 # Functions
 print_header() {
@@ -59,6 +60,20 @@ print_warning() {
 
 print_info() {
     echo -e "${BLUE}ℹ${NC} $1"
+}
+
+set_compose_command() {
+    if docker compose version &> /dev/null; then
+        COMPOSE_CMD=(docker compose)
+        print_success "Docker Compose plugin detected: $(docker compose version)"
+    elif command -v docker-compose &> /dev/null; then
+        COMPOSE_CMD=(docker-compose)
+        print_success "Docker Compose is installed: $(docker-compose --version)"
+    else
+        print_error "Docker Compose is not installed."
+        print_info "Visit: https://docs.docker.com/compose/install/"
+        exit 1
+    fi
 }
 
 # Helper: download a file via curl or wget
@@ -88,23 +103,25 @@ check_prerequisites() {
     print_success "Docker is installed: $(docker --version)"
 
     # Check Docker Compose
-    if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
-        print_error "Docker Compose is not installed."
-        print_info "Visit: https://docs.docker.com/compose/install/"
-        exit 1
-    fi
-    if command -v docker-compose &> /dev/null; then
-        print_success "Docker Compose is installed: $(docker-compose --version)"
-    else
-        print_success "Docker Compose plugin detected: $(docker compose version)"
-    fi
+    set_compose_command
 
     # Check disk space
-    AVAILABLE_SPACE=$(df -k "$INSTALL_DIR" 2>/dev/null | awk 'NR==2 {print $4}' || df -k / | awk 'NR==2 {print $4}')
-    if [ "$AVAILABLE_SPACE" -lt 10485760 ]; then  # 10GB in KB
+    local disk_path="$INSTALL_DIR"
+    if [ ! -d "$disk_path" ]; then
+        disk_path="$(dirname "$INSTALL_DIR")"
+    fi
+    if [ ! -d "$disk_path" ]; then
+        disk_path="/"
+    fi
+
+    local available_space
+    available_space="$(df -Pk "$disk_path" | awk 'NR==2 {print $4}')"
+    if [[ ! "$available_space" =~ ^[0-9]+$ ]]; then
+        print_warning "Could not determine available disk space for $disk_path"
+    elif [ "$available_space" -lt 10485760 ]; then  # 10GB in KB
         print_warning "Less than 10GB disk space available. Recommended: 20GB+"
     else
-        print_success "Disk space: $(numfmt --to=iec $((AVAILABLE_SPACE * 1024)) 2>/dev/null || echo "${AVAILABLE_SPACE}K") available"
+        print_success "Disk space: $(numfmt --to=iec $((available_space * 1024)) 2>/dev/null || echo "${available_space}K") available"
     fi
 }
 
@@ -116,7 +133,24 @@ download_source() {
 
     local downloaded=false
 
-    # Strategy 1: Download tarball from control plane Downloads API
+    # Strategy 1: Download license-gated source bundle from the control plane.
+    if [ -n "$CONTROL_PLANE_URL" ] && [ -n "$LICENSE_KEY" ]; then
+        print_info "Downloading licensed source bundle from control plane..."
+        local tarball_path
+        tarball_path="$(mktemp /tmp/glide-hims-src-XXXXXX.tar.gz)"
+
+        if fetch_file "${CONTROL_PLANE_URL}/api/v1/deployments/source-bundle?licenseKey=${LICENSE_KEY}" "$tarball_path" 2>/dev/null; then
+            print_success "Downloaded source bundle from control plane"
+            tar xzf "$tarball_path" -C "$INSTALL_DIR" --strip-components=1 2>/dev/null || \
+                tar xzf "$tarball_path" -C "$INSTALL_DIR" 2>/dev/null
+            downloaded=true
+        else
+            print_warning "Licensed source bundle unavailable; trying fallback sources"
+        fi
+        rm -f "$tarball_path"
+    fi
+
+    # Strategy 2: Download tarball from control plane Downloads API
     if [ -n "$CONTROL_PLANE_URL" ]; then
         print_info "Attempting to download source tarball from control plane..."
         local tarball_path
@@ -137,13 +171,23 @@ download_source() {
         rm -f "$tarball_path"
     fi
 
-    # Strategy 2: Clone from git
+    # Strategy 3: Clone from git
     if [ "$downloaded" = false ]; then
         if command -v git &> /dev/null; then
             print_info "Cloning repository from $GIT_REPO_URL ..."
-            git clone --depth 1 "$GIT_REPO_URL" "$INSTALL_DIR/src-tmp" 2>&1 | tail -5
+            local clone_log
+            clone_log="$(mktemp /tmp/glide-git-clone-XXXXXX.log)"
+            if ! git clone --depth 1 "$GIT_REPO_URL" "$INSTALL_DIR/src-tmp" >"$clone_log" 2>&1; then
+                tail -20 "$clone_log" >&2
+                rm -f "$clone_log"
+                print_error "Repository clone failed"
+                print_info "Provide a source tarball through the control plane or set GIT_REPO_URL to an accessible repository."
+                exit 1
+            fi
+            tail -5 "$clone_log" || true
+            rm -f "$clone_log"
             # Move contents into INSTALL_DIR (in case it's not empty)
-            cp -a "$INSTALL_DIR/src-tmp/." "$INSTALL_DIR/" 2>/dev/null || true
+            cp -a "$INSTALL_DIR/src-tmp/." "$INSTALL_DIR/"
             rm -rf "$INSTALL_DIR/src-tmp"
             downloaded=true
             print_success "Repository cloned"
@@ -308,11 +352,11 @@ download_images() {
     print_success "Nginx image ready"
 
     print_info "Building backend image..."
-    docker-compose -f docker-compose.hybrid.yml build backend 2>&1 | tail -20
+    "${COMPOSE_CMD[@]}" -f docker-compose.hybrid.yml build backend 2>&1 | tail -20
     print_success "Backend image built"
 
     print_info "Building frontend image..."
-    docker-compose -f docker-compose.hybrid.yml build frontend 2>&1 | tail -20
+    "${COMPOSE_CMD[@]}" -f docker-compose.hybrid.yml build frontend 2>&1 | tail -20
     print_success "Frontend image built"
 }
 
@@ -323,14 +367,14 @@ start_services() {
     cd "$INSTALL_DIR"
 
     print_info "Bringing up containers (this may take 30-60 seconds)..."
-    docker-compose -f docker-compose.hybrid.yml up -d
+    "${COMPOSE_CMD[@]}" -f docker-compose.hybrid.yml up -d
 
     sleep 10
 
     # Wait for health checks
     print_info "Waiting for services to be healthy..."
     for i in $(seq 1 60); do
-        if docker-compose -f docker-compose.hybrid.yml ps | grep -q "healthy"; then
+        if "${COMPOSE_CMD[@]}" -f docker-compose.hybrid.yml ps | grep -q "healthy"; then
             print_success "Services are healthy"
             break
         fi
@@ -340,7 +384,7 @@ start_services() {
 
     # Check final status
     print_info "Service status:"
-    docker-compose -f docker-compose.hybrid.yml ps
+    "${COMPOSE_CMD[@]}" -f docker-compose.hybrid.yml ps
 }
 
 # Verify installation
@@ -365,7 +409,7 @@ verify_installation() {
 
     # Check Database
     print_info "Checking database..."
-    if docker-compose -f docker-compose.hybrid.yml exec -T postgres pg_isready -U hims_admin > /dev/null 2>&1; then
+    if "${COMPOSE_CMD[@]}" -f docker-compose.hybrid.yml exec -T postgres pg_isready -U hims_admin > /dev/null 2>&1; then
         print_success "Database is running"
     else
         print_warning "Database check inconclusive"
@@ -389,11 +433,11 @@ show_completion() {
     echo -e "  User:     hims_admin\n"
 
     echo -e "${BLUE}Management Commands:${NC}"
-    echo -e "  View logs:       docker-compose -f docker-compose.hybrid.yml logs -f"
-    echo -e "  Stop services:   docker-compose -f docker-compose.hybrid.yml stop"
-    echo -e "  Start services:  docker-compose -f docker-compose.hybrid.yml start"
-    echo -e "  Restart:         docker-compose -f docker-compose.hybrid.yml restart"
-    echo -e "  Full restart:    docker-compose -f docker-compose.hybrid.yml down && docker-compose -f docker-compose.hybrid.yml up -d\n"
+    echo -e "  View logs:       ${COMPOSE_CMD[*]} -f docker-compose.hybrid.yml logs -f"
+    echo -e "  Stop services:   ${COMPOSE_CMD[*]} -f docker-compose.hybrid.yml stop"
+    echo -e "  Start services:  ${COMPOSE_CMD[*]} -f docker-compose.hybrid.yml start"
+    echo -e "  Restart:         ${COMPOSE_CMD[*]} -f docker-compose.hybrid.yml restart"
+    echo -e "  Full restart:    ${COMPOSE_CMD[*]} -f docker-compose.hybrid.yml down && ${COMPOSE_CMD[*]} -f docker-compose.hybrid.yml up -d\n"
 
     echo -e "${YELLOW}Important:${NC}"
     echo -e "  1. Update SSL certificates before going to production"
