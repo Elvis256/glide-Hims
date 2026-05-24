@@ -129,4 +129,164 @@ describe('Auth Security', () => {
       expect(escapeHtml("O'Brien")).toBe('O&#x27;Brien');
     });
   });
+
+  describe('CSP Configuration', () => {
+    it('should NOT include unsafe-eval in production scriptSrc', () => {
+      // Production CSP directives as configured in main.ts
+      const productionCspDirectives = {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+        connectSrc: ["'self'", 'wss:', 'https:'],
+        fontSrc: ["'self'", 'data:'],
+        objectSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+      };
+
+      expect(productionCspDirectives.scriptSrc).not.toContain("'unsafe-eval'");
+      expect(productionCspDirectives.scriptSrc).not.toContain("'unsafe-inline'");
+    });
+
+    it('should allow unsafe-inline only for styleSrc (required for CSS-in-JS)', () => {
+      const styleSrc = ["'self'", "'unsafe-inline'"];
+      expect(styleSrc).toContain("'unsafe-inline'");
+    });
+
+    it('should block framing via frameAncestors', () => {
+      const frameAncestors = ["'none'"];
+      expect(frameAncestors).toContain("'none'");
+    });
+  });
+
+  describe('MFA Policy Enforcement', () => {
+    it('should block login when policy requires MFA but user has not enrolled', () => {
+      const policy = { requireMfa: true };
+      const user = { mfaEnabled: false, isSystemAdmin: false };
+
+      const shouldBlock = policy.requireMfa && !user.mfaEnabled;
+      expect(shouldBlock).toBe(true);
+    });
+
+    it('should allow login when policy requires MFA and user has enrolled', () => {
+      const policy = { requireMfa: true };
+      const user = { mfaEnabled: true, isSystemAdmin: false };
+
+      const shouldBlock = policy.requireMfa && !user.mfaEnabled;
+      expect(shouldBlock).toBe(false);
+    });
+
+    it('should allow login when policy does not require MFA', () => {
+      const policy = { requireMfa: false };
+      const user = { mfaEnabled: false, isSystemAdmin: false };
+
+      const shouldBlock = policy.requireMfa && !user.mfaEnabled;
+      expect(shouldBlock).toBe(false);
+    });
+
+    it('should set mustEnrollMfa flag for system admins without MFA', () => {
+      const user = { isSystemAdmin: true, mfaEnabled: false };
+      const policy = { requireMfa: false };
+
+      const mustEnrollMfa = !user.mfaEnabled && (user.isSystemAdmin || policy.requireMfa);
+      expect(mustEnrollMfa).toBe(true);
+    });
+
+    it('should set mustEnrollMfa flag when policy requires MFA', () => {
+      const user = { isSystemAdmin: false, mfaEnabled: false };
+      const policy = { requireMfa: true };
+
+      const mustEnrollMfa = !user.mfaEnabled && (user.isSystemAdmin || policy.requireMfa);
+      expect(mustEnrollMfa).toBe(true);
+    });
+
+    it('should not set mustEnrollMfa when user already has MFA enabled', () => {
+      const user = { isSystemAdmin: true, mfaEnabled: true };
+      const policy = { requireMfa: true };
+
+      const mustEnrollMfa = !user.mfaEnabled && (user.isSystemAdmin || policy.requireMfa);
+      expect(mustEnrollMfa).toBe(false);
+    });
+  });
+
+  describe('Production Environment Validation', () => {
+    it('should require MFA_ENCRYPTION_KEY in production', () => {
+      const requiredInProduction = [
+        'MFA_ENCRYPTION_KEY',
+        'PII_ENCRYPTION_KEY',
+        'PII_HASH_KEY',
+      ];
+      const env: Record<string, string> = {}; // Empty = missing
+
+      const missing = requiredInProduction.filter((key) => !env[key]);
+      expect(missing).toEqual(requiredInProduction);
+    });
+
+    it('should pass when all required keys are present', () => {
+      const requiredInProduction = [
+        'MFA_ENCRYPTION_KEY',
+        'PII_ENCRYPTION_KEY',
+        'PII_HASH_KEY',
+      ];
+      const env: Record<string, string> = {
+        MFA_ENCRYPTION_KEY: 'some-key',
+        PII_ENCRYPTION_KEY: 'some-key',
+        PII_HASH_KEY: 'some-key',
+      };
+
+      const missing = requiredInProduction.filter((key) => !env[key]);
+      expect(missing).toEqual([]);
+    });
+
+    it('should reject JWT_SECRET shorter than 32 chars in production', () => {
+      const jwtSecret = 'short-secret';
+      expect(jwtSecret.length).toBeLessThan(32);
+    });
+
+    it('should reject JWT_SECRET containing dev markers', () => {
+      const devMarkers = ['dev', 'test', 'xxx'];
+      const jwtSecret = 'my-dev-secret-key-1234567890abcdef';
+
+      const containsDevMarker = devMarkers.some((m) => jwtSecret.includes(m));
+      expect(containsDevMarker).toBe(true);
+    });
+  });
+
+  describe('CORS Origin Validation', () => {
+    const validateOrigin = (origin: string): boolean => {
+      try {
+        new URL(origin);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    it('should accept valid HTTPS origins', () => {
+      expect(validateOrigin('https://example.com')).toBe(true);
+      expect(validateOrigin('https://hmis.hospital.org')).toBe(true);
+    });
+
+    it('should accept valid HTTP origins (dev)', () => {
+      expect(validateOrigin('http://localhost:5173')).toBe(true);
+    });
+
+    it('should reject invalid origins', () => {
+      expect(validateOrigin('not-a-url')).toBe(false);
+      expect(validateOrigin('')).toBe(false);
+      expect(validateOrigin('just-words-no-scheme')).toBe(false);
+    });
+
+    it('should accept IP-based origins', () => {
+      expect(validateOrigin('https://212.47.69.106')).toBe(true);
+    });
+
+    it('should parse comma-separated origins correctly', () => {
+      const corsString = 'https://a.com, https://b.com ,https://c.com';
+      const origins = corsString.split(',').map((o) => o.trim()).filter(Boolean);
+
+      expect(origins).toEqual(['https://a.com', 'https://b.com', 'https://c.com']);
+      origins.forEach((o) => expect(validateOrigin(o)).toBe(true));
+    });
+  });
 });

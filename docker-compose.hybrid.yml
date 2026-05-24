@@ -51,14 +51,24 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
+      # Individual DB vars required by main.ts startup checks
+      DB_HOST: postgres
+      DB_USERNAME: ${DB_USER:-hims_admin}
+      DB_PASSWORD: ${DB_PASSWORD:-ChangeMeInProduction}
+      DB_NAME: glide_hims
       DATABASE_URL: postgresql://${DB_USER:-hims_admin}:${DB_PASSWORD:-ChangeMeInProduction}@postgres:5432/glide_hims
       REDIS_URL: redis://:${REDIS_PASSWORD:-ChangeMeInProduction}@redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-ChangeMeInProduction}
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production-with-32-char-min}
       JWT_EXPIRES_IN: 24h
-      REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:-change-me-in-production-with-32-char-min}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-${REFRESH_TOKEN_SECRET:-change-me-in-production-with-32-char-min}}
       REFRESH_TOKEN_EXPIRES_IN: 7d
+      # Encryption keys (required in production by main.ts)
+      MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:-}
+      PII_ENCRYPTION_KEY: ${PII_ENCRYPTION_KEY:-}
+      PII_HASH_KEY: ${PII_HASH_KEY:-}
       LOG_LEVEL: info
-      CORS_ORIGIN: http://localhost:8080,https://${DOMAIN_NAME}
+      CORS_ORIGINS: http://localhost:8080,https://${DOMAIN_NAME}
       API_URL: https://${DOMAIN_NAME}/api
       FRONTEND_URL: https://${DOMAIN_NAME}
     ports:

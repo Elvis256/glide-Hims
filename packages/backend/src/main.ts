@@ -82,7 +82,16 @@ async function bootstrap() {
       process.exit(1);
     }
     if (!configService.get('MFA_ENCRYPTION_KEY')) {
-      logger.warn('MFA_ENCRYPTION_KEY not set — MFA features will be unavailable');
+      logger.error('MFA_ENCRYPTION_KEY is required in production');
+      process.exit(1);
+    }
+    if (!configService.get('PII_ENCRYPTION_KEY')) {
+      logger.error('PII_ENCRYPTION_KEY is required in production for patient data encryption');
+      process.exit(1);
+    }
+    if (!configService.get('PII_HASH_KEY')) {
+      logger.error('PII_HASH_KEY is required in production for patient data lookup');
+      process.exit(1);
     }
     if (!configService.get('REDIS_PASSWORD')) {
       logger.warn('REDIS_PASSWORD not set — Redis is unprotected');
@@ -98,7 +107,7 @@ async function bootstrap() {
         : {
             directives: {
               defaultSrc: ["'self'"],
-              scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+              scriptSrc: ["'self'"],
               styleSrc: ["'self'", "'unsafe-inline'"],
               imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
               connectSrc: ["'self'", 'wss:', 'https:'],
@@ -188,8 +197,17 @@ async function bootstrap() {
 
   // CORS Configuration
   const corsOrigins = configService.get<string>('CORS_ORIGINS', 'http://localhost:5173');
+  const origins = corsOrigins.split(',').map((o) => o.trim()).filter(Boolean);
+  for (const origin of origins) {
+    try {
+      new URL(origin);
+    } catch {
+      logger.error(`Invalid CORS origin: "${origin}" — must be a valid URL`);
+      process.exit(1);
+    }
+  }
   app.enableCors({
-    origin: corsOrigins.split(',').map((o) => o.trim()),
+    origin: origins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: [
