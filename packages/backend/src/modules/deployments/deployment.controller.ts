@@ -36,8 +36,18 @@ export class DeploymentController {
 
   @Post()
   async createDeployment(@Req() req: Request, @Body() dto: any) {
-    if (this.isSystemAdmin(req) && dto?.organizationName && !dto?.tenantId) {
+    const isSysAdmin = this.isSystemAdmin(req);
+    const isProvisioningRequest =
+      dto?.type === 'hybrid' ||
+      dto?.type === 'standalone' ||
+      !!dto?.organizationName ||
+      !!dto?.tier ||
+      dto?.maxUsers != null ||
+      !!dto?.domain;
+
+    if (isSysAdmin && isProvisioningRequest) {
       const provisionDto: ProvisionDeploymentDto = {
+        tenantId: dto.tenantId,
         organizationName: dto.organizationName,
         type: dto.type,
         tier: dto.tier,
@@ -47,7 +57,10 @@ export class DeploymentController {
       };
       return this.deploymentService.provisionDeployment(provisionDto);
     }
-    const tenantId = this.getTenantId(req);
+
+    // For system admins, use the tenantId from the DTO if provided, otherwise fallback to their context.
+    // This allows admins to create deployments for any tenant while maintaining security for regular users.
+    const tenantId = (isSysAdmin && dto?.tenantId) ? dto.tenantId : this.getTenantId(req);
     return this.deploymentService.createDeployment(tenantId, dto as CreateDeploymentDto);
   }
 
@@ -229,7 +242,7 @@ export class DeploymentController {
 
   @Post('features/toggle')
   async toggleFeature(@Req() req: Request, @Body() dto: ToggleFeatureFlagDto) {
-    const tenantId = this.getTenantId(req);
+    const tenantId = this.isSystemAdmin(req) && dto.tenantId ? dto.tenantId : this.getTenantId(req);
     return this.featureFlagService.toggleFeature(tenantId, dto);
   }
 

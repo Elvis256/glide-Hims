@@ -2,6 +2,10 @@ import { IsString, IsUUID, IsOptional, IsEnum, IsObject, IsArray, IsInt, Min, Ma
 import { DeploymentType, DeploymentStatus } from '../../database/entities/deployment.entity';
 
 export class ProvisionDeploymentDto {
+  @IsOptional()
+  @IsUUID()
+  tenantId?: string;
+
   @IsString()
   organizationName: string;
 

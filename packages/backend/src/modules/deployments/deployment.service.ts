@@ -75,20 +75,37 @@ export class DeploymentService {
   }
 
   async provisionDeployment(dto: ProvisionDeploymentDto): Promise<DeploymentResponseDto> {
-    const orgName = dto.organizationName?.trim();
-    if (!orgName) throw new BadRequestException('Organization name is required');
+    const requestedOrgName = dto.organizationName?.trim();
+    let tenant: any;
 
-    const slug = TenantsService['generateSlug'](orgName);
-    let tenant: any = await this.tenantsService.findBySlug(slug).catch(() => null);
-    if (!tenant) {
-      tenant = await this.tenantsService.create({
-        name: orgName,
-        description: `Auto-created from deployment provisioning${dto.tier ? ' (' + dto.tier + ')' : ''}`,
-      } as any);
+    if (dto.tenantId) {
+      tenant = await this.tenantsService.findOne(dto.tenantId);
+    } else {
+      if (!requestedOrgName) throw new BadRequestException('Organization name is required');
+
+      const slug = TenantsService.generateSlug(requestedOrgName);
+      tenant = await this.tenantsService.findBySlug(slug).catch(() => null);
+      if (!tenant) {
+        tenant = await this.tenantsService.create({
+          name: requestedOrgName,
+          description: `Auto-created from deployment provisioning${dto.tier ? ' (' + dto.tier + ')' : ''}`,
+        } as any);
+      }
     }
 
-    const dbType = dto.type === 'standalone' ? DeploymentType.ONPREMISE : DeploymentType.HYBRID;
-    const apiEndpoint = dto.domain?.trim() ? `https://${dto.domain.trim()}` : '';
+    const orgName = tenant?.name || requestedOrgName;
+    if (!orgName) throw new BadRequestException('Organization name is required');
+
+    const userFacingType: 'hybrid' | 'standalone' = dto.type === 'standalone' ? 'standalone' : 'hybrid';
+    const tier: DeploymentTier =
+      dto.tier === 'community' || dto.tier === 'professional' || dto.tier === 'enterprise'
+        ? dto.tier
+        : 'professional';
+    const dbType = userFacingType === 'standalone' ? DeploymentType.ONPREMISE : DeploymentType.HYBRID;
+    const domain = dto.domain?.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '') || '';
+    const apiEndpoint = domain ? `https://${domain}` : '';
+    const maxUsersRaw = typeof dto.maxUsers === 'number' ? dto.maxUsers : Number(dto.maxUsers);
+    const maxUsers = Number.isFinite(maxUsersRaw) && maxUsersRaw > 0 ? Math.floor(maxUsersRaw) : 50;
 
     const deployment = this.deploymentRepository.create({
       tenantId: tenant.id,
@@ -99,10 +116,10 @@ export class DeploymentService {
       currentVersion: '1.0.0',
       notes: dto.notes,
       config: {
-        userFacingType: dto.type,
-        tier: dto.tier || 'professional',
-        domain: dto.domain || null,
-        maxUsers: dto.maxUsers ?? 50,
+        userFacingType,
+        tier,
+        domain: domain || null,
+        maxUsers,
       },
     });
 
@@ -117,8 +134,8 @@ export class DeploymentService {
       await this.alignLicenseWithDeployment({
         tenantId: tenant.id,
         organizationName: orgName,
-        tier: (dto.tier as DeploymentTier) || 'professional',
-        maxUsers: dto.maxUsers ?? 50,
+        tier,
+        maxUsers,
         adminEmail: (tenant as any).adminEmail,
       });
     } catch (err) {
