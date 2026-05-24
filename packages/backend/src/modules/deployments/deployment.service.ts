@@ -471,8 +471,11 @@ export class DeploymentService {
     const redisPassword = rand(24);
     const jwtSecret = rand(48);
 
-    const repoBase = process.env.GLIDE_INSTALLER_REPO || 'https://raw.githubusercontent.com/Elvis256/glide-Hims/main';
-    const installerUrl = `${repoBase}/install-${userFacingType}.sh`;
+    const phoneHomeUrl =
+      process.env.PHONE_HOME_URL ||
+      process.env.API_BASE_URL ||
+      'https://hmisdemo.itsolutionsuganda.com';
+    const installerUrl = `${phoneHomeUrl.replace(/\/+$/, '')}/api/v1/deployments/installers/${userFacingType}`;
 
     const orgName = deployment.name || 'glide-hims';
     const orgSlug = orgName.replace(/[^a-z0-9]+/gi, '-').toLowerCase().replace(/(^-|-$)/g, '') || 'install';
@@ -501,6 +504,7 @@ export class DeploymentService {
       `export DB_PASSWORD="${dbPassword}"`,
       `export REDIS_PASSWORD="${redisPassword}"`,
       `export JWT_SECRET="${jwtSecret}"`,
+      `export CONTROL_PLANE_URL="${phoneHomeUrl.replace(/\/+$/, '')}"`,
       ``,
     ];
 
