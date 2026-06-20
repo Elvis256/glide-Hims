@@ -21,6 +21,7 @@ import { EfrisService } from '../../efris/efris.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { FinanceService } from '../../finance/finance.service';
 import { InventoryService } from '../../inventory/inventory.service';
+import { MedicationSafetyService } from '../../allergies/medication-safety.service';
 import { BadRequestException } from '@nestjs/common';
 
 describe('PharmacyService', () => {
@@ -105,6 +106,7 @@ describe('PharmacyService', () => {
         { provide: EfrisService, useValue: mockEfrisService },
         { provide: EventEmitter2, useValue: mockEventEmitter },
         { provide: InventoryService, useValue: mockInventoryService },
+        { provide: MedicationSafetyService, useValue: {} },
       ],
     }).compile();
 
