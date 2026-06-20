@@ -11,6 +11,8 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { SystemSettingsService } from '../../system-settings/system-settings.service';
 import { AuthWithPermissions } from '../../auth/decorators/auth.decorator';
+import { CreateWebhookDto, UpdateWebhookDto } from '../dto/webhook.dto';
+import { validateWebhookUrl } from '../utils/url-validator';
 import { v4 as uuidv4 } from 'uuid';
 
 const WEBHOOKS = 'integrations.webhooks';
@@ -50,7 +52,9 @@ export class IntegrationsController {
 
   @Post('webhooks')
   @AuthWithPermissions('settings.update')
-  async createWebhook(@Body() dto: any, @Request() req: any) {
+  async createWebhook(@Body() dto: CreateWebhookDto, @Request() req: any) {
+    // Fix 3: SSRF validation — reject private/internal network URLs
+    validateWebhookUrl(dto.url);
     const list = await readArray(this.settings, WEBHOOKS, req.user?.tenantId);
     const item = {
       id: uuidv4(),
@@ -67,7 +71,9 @@ export class IntegrationsController {
 
   @Patch('webhooks/:id')
   @AuthWithPermissions('settings.update')
-  async updateWebhook(@Param('id') id: string, @Body() dto: any, @Request() req: any) {
+  async updateWebhook(@Param('id') id: string, @Body() dto: UpdateWebhookDto, @Request() req: any) {
+    // Fix 3: SSRF validation on URL updates
+    if (dto.url) validateWebhookUrl(dto.url);
     const list = await readArray(this.settings, WEBHOOKS, req.user?.tenantId);
     const idx = list.findIndex((w) => w.id === id);
     if (idx < 0) return { success: false };

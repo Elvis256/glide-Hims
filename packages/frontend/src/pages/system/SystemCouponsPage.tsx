@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Loader2, Plus, Trash2, Check, X, Tag, CheckCircle, Clock, Activity, Pencil, Power, Users, ExternalLink } from 'lucide-react';
+import { toast } from 'sonner';
 import api from '../../services/api';
+import SystemPagination from '../../components/SystemPagination';
 import { Coupon, fmtMoney, fmtDate, fmtDateTime, unwrap } from './saas/_shared';
 
 type Filter = 'all' | 'active' | 'inactive' | 'expired' | 'exhausted';
@@ -27,6 +29,15 @@ export default function SystemCouponsPage() {
   const [redemptions, setRedemptions] = useState<RedemptionRow[]>([]);
   const [redemptionsLoading, setRedemptionsLoading] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
 
   const load = async () => {
     setLoading(true);
@@ -51,15 +62,30 @@ export default function SystemCouponsPage() {
     return { total, active, expired, exhausted, redemptions };
   }, [items]);
 
-  const visible = useMemo(() => items.filter((c) => {
-    switch (filter) {
-      case 'active':    return c.isActive && !isExpired(c) && !isExhausted(c);
-      case 'inactive':  return !c.isActive;
-      case 'expired':   return isExpired(c);
-      case 'exhausted': return isExhausted(c);
-      default:          return true;
-    }
-  }), [items, filter]);
+  const visible = useMemo(() => {
+    const filtered = items.filter((c) => {
+      switch (filter) {
+        case 'active':    return c.isActive && !isExpired(c) && !isExhausted(c);
+        case 'inactive':  return !c.isActive;
+        case 'expired':   return isExpired(c);
+        case 'exhausted': return isExhausted(c);
+        default:          return true;
+      }
+    });
+    if (!debouncedSearch) return filtered;
+    const q = debouncedSearch.toLowerCase();
+    return filtered.filter((c) =>
+      c.code.toLowerCase().includes(q) ||
+      (c.notes && c.notes.toLowerCase().includes(q))
+    );
+  }, [items, filter, debouncedSearch]);
+
+  useEffect(() => { setPage(1); }, [filter]);
+
+  const paginatedItems = useMemo(
+    () => visible.slice((page - 1) * pageSize, page * pageSize),
+    [visible, page, pageSize],
+  );
 
   const save = async () => {
     if (!edit) return;
@@ -71,7 +97,7 @@ export default function SystemCouponsPage() {
       if (edit.id) await api.put(`/saas-revenue/coupons/${edit.id}`, payload);
       else await api.post('/saas-revenue/coupons', payload);
       setEdit(null); await load();
-    } catch (e: any) { alert(e?.response?.data?.message || 'Save failed'); }
+    } catch (e: any) { toast.error(e?.response?.data?.message || 'Save failed'); }
     finally { setSaving(false); }
   };
 
@@ -85,7 +111,7 @@ export default function SystemCouponsPage() {
     try {
       await api.put(`/saas-revenue/coupons/${c.id}`, { isActive: !c.isActive });
       await load();
-    } catch (e: any) { alert(e?.response?.data?.message || 'Toggle failed'); }
+    } catch (e: any) { toast.error(e?.response?.data?.message || 'Toggle failed'); }
     finally { setTogglingId(null); }
   };
 
@@ -139,6 +165,14 @@ export default function SystemCouponsPage() {
         <Chip id="exhausted" label="Exhausted" count={stats.exhausted} />
       </div>
 
+      <input
+        type="text"
+        placeholder="Search..."
+        value={search}
+        onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+        className="px-3 py-2 border border-gray-200 rounded-lg text-sm w-64 focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
+
       {loading ? <Loader2 className="w-5 h-5 animate-spin text-gray-400" /> : (
         <div className="bg-white border rounded-lg overflow-hidden">
           <table className="w-full text-sm">
@@ -148,7 +182,7 @@ export default function SystemCouponsPage() {
               <th className="text-left px-4 py-2">Expires</th><th className="text-left px-4 py-2">Status</th><th></th>
             </tr></thead>
             <tbody>
-              {visible.map((c) => {
+              {paginatedItems.map((c) => {
                 const expired = isExpired(c);
                 const exhausted = isExhausted(c);
                 const status = expired ? { t: 'expired',   k: 'text-amber-700' }
@@ -186,6 +220,7 @@ export default function SystemCouponsPage() {
               {visible.length === 0 && <tr><td colSpan={7} className="px-4 py-10 text-center text-gray-500">No coupons match this filter</td></tr>}
             </tbody>
           </table>
+          <SystemPagination page={page} pageSize={pageSize} total={visible.length} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
         </div>
       )}
 
@@ -197,29 +232,28 @@ export default function SystemCouponsPage() {
               <button onClick={() => setEdit(null)} className="text-gray-400"><X className="w-5 h-5" /></button>
             </div>
             <div className="space-y-3 text-sm">
-              <div><div className="text-xs text-gray-500 mb-1">Code (will be uppercased)</div><input className="input w-full" value={edit.code || ''} onChange={(e) => setEdit({ ...edit, code: e.target.value })} /></div>
+              <div><div className="text-xs text-gray-500 mb-1">Code (will be uppercased)</div><input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={edit.code || ''} onChange={(e) => setEdit({ ...edit, code: e.target.value })} /></div>
               <div className="grid grid-cols-2 gap-3">
                 <div><div className="text-xs text-gray-500 mb-1">Discount type</div>
-                  <select className="input w-full" value={edit.discountType || 'percent'} onChange={(e) => setEdit({ ...edit, discountType: e.target.value as any })}>
+                  <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={edit.discountType || 'percent'} onChange={(e) => setEdit({ ...edit, discountType: e.target.value as any })}>
                     <option value="percent">Percent</option>
                     <option value="fixed">Fixed amount</option>
                   </select>
                 </div>
-                <div><div className="text-xs text-gray-500 mb-1">Amount {edit.discountType === 'percent' ? '(%)' : '(minor units)'}</div><input type="number" className="input w-full" value={edit.amount ?? 0} onChange={(e) => setEdit({ ...edit, amount: parseInt(e.target.value || '0', 10) })} /></div>
+                <div><div className="text-xs text-gray-500 mb-1">Amount {edit.discountType === 'percent' ? '(%)' : '(minor units)'}</div><input type="number" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={edit.amount ?? 0} onChange={(e) => setEdit({ ...edit, amount: parseInt(e.target.value || '0', 10) })} /></div>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <div><div className="text-xs text-gray-500 mb-1">Max redemptions (optional)</div><input type="number" className="input w-full" value={edit.maxRedemptions ?? ''} onChange={(e) => setEdit({ ...edit, maxRedemptions: e.target.value ? parseInt(e.target.value, 10) : null })} /></div>
-                <div><div className="text-xs text-gray-500 mb-1">Duration months (forever if blank)</div><input type="number" className="input w-full" value={edit.durationMonths ?? ''} onChange={(e) => setEdit({ ...edit, durationMonths: e.target.value ? parseInt(e.target.value, 10) : null })} /></div>
+                <div><div className="text-xs text-gray-500 mb-1">Max redemptions (optional)</div><input type="number" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={edit.maxRedemptions ?? ''} onChange={(e) => setEdit({ ...edit, maxRedemptions: e.target.value ? parseInt(e.target.value, 10) : null })} /></div>
+                <div><div className="text-xs text-gray-500 mb-1">Duration months (forever if blank)</div><input type="number" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={edit.durationMonths ?? ''} onChange={(e) => setEdit({ ...edit, durationMonths: e.target.value ? parseInt(e.target.value, 10) : null })} /></div>
               </div>
-              <div><div className="text-xs text-gray-500 mb-1">Expires at (YYYY-MM-DD, optional)</div><input className="input w-full" value={edit.expiresAt || ''} onChange={(e) => setEdit({ ...edit, expiresAt: e.target.value || null })} placeholder="2026-12-31" /></div>
-              <div><div className="text-xs text-gray-500 mb-1">Notes (internal)</div><input className="input w-full" value={edit.notes || ''} onChange={(e) => setEdit({ ...edit, notes: e.target.value })} /></div>
+              <div><div className="text-xs text-gray-500 mb-1">Expires at (YYYY-MM-DD, optional)</div><input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={edit.expiresAt || ''} onChange={(e) => setEdit({ ...edit, expiresAt: e.target.value || null })} placeholder="2026-12-31" /></div>
+              <div><div className="text-xs text-gray-500 mb-1">Notes (internal)</div><input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={edit.notes || ''} onChange={(e) => setEdit({ ...edit, notes: e.target.value })} /></div>
               <label className="flex items-center gap-2"><input type="checkbox" checked={!!edit.isActive} onChange={(e) => setEdit({ ...edit, isActive: e.target.checked })} /> Active</label>
             </div>
             <div className="mt-5 flex justify-end gap-2">
               <button onClick={() => setEdit(null)} className="px-3 py-2 text-sm border rounded hover:bg-gray-50">Cancel</button>
               <button onClick={save} disabled={saving} className="px-3 py-2 text-sm bg-blue-600 text-white rounded inline-flex items-center gap-2 hover:bg-blue-700 disabled:opacity-50">{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Save</button>
             </div>
-            <style>{`.input{border:1px solid #d1d5db;border-radius:6px;padding:6px 10px;font-size:13px}`}</style>
           </div>
         </div>
       )}

@@ -1753,6 +1753,7 @@ export class ProcurementService {
     id: string,
     userId: string,
     tenantId?: string,
+    userRoles?: string[],
   ): Promise<GoodsReceiptNote> {
     const grn = await this.getGoodsReceipt(id, tenantId);
 
@@ -1763,7 +1764,31 @@ export class ProcurementService {
       );
     }
 
+    // Segregation of duties: inspector cannot approve their own GRN
+    // (Super Admin override allowed for platform unblocking)
+    const userRolesList = userRoles
+      ? userRoles.map((r) => ({ name: r }))
+      : await this.usersService.getUserRoles(userId, tenantId);
+    const userRoleNames = (userRolesList as any[]).map((r: any) =>
+      (typeof r === 'string' ? r : r.name || '').toLowerCase(),
+    );
+    const isSuperAdmin = userRoleNames.includes('super admin');
+
+    if (grn.inspectedById === userId && !isSuperAdmin) {
+      throw new BadRequestException(
+        'Segregation of duties violation: the inspector cannot approve the same GRN',
+      );
+    }
+
+    if (grn.inspectedById === userId && isSuperAdmin) {
+      this.logger.warn(
+        `Super Admin override: user ${userId} both inspected and approved GRN ${grn.grnNumber}`,
+      );
+    }
+
     grn.status = GRNStatus.APPROVED;
+    grn.approvedById = userId;
+    grn.approvedAt = new Date();
     return this.grnRepo.save(grn);
   }
 

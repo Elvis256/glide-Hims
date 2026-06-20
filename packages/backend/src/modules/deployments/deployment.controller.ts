@@ -12,9 +12,11 @@ import { ReplicationService } from './replication.service';
 import { MonitoringService } from './monitoring.service';
 import { BackupService } from '../backup/backup.service';
 import { Public } from '../auth/decorators/public.decorator';
+import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { CreateDeploymentDto, UpdateDeploymentDto, ToggleFeatureFlagDto, ProvisionDeploymentDto, CreateUpdateRolloutDto } from './deployment.dto';
 
 @Controller('deployments')
+@AuthWithPermissions('system.manage')
 export class DeploymentController {
   constructor(
     private deploymentService: DeploymentService,
@@ -25,8 +27,8 @@ export class DeploymentController {
     private backupService: BackupService,
   ) {}
 
-  private getTenantId(req: Request): string {
-    return (req.user as any)?.tenantId || req.headers['x-tenant-id'] as string;
+  private getUserTenantId(req: Request): string {
+    return (req.user as any)?.tenantId;
   }
 
   private isSystemAdmin(req: Request): boolean {
@@ -61,7 +63,7 @@ export class DeploymentController {
 
     // For system admins, use the tenantId from the DTO if provided, otherwise fallback to their context.
     // This allows admins to create deployments for any tenant while maintaining security for regular users.
-    const tenantId = (isSysAdmin && dto?.tenantId) ? dto.tenantId : this.getTenantId(req);
+    const tenantId = (isSysAdmin && dto?.tenantId) ? dto.tenantId : this.getUserTenantId(req);
     return this.deploymentService.createDeployment(tenantId, dto as CreateDeploymentDto);
   }
 
@@ -70,7 +72,7 @@ export class DeploymentController {
     if (this.isSystemAdmin(req)) {
       return this.deploymentService.listAllDeployments();
     }
-    const tenantId = this.getTenantId(req);
+    const tenantId = this.getUserTenantId(req);
     return this.deploymentService.listDeployments(tenantId);
   }
 
@@ -107,7 +109,7 @@ export class DeploymentController {
 
   @Get('rollouts/:rolloutId/status')
   async getRolloutStatus(@Req() req: Request, @Param('rolloutId') rolloutId: string) {
-    const tenantId = this.getTenantId(req);
+    const tenantId = this.getUserTenantId(req);
     return this.updateService.getRolloutStatus(tenantId, rolloutId);
   }
 
@@ -189,7 +191,6 @@ export class DeploymentController {
    * customer hosts to authenticate against the private GitHub repository.
    */
   @Get('source-bundle')
-  @Public()
   async serveSourceBundle(
     @Query('licenseKey') licenseKey: string,
     @Res() res: Response,
@@ -248,7 +249,6 @@ export class DeploymentController {
    * them without authentication.
    */
   @Get('installers/:type')
-  @Public()
   async serveInstallerScript(
     @Param('type') type: string,
     @Res() res: Response,
@@ -301,62 +301,62 @@ export class DeploymentController {
 
   @Post('features/toggle')
   async toggleFeature(@Req() req: Request, @Body() dto: ToggleFeatureFlagDto) {
-    const tenantId = this.isSystemAdmin(req) && dto.tenantId ? dto.tenantId : this.getTenantId(req);
+    const tenantId = this.isSystemAdmin(req) && dto.tenantId ? dto.tenantId : this.getUserTenantId(req);
     return this.featureFlagService.toggleFeature(tenantId, dto);
   }
 
   @Get('features')
   async getTenantFeatures(@Req() req: Request) {
-    const tenantId = this.getTenantId(req);
+    const tenantId = this.getUserTenantId(req);
     return this.featureFlagService.getFeatures(tenantId);
   }
 
   @Get('replication-history')
   async getReplicationHistory(@Req() req: Request) {
-    const tenantId = this.getTenantId(req);
+    const tenantId = this.getUserTenantId(req);
     return this.replicationService.getReplicationHistory(tenantId);
   }
 
   @Get('alerts')
   async listAlerts(@Req() req: Request) {
-    const tenantId = this.getTenantId(req);
+    const tenantId = this.getUserTenantId(req);
     return this.monitoringService.getAlerts(tenantId);
   }
 
   @Put('alerts/:alertId/resolve')
   async resolveAlert(@Req() req: Request, @Param('alertId') alertId: string) {
-    const tenantId = this.getTenantId(req);
+    const tenantId = this.getUserTenantId(req);
     return this.monitoringService.resolveAlert(tenantId, alertId);
   }
 
   @Get(':deploymentId')
   async getDeployment(@Req() req: Request, @Param('deploymentId') deploymentId: string) {
-    const tenantId = this.getTenantId(req);
+    const tenantId = this.getUserTenantId(req);
     return this.deploymentService.getDeployment(tenantId, deploymentId);
   }
 
   @Put(':deploymentId')
   async updateDeployment(@Req() req: Request, @Param('deploymentId') deploymentId: string, @Body() dto: UpdateDeploymentDto) {
-    const tenantId = this.getTenantId(req);
+    const tenantId = this.getUserTenantId(req);
     return this.deploymentService.updateDeployment(tenantId, deploymentId, dto);
   }
 
   @Delete(':deploymentId')
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteDeployment(@Req() req: Request, @Param('deploymentId') deploymentId: string) {
-    const tenantId = this.getTenantId(req);
+    const tenantId = this.getUserTenantId(req);
     return this.deploymentService.deleteDeployment(tenantId, deploymentId);
   }
 
   @Post(':deploymentId/activate/:versionId')
   async activateDeployment(@Req() req: Request, @Param('deploymentId') deploymentId: string, @Param('versionId') versionId: string) {
-    const tenantId = this.getTenantId(req);
+    const tenantId = this.getUserTenantId(req);
     return this.deploymentService.activateDeployment(tenantId, deploymentId, versionId);
   }
 
   @Get(':deploymentId/health')
   async getDeploymentHealth(@Req() req: Request, @Param('deploymentId') deploymentId: string) {
-    const tenantId = this.getTenantId(req);
+    const tenantId = this.getUserTenantId(req);
     return this.deploymentService.getDeploymentHealth(tenantId, deploymentId);
   }
 
@@ -403,7 +403,7 @@ export class DeploymentController {
 
   @Post(':deploymentId/rollback')
   async rollbackDeployment(@Req() req: Request, @Param('deploymentId') deploymentId: string) {
-    const tenantId = this.getTenantId(req);
+    const tenantId = this.getUserTenantId(req);
     return this.updateService.rollbackDeployment(tenantId, deploymentId);
   }
 
@@ -486,13 +486,13 @@ export class DeploymentController {
 
   @Get(':deploymentId/replication-status')
   async getReplicationStatus(@Req() req: Request, @Param('deploymentId') deploymentId: string) {
-    const tenantId = this.getTenantId(req);
+    const tenantId = this.getUserTenantId(req);
     return this.replicationService.getReplicationStatus(tenantId, deploymentId);
   }
 
   @Get(':deploymentId/pending-changes')
   async getPendingChanges(@Req() req: Request, @Param('deploymentId') deploymentId: string) {
-    const tenantId = this.getTenantId(req);
+    const tenantId = this.getUserTenantId(req);
     return this.replicationService.getPendingChanges(tenantId, deploymentId);
   }
 
@@ -514,19 +514,19 @@ export class DeploymentController {
       errorRatePercent?: number;
     },
   ) {
-    const tenantId = this.getTenantId(req);
+    const tenantId = this.getUserTenantId(req);
     return this.monitoringService.recordHealthMetrics(tenantId, deploymentId, dto);
   }
 
   @Get(':deploymentId/status')
   async getDeploymentStatus(@Req() req: Request, @Param('deploymentId') deploymentId: string) {
-    const tenantId = this.getTenantId(req);
+    const tenantId = this.getUserTenantId(req);
     return this.monitoringService.getDeploymentStatus(tenantId, deploymentId);
   }
 
   @Get(':deploymentId/health-history')
   async getHealthHistory(@Req() req: Request, @Param('deploymentId') deploymentId: string) {
-    const tenantId = this.getTenantId(req);
+    const tenantId = this.getUserTenantId(req);
     return this.monitoringService.getHealthHistory(tenantId, deploymentId);
   }
 
@@ -536,7 +536,7 @@ export class DeploymentController {
     @Param('deploymentId') deploymentId: string,
     @Body() dto: { title: string; severity: string },
   ) {
-    const tenantId = this.getTenantId(req);
+    const tenantId = this.getUserTenantId(req);
     return this.monitoringService.createAlert(tenantId, deploymentId, dto.title, dto.severity as any);
   }
 

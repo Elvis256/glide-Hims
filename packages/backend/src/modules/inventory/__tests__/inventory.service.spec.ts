@@ -25,7 +25,10 @@ const mockItemRepo = {
   find: jest.fn(),
   findAndCount: jest.fn(),
   save: jest.fn(),
-  create: jest.fn((data: any) => ({ ...data })),
+  create: jest.fn((arg1: any, arg2?: any) => {
+    const data = arg2 !== undefined ? arg2 : arg1;
+    return { ...data };
+  }),
   softRemove: jest.fn(),
 };
 
@@ -49,6 +52,22 @@ describe('InventoryService', () => {
   let service: InventoryService;
 
   beforeEach(async () => {
+    const defaultManager = createMockManager({
+      findOne: mockItemRepo.findOne,
+      create: mockItemRepo.create,
+      save: mockItemRepo.save,
+      query: jest.fn().mockResolvedValue([]),
+      createQueryBuilder: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        getRawOne: jest.fn().mockResolvedValue(null),
+      }),
+    });
+    mockDataSource.transaction.mockImplementation((cb: any) => cb(defaultManager));
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         InventoryService,
@@ -63,6 +82,17 @@ describe('InventoryService', () => {
     jest.clearAllMocks();
   });
 
+  afterEach(() => {
+    mockItemRepo.findOne.mockReset();
+    mockItemRepo.save.mockReset();
+    mockItemRepo.create.mockReset();
+    mockItemRepo.create.mockImplementation((data: any) => ({ ...data }));
+    mockItemRepo.save.mockImplementation((data: any) => Promise.resolve(data));
+
+    mockStockBalanceRepo.findOne.mockReset();
+    mockStockBalanceRepo.save.mockReset();
+  });
+
   describe('createItem', () => {
     it('should create a new item', async () => {
       const dto = { code: 'MED-001', name: 'Paracetamol', category: 'drugs' };
@@ -74,6 +104,7 @@ describe('InventoryService', () => {
 
       expect(result).toEqual(expect.objectContaining({ code: 'MED-001' }));
       expect(mockItemRepo.create).toHaveBeenCalledWith(
+        Item,
         expect.objectContaining({ code: 'MED-001' }),
       );
     });
@@ -93,7 +124,7 @@ describe('InventoryService', () => {
 
       await service.createItem({ code: 'X', name: 'Y' } as any, 't1');
 
-      expect(mockItemRepo.create).toHaveBeenCalledWith(expect.objectContaining({ tenantId: 't1' }));
+      expect(mockItemRepo.create).toHaveBeenCalledWith(Item, expect.objectContaining({ tenantId: 't1' }));
     });
   });
 

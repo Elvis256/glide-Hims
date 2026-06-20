@@ -104,6 +104,16 @@ export class GoodsReceiptNote extends BaseEntity {
   inspectedById: string;
 
   @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'approved_by_id' })
+  approvedBy: User;
+
+  @Column({ name: 'approved_by_id', nullable: true })
+  approvedById: string;
+
+  @Column({ name: 'approved_at', type: 'timestamptz', nullable: true })
+  approvedAt: Date;
+
+  @ManyToOne(() => User, { nullable: true })
   @JoinColumn({ name: 'posted_by_id' })
   postedBy: User;
 

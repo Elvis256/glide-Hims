@@ -6,6 +6,7 @@ import {
   Patch,
   Param,
   Delete,
+  Query,
   ParseUUIDPipe,
   Request,
 } from '@nestjs/common';
@@ -27,16 +28,18 @@ export class FacilitiesController {
   constructor(private readonly facilitiesService: FacilitiesService) {}
 
   // Public endpoint for basic facility info (for patient cards, receipts, etc.)
+  // Fix 9: require tenantId param and return only safe public subset (no internal IDs)
   @Get('public/info')
   @Public()
   @ApiOperation({ summary: 'Get basic facility info (public - for printing)' })
-  async getPublicInfo() {
-    // Only return the default/first facility — no arbitrary facilityId to prevent cross-tenant data exposure
-    let facility;
-    const facilities = await this.facilitiesService.findAllFacilities();
-    facility = facilities[0];
+  async getPublicInfo(@Query('tenantId') tenantId?: string) {
+    if (!tenantId) {
+      return { name: 'Hospital', address: '', phone: '', email: '', logo: '' };
+    }
+    const facilities = await this.facilitiesService.findAllFacilities(tenantId);
+    const facility = facilities[0];
     if (!facility) {
-      return { name: 'Hospital', address: '', phone: '', email: '', logo: '', taxId: '' };
+      return { name: 'Hospital', address: '', phone: '', email: '', logo: '' };
     }
     const settings = (facility.settings || {}) as Record<string, any>;
     return {
@@ -49,7 +52,6 @@ export class FacilitiesController {
       phone: facility.contact?.phone || '',
       email: facility.contact?.email || '',
       logo: settings.logo || '',
-      taxId: settings.taxId || '',
     };
   }
 

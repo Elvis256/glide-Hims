@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import api from '../../services/api';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import {
   Settings, Database, Globe, Shield, Server, Users, Building2,
   Activity, HardDrive, RefreshCw, Loader2, Save, Pencil, X, Check,
@@ -73,6 +74,7 @@ export default function SystemSettingsPage() {
     deploymentMode: 'on-premise',
     version: typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.0',
   });
+  const [confirmAction, setConfirmAction] = useState<{open: boolean; title: string; message: string; variant: 'danger'|'warning'|'info'; confirmLabel: string; onConfirm: () => void}>({open: false, title: '', message: '', variant: 'danger', confirmLabel: 'Confirm', onConfirm: () => {}});
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -253,6 +255,17 @@ export default function SystemSettingsPage() {
                         let val: any = editValue;
                         if (config.type === 'number') val = Number(editValue) || 0;
                         if (config.type === 'boolean') val = editValue === 'true';
+                        if (key === 'platform.maintenance_mode' && val === true) {
+                          setConfirmAction({
+                            open: true,
+                            title: 'Enable maintenance mode?',
+                            message: 'Enabling maintenance mode will take the entire platform offline. All users will see a maintenance page and will be unable to access the system until this setting is disabled.',
+                            variant: 'danger',
+                            confirmLabel: 'Enable maintenance mode',
+                            onConfirm: () => { setConfirmAction(prev => ({ ...prev, open: false })); handleSaveSetting(key, val); },
+                          });
+                          return;
+                        }
                         handleSaveSetting(key, val);
                       }}
                       disabled={saving}
@@ -283,6 +296,16 @@ export default function SystemSettingsPage() {
           })}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmAction.open}
+        title={confirmAction.title}
+        message={confirmAction.message}
+        variant={confirmAction.variant}
+        confirmLabel={confirmAction.confirmLabel}
+        onConfirm={confirmAction.onConfirm}
+        onCancel={() => setConfirmAction(prev => ({ ...prev, open: false }))}
+      />
     </div>
   );
 }

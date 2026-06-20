@@ -178,7 +178,7 @@ export class UsersController {
     if (!req.user?.isSystemAdmin) {
       throw new ForbiddenException('Only system administrators can perform this action');
     }
-    const result = await this.authService.adminResetPassword(id, dto.newPassword, req.user.sub);
+    const result = await this.authService.adminResetPassword(id, dto.newPassword, req.user.sub, undefined, req.user.isSystemAdmin);
     return { message: 'Password reset successfully', data: result };
   }
 
@@ -271,7 +271,10 @@ export class UsersController {
     if (!tenantId && !req.user?.isSystemAdmin) {
       throw new ForbiddenException('Tenant context required');
     }
-    await this.usersService.remove(id, tenantId);
+    await this.usersService.remove(id, tenantId, {
+      id: req.user?.sub || req.user?.id,
+      isSystemAdmin: req.user?.isSystemAdmin,
+    });
     return { message: 'User deleted successfully' };
   }
 
@@ -481,6 +484,7 @@ export class UsersController {
       dto.newPassword,
       req.user.sub,
       req.user.tenantId,
+      req.user.isSystemAdmin,
     );
     return { message: 'Password reset successfully', data: result };
   }

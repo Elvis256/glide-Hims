@@ -10,10 +10,11 @@ import {
   BadRequestException,
   Request,
   ForbiddenException,
+  Query,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { TenantsService } from './tenants.service';
-import { CreateTenantDto, UpdateTenantDto } from './dto/tenant.dto';
+import { CreateTenantDto, UpdateTenantDto, TenantListQueryDto } from './dto/tenant.dto';
 import { ChangeFacilityModeDto } from './dto/change-facility-mode.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { Public } from '../auth/decorators/public.decorator';
@@ -57,11 +58,11 @@ export class TenantsController {
   @Get()
   @AuthWithPermissions('tenants.read')
   @ApiOperation({ summary: 'List all tenants' })
-  async findAll(@Request() req: any) {
+  async findAll(@Query() query: TenantListQueryDto, @Request() req: any) {
     if (!req.user?.isSystemAdmin) {
       throw new ForbiddenException('System admin access required');
     }
-    return this.tenantsService.findAll();
+    return this.tenantsService.findAll(query);
   }
 
   @Get('with-stats')

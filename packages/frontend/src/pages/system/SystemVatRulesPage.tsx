@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Loader2, Save, CheckCircle, AlertTriangle, Plus, Trash2, RotateCcw, Percent } from 'lucide-react';
 import api from '../../services/api';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import { unwrap } from './saas/_shared';
 
 interface VatRule {
@@ -35,6 +36,7 @@ export default function SystemVatRulesPage() {
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -90,7 +92,12 @@ export default function SystemVatRulesPage() {
     }
   };
 
-  const reset = () => setData(DEFAULTS);
+  const reset = () =>
+    setConfirmAction({
+      title: 'Reset defaults',
+      message: 'This will discard all current VAT rules and restore the built-in defaults. Unsaved changes will be lost.',
+      onConfirm: () => { setData(DEFAULTS); setConfirmAction(null); },
+    });
 
   if (loading) {
     return <div className="p-8 flex items-center gap-2 text-gray-600"><Loader2 className="w-5 h-5 animate-spin" /> Loading VAT rules…</div>;
@@ -224,7 +231,11 @@ export default function SystemVatRulesPage() {
                       />
                     </td>
                     <td className="px-3 py-2 text-right">
-                      <button onClick={() => removeRule(i)} className="text-red-600 hover:text-red-800" title="Remove">
+                      <button onClick={() => setConfirmAction({
+                        title: 'Remove country rule',
+                        message: `Remove the rule for "${r.country || '(unnamed)'}"? This change is not saved until you click Save.`,
+                        onConfirm: () => { removeRule(i); setConfirmAction(null); },
+                      })} className="text-red-600 hover:text-red-800" title="Remove">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </td>
@@ -256,6 +267,16 @@ export default function SystemVatRulesPage() {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={!!confirmAction}
+        title={confirmAction?.title || ''}
+        message={confirmAction?.message || ''}
+        confirmLabel="Confirm"
+        variant="danger"
+        onConfirm={() => confirmAction?.onConfirm()}
+        onCancel={() => setConfirmAction(null)}
+      />
     </div>
   );
 }

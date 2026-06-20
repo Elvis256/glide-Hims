@@ -116,8 +116,10 @@ export class SystemSettingsController {
   @Public()
   @ApiOperation({ summary: 'Get a public system setting by key (read-only)' })
   async findOnePublic(@Param('key') key: string) {
-    // Only allow explicitly public settings — no tenant parameter to prevent cross-tenant leakage
+    // Fix 9: whitelist only specific safe keys and return empty for non-whitelisted
     const publicKeys = [
+      'app.name',
+      'app.logo',
       'facility_name',
       'facility_logo',
       'facility_address',
@@ -128,9 +130,13 @@ export class SystemSettingsController {
       'default_currency',
     ];
     if (!publicKeys.includes(key)) {
-      throw new ForbiddenException('This setting is not publicly accessible');
+      return { key, value: null };
     }
-    return this.systemSettingsService.getByKey(key);
+    try {
+      return await this.systemSettingsService.getByKey(key);
+    } catch {
+      return { key, value: null };
+    }
   }
 
   @Get(':key')

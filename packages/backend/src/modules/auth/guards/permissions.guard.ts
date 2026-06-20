@@ -85,8 +85,9 @@ export class PermissionsGuard implements CanActivate {
         path.includes('/system-reset-password') ||
         path.includes('/system-create-admin') ||
         // Creating/updating other system admins is a system-level op even though
-        // the route is /users. Detect via request body flag.
-        (path.startsWith('/api/v1/users') && request.body?.isSystemAdmin === true);
+        // the route is /users. Check the *database* isSystemAdmin flag from the JWT,
+        // never trust request.body.isSystemAdmin (Fix 15: body-based privilege escalation).
+        (path.startsWith('/api/v1/users') && path.includes('/system-admins'));
 
       if (isSystemLevelEndpoint) {
         this.logSuperAdminAccess(request, requiredPermissions);

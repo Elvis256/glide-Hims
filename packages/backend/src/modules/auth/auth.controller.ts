@@ -483,8 +483,12 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Account unlocked successfully' })
   @ApiResponse({ status: 404, description: 'User not found' })
   @ApiResponse({ status: 403, description: 'Admin role required' })
-  async unlockAccount(@CurrentUser('id') adminUserId: string, @Param('userId') userId: string) {
-    return this.authService.unlockAccount(userId, adminUserId);
+  async unlockAccount(
+    @CurrentUser('id') adminUserId: string,
+    @CurrentUser('tenantId') callerTenantId: string,
+    @Param('userId') userId: string,
+  ) {
+    return this.authService.unlockAccount(userId, adminUserId, callerTenantId);
   }
 
   @Get('admin/lockout-status/:userId')
@@ -494,8 +498,11 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Account lockout status' })
   @ApiResponse({ status: 404, description: 'User not found' })
   @ApiResponse({ status: 403, description: 'Admin role required' })
-  async getAccountLockoutStatus(@Param('userId') userId: string) {
-    return this.authService.getAccountLockoutStatus(userId);
+  async getAccountLockoutStatus(
+    @CurrentUser('tenantId') callerTenantId: string,
+    @Param('userId') userId: string,
+  ) {
+    return this.authService.getAccountLockoutStatus(userId, callerTenantId);
   }
 
   @Post('admin/unblock-ip')

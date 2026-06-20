@@ -11,7 +11,7 @@ import {
 } from 'typeorm';
 import { Item } from './inventory.entity';
 
-export type BatchStockStatus = 'active' | 'quarantined' | 'expired';
+export type BatchStockStatus = 'active' | 'quarantined' | 'expired' | 'recalled';
 
 @Entity('batch_stock_balances')
 @Index(['itemId', 'facilityId'])

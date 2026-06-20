@@ -55,6 +55,15 @@ const SystemLicensesPage = lazy(() => import('./pages/system/SystemLicensesPage'
 const SystemPlansPage = lazy(() => import('./pages/system/SystemPlansPage'));
 const SystemSubscriptionsPage = lazy(() => import('./pages/system/SystemSubscriptionsPage'));
 const SystemSubscriptionDetailPage = lazy(() => import('./pages/system/SystemSubscriptionDetailPage'));
+const SystemQuotationGeneratorPage = lazy(() => import('./pages/system/SystemQuotationGeneratorPage'));
+const SystemQuotationsPage = lazy(() => import('./pages/system/SystemQuotationsPage'));
+const SystemQuotationDetailPage = lazy(() => import('./pages/system/SystemQuotationDetailPage'));
+const SystemPriceCatalogPage = lazy(() => import('./pages/system/SystemPriceCatalogPage'));
+const SystemContractsPage = lazy(() => import('./pages/system/SystemContractsPage'));
+const SystemContractDetailPage = lazy(() => import('./pages/system/SystemContractDetailPage'));
+const SystemOnboardingsPage = lazy(() => import('./pages/system/SystemOnboardingsPage'));
+const SystemOnboardingDetailPage = lazy(() => import('./pages/system/SystemOnboardingDetailPage'));
+const SystemClientHealthPage = lazy(() => import('./pages/system/SystemClientHealthPage'));
 const SystemSaasInvoicesPage = lazy(() => import('./pages/system/SystemSaasInvoicesPage'));
 const SystemInvoiceDetailPage = lazy(() => import('./pages/system/SystemInvoiceDetailPage'));
 const SystemBillingSettingsPage = lazy(() => import('./pages/system/SystemBillingSettingsPage'));
@@ -556,23 +565,16 @@ function AppRoutes() {
       // object from the backend using the httpOnly auth cookie. We no
       // longer persist the user object (or any in-memory tokens) to
       // localStorage, so this rehydrate is required for any reloaded tab.
+      // Single /auth/me call returns everything (profile + permissions +
+      // roles + modules), eliminating the old sequential two-call waterfall.
       if (isAuthenticated) {
         try {
           const { authService } = await import('./services/auth');
           const { useAuthStore } = await import('./store/auth');
 
-          // /auth/profile returns the full User; populate the store first
-          // so route-guards have something to read while /auth/me lands.
-          const profile = await authService.getProfile();
-          useAuthStore.getState().setUser(profile);
-
-          // /auth/me returns the effective permissions/roles/modules.
-          try {
-            const meData = await authService.getMe();
-            useAuthStore.getState().updateFromMe(meData);
-          } catch {
-            // Non-critical: navigation will fall back to role-based filtering
-          }
+          const meData = await authService.getMe();
+          useAuthStore.getState().setUser(meData as any);
+          useAuthStore.getState().updateFromMe(meData);
 
           console.log('[App] Auth rehydrated from cookie');
         } catch (err) {
@@ -669,6 +671,15 @@ function AppRoutes() {
         <Route path="plans" element={<SystemPlansPage />} />
         <Route path="subscriptions" element={<SystemSubscriptionsPage />} />
         <Route path="subscriptions/:id" element={<SystemSubscriptionDetailPage />} />
+        <Route path="quotation-generator" element={<SystemQuotationGeneratorPage />} />
+        <Route path="quotations" element={<SystemQuotationsPage />} />
+        <Route path="quotations/:id" element={<SystemQuotationDetailPage />} />
+        <Route path="price-catalog" element={<SystemPriceCatalogPage />} />
+        <Route path="contracts" element={<SystemContractsPage />} />
+        <Route path="contracts/:id" element={<SystemContractDetailPage />} />
+        <Route path="onboardings" element={<SystemOnboardingsPage />} />
+        <Route path="onboardings/:id" element={<SystemOnboardingDetailPage />} />
+        <Route path="client-health" element={<SystemClientHealthPage />} />
         <Route path="saas-invoices" element={<SystemSaasInvoicesPage />} />
         <Route path="saas-invoices/:id" element={<SystemInvoiceDetailPage />} />
         <Route path="billing-settings" element={<SystemBillingSettingsPage />} />

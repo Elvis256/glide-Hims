@@ -50,11 +50,14 @@ export class FlutterwaveService {
   }
 
   verifyWebhookSignature(rawSignature: string | undefined, rawBody: string): boolean {
-    if (!this.secretHash) return true;
+    if (!this.secretHash) {
+      this.logger.error('FLW_WEBHOOK_HASH not configured — rejecting webhook. Set the env var to accept Flutterwave webhooks.');
+      return false;
+    }
     if (!rawSignature) return false;
     const computed = crypto.createHmac('sha256', this.secretHash).update(rawBody).digest('hex');
     try { return crypto.timingSafeEqual(Buffer.from(rawSignature), Buffer.from(computed)); }
-    catch { return rawSignature === this.secretHash; }
+    catch { return false; }
   }
 
   async verifyTransaction(transactionId: string | number): Promise<{ ok: boolean; amount?: number; currency?: string; status?: string; tx_ref?: string; raw?: any }> {

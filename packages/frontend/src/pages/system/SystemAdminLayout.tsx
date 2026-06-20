@@ -31,6 +31,12 @@ import {
   Percent,
   Coins,
   Inbox,
+  FileText,
+  ClipboardList,
+  HeartPulse,
+  Handshake,
+  ListChecks,
+  DollarSign,
 } from 'lucide-react';
 
 const sidebarItems = [
@@ -45,6 +51,12 @@ const sidebarItems = [
   { name: 'Licenses', href: '/system/licenses', icon: KeyRound },
   { name: 'Plans', href: '/system/plans', icon: Package },
   { name: 'Subscriptions', href: '/system/subscriptions', icon: CreditCard },
+  { name: 'Price Catalog', href: '/system/price-catalog', icon: DollarSign },
+  { name: 'Quotations', href: '/system/quotations', icon: FileText },
+  { name: 'Contracts', href: '/system/contracts', icon: Handshake },
+  { name: 'Onboarding', href: '/system/onboardings', icon: ListChecks },
+  { name: 'Client Health', href: '/system/client-health', icon: HeartPulse },
+  { name: 'Quotation Generator', href: '/system/quotation-generator', icon: ClipboardList },
   { name: 'SaaS Invoices', href: '/system/saas-invoices', icon: Receipt },
   { name: 'Billing Identity', href: '/system/billing-settings', icon: Building2 },
   { name: 'Email Templates', href: '/system/email-templates', icon: Mail },

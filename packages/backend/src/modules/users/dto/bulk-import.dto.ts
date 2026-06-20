@@ -9,4 +9,5 @@ export interface BulkImportResult {
   successful: number;
   failed: number;
   errors: BulkImportRowError[];
+  generatedCredentials?: { username: string; password: string }[];
 }

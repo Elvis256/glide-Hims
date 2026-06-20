@@ -10,8 +10,15 @@ import {
   ExpiryAlert,
 } from '../../../database/entities/inventory.entity';
 import { BatchStockBalance } from '../../../database/entities/batch-stock.entity';
-import { Prescription } from '../../../database/entities/prescription.entity';
+import { Prescription, PrescriptionItem } from '../../../database/entities/prescription.entity';
 import { AuditLog } from '../../../database/entities/audit-log.entity';
+import { DrugClassification, DrugInteraction } from '../../../database/entities/drug-classification.entity';
+import { DrugInteractionOverride } from '../../../database/entities/drug-interaction-override.entity';
+import { ControlledSubstanceLog } from '../../../database/entities/controlled-substance.entity';
+import { ReceiptReprint, RetailCustomer } from '../../../database/entities/pos-retail.entity';
+import { PosShiftGuardService } from '../../pos/services/pos-shift-guard.service';
+import { EfrisService } from '../../efris/efris.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { FinanceService } from '../../finance/finance.service';
 import { InventoryService } from '../../inventory/inventory.service';
 import { BadRequestException } from '@nestjs/common';
@@ -25,11 +32,31 @@ describe('PharmacyService', () => {
   const mockLedgerRepo = {};
   const mockStockBalanceRepo = {};
   const mockPrescriptionRepo = {};
+  const mockPrescriptionItemRepo = {};
   const mockBatchStockRepo = {};
   const mockExpiryAlertRepo = {};
   const mockAuditLogRepo = {};
+  const mockDrugClassRepo = {};
+  const mockDrugInteractionRepo = {};
+  const mockDdiOverrideRepo = {};
+  const mockControlledLogRepo = {};
+  const mockReprintRepo = {};
+  const mockRetailCustomerRepo = {};
   const mockFinanceService = {};
   const mockInventoryService = { applyStockMovement: jest.fn().mockResolvedValue({ id: 'ledger-1' }) };
+  const mockPosShiftGuard = {
+    assertOpenShift: jest.fn().mockResolvedValue({ id: 'shift-1' }),
+    assertActiveRegister: jest.fn().mockResolvedValue(true),
+    recordSale: jest.fn(),
+  };
+  const mockEfrisService = {
+    getConfig: jest.fn().mockResolvedValue({}),
+    buildInvoicePayload: jest.fn().mockReturnValue({}),
+    enqueueDocument: jest.fn().mockResolvedValue({}),
+  };
+  const mockEventEmitter = {
+    emit: jest.fn(),
+  };
 
   const mockEntityManager = {
     findOne: jest.fn(),
@@ -63,10 +90,20 @@ describe('PharmacyService', () => {
         { provide: getRepositoryToken(StockLedger), useValue: mockLedgerRepo },
         { provide: getRepositoryToken(StockBalance), useValue: mockStockBalanceRepo },
         { provide: getRepositoryToken(Prescription), useValue: mockPrescriptionRepo },
+        { provide: getRepositoryToken(PrescriptionItem), useValue: mockPrescriptionItemRepo },
         { provide: getRepositoryToken(BatchStockBalance), useValue: mockBatchStockRepo },
         { provide: getRepositoryToken(ExpiryAlert), useValue: mockExpiryAlertRepo },
         { provide: getRepositoryToken(AuditLog), useValue: mockAuditLogRepo },
+        { provide: getRepositoryToken(DrugClassification), useValue: mockDrugClassRepo },
+        { provide: getRepositoryToken(DrugInteraction), useValue: mockDrugInteractionRepo },
+        { provide: getRepositoryToken(DrugInteractionOverride), useValue: mockDdiOverrideRepo },
+        { provide: getRepositoryToken(ControlledSubstanceLog), useValue: mockControlledLogRepo },
+        { provide: getRepositoryToken(ReceiptReprint), useValue: mockReprintRepo },
+        { provide: getRepositoryToken(RetailCustomer), useValue: mockRetailCustomerRepo },
         { provide: DataSource, useValue: mockDataSource },
+        { provide: PosShiftGuardService, useValue: mockPosShiftGuard },
+        { provide: EfrisService, useValue: mockEfrisService },
+        { provide: EventEmitter2, useValue: mockEventEmitter },
         { provide: InventoryService, useValue: mockInventoryService },
       ],
     }).compile();

@@ -38,6 +38,7 @@ export enum EncounterStatus {
   RETURN_TO_PHARMACY = 'return_to_pharmacy',
   RETURN_TO_LAB = 'return_to_lab',
   ADMITTED = 'admitted',
+  READY_FOR_DISCHARGE = 'ready_for_discharge',
   DISCHARGED = 'discharged',
   COMPLETED = 'completed',
   CANCELLED = 'cancelled',

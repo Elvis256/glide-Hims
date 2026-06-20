@@ -200,11 +200,16 @@ export default function UserListPage() {
       toast.error('Please fill all required fields');
       return;
     }
+    const trimmedEmail = newUser.email.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      toast.error('Please enter a valid email address');
+      return;
+    }
     if (newUser.password.length < 8) {
       toast.error('Password must be at least 8 characters');
       return;
     }
-    createUserMutation.mutate(newUser);
+    createUserMutation.mutate({ ...newUser, email: trimmedEmail });
   };
 
   // Update user mutation

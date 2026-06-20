@@ -1,6 +1,8 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import api from '../../services/api';
+import ConfirmDialog from '../../components/ConfirmDialog';
+import SystemPagination from '../../components/SystemPagination';
 import {
   Plus,
   Search,
@@ -38,28 +40,68 @@ interface UserFormData {
   password: string;
 }
 
+function validatePassword(pw: string): string | null {
+  if (pw.length < 8) return 'Password must be at least 8 characters';
+  if (!/[A-Z]/.test(pw)) return 'Password must contain an uppercase letter';
+  if (!/[a-z]/.test(pw)) return 'Password must contain a lowercase letter';
+  if (!/[0-9]/.test(pw)) return 'Password must contain a number';
+  if (!/[^A-Za-z0-9]/.test(pw)) return 'Password must contain a special character';
+  return null;
+}
+
 export default function SystemUsersPage() {
   const [users, setUsers] = useState<SystemUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingUser, setEditingUser] = useState<SystemUser | null>(null);
   const [actionMenuId, setActionMenuId] = useState<string | null>(null);
   const [resetPasswordModal, setResetPasswordModal] = useState<SystemUser | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [total, setTotal] = useState(0);
+  const [confirmState, setConfirmState] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    variant: 'danger' | 'warning';
+    onConfirm: () => void;
+  }>({ open: false, title: '', message: '', variant: 'danger', onConfirm: () => {} });
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Debounce search input
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 300);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [search]);
 
   const loadUsers = useCallback(async () => {
     try {
+      setLoading(true);
       const res = await api.get('/users/system-admins', {
-        params: { search: search || undefined, limit: 100 },
+        params: { search: debouncedSearch || undefined, page, limit: pageSize },
       });
       const data = res.data;
-      setUsers(Array.isArray(data) ? data : (data?.data || []));
-    } catch {
+      if (Array.isArray(data)) {
+        setUsers(data);
+        setTotal(data.length);
+      } else {
+        setUsers(data?.data || []);
+        setTotal(data?.total ?? data?.data?.length ?? 0);
+      }
+    } catch (err) {
       toast.error('Failed to load system users');
     } finally {
       setLoading(false);
     }
-  }, [search]);
+  }, [debouncedSearch, page, pageSize]);
 
   useEffect(() => {
     loadUsers();
@@ -87,8 +129,7 @@ export default function SystemUsersPage() {
     setActionMenuId(null);
   };
 
-  const handleDelete = async (userId: string) => {
-    if (!confirm('Are you sure you want to delete this system admin user?')) return;
+  const handleDeleteConfirmed = async (userId: string) => {
     try {
       await api.delete(`/users/${userId}`);
       toast.success('User deleted');
@@ -96,6 +137,20 @@ export default function SystemUsersPage() {
     } catch {
       toast.error('Failed to delete user');
     }
+    setActionMenuId(null);
+  };
+
+  const handleDelete = (userId: string) => {
+    setConfirmState({
+      open: true,
+      title: 'Delete User?',
+      message: 'Are you sure you want to delete this system admin user? This action cannot be undone.',
+      variant: 'danger',
+      onConfirm: () => {
+        setConfirmState((s) => ({ ...s, open: false }));
+        handleDeleteConfirmed(userId);
+      },
+    });
     setActionMenuId(null);
   };
 
@@ -258,6 +313,18 @@ export default function SystemUsersPage() {
         )}
       </div>
 
+      {/* Pagination */}
+      <SystemPagination
+        page={page}
+        pageSize={pageSize}
+        total={total}
+        onPageChange={setPage}
+        onPageSizeChange={(s) => {
+          setPageSize(s);
+          setPage(1);
+        }}
+      />
+
       {/* Create/Edit Modal */}
       {(showCreateModal || editingUser) && (
         <UserModal
@@ -281,6 +348,13 @@ export default function SystemUsersPage() {
           onClose={() => setResetPasswordModal(null)}
         />
       )}
+
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        {...confirmState}
+        onCancel={() => setConfirmState((s) => ({ ...s, open: false }))}
+        confirmLabel="Delete"
+      />
     </div>
   );
 }
@@ -319,13 +393,25 @@ function UserModal({
           phone: formData.phone,
         };
         if (formData.password) {
+          const pwError = validatePassword(formData.password);
+          if (pwError) {
+            setError(pwError);
+            setSaving(false);
+            return;
+          }
           updatePayload.password = formData.password;
         }
         await api.patch(`/users/${user!.id}`, updatePayload);
         toast.success('User updated successfully');
       } else {
-        if (!formData.password || formData.password.length < 8) {
-          setError('Password must be at least 8 characters');
+        if (!formData.password) {
+          setError('Password is required');
+          setSaving(false);
+          return;
+        }
+        const pwError = validatePassword(formData.password);
+        if (pwError) {
+          setError(pwError);
           setSaving(false);
           return;
         }

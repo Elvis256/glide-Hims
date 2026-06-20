@@ -443,7 +443,8 @@ export class EncountersService {
       EncounterStatus.IN_CONSULTATION,
       EncounterStatus.CANCELLED,
     ],
-    [EncounterStatus.ADMITTED]: [EncounterStatus.DISCHARGED, EncounterStatus.CANCELLED],
+    [EncounterStatus.ADMITTED]: [EncounterStatus.READY_FOR_DISCHARGE, EncounterStatus.DISCHARGED, EncounterStatus.CANCELLED],
+    [EncounterStatus.READY_FOR_DISCHARGE]: [EncounterStatus.DISCHARGED, EncounterStatus.ADMITTED, EncounterStatus.CANCELLED],
     // Terminal states: COMPLETED, DISCHARGED, CANCELLED — no transitions allowed
   };
 
@@ -629,6 +630,30 @@ export class EncountersService {
       }
     } catch (err) {
       this.logger.error(`Failed to notify doctor on return for encounter ${id}: ${err}`);
+    }
+
+    // Escalate to supervisors when bounce count reaches warning threshold
+    const bounceCount = saved.metadata?.bounceCount || 0;
+    if (bounceCount >= 3) {
+      const patientName = saved.patient?.fullName || 'Patient';
+      this.inAppNotificationsService
+        .getUserIdsByRole(['supervisor', 'head of department', 'medical director'], saved.facilityId, saved.tenantId)
+        .then((supervisorIds) => {
+          if (supervisorIds.length > 0) {
+            return this.inAppNotificationsService.notifyMany(
+              supervisorIds,
+              {
+                facilityId: saved.facilityId,
+                type: 'general' as any,
+                title: `Encounter Bounce Alert (${bounceCount}x)`,
+                message: `${patientName} (${saved.visitNumber}) has been returned ${bounceCount} times. Reason: ${reason}. Please review.`,
+                metadata: { referenceType: 'encounter', referenceId: saved.id, bounceCount },
+              },
+              saved.tenantId,
+            );
+          }
+        })
+        .catch((err) => this.logger.warn(`Supervisor escalation notification failed: ${err.message}`));
     }
 
     return saved;

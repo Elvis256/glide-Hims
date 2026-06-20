@@ -16,7 +16,7 @@ import { Logger } from '@nestjs/common';
     methods: ['GET', 'POST'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   },
-  namespace: '/socket.io',
+  namespace: '/notifications',
   transports: ['websocket', 'polling'],
   serveClient: false,
   pingInterval: 25000,

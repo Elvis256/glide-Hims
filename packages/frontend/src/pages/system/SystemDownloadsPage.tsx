@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Download, Loader2, Plus, RefreshCw, Trash2, Upload, FileArchive, AlertCircle } from 'lucide-react';
+import { toast } from 'sonner';
 import api from '../../services/api';
+import ConfirmDialog from '../../components/ConfirmDialog';
 
 interface Installer {
   id: string;
@@ -62,6 +64,7 @@ export default function SystemDownloadsPage() {
     isPublished: true,
     minLicenseTier: '',
   });
+  const [confirmAction, setConfirmAction] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
 
   async function load() {
     setLoading(true);
@@ -101,10 +104,20 @@ export default function SystemDownloadsPage() {
     }
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm('Delete this installer record? The file on disk is not removed.')) return;
-    await api.delete(`/downloads/${id}`);
-    load();
+  function handleDelete(id: string) {
+    setConfirmAction({
+      title: 'Delete installer',
+      message: 'Delete this installer record? The file on disk is not removed.',
+      onConfirm: async () => {
+        setConfirmAction(null);
+        try {
+          await api.delete(`/downloads/${id}`);
+          load();
+        } catch (e: any) {
+          toast.error(e?.response?.data?.message || e?.message || 'Failed to delete installer');
+        }
+      },
+    });
   }
 
   async function handleTogglePublish(it: Installer) {
@@ -276,6 +289,16 @@ export default function SystemDownloadsPage() {
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-900">
         <strong>How it works:</strong> Run <code>./scripts/build-installer.sh 1.0.0</code> on the server to create a tarball of this repo at <code>/var/lib/glide-hims/installers/</code>, then register the metadata here. Authenticated users hit <code>/api/v1/downloads/:id/file</code>.
       </div>
+
+      <ConfirmDialog
+        open={!!confirmAction}
+        title={confirmAction?.title || ''}
+        message={confirmAction?.message || ''}
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={() => confirmAction?.onConfirm()}
+        onCancel={() => setConfirmAction(null)}
+      />
 
       {showAudit && (
         <div className="bg-white rounded-xl shadow-sm border overflow-hidden">

@@ -969,6 +969,7 @@ export class AuthService {
       fullName: user.fullName,
       email: user.email,
       phone: user.phone,
+      isSystemAdmin: user.isSystemAdmin || false,
       mfaEnabled: user.mfaEnabled,
       lastLoginAt: user.lastLoginAt,
       roles: userRoles.map((ur) => ({
@@ -1164,49 +1165,48 @@ export class AuthService {
   }
 
   async getMe(userId: string) {
-    const user = await this.userRepository.findOne({ where: { id: userId } });
+    // Fetch user + roles in parallel (2 queries → 1 roundtrip)
+    const [user, userRoles] = await Promise.all([
+      this.userRepository.findOne({ where: { id: userId } }),
+      this.userRoleRepository.find({
+        where: { userId },
+        relations: ['role', 'facility'],
+      }),
+    ]);
     if (!user) throw new UnauthorizedException('User not found');
-
-    const userRoles = await this.userRoleRepository.find({
-      where: { userId: user.id },
-      relations: ['role', 'facility'],
-    });
 
     const roles = userRoles.map((ur) => ur.role.name);
     const roleIds = userRoles.map((ur) => ur.roleId);
 
-    // Resolve permissions including inheritance
-    let permissions: string[] = [];
-    if (roleIds.length > 0) {
-      const allRoleIds = new Set<string>(roleIds);
-      for (const roleId of roleIds) {
-        let currentId = roleId;
-        const visited = new Set<string>([roleId]);
-        for (let depth = 0; depth < 10; depth++) {
-          const parentRole = await this.userRoleRepository.manager
-            .getRepository('Role')
-            .findOne({ where: { id: currentId }, select: ['id', 'parentRoleId'] });
-          if (!parentRole?.parentRoleId || visited.has(parentRole.parentRoleId)) break;
-          visited.add(parentRole.parentRoleId);
-          allRoleIds.add(parentRole.parentRoleId);
-          currentId = parentRole.parentRoleId;
-        }
-      }
+    // Resolve role permissions (recursive CTE) + direct permissions in parallel
+    const rolePermPromise = roleIds.length > 0
+      ? this.userRoleRepository.manager.query(
+          `WITH RECURSIVE role_tree AS (
+             SELECT id FROM roles WHERE id IN (${roleIds.map((_, i) => `$${i + 1}`).join(', ')})
+             UNION
+             SELECT r.parent_role_id FROM roles r
+             INNER JOIN role_tree rt ON rt.id = r.id
+             WHERE r.parent_role_id IS NOT NULL
+           )
+           SELECT DISTINCT p.code FROM role_tree rt
+           JOIN role_permissions rp ON rp.role_id = rt.id
+           JOIN permissions p ON p.id = rp.permission_id`,
+          roleIds,
+        )
+      : Promise.resolve([]);
 
-      const rolePermissions = await this.rolePermissionRepository.find({
-        where: { roleId: In([...allRoleIds]) },
-        relations: ['permission'],
-      });
-      permissions = [...new Set(rolePermissions.map((rp) => rp.permission.code))];
-    }
-
-    // Direct permissions
-    const directPermissions = await this.userPermissionRepository.find({
+    const directPermPromise = this.userPermissionRepository.find({
       where: { userId: user.id },
       relations: ['permission'],
     });
-    permissions = [
-      ...new Set([...permissions, ...directPermissions.map((up) => up.permission.code)]),
+
+    const [permRows, directPermissions] = await Promise.all([rolePermPromise, directPermPromise]);
+
+    const permissions = [
+      ...new Set([
+        ...permRows.map((r: any) => r.code),
+        ...directPermissions.map((up) => up.permission.code),
+      ]),
     ];
 
     const superAdmin = isSuperAdmin(roles);
@@ -1215,116 +1215,77 @@ export class AuthService {
     let tenantEnabledModules: string[] | null = null;
     let facilityMode: string | null = null;
     let businessType: string | null = null;
+    let workflowMode: 'simple' | 'departmental' = 'simple';
     if (user.tenantId) {
-      // Priority 1: Check system_settings for enabled_modules (most reliable)
-      const enabledModulesSetting = await this.userRoleRepository.manager.query(
-        `SELECT value FROM system_settings WHERE tenant_id = $1 AND key = 'enabled_modules' LIMIT 1`,
-        [user.tenantId],
-      );
-      if (enabledModulesSetting?.length > 0) {
-        const val = enabledModulesSetting[0].value;
+      // Batch all system_settings + license + tenant into parallel queries
+      const [settingsRows, tenantRow, licenseRows] = await Promise.all([
+        this.userRoleRepository.manager.query(
+          `SELECT key, value FROM system_settings
+           WHERE tenant_id = $1 AND key IN ('enabled_modules', 'facility_mode', 'workflow_mode', 'business_type')`,
+          [user.tenantId],
+        ),
+        this.tenantRepository.findOne({ where: { id: user.tenantId } }),
+        this.userRoleRepository.manager.query(
+          `SELECT enabled_modules FROM licenses
+           WHERE tenant_id = $1 AND status = 'active'
+           ORDER BY created_at DESC LIMIT 1`,
+          [user.tenantId],
+        ).catch(() => [] as any[]),
+      ]);
+
+      // Parse settings into a map
+      const settingsMap: Record<string, any> = {};
+      for (const row of settingsRows || []) {
+        settingsMap[row.key] = typeof row.value === 'string' ? row.value.replace(/^"|"$/g, '') : row.value;
+      }
+
+      // Priority 1: system_settings enabled_modules
+      if (settingsMap['enabled_modules']) {
+        const val = settingsMap['enabled_modules'];
         const parsed = typeof val === 'string' ? JSON.parse(val) : val;
         if (Array.isArray(parsed) && parsed.length > 0) {
           tenantEnabledModules = parsed;
         }
       }
 
-      // Priority 2: Check tenant.settings.enabledModules (JSONB column)
-      if (!tenantEnabledModules) {
-        const tenant = await this.tenantRepository.findOne({ where: { id: user.tenantId } });
-        if (tenant?.settings?.enabledModules && Array.isArray(tenant.settings.enabledModules)) {
-          tenantEnabledModules = tenant.settings.enabledModules;
+      // Priority 2: tenant.settings.enabledModules
+      if (!tenantEnabledModules && tenantRow?.settings?.enabledModules && Array.isArray(tenantRow.settings.enabledModules)) {
+        tenantEnabledModules = tenantRow.settings.enabledModules;
+      }
+
+      // Priority 3: facility_mode preset
+      if (settingsMap['facility_mode']) {
+        facilityMode = settingsMap['facility_mode'];
+        const preset = getPreset(facilityMode as FacilityMode);
+        if (preset) {
+          if (!tenantEnabledModules) tenantEnabledModules = preset.enabledModules;
+          businessType = preset.businessType;
         }
       }
 
-      // Priority 3: Derive from facility_mode preset
-      if (!tenantEnabledModules) {
-        const facilityModeSetting = await this.userRoleRepository.manager.query(
-          `SELECT value FROM system_settings WHERE tenant_id = $1 AND key = 'facility_mode' LIMIT 1`,
-          [user.tenantId],
-        );
-        if (facilityModeSetting?.length > 0) {
-          const mode =
-            typeof facilityModeSetting[0].value === 'string'
-              ? facilityModeSetting[0].value.replace(/"/g, '')
-              : facilityModeSetting[0].value;
-          facilityMode = mode;
-          const preset = getPreset(mode as FacilityMode);
-          if (preset) {
-            tenantEnabledModules = preset.enabledModules;
-            businessType = preset.businessType;
-          }
-        }
+      // Apply license as upper bound
+      const lic = licenseRows?.[0]?.enabled_modules;
+      const licMods: string[] = Array.isArray(lic)
+        ? lic
+        : typeof lic === 'string'
+          ? (JSON.parse(lic) as string[])
+          : [];
+      if (licMods.length > 0) {
+        const licSet = new Set(licMods);
+        tenantEnabledModules =
+          tenantEnabledModules && tenantEnabledModules.length > 0
+            ? tenantEnabledModules.filter((m) => licSet.has(m))
+            : licMods;
       }
 
-      // Apply the tenant's active license as an UPPER BOUND.
-      // The license is the commercial source of truth and ModuleGuard
-      // (auth/guards/module.guard.ts) treats it as a hard cap — settings can
-      // only narrow the licensed set, never broaden it. Mirror that here so
-      // /auth/me's accessibleModules cannot promise the frontend access that
-      // the backend ModuleGuard will then 403 on. If the tenant has no
-      // settings yet, fall back to the license as the enabled set.
-      try {
-        const licenseRows = await this.userRoleRepository.manager.query(
-          `SELECT enabled_modules FROM licenses
-             WHERE tenant_id = $1 AND status = 'active'
-             ORDER BY created_at DESC LIMIT 1`,
-          [user.tenantId],
-        );
-        const lic = licenseRows?.[0]?.enabled_modules;
-        const licMods: string[] = Array.isArray(lic)
-          ? lic
-          : typeof lic === 'string'
-            ? (JSON.parse(lic) as string[])
-            : [];
-        if (licMods.length > 0) {
-          const licSet = new Set(licMods);
-          tenantEnabledModules =
-            tenantEnabledModules && tenantEnabledModules.length > 0
-              ? tenantEnabledModules.filter((m) => licSet.has(m))
-              : licMods;
-        }
-      } catch {
-        // licenses table may not exist in some deployments — ignore
-      }
-    }
-
-    // If we have enabled modules but didn't set facilityMode yet, look it up
-    if (!facilityMode && user.tenantId) {
-      const fmSetting = await this.userRoleRepository.manager.query(
-        `SELECT value FROM system_settings WHERE tenant_id = $1 AND key = 'facility_mode' LIMIT 1`,
-        [user.tenantId],
-      );
-      if (fmSetting?.length > 0) {
-        facilityMode =
-          typeof fmSetting[0].value === 'string'
-            ? fmSetting[0].value.replace(/"/g, '')
-            : fmSetting[0].value;
-        if (!businessType) {
-          const preset = getPreset(facilityMode as FacilityMode);
-          if (preset) businessType = preset.businessType;
-        }
+      // Resolve workflow_mode from already-fetched settingsMap (no extra query)
+      if (settingsMap['workflow_mode']) {
+        const raw = settingsMap['workflow_mode'];
+        if (raw === 'departmental' || raw === 'simple') workflowMode = raw;
       }
     }
 
     const accessibleModules = getAccessibleModules(permissions, superAdmin, tenantEnabledModules);
-
-    // Resolve workflow_mode (simple = single shared queue, departmental = per-dept queues).
-    // Defaults to 'simple' so newly registered tenants behave as a clinic until they explicitly opt-in.
-    let workflowMode: 'simple' | 'departmental' = 'simple';
-    if (user.tenantId) {
-      const wfRow = await this.userRoleRepository.manager.query(
-        `SELECT value FROM system_settings WHERE tenant_id = $1 AND key = 'workflow_mode' LIMIT 1`,
-        [user.tenantId],
-      );
-      if (wfRow?.length > 0) {
-        const raw =
-          typeof wfRow[0].value === 'string'
-            ? wfRow[0].value.replace(/"/g, '')
-            : wfRow[0].value;
-        if (raw === 'departmental' || raw === 'simple') workflowMode = raw;
-      }
-    }
 
     return {
       id: user.id,
@@ -1332,6 +1293,9 @@ export class AuthService {
       fullName: user.fullName,
       email: user.email,
       phone: user.phone,
+      isSystemAdmin: user.isSystemAdmin || false,
+      mfaEnabled: user.mfaEnabled || false,
+      lastLoginAt: user.lastLoginAt,
       roles,
       permissions,
       accessibleModules,
@@ -1427,6 +1391,7 @@ export class AuthService {
     newPassword: string | undefined,
     adminUserId: string,
     callerTenantId?: string,
+    callerIsSystemAdmin = false,
   ): Promise<{ temporaryPassword: string }> {
     const user = await this.userRepository.findOne({ where: { id: targetUserId } });
     if (!user) {
@@ -1436,6 +1401,11 @@ export class AuthService {
     // Cross-tenant isolation — non-system-admins can only reset within their tenant
     if (callerTenantId && user.tenantId !== callerTenantId) {
       throw new ForbiddenException('Cannot reset password for users in another organization');
+    }
+
+    // Fix 7: prevent tenant admins from resetting system admin passwords
+    if (user.isSystemAdmin && !callerIsSystemAdmin) {
+      throw new ForbiddenException('Cannot reset password for system administrators');
     }
 
     // Generate random password if not provided
@@ -1603,8 +1573,12 @@ export class AuthService {
   /**
    * Admin: Unlock a locked user account
    */
-  async unlockAccount(userId: string, adminUserId: string): Promise<{ message: string }> {
-    const user = await this.userRepository.findOne({ where: { id: userId } });
+  async unlockAccount(userId: string, adminUserId: string, callerTenantId?: string): Promise<{ message: string }> {
+    // Fix 6: add tenantId to where clause to prevent cross-tenant unlock
+    const where: any = { id: userId };
+    if (callerTenantId) where.tenantId = callerTenantId;
+
+    const user = await this.userRepository.findOne({ where });
     if (!user) {
       throw new NotFoundException('User not found');
     }
@@ -1621,13 +1595,17 @@ export class AuthService {
   /**
    * Admin: Get account lockout status
    */
-  async getAccountLockoutStatus(userId: string): Promise<{
+  async getAccountLockoutStatus(userId: string, callerTenantId?: string): Promise<{
     isLocked: boolean;
     failedAttempts: number;
     lockedUntil: Date | null;
     lockReason?: string;
   }> {
-    const user = await this.userRepository.findOne({ where: { id: userId } });
+    // Fix 6: add tenantId to where clause to prevent cross-tenant status check
+    const where: any = { id: userId };
+    if (callerTenantId) where.tenantId = callerTenantId;
+
+    const user = await this.userRepository.findOne({ where });
     if (!user) {
       throw new NotFoundException('User not found');
     }

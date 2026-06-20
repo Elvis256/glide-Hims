@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { api } from '../../services/api';
+import api from '../../services/api';
 import { BookOpen, FileText, Loader2, ExternalLink } from 'lucide-react';
 
 interface DocPage {
@@ -41,7 +41,7 @@ export default function SystemDocsPage() {
   const activeSlug = searchParams.get('p') || allPages[0]?.slug || 'index';
   const activePage = allPages.find((p) => p.slug === activeSlug);
 
-  const iframeSrc = `/api/v1/system/docs/${activeSlug}`;
+  const iframeSrc = `${api.defaults.baseURL}/system/docs/${activeSlug}`;
 
   return (
     <div className="flex h-[calc(100vh-4rem)] bg-gray-50">
@@ -112,7 +112,7 @@ export default function SystemDocsPage() {
           src={iframeSrc}
           title={activePage?.title || 'Documentation'}
           className="flex-1 w-full bg-white"
-          sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+          sandbox="allow-scripts allow-popups allow-forms"
         />
       </main>
     </div>

@@ -6,6 +6,8 @@ import { AlertingService } from '../alerting.service';
 import { DeploymentHealth } from '../../../database/entities/deployment-health.entity';
 import { DeploymentAlert } from '../../../database/entities/deployment-alert.entity';
 
+import { Deployment } from '../../../database/entities/deployment.entity';
+
 describe('Phase 4 Health & Alerting Integration Tests', () => {
   let healthMetricsCollectorService: HealthMetricsCollectorService;
   let alertingService: AlertingService;
@@ -26,6 +28,14 @@ describe('Phase 4 Health & Alerting Integration Tests', () => {
     find: jest.fn(),
     findOne: jest.fn(),
     update: jest.fn(),
+    count: jest.fn().mockResolvedValue(0),
+  };
+
+  const mockDeploymentRepository = {
+    findOne: jest.fn(),
+    find: jest.fn(),
+    count: jest.fn(),
+    save: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -41,6 +51,10 @@ describe('Phase 4 Health & Alerting Integration Tests', () => {
           provide: getRepositoryToken(DeploymentAlert),
           useValue: mockAlertRepository,
         },
+        {
+          provide: getRepositoryToken(Deployment),
+          useValue: mockDeploymentRepository,
+        },
       ],
     }).compile();
 
@@ -54,6 +68,12 @@ describe('Phase 4 Health & Alerting Integration Tests', () => {
     alertRepository = module.get<Repository<DeploymentAlert>>(
       getRepositoryToken(DeploymentAlert),
     );
+
+    mockDeploymentRepository.findOne.mockResolvedValue({ id: 'deploy-1', tenantId: 'tenant-1' });
+    mockHealthRepository.create.mockImplementation((arg) => ({ ...arg, createdAt: new Date() }));
+    mockHealthRepository.save.mockImplementation(async (arg) => ({ ...arg, createdAt: new Date() }));
+    mockAlertRepository.create.mockImplementation((arg) => ({ ...arg, id: 'alert-1', createdAt: new Date() }));
+    mockAlertRepository.save.mockImplementation(async (arg) => ({ ...arg, id: 'alert-1', createdAt: new Date() }));
 
     jest.clearAllMocks();
   });

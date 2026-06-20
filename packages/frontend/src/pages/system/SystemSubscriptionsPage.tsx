@@ -1,7 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Loader2, Plus, RefreshCw, ExternalLink, Pause, Play, Ban, KeyRound, FileText } from 'lucide-react';
+import { ArrowRight, Loader2, Plus, RefreshCw, ExternalLink, Pause, Play, Ban, KeyRound, Download } from 'lucide-react';
+import { toast } from 'sonner';
 import api from '../../services/api';
+import SystemPagination from '../../components/SystemPagination';
+import { exportToCsv } from '../../utils/csvExport';
 import { Plan, Subscription, SubStatus, SUB_STATUS_STYLES, fmtMoney, fmtDate, unwrap } from './saas/_shared';
 
 const STATUSES: SubStatus[] = ['trial', 'active', 'past_due', 'paused', 'cancelled', 'churned'];
@@ -13,16 +16,26 @@ export default function SystemSubscriptionsPage() {
   const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(false);
   const [plans, setPlans] = useState<Plan[]>([]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
 
   const load = async () => {
     setLoading(true);
     try {
       const r = await api.get('/saas-revenue/subscriptions', { params: status ? { status } : {} });
       setItems(unwrap<Subscription[]>(r) || []);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to load subscriptions');
     } finally { setLoading(false); }
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [status]);
   useEffect(() => { api.get('/saas-revenue/plans').then((r) => setPlans(unwrap<Plan[]>(r) || [])); }, []);
+  useEffect(() => { setPage(1); }, [status]);
+
+  const paginatedItems = useMemo(
+    () => items.slice((page - 1) * pageSize, page * pageSize),
+    [items, page, pageSize],
+  );
 
   return (
     <div className="space-y-6">
@@ -31,9 +44,24 @@ export default function SystemSubscriptionsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Subscriptions</h1>
           <p className="text-sm text-gray-500">All tenant SaaS subscriptions and their lifecycle state</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => exportToCsv('subscriptions', items, [
+              { header: 'Tenant', accessor: (s) => s.tenant?.name || s.tenantId },
+              { header: 'Plan', accessor: (s) => s.plan?.name || '' },
+              { header: 'Status', accessor: (s) => s.status },
+              { header: 'Billing Interval', accessor: (s) => s.billingInterval },
+              { header: 'Seats', accessor: (s) => s.seats },
+              { header: 'MRR', accessor: (s) => s.unitPriceMinor * s.seats },
+              { header: 'Start Date', accessor: (s) => s.createdAt },
+            ])}
+            className="inline-flex items-center gap-2 px-3 py-2 border rounded text-sm hover:bg-gray-50"
+          >
+            <Download className="w-4 h-4" /> Export CSV
+          </button>
           <button onClick={load} className="inline-flex items-center gap-2 px-3 py-2 border rounded text-sm hover:bg-gray-50"><RefreshCw className="w-4 h-4" /> Refresh</button>
           <button onClick={() => setShowNew(true)} className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"><Plus className="w-4 h-4" /> New subscription</button>
+          <Link to="/system/quotations" className="inline-flex items-center gap-2 px-3 py-2 border border-blue-600 text-blue-600 rounded text-sm hover:bg-blue-50"><ArrowRight className="w-4 h-4" /> Generate quotation</Link>
         </div>
       </div>
 
@@ -60,7 +88,7 @@ export default function SystemSubscriptionsPage() {
               </tr>
             </thead>
             <tbody>
-              {items.map((s) => (
+              {paginatedItems.map((s) => (
                 <tr key={s.id} className="border-t">
                   <td className="px-4 py-2 font-medium">{s.plan?.name ?? '?'}</td>
                   <td className="px-4 py-2">
@@ -91,6 +119,7 @@ export default function SystemSubscriptionsPage() {
               {items.length === 0 && <tr><td colSpan={8} className="px-4 py-10 text-center text-gray-500">No subscriptions in this filter</td></tr>}
             </tbody>
           </table>
+          <SystemPagination page={page} pageSize={pageSize} total={items.length} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
         </div>
       )}
 
@@ -129,27 +158,27 @@ function NewSubModal({ plans, onClose, onSaved }: { plans: Plan[]; onClose: () =
       <div className="bg-white rounded-lg shadow-xl max-w-lg w-full p-6" onClick={(e) => e.stopPropagation()}>
         <h2 className="text-lg font-semibold mb-4">New subscription</h2>
         <div className="space-y-3 text-sm">
-          <div><div className="text-xs text-gray-500 mb-1">Tenant ID *</div><input className="input w-full" value={tenantId} onChange={(e) => setTenantId(e.target.value)} placeholder="UUID of tenant" /></div>
+          <div><div className="text-xs text-gray-500 mb-1">Tenant ID *</div><input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={tenantId} onChange={(e) => setTenantId(e.target.value)} placeholder="UUID of tenant" /></div>
           <div><div className="text-xs text-gray-500 mb-1">Plan *</div>
-            <select className="input w-full" value={planId} onChange={(e) => setPlanId(e.target.value)}>
+            <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={planId} onChange={(e) => setPlanId(e.target.value)}>
               {plans.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.code})</option>)}
             </select>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><div className="text-xs text-gray-500 mb-1">Billing interval</div>
-              <select className="input w-full" value={billingInterval} onChange={(e) => setInterval(e.target.value as any)}>
+              <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={billingInterval} onChange={(e) => setInterval(e.target.value as any)}>
                 <option value="monthly">Monthly</option>
                 <option value="annual">Annual</option>
               </select>
             </div>
-            <div><div className="text-xs text-gray-500 mb-1">Seats</div><input type="number" min={1} className="input w-full" value={seats} onChange={(e) => setSeats(parseInt(e.target.value || '1', 10))} /></div>
+            <div><div className="text-xs text-gray-500 mb-1">Seats</div><input type="number" min={1} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={seats} onChange={(e) => setSeats(parseInt(e.target.value || '1', 10))} /></div>
           </div>
-          <div><div className="text-xs text-gray-500 mb-1">Coupon code (optional)</div><input className="input w-full" value={couponCode} onChange={(e) => setCoupon(e.target.value)} /></div>
+          <div><div className="text-xs text-gray-500 mb-1">Coupon code (optional)</div><input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={couponCode} onChange={(e) => setCoupon(e.target.value)} /></div>
           <div className="flex gap-4">
             <label className="flex items-center gap-2"><input type="checkbox" checked={startTrial} onChange={(e) => setStartTrial(e.target.checked)} /> Start with trial</label>
             <label className="flex items-center gap-2"><input type="checkbox" checked={autoRenew} onChange={(e) => setAutoRenew(e.target.checked)} /> Auto-renew</label>
           </div>
-          <div><div className="text-xs text-gray-500 mb-1">Notes</div><textarea className="input w-full min-h-[60px]" value={notes} onChange={(e) => setNotes(e.target.value)} /></div>
+          <div><div className="text-xs text-gray-500 mb-1">Notes</div><textarea className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm min-h-[60px]" value={notes} onChange={(e) => setNotes(e.target.value)} /></div>
         </div>
         <div className="mt-5 flex justify-end gap-2">
           <button onClick={onClose} className="px-3 py-2 text-sm border rounded hover:bg-gray-50">Cancel</button>
@@ -157,7 +186,6 @@ function NewSubModal({ plans, onClose, onSaved }: { plans: Plan[]; onClose: () =
             {saving && <Loader2 className="w-4 h-4 animate-spin" />} Create
           </button>
         </div>
-        <style>{`.input{border:1px solid #d1d5db;border-radius:6px;padding:6px 10px;font-size:13px}`}</style>
       </div>
     </div>
   );

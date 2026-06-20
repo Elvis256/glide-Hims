@@ -55,6 +55,7 @@ import { EfrisService } from '../efris/efris.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { EfrisDocumentType } from '../../database/entities/pos-compliance.entity';
 import { ReceiptReprint, RetailCustomer } from '../../database/entities/pos-retail.entity';
+import { MedicationSafetyService } from '../allergies/medication-safety.service';
 
 // C4: VAT rate is loaded per-tenant from efris_config, fallback to UG default.
 // This is retrieved in getDefaultVatRate() which caches the result.
@@ -103,6 +104,7 @@ export class PharmacyService {
     private efrisService: EfrisService,
     private eventEmitter: EventEmitter2,
     private inventoryService: InventoryService,
+    private medicationSafetyService: MedicationSafetyService,
   ) {}
 
   /**
@@ -575,6 +577,43 @@ export class PharmacyService {
       const stockBalanceRepo = manager.getRepository(StockBalance);
       const stockLedgerRepo = manager.getRepository(StockLedger);
       const batchStockRepo = manager.getRepository(BatchStockBalance);
+
+      // Medication safety checks (DDI between basket items; allergy checks if patientId present)
+      const saleItems = sale.items as any[];
+      const drugIds = saleItems.map((i: any) => i.itemId).filter(Boolean);
+      if (drugIds.length > 0) {
+        try {
+          const safetyResult = await this.medicationSafetyService.runSafetyChecks({
+            patientId: (sale as any).patientId || undefined,
+            drugIds,
+            lines: saleItems.map((i: any) => ({
+              drugId: i.itemId,
+              drugName: i.itemName || i.name || 'Unknown',
+            })),
+            tenantId,
+          });
+          if (safetyResult.blocked) {
+            const reasons = safetyResult.blockingAlerts
+              .map((a) => `${a.pairedDrugName || a.drugName || 'Drug'}: ${a.description || a.severity}`)
+              .join('; ');
+            throw new BadRequestException(
+              `Medication safety check failed: ${reasons || 'Blocking alerts detected'}. An override is required to proceed.`,
+            );
+          }
+        } catch (err) {
+          // Re-throw BadRequestException (our own blocking throw)
+          if (err instanceof BadRequestException) throw err;
+          // For OTC sales without patientId, allergy check failures are non-fatal
+          // but DDI degradation on multi-drug baskets is still fail-closed
+          if (drugIds.length > 1) {
+            this.logger.warn(`Medication safety check degraded for sale ${id}: ${err.message}`);
+            throw new BadRequestException(
+              'Medication safety checks are unavailable and this sale contains multiple drugs. Cannot proceed safely.',
+            );
+          }
+          this.logger.warn(`Medication safety check skipped for sale ${id}: ${err.message}`);
+        }
+      }
 
       // FEFO auto-allocation: for any sale item without an explicit batchNumber,
       // pick the earliest-expiring batch that has enough available stock.

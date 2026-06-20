@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ShieldCheck, AlertTriangle, Siren, DatabaseBackup, KeyRound, FileBarChart2, Download } from 'lucide-react';
 import api from '../../services/api';
+import ConfirmDialog from '../../components/ConfirmDialog';
+import { toast } from 'sonner';
 
 type VulnerabilityRecord = {
   id: string;
@@ -58,6 +60,13 @@ const RECORD_TYPES = {
   sla: 'sla',
 } as const;
 
+function generateId(prefix: string): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
 function useApiRecords<T extends { id: string }>(recordType: string, defaultValue: T[]) {
   const [records, setRecords] = useState<T[]>(defaultValue);
   const [loading, setLoading] = useState(true);
@@ -79,16 +88,24 @@ function useApiRecords<T extends { id: string }>(recordType: string, defaultValu
   }, [recordType]);
 
   const add = async (record: T) => {
-    const { id, ...payload } = record as any;
-    void id;
-    const resp = await api.post(`/compliance/${recordType}`, payload);
-    const created = { id: resp.data.id, ...resp.data.payload } as T;
-    setRecords((prev) => [created, ...prev]);
+    try {
+      const { id, ...payload } = record as any;
+      void id;
+      const resp = await api.post(`/compliance/${recordType}`, payload);
+      const created = { id: resp.data.id, ...resp.data.payload } as T;
+      setRecords((prev) => [created, ...prev]);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err?.message || 'Failed to add record');
+    }
   };
 
   const clear = async () => {
-    await Promise.all(records.map((r) => api.delete(`/compliance/${recordType}/${r.id}`)));
-    setRecords([]);
+    try {
+      await Promise.all(records.map((r) => api.delete(`/compliance/${recordType}/${r.id}`)));
+      setRecords([]);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err?.message || 'Failed to clear records');
+    }
   };
 
   return { records, add, clear, loading };
@@ -117,6 +134,9 @@ export default function SystemComplianceCenterPage() {
   const [accessForm, setAccessForm] = useState({ environment: 'production', privilegedAccounts: 0, accountsRevoked: 0, reviewOwner: '' });
   const [slaForm, setSlaForm] = useState({ month: new Date().toISOString().slice(0, 7), availabilityPercent: 99.5, p1Count: 0, p2Count: 0, p3Count: 0, p4Count: 0 });
 
+  const [confirmClear, setConfirmClear] = useState<{ label: string; action: () => Promise<void> } | null>(null);
+  const [clearLoading, setClearLoading] = useState(false);
+
   const metrics = useMemo(() => {
     const openVulns = vulnerabilities.records.filter((v) => v.status !== 'closed').length;
     const openIncidents = incidents.records.filter((i) => i.status !== 'resolved').length;
@@ -129,7 +149,7 @@ export default function SystemComplianceCenterPage() {
   const addVulnerability = () => {
     if (!vulnForm.component || !vulnForm.owner) return;
     vulnerabilities.add({
-      id: `VULN-${Date.now()}`,
+      id: generateId('VULN'),
       discoveredDate: new Date().toISOString(),
       severity: vulnForm.severity as VulnerabilityRecord['severity'],
       component: vulnForm.component,
@@ -142,7 +162,7 @@ export default function SystemComplianceCenterPage() {
   const addIncident = () => {
     if (!incidentForm.service || !incidentForm.summary) return;
     incidents.add({
-      id: `INC-${Date.now()}`,
+      id: generateId('INC'),
       detectedAt: new Date().toISOString(),
       severity: incidentForm.severity as IncidentRecord['severity'],
       service: incidentForm.service,
@@ -154,7 +174,7 @@ export default function SystemComplianceCenterPage() {
 
   const addBackupEvidence = () => {
     backups.add({
-      id: `BKP-${Date.now()}`,
+      id: generateId('BKP'),
       recordDate: new Date().toISOString(),
       environment: backupForm.environment as BackupRecord['environment'],
       backupStatus: backupForm.backupStatus as BackupRecord['backupStatus'],
@@ -166,7 +186,7 @@ export default function SystemComplianceCenterPage() {
   const addAccessReview = () => {
     if (!accessForm.reviewOwner) return;
     accessReviews.add({
-      id: `ACR-${Date.now()}`,
+      id: generateId('ACR'),
       reviewDate: new Date().toISOString(),
       environment: accessForm.environment as AccessReviewRecord['environment'],
       privilegedAccounts: Number(accessForm.privilegedAccounts),
@@ -177,7 +197,7 @@ export default function SystemComplianceCenterPage() {
 
   const addSlaRecord = () => {
     sla.add({
-      id: `SLA-${Date.now()}`,
+      id: generateId('SLA'),
       month: slaForm.month,
       availabilityPercent: Number(slaForm.availabilityPercent),
       p1Count: Number(slaForm.p1Count),
@@ -304,12 +324,32 @@ export default function SystemComplianceCenterPage() {
       </section>
 
       <div className="flex gap-2">
-        <button onClick={() => vulnerabilities.clear()} className="px-3 py-2 rounded border text-sm">Clear Vulnerabilities</button>
-        <button onClick={() => incidents.clear()} className="px-3 py-2 rounded border text-sm">Clear Incidents</button>
-        <button onClick={() => backups.clear()} className="px-3 py-2 rounded border text-sm">Clear Backup Evidence</button>
-        <button onClick={() => accessReviews.clear()} className="px-3 py-2 rounded border text-sm">Clear Access Reviews</button>
-        <button onClick={() => sla.clear()} className="px-3 py-2 rounded border text-sm">Clear SLA</button>
+        <button onClick={() => setConfirmClear({ label: 'Vulnerabilities', action: vulnerabilities.clear })} className="px-3 py-2 rounded border text-sm">Clear Vulnerabilities</button>
+        <button onClick={() => setConfirmClear({ label: 'Incidents', action: incidents.clear })} className="px-3 py-2 rounded border text-sm">Clear Incidents</button>
+        <button onClick={() => setConfirmClear({ label: 'Backup Evidence', action: backups.clear })} className="px-3 py-2 rounded border text-sm">Clear Backup Evidence</button>
+        <button onClick={() => setConfirmClear({ label: 'Access Reviews', action: accessReviews.clear })} className="px-3 py-2 rounded border text-sm">Clear Access Reviews</button>
+        <button onClick={() => setConfirmClear({ label: 'SLA', action: sla.clear })} className="px-3 py-2 rounded border text-sm">Clear SLA</button>
       </div>
+
+      <ConfirmDialog
+        open={confirmClear !== null}
+        title={`Clear ${confirmClear?.label ?? ''}?`}
+        message={`Are you sure you want to delete all ${confirmClear?.label ?? ''} records? This action cannot be undone.`}
+        confirmLabel="Clear All"
+        variant="danger"
+        loading={clearLoading}
+        onCancel={() => setConfirmClear(null)}
+        onConfirm={async () => {
+          if (!confirmClear) return;
+          setClearLoading(true);
+          try {
+            await confirmClear.action();
+          } finally {
+            setClearLoading(false);
+            setConfirmClear(null);
+          }
+        }}
+      />
     </div>
   );
 }

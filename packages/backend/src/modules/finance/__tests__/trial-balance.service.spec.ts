@@ -67,6 +67,8 @@ describe('TrialBalanceService', () => {
       startDate: new Date('2024-01-01'),
       endDate: new Date('2024-01-31'),
     });
+    journalEntryRepo.find.mockResolvedValue([{ id: 'je-1' }]);
+    journalEntryLineRepo.find.mockResolvedValue([]);
   });
 
   describe('getTrialBalance', () => {
@@ -105,12 +107,7 @@ describe('TrialBalanceService', () => {
         },
       ];
 
-      journalEntryLineRepo.createQueryBuilder.mockReturnValue({
-        innerJoin: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        getMany: jest.fn().mockResolvedValue(mockLines),
-      });
+      journalEntryLineRepo.find.mockResolvedValue(mockLines);
 
       const result = await service.getTrialBalance(facilityId, periodId);
 
@@ -142,12 +139,7 @@ describe('TrialBalanceService', () => {
         },
       ];
 
-      journalEntryLineRepo.createQueryBuilder.mockReturnValue({
-        innerJoin: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        getMany: jest.fn().mockResolvedValue(mockLines),
-      });
+      journalEntryLineRepo.find.mockResolvedValue(mockLines);
 
       const result = await service.getTrialBalance(facilityId, periodId);
 
@@ -159,12 +151,7 @@ describe('TrialBalanceService', () => {
       const facilityId = 'facility-1';
       const periodId = 'period-1';
 
-      journalEntryLineRepo.createQueryBuilder.mockReturnValue({
-        innerJoin: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        getMany: jest.fn().mockResolvedValue([]),
-      });
+      journalEntryLineRepo.find.mockResolvedValue([]);
 
       const result = await service.getTrialBalance(facilityId, periodId);
 
@@ -209,12 +196,7 @@ describe('TrialBalanceService', () => {
         },
       ];
 
-      journalEntryLineRepo.createQueryBuilder.mockReturnValue({
-        innerJoin: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        getMany: jest.fn().mockResolvedValue(mockLines),
-      });
+      journalEntryLineRepo.find.mockResolvedValue(mockLines);
 
       const result = await service.getTrialBalance(facilityId, periodId);
 
@@ -228,20 +210,33 @@ describe('TrialBalanceService', () => {
       const facilityId = 'facility-1';
       const periodId = 'period-1';
 
-      chartOfAccountRepo.find.mockResolvedValue([
+      const mockLines = [
         {
-          id: 'acc-1',
-          accountCode: '1000',
-          accountName: 'Cash',
-          accountType: AccountType.ASSET,
+          journalEntryId: 'je-1',
+          accountId: 'acc-1',
+          debit: 1000,
+          credit: 0,
+          account: {
+            id: 'acc-1',
+            accountCode: '1000',
+            accountName: 'Cash',
+            accountType: AccountType.ASSET,
+          },
         },
         {
-          id: 'acc-2',
-          accountCode: '2000',
-          accountName: 'Payable',
-          accountType: AccountType.LIABILITY,
+          journalEntryId: 'je-1',
+          accountId: 'acc-2',
+          debit: 0,
+          credit: 1000,
+          account: {
+            id: 'acc-2',
+            accountCode: '2000',
+            accountName: 'Payable',
+            accountType: AccountType.LIABILITY,
+          },
         },
-      ]);
+      ];
+      journalEntryLineRepo.find.mockResolvedValue(mockLines);
 
       const result = await service.getReconciliationStatus(facilityId, periodId);
 
@@ -276,12 +271,7 @@ describe('TrialBalanceService', () => {
         },
       ];
 
-      journalEntryLineRepo.createQueryBuilder.mockReturnValue({
-        innerJoin: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        getMany: jest.fn().mockResolvedValue(mockLines),
-      });
+      journalEntryLineRepo.find.mockResolvedValue(mockLines);
 
       const result = await service.detectVariances(facilityId, periodId);
 
@@ -317,14 +307,9 @@ describe('TrialBalanceService', () => {
       ];
 
       let callCount = 0;
-      journalEntryLineRepo.createQueryBuilder.mockImplementation(() => {
+      journalEntryLineRepo.find.mockImplementation(() => {
         callCount++;
-        return {
-          innerJoin: jest.fn().mockReturnThis(),
-          where: jest.fn().mockReturnThis(),
-          andWhere: jest.fn().mockReturnThis(),
-          getMany: jest.fn().mockResolvedValue(callCount === 1 ? mockLinesPeriod1 : mockLinesPeriod2),
-        };
+        return Promise.resolve(callCount === 1 ? mockLinesPeriod1 : mockLinesPeriod2);
       });
 
       const result = await service.comparePeriodsTrialBalance(facilityId, period1Id, period2Id);
@@ -443,12 +428,7 @@ describe('TrialBalanceService', () => {
         },
       ];
 
-      journalEntryLineRepo.createQueryBuilder.mockReturnValue({
-        innerJoin: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        getMany: jest.fn().mockResolvedValue(mockLines),
-      });
+      journalEntryLineRepo.find.mockResolvedValue(mockLines);
 
       const result = await service.getTrialBalance(facilityId, periodId);
 
@@ -478,12 +458,7 @@ describe('TrialBalanceService', () => {
         },
       ];
 
-      journalEntryLineRepo.createQueryBuilder.mockReturnValue({
-        innerJoin: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        getMany: jest.fn().mockResolvedValue(mockLines),
-      });
+      journalEntryLineRepo.find.mockResolvedValue(mockLines);
 
       const result = await service.getTrialBalance(facilityId, periodId);
 
@@ -527,12 +502,7 @@ describe('TrialBalanceService', () => {
         },
       ];
 
-      journalEntryLineRepo.createQueryBuilder.mockReturnValue({
-        innerJoin: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        getMany: jest.fn().mockResolvedValue(mockLines),
-      });
+      journalEntryLineRepo.find.mockResolvedValue(mockLines);
 
       const result = await service.getTrialBalance(facilityId, periodId);
 
@@ -565,16 +535,18 @@ describe('TrialBalanceService', () => {
         },
       ];
 
-      journalEntryLineRepo.createQueryBuilder.mockReturnValue({
-        innerJoin: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        getMany: jest.fn().mockResolvedValue(mockLines),
-      });
+      journalEntryLineRepo.find.mockResolvedValue(mockLines);
 
       const result = await service.getTrialBalance(facilityId, periodId);
 
-      expect(result.lines[0].accountId).toBe('facility-1');
+      expect(result.lines[0].accountId).toBe('acc-1');
+      expect(journalEntryRepo.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            facilityId: 'facility-1',
+          }),
+        }),
+      );
     });
   });
 });

@@ -9,6 +9,7 @@ import {
   JoinColumn,
   OneToMany,
 } from 'typeorm';
+import { SaasPaymentProof } from './payment-proof.entity';
 
 export type BillingInterval = 'monthly' | 'annual';
 export type PlanTier = 'community' | 'standard' | 'professional' | 'enterprise';
@@ -21,6 +22,7 @@ export type SubscriptionStatus =
   | 'paused';
 export type SaasInvoiceStatus = 'draft' | 'open' | 'paid' | 'void' | 'uncollectible';
 export type SaasPaymentStatus = 'succeeded' | 'failed' | 'pending' | 'refunded';
+export type SaasPaymentVerificationStatus = 'unverified' | 'pending_verification' | 'verified' | 'rejected';
 export type CouponDiscountType = 'percent' | 'fixed';
 export type SubscriptionEventType =
   | 'created'
@@ -78,6 +80,7 @@ export class SaasSubscription {
   @Column({ type: 'uuid', nullable: true, name: 'billing_payer_tenant_id' }) @Index() billingPayerTenantId: string | null;
   @Column({ type: 'uuid', nullable: true }) deploymentId: string | null;
   @Column({ type: 'uuid', nullable: true }) leadId: string | null;
+  @Column({ type: 'uuid', nullable: true }) quotationId: string | null;
   @Column({ type: 'uuid', name: 'plan_id' }) planId: string;
   @ManyToOne(() => SaasPlan) @JoinColumn({ name: 'plan_id' }) plan: SaasPlan;
 
@@ -178,6 +181,13 @@ export class SaasPayment {
   @Column({ type: 'timestamp' }) paidAt: Date;
   @Column({ type: 'uuid', nullable: true }) recordedBy: string | null;
   @Column({ type: 'text', nullable: true }) notes: string | null;
+
+  @Column({ type: 'varchar', length: 30, default: 'unverified' }) verificationStatus: SaasPaymentVerificationStatus;
+  @Column({ type: 'uuid', nullable: true }) verifiedBy: string | null;
+  @Column({ type: 'timestamp', nullable: true }) verifiedAt: Date | null;
+  @Column({ type: 'text', nullable: true }) verificationNotes: string | null;
+
+  @OneToMany(() => SaasPaymentProof, (p) => p.payment) proofs: SaasPaymentProof[];
 
   @CreateDateColumn() createdAt: Date;
   @UpdateDateColumn() updatedAt: Date;

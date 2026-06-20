@@ -54,6 +54,9 @@ export class DisposalRecord extends BaseEntity {
   @Column({ nullable: true })
   witness: string;
 
+  @Column({ nullable: true })
+  witness2: string;
+
   @Column({ name: 'certificate_number', nullable: true })
   certificateNumber: string;
 

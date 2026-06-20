@@ -441,6 +441,32 @@ export default function PrintReceiptPage() {
           )}
         </div>
       </div>
+      
+      {/* Print styles for thermal receipt */}
+      <style>{`
+        @media print {
+          body * {
+            visibility: hidden;
+          }
+          .print-receipt,
+          .print-receipt * {
+            visibility: visible;
+          }
+          .print-receipt {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 80mm;
+            padding: 5mm;
+            margin: 0;
+            background: white;
+          }
+          @page {
+            size: 80mm auto;
+            margin: 0;
+          }
+        }
+      `}</style>
     </div>
   );
 }

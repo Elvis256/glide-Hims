@@ -10,7 +10,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { Tenant } from '../../database/entities/tenant.entity';
-import { CreateTenantDto, UpdateTenantDto } from './dto/tenant.dto';
+import { CreateTenantDto, UpdateTenantDto, TenantListQueryDto } from './dto/tenant.dto';
 import { LicenseService } from '../licensing/license.service';
 import {
   FACILITY_MODES,
@@ -130,8 +130,37 @@ export class TenantsService implements OnModuleInit {
     return saved;
   }
 
-  async findAll() {
-    return this.tenantRepository.find({ order: { name: 'ASC' } });
+  async findAll(query?: TenantListQueryDto) {
+    const page = query?.page || 1;
+    const limit = query?.limit || query?.perPage || 20;
+    const skip = (page - 1) * limit;
+
+    const qb = this.tenantRepository.createQueryBuilder('tenant');
+
+    if (query?.status) {
+      qb.andWhere('tenant.status = :status', { status: query.status });
+    }
+
+    if (query?.search) {
+      qb.andWhere(
+        '(tenant.name ILIKE :search OR tenant.slug ILIKE :search OR tenant.description ILIKE :search)',
+        { search: `%${query.search}%` },
+      );
+    }
+
+    const [tenants, total] = await qb
+      .orderBy('tenant.name', 'ASC')
+      .skip(skip)
+      .take(limit)
+      .getManyAndCount();
+
+    return {
+      data: tenants,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
   /**

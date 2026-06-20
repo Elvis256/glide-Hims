@@ -87,22 +87,20 @@ export class FacilityGuard implements CanActivate {
   }
 
   private extractFacilityId(request: any): string | null {
-    // Header takes priority
-    const headerFacility = request.headers?.['x-facility-id'];
-    if (headerFacility) return headerFacility;
-
-    // Query param
-    if (request.query?.facilityId) return request.query.facilityId;
-
-    // Body
-    if (request.body?.facilityId) return request.body.facilityId;
-
-    // Route params
-    if (request.params?.facilityId) return request.params.facilityId;
-
-    // JWT facilityId as last resort
+    // Fix 10: JWT facilityId takes priority over client-controlled sources
     const user = request.user;
     if (user?.facilityId) return user.facilityId;
+
+    // Only fall back to request params if JWT doesn't contain a facility
+    if (request.params?.facilityId) return request.params.facilityId;
+
+    // Header/query/body are client-controlled — only allow for system admins
+    if (user?.isSystemAdmin) {
+      const headerFacility = request.headers?.['x-facility-id'];
+      if (headerFacility) return headerFacility;
+      if (request.query?.facilityId) return request.query.facilityId;
+      if (request.body?.facilityId) return request.body.facilityId;
+    }
 
     return null;
   }
