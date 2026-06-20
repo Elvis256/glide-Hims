@@ -12,7 +12,7 @@ import { SaasRevenueService } from './saas-revenue.service';
 import { SaasMailerService, EMAIL_TEMPLATES_META, EmailTemplateKey } from './saas-mailer.service';
 import {
   CreatePlanDto, UpdatePlanDto, CreateSubscriptionDto, ChangePlanDto, RecordPaymentDto, CreateCouponDto, UpdateCouponDto,
-  ConvertLeadDto, InitCheckoutDto,
+  ConvertLeadDto, InitCheckoutDto, CreateManualInvoiceDto,
 } from './dtos';
 
 function ensureAdmin(req: any) {
@@ -129,6 +129,12 @@ export class SaasRevenueController {
 
   @Get('invoices/:id')
   getInv(@Req() req: any, @Param('id') id: string) { ensureAdmin(req); return this.svc.getInvoice(id); }
+
+  @Post('invoices')
+  createManualInvoice(@Req() req: any, @Body() dto: CreateManualInvoiceDto) {
+    ensureAdmin(req);
+    return this.svc.createManualInvoice(dto, req.user?.id);
+  }
 
   @Post('invoices/:id/payments')
   recordPayment(@Req() req: any, @Param('id') id: string, @Body() dto: RecordPaymentDto) {

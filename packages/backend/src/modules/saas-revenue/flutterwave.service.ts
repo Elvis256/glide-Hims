@@ -73,6 +73,29 @@ export class FlutterwaveService {
     return { ok: d?.status === 'successful', amount: Math.round((d?.amount ?? 0) * 100), currency: d?.currency, status: d?.status, tx_ref: d?.tx_ref, raw: d };
   }
 
+  async refundTransaction(transactionId: string, amountMajor: number): Promise<{ ok: boolean; refundId?: string; error?: string }> {
+    if (!this.isConfigured() || String(transactionId).startsWith('MOCK-')) {
+      this.logger.warn('FLW_SECRET_KEY not set or mock transaction — returning mock refund');
+      return { ok: true, refundId: `MOCK-REFUND-${Date.now()}` };
+    }
+    try {
+      const res = await fetch(`${this.base}/transactions/${transactionId}/refund`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${this.secretKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: amountMajor }),
+      });
+      const json: any = await res.json();
+      if (!res.ok || json.status !== 'success') {
+        this.logger.error(`Flutterwave refund failed: ${JSON.stringify(json)}`);
+        return { ok: false, error: json.message || 'Refund request failed' };
+      }
+      return { ok: true, refundId: String(json.data?.id ?? '') };
+    } catch (e: any) {
+      this.logger.error(`Flutterwave refund error: ${e.message}`);
+      return { ok: false, error: e.message };
+    }
+  }
+
   /**
    * Charge a previously-saved card token via Flutterwave's /tokenized-charges endpoint.
    * Returns the new transaction id on success so the caller can poll/verify and the

@@ -737,6 +737,7 @@ export class SaasRevenueService {
       unitPriceMinor,
       seats,
       couponId: coupon?.id ?? null,
+      couponAppliedAt: coupon ? new Date() : null,
       discountPercent: coupon?.discountType === 'percent' ? coupon.amount : 0,
       discountFixedMinor: coupon?.discountType === 'fixed' ? coupon.amount : 0,
       startDate: now,
@@ -879,7 +880,82 @@ export class SaasRevenueService {
     }
   }
 
+  async createManualInvoice(dto: { subscriptionId: string; lines: Array<{ description: string; quantity: number; unitPriceMinor: number }>; memo?: string; dueInDays?: number; sendEmail?: boolean }, actorId?: string) {
+    const sub = await this.subs.findOne({ where: { id: dto.subscriptionId } });
+    if (!sub) throw new NotFoundException('Subscription not found');
+    if (!dto.lines?.length) throw new BadRequestException('At least one line item is required');
+
+    const lines = dto.lines.map((l) => ({
+      description: l.description,
+      quantity: l.quantity,
+      unitPriceMinor: l.unitPriceMinor,
+      amountMinor: l.quantity * l.unitPriceMinor,
+    }));
+    const subtotal = lines.reduce((sum, l) => sum + l.amountMinor, 0);
+
+    let discount = 0;
+    if (sub.discountPercent > 0) discount = Math.floor((subtotal * sub.discountPercent) / 100);
+    if (sub.discountFixedMinor > 0) discount += sub.discountFixedMinor;
+    if (discount > subtotal) discount = subtotal;
+
+    const taxBase = subtotal - discount;
+    const taxInfo = await this.resolveTaxForTenant(sub.tenantId);
+    const tax = taxInfo.rate > 0 ? Math.floor((taxBase * taxInfo.rate) / 100) : 0;
+    const total = taxBase + tax;
+
+    const now = new Date();
+    const dueInDays = dto.dueInDays ?? 7;
+    const invoiceNumber = await this.nextInvoiceNumber();
+
+    const inv = this.invoices.create(<Partial<SaasInvoice>>{
+      invoiceNumber,
+      subscriptionId: sub.id,
+      tenantId: sub.tenantId,
+      billingPayerTenantId: sub.billingPayerTenantId ?? null,
+      status: 'open',
+      currency: sub.currency,
+      subtotalMinor: subtotal,
+      discountMinor: discount,
+      taxMinor: tax,
+      totalMinor: total,
+      amountPaidMinor: 0,
+      issuedAt: now,
+      dueAt: this.addDays(now, dueInDays),
+      memo: dto.memo ?? null,
+      lines,
+    });
+    const saved = await this.invoices.save(inv);
+
+    await this.recordEvent(sub.id, 'invoice_issued', `Manual invoice ${invoiceNumber} issued for ${this.fmtMoney(total, sub.currency)}`, { invoiceId: saved.id, manual: true }, actorId);
+
+    if (dto.sendEmail) {
+      const plan = await this.plans.findOne({ where: { id: sub.planId } });
+      const tenant = await this.tenants.findOne({ where: { id: sub.tenantId } });
+      const to = sub.billingEmail || (tenant as any)?.contactEmail || (tenant as any)?.adminEmail || null;
+      if (to) {
+        this.mailer.sendInvoiceIssued(to, saved as any, plan ?? undefined).catch(() => {});
+      }
+    }
+
+    return saved;
+  }
+
   async issueRenewalInvoice(sub: SaasSubscription, periodStart: Date, periodEnd: Date, actorId?: string) {
+    // Check coupon expiry based on durationMonths
+    if (sub.couponId && sub.couponAppliedAt) {
+      const coupon = await this.coupons.findOne({ where: { id: sub.couponId } });
+      if (coupon?.durationMonths) {
+        const expiresAt = new Date(sub.couponAppliedAt);
+        expiresAt.setMonth(expiresAt.getMonth() + coupon.durationMonths);
+        if (new Date() >= expiresAt) {
+          sub.discountPercent = 0;
+          sub.discountFixedMinor = 0;
+          sub.couponId = null;
+          await this.subs.save(sub);
+        }
+      }
+    }
+
     const subtotal = sub.unitPriceMinor * sub.seats;
     let discount = 0;
     if (sub.discountPercent > 0) discount = Math.floor((subtotal * sub.discountPercent) / 100);
@@ -1128,7 +1204,24 @@ export class SaasRevenueService {
     if (amount > refundable) throw new BadRequestException(`Refund exceeds refundable balance (${refundable})`);
 
     const reason = (dto.reason || '').trim() || null;
-    const refundRecord = { at: new Date().toISOString(), amountMinor: amount, reason, by: actorId || null };
+
+    // Call Flutterwave refund API if this was a Flutterwave payment
+    let gatewayRefundId: string | undefined;
+    let gatewayRefundStatus = 'completed';
+    if (pay.gateway === 'flutterwave') {
+      const txId = meta.transaction_id || meta.transactionId || pay.gatewayRef;
+      if (txId) {
+        const refundResult = await this.flw.refundTransaction(String(txId), amount / 100);
+        if (refundResult.ok) {
+          gatewayRefundId = refundResult.refundId;
+        } else {
+          gatewayRefundStatus = 'refund_pending';
+          this.logger.warn(`Flutterwave refund failed for payment ${paymentId}: ${refundResult.error} — recorded locally as refund_pending`);
+        }
+      }
+    }
+
+    const refundRecord = { at: new Date().toISOString(), amountMinor: amount, reason, by: actorId || null, gatewayRefundId, gatewayRefundStatus };
     const newRefundedTotal = alreadyRefunded + amount;
     pay.gatewayPayload = {
       ...meta,
@@ -1613,6 +1706,8 @@ export class SaasRevenueService {
     }
     if (sub.status === 'churned' || sub.status === 'cancelled') {
       if (lic.status !== 'expired') { lic.status = 'expired'; changed = true; }
+    } else if (sub.status === 'paused') {
+      if (lic.status !== 'suspended') { lic.status = 'suspended'; changed = true; }
     } else if (sub.status === 'active' || sub.status === 'trial') {
       if (lic.status !== 'active') { lic.status = 'active'; changed = true; }
     }

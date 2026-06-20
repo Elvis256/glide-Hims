@@ -92,6 +92,7 @@ export class SaasSubscription {
   @Column({ type: 'integer', default: 1 }) seats: number;
 
   @Column({ type: 'uuid', nullable: true }) couponId: string | null;
+  @Column({ type: 'timestamptz', nullable: true }) couponAppliedAt: Date | null;
   @Column({ type: 'integer', default: 0 }) discountPercent: number;
   @Column({ type: 'integer', default: 0 }) discountFixedMinor: number;
 
