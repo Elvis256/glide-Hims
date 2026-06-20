@@ -21,6 +21,7 @@ import { Tenant } from '../../database/entities/tenant.entity';
 import { License } from '../../database/entities/license.entity';
 import { SaasRevenueService, VendorBillingSettings } from './saas-revenue.service';
 import { SaasMailerService } from './saas-mailer.service';
+import { ContractService } from './contract.service';
 import {
   CreateCatalogItemDto,
   UpdateCatalogItemDto,
@@ -44,6 +45,7 @@ export class QuotationService {
     @InjectRepository(SaasSubscription) private readonly subs: Repository<SaasSubscription>,
     @InjectRepository(License) private readonly licenses: Repository<License>,
     private readonly saasRevenue: SaasRevenueService,
+    private readonly contractService: ContractService,
     private readonly mailer: SaasMailerService,
     private readonly dataSource: DataSource,
     private readonly events: EventEmitter2,
@@ -436,6 +438,16 @@ export class QuotationService {
 
       return q;
     }).then(async (savedQ) => {
+      // Auto-create contract from quotation
+      try {
+        const contract = await this.contractService.createContractFromQuotation(savedQ.id);
+        if (contract) {
+          savedQ.contractId = contract.id;
+          await this.quotations.save(savedQ);
+        }
+      } catch (e) {
+        this.logger.warn(`Auto-contract creation failed for quotation ${savedQ.id}: ${e?.message || e}`);
+      }
       // After commit: emit events
       this.events.emit('quotation.accepted', {
         quotationId: savedQ.id,

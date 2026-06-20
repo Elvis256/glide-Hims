@@ -85,6 +85,20 @@ export class CreateCouponDto {
   @IsOptional() @IsString() notes?: string;
 }
 
+export class CreateManualInvoiceLineDto {
+  @IsString() description: string;
+  @IsInt() @Min(1) quantity: number;
+  @IsInt() @Min(0) unitPriceMinor: number;
+}
+
+export class CreateManualInvoiceDto {
+  @IsUUID() subscriptionId: string;
+  @IsArray() lines: CreateManualInvoiceLineDto[];
+  @IsOptional() @IsString() memo?: string;
+  @IsOptional() @IsInt() @Min(1) dueInDays?: number;
+  @IsOptional() @IsBoolean() sendEmail?: boolean;
+}
+
 export class UpdateCouponDto {
   @IsOptional() @IsString() code?: string;
   @IsOptional() @IsEnum(['percent', 'fixed']) discountType?: 'percent' | 'fixed';
