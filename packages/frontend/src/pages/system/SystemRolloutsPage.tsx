@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../services/api';
 import {
@@ -7,6 +7,7 @@ import {
   ShieldAlert, ExternalLink, FileText, EyeOff, Eye, Layers,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import SystemPagination from '../../components/SystemPagination';
 
 type RolloutStatus = 'scheduled' | 'in_progress' | 'paused' | 'completed' | 'rolled_back' | 'failed';
 type RolloutPhase = 'phase_1' | 'phase_2' | 'phase_3';
@@ -64,6 +65,12 @@ export default function SystemRolloutsPage() {
     notes: '',
   });
   const [creating, setCreating] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const paginatedRollouts = useMemo(
+    () => rollouts.slice((page - 1) * pageSize, page * pageSize),
+    [rollouts, page, pageSize],
+  );
   const [reportsRollout, setReportsRollout] = useState<Rollout | null>(null);
   const [reports, setReports] = useState<Array<{
     id: string;
@@ -266,7 +273,7 @@ export default function SystemRolloutsPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {rollouts.map((r) => {
+          {paginatedRollouts.map((r) => {
             const badge = STATUS_BADGES[r.status] || STATUS_BADGES.scheduled;
             const total = r.deploymentsTotalCount || 0;
             const success = r.deploymentsSuccessCount || 0;
@@ -396,6 +403,16 @@ export default function SystemRolloutsPage() {
             );
           })}
         </div>
+      )}
+
+      {rollouts.length > 0 && (
+        <SystemPagination
+          page={page}
+          pageSize={pageSize}
+          total={rollouts.length}
+          onPageChange={setPage}
+          onPageSizeChange={(s) => { setPageSize(s); setPage(1); }}
+        />
       )}
 
       {showCreate && (

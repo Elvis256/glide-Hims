@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { KeyRound, Loader2, Plus, RefreshCw, Ban, CalendarPlus, ShieldCheck, AlertCircle, Pencil, Pause, Play, Copy, Check } from 'lucide-react';
+import { toast } from 'sonner';
 import api from '../../services/api';
 import TierBadge from '../../components/TierBadge';
+import SystemPagination from '../../components/SystemPagination';
 
 interface License {
   id: string;
@@ -122,6 +124,26 @@ export default function SystemLicensesPage() {
   const [statusActionId, setStatusActionId] = useState<string | null>(null);
   const [extendingId, setExtendingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const filteredItems = useMemo(() => {
+    if (!debouncedSearch) return items;
+    const q = debouncedSearch.toLowerCase();
+    return items.filter((l) =>
+      l.organizationName.toLowerCase().includes(q) ||
+      (l.email && l.email.toLowerCase().includes(q)) ||
+      l.licenseKey.toLowerCase().includes(q) ||
+      l.licenseType.toLowerCase().includes(q)
+    );
+  }, [items, debouncedSearch]);
 
   const onCopyKey = async (lic: License) => {
     try {
@@ -139,7 +161,7 @@ export default function SystemLicensesPage() {
     try {
       const [licRes, tnRes] = await Promise.all([
         api.get('/license'),
-        api.get('/tenants').catch(() => ({ data: { data: [] } })),
+        api.get('/tenants', { params: { limit: 1000 } }).catch(() => ({ data: { data: [] } })),
       ]);
       setItems(licRes.data?.data || licRes.data || []);
       setTenants(tnRes.data?.data || tnRes.data || []);
@@ -151,6 +173,11 @@ export default function SystemLicensesPage() {
   };
 
   useEffect(() => { load(); }, []);
+
+  const paginatedItems = useMemo(
+    () => filteredItems.slice((page - 1) * pageSize, page * pageSize),
+    [filteredItems, page, pageSize],
+  );
 
   const tenantById = useMemo(() => {
     const m = new Map<string, Tenant>();
@@ -164,7 +191,7 @@ export default function SystemLicensesPage() {
       await api.put(`/license/${lic.licenseKey}/revoke`);
       await load();
     } catch (e: any) {
-      alert(e?.response?.data?.message || 'Revoke failed');
+      toast.error(e?.response?.data?.message || 'Revoke failed');
     }
   };
 
@@ -172,13 +199,13 @@ export default function SystemLicensesPage() {
     const daysStr = prompt(`Extend license for ${lic.organizationName} by how many days?`, '30');
     if (!daysStr) return;
     const days = parseInt(daysStr, 10);
-    if (!Number.isFinite(days) || days <= 0) { alert('Enter a positive integer'); return; }
+    if (!Number.isFinite(days) || days <= 0) { toast.error('Enter a positive integer'); return; }
     setExtendingId(lic.id);
     try {
       await api.put(`/license/${lic.licenseKey}/extend`, { days });
       await load();
     } catch (e: any) {
-      alert(e?.response?.data?.message || 'Extend failed');
+      toast.error(e?.response?.data?.message || 'Extend failed');
     } finally {
       setExtendingId(null);
     }
@@ -191,7 +218,7 @@ export default function SystemLicensesPage() {
       await api.put(`/license/${lic.licenseKey}/suspend`);
       await load();
     } catch (e: any) {
-      alert(e?.response?.data?.message || 'Suspend failed');
+      toast.error(e?.response?.data?.message || 'Suspend failed');
     } finally {
       setStatusActionId(null);
     }
@@ -203,7 +230,7 @@ export default function SystemLicensesPage() {
       await api.put(`/license/${lic.licenseKey}/reactivate`);
       await load();
     } catch (e: any) {
-      alert(e?.response?.data?.message || 'Reactivate failed');
+      toast.error(e?.response?.data?.message || 'Reactivate failed');
     } finally {
       setStatusActionId(null);
     }
@@ -236,6 +263,14 @@ export default function SystemLicensesPage() {
         </div>
       </div>
 
+      <input
+        type="text"
+        placeholder="Search..."
+        value={search}
+        onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+        className="px-3 py-2 border border-gray-200 rounded-lg text-sm w-64 focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
+
       {error && (
         <div className="flex items-start gap-2 p-3 bg-rose-50 border border-rose-200 rounded-lg text-sm text-rose-700">
           <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" /> {error}
@@ -262,10 +297,10 @@ export default function SystemLicensesPage() {
                 <Loader2 className="w-5 h-5 animate-spin inline mr-2" /> Loading…
               </td></tr>
             )}
-            {!loading && items.length === 0 && (
+            {!loading && filteredItems.length === 0 && (
               <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400">No licenses yet. Click "Issue License" to create one.</td></tr>
             )}
-            {!loading && items.map((l) => {
+            {!loading && paginatedItems.map((l) => {
               const tenant = l.tenantId ? tenantById.get(l.tenantId) : null;
               const days = daysUntil(l.expiresAt);
               return (
@@ -278,9 +313,14 @@ export default function SystemLicensesPage() {
                     <TierBadge tier={l.licenseType} />
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${STATUS_BADGE[l.status] || ''}`}>
-                      {l.status}
-                    </span>
+                    {(() => {
+                      const displayStatus = (l.status === 'active' && days < 0) ? 'expired' : l.status;
+                      return (
+                        <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${STATUS_BADGE[displayStatus] || ''}`}>
+                          {displayStatus}
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td className="px-4 py-3 text-gray-700">
                     {tenant ? (
@@ -364,6 +404,7 @@ export default function SystemLicensesPage() {
             })}
           </tbody>
         </table>
+        <SystemPagination page={page} pageSize={pageSize} total={filteredItems.length} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
       </div>
 
       {showCreate && (

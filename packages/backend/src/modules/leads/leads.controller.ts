@@ -45,6 +45,13 @@ export class LeadsController {
     return this.service.stats();
   }
 
+  @Get('pipeline')
+  @ApiOperation({ summary: 'Pipeline summary stats' })
+  async pipeline(@Req() req: any) {
+    if (!req.user?.isSystemAdmin) throw new ForbiddenException('System admin only');
+    return this.service.getLeadPipeline();
+  }
+
   @Get(':id')
   async findOne(@Req() req: any, @Param('id') id: string) {
     if (!req.user?.isSystemAdmin) throw new ForbiddenException('System admin only');
@@ -59,5 +66,33 @@ export class LeadsController {
   ) {
     if (!req.user?.isSystemAdmin) throw new ForbiddenException('System admin only');
     return this.service.updateStatus(id, dto);
+  }
+
+  @Get(':id/activities')
+  @ApiOperation({ summary: 'List activities for a lead' })
+  async listActivities(@Req() req: any, @Param('id') id: string) {
+    if (!req.user?.isSystemAdmin) throw new ForbiddenException('System admin only');
+    return this.service.listActivities(id);
+  }
+
+  @Post(':id/activities')
+  @ApiOperation({ summary: 'Add an activity to a lead' })
+  async addActivity(@Req() req: any, @Param('id') id: string, @Body() body: { type: string; content?: string }) {
+    if (!req.user?.isSystemAdmin) throw new ForbiddenException('System admin only');
+    return this.service.addActivity(id, { type: body.type as any, content: body.content, actorId: req.user?.id });
+  }
+
+  @Patch(':id/assign')
+  @ApiOperation({ summary: 'Assign a lead to a user' })
+  async assignLead(@Req() req: any, @Param('id') id: string, @Body() body: { assignedTo: string | null }) {
+    if (!req.user?.isSystemAdmin) throw new ForbiddenException('System admin only');
+    return this.service.assignLead(id, body.assignedTo);
+  }
+
+  @Patch(':id/follow-up')
+  @ApiOperation({ summary: 'Set follow-up date for a lead' })
+  async setFollowUp(@Req() req: any, @Param('id') id: string, @Body() body: { nextFollowUpAt: string | null }) {
+    if (!req.user?.isSystemAdmin) throw new ForbiddenException('System admin only');
+    return this.service.setFollowUp(id, body.nextFollowUpAt);
   }
 }

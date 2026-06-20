@@ -9,13 +9,16 @@ function createService() {
   } as any;
 
   const queueDisplayRepository = {} as any;
-  const encounterRepository = {} as any;
+  const encounterRepository = {
+    findOne: jest.fn().mockResolvedValue(null),
+  } as any;
   const doctorDutyRepository = {
     findOne: jest.fn(),
   } as any;
   const auditLogRepository = {} as any;
   const systemSettingRepository = {
     findOne: jest.fn(),
+    find: jest.fn().mockResolvedValue([{ key: 'billing.mode', value: 'pre_pay' }]),
   } as any;
   const invoiceRepository = {} as any;
   const invoiceItemRepository = {} as any;
@@ -24,6 +27,8 @@ function createService() {
     findOne: jest.fn(),
   } as any;
   const smsService = {} as any;
+  const doctorFeesService = {} as any;
+  const inAppNotifications = {} as any;
   const dataSource = {} as any;
 
   const service = new QueueManagementService(
@@ -38,6 +43,8 @@ function createService() {
     serviceRepository,
     departmentRepository,
     smsService,
+    doctorFeesService,
+    inAppNotifications,
     dataSource,
   );
 

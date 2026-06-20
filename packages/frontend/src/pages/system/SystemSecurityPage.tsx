@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ShieldAlert, Loader2, RefreshCw, Unlock, AlertCircle, ShieldCheck } from 'lucide-react';
 import api from '../../services/api';
+import ConfirmDialog from '../../components/ConfirmDialog';
 
 interface BlockedEntry {
   kind: 'ip' | 'user';
@@ -24,6 +25,7 @@ export default function SystemSecurityPage() {
   const [error, setError] = useState<string | null>(null);
   const [unblocking, setUnblocking] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [confirmUnblock, setConfirmUnblock] = useState<BlockedEntry | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -150,7 +152,7 @@ export default function SystemSecurityPage() {
                     </td>
                     <td className="px-3 py-2 text-right">
                       <button
-                        onClick={() => unblock(entry)}
+                        onClick={() => setConfirmUnblock(entry)}
                         disabled={unblocking === id}
                         className="inline-flex items-center gap-1 px-2 py-1 text-xs border border-emerald-300 text-emerald-700 rounded hover:bg-emerald-50 disabled:opacity-50"
                       >
@@ -178,6 +180,21 @@ export default function SystemSecurityPage() {
         </p>
         <p>Auto-refreshes every 10 seconds. Blocks expire automatically — manual unblock is for emergencies.</p>
       </div>
+
+      <ConfirmDialog
+        open={confirmUnblock !== null}
+        title="Unblock IP?"
+        message="Are you sure you want to unblock this IP address? This will allow login attempts from this IP again."
+        confirmLabel="Unblock"
+        variant="warning"
+        loading={unblocking !== null}
+        onCancel={() => setConfirmUnblock(null)}
+        onConfirm={async () => {
+          if (!confirmUnblock) return;
+          await unblock(confirmUnblock);
+          setConfirmUnblock(null);
+        }}
+      />
     </div>
   );
 }

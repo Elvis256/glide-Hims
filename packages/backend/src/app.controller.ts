@@ -103,7 +103,7 @@ export class AppController {
         return { initialized: false };
       }
       const tenants = await this.tenantService.findAll();
-      return { initialized: !!(tenants && tenants.length > 0) };
+      return { initialized: !!(tenants && tenants.total > 0) };
     } catch {
       return { initialized: false };
     }

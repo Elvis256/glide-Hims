@@ -1909,7 +1909,29 @@ export class QueueManagementService {
   ): Promise<void> {
     if (!encounterId) return;
     try {
-      await this.encounterRepository.update({ id: encounterId }, { status });
+      // Validate the transition is legal before updating to prevent queue-encounter state divergence
+      const encounter = await this.encounterRepository.findOne({ where: { id: encounterId } });
+      if (!encounter || encounter.status === status) return;
+
+      // Only sync if the encounter is in a state that logically allows this transition
+      const safeTransitions: Partial<Record<string, string[]>> = {
+        registered: ['triage', 'waiting', 'in_consultation'],
+        triage: ['waiting', 'in_consultation'],
+        waiting: ['in_consultation'],
+        in_consultation: ['pending_lab', 'pending_pharmacy', 'pending_payment', 'completed'],
+        pending_lab: ['in_consultation', 'return_to_doctor'],
+        pending_pharmacy: ['in_consultation', 'return_to_doctor'],
+        pending_payment: ['completed', 'return_to_doctor'],
+      };
+
+      const allowed = safeTransitions[encounter.status] || [];
+      if (allowed.includes(status)) {
+        await this.encounterRepository.update({ id: encounterId }, { status });
+      } else {
+        this.logger.warn(
+          `Queue→Encounter sync skipped: cannot transition encounter ${encounterId} from '${encounter.status}' to '${status}'`,
+        );
+      }
     } catch (e) {
       this.logger.error(
         `Failed to sync encounter ${encounterId} to status ${status}: ${e.message}`,

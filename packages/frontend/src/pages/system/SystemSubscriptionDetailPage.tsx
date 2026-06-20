@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Loader2, ArrowLeft, Pause, Play, Ban, KeyRound, RefreshCw, FileText, DollarSign, Calendar, Tag, AlertTriangle, TrendingUp, Settings, Save, Coins } from 'lucide-react';
+import { toast } from 'sonner';
 import api from '../../services/api';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import { Plan, Subscription, SaasInvoice, SaasPayment, INVOICE_STATUS_STYLES, SUB_STATUS_STYLES, fmtMoney, fmtDate, fmtDateTime, unwrap } from './saas/_shared';
 
 interface SubDetail extends Subscription {

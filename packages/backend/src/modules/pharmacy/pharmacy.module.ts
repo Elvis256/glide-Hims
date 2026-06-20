@@ -30,6 +30,7 @@ import { FinanceModule } from '../finance/finance.module';
 import { PosModule } from '../pos/pos.module';
 import { EfrisModule } from '../efris/efris.module';
 import { InventoryModule } from '../inventory/inventory.module';
+import { AllergiesModule } from '../allergies/allergies.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { InventoryModule } from '../inventory/inventory.module';
     forwardRef(() => PosModule),
     EfrisModule,
     InventoryModule,
+    AllergiesModule,
     TypeOrmModule.forFeature([
       PharmacySale,
       PharmacySaleItem,

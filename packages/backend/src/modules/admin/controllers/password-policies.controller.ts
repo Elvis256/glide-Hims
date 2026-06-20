@@ -12,6 +12,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from '../../auth/auth.service';
 import { AuthWithPermissions } from '../../auth/decorators/auth.decorator';
+import { CreatePasswordPolicyDto, UpdatePasswordPolicyDto } from '../dto/password-policy.dto';
 
 @ApiTags('Admin - Password Policies')
 @ApiBearerAuth()
@@ -33,7 +34,7 @@ export class PasswordPoliciesController {
   @Post()
   @AuthWithPermissions('settings.update')
   @ApiOperation({ summary: 'Create password policy' })
-  async create(@Body() dto: any, @Request() req: any) {
+  async create(@Body() dto: CreatePasswordPolicyDto, @Request() req: any) {
     return this.authService.createPasswordPolicy(
       dto,
       req.user?.tenantId,
@@ -44,7 +45,7 @@ export class PasswordPoliciesController {
   @Patch(':id')
   @AuthWithPermissions('settings.update')
   @ApiOperation({ summary: 'Update password policy' })
-  async update(@Param('id') id: string, @Body() dto: any, @Request() req: any) {
+  async update(@Param('id') id: string, @Body() dto: UpdatePasswordPolicyDto, @Request() req: any) {
     return this.authService.updatePasswordPolicy(
       id,
       dto,

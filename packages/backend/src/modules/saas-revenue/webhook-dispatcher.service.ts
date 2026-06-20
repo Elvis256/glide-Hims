@@ -19,6 +19,9 @@ export const WEBHOOK_EVENT_TYPES = [
   'subscription.created',
   'subscription.updated',
   'subscription.cancelled',
+  'subscription.churned',
+  'subscription.paused',
+  'subscription.resumed',
 ] as const;
 export type WebhookEventType = typeof WEBHOOK_EVENT_TYPES[number];
 

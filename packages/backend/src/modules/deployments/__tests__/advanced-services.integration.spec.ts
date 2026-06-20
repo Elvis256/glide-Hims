@@ -8,6 +8,9 @@ import { ConflictResolutionEngine } from '../conflict-resolution.service';
 import { UpdateRollout } from '../../../database/entities/update-rollout.entity';
 import { ChangeSet } from '../../../database/entities/changeset.entity';
 
+import { Deployment } from '../../../database/entities/deployment.entity';
+import { ReplicationLog } from '../../../database/entities/replication-log.entity';
+
 describe('Phase 2-4 Advanced Services Integration Tests', () => {
   let updateDistributionService: UpdateDistributionService;
   let rolloutOrchestrationService: RolloutOrchestrationService;
@@ -31,6 +34,20 @@ describe('Phase 2-4 Advanced Services Integration Tests', () => {
     findOne: jest.fn(),
   };
 
+  const mockDeploymentRepository = {
+    findOne: jest.fn(),
+    find: jest.fn(),
+    count: jest.fn(),
+    save: jest.fn(),
+  };
+
+  const mockReplicationLogRepository = {
+    create: jest.fn(),
+    save: jest.fn(),
+    findOne: jest.fn(),
+    find: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -45,6 +62,14 @@ describe('Phase 2-4 Advanced Services Integration Tests', () => {
         {
           provide: getRepositoryToken(ChangeSet),
           useValue: mockChangeSetRepository,
+        },
+        {
+          provide: getRepositoryToken(Deployment),
+          useValue: mockDeploymentRepository,
+        },
+        {
+          provide: getRepositoryToken(ReplicationLog),
+          useValue: mockReplicationLogRepository,
         },
       ],
     }).compile();

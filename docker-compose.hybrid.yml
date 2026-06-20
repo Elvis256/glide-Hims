@@ -5,11 +5,15 @@ services:
   postgres:
     image: postgres:15-alpine
     container_name: glide-hims-postgres
+    shm_size: '512m'
     environment:
       POSTGRES_DB: glide_hims
       POSTGRES_USER: ${DB_USER:-hims_admin}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-ChangeMeInProduction}
-      POSTGRES_INITDB_ARGS: "-c max_connections=500 -c shared_buffers=256MB"
+    command: >
+      postgres
+      -c max_connections=500
+      -c shared_buffers=256MB
     ports:
       - "5432:5432"
     volumes:
@@ -19,6 +23,7 @@ services:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-hims_admin}"]
       interval: 10s
       timeout: 5s
+      start_period: 30s
       retries: 5
     networks:
       - glide-network
@@ -45,8 +50,8 @@ services:
   # NestJS Backend API
   backend:
     build:
-      context: ./packages/backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: packages/backend/Dockerfile
     container_name: glide-hims-backend
     environment:
       NODE_ENV: production
@@ -92,8 +97,8 @@ services:
   # React Frontend
   frontend:
     build:
-      context: ./packages/frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: packages/frontend/Dockerfile
     container_name: glide-hims-frontend
     environment:
       VITE_API_URL: https://${DOMAIN_NAME}/api

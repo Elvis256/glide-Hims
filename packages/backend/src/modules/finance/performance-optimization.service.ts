@@ -62,14 +62,15 @@ export class PerformanceOptimizationService {
 
     try {
       const query = `
-        SELECT 
-          TABLE_NAME,
-          TABLE_ROWS,
-          ROUND((DATA_LENGTH + INDEX_LENGTH) / 1024 / 1024, 2) as size_mb,
-          ROUND(INDEX_LENGTH / 1024 / 1024, 2) as index_size_mb
-        FROM information_schema.TABLES
-        WHERE TABLE_SCHEMA = DATABASE()
-        ORDER BY DATA_LENGTH + INDEX_LENGTH DESC
+        SELECT
+          c.relname AS table_name,
+          c.reltuples::bigint AS row_count,
+          ROUND(pg_total_relation_size(c.oid) / 1024.0 / 1024.0, 2) AS size_mb,
+          ROUND(pg_indexes_size(c.oid) / 1024.0 / 1024.0, 2) AS index_size_mb
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public' AND c.relkind = 'r'
+        ORDER BY pg_total_relation_size(c.oid) DESC
       `;
 
       const tables = await this.dataSource.query(query);
@@ -79,8 +80,8 @@ export class PerformanceOptimizationService {
         const size = parseFloat(t.size_mb) || 0;
         totalSize += size;
         return {
-          tableName: t.TABLE_NAME,
-          rowCount: parseInt(t.TABLE_ROWS) || 0,
+          tableName: t.table_name,
+          rowCount: parseInt(t.row_count) || 0,
           sizeInMB: size,
           indexSizeInMB: parseFloat(t.index_size_mb) || 0,
         };
@@ -117,17 +118,19 @@ export class PerformanceOptimizationService {
 
     try {
       const query = `
-        SELECT 
-          INDEX_NAME,
-          TABLE_NAME
-        FROM information_schema.STATISTICS
-        WHERE TABLE_SCHEMA = DATABASE()
-        GROUP BY INDEX_NAME, TABLE_NAME
+        SELECT
+          i.relname AS index_name,
+          t.relname AS table_name
+        FROM pg_index ix
+        JOIN pg_class i ON i.oid = ix.indexrelid
+        JOIN pg_class t ON t.oid = ix.indrelid
+        JOIN pg_namespace n ON n.oid = t.relnamespace
+        WHERE n.nspname = 'public'
       `;
 
       const indexes = await this.dataSource.query(query);
       const existingIndexNames = new Set(
-        indexes.map((i: any) => i.INDEX_NAME),
+        indexes.map((i: any) => i.index_name),
       );
 
       const missing = this.recommendedIndexes.filter(
@@ -169,14 +172,14 @@ export class PerformanceOptimizationService {
 
     const tables = [
       'journal_entry_line',
-      'audit_log',
+      'audit_logs',
       'chart_of_accounts',
     ];
 
     let optimized = 0;
     for (const table of tables) {
       try {
-        await this.dataSource.query(`ANALYZE TABLE \`${table}\``);
+        await this.dataSource.query(`ANALYZE "${table}"`);
         optimized++;
       } catch (error) {
         this.logger.warn(`Failed to analyze table ${table}:`, error);
@@ -209,27 +212,28 @@ export class PerformanceOptimizationService {
 
     try {
       const query = `
-        SELECT 
-          TABLE_NAME,
-          ROUND(
-            (DATA_FREE / (DATA_LENGTH + INDEX_LENGTH + DATA_FREE)) * 100, 2
-          ) as fragmentation_percent
-        FROM information_schema.TABLES
-        WHERE TABLE_SCHEMA = DATABASE()
-          AND (DATA_LENGTH + INDEX_LENGTH + DATA_FREE) > 0
+        SELECT
+          relname AS table_name,
+          CASE WHEN relpages > 0
+            THEN ROUND((1.0 - n_live_tup::numeric / GREATEST(relpages * current_setting('block_size')::numeric / 100, 1)) * 100, 2)
+            ELSE 0
+          END AS fragmentation_percent
+        FROM pg_stat_user_tables
+        JOIN pg_class ON pg_class.relname = pg_stat_user_tables.relname
+        WHERE schemaname = 'public' AND n_live_tup > 0
         ORDER BY fragmentation_percent DESC
       `;
 
       const tables = await this.dataSource.query(query);
 
       const results = tables.map((t: any) => {
-        const frag = parseFloat(t.fragmentation_percent) || 0;
+        const frag = Math.max(0, parseFloat(t.fragmentation_percent) || 0);
         return {
-          tableName: t.TABLE_NAME,
+          tableName: t.table_name,
           fragmentationPercent: frag,
           status: frag > 20 ? 'HIGH' : frag > 10 ? 'MODERATE' : 'HEALTHY',
           recommendedAction:
-            frag > 20 ? 'OPTIMIZE TABLE' : frag > 10 ? 'MONITOR' : 'NONE',
+            frag > 20 ? 'VACUUM FULL' : frag > 10 ? 'MONITOR' : 'NONE',
         };
       });
 
@@ -264,31 +268,37 @@ export class PerformanceOptimizationService {
   }> {
     this.logger.debug('Identifying slow queries');
 
-    const slowQueries = [
-      {
-        query:
-          'SELECT * FROM journal_entry_line WHERE debit > 0 (missing index)',
-        executionTimeMs: 5420,
-        estimatedOptimization: 'Add idx_journal_entry_line_debit index',
-      },
-      {
-        query:
-          'SELECT * FROM journal_entry_line WHERE account_id = ? (full scan)',
-        executionTimeMs: 3200,
-        estimatedOptimization: 'Ensure idx_journal_entry_line_account exists',
-      },
-    ];
+    try {
+      // Use pg_stat_statements if available
+      const rows = await this.dataSource.query(`
+        SELECT query, ROUND(mean_exec_time::numeric, 2) AS mean_ms, calls
+        FROM pg_stat_statements
+        WHERE mean_exec_time > 100
+        ORDER BY mean_exec_time DESC
+        LIMIT 10
+      `).catch(() => []);
 
-    const avgTime = slowQueries.length > 0
-      ? slowQueries.reduce((sum, q) => sum + q.executionTimeMs, 0) / slowQueries.length
-      : 0;
+      if (rows.length > 0) {
+        const slowQueries = rows.map((r: any) => ({
+          query: (r.query || '').substring(0, 200),
+          executionTimeMs: parseFloat(r.mean_ms) || 0,
+          estimatedOptimization: 'Review query plan with EXPLAIN ANALYZE',
+        }));
+        const avgTime = slowQueries.reduce((sum: number, q: any) => sum + q.executionTimeMs, 0) / slowQueries.length;
+        return {
+          slowQueryCount: slowQueries.length,
+          averageQueryTimeMs: Math.round(avgTime),
+          slowestQueries: slowQueries,
+        };
+      }
+    } catch {
+      // pg_stat_statements not available
+    }
 
     return {
-      slowQueryCount: slowQueries.length,
-      averageQueryTimeMs: Math.round(avgTime),
-      slowestQueries: slowQueries.sort(
-        (a, b) => b.executionTimeMs - a.executionTimeMs,
-      ),
+      slowQueryCount: 0,
+      averageQueryTimeMs: 0,
+      slowestQueries: [],
     };
   }
 
@@ -312,6 +322,16 @@ export class PerformanceOptimizationService {
     const fragmentation = await this.analyzeTableFragmentation();
     const slowQueries = await this.identifySlowQueries();
 
+    // Get actual cache hit rate from PostgreSQL
+    let cacheHitRate = 92;
+    try {
+      const cacheResult = await this.dataSource.query(`
+        SELECT ROUND(100.0 * sum(blks_hit) / NULLIF(sum(blks_hit) + sum(blks_read), 0), 1) AS ratio
+        FROM pg_stat_database WHERE datname = current_database()
+      `);
+      if (cacheResult[0]?.ratio) cacheHitRate = parseFloat(cacheResult[0].ratio);
+    } catch { /* ignore */ }
+
     const metrics = {
       indexHealth: indexHealth.healthScore,
       tableFragmentation: Math.max(
@@ -323,7 +343,7 @@ export class PerformanceOptimizationService {
               ? 15
               : 0),
       ),
-      cacheHitRate: 92,
+      cacheHitRate,
       queryPerformance: Math.max(0, 100 - slowQueries.slowQueryCount * 15),
     };
 
@@ -341,7 +361,7 @@ export class PerformanceOptimizationService {
       );
     }
     if (fragmentation.totalFragmentation > 20) {
-      recommendations.push('Run OPTIMIZE TABLE on highly fragmented tables');
+      recommendations.push('Run VACUUM FULL on highly fragmented tables');
     }
     if (slowQueries.slowQueryCount > 0) {
       recommendations.push(
@@ -379,8 +399,8 @@ export class PerformanceOptimizationService {
     if (!dryRun && toCreate.length > 0) {
       for (const idx of toCreate) {
         try {
-          const columns = idx.columns.join(', ');
-          const query = `CREATE INDEX \`${idx.name}\` ON \`${idx.table}\` (\`${columns}\`)`;
+          const columns = idx.columns.map((c) => `"${c}"`).join(', ');
+          const query = `CREATE INDEX IF NOT EXISTS "${idx.name}" ON "${idx.table}" (${columns})`;
           await this.dataSource.query(query);
           created++;
           this.logger.log(`Created index: ${idx.name}`);
@@ -434,7 +454,7 @@ export class PerformanceOptimizationService {
     if (
       fragmentation.tables.some((t) => t.status === 'HIGH')
     ) {
-      quickWins.push('Run OPTIMIZE TABLE on fragmented tables (30 min)');
+      quickWins.push('Run VACUUM FULL on fragmented tables (30 min)');
     }
 
     const mediumTermImprovements = [

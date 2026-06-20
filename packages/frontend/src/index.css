@@ -38,39 +38,18 @@ input[type="number"] {
 
 /* Print Styles */
 @media print {
-  /* Hide everything except the receipt */
-  body * {
-    visibility: hidden;
-  }
-  
-  /* Show only the printable receipt area */
-  .print-receipt,
-  .print-receipt * {
-    visibility: visible;
-  }
-  
-  .print-receipt {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 80mm;
-    padding: 5mm;
-    margin: 0;
-    background: white;
-  }
-  
-  /* Hide sidebar, header, navigation */
+  /* Hide sidebar, header, navigation globally during print */
   nav,
   aside,
   header,
   .sidebar,
-  .print\\:hidden {
+  .print\:hidden,
+  .no-print {
     display: none !important;
   }
   
-  /* Reset page margins for thermal printer */
-  @page {
-    size: 80mm auto;
-    margin: 0;
+  body {
+    background: white !important;
+    color: black !important;
   }
 }

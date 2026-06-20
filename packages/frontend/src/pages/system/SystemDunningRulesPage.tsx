@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Loader2, Save, CheckCircle, AlertTriangle, Play, RotateCcw } from 'lucide-react';
 import api from '../../services/api';
 import { unwrap } from './saas/_shared';
+import ConfirmDialog from '../../components/ConfirmDialog';
 
 interface DunningRules {
   enabled: boolean;
@@ -24,6 +25,7 @@ export default function SystemDunningRulesPage() {
   const [running, setRunning] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{open: boolean; title: string; message: string; variant: 'danger'|'warning'|'info'; confirmLabel: string; onConfirm: () => void}>({open: false, title: '', message: '', variant: 'danger', confirmLabel: 'Confirm', onConfirm: () => {}});
 
   const load = async () => {
     setLoading(true);
@@ -61,9 +63,16 @@ export default function SystemDunningRulesPage() {
     }
   };
 
-  const reset = () => setData({ ...DEFAULTS });
+  const reset = () => setConfirmAction({
+    open: true,
+    title: 'Reset to defaults?',
+    message: 'This will discard your current dunning rule configuration and restore all fields to their default values. Unsaved changes will be lost.',
+    variant: 'warning',
+    confirmLabel: 'Reset to defaults',
+    onConfirm: () => { setData({ ...DEFAULTS }); setConfirmAction(prev => ({ ...prev, open: false })); },
+  });
 
-  const runNow = async () => {
+  const executeRunNow = async () => {
     setRunning(true);
     try {
       await api.post('/saas-revenue/cron/run');
@@ -75,6 +84,15 @@ export default function SystemDunningRulesPage() {
       setRunning(false);
     }
   };
+
+  const runNow = () => setConfirmAction({
+    open: true,
+    title: 'Run dunning now?',
+    message: 'This will immediately process all overdue invoices, send dunning emails to affected customers, and may auto-churn subscriptions that exceed the churn threshold. This action cannot be undone.',
+    variant: 'danger',
+    confirmLabel: 'Run dunning now',
+    onConfirm: () => { setConfirmAction(prev => ({ ...prev, open: false })); executeRunNow(); },
+  });
 
   if (loading || !data) {
     return <div className="p-6"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>;
@@ -200,6 +218,16 @@ export default function SystemDunningRulesPage() {
           <span className="inline-flex items-center gap-1 text-sm text-emerald-700"><CheckCircle className="w-4 h-4" /> Done</span>
         )}
       </div>
+
+      <ConfirmDialog
+        open={confirmAction.open}
+        title={confirmAction.title}
+        message={confirmAction.message}
+        variant={confirmAction.variant}
+        confirmLabel={confirmAction.confirmLabel}
+        onConfirm={confirmAction.onConfirm}
+        onCancel={() => setConfirmAction(prev => ({ ...prev, open: false }))}
+      />
     </div>
   );
 }

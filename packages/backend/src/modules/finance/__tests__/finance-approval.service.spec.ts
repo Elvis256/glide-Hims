@@ -57,6 +57,17 @@ describe('FinanceApprovalService', () => {
             find: jest.fn(),
             findOne: jest.fn(),
             update: jest.fn(),
+            createQueryBuilder: jest.fn().mockImplementation(() => ({
+              setLock: jest.fn().mockReturnThis(),
+              where: jest.fn().mockReturnThis(),
+              andWhere: jest.fn().mockReturnThis(),
+              getOne: jest.fn().mockImplementation(async () => {
+                return approvalChainRepo.findOne({} as any);
+              }),
+              update: jest.fn().mockReturnThis(),
+              set: jest.fn().mockReturnThis(),
+              execute: jest.fn().mockResolvedValue({ affected: 1 }),
+            })),
           },
         },
         {
@@ -65,7 +76,14 @@ describe('FinanceApprovalService', () => {
             findOne: jest.fn(),
             find: jest.fn(),
             save: jest.fn(),
-            createQueryBuilder: jest.fn(),
+            createQueryBuilder: jest.fn().mockImplementation(() => ({
+              setLock: jest.fn().mockReturnThis(),
+              where: jest.fn().mockReturnThis(),
+              andWhere: jest.fn().mockReturnThis(),
+              getOne: jest.fn().mockImplementation(async () => {
+                return journalEntryRepo.findOne({} as any);
+              }),
+            })),
           },
         },
         {
@@ -80,7 +98,16 @@ describe('FinanceApprovalService', () => {
         {
           provide: DataSource,
           useValue: {
-            transaction: jest.fn(async (cb: any) => cb({} as any)),
+            transaction: jest.fn(async (cb: any) => {
+              const mockManager = {
+                getRepository: jest.fn().mockImplementation((entity) => {
+                  if (entity === JournalEntry) return journalEntryRepo;
+                  if (entity === FinanceApprovalChain) return approvalChainRepo;
+                  return {};
+                }),
+              };
+              return cb(mockManager);
+            }),
           },
         },
       ],
@@ -91,6 +118,11 @@ describe('FinanceApprovalService', () => {
       getRepositoryToken(FinanceApprovalChain),
     );
     journalEntryRepo = module.get<Repository<JournalEntry>>(getRepositoryToken(JournalEntry));
+
+    const defaultEntry = mockJournalEntry(5000);
+    defaultEntry.status = JournalStatus.SUBMITTED;
+    defaultEntry.createdById = 'some-other-creator-id';
+    jest.spyOn(journalEntryRepo, 'findOne').mockResolvedValue(defaultEntry);
   });
 
   describe('getRequiredApprovalsForAmount', () => {

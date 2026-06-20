@@ -1,6 +1,9 @@
-import { useEffect, useState } from 'react';
-import { Mail, Phone, Building2, Globe, Loader2, RefreshCw, Sparkles, X, Check } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Mail, Phone, Building2, Globe, Loader2, RefreshCw, Sparkles, X, Check, FileText } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import api from '../../services/api';
+import SystemPagination from '../../components/SystemPagination';
 
 type LeadStatus = 'new' | 'contacted' | 'qualified' | 'won' | 'lost' | 'spam';
 
@@ -149,6 +152,9 @@ export default function SystemLeadsPage() {
                       <option value="lost">lost</option>
                       <option value="spam">spam</option>
                     </select>
+                    {(l.status === 'qualified' || l.status === 'contacted' || l.status === 'new') && (
+                      <CreateQuotationButton leadId={l.id} />
+                    )}
                     {(l.status === 'qualified' || l.status === 'won') && (
                       <button onClick={() => setConverting(l)} className="inline-flex items-center gap-1 text-xs px-2 py-1 bg-emerald-600 text-white rounded hover:bg-emerald-700">
                         <Sparkles className="w-3 h-3" /> Convert to subscription
@@ -223,25 +229,25 @@ function ConvertModal({ lead, onClose, onDone }: { lead: Lead; onClose: () => vo
         <p className="text-xs text-gray-500 mb-3">{lead.fullName} · {lead.organization}</p>
         <div className="space-y-3 text-sm">
           <div><div className="text-xs text-gray-500 mb-1">Tenant</div>
-            <select className="input w-full" value={tenantId} onChange={(e) => setTenantId(e.target.value)}>
+            <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={tenantId} onChange={(e) => setTenantId(e.target.value)}>
               <option value="">— select tenant —</option>
               {tenants.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
           </div>
           <div><div className="text-xs text-gray-500 mb-1">Plan</div>
-            <select className="input w-full" value={planId} onChange={(e) => setPlanId(e.target.value)}>
+            <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={planId} onChange={(e) => setPlanId(e.target.value)}>
               <option value="">— select plan —</option>
               {plans.map((p: any) => <option key={p.id} value={p.id}>{p.name} ({p.tier})</option>)}
             </select>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><div className="text-xs text-gray-500 mb-1">Interval</div>
-              <select className="input w-full" value={billingInterval} onChange={(e) => setInterval(e.target.value as any)}>
+              <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={billingInterval} onChange={(e) => setInterval(e.target.value as any)}>
                 <option value="monthly">Monthly</option>
                 <option value="annual">Annual</option>
               </select>
             </div>
-            <div><div className="text-xs text-gray-500 mb-1">Seats</div><input type="number" min={1} className="input w-full" value={seats} onChange={(e) => setSeats(parseInt(e.target.value || '1', 10))} /></div>
+            <div><div className="text-xs text-gray-500 mb-1">Seats</div><input type="number" min={1} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={seats} onChange={(e) => setSeats(parseInt(e.target.value || '1', 10))} /></div>
           </div>
           <label className="flex items-center gap-2"><input type="checkbox" checked={startTrial} onChange={(e) => setStartTrial(e.target.checked)} /> Start with trial period (per plan)</label>
           {err && <div className="text-xs text-red-600">{err}</div>}
@@ -250,8 +256,30 @@ function ConvertModal({ lead, onClose, onDone }: { lead: Lead; onClose: () => vo
           <button onClick={onClose} className="px-3 py-2 text-sm border rounded hover:bg-gray-50">Cancel</button>
           <button onClick={submit} disabled={saving} className="px-3 py-2 text-sm bg-emerald-600 text-white rounded inline-flex items-center gap-2 hover:bg-emerald-700 disabled:opacity-50">{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Convert</button>
         </div>
-        <style>{`.input{border:1px solid #d1d5db;border-radius:6px;padding:6px 10px;font-size:13px}`}</style>
       </div>
     </div>
+  );
+}
+
+function CreateQuotationButton({ leadId }: { leadId: string }) {
+  const navigate = useNavigate();
+  const [creating, setCreating] = useState(false);
+
+  const handleClick = async () => {
+    setCreating(true);
+    try {
+      const r = await api.post(`/saas-revenue/quotations/from-lead/${leadId}`);
+      const q = (r as any)?.data?.data ?? (r as any)?.data;
+      toast.success('Quotation created from lead');
+      navigate(`/system/quotations/${q.id}`);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Failed to create quotation');
+    } finally { setCreating(false); }
+  };
+
+  return (
+    <button onClick={handleClick} disabled={creating} className="inline-flex items-center gap-1 text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">
+      {creating ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />} Create Quotation
+    </button>
   );
 }

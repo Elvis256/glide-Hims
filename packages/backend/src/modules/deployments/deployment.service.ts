@@ -1,7 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { randomBytes } from 'crypto';
 import { Deployment, DeploymentType, DeploymentStatus } from '../../database/entities/deployment.entity';
 import { DeploymentVersion } from '../../database/entities/deployment-version.entity';
 import { DeploymentConfig } from '../../database/entities/deployment-config.entity';
@@ -494,11 +493,6 @@ export class DeploymentService {
         })
       : null;
 
-    const rand = (bytes = 32) => randomBytes(bytes).toString('base64').replace(/[+/=]/g, '').slice(0, 32);
-    const dbPassword = rand(24);
-    const redisPassword = rand(24);
-    const jwtSecret = rand(48);
-
     const phoneHomeUrl =
       process.env.PHONE_HOME_URL ||
       process.env.API_BASE_URL ||
@@ -522,17 +516,21 @@ export class DeploymentService {
       `# Deployment ID: ${deployment.id}`,
       `# Generated    : ${new Date().toISOString()}`,
       `#`,
-      `# WARNING: this file contains a pre-generated license key and freshly`,
-      `# generated random secrets. Treat it as confidential and delete after use.`,
+      `# Secrets are auto-generated at install time. The license key is embedded`,
+      `# but sensitive credentials are generated fresh on the target machine.`,
+      `# Delete this file after successful installation.`,
       `###############################################################################`,
       `set -euo pipefail`,
       ``,
       `export LICENSE_KEY="${licenseKey}"`,
       `export DOMAIN_NAME="${domain}"`,
-      `export DB_PASSWORD="${dbPassword}"`,
-      `export REDIS_PASSWORD="${redisPassword}"`,
-      `export JWT_SECRET="${jwtSecret}"`,
       `export CONTROL_PLANE_URL="${phoneHomeUrl.replace(/\/+$/, '')}"`,
+      ``,
+      `# Generate secrets on the target machine (never transmitted over the network)`,
+      `gen_secret() { head -c "$1" /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c "$1"; }`,
+      `export DB_PASSWORD="\${DB_PASSWORD:-$(gen_secret 32)}"`,
+      `export REDIS_PASSWORD="\${REDIS_PASSWORD:-$(gen_secret 32)}"`,
+      `export JWT_SECRET="\${JWT_SECRET:-$(gen_secret 64)}"`,
       ``,
     ];
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Loader2, Save, CheckCircle, AlertTriangle, Plus, Trash2, RotateCcw, Coins, RefreshCw } from 'lucide-react';
 import api from '../../services/api';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import { unwrap } from './saas/_shared';
 
 interface CurrencyRates {
@@ -25,6 +26,7 @@ export default function SystemCurrencyRatesPage() {
   const [newRate, setNewRate] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [refreshInfo, setRefreshInfo] = useState<{ updated: string[]; missing: string[] } | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -76,7 +78,12 @@ export default function SystemCurrencyRatesPage() {
     }
   };
 
-  const reset = () => setData(DEFAULTS);
+  const reset = () =>
+    setConfirmAction({
+      title: 'Reset defaults',
+      message: 'This will discard all current currency rates and restore the built-in defaults. Unsaved changes will be lost.',
+      onConfirm: () => { setData(DEFAULTS); setConfirmAction(null); },
+    });
 
   const refreshFromProvider = async () => {
     setError(null); setRefreshInfo(null); setRefreshing(true);
@@ -185,7 +192,11 @@ export default function SystemCurrencyRatesPage() {
                       </td>
                       <td className="px-3 py-2 text-right">
                         {!isBase && (
-                          <button onClick={() => removeRate(ccy)} className="text-red-600 hover:text-red-800" title="Remove">
+                          <button onClick={() => setConfirmAction({
+                            title: 'Remove currency',
+                            message: `Remove the rate for "${ccy}"? This change is not saved until you click Save.`,
+                            onConfirm: () => { removeRate(ccy); setConfirmAction(null); },
+                          })} className="text-red-600 hover:text-red-800" title="Remove">
                             <Trash2 className="w-4 h-4" />
                           </button>
                         )}
@@ -246,6 +257,16 @@ export default function SystemCurrencyRatesPage() {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={!!confirmAction}
+        title={confirmAction?.title || ''}
+        message={confirmAction?.message || ''}
+        confirmLabel="Confirm"
+        variant="danger"
+        onConfirm={() => confirmAction?.onConfirm()}
+        onCancel={() => setConfirmAction(null)}
+      />
     </div>
   );
 }

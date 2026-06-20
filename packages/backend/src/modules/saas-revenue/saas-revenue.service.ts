@@ -25,7 +25,9 @@ import {
   BillingInterval,
   SubscriptionStatus,
   SubscriptionEventType,
+  SaasPaymentVerificationStatus,
 } from './saas.entity';
+import { SaasPaymentProof } from './payment-proof.entity';
 import { License } from '../../database/entities/license.entity';
 import { Tenant } from '../../database/entities/tenant.entity';
 import {
@@ -158,6 +160,7 @@ export class SaasRevenueService {
     @InjectRepository(SaasPaymentMethod) private readonly paymentMethods: Repository<SaasPaymentMethod>,
     @InjectRepository(SaasWebhookEndpoint) private readonly webhookEndpoints: Repository<SaasWebhookEndpoint>,
     @InjectRepository(SaasWebhookDelivery) private readonly webhookDeliveries: Repository<SaasWebhookDelivery>,
+    @InjectRepository(SaasPaymentProof) private readonly paymentProofs: Repository<SaasPaymentProof>,
     private readonly mailer: SaasMailerService,
     private readonly flw: FlutterwaveService,
     private readonly pesapal: PesapalService,
@@ -809,7 +812,9 @@ export class SaasRevenueService {
     const sub = await this.subs.findOne({ where: { id } });
     if (!sub) throw new NotFoundException();
     sub.status = 'paused';
+    sub.metadata = { ...(sub.metadata || {}), pausedAt: new Date().toISOString() };
     await this.subs.save(sub);
+    await this.syncLicenseFromSubscription(sub.id);
     await this.recordEvent(sub.id, 'paused', 'Paused', null, actorId);
     return this.getSubscription(sub.id);
   }
@@ -817,8 +822,22 @@ export class SaasRevenueService {
   async resumeSubscription(id: string, actorId?: string) {
     const sub = await this.subs.findOne({ where: { id } });
     if (!sub) throw new NotFoundException();
+    const now = new Date();
+    // Advance period dates by the time the subscription was paused
+    const pausedAt = sub.metadata?.pausedAt ? new Date(sub.metadata.pausedAt) : null;
+    if (pausedAt && sub.currentPeriodEnd) {
+      const pausedMs = now.getTime() - pausedAt.getTime();
+      sub.currentPeriodEnd = new Date(sub.currentPeriodEnd.getTime() + pausedMs);
+      if (sub.nextRenewalAt) {
+        sub.nextRenewalAt = new Date(sub.nextRenewalAt.getTime() + pausedMs);
+      }
+    }
     sub.status = 'active';
+    const meta = { ...(sub.metadata || {}) };
+    delete meta.pausedAt;
+    sub.metadata = meta;
     await this.subs.save(sub);
+    await this.syncLicenseFromSubscription(sub.id);
     await this.recordEvent(sub.id, 'resumed', 'Resumed', null, actorId);
     return this.getSubscription(sub.id);
   }
@@ -975,6 +994,8 @@ export class SaasRevenueService {
     if (!inv) throw new NotFoundException('Invoice not found');
     const sub = await this.subs.findOne({ where: { id: inv.subscriptionId } });
     if (!sub) throw new NotFoundException('Subscription not found');
+    const gw = dto.gateway ?? 'manual';
+    const isGateway = gw !== 'manual';
     const pay = this.payments.create(<Partial<SaasPayment>>{
       invoiceId: inv.id,
       subscriptionId: sub.id,
@@ -983,14 +1004,16 @@ export class SaasRevenueService {
       currency: dto.currency ?? inv.currency,
       amountMinor: dto.amountMinor,
       status: 'succeeded',
-      gateway: dto.gateway ?? 'manual',
+      gateway: gw,
       gatewayRef: dto.gatewayRef ?? null,
       method: dto.method ?? null,
       paidAt: dto.paidAt ? new Date(dto.paidAt) : new Date(),
       recordedBy: actorId ?? null,
       notes: dto.notes ?? null,
+      verificationStatus: isGateway ? 'verified' : 'pending_verification',
+      verifiedAt: isGateway ? new Date() : null,
     });
-    const savedPay = await this.payments.save(pay );
+    const savedPay = await this.payments.save(pay);
 
     inv.amountPaidMinor += dto.amountMinor;
     if (inv.amountPaidMinor >= inv.totalMinor) {
@@ -1023,6 +1046,61 @@ export class SaasRevenueService {
       }).catch(() => {});
     }
     return savedPay;
+  }
+
+  // ============================================================
+  // PAYMENT PROOF & VERIFICATION
+  // ============================================================
+
+  async uploadPaymentProof(paymentId: string, file: Express.Multer.File, uploadedBy: string, notes?: string) {
+    const pay = await this.payments.findOne({ where: { id: paymentId } });
+    if (!pay) throw new NotFoundException('Payment not found');
+    const proof = this.paymentProofs.create({
+      paymentId,
+      filePath: file.path,
+      originalFilename: file.originalname,
+      fileType: file.mimetype,
+      fileSize: file.size,
+      uploadedBy,
+      notes: notes ?? null,
+    });
+    return this.paymentProofs.save(proof);
+  }
+
+  async listPaymentProofs(paymentId: string) {
+    return this.paymentProofs.find({ where: { paymentId }, order: { createdAt: 'DESC' } });
+  }
+
+  async getPaymentProof(proofId: string) {
+    const proof = await this.paymentProofs.findOne({ where: { id: proofId } });
+    if (!proof) throw new NotFoundException('Proof not found');
+    return proof;
+  }
+
+  async verifyPayment(paymentId: string, dto: { status: 'verified' | 'rejected'; notes?: string }, verifierId: string) {
+    const pay = await this.payments.findOne({ where: { id: paymentId } });
+    if (!pay) throw new NotFoundException('Payment not found');
+    if (pay.verificationStatus === 'verified') throw new BadRequestException('Payment already verified');
+    if (dto.status !== 'verified' && dto.status !== 'rejected') throw new BadRequestException('Status must be verified or rejected');
+
+    pay.verificationStatus = dto.status;
+    pay.verifiedBy = verifierId;
+    pay.verifiedAt = new Date();
+    pay.verificationNotes = dto.notes ?? null;
+    await this.payments.save(pay);
+
+    await this.recordEvent(pay.subscriptionId, 'payment_recorded',
+      `Payment ${this.fmtMoney(pay.amountMinor, pay.currency)} ${dto.status} by verifier`,
+      { paymentId: pay.id, verificationStatus: dto.status }, verifierId);
+
+    return pay;
+  }
+
+  async listPaymentsForVerification() {
+    return this.payments.find({
+      where: { verificationStatus: 'pending_verification' },
+      order: { createdAt: 'DESC' },
+    });
   }
 
   async voidInvoice(id: string, actorId?: string) {
@@ -1353,6 +1431,8 @@ export class SaasRevenueService {
       await this.processTrialExpiry();
       await this.processRenewals();
       await this.processDunning();
+      await this.processRenewalReminders();
+      await this.processTrialEndingReminders();
     } catch (e: any) {
       this.logger.error(`renewalTick failed: ${e?.message ?? e}`);
     }
@@ -1399,6 +1479,7 @@ export class SaasRevenueService {
       s.currentPeriodEnd = end;
       s.nextRenewalAt = end;
       await this.subs.save(s);
+      await this.syncLicenseFromSubscription(s.id);
       await this.issueRenewalInvoice(s, start, end);
       await this.recordEvent(s.id, 'renewed', `Renewed for ${s.billingInterval} period`);
       count++;
@@ -1434,7 +1515,14 @@ export class SaasRevenueService {
         ((daysOverdue - rules.graceDays) % rules.reminderIntervalDays === 0)
       ) {
         // Send a reminder every reminderIntervalDays after the grace period.
-        if (sub.billingEmail) this.mailer.sendDunning(sub.billingEmail, sub, inv, daysOverdue).catch(() => {});
+        // Guard: skip if we already sent a dunning email today (cron runs hourly).
+        const lastSent = sub.lastDunningAt ? sub.lastDunningAt.getTime() : 0;
+        const hoursSinceLastSent = (now.getTime() - lastSent) / 3600000;
+        if (hoursSinceLastSent >= 23) {
+          sub.lastDunningAt = now;
+          await this.subs.save(sub);
+          if (sub.billingEmail) this.mailer.sendDunning(sub.billingEmail, sub, inv, daysOverdue).catch(() => {});
+        }
       }
       // Auto-churn at churnAfterDays past due.
       if (daysOverdue >= rules.churnAfterDays && sub.status === 'past_due') {
@@ -1443,6 +1531,66 @@ export class SaasRevenueService {
         await this.subs.save(sub);
         await this.recordEvent(sub.id, 'churned', `Auto-churn after ${rules.churnAfterDays}d unpaid`);
         await this.syncLicenseFromSubscription(sub.id);
+        // Notify tenant and dispatch webhook on auto-churn
+        this.webhooks.enqueue(sub.tenantId, 'subscription.churned', {
+          subscriptionId: sub.id,
+          tenantId: sub.tenantId,
+          reason: `Auto-churned after ${rules.churnAfterDays} days unpaid`,
+          invoiceId: inv.id,
+          invoiceNumber: inv.invoiceNumber,
+        });
+        if (sub.billingEmail) {
+          this.mailer.sendDunning(sub.billingEmail, sub, inv, daysOverdue).catch(() => {});
+        }
+      }
+    }
+  }
+
+  // ============================================================
+  // RENEWAL & TRIAL REMINDERS
+  // ============================================================
+
+  private async processRenewalReminders() {
+    const now = new Date();
+    const reminderDays = [7, 3, 1];
+    for (const days of reminderDays) {
+      const windowStart = new Date(now.getTime() + (days - 0.5) * 86400000);
+      const windowEnd = new Date(now.getTime() + (days + 0.5) * 86400000);
+      const upcoming = await this.subs.find({
+        where: { status: 'active' as any, autoRenew: true, nextRenewalAt: Between(windowStart, windowEnd) },
+        relations: ['plan'],
+      });
+      for (const sub of upcoming) {
+        // Only send once per day by checking metadata
+        const sentKey = `renewal_reminder_${days}d`;
+        if (sub.metadata?.[sentKey]) continue;
+        if (sub.billingEmail) {
+          this.mailer.sendRenewalReminder(sub.billingEmail, sub, days).catch(() => {});
+        }
+        sub.metadata = { ...(sub.metadata || {}), [sentKey]: now.toISOString() };
+        await this.subs.save(sub);
+      }
+    }
+  }
+
+  private async processTrialEndingReminders() {
+    const now = new Date();
+    const reminderDays = [3, 1];
+    for (const days of reminderDays) {
+      const windowStart = new Date(now.getTime() + (days - 0.5) * 86400000);
+      const windowEnd = new Date(now.getTime() + (days + 0.5) * 86400000);
+      const expiring = await this.subs.find({
+        where: { status: 'trial' as any, trialEndsAt: Between(windowStart, windowEnd) },
+        relations: ['plan'],
+      });
+      for (const sub of expiring) {
+        const sentKey = `trial_ending_${days}d`;
+        if (sub.metadata?.[sentKey]) continue;
+        if (sub.billingEmail) {
+          this.mailer.sendTrialEnding(sub.billingEmail, sub).catch(() => {});
+        }
+        sub.metadata = { ...(sub.metadata || {}), [sentKey]: now.toISOString() };
+        await this.subs.save(sub);
       }
     }
   }
@@ -1468,7 +1616,28 @@ export class SaasRevenueService {
     } else if (sub.status === 'active' || sub.status === 'trial') {
       if (lic.status !== 'active') { lic.status = 'active'; changed = true; }
     }
-    if (changed) await this.licenses.save(lic);
+    // Sync enabledModules from plan to license
+    if (sub.plan?.enabledModules?.length) {
+      const sorted = [...sub.plan.enabledModules].sort();
+      const licSorted = lic.enabledModules ? [...lic.enabledModules].sort() : [];
+      if (JSON.stringify(sorted) !== JSON.stringify(licSorted)) {
+        lic.enabledModules = sub.plan.enabledModules;
+        changed = true;
+      }
+    }
+    if (changed) {
+      await this.licenses.save(lic);
+      // Propagate enabledModules to system_settings so tenant config stays in sync
+      if (lic.enabledModules?.length && sub.tenantId) {
+        await this.subs.manager.query(
+          `INSERT INTO system_settings (tenant_id, key, value, description)
+           VALUES ($1, 'enabled_modules', $2::jsonb, 'Synced from subscription plan')
+           ON CONFLICT (key, tenant_id)
+           DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+          [sub.tenantId, JSON.stringify(lic.enabledModules)],
+        );
+      }
+    }
   }
 
   // ============================================================
@@ -1481,15 +1650,23 @@ export class SaasRevenueService {
   private async nextInvoiceNumber(): Promise<string> {
     const year = new Date().getFullYear();
     const prefix = `INV-${year}-`;
-    const last = await this.invoices.createQueryBuilder('i')
-      .where('i.invoiceNumber LIKE :p', { p: `${prefix}%` })
-      .orderBy('i.invoiceNumber', 'DESC').limit(1).getOne();
-    let nextSeq = 1;
-    if (last) {
-      const m = last.invoiceNumber.match(/(\d+)$/);
-      if (m) nextSeq = parseInt(m[1], 10) + 1;
+    // Use advisory lock to prevent race conditions on concurrent invoice creation
+    const lockId = 900000 + year; // stable lock ID per year
+    const mgr = this.invoices.manager;
+    await mgr.query(`SELECT pg_advisory_lock($1)`, [lockId]);
+    try {
+      const last = await this.invoices.createQueryBuilder('i')
+        .where('i.invoiceNumber LIKE :p', { p: `${prefix}%` })
+        .orderBy('i.invoiceNumber', 'DESC').limit(1).getOne();
+      let nextSeq = 1;
+      if (last) {
+        const m = last.invoiceNumber.match(/(\d+)$/);
+        if (m) nextSeq = parseInt(m[1], 10) + 1;
+      }
+      return `${prefix}${String(nextSeq).padStart(5, '0')}`;
+    } finally {
+      await mgr.query(`SELECT pg_advisory_unlock($1)`, [lockId]);
     }
-    return `${prefix}${String(nextSeq).padStart(5, '0')}`;
   }
 
   private addDays(d: Date, days: number) {
@@ -1508,7 +1685,10 @@ export class SaasRevenueService {
     return Math.max(v, 0);
   }
   private fmtMoney(minor: number, currency: string) {
-    return `${currency} ${(minor / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+    const zeroDecimal = new Set(['UGX','KES','TZS','RWF','JPY','KRW','VND','CLP','PYG']);
+    const divisor = zeroDecimal.has(currency) ? 1 : 100;
+    const fractionDigits = zeroDecimal.has(currency) ? 0 : 2;
+    return `${currency} ${(minor / divisor).toLocaleString(undefined, { minimumFractionDigits: fractionDigits })}`;
   }
 
   // ============================================================

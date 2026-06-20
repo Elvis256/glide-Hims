@@ -1,7 +1,12 @@
 import {
-  Body, Controller, Delete, ForbiddenException, Get, Headers, Param, Post, Put, Query, RawBodyRequest, Req, Res,
+  BadRequestException, Body, Controller, Delete, ForbiddenException, Get, Headers, Param, Post, Put, Query,
+  RawBodyRequest, Req, Res, UploadedFile, UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
+import { createReadStream, existsSync, readFileSync } from 'fs';
+import { join, resolve } from 'path';
+import { validateFileContent } from '../../common/file-validation';
 import { Public } from '../auth/decorators/public.decorator';
 import { SaasRevenueService } from './saas-revenue.service';
 import { SaasMailerService, EMAIL_TEMPLATES_META, EmailTemplateKey } from './saas-mailer.service';
@@ -137,6 +142,71 @@ export class SaasRevenueController {
   refundPayment(@Req() req: any, @Param('id') id: string, @Body() dto: { amountMinor?: number; reason?: string }) {
     ensureAdmin(req);
     return this.svc.refundPayment(id, dto || {}, req.user?.id);
+  }
+
+  // ---------- Payment Proof & Verification ----------
+  @Get('payments/pending-verification')
+  listPendingVerification(@Req() req: any) {
+    ensureAdmin(req);
+    return this.svc.listPaymentsForVerification();
+  }
+
+  @Post('payments/:id/proofs')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadPaymentProof(
+    @Req() req: any,
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Body() body: { notes?: string },
+  ) {
+    ensureAdmin(req);
+    if (!file) throw new BadRequestException('File is required');
+    if (file.path) {
+      const header = readFileSync(file.path, { flag: 'r' }).subarray(0, 16);
+      if (!validateFileContent(header, file.mimetype)) {
+        throw new BadRequestException('File content does not match declared type');
+      }
+    }
+    return this.svc.uploadPaymentProof(id, file, req.user?.id, body?.notes);
+  }
+
+  @Get('payments/:id/proofs')
+  listPaymentProofs(@Req() req: any, @Param('id') id: string) {
+    ensureAdmin(req);
+    return this.svc.listPaymentProofs(id);
+  }
+
+  @Get('payment-proofs/:proofId/download')
+  async downloadPaymentProof(@Req() req: any, @Param('proofId') proofId: string, @Query('inline') inline: string | undefined, @Res() res: Response) {
+    ensureAdmin(req);
+    const proof = await this.svc.getPaymentProof(proofId);
+
+    if (!existsSync(proof.filePath)) {
+      return res.status(404).json({ message: 'File not found on server' });
+    }
+
+    const uploadsDir = resolve(join(process.cwd(), 'uploads'));
+    const resolvedPath = resolve(proof.filePath);
+    if (!resolvedPath.startsWith(uploadsDir)) {
+      return res.status(403).json({ message: 'Access denied: invalid file path' });
+    }
+
+    const safeName = proof.originalFilename
+      .replace(/[/\\]/g, '_')
+      .replace(/[^\w\s.\-()]/g, '_')
+      .replace(/\.{2,}/g, '.')
+      .slice(0, 200);
+
+    const disposition = inline === '1' || inline === 'true' ? 'inline' : 'attachment';
+    res.setHeader('Content-Type', proof.fileType || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `${disposition}; filename="${safeName}"`);
+    createReadStream(proof.filePath).pipe(res);
+  }
+
+  @Post('payments/:id/verify')
+  verifyPayment(@Req() req: any, @Param('id') id: string, @Body() dto: { status: 'verified' | 'rejected'; notes?: string }) {
+    ensureAdmin(req);
+    return this.svc.verifyPayment(id, dto || {} as any, req.user?.id);
   }
 
   @Post('invoices/:id/send-email')

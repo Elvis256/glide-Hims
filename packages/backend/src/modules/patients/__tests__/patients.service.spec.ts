@@ -14,12 +14,19 @@ describe('PatientsService', () => {
   let service: PatientsService;
   let dataSource: DataSource;
 
+  const mockQueryBuilder = {
+    where: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
+    getMany: jest.fn().mockResolvedValue([]),
+  };
+
   const mockPatientRepo = {
     findOne: jest.fn(),
     save: jest.fn(),
     create: jest.fn(),
     findAndCount: jest.fn(),
-    createQueryBuilder: jest.fn(),
+    createQueryBuilder: jest.fn().mockReturnValue(mockQueryBuilder),
+    find: jest.fn().mockResolvedValue([]),
   };
 
   const mockDocumentRepo = {};

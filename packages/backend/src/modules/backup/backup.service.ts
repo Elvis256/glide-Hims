@@ -1,11 +1,14 @@
-import { Injectable, Logger, NotFoundException, NotImplementedException, ForbiddenException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, LessThan } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { Backup } from '../../database/entities/backup.entity';
+import { BackupSchedule } from '../../database/entities/backup-schedule.entity';
+import { DrDrill } from '../../database/entities/dr-drill.entity';
 
 const BACKUP_TABLES = [
   'users',
@@ -26,6 +29,10 @@ export class BackupService {
   constructor(
     @InjectRepository(Backup)
     private readonly backupRepository: Repository<Backup>,
+    @InjectRepository(BackupSchedule)
+    private readonly scheduleRepository: Repository<BackupSchedule>,
+    @InjectRepository(DrDrill)
+    private readonly drDrillRepository: Repository<DrDrill>,
     private readonly dataSource: DataSource,
     private readonly configService: ConfigService,
   ) {
@@ -140,8 +147,91 @@ export class BackupService {
     await this.backupRepository.remove(backup);
   }
 
-  async restoreBackup(id: string, tenantId: string): Promise<void> {
-    throw new NotImplementedException('Restore functionality coming soon');
+  async restoreBackup(
+    backupId: string,
+    tenantId: string,
+    userId: string,
+  ): Promise<{ success: boolean; tables: string[]; errors: string[] }> {
+    const backup = await this.backupRepository.findOne({
+      where: { id: backupId, tenantId },
+    });
+
+    if (!backup) {
+      throw new NotFoundException('Backup not found');
+    }
+
+    if (!fs.existsSync(backup.filePath)) {
+      throw new NotFoundException('Backup file not found on disk');
+    }
+
+    const raw = fs.readFileSync(backup.filePath, 'utf-8');
+    let data: Record<string, any[]>;
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      throw new BadRequestException('Backup file contains invalid JSON');
+    }
+
+    const restoredTables: string[] = [];
+    const errors: string[] = [];
+
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      for (const table of Object.keys(data)) {
+        const rows = data[table];
+        if (!Array.isArray(rows) || rows.length === 0) {
+          continue;
+        }
+
+        try {
+          // Delete existing tenant data for this table
+          await queryRunner.query(
+            `DELETE FROM "${table}" WHERE tenant_id = $1`,
+            [tenantId],
+          );
+
+          // Re-insert rows from backup
+          for (const row of rows) {
+            const columns = Object.keys(row);
+            const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ');
+            const quotedColumns = columns.map((c) => `"${c}"`).join(', ');
+            const values = columns.map((c) => row[c]);
+
+            await queryRunner.query(
+              `INSERT INTO "${table}" (${quotedColumns}) VALUES (${placeholders}) ON CONFLICT DO NOTHING`,
+              values,
+            );
+          }
+
+          restoredTables.push(table);
+        } catch (err) {
+          errors.push(`Table "${table}": ${err.message}`);
+        }
+      }
+
+      if (errors.length > 0 && restoredTables.length === 0) {
+        // All tables failed - rollback
+        await queryRunner.rollbackTransaction();
+        this.logger.error(`Restore failed completely for backup ${backupId}: ${errors.join('; ')}`);
+        return { success: false, tables: [], errors };
+      }
+
+      await queryRunner.commitTransaction();
+      this.logger.log(
+        `Restore completed for backup ${backupId} by user ${userId}: ${restoredTables.length} tables restored`,
+      );
+
+      return { success: true, tables: restoredTables, errors };
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      this.logger.error(`Restore failed for backup ${backupId}: ${err.message}`);
+      return { success: false, tables: [], errors: [err.message] };
+    } finally {
+      await queryRunner.release();
+    }
   }
 
   async importSnapshot(opts: {
@@ -283,5 +373,298 @@ export class BackupService {
       commands,
       warnings,
     };
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Backup Schedule Management
+  // ───────────────────────────────────────────────────────────────────────────
+
+  async createSchedule(
+    dto: {
+      frequency: string;
+      timeOfDay: string;
+      dayOfWeek?: number | null;
+      dayOfMonth?: number | null;
+      retentionDays?: number;
+      enabled?: boolean;
+    },
+    tenantId: string,
+  ): Promise<BackupSchedule> {
+    const schedule = this.scheduleRepository.create({
+      tenantId,
+      frequency: dto.frequency,
+      timeOfDay: dto.timeOfDay,
+      dayOfWeek: dto.dayOfWeek ?? null,
+      dayOfMonth: dto.dayOfMonth ?? null,
+      retentionDays: dto.retentionDays ?? 30,
+      enabled: dto.enabled ?? true,
+      nextRunAt: null,
+    });
+
+    schedule.nextRunAt = this.calculateNextRun(schedule);
+    return this.scheduleRepository.save(schedule);
+  }
+
+  async updateSchedule(
+    id: string,
+    dto: Partial<{
+      frequency: string;
+      timeOfDay: string;
+      dayOfWeek: number | null;
+      dayOfMonth: number | null;
+      retentionDays: number;
+      enabled: boolean;
+    }>,
+    tenantId: string,
+  ): Promise<BackupSchedule> {
+    const schedule = await this.scheduleRepository.findOne({
+      where: { id, tenantId },
+    });
+
+    if (!schedule) {
+      throw new NotFoundException('Backup schedule not found');
+    }
+
+    Object.assign(schedule, dto);
+    schedule.nextRunAt = this.calculateNextRun(schedule);
+    return this.scheduleRepository.save(schedule);
+  }
+
+  async deleteSchedule(id: string, tenantId: string): Promise<void> {
+    const schedule = await this.scheduleRepository.findOne({
+      where: { id, tenantId },
+    });
+
+    if (!schedule) {
+      throw new NotFoundException('Backup schedule not found');
+    }
+
+    await this.scheduleRepository.remove(schedule);
+  }
+
+  async listSchedules(tenantId: string): Promise<BackupSchedule[]> {
+    return this.scheduleRepository.find({
+      where: { tenantId },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  /**
+   * Runs every hour to check which backup schedules need to run.
+   * Compares nextRunAt with current time and triggers backups accordingly.
+   */
+  @Cron(CronExpression.EVERY_HOUR)
+  async runScheduledBackups(): Promise<void> {
+    const now = new Date();
+
+    try {
+      const dueSchedules = await this.scheduleRepository
+        .createQueryBuilder('s')
+        .where('s.enabled = :enabled', { enabled: true })
+        .andWhere('s.next_run_at IS NOT NULL')
+        .andWhere('s.next_run_at <= :now', { now })
+        .getMany();
+
+      for (const schedule of dueSchedules) {
+        try {
+          this.logger.log(
+            `Running scheduled backup for tenant ${schedule.tenantId} (schedule ${schedule.id})`,
+          );
+
+          await this.createBackup(schedule.tenantId!, 'system-scheduler');
+
+          schedule.lastRunAt = now;
+          schedule.lastRunStatus = 'success';
+          schedule.nextRunAt = this.calculateNextRun(schedule);
+          await this.scheduleRepository.save(schedule);
+
+          this.logger.log(
+            `Scheduled backup succeeded for tenant ${schedule.tenantId}, next run at ${schedule.nextRunAt}`,
+          );
+        } catch (err) {
+          schedule.lastRunAt = now;
+          schedule.lastRunStatus = 'failed';
+          schedule.nextRunAt = this.calculateNextRun(schedule);
+          await this.scheduleRepository.save(schedule);
+
+          this.logger.error(
+            `Scheduled backup failed for tenant ${schedule.tenantId}: ${err.message}`,
+          );
+        }
+      }
+    } catch (err) {
+      this.logger.error(`Error in runScheduledBackups cron: ${err.message}`);
+    }
+  }
+
+  /**
+   * Calculate the next run time based on the schedule's frequency, timeOfDay,
+   * dayOfWeek, and dayOfMonth settings.
+   */
+  calculateNextRun(schedule: BackupSchedule): Date {
+    const now = new Date();
+    const [hours, minutes] = (schedule.timeOfDay || '02:00').split(':').map(Number);
+
+    let next = new Date(now);
+    next.setSeconds(0, 0);
+    next.setHours(hours, minutes);
+
+    switch (schedule.frequency) {
+      case 'daily': {
+        // If today's run time has passed, schedule for tomorrow
+        if (next <= now) {
+          next.setDate(next.getDate() + 1);
+        }
+        break;
+      }
+
+      case 'weekly': {
+        const targetDay = schedule.dayOfWeek ?? 0; // default Sunday
+        const currentDay = next.getDay();
+        let daysUntilTarget = targetDay - currentDay;
+        if (daysUntilTarget < 0 || (daysUntilTarget === 0 && next <= now)) {
+          daysUntilTarget += 7;
+        }
+        next.setDate(next.getDate() + daysUntilTarget);
+        break;
+      }
+
+      case 'monthly': {
+        const targetDate = schedule.dayOfMonth ?? 1; // default 1st
+        next.setDate(targetDate);
+        // If this month's run date has passed, move to next month
+        if (next <= now) {
+          next.setMonth(next.getMonth() + 1);
+          next.setDate(targetDate);
+        }
+        break;
+      }
+
+      default: {
+        // Fallback: run tomorrow at the specified time
+        if (next <= now) {
+          next.setDate(next.getDate() + 1);
+        }
+        break;
+      }
+    }
+
+    return next;
+  }
+
+  /**
+   * Runs daily at 4 AM to purge expired backups based on retention policies.
+   */
+  @Cron('0 4 * * *')
+  async purgeExpiredBackups(): Promise<void> {
+    try {
+      const schedules = await this.scheduleRepository.find({
+        where: { enabled: true },
+      });
+
+      // Build a map of tenantId -> minimum retention days
+      const retentionByTenant = new Map<string, number>();
+      for (const schedule of schedules) {
+        if (!schedule.tenantId) continue;
+        const current = retentionByTenant.get(schedule.tenantId) ?? Infinity;
+        retentionByTenant.set(
+          schedule.tenantId,
+          Math.min(current, schedule.retentionDays),
+        );
+      }
+
+      let totalPurged = 0;
+
+      for (const [tenantId, retentionDays] of retentionByTenant.entries()) {
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
+
+        const expiredBackups = await this.backupRepository.find({
+          where: {
+            tenantId,
+            createdAt: LessThan(cutoffDate),
+          },
+        });
+
+        for (const backup of expiredBackups) {
+          try {
+            if (fs.existsSync(backup.filePath)) {
+              fs.unlinkSync(backup.filePath);
+            }
+            await this.backupRepository.remove(backup);
+            totalPurged++;
+          } catch (err) {
+            this.logger.error(
+              `Failed to purge backup ${backup.id} for tenant ${tenantId}: ${err.message}`,
+            );
+          }
+        }
+      }
+
+      if (totalPurged > 0) {
+        this.logger.log(`Purged ${totalPurged} expired backups`);
+      }
+    } catch (err) {
+      this.logger.error(`Error in purgeExpiredBackups cron: ${err.message}`);
+    }
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // DR Drill Management
+  // ───────────────────────────────────────────────────────────────────────────
+
+  async createDrDrill(
+    dto: {
+      drillType: string;
+      scheduledAt: Date | string;
+      backupId?: string;
+      notes?: string;
+      conductedBy?: string;
+    },
+    tenantId: string,
+  ): Promise<DrDrill> {
+    const drill = this.drDrillRepository.create({
+      tenantId,
+      drillType: dto.drillType,
+      status: 'scheduled',
+      scheduledAt: new Date(dto.scheduledAt),
+      backupId: dto.backupId ?? null,
+      notes: dto.notes ?? null,
+      conductedBy: dto.conductedBy ?? null,
+    });
+
+    return this.drDrillRepository.save(drill);
+  }
+
+  async listDrDrills(tenantId: string): Promise<DrDrill[]> {
+    return this.drDrillRepository.find({
+      where: { tenantId },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  async updateDrDrill(
+    id: string,
+    dto: Partial<{
+      status: string;
+      startedAt: Date | string;
+      completedAt: Date | string;
+      restoreDurationMinutes: number;
+      notes: string;
+      conductedBy: string;
+      result: { success: boolean; errors: string[]; warnings: string[] };
+    }>,
+  ): Promise<DrDrill> {
+    const drill = await this.drDrillRepository.findOne({ where: { id } });
+
+    if (!drill) {
+      throw new NotFoundException('DR drill not found');
+    }
+
+    if (dto.startedAt) dto.startedAt = new Date(dto.startedAt);
+    if (dto.completedAt) dto.completedAt = new Date(dto.completedAt);
+
+    Object.assign(drill, dto);
+    return this.drDrillRepository.save(drill);
   }
 }

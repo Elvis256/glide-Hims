@@ -164,6 +164,94 @@ export class LicenseController {
   }
 
   /**
+   * Re-sign all licenses with the current LICENSE_SECRET_KEY (system admin only).
+   * Use after rotating the secret key to prevent source-bundle 403 errors.
+   */
+  @Post('re-sign-all')
+  @Auth()
+  @ApiOperation({ summary: 'Re-sign all license signatures with current secret key' })
+  async reSignAll(@Request() req: any) {
+    this.requireSystemAdmin(req);
+    const count = await this.licenseService.reSignStaleSignatures();
+    return { message: `Re-signed ${count} license(s)`, updated: count };
+  }
+
+  // ==================== License Lifecycle Endpoints ====================
+
+  /**
+   * Get upcoming license renewals grouped by urgency (system admin only).
+   */
+  @Get('renewals')
+  @Auth()
+  @ApiOperation({ summary: 'Get upcoming license renewals grouped by urgency' })
+  async getRenewals(@Request() req: any) {
+    this.requireSystemAdmin(req);
+    return this.licenseService.checkLicenseRenewals();
+  }
+
+  /**
+   * Get license usage analytics across all tenants (system admin only).
+   */
+  @Get('analytics')
+  @Auth()
+  @ApiOperation({ summary: 'Get license usage analytics' })
+  async getAnalytics(@Request() req: any) {
+    this.requireSystemAdmin(req);
+    return this.licenseService.getLicenseUsageAnalytics();
+  }
+
+  /**
+   * Batch extend all licenses expiring within a given number of days (system admin only).
+   */
+  @Post('batch/extend')
+  @Auth()
+  @ApiOperation({ summary: 'Batch extend licenses expiring within N days' })
+  async batchExtend(
+    @Body() body: { days: number; withinDays: number },
+    @Request() req: any,
+  ) {
+    this.requireSystemAdmin(req);
+    if (!body?.days || !body?.withinDays) {
+      throw new HttpException(
+        'Both "days" and "withinDays" are required',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    return this.licenseService.batchExtendExpiring(body.days, body.withinDays);
+  }
+
+  /**
+   * Batch suspend all licenses expired beyond their grace period (system admin only).
+   */
+  @Post('batch/suspend-delinquent')
+  @Auth()
+  @ApiOperation({ summary: 'Batch suspend delinquent licenses past grace period' })
+  async batchSuspendDelinquent(@Request() req: any) {
+    this.requireSystemAdmin(req);
+    return this.licenseService.batchSuspendDelinquent();
+  }
+
+  /**
+   * Rotate a license key: generates a new key, copies all settings, revokes old (system admin only).
+   */
+  @Post(':key/rotate')
+  @Auth()
+  @ApiOperation({ summary: 'Rotate a license key' })
+  async rotateKey(@Param('key') key: string, @Request() req: any) {
+    this.requireSystemAdmin(req);
+    const newLicense = await this.licenseService.rotateKey(key);
+    return {
+      message: 'License key rotated',
+      oldKey: key,
+      newLicenseKey: newLicense.licenseKey,
+      organizationName: newLicense.organizationName,
+      licenseType: newLicense.licenseType,
+      expiresAt: newLicense.expiresAt,
+      status: newLicense.status,
+    };
+  }
+
+  /**
    * Get license details (system admin only)
    */
   @Get(':licenseKey')

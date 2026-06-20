@@ -19,6 +19,16 @@ describe('GLReconciliationService', () => {
           useValue: {
             findOne: jest.fn(),
             createQueryBuilder: jest.fn(),
+            manager: {
+              getRepository: jest.fn().mockReturnValue({
+                createQueryBuilder: jest.fn().mockReturnValue({
+                  innerJoin: jest.fn().mockReturnThis(),
+                  where: jest.fn().mockReturnThis(),
+                  andWhere: jest.fn().mockReturnThis(),
+                  getMany: jest.fn().mockResolvedValue([]),
+                }),
+              }),
+            },
           },
         },
         {
@@ -41,7 +51,7 @@ describe('GLReconciliationService', () => {
   });
 
   describe('markAsReconciled', () => {
-    it('should mark account as reconciled', async () => {
+    it('should throw NotImplementedException', async () => {
       const accountId = 'acc-1';
       const fiscalPeriodId = 'period-1';
       const userId = 'user-1';
@@ -55,20 +65,14 @@ describe('GLReconciliationService', () => {
       };
 
       chartOfAccountRepo.findOne.mockResolvedValue(mockAccount);
-      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
 
-      await service.markAsReconciled(accountId, fiscalPeriodId, userId, notes);
+      await expect(
+        service.markAsReconciled(accountId, fiscalPeriodId, userId, 'tenant-1', notes),
+      ).rejects.toThrow('GL reconciliation persistence is not yet implemented');
 
       expect(chartOfAccountRepo.findOne).toHaveBeenCalledWith({
-        where: { id: accountId },
+        where: { id: accountId, tenantId: 'tenant-1' },
       });
-
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('RECONCILIATION'),
-        expect.stringContaining('1000'),
-      );
-
-      consoleSpy.mockRestore();
     });
 
     it('should throw NotFoundException for non-existent account', async () => {
@@ -79,7 +83,7 @@ describe('GLReconciliationService', () => {
       chartOfAccountRepo.findOne.mockResolvedValue(null);
 
       await expect(
-        service.markAsReconciled(accountId, fiscalPeriodId, userId),
+        service.markAsReconciled(accountId, fiscalPeriodId, userId, 'tenant-1'),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -96,13 +100,10 @@ describe('GLReconciliationService', () => {
       };
 
       chartOfAccountRepo.findOne.mockResolvedValue(mockAccount);
-      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
 
-      await service.markAsReconciled(accountId, fiscalPeriodId, userId);
-
-      expect(consoleSpy).toHaveBeenCalled();
-
-      consoleSpy.mockRestore();
+      await expect(
+        service.markAsReconciled(accountId, fiscalPeriodId, userId, 'tenant-1'),
+      ).rejects.toThrow('GL reconciliation persistence is not yet implemented');
     });
   });
 
@@ -111,7 +112,7 @@ describe('GLReconciliationService', () => {
       const accountId = 'acc-1';
       const facilityId = 'facility-1';
 
-      const history = await service.getReconciliationHistory(accountId, facilityId);
+      const history = await service.getReconciliationHistory(accountId, facilityId, 'tenant-1');
 
       expect(Array.isArray(history)).toBe(true);
       expect(history).toHaveLength(0); // Placeholder returns empty
@@ -123,7 +124,7 @@ describe('GLReconciliationService', () => {
       const accountId = 'acc-1';
       const fiscalPeriodId = 'period-1';
 
-      const items = await service.detectUnmatchedItems(accountId, fiscalPeriodId);
+      const items = await service.detectUnmatchedItems(accountId, fiscalPeriodId, 'tenant-1');
 
       expect(Array.isArray(items)).toBe(true);
       expect(items).toHaveLength(0); // Placeholder returns empty
@@ -158,13 +159,13 @@ describe('GLReconciliationService', () => {
 
       chartOfAccountRepo.find.mockResolvedValue(mockAccounts);
 
-      const summary = await service.getReconciliationSummary(facilityId, fiscalPeriodId);
+      const summary = await service.getReconciliationSummary(facilityId, fiscalPeriodId, 'tenant-1');
 
       expect(summary).toBeDefined();
       expect(summary.totalAccounts).toBe(3);
-      expect(summary.reconciledAccounts).toBe(3);
-      expect(summary.pendingAccounts).toBe(0);
-      expect(summary.completionPercent).toBe(100);
+      expect(summary.reconciledAccounts).toBe(0);
+      expect(summary.pendingAccounts).toBe(3);
+      expect(summary.completionPercent).toBe(0);
     });
 
     it('should handle empty facility', async () => {
@@ -173,11 +174,11 @@ describe('GLReconciliationService', () => {
 
       chartOfAccountRepo.find.mockResolvedValue([]);
 
-      const summary = await service.getReconciliationSummary(facilityId, fiscalPeriodId);
+      const summary = await service.getReconciliationSummary(facilityId, fiscalPeriodId, 'tenant-1');
 
       expect(summary.totalAccounts).toBe(0);
       expect(summary.reconciledAccounts).toBe(0);
-      expect(summary.completionPercent).toBe(100);
+      expect(summary.completionPercent).toBe(0);
     });
   });
 
@@ -202,6 +203,7 @@ describe('GLReconciliationService', () => {
         accountId,
         fiscalPeriodId,
         externalData,
+        'tenant-1',
       );
 
       expect(result).toBeDefined();
@@ -219,6 +221,7 @@ describe('GLReconciliationService', () => {
         accountId,
         fiscalPeriodId,
         externalData,
+        'tenant-1',
       );
 
       expect(result.matched).toBe(0);
@@ -246,6 +249,7 @@ describe('GLReconciliationService', () => {
         accountId,
         fiscalPeriodId,
         facilityId,
+        'tenant-1',
       );
 
       expect(report).toBeDefined();
@@ -267,7 +271,7 @@ describe('GLReconciliationService', () => {
       chartOfAccountRepo.findOne.mockResolvedValue(null);
 
       await expect(
-        service.generateReconciliationReport(accountId, fiscalPeriodId, facilityId),
+        service.generateReconciliationReport(accountId, fiscalPeriodId, facilityId, 'tenant-1'),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -286,10 +290,10 @@ describe('GLReconciliationService', () => {
 
       chartOfAccountRepo.findOne.mockResolvedValue(mockAccount);
 
-      await service.generateReconciliationReport(accountId, fiscalPeriodId, facilityId);
+      await service.generateReconciliationReport(accountId, fiscalPeriodId, facilityId, 'tenant-1');
 
       expect(chartOfAccountRepo.findOne).toHaveBeenCalledWith({
-        where: { id: accountId, facilityId },
+        where: { id: accountId, facilityId, tenantId: 'tenant-1' },
       });
     });
   });
@@ -314,11 +318,12 @@ describe('GLReconciliationService', () => {
         accountId,
         fiscalPeriodId,
         facilityId,
+        'tenant-1',
       );
 
       expect(report.accountId).toBe(accountId);
       expect(chartOfAccountRepo.findOne).toHaveBeenCalledWith({
-        where: { id: accountId, facilityId },
+        where: { id: accountId, facilityId, tenantId: 'tenant-1' },
       });
     });
   });
@@ -337,6 +342,7 @@ describe('GLReconciliationService', () => {
           accountId,
           'period-1',
           facilityId,
+          'tenant-1',
         ),
       ).rejects.toThrow('Database connection error');
     });

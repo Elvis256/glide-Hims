@@ -190,7 +190,8 @@ export class AuditLogsController {
       excludeReads,
       onlyErrors,
     });
-    const rows = await qb.orderBy('a.createdAt', 'DESC').take(50000).getMany();
+    // Fix 13: paginated streaming instead of loading 50K rows at once
+    const PAGE_SIZE = 5000;
     const cols = [
       'id',
       'createdAt',
@@ -208,26 +209,43 @@ export class AuditLogsController {
       'ipAddress',
       'userAgent',
     ];
+    // Fix 13: sanitize CSV values to prevent formula injection
     const escape = (v: any) => {
       if (v === null || v === undefined) return '';
-      const s = typeof v === 'object' ? JSON.stringify(v) : String(v);
+      let s = typeof v === 'object' ? JSON.stringify(v) : String(v);
+      // Prefix formula-triggering characters with a single quote
+      if (/^[=+\-@\t\r]/.test(s)) {
+        s = "'" + s;
+      }
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
-    const lines = [cols.join(',')];
-    for (const r of rows as any[]) {
-      const flat = {
-        ...r,
-        username: r.user?.username,
-        fullName: r.user?.fullName,
-      };
-      lines.push(cols.map((c) => escape(flat[c])).join(','));
-    }
-    const csv = lines.join('\n');
+
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader(
       'Content-Disposition',
       `attachment; filename="audit-logs-${new Date().toISOString().slice(0, 10)}.csv"`,
     );
-    res.send(csv);
+    res.write(cols.join(',') + '\n');
+
+    let offset = 0;
+    let hasMore = true;
+    while (hasMore) {
+      const rows = await qb
+        .orderBy('a.createdAt', 'DESC')
+        .skip(offset)
+        .take(PAGE_SIZE)
+        .getMany();
+      for (const r of rows as any[]) {
+        const flat = {
+          ...r,
+          username: r.user?.username,
+          fullName: r.user?.fullName,
+        };
+        res.write(cols.map((c) => escape(flat[c])).join(',') + '\n');
+      }
+      offset += rows.length;
+      hasMore = rows.length === PAGE_SIZE && offset < 50000;
+    }
+    res.end();
   }
 }

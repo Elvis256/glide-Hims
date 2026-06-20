@@ -402,9 +402,9 @@ export class RFQService {
         ...(tenantId ? { tenantId } : {}),
       },
     });
-    if (quotationCount < 2) {
+    if (quotationCount < 3) {
       throw new BadRequestException(
-        `Competitive bidding requires at least 2 quotations. Only ${quotationCount} received. Cannot select a winner yet.`,
+        `Competitive bidding requires at least 3 quotations. Only ${quotationCount} received. Cannot select a winner yet.`,
       );
     }
 

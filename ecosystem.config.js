@@ -4,6 +4,8 @@ module.exports = {
       name: 'glide-hims-backend',
       script: 'dist/main.js',
       cwd: '/root/glide-Hims/current/packages/backend',
+      instances: process.env.PM2_INSTANCES || 'max',
+      exec_mode: process.env.PM2_EXEC_MODE || 'cluster',
       env: {
         NODE_ENV: 'production',
         PORT: 3000

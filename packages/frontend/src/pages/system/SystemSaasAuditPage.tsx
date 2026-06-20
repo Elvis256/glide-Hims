@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import api from '../../services/api';
+import { getObjectDiff } from './saas/_shared';
 import {
   ScrollText, RefreshCw, Loader2, AlertTriangle, Search, Download,
   ChevronLeft, ChevronRight, X, ShieldCheck, User as UserIcon, Receipt,
@@ -278,13 +279,35 @@ export default function SystemSaasAuditPage() {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                               {log.reason && <div className="md:col-span-2"><p className="text-gray-500 mb-1">Reason</p><p className="text-gray-800 italic">{log.reason}</p></div>}
                               {log.errorMessage && <div className="md:col-span-2"><p className="text-gray-500 mb-1">Error</p><p className="text-red-700">{log.errorMessage}</p></div>}
-                              <div>
-                                <p className="text-gray-500 mb-1">Old value</p>
-                                <pre className="bg-white border border-gray-200 rounded p-2 text-xs overflow-auto max-h-48">{log.oldValue ? JSON.stringify(log.oldValue, null, 2) : '—'}</pre>
-                              </div>
-                              <div>
-                                <p className="text-gray-500 mb-1">New value</p>
-                                <pre className="bg-white border border-gray-200 rounded p-2 text-xs overflow-auto max-h-48">{log.newValue ? JSON.stringify(log.newValue, null, 2) : '—'}</pre>
+                              <div className="md:col-span-2 bg-white border border-gray-200 rounded-lg p-4">
+                                <p className="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">Changed Fields</p>
+                                {(() => {
+                                  const diffs = getObjectDiff(log.oldValue, log.newValue);
+                                  if (diffs.length === 0) {
+                                    return <p className="text-xs text-gray-500 italic">No field differences detected</p>;
+                                  }
+                                  return (
+                                    <div className="divide-y divide-gray-100 font-mono text-xs">
+                                      {diffs.map((d) => (
+                                        <div key={d.key} className="py-2 grid grid-cols-1 sm:grid-cols-12 gap-1.5 first:pt-0 last:pb-0">
+                                          <span className="sm:col-span-3 font-semibold text-gray-600 truncate" title={d.key}>{d.key}</span>
+                                          <div className="sm:col-span-9 space-y-1">
+                                            {d.oldValue !== null && (
+                                              <div className="bg-red-50 text-red-700 px-2 py-0.5 rounded break-all border border-red-100">
+                                                - {d.oldValue}
+                                              </div>
+                                            )}
+                                            {d.newValue !== null && (
+                                              <div className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded break-all border border-emerald-100">
+                                                + {d.newValue}
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  );
+                                })()}
                               </div>
                             </div>
                           </td>

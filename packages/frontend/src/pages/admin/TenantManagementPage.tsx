@@ -101,7 +101,14 @@ export default function TenantManagementPage() {
       const list: any[] = Array.isArray(res.data) ? res.data : (res.data as any)?.data || [];
       const counts: Record<string, number> = {};
       for (const dep of list) {
-        if (dep.tenantId) counts[dep.tenantId] = (counts[dep.tenantId] || 0) + 1;
+        // Only count verified deployments: must be active, have a real
+        // endpoint, and have been health-checked or synced at least once.
+        const isActive = dep.status === 'active';
+        const hasEndpoint = !!dep.apiEndpoint;
+        const hasBeenVerified = !!(dep.lastSeen || dep.lastHealthCheck || dep.lastSync);
+        if (dep.tenantId && isActive && hasEndpoint && hasBeenVerified) {
+          counts[dep.tenantId] = (counts[dep.tenantId] || 0) + 1;
+        }
       }
       setDeploymentCounts(counts);
     } catch {

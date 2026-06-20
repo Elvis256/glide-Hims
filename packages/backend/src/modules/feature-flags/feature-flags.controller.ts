@@ -6,7 +6,7 @@ import {
   Delete,
   Body,
   Param,
-  Query,
+  Request,
   BadRequestException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
@@ -18,34 +18,31 @@ import { Auth } from '../auth/decorators/auth.decorator';
 export class FeatureFlagsController {
   constructor(private readonly featureFlagsService: FeatureFlagsService) {}
 
-  private requireTenantId(tenantId: string | undefined): string {
-    if (!tenantId) {
-      throw new BadRequestException('tenantId is required');
-    }
-    return tenantId;
-  }
-
   /**
-   * Check if a feature is enabled
+   * Check if a feature is enabled (Fix 2: now requires auth, uses JWT tenantId)
    */
   @Get('check/:featureKey')
+  @Auth()
   @ApiOperation({ summary: 'Check if a feature is enabled' })
   async checkFeature(
     @Param('featureKey') featureKey: string,
-    @Query('tenantId') tenantId?: string,
+    @Request() req: any,
   ) {
-    const tid = this.requireTenantId(tenantId);
+    const tid = req.user?.tenantId;
+    if (!tid) throw new BadRequestException('Tenant context required');
     const enabled = await this.featureFlagsService.isEnabled(featureKey, tid);
     return { featureKey, enabled };
   }
 
   /**
-   * Check multiple features at once
+   * Check multiple features at once (Fix 2: now requires auth, uses JWT tenantId)
    */
   @Post('check-batch')
+  @Auth()
   @ApiOperation({ summary: 'Check multiple features at once' })
-  async checkFeatures(@Body() body: { featureKeys: string[]; tenantId?: string }) {
-    const tid = this.requireTenantId(body.tenantId);
+  async checkFeatures(@Body() body: { featureKeys: string[] }, @Request() req: any) {
+    const tid = req.user?.tenantId;
+    if (!tid) throw new BadRequestException('Tenant context required');
     return this.featureFlagsService.checkFeatures(body.featureKeys, tid);
   }
 
@@ -55,21 +52,24 @@ export class FeatureFlagsController {
   @Get()
   @Auth('Administrator')
   @ApiOperation({ summary: 'Get all feature flags' })
-  async getFlags(@Query('tenantId') tenantId?: string) {
-    const tid = this.requireTenantId(tenantId);
+  async getFlags(@Request() req: any) {
+    const tid = req.user?.tenantId;
+    if (!tid) throw new BadRequestException('Tenant context required');
     return this.featureFlagsService.getFlags(tid);
   }
 
   /**
-   * Get feature flag value
+   * Get feature flag value (Fix 2: now requires auth, uses JWT tenantId)
    */
   @Get(':featureKey/value')
+  @Auth()
   @ApiOperation({ summary: 'Get feature flag value' })
   async getFlagValue(
     @Param('featureKey') featureKey: string,
-    @Query('tenantId') tenantId?: string,
+    @Request() req: any,
   ) {
-    const tid = this.requireTenantId(tenantId);
+    const tid = req.user?.tenantId;
+    if (!tid) throw new BadRequestException('Tenant context required');
     const value = await this.featureFlagsService.getValue(featureKey, tid);
     const enabled = await this.featureFlagsService.isEnabled(featureKey, tid);
     return { featureKey, enabled, value };
@@ -85,15 +85,16 @@ export class FeatureFlagsController {
     @Param('featureKey') featureKey: string,
     @Body()
     body: {
-      tenantId?: string;
       enabled: boolean;
       value?: any;
       metadata?: Record<string, any>;
     },
+    @Request() req: any,
   ) {
+    const tid = req.user?.tenantId ?? null;
     return this.featureFlagsService.setFlag(
       featureKey,
-      body.tenantId ?? null,
+      tid,
       body.enabled,
       body.value,
       body.metadata,
@@ -106,8 +107,9 @@ export class FeatureFlagsController {
   @Delete(':featureKey')
   @Auth('Administrator')
   @ApiOperation({ summary: 'Delete a feature flag' })
-  async deleteFlag(@Param('featureKey') featureKey: string, @Query('tenantId') tenantId?: string) {
-    const tid = this.requireTenantId(tenantId);
+  async deleteFlag(@Param('featureKey') featureKey: string, @Request() req: any) {
+    const tid = req.user?.tenantId;
+    if (!tid) throw new BadRequestException('Tenant context required');
     await this.featureFlagsService.deleteFlag(featureKey, tid);
     return { message: 'Feature flag deleted' };
   }

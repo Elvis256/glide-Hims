@@ -102,6 +102,7 @@ import { ExportModule } from './modules/export/export.module';
 import { BackupModule } from './modules/backup/backup.module';
 import { DeploymentsModule } from './modules/deployments/deployment.module';
 import { EfrisModule } from './modules/efris/efris.module';
+import { getDatabaseConfig } from './config/database.factory';
 
 @Module({
   imports: [
@@ -131,22 +132,14 @@ import { EfrisModule } from './modules/efris/efris.module';
     // Database
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
-      useFactory: (configService: ConfigService) => ({
-        type: 'postgres',
-        host: configService.get('DB_HOST'),
-        port: configService.get('DB_PORT'),
-        username: configService.get('DB_USERNAME'),
-        password: configService.get('DB_PASSWORD'),
-        database: configService.get('DB_NAME'),
-        entities: [
-          __dirname + '/**/*.entity{.ts,.js}',
-          __dirname + '/**/*.entities{.ts,.js}',
-        ],
-        synchronize: false, // Always use migrations — never auto-sync schema
-        logging: configService.get('NODE_ENV') === 'development',
-        migrations: [__dirname + '/database/migrations/*{.ts,.js}'],
-        migrationsRun: false,
-      }),
+      useFactory: (configService: ConfigService) => {
+        const config = getDatabaseConfig(false);
+        return {
+          ...config,
+          synchronize: configService.get('TYPEORM_SYNCHRONIZE') === 'true' || config.synchronize,
+          migrationsRun: configService.get('TYPEORM_MIGRATIONS_RUN') === 'true',
+        };
+      },
       inject: [ConfigService],
     }),
 

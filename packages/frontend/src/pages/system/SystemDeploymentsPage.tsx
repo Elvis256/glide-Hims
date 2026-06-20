@@ -1,13 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import api from '../../services/api';
 import {
   Server, Cloud, HardDrive, Plus, Search, RefreshCw,
   CheckCircle2, AlertTriangle, Clock, Loader2, Copy, Check,
   ExternalLink, MoreVertical, KeyRound, Activity, Building2, Download, X,
+  Eye, EyeOff,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import TierBadge from '../../components/TierBadge';
+import SystemPagination from '../../components/SystemPagination';
+import ConfirmDialog from '../../components/ConfirmDialog';
 
 type DeploymentType = 'hybrid' | 'standalone';
 type DeploymentStatus = 'active' | 'pending' | 'error' | 'expired';
@@ -107,22 +110,37 @@ export default function SystemDeploymentsPage() {
   const tenantFilterId = searchParams.get('tenantId') || '';
   const [actionMenuId, setActionMenuId] = useState<string | null>(null);
   const [busyDeploymentId, setBusyDeploymentId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [revealedKeys, setRevealedKeys] = useState<Set<string>>(new Set());
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    variant: 'danger' | 'warning' | 'info';
+    confirmLabel: string;
+    onConfirm: () => void;
+  }>({ open: false, title: '', message: '', variant: 'danger', confirmLabel: 'Confirm', onConfirm: () => {} });
+
+  const closeConfirmDialog = () => setConfirmDialog((prev) => ({ ...prev, open: false }));
+
+  const toggleKeyVisibility = (depId: string) => {
+    setRevealedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(depId)) next.delete(depId);
+      else next.add(depId);
+      return next;
+    });
+  };
+
+  const maskKey = (key: string) => key.length > 8 ? key.slice(0, 8) + '...' : key;
 
   const closeActionMenu = () => setActionMenuId(null);
 
-  const runLicenseAction = async (
+  const executeLicenseAction = async (
     dep: Deployment,
     action: 'suspend' | 'reactivate' | 'revoke' | 'extend',
   ) => {
-    if (!dep.licenseKey) {
-      toast.error('No license key on this deployment');
-      return;
-    }
-    if (action === 'revoke' && !window.confirm(
-      `Revoke license for ${dep.organizationName}? This is permanent — the install will stop validating immediately.`,
-    )) {
-      return;
-    }
     setBusyDeploymentId(dep.id);
     closeActionMenu();
     try {
@@ -139,6 +157,45 @@ export default function SystemDeploymentsPage() {
     } finally {
       setBusyDeploymentId(null);
     }
+  };
+
+  const runLicenseAction = (
+    dep: Deployment,
+    action: 'suspend' | 'reactivate' | 'revoke' | 'extend',
+  ) => {
+    if (!dep.licenseKey) {
+      toast.error('No license key on this deployment');
+      return;
+    }
+    if (action === 'revoke') {
+      setConfirmDialog({
+        open: true,
+        title: 'Revoke License',
+        message: `Revoke license for ${dep.organizationName}? This is permanent \u2014 the install will stop validating immediately.`,
+        variant: 'danger',
+        confirmLabel: 'Revoke',
+        onConfirm: () => {
+          closeConfirmDialog();
+          executeLicenseAction(dep, 'revoke');
+        },
+      });
+      return;
+    }
+    if (action === 'suspend') {
+      setConfirmDialog({
+        open: true,
+        title: 'Suspend License',
+        message: `Suspend license for ${dep.organizationName}? The deployment will stop functioning until reactivated.`,
+        variant: 'warning',
+        confirmLabel: 'Suspend',
+        onConfirm: () => {
+          closeConfirmDialog();
+          executeLicenseAction(dep, 'suspend');
+        },
+      });
+      return;
+    }
+    executeLicenseAction(dep, action);
   };
 
   const downloadInstallerBundle = async (dep: Deployment) => {
@@ -197,6 +254,7 @@ export default function SystemDeploymentsPage() {
         err?.message ||
         'Failed to load deployments';
       setLoadError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -205,7 +263,7 @@ export default function SystemDeploymentsPage() {
   useEffect(() => {
     loadDeployments();
     api
-      .get('/tenants')
+      .get('/tenants', { params: { limit: 1000 } })
       .then((r) => {
         const list = Array.isArray(r.data) ? r.data : (r.data?.data || []);
         setTenants(list.map((t: any) => ({ id: t.id, name: t.name, slug: t.slug })));
@@ -253,6 +311,15 @@ export default function SystemDeploymentsPage() {
     const matchType = typeFilter === 'all' || d.type === typeFilter;
     return matchTenant && matchSearch && matchType;
   });
+
+  // Reset to page 1 whenever filters change
+  useEffect(() => { setPage(1); }, [search, typeFilter, tenantFilterId]);
+
+  const total = filtered.length;
+  const paginatedFiltered = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, page, pageSize]);
 
   const tenantFilterName = tenantFilterId
     ? deployments.find((d) => d.tenantId === tenantFilterId)?.organizationName
@@ -437,7 +504,7 @@ export default function SystemDeploymentsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {filtered.map((dep) => (
+              {paginatedFiltered.map((dep) => (
                 <tr key={dep.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-4 py-3">
                     {dep.tenantId ? (
@@ -480,7 +547,20 @@ export default function SystemDeploymentsPage() {
                   <td className="px-4 py-3">
                     {dep.licenseKey ? (
                       <div className="flex items-center gap-2">
-                        <code className="text-xs bg-gray-100 px-2 py-1 rounded font-mono">{dep.licenseKey}</code>
+                        <code className="text-xs bg-gray-100 px-2 py-1 rounded font-mono">
+                          {revealedKeys.has(dep.id) ? dep.licenseKey : maskKey(dep.licenseKey)}
+                        </code>
+                        <button
+                          onClick={() => toggleKeyVisibility(dep.id)}
+                          className="text-gray-400 hover:text-gray-600"
+                          title={revealedKeys.has(dep.id) ? 'Hide license key' : 'Reveal license key'}
+                        >
+                          {revealedKeys.has(dep.id) ? (
+                            <EyeOff className="w-3.5 h-3.5" />
+                          ) : (
+                            <Eye className="w-3.5 h-3.5" />
+                          )}
+                        </button>
                         <button
                           onClick={() => copy(dep.licenseKey, dep.id)}
                           className="text-gray-400 hover:text-gray-600"
@@ -592,8 +672,26 @@ export default function SystemDeploymentsPage() {
               ))}
             </tbody>
           </table>
+          <SystemPagination
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+          />
         </div>
       )}
+
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        variant={confirmDialog.variant}
+        confirmLabel={confirmDialog.confirmLabel}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={closeConfirmDialog}
+      />
 
       {/* Create Deployment Modal */}
       {showCreate && (

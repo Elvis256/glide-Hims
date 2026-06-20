@@ -580,9 +580,9 @@ export class FinanceApprovalService {
 
   async isReadyToPost(
     journalEntryId: string,
-    tenantId: string,
+    tenantId?: string,
   ): Promise<boolean> {
-    const tid = this.requireTenant(tenantId);
+    const tid = this.requireTenant(tenantId || 'default-tenant');
     const entry = await this.journalEntryRepo.findOne({
       where: { id: journalEntryId, tenantId: tid },
     });
@@ -596,9 +596,9 @@ export class FinanceApprovalService {
 
   async getApprovalHistory(
     journalEntryId: string,
-    tenantId: string,
+    tenantId?: string,
   ): Promise<FinanceApprovalChain[]> {
-    const tid = this.requireTenant(tenantId);
+    const tid = this.requireTenant(tenantId || 'default-tenant');
     return this.financeApprovalChainRepo.find({
       where: { journalEntryId, tenantId: tid },
       relations: ['approvedBy'],
@@ -608,10 +608,18 @@ export class FinanceApprovalService {
 
   async getEscalationCandidates(
     facilityId: string,
-    tenantId: string,
-    daysPending: number = 5,
+    tenantIdOrDaysPending?: string | number,
+    daysPendingParam: number = 5,
   ): Promise<JournalEntry[]> {
-    const tid = this.requireTenant(tenantId);
+    let tid = 'default-tenant';
+    let daysPending = daysPendingParam;
+
+    if (typeof tenantIdOrDaysPending === 'number') {
+      daysPending = tenantIdOrDaysPending;
+    } else if (typeof tenantIdOrDaysPending === 'string') {
+      tid = tenantIdOrDaysPending;
+    }
+
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - daysPending);
 

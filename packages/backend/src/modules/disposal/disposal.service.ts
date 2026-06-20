@@ -93,9 +93,12 @@ export class DisposalService {
   async approve(id: string, userId: string, tenantId?: string): Promise<DisposalRecord> {
     const record = await this.findOne(id, tenantId);
 
-    // Require witness for regulatory compliance
+    // Require both witnesses for regulatory compliance (dual-witness requirement)
     if (!record.witness) {
       throw new BadRequestException('Disposal must have a witness recorded before approval');
+    }
+    if (!record.witness2) {
+      throw new BadRequestException('Disposal requires a second witness before approval');
     }
 
     // Require disposal certificate number

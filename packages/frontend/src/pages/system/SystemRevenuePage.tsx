@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Loader2, RefreshCw, TrendingUp, Users, AlertTriangle, Calendar, DollarSign, Activity, PlayCircle, BarChart3, X } from 'lucide-react';
+import { Loader2, RefreshCw, TrendingUp, Users, AlertTriangle, Calendar, DollarSign, Activity, PlayCircle, BarChart3, X, Download } from 'lucide-react';
 import api from '../../services/api';
+import { exportToCsv } from '../../utils/csvExport';
 import { fmtMoney, fmtDate, unwrap } from './saas/_shared';
+import ConfirmDialog from '../../components/ConfirmDialog';
 
 interface Dashboard {
   currency: string;
@@ -25,6 +27,7 @@ export default function SystemRevenuePage() {
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [planDetail, setPlanDetail] = useState<any | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{open: boolean; title: string; message: string; variant: 'danger'|'warning'|'info'; confirmLabel: string; onConfirm: () => void}>({open: false, title: '', message: '', variant: 'danger', confirmLabel: 'Confirm', onConfirm: () => {}});
 
   const openPlan = async (planId: string) => {
     setPlanDetail({ loading: true });
@@ -39,12 +42,21 @@ export default function SystemRevenuePage() {
   };
   useEffect(() => { load(); }, []);
 
-  const runCron = async () => {
+  const executeRunCron = async () => {
     setRunning(true);
     try { await api.post('/saas-revenue/cron/run'); await load(); }
     catch (e: any) { alert(e?.response?.data?.message || 'Failed'); }
     finally { setRunning(false); }
   };
+
+  const runCron = () => setConfirmAction({
+    open: true,
+    title: 'Run renewal/dunning now?',
+    message: 'This will immediately process all pending renewals and overdue invoices, send dunning emails to affected customers, and may auto-churn subscriptions that exceed the churn threshold. This action cannot be undone.',
+    variant: 'danger',
+    confirmLabel: 'Run now',
+    onConfirm: () => { setConfirmAction(prev => ({ ...prev, open: false })); executeRunCron(); },
+  });
 
   if (loading || !data) return <div className="flex items-center gap-2 text-gray-500"><Loader2 className="w-5 h-5 animate-spin" /> Loading…</div>;
 
@@ -70,6 +82,38 @@ export default function SystemRevenuePage() {
           <p className="text-sm text-gray-500">SaaS metrics across all tenants</p>
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={() => {
+              if (!data) return;
+              const summaryRows = [
+                { metric: 'MRR', value: fmtMoney(data.mrrMinor, cur), raw: data.mrrMinor },
+                { metric: 'ARR', value: fmtMoney(data.arrMinor, cur), raw: data.arrMinor },
+                { metric: 'ARPA', value: fmtMoney(data.arpaMinor, cur), raw: data.arpaMinor },
+                { metric: 'LTV', value: fmtMoney(data.ltvMinor, cur), raw: data.ltvMinor },
+                { metric: 'Churn Rate (30d)', value: `${data.churnRatePct}%`, raw: data.churnRatePct },
+                { metric: 'Outstanding A/R', value: fmtMoney(data.outstandingMinor, cur), raw: data.outstandingMinor },
+                { metric: 'Active Subscriptions', value: String(data.counts.active), raw: data.counts.active },
+                { metric: 'Trial Subscriptions', value: String(data.counts.trial), raw: data.counts.trial },
+                { metric: 'Past Due', value: String(data.counts.pastDue), raw: data.counts.pastDue },
+                { metric: 'Forecast 30d', value: fmtMoney(data.forecast.d30Minor, cur), raw: data.forecast.d30Minor },
+                { metric: 'Forecast 60d', value: fmtMoney(data.forecast.d60Minor, cur), raw: data.forecast.d60Minor },
+                { metric: 'Forecast 90d', value: fmtMoney(data.forecast.d90Minor, cur), raw: data.forecast.d90Minor },
+                ...data.topCustomers.map((c) => ({
+                  metric: `Top Customer: ${c.tenant?.name || c.tenantId}`,
+                  value: fmtMoney(c.totalMinor, cur),
+                  raw: c.totalMinor,
+                })),
+              ];
+              exportToCsv('revenue-summary', summaryRows, [
+                { header: 'Metric', accessor: (r) => r.metric },
+                { header: 'Value', accessor: (r) => r.value },
+                { header: 'Raw', accessor: (r) => r.raw },
+              ]);
+            }}
+            className="inline-flex items-center gap-2 px-3 py-2 border rounded text-sm hover:bg-gray-50"
+          >
+            <Download className="w-4 h-4" /> Export CSV
+          </button>
           <button onClick={runCron} disabled={running} className="inline-flex items-center gap-2 px-3 py-2 border rounded text-sm hover:bg-gray-50 disabled:opacity-50">
             {running ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlayCircle className="w-4 h-4" />} Run renewal/dunning now
           </button>
@@ -327,6 +371,16 @@ export default function SystemRevenuePage() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmAction.open}
+        title={confirmAction.title}
+        message={confirmAction.message}
+        variant={confirmAction.variant}
+        confirmLabel={confirmAction.confirmLabel}
+        onConfirm={confirmAction.onConfirm}
+        onCancel={() => setConfirmAction(prev => ({ ...prev, open: false }))}
+      />
     </div>
   );
 }

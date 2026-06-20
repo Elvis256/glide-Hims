@@ -22,6 +22,7 @@ import { UserPermission } from '../../database/entities/user-permission.entity';
 import { Department } from '../../database/entities/department.entity';
 import { Permission } from '../../database/entities/permission.entity';
 import { AuditLog } from '../../database/entities/audit-log.entity';
+import { PasswordPolicy } from '../../database/entities/password-policy.entity';
 import {
   CreateUserDto,
   UpdateUserDto,
@@ -820,8 +821,9 @@ export class UsersService {
       }
     }
 
-    // Hash new password if provided
+    // Fix 5: validate password against tenant's PasswordPolicy before hashing
     if (updateUserDto.password) {
+      await this.validatePasswordAgainstPolicy(updateUserDto.password, user.tenantId, user.facilityId);
       const saltRoundsConfig = this.configService.get<string>('BCRYPT_ROUNDS', '12');
       const saltRounds = parseInt(saltRoundsConfig, 10) || 12;
       user.passwordHash = await bcrypt.hash(updateUserDto.password, saltRounds);
@@ -876,9 +878,51 @@ export class UsersService {
     return savedUser;
   }
 
-  async remove(id: string, tenantId?: string): Promise<void> {
+  async remove(
+    id: string,
+    tenantId?: string,
+    caller?: { id?: string; userId?: string; isSystemAdmin?: boolean },
+  ): Promise<void> {
     const user = await this.findOne(id, tenantId);
+
+    // Fix 14: self-deletion guard
+    const callerId = caller?.id || caller?.userId;
+    if (callerId && callerId === id) {
+      throw new BadRequestException('Cannot delete your own account');
+    }
+
+    // Fix 14: prevent deletion of system admin accounts by non-system-admins
+    if (user.isSystemAdmin && !caller?.isSystemAdmin) {
+      throw new BadRequestException('Cannot delete system administrator accounts');
+    }
+
+    // Fix 14: last-admin guard — count remaining admins for tenant before deleting
+    if (tenantId) {
+      const adminRoles = await this.roleRepository.find({
+        where: [
+          { name: 'Administrator', isSystemRole: true },
+          { name: 'Super Admin', isSystemRole: true },
+        ],
+      });
+      if (adminRoles.length > 0) {
+        const adminRoleIds = adminRoles.map((r) => r.id);
+        const adminCount = await this.userRoleRepository
+          .createQueryBuilder('ur')
+          .innerJoin('ur.user', 'u')
+          .where('ur.roleId IN (:...roleIds)', { roleIds: adminRoleIds })
+          .andWhere('u.tenantId = :tenantId', { tenantId })
+          .andWhere('u.id != :userId', { userId: id })
+          .andWhere('u.deletedAt IS NULL')
+          .getCount();
+        if (adminCount === 0) {
+          throw new BadRequestException('Cannot delete the last administrator for this organization');
+        }
+      }
+    }
+
     await this.userRepository.softRemove(user);
+    // Revoke all active sessions and refresh tokens for deleted user
+    await this.revokeUserSessions(id);
   }
 
   async assignRole(
@@ -1008,7 +1052,27 @@ export class UsersService {
   async deactivateUser(id: string, tenantId?: string): Promise<User> {
     const user = await this.findOne(id, tenantId);
     user.status = 'inactive';
-    return this.userRepository.save(user);
+    const saved = await this.userRepository.save(user);
+    // Revoke all active sessions and refresh tokens for deactivated user
+    await this.revokeUserSessions(id);
+    return saved;
+  }
+
+  /** Revoke all active sessions and refresh tokens for a user (used on deactivation/deletion). */
+  private async revokeUserSessions(userId: string): Promise<void> {
+    try {
+      await this.dataSource.query(
+        `UPDATE sessions SET revoked_at = NOW(), is_active = false WHERE user_id = $1 AND revoked_at IS NULL`,
+        [userId],
+      );
+      await this.dataSource.query(
+        `UPDATE refresh_tokens SET is_revoked = true WHERE user_id = $1 AND is_revoked = false`,
+        [userId],
+      );
+    } catch (err) {
+      // Sessions/refresh_tokens tables may not exist — don't block user operations
+      this.logger.warn(`Failed to revoke sessions for user ${userId}: ${(err as Error).message}`);
+    }
   }
 
   // Direct user permission management
@@ -1375,6 +1439,9 @@ export class UsersService {
       }
     }
 
+    // Fix 4: track generated credentials outside the transaction scope
+    const generatedPasswords: { username: string; password: string }[] = [];
+
     // Process valid rows in a transaction
     if (validatedRows.length > 0) {
       const queryRunner = this.dataSource.createQueryRunner();
@@ -1384,8 +1451,8 @@ export class UsersService {
       try {
         const saltRoundsConfig = this.configService.get<string>('BCRYPT_ROUNDS', '12');
         const saltRounds = parseInt(saltRoundsConfig, 10) || 12;
-        const tempPassword = 'TempPass123!';
-        const passwordHash = await bcrypt.hash(tempPassword, saltRounds);
+        // Fix 4: generate unique random password per user instead of hardcoded 'TempPass123!'
+        const cryptoMod = await import('crypto');
 
         for (const { index: rowNum, data: row, role } of validatedRows) {
           try {
@@ -1395,6 +1462,10 @@ export class UsersService {
             const phone = (row['phone'] || '').trim() || undefined;
             const department = (row['department'] || '').trim() || undefined;
             const jobTitle = (row['job_title'] || '').trim() || undefined;
+
+            const tempPassword = cryptoMod.randomBytes(16).toString('base64url');
+            const passwordHash = await bcrypt.hash(tempPassword, saltRounds);
+            generatedPasswords.push({ username, password: tempPassword });
 
             const user = this.userRepository.create({
               username,
@@ -1480,7 +1551,63 @@ export class UsersService {
       successful,
       failed: rows.length - successful,
       errors,
+      // Fix 4: return generated passwords so admin can distribute them securely
+      generatedCredentials: generatedPasswords,
     };
+  }
+
+  /**
+   * Fix 5: Validate password against the tenant's PasswordPolicy entity.
+   */
+  private async validatePasswordAgainstPolicy(
+    password: string,
+    tenantId?: string,
+    facilityId?: string,
+  ): Promise<void> {
+    const policyRepo = this.dataSource.getRepository(PasswordPolicy);
+    let policy: PasswordPolicy | null = null;
+
+    // Try facility-specific policy first
+    if (facilityId) {
+      policy = await policyRepo.findOne({ where: { facilityId, isActive: true } });
+    }
+    // Fall back to tenant default
+    if (!policy && tenantId) {
+      policy = await policyRepo.findOne({ where: { tenantId, isDefault: true, isActive: true } });
+    }
+    // Fall back to global default
+    if (!policy) {
+      policy = await policyRepo.findOne({ where: { isDefault: true, isActive: true } });
+    }
+
+    if (!policy) return; // No policy to enforce
+
+    const errors: string[] = [];
+    if (password.length < policy.minLength) {
+      errors.push(`Password must be at least ${policy.minLength} characters`);
+    }
+    if (policy.maxLength && password.length > policy.maxLength) {
+      errors.push(`Password must be at most ${policy.maxLength} characters`);
+    }
+    if (policy.requireUppercase && !/[A-Z]/.test(password)) {
+      errors.push('Password must contain at least one uppercase letter');
+    }
+    if (policy.requireLowercase && !/[a-z]/.test(password)) {
+      errors.push('Password must contain at least one lowercase letter');
+    }
+    if (policy.requireNumbers && !/\d/.test(password)) {
+      errors.push('Password must contain at least one number');
+    }
+    if (policy.requireSpecialChars) {
+      const specialChars = policy.allowedSpecialChars || '!@#$%^&*()_+-=[]{}|;:,.<>?';
+      const escaped = specialChars.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+      if (!new RegExp(`[${escaped}]`).test(password)) {
+        errors.push('Password must contain at least one special character');
+      }
+    }
+    if (errors.length > 0) {
+      throw new BadRequestException(errors.join('; '));
+    }
   }
 
   private parseImportFile(file: Express.Multer.File): Record<string, string>[] {

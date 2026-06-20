@@ -11,10 +11,14 @@ import {
 } from '../../../database/entities/invoice.entity';
 import { Encounter } from '../../../database/entities/encounter.entity';
 import { NotificationsService } from '../../notifications/notifications.service';
+import { InAppNotificationsService } from '../../in-app-notifications/in-app-notifications.service';
 import { SystemSettingsService } from '../../system-settings/system-settings.service';
 import { FinanceService } from '../../finance/finance.service';
 import { PricingEngineService } from '../../pricing-engine/pricing-engine.service';
 import { CoverageCheckService } from '../../insurance/coverage-check.service';
+import { ServicesService } from '../../services/services.service';
+import { InventoryService } from '../../inventory/inventory.service';
+import { AuditLogService } from '../../../common/interceptors/audit-log.service';
 
 // Helper to create a mock QueryBuilder
 function createMockQueryBuilder(result: any = null) {
@@ -81,6 +85,11 @@ const mockNotificationsService = {
   sendThankYouMessage: jest.fn().mockResolvedValue({ success: true, channel: 'sms' }),
 };
 
+const mockInAppNotificationsService = {
+  notifyInvoiceCreated: jest.fn().mockResolvedValue({}),
+  notifyPaymentCleared: jest.fn().mockResolvedValue({}),
+};
+
 const mockSettingsService = {};
 
 const mockFinanceService = {
@@ -94,6 +103,18 @@ const mockPricingEngineService = {
 
 const mockCoverageCheckService = {
   checkCoverage: jest.fn(),
+};
+
+const mockServicesService = {
+  getConsumablesByCode: jest.fn().mockResolvedValue([]),
+};
+
+const mockInventoryService = {
+  deductStock: jest.fn().mockResolvedValue({}),
+};
+
+const mockAuditLogService = {
+  log: jest.fn().mockResolvedValue({}),
 };
 
 const mockDataSource = {
@@ -113,10 +134,14 @@ describe('BillingService', () => {
         { provide: getRepositoryToken(Encounter), useValue: mockEncounterRepo },
         { provide: DataSource, useValue: mockDataSource },
         { provide: NotificationsService, useValue: mockNotificationsService },
+        { provide: InAppNotificationsService, useValue: mockInAppNotificationsService },
         { provide: SystemSettingsService, useValue: mockSettingsService },
         { provide: FinanceService, useValue: mockFinanceService },
         { provide: PricingEngineService, useValue: mockPricingEngineService },
         { provide: CoverageCheckService, useValue: mockCoverageCheckService },
+        { provide: ServicesService, useValue: mockServicesService },
+        { provide: InventoryService, useValue: mockInventoryService },
+        { provide: AuditLogService, useValue: mockAuditLogService },
       ],
     }).compile();
 

@@ -11,6 +11,7 @@ import { BillingService } from '../../billing/billing.service';
 import { QueueManagementService } from '../../queue-management/queue-management.service';
 import { InsuranceService } from '../../insurance/insurance.service';
 import { AuditLogService } from '../../../common/interceptors/audit-log.service';
+import { IdentityGuardService } from '../../../common/services/identity-guard.service';
 import { BadRequestException } from '@nestjs/common';
 
 describe('EncountersService', () => {
@@ -28,6 +29,7 @@ describe('EncountersService', () => {
   };
 
   const mockServiceRepo = {
+    findOne: jest.fn(),
     createQueryBuilder: jest.fn().mockReturnValue({
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
@@ -59,6 +61,8 @@ describe('EncountersService', () => {
     log: jest.fn(),
   };
 
+  const mockIdentityGuardService = {};
+
   const mockEntityManager = {
     getRepository: jest.fn().mockImplementation((entity) => {
       if (entity === Encounter) return mockEncounterRepo;
@@ -68,6 +72,11 @@ describe('EncountersService', () => {
     query: jest.fn().mockResolvedValue([]),
     create: jest.fn().mockImplementation((entity, data) => data),
     save: jest.fn().mockImplementation((entity, data) => Promise.resolve({ id: 'enc-1', ...data })),
+    findOne: jest.fn().mockImplementation((entity, options) => {
+      if (entity === Encounter) return mockEncounterRepo.findOne(options);
+      if (entity === Service) return mockServiceRepo.findOne(options);
+      return Promise.resolve(null);
+    }),
   };
 
   const mockDataSource = {
@@ -88,6 +97,7 @@ describe('EncountersService', () => {
         { provide: InsuranceService, useValue: mockInsuranceService },
         { provide: DataSource, useValue: mockDataSource },
         { provide: AuditLogService, useValue: mockAuditLogService },
+        { provide: IdentityGuardService, useValue: mockIdentityGuardService },
       ],
     }).compile();
 

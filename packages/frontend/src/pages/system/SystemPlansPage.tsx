@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Loader2, Plus, Edit2, Trash2, Eye, EyeOff, Check, X } from 'lucide-react';
+import { toast } from 'sonner';
 import api from '../../services/api';
+import SystemPagination from '../../components/SystemPagination';
 import { Plan, fmtMoney, unwrap } from './saas/_shared';
 
 const EMPTY: Partial<Plan> = {
@@ -18,12 +20,16 @@ export default function SystemPlansPage() {
   const [showInactive, setShowInactive] = useState(false);
   const [edit, setEdit] = useState<Partial<Plan> | null>(null);
   const [saving, setSaving] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
 
   const load = async () => {
     setLoading(true);
     try {
       const r = await api.get('/saas-revenue/plans', { params: showInactive ? { includeInactive: 'true' } : {} });
       setItems(unwrap<Plan[]>(r) || []);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to load plans');
     } finally { setLoading(false); }
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [showInactive]);
@@ -49,9 +55,14 @@ export default function SystemPlansPage() {
       setEdit(null);
       await load();
     } catch (e: any) {
-      alert(e?.response?.data?.message || 'Save failed');
+      toast.error(e?.response?.data?.message || 'Save failed');
     } finally { setSaving(false); }
   };
+
+  const paginatedItems = useMemo(
+    () => items.slice((page - 1) * pageSize, page * pageSize),
+    [items, page, pageSize],
+  );
 
   const remove = async (id: string) => {
     if (!confirm('Delete plan? Subscriptions will be blocked if any are still on it.')) return;
@@ -59,7 +70,7 @@ export default function SystemPlansPage() {
       await api.delete(`/saas-revenue/plans/${id}`);
       await load();
     } catch (e: any) {
-      alert(e?.response?.data?.message || 'Delete failed');
+      toast.error(e?.response?.data?.message || 'Delete failed');
     }
   };
 
@@ -86,7 +97,7 @@ export default function SystemPlansPage() {
         <div className="flex items-center gap-2 text-gray-500"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
       ) : (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {items.map((p) => (
+          {paginatedItems.map((p) => (
             <div key={p.id} className={`border rounded-lg bg-white p-5 ${!p.isActive ? 'opacity-60' : ''}`}>
               <div className="flex items-start justify-between">
                 <div>
@@ -114,6 +125,9 @@ export default function SystemPlansPage() {
           ))}
         </div>
       )}
+      {!loading && (
+        <SystemPagination page={page} pageSize={pageSize} total={items.length} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
+      )}
 
       {edit && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => !saving && setEdit(null)}>
@@ -123,31 +137,31 @@ export default function SystemPlansPage() {
               <button onClick={() => setEdit(null)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
             </div>
             <div className="grid grid-cols-2 gap-3 text-sm">
-              <Field label="Code (slug)"><input className="input" value={edit.code || ''} onChange={(e) => setEdit({ ...edit, code: e.target.value })} /></Field>
-              <Field label="Name"><input className="input" value={edit.name || ''} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></Field>
+              <Field label="Code (slug)"><input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={edit.code || ''} onChange={(e) => setEdit({ ...edit, code: e.target.value })} /></Field>
+              <Field label="Name"><input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={edit.name || ''} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></Field>
               <Field label="Tier">
-                <select className="input" value={edit.tier || 'professional'} onChange={(e) => setEdit({ ...edit, tier: e.target.value as any })}>
+                <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={edit.tier || 'professional'} onChange={(e) => setEdit({ ...edit, tier: e.target.value as any })}>
                   <option value="community">community</option>
                   <option value="standard">standard</option>
                   <option value="professional">professional</option>
                   <option value="enterprise">enterprise</option>
                 </select>
               </Field>
-              <Field label="Currency"><input className="input" value={edit.currency || 'UGX'} onChange={(e) => setEdit({ ...edit, currency: e.target.value })} /></Field>
-              <Field label={`Monthly price (minor — e.g. 1500000 = ${edit.currency} 15,000.00)`}><input type="number" className="input" value={edit.priceMonthlyMinor ?? 0} onChange={(e) => setEdit({ ...edit, priceMonthlyMinor: parseInt(e.target.value || '0', 10) })} /></Field>
-              <Field label="Annual price (minor)"><input type="number" className="input" value={edit.priceAnnualMinor ?? 0} onChange={(e) => setEdit({ ...edit, priceAnnualMinor: parseInt(e.target.value || '0', 10) })} /></Field>
-              <Field label="Annual discount %"><input type="number" className="input" value={edit.annualDiscountPercent ?? 0} onChange={(e) => setEdit({ ...edit, annualDiscountPercent: parseInt(e.target.value || '0', 10) })} /></Field>
-              <Field label="Trial days"><input type="number" className="input" value={edit.trialDays ?? 0} onChange={(e) => setEdit({ ...edit, trialDays: parseInt(e.target.value || '0', 10) })} /></Field>
-              <Field label="Max users"><input type="number" className="input" value={edit.maxUsers ?? 0} onChange={(e) => setEdit({ ...edit, maxUsers: parseInt(e.target.value || '0', 10) })} /></Field>
-              <Field label="Max facilities"><input type="number" className="input" value={edit.maxFacilities ?? 0} onChange={(e) => setEdit({ ...edit, maxFacilities: parseInt(e.target.value || '0', 10) })} /></Field>
-              <Field label="Sort order"><input type="number" className="input" value={edit.sortOrder ?? 0} onChange={(e) => setEdit({ ...edit, sortOrder: parseInt(e.target.value || '0', 10) })} /></Field>
+              <Field label="Currency"><input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={edit.currency || 'UGX'} onChange={(e) => setEdit({ ...edit, currency: e.target.value })} /></Field>
+              <Field label={`Monthly price (minor — e.g. 1500000 = ${edit.currency} 15,000.00)`}><input type="number" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={edit.priceMonthlyMinor ?? 0} onChange={(e) => setEdit({ ...edit, priceMonthlyMinor: parseInt(e.target.value || '0', 10) })} /></Field>
+              <Field label="Annual price (minor)"><input type="number" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={edit.priceAnnualMinor ?? 0} onChange={(e) => setEdit({ ...edit, priceAnnualMinor: parseInt(e.target.value || '0', 10) })} /></Field>
+              <Field label="Annual discount %"><input type="number" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={edit.annualDiscountPercent ?? 0} onChange={(e) => setEdit({ ...edit, annualDiscountPercent: parseInt(e.target.value || '0', 10) })} /></Field>
+              <Field label="Trial days"><input type="number" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={edit.trialDays ?? 0} onChange={(e) => setEdit({ ...edit, trialDays: parseInt(e.target.value || '0', 10) })} /></Field>
+              <Field label="Max users"><input type="number" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={edit.maxUsers ?? 0} onChange={(e) => setEdit({ ...edit, maxUsers: parseInt(e.target.value || '0', 10) })} /></Field>
+              <Field label="Max facilities"><input type="number" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={edit.maxFacilities ?? 0} onChange={(e) => setEdit({ ...edit, maxFacilities: parseInt(e.target.value || '0', 10) })} /></Field>
+              <Field label="Sort order"><input type="number" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={edit.sortOrder ?? 0} onChange={(e) => setEdit({ ...edit, sortOrder: parseInt(e.target.value || '0', 10) })} /></Field>
               <Field label="Enabled modules (comma-separated)" wide>
-                <input className="input" value={Array.isArray(edit.enabledModules) ? edit.enabledModules.join(', ') : (edit.enabledModules || '')}
+                <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={Array.isArray(edit.enabledModules) ? edit.enabledModules.join(', ') : (edit.enabledModules || '')}
                   onChange={(e) => setEdit({ ...edit, enabledModules: e.target.value as any })} />
               </Field>
-              <Field label="Description" wide><textarea className="input min-h-[60px]" value={edit.description || ''} onChange={(e) => setEdit({ ...edit, description: e.target.value })} /></Field>
+              <Field label="Description" wide><textarea className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm min-h-[60px]" value={edit.description || ''} onChange={(e) => setEdit({ ...edit, description: e.target.value })} /></Field>
               <Field label="Features (JSON)" wide>
-                <textarea className="input min-h-[80px] font-mono text-xs" value={typeof edit.features === 'string' ? edit.features : JSON.stringify(edit.features ?? {}, null, 2)}
+                <textarea className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm min-h-[80px] font-mono text-xs" value={typeof edit.features === 'string' ? edit.features : JSON.stringify(edit.features ?? {}, null, 2)}
                   onChange={(e) => setEdit({ ...edit, features: e.target.value as any })} />
               </Field>
               <label className="flex items-center gap-2"><input type="checkbox" checked={!!edit.isActive} onChange={(e) => setEdit({ ...edit, isActive: e.target.checked })} /> Active</label>
@@ -162,7 +176,6 @@ export default function SystemPlansPage() {
           </div>
         </div>
       )}
-      <style>{`.input{width:100%;border:1px solid #d1d5db;border-radius:6px;padding:6px 10px;font-size:13px}`}</style>
     </div>
   );
 }

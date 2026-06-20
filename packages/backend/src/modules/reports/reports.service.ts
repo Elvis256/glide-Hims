@@ -938,12 +938,13 @@ export class ReportsService {
       [tid, q.facilityId, start, end, ...NOTIFIABLE_ICD_PREFIXES.map((p) => `${p.code}%`)],
     );
 
-    // Compute deaths per disease from admissions joined by ICD prefix in discharge_diagnosis
+    // Compute deaths per disease from admissions joined by ICD prefix in dischargeDiagnosis
     const deathsByDisease = await this.ds.query(
-      `SELECT a.discharge_diagnosis, COUNT(*)::int AS deaths
+      `SELECT a."dischargeDiagnosis" AS discharge_diagnosis, COUNT(*)::int AS deaths
        FROM admissions a
-       WHERE a.tenant_id = $1 AND a.facility_id = $2 AND a.status = 'deceased'
-         AND a.discharge_date >= $3 AND a.discharge_date < $4
+       JOIN encounters e ON e.id = a."encounterId"
+       WHERE a.tenant_id = $1 AND e.facility_id = $2 AND a.status = 'deceased'
+         AND a."dischargeDate" >= $3 AND a."dischargeDate" < $4
        GROUP BY 1`,
       [tid, q.facilityId, start, end],
     ).catch(() => []);

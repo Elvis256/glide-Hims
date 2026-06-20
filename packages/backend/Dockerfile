@@ -2,8 +2,9 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
+# Copy package files (root + backend package.json needed for pnpm workspace install)
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/backend/package.json ./packages/backend/
 
 # Install dependencies
 RUN apk add --no-cache python3 make g++ && \
@@ -12,7 +13,6 @@ RUN apk add --no-cache python3 make g++ && \
 
 # Copy source
 COPY packages/backend ./packages/backend
-COPY tsconfig.json ./
 
 # Build
 WORKDIR /app/packages/backend
@@ -28,17 +28,21 @@ RUN npm install -g pnpm
 
 # Copy package files
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/backend/package.json ./packages/backend/
 
 # Install production dependencies only
 RUN pnpm install --prod --frozen-lockfile
 
 # Copy built application from builder
 COPY --from=builder /app/packages/backend/dist ./packages/backend/dist
-COPY --from=builder /app/packages/backend/package.json ./packages/backend/
 
 # Create app user for security
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001
+
+# Create upload directories before switching to non-root user
+RUN mkdir -p /app/packages/backend/uploads/patient-documents && \
+    chown -R nodejs:nodejs /app/packages/backend/uploads
 
 USER nodejs
 

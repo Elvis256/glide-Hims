@@ -5,6 +5,7 @@ import {
   Param,
   Query,
   BadRequestException,
+  ForbiddenException,
   NotFoundException,
   Request,
 } from '@nestjs/common';
@@ -16,10 +17,11 @@ import { User } from '../../../database/entities/user.entity';
 import { Patient } from '../../../database/entities/patient.entity';
 import { Role } from '../../../database/entities/role.entity';
 
-const TRASH_TYPES: Record<string, { entity: any; label: string }> = {
-  users: { entity: User, label: 'User' },
-  patients: { entity: Patient, label: 'Patient' },
-  roles: { entity: Role, label: 'Role' },
+// Fix 11: type-specific permissions instead of blanket 'users.delete'
+const TRASH_TYPES: Record<string, { entity: any; label: string; permission: string }> = {
+  users: { entity: User, label: 'User', permission: 'users.delete' },
+  patients: { entity: Patient, label: 'Patient', permission: 'patients.delete' },
+  roles: { entity: Role, label: 'Role', permission: 'roles.delete' },
 };
 
 @ApiTags('Admin - Trash')
@@ -28,6 +30,7 @@ const TRASH_TYPES: Record<string, { entity: any; label: string }> = {
 export class TrashController {
   constructor(@InjectDataSource() private dataSource: DataSource) {}
 
+  // Fix 11: require at least one trash-related permission; type-specific check inside
   @Get()
   @AuthWithPermissions('users.delete')
   @ApiOperation({ summary: 'List soft-deleted records across supported types' })
@@ -39,11 +42,14 @@ export class TrashController {
     @Request() req?: any,
   ) {
     const tenantId = req?.user?.tenantId;
+    const userPerms: string[] = req?.user?.permissions || [];
     const types = type ? [type] : Object.keys(TRASH_TYPES);
     const result: any[] = [];
     for (const t of types) {
       const meta = TRASH_TYPES[t];
       if (!meta) continue;
+      // Fix 11: skip types the user doesn't have permission for
+      if (userPerms.length > 0 && !userPerms.includes(meta.permission)) continue;
       const repo = this.dataSource.getRepository(meta.entity);
       const where: any = { deletedAt: Not(IsNull()) };
       if (tenantId) where.tenantId = tenantId;
@@ -76,6 +82,11 @@ export class TrashController {
   ) {
     const meta = TRASH_TYPES[type];
     if (!meta) throw new BadRequestException(`Unsupported trash type: ${type}`);
+    // Fix 11: check type-specific permission
+    const userPerms: string[] = req?.user?.permissions || [];
+    if (userPerms.length > 0 && !userPerms.includes(meta.permission)) {
+      throw new ForbiddenException(`Missing permission: ${meta.permission}`);
+    }
     const repo = this.dataSource.getRepository(meta.entity);
     const tenantId = req?.user?.tenantId;
     const where: any = { id };
