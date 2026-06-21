@@ -1,6 +1,6 @@
 import { useParams, Link } from 'react-router-dom';
 import {
-  ArrowLeft, Send, Check, X, Trash2, Loader2, History, Sparkles,
+  ArrowLeft, Send, Check, X, Trash2, Loader2, History, Sparkles, Pencil, Save, Undo2,
 } from 'lucide-react';
 import { fmtDate, QUOTATION_STATUS_STYLES } from './saas/_shared';
 import { useQuotationForm } from './quotation/useQuotationForm';
@@ -84,17 +84,35 @@ export default function SystemQuotationDetailPage() {
               )}
             </div>
             <div className="flex flex-wrap gap-2 mt-4">
-              {q.quotation?.status === 'sent' && (
+              {q.quotation?.status === 'sent' && !q.revising && (
                 <>
                   <button onClick={() => q.handleAction('accept')} disabled={q.saving} className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 text-white rounded text-sm hover:bg-emerald-700"><Check className="w-4 h-4" /> Accept</button>
                   <button onClick={() => q.handleAction('reject')} disabled={q.saving} className="inline-flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white rounded text-sm hover:bg-red-700"><X className="w-4 h-4" /> Reject</button>
                 </>
+              )}
+              {q.revising ? (
+                <>
+                  <button onClick={q.handleNewRevision} disabled={q.saving} className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"><Save className="w-4 h-4" /> {q.saving ? 'Saving...' : 'Save New Revision'}</button>
+                  <button onClick={q.cancelRevising} className="inline-flex items-center gap-1.5 px-4 py-2 border rounded text-sm hover:bg-gray-50"><Undo2 className="w-4 h-4" /> Cancel Editing</button>
+                </>
+              ) : (
+                <button onClick={q.startRevising} className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700"><Pencil className="w-4 h-4" /> Edit / New Revision</button>
               )}
               <button onClick={() => window.print()} className="inline-flex items-center gap-1.5 px-4 py-2 border rounded text-sm hover:bg-gray-50">Print Proposal</button>
               {q.quotation?.id && (
                 <a href={`/api/v1/saas-revenue/quotations/${q.quotation.id}/html`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 px-4 py-2 border rounded text-sm hover:bg-gray-50">View PDF</a>
               )}
             </div>
+          </div>
+        )}
+
+        {/* Revising banner */}
+        {q.revising && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-center gap-3">
+            <Pencil className="w-4 h-4 text-amber-600 shrink-0" />
+            <p className="text-sm text-amber-800">
+              <strong>Editing mode:</strong> Add/remove modules, change prices, discounts, terms, etc. When done, click <strong>"Save New Revision"</strong> to create a new version.
+            </p>
           </div>
         )}
 
