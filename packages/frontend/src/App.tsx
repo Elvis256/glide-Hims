@@ -55,7 +55,6 @@ const SystemLicensesPage = lazy(() => import('./pages/system/SystemLicensesPage'
 const SystemPlansPage = lazy(() => import('./pages/system/SystemPlansPage'));
 const SystemSubscriptionsPage = lazy(() => import('./pages/system/SystemSubscriptionsPage'));
 const SystemSubscriptionDetailPage = lazy(() => import('./pages/system/SystemSubscriptionDetailPage'));
-const SystemQuotationGeneratorPage = lazy(() => import('./pages/system/SystemQuotationGeneratorPage'));
 const SystemQuotationsPage = lazy(() => import('./pages/system/SystemQuotationsPage'));
 const SystemQuotationDetailPage = lazy(() => import('./pages/system/SystemQuotationDetailPage'));
 const SystemPriceCatalogPage = lazy(() => import('./pages/system/SystemPriceCatalogPage'));
@@ -671,7 +670,6 @@ function AppRoutes() {
         <Route path="plans" element={<SystemPlansPage />} />
         <Route path="subscriptions" element={<SystemSubscriptionsPage />} />
         <Route path="subscriptions/:id" element={<SystemSubscriptionDetailPage />} />
-        <Route path="quotation-generator" element={<SystemQuotationGeneratorPage />} />
         <Route path="quotations" element={<SystemQuotationsPage />} />
         <Route path="quotations/:id" element={<SystemQuotationDetailPage />} />
         <Route path="price-catalog" element={<SystemPriceCatalogPage />} />
