@@ -90,6 +90,7 @@ export function useQuotationForm(id: string | undefined) {
   const [lines, setLines] = useState<QuoteLine[]>([createLine()]);
   const [includeTraining, setIncludeTraining] = useState(false);
   const [tab, setTab] = useState<'details' | 'revisions'>('details');
+  const [revising, setRevising] = useState(false);
 
   // -----------------------------------------------------------------------
   // Loaders
@@ -356,8 +357,20 @@ export function useQuotationForm(id: string | undefined) {
     navigate('/system/quotations', { replace: true });
   };
 
+  const startRevising = () => {
+    setRevising(true);
+    setTab('details');
+    toast.info('Editing enabled — make your changes then click "Save New Revision".');
+  };
+
+  const cancelRevising = () => {
+    setRevising(false);
+    loadQuotation(); // reset to server state
+  };
+
   const handleNewRevision = async () => {
     const changeNotes = prompt('Change notes for new revision:') || '';
+    if (changeNotes === null) return; // cancelled prompt
     setSaving(true);
     try {
       const payload = buildPayload();
@@ -366,6 +379,7 @@ export function useQuotationForm(id: string | undefined) {
         changeNotes,
       });
       toast.success('New revision created');
+      setRevising(false);
       loadQuotation();
     } catch (e: any) {
       toast.error(e?.response?.data?.message || 'Failed to create revision');
@@ -377,19 +391,20 @@ export function useQuotationForm(id: string | undefined) {
   // -----------------------------------------------------------------------
 
   const isDraft = !quotation || quotation.status === 'draft';
-  const isEditable = isNew || isDraft;
+  const isEditable = isNew || isDraft || revising;
 
   return {
     // State
     isNew, quotation, loading, saving, form, setForm, lines, tab, setTab,
-    includeTraining, setIncludeTraining, company, catalogPrices,
+    includeTraining, setIncludeTraining, company, catalogPrices, revising,
     // Computed
     subtotal, trainingAmount, baseSubtotal, discountAmt, afterDiscount,
     vatAmount, whtAmount, total, selectedModuleIds, hardwareSuggestions,
     isDraft, isEditable,
     // Actions
     updateLine, addLine, removeLine, applyModuleToLine, addQuotedModule,
-    applyPresetPackage, handleSave, handleAction, handleDelete, handleNewRevision,
+    applyPresetPackage, handleSave, handleAction, handleDelete,
+    handleNewRevision, startRevising, cancelRevising,
     resolvePrice, formatMoney,
   };
 }
