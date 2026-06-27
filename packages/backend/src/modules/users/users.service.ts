@@ -1365,7 +1365,31 @@ export class UsersService {
     tenantId?: string,
     facilityId?: string,
   ): Promise<BulkImportResult> {
+    // Guard: file size limit (5 MB)
+    const MAX_FILE_SIZE = 5 * 1024 * 1024;
+    if (file.size > MAX_FILE_SIZE) {
+      throw new BadRequestException(`File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum is 5 MB.`);
+    }
+
     const rows = this.parseImportFile(file);
+
+    // Guard: row count limit
+    const MAX_ROWS = 1000;
+    if (rows.length > MAX_ROWS) {
+      throw new BadRequestException(`Too many rows (${rows.length}). Maximum is ${MAX_ROWS}.`);
+    }
+    if (rows.length === 0) {
+      throw new BadRequestException('File contains no data rows.');
+    }
+
+    // Validate required headers exist
+    const headers = Object.keys(rows[0]);
+    const requiredHeaders = ['username', 'full_name'];
+    const missingHeaders = requiredHeaders.filter((h) => !headers.includes(h));
+    if (missingHeaders.length > 0) {
+      throw new BadRequestException(`Missing required column(s): ${missingHeaders.join(', ')}`);
+    }
+
     const errors: BulkImportRowError[] = [];
     let successful = 0;
 
@@ -1390,10 +1414,11 @@ export class UsersService {
       const rowNum = i + 2; // +2 for 1-based index + header row
       let hasError = false;
 
-      const username = (row['username'] || '').trim();
-      const email = (row['email'] || '').trim();
-      const fullName = (row['full_name'] || '').trim();
-      const roleName = (row['role'] || '').trim();
+      const username = this.sanitizeCsvValue((row['username'] || '').trim());
+      const email = this.sanitizeCsvValue((row['email'] || '').trim());
+      const fullName = this.sanitizeCsvValue((row['full_name'] || '').trim());
+      const roleName = this.sanitizeCsvValue((row['role'] || '').trim());
+      const phone = this.sanitizeCsvValue((row['phone'] || '').trim());
 
       if (!username) {
         errors.push({ row: rowNum, field: 'username', message: 'Username is required' });
@@ -1403,6 +1428,20 @@ export class UsersService {
           row: rowNum,
           field: 'username',
           message: 'Username must not contain spaces',
+        });
+        hasError = true;
+      } else if (username.length < 3 || username.length > 50) {
+        errors.push({
+          row: rowNum,
+          field: 'username',
+          message: 'Username must be 3-50 characters',
+        });
+        hasError = true;
+      } else if (!/^[a-zA-Z0-9._-]+$/.test(username)) {
+        errors.push({
+          row: rowNum,
+          field: 'username',
+          message: 'Username may only contain letters, digits, dots, hyphens, and underscores',
         });
         hasError = true;
       } else if (existingUsernames.has(username.toLowerCase())) {
@@ -1421,6 +1460,14 @@ export class UsersService {
 
       if (!fullName) {
         errors.push({ row: rowNum, field: 'full_name', message: 'Full name is required' });
+        hasError = true;
+      } else if (fullName.length > 150) {
+        errors.push({ row: rowNum, field: 'full_name', message: 'Full name is too long (max 150 chars)' });
+        hasError = true;
+      }
+
+      if (phone && !/^\+?[0-9\s()-]{7,20}$/.test(phone)) {
+        errors.push({ row: rowNum, field: 'phone', message: 'Invalid phone format' });
         hasError = true;
       }
 
@@ -1608,6 +1655,11 @@ export class UsersService {
     if (errors.length > 0) {
       throw new BadRequestException(errors.join('; '));
     }
+  }
+
+  /** Strip CSV injection prefixes (=, +, -, @, tab, CR) that could trigger formula execution in spreadsheet apps. */
+  private sanitizeCsvValue(value: string): string {
+    return value.replace(/^[=+\-@\t\r]+/, '');
   }
 
   private parseImportFile(file: Express.Multer.File): Record<string, string>[] {

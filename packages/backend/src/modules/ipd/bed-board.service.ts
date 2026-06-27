@@ -310,14 +310,18 @@ export class BedBoardService {
     const reserved = await this.bedRepo.find({
       where: { status: BedStatus.RESERVED, ...(tenantId ? { tenantId } : {}) },
     });
+    const expiredBeds: typeof reserved = [];
     for (const bed of reserved) {
       const r = this.parseReservation(bed.notes);
       if (r && new Date(r.until) <= now) {
         bed.status = BedStatus.AVAILABLE;
         bed.notes = '';
-        await this.bedRepo.save(bed);
+        expiredBeds.push(bed);
         this.logger.log(`Reservation expired on bed ${bed.bedNumber}`);
       }
+    }
+    if (expiredBeds.length > 0) {
+      await this.bedRepo.save(expiredBeds);
     }
   }
 

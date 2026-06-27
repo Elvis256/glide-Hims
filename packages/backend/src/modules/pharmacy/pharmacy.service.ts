@@ -1884,20 +1884,29 @@ export class PharmacyService {
 
     const warnings: InteractionWarning[] = [];
 
-    // Check all pairs using the drug_interactions table
+    // Batch-load all interactions for the drug set in a single query
+    // instead of O(N²) per-pair lookups.
+    const interactions = await this.drugInteractionRepo
+      .createQueryBuilder('di')
+      .where('di.drug_a_id IN (:...ids) AND di.drug_b_id IN (:...ids)', { ids: allCheckIds })
+      .andWhere('di.is_active = true')
+      .getMany();
+
+    // Build a lookup set for fast pair matching
+    const interactionMap = new Map<string, typeof interactions[0]>();
+    for (const ix of interactions) {
+      // Normalise key so (a,b) and (b,a) resolve to the same entry
+      const k1 = `${ix.drugAId}:${ix.drugBId}`;
+      const k2 = `${ix.drugBId}:${ix.drugAId}`;
+      if (!interactionMap.has(k1)) interactionMap.set(k1, ix);
+      if (!interactionMap.has(k2)) interactionMap.set(k2, ix);
+    }
+
     for (let i = 0; i < allCheckIds.length - 1; i++) {
       for (let j = i + 1; j < allCheckIds.length; j++) {
         const aId = allCheckIds[i];
         const bId = allCheckIds[j];
-
-        const interaction = await this.drugInteractionRepo
-          .createQueryBuilder('di')
-          .where(
-            '((di.drug_a_id = :a AND di.drug_b_id = :b) OR (di.drug_a_id = :b AND di.drug_b_id = :a))',
-            { a: aId, b: bId },
-          )
-          .andWhere('di.is_active = true')
-          .getOne();
+        const interaction = interactionMap.get(`${aId}:${bId}`);
 
         if (interaction) {
           const drug1Item = itemMap.get(aId) ?? historyItems.find((h) => h.id === aId);
@@ -1943,6 +1952,122 @@ export class PharmacyService {
         tenantId: dto.tenantId,
       } as any),
     );
+  }
+
+  // ─── Controlled Substance Register & Reconciliation ──────────────────────
+
+  /** List controlled substance logs (register) for a facility. */
+  async getControlledRegister(opts: {
+    facilityId: string;
+    tenantId?: string;
+    from?: string;
+    to?: string;
+    schedule?: string;
+    limit: number;
+    offset: number;
+  }) {
+    const qb = this.controlledLogRepo
+      .createQueryBuilder('log')
+      .leftJoinAndSelect('log.dispensedBy', 'dispensedBy')
+      .leftJoinAndSelect('log.witness', 'witness')
+      .where('log.facilityId = :facilityId', { facilityId: opts.facilityId });
+
+    if (opts.from) qb.andWhere('log.createdAt >= :from', { from: opts.from });
+    if (opts.to) qb.andWhere('log.createdAt <= :to', { to: opts.to });
+    if (opts.schedule) qb.andWhere('log.drugSchedule = :schedule', { schedule: opts.schedule });
+
+    const [data, total] = await qb
+      .orderBy('log.createdAt', 'DESC')
+      .skip(opts.offset)
+      .take(opts.limit)
+      .getManyAndCount();
+
+    return { data, total, limit: opts.limit, offset: opts.offset };
+  }
+
+  /** Compare physical counts against system stock balance for controlled items. */
+  async reconcileControlledSubstances(opts: {
+    facilityId: string;
+    tenantId?: string;
+    userId: string;
+    counts: { itemId: string; physicalCount: number }[];
+    notes?: string;
+  }) {
+    const itemIds = opts.counts.map((c) => c.itemId);
+    if (itemIds.length === 0) throw new BadRequestException('No items provided');
+
+    // Fetch controlled items with their system stock
+    const items = await this.inventoryRepo
+      .createQueryBuilder('i')
+      .where('i.id IN (:...ids)', { ids: itemIds })
+      .andWhere('i.isControlled = true')
+      .getMany();
+
+    const itemMap = new Map(items.map((i) => [i.id, i]));
+
+    // Fetch system stock balances for these items at this facility
+    const balances = await this.stockBalanceRepo
+      .createQueryBuilder('sb')
+      .where('sb.itemId IN (:...ids)', { ids: itemIds })
+      .andWhere('sb.facilityId = :facilityId', { facilityId: opts.facilityId })
+      .getMany();
+    const balanceMap = new Map(balances.map((b) => [b.itemId, Number(b.totalQuantity)]));
+
+    const variances: {
+      itemId: string;
+      itemName: string;
+      systemBalance: number;
+      physicalCount: number;
+      variance: number;
+      status: 'match' | 'shortage' | 'overage';
+    }[] = [];
+
+    for (const count of opts.counts) {
+      const item = itemMap.get(count.itemId);
+      if (!item) continue; // skip non-controlled or not-found
+
+      const systemBalance = balanceMap.get(count.itemId) || 0;
+      const variance = count.physicalCount - systemBalance;
+      variances.push({
+        itemId: count.itemId,
+        itemName: item.name,
+        systemBalance,
+        physicalCount: count.physicalCount,
+        variance,
+        status: variance === 0 ? 'match' : variance < 0 ? 'shortage' : 'overage',
+      });
+    }
+
+    // Log discrepancies to audit
+    const discrepancies = variances.filter((v) => v.status !== 'match');
+    if (discrepancies.length > 0) {
+      await this.auditLogRepo.save({
+        action: 'CONTROLLED_SUBSTANCE_RECONCILIATION',
+        entityType: 'controlled_substance_reconciliation',
+        userId: opts.userId,
+        tenantId: opts.tenantId,
+        newValue: {
+          facilityId: opts.facilityId,
+          notes: opts.notes,
+          discrepancies,
+          totalItems: variances.length,
+          matchCount: variances.length - discrepancies.length,
+        },
+      });
+      this.logger.warn(
+        `Controlled substance reconciliation: ${discrepancies.length} discrepancies found at facility ${opts.facilityId}`,
+      );
+    }
+
+    return {
+      reconciledAt: new Date().toISOString(),
+      facilityId: opts.facilityId,
+      totalItems: variances.length,
+      matches: variances.filter((v) => v.status === 'match').length,
+      shortages: variances.filter((v) => v.status === 'shortage').length,
+      overages: variances.filter((v) => v.status === 'overage').length,
+      items: variances,
+    };
   }
 }
 

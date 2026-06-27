@@ -565,16 +565,22 @@ export class IpdService {
       // Occupy new bed
       await manager.update(Bed, dto.toBedId, { status: BedStatus.OCCUPIED });
 
-      // Update ward bed counts
+      // Update ward bed counts — single aggregation query instead of 2N count queries
       const wardIds = fromWardId === dto.toWardId ? [fromWardId] : [fromWardId, dto.toWardId];
-      for (const wardId of wardIds) {
-        const totalBeds = await manager.count(Bed, {
-          where: { wardId, ...(tenantId ? { tenantId } : {}) },
+      const bedStats: { wardId: string; total: string; occupied: string }[] = await manager
+        .createQueryBuilder(Bed, 'b')
+        .select('b.wardId', 'wardId')
+        .addSelect('COUNT(*)::int', 'total')
+        .addSelect(`COUNT(*) FILTER (WHERE b.status = '${BedStatus.OCCUPIED}')::int`, 'occupied')
+        .where('b.wardId IN (:...wardIds)', { wardIds })
+        .andWhere(tenantId ? 'b.tenantId = :tenantId' : '1=1', tenantId ? { tenantId } : {})
+        .groupBy('b.wardId')
+        .getRawMany();
+      for (const stat of bedStats) {
+        await manager.update(Ward, stat.wardId, {
+          totalBeds: Number(stat.total),
+          occupiedBeds: Number(stat.occupied),
         });
-        const occupiedBeds = await manager.count(Bed, {
-          where: { wardId, status: BedStatus.OCCUPIED, ...(tenantId ? { tenantId } : {}) },
-        });
-        await manager.update(Ward, wardId, { totalBeds, occupiedBeds });
       }
 
       // Update admission

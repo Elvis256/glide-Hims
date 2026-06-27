@@ -10,6 +10,7 @@ import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Patient } from '../../database/entities/patient.entity';
+import { AuditLog } from '../../database/entities/audit-log.entity';
 import { Invoice } from '../../database/entities/invoice.entity';
 import { Appointment } from '../appointments/entities/appointment.entity';
 import { LabSample } from '../../database/entities/lab-sample.entity';
@@ -41,6 +42,7 @@ export class PatientPortalService {
 
   constructor(
     @InjectRepository(Patient) private readonly patients: Repository<Patient>,
+    @InjectRepository(AuditLog) private readonly auditLogs: Repository<AuditLog>,
     @InjectRepository(Invoice) private readonly invoices: Repository<Invoice>,
     @InjectRepository(Appointment) private readonly appointments: Repository<Appointment>,
     @InjectRepository(LabSample) private readonly labSamples: Repository<LabSample>,
@@ -128,18 +130,20 @@ export class PatientPortalService {
 
   // ─── Authenticated reads (called after PatientPortalGuard sets req.patientId) ──
 
-  async getMe(patientId: string) {
+  async getMe(patientId: string, ip?: string) {
     const patient = await this.patients.findOne({ where: { id: patientId } });
     if (!patient) throw new NotFoundException('Patient not found');
+    this.logAccess(patientId, 'patient_profile', 1, ip);
     return this.publicProfile(patient);
   }
 
-  async listAppointments(patientId: string) {
+  async listAppointments(patientId: string, ip?: string) {
     const rows = await this.appointments.find({
       where: { patientId },
       order: { appointmentDate: 'DESC', startTime: 'DESC' },
       take: 100,
     });
+    this.logAccess(patientId, 'appointments', rows.length, ip);
     return rows.map((a) => ({
       id: a.id,
       number: a.appointmentNumber,
@@ -153,12 +157,13 @@ export class PatientPortalService {
     }));
   }
 
-  async listInvoices(patientId: string) {
+  async listInvoices(patientId: string, ip?: string) {
     const rows = await this.invoices.find({
       where: { patientId },
       order: { createdAt: 'DESC' },
       take: 100,
     });
+    this.logAccess(patientId, 'invoices', rows.length, ip);
     return rows.map((i) => ({
       id: i.id,
       number: i.invoiceNumber,
@@ -171,7 +176,7 @@ export class PatientPortalService {
     }));
   }
 
-  async listLabResults(patientId: string) {
+  async listLabResults(patientId: string, ip?: string) {
     // Return only released/completed samples; other states are still in-process and
     // shouldn't be visible to patients without a clinician's interpretation.
     const rows = await this.labSamples
@@ -183,6 +188,7 @@ export class PatientPortalService {
       .orderBy('s.updatedAt', 'DESC')
       .limit(100)
       .getMany();
+    this.logAccess(patientId, 'lab_results', rows.length, ip);
     return rows.map((s: any) => ({
       id: s.id,
       sampleNumber: s.sampleNumber,
@@ -201,7 +207,7 @@ export class PatientPortalService {
     }));
   }
 
-  async listPrescriptions(patientId: string) {
+  async listPrescriptions(patientId: string, ip?: string) {
     const rows = await this.prescriptions
       .createQueryBuilder('p')
       .leftJoinAndSelect('p.items', 'items')
@@ -210,6 +216,7 @@ export class PatientPortalService {
       .orderBy('p.created_at', 'DESC')
       .limit(100)
       .getMany();
+    this.logAccess(patientId, 'prescriptions', rows.length, ip);
     return rows.map((p: any) => ({
       id: p.id,
       number: p.prescriptionNumber,
@@ -223,6 +230,22 @@ export class PatientPortalService {
         instructions: it.instructions,
       })),
     }));
+  }
+
+  // ─── audit ─────────────────────────────────────────────────────────────────
+
+  /** Fire-and-forget audit log for portal data access. */
+  private logAccess(patientId: string, resource: string, count: number, ip?: string): void {
+    this.auditLogs
+      .save({
+        action: 'PORTAL_VIEW',
+        entityType: resource,
+        entityId: patientId,
+        actorType: 'patient',
+        ipAddress: ip,
+        newValue: { resource, resultCount: count },
+      })
+      .catch((err) => this.logger.warn(`Portal audit log failed: ${err.message}`));
   }
 
   // ─── helpers ───────────────────────────────────────────────────────────────

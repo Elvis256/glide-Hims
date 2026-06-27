@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { MoreThanOrEqual, Repository } from 'typeorm';
+import { In, MoreThanOrEqual, Repository } from 'typeorm';
 import {
   DoctorFeeProfile,
   DoctorFeeMode,
@@ -47,6 +47,17 @@ export class DoctorFeesService {
     const where: any = { doctorId };
     if (tenantId) where.tenantId = tenantId;
     return this.profileRepo.findOne({ where });
+  }
+
+  /** Batch-fetch profiles for multiple doctors in a single query. */
+  async getProfiles(doctorIds: string[], tenantId?: string): Promise<Map<string, DoctorFeeProfile>> {
+    if (doctorIds.length === 0) return new Map();
+    const where: any = { doctorId: In(doctorIds) };
+    if (tenantId) where.tenantId = tenantId;
+    const profiles = await this.profileRepo.find({ where });
+    const map = new Map<string, DoctorFeeProfile>();
+    for (const p of profiles) map.set(p.doctorId, p);
+    return map;
   }
 
   async listProfiles(tenantId?: string): Promise<DoctorFeeProfile[]> {
