@@ -31,6 +31,7 @@ import {
   AdmissionQueryDto,
 } from './dto/ipd.dto';
 import { RequireModule } from '../auth/decorators/module.decorator';
+import { RequireFacilityAccess } from '../auth/decorators/facility-access.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -45,6 +46,7 @@ function validateUuid(id: string, fieldName = 'id'): void {
 @ApiBearerAuth()
 @UseGuards(ModuleGuard)
 @RequireModule('ipd')
+@RequireFacilityAccess()
 @Controller('ipd')
 export class IpdController {
   constructor(

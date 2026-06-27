@@ -444,7 +444,7 @@ export class LabService {
   async getSamples(
     query: SampleQueryDto,
     tenantId?: string,
-  ): Promise<{ data: LabSample[]; total: number }> {
+  ): Promise<{ data: LabSample[]; total: number; limit: number; offset: number }> {
     const qb = this.sampleRepo
       .createQueryBuilder('sample')
       .leftJoinAndSelect('sample.patient', 'patient')
@@ -471,9 +471,13 @@ export class LabService {
       });
     }
 
-    const [data, total] = await qb.orderBy('sample.createdAt', 'DESC').getManyAndCount();
+    const take = Math.min(query.limit || 50, 200);
+    const skip = query.offset || 0;
+    qb.orderBy('sample.createdAt', 'DESC').skip(skip).take(take);
 
-    return { data, total };
+    const [data, total] = await qb.getManyAndCount();
+
+    return { data, total, limit: take, offset: skip };
   }
 
   async getSample(id: string, tenantId?: string): Promise<LabSample> {
@@ -790,6 +794,29 @@ export class LabService {
       throw new BadRequestException(
         `referenceMin (${dto.referenceMin}) must be <= referenceMax (${dto.referenceMax}).`,
       );
+    }
+
+    // P1: reject physically impossible numeric values (negative or absurdly large).
+    // This catches data-entry typos (e.g. hemoglobin 500, glucose -10).
+    if (dto.numericValue !== undefined) {
+      if (dto.numericValue < 0) {
+        throw new BadRequestException(
+          `Numeric value (${dto.numericValue}) cannot be negative. Please verify the result.`,
+        );
+      }
+      // Absolute ceiling: no known lab parameter exceeds 1,000,000.
+      // Individual test configs can enforce tighter bounds via referenceMax/criticalHigh.
+      if (dto.numericValue > 1_000_000) {
+        throw new BadRequestException(
+          `Numeric value (${dto.numericValue}) exceeds maximum plausible range. Please verify the result.`,
+        );
+      }
+      // Warn (but don't block) if value is > 10x the reference max — likely a unit or decimal error.
+      if (dto.referenceMax !== undefined && dto.numericValue > dto.referenceMax * 10) {
+        this.logger.warn(
+          `enterResult: value ${dto.numericValue} is >10x reference max (${dto.referenceMax}) for sample ${sampleId}. Possible unit/decimal error.`,
+        );
+      }
     }
 
     // Wrap all status transitions and result save in a single transaction

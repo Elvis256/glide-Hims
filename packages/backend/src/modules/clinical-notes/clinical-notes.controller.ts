@@ -16,12 +16,14 @@ import { ClinicalNotesService } from './clinical-notes.service';
 import { CreateClinicalNoteDto, UpdateClinicalNoteDto } from './clinical-notes.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
+import { RequireFacilityAccess } from '../auth/decorators/facility-access.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('Clinical Notes')
 @ApiBearerAuth()
 @UseGuards(ModuleGuard)
 @RequireModule('doctors')
+@RequireFacilityAccess()
 @Controller('clinical-notes')
 export class ClinicalNotesController {
   constructor(private readonly notesService: ClinicalNotesService) {}

@@ -20,10 +20,12 @@ import {
   ReferralFilterDto,
 } from './dto/referral.dto';
 import { RequireModule } from '../auth/decorators/module.decorator';
+import { RequireFacilityAccess } from '../auth/decorators/facility-access.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
 
 @UseGuards(ModuleGuard)
 @RequireModule('doctors')
+@RequireFacilityAccess()
 @Controller('referrals')
 @UseGuards(AuthGuard('jwt'))
 export class ReferralsController {

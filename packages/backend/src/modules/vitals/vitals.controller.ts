@@ -16,12 +16,14 @@ import { VitalsService } from './vitals.service';
 import { CreateVitalDto, UpdateVitalDto } from './vitals.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
+import { RequireFacilityAccess } from '../auth/decorators/facility-access.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('Vitals')
 @ApiBearerAuth()
 @UseGuards(ModuleGuard)
 @RequireModule('nursing')
+@RequireFacilityAccess()
 @Controller('vitals')
 export class VitalsController {
   constructor(private readonly vitalsService: VitalsService) {}

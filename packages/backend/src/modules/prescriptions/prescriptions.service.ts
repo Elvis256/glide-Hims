@@ -456,7 +456,7 @@ export class PrescriptionsService {
   ): Promise<Dispensation> {
     const item = await this.itemRepository.findOne({
       where: { id: dto.prescriptionItemId, ...(tenantId ? { tenantId } : {}) },
-      relations: ['prescription'],
+      relations: ['prescription', 'prescription.encounter'],
     });
 
     if (!item) {
@@ -468,14 +468,34 @@ export class PrescriptionsService {
       throw new BadRequestException(`Cannot dispense more than ${remainingQty} units`);
     }
 
-    // Server-derived price ONLY: never trust client-supplied unitPrice.
-    let resolvedPrice = 0;
+    // ─── Medication-safety check at dispense time ───────────────────────
     const inv = await this.inventoryRepo.findOne({
       where: [
         { code: item.drugCode, ...(tenantId ? { tenantId } : {}) },
         { name: ILike(`%${item.drugName}%`), ...(tenantId ? { tenantId } : {}) },
       ],
     });
+    if (inv) {
+      const patientId = (item.prescription?.encounter as any)?.patientId as string | undefined;
+      const safety = await this.medicationSafety.runSafetyChecks({
+        patientId,
+        drugIds: [inv.id],
+        lines: [{ drugId: inv.id, drugCode: item.drugCode, drugName: item.drugName, dose: item.dose, frequency: item.frequency }],
+        tenantId,
+      });
+      if (safety.blocked) {
+        const summary = safety.blockingAlerts.length > 0
+          ? safety.blockingAlerts.map(a => `${a.kind.toUpperCase()} (${a.severity}): ${a.description}`).join('; ')
+          : `Safety check degraded: ${safety.degradedReasons.join('; ')}`;
+        throw new BadRequestException(
+          `MEDICATION SAFETY BLOCK: ${summary}. Cannot dispense ${item.drugName}. Override at pharmacy POS required.`,
+        );
+      }
+    }
+    // ─── End medication-safety check ────────────────────────────────────
+
+    // Server-derived price ONLY: never trust client-supplied unitPrice.
+    let resolvedPrice = 0;
     if (inv) {
       resolvedPrice =
         Number((inv as any).retailPrice) ||
@@ -1296,7 +1316,6 @@ export class PrescriptionsService {
     prescriptionItemId: string,
     dto: AdministerMedicationDto,
     userId: string,
-
     tenantId?: string,
   ): Promise<MedicationAdministration> {
     const item = await this.itemRepository.findOne({
@@ -1304,6 +1323,23 @@ export class PrescriptionsService {
       relations: ['prescription'],
     });
     if (!item) throw new NotFoundException('Prescription item not found');
+
+    // ─── Timestamp validation ───────────────────────────────────────────
+    const now = new Date();
+    const administeredAt = dto.administeredAt ? new Date(dto.administeredAt) : now;
+    if (isNaN(administeredAt.getTime())) {
+      throw new BadRequestException('Invalid administeredAt timestamp');
+    }
+    if (administeredAt > now) {
+      throw new BadRequestException('Cannot record medication administration in the future');
+    }
+    const MAX_BACKDATE_MS = 24 * 60 * 60 * 1000; // 24 hours
+    if (now.getTime() - administeredAt.getTime() > MAX_BACKDATE_MS) {
+      throw new BadRequestException(
+        'Cannot backdate medication administration more than 24 hours. Contact a supervisor for corrections.',
+      );
+    }
+    // ─── End timestamp validation ───────────────────────────────────────
 
     if (dto.witnessId) {
       await this.identityGuard.assertWitness({
@@ -1319,7 +1355,7 @@ export class PrescriptionsService {
       prescriptionItemId: item.id,
       administeredById: userId,
       witnessId: dto.witnessId,
-      administeredAt: dto.administeredAt ? new Date(dto.administeredAt) : new Date(),
+      administeredAt,
       doseGiven: dto.doseGiven,
       routeOfAdministration: dto.routeOfAdministration,
       notes: dto.notes,

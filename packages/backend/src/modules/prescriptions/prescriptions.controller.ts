@@ -30,11 +30,13 @@ import {
 import { AuthWithPermissions, AuthWithOwnership } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
+import { RequireFacilityAccess } from '../auth/decorators/facility-access.decorator';
 
 @ApiTags('Prescriptions')
 @ApiBearerAuth()
 @UseGuards(ModuleGuard)
 @RequireModule('pharmacy')
+@RequireFacilityAccess()
 @Controller('prescriptions')
 export class PrescriptionsController {
   constructor(private readonly prescriptionsService: PrescriptionsService) {}

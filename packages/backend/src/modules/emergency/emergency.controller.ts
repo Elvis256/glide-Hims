@@ -22,6 +22,7 @@ import {
   EmergencyQueryDto,
 } from './dto/emergency.dto';
 import { RequireModule } from '../auth/decorators/module.decorator';
+import { RequireFacilityAccess } from '../auth/decorators/facility-access.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
 
 // UUID regex for validation
@@ -31,6 +32,7 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 @ApiBearerAuth()
 @UseGuards(ModuleGuard)
 @RequireModule('emergency')
+@RequireFacilityAccess()
 @Controller('emergency')
 export class EmergencyController {
   constructor(private readonly emergencyService: EmergencyService) {}
