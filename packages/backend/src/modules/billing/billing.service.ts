@@ -521,8 +521,9 @@ export class BillingService {
       search,
       patientMrn,
       page = 1,
-      limit = 20,
+      limit: rawLimit = 20,
     } = query;
+    const limit = Math.min(rawLimit, 200);
 
     const qb = this.invoiceRepository
       .createQueryBuilder('invoice')

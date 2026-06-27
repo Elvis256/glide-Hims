@@ -260,8 +260,9 @@ export class EncountersService {
       dateFrom,
       dateTo,
       page = 1,
-      limit = 20,
+      limit: rawLimit = 20,
     } = query;
+    const limit = Math.min(rawLimit, 200);
 
     const qb = this.encounterRepository
       .createQueryBuilder('encounter')

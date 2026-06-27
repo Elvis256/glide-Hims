@@ -24,11 +24,13 @@ import {
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { DiagnosisCategory } from '../../database/entities/diagnosis.entity';
 import { RequireModule } from '../auth/decorators/module.decorator';
+import { RequireFacilityAccess } from '../auth/decorators/facility-access.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('diagnoses')
 @UseGuards(ModuleGuard)
 @RequireModule('doctors')
+@RequireFacilityAccess()
 @Controller('diagnoses')
 export class DiagnosesController {
   constructor(

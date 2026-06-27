@@ -242,6 +242,19 @@ export class SampleQueryDto {
   @IsDateString()
   @IsOptional()
   toDate?: string;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  @Max(200)
+  @IsOptional()
+  limit?: number;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  offset?: number;
 }
 
 // Result DTOs

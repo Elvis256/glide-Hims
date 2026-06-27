@@ -23,6 +23,7 @@ import {
 } from './encounters.dto';
 import { AuthWithPermissions, AuthWithOwnership } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
+import { RequireFacilityAccess } from '../auth/decorators/facility-access.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
 import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
 
@@ -30,6 +31,7 @@ import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
 @ApiBearerAuth()
 @UseGuards(ModuleGuard, TenantContextGuard)
 @RequireModule('doctors')
+@RequireFacilityAccess()
 @Controller('encounters')
 export class EncountersController {
   constructor(private readonly encountersService: EncountersService) {}

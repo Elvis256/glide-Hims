@@ -489,6 +489,13 @@ export default function NewConsultationPage() {
 
   // Auto-save timer ref
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const draftRecoveryDismissed = useRef(false);
+
+  // localStorage draft key (scoped to patient if available)
+  const getDraftKey = useCallback(
+    (patientId?: string) => `glide_consultation_draft_${patientId || 'new'}`,
+    [],
+  );
 
   const [form, setForm] = useState<ConsultationForm>({
     chiefComplaint: '',
@@ -532,6 +539,80 @@ export default function NewConsultationPage() {
   const urlPatientId = searchParams.get('patientId');
   const urlEncounterId = searchParams.get('encounterId');
   const effectiveEncounterId = encounterId || urlEncounterId;
+
+  // --- localStorage draft auto-save (protects against browser crash / accidental close) ---
+  // Save form to localStorage every 15s when there is meaningful content
+  useEffect(() => {
+    const patientId = selectedPatient?.patientId || urlPatientId;
+    const key = getDraftKey(patientId || undefined);
+    const hasContent = !!(
+      form.chiefComplaint || form.historyOfPresentIllness ||
+      form.clinicalImpression || form.diagnoses.length > 0
+    );
+    if (!hasContent) return;
+
+    const timer = setInterval(() => {
+      try {
+        localStorage.setItem(key, JSON.stringify({ form, savedAt: Date.now() }));
+      } catch { /* storage full — ignore */ }
+    }, 15_000);
+
+    // Also save on beforeunload
+    const onUnload = () => {
+      try { localStorage.setItem(key, JSON.stringify({ form, savedAt: Date.now() })); } catch {}
+    };
+    window.addEventListener('beforeunload', onUnload);
+
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('beforeunload', onUnload);
+    };
+  }, [form, selectedPatient?.patientId, urlPatientId, getDraftKey]);
+
+  // Recover draft on patient selection (only if no encounter loaded yet)
+  useEffect(() => {
+    if (encounterId || draftRecoveryDismissed.current) return;
+    const patientId = selectedPatient?.patientId || urlPatientId;
+    if (!patientId) return;
+    const key = getDraftKey(patientId);
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return;
+      const { form: savedForm, savedAt } = JSON.parse(raw) as { form: ConsultationForm; savedAt: number };
+      // Only offer recovery if draft is less than 24 hours old
+      if (Date.now() - savedAt > 24 * 60 * 60 * 1000) {
+        localStorage.removeItem(key);
+        return;
+      }
+      const ago = Math.round((Date.now() - savedAt) / 60_000);
+      const label = ago < 1 ? 'less than a minute' : ago < 60 ? `${ago} minute(s)` : `${Math.round(ago / 60)} hour(s)`;
+      toast(`Unsaved consultation draft found (${label} ago)`, {
+        duration: 15_000,
+        action: {
+          label: 'Restore',
+          onClick: () => {
+            setForm(prev => ({
+              ...prev,
+              ...savedForm,
+              reviewOfSystems: savedForm.reviewOfSystems?.length ? savedForm.reviewOfSystems : prev.reviewOfSystems,
+              physicalExam: savedForm.physicalExam?.length ? savedForm.physicalExam : prev.physicalExam,
+            }));
+            toast.success('Draft restored');
+          },
+        },
+        cancel: {
+          label: 'Discard',
+          onClick: () => {
+            localStorage.removeItem(key);
+            draftRecoveryDismissed.current = true;
+          },
+        },
+      });
+    } catch {
+      // corrupt draft — remove it
+      localStorage.removeItem(getDraftKey(patientId));
+    }
+  }, [selectedPatient?.patientId, urlPatientId, encounterId, getDraftKey]);
 
   // Fetch waiting patients from queue
   const { data: waitingPatients = [], isLoading } = useQuery({
@@ -1303,6 +1384,11 @@ export default function NewConsultationPage() {
         }
       }
       toast.success(msg);
+      // Clear localStorage draft on successful completion
+      const patientId = selectedPatient?.patientId || urlPatientId;
+      if (patientId) {
+        try { localStorage.removeItem(getDraftKey(patientId)); } catch {}
+      }
       // Close any open disposition modal
       setAdmitModalOpen(false);
       setReferralModalOpen(false);

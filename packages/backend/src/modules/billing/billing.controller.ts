@@ -28,11 +28,13 @@ import {
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
+import { RequireFacilityAccess } from '../auth/decorators/facility-access.decorator';
 
 @ApiTags('Billing')
 @ApiBearerAuth()
 @UseGuards(ModuleGuard)
 @RequireModule('billing')
+@RequireFacilityAccess()
 @Controller('billing')
 export class BillingController {
   constructor(private readonly billingService: BillingService) {}
