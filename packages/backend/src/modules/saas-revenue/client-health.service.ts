@@ -22,7 +22,18 @@ export class ClientHealthService {
   ) {}
 
   async listHealthScores() {
-    return this.scores.find({ order: { overallScore: 'ASC' } });
+    const rows = await this.scores.find({ order: { overallScore: 'ASC' } });
+    if (rows.length === 0) return [];
+
+    // Enrich with tenant names
+    const tenantIds = [...new Set(rows.map((r) => r.tenantId))];
+    const tenantEntities = await this.tenants.find({
+      where: tenantIds.map((id) => ({ id })),
+      select: ['id', 'name', 'slug'],
+    });
+    const tmap = new Map(tenantEntities.map((t) => [t.id, { id: t.id, name: t.name, slug: t.slug }]));
+
+    return rows.map((r) => ({ ...r, tenant: tmap.get(r.tenantId) ?? null }));
   }
 
   async getHealthScore(tenantId: string): Promise<ClientHealthScore> {
@@ -66,8 +77,9 @@ export class ClientHealthService {
     const sub = subscriptionId ? await this.subs.findOne({ where: { id: subscriptionId } }) : null;
     const usageScore = sub?.status === 'active' ? 80 : sub?.status === 'past_due' ? 40 : 20;
 
-    // Deployment score: based on deployment status and last health check
-    let deploymentScore = 75; // default if no deployments
+    // Deployment score: based on deployment status and last health check.
+    // Tenants with no deployments or only pending deployments get a neutral default.
+    let deploymentScore = 75; // default if no deployments or all pending
     const tenantDeployments = await this.deployments.find({ where: { tenantId } });
     if (tenantDeployments.length > 0) {
       let activeCount = 0;
@@ -81,9 +93,13 @@ export class ClientHealthService {
           }
         }
       }
-      const activeRatio = activeCount / tenantDeployments.length;
-      const healthyRatio = activeCount > 0 ? healthyCount / activeCount : 0;
-      deploymentScore = Math.round(activeRatio * 50 + healthyRatio * 50);
+      // Only score deployments if at least one has been activated;
+      // all-pending means setup is still in progress — use neutral default.
+      if (activeCount > 0) {
+        const activeRatio = activeCount / tenantDeployments.length;
+        const healthyRatio = healthyCount / activeCount;
+        deploymentScore = Math.round(activeRatio * 50 + healthyRatio * 50);
+      }
     }
 
     // Support score: default (would pull from support requests)

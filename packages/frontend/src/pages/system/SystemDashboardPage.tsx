@@ -86,14 +86,6 @@ export default function SystemDashboardPage() {
         }
       }
 
-      // Subscriptions
-      if (results[3].status === 'fulfilled' && results[3].value.data) {
-        const subData = results[3].value.data;
-        if (subData.stats) {
-          s.subscriptions = subData.stats;
-        }
-      }
-
       // Support requests
       if (results[5].status === 'fulfilled') {
         const pendingData = results[5].value.data;
@@ -101,11 +93,18 @@ export default function SystemDashboardPage() {
         s.support.pending = pendingList.length;
       }
 
-      // Revenue
+      // Revenue + Subscription counts (from /saas-revenue/dashboard)
       if (results[6].status === 'fulfilled' && results[6].value.data) {
         const rev = results[6].value.data;
         if (rev.mrr != null) s.revenue.mrr = rev.mrr;
         if (rev.currency) s.revenue.currency = rev.currency;
+        if (rev.counts) {
+          s.subscriptions = {
+            active: rev.counts.active ?? 0,
+            pastDue: rev.counts.pastDue ?? 0,
+            trial: rev.counts.trial ?? 0,
+          };
+        }
       }
 
       setStats(s);

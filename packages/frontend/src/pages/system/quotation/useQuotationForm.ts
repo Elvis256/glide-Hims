@@ -43,6 +43,8 @@ export interface QuotationFormState {
   internalNotes: string;
   leadId: string;
   planId: string;
+  deploymentType: string;
+  deploymentDomain: string;
 }
 
 export interface CompanyInfo {
@@ -86,6 +88,7 @@ export function useQuotationForm(id: string | undefined) {
     includeVat: true, vatRatePercent: 18, deductWht: false, whtRatePercent: 6,
     discountPercent: 0, discountFixedMinor: 0,
     validUntil: buildExpiryIso(), notes: '', internalNotes: '', leadId: '', planId: '',
+    deploymentType: 'hybrid', deploymentDomain: '',
   });
   const [lines, setLines] = useState<QuoteLine[]>([createLine()]);
   const [includeTraining, setIncludeTraining] = useState(false);
@@ -147,6 +150,8 @@ export function useQuotationForm(id: string | undefined) {
         internalNotes: q.internalNotes || '',
         leadId: q.leadId || '',
         planId: q.planId || '',
+        deploymentType: q.deploymentType || 'hybrid',
+        deploymentDomain: q.deploymentDomain || '',
       });
       const currentRev = q.revisions?.find((r) => r.revisionNumber === q.currentRevisionNumber);
       if (currentRev) {
@@ -294,7 +299,9 @@ export function useQuotationForm(id: string | undefined) {
   // -----------------------------------------------------------------------
 
   const buildPayload = () => {
-    const apiLines = lines.map((l) => ({
+    // Filter out empty/incomplete lines before sending to backend
+    const validLines = lines.filter((l) => l.description && l.quantity >= 1);
+    const apiLines = validLines.map((l) => ({
       catalogItemId: l.catalogItemId, moduleId: l.moduleId || undefined,
       description: l.description, quantity: l.quantity,
       unitPriceMinor: l.unitPrice, category: l.category || 'module',
@@ -307,7 +314,11 @@ export function useQuotationForm(id: string | undefined) {
         category: 'training',
       });
     }
-    return { ...form, lineItems: apiLines };
+    const payload: Record<string, any> = { ...form, lineItems: apiLines };
+    // Strip empty strings for optional UUID fields — backend rejects '' as invalid UUID
+    if (!payload.leadId) delete payload.leadId;
+    if (!payload.planId) delete payload.planId;
+    return payload;
   };
 
   // -----------------------------------------------------------------------
@@ -315,6 +326,11 @@ export function useQuotationForm(id: string | undefined) {
   // -----------------------------------------------------------------------
 
   const handleSave = async () => {
+    // Frontend validation
+    if (!form.clientName.trim()) { toast.error('Client name is required'); return; }
+    const validLines = lines.filter((l) => l.description && l.quantity >= 1);
+    if (validLines.length === 0) { toast.error('Add at least one line item with a description'); return; }
+
     setSaving(true);
     try {
       const payload = buildPayload();
@@ -329,7 +345,8 @@ export function useQuotationForm(id: string | undefined) {
         loadQuotation();
       }
     } catch (e: any) {
-      toast.error(e?.response?.data?.message || 'Failed to save');
+      const msg = e?.response?.data?.message;
+      toast.error(Array.isArray(msg) ? msg.join('. ') : (msg || 'Failed to save'));
     } finally { setSaving(false); }
   };
 
@@ -387,6 +404,32 @@ export function useQuotationForm(id: string | undefined) {
   };
 
   // -----------------------------------------------------------------------
+  // Print — auto-saves first if unsaved, then triggers browser print
+  // -----------------------------------------------------------------------
+
+  const handlePrint = async () => {
+    if (isNew && form.clientName) {
+      // Auto-save as draft before printing so it appears in quotations list
+      setSaving(true);
+      try {
+        const payload = buildPayload();
+        const r = await api.post('/saas-revenue/quotations', payload);
+        const q = unwrap<Quotation>(r);
+        toast.success('Quotation saved as draft');
+        navigate(`/system/quotations/${q.id}`, { replace: true });
+        // Small delay to let React update the URL/state, then print
+        setTimeout(() => window.print(), 500);
+      } catch (e: any) {
+        toast.error(e?.response?.data?.message || 'Failed to save before printing');
+        // Still allow printing even if save fails
+        window.print();
+      } finally { setSaving(false); }
+    } else {
+      window.print();
+    }
+  };
+
+  // -----------------------------------------------------------------------
   // Derived state
   // -----------------------------------------------------------------------
 
@@ -404,7 +447,7 @@ export function useQuotationForm(id: string | undefined) {
     // Actions
     updateLine, addLine, removeLine, applyModuleToLine, addQuotedModule,
     applyPresetPackage, handleSave, handleAction, handleDelete,
-    handleNewRevision, startRevising, cancelRevising,
+    handleNewRevision, startRevising, cancelRevising, handlePrint,
     resolvePrice, formatMoney,
   };
 }
