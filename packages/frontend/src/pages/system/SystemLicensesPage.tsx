@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { KeyRound, Loader2, Plus, RefreshCw, Ban, CalendarPlus, ShieldCheck, AlertCircle, Pencil, Pause, Play, Copy, Check } from 'lucide-react';
+import { KeyRound, Loader2, Plus, RefreshCw, Ban, CalendarPlus, ShieldCheck, AlertCircle, Pencil, Pause, Play, Copy, Check, RotateCw } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../../services/api';
 import TierBadge from '../../components/TierBadge';
@@ -36,6 +36,10 @@ const STATUS_BADGE: Record<string, string> = {
 
 function daysUntil(iso: string) {
   return Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000);
+}
+
+function isStandardKeyFormat(key: string) {
+  return /^GLIDE-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(key);
 }
 
 // Module catalog grouped for the Issue License modal. Names match the
@@ -224,6 +228,20 @@ export default function SystemLicensesPage() {
     }
   };
 
+  const onRotateKey = async (lic: License) => {
+    if (!confirm(`Rotate license key for ${lic.organizationName}? The old key will be revoked and a new standard-format key issued. Any deployment using the old key must be updated.`)) return;
+    setStatusActionId(lic.id);
+    try {
+      const res = await api.post(`/license/${lic.licenseKey}/rotate`);
+      toast.success(`Key rotated. New key: ${res.data?.newKey || 'see list'}`);
+      await load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Rotate failed');
+    } finally {
+      setStatusActionId(null);
+    }
+  };
+
   const onReactivate = async (lic: License) => {
     setStatusActionId(lic.id);
     try {
@@ -337,7 +355,15 @@ export default function SystemLicensesPage() {
                       {days < 0 ? `expired ${-days}d ago` : `${days}d left`}
                     </div>
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs text-gray-600">{l.licenseKey}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-gray-600">
+                    {l.licenseKey}
+                    {!isStandardKeyFormat(l.licenseKey) && (
+                      <div className="flex items-center gap-1 mt-1 text-amber-600">
+                        <AlertCircle className="w-3 h-3" />
+                        <span className="text-[10px] font-sans">Non-standard format — rotate recommended</span>
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-right">
                     <div className="inline-flex flex-wrap gap-1 justify-end">
                       <button
@@ -348,6 +374,17 @@ export default function SystemLicensesPage() {
                         {copiedId === l.id ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
                         {copiedId === l.id ? 'Copied' : 'Copy key'}
                       </button>
+                      {!isStandardKeyFormat(l.licenseKey) && l.status !== 'revoked' && (
+                        <button
+                          onClick={() => onRotateKey(l)}
+                          disabled={statusActionId === l.id}
+                          className="inline-flex items-center gap-1 px-2 py-1 text-xs text-amber-700 border border-amber-200 rounded hover:bg-amber-50 disabled:opacity-30"
+                          title="Rotate to standard GLIDE-XXXX format"
+                        >
+                          {statusActionId === l.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCw className="w-3.5 h-3.5" />}
+                          Rotate Key
+                        </button>
+                      )}
                       <button
                         onClick={() => setEditing(l)}
                         disabled={l.status === 'revoked'}

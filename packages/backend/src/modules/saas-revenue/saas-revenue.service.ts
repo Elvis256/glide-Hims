@@ -47,6 +47,7 @@ const TIER_TO_LICENSE: Record<string, License['licenseType']> = {
 };
 
 import { SaasMailerService } from './saas-mailer.service';
+import { fmtMoney } from './currency-utils';
 import { FlutterwaveService } from './flutterwave.service';
 import { PesapalService } from './pesapal.service';
 import { WebhookDispatcherService, WebhookEventType, WEBHOOK_EVENT_TYPES } from './webhook-dispatcher.service';
@@ -167,6 +168,22 @@ export class SaasRevenueService {
     private readonly webhooks: WebhookDispatcherService,
     private readonly settings: SystemSettingsService,
   ) {}
+
+  /**
+   * Resolve the best email for a subscription: billingEmail → tenant admin email fallback.
+   */
+  private async resolveBillingEmail(sub: SaasSubscription): Promise<string | null> {
+    if (sub.billingEmail) return sub.billingEmail;
+    try {
+      const rows = await this.tenants.manager.query(
+        `SELECT email FROM users WHERE tenant_id = $1 AND deleted_at IS NULL AND status = 'active' ORDER BY created_at LIMIT 1`,
+        [sub.tenantId],
+      );
+      return rows?.[0]?.email ?? null;
+    } catch {
+      return null;
+    }
+  }
 
   // ============================================================
   // VENDOR BILLING SETTINGS (system-wide, tenantId NULL)
@@ -1024,9 +1041,10 @@ export class SaasRevenueService {
     sub.lastInvoicedAt = new Date();
     await this.subs.save(sub);
     await this.recordEvent(sub.id, 'invoice_issued', `Invoice ${invoiceNumber} issued for ${this.fmtMoney(invTotal, billingCcy)}${fxApplied ? ` (FX ${sourceCcy}→${billingCcy})` : ''}`, { invoiceId: saved.id, fxApplied, fxRate, sourceCcy, billingCcy }, actorId);
-    if (sub.billingEmail) {
+    const invoiceTo = await this.resolveBillingEmail(sub);
+    if (invoiceTo) {
       const plan = await this.plans.findOne({ where: { id: sub.planId } });
-      this.mailer.sendInvoiceIssued(sub.billingEmail, saved, plan ?? undefined).catch(() => {});
+      this.mailer.sendInvoiceIssued(invoiceTo, saved, plan ?? undefined).catch(() => {});
     }
     this.webhooks.enqueue(sub.tenantId, 'invoice.issued', {
       invoiceId: saved.id, invoiceNumber, subscriptionId: sub.id,
@@ -1109,7 +1127,8 @@ export class SaasRevenueService {
     }
     await this.recordEvent(sub.id, 'payment_recorded', `Payment ${this.fmtMoney(dto.amountMinor, inv.currency)} via ${dto.gateway ?? 'manual'}`, { paymentId: savedPay.id, invoiceId: inv.id }, actorId);
     await this.syncLicenseFromSubscription(sub.id);
-    if (sub.billingEmail) this.mailer.sendPaymentReceipt(sub.billingEmail, savedPay, inv).catch(() => {});
+    const receiptTo = await this.resolveBillingEmail(sub);
+    if (receiptTo) this.mailer.sendPaymentReceipt(receiptTo, savedPay, inv).catch(() => {});
     this.webhooks.enqueue(sub.tenantId, 'payment.recorded', {
       paymentId: savedPay.id, invoiceId: inv.id, subscriptionId: sub.id,
       amountMinor: savedPay.amountMinor, currency: savedPay.currency, gateway: savedPay.gateway, method: savedPay.method,
@@ -1601,7 +1620,8 @@ export class SaasRevenueService {
         sub.lastDunningAt = now;
         await this.subs.save(sub);
         await this.recordEvent(sub.id, 'past_due', `Invoice ${inv.invoiceNumber} ${daysOverdue}d overdue`);
-        if (sub.billingEmail) this.mailer.sendDunning(sub.billingEmail, sub, inv, daysOverdue).catch(() => {});
+        const to = await this.resolveBillingEmail(sub);
+        this.mailer.sendDunning(to, sub, inv, daysOverdue).catch(() => {});
       } else if (
         sub.status === 'past_due' &&
         daysOverdue > rules.graceDays &&
@@ -1614,7 +1634,8 @@ export class SaasRevenueService {
         if (hoursSinceLastSent >= 23) {
           sub.lastDunningAt = now;
           await this.subs.save(sub);
-          if (sub.billingEmail) this.mailer.sendDunning(sub.billingEmail, sub, inv, daysOverdue).catch(() => {});
+          const to = await this.resolveBillingEmail(sub);
+          this.mailer.sendDunning(to, sub, inv, daysOverdue).catch(() => {});
         }
       }
       // Auto-churn at churnAfterDays past due.
@@ -1632,9 +1653,8 @@ export class SaasRevenueService {
           invoiceId: inv.id,
           invoiceNumber: inv.invoiceNumber,
         });
-        if (sub.billingEmail) {
-          this.mailer.sendDunning(sub.billingEmail, sub, inv, daysOverdue).catch(() => {});
-        }
+        const to = await this.resolveBillingEmail(sub);
+        this.mailer.sendDunning(to, sub, inv, daysOverdue).catch(() => {});
       }
     }
   }
@@ -1657,9 +1677,8 @@ export class SaasRevenueService {
         // Only send once per day by checking metadata
         const sentKey = `renewal_reminder_${days}d`;
         if (sub.metadata?.[sentKey]) continue;
-        if (sub.billingEmail) {
-          this.mailer.sendRenewalReminder(sub.billingEmail, sub, days).catch(() => {});
-        }
+        const reminderTo = await this.resolveBillingEmail(sub);
+        this.mailer.sendRenewalReminder(reminderTo, sub, days).catch(() => {});
         sub.metadata = { ...(sub.metadata || {}), [sentKey]: now.toISOString() };
         await this.subs.save(sub);
       }
@@ -1679,9 +1698,8 @@ export class SaasRevenueService {
       for (const sub of expiring) {
         const sentKey = `trial_ending_${days}d`;
         if (sub.metadata?.[sentKey]) continue;
-        if (sub.billingEmail) {
-          this.mailer.sendTrialEnding(sub.billingEmail, sub).catch(() => {});
-        }
+        const trialTo = await this.resolveBillingEmail(sub);
+        this.mailer.sendTrialEnding(trialTo, sub).catch(() => {});
         sub.metadata = { ...(sub.metadata || {}), [sentKey]: now.toISOString() };
         await this.subs.save(sub);
       }
@@ -1780,10 +1798,7 @@ export class SaasRevenueService {
     return Math.max(v, 0);
   }
   private fmtMoney(minor: number, currency: string) {
-    const zeroDecimal = new Set(['UGX','KES','TZS','RWF','JPY','KRW','VND','CLP','PYG']);
-    const divisor = zeroDecimal.has(currency) ? 1 : 100;
-    const fractionDigits = zeroDecimal.has(currency) ? 0 : 2;
-    return `${currency} ${(minor / divisor).toLocaleString(undefined, { minimumFractionDigits: fractionDigits })}`;
+    return fmtMoney(minor, currency);
   }
 
   // ============================================================
