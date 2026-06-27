@@ -37,6 +37,7 @@ import {
 } from 'lucide-react';
 import { queueService, type QueueEntry } from '../../services/queue';
 import { vitalsService } from '../../services/vitals';
+import { systemSettingsService } from '../../services/system-settings';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 import { announcePatientCall } from '../../utils/announcements';
@@ -90,8 +91,9 @@ const DISPOSITION_OPTIONS = [
   { value: 'pharmacy-only', label: 'Pharmacy Pickup', icon: AlertTriangle },
 ];
 
-/** Clinical thresholds for vital sign alerts */
-const VITAL_THRESHOLDS = {
+/** Default clinical thresholds for vital sign alerts — can be overridden via
+ *  system setting key `clinical.vital_thresholds` (per-tenant). */
+const DEFAULT_VITAL_THRESHOLDS = {
   temperature: { low: 35.5, criticalLow: 34, high: 38, criticalHigh: 40 },
   pulse: { low: 50, criticalLow: 40, high: 100, criticalHigh: 130 },
   bpSystolic: { low: 90, criticalLow: 70, high: 140, criticalHigh: 180 },
@@ -101,10 +103,11 @@ const VITAL_THRESHOLDS = {
   painScale: { low: 0, criticalLow: 0, high: 6, criticalHigh: 8 },
 };
 
+type VitalThresholds = typeof DEFAULT_VITAL_THRESHOLDS;
 type VitalAlert = 'critical' | 'warning' | 'normal';
 
-function getVitalAlert(key: keyof typeof VITAL_THRESHOLDS, value: number): VitalAlert {
-  const t = VITAL_THRESHOLDS[key];
+function getVitalAlert(key: keyof VitalThresholds, value: number, thresholds: VitalThresholds): VitalAlert {
+  const t = thresholds[key];
   if (value <= t.criticalLow || value >= t.criticalHigh) return 'critical';
   if (value < t.low || value > t.high) return 'warning';
   return 'normal';
@@ -244,6 +247,23 @@ export default function TriageQueuePage() {
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const previousQueueLengthRef = useRef(0);
   const audioContextRef = useRef<AudioContext | null>(null);
+
+  // Configurable vital thresholds — fetch tenant overrides, fall back to defaults
+  const { data: customThresholdsData } = useQuery({
+    queryKey: ['settings', 'clinical.vital_thresholds'],
+    queryFn: () => systemSettingsService.getByKey('clinical.vital_thresholds').then((r) => r.data),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const vitalThresholds = useMemo<typeof DEFAULT_VITAL_THRESHOLDS>(() => {
+    if (!customThresholdsData?.value) return DEFAULT_VITAL_THRESHOLDS;
+    const custom = customThresholdsData.value as Partial<typeof DEFAULT_VITAL_THRESHOLDS>;
+    const merged = { ...DEFAULT_VITAL_THRESHOLDS };
+    for (const key of Object.keys(merged) as (keyof typeof merged)[]) {
+      if (custom[key]) merged[key] = { ...merged[key], ...custom[key] };
+    }
+    return merged;
+  }, [customThresholdsData]);
 
   // Triage form state
   const [triageForm, setTriageForm] = useState({
@@ -941,7 +961,7 @@ export default function TriageQueuePage() {
                     <p className="text-xs text-blue-600 mb-2 font-medium">Vitals Recorded</p>
                     <div className="grid grid-cols-2 gap-1.5 text-sm">
                       {selectedPatient.vitals.temperature !== undefined && (() => {
-                        const level = getVitalAlert('temperature', selectedPatient.vitals!.temperature!);
+                        const level = getVitalAlert('temperature', selectedPatient.vitals!.temperature!, vitalThresholds);
                         return (
                           <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded border ${getVitalAlertClass(level)}`}>
                             <Thermometer className="w-3 h-3 flex-shrink-0" />
@@ -951,7 +971,7 @@ export default function TriageQueuePage() {
                         );
                       })()}
                       {selectedPatient.vitals.pulse !== undefined && (() => {
-                        const level = getVitalAlert('pulse', selectedPatient.vitals!.pulse!);
+                        const level = getVitalAlert('pulse', selectedPatient.vitals!.pulse!, vitalThresholds);
                         return (
                           <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded border ${getVitalAlertClass(level)}`}>
                             <Heart className="w-3 h-3 flex-shrink-0" />
@@ -961,7 +981,7 @@ export default function TriageQueuePage() {
                         );
                       })()}
                       {selectedPatient.vitals.bpSystolic !== undefined && (() => {
-                        const level = getVitalAlert('bpSystolic', selectedPatient.vitals!.bpSystolic!);
+                        const level = getVitalAlert('bpSystolic', selectedPatient.vitals!.bpSystolic!, vitalThresholds);
                         return (
                           <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded border ${getVitalAlertClass(level)}`}>
                             <Activity className="w-3 h-3 flex-shrink-0" />
@@ -971,7 +991,7 @@ export default function TriageQueuePage() {
                         );
                       })()}
                       {selectedPatient.vitals.oxygenSaturation !== undefined && (() => {
-                        const level = getVitalAlert('oxygenSaturation', selectedPatient.vitals!.oxygenSaturation!);
+                        const level = getVitalAlert('oxygenSaturation', selectedPatient.vitals!.oxygenSaturation!, vitalThresholds);
                         return (
                           <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded border ${getVitalAlertClass(level)}`}>
                             <Droplets className="w-3 h-3 flex-shrink-0" />
@@ -987,7 +1007,7 @@ export default function TriageQueuePage() {
                       { key: 'pulse' as const, val: selectedPatient.vitals.pulse },
                       { key: 'bpSystolic' as const, val: selectedPatient.vitals.bpSystolic },
                       { key: 'oxygenSaturation' as const, val: selectedPatient.vitals.oxygenSaturation },
-                    ].some(v => v.val !== undefined && getVitalAlert(v.key, v.val!) === 'critical') && (
+                    ].some(v => v.val !== undefined && getVitalAlert(v.key, v.val!, vitalThresholds) === 'critical') && (
                       <div className="mt-2 p-2 bg-red-100 border border-red-300 rounded text-xs text-red-700 font-semibold flex items-center gap-1">
                         <AlertCircle className="w-4 h-4" />
                         ⚠ CRITICAL VITALS — Escalate immediately

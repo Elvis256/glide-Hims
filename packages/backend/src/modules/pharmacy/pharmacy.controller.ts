@@ -428,4 +428,44 @@ export class PharmacyController {
       tenantId: req.user?.tenantId,
     });
   }
+
+  // ─── Controlled Substances ─────────────────────────────────────────────────
+
+  @Get('controlled/register')
+  @AuthWithPermissions('pharmacy.controlled.read')
+  @ApiOperation({ summary: 'List controlled substance dispensing/receipt logs for the current facility' })
+  getControlledRegister(
+    @Request() req: any,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('schedule') schedule?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    return this.service.getControlledRegister({
+      facilityId: req.user.facilityId,
+      tenantId: req.user?.tenantId,
+      from,
+      to,
+      schedule,
+      limit: Math.min(Number(limit) || 50, 200),
+      offset: Number(offset) || 0,
+    });
+  }
+
+  @Post('controlled/reconcile')
+  @AuthWithPermissions('pharmacy.controlled.reconcile')
+  @ApiOperation({ summary: 'Submit a physical count for controlled substances and receive a variance report' })
+  reconcileControlledSubstances(
+    @Body() body: { counts: { itemId: string; physicalCount: number }[]; notes?: string },
+    @Request() req: any,
+  ) {
+    return this.service.reconcileControlledSubstances({
+      facilityId: req.user.facilityId,
+      tenantId: req.user?.tenantId,
+      userId: req.user.id,
+      counts: body.counts,
+      notes: body.notes,
+    });
+  }
 }

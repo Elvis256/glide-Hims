@@ -68,7 +68,7 @@ export class PatientPortalController {
   @Get('me')
   @ApiOperation({ summary: 'Get the logged-in patient profile' })
   me(@Req() req: any) {
-    return this.service.getMe(req.patientId);
+    return this.service.getMe(req.patientId, req.ip);
   }
 
   @UseGuards(PatientPortalGuard)
@@ -76,7 +76,7 @@ export class PatientPortalController {
   @Get('appointments')
   @ApiOperation({ summary: "List the patient's appointments" })
   appointments(@Req() req: any) {
-    return this.service.listAppointments(req.patientId);
+    return this.service.listAppointments(req.patientId, req.ip);
   }
 
   @UseGuards(PatientPortalGuard)
@@ -84,7 +84,7 @@ export class PatientPortalController {
   @Get('invoices')
   @ApiOperation({ summary: "List the patient's invoices" })
   invoices(@Req() req: any) {
-    return this.service.listInvoices(req.patientId);
+    return this.service.listInvoices(req.patientId, req.ip);
   }
 
   @UseGuards(PatientPortalGuard)
@@ -92,7 +92,7 @@ export class PatientPortalController {
   @Get('lab-results')
   @ApiOperation({ summary: "List the patient's released lab results" })
   labResults(@Req() req: any) {
-    return this.service.listLabResults(req.patientId);
+    return this.service.listLabResults(req.patientId, req.ip);
   }
 
   @UseGuards(PatientPortalGuard)
@@ -100,6 +100,6 @@ export class PatientPortalController {
   @Get('prescriptions')
   @ApiOperation({ summary: "List the patient's prescriptions" })
   prescriptions(@Req() req: any) {
-    return this.service.listPrescriptions(req.patientId);
+    return this.service.listPrescriptions(req.patientId, req.ip);
   }
 }

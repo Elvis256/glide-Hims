@@ -1167,11 +1167,15 @@ export class QueueManagementService {
     if (queue.assignedDoctorId) candidates.push(queue.assignedDoctorId);
     if (callerUserId && !candidates.includes(callerUserId)) candidates.push(callerUserId);
 
-    for (const doctorId of candidates) {
-      const duty = await this.doctorDutyRepository.findOne({
-        where: { ...baseWhere, doctorId },
+    if (candidates.length > 0) {
+      const duties = await this.doctorDutyRepository.find({
+        where: { ...baseWhere, doctorId: In(candidates) },
       });
-      if (duty?.roomNumber) return duty.roomNumber;
+      // Prefer assignedDoctorId first, then callerUserId — respect original priority
+      for (const cId of candidates) {
+        const duty = duties.find((d) => d.doctorId === cId);
+        if (duty?.roomNumber) return duty.roomNumber;
+      }
     }
 
     if (queue.departmentId) {
@@ -2236,12 +2240,10 @@ export class QueueManagementService {
    */
   private async filterByWorkingDays(doctorIds: string[], tenantId?: string): Promise<string[]> {
     if (doctorIds.length === 0) return [];
-    const out: string[] = [];
-    for (const id of doctorIds) {
-      const profile = await this.doctorFeesService.getProfile(id, tenantId);
-      if (this.doctorFeesService.isWorkingToday(profile)) out.push(id);
-    }
-    return out;
+    const profileMap = await this.doctorFeesService.getProfiles(doctorIds, tenantId);
+    return doctorIds.filter((id) =>
+      this.doctorFeesService.isWorkingToday(profileMap.get(id) || null),
+    );
   }
 
   private async updateDoctorQueueCount(
