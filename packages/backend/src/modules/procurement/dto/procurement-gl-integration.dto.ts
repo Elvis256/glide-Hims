@@ -1,4 +1,5 @@
-import { IsString, IsNumber, IsDate, IsOptional, IsEnum, IsUUID, Min } from 'class-validator';
+import { IsString, IsNumber, IsDate, IsOptional, IsEnum, IsUUID, Min, Max, IsBoolean } from 'class-validator';
+import { MAX_MONEY, NUMBER_OPTS } from '../../../common/constants/validation.constants';
 
 export enum EncumbranceStatusType {
   ACTIVE = 'active',
@@ -36,8 +37,9 @@ export class EncumbranceDto {
   @IsUUID()
   departmentId: string;
 
+  @IsNumber(NUMBER_OPTS)
   @Min(0)
-  @IsNumber()
+  @Max(MAX_MONEY)
   amount: number;
 
   @IsOptional()
@@ -65,8 +67,9 @@ export class PostInvoiceToGLDto {
   @IsUUID()
   supplierId: string;
 
+  @IsNumber(NUMBER_OPTS)
   @Min(0)
-  @IsNumber()
+  @Max(MAX_MONEY)
   amount: number;
 
   @IsOptional()
@@ -88,22 +91,32 @@ export class ThreeWayMatchDto {
   @IsString()
   invoiceId: string;
 
-  @IsNumber()
+  @IsNumber(NUMBER_OPTS)
+  @Min(0)
+  @Max(MAX_MONEY)
   poAmount: number;
 
-  @IsNumber()
+  @IsNumber(NUMBER_OPTS)
+  @Min(0)
+  @Max(MAX_MONEY)
   grnAmount: number;
 
-  @IsNumber()
+  @IsNumber(NUMBER_OPTS)
+  @Min(-MAX_MONEY)
+  @Max(MAX_MONEY)
   variance: number;
 
   @IsOptional()
+  @IsString()
   varianceReason?: string;
 
+  @IsBoolean()
   quantitiesMatch: boolean;
 
+  @IsBoolean()
   amountsMatch: boolean;
 
+  @IsBoolean()
   isMatched: boolean;
 
   @IsEnum(MatchStatus)

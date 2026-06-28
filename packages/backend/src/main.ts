@@ -46,56 +46,16 @@ async function bootstrap() {
 
   const configService = app.get(ConfigService);
 
-  // Validate critical environment variables
-  const requiredEnvVars = [
-    'DB_HOST',
-    'DB_USERNAME',
-    'DB_PASSWORD',
-    'DB_NAME',
-    'JWT_SECRET',
-    'JWT_REFRESH_SECRET',
-  ];
-  for (const envVar of requiredEnvVars) {
-    if (!configService.get(envVar)) {
-      logger.error(`Missing required environment variable: ${envVar}`);
-      process.exit(1);
-    }
-  }
-
-  // Warn if MFA encryption key is missing — MFA features will fail at runtime
+  // Env validation is handled by ConfigModule + Joi schema (env.validation.ts).
+  // Warn for non-critical missing config that doesn't block startup.
   if (!configService.get('MFA_ENCRYPTION_KEY')) {
     logger.warn(
       'MFA_ENCRYPTION_KEY is not set — MFA enrollment/verification will fail. Set this variable to enable MFA support.',
     );
   }
-  const jwtSecret = configService.get<string>('JWT_SECRET', '');
   const isProduction = configService.get('NODE_ENV') === 'production';
-  if (isProduction) {
-    if (jwtSecret.length < 32) {
-      logger.error('JWT_SECRET must be at least 32 characters in production');
-      process.exit(1);
-    }
-    if (jwtSecret.includes('dev') || jwtSecret.includes('test') || jwtSecret.includes('xxx')) {
-      logger.error(
-        'JWT_SECRET appears to be a development value — use a cryptographically random secret in production',
-      );
-      process.exit(1);
-    }
-    if (!configService.get('MFA_ENCRYPTION_KEY')) {
-      logger.error('MFA_ENCRYPTION_KEY is required in production');
-      process.exit(1);
-    }
-    if (!configService.get('PII_ENCRYPTION_KEY')) {
-      logger.error('PII_ENCRYPTION_KEY is required in production for patient data encryption');
-      process.exit(1);
-    }
-    if (!configService.get('PII_HASH_KEY')) {
-      logger.error('PII_HASH_KEY is required in production for patient data lookup');
-      process.exit(1);
-    }
-    if (!configService.get('REDIS_PASSWORD')) {
-      logger.warn('REDIS_PASSWORD not set — Redis is unprotected');
-    }
+  if (isProduction && !configService.get('REDIS_PASSWORD')) {
+    logger.warn('REDIS_PASSWORD not set — Redis is unprotected');
   }
 
   // Security: Helmet HTTP headers

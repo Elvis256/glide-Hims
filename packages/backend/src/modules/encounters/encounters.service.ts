@@ -31,6 +31,7 @@ import { QueueManagementService } from '../queue-management/queue-management.ser
 import { InsuranceService } from '../insurance/insurance.service';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
 import { IdentityGuardService } from '../../common/services/identity-guard.service';
+import { StateMachine } from '../../common/fsm/state-machine';
 
 @Injectable()
 export class EncountersService {
@@ -386,8 +387,9 @@ export class EncountersService {
     return this.encounterRepository.save(encounter);
   }
 
-  // Valid status transitions
-  private static readonly VALID_TRANSITIONS: Partial<Record<EncounterStatus, EncounterStatus[]>> = {
+  // Encounter status FSM — defines all legal transitions.
+  // Terminal states (COMPLETED, DISCHARGED, CANCELLED) have no outgoing edges.
+  private static readonly statusFsm = new StateMachine<EncounterStatus>({
     [EncounterStatus.REGISTERED]: [
       EncounterStatus.TRIAGE,
       EncounterStatus.WAITING,
@@ -446,15 +448,10 @@ export class EncountersService {
     ],
     [EncounterStatus.ADMITTED]: [EncounterStatus.READY_FOR_DISCHARGE, EncounterStatus.DISCHARGED, EncounterStatus.CANCELLED],
     [EncounterStatus.READY_FOR_DISCHARGE]: [EncounterStatus.DISCHARGED, EncounterStatus.ADMITTED, EncounterStatus.CANCELLED],
-    // Terminal states: COMPLETED, DISCHARGED, CANCELLED — no transitions allowed
-  };
+  });
 
   private validateStatusTransition(current: EncounterStatus, target: EncounterStatus): void {
-    if (current === target) return; // Self-transition is a no-op, not an error
-    const allowed = EncountersService.VALID_TRANSITIONS[current];
-    if (!allowed || !allowed.includes(target)) {
-      throw new BadRequestException(`Cannot transition encounter from '${current}' to '${target}'`);
-    }
+    EncountersService.statusFsm.validate(current, target);
   }
 
   async updateStatus(

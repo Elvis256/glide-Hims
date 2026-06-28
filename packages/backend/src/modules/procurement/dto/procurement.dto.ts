@@ -14,6 +14,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PRPriority, PRStatus } from '../../../database/entities/purchase-request.entity';
+import { MAX_MONEY, MAX_QUANTITY, NUMBER_OPTS } from '../../../common/constants/validation.constants';
 import { POStatus } from '../../../database/entities/purchase-order.entity';
 import { GRNStatus } from '../../../database/entities/goods-receipt.entity';
 
@@ -35,8 +36,9 @@ export class CreatePRItemDto {
   quantityRequested: number;
 
   @IsOptional()
+  @IsNumber(NUMBER_OPTS)
   @Min(0)
-  @IsNumber()
+  @Max(MAX_MONEY)
   unitPriceEstimated?: number;
 
   @IsOptional()
@@ -148,10 +150,12 @@ export class CreatePOItemDto {
   itemUnit?: string;
 
   @IsPositive()
+  @Max(MAX_QUANTITY)
   quantityOrdered: number;
 
+  @IsNumber(NUMBER_OPTS)
   @Min(0)
-  @IsNumber()
+  @Max(MAX_MONEY)
   unitPrice: number;
 
   @IsOptional()
@@ -229,8 +233,9 @@ export class POFromPRItemPriceDto {
   @IsUUID()
   itemId: string;
 
+  @IsNumber(NUMBER_OPTS)
   @Min(0)
-  @IsNumber()
+  @Max(MAX_MONEY)
   unitPrice: number;
 }
 
@@ -292,16 +297,19 @@ export class CreateGRNItemDto {
   @IsString()
   itemUnit?: string;
 
+  @IsNumber(NUMBER_OPTS)
   @Min(0)
-  @IsNumber()
+  @Max(MAX_QUANTITY)
   quantityExpected: number;
 
+  @IsNumber(NUMBER_OPTS)
   @Min(0)
-  @IsNumber()
+  @Max(MAX_QUANTITY)
   quantityReceived: number;
 
+  @IsNumber(NUMBER_OPTS)
   @Min(0)
-  @IsNumber()
+  @Max(MAX_MONEY)
   unitCost: number;
 
   @IsOptional()
@@ -374,8 +382,9 @@ export class CreateGoodsReceiptDto {
   invoiceDate?: string;
 
   @IsOptional()
+  @IsNumber(NUMBER_OPTS)
   @Min(0)
-  @IsNumber()
+  @Max(MAX_MONEY)
   invoiceAmount?: number;
 
   @IsOptional()

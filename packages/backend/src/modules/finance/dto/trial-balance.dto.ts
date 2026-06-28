@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsUUID, IsNumber } from 'class-validator';
+import { IsString, IsOptional, IsUUID, IsNumber, IsIn, IsBoolean } from 'class-validator';
 
 /**
  * GetTrialBalanceQueryDto
@@ -8,7 +8,7 @@ export class GetTrialBalanceQueryDto {
   fiscalPeriodId: string;
 
   @IsOptional()
-  @IsString()
+  @IsIn(['json', 'csv', 'excel', 'pdf'])
   format?: 'json' | 'csv' | 'excel' | 'pdf';
 }
 
@@ -38,12 +38,12 @@ export class ExportTrialBalanceDto {
   @IsUUID()
   fiscalPeriodId: string;
 
-  @IsString()
-  format: 'csv' | 'excel' | 'pdf'; // csv, xlsx, pdf
+  @IsIn(['csv', 'excel', 'pdf'])
+  format: 'csv' | 'excel' | 'pdf';
 
   @IsOptional()
-  @IsString()
-  includeZeroBalance?: boolean; // Include accounts with zero balance
+  @IsBoolean()
+  includeZeroBalance?: boolean;
 }
 
 /**

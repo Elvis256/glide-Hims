@@ -103,6 +103,7 @@ import { BackupModule } from './modules/backup/backup.module';
 import { DeploymentsModule } from './modules/deployments/deployment.module';
 import { EfrisModule } from './modules/efris/efris.module';
 import { getDatabaseConfig } from './config/database.factory';
+import { envValidationSchema } from './config/env.validation';
 
 @Module({
   imports: [
@@ -110,6 +111,7 @@ import { getDatabaseConfig } from './config/database.factory';
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
+      validationSchema: envValidationSchema,
     }),
 
     // Event emitter (used for SaleCompleted, EFRIS submission requested, etc.)

@@ -24,6 +24,7 @@ import {
 import { ImagingModality } from '../../database/entities/imaging-modality.entity';
 import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
 import { QueueManagementService } from '../queue-management/queue-management.service';
+import { AuditLogService } from '../../common/interceptors/audit-log.service';
 
 @Injectable()
 export class OrdersService {
@@ -52,6 +53,7 @@ export class OrdersService {
     private inAppNotificationsService: InAppNotificationsService,
     private queueManagementService: QueueManagementService,
     private dataSource: DataSource,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   private async generateOrderNumber(orderType: OrderType): Promise<string> {
@@ -99,6 +101,15 @@ export class OrdersService {
     });
 
     const savedOrder = await this.orderRepository.save(order);
+
+    this.auditLogService.log({
+      action: 'CREATE_ORDER',
+      entityType: 'Order',
+      entityId: savedOrder.id,
+      userId,
+      tenantId,
+      newValue: { orderNumber, orderType: dto.orderType, status: OrderStatus.PENDING, encounterId: dto.encounterId },
+    }).catch(() => {});
 
     // Auto-create imaging_orders record for radiology orders
     if (dto.orderType === OrderType.RADIOLOGY) {
@@ -405,6 +416,17 @@ export class OrdersService {
     const updateWhere: any = { id };
     if (tenantId) updateWhere.tenantId = tenantId;
     await this.orderRepository.update(updateWhere, updateData);
+
+    this.auditLogService.log({
+      action: 'UPDATE_ORDER_STATUS',
+      entityType: 'Order',
+      entityId: id,
+      userId,
+      tenantId,
+      oldValue: { status: order.status },
+      newValue: { status: dto.status },
+    }).catch(() => {});
+
     return this.findById(id, tenantId);
   }
 
@@ -491,12 +513,25 @@ export class OrdersService {
       );
     }
 
+    const oldStatus = order.status;
     order.status = OrderStatus.CANCELLED;
     order.clinicalNotes = order.clinicalNotes
       ? `${order.clinicalNotes}\n\n[Cancelled]: ${reason}`
       : `[Cancelled]: ${reason}`;
 
-    return this.orderRepository.save(order);
+    const saved = await this.orderRepository.save(order);
+
+    this.auditLogService.log({
+      action: 'CANCEL_ORDER',
+      entityType: 'Order',
+      entityId: id,
+      userId,
+      tenantId,
+      oldValue: { status: oldStatus },
+      newValue: { status: OrderStatus.CANCELLED, reason },
+    }).catch(() => {});
+
+    return saved;
   }
 
   async reviewOrder(id: string, userId: string, tenantId?: string): Promise<Order> {

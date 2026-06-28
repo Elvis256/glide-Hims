@@ -6,9 +6,12 @@ import {
   IsNumber,
   IsEnum,
   IsBoolean,
+  Min,
+  Max,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PettyCashTransactionType } from '../../../database/entities/finance-extended.entity';
+import { MAX_MONEY, NUMBER_OPTS } from '../../../common/constants/validation.constants';
 
 export class CreatePettyCashFundDto {
   @ApiProperty()
@@ -20,7 +23,9 @@ export class CreatePettyCashFundDto {
   name: string;
 
   @ApiProperty()
-  @IsNumber()
+  @IsNumber(NUMBER_OPTS)
+  @Min(0)
+  @Max(MAX_MONEY)
   imprestAmount: number;
 
   @ApiProperty()
@@ -39,7 +44,9 @@ export class RecordTransactionDto {
   type: PettyCashTransactionType;
 
   @ApiProperty()
-  @IsNumber()
+  @IsNumber(NUMBER_OPTS)
+  @Min(0)
+  @Max(MAX_MONEY)
   amount: number;
 
   @ApiProperty()
@@ -69,7 +76,9 @@ export class RecordTransactionDto {
 
 export class ReplenishFundDto {
   @ApiProperty()
-  @IsNumber()
+  @IsNumber(NUMBER_OPTS)
+  @Min(0)
+  @Max(MAX_MONEY)
   amount: number;
 
   @ApiProperty()
