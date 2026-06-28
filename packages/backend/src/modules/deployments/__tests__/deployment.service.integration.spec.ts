@@ -165,7 +165,7 @@ describe('DeploymentService Integration Tests', () => {
         tenantId,
         name: dto.name,
         deploymentType: dto.type,
-        status: DeploymentStatus.ACTIVE,
+        status: DeploymentStatus.PENDING,
         apiEndpoint: dto.apiUrl,
         currentVersion: '1.0.0',
         createdAt: new Date(),
@@ -184,7 +184,7 @@ describe('DeploymentService Integration Tests', () => {
         tenantId,
         name: dto.name,
         deploymentType: dto.type,
-        status: DeploymentStatus.ACTIVE,
+        status: DeploymentStatus.PENDING,
       }));
       expect(mockDeploymentRepository.save).toHaveBeenCalled();
     });
