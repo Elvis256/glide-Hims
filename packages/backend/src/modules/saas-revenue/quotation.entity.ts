@@ -121,6 +121,11 @@ export class SaasQuotation {
   @Column({ type: 'uuid', nullable: true, name: 'subscription_id' }) subscriptionId: string | null;
   @Column({ type: 'uuid', nullable: true, name: 'contract_id' }) contractId: string | null;
 
+  // Deployment (auto-provisioned on acceptance)
+  @Column({ type: 'varchar', length: 20, nullable: true, name: 'deployment_type' }) deploymentType: string | null;
+  @Column({ type: 'varchar', length: 255, nullable: true, name: 'deployment_domain' }) deploymentDomain: string | null;
+  @Column({ type: 'uuid', nullable: true, name: 'deployment_id' }) deploymentId: string | null;
+
   // Notes
   @Column({ type: 'text', nullable: true }) notes: string | null;
   @Column({ type: 'text', nullable: true }) internalNotes: string | null;

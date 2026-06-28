@@ -11,12 +11,14 @@ import { SystemSetting } from '../../database/entities/system-setting.entity';
 import { Department } from '../../database/entities/department.entity';
 import { SystemSettingsModule } from '../system-settings/system-settings.module';
 import { SaasRevenueModule } from '../saas-revenue/saas-revenue.module';
+import { LicensingModule } from '../licensing/licensing.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Tenant, Facility, User, Role, UserRole, SystemSetting, Department]),
     SystemSettingsModule,
     SaasRevenueModule,
+    LicensingModule,
   ],
   controllers: [SetupController],
   providers: [SetupService],

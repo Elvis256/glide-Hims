@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
 import { authService } from '../services/auth';
+import { buildLoginPath } from '../lib/tenant';
 import {
   Building2,
   Users,
@@ -1445,7 +1446,7 @@ export default function DashboardLayout({ children }: LayoutProps) {
 
   const handleLogout = async () => {
     const kind = localStorage.getItem('glide_login_kind');
-    const tenantSlug = localStorage.getItem('glide_tenant_slug');
+    const savedSlug = localStorage.getItem('glide_tenant_slug');
     sessionStorage.removeItem('glide_active_tenant_id');
     sessionStorage.removeItem('glide_active_facility_id');
     localStorage.removeItem('glide_active_tenant_id');
@@ -1456,7 +1457,7 @@ export default function DashboardLayout({ children }: LayoutProps) {
     if (kind === 'system') {
       navigate('/system/login');
     } else {
-      navigate(tenantSlug ? `/login/${tenantSlug}` : '/login');
+      navigate(buildLoginPath(savedSlug));
     }
   };
 

@@ -22,6 +22,8 @@ import { InitializeSetupDto, RegisterTenantDto, InitializeTenantSetupDto } from 
 import { TenantsService } from '../tenants/tenants.service';
 import { SaasRevenueService } from '../saas-revenue/saas-revenue.service';
 import { SaasPlan } from '../saas-revenue/saas.entity';
+import { LicenseService } from '../licensing/license.service';
+import { License } from '../../database/entities/license.entity';
 import {
   FACILITY_PRESETS,
   FACILITY_MODES,
@@ -386,7 +388,75 @@ export class SetupService {
     private dataSource: DataSource,
     private configService: ConfigService,
     private readonly saasRevenue: SaasRevenueService,
+    private readonly licenseService: LicenseService,
   ) {}
+
+  /**
+   * Score each FACILITY_PRESET by overlap with a license's enabledModules.
+   * Returns the mode string of the best-matching preset, or undefined.
+   */
+  private suggestPreset(license: License): string | undefined {
+    const licenseModules = license.enabledModules;
+    if (!licenseModules || licenseModules.length === 0) return undefined;
+
+    const moduleSet = new Set(licenseModules);
+    let bestMode: string | undefined;
+    let bestScore = -1;
+
+    for (const preset of FACILITY_PRESETS) {
+      // Skip multi-site presets when license only allows 1 facility
+      if (preset.supportsMultiSite && license.maxFacilities === 1) continue;
+      // Skip single-user preset when license allows many users
+      if (preset.singleUserMode && license.maxUsers > 5) continue;
+
+      const overlap = preset.enabledModules.filter(m => moduleSet.has(m)).length;
+      const total = new Set([...preset.enabledModules, ...licenseModules]).size;
+      // Jaccard-like score: overlap / union
+      const score = total > 0 ? overlap / total : 0;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestMode = preset.mode;
+      }
+    }
+
+    return bestMode;
+  }
+
+  /**
+   * Build licenseDefaults from the first active license (hybrid/on-premise only).
+   * Returns undefined if no license found or on SaaS deployments.
+   */
+  private async getLicenseDefaults(deploymentMode: string): Promise<{
+    organizationName: string;
+    enabledModules: string[];
+    maxFacilities: number;
+    maxUsers: number;
+    licenseType: string;
+    suggestedPreset?: string;
+    features?: Record<string, boolean>;
+  } | undefined> {
+    if (deploymentMode === 'saas') return undefined;
+
+    try {
+      const licenses = await this.licenseService.listLicenses({ status: 'active' });
+      const license = licenses?.[0];
+      if (!license) return undefined;
+
+      return {
+        organizationName: license.organizationName,
+        enabledModules: license.enabledModules?.length ? license.enabledModules : [],
+        maxFacilities: license.maxFacilities,
+        maxUsers: license.maxUsers,
+        licenseType: license.licenseType,
+        suggestedPreset: this.suggestPreset(license),
+        features: license.features ?? undefined,
+      };
+    } catch (err) {
+      this.logger.warn('Failed to read license for setup defaults: ' + err.message);
+      return undefined;
+    }
+  }
 
   /**
    * Check if initial setup has been completed
@@ -398,6 +468,15 @@ export class SetupService {
     facilityName?: string;
     tenantSlug?: string;
     tenantCount?: number;
+    licenseDefaults?: {
+      organizationName: string;
+      enabledModules: string[];
+      maxFacilities: number;
+      maxUsers: number;
+      licenseType: string;
+      suggestedPreset?: string;
+      features?: Record<string, boolean>;
+    };
   }> {
     const deploymentMode = this.configService.get<string>('DEPLOYMENT_MODE', 'on-premise');
 
@@ -411,7 +490,8 @@ export class SetupService {
       });
 
       if (!tenant) {
-        return { isSetupComplete: false, deploymentMode, tenantCount: 0 };
+        const licenseDefaults = await this.getLicenseDefaults(deploymentMode);
+        return { isSetupComplete: false, deploymentMode, tenantCount: 0, licenseDefaults };
       }
 
       // Check if setup_complete setting exists
@@ -422,7 +502,8 @@ export class SetupService {
         });
       } catch (e) {
         // Table might not exist yet
-        return { isSetupComplete: false, deploymentMode, tenantCount };
+        const licenseDefaults = await this.getLicenseDefaults(deploymentMode);
+        return { isSetupComplete: false, deploymentMode, tenantCount, licenseDefaults };
       }
 
       // Get main facility
@@ -431,18 +512,23 @@ export class SetupService {
         order: { createdAt: 'ASC' },
       });
 
+      const isSetupComplete = setupSetting?.value === true;
+
       return {
-        isSetupComplete: setupSetting?.value === true,
+        isSetupComplete,
         deploymentMode,
         organizationName: tenant.name,
         facilityName: facility?.name,
         tenantSlug: tenant.slug,
         tenantCount,
+        // Only include license defaults when setup is incomplete
+        ...(!isSetupComplete ? { licenseDefaults: await this.getLicenseDefaults(deploymentMode) } : {}),
       };
     } catch (error) {
       // If tables don't exist yet, setup is not complete
       this.logger.log('Error checking setup status: ' + error.message);
-      return { isSetupComplete: false, deploymentMode, tenantCount: 0 };
+      const licenseDefaults = await this.getLicenseDefaults(deploymentMode);
+      return { isSetupComplete: false, deploymentMode, tenantCount: 0, licenseDefaults };
     }
   }
 

@@ -10,6 +10,8 @@ import { PhoneHomeRecord } from '../../database/entities/phone-home-record.entit
 import { License } from '../../database/entities/license.entity';
 import { AppVersion } from '../../database/entities/app-version.entity';
 import { Deployment, DeploymentStatus } from '../../database/entities/deployment.entity';
+import { UpdateRollout, UpdateRolloutStatus } from '../../database/entities/update-rollout.entity';
+import { UpdateClientService } from './update-client.service';
 
 export interface PhoneHomePayload {
   licenseKey: string;
@@ -30,6 +32,7 @@ export interface PhoneHomeResponse {
   updateAvailable?: boolean;
   latestVersion?: string;
   updateUrl?: string;
+  rolloutId?: string;
   commands?: string[];
 }
 
@@ -49,7 +52,10 @@ export class PhoneHomeService {
     private readonly versionRepository: Repository<AppVersion>,
     @InjectRepository(Deployment)
     private readonly deploymentRepository: Repository<Deployment>,
+    @InjectRepository(UpdateRollout)
+    private readonly rolloutRepository: Repository<UpdateRollout>,
     private readonly configService: ConfigService,
+    private readonly updateClientService: UpdateClientService,
   ) {
     this.phoneHomeUrl =
       this.configService.get<string>('PHONE_HOME_URL') ||
@@ -161,6 +167,24 @@ export class PhoneHomeService {
       ? this.compareVersions(payload.appVersion, latestVersion.version) < 0
       : false;
 
+    // Build source-bundle URL and find active rollout for this tenant
+    let updateUrl: string | undefined;
+    let rolloutId: string | undefined;
+
+    if (updateAvailable) {
+      // Always provide the license-gated source-bundle URL
+      const baseUrl = this.configService.get<string>('CONTROL_PLANE_URL') ||
+        'https://hmisdemo.itsolutionsuganda.com';
+      updateUrl =
+        latestVersion?.downloadUrl ||
+        `${baseUrl}/api/v1/deployments/source-bundle?licenseKey=${payload.licenseKey}`;
+
+      // Look up an active rollout for reporting purposes
+      if (license.tenantId) {
+        rolloutId = await this.findActiveRolloutId(license.tenantId);
+      }
+    }
+
     // Calculate expiry warning
     const daysUntilExpiry = Math.ceil(
       (license.expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24),
@@ -172,7 +196,8 @@ export class PhoneHomeService {
       message: daysUntilExpiry <= 30 ? `License expires in ${daysUntilExpiry} days` : undefined,
       updateAvailable,
       latestVersion: latestVersion?.version,
-      updateUrl: updateAvailable ? latestVersion?.downloadUrl : undefined,
+      updateUrl,
+      rolloutId,
     };
 
     return response;
@@ -275,18 +300,53 @@ export class PhoneHomeService {
 
     this.logger.log('Sending periodic phone home...');
 
-    // TODO: Get real stats from database
+    // Gather real usage stats from database
+    let activeUsers = 0;
+    let totalUsers = 0;
+    let totalPatients = 0;
+    let totalEncounters = 0;
+    try {
+      const mgr = this.recordRepository.manager;
+      const [userStats] = await mgr.query(
+        `SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE last_login_at > NOW() - INTERVAL '30 days') AS active FROM users`,
+      );
+      totalUsers = parseInt(userStats?.total || '0', 10);
+      activeUsers = parseInt(userStats?.active || '0', 10);
+      const [patientStats] = await mgr.query(`SELECT COUNT(*) AS total FROM patients`);
+      totalPatients = parseInt(patientStats?.total || '0', 10);
+      const [encounterStats] = await mgr.query(`SELECT COUNT(*) AS total FROM encounters`);
+      totalEncounters = parseInt(encounterStats?.total || '0', 10);
+    } catch {
+      // Tables may not exist; stats are optional
+    }
+
+    // Read version from package.json at runtime
+    let appVersion = '1.0.0';
+    try {
+      appVersion = require('../../../package.json').version || '1.0.0';
+    } catch { /* fallback */ }
+
     const payload: PhoneHomePayload = {
       licenseKey,
       hardwareId: this.getHardwareId(),
-      appVersion: '1.0.0', // TODO: Get from package.json
+      appVersion,
+      activeUsers,
+      totalUsers,
+      totalPatients,
+      totalEncounters,
       systemInfo: this.getSystemInfo(),
     };
 
     const response = await this.sendHeartbeat(payload);
 
-    if (response.updateAvailable) {
+    if (response.updateAvailable && response.latestVersion) {
       this.logger.log(`Update available: ${response.latestVersion}`);
+      // Notify the update client so it can auto-apply or store for admin
+      await this.updateClientService.handleUpdateAvailable({
+        version: response.latestVersion,
+        updateUrl: response.updateUrl || '',
+        rolloutId: response.rolloutId,
+      });
     }
 
     if (response.status === 'error') {
@@ -295,6 +355,28 @@ export class PhoneHomeService {
   }
 
   // ==================== Private Methods ====================
+
+  /**
+   * Find the most recent in-progress or scheduled rollout for a tenant's
+   * deployments so on-premise instances can report update progress.
+   */
+  private async findActiveRolloutId(tenantId: string): Promise<string | undefined> {
+    try {
+      // Deployments belong to a tenant; rollouts reference a release candidate.
+      // We look for any rollout that is currently active (in_progress or scheduled).
+      const rollout = await this.rolloutRepository
+        .createQueryBuilder('r')
+        .where('r.status IN (:...statuses)', {
+          statuses: [UpdateRolloutStatus.IN_PROGRESS, UpdateRolloutStatus.SCHEDULED],
+        })
+        .orderBy('r.created_at', 'DESC')
+        .getOne();
+
+      return rollout?.id;
+    } catch {
+      return undefined;
+    }
+  }
 
   private async getLatestVersion(): Promise<AppVersion | null> {
     return this.versionRepository.findOne({

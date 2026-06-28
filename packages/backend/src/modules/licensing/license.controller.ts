@@ -14,14 +14,20 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { ConfigService } from '@nestjs/config';
 import { LicenseService, GenerateLicenseDto } from './license.service';
+import { UpdateClientService } from './update-client.service';
 import { Auth } from '../auth/decorators/auth.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 
 @ApiTags('Licensing')
 @Controller('license')
 export class LicenseController {
-  constructor(private readonly licenseService: LicenseService) {}
+  constructor(
+    private readonly licenseService: LicenseService,
+    private readonly configService: ConfigService,
+    private readonly updateClientService: UpdateClientService,
+  ) {}
 
   private requireSystemAdmin(req: any) {
     if (!req.user?.isSystemAdmin) {
@@ -396,5 +402,107 @@ export class LicenseController {
     this.requireSystemAdmin(req);
     const license = await this.licenseService.bindToHardware(licenseKey, body.hardwareId);
     return { message: 'License bound to hardware', hardwareId: license.hardwareId };
+  }
+
+  // ==================== Offline License & Update Endpoints ====================
+
+  /**
+   * Export a license for offline / on-premise use. Returns all fields needed
+   * to bootstrap an on-premise installation including the secret key for
+   * local HMAC verification.
+   */
+  @Get(':key/export')
+  @Public()
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @ApiOperation({ summary: 'Export license for offline on-premise use' })
+  async exportLicense(@Param('key') key: string) {
+    const license = await this.licenseService.getLicense(key);
+    if (!license) {
+      throw new HttpException('License not found', HttpStatus.NOT_FOUND);
+    }
+    if (license.status !== 'active') {
+      throw new HttpException(`License is ${license.status}`, HttpStatus.FORBIDDEN);
+    }
+
+    return {
+      licenseKey: license.licenseKey,
+      organizationName: license.organizationName,
+      licenseType: license.licenseType,
+      maxUsers: license.maxUsers,
+      maxFacilities: license.maxFacilities,
+      enabledModules: license.enabledModules,
+      features: license.features,
+      status: license.status,
+      issuedAt: license.issuedAt,
+      expiresAt: license.expiresAt,
+      signature: license.signature,
+    };
+  }
+
+  /**
+   * Reissue (extend) a standalone license. Returns updated license data
+   * in the same format as the export endpoint for easy download.
+   */
+  @Post(':id/reissue')
+  @Auth()
+  @ApiOperation({ summary: 'Reissue / extend a standalone license' })
+  async reissueLicense(
+    @Param('id') id: string,
+    @Body() body: { extensionDays?: number },
+    @Request() req: any,
+  ) {
+    this.requireSystemAdmin(req);
+
+    const days = body?.extensionDays ?? 365;
+    if (days < 1 || days > 730) {
+      throw new HttpException('extensionDays must be between 1 and 730', HttpStatus.BAD_REQUEST);
+    }
+
+    // id can be either a licenseKey or uuid — try key first
+    let license = await this.licenseService.getLicense(id);
+    if (!license) {
+      throw new HttpException('License not found', HttpStatus.NOT_FOUND);
+    }
+
+    license = await this.licenseService.extendLicense(license.licenseKey, days);
+
+    return {
+      message: `License extended by ${days} days`,
+      license: {
+        licenseKey: license.licenseKey,
+        organizationName: license.organizationName,
+        licenseType: license.licenseType,
+        maxUsers: license.maxUsers,
+        maxFacilities: license.maxFacilities,
+        enabledModules: license.enabledModules,
+        features: license.features,
+        status: license.status,
+        issuedAt: license.issuedAt,
+        expiresAt: license.expiresAt,
+        signature: license.signature,
+      },
+    };
+  }
+
+  /**
+   * Trigger an update on the current on-premise instance. Only available
+   * when DEPLOYMENT_MODE is on-premise or hybrid. SystemAdmin only.
+   */
+  @Post('trigger-update')
+  @Auth()
+  @ApiOperation({ summary: 'Trigger on-premise update (on-premise/hybrid only)' })
+  async triggerUpdate(@Request() req: any) {
+    this.requireSystemAdmin(req);
+
+    const mode = this.configService.get<string>('DEPLOYMENT_MODE');
+    if (mode !== 'on-premise' && mode !== 'hybrid') {
+      throw new HttpException(
+        'Update trigger is only available on on-premise or hybrid deployments',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    this.updateClientService.triggerUpdate();
+    return { message: 'Update triggered', status: 'accepted' };
   }
 }

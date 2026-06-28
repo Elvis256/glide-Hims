@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import * as crypto from 'crypto';
+import { minorToMajor, majorToMinor } from './currency-utils';
 
 export interface FlutterwaveInitArgs {
   txRef: string;
@@ -28,7 +29,7 @@ export class FlutterwaveService {
     }
     const body = {
       tx_ref: args.txRef,
-      amount: args.amount / 100,
+      amount: minorToMajor(args.amount, args.currency),
       currency: args.currency,
       redirect_url: args.redirectUrl,
       customer: { email: args.customerEmail, name: args.customerName },
@@ -61,8 +62,11 @@ export class FlutterwaveService {
   }
 
   async verifyTransaction(transactionId: string | number): Promise<{ ok: boolean; amount?: number; currency?: string; status?: string; tx_ref?: string; raw?: any }> {
-    if (!this.isConfigured() || String(transactionId).startsWith('MOCK-')) {
+    if (!this.isConfigured() && String(transactionId).startsWith('MOCK-')) {
       return { ok: true, status: 'successful', raw: { mock: true } };
+    }
+    if (!this.isConfigured()) {
+      return { ok: false, status: 'not_configured', raw: { error: 'Flutterwave not configured' } };
     }
     const res = await fetch(`${this.base}/transactions/${transactionId}/verify`, {
       headers: { Authorization: `Bearer ${this.secretKey}` },
@@ -70,13 +74,16 @@ export class FlutterwaveService {
     const json: any = await res.json();
     if (!res.ok || json.status !== 'success') return { ok: false, raw: json };
     const d = json.data;
-    return { ok: d?.status === 'successful', amount: Math.round((d?.amount ?? 0) * 100), currency: d?.currency, status: d?.status, tx_ref: d?.tx_ref, raw: d };
+    return { ok: d?.status === 'successful', amount: majorToMinor(d?.amount ?? 0, d?.currency ?? ''), currency: d?.currency, status: d?.status, tx_ref: d?.tx_ref, raw: d };
   }
 
   async refundTransaction(transactionId: string, amountMajor: number): Promise<{ ok: boolean; refundId?: string; error?: string }> {
-    if (!this.isConfigured() || String(transactionId).startsWith('MOCK-')) {
-      this.logger.warn('FLW_SECRET_KEY not set or mock transaction — returning mock refund');
+    if (!this.isConfigured() && String(transactionId).startsWith('MOCK-')) {
+      this.logger.warn('FLW_SECRET_KEY not set — returning mock refund');
       return { ok: true, refundId: `MOCK-REFUND-${Date.now()}` };
+    }
+    if (!this.isConfigured()) {
+      return { ok: false, error: 'Flutterwave not configured' };
     }
     try {
       const res = await fetch(`${this.base}/transactions/${transactionId}/refund`, {
@@ -119,7 +126,7 @@ export class FlutterwaveService {
       token: args.token,
       currency: args.currency,
       country: args.currency === 'NGN' ? 'NG' : args.currency === 'KES' ? 'KE' : args.currency === 'GHS' ? 'GH' : 'UG',
-      amount: args.amountMinor / 100,
+      amount: minorToMajor(args.amountMinor, args.currency),
       email: args.customerEmail,
       first_name: (args.customerName || '').split(' ')[0] || 'Customer',
       last_name: (args.customerName || '').split(' ').slice(1).join(' ') || '',

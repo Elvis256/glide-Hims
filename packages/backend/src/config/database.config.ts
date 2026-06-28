@@ -15,7 +15,7 @@ export default new DataSource({
   migrations: [join(__dirname, '../database/migrations/*{.ts,.js}')],
   synchronize: false,
   logging: process.env.NODE_ENV !== 'production',
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  ssl: process.env.DB_SSL === 'false' ? false : (process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false),
   poolSize: 20,
   extra: {
     max: 20,

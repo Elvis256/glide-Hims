@@ -106,10 +106,16 @@ export default function QuotationSummaryPanel({
         )}
 
         {discountAmt > 0 && (
-          <div className="flex justify-between text-red-600">
-            <span>Discount{discountPercent > 0 ? ` (${discountPercent}%)` : ''}</span>
-            <span>-{formatMoney(discountAmt, currency)}</span>
-          </div>
+          <>
+            <div className="flex justify-between text-red-600">
+              <span>Discount{discountPercent > 0 ? ` (${discountPercent}%)` : ''}</span>
+              <span>-{formatMoney(discountAmt, currency)}</span>
+            </div>
+            <div className="flex justify-between font-semibold text-slate-800 border-t border-slate-50 pt-1.5">
+              <span>After Discount</span>
+              <span>{formatMoney(afterDiscount, currency)}</span>
+            </div>
+          </>
         )}
 
         {includeVat && (

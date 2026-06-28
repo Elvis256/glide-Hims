@@ -9,8 +9,8 @@ export class ProvisionDeploymentDto {
   @IsString()
   organizationName: string;
 
-  @IsEnum(['hybrid', 'standalone'])
-  type: 'hybrid' | 'standalone';
+  @IsEnum(['cloud', 'hybrid', 'standalone'])
+  type: 'cloud' | 'hybrid' | 'standalone';
 
   @IsOptional()
   @IsString()

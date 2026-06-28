@@ -4,6 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SaasInvoice, SaasPayment, SaasSubscription, SaasPlan, SaasEmailLog } from './saas.entity';
 import { SystemSettingsService } from '../system-settings/system-settings.service';
+import { fmtMoney } from './currency-utils';
 
 export type EmailTemplateKey =
   | 'invoice_issued'
@@ -268,7 +269,7 @@ export class SaasMailerService {
 
   // ---------- Helpers ----------
   private fmt(minor: number, currency: string) {
-    return `${currency} ${(minor / 100).toLocaleString()}`;
+    return fmtMoney(minor, currency);
   }
 
   private wrap(title: string, body: string) {

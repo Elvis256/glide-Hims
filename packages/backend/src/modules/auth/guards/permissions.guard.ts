@@ -10,6 +10,7 @@ import { GroupPermission } from '../../../database/entities/group-permission.ent
 import { isSuperAdmin } from '../../../common/constants/roles.constants';
 import { CacheService } from '../../cache/cache.service';
 import { getActiveSupportTier, checkSystemAdminAccess } from './support-tier.util';
+import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 
 export const PERMISSIONS_KEY = 'permissions';
 export const FACILITY_KEY = 'requireFacility';
@@ -25,6 +26,13 @@ export class PermissionsGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    // @Public() on a handler overrides class-level @AuthWithPermissions
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (isPublic) return true;
+
     // @SystemAdminOnly() bypass: short-circuit when the route demands sysadmin.
     const systemAdminOnly = this.reflector.getAllAndOverride<boolean>('systemAdminOnly', [
       context.getHandler(),

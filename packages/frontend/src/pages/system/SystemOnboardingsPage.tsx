@@ -27,6 +27,7 @@ export default function SystemOnboardingsPage() {
     if (!debouncedSearch) return items;
     const q = debouncedSearch.toLowerCase();
     return items.filter((o) =>
+      (o.tenant?.name || '').toLowerCase().includes(q) ||
       (o.tenantId && o.tenantId.toLowerCase().includes(q)) ||
       (o.assignedTo && o.assignedTo.toLowerCase().includes(q)) ||
       o.status.toLowerCase().includes(q)
@@ -84,9 +85,9 @@ export default function SystemOnboardingsPage() {
           {paginatedItems.map((o) => (
             <Link key={o.id} to={`/system/onboardings/${o.id}`} className="bg-white rounded-lg border p-5 hover:border-blue-300 transition block">
               <div className="flex items-center justify-between mb-3">
-                <div>
+                <div className="flex items-center gap-2">
                   <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold capitalize ${ONBOARDING_STATUS_STYLES[o.status]}`}>{o.status.replace('_', ' ')}</span>
-                  <span className="ml-2 text-xs text-gray-500">ID: {o.id.slice(0, 8)}</span>
+                  <span className="text-sm font-semibold text-gray-900">{o.tenant?.name || <span className="font-mono text-gray-400 text-xs">ID: {o.id.slice(0, 8)}</span>}</span>
                 </div>
                 <div className="text-sm text-gray-500">Target: {fmtDate(o.targetGoLiveDate)}</div>
               </div>

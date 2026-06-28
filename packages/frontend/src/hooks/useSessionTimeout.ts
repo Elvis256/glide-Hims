@@ -1,5 +1,6 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { useAuthStore } from '../store/auth';
+import { buildLoginPath } from '../lib/tenant';
 
 // Session timeout configuration
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes of inactivity
@@ -35,7 +36,7 @@ export function useSessionTimeout(options: UseSessionTimeoutOptions = {}) {
       onTimeout();
     } else {
       const kind = localStorage.getItem('glide_login_kind');
-      const tenantSlug = localStorage.getItem('glide_tenant_slug');
+      const savedSlug = localStorage.getItem('glide_tenant_slug');
       localStorage.removeItem('glide_tenant_slug');
       localStorage.removeItem('glide_active_tenant_id');
       sessionStorage.removeItem('glide_active_tenant_id');
@@ -44,7 +45,7 @@ export function useSessionTimeout(options: UseSessionTimeoutOptions = {}) {
       if (kind === 'system') {
         window.location.href = '/system/login?expired=true';
       } else {
-        window.location.href = tenantSlug ? `/login/${tenantSlug}?expired=true` : '/login?expired=true';
+        window.location.href = `${buildLoginPath(savedSlug)}?expired=true`;
       }
     }
   }, [logout, onTimeout]);

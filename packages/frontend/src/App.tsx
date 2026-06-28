@@ -6,6 +6,7 @@ import { Toaster, toast } from 'sonner';
 import { useAuthStore } from './store/auth';
 import { useSessionTimeout } from './hooks/useSessionTimeout';
 import { api, getApiErrorMessage, SESSION_EXPIRED_EVENT } from './services/api';
+import { isTenantSubdomain, getEffectiveTenantSlug } from './lib/tenant';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import ProtectedRoute from './components/ProtectedRoute';
 import ModuleRoute from './components/ModuleRoute';
@@ -84,7 +85,6 @@ const TenantSetupWizardPage = lazy(() => import('./pages/TenantSetupWizardPage')
 const RegisterOrganizationPage = lazy(() => import('./pages/RegisterOrganizationPage'));
 const ChangePasswordPage = lazy(() => import('./pages/ChangePasswordPage'));
 const MyProfilePage = lazy(() => import('./pages/MyProfilePage'));
-const FirstRunOnboardingPage = lazy(() => import('./pages/Onboarding/FirstRunOnboardingPage'));
 const AdminDashboard = lazy(() => import('./pages/Admin/AdminDashboard'));
 const PublicLandingPage = lazy(() => import('./pages/Public/PublicLandingPage'));
 const TenantManagementPage = lazy(() => import('./pages/admin/TenantManagementPage'));
@@ -500,7 +500,8 @@ const queryClient = new QueryClient({
  * If not authenticated, show the login page.
  */
 function LoginRouteGuard({ isAuthenticated }: { isAuthenticated: boolean }) {
-  const { slug } = useParams<{ slug: string }>();
+  const { slug: routeSlug } = useParams<{ slug: string }>();
+  const slug = getEffectiveTenantSlug(routeSlug);
   const { logout } = useAuthStore();
   const [pendingSetup, setPendingSetup] = useState<boolean | null>(null);
 
@@ -540,6 +541,7 @@ function AppRoutes() {
   const { isAuthenticated, logout, accessToken, refreshToken, setTokens } = useAuthStore();
   const [setupChecked, setSetupChecked] = useState(false);
   const [isSetupComplete, setIsSetupComplete] = useState(true);
+  const [deploymentMode, setDeploymentMode] = useState<string>('on-premise');
 
   // Cancel all in-flight queries immediately when session expires
   useEffect(() => {
@@ -554,8 +556,9 @@ function AppRoutes() {
   // Check setup status and validate token on initial app load
   useEffect(() => {
     const checkSetup = async () => {
-      // Skip check if on setup or register page
+      // Skip check if on setup or register page — ensure wizard can render
       if (window.location.pathname.startsWith('/setup') || window.location.pathname === '/register') {
+        setIsSetupComplete(false);
         setSetupChecked(true);
         return;
       }
@@ -588,20 +591,35 @@ function AppRoutes() {
         return;
       }
       
-      try {
-        const status = await import('./services/setup').then(m => m.setupService.getStatus());
-        console.log('[App] Setup status:', status);
-        setIsSetupComplete(status.isSetupComplete);
-        
-        // If setup not complete, clear any stale auth
-        if (!status.isSetupComplete) {
-          console.log('[App] Setup not complete, clearing auth');
-          await logout();
+      // Retry loop: backend may still be starting on first boot (30-60s for postgres + migrations)
+      const MAX_RETRIES = 5;
+      const RETRY_DELAY = 3000;
+      let retries = 0;
+
+      while (retries < MAX_RETRIES) {
+        try {
+          const status = await import('./services/setup').then(m => m.setupService.getStatus());
+          console.log('[App] Setup status:', status);
+          setDeploymentMode(status.deploymentMode || 'on-premise');
+          setIsSetupComplete(status.isSetupComplete);
+
+          // If setup not complete, clear any stale auth
+          if (!status.isSetupComplete) {
+            console.log('[App] Setup not complete, clearing auth');
+            await logout();
+          }
+          break;
+        } catch (err) {
+          retries++;
+          console.warn(`[App] Setup check attempt ${retries}/${MAX_RETRIES} failed:`, err);
+          if (retries < MAX_RETRIES) {
+            await new Promise(r => setTimeout(r, RETRY_DELAY));
+          } else {
+            // All retries exhausted — default to NOT complete (safer: shows setup wizard)
+            console.error('[App] Setup check failed after all retries, defaulting to setup incomplete');
+            setIsSetupComplete(false);
+          }
         }
-      } catch (err) {
-        console.error('[App] Setup check error:', err);
-        // Assume complete if check fails
-        setIsSetupComplete(true);
       }
       setSetupChecked(true);
     };
@@ -614,7 +632,7 @@ function AppRoutes() {
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading...</p>
+          <p className="mt-4 text-gray-600">Connecting to server...</p>
         </div>
       </div>
     );
@@ -698,7 +716,7 @@ function AppRoutes() {
       />
       <Route
         path="/onboarding"
-        element={!isSetupComplete ? <FirstRunOnboardingPage /> : <Navigate to="/" replace />}
+        element={!isSetupComplete ? <Navigate to="/setup" replace /> : <Navigate to="/" replace />}
       />
       <Route
         path="/admin"
@@ -716,13 +734,15 @@ function AppRoutes() {
         path="/"
         element={
           !isSetupComplete ? (
-            <FirstRunOnboardingPage />
+            <Navigate to="/setup" replace />
           ) : isAuthenticated ? (
             (useAuthStore.getState().user as any)?.isSystemAdmin ? (
               <Navigate to="/system" replace />
             ) : (
               <Navigate to="/dashboard" replace />
             )
+          ) : (deploymentMode !== 'saas' || isTenantSubdomain) ? (
+            <Navigate to="/login" replace />
           ) : (
             <PublicLandingPage />
           )

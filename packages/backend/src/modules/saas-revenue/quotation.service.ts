@@ -19,9 +19,11 @@ import { SaasSubscription, SaasPlan } from './saas.entity';
 import { Lead } from '../leads/lead.entity';
 import { Tenant } from '../../database/entities/tenant.entity';
 import { License } from '../../database/entities/license.entity';
+import { Deployment, DeploymentType, DeploymentStatus } from '../../database/entities/deployment.entity';
 import { SaasRevenueService, VendorBillingSettings } from './saas-revenue.service';
 import { SaasMailerService } from './saas-mailer.service';
 import { ContractService } from './contract.service';
+import { ZERO_DECIMAL_CURRENCIES, fmtMoney as fmtMoneyCurrency } from './currency-utils';
 import {
   CreateCatalogItemDto,
   UpdateCatalogItemDto,
@@ -44,6 +46,7 @@ export class QuotationService {
     @InjectRepository(SaasPlan) private readonly plans: Repository<SaasPlan>,
     @InjectRepository(SaasSubscription) private readonly subs: Repository<SaasSubscription>,
     @InjectRepository(License) private readonly licenses: Repository<License>,
+    @InjectRepository(Deployment) private readonly deployments: Repository<Deployment>,
     private readonly saasRevenue: SaasRevenueService,
     private readonly contractService: ContractService,
     private readonly mailer: SaasMailerService,
@@ -121,6 +124,8 @@ export class QuotationService {
       status: 'draft' as QuotationStatus,
       currentRevisionNumber: 1,
       createdBy: createdBy ?? null,
+      deploymentType: dto.deploymentType ?? null,
+      deploymentDomain: dto.deploymentDomain ?? null,
     });
 
     const saved = await this.quotations.save(quotation);
@@ -198,6 +203,8 @@ export class QuotationService {
     if (dto.validUntil !== undefined) q.validUntil = dto.validUntil ? new Date(dto.validUntil) : null;
     if (dto.notes !== undefined) q.notes = dto.notes ?? null;
     if (dto.internalNotes !== undefined) q.internalNotes = dto.internalNotes ?? null;
+    if (dto.deploymentType !== undefined) q.deploymentType = dto.deploymentType ?? null;
+    if (dto.deploymentDomain !== undefined) q.deploymentDomain = dto.deploymentDomain ?? null;
 
     await this.quotations.save(q);
 
@@ -319,14 +326,13 @@ export class QuotationService {
     // Send email to client
     if (q.clientEmail) {
       const rev = await this.getRevision(q.id, q.currentRevisionNumber);
-      const zeroDecimal = new Set(['UGX','KES','TZS','RWF','JPY','KRW','VND','CLP','PYG']);
-      const fmtMoney = (n: number) => `${q.currency} ${(n / (zeroDecimal.has(q.currency) ? 1 : 100)).toLocaleString()}`;
-      const subject = `Quotation ${q.quotationNumber} — ${fmtMoney(rev.totalMinor)}`;
+      const fmt = (n: number) => fmtMoneyCurrency(n, q.currency);
+      const subject = `Quotation ${q.quotationNumber} — ${fmt(rev.totalMinor)}`;
       const body = `<p>Dear ${this.esc(q.clientName)},</p>
 <p>Please find your quotation below:</p>
 <ul>
   <li><b>Quotation #:</b> ${this.esc(q.quotationNumber)}</li>
-  <li><b>Total:</b> ${fmtMoney(rev.totalMinor)}</li>
+  <li><b>Total:</b> ${fmt(rev.totalMinor)}</li>
   <li><b>Valid until:</b> ${q.validUntil ? new Date(q.validUntil).toLocaleDateString() : 'N/A'}</li>
 </ul>
 <p>Thank you for choosing Glide HIMS.</p>`;
@@ -432,7 +438,25 @@ export class QuotationService {
         await manager.save(License, license);
       }
 
-      // 7. Link back
+      // 7. Auto-create Deployment if deploymentType is set
+      if (q.deploymentType) {
+        const deployType = q.deploymentType === 'standalone'
+          ? DeploymentType.ONPREMISE
+          : DeploymentType.HYBRID;
+        const deployment = manager.create(Deployment, {
+          tenantId: tenant.id,
+          deploymentType: deployType,
+          name: `${tenant.name} — ${deployType}`,
+          status: DeploymentStatus.PENDING,
+          apiEndpoint: q.deploymentDomain || `https://${tenant.slug}.glidehims.com`,
+          currentVersion: '1.0.0',
+          config: { provisionedFrom: 'quotation', quotationId: q.id },
+        });
+        const savedDeployment = await manager.save(Deployment, deployment);
+        q.deploymentId = savedDeployment.id;
+      }
+
+      // 8. Link back
       q.subscriptionId = savedSub.id;
       await manager.save(SaasQuotation, q);
 
@@ -440,7 +464,18 @@ export class QuotationService {
     }).then(async (savedQ) => {
       // Auto-create contract from quotation
       try {
-        const contract = await this.contractService.createContractFromQuotation(savedQ.id);
+        // Resolve tenantId from the subscription we just created
+        let tenantId: string | undefined;
+        if (savedQ.subscriptionId) {
+          const sub = await this.dataSource.getRepository(SaasSubscription)
+            .findOne({ where: { id: savedQ.subscriptionId }, select: ['tenantId'] });
+          tenantId = sub?.tenantId ?? undefined;
+        }
+        const contract = await this.contractService.createContractFromQuotation(
+          savedQ.id,
+          undefined,
+          { tenantId, autoActivate: true },
+        );
         if (contract) {
           savedQ.contractId = contract.id;
           await this.quotations.save(savedQ);
@@ -517,8 +552,7 @@ export class QuotationService {
     try { vendor = await this.saasRevenue.getVendorBilling(); }
     catch { vendor = { legalName: 'Glide HIMS' }; }
 
-    const zeroDecimal = new Set(['UGX','KES','TZS','RWF','JPY','KRW','VND','CLP','PYG']);
-    const fmt = (n: number) => `${q.currency} ${(n / (zeroDecimal.has(q.currency) ? 1 : 100)).toLocaleString()}`;
+    const fmt = (n: number) => fmtMoneyCurrency(n, q.currency);
     const fmtD = (d: any) => (d ? new Date(d).toISOString().slice(0, 10) : '—');
     const esc = this.esc;
     const lines = rev.lineItems || [];

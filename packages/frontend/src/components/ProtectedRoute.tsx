@@ -2,6 +2,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
 import type { ReactNode } from 'react';
 import AccessDenied from './AccessDenied';
+import { buildLoginPath } from '../lib/tenant';
 
 interface ProtectedRouteProps {
   children: ReactNode;
@@ -25,8 +26,7 @@ export default function ProtectedRoute({
       return <Navigate to="/system/login" state={{ from: location }} replace />;
     }
     const tenantSlug = localStorage.getItem('glide_tenant_slug');
-    const loginPath = tenantSlug ? `/login/${tenantSlug}` : '/login';
-    return <Navigate to={loginPath} state={{ from: location }} replace />;
+    return <Navigate to={buildLoginPath(tenantSlug)} state={{ from: location }} replace />;
   }
 
   // Super Admin bypasses all permission checks (Administrator still requires explicit permissions)
