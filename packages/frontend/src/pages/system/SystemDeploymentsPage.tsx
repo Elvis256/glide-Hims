@@ -12,7 +12,7 @@ import TierBadge from '../../components/TierBadge';
 import SystemPagination from '../../components/SystemPagination';
 import ConfirmDialog from '../../components/ConfirmDialog';
 
-type DeploymentType = 'hybrid' | 'standalone';
+type DeploymentType = 'cloud' | 'hybrid' | 'standalone';
 type DeploymentStatus = 'active' | 'pending' | 'error' | 'expired';
 
 interface Deployment {
@@ -56,16 +56,24 @@ const STATUS_ICONS: Record<DeploymentStatus, React.ReactNode> = {
   expired: <AlertTriangle className="w-3.5 h-3.5" />,
 };
 
-const TYPE_CONFIG: Record<DeploymentType, { label: string; icon: React.ReactNode; color: string }> = {
+const TYPE_CONFIG: Record<DeploymentType, { label: string; icon: React.ReactNode; color: string; description: string }> = {
+  cloud: {
+    label: 'Cloud',
+    icon: <Server className="w-4 h-4" />,
+    color: 'text-green-600 bg-green-50',
+    description: 'Hosted on this server, auto-active',
+  },
   hybrid: {
     label: 'Hybrid',
     icon: <Cloud className="w-4 h-4" />,
     color: 'text-blue-600 bg-blue-50',
+    description: 'Customer-hosted, central updates',
   },
   standalone: {
     label: 'Standalone',
     icon: <HardDrive className="w-4 h-4" />,
     color: 'text-purple-600 bg-purple-50',
+    description: 'Air-gapped, offline operation',
   },
 };
 
@@ -94,7 +102,7 @@ export default function SystemDeploymentsPage() {
     setBannerDismissed(true);
     try { localStorage.setItem('deployments_intro_banner_dismissed', '1'); } catch { /* ignore */ }
   };
-  const [typeFilter, setTypeFilter] = useState<'all' | DeploymentType>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'cloud' | DeploymentType>('all');
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<CreateDeploymentForm>({
@@ -113,6 +121,9 @@ export default function SystemDeploymentsPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [revealedKeys, setRevealedKeys] = useState<Set<string>>(new Set());
+  const [reissueModal, setReissueModal] = useState<{ open: boolean; dep: Deployment | null; days: number; busy: boolean }>({
+    open: false, dep: null, days: 365, busy: false,
+  });
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
     title: string;
@@ -240,6 +251,37 @@ export default function SystemDeploymentsPage() {
     }
   };
 
+  const openReissueModal = (dep: Deployment) => {
+    closeActionMenu();
+    setReissueModal({ open: true, dep, days: 365, busy: false });
+  };
+
+  const executeReissue = async () => {
+    const dep = reissueModal.dep;
+    if (!dep) return;
+    setReissueModal((prev) => ({ ...prev, busy: true }));
+    try {
+      const res = await api.post(`/license/${encodeURIComponent(dep.licenseKey)}/reissue`, {
+        extensionDays: reissueModal.days,
+      });
+      const licenseData = res.data?.license || res.data;
+      // Download the new license.json file
+      const blob = new Blob([JSON.stringify(licenseData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `license-${dep.organizationName.replace(/\s+/g, '-').toLowerCase()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`License reissued (+${reissueModal.days} days) — file downloaded`);
+      setReissueModal({ open: false, dep: null, days: 365, busy: false });
+      loadDeployments();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Failed to reissue license');
+      setReissueModal((prev) => ({ ...prev, busy: false }));
+    }
+  };
+
   const loadDeployments = async () => {
     setLoading(true);
     setLoadError(null);
@@ -285,7 +327,7 @@ export default function SystemDeploymentsPage() {
         if (t && !payload.organizationName) payload.organizationName = t.name;
       }
       await api.post('/deployments', payload);
-      toast.success(`${form.type === 'hybrid' ? 'Hybrid' : 'Standalone'} deployment created`);
+      toast.success(`${TYPE_CONFIG[form.type].label} deployment created`);
       setShowCreate(false);
       setSelectedTenantId('');
       setForm({ organizationName: '', type: 'hybrid', tier: 'professional', domain: '', maxUsers: 50, notes: '' });
@@ -333,6 +375,7 @@ export default function SystemDeploymentsPage() {
 
   const stats = {
     total: deployments.length,
+    cloud: deployments.filter((d) => d.type === 'cloud').length,
     hybrid: deployments.filter((d) => d.type === 'hybrid').length,
     standalone: deployments.filter((d) => d.type === 'standalone').length,
     active: deployments.filter((d) => d.status === 'active').length,
@@ -344,7 +387,7 @@ export default function SystemDeploymentsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Deployments</h1>
-          <p className="text-sm text-gray-500 mt-1">Manage Hybrid &amp; Standalone customer deployments</p>
+          <p className="text-sm text-gray-500 mt-1">Manage Cloud, Hybrid &amp; Standalone deployments</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -364,12 +407,13 @@ export default function SystemDeploymentsPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
         {[
           { label: 'Total Deployments', value: stats.total, icon: Server, color: 'text-gray-600 bg-gray-100' },
-          { label: 'Hybrid (Cloud)', value: stats.hybrid, icon: Cloud, color: 'text-blue-600 bg-blue-50' },
+          { label: 'Cloud (Hosted)', value: stats.cloud, icon: Server, color: 'text-green-600 bg-green-50' },
+          { label: 'Hybrid (Client)', value: stats.hybrid, icon: Cloud, color: 'text-blue-600 bg-blue-50' },
           { label: 'Standalone (Offline)', value: stats.standalone, icon: HardDrive, color: 'text-purple-600 bg-purple-50' },
-          { label: 'Active', value: stats.active, icon: Activity, color: 'text-green-600 bg-green-50' },
+          { label: 'Active', value: stats.active, icon: Activity, color: 'text-emerald-600 bg-emerald-50' },
         ].map((stat) => (
           <div key={stat.label} className="bg-white rounded-xl border border-gray-200 p-4">
             <div className={`w-10 h-10 ${stat.color} rounded-lg flex items-center justify-center mb-3`}>
@@ -386,8 +430,9 @@ export default function SystemDeploymentsPage() {
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex gap-3 relative">
           <Building2 className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
           <div className="text-sm text-blue-800 flex-1 pr-6">
-            <p className="font-medium">Two deployment types available</p>
+            <p className="font-medium">Three deployment types available</p>
             <p className="mt-1">
+              <strong>Cloud</strong> — Tenant hosted on this central server. Auto-active, no phone-home needed.{' '}
               <strong>Hybrid</strong> — Customer hosts on their own servers (AWS/Azure/On-Premise).
               Updates pushed from this server.{' '}
               <strong>Standalone</strong> — Completely air-gapped for government, military, and remote clinics.
@@ -418,7 +463,7 @@ export default function SystemDeploymentsPage() {
           />
         </div>
         <div className="flex gap-2">
-          {(['all', 'hybrid', 'standalone'] as const).map((t) => (
+          {(['all', 'cloud', 'hybrid', 'standalone'] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTypeFilter(t)}
@@ -477,7 +522,7 @@ export default function SystemDeploymentsPage() {
           <p className="text-gray-500 font-medium">No deployments found</p>
           <p className="text-gray-400 text-sm mt-1">
             {deployments.length === 0
-              ? 'Create your first hybrid or standalone deployment above.'
+              ? 'Create your first deployment above.'
               : 'Try adjusting your search or filters.'}
           </p>
           {deployments.length === 0 && (
@@ -633,6 +678,15 @@ export default function SystemDeploymentsPage() {
                                 <Clock className="w-4 h-4" />
                                 Extend +30 days
                               </button>
+                              {dep.type === 'standalone' && (
+                                <button
+                                  onClick={() => openReissueModal(dep)}
+                                  className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2 text-indigo-700"
+                                >
+                                  <RefreshCw className="w-4 h-4" />
+                                  Reissue license
+                                </button>
+                              )}
                               {dep.licenseStatus === 'suspended' ? (
                                 <button
                                   onClick={() => runLicenseAction(dep, 'reactivate')}
@@ -733,8 +787,8 @@ export default function SystemDeploymentsPage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Deployment Type *</label>
-                <div className="grid grid-cols-2 gap-3">
-                  {(['hybrid', 'standalone'] as const).map((type) => (
+                <div className="grid grid-cols-3 gap-3">
+                  {(['cloud', 'hybrid', 'standalone'] as const).map((type) => (
                     <button
                       key={type}
                       onClick={() => setForm({ ...form, type })}
@@ -749,9 +803,7 @@ export default function SystemDeploymentsPage() {
                         <span className="font-medium text-sm">{TYPE_CONFIG[type].label}</span>
                       </div>
                       <p className="text-xs text-gray-500">
-                        {type === 'hybrid'
-                          ? 'Customer-hosted, central updates'
-                          : 'Air-gapped, offline operation'}
+                        {TYPE_CONFIG[type].description}
                       </p>
                     </button>
                   ))}
@@ -771,7 +823,7 @@ export default function SystemDeploymentsPage() {
                 </select>
               </div>
 
-              {form.type === 'hybrid' && (
+              {(form.type === 'cloud' || form.type === 'hybrid') && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Domain (optional)</label>
                   <input
@@ -819,6 +871,60 @@ export default function SystemDeploymentsPage() {
                   <><Loader2 className="w-4 h-4 animate-spin" /> Creating…</>
                 ) : (
                   <><KeyRound className="w-4 h-4" /> Generate License &amp; Create</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reissue License Modal */}
+      {reissueModal.open && reissueModal.dep && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <h2 className="text-lg font-bold text-gray-900">Reissue License</h2>
+              <button
+                onClick={() => setReissueModal({ open: false, dep: null, days: 365, busy: false })}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-gray-600">
+                Extend and reissue the license for <strong>{reissueModal.dep.organizationName}</strong>.
+                A new <code>license.json</code> file will be downloaded for the on-premise admin to apply.
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Extension days</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={730}
+                  value={reissueModal.days}
+                  onChange={(e) => setReissueModal((prev) => ({ ...prev, days: Number(e.target.value) }))}
+                  className="input w-full"
+                />
+                <p className="text-xs text-gray-500 mt-1">Between 1 and 730 days. Default: 365.</p>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-100">
+              <button
+                onClick={() => setReissueModal({ open: false, dep: null, days: 365, busy: false })}
+                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={executeReissue}
+                disabled={reissueModal.busy || reissueModal.days < 1 || reissueModal.days > 730}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
+              >
+                {reissueModal.busy ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Reissuing...</>
+                ) : (
+                  <><RefreshCw className="w-4 h-4" /> Reissue &amp; Download</>
                 )}
               </button>
             </div>

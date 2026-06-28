@@ -10,7 +10,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 
 // ---------------------------------------------------------------------------
 // Price Catalog DTOs
@@ -58,8 +58,8 @@ export class LineItemDto {
 // ---------------------------------------------------------------------------
 
 export class CreateQuotationDto {
-  @IsOptional() @IsUUID() leadId?: string;
-  @IsOptional() @IsUUID() planId?: string;
+  @IsOptional() @Transform(({ value }) => value || undefined) @IsUUID() leadId?: string;
+  @IsOptional() @Transform(({ value }) => value || undefined) @IsUUID() planId?: string;
 
   @IsString() @MaxLength(200) clientName: string;
   @IsOptional() @IsString() @MaxLength(200) clientOrganization?: string;
@@ -84,13 +84,16 @@ export class CreateQuotationDto {
   @IsOptional() @IsString() notes?: string;
   @IsOptional() @IsString() internalNotes?: string;
 
+  @IsOptional() @IsString() @MaxLength(20) deploymentType?: string;
+  @IsOptional() @IsString() @MaxLength(255) deploymentDomain?: string;
+
   @IsArray() @ValidateNested({ each: true }) @Type(() => LineItemDto)
   lineItems: LineItemDto[];
 }
 
 export class UpdateQuotationDto {
-  @IsOptional() @IsUUID() leadId?: string;
-  @IsOptional() @IsUUID() planId?: string;
+  @IsOptional() @Transform(({ value }) => value || undefined) @IsUUID() leadId?: string;
+  @IsOptional() @Transform(({ value }) => value || undefined) @IsUUID() planId?: string;
 
   @IsOptional() @IsString() @MaxLength(200) clientName?: string;
   @IsOptional() @IsString() @MaxLength(200) clientOrganization?: string;
@@ -114,6 +117,9 @@ export class UpdateQuotationDto {
 
   @IsOptional() @IsString() notes?: string;
   @IsOptional() @IsString() internalNotes?: string;
+
+  @IsOptional() @IsString() @MaxLength(20) deploymentType?: string;
+  @IsOptional() @IsString() @MaxLength(255) deploymentDomain?: string;
 
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => LineItemDto)
   lineItems?: LineItemDto[];

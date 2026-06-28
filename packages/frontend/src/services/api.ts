@@ -2,6 +2,7 @@ import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import { toast } from 'sonner';
 import { useAuthStore } from '../store/auth';
 import { logger } from '../lib/logger';
+import { buildLoginPath } from '../lib/tenant';
 
 // Use relative URL to leverage Vite proxy, or fall back to env var for production
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
@@ -209,28 +210,28 @@ api.interceptors.response.use(
           dispatchSessionExpired();
           useAuthStore.getState().logout();
           const kind = localStorage.getItem('glide_login_kind');
-          const slug = localStorage.getItem('glide_tenant_slug');
+          const savedSlug = localStorage.getItem('glide_tenant_slug');
           localStorage.removeItem('glide_tenant_slug');
           localStorage.removeItem('glide_active_tenant_id');
           if (kind === 'system') {
             window.location.href = '/system/login?expired=true';
           } else {
-            window.location.href = slug ? `/login/${slug}?expired=true` : '/login?expired=true';
+            window.location.href = `${buildLoginPath(savedSlug)}?expired=true`;
           }
-          
+
           return Promise.reject(refreshError);
         }
       } else {
         // Not authenticated - redirect to login
         useAuthStore.getState().logout();
         const kind = localStorage.getItem('glide_login_kind');
-        const slug = localStorage.getItem('glide_tenant_slug');
+        const savedSlug = localStorage.getItem('glide_tenant_slug');
         localStorage.removeItem('glide_tenant_slug');
         localStorage.removeItem('glide_active_tenant_id');
         if (kind === 'system') {
           window.location.href = '/system/login';
         } else {
-          window.location.href = slug ? `/login/${slug}` : '/login';
+          window.location.href = buildLoginPath(savedSlug);
         }
       }
     }

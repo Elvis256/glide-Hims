@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import { ClientOnboarding, ClientOnboardingItem, OnboardingPhase, OnboardingItemStatus } from './onboarding.entity';
 import { SaasQuotation, SaasQuotationRevision } from './quotation.entity';
 import { SaasSubscription } from './saas.entity';
+import { Tenant } from '../../database/entities/tenant.entity';
 
 // Default onboarding template items grouped by phase
 const DEFAULT_TEMPLATE: Array<{ phase: OnboardingPhase; title: string; description: string }> = [
@@ -44,18 +45,32 @@ export class OnboardingService {
     @InjectRepository(SaasQuotation) private readonly quotations: Repository<SaasQuotation>,
     @InjectRepository(SaasQuotationRevision) private readonly revisions: Repository<SaasQuotationRevision>,
     @InjectRepository(SaasSubscription) private readonly subscriptions: Repository<SaasSubscription>,
+    @InjectRepository(Tenant) private readonly tenants: Repository<Tenant>,
     private readonly events: EventEmitter2,
   ) {}
 
   async listOnboardings(filters: { status?: string } = {}) {
     const where: any = {};
     if (filters.status) where.status = filters.status;
-    const [items, total] = await this.onboardings.findAndCount({
+    const [rows, total] = await this.onboardings.findAndCount({
       where,
       relations: ['items'],
       order: { createdAt: 'DESC' },
       take: 200,
     });
+
+    // Enrich with tenant names
+    const tenantIds = [...new Set(rows.map((r) => r.tenantId).filter(Boolean))] as string[];
+    let tmap = new Map<string, { id: string; name: string; slug: string }>();
+    if (tenantIds.length > 0) {
+      const tenantEntities = await this.tenants.find({
+        where: tenantIds.map((id) => ({ id })),
+        select: ['id', 'name', 'slug'],
+      });
+      tmap = new Map(tenantEntities.map((t) => [t.id, { id: t.id, name: t.name, slug: t.slug }]));
+    }
+
+    const items = rows.map((r) => ({ ...r, tenant: r.tenantId ? tmap.get(r.tenantId) ?? null : null }));
     return { items, total };
   }
 

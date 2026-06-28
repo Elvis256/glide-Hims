@@ -52,7 +52,7 @@ export class Deployment {
   @Column({
     type: 'enum',
     enum: DeploymentStatus,
-    default: DeploymentStatus.ACTIVE,
+    default: DeploymentStatus.PENDING,
   })
   status: DeploymentStatus;
 

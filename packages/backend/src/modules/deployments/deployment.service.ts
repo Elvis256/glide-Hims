@@ -95,25 +95,36 @@ export class DeploymentService {
     const orgName = tenant?.name || requestedOrgName;
     if (!orgName) throw new BadRequestException('Organization name is required');
 
-    const userFacingType: 'hybrid' | 'standalone' = dto.type === 'standalone' ? 'standalone' : 'hybrid';
+    const userFacingType: 'cloud' | 'hybrid' | 'standalone' =
+      dto.type === 'standalone' ? 'standalone'
+        : dto.type === 'cloud' ? 'cloud'
+          : 'hybrid';
     const tier: DeploymentTier =
       dto.tier === 'community' || dto.tier === 'professional' || dto.tier === 'enterprise'
         ? dto.tier
         : 'professional';
-    const dbType = userFacingType === 'standalone' ? DeploymentType.ONPREMISE : DeploymentType.HYBRID;
+    const dbType =
+      userFacingType === 'standalone' ? DeploymentType.ONPREMISE
+        : userFacingType === 'cloud' ? DeploymentType.CLOUD
+          : DeploymentType.HYBRID;
     const domain = dto.domain?.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '') || '';
     const apiEndpoint = domain ? `https://${domain}` : '';
     const maxUsersRaw = typeof dto.maxUsers === 'number' ? dto.maxUsers : Number(dto.maxUsers);
     const maxUsers = Number.isFinite(maxUsersRaw) && maxUsersRaw > 0 ? Math.floor(maxUsersRaw) : 50;
 
+    // Cloud deployments run on this server — mark Active immediately.
+    // Hybrid/standalone require a phone-home heartbeat to flip from Pending.
+    const isCloud = dbType === DeploymentType.CLOUD;
+
     const deployment = this.deploymentRepository.create({
       tenantId: tenant.id,
       name: orgName,
       deploymentType: dbType,
-      status: DeploymentStatus.PENDING,
+      status: isCloud ? DeploymentStatus.ACTIVE : DeploymentStatus.PENDING,
       apiEndpoint,
       currentVersion: '1.0.0',
       notes: dto.notes,
+      lastHealthCheck: isCloud ? new Date() : undefined,
       config: {
         userFacingType,
         tier,
@@ -222,7 +233,7 @@ export class DeploymentService {
         organizationName: r.organization_name,
         tenantSlug: r.tenant_slug,
         name: r.name,
-        type: r.config?.userFacingType || (r.deployment_type === 'onpremise' ? 'standalone' : 'hybrid'),
+        type: r.config?.userFacingType || (r.deployment_type === 'onpremise' ? 'standalone' : r.deployment_type === 'cloud' ? 'cloud' : 'hybrid'),
         deploymentType: r.deployment_type,
         status: r.status,
         apiEndpoint: r.api_endpoint,
@@ -253,7 +264,7 @@ export class DeploymentService {
       tenantId,
       name: dto.name,
       deploymentType: dto.type,
-      status: DeploymentStatus.ACTIVE,
+      status: DeploymentStatus.PENDING,
       apiEndpoint: dto.apiUrl,
       currentVersion: '1.0.0',
     });
@@ -313,7 +324,7 @@ export class DeploymentService {
       tenant,
       name: deployment.name,
       organizationName: deployment.name,
-      type: deployment.config?.userFacingType || (deployment.deploymentType === DeploymentType.ONPREMISE ? 'standalone' : 'hybrid'),
+      type: deployment.config?.userFacingType || (deployment.deploymentType === DeploymentType.ONPREMISE ? 'standalone' : deployment.deploymentType === DeploymentType.CLOUD ? 'cloud' : 'hybrid'),
       deploymentType: deployment.deploymentType,
       status: deployment.status,
       apiEndpoint: deployment.apiEndpoint,

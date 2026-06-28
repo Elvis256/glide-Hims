@@ -10,6 +10,7 @@ import api from '../services/api';
 import { Eye, EyeOff, Loader2, Clock, Building2, UserPlus, AlertCircle, Shield } from 'lucide-react';
 import Logo from '../components/Logo';
 import { getBusinessConfig } from '../hooks/useBusinessConfig';
+import { getEffectiveTenantSlug, buildLoginPath } from '../lib/tenant';
 
 interface TenantInfo {
   id: string;
@@ -28,7 +29,8 @@ type LoginForm = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { slug } = useParams<{ slug: string }>();
+  const { slug: routeSlug } = useParams<{ slug: string }>();
+  const slug = getEffectiveTenantSlug(routeSlug);
   const [searchParams] = useSearchParams();
   const { login, setAccessibleModules } = useAuthStore();
   const [showPassword, setShowPassword] = useState(false);
@@ -87,11 +89,11 @@ export default function LoginPage() {
   useEffect(() => {
     if (searchParams.get('expired') === 'true') {
       setSessionExpired(true);
-      window.history.replaceState({}, '', slug ? `/login/${slug}` : '/login');
+      window.history.replaceState({}, '', buildLoginPath(slug));
     }
     if (searchParams.get('registered') === 'true') {
       setJustRegistered(true);
-      window.history.replaceState({}, '', slug ? `/login/${slug}` : '/login');
+      window.history.replaceState({}, '', buildLoginPath(slug));
     }
   }, [searchParams, slug]);
 

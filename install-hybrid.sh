@@ -38,6 +38,10 @@ LICENSE_KEY="${LICENSE_KEY:-}"
 CONTROL_PLANE_URL="${CONTROL_PLANE_URL:-}"
 GIT_REPO_URL="${GIT_REPO_URL:-https://github.com/Elvis256/glide-Hims.git}"
 COMPOSE_CMD=()
+BACKEND_HOST_PORT=3000
+FRONTEND_HOST_PORT=8080
+HTTP_HOST_PORT=80
+HTTPS_HOST_PORT=443
 
 # Functions
 print_header() {
@@ -293,6 +297,9 @@ PII_HASH_KEY=$PII_HASH_KEY
 # Environment
 NODE_ENV=production
 
+# Deployment Mode
+DEPLOYMENT_MODE=hybrid
+
 # License
 LICENSE_KEY=$LICENSE_KEY
 
@@ -310,6 +317,28 @@ SUPPORT_EMAIL=support@itsolutionsuganda.com
 SUPPORT_PHONE=+256-XXX-XXX-XXX
 EOF
     print_success ".env file created"
+
+    # Download offline license file for local validation
+    if [ -n "$LICENSE_KEY" ] && [ -n "$CONTROL_PLANE_URL" ]; then
+        print_info "Downloading offline license file..."
+        mkdir -p /etc/glide-hims
+        if curl -sf "${CONTROL_PLANE_URL}/api/v1/license/${LICENSE_KEY}/export" -o /etc/glide-hims/license.json; then
+            # Extract SECRET_KEY from the license file and add to .env
+            SECRET_KEY=$(python3 -c "import json; print(json.load(open('/etc/glide-hims/license.json'))['secretKey'])" 2>/dev/null || true)
+            print_success "Offline license file saved to /etc/glide-hims/license.json"
+        else
+            print_warning "Could not download offline license file (non-fatal — phone-home will still work)"
+        fi
+    fi
+
+    # Ensure LICENSE_SECRET_KEY is set (required for production startup)
+    if [ -z "$SECRET_KEY" ]; then
+        SECRET_KEY=$(openssl rand -hex 32)
+        print_warning "LICENSE_SECRET_KEY not found in license export — generated a local key"
+    fi
+    echo "" >> "$INSTALL_DIR/.env"
+    echo "# License secret for offline HMAC validation" >> "$INSTALL_DIR/.env"
+    echo "LICENSE_SECRET_KEY=$SECRET_KEY" >> "$INSTALL_DIR/.env"
 }
 
 # Create necessary directories
@@ -360,11 +389,78 @@ download_images() {
     print_success "Frontend image built"
 }
 
+# Find an available port starting from a preferred port
+find_available_port() {
+    local port="$1"
+    local max_tries=20
+    local i=0
+    while [ $i -lt $max_tries ]; do
+        if ! ss -tlnH "sport = :$port" 2>/dev/null | grep -q ":$port" && \
+           ! lsof -i ":$port" >/dev/null 2>&1; then
+            echo "$port"
+            return 0
+        fi
+        port=$((port + 1))
+        i=$((i + 1))
+    done
+    # fallback — return the incremented port and hope for the best
+    echo "$port"
+}
+
+# Resolve port conflicts before starting containers
+resolve_port_conflicts() {
+    print_header "Checking Port Availability"
+
+    local compose_file="$INSTALL_DIR/docker-compose.hybrid.yml"
+    local changed=false
+
+    # Ports used by our compose file: 5432 (postgres), 6379 (redis), 3000 (backend), 8080 (frontend), 80 (nginx http), 443 (nginx https)
+    for mapping in "5432:5432:PostgreSQL" "6379:6379:Redis" "3000:3000:Backend API" "8080:8080:Frontend" "80:80:HTTP" "443:443:HTTPS"; do
+        local host_port="${mapping%%:*}"
+        local rest="${mapping#*:}"
+        local container_port="${rest%%:*}"
+        local service_name="${rest#*:}"
+
+        local available
+        available=$(find_available_port "$host_port")
+
+        if [ "$available" != "$host_port" ]; then
+            print_warning "Port $host_port ($service_name) is in use — reassigning to $available"
+            # Replace the host port mapping in compose file
+            sed -i "s/\"${host_port}:${container_port}\"/\"${available}:${container_port}\"/g" "$compose_file"
+            changed=true
+
+            # Track the backend port for verify step
+            if [ "$container_port" = "3000" ]; then
+                BACKEND_HOST_PORT="$available"
+            fi
+            if [ "$container_port" = "8080" ]; then
+                FRONTEND_HOST_PORT="$available"
+            fi
+            if [ "$host_port" = "80" ]; then
+                HTTP_HOST_PORT="$available"
+            fi
+            if [ "$host_port" = "443" ]; then
+                HTTPS_HOST_PORT="$available"
+            fi
+        else
+            print_success "Port $host_port ($service_name) is available"
+        fi
+    done
+
+    if [ "$changed" = true ]; then
+        print_info "Port mappings updated in docker-compose.hybrid.yml"
+    fi
+}
+
 # Start services
 start_services() {
     print_header "Starting Services"
 
     cd "$INSTALL_DIR"
+
+    # Auto-resolve any port conflicts before starting
+    resolve_port_conflicts
 
     print_info "Bringing up containers (this may take 30-60 seconds)..."
     "${COMPOSE_CMD[@]}" -f docker-compose.hybrid.yml up -d
@@ -392,16 +488,16 @@ verify_installation() {
     print_header "Verifying Installation"
 
     # Check API
-    print_info "Checking API endpoint..."
-    if curl -s http://localhost:3000/api/v1/health | grep -q "ok"; then
+    print_info "Checking API endpoint on port $BACKEND_HOST_PORT..."
+    if curl -s "http://localhost:${BACKEND_HOST_PORT}/api/v1/health" | grep -q "ok"; then
         print_success "Backend API is responding"
     else
         print_warning "Backend API check inconclusive (may need more time)"
     fi
 
     # Check Frontend
-    print_info "Checking frontend..."
-    if curl -s http://localhost:8080 | grep -q "Glide"; then
+    print_info "Checking frontend on port $FRONTEND_HOST_PORT..."
+    if curl -s "http://localhost:${FRONTEND_HOST_PORT}" | grep -q "Glide"; then
         print_success "Frontend is accessible"
     else
         print_warning "Frontend check inconclusive"
@@ -422,10 +518,22 @@ show_completion() {
 
     echo -e "${GREEN}Glide-HIMS is now running!${NC}\n"
 
-    echo -e "${BLUE}Access URLs:${NC}"
-    echo -e "  Frontend:  https://$DOMAIN_NAME"
-    echo -e "  Admin API: https://$DOMAIN_NAME/api/v1"
-    echo -e "  Health:    https://$DOMAIN_NAME/api/v1/health\n"
+    if [ "$HTTP_HOST_PORT" = "80" ]; then
+        echo -e "${BLUE}Access URLs:${NC}"
+        echo -e "  Frontend:  https://$DOMAIN_NAME"
+        echo -e "  Admin API: https://$DOMAIN_NAME/api/v1"
+        echo -e "  Health:    https://$DOMAIN_NAME/api/v1/health\n"
+    else
+        echo -e "${BLUE}Access URLs:${NC}"
+        echo -e "  Frontend:  http://$DOMAIN_NAME:${HTTP_HOST_PORT}  (or https on port ${HTTPS_HOST_PORT})"
+        echo -e "  Backend:   http://$DOMAIN_NAME:${BACKEND_HOST_PORT}/api/v1"
+        echo -e "  Health:    http://$DOMAIN_NAME:${BACKEND_HOST_PORT}/api/v1/health\n"
+        echo -e "${YELLOW}Note: Some ports were remapped to avoid conflicts.${NC}"
+        echo -e "  Backend port:  ${BACKEND_HOST_PORT}"
+        echo -e "  Frontend port: ${FRONTEND_HOST_PORT}"
+        echo -e "  HTTP port:     ${HTTP_HOST_PORT}"
+        echo -e "  HTTPS port:    ${HTTPS_HOST_PORT}\n"
+    fi
 
     echo -e "${BLUE}Database Credentials:${NC}"
     echo -e "  Host:     postgres (localhost:5432)"

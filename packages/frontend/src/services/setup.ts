@@ -1,5 +1,15 @@
 import api from './api';
 
+export interface LicenseDefaults {
+  organizationName: string;
+  enabledModules: string[];
+  maxFacilities: number;
+  maxUsers: number;
+  licenseType: string;
+  suggestedPreset?: string;
+  features?: Record<string, boolean>;
+}
+
 export interface SetupStatus {
   isSetupComplete: boolean;
   deploymentMode: 'on-premise' | 'saas';
@@ -7,6 +17,7 @@ export interface SetupStatus {
   facilityName?: string;
   tenantSlug?: string;
   tenantCount?: number;
+  licenseDefaults?: LicenseDefaults;
 }
 
 export interface OrganizationData {
@@ -105,30 +116,35 @@ export const setupService = {
    * Check if initial setup has been completed
    */
   getStatus: async (): Promise<SetupStatus> => {
+    let systemNotInitialized = false;
     try {
       // First, check if system is initialized with tenants (multi-tenant mode)
       const systemStatus = await api.get('/system/initialized');
       if (systemStatus.data && systemStatus.data.initialized === false) {
-        // System not initialized - show onboarding
-        return {
-          isSetupComplete: false,
-          deploymentMode: 'saas',
-          tenantCount: 0,
-        };
+        systemNotInitialized = true;
+        // Don't return early — fall through to /setup/status to get correct deploymentMode
       }
     } catch (err) {
-      // Fall through to old setup check
+      // Fall through to setup status check
       console.log('[setupService] Multi-tenant check failed, falling back to legacy setup check');
     }
 
-    // Fall back to legacy setup status endpoint
+    // Get setup status (has correct deploymentMode from DEPLOYMENT_MODE env var)
     try {
       const response = await api.get<SetupStatus>('/setup/status');
+      if (systemNotInitialized) {
+        // Override: system has no tenants, so setup is not complete
+        return {
+          ...response.data,
+          isSetupComplete: false,
+          tenantCount: 0,
+        };
+      }
       return response.data;
     } catch (err) {
-      // If both fail, assume setup is complete
+      // If both fail (backend not ready), assume setup NOT complete (safer default)
       return {
-        isSetupComplete: true,
+        isSetupComplete: false,
         deploymentMode: 'on-premise',
       };
     }

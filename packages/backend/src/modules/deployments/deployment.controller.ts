@@ -191,6 +191,8 @@ export class DeploymentController {
    * customer hosts to authenticate against the private GitHub repository.
    */
   @Get('source-bundle')
+  @Public()
+  @Throttle({ default: { ttl: 60000, limit: 3 } })
   async serveSourceBundle(
     @Query('licenseKey') licenseKey: string,
     @Res() res: Response,
@@ -249,6 +251,8 @@ export class DeploymentController {
    * them without authentication.
    */
   @Get('installers/:type')
+  @Public()
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   async serveInstallerScript(
     @Param('type') type: string,
     @Res() res: Response,

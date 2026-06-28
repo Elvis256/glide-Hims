@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { minorToMajor, majorToMinor } from './currency-utils';
 
 export interface PesapalInitArgs {
   txRef: string;
@@ -88,7 +89,7 @@ export class PesapalService {
     const body: any = {
       id: args.txRef,
       currency: args.currency,
-      amount: args.amount / 100,
+      amount: minorToMajor(args.amount, args.currency),
       description: (args.description || 'Glide-HIMS subscription').slice(0, 100),
       callback_url: args.callbackUrl,
       notification_id: ipnId,
@@ -130,8 +131,11 @@ export class PesapalService {
   }
 
   async verifyTransaction(orderTrackingId: string): Promise<{ ok: boolean; amount?: number; currency?: string; status?: string; merchantReference?: string; raw?: any }> {
-    if (!this.isConfigured() || String(orderTrackingId).startsWith('MOCK-')) {
+    if (!this.isConfigured() && String(orderTrackingId).startsWith('MOCK-')) {
       return { ok: true, status: 'COMPLETED', raw: { mock: true } };
+    }
+    if (!this.isConfigured()) {
+      return { ok: false, status: 'NOT_CONFIGURED', raw: { error: 'Pesapal not configured' } };
     }
     const token = await this.authToken();
     const res = await fetch(`${this.base}/api/Transactions/GetTransactionStatus?orderTrackingId=${encodeURIComponent(orderTrackingId)}`, {
@@ -144,7 +148,7 @@ export class PesapalService {
     return {
       ok: completed,
       status: json.payment_status_description,
-      amount: typeof json.amount === 'number' ? Math.round(json.amount * 100) : undefined,
+      amount: typeof json.amount === 'number' ? majorToMinor(json.amount, json.currency || json.currency_code || '') : undefined,
       currency: json.currency || json.currency_code,
       merchantReference: json.merchant_reference,
       raw: json,

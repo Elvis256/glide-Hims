@@ -2,7 +2,6 @@ import { Entity, Column, ManyToOne, JoinColumn, Index } from 'typeorm';
 import { BaseEntity } from './base.entity';
 
 @Entity('positions')
-@Index(['tenantId'])
 @Index(['rank'])
 export class Position extends BaseEntity {
   @Column({ length: 120 })
@@ -29,7 +28,6 @@ export enum ApproverGroupQuorum {
 }
 
 @Entity('approver_groups')
-@Index(['tenantId'])
 export class ApproverGroup extends BaseEntity {
   @Column({ length: 120 })
   name: string;
@@ -53,7 +51,6 @@ export class ApproverGroup extends BaseEntity {
 }
 
 @Entity('approver_group_members')
-@Index(['tenantId'])
 @Index(['groupId'])
 export class ApproverGroupMember extends BaseEntity {
   @Column({ name: 'group_id' })
@@ -85,7 +82,6 @@ export enum ApprovalPolicyStepType {
 }
 
 @Entity('procurement_approval_policies')
-@Index(['tenantId'])
 @Index(['documentType'])
 @Index(['priority'])
 @Index(['module', 'tenantId'])
@@ -135,7 +131,6 @@ export class ProcurementApprovalPolicy extends BaseEntity {
 }
 
 @Entity('procurement_approval_policy_steps')
-@Index(['tenantId'])
 @Index(['policyId'])
 export class ProcurementApprovalPolicyStep extends BaseEntity {
   @Column({ name: 'policy_id' })

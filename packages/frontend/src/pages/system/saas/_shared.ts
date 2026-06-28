@@ -166,6 +166,7 @@ export interface Quotation {
   acceptedAt: string | null; rejectedAt: string | null;
   currentRevisionNumber: number; status: QuotationStatus;
   subscriptionId: string | null; contractId: string | null;
+  deploymentType: string | null; deploymentDomain: string | null; deploymentId: string | null;
   notes: string | null; internalNotes: string | null;
   createdBy: string | null; metadata: any;
   revisions: QuotationRevision[];
@@ -225,7 +226,8 @@ export interface OnboardingItem {
 }
 
 export interface Onboarding {
-  id: string; tenantId: string | null; deploymentId: string | null;
+  id: string; tenantId: string | null; tenant?: TenantRef | null;
+  deploymentId: string | null;
   quotationId: string | null; subscriptionId: string | null;
   status: OnboardingStatus; progressPercent: number;
   targetGoLiveDate: string | null; actualGoLiveDate: string | null;
@@ -249,6 +251,7 @@ export type HealthStatus = 'healthy' | 'at_risk' | 'critical';
 
 export interface ClientHealth {
   id: string; tenantId: string; subscriptionId: string | null;
+  tenant?: TenantRef | null;
   overallScore: number; healthStatus: HealthStatus;
   usageScore: number; paymentScore: number; supportScore: number;
   adoptionScore: number; deploymentScore: number;

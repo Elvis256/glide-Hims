@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Plus, RefreshCw, Loader2, Eye, FileText } from 'lucide-react';
+import { RefreshCw, Loader2, Eye, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../../services/api';
 import SystemPagination from '../../components/SystemPagination';
@@ -53,29 +53,40 @@ export default function SystemContractsPage() {
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [status]);
 
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    items.forEach((c) => { counts[c.status] = (counts[c.status] || 0) + 1; });
+    return counts;
+  }, [items]);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Contracts</h1>
-          <p className="text-sm text-gray-500">Manage client SaaS contracts and agreements</p>
+          <p className="text-sm text-gray-500">Manage client SaaS contracts and agreements. Contracts are auto-generated when quotations are accepted.</p>
         </div>
-        <button onClick={load} className="inline-flex items-center gap-2 px-3 py-2 border rounded text-sm hover:bg-gray-50"><RefreshCw className="w-4 h-4" /> Refresh</button>
+        <button onClick={load} className="inline-flex items-center gap-2 px-3 py-2 border rounded-lg text-sm font-medium hover:bg-gray-50 transition-all"><RefreshCw className="w-4 h-4" /> Refresh</button>
       </div>
 
+      {/* Status filter tabs */}
       <div className="flex flex-wrap gap-1 border-b pb-2">
-        <button onClick={() => setParams({})} className={`px-3 py-1.5 rounded-t text-sm font-medium ${!status ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}>All</button>
+        <button onClick={() => setParams({})} className={`px-3 py-1.5 rounded-t text-sm font-medium ${!status ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}>
+          All ({items.length})
+        </button>
         {STATUSES.map((s) => (
-          <button key={s} onClick={() => setParams({ status: s })} className={`px-3 py-1.5 rounded-t text-sm font-medium capitalize ${status === s ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}>{s.replaceAll('_', ' ')}</button>
+          <button key={s} onClick={() => setParams({ status: s })} className={`px-3 py-1.5 rounded-t text-sm font-medium capitalize ${status === s ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}>
+            {s.replaceAll('_', ' ')}{statusCounts[s] ? ` (${statusCounts[s]})` : ''}
+          </button>
         ))}
       </div>
 
       <input
         type="text"
-        placeholder="Search..."
+        placeholder="Search by contract number, client name..."
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        className="px-3 py-2 border border-gray-200 rounded-lg text-sm w-64 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        className="px-3 py-2 border border-gray-200 rounded-lg text-sm w-80 focus:outline-none focus:ring-2 focus:ring-blue-500"
       />
 
       {loading ? (
@@ -89,32 +100,51 @@ export default function SystemContractsPage() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Client</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Value</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Start</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">End</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Period</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {paginatedItems.map((c) => (
-                <tr key={c.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 text-sm font-mono font-medium text-gray-900">{c.contractNumber}</td>
-                  <td className="px-4 py-3 text-sm">
-                    <div className="font-medium text-gray-900">{c.clientName}</div>
-                    {c.clientOrganization && <div className="text-xs text-gray-500">{c.clientOrganization}</div>}
-                  </td>
-                  <td className="px-4 py-3 text-sm">
-                    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold capitalize ${CONTRACT_STATUS_STYLES[c.status] || 'bg-gray-100 text-gray-700'}`}>{c.status.replaceAll('_', ' ')}</span>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-right font-medium">{fmtMoney(c.totalValueMinor, c.currency)}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{fmtDate(c.startDate)}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{fmtDate(c.endDate)}</td>
-                  <td className="px-4 py-3 text-right space-x-1">
-                    <Link to={`/system/contracts/${c.id}`} className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm"><Eye className="w-3.5 h-3.5" /> View</Link>
-                    <a href={`/api/v1/saas-revenue/contracts/${c.id}/html`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-gray-500 hover:text-gray-700 text-sm ml-2"><FileText className="w-3.5 h-3.5" /></a>
+              {paginatedItems.map((c) => {
+                const meta = (c.metadata || {}) as any;
+                return (
+                  <tr key={c.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3">
+                      <div className="text-sm font-mono font-medium text-gray-900">{c.contractNumber}</div>
+                      {meta.quotationNumber && <div className="text-[11px] text-gray-400">from {meta.quotationNumber}</div>}
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      <div className="font-medium text-gray-900">{c.clientOrganization || c.clientName}</div>
+                      {c.clientOrganization && c.clientName !== c.clientOrganization && <div className="text-xs text-gray-500">{c.clientName}</div>}
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold capitalize ${CONTRACT_STATUS_STYLES[c.status] || 'bg-gray-100 text-gray-700'}`}>{c.status.replaceAll('_', ' ')}</span>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-right">
+                      <div className="font-semibold">{fmtMoney(c.totalValueMinor, c.currency)}</div>
+                      {meta.billingInterval && <div className="text-[11px] text-gray-400 capitalize">{meta.billingInterval}</div>}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-600">
+                      <div>{fmtDate(c.startDate)}</div>
+                      <div className="text-xs text-gray-400">to {fmtDate(c.endDate)}</div>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <Link to={`/system/contracts/${c.id}`} className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm font-medium"><Eye className="w-3.5 h-3.5" /> View</Link>
+                        <a href={`/api/v1/saas-revenue/contracts/${c.id}/html`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-gray-400 hover:text-gray-700 text-sm" title="View PDF"><FileText className="w-3.5 h-3.5" /></a>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {filteredItems.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-12 text-center text-gray-500">
+                    <p className="font-medium">No contracts found</p>
+                    <p className="text-xs mt-1">Contracts are automatically created when quotations are accepted.</p>
                   </td>
                 </tr>
-              ))}
-              {filteredItems.length === 0 && <tr><td colSpan={7} className="px-4 py-12 text-center text-gray-500">No contracts found</td></tr>}
+              )}
             </tbody>
           </table>
           <SystemPagination page={page} pageSize={pageSize} total={filteredItems.length} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />

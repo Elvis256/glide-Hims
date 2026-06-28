@@ -16,7 +16,7 @@ import {
   MapPin,
   Building,
 } from 'lucide-react';
-import { setupService, type InitializeSetupData, type FacilityPreset } from '../services/setup';
+import { setupService, type InitializeSetupData, type FacilityPreset, type LicenseDefaults } from '../services/setup';
 
 type Step = 'organization' | 'deployment' | 'facility' | 'admin' | 'settings' | 'review';
 
@@ -134,9 +134,49 @@ export default function SetupWizardPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [presets, setPresets] = useState<FacilityPreset[]>([]);
   const [selectedPreset, setSelectedPreset] = useState<FacilityPreset | null>(null);
+  const [licenseHint, setLicenseHint] = useState(false);
 
   useEffect(() => {
-    setupService.getPresets().then(setPresets).catch(() => {/* ignore if unavailable */});
+    let cancelled = false;
+
+    Promise.all([
+      setupService.getPresets().catch(() => [] as FacilityPreset[]),
+      setupService.getStatus().catch(() => null),
+    ]).then(([fetchedPresets, status]) => {
+      if (cancelled) return;
+
+      if (fetchedPresets.length > 0) setPresets(fetchedPresets);
+
+      const defaults = status?.licenseDefaults;
+      if (!defaults) return;
+
+      setLicenseHint(true);
+
+      // Pre-fill organization name
+      if (defaults.organizationName) {
+        setFormData(prev => ({
+          ...prev,
+          organization: { ...prev.organization, name: defaults.organizationName },
+        }));
+      }
+
+      // Pre-fill enabled modules (only if license has them)
+      if (defaults.enabledModules.length > 0) {
+        setFormData(prev => ({
+          ...prev,
+          settings: { ...prev.settings, enabledModules: defaults.enabledModules },
+        }));
+      }
+
+      // Auto-select suggested preset
+      if (defaults.suggestedPreset) {
+        const presetList = fetchedPresets.length > 0 ? fetchedPresets : BUILTIN_PRESETS;
+        const match = presetList.find(p => p.mode === defaults.suggestedPreset);
+        if (match) selectPreset(match);
+      }
+    });
+
+    return () => { cancelled = true; };
   }, []);
   
   // Form data
@@ -275,6 +315,9 @@ export default function SetupWizardPage() {
                   placeholder="e.g., Kampala Medical Center"
                 />
                 {errors['organization.name'] && <p className="mt-1 text-sm text-red-500">{errors['organization.name']}</p>}
+                {licenseHint && formData.organization.name && (
+                  <p className="mt-1 text-xs text-blue-500">Pre-filled from your license</p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Organization Type</label>
@@ -311,6 +354,9 @@ export default function SetupWizardPage() {
               <p className="mt-1 text-gray-600">
                 Choose how this system will be used. This sets up the right modules and roles for your facility type.
               </p>
+              {licenseHint && selectedPreset && (
+                <p className="mt-1 text-xs text-blue-500">Pre-filled from your license</p>
+              )}
             </div>
             <div className="grid gap-4">
               {(presets.length > 0 ? presets : BUILTIN_PRESETS).map((preset) => {
@@ -551,7 +597,10 @@ export default function SetupWizardPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-3">Enabled Modules</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Enabled Modules</label>
+                {licenseHint && (
+                  <p className="mb-2 text-xs text-blue-500">Pre-filled from your license</p>
+                )}
                 <div className="grid grid-cols-2 gap-3">
                   {modules.map(module => (
                     <label key={module.id} className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50">

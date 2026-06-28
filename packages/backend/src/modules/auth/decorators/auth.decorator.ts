@@ -5,6 +5,7 @@ import { RolesGuard } from '../guards/roles.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { OwnershipGuard } from '../guards/ownership.guard';
 import { ModuleGuard } from '../guards/module.guard';
+import { GlobalJwtAuthGuard } from '../guards/global-jwt.guard';
 import { Roles } from './roles.decorator';
 import { RequirePermissions } from './permissions.decorator';
 import { RequireModule } from './module.decorator';
@@ -16,7 +17,7 @@ import { ResourceOwnership, ResourceOwnershipConfig } from './resource-ownership
  */
 export function Auth(...roles: string[]) {
   const decorators = [
-    UseGuards(AuthGuard('jwt'), RolesGuard),
+    UseGuards(GlobalJwtAuthGuard, RolesGuard),
     ApiBearerAuth(),
     ApiUnauthorizedResponse({ description: 'Unauthorized' }),
   ];
@@ -35,7 +36,7 @@ export function Auth(...roles: string[]) {
  */
 export function AuthWithPermissions(...permissions: string[]) {
   const decorators = [
-    UseGuards(AuthGuard('jwt'), PermissionsGuard),
+    UseGuards(GlobalJwtAuthGuard, PermissionsGuard),
     ApiBearerAuth(),
     ApiUnauthorizedResponse({ description: 'Unauthorized' }),
     ApiForbiddenResponse({ description: 'Insufficient permissions' }),

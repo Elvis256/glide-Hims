@@ -40,6 +40,19 @@ export default function QuotationBillingForm({ form, onChange, disabled }: Props
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.includeVat} onChange={(e) => onChange({ includeVat: e.target.checked })} disabled={disabled} /> Include VAT ({form.vatRatePercent}%)</label>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.deductWht} onChange={(e) => onChange({ deductWht: e.target.checked })} disabled={disabled} /> Deduct WHT ({form.whtRatePercent}%)</label>
       </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+        <div>
+          <label className="block text-xs font-medium mb-1">Deployment Type</label>
+          <select className="w-full border rounded px-3 py-2 text-sm" value={form.deploymentType} onChange={(e) => onChange({ deploymentType: e.target.value })} disabled={disabled}>
+            <option value="hybrid">Hybrid</option>
+            <option value="standalone">Standalone (On-Premise)</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium mb-1">Deployment Domain</label>
+          <input type="text" placeholder="e.g. client.glidehims.com" className="w-full border rounded px-3 py-2 text-sm" value={form.deploymentDomain} onChange={(e) => onChange({ deploymentDomain: e.target.value })} disabled={disabled} />
+        </div>
+      </div>
     </div>
   );
 }

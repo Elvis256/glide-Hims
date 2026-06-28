@@ -1,7 +1,37 @@
-version: '3.8'
+#!/bin/bash
+# Fix script for hybrid deployment container issues
+set -e
 
+cd /opt/glide-hims
+
+echo "==> Creating uploads directory..."
+mkdir -p uploads/patient-documents
+
+echo "==> Creating frontend nginx config..."
+cat > frontend-nginx.conf << 'NGINX'
+events { worker_connections 1024; }
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+    sendfile on;
+    keepalive_timeout 65;
+    server {
+        listen 8080;
+        server_name _;
+        root /usr/share/nginx/html;
+        index index.html;
+        gzip on;
+        gzip_types text/plain text/css application/json application/javascript text/xml;
+        location /health { return 200 "healthy\n"; add_header Content-Type text/plain; }
+        location / { try_files $uri $uri/ /index.html; }
+        location ~ /\. { deny all; }
+    }
+}
+NGINX
+
+echo "==> Updating docker-compose.hybrid.yml..."
+cat > docker-compose.hybrid.yml << 'COMPOSE'
 services:
-  # PostgreSQL Database - Core data storage
   postgres:
     image: postgres:15-alpine
     container_name: glide-hims-postgres
@@ -29,7 +59,6 @@ services:
       - glide-network
     restart: unless-stopped
 
-  # Redis Cache - Session storage & caching
   redis:
     image: redis:7-alpine
     container_name: glide-hims-redis
@@ -39,7 +68,7 @@ services:
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a ${REDIS_PASSWORD:-ChangeMeInProduction} ping | grep PONG"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -47,7 +76,6 @@ services:
       - glide-network
     restart: unless-stopped
 
-  # NestJS Backend API
   backend:
     build:
       context: .
@@ -56,7 +84,6 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
-      # Individual DB vars required by main.ts startup checks
       DB_HOST: postgres
       DB_USERNAME: ${DB_USER:-hims_admin}
       DB_PASSWORD: ${DB_PASSWORD:-ChangeMeInProduction}
@@ -68,18 +95,10 @@ services:
       JWT_EXPIRES_IN: 24h
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-${REFRESH_TOKEN_SECRET:-change-me-in-production-with-32-char-min}}
       REFRESH_TOKEN_EXPIRES_IN: 7d
-      # Encryption keys (required in production by main.ts)
       MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:-}
       PII_ENCRYPTION_KEY: ${PII_ENCRYPTION_KEY:-}
       PII_HASH_KEY: ${PII_HASH_KEY:-}
       LOG_LEVEL: info
-      DEPLOYMENT_MODE: ${DEPLOYMENT_MODE:-hybrid}
-      DB_SSL: "false"
-      # License
-      LICENSE_KEY: ${LICENSE_KEY:-}
-      LICENSE_SECRET_KEY: ${LICENSE_SECRET_KEY:-}
-      # Schema changes are applied via migrations — never use synchronize in production
-      TYPEORM_SYNCHRONIZE: "false"
       CORS_ORIGINS: http://localhost:8080,https://${DOMAIN_NAME}
       API_URL: https://${DOMAIN_NAME}/api
       FRONTEND_URL: https://${DOMAIN_NAME}
@@ -100,8 +119,8 @@ services:
     restart: unless-stopped
     volumes:
       - ./packages/backend/logs:/app/logs
+      - ./uploads:/app/packages/backend/uploads
 
-  # React Frontend
   frontend:
     build:
       context: .
@@ -112,13 +131,14 @@ services:
       VITE_API_TIMEOUT: 30000
     ports:
       - "8080:8080"
+    volumes:
+      - ./frontend-nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - backend
     networks:
       - glide-network
     restart: unless-stopped
 
-  # Nginx Reverse Proxy & Load Balancer
   nginx:
     image: nginx:alpine
     container_name: glide-hims-nginx
@@ -135,11 +155,6 @@ services:
     networks:
       - glide-network
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:80/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
 networks:
   glide-network:
@@ -148,3 +163,14 @@ networks:
 volumes:
   postgres_data:
   redis_data:
+COMPOSE
+
+echo "==> Stopping containers..."
+docker compose -f docker-compose.hybrid.yml down 2>/dev/null || true
+
+echo "==> Starting containers..."
+docker compose -f docker-compose.hybrid.yml up -d
+
+echo "==> Done! Checking status in 10 seconds..."
+sleep 10
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"

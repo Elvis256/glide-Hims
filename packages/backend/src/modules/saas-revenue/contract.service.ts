@@ -7,6 +7,11 @@ import { SaasContract, ContractStatus } from './contract.entity';
 import { SaasQuotation, SaasQuotationRevision } from './quotation.entity';
 import { SaasRevenueService } from './saas-revenue.service';
 
+interface ContractFromQuotationOpts {
+  tenantId?: string;
+  autoActivate?: boolean;
+}
+
 @Injectable()
 export class ContractService {
   private readonly logger = new Logger(ContractService.name);
@@ -52,7 +57,11 @@ export class ContractService {
     return this.contracts.save(c);
   }
 
-  async createContractFromQuotation(quotationId: string, createdBy?: string): Promise<SaasContract> {
+  async createContractFromQuotation(
+    quotationId: string,
+    createdBy?: string,
+    opts: ContractFromQuotationOpts = {},
+  ): Promise<SaasContract> {
     const q = await this.quotations.findOne({ where: { id: quotationId } });
     if (!q) throw new NotFoundException('Quotation not found');
 
@@ -61,16 +70,90 @@ export class ContractService {
     });
 
     const now = new Date();
-    return this.createContract({
+    const interval = (q.billingInterval || 'monthly') as string;
+    const endDate = new Date(now);
+    if (interval === 'yearly' || interval === 'annual') {
+      endDate.setFullYear(endDate.getFullYear() + 1);
+    } else {
+      endDate.setFullYear(endDate.getFullYear() + 1); // contracts are annual even if billing is monthly
+    }
+
+    // Build terms text from quotation data
+    let vendor: any;
+    try { vendor = await this.saasRevenue.getVendorBilling(); } catch { vendor = { legalName: 'Glide HIMS' }; }
+    const vendorName = vendor.tradingName || vendor.legalName || 'Glide HIMS';
+
+    const lineDescriptions = (rev?.lineItems || [])
+      .map((l: any, i: number) => `  ${i + 1}. ${l.description || 'Custom Service'} (Qty: ${l.quantity})`)
+      .join('\n');
+
+    const zeroDecimal = new Set(['UGX','KES','TZS','RWF','JPY','KRW','VND','CLP','PYG']);
+    const fmtCurrency = (n: number) => `${q.currency} ${(n / (zeroDecimal.has(q.currency) ? 1 : 100)).toLocaleString()}`;
+
+    const termsText = [
+      `SOFTWARE LICENSE & SERVICE AGREEMENT`,
+      ``,
+      `This agreement ("Contract") is entered into between ${vendorName} ("Provider") and ${q.clientOrganization || q.clientName} ("Client") for the provision of Glide-HIMS Hospital Management Information System software and related services.`,
+      ``,
+      `1. SCOPE OF SERVICES`,
+      `The Provider shall deliver, configure, and maintain the following system modules and services as detailed in Quotation ${q.quotationNumber}:`,
+      lineDescriptions,
+      ``,
+      `2. CONTRACT VALUE & BILLING`,
+      `Total Contract Value: ${fmtCurrency(rev?.totalMinor ?? 0)}`,
+      `Billing Interval: ${interval === 'yearly' || interval === 'annual' ? 'Annual' : 'Monthly'}`,
+      `Licensed User Seats: ${q.seats}`,
+      `Currency: ${q.currency}`,
+      ``,
+      `3. IMPLEMENTATION MILESTONES`,
+      `  Phase 1 (50%): Initial Setup & Base System — within 7 days of deposit`,
+      `  Phase 2 (30%): Customization & User Training — within 21 days`,
+      `  Phase 3 (20%): Go-Live & Support Handover — within 42 days`,
+      ``,
+      `4. SUPPORT & MAINTENANCE`,
+      `The Provider shall provide 90 days of complimentary technical support post-deployment. Thereafter, a Service Level Agreement (SLA) at 15% of the annual software licensing value shall apply, billed quarterly.`,
+      ``,
+      `5. DATA PROTECTION & CONFIDENTIALITY`,
+      `Both parties agree to protect all patient data, financial records, and institutional information exchanged during and after the implementation period. All data handling shall comply with applicable Ugandan data protection laws.`,
+      ``,
+      `6. TERMINATION`,
+      `Either party may terminate this contract with 30 days written notice. In the event of early termination by the Client, any outstanding milestone payments remain due. The Provider shall ensure a reasonable data export period of not less than 14 days.`,
+      ``,
+      `7. GOVERNING LAW`,
+      `This contract shall be governed by and construed in accordance with the laws of the Republic of Uganda.`,
+    ].join('\n');
+
+    const contract = await this.createContract({
       quotationId: q.id,
       subscriptionId: q.subscriptionId,
+      tenantId: opts.tenantId ?? null,
       clientName: q.clientName,
       clientOrganization: q.clientOrganization,
       startDate: now,
-      endDate: new Date(now.getTime() + 365 * 86400000),
+      endDate,
       totalValueMinor: rev?.totalMinor ?? 0,
       currency: q.currency,
+      autoRenew: true,
+      termsText,
+      notes: q.notes || null,
+      metadata: {
+        quotationNumber: q.quotationNumber,
+        billingInterval: interval,
+        seats: q.seats,
+        deploymentType: q.deploymentType,
+        lineItemCount: rev?.lineItems?.length ?? 0,
+      },
     }, createdBy);
+
+    // Auto-activate if requested (e.g. from quotation acceptance flow)
+    if (opts.autoActivate) {
+      contract.status = 'active';
+      await this.contracts.save(contract);
+      this.events.emit('contract.activated', { contractId: contract.id });
+      this.logger.log(`Contract ${contract.contractNumber} auto-activated from quotation ${q.quotationNumber}`);
+    }
+
+    return contract;
   }
 
   async activateContract(id: string): Promise<SaasContract> {

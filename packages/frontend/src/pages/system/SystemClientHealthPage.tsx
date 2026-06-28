@@ -24,6 +24,7 @@ export default function SystemClientHealthPage() {
     const q = debouncedSearch.toLowerCase();
     return scores.filter((s) =>
       s.tenantId.toLowerCase().includes(q) ||
+      (s.tenant?.name || '').toLowerCase().includes(q) ||
       String(s.overallScore).includes(q) ||
       s.healthStatus.toLowerCase().includes(q)
     );
@@ -138,7 +139,7 @@ export default function SystemClientHealthPage() {
             <tbody className="divide-y divide-gray-200">
               {filteredScores.map((s) => (
                 <tr key={s.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 text-sm font-mono text-gray-900">{s.tenantId.slice(0, 8)}...</td>
+                  <td className="px-4 py-3 text-sm text-gray-900">{s.tenant?.name || <span className="font-mono text-gray-400">{s.tenantId.slice(0, 8)}...</span>}</td>
                   <td className="px-4 py-3 text-center">
                     <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold capitalize ${HEALTH_STATUS_STYLES[s.healthStatus]}`}>{s.healthStatus.replace('_', ' ')}</span>
                   </td>

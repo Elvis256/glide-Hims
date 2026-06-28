@@ -183,6 +183,29 @@ SESSION_TIMEOUT=3600
 ENVFILE
 
   log_success ".env file created at $GLIDE_DIR/.env"
+
+  # Attempt to download offline license file if the platform is reachable
+  # (standalone may be air-gapped — this step is best-effort)
+  PLATFORM_URL="${CONTROL_PLANE_URL:-https://hmisdemo.itsolutionsuganda.com}"
+  if [ -n "$LICENSE_KEY" ]; then
+    log_info "Attempting to download offline license file..."
+    mkdir -p /etc/glide-hims
+    if curl -sf --connect-timeout 10 "${PLATFORM_URL}/api/v1/license/${LICENSE_KEY}/export" -o /etc/glide-hims/license.json 2>/dev/null; then
+      SECRET_KEY=$(python3 -c "import json; print(json.load(open('/etc/glide-hims/license.json'))['secretKey'])" 2>/dev/null || true)
+      log_success "Offline license file saved to /etc/glide-hims/license.json"
+    else
+      log_info "Platform unreachable — offline license file will need to be placed manually at /etc/glide-hims/license.json"
+    fi
+  fi
+
+  # Ensure LICENSE_SECRET_KEY is set (required for production startup)
+  if [ -z "$SECRET_KEY" ]; then
+    SECRET_KEY=$(openssl rand -hex 32)
+    log_info "LICENSE_SECRET_KEY not found in license export — generated a local key"
+  fi
+  echo "" >> "$GLIDE_DIR/.env"
+  echo "# License secret for offline HMAC validation" >> "$GLIDE_DIR/.env"
+  echo "LICENSE_SECRET_KEY=$SECRET_KEY" >> "$GLIDE_DIR/.env"
 }
 
 start_containers() {
