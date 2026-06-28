@@ -6,9 +6,12 @@ import {
   IsNumber,
   IsArray,
   ValidateNested,
+  Min,
+  Max,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { MAX_MONEY, NUMBER_OPTS } from '../../../common/constants/validation.constants';
 
 export class CreateBankReconciliationDto {
   @ApiProperty()
@@ -24,11 +27,15 @@ export class CreateBankReconciliationDto {
   statementDate: string;
 
   @ApiProperty()
-  @IsNumber()
+  @IsNumber(NUMBER_OPTS)
+  @Min(-MAX_MONEY)
+  @Max(MAX_MONEY)
   statementBalance: number;
 
   @ApiProperty()
-  @IsNumber()
+  @IsNumber(NUMBER_OPTS)
+  @Min(-MAX_MONEY)
+  @Max(MAX_MONEY)
   bookBalance: number;
 }
 
@@ -44,7 +51,9 @@ export class StatementItemDto {
   statementDescription?: string;
 
   @ApiProperty()
-  @IsNumber()
+  @IsNumber(NUMBER_OPTS)
+  @Min(-MAX_MONEY)
+  @Max(MAX_MONEY)
   statementAmount: number;
 
   @ApiProperty()

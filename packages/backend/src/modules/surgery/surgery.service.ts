@@ -24,6 +24,7 @@ import {
   RecordConsumableDto,
 } from './dto/surgery.dto';
 import { InventoryService } from '../inventory/inventory.service';
+import { AuditLogService } from '../../common/interceptors/audit-log.service';
 
 @Injectable()
 export class SurgeryService {
@@ -40,6 +41,7 @@ export class SurgeryService {
     private itemRepo: Repository<Item>,
     private inventoryService: InventoryService,
     private dataSource: DataSource,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   // ============ THEATRE MANAGEMENT ============
@@ -175,7 +177,18 @@ export class SurgeryService {
       });
       if (tenantId) (surgeryCase as any).tenantId = tenantId;
 
-      return manager.save(surgeryCase);
+      const saved = await manager.save(surgeryCase);
+
+      this.auditLogService.log({
+        action: 'SCHEDULE_SURGERY',
+        entityType: 'SurgeryCase',
+        entityId: saved.id,
+        userId,
+        tenantId,
+        newValue: { caseNumber: saved.caseNumber, status: SurgeryStatus.SCHEDULED, procedureName: dto.procedureName },
+      }).catch(() => {});
+
+      return saved;
     });
   }
 
@@ -296,7 +309,18 @@ export class SurgeryService {
     // Update theatre status
     await this.theatreRepo.update(surgeryCase.theatreId, { status: TheatreStatus.IN_USE });
 
-    return this.surgeryCaseRepo.save(surgeryCase);
+    const saved = await this.surgeryCaseRepo.save(surgeryCase);
+
+    this.auditLogService.log({
+      action: 'START_SURGERY',
+      entityType: 'SurgeryCase',
+      entityId: id,
+      tenantId,
+      oldValue: { status: SurgeryStatus.PRE_OP },
+      newValue: { status: SurgeryStatus.IN_PROGRESS },
+    }).catch(() => {});
+
+    return saved;
   }
 
   async updateIntraOpNotes(
@@ -344,7 +368,18 @@ export class SurgeryService {
     // Update theatre to cleaning
     await this.theatreRepo.update(surgeryCase.theatreId, { status: TheatreStatus.CLEANING });
 
-    return this.surgeryCaseRepo.save(surgeryCase);
+    const saved = await this.surgeryCaseRepo.save(surgeryCase);
+
+    this.auditLogService.log({
+      action: 'COMPLETE_SURGERY',
+      entityType: 'SurgeryCase',
+      entityId: id,
+      tenantId,
+      oldValue: { status: SurgeryStatus.IN_PROGRESS },
+      newValue: { status: SurgeryStatus.POST_OP },
+    }).catch(() => {});
+
+    return saved;
   }
 
   async dischargeFromRecovery(id: string, tenantId?: string): Promise<SurgeryCase> {
@@ -381,7 +416,18 @@ export class SurgeryService {
       surgeryCase.preOpNotes = `${surgeryCase.preOpNotes || ''}\n[CANCELLED] ${dto.reason}`.trim();
     }
 
-    return this.surgeryCaseRepo.save(surgeryCase);
+    const saved = await this.surgeryCaseRepo.save(surgeryCase);
+
+    this.auditLogService.log({
+      action: 'CANCEL_SURGERY',
+      entityType: 'SurgeryCase',
+      entityId: id,
+      tenantId,
+      oldValue: { status: surgeryCase.status === SurgeryStatus.POSTPONED ? 'previous' : 'previous' },
+      newValue: { status: saved.status, reason: dto.reason },
+    }).catch(() => {});
+
+    return saved;
   }
 
   // ============ SCHEDULE & DASHBOARD ============

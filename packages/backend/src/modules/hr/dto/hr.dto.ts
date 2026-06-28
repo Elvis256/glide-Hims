@@ -15,9 +15,38 @@ import {
   IsUrl,
   MaxLength,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { EmploymentType, Gender, MaritalStatus } from '../../../database/entities/employee.entity';
+import { MAX_MONEY, NUMBER_OPTS } from '../../../common/constants/validation.constants';
+
+export class AllowanceDto {
+  @IsString()
+  name: string;
+
+  @IsNumber(NUMBER_OPTS)
+  @Min(0)
+  @Max(MAX_MONEY)
+  amount: number;
+
+  @IsBoolean()
+  taxable: boolean;
+}
+
+export class DeductionDto {
+  @IsString()
+  name: string;
+
+  @IsNumber(NUMBER_OPTS)
+  @Min(0)
+  @Max(MAX_MONEY)
+  amount: number;
+
+  @IsString()
+  type: 'fixed' | 'percentage';
+}
 import { LeaveType } from '../../../database/entities/leave-request.entity';
 import { ApplicationStatus } from '../../../database/entities/job-application.entity';
 
@@ -116,14 +145,17 @@ export class CreateEmployeeDto {
   salaryGrade?: string;
 
   @ApiProperty()
-  @IsNumber()
+  @IsNumber(NUMBER_OPTS)
   @Min(0)
+  @Max(MAX_MONEY)
   basicSalary: number;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsArray()
-  allowances?: { name: string; amount: number; taxable: boolean }[];
+  @ValidateNested({ each: true })
+  @Type(() => AllowanceDto)
+  allowances?: AllowanceDto[];
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -169,18 +201,24 @@ export class UpdateEmployeeDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
+  @IsNumber(NUMBER_OPTS)
+  @Min(0)
+  @Max(MAX_MONEY)
   basicSalary?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsArray()
-  allowances?: { name: string; amount: number; taxable: boolean }[];
+  @ValidateNested({ each: true })
+  @Type(() => AllowanceDto)
+  allowances?: AllowanceDto[];
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsArray()
-  deductions?: { name: string; amount: number; type: 'fixed' | 'percentage' }[];
+  @ValidateNested({ each: true })
+  @Type(() => DeductionDto)
+  deductions?: DeductionDto[];
 
   @ApiPropertyOptional()
   @IsOptional()

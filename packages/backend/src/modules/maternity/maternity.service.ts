@@ -39,6 +39,7 @@ import {
   RecordBabyWellnessDto,
   AdministerVaccineDto,
 } from './dto/maternity.dto';
+import { AuditLogService } from '../../common/interceptors/audit-log.service';
 
 @Injectable()
 export class MaternityService {
@@ -57,6 +58,7 @@ export class MaternityService {
     private babyWellnessRepo: Repository<BabyWellnessCheck>,
     @InjectRepository(ImmunizationSchedule)
     private immunizationRepo: Repository<ImmunizationSchedule>,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   // ============ ANC REGISTRATION ============
@@ -122,7 +124,18 @@ export class MaternityService {
     });
     if (tenantId) (registration as any).tenantId = tenantId;
 
-    return this.ancRepo.save(registration);
+    const saved = await this.ancRepo.save(registration);
+
+    this.auditLogService.log({
+      action: 'REGISTER_ANTENATAL',
+      entityType: 'MaternityCase',
+      entityId: saved.id,
+      userId: userId,
+      tenantId: tenantId,
+      newValue: { status: saved.status },
+    }).catch(() => {});
+
+    return saved;
   }
 
   async getRegistrations(
@@ -245,7 +258,18 @@ export class MaternityService {
     });
     if (tenantId) (visit as any).tenantId = tenantId;
 
-    return this.visitRepo.save(visit);
+    const savedVisit = await this.visitRepo.save(visit);
+
+    this.auditLogService.log({
+      action: 'RECORD_ANC_VISIT',
+      entityType: 'MaternityVisit',
+      entityId: savedVisit.id,
+      userId: userId,
+      tenantId: tenantId,
+      newValue: { status: (savedVisit as any).status },
+    }).catch(() => {});
+
+    return savedVisit;
   }
 
   async getVisits(registrationId: string, tenantId?: string): Promise<AntenatalVisit[]> {
@@ -303,7 +327,18 @@ export class MaternityService {
     });
     if (tenantId) (labour as any).tenantId = tenantId;
 
-    return this.labourRepo.save(labour);
+    const savedLabour = await this.labourRepo.save(labour);
+
+    this.auditLogService.log({
+      action: 'ADMIT_LABOUR',
+      entityType: 'MaternityCase',
+      entityId: savedLabour.id,
+      userId: userId,
+      tenantId: tenantId,
+      newValue: { status: savedLabour.status },
+    }).catch(() => {});
+
+    return savedLabour;
   }
 
   async getLabourById(id: string, tenantId?: string): Promise<LabourRecord> {
@@ -371,7 +406,18 @@ export class MaternityService {
       { status: PregnancyStatus.DELIVERED },
     );
 
-    return this.labourRepo.save(labour);
+    const savedDelivery = await this.labourRepo.save(labour);
+
+    this.auditLogService.log({
+      action: 'RECORD_DELIVERY',
+      entityType: 'MaternityCase',
+      entityId: savedDelivery.id,
+      userId: userId,
+      tenantId: tenantId,
+      newValue: { status: savedDelivery.status },
+    }).catch(() => {});
+
+    return savedDelivery;
   }
 
   async recordBabyOutcome(dto: RecordBabyOutcomeDto, tenantId?: string): Promise<DeliveryOutcome> {
@@ -405,7 +451,17 @@ export class MaternityService {
     });
     if (tenantId) (outcome as any).tenantId = tenantId;
 
-    return this.outcomeRepo.save(outcome);
+    const savedOutcome = await this.outcomeRepo.save(outcome);
+
+    this.auditLogService.log({
+      action: 'RECORD_BABY_OUTCOME',
+      entityType: 'BabyOutcome',
+      entityId: savedOutcome.id,
+      tenantId: tenantId,
+      newValue: { status: savedOutcome.babyStatus },
+    }).catch(() => {});
+
+    return savedOutcome;
   }
 
   async getBabyOutcomes(labourRecordId: string, tenantId?: string): Promise<DeliveryOutcome[]> {

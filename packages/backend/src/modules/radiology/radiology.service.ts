@@ -26,6 +26,7 @@ import { InAppNotificationsService } from '../in-app-notifications/in-app-notifi
 import { NotificationsService } from '../notifications/notifications.service';
 import { FinanceService } from '../finance/finance.service';
 import { CriticalResultsService } from '../critical-results/critical-results.service';
+import { AuditLogService } from '../../common/interceptors/audit-log.service';
 
 @Injectable()
 export class RadiologyService {
@@ -45,6 +46,7 @@ export class RadiologyService {
     @Inject(forwardRef(() => FinanceService))
     private financeService: FinanceService,
     private criticalResultsService: CriticalResultsService,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   // ============ MODALITIES ============
@@ -130,6 +132,15 @@ export class RadiologyService {
       this.logger.log(
         `Imaging order created: ${orderNumber} for patient ${dto.patientId} by user ${userId}`,
       );
+
+      this.auditLogService.log({
+        action: 'CREATE_IMAGING_ORDER',
+        entityType: 'ImagingOrder',
+        entityId: savedOrder.id,
+        userId,
+        tenantId,
+        newValue: { orderNumber, studyType: dto.studyType, patientId: dto.patientId, status: ImagingOrderStatus.ORDERED },
+      }).catch(() => {});
 
       return savedOrder;
     });
@@ -223,9 +234,21 @@ export class RadiologyService {
     }
 
     order.scheduledAt = new Date(dto.scheduledAt);
+    const oldStatus = order.status;
     order.status = ImagingOrderStatus.SCHEDULED;
 
-    return this.orderRepo.save(order);
+    const saved = await this.orderRepo.save(order);
+
+    this.auditLogService.log({
+      action: 'SCHEDULE_IMAGING',
+      entityType: 'ImagingOrder',
+      entityId: id,
+      tenantId,
+      oldValue: { status: oldStatus },
+      newValue: { status: ImagingOrderStatus.SCHEDULED, scheduledAt: dto.scheduledAt },
+    }).catch(() => {});
+
+    return saved;
   }
 
   async startImaging(id: string, userId: string, tenantId?: string): Promise<ImagingOrder> {
@@ -238,8 +261,20 @@ export class RadiologyService {
     order.status = ImagingOrderStatus.IN_PROGRESS;
     order.performedById = userId;
 
+    const oldStatus = order.status;
     const savedOrder = await this.orderRepo.save(order);
     this.logger.log(`Imaging started: ${order.orderNumber} by user ${userId}`);
+
+    this.auditLogService.log({
+      action: 'START_IMAGING',
+      entityType: 'ImagingOrder',
+      entityId: id,
+      userId,
+      tenantId,
+      oldValue: { status: oldStatus },
+      newValue: { status: ImagingOrderStatus.IN_PROGRESS },
+    }).catch(() => {});
+
     return savedOrder;
   }
 
@@ -266,6 +301,17 @@ export class RadiologyService {
     this.logger.log(
       `Imaging completed: ${order.orderNumber} by user ${userId}, images: ${order.imageCount}`,
     );
+
+    this.auditLogService.log({
+      action: 'COMPLETE_IMAGING',
+      entityType: 'ImagingOrder',
+      entityId: id,
+      userId,
+      tenantId,
+      oldValue: { status: ImagingOrderStatus.IN_PROGRESS },
+      newValue: { status: ImagingOrderStatus.COMPLETED, imageCount: order.imageCount },
+    }).catch(() => {});
+
     return savedOrder;
   }
 
@@ -325,6 +371,15 @@ export class RadiologyService {
     this.logger.log(
       `Imaging result created for order ${order.orderNumber} by user ${userId}${dto.isCritical ? ' [CRITICAL]' : ''}`,
     );
+
+    this.auditLogService.log({
+      action: 'CREATE_IMAGING_RESULT',
+      entityType: 'ImagingResult',
+      entityId: result.id,
+      userId,
+      tenantId,
+      newValue: { orderId: order.id, isCritical: dto.isCritical, findingCategory: dto.findingCategory },
+    }).catch(() => {});
 
     // Auto-post GL entry: DR Accounts Receivable, CR Radiology Revenue
     if (order.facilityId) {

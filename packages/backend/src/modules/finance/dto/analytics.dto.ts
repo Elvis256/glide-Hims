@@ -1,93 +1,182 @@
 /**
  * Analytics DTOs for GL Analytics endpoints
  */
+import {
+  IsString,
+  IsOptional,
+  IsUUID,
+  IsNumber,
+  IsIn,
+  IsArray,
+  Matches,
+  Min,
+  Max,
+} from 'class-validator';
 
 // GL Analytics Query DTOs
 export class GetGLTrendsDto {
+  @IsUUID()
   accountId: string;
+
+  @IsString()
+  @Matches(/^\d{4}-\d{2}$/)
   startPeriod: string; // YYYY-MM
+
+  @IsString()
+  @Matches(/^\d{4}-\d{2}$/)
   endPeriod: string; // YYYY-MM
 }
 
 export class ComparePeriodGLDto {
+  @IsString()
+  @Matches(/^\d{4}-\d{2}$/)
   period1: string; // YYYY-MM
+
+  @IsString()
+  @Matches(/^\d{4}-\d{2}$/)
   period2: string; // YYYY-MM
 }
 
 export class GetVarianceAnalysisDto {
+  @IsUUID()
   accountId: string;
+
+  @IsString()
+  @Matches(/^\d{4}-\d{2}$/)
   period: string; // YYYY-MM
+
+  @IsOptional()
+  @IsNumber()
   expectedBalance?: number;
 }
 
 export class GetTopAccountsDto {
+  @IsString()
+  @Matches(/^\d{4}-\d{2}$/)
   period: string; // YYYY-MM
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(500)
   limit?: number;
 }
 
 // Revenue & Expense DTOs
 export class GetRevenueExpenseDto {
+  @IsString()
+  @Matches(/^\d{4}-\d{2}$/)
   period: string; // YYYY-MM
 }
 
 export class GetRevenueExpenseByCCDto {
+  @IsString()
+  @Matches(/^\d{4}-\d{2}$/)
   period: string; // YYYY-MM
 }
 
 export class GetRevenueByAccountTypeDto {
+  @IsString()
+  @Matches(/^\d{4}-\d{2}$/)
   period: string; // YYYY-MM
 }
 
 // Budget Variance DTOs
 export class GetBudgetVarianceDto {
+  @IsString()
+  @Matches(/^\d{4}-\d{2}$/)
   period: string; // YYYY-MM
 }
 
 export class GetBudgetByCCDto {
+  @IsString()
+  @Matches(/^\d{4}-\d{2}$/)
   period: string; // YYYY-MM
 }
 
 export class GetBudgetVarianceAccountsDto {
+  @IsString()
+  @Matches(/^\d{4}-\d{2}$/)
   period: string; // YYYY-MM
+
+  @IsIn(['over', 'under'])
   type: 'over' | 'under'; // Over or under budget
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
   threshold?: number; // % threshold
 }
 
 export class GetBudgetBurnRateDto {
+  @IsString()
+  @Matches(/^\d{4}-\d{2}$/)
   period: string; // YYYY-MM
 }
 
 // Report Generation DTOs
 export class GenerateReportDto {
+  @IsIn(['trial-balance', 'income-statement', 'balance-sheet', 'variance', 'custom'])
   reportType: 'trial-balance' | 'income-statement' | 'balance-sheet' | 'variance' | 'custom';
+
+  @IsString()
+  @Matches(/^\d{4}-\d{2}$/)
   period: string; // YYYY-MM
+
+  @IsOptional()
+  @IsIn(['csv', 'excel', 'pdf'])
   format?: 'csv' | 'excel' | 'pdf';
+
+  @IsOptional()
+  @IsString()
   budget?: string; // For variance reports
 }
 
 export class ExportReportDto {
+  @IsUUID()
   reportId: string;
+
+  @IsIn(['csv', 'excel', 'pdf'])
   format: 'csv' | 'excel' | 'pdf';
 }
 
 export class CreateCustomReportDto {
+  @IsString()
   name: string;
+
+  @IsOptional()
+  @IsString()
   description?: string;
+
+  @IsArray()
   columns: Array<{
     field: string;
     label: string;
     dataType: 'number' | 'string' | 'date';
   }>;
+
+  @IsOptional()
+  @IsArray()
   filters?: Array<{
     field: string;
     operator: 'eq' | 'neq' | 'gt' | 'lt' | 'gte' | 'lte' | 'in' | 'between';
     value: any;
   }>;
+
+  @IsOptional()
+  @IsArray()
   sorts?: Array<{
     field: string;
     direction: 'asc' | 'desc';
   }>;
+
+  @IsOptional()
+  @IsArray()
   groupBy?: string[];
+
+  @IsOptional()
+  @IsArray()
   aggregations?: Array<{
     field: string;
     function: 'sum' | 'avg' | 'min' | 'max' | 'count';
