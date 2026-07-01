@@ -44,7 +44,7 @@ export class CreateUsageMeterTables1777800000000 implements MigrationInterface {
           {
             name: 'event_source',
             type: 'varchar',
-            length: 500,
+            length: '500',
             isNullable: true,
           },
           {
@@ -354,7 +354,7 @@ export class CreateUsageMeterTables1777800000000 implements MigrationInterface {
           {
             name: 'severity',
             type: 'varchar',
-            length: 50,
+            length: '50',
             default: "'warning'",
           },
           {
@@ -374,7 +374,7 @@ export class CreateUsageMeterTables1777800000000 implements MigrationInterface {
           {
             name: 'limit_period',
             type: 'varchar',
-            length: 100,
+            length: '100',
             default: "'monthly'",
           },
           {

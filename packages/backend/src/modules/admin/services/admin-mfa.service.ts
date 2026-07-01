@@ -2,7 +2,7 @@ import { Injectable, BadRequestException, UnauthorizedException } from '@nestjs/
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from '../../../database/entities/user.entity';
-import { authenticator } from 'otpauth';
+import * as OTPAuth from 'otpauth';
 import * as qrcode from 'qrcode';
 import * as crypto from 'crypto';
 
@@ -42,7 +42,7 @@ export class AdminMFAService {
     }
 
     // Generate TOTP secret (base32 encoded random bytes)
-    const secret = authenticator.generateSecret({
+    const secret = OTPAuth.authenticator.generateSecret({
       name: `Glide-HIMS Admin (${admin.email})`,
       issuer: 'Glide-HIMS',
       length: 32,
@@ -247,7 +247,7 @@ export class AdminMFAService {
     if (!secret || !code) return false;
 
     try {
-      const totp = new authenticator({
+      const totp = new OTPAuth.authenticator({
         secret,
       });
 
