@@ -42,6 +42,9 @@ describe('AdminAuditService', () => {
     getCount: jest.fn(),
     getMany: jest.fn(),
     getRawMany: jest.fn(),
+    select: jest.fn(),
+    addSelect: jest.fn(),
+    groupBy: jest.fn(),
   };
 
   beforeEach(async () => {

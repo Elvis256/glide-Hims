@@ -83,7 +83,7 @@ export class AdminMFAService {
     }
 
     // Verify the TOTP code before enabling
-    if (!this.verifyTOTPCode(admin.mfaSecret, totpCode)) {
+    if (!this.verifyTOTPCode(admin.mfaSecret!, totpCode)) {
       throw new UnauthorizedException('Invalid TOTP code. Please try again.');
     }
 
@@ -119,7 +119,7 @@ export class AdminMFAService {
     }
 
     // Try TOTP code first
-    if (this.verifyTOTPCode(admin.mfaSecret, totpCode)) {
+    if (this.verifyTOTPCode(admin.mfaSecret!, totpCode)) {
       return true;
     }
 
@@ -161,8 +161,8 @@ export class AdminMFAService {
     }
 
     admin.mfaEnabled = false;
-    admin.mfaSecret = null;
-    admin.backupCodes = null;
+    admin.mfaSecret = null as any;
+    admin.backupCodes = null as any;
 
     await this.userRepository.save(admin);
 
