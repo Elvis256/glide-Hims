@@ -3,7 +3,9 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Tenant } from '../tenants/entities';
 import { TenantService } from '../tenants/services';
 import { AdminService } from './services/admin.service';
+import { AdminMFAService } from './services/admin-mfa.service';
 import { AdminController } from './controllers/admin.controller';
+import { AdminMFAController } from './controllers/admin-mfa.controller';
 import { TrashController } from './controllers/trash.controller';
 import { AuditLogsController } from './controllers/audit-logs.controller';
 import { PasswordPoliciesController } from './controllers/password-policies.controller';
@@ -27,6 +29,7 @@ import { SystemAlert } from '../../database/entities/system-alert.entity';
 import { Session } from '../../database/entities/session.entity';
 import { SystemAdminRole, SystemAdminRoleAssignment } from '../../database/entities/system-admin-role.entity';
 import { ApiKey, WebhookDeliveryLog } from '../../database/entities/api-key.entity';
+import { User } from '../../database/entities/user.entity';
 import { AuthModule } from '../auth/auth.module';
 import { SystemSettingsModule } from '../system-settings/system-settings.module';
 import { InAppNotificationsModule } from '../in-app-notifications/in-app-notifications.module';
@@ -35,6 +38,7 @@ import { InAppNotificationsModule } from '../in-app-notifications/in-app-notific
   imports: [
     TypeOrmModule.forFeature([
       Tenant,
+      User,
       AuditLog,
       Department,
       Deployment,
@@ -53,6 +57,7 @@ import { InAppNotificationsModule } from '../in-app-notifications/in-app-notific
   ],
   providers: [
     AdminService,
+    AdminMFAService,
     TenantService,
     SystemHealthService,
     SystemRbacService,
@@ -61,6 +66,7 @@ import { InAppNotificationsModule } from '../in-app-notifications/in-app-notific
   ],
   controllers: [
     AdminController,
+    AdminMFAController,
     TrashController,
     AuditLogsController,
     PasswordPoliciesController,
@@ -72,6 +78,6 @@ import { InAppNotificationsModule } from '../in-app-notifications/in-app-notific
     ApiKeyController,
     RevenueAnalyticsController,
   ],
-  exports: [AdminService, TenantService, SystemHealthService, SystemRbacService, ApiKeyService],
+  exports: [AdminService, AdminMFAService, TenantService, SystemHealthService, SystemRbacService, ApiKeyService],
 })
 export class AdminModule {}
