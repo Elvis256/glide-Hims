@@ -22,7 +22,6 @@ import { ApiKeyController } from './controllers/api-key.controller';
 import { ApiKeyService } from './services/api-key.service';
 import { RevenueAnalyticsController } from './controllers/revenue-analytics.controller';
 import { RevenueAnalyticsService } from './services/revenue-analytics.service';
-import { AdminAuditSubscriber } from './subscribers/admin-audit.subscriber';
 import { AuditLog } from '../../database/entities/audit-log.entity';
 import { AdminAuditLog } from '../../database/entities/admin-audit-log.entity';
 import { Department } from '../../database/entities/department.entity';
@@ -73,7 +72,6 @@ import { InAppNotificationsModule } from '../in-app-notifications/in-app-notific
     SystemRbacService,
     ApiKeyService,
     RevenueAnalyticsService,
-    AdminAuditSubscriber,
   ],
   controllers: [
     AdminController,

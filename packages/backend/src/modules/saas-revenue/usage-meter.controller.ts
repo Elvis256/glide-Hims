@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
-import { UsageMeterService, UsageCheckResponse, UsageReportResponse } from '../usage-meter.service';
+import { UsageMeterService, UsageCheckResponse, UsageReportResponse } from './usage-meter.service';
 import {
   RecordUsageDto,
   CheckQuotaDto,
@@ -20,11 +20,11 @@ import {
   GetUsageReportDto,
   BillingUsageDto,
 } from './dtos/usage-meter.dto';
-import { CurrentUser } from '../../../common/decorators/current-user.decorator';
-import { CurrentTenant } from '../../../common/decorators/current-tenant.decorator';
-import { User } from '../../../database/entities/user.entity';
-import { Tenant } from '../../../database/entities/tenant.entity';
-import { UsageAlert } from '../../../database/entities/usage-meter.entity';
+import { CurrentUser } from '../../modules/auth/decorators/current-user.decorator';
+import { CurrentTenant } from '../../common/decorators/current-tenant.decorator';
+import { User } from '../../database/entities/user.entity';
+import { Tenant } from '../../database/entities/tenant.entity';
+import { UsageAlert } from '../../database/entities/usage-meter.entity';
 
 @ApiTags('SaaS - Usage Metering & Billing')
 @ApiBearerAuth()
@@ -142,7 +142,7 @@ export class UsageMeterController {
       new Date(),
     );
 
-    return report.metrics.map((m) => ({
+    return report.metrics.map((m: any) => ({
       metricType: m.metricType,
       currentUsage: m.monthly || 0,
       limit: m.monthlyLimit,

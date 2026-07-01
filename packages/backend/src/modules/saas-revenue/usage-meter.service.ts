@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThanOrEqual, LessThan, Between } from 'typeorm';
+import { Repository, MoreThanOrEqual, LessThan, Between, IsNull } from 'typeorm';
 import {
   UsageMeterEvent,
   UsageMeterAggregate,
@@ -8,8 +8,8 @@ import {
   UsageAlert,
   UsageMetricType,
   UsageAggregationPeriod,
-} from '../../../database/entities/usage-meter.entity';
-import { Tenant } from '../../../database/entities/tenant.entity';
+} from '../../database/entities/usage-meter.entity';
+import { Tenant } from '../../database/entities/tenant.entity';
 
 export interface UsageCheckResponse {
   allowed: boolean;
@@ -217,7 +217,7 @@ export class UsageMeterService {
     const alerts = await this.alertRepository.find({
       where: {
         tenantId,
-        resolvedAt: null,
+        resolvedAt: IsNull(),
       },
     });
 
@@ -305,7 +305,7 @@ export class UsageMeterService {
       where: {
         tenantId,
         metricType,
-        resolvedAt: null,
+        resolvedAt: IsNull(),
         createdAt: MoreThanOrEqual(monthStart),
       },
     });
@@ -400,7 +400,7 @@ export class UsageMeterService {
    */
   async getActiveAlerts(tenantId: string): Promise<UsageAlert[]> {
     return this.alertRepository.find({
-      where: { tenantId, resolvedAt: null },
+      where: { tenantId, resolvedAt: IsNull() },
       order: { createdAt: 'DESC' },
     });
   }
