@@ -12,6 +12,7 @@ import { ExpiryAlertConfig, ExpiryAlertHistory } from '../../database/entities/e
 import { Invoice } from '../../database/entities/invoice.entity';
 import { Patient } from '../../database/entities/patient.entity';
 import { Queue } from '../../database/entities/queue.entity';
+import { Encounter } from '../../database/entities/encounter.entity';
 import { InAppNotificationsModule } from '../in-app-notifications/in-app-notifications.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 
@@ -30,6 +31,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
       Invoice,
       Patient,
       Queue,
+      Encounter,
     ]),
     InAppNotificationsModule,
     NotificationsModule,
