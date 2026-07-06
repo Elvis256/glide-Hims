@@ -4,12 +4,32 @@ import { Shield, CreditCard, Building2, AlertTriangle, CheckCircle, Loader2 } fr
 import { insuranceService, type InsurancePolicy } from '../services/insurance';
 import type { PayerType } from '../services/encounters';
 
+// Coverage compatibility map — mirrors backend A.5 logic
+const COVERAGE_COMPAT: Record<string, string[]> = {
+  opd: ['outpatient'],
+  ipd: ['inpatient'],
+  emergency: ['outpatient', 'inpatient'],
+  anc: ['maternity'],
+  pnc: ['maternity'],
+  dental: ['dental'],
+  optical: ['optical'],
+};
+
+function isCoverageCompatible(encounterType: string | undefined, coverageType: string): boolean {
+  if (!encounterType) return true;
+  if (coverageType === 'comprehensive' || coverageType === 'both') return true;
+  const required = COVERAGE_COMPAT[encounterType.toLowerCase()];
+  if (!required) return true;
+  return required.includes(coverageType);
+}
+
 interface InsurancePolicySelectorProps {
   patientId: string | undefined;
   payerType: PayerType;
   onPayerTypeChange: (type: PayerType) => void;
   selectedPolicyId: string | undefined;
   onPolicyChange: (policyId: string | undefined) => void;
+  encounterType?: string;
   compact?: boolean;
 }
 
@@ -19,6 +39,7 @@ export default function InsurancePolicySelector({
   onPayerTypeChange,
   selectedPolicyId,
   onPolicyChange,
+  encounterType,
   compact = false,
 }: InsurancePolicySelectorProps) {
   const [showPolicies, setShowPolicies] = useState(false);
@@ -115,6 +136,7 @@ export default function InsurancePolicySelector({
                 const isSelected = selectedPolicyId === policy.id;
                 const remaining = (Number(policy.coverageLimit) || 0) - (Number(policy.usedAmount) || 0);
                 const isExpiringSoon = new Date(policy.endDate) < new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+                const coverageIncompat = !isCoverageCompatible(encounterType, policy.coverageType);
 
                 return (
                   <button
@@ -124,7 +146,9 @@ export default function InsurancePolicySelector({
                     className={`w-full text-left p-2 rounded-lg border transition-all ${
                       isSelected
                         ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-200'
-                        : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
+                        : coverageIncompat
+                          ? 'border-gray-200 hover:border-blue-300 bg-gray-50 opacity-70'
+                          : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
                     }`}
                   >
                     <div className="flex items-start justify-between">
@@ -157,6 +181,12 @@ export default function InsurancePolicySelector({
                             <span className="text-orange-600 flex items-center gap-0.5">
                               <AlertTriangle className="w-3 h-3" />
                               Expiring soon
+                            </span>
+                          )}
+                          {coverageIncompat && (
+                            <span className="text-amber-600 flex items-center gap-0.5">
+                              <AlertTriangle className="w-3 h-3" />
+                              May not cover {encounterType?.toUpperCase()}
                             </span>
                           )}
                         </div>

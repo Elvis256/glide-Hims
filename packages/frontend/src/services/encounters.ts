@@ -28,6 +28,7 @@ export interface Encounter {
   insurancePolicyId?: string;
   visitDate?: string;
   startTime?: string;
+  metadata?: Record<string, any>;
   createdAt: string;
   updatedAt: string;
 }
@@ -63,9 +64,18 @@ export interface EncounterQueryParams {
 export interface TodayStats {
   total: number;
   waiting: number;
+  inConsultation: number;
   inProgress: number;
   completed: number;
+  bouncedEncounters: number;
+  totalBounces: number;
+  bounceRate: number;
+  pendingPayment: number;
+  pendingLab: number;
+  pendingPharmacy: number;
+  averageWaitMinutes: number;
   byDepartment: Record<string, number>;
+  departmentBreakdown: Record<string, number>;
 }
 
 export const encountersService = {
@@ -161,8 +171,8 @@ export const encountersService = {
       followUpDate?: string;
       followUpNotes?: string;
     },
-  ): Promise<{ encounter: Encounter; clinicalNoteId: string }> => {
-    const response = await api.post<{ encounter: Encounter; clinicalNoteId: string }>(
+  ): Promise<{ encounter: Encounter; clinicalNoteId: string; clinicalNoteScore: number; followUpId?: string }> => {
+    const response = await api.post<{ encounter: Encounter; clinicalNoteId: string; clinicalNoteScore: number; followUpId?: string }>(
       `/encounters/${id}/complete`,
       data,
     );

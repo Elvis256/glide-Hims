@@ -1102,10 +1102,11 @@ export default function NewConsultationPage() {
       //   admit  → encounter ends as ADMITTED (set by ipdService.admissions.create)
       //   refer  → encounter ends as COMPLETED + referral artifact
       //   other  → encounter ends as COMPLETED via completeConsultation
+      let clinicalNoteScore: number | undefined;
       if (disposition === 'admit') {
         await upsertClinicalNote();
       } else {
-        await encountersService.completeConsultation(encounterId, {
+        const completeResult = await encountersService.completeConsultation(encounterId, {
           ...clinicalNoteBody,
           chiefComplaint: form.chiefComplaint,
           notes: JSON.stringify({
@@ -1117,6 +1118,7 @@ export default function NewConsultationPage() {
             plan: form.planItems,
           }),
         });
+        clinicalNoteScore = completeResult.clinicalNoteScore;
       }
 
       // ===== Step 2: Auto-create orders/prescriptions from plan items =====
@@ -1358,13 +1360,14 @@ export default function NewConsultationPage() {
         }
       }
 
-      return { disposition, routedTo, prePayApplied: prePayMode && routedTo === 'billing' };
+      return { disposition, routedTo, prePayApplied: prePayMode && routedTo === 'billing', clinicalNoteScore };
     },
     onSuccess: (result) => {
-      const { disposition: dispUsed, routedTo, prePayApplied } = result || {
+      const { disposition: dispUsed, routedTo, prePayApplied, clinicalNoteScore: score } = result || {
         disposition,
         routedTo: null,
         prePayApplied: false,
+        clinicalNoteScore: undefined,
       };
       let msg = 'Consultation completed';
       if (dispUsed === 'admit') {
@@ -1382,6 +1385,9 @@ export default function NewConsultationPage() {
         if (prePayApplied) {
           msg += ' (pre-pay mode)';
         }
+      }
+      if (score != null) {
+        msg += ` — Note quality: ${score}/100`;
       }
       toast.success(msg);
       // Clear localStorage draft on successful completion
