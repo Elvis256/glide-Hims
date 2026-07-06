@@ -340,8 +340,7 @@ export interface ResolvedPrice {
     membershipDiscount: number;
     loyaltyDiscount: number;
     otherDiscounts: number;
-    subtotal: number;
-    tax: number;
+    preTaxTotal: number;
     total: number;
   };
 }

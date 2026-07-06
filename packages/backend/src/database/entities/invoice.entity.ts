@@ -11,6 +11,7 @@ export enum InvoiceStatus {
   PAID = 'paid',
   CANCELLED = 'cancelled',
   REFUNDED = 'refunded',
+  WRITTEN_OFF = 'written_off',
 }
 
 export enum PaymentType {
@@ -25,6 +26,7 @@ export enum PaymentType {
 @Index(['encounter'])
 @Index(['patient'])
 @Index(['status', 'createdAt'])
+@Index(['insurancePolicyId'])
 export class Invoice extends BaseEntity {
   @Column({ name: 'invoice_number', unique: true })
   invoiceNumber: string;
@@ -124,6 +126,7 @@ export enum ChargeType {
 @Entity('invoice_items')
 @Index(['invoice'])
 @Index(['referenceType', 'referenceId'], { unique: true })
+@Index(['serviceCode'])
 export class InvoiceItem extends BaseEntity {
   @Column({ name: 'service_code' })
   serviceCode: string;
@@ -217,6 +220,7 @@ export enum PaymentStatus {
 @Index(['invoice'])
 @Index(['receiptNumber'], { unique: true })
 @Index(['paidAt'])
+@Index(['transactionReference'])
 export class Payment extends BaseEntity {
   @Column({ name: 'receipt_number', unique: true })
   receiptNumber: string;
@@ -242,6 +246,9 @@ export class Payment extends BaseEntity {
 
   @Column({ type: 'text', nullable: true })
   notes: string;
+
+  @Column({ name: 'gl_posted', type: 'boolean', default: true })
+  glPosted: boolean;
 
   @Column({ name: 'paid_at', type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })
   paidAt: Date;
