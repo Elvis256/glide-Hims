@@ -14,8 +14,9 @@ import {
   IsNotEmpty,
   ArrayMinSize,
   ArrayMaxSize,
+  Matches,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 import {
   EncounterType,
   EncounterStatus,
@@ -49,7 +50,19 @@ export class CreateEncounterDto {
   @IsUUID()
   @IsOptional()
   insurancePolicyId?: string;
+
+  @IsIn(['pre_pay', 'post_pay'])
+  @IsOptional()
+  billingMode?: 'pre_pay' | 'post_pay';
+
+  @IsUUID()
+  @IsOptional()
+  attendingProviderId?: string;
 }
+
+/** Strip HTML tags from a string value (defense-in-depth for stored XSS). */
+const StripHtml = () =>
+  Transform(({ value }) => (typeof value === 'string' ? value.replace(/<[^>]*>/g, '') : value));
 
 export class UpdateEncounterDto {
   // Note: status is intentionally excluded — use PATCH :id/status endpoint
@@ -58,11 +71,13 @@ export class UpdateEncounterDto {
   @IsString()
   @MaxLength(2000)
   @IsOptional()
+  @StripHtml()
   chiefComplaint?: string;
 
   @IsString()
   @MaxLength(4000)
   @IsOptional()
+  @StripHtml()
   notes?: string;
 
   @IsUUID()
@@ -125,6 +140,14 @@ export class EncounterQueryDto {
   @IsOptional()
   patientId?: string;
 
+  @IsUUID()
+  @IsOptional()
+  attendingProviderId?: string;
+
+  @IsEnum(PayerType)
+  @IsOptional()
+  payerType?: PayerType;
+
   @IsDateString()
   @IsOptional()
   dateFrom?: string;
@@ -149,8 +172,15 @@ export class EncounterQueryDto {
 }
 
 class DiagnosisDto {
+  /**
+   * ICD-10 code format: letter + 2 digits, optionally followed by a dot and
+   * 1-4 alphanumeric characters (e.g. A09, J18.1, S72.001A, Z00.00).
+   */
   @IsString()
   @MaxLength(32)
+  @Matches(/^[A-Z]\d{2}(\.\d{1,4}[A-Z]?)?$/i, {
+    message: 'Diagnosis code must be a valid ICD-10 format (e.g. A09, J18.1, S72.001A)',
+  })
   code: string;
 
   @IsString()
@@ -159,6 +189,35 @@ class DiagnosisDto {
 
   @IsIn(['primary', 'secondary', 'differential'])
   type: 'primary' | 'secondary' | 'differential';
+}
+
+export class QueueQueryDto {
+  @IsUUID()
+  @IsOptional()
+  facilityId?: string;
+
+  @IsUUID()
+  @IsOptional()
+  departmentId?: string;
+
+  @IsUUID()
+  @IsOptional()
+  doctorId?: string;
+
+  @IsEnum(EncounterType)
+  @IsOptional()
+  encounterType?: EncounterType;
+}
+
+/**
+ * Extends an Encounter with computed queue-display fields.
+ * Returned by getQueue / getPharmacyQueue / getLabQueue.
+ */
+export interface QueueItem {
+  /** Minutes elapsed since encounter.startTime */
+  waitMinutes: number;
+  /** true when type === EMERGENCY */
+  isUrgent: boolean;
 }
 
 export class ReturnReasonDto {
