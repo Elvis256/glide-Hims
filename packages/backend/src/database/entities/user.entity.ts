@@ -140,6 +140,10 @@ export class User extends BaseEntity {
   })
   mfaSecret?: string;
 
+  @Exclude()
+  @Column({ type: 'jsonb', nullable: true, name: 'backup_codes', select: false })
+  backupCodes?: Array<{ code: string; used: boolean }>;
+
   @Column({ type: 'timestamp', nullable: true, name: 'last_login_at' })
   lastLoginAt?: Date;
 

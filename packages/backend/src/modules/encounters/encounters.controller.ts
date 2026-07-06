@@ -18,6 +18,7 @@ import {
   UpdateEncounterDto,
   UpdateStatusDto,
   EncounterQueryDto,
+  QueueQueryDto,
   CompleteConsultationDto,
   ReturnReasonDto,
 } from './encounters.dto';
@@ -52,22 +53,48 @@ export class EncountersController {
 
   @Get('queue')
   @AuthWithPermissions('encounters.read')
-  @ApiOperation({ summary: "Get today's patient queue" })
-  getQueue(
-    @Query('facilityId') facilityIdQuery: string,
-    @Query('departmentId') departmentId: string,
-    @Query('doctorId') doctorId: string | undefined,
-    @Request() req: any,
-  ) {
-    const facilityId = facilityIdQuery || req.headers['x-facility-id'] || req.user?.facilityId;
+  @ApiOperation({ summary: "Get today's doctor/reception patient queue" })
+  getQueue(@Query() query: QueueQueryDto, @Request() req: any) {
+    const facilityId = query.facilityId || req.headers['x-facility-id'] || req.user?.facilityId;
     if (!facilityId) {
       return [];
     }
     return this.encountersService.getQueue(
       facilityId,
-      departmentId,
+      query.departmentId,
       req.user?.tenantId,
-      doctorId,
+      query.doctorId,
+      query.encounterType,
+    );
+  }
+
+  @Get('queue/pharmacy')
+  @AuthWithPermissions('encounters.read')
+  @ApiOperation({ summary: 'Get pharmacy dispensing queue' })
+  getPharmacyQueue(@Query() query: QueueQueryDto, @Request() req: any) {
+    const facilityId = query.facilityId || req.headers['x-facility-id'] || req.user?.facilityId;
+    if (!facilityId) {
+      return [];
+    }
+    return this.encountersService.getPharmacyQueue(
+      facilityId,
+      query.departmentId,
+      req.user?.tenantId,
+    );
+  }
+
+  @Get('queue/lab')
+  @AuthWithPermissions('encounters.read')
+  @ApiOperation({ summary: 'Get lab sample collection queue' })
+  getLabQueue(@Query() query: QueueQueryDto, @Request() req: any) {
+    const facilityId = query.facilityId || req.headers['x-facility-id'] || req.user?.facilityId;
+    if (!facilityId) {
+      return [];
+    }
+    return this.encountersService.getLabQueue(
+      facilityId,
+      query.departmentId,
+      req.user?.tenantId,
     );
   }
 
@@ -86,7 +113,12 @@ export class EncountersController {
   getTodayStats(@Query('facilityId') facilityId: string, @Request() req: any) {
     const effectiveFacilityId = facilityId || req.headers['x-facility-id'] || req.user?.facilityId;
     if (!effectiveFacilityId) {
-      return { total: 0, waiting: 0, inProgress: 0, completed: 0 };
+      return {
+        total: 0, waiting: 0, inConsultation: 0, inProgress: 0, completed: 0,
+        cancelled: 0, pendingPayment: 0, pendingLab: 0, pendingPharmacy: 0,
+        averageWaitMinutes: null, bouncedEncounters: 0, totalBounces: 0,
+        bounceRate: 0, departmentBreakdown: [],
+      };
     }
     return this.encountersService.getTodayStats(effectiveFacilityId, req.user?.tenantId);
   }
@@ -123,7 +155,7 @@ export class EncountersController {
     @Body() dto: UpdateEncounterDto,
     @Request() req: any,
   ) {
-    return this.encountersService.update(id, dto, req.user?.tenantId);
+    return this.encountersService.update(id, dto, req.user.id, req.user?.tenantId);
   }
 
   @Patch(':id/status')

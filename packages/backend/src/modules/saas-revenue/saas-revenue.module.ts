@@ -33,6 +33,14 @@ import { FlutterwaveService } from './flutterwave.service';
 import { PesapalService } from './pesapal.service';
 import { WebhookDispatcherService } from './webhook-dispatcher.service';
 import { SystemSettingsModule } from '../system-settings/system-settings.module';
+import {
+  UsageMeterEvent,
+  UsageMeterAggregate,
+  UsageQuota,
+  UsageAlert,
+} from '../../database/entities/usage-meter.entity';
+import { UsageMeterService } from './usage-meter.service';
+import { UsageMeterController } from './usage-meter.controller';
 
 @Module({
   imports: [
@@ -45,6 +53,7 @@ import { SystemSettingsModule } from '../system-settings/system-settings.module'
       ClientOnboarding, ClientOnboardingItem,
       ClientHealthScore,
       License, Lead, LeadActivity, Tenant, Deployment,
+      UsageMeterEvent, UsageMeterAggregate, UsageQuota, UsageAlert,
     ]),
     MulterModule.register({
       storage: diskStorage({
@@ -78,6 +87,7 @@ import { SystemSettingsModule } from '../system-settings/system-settings.module'
     ContractController,
     OnboardingController,
     ClientHealthController,
+    UsageMeterController,
   ],
   providers: [
     SaasRevenueService,
@@ -85,12 +95,13 @@ import { SystemSettingsModule } from '../system-settings/system-settings.module'
     ContractService,
     OnboardingService,
     ClientHealthService,
+    UsageMeterService,
     LifecycleEventsListener,
     SaasMailerService,
     FlutterwaveService,
     PesapalService,
     WebhookDispatcherService,
   ],
-  exports: [SaasRevenueService, QuotationService, ContractService, OnboardingService, ClientHealthService],
+  exports: [SaasRevenueService, QuotationService, ContractService, OnboardingService, ClientHealthService, UsageMeterService],
 })
 export class SaasRevenueModule {}
