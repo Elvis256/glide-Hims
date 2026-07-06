@@ -162,6 +162,7 @@ export interface Encounter {
   departmentId?: string;
   department?: Department;
   attendingProvider?: User;
+  metadata?: Record<string, any>;
   createdAt: string;
 }
 

@@ -228,7 +228,7 @@ export default function DashboardPage() {
         promises.patients = api.get('/patients?limit=1').catch(() => ({ data: { total: 0 } }));
       }
       if (canReadEncounters) {
-        promises.encounters = api.get('/encounters/stats/today').catch(() => ({ data: { total: 0, waiting: 0, inProgress: 0, completed: 0 } }));
+        promises.encounters = api.get('/encounters/stats/today').catch(() => ({ data: { total: 0, waiting: 0, inProgress: 0, completed: 0, bouncedEncounters: 0, totalBounces: 0, bounceRate: 0 } }));
       }
       if (canReadAnalytics) {
         promises.analytics = api.get('/analytics/dashboard').catch(() => ({ data: null }));
@@ -252,7 +252,7 @@ export default function DashboardPage() {
           total: analytics?.patients?.total || resolved.patients?.data?.meta?.total || resolved.patients?.data?.total || 0,
           today: analytics?.patients?.newToday || 0
         },
-        encounters: resolved.encounters?.data || { total: 0, waiting: 0, inProgress: 0, completed: 0 },
+        encounters: resolved.encounters?.data || { total: 0, waiting: 0, inProgress: 0, completed: 0, bouncedEncounters: 0, totalBounces: 0, bounceRate: 0 },
         lab: {
           pending: resolved.lab?.data?.pending || 0,
           completed: resolved.lab?.data?.completed || 0

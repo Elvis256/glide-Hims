@@ -18,6 +18,8 @@ import {
   Calendar,
 } from 'lucide-react';
 import { asList } from '../utils/unwrapResponse';
+import InsurancePolicySelector from '../components/InsurancePolicySelector';
+import type { PayerType } from '../services/encounters';
 
 const statusColors: Record<EncounterStatus, string> = {
   registered: 'bg-blue-100 text-blue-700',
@@ -85,7 +87,17 @@ export default function EncountersPage() {
     queryKey: ['encounter-stats', facilityId],
     queryFn: async () => {
       const response = await api.get(`/encounters/stats/today?facilityId=${facilityId}`);
-      return response.data as { total: number; waiting: number; inConsultation: number; completed: number };
+      return response.data as {
+        total: number;
+        waiting: number;
+        inConsultation: number;
+        completed: number;
+        bouncedEncounters: number;
+        totalBounces: number;
+        bounceRate: number;
+        pendingLab: number;
+        pendingPharmacy: number;
+      };
     },
   });
 
@@ -126,6 +138,25 @@ export default function EncountersPage() {
           <div className="card">
             <p className="text-sm text-gray-500">Completed</p>
             <p className="text-2xl font-bold text-green-600">{stats.completed}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Extended Stats Row */}
+      {stats && (stats.pendingLab > 0 || stats.pendingPharmacy > 0 || stats.totalBounces > 0) && (
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="card">
+            <p className="text-sm text-gray-500">Pending Lab</p>
+            <p className="text-2xl font-bold text-cyan-600">{stats.pendingLab}</p>
+          </div>
+          <div className="card">
+            <p className="text-sm text-gray-500">Pending Pharmacy</p>
+            <p className="text-2xl font-bold text-pink-600">{stats.pendingPharmacy}</p>
+          </div>
+          <div className="card">
+            <p className="text-sm text-gray-500">Bounce Rate</p>
+            <p className="text-2xl font-bold text-red-600">{stats.bounceRate}%</p>
+            <p className="text-xs text-gray-400">{stats.totalBounces} total bounces</p>
           </div>
         </div>
       )}
@@ -225,7 +256,9 @@ export default function EncountersPage() {
                     </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${statusColors[encounter.status]}`}>
-                        {statusLabels[encounter.status]}
+                        {encounter.status === 'cancelled' && (encounter as any).metadata?.autoCancelledAt
+                          ? 'Auto-Cancelled'
+                          : statusLabels[encounter.status]}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-gray-600 text-sm">
@@ -278,6 +311,8 @@ function NewVisitModal({ onClose, onSuccess }: NewVisitModalProps) {
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [chiefComplaint, setChiefComplaint] = useState('');
   const [visitType, setVisitType] = useState<'opd' | 'emergency'>('opd');
+  const [payerType, setPayerType] = useState<PayerType>('cash');
+  const [insurancePolicyId, setInsurancePolicyId] = useState<string | undefined>();
 
   // Search patients
   const { data: patients, isLoading: searchingPatients } = useQuery<Patient[]>({
@@ -293,7 +328,7 @@ function NewVisitModal({ onClose, onSuccess }: NewVisitModalProps) {
 
   // Create encounter mutation
   const createMutation = useMutation({
-    mutationFn: async (data: { patientId: string; facilityId: string; type: string; chiefComplaint?: string }) => {
+    mutationFn: async (data: { patientId: string; facilityId: string; type: string; chiefComplaint?: string; payerType?: PayerType; insurancePolicyId?: string }) => {
       const response = await api.post('/encounters', data);
       return response.data;
     },
@@ -311,6 +346,8 @@ function NewVisitModal({ onClose, onSuccess }: NewVisitModalProps) {
       facilityId: facilityId,
       type: visitType,
       chiefComplaint: chiefComplaint || undefined,
+      payerType,
+      insurancePolicyId: payerType === 'insurance' ? insurancePolicyId : undefined,
     });
   };
 
@@ -430,6 +467,17 @@ function NewVisitModal({ onClose, onSuccess }: NewVisitModalProps) {
               rows={3}
             />
           </div>
+
+          {/* Payment / Insurance */}
+          <InsurancePolicySelector
+            patientId={selectedPatient?.id}
+            payerType={payerType}
+            onPayerTypeChange={setPayerType}
+            selectedPolicyId={insurancePolicyId}
+            onPolicyChange={setInsurancePolicyId}
+            encounterType={visitType}
+            compact
+          />
 
           <div className="flex gap-3 pt-4">
             <button type="button" onClick={onClose} className="btn-secondary flex-1">
