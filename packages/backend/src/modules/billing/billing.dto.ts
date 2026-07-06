@@ -278,6 +278,20 @@ export class ListPaymentsQueryDto {
   @IsEnum(PaymentMethod)
   @IsOptional()
   method?: PaymentMethod;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100_000)
+  @IsOptional()
+  page?: number = 1;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(200)
+  @IsOptional()
+  limit?: number = 50;
 }
 
 export class InvoiceQueryDto {

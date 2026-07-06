@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, IsNull, LessThanOrEqual, MoreThanOrEqual, Or } from 'typeorm';
+import { roundCurrency, multiply, divide, subtract, add } from '../../common/utils/currency';
+import { AuditLogService } from '../../common/interceptors/audit-log.service';
 import { InsurancePriceList } from '../../database/entities/insurance-price-list.entity';
 import {
   PricingRule,
@@ -30,9 +32,9 @@ import {
 
 @Injectable()
 export class PricingEngineService {
-  /** Round monetary value to 2 decimal places to avoid floating-point errors */
+  /** P0: Use currency.ts roundCurrency instead of Math.round to match billing service */
   private roundMoney(value: number): number {
-    return Math.round(value * 100) / 100;
+    return roundCurrency(value);
   }
 
   constructor(
@@ -56,6 +58,7 @@ export class PricingEngineService {
     private readonly taxRateRepo: Repository<TaxRate>,
     @InjectRepository(TaxExemption)
     private readonly taxExemptionRepo: Repository<TaxExemption>,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   // ==================== MAIN PRICE RESOLUTION ====================
@@ -213,12 +216,22 @@ export class PricingEngineService {
       }
     }
 
+    // P1: Cap total discount to configurable max (default 50%) to prevent stacking abuse
+    const maxDiscountPercent = 50;
+    const totalDiscountAmount = subtract(basePrice, finalPrice);
+    if (basePrice > 0 && totalDiscountAmount > 0) {
+      const discountPercent = (totalDiscountAmount / basePrice) * 100;
+      if (discountPercent > maxDiscountPercent) {
+        finalPrice = this.roundMoney(basePrice * (1 - maxDiscountPercent / 100));
+      }
+    }
+
     // Ensure final price doesn't go below 0
     finalPrice = Math.max(0, this.roundMoney(finalPrice));
 
     return {
       originalPrice: basePrice,
-      finalPrice: Math.round(finalPrice * 100) / 100,
+      finalPrice: roundCurrency(finalPrice),
       currency: 'UGX',
       payerType,
       appliedDiscounts,
@@ -228,8 +241,7 @@ export class PricingEngineService {
         membershipDiscount,
         loyaltyDiscount,
         otherDiscounts,
-        subtotal: finalPrice,
-        tax: 0, // TODO: Add tax calculation if needed
+        preTaxTotal: finalPrice,
         total: finalPrice,
       },
     };
@@ -304,15 +316,25 @@ export class PricingEngineService {
    */
   async getActivePricingRules(appliesTo: string, tenantId?: string): Promise<PricingRule[]> {
     const today = new Date();
-    const where: any = {
-      isActive: true,
-      appliesTo: In([appliesTo, 'all']),
-    };
-    if (tenantId) where.tenantId = tenantId;
-    return this.pricingRuleRepo.find({
-      where,
-      order: { priority: 'ASC' },
-    });
+    const todayStr = today.toISOString().slice(0, 10);
+
+    // P1: Filter expired rules by validFrom/validTo date range + deterministic secondary sort
+    const qb = this.pricingRuleRepo
+      .createQueryBuilder('rule')
+      .where('rule.is_active = true')
+      .andWhere('rule.applies_to IN (:...types)', { types: [appliesTo, 'all'] })
+      // P1: Exclude rules that haven't started yet or have already expired
+      .andWhere('(rule.valid_from IS NULL OR rule.valid_from <= :today)', { today: todayStr })
+      .andWhere('(rule.valid_to IS NULL OR rule.valid_to >= :today)', { today: todayStr })
+      // P1: Deterministic ordering — same-priority rules sorted by createdAt
+      .orderBy('rule.priority', 'ASC')
+      .addOrderBy('rule.created_at', 'ASC');
+
+    if (tenantId) {
+      qb.andWhere('rule.tenant_id = :tenantId', { tenantId });
+    }
+
+    return qb.getMany();
   }
 
   /**
@@ -525,12 +547,23 @@ export class PricingEngineService {
       createdById: userId,
       ...(tenantId ? { tenantId } : {}),
     });
-    return this.pricingRuleRepo.save(rule);
+    const saved = await this.pricingRuleRepo.save(rule);
+    // P1: Audit log on pricing rule creation
+    this.auditLogService.log({
+      userId,
+      action: 'PRICING_RULE_CREATED',
+      entityType: 'PricingRule',
+      entityId: saved.id,
+      newValue: { name: saved.name, ruleType: saved.ruleType, discountType: saved.discountType, discountValue: saved.discountValue },
+      ...(tenantId ? { tenantId } : {}),
+    }).catch(() => {});
+    return saved;
   }
 
   async updatePricingRule(
     id: string,
     dto: UpdatePricingRuleDto,
+    userId?: string,
     tenantId?: string,
   ): Promise<PricingRule> {
     const where: any = { id };
@@ -539,16 +572,40 @@ export class PricingEngineService {
     if (!rule) {
       throw new NotFoundException('Pricing rule not found');
     }
+    const oldValue = { name: rule.name, discountValue: rule.discountValue, isActive: rule.isActive };
     Object.assign(rule, dto);
-    return this.pricingRuleRepo.save(rule);
+    const saved = await this.pricingRuleRepo.save(rule);
+    // P1: Audit log on pricing rule update
+    if (userId) {
+      this.auditLogService.log({
+        userId,
+        action: 'PRICING_RULE_UPDATED',
+        entityType: 'PricingRule',
+        entityId: id,
+        oldValue,
+        newValue: { name: saved.name, discountValue: saved.discountValue, isActive: saved.isActive },
+        ...(tenantId ? { tenantId } : {}),
+      }).catch(() => {});
+    }
+    return saved;
   }
 
-  async deletePricingRule(id: string, tenantId?: string): Promise<void> {
+  async deletePricingRule(id: string, userId?: string, tenantId?: string): Promise<void> {
     if (tenantId) {
       const entity = await this.pricingRuleRepo.findOne({ where: { id, tenantId } as any });
       if (!entity) throw new NotFoundException('Pricing rule not found');
     }
     await this.pricingRuleRepo.softDelete(id);
+    // P1: Audit log on pricing rule deletion
+    if (userId) {
+      this.auditLogService.log({
+        userId,
+        action: 'PRICING_RULE_DELETED',
+        entityType: 'PricingRule',
+        entityId: id,
+        ...(tenantId ? { tenantId } : {}),
+      }).catch(() => {});
+    }
   }
 
   async getPricingRules(tenantId?: string): Promise<PricingRule[]> {

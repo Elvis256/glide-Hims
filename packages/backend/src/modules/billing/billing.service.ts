@@ -33,7 +33,7 @@ import { AuditLogService } from '../../common/interceptors/audit-log.service';
 import { PreAuthorization, PreAuthStatus } from '../../database/entities/pre-authorization.entity';
 import { InsurancePolicy, PolicyStatus } from '../../database/entities/insurance-policy.entity';
 import { MembershipScheme, PatientMembership } from '../../database/entities/membership.entity';
-import { multiply, add, subtract } from '../../common/utils/currency';
+import { multiply, add, subtract, divide, roundCurrency } from '../../common/utils/currency';
 
 @Injectable()
 export class BillingService {
@@ -143,6 +143,15 @@ export class BillingService {
       throw new BadRequestException('Discount amount cannot be negative');
     }
 
+    // P1: Reject past due dates — an invoice's payment deadline must be in the future
+    if (dto.dueDate) {
+      const due = new Date(dto.dueDate);
+      due.setHours(23, 59, 59, 999); // allow same-day
+      if (due < new Date()) {
+        throw new BadRequestException('Due date cannot be in the past');
+      }
+    }
+
     // VAT enforcement: taxPercent can only be 0 if explicitly marked as tax-exempt
     if (dto.taxPercent !== undefined && dto.taxPercent === 0 && !dto.taxExemptReason) {
       throw new BadRequestException(
@@ -200,7 +209,7 @@ export class BillingService {
               .where('inv.insurance_policy_id = :policyId', { policyId: dto.insurancePolicyId })
               .andWhere('inv.patient_id = :patientId', { patientId: dto.patientId })
               .andWhere('inv.status NOT IN (:...excluded)', {
-                excluded: [InvoiceStatus.CANCELLED, InvoiceStatus.REFUNDED],
+                excluded: [InvoiceStatus.DRAFT, InvoiceStatus.CANCELLED, InvoiceStatus.REFUNDED, InvoiceStatus.WRITTEN_OFF],
               })
               .andWhere(tenantId ? 'inv.tenant_id = :tenantId' : '1=1', { tenantId })
               .getRawOne<{ used: string }>();
@@ -236,9 +245,16 @@ export class BillingService {
     });
 
     const taxPercent = dto.taxPercent ?? 18;
-    const taxAmount = multiply(subtotal, taxPercent) / 100;
+    const taxAmount = divide(multiply(subtotal, taxPercent), 100);
     const discountAmount = dto.discountAmount || 0;
     const totalAmount = subtract(add(subtotal, taxAmount), discountAmount);
+
+    // P0: Discount exceeding subtotal+tax produces a negative invoice — reject
+    if (totalAmount < 0) {
+      throw new BadRequestException(
+        `Discount amount (${discountAmount}) exceeds invoice total (${add(subtotal, taxAmount)}). Reduce the discount or add more items.`,
+      );
+    }
 
     // Wrap invoice number generation, save, GL posting, and encounter update
      // in a single transaction. The advisory lock taken by generateInvoiceNumber
@@ -273,7 +289,13 @@ export class BillingService {
         const encounter = await manager.findOne(Encounter, {
           where: { id: dto.encounterId, ...(tenantId ? { tenantId } : {}) },
         });
-        if (encounter?.facilityId) {
+        // P1: Throw when caller supplies an encounterId that doesn't exist (or belongs to another tenant)
+        if (!encounter) {
+          throw new BadRequestException(
+            `Encounter ${dto.encounterId} not found${tenantId ? ' for this tenant' : ''}`,
+          );
+        }
+        if (encounter.facilityId) {
           await this.financeService.autoPostInvoiceJournal(
             {
               facilityId: encounter.facilityId,
@@ -354,8 +376,12 @@ export class BillingService {
       if (it.quantity <= 0) {
         throw new BadRequestException(`Quantity must be positive: ${it.description}`);
       }
+      // P1: Align with createInvoice() — warn on zero unitPrice in preview
       if (it.unitPrice < 0) {
         throw new BadRequestException(`Unit price cannot be negative: ${it.description}`);
+      }
+      if (it.unitPrice === 0) {
+        warnings.push(`Item "${it.description}" has a zero unit price — it will be rejected on invoice creation.`);
       }
     }
 
@@ -412,14 +438,14 @@ export class BillingService {
       };
     });
 
-    // 3. Tax (default 18% VAT, same rule as createInvoice)
+    // 3. Tax (default 18% VAT, same rule as createInvoice) — use currency.ts to match createInvoice
     const taxPercent = dto.taxPercent ?? 18;
-    const taxAmount = Math.round((subtotal * taxPercent) / 100);
+    const taxAmount = divide(multiply(subtotal, taxPercent), 100);
 
     // 4. Membership discount applies BEFORE coverage (covers fewer items)
     const membershipDiscount =
       membershipDiscountPercent > 0
-        ? Math.round((subtotal * membershipDiscountPercent) / 100)
+        ? divide(multiply(subtotal, membershipDiscountPercent), 100)
         : 0;
 
     const taxedTotal = subtract(add(subtotal, taxAmount), membershipDiscount);
@@ -429,7 +455,7 @@ export class BillingService {
     let patientCopay = taxedTotal;
     if (dto.paymentType === PaymentType.INSURANCE && policyActive && (copayPercent || copayFixed)) {
       if (copayPercent > 0 && copayPercent <= 100) {
-        patientCopay = Math.round((taxedTotal * copayPercent) / 100);
+        patientCopay = divide(multiply(taxedTotal, copayPercent), 100);
       } else if (copayFixed > 0) {
         patientCopay = Math.min(copayFixed, taxedTotal);
       }
@@ -443,7 +469,8 @@ export class BillingService {
 
     // 6. Final adjustments (manual discount on the bill)
     const manualDiscount = dto.discountAmount || 0;
-    const totalAmount = subtract(taxedTotal, 0); // invoice total stored on the invoice
+    // P1-fix: was subtract(taxedTotal, 0) — manual discount was ignored in totalAmount
+    const totalAmount = subtract(taxedTotal, manualDiscount);
     const patientPortion = Math.max(0, subtract(patientCopay, manualDiscount));
 
     return {
@@ -503,6 +530,47 @@ export class BillingService {
           } else {
             this.logger.error(msg);
           }
+        }
+      }
+    }
+  }
+
+  /** Enhancement B: Reverse consumable deductions when an invoice is cancelled. */
+  private async autoReverseServiceConsumables(
+    invoice: Invoice,
+    userId: string,
+    tenantId?: string,
+  ): Promise<void> {
+    let facilityId: string | undefined;
+    if (invoice.encounterId) {
+      const enc = await this.encounterRepository.findOne({
+        where: { id: invoice.encounterId, ...(tenantId ? { tenantId } : {}) },
+      });
+      facilityId = enc?.facilityId;
+    }
+    if (!facilityId) return;
+
+    const items = await this.itemRepository.find({ where: { invoiceId: invoice.id } });
+    for (const item of items) {
+      if (!item.serviceCode) continue;
+      const consumables = await this.servicesService.getConsumablesByCode(item.serviceCode, tenantId);
+      for (const c of consumables) {
+        const totalQty = Number(c.quantity) * Number(item.quantity || 1);
+        try {
+          // Negative deduction = stock restoration
+          await this.inventoryService.deductStock(
+            c.itemId,
+            facilityId,
+            -totalQty,
+            'invoice_cancel',
+            invoice.id,
+            userId,
+            tenantId,
+          );
+        } catch (err: any) {
+          this.logger.warn(
+            `Could not reverse ${totalQty} of item ${c.itemId} for service ${item.serviceCode}: ${err?.message || err}`,
+          );
         }
       }
     }
@@ -632,12 +700,9 @@ export class BillingService {
       if (invoice.status === InvoiceStatus.PAID) {
         throw new BadRequestException('Cannot add items to a paid invoice');
       }
-      if (invoice.status === InvoiceStatus.PARTIALLY_PAID) {
-        throw new BadRequestException(
-          'Cannot add items to a partially paid invoice — refund or void the existing payments first',
-        );
-      }
-      if (invoice.status === InvoiceStatus.CANCELLED || invoice.status === InvoiceStatus.REFUNDED) {
+      // P1: Allow adding items to PARTIALLY_PAID invoices (hospital setting — services
+      // happen before payment completes). Aligned with addBillableItem() behavior.
+      if (invoice.status === InvoiceStatus.CANCELLED || invoice.status === InvoiceStatus.REFUNDED || invoice.status === InvoiceStatus.WRITTEN_OFF) {
         throw new BadRequestException(`Cannot add items to a ${invoice.status} invoice`);
       }
 
@@ -682,7 +747,7 @@ export class BillingService {
           'Cannot update item price on a paid or partially paid invoice',
         );
       }
-      if (invoice.status === InvoiceStatus.CANCELLED || invoice.status === InvoiceStatus.REFUNDED) {
+      if (invoice.status === InvoiceStatus.CANCELLED || invoice.status === InvoiceStatus.REFUNDED || invoice.status === InvoiceStatus.WRITTEN_OFF) {
         throw new BadRequestException(`Cannot update item price on a ${invoice.status} invoice`);
       }
 
@@ -731,7 +796,7 @@ export class BillingService {
           'Cannot remove items from a partially paid invoice — refund or void the existing payments first',
         );
       }
-      if (invoice.status === InvoiceStatus.CANCELLED || invoice.status === InvoiceStatus.REFUNDED) {
+      if (invoice.status === InvoiceStatus.CANCELLED || invoice.status === InvoiceStatus.REFUNDED || invoice.status === InvoiceStatus.WRITTEN_OFF) {
         throw new BadRequestException(`Cannot remove items from a ${invoice.status} invoice`);
       }
 
@@ -772,22 +837,23 @@ export class BillingService {
       throw new NotFoundException('Invoice not found');
     }
 
-    const subtotal = invoice.items.reduce((sum, item) => sum + Number(item.amount), 0);
-    const totalAmount = subtotal + Number(invoice.taxAmount) - Number(invoice.discountAmount);
-    const balanceDue = totalAmount - Number(invoice.amountPaid);
+    // P0: Use currency.ts add/subtract to avoid floating-point drift on decimal columns
+    const subtotal = invoice.items.reduce((sum, item) => add(sum, Number(item.amount)), 0);
+    const totalAmount = subtract(add(subtotal, Number(invoice.taxAmount)), Number(invoice.discountAmount));
+    const balanceDue = subtract(totalAmount, Number(invoice.amountPaid));
 
     const insuranceAmount = invoice.items.reduce(
-      (sum, item) => sum + Number(item.insuranceAmount || 0),
+      (sum, item) => add(sum, Number(item.insuranceAmount || 0)),
       0,
     );
     const copayAmount = invoice.items.reduce(
-      (sum, item) => sum + Number(item.copayAmount || 0),
+      (sum, item) => add(sum, Number(item.copayAmount || 0)),
       0,
     );
     const uncoveredAmount = invoice.items
       .filter((item) => !item.insuranceCovered)
-      .reduce((sum, item) => sum + Number(item.amount || 0), 0);
-    const patientResponsibility = copayAmount + uncoveredAmount;
+      .reduce((sum, item) => add(sum, Number(item.amount || 0)), 0);
+    const patientResponsibility = add(copayAmount, uncoveredAmount);
 
     invoice.subtotal = subtotal;
     invoice.totalAmount = totalAmount;
@@ -826,24 +892,25 @@ export class BillingService {
         throw new NotFoundException('Invoice not found');
       }
 
-      const subtotal = invoice.items.reduce((sum, item) => sum + Number(item.amount), 0);
-      const totalAmount = subtotal + Number(invoice.taxAmount) - Number(invoice.discountAmount);
-      const balanceDue = totalAmount - Number(invoice.amountPaid);
+      // P0: Use currency.ts add/subtract to avoid floating-point drift on decimal columns
+      const subtotal = invoice.items.reduce((sum, item) => add(sum, Number(item.amount)), 0);
+      const totalAmount = subtract(add(subtotal, Number(invoice.taxAmount)), Number(invoice.discountAmount));
+      const balanceDue = subtract(totalAmount, Number(invoice.amountPaid));
 
       // Calculate insurance breakdown
       const insuranceAmount = invoice.items.reduce(
-        (sum, item) => sum + Number(item.insuranceAmount || 0),
+        (sum, item) => add(sum, Number(item.insuranceAmount || 0)),
         0,
       );
       const copayAmount = invoice.items.reduce(
-        (sum, item) => sum + Number(item.copayAmount || 0),
+        (sum, item) => add(sum, Number(item.copayAmount || 0)),
         0,
       );
       // Patient pays: copay on covered items + full amount on uncovered items
       const uncoveredAmount = invoice.items
         .filter((item) => !item.insuranceCovered)
-        .reduce((sum, item) => sum + Number(item.amount || 0), 0);
-      const patientResponsibility = copayAmount + uncoveredAmount;
+        .reduce((sum, item) => add(sum, Number(item.amount || 0)), 0);
+      const patientResponsibility = add(copayAmount, uncoveredAmount);
 
       invoice.subtotal = subtotal;
       invoice.totalAmount = totalAmount;
@@ -940,26 +1007,21 @@ export class BillingService {
 
       const receiptNumber = await this.generateReceiptNumber(manager, tenantId);
 
+      // P1: Set transactionReference before first save to avoid double-save.
+      // For cash payments without an external reference, stamp the receipt number
+      // so every payment row has a traceable code.
       const payment = manager.create(Payment, {
         receiptNumber,
         invoiceId: dto.invoiceId,
         amount: dto.amount,
         method: dto.method,
-        transactionReference: dto.transactionReference,
+        transactionReference: dto.transactionReference || receiptNumber,
         notes: dto.notes,
         receivedById: userId,
         ...(tenantId ? { tenantId } : {}),
       });
 
-
       const savedPayment = await manager.save(payment);
-
-      // For cash payments without an external reference, stamp the receipt number
-      // back as the transaction reference so every payment row has a traceable code.
-      if (!savedPayment.transactionReference) {
-        savedPayment.transactionReference = receiptNumber;
-        await manager.save(savedPayment);
-      }
 
       // Update invoice totals
       invoice.amountPaid = Number(invoice.amountPaid) + dto.amount;
@@ -1096,6 +1158,9 @@ export class BillingService {
             tenantId,
           );
         } catch (err) {
+          // P1: Track GL failure on the payment row for reconciliation reports
+          savedPayment.glPosted = false;
+          await manager.save(Payment, savedPayment);
           this.logger.error(`GL auto-post failed for payment ${receiptNumber}: ${err.message}`, {
             receiptNumber,
             amount: dto.amount,
@@ -1184,9 +1249,12 @@ export class BillingService {
   }
 
   async listPayments(
-    params: { startDate?: string; endDate?: string; method?: string },
+    params: { startDate?: string; endDate?: string; method?: string; page?: number; limit?: number },
     tenantId?: string,
-  ): Promise<Payment[]> {
+  ): Promise<{ data: Payment[]; total: number }> {
+    const page = params.page || 1;
+    const limit = Math.min(params.limit || 50, 200);
+
     const qb = this.paymentRepository
       .createQueryBuilder('payment')
       .leftJoinAndSelect('payment.invoice', 'invoice')
@@ -1214,15 +1282,18 @@ export class BillingService {
       qb.andWhere('payment.method = :method', { method: params.method });
     }
 
-    qb.orderBy('payment.paidAt', 'DESC');
+    qb.orderBy('payment.paidAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
 
-    const payments = await qb.getMany();
+    const [payments, total] = await qb.getManyAndCount();
 
     // Transform to include patient info
-    return payments.map((p) => ({
+    const data = payments.map((p) => ({
       ...p,
       patientName: p.invoice?.patient?.fullName || null,
     }));
+    return { data, total };
   }
 
   async voidPayment(
@@ -1248,6 +1319,30 @@ export class BillingService {
 
       if (payment.status === PaymentStatus.VOIDED) {
         throw new BadRequestException('Payment is already voided');
+      }
+      if (payment.status === PaymentStatus.REFUNDED) {
+        throw new BadRequestException('Cannot void a refunded payment');
+      }
+
+      // P1: Time window for voids — after the window, require refundPayment() instead
+      const voidWindowHours = 24;
+      const paymentAge = Date.now() - new Date(payment.paidAt).getTime();
+      if (paymentAge > voidWindowHours * 60 * 60 * 1000) {
+        throw new BadRequestException(
+          `Payment is older than ${voidWindowHours} hours. Use refund instead of void.`,
+        );
+      }
+
+      // P1: Reject void if partial refunds already exist — would double-reverse
+      const existingRefunds = await paymentRepo
+        .createQueryBuilder('p')
+        .where('p.transactionReference = :ref', { ref: `REFUND-${payment.receiptNumber}` })
+        .andWhere('p.status = :st', { st: PaymentStatus.REFUNDED })
+        .getCount();
+      if (existingRefunds > 0) {
+        throw new BadRequestException(
+          'Cannot void a payment that has partial refunds. Refund the remaining balance instead.',
+        );
       }
 
       // Maker-checker: the user who received the payment cannot void it
@@ -1365,6 +1460,15 @@ export class BillingService {
         );
       }
 
+      // P1: Time window for refunds — 90-day limit
+      const refundWindowDays = 90;
+      const paymentAgeMs = Date.now() - new Date(original.paidAt).getTime();
+      if (paymentAgeMs > refundWindowDays * 24 * 60 * 60 * 1000) {
+        throw new BadRequestException(
+          `Payment is older than ${refundWindowDays} days. Refunds are no longer allowed — use a write-off instead.`,
+        );
+      }
+
       // How much of this payment is still refundable?
       const priorRefunds = await paymentRepo
         .createQueryBuilder('p')
@@ -1384,7 +1488,8 @@ export class BillingService {
         );
       }
 
-      const refundReceipt = `REF${original.receiptNumber.replace(/^RCP/, '')}-${Date.now().toString().slice(-4)}`;
+      // P0: Use advisory-locked receipt generator instead of Date.now() suffix (collision risk)
+      const refundReceipt = (await this.generateReceiptNumber(manager, tenantId)).replace(/^RCP/, 'REF');
 
       const refund = manager.create(Payment, {
         receiptNumber: refundReceipt,
@@ -1399,9 +1504,11 @@ export class BillingService {
       });
       const savedRefund = await manager.save(refund);
 
-      // If the entire payment is refunded, mark the original VOIDED to keep ledger tidy
+      // P0: Keep original payment as COMPLETED even when fully refunded — the refund
+      // counter-payment rows track the reversal. Reports distinguish refunds from voids
+      // by checking for counter-payments. Mark as REFUNDED (not VOIDED) for clarity.
       if (alreadyRefunded + refundAmount >= Number(original.amount)) {
-        original.status = PaymentStatus.VOIDED;
+        original.status = PaymentStatus.REFUNDED;
         original.notes =
           `${original.notes || ''}\nFully refunded by ${userId}: ${reason}`.trim();
         await paymentRepo.save(original);
@@ -1544,7 +1651,11 @@ export class BillingService {
     cashAmount: number;
     mobileMoneyAmount: number;
     cardAmount: number;
+    bankTransferAmount: number;
+    insuranceAmount: number;
+    otherAmount: number;
     paymentCount: number;
+    byMethod: Record<string, number>;
   }> {
     const startOfDay = new Date(date);
     startOfDay.setHours(0, 0, 0, 0);
@@ -1565,22 +1676,31 @@ export class BillingService {
     const payments = await qb.getMany();
 
     const totalCollected = payments.reduce((sum, p) => sum + Number(p.amount), 0);
-    const cashAmount = payments
-      .filter((p) => p.method === 'cash')
-      .reduce((sum, p) => sum + Number(p.amount), 0);
-    const mobileMoneyAmount = payments
-      .filter((p) => p.method === 'mobile_money')
-      .reduce((sum, p) => sum + Number(p.amount), 0);
-    const cardAmount = payments
-      .filter((p) => p.method === 'card')
-      .reduce((sum, p) => sum + Number(p.amount), 0);
+
+    // P1: Full payment method breakdown — not just cash/mobile/card
+    const byMethod: Record<string, number> = {};
+    for (const p of payments) {
+      const method = p.method || 'other';
+      byMethod[method] = (byMethod[method] || 0) + Number(p.amount);
+    }
+
+    const cashAmount = byMethod[PaymentMethod.CASH] || 0;
+    const mobileMoneyAmount = byMethod[PaymentMethod.MOBILE_MONEY] || 0;
+    const cardAmount = byMethod[PaymentMethod.CARD] || 0;
+    const bankTransferAmount = byMethod[PaymentMethod.BANK_TRANSFER] || 0;
+    const insuranceAmount = byMethod[PaymentMethod.INSURANCE] || 0;
+    const otherAmount = totalCollected - cashAmount - mobileMoneyAmount - cardAmount - bankTransferAmount - insuranceAmount;
 
     return {
       totalCollected,
       cashAmount,
       mobileMoneyAmount,
       cardAmount,
+      bankTransferAmount,
+      insuranceAmount,
+      otherAmount,
       paymentCount: payments.length,
+      byMethod,
     };
   }
 
@@ -1659,7 +1779,7 @@ export class BillingService {
     // Filter out cancelled / refunded
     const active = invoices.filter(
       (inv) =>
-        inv.status !== InvoiceStatus.CANCELLED && inv.status !== InvoiceStatus.REFUNDED,
+        inv.status !== InvoiceStatus.CANCELLED && inv.status !== InvoiceStatus.REFUNDED && inv.status !== InvoiceStatus.WRITTEN_OFF,
     );
 
     let grandTotal = 0;
@@ -1716,96 +1836,125 @@ export class BillingService {
 
   async cancelInvoice(
     id: string,
-    reason?: string,
+    reason: string,
     userId?: string,
     tenantId?: string,
   ): Promise<Invoice> {
-    const invoice = await this.invoiceRepository.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
-      relations: ['patient', 'encounter', 'payments'],
-    });
-
-    if (!invoice) {
-      throw new NotFoundException('Invoice not found');
+    // P1: reason is now required
+    if (!reason || !reason.trim()) {
+      throw new BadRequestException('Cancellation reason is required');
     }
 
-    // Segregation of duties: the user who created the invoice cannot cancel it
-    if (userId && invoice.createdById && invoice.createdById === userId) {
-      throw new BadRequestException(
-        'Segregation of duties violation: the user who created the invoice cannot cancel it',
-      );
-    }
+    // P1: Wrap in transaction with pessimistic lock to prevent race with recordPayment()
+    return this.dataSource.transaction(async (manager) => {
+      const invoice = await manager.findOne(Invoice, {
+        where: { id, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
 
-    // Segregation of duties: a user who collected any completed payment on this
-    // invoice cannot also cancel it. Mirrors the refundInvoice / refundPayment
-    // checks so a cashier can't quietly cancel an invoice they took money on.
-    if (userId) {
-      const collectorOverlap = (invoice.payments || []).some(
-        (p) => p.status === PaymentStatus.COMPLETED && p.receivedById === userId,
-      );
-      if (collectorOverlap) {
+      if (!invoice) {
+        throw new NotFoundException('Invoice not found');
+      }
+
+      // Load relations separately (pessimistic lock doesn't support joins)
+      const payments = await manager.find(Payment, { where: { invoiceId: id } });
+      invoice.payments = payments;
+      if (invoice.encounterId) {
+        const enc = await manager.findOne(Encounter, { where: { id: invoice.encounterId } });
+        if (enc) invoice.encounter = enc;
+      }
+
+      // Segregation of duties: the user who created the invoice cannot cancel it
+      if (userId && invoice.createdById && invoice.createdById === userId) {
         throw new BadRequestException(
-          'Segregation of duties violation: a user who collected payment on this invoice cannot also cancel it',
+          'Segregation of duties violation: the user who created the invoice cannot cancel it',
         );
       }
-    }
 
-    if (invoice.status === InvoiceStatus.PAID) {
-      throw new BadRequestException('Cannot cancel a paid invoice. Use refund instead.');
-    }
-
-    if (invoice.status === InvoiceStatus.CANCELLED) {
-      throw new BadRequestException('Invoice is already cancelled');
-    }
-
-    invoice.status = InvoiceStatus.CANCELLED;
-    invoice.notes = reason
-      ? `${invoice.notes || ''}\nCancelled${userId ? ` by ${userId}` : ''}: ${reason}`.trim()
-      : invoice.notes;
-
-    const saved = await this.invoiceRepository.save(invoice);
-
-    // Post GL reversal: CR Accounts Receivable, DR Revenue (reverses the original posting)
-    if (invoice.encounter?.facilityId && Number(invoice.totalAmount) > 0) {
-      this.financeService
-        .autoPostInvoiceJournal(
-          {
-            facilityId: invoice.encounter.facilityId,
-            invoiceNumber: `${invoice.invoiceNumber}-REVERSAL`,
-            totalAmount: -Number(invoice.totalAmount),
-            revenueCategory: invoice.paymentType || 'consultation',
-            userId: userId || 'system',
-          },
-          tenantId,
-        )
-        .catch((err) =>
-          this.logger.error(
-            `GL reversal failed for cancelled invoice ${invoice.invoiceNumber}: ${err.message}`,
-            {
-              invoiceNumber: invoice.invoiceNumber,
-              totalAmount: invoice.totalAmount,
-              error: err.stack,
-            },
-          ),
+      // Segregation of duties: a user who collected any completed payment on this
+      // invoice cannot also cancel it.
+      if (userId) {
+        const collectorOverlap = (invoice.payments || []).some(
+          (p) => p.status === PaymentStatus.COMPLETED && p.receivedById === userId,
         );
-    }
+        if (collectorOverlap) {
+          throw new BadRequestException(
+            'Segregation of duties violation: a user who collected payment on this invoice cannot also cancel it',
+          );
+        }
+      }
 
-    if (userId) {
-      await this.auditLogService.log({
-        userId,
-        action: 'INVOICE_CANCELLED',
-        entityType: 'Invoice',
-        entityId: invoice.id,
-        oldValue: { status: 'previous', totalAmount: Number(invoice.totalAmount), invoiceNumber: invoice.invoiceNumber },
-        newValue: { status: InvoiceStatus.CANCELLED },
-        reason: reason || 'No reason provided',
-        ...(tenantId ? { tenantId } : {}),
-      }).catch((err) =>
-        this.logger.error(`Audit log failed for cancelInvoice ${invoice.id}: ${err.message}`),
-      );
-    }
+      if (invoice.status === InvoiceStatus.PAID) {
+        throw new BadRequestException('Cannot cancel a paid invoice. Use refund instead.');
+      }
 
-    return saved;
+      // P0: Block cancellation of partially-paid invoices — payments are COMPLETED on a
+      // CANCELLED invoice, creating a reconciliation gap. Require refund of payments first.
+      if (invoice.status === InvoiceStatus.PARTIALLY_PAID) {
+        throw new BadRequestException(
+          'Cannot cancel a partially paid invoice. Refund or void the outstanding payments first, then cancel.',
+        );
+      }
+
+      if (invoice.status === InvoiceStatus.CANCELLED) {
+        throw new BadRequestException('Invoice is already cancelled');
+      }
+
+      invoice.status = InvoiceStatus.CANCELLED;
+      invoice.notes =
+        `${invoice.notes || ''}\nCancelled${userId ? ` by ${userId}` : ''}: ${reason}`.trim();
+
+      const saved = await manager.save(Invoice, invoice);
+
+      // Enhancement B: Reverse consumable inventory deductions for cancelled invoice
+      await this.autoReverseServiceConsumables(invoice, userId || 'system', tenantId).catch((err) => {
+        this.logger.warn(
+          `Auto-reverse consumables failed for cancelled ${invoice.invoiceNumber}: ${err?.message || err}`,
+        );
+      });
+
+      // Post GL reversal: CR Accounts Receivable, DR Revenue (reverses the original posting)
+      if (invoice.encounter?.facilityId && Number(invoice.totalAmount) > 0) {
+        this.financeService
+          .autoPostInvoiceJournal(
+            {
+              facilityId: invoice.encounter.facilityId,
+              invoiceNumber: `${invoice.invoiceNumber}-REVERSAL`,
+              totalAmount: -Number(invoice.totalAmount),
+              revenueCategory: invoice.paymentType || 'consultation',
+              userId: userId || 'system',
+            },
+            tenantId,
+          )
+          .catch((err) =>
+            this.logger.error(
+              `GL reversal failed for cancelled invoice ${invoice.invoiceNumber}: ${err.message}`,
+              {
+                invoiceNumber: invoice.invoiceNumber,
+                totalAmount: invoice.totalAmount,
+                error: err.stack,
+              },
+            ),
+          );
+      }
+
+      if (userId) {
+        await this.auditLogService.log({
+          userId,
+          action: 'INVOICE_CANCELLED',
+          entityType: 'Invoice',
+          entityId: invoice.id,
+          oldValue: { status: 'previous', totalAmount: Number(invoice.totalAmount), invoiceNumber: invoice.invoiceNumber },
+          newValue: { status: InvoiceStatus.CANCELLED },
+          reason,
+          ...(tenantId ? { tenantId } : {}),
+        }).catch((err) =>
+          this.logger.error(`Audit log failed for cancelInvoice ${invoice.id}: ${err.message}`),
+        );
+      }
+
+      return saved;
+    });
   }
 
   async refundInvoice(
@@ -1975,9 +2124,8 @@ export class BillingService {
       });
 
       if (!invoice) {
-        const invoiceNumber = await this.dataSource.transaction((manager) =>
-          this.generateInvoiceNumber(manager, tenantId),
-        );
+        // P0: Use outer transaction manager — inner transaction releases advisory lock too early
+        const invoiceNumber = await this.generateInvoiceNumber(manager, tenantId);
         invoice = await manager.save(
           Invoice,
           manager.create(Invoice, {
@@ -2106,7 +2254,7 @@ export class BillingService {
         }
       }
 
-      // Add item
+      // Add item — P1: stamp tenantId explicitly for cascading insert isolation
       const amount = multiply(params.quantity, resolvedUnitPrice);
       const item = await manager.save(
         InvoiceItem,
@@ -2124,11 +2272,32 @@ export class BillingService {
           insuranceAmount: insuranceCoveredAmount || 0,
           copayAmount: patientCopay || 0,
           coverageNote: coverageNote,
+          ...(tenantId ? { tenantId } : {}),
         }),
       );
 
       // Recalculate invoice totals
       await this.recalculateInvoice(invoice.id, tenantId);
+
+      // P1: Audit log for billable item additions
+      this.auditLogService.log({
+        userId,
+        action: 'BILLABLE_ITEM_ADDED',
+        entityType: 'InvoiceItem',
+        entityId: item.id,
+        newValue: {
+          invoiceId: invoice.id,
+          invoiceNumber: invoice.invoiceNumber,
+          serviceCode: params.serviceCode,
+          description: params.description,
+          quantity: params.quantity,
+          unitPrice: resolvedUnitPrice,
+          amount,
+        },
+        ...(tenantId ? { tenantId } : {}),
+      }).catch((err) =>
+        this.logger.error(`Audit log failed for addBillableItem: ${err.message}`),
+      );
 
       return item;
     });
@@ -2146,26 +2315,63 @@ export class BillingService {
     userId?: string,
     tenantId?: string,
   ): Promise<boolean> {
-    const existing = await this.itemRepository.findOne({
-      where: {
-        referenceType: params.referenceType,
-        referenceId: params.referenceId,
-        ...(tenantId ? { tenantId } : {}),
-      },
+    // P0: Wrap in transaction with pessimistic lock on parent invoice
+    return this.dataSource.transaction(async (manager) => {
+      const existing = await manager.findOne(InvoiceItem, {
+        where: {
+          referenceType: params.referenceType,
+          referenceId: params.referenceId,
+          ...(tenantId ? { tenantId } : {}),
+        },
+      });
+      if (!existing) return false;
+
+      // P1: Block modifications on terminal invoice statuses
+      const invoice = await manager.findOne(Invoice, {
+        where: { id: existing.invoiceId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!invoice) return false;
+      const terminalStatuses: InvoiceStatus[] = [
+        InvoiceStatus.PAID, InvoiceStatus.CANCELLED, InvoiceStatus.REFUNDED, InvoiceStatus.WRITTEN_OFF,
+      ];
+      if (terminalStatuses.includes(invoice.status)) {
+        throw new BadRequestException(
+          `Cannot modify items on a ${invoice.status} invoice`,
+        );
+      }
+
+      const oldAmount = existing.amount;
+      if (params.description !== undefined) existing.description = params.description;
+      if (params.quantity !== undefined) existing.quantity = params.quantity;
+      if (params.unitPrice !== undefined) existing.unitPrice = params.unitPrice;
+      existing.amount = multiply(existing.quantity, existing.unitPrice);
+
+      await manager.save(InvoiceItem, existing);
+      this.logger.log(
+        `Billable item updated: ${params.referenceType}/${params.referenceId} by ${userId || 'unknown'}`,
+      );
+
+      // Recalculate within the same transaction context
+      await this.recalculateInvoiceInTxn(manager, existing.invoiceId, tenantId);
+
+      // P1: Audit log
+      if (userId) {
+        this.auditLogService.log({
+          userId,
+          action: 'BILLABLE_ITEM_UPDATED',
+          entityType: 'InvoiceItem',
+          entityId: existing.id,
+          oldValue: { amount: Number(oldAmount) },
+          newValue: { quantity: existing.quantity, unitPrice: existing.unitPrice, amount: existing.amount },
+          ...(tenantId ? { tenantId } : {}),
+        }).catch((err) =>
+          this.logger.error(`Audit log failed for updateBillableItem: ${err.message}`),
+        );
+      }
+
+      return true;
     });
-    if (!existing) return false;
-
-    if (params.description !== undefined) existing.description = params.description;
-    if (params.quantity !== undefined) existing.quantity = params.quantity;
-    if (params.unitPrice !== undefined) existing.unitPrice = params.unitPrice;
-    existing.amount = multiply(existing.quantity, existing.unitPrice);
-
-    await this.itemRepository.save(existing);
-    this.logger.log(
-      `Billable item updated: ${params.referenceType}/${params.referenceId} by ${userId || 'unknown'}`,
-    );
-    await this.recalculateInvoice(existing.invoiceId, tenantId);
-    return true;
   }
 
   /** Remove a billable item by reference */
@@ -2175,17 +2381,59 @@ export class BillingService {
     userId?: string,
     tenantId?: string,
   ): Promise<boolean> {
-    const existing = await this.itemRepository.findOne({
-      where: { referenceType, referenceId, ...(tenantId ? { tenantId } : {}) },
+    // P0: Wrap in transaction with pessimistic lock on parent invoice
+    return this.dataSource.transaction(async (manager) => {
+      const existing = await manager.findOne(InvoiceItem, {
+        where: { referenceType, referenceId, ...(tenantId ? { tenantId } : {}) },
+      });
+      if (!existing) return false;
+
+      // P1: Block modifications on terminal invoice statuses
+      const invoice = await manager.findOne(Invoice, {
+        where: { id: existing.invoiceId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!invoice) return false;
+      const terminalStatuses: InvoiceStatus[] = [
+        InvoiceStatus.PAID, InvoiceStatus.CANCELLED, InvoiceStatus.REFUNDED, InvoiceStatus.WRITTEN_OFF,
+      ];
+      if (terminalStatuses.includes(invoice.status)) {
+        throw new BadRequestException(
+          `Cannot remove items from a ${invoice.status} invoice`,
+        );
+      }
+
+      const invoiceId = existing.invoiceId;
+      const removedItem = { ...existing };
+      await manager.remove(InvoiceItem, existing);
+      this.logger.log(
+        `Billable item removed: ${referenceType}/${referenceId} from invoice ${invoiceId} by ${userId || 'unknown'}`,
+      );
+
+      // Recalculate within the same transaction context
+      await this.recalculateInvoiceInTxn(manager, invoiceId, tenantId);
+
+      // P1: Audit log
+      if (userId) {
+        this.auditLogService.log({
+          userId,
+          action: 'BILLABLE_ITEM_REMOVED',
+          entityType: 'InvoiceItem',
+          entityId: removedItem.id,
+          oldValue: {
+            invoiceId,
+            serviceCode: removedItem.serviceCode,
+            description: removedItem.description,
+            amount: Number(removedItem.amount),
+          },
+          ...(tenantId ? { tenantId } : {}),
+        }).catch((err) =>
+          this.logger.error(`Audit log failed for removeBillableItem: ${err.message}`),
+        );
+      }
+
+      return true;
     });
-    if (!existing) return false;
-    const invoiceId = existing.invoiceId;
-    await this.itemRepository.remove(existing);
-    this.logger.log(
-      `Billable item removed: ${referenceType}/${referenceId} from invoice ${invoiceId} by ${userId || 'unknown'}`,
-    );
-    await this.recalculateInvoice(invoiceId, tenantId);
-    return true;
   }
 
   // ============ REVENUE DASHBOARD ============
@@ -2229,14 +2477,18 @@ export class BillingService {
     const previousStart = new Date(startDate);
     previousStart.setDate(previousStart.getDate() - periodDays);
 
-    // Get current period payments
+    // Get current period payments — P1: join through encounter to filter by facilityId
     const currentPaymentsQb = this.paymentRepository
       .createQueryBuilder('p')
       .leftJoinAndSelect('p.invoice', 'inv')
+      .leftJoin('inv.encounter', 'enc')
       .where('p.paid_at >= :startDate', { startDate })
       .andWhere('p.paid_at <= :now', { now })
       .andWhere('p.status = :status', { status: PaymentStatus.COMPLETED });
 
+    if (facilityId) {
+      currentPaymentsQb.andWhere('enc.facility_id = :facilityId', { facilityId });
+    }
     if (tenantId) {
       currentPaymentsQb.andWhere('p.tenant_id = :tenantId', { tenantId });
     }
@@ -2246,10 +2498,15 @@ export class BillingService {
     // Get previous period payments for comparison
     const previousPaymentsQb = this.paymentRepository
       .createQueryBuilder('p')
+      .leftJoin('p.invoice', 'inv2')
+      .leftJoin('inv2.encounter', 'enc2')
       .where('p.paid_at >= :start', { start: previousStart })
       .andWhere('p.paid_at < :end', { end: startDate })
       .andWhere('p.status = :status', { status: PaymentStatus.COMPLETED });
 
+    if (facilityId) {
+      previousPaymentsQb.andWhere('enc2.facility_id = :facilityId', { facilityId });
+    }
     if (tenantId) {
       previousPaymentsQb.andWhere('p.tenant_id = :tenantId', { tenantId });
     }
@@ -2269,9 +2526,14 @@ export class BillingService {
         return { opd: 0, lab: 0, pharmacy: 0, imaging: 0, procedures: 0, other: 0 };
       }
 
+      // P1: Filter out items from cancelled/refunded/written_off invoices
       const items = await this.itemRepository
         .createQueryBuilder('item')
+        .innerJoin('item.invoice', 'inv')
         .where('item.invoice_id IN (:...ids)', { ids: invoiceIds })
+        .andWhere('inv.status NOT IN (:...excludedStatuses)', {
+          excludedStatuses: [InvoiceStatus.CANCELLED, InvoiceStatus.REFUNDED, InvoiceStatus.WRITTEN_OFF],
+        })
         .getMany();
 
       const breakdown = { opd: 0, lab: 0, pharmacy: 0, imaging: 0, procedures: 0, other: 0 };
@@ -2341,10 +2603,12 @@ export class BillingService {
     const pendingInvoices = await pendingInvoicesQb.getMany();
 
     const receivables = pendingInvoices.map((inv) => {
-      const dueDate = inv.dueDate || new Date(inv.createdAt);
-      dueDate.setDate(dueDate.getDate() + 30); // Default 30-day terms
+      // P2: Use dueDate for aging calculation (not createdAt) — reflects actual payment terms
+      const dueDate = inv.dueDate ? new Date(inv.dueDate) : new Date(inv.createdAt);
+      if (!inv.dueDate) dueDate.setDate(dueDate.getDate() + 30); // Default 30-day terms
+      const agingBase = inv.dueDate ? new Date(inv.dueDate) : new Date(inv.createdAt);
       const aging = Math.floor(
-        (now.getTime() - new Date(inv.createdAt).getTime()) / (1000 * 60 * 60 * 24),
+        (now.getTime() - agingBase.getTime()) / (1000 * 60 * 60 * 24),
       );
 
       return {
@@ -2431,11 +2695,12 @@ export class BillingService {
   // ============ WRITE-OFFS ============
 
   /**
-   * Configurable write-off threshold (in tenant currency, default UGX).
+   * Default write-off threshold (in tenant currency, default UGX).
    * Amounts above this require the `finance.write_off_large` permission, or
    * (back-compat) one of the supervisor/admin/finance_manager roles.
+   * P2: Now loaded from system settings `write_off_threshold` per tenant at runtime.
    */
-  private static readonly WRITE_OFF_LIMIT = 5_000_000;
+  private static readonly DEFAULT_WRITE_OFF_LIMIT = 5_000_000;
   private static readonly WRITE_OFF_SUPERVISOR_ROLES = [
     'supervisor',
     'admin',
@@ -2478,14 +2743,33 @@ export class BillingService {
         throw new BadRequestException('Cannot write off a cancelled invoice');
       if (invoice.status === InvoiceStatus.REFUNDED)
         throw new BadRequestException('Cannot write off a refunded invoice');
+      if (invoice.status === InvoiceStatus.WRITTEN_OFF)
+        throw new BadRequestException('Invoice is already written off');
+
+      // P1: Maker-checker — the creator of the invoice cannot write it off
+      if (invoice.createdById === userId) {
+        throw new BadRequestException(
+          'Segregation of duties violation: the user who created the invoice cannot write it off',
+        );
+      }
 
       const writeOffAmount = Number(invoice.balanceDue);
       if (writeOffAmount <= 0) {
         throw new BadRequestException('Nothing to write off — invoice has no outstanding balance');
       }
 
+      // P2: Load configurable threshold from system settings, fall back to default
+      let writeOffLimit = BillingService.DEFAULT_WRITE_OFF_LIMIT;
+      try {
+        const setting = await this.settingsService.getByKey('write_off_threshold');
+        const parsed = Number(setting?.value);
+        if (parsed > 0) writeOffLimit = parsed;
+      } catch {
+        /* use default */
+      }
+
       // Enforce threshold via permission first, then back-compat role list.
-      if (writeOffAmount > BillingService.WRITE_OFF_LIMIT) {
+      if (writeOffAmount > writeOffLimit) {
         const perms = userPermissions || [];
         const roles = userRoles || [];
         const hasLargeWriteOffPerm =
@@ -2496,13 +2780,14 @@ export class BillingService {
         if (!hasLargeWriteOffPerm && !isSupervisor) {
           throw new BadRequestException(
             `Write-off amount (${writeOffAmount.toLocaleString()}) exceeds the limit of ` +
-              `${BillingService.WRITE_OFF_LIMIT.toLocaleString()}. ` +
+              `${writeOffLimit.toLocaleString()}. ` +
               `The 'finance.write_off_large' permission (or supervisor / finance-manager role) is required.`,
           );
         }
       }
 
-      invoice.status = InvoiceStatus.CANCELLED;
+      // P1: Use dedicated WRITTEN_OFF status instead of CANCELLED
+      invoice.status = InvoiceStatus.WRITTEN_OFF;
       invoice.notes =
         `${invoice.notes || ''}\nWRITTEN OFF (${new Date().toISOString().slice(0, 10)}): ${reason} — Amount: ${writeOffAmount}`.trim();
       const saved = await manager.save(Invoice, invoice);
@@ -2541,7 +2826,7 @@ export class BillingService {
         entityType: 'Invoice',
         entityId: invoice.id,
         oldValue: { balanceDue: writeOffAmount, status: 'previous', invoiceNumber: invoice.invoiceNumber },
-        newValue: { status: InvoiceStatus.CANCELLED, writeOffAmount, glPosted },
+        newValue: { status: InvoiceStatus.WRITTEN_OFF, writeOffAmount, glPosted },
         reason,
         ...(tenantId ? { tenantId } : {}),
       }).catch((err) =>
@@ -2557,11 +2842,30 @@ export class BillingService {
   async getReceiptPrintData(paymentId: string, tenantId?: string) {
     const payment = await this.paymentRepository.findOne({
       where: { id: paymentId, ...(tenantId ? { tenantId } : {}) },
-      relations: ['invoice', 'invoice.items', 'invoice.patient', 'receivedBy'],
+      relations: ['invoice', 'invoice.items', 'invoice.patient', 'invoice.encounter', 'receivedBy'],
     });
     if (!payment) throw new NotFoundException('Payment not found');
 
     const invoice = payment.invoice;
+
+    // Enhancement C: Load facility for URA-compliant receipt fields (name, address, TIN, logo)
+    let facility: { name?: string; address?: string; tin?: string; logoUrl?: string; phone?: string } = {};
+    const facilityId = invoice?.encounter?.facilityId;
+    if (facilityId) {
+      const fac = await this.dataSource.getRepository(Facility).findOne({
+        where: { id: facilityId },
+      });
+      if (fac) {
+        facility = {
+          name: fac.name,
+          address: (fac as any).address || '',
+          tin: (fac as any).tin || '',
+          logoUrl: (fac as any).logoUrl || '',
+          phone: (fac as any).phone || '',
+        };
+      }
+    }
+
     return {
       receiptNumber: payment.receiptNumber,
       date: payment.paidAt || payment.createdAt,
@@ -2583,6 +2887,12 @@ export class BillingService {
       transactionReference: payment.transactionReference,
       balanceDue: Number(invoice?.balanceDue || 0),
       cashier: payment.receivedBy?.fullName || payment.receivedBy?.email || '',
+      // Enhancement C: URA-compliant receipt fields
+      facilityName: facility.name || '',
+      facilityAddress: facility.address || '',
+      facilityTin: facility.tin || '',
+      facilityLogoUrl: facility.logoUrl || '',
+      facilityPhone: facility.phone || '',
     };
   }
 }

@@ -191,7 +191,7 @@ export class BillingController {
       }
     }
     return this.billingService.listPayments(
-      { startDate: query.startDate, endDate: query.endDate, method: query.method },
+      { startDate: query.startDate, endDate: query.endDate, method: query.method, page: query.page, limit: query.limit },
       req?.user?.tenantId,
     );
   }

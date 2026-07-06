@@ -133,14 +133,14 @@ export class PricingEngineController {
     @Body() dto: UpdatePricingRuleDto,
     @Request() req: any,
   ) {
-    return this.pricingService.updatePricingRule(id, dto, req.user?.tenantId);
+    return this.pricingService.updatePricingRule(id, dto, req.user?.id, req.user?.tenantId);
   }
 
   @Delete('rules/:id')
   @AuthWithPermissions('services.delete')
   @ApiOperation({ summary: 'Delete pricing rule' })
   deletePricingRule(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
-    return this.pricingService.deletePricingRule(id, req.user?.tenantId);
+    return this.pricingService.deletePricingRule(id, req.user?.id, req.user?.tenantId);
   }
 
   // ==================== TAX RATES ====================
