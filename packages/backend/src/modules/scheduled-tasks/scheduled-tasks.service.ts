@@ -28,6 +28,7 @@ import { NotificationType } from '../../database/entities/notification-config.en
 import { Invoice, InvoiceStatus } from '../../database/entities/invoice.entity';
 import { Patient } from '../../database/entities/patient.entity';
 import { Queue, QueueStatus } from '../../database/entities/queue.entity';
+import { Encounter, EncounterStatus } from '../../database/entities/encounter.entity';
 
 @Injectable()
 export class ScheduledTasksService {
@@ -58,6 +59,8 @@ export class ScheduledTasksService {
     private readonly patientRepo: Repository<Patient>,
     @InjectRepository(Queue)
     private readonly queueRepo: Repository<Queue>,
+    @InjectRepository(Encounter)
+    private readonly encounterRepo: Repository<Encounter>,
     private readonly inAppNotificationsService: InAppNotificationsService,
     private readonly notificationsService: NotificationsService,
   ) {}
@@ -948,6 +951,65 @@ export class ScheduledTasksService {
     } catch (error) {
       this.logger.error(
         'Queue stale-sweep failed',
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
+  }
+
+  /**
+   * Auto-cancel stale encounters every 15 minutes.
+   * Encounters in REGISTERED, TRIAGE, or WAITING status older than
+   * ENCOUNTER_AUTO_CANCEL_MINUTES (env, default 480 = 8h) are cancelled
+   * automatically to prevent indefinite parking.
+   */
+  @Cron('*/15 * * * *', { name: 'encounter-stale-sweep' })
+  async sweepStaleEncounters(): Promise<void> {
+    const cutoffMinutes = Number(process.env.ENCOUNTER_AUTO_CANCEL_MINUTES || 480);
+    const cutoff = new Date(Date.now() - cutoffMinutes * 60_000);
+
+    try {
+      const stale = await this.encounterRepo
+        .createQueryBuilder('e')
+        .where('e.status IN (:...statuses)', {
+          statuses: [
+            EncounterStatus.REGISTERED,
+            EncounterStatus.TRIAGE,
+            EncounterStatus.WAITING,
+          ],
+        })
+        .andWhere('e.created_at < :cutoff', { cutoff })
+        .limit(500)
+        .getMany();
+
+      if (stale.length === 0) {
+        return;
+      }
+
+      let cancelled = 0;
+      const now = new Date();
+      for (const encounter of stale) {
+        encounter.status = EncounterStatus.CANCELLED;
+        encounter.metadata = {
+          ...encounter.metadata,
+          autoCancelledAt: now.toISOString(),
+          autoCancelReason: `Stale encounter auto-cancelled after ${cutoffMinutes} minutes`,
+        };
+        try {
+          await this.encounterRepo.save(encounter);
+          cancelled++;
+        } catch (e) {
+          this.logger.warn(
+            `Failed to auto-cancel encounter ${encounter.id}: ${(e as Error).message}`,
+          );
+        }
+      }
+
+      this.logger.log(
+        `Encounter stale-sweep: scanned ${stale.length}, auto-cancelled ${cancelled} (cutoff=${cutoffMinutes}m)`,
+      );
+    } catch (error) {
+      this.logger.error(
+        'Encounter stale-sweep failed',
         error instanceof Error ? error.stack : String(error),
       );
     }

@@ -14,7 +14,7 @@ import {
   EncounterType,
   PayerType,
 } from '../../database/entities/encounter.entity';
-import { InsurancePolicy } from '../../database/entities/insurance-policy.entity';
+import { InsurancePolicy, CoverageType } from '../../database/entities/insurance-policy.entity';
 import { Invoice } from '../../database/entities/invoice.entity';
 import { Patient } from '../../database/entities/patient.entity';
 import { Facility } from '../../database/entities/facility.entity';
@@ -181,6 +181,20 @@ export class EncountersService {
     },
   };
 
+  /**
+   * Maps encounter types to compatible insurance coverage types.
+   * COMPREHENSIVE and BOTH always match any encounter type (handled in validation logic).
+   */
+  private static readonly COVERAGE_TYPE_MAP: Partial<Record<EncounterType, CoverageType[]>> = {
+    [EncounterType.OPD]: [CoverageType.OUTPATIENT],
+    [EncounterType.IPD]: [CoverageType.INPATIENT],
+    [EncounterType.EMERGENCY]: [CoverageType.OUTPATIENT, CoverageType.INPATIENT],
+    [EncounterType.ANC]: [CoverageType.MATERNITY],
+    [EncounterType.PNC]: [CoverageType.MATERNITY],
+    [EncounterType.DENTAL]: [CoverageType.DENTAL],
+    [EncounterType.OPTICAL]: [CoverageType.OPTICAL],
+  };
+
   async create(dto: CreateEncounterDto, userId: string, tenantId?: string): Promise<Encounter> {
     // Verify patient exists
     const patient = await this.patientRepository.findOne({
@@ -237,6 +251,21 @@ export class EncountersService {
       }
       if (new Date(policy.expiryDate) < new Date()) {
         throw new BadRequestException('Insurance policy has expired');
+      }
+
+      // A.5: Validate coverage type matches encounter type
+      const encounterType = dto.type || EncounterType.OPD;
+      const policyCoverage = policy.coverageType;
+      if (
+        policyCoverage !== CoverageType.COMPREHENSIVE &&
+        policyCoverage !== CoverageType.BOTH
+      ) {
+        const compatibleTypes = EncountersService.COVERAGE_TYPE_MAP[encounterType] || [];
+        if (compatibleTypes.length > 0 && !compatibleTypes.includes(policyCoverage)) {
+          throw new BadRequestException(
+            `Insurance policy coverage type '${policyCoverage}' does not cover '${encounterType}' encounters`,
+          );
+        }
       }
     }
 
@@ -1358,6 +1387,9 @@ export class EncountersService {
     pendingPharmacy: number;
     averageWaitMinutes: number | null;
     departmentBreakdown: Array<{ departmentId: string; departmentName: string; total: number }>;
+    bouncedEncounters: number;
+    totalBounces: number;
+    bounceRate: number;
     /** @deprecated Use inConsultation */
     inProgress: number;
   }> {
@@ -1426,17 +1458,37 @@ export class EncountersService {
       .addGroupBy('department.name')
       .orderBy('total', 'DESC');
 
-    // Run both in parallel
-    const [result, deptResults] = await Promise.all([
+    // Bounce rate query — counts encounters with any bounce metadata
+    const bounceQb = this.encounterRepository
+      .createQueryBuilder('encounter')
+      .select('COUNT(*)', 'bouncedEncounters')
+      .addSelect(
+        `COALESCE(SUM(COALESCE((encounter.metadata->>'doctorBounceCount')::int, 0) + COALESCE((encounter.metadata->>'pharmacyBounceCount')::int, 0) + COALESCE((encounter.metadata->>'labBounceCount')::int, 0)), 0)`,
+        'totalBounces',
+      )
+      .where('encounter.facility_id = :facilityId', { facilityId })
+      .andWhere('encounter.created_at >= :today', { today })
+      .andWhere(tenantFilter, { tenantId })
+      .andWhere(
+        `(COALESCE((encounter.metadata->>'doctorBounceCount')::int, 0) + COALESCE((encounter.metadata->>'pharmacyBounceCount')::int, 0) + COALESCE((encounter.metadata->>'labBounceCount')::int, 0)) > 0`,
+      );
+
+    // Run all in parallel
+    const [result, deptResults, bounceResult] = await Promise.all([
       qb.getRawOne(),
       deptQb.getRawMany(),
+      bounceQb.getRawOne(),
     ]);
 
     const inConsultation = parseInt(result.inConsultation, 10) || 0;
     const avgWait = result.averageWaitMinutes ? Math.round(parseFloat(result.averageWaitMinutes)) : null;
+    const total = parseInt(result.total, 10) || 0;
+    const bouncedEncounters = parseInt(bounceResult?.bouncedEncounters, 10) || 0;
+    const totalBounces = parseInt(bounceResult?.totalBounces, 10) || 0;
+    const bounceRate = total > 0 ? Math.round((bouncedEncounters / total) * 10000) / 100 : 0;
 
     return {
-      total: parseInt(result.total, 10) || 0,
+      total,
       waiting: parseInt(result.waiting, 10) || 0,
       inConsultation,
       inProgress: inConsultation,
@@ -1446,6 +1498,9 @@ export class EncountersService {
       pendingLab: parseInt(result.pendingLab, 10) || 0,
       pendingPharmacy: parseInt(result.pendingPharmacy, 10) || 0,
       averageWaitMinutes: avgWait,
+      bouncedEncounters,
+      totalBounces,
+      bounceRate,
       departmentBreakdown: deptResults.map((r) => ({
         departmentId: r.departmentId,
         departmentName: r.departmentName || 'Unassigned',
@@ -1555,7 +1610,9 @@ export class EncountersService {
     dto: CompleteConsultationDto,
     userId: string,
     tenantId?: string,
-  ): Promise<{ encounter: Encounter; clinicalNoteId: string; followUpId?: string }> {
+  ): Promise<{ encounter: Encounter; clinicalNoteId: string; followUpId?: string; clinicalNoteScore: number }> {
+    const clinicalNoteScore = this.computeNoteCompletenessScore(dto);
+
     const result = await this.dataSource.transaction(async (manager) => {
       // Fetch encounter with pessimistic lock (no relations to avoid FOR UPDATE on outer join)
       const encounter = await manager.findOne(Encounter, {
@@ -1632,12 +1689,12 @@ export class EncountersService {
         at: new Date().toISOString(),
         actorUserId: userId,
       });
-      encounter.metadata = { ...encounter.metadata, statusHistory };
+      encounter.metadata = { ...encounter.metadata, statusHistory, clinicalNoteScore };
 
       const savedEncounter = await manager.save(Encounter, encounter);
 
       this.logger.log(
-        `Consultation completed atomically: encounter=${encounterId}, note=${savedNote.id}, provider=${userId}`,
+        `Consultation completed atomically: encounter=${encounterId}, note=${savedNote.id}, provider=${userId}, noteScore=${clinicalNoteScore}`,
       );
 
       return { encounter: savedEncounter, clinicalNoteId: savedNote.id, oldStatus };
@@ -1712,7 +1769,30 @@ export class EncountersService {
       }
     }
 
-    return { encounter: result.encounter, clinicalNoteId: result.clinicalNoteId, followUpId };
+    return { encounter: result.encounter, clinicalNoteId: result.clinicalNoteId, followUpId, clinicalNoteScore };
+  }
+
+  /**
+   * Compute a clinical note completeness score (0-100) based on SOAP fields,
+   * diagnoses coverage, and follow-up documentation.
+   */
+  private computeNoteCompletenessScore(dto: CompleteConsultationDto): number {
+    let score = 0;
+
+    if (dto.subjective) score += 15;
+    if (dto.objective) score += 15;
+    if (dto.assessment) score += 20;
+    if (dto.plan) score += 20;
+
+    const diagCount = dto.diagnoses?.length || 0;
+    if (diagCount >= 3) score += 20;
+    else if (diagCount >= 2) score += 15;
+    else if (diagCount >= 1) score += 10;
+
+    if (dto.followUpDate) score += 5;
+    if (dto.followUpNotes) score += 5;
+
+    return score;
   }
 
   /**
