@@ -4,6 +4,20 @@ import { Encounter } from './encounter.entity';
 import { Patient } from './patient.entity';
 import { User } from './user.entity';
 
+export enum ConsciousnessLevel {
+  A = 'A', // Alert
+  V = 'V', // Voice responsive
+  P = 'P', // Pain responsive
+  U = 'U', // Unresponsive
+}
+
+export enum ClinicalRiskLevel {
+  LOW = 'low',
+  LOW_MEDIUM = 'low_medium',
+  MEDIUM = 'medium',
+  HIGH = 'high',
+}
+
 export enum VitalSource {
   OPD_ENCOUNTER = 'OPD_ENCOUNTER',
   NURSING_ROUND = 'NURSING_ROUND',
@@ -87,4 +101,34 @@ export class Vital extends BaseEntity {
 
   @Column({ name: 'recorded_by_id' })
   recordedById: string;
+
+  // --- Early Warning Score fields ---
+
+  @Column({ name: 'news_score', type: 'smallint', nullable: true })
+  newsScore: number | null;
+
+  @Column({ name: 'mews_score', type: 'smallint', nullable: true })
+  mewsScore: number | null;
+
+  @Column({ name: 'news_components', type: 'jsonb', nullable: true })
+  newsComponents: Record<string, number> | null;
+
+  @Column({
+    name: 'consciousness_level',
+    type: 'enum',
+    enum: ConsciousnessLevel,
+    nullable: true,
+  })
+  consciousnessLevel: ConsciousnessLevel | null;
+
+  @Column({ name: 'supplemental_oxygen', default: false })
+  supplementalOxygen: boolean;
+
+  @Column({
+    name: 'clinical_risk_level',
+    type: 'enum',
+    enum: ClinicalRiskLevel,
+    nullable: true,
+  })
+  clinicalRiskLevel: ClinicalRiskLevel | null;
 }

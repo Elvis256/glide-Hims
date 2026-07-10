@@ -1,14 +1,16 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, Optional, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AllergiesService } from './allergies.service';
 import { DrugManagementService } from '../drug-management/drug-management.service';
 import { DoseCheckService } from './dose-check.service';
+import { DrugDiseaseService } from './drug-disease.service';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
 import {
   PrescriptionSafetyOverride,
   SafetyAlert,
 } from '../../database/entities/prescription-safety-override.entity';
+import { PatientActiveMedicationService } from '../prescriptions/patient-active-medication.service';
 
 export interface PrescriptionLineLite {
   drugId?: string;
@@ -20,6 +22,7 @@ export interface PrescriptionLineLite {
 
 export interface RunSafetyChecksInput {
   patientId?: string;
+  encounterId?: string;
   drugIds: string[];
   lines: PrescriptionLineLite[];
   tenantId?: string;
@@ -69,10 +72,15 @@ export class MedicationSafetyService {
     private readonly drugManagementService: DrugManagementService,
     private readonly doseCheckService: DoseCheckService,
     private readonly auditLog: AuditLogService,
+    @Optional()
+    @Inject(forwardRef(() => PatientActiveMedicationService))
+    private readonly activeMedService: PatientActiveMedicationService | null,
+    @Optional()
+    private readonly drugDiseaseService: DrugDiseaseService | null,
   ) {}
 
   async runSafetyChecks(input: RunSafetyChecksInput): Promise<SafetyResult> {
-    const { patientId, drugIds, lines, tenantId } = input;
+    const { patientId, encounterId, drugIds, lines, tenantId } = input;
     const alerts: SafetyAlert[] = [];
     const degradedReasons: string[] = [];
 
@@ -81,10 +89,29 @@ export class MedicationSafetyService {
       drugIdToName.set(drugIds[i], lines[i]?.drugName || 'drug');
     }
 
-    // ─── DDI ───────────────────────────────────────────────────────────────
-    if (drugIds.length >= 2) {
+    // ─── Cross-encounter active medication merge ─────────────────────────
+    // Fetch the patient's active medications from prior encounters and merge
+    // their drug IDs into the DDI check so we catch cross-encounter interactions.
+    const allDrugIds = [...drugIds];
+    if (patientId && this.activeMedService) {
       try {
-        const r = await this.drugManagementService.checkInteractions(drugIds, tenantId);
+        const activeMeds = await this.activeMedService.getActiveMedications(patientId, tenantId);
+        for (const med of activeMeds) {
+          if (med.drugId && !allDrugIds.includes(med.drugId)) {
+            allDrugIds.push(med.drugId);
+            drugIdToName.set(med.drugId, med.drugName);
+          }
+        }
+      } catch (err: any) {
+        this.logger.error(`Active medication lookup failed: ${err?.message}`, err?.stack);
+        degradedReasons.push(`active medication lookup unavailable: ${err?.message}`);
+      }
+    }
+
+    // ─── DDI ───────────────────────────────────────────────────────────────
+    if (allDrugIds.length >= 2) {
+      try {
+        const r = await this.drugManagementService.checkInteractions(allDrugIds, tenantId);
         for (const i of r.interactions) {
           const sev = i.severity;
           if (sev === 'minor') continue;
@@ -162,6 +189,23 @@ export class MedicationSafetyService {
     } catch (err: any) {
       this.logger.error(`Dose check failed: ${err?.message}`, err?.stack);
       degradedReasons.push(`dose-range check unavailable: ${err?.message}`);
+    }
+
+    // ─── Drug-Disease Contraindication ───────────────────────────────────
+    if (patientId && this.drugDiseaseService) {
+      try {
+        const ddAlerts = await this.drugDiseaseService.checkDrugDiseaseInteractions({
+          patientId,
+          drugIds: allDrugIds,
+          drugIdToName,
+          encounterId,
+          tenantId,
+        });
+        alerts.push(...ddAlerts);
+      } catch (err: any) {
+        this.logger.error(`Drug-disease check failed: ${err?.message}`, err?.stack);
+        degradedReasons.push(`drug-disease check unavailable: ${err?.message}`);
+      }
     }
 
     const blockingAlerts = alerts.filter(

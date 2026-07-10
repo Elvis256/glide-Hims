@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, DataSource } from 'typeorm';
 import { DischargeSummary, DischargeType } from '../../database/entities/discharge-summary.entity';
@@ -6,6 +6,7 @@ import { Encounter, EncounterStatus } from '../../database/entities/encounter.en
 import { CreateDischargeSummaryDto, DischargeSummaryFilterDto } from './dto/discharge.dto';
 import { VitalsService } from '../vitals/vitals.service';
 import { VitalSource } from '../../database/entities/vital.entity';
+import { MedicationReconciliationService } from './medication-reconciliation.service';
 
 const DISCHARGEABLE_STATUSES: EncounterStatus[] = [
   EncounterStatus.ADMITTED,
@@ -14,6 +15,8 @@ const DISCHARGEABLE_STATUSES: EncounterStatus[] = [
 
 @Injectable()
 export class DischargeService {
+  private readonly logger = new Logger(DischargeService.name);
+
   constructor(
     @InjectRepository(DischargeSummary)
     private dischargeSummaryRepository: Repository<DischargeSummary>,
@@ -21,6 +24,8 @@ export class DischargeService {
     private encounterRepository: Repository<Encounter>,
     private dataSource: DataSource,
     private vitalsService: VitalsService,
+    @Optional()
+    private medReconciliationService: MedicationReconciliationService | null,
   ) {}
 
   async create(
@@ -118,6 +123,21 @@ export class DischargeService {
             weight: v.weight,
           },
         });
+      }
+
+      // Auto-initialize medication reconciliation (best-effort)
+      if (this.medReconciliationService && encounter.patientId) {
+        try {
+          await this.medReconciliationService.initializeReconciliation({
+            encounterId: dto.encounterId,
+            patientId: encounter.patientId,
+            facilityId,
+            dischargeSummaryId: savedSummary.id,
+            tenantId,
+          });
+        } catch (err: any) {
+          this.logger.warn(`Failed to initialize medication reconciliation: ${err?.message}`);
+        }
       }
 
       return savedSummary;

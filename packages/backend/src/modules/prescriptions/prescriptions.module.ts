@@ -19,12 +19,16 @@ import { DrugClassification } from '../../database/entities/drug-classification.
 import { ControlledSubstanceLog } from '../../database/entities/controlled-substance.entity';
 import { Encounter } from '../../database/entities/encounter.entity';
 import { Item, StockBalance, StockLedger } from '../../database/entities/inventory.entity';
+import { PatientActiveMedication } from '../../database/entities/patient-active-medication.entity';
 import { BillingModule } from '../billing/billing.module';
 import { InAppNotificationsModule } from '../in-app-notifications/in-app-notifications.module';
 import { QueueManagementModule } from '../queue-management/queue-management.module';
 import { IntegrationsModule } from '../integrations/integrations.module';
 import { DrugManagementModule } from '../drug-management/drug-management.module';
 import { AllergiesModule } from '../allergies/allergies.module';
+import { PatientActiveMedicationService } from './patient-active-medication.service';
+import { PatientActiveMedicationController } from './patient-active-medication.controller';
+import { AuditModule } from '../../common/interceptors/audit.module';
 
 @Module({
   imports: [
@@ -41,6 +45,7 @@ import { AllergiesModule } from '../allergies/allergies.module';
       DrugClassification,
       PrescriptionTemplate,
       RxNotificationLog,
+      PatientActiveMedication,
     ]),
     forwardRef(() => BillingModule),
     InAppNotificationsModule,
@@ -48,9 +53,10 @@ import { AllergiesModule } from '../allergies/allergies.module';
     IntegrationsModule,
     DrugManagementModule,
     AllergiesModule,
+    AuditModule,
   ],
-  controllers: [PrescriptionsController, DURReportsController, RxTemplateNotificationController],
-  providers: [PrescriptionsService, DURReportsService, RxTemplateService, RxNotificationService],
-  exports: [PrescriptionsService],
+  controllers: [PrescriptionsController, DURReportsController, RxTemplateNotificationController, PatientActiveMedicationController],
+  providers: [PrescriptionsService, DURReportsService, RxTemplateService, RxNotificationService, PatientActiveMedicationService],
+  exports: [PrescriptionsService, PatientActiveMedicationService],
 })
 export class PrescriptionsModule {}

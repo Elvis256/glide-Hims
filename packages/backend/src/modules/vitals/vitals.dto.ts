@@ -4,6 +4,8 @@ import {
   IsNumber,
   IsUUID,
   IsDateString,
+  IsBoolean,
+  IsEnum,
   MaxLength,
   Min,
   Max,
@@ -12,6 +14,7 @@ import {
   ValidatorConstraintInterface,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { ConsciousnessLevel } from '../../database/entities/vital.entity';
 
 @ValidatorConstraint({ name: 'NotInFuture', async: false })
 class NotInFutureConstraint implements ValidatorConstraintInterface {
@@ -117,6 +120,14 @@ export class CreateVitalDto {
   @IsOptional()
   @Validate(NotInFutureConstraint)
   recordedAt?: string;
+
+  @IsOptional()
+  @IsEnum(ConsciousnessLevel)
+  consciousnessLevel?: ConsciousnessLevel;
+
+  @IsOptional()
+  @IsBoolean()
+  supplementalOxygen?: boolean;
 }
 
 export class UpdateVitalDto {
