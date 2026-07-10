@@ -52,6 +52,18 @@ export class VitalsController {
     return this.vitalsService.findLatestByEncounter(encounterId, req.user?.tenantId);
   }
 
+  @Get('patient/:patientId/news-trend')
+  @AuthWithPermissions('vitals.read')
+  @ApiOperation({ summary: 'Get NEWS score trend for a patient' })
+  getNewsTrend(
+    @Param('patientId', ParseUUIDPipe) patientId: string,
+    @Query('limit') limit?: string,
+    @Request() req?: any,
+  ) {
+    const parsedLimit = limit ? parseInt(limit, 10) : 20;
+    return this.vitalsService.getNewsTrend(patientId, parsedLimit, req?.user?.tenantId);
+  }
+
   @Get('patient/:patientId/history')
   @AuthWithPermissions('vitals.read')
   @ApiOperation({ summary: 'Get patient vital history' })

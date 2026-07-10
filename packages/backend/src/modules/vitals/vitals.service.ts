@@ -1,12 +1,20 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
-import { Vital, VitalSource } from '../../database/entities/vital.entity';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { Vital, VitalSource, ConsciousnessLevel, ClinicalRiskLevel } from '../../database/entities/vital.entity';
 import { Encounter, EncounterStatus } from '../../database/entities/encounter.entity';
 import { CreateVitalDto, UpdateVitalDto } from './vitals.dto';
 import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
 import { InAppNotificationType } from '../../database/entities/in-app-notification.entity';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
+
+export interface EarlyWarningScores {
+  newsScore: number;
+  mewsScore: number;
+  newsComponents: Record<string, number>;
+  clinicalRiskLevel: ClinicalRiskLevel;
+}
 
 export interface VitalAlert {
   parameter: string;
@@ -47,12 +55,202 @@ export class VitalsService {
     private encounterRepository: Repository<Encounter>,
     private inAppNotifications: InAppNotificationsService,
     private auditLogService: AuditLogService,
+    private eventEmitter: EventEmitter2,
   ) {}
 
   private calculateBMI(weight: number, heightCm: number): number | null {
     if (!weight || !heightCm) return null;
     const heightM = heightCm / 100;
     return Math.round((weight / (heightM * heightM)) * 10) / 10;
+  }
+
+  /**
+   * Compute NEWS2 + MEWS early warning scores per Royal College of Physicians.
+   * Public so triage can call it without saving a vital record.
+   *
+   * NEWS2 parameters: RespRate, SpO2, supplementalO2, temperature, systolicBP, HR, consciousness (AVPU)
+   * Returns null if insufficient data (need at least RR + SpO2 + HR).
+   */
+  computeEarlyWarningScores(params: {
+    temperature?: number | null;
+    pulse?: number | null;
+    bpSystolic?: number | null;
+    respiratoryRate?: number | null;
+    oxygenSaturation?: number | null;
+    consciousnessLevel?: ConsciousnessLevel | string | null;
+    supplementalOxygen?: boolean | null;
+  }): EarlyWarningScores | null {
+    const rr = params.respiratoryRate != null ? Number(params.respiratoryRate) : null;
+    const spo2 = params.oxygenSaturation != null ? Number(params.oxygenSaturation) : null;
+    const hr = params.pulse != null ? Number(params.pulse) : null;
+
+    // Minimum required: RR, SpO2, HR
+    if (rr == null || spo2 == null || hr == null) return null;
+
+    const temp = params.temperature != null ? Number(params.temperature) : null;
+    const sbp = params.bpSystolic != null ? Number(params.bpSystolic) : null;
+    const avpu = params.consciousnessLevel || 'A';
+    const onO2 = params.supplementalOxygen ?? false;
+
+    const components: Record<string, number> = {};
+
+    // --- NEWS2 Scoring (Scale 1 — standard SpO2) ---
+    // Respiration rate
+    if (rr <= 8) components.respiratoryRate = 3;
+    else if (rr <= 11) components.respiratoryRate = 1;
+    else if (rr <= 20) components.respiratoryRate = 0;
+    else if (rr <= 24) components.respiratoryRate = 2;
+    else components.respiratoryRate = 3;
+
+    // SpO2 Scale 1 (default)
+    if (spo2 <= 91) components.oxygenSaturation = 3;
+    else if (spo2 <= 93) components.oxygenSaturation = 2;
+    else if (spo2 <= 95) components.oxygenSaturation = 1;
+    else components.oxygenSaturation = 0;
+
+    // Air or oxygen
+    components.supplementalOxygen = onO2 ? 2 : 0;
+
+    // Temperature
+    if (temp != null) {
+      if (temp <= 35.0) components.temperature = 3;
+      else if (temp <= 36.0) components.temperature = 1;
+      else if (temp <= 38.0) components.temperature = 0;
+      else if (temp <= 39.0) components.temperature = 1;
+      else components.temperature = 2;
+    } else {
+      components.temperature = 0;
+    }
+
+    // Systolic BP
+    if (sbp != null) {
+      if (sbp <= 90) components.bpSystolic = 3;
+      else if (sbp <= 100) components.bpSystolic = 2;
+      else if (sbp <= 110) components.bpSystolic = 1;
+      else if (sbp <= 219) components.bpSystolic = 0;
+      else components.bpSystolic = 3;
+    } else {
+      components.bpSystolic = 0;
+    }
+
+    // Heart rate / pulse
+    if (hr <= 40) components.pulse = 3;
+    else if (hr <= 50) components.pulse = 1;
+    else if (hr <= 90) components.pulse = 0;
+    else if (hr <= 110) components.pulse = 1;
+    else if (hr <= 130) components.pulse = 2;
+    else components.pulse = 3;
+
+    // Consciousness (AVPU)
+    components.consciousness = avpu === 'A' ? 0 : 3;
+
+    const newsScore = Object.values(components).reduce((a, b) => a + b, 0);
+
+    // --- MEWS (Modified Early Warning Score) ---
+    // Simplified MEWS: SBP, HR, RR, Temp, AVPU
+    let mewsScore = 0;
+    // SBP
+    if (sbp != null) {
+      if (sbp <= 70) mewsScore += 3;
+      else if (sbp <= 80) mewsScore += 2;
+      else if (sbp <= 100) mewsScore += 1;
+      else if (sbp <= 199) mewsScore += 0;
+      else mewsScore += 2;
+    }
+    // HR
+    if (hr <= 40) mewsScore += 2;
+    else if (hr <= 50) mewsScore += 1;
+    else if (hr <= 100) mewsScore += 0;
+    else if (hr <= 110) mewsScore += 1;
+    else if (hr <= 129) mewsScore += 2;
+    else mewsScore += 3;
+    // RR
+    if (rr < 9) mewsScore += 2;
+    else if (rr <= 14) mewsScore += 0;
+    else if (rr <= 20) mewsScore += 1;
+    else if (rr <= 29) mewsScore += 2;
+    else mewsScore += 3;
+    // Temp
+    if (temp != null) {
+      if (temp < 35.0) mewsScore += 2;
+      else if (temp <= 38.4) mewsScore += 0;
+      else mewsScore += 2;
+    }
+    // AVPU
+    if (avpu === 'A') mewsScore += 0;
+    else if (avpu === 'V') mewsScore += 1;
+    else if (avpu === 'P') mewsScore += 2;
+    else mewsScore += 3;
+
+    // Clinical risk level per NEWS2 guidelines
+    let clinicalRiskLevel: ClinicalRiskLevel;
+    const hasIndividual3 = Object.values(components).some((v) => v === 3);
+    if (newsScore >= 7) {
+      clinicalRiskLevel = ClinicalRiskLevel.HIGH;
+    } else if (newsScore >= 5) {
+      clinicalRiskLevel = ClinicalRiskLevel.MEDIUM;
+    } else if (hasIndividual3) {
+      clinicalRiskLevel = ClinicalRiskLevel.LOW_MEDIUM;
+    } else {
+      clinicalRiskLevel = ClinicalRiskLevel.LOW;
+    }
+
+    return { newsScore, mewsScore, newsComponents: components, clinicalRiskLevel };
+  }
+
+  /** Apply early warning scores to a vital record and emit deterioration event if needed. */
+  private async applyScoresAndEmit(
+    vital: Vital,
+    encounter?: { facilityId?: string } | null,
+    tenantId?: string,
+  ): Promise<void> {
+    const scores = this.computeEarlyWarningScores({
+      temperature: vital.temperature,
+      pulse: vital.pulse,
+      bpSystolic: vital.bpSystolic,
+      respiratoryRate: vital.respiratoryRate,
+      oxygenSaturation: vital.oxygenSaturation,
+      consciousnessLevel: vital.consciousnessLevel,
+      supplementalOxygen: vital.supplementalOxygen,
+    });
+
+    if (!scores) return;
+
+    vital.newsScore = scores.newsScore;
+    vital.mewsScore = scores.mewsScore;
+    vital.newsComponents = scores.newsComponents;
+    vital.clinicalRiskLevel = scores.clinicalRiskLevel;
+    await this.vitalRepository.save(vital);
+
+    // Emit deterioration event for NEWS >= 5
+    if (scores.newsScore >= 5) {
+      this.eventEmitter.emit('vital.deterioration', {
+        vitalId: vital.id,
+        patientId: vital.patientId,
+        encounterId: vital.encounterId,
+        newsScore: scores.newsScore,
+        clinicalRiskLevel: scores.clinicalRiskLevel,
+        tenantId,
+        facilityId: encounter?.facilityId,
+      });
+    }
+  }
+
+  /** Get NEWS score trend for a patient over time. */
+  async getNewsTrend(
+    patientId: string,
+    limit = 20,
+    tenantId?: string,
+  ): Promise<Pick<Vital, 'id' | 'recordedAt' | 'newsScore' | 'mewsScore' | 'clinicalRiskLevel'>[]> {
+    const qb = this.vitalRepository
+      .createQueryBuilder('v')
+      .select(['v.id', 'v.recordedAt', 'v.newsScore', 'v.mewsScore', 'v.clinicalRiskLevel'])
+      .where('v.patient_id = :patientId', { patientId })
+      .andWhere('v.news_score IS NOT NULL');
+
+    if (tenantId) qb.andWhere('v.tenant_id = :tenantId', { tenantId });
+
+    return qb.orderBy('v.recorded_at', 'DESC').take(limit).getMany();
   }
 
   /** Check vitals against clinical thresholds and return alerts */
@@ -131,6 +329,9 @@ export class VitalsService {
     });
 
     const savedVital = await this.vitalRepository.save(vital);
+
+    // Compute early warning scores (NEWS2 + MEWS)
+    await this.applyScoresAndEmit(savedVital, encounter, tenantId);
 
     // Check for abnormal vitals and generate alerts
     const alerts = this.checkVitalAlerts(savedVital);
@@ -305,7 +506,9 @@ export class VitalsService {
     tenantId?: string;
     facilityId?: string;
     recordedAt?: Date;
-    vitals: Partial<
+    consciousnessLevel?: ConsciousnessLevel | string | null;
+    supplementalOxygen?: boolean | null;
+    vitals?: Partial<
       Pick<
         Vital,
         | 'temperature'
@@ -322,9 +525,29 @@ export class VitalsService {
         | 'notes'
       >
     >;
+    // Flat params (alternative to vitals object, used by triage)
+    temperature?: number | null;
+    pulse?: number | null;
+    bpSystolic?: number | null;
+    bpDiastolic?: number | null;
+    respiratoryRate?: number | null;
+    oxygenSaturation?: number | null;
+    bloodGlucose?: number | null;
+    weight?: number | null;
   }): Promise<Vital | null> {
     try {
-      const v = params.vitals;
+      // Merge flat params with vitals object (flat params take precedence for triage callers)
+      const v = {
+        ...(params.vitals || {}),
+        ...(params.temperature != null ? { temperature: params.temperature } : {}),
+        ...(params.pulse != null ? { pulse: params.pulse } : {}),
+        ...(params.bpSystolic != null ? { bpSystolic: params.bpSystolic } : {}),
+        ...(params.bpDiastolic != null ? { bpDiastolic: params.bpDiastolic } : {}),
+        ...(params.respiratoryRate != null ? { respiratoryRate: params.respiratoryRate } : {}),
+        ...(params.oxygenSaturation != null ? { oxygenSaturation: params.oxygenSaturation } : {}),
+        ...(params.bloodGlucose != null ? { bloodGlucose: params.bloodGlucose } : {}),
+        ...(params.weight != null ? { weight: params.weight } : {}),
+      };
       // Skip if every clinically-meaningful field is null/undefined.
       const meaningful = [
         v.temperature,
@@ -351,10 +574,15 @@ export class VitalsService {
         sourceRefId: params.sourceRefId,
         recordedById: params.recordedById,
         recordedAt: params.recordedAt ?? new Date(),
+        consciousnessLevel: (params.consciousnessLevel as ConsciousnessLevel) || null,
+        supplementalOxygen: params.supplementalOxygen ?? false,
         ...(params.tenantId ? { tenantId: params.tenantId } : {}),
       } as Partial<Vital>);
 
       const saved = await this.vitalRepository.save(vital);
+
+      // Compute early warning scores on mirrored vitals
+      await this.applyScoresAndEmit(saved, { facilityId: params.facilityId }, params.tenantId);
 
       // Run alerting + audit on mirrored rows too — a critical SpO2 captured
       // at triage is just as urgent as one captured in OPD.

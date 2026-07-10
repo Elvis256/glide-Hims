@@ -216,6 +216,17 @@ export class Queue extends BaseEntity {
   @Column({ name: 'hold_started_at', type: 'timestamptz', nullable: true })
   holdStartedAt: Date | null;
 
+  // Structured triage assessment FK
+  @Column({ name: 'triage_assessment_id', type: 'uuid', nullable: true })
+  triageAssessmentId: string | null;
+
+  // Deterioration escalation tracking
+  @Column({ name: 'last_escalated_at', type: 'timestamptz', nullable: true })
+  lastEscalatedAt: Date | null;
+
+  @Column({ name: 'escalation_count', default: 0 })
+  escalationCount: number;
+
   // Previous service point — for preserving context on transfer
   @Column({ name: 'previous_service_point', type: 'varchar', nullable: true })
   previousServicePoint: string;

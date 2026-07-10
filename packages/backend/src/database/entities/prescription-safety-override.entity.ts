@@ -2,7 +2,7 @@ import { Entity, Column, Index } from 'typeorm';
 import { BaseEntity } from './base.entity';
 
 export interface SafetyAlert {
-  kind: 'allergy' | 'interaction' | 'duplicate-therapy' | 'dose';
+  kind: 'allergy' | 'interaction' | 'duplicate-therapy' | 'dose' | 'drug-disease';
   severity: 'moderate' | 'major' | 'severe' | 'contraindicated';
   drugId?: string;
   drugName: string;
@@ -10,6 +10,8 @@ export interface SafetyAlert {
   pairedDrugName?: string;
   matchedAllergen?: string;
   matchedAllergyId?: string;
+  diagnosisCode?: string;
+  diagnosisName?: string;
   description: string;
   recommendation?: string;
 }

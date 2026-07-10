@@ -42,6 +42,7 @@ import { InAppNotificationsService } from '../in-app-notifications/in-app-notifi
 import { QueueManagementService } from '../queue-management/queue-management.service';
 import { DrugManagementService } from '../drug-management/drug-management.service';
 import { MedicationSafetyService } from '../allergies/medication-safety.service';
+import { PatientActiveMedicationService } from './patient-active-medication.service';
 import { IdentityGuardService } from '../../common/services/identity-guard.service';
 
 @Injectable()
@@ -74,6 +75,7 @@ export class PrescriptionsService {
     private queueManagementService: QueueManagementService,
     private drugManagementService: DrugManagementService,
     private medicationSafety: MedicationSafetyService,
+    private activeMedService: PatientActiveMedicationService,
     private identityGuard: IdentityGuardService,
     private dataSource: DataSource,
   ) {}
@@ -167,6 +169,7 @@ export class PrescriptionsService {
     const patientIdForSafety: string | undefined = encounter.patientId;
     const safety = await this.medicationSafety.runSafetyChecks({
       patientId: patientIdForSafety,
+      encounterId: dto.encounterId,
       drugIds,
       lines: linesLite,
       tenantId,
@@ -547,6 +550,29 @@ export class PrescriptionsService {
       item.isDispensed = true;
     }
     await this.itemRepository.save(item);
+
+    // Activate medication for cross-encounter tracking
+    try {
+      const encounter = item.prescription?.encounter;
+      await this.activeMedService.activateFromDispensation({
+        patientId: encounter?.patientId || '',
+        encounterId: item.prescription?.encounterId || '',
+        prescriptionId: item.prescriptionId,
+        prescriptionItemId: item.id,
+        drugId: inv?.id,
+        drugCode: item.drugCode,
+        drugName: item.drugName,
+        genericName: inv?.genericName,
+        dose: item.dose,
+        frequency: item.frequency,
+        route: (item as any).route,
+        duration: item.duration,
+        facilityId: encounter?.facilityId || '',
+        tenantId,
+      });
+    } catch (err: any) {
+      this.logger.warn(`Failed to activate medication record: ${err?.message}`);
+    }
 
     // Update prescription status
     await this.updatePrescriptionStatus(item.prescriptionId, tenantId);

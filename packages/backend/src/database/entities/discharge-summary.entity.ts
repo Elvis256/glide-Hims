@@ -213,6 +213,10 @@ export class DischargeSummary extends BaseEntity {
   @Column({ name: 'emergency_contact_phone', nullable: true })
   emergencyContactPhone: string;
 
+  // Medication Reconciliation
+  @Column({ name: 'medication_reconciliation_id', type: 'uuid', nullable: true })
+  medicationReconciliationId: string | null;
+
   // Relationships
   @ManyToOne(() => Patient, { eager: true })
   @JoinColumn({ name: 'patient_id' })

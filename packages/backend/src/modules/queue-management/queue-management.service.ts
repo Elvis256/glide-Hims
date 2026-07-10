@@ -2442,4 +2442,34 @@ export class QueueManagementService {
 
     return journeys;
   }
+
+  /**
+   * Escalate queue priority for a patient (used by deterioration monitor).
+   * Only upgrades if current priority is lower (higher number).
+   */
+  async escalatePriority(
+    patientId: string,
+    newPriority: QueuePriority,
+    reason: string,
+    tenantId?: string,
+  ): Promise<Queue | null> {
+    const activeQueue = await this.queueRepository.findOne({
+      where: {
+        patientId,
+        status: In([QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE]),
+        ...(tenantId ? { tenantId } : {}),
+      },
+      order: { createdAt: 'DESC' },
+    });
+
+    if (!activeQueue) return null;
+    if (activeQueue.priority <= newPriority) return activeQueue;
+
+    activeQueue.priority = newPriority;
+    activeQueue.priorityReason = reason;
+    activeQueue.lastEscalatedAt = new Date();
+    activeQueue.escalationCount = (activeQueue.escalationCount || 0) + 1;
+
+    return this.queueRepository.save(activeQueue);
+  }
 }
