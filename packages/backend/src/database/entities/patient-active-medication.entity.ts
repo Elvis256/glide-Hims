@@ -28,25 +28,25 @@ export class PatientActiveMedication extends BaseEntity {
   @Column({ type: 'uuid', name: 'drug_id', nullable: true })
   drugId: string | null;
 
-  @Column({ name: 'drug_code' })
+  @Column({ type: 'varchar', length: 100, name: 'drug_code' })
   drugCode: string;
 
-  @Column({ name: 'drug_name' })
+  @Column({ type: 'varchar', length: 255, name: 'drug_name' })
   drugName: string;
 
-  @Column({ name: 'generic_name', nullable: true })
+  @Column({ type: 'varchar', length: 255, name: 'generic_name', nullable: true })
   genericName: string | null;
 
-  @Column()
+  @Column({ type: 'varchar', length: 100 })
   dose: string;
 
-  @Column()
+  @Column({ type: 'varchar', length: 100 })
   frequency: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', length: 100, nullable: true })
   route: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', length: 100, nullable: true })
   duration: string | null;
 
   @Column({ name: 'start_date', type: 'date' })

@@ -79,22 +79,22 @@ export class MedicationReconciliationItem extends BaseEntity {
   @Column({ name: 'source_id', type: 'uuid', nullable: true })
   sourceId: string | null;
 
-  @Column({ name: 'drug_name' })
+  @Column({ type: 'varchar', length: 255, name: 'drug_name' })
   drugName: string;
 
-  @Column({ name: 'generic_name', nullable: true })
+  @Column({ type: 'varchar', length: 255, name: 'generic_name', nullable: true })
   genericName: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', length: 100, nullable: true })
   dose: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', length: 100, nullable: true })
   frequency: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', length: 100, nullable: true })
   route: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', length: 100, nullable: true })
   duration: string | null;
 
   @Column({ type: 'text', nullable: true })
@@ -108,13 +108,13 @@ export class MedicationReconciliationItem extends BaseEntity {
   })
   reconciliationStatus: ReconciliationItemStatus;
 
-  @Column({ name: 'discharge_dose', nullable: true })
+  @Column({ type: 'varchar', length: 100, name: 'discharge_dose', nullable: true })
   dischargeDose: string | null;
 
-  @Column({ name: 'discharge_frequency', nullable: true })
+  @Column({ type: 'varchar', length: 100, name: 'discharge_frequency', nullable: true })
   dischargeFrequency: string | null;
 
-  @Column({ name: 'discharge_duration', nullable: true })
+  @Column({ type: 'varchar', length: 100, name: 'discharge_duration', nullable: true })
   dischargeDuration: string | null;
 
   @Column({ name: 'discharge_instructions', type: 'text', nullable: true })

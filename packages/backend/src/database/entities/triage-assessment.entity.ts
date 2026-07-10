@@ -65,13 +65,13 @@ export class TriageAssessment extends BaseEntity {
   @Column({ name: 'chief_complaint', type: 'text' })
   chiefComplaint: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', length: 255, nullable: true })
   onset: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', length: 255, nullable: true })
   duration: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', length: 100, nullable: true })
   severity: string | null;
 
   @Column({ name: 'esi_level', type: 'enum', enum: ESILevel, nullable: true })
@@ -83,10 +83,10 @@ export class TriageAssessment extends BaseEntity {
   @Column({ name: 'pain_score', type: 'smallint', nullable: true })
   painScore: number | null;
 
-  @Column({ name: 'pain_location', nullable: true })
+  @Column({ type: 'varchar', length: 255, name: 'pain_location', nullable: true })
   painLocation: string | null;
 
-  @Column({ name: 'pain_character', nullable: true })
+  @Column({ type: 'varchar', length: 255, name: 'pain_character', nullable: true })
   painCharacter: string | null;
 
   @Column({ name: 'mobility_status', type: 'enum', enum: MobilityStatus, nullable: true })
@@ -110,16 +110,16 @@ export class TriageAssessment extends BaseEntity {
   @Column({ type: 'decimal', precision: 4, scale: 1, nullable: true })
   temperature: number | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'int', nullable: true })
   pulse: number | null;
 
-  @Column({ name: 'bp_systolic', nullable: true })
+  @Column({ type: 'int', name: 'bp_systolic', nullable: true })
   bpSystolic: number | null;
 
-  @Column({ name: 'bp_diastolic', nullable: true })
+  @Column({ type: 'int', name: 'bp_diastolic', nullable: true })
   bpDiastolic: number | null;
 
-  @Column({ name: 'respiratory_rate', nullable: true })
+  @Column({ type: 'int', name: 'respiratory_rate', nullable: true })
   respiratoryRate: number | null;
 
   @Column({ name: 'oxygen_saturation', type: 'decimal', precision: 5, scale: 2, nullable: true })
