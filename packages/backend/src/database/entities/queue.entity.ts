@@ -164,10 +164,10 @@ export class Queue extends BaseEntity {
   @Column({ name: 'call_count', default: 0 })
   callCount: number;
 
-  @Column({ name: 'counter_number', nullable: true })
+  @Column({ name: 'counter_number', type: 'varchar', nullable: true })
   counterNumber: string | null;
 
-  @Column({ name: 'room_number', nullable: true })
+  @Column({ name: 'room_number', type: 'varchar', nullable: true })
   roomNumber: string | null;
 
   @Column({ name: 'notes', type: 'text', nullable: true })
@@ -257,7 +257,7 @@ export class Queue extends BaseEntity {
   @JoinColumn({ name: 'serving_user_id' })
   servingUser: User;
 
-  @Column({ name: 'serving_user_id', nullable: true })
+  @Column({ name: 'serving_user_id', type: 'uuid', nullable: true })
   servingUserId: string | null;
 
   @ManyToOne(() => User)
