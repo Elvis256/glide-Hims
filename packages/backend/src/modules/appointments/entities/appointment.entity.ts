@@ -88,6 +88,15 @@ export class Appointment {
   @Column({ name: 'cancellation_reason', type: 'text', nullable: true })
   cancellationReason: string;
 
+  @Column({ type: 'uuid', name: 'encounter_id', nullable: true })
+  encounterId: string | null;
+
+  @Column({ type: 'uuid', name: 'queue_id', nullable: true })
+  queueId: string | null;
+
+  @Column({ type: 'timestamptz', name: 'checked_in_at', nullable: true })
+  checkedInAt: Date | null;
+
   @Column({ name: 'created_by' })
   createdBy: string;
 

@@ -125,6 +125,10 @@ export class CreatePharmacySaleDto {
   @IsString()
   @MaxLength(128)
   prescriptionId?: string;
+  @ApiProperty({ required: false, description: 'Link sale to an encounter for invoice bridging' })
+  @IsOptional()
+  @IsUUID()
+  encounterId?: string;
   @ApiProperty({ required: false })
   @IsOptional()
   @IsString()

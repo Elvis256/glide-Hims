@@ -34,11 +34,13 @@ import { PosModule } from '../pos/pos.module';
 import { EfrisModule } from '../efris/efris.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { AllergiesModule } from '../allergies/allergies.module';
+import { BillingModule } from '../billing/billing.module';
 
 @Module({
   imports: [
     forwardRef(() => FinanceModule),
     forwardRef(() => PosModule),
+    forwardRef(() => BillingModule),
     EfrisModule,
     InventoryModule,
     AllergiesModule,

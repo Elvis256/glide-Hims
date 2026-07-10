@@ -8,10 +8,14 @@ import { Patient } from '../../database/entities/patient.entity';
 import { PatientDocument } from '../../database/entities/patient-document.entity';
 import { PatientNote } from '../../database/entities/patient-note.entity';
 import { PatientMerge } from '../../database/entities/patient-merge.entity';
+import { PatientConsent } from '../../database/entities/patient-consent.entity';
 import { AuditLog } from '../../database/entities/audit-log.entity';
 import { SystemSetting } from '../../database/entities/system-setting.entity';
 import { PatientsService } from './patients.service';
 import { PatientsController } from './patients.controller';
+import { PatientConsentService } from './patient-consent.service';
+import { PatientConsentController } from './patient-consent.controller';
+import { AuditModule } from '../../common/interceptors/audit.module';
 
 @Module({
   imports: [
@@ -20,9 +24,11 @@ import { PatientsController } from './patients.controller';
       PatientDocument,
       PatientNote,
       PatientMerge,
+      PatientConsent,
       AuditLog,
       SystemSetting,
     ]),
+    AuditModule,
     MulterModule.register({
       storage: diskStorage({
         destination: './uploads/patient-documents',
@@ -52,8 +58,8 @@ import { PatientsController } from './patients.controller';
       },
     }),
   ],
-  controllers: [PatientsController],
-  providers: [PatientsService],
-  exports: [PatientsService],
+  controllers: [PatientsController, PatientConsentController],
+  providers: [PatientsService, PatientConsentService],
+  exports: [PatientsService, PatientConsentService],
 })
 export class PatientsModule {}

@@ -1,18 +1,35 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+  Optional,
+  Inject,
+  forwardRef,
+  Logger,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, Between } from 'typeorm';
+import { Repository, Like, Between, DataSource } from 'typeorm';
 import { Appointment, AppointmentStatus } from './entities/appointment.entity';
 import {
   CreateAppointmentDto,
   UpdateAppointmentDto,
   AppointmentQueryDto,
 } from './dto/appointment.dto';
+import { QueueManagementService } from '../queue-management/queue-management.service';
+import { ServicePoint } from '../../database/entities/queue.entity';
 
 @Injectable()
 export class AppointmentsService {
+  private readonly logger = new Logger(AppointmentsService.name);
+
   constructor(
     @InjectRepository(Appointment)
     private appointmentRepository: Repository<Appointment>,
+    private dataSource: DataSource,
+    @Optional()
+    @Inject(forwardRef(() => QueueManagementService))
+    private queueService?: QueueManagementService,
   ) {}
 
   private async generateAppointmentNumber(tenantId?: string): Promise<string> {
@@ -203,6 +220,66 @@ export class AppointmentsService {
       .getCount();
 
     return { total, scheduled, confirmed, completed };
+  }
+
+  async checkIn(
+    appointmentId: string,
+    facilityId: string,
+    userId: string,
+    tenantId?: string,
+  ): Promise<Appointment> {
+    const appointment = await this.findOne(appointmentId, facilityId, tenantId);
+
+    if (
+      appointment.status !== AppointmentStatus.SCHEDULED &&
+      appointment.status !== AppointmentStatus.CONFIRMED
+    ) {
+      throw new BadRequestException(
+        `Cannot check in appointment with status "${appointment.status}". Only SCHEDULED or CONFIRMED appointments can be checked in.`,
+      );
+    }
+
+    // Step 1: Update appointment to CHECKED_IN
+    appointment.status = AppointmentStatus.CHECKED_IN;
+    appointment.checkedInAt = new Date();
+    await this.appointmentRepository.save(appointment);
+
+    // Step 2: Create queue entry via QueueManagementService (has its own transaction)
+    if (this.queueService) {
+      try {
+        const queueEntry = await this.queueService.addToQueue(
+          {
+            patientId: appointment.patientId,
+            servicePoint: ServicePoint.CONSULTATION,
+            assignedDoctorId: appointment.doctorId,
+            chiefComplaintAtToken: appointment.reasonForVisit,
+          },
+          userId,
+          facilityId,
+          tenantId,
+        );
+
+        // Step 3: Back-populate appointment with queue and encounter IDs
+        appointment.queueId = queueEntry.id;
+        appointment.encounterId = queueEntry.encounterId;
+        await this.appointmentRepository.save(appointment);
+
+        // Step 4: Link queue entry back to appointment
+        await this.dataSource
+          .createQueryBuilder()
+          .update('queues')
+          .set({ appointmentId: appointment.id })
+          .where('id = :id', { id: queueEntry.id })
+          .execute();
+      } catch (err) {
+        // Queue creation failed — appointment is still CHECKED_IN, recoverable via retry
+        this.logger.warn(
+          `Failed to create queue entry for appointment ${appointmentId}: ${err.message}`,
+        );
+      }
+    }
+
+    return this.findOne(appointmentId, facilityId, tenantId);
   }
 
   async delete(id: string, facilityId: string, tenantId?: string): Promise<void> {

@@ -139,6 +139,9 @@ export class PharmacySale extends BaseEntity {
   @Column({ name: 'prescription_id', nullable: true })
   prescriptionId: string; // If from prescription
 
+  @Column({ type: 'uuid', name: 'encounter_id', nullable: true })
+  encounterId: string | null;
+
   // ── B2: Void / Cancel ──────────────────────────────────────────────────────
   @Column({ name: 'voided_at', type: 'timestamptz', nullable: true })
   voidedAt: Date;

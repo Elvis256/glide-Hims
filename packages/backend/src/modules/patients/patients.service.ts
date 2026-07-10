@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   BadRequestException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, DataSource, EntityManager, ILike } from 'typeorm';
@@ -19,9 +20,11 @@ import { PatientMerge } from '../../database/entities/patient-merge.entity';
 import { AuditLog } from '../../database/entities/audit-log.entity';
 import { SystemSetting } from '../../database/entities/system-setting.entity';
 import { Encounter } from '../../database/entities/encounter.entity';
+import { ConsentType } from '../../database/entities/patient-consent.entity';
 import { CreatePatientDto, UpdatePatientDto, PatientSearchDto } from './dto/patient.dto';
 import { hashPii } from '../../common/crypto/pii-crypto';
 import { checkDuplicates, DuplicateMatch } from './duplicate-detector.util';
+import { PatientConsentService } from './patient-consent.service';
 
 export interface UploadDocumentDto {
   category: DocumentCategory;
@@ -68,6 +71,7 @@ export class PatientsService {
     @InjectRepository(SystemSetting)
     private systemSettingRepository: Repository<SystemSetting>,
     private dataSource: DataSource,
+    @Optional() private patientConsentService?: PatientConsentService,
   ) {}
 
   private async generateMRN(manager: EntityManager, tenantId?: string): Promise<string> {
@@ -208,6 +212,28 @@ export class PatientsService {
           `Failed to log audit trail for patient ${savedPatient.id}: ${auditError.message}`,
         );
       }
+    }
+
+    // Record consents if provided at registration
+    if (this.patientConsentService && (dto as any).consents?.length) {
+      for (const c of (dto as any).consents) {
+        try {
+          await this.patientConsentService.recordConsent({
+            patientId: savedPatient.id,
+            consentType: c.consentType,
+            version: c.version,
+            accepted: c.accepted,
+            recordedById: userId,
+            tenantId,
+          });
+        } catch (err) {
+          this.logger.warn(`Failed to record consent ${c.consentType} for ${savedPatient.id}: ${err.message}`);
+        }
+      }
+    } else if (!(dto as any).skipConsentValidation) {
+      this.logger.warn(
+        `Patient ${savedPatient.id} registered without data_processing consent`,
+      );
     }
 
     return savedPatient;

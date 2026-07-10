@@ -4,6 +4,7 @@ import {
   IsOptional,
   IsEmail,
   IsDateString,
+  IsEnum,
   Matches,
   MaxLength,
   IsIn,
@@ -11,9 +12,11 @@ import {
   ValidateNested,
   IsArray,
   IsBoolean,
+  ArrayMaxSize,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { ConsentType } from '../../../database/entities/patient-consent.entity';
 
 export const VALID_BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] as const;
 
@@ -46,6 +49,20 @@ export class NextOfKinDto {
   @MaxLength(100)
   @IsOptional()
   nationalId?: string;
+}
+
+export class ConsentRecordDto {
+  @IsEnum(ConsentType)
+  consentType: ConsentType;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  version?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  accepted?: boolean;
 }
 
 export class CreatePatientDto {
@@ -156,6 +173,19 @@ export class CreatePatientDto {
   @IsOptional()
   @IsObject()
   metadata?: Record<string, string | number | boolean>;
+
+  @ApiPropertyOptional({ description: 'Consents to record at registration', type: [ConsentRecordDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @ValidateNested({ each: true })
+  @Type(() => ConsentRecordDto)
+  consents?: ConsentRecordDto[];
+
+  @ApiPropertyOptional({ description: 'Skip consent validation warning' })
+  @IsOptional()
+  @IsBoolean()
+  skipConsentValidation?: boolean;
 }
 
 export class UpdatePatientDto extends PartialType(CreatePatientDto) {}
