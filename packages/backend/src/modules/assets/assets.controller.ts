@@ -20,6 +20,7 @@ import {
   AssetStatus as _AssetStatus,
   TransferApprovalStage,
   DisposalStatus,
+  AssetMaintenance,
 } from '../../database/entities/fixed-asset.entity';
 import {
   RunDepreciationDto,
@@ -87,7 +88,16 @@ export class AssetsController {
   ) {
     return this.assetsService.listAssets(
       facilityId,
-      { category, categoryId, assetClass, criticalityLevel, status, departmentId, custodianId, search },
+      {
+        category,
+        categoryId,
+        assetClass,
+        criticalityLevel,
+        status,
+        departmentId,
+        custodianId,
+        search,
+      },
       req.user?.tenantId,
     );
   }
@@ -111,7 +121,11 @@ export class AssetsController {
     @Query('daysAhead') daysAhead?: number,
     @Request() req?: any,
   ) {
-    return this.assetsService.getMaintenanceDue(facilityId, Number(daysAhead) || 30, req.user?.tenantId);
+    return this.assetsService.getMaintenanceDue(
+      facilityId,
+      Number(daysAhead) || 30,
+      req.user?.tenantId,
+    );
   }
 
   @Get('calibration-due')
@@ -121,7 +135,11 @@ export class AssetsController {
     @Query('daysAhead') daysAhead?: number,
     @Request() req?: any,
   ) {
-    return this.assetsService.getCalibrationDue(facilityId, Number(daysAhead) || 30, req.user?.tenantId);
+    return this.assetsService.getCalibrationDue(
+      facilityId,
+      Number(daysAhead) || 30,
+      req.user?.tenantId,
+    );
   }
 
   @Get('amc-expiring')
@@ -131,7 +149,11 @@ export class AssetsController {
     @Query('daysAhead') daysAhead?: number,
     @Request() req?: any,
   ) {
-    return this.assetsService.getAmcExpiring(facilityId, Number(daysAhead) || 60, req.user?.tenantId);
+    return this.assetsService.getAmcExpiring(
+      facilityId,
+      Number(daysAhead) || 60,
+      req.user?.tenantId,
+    );
   }
 
   @Get('warranty-expiring')
@@ -141,7 +163,11 @@ export class AssetsController {
     @Query('daysAhead') daysAhead?: number,
     @Request() req?: any,
   ) {
-    return this.assetsService.getWarrantyExpiring(facilityId, Number(daysAhead) || 60, req.user?.tenantId);
+    return this.assetsService.getWarrantyExpiring(
+      facilityId,
+      Number(daysAhead) || 60,
+      req.user?.tenantId,
+    );
   }
 
   // ==================== CATEGORIES (must come before :id route) ====================
@@ -367,7 +393,11 @@ export class AssetsController {
 
   @Post(':id/dispose')
   @AuthWithPermissions('assets.disposal.complete')
-  async disposeAsset(@Param('id', ParseUUIDPipe) id: string, @Body() data: DisposeAssetDto, @Request() req: any) {
+  async disposeAsset(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() data: DisposeAssetDto,
+    @Request() req: any,
+  ) {
     return this.assetsService.disposeAsset(
       id,
       {
@@ -385,7 +415,12 @@ export class AssetsController {
   @Post('depreciation/run')
   @AuthWithPermissions('assets.depreciation.run')
   async runDepreciation(@Body() data: RunDepreciationDto, @Request() req: any) {
-    return this.assetsService.runDepreciation(data.facilityId, data.year, data.month, actorCtx(req));
+    return this.assetsService.runDepreciation(
+      data.facilityId,
+      data.year,
+      data.month,
+      actorCtx(req),
+    );
   }
 
   @Get('reports/depreciation')
@@ -399,7 +434,8 @@ export class AssetsController {
     const yr = Number(year);
     const safeYear = Number.isFinite(yr) && yr > 1900 ? yr : new Date().getFullYear();
     const mn = month !== undefined ? Number(month) : undefined;
-    const safeMonth = mn !== undefined && Number.isFinite(mn) && mn >= 1 && mn <= 12 ? mn : undefined;
+    const safeMonth =
+      mn !== undefined && Number.isFinite(mn) && mn >= 1 && mn <= 12 ? mn : undefined;
     return this.assetsService.getDepreciationReport(
       facilityId,
       safeYear,
@@ -435,12 +471,7 @@ export class AssetsController {
     @Request() req?: any,
   ) {
     const { start, end } = this.resolveDateRange(startDate, endDate);
-    return this.assetsService.getLossOnDisposalReport(
-      facilityId,
-      start,
-      end,
-      req?.user?.tenantId,
-    );
+    return this.assetsService.getLossOnDisposalReport(facilityId, start, end, req?.user?.tenantId);
   }
 
   @Get('reports/age-analysis')
@@ -458,12 +489,7 @@ export class AssetsController {
     @Request() req?: any,
   ) {
     const { start, end } = this.resolveDateRange(startDate, endDate);
-    return this.assetsService.getMaintenanceCostReport(
-      facilityId,
-      start,
-      end,
-      req?.user?.tenantId,
-    );
+    return this.assetsService.getMaintenanceCostReport(facilityId, start, end, req?.user?.tenantId);
   }
 
   private resolveDateRange(startDate?: string, endDate?: string): { start: Date; end: Date } {
@@ -488,16 +514,16 @@ export class AssetsController {
   ) {
     return this.assetsService.recordMaintenance(
       {
-        ...(data as any),
-        type: (data as any).maintenanceType || (data as any).type,
-        nextDueDate: (data as any).nextMaintenanceDate
-          ? new Date((data as any).nextMaintenanceDate)
+        ...data,
+        type: data.maintenanceType || (data as Record<string, any>).type,
+        nextDueDate: data.nextMaintenanceDate
+          ? new Date(data.nextMaintenanceDate)
           : undefined,
-        maintenanceDate: (data as any).maintenanceDate
-          ? new Date((data as any).maintenanceDate)
+        maintenanceDate: data.maintenanceDate
+          ? new Date(data.maintenanceDate)
           : new Date(),
         assetId,
-      } as any,
+      } as Partial<AssetMaintenance>,
       actorCtx(req),
     );
   }
@@ -536,7 +562,11 @@ export class AssetsController {
 
   @Put(':id')
   @AuthWithPermissions('assets.update')
-  async updateAsset(@Param('id', ParseUUIDPipe) id: string, @Body() data: UpdateAssetDto, @Request() req: any) {
+  async updateAsset(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() data: UpdateAssetDto,
+    @Request() req: any,
+  ) {
     return this.assetsService.updateAsset(id, data as any, actorCtx(req));
   }
 

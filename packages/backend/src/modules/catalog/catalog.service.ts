@@ -102,10 +102,7 @@ export class CatalogService {
     }));
   }
 
-  async getItemsByIds(
-    ids: string[],
-    tenantId?: string,
-  ): Promise<CatalogItemResult[]> {
+  async getItemsByIds(ids: string[], tenantId?: string): Promise<CatalogItemResult[]> {
     if (!ids || ids.length === 0) return [];
 
     const where: Record<string, unknown> = { id: In(ids) };

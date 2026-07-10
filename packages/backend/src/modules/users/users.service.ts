@@ -194,9 +194,7 @@ export class UsersService {
     // of the controller's check, so service-internal callers also can't
     // mint platform admins by accident.
     if (createUserDto.isSystemAdmin && caller && !caller.isSystemAdmin) {
-      throw new BadRequestException(
-        'Only platform administrators may create system-admin users',
-      );
+      throw new BadRequestException('Only platform administrators may create system-admin users');
     }
 
     // If linking to existing employee, verify it exists and isn't already linked
@@ -312,7 +310,9 @@ export class UsersService {
                 licenseNumber: employeeProfile?.licenseNumber,
                 specialization: employeeProfile?.specialization,
                 employmentType: employeeProfile?.employmentType || EmploymentType.PERMANENT,
-                hireDate: employeeProfile?.hireDate ? new Date(employeeProfile.hireDate) : new Date(),
+                hireDate: employeeProfile?.hireDate
+                  ? new Date(employeeProfile.hireDate)
+                  : new Date(),
                 basicSalary: employeeProfile?.basicSalary || 0,
                 facilityId: effectiveFacilityId,
                 tenantId: tenantId || undefined,
@@ -599,11 +599,7 @@ export class UsersService {
     return saved;
   }
 
-  async unlinkUserFromEmployee(
-    userId: string,
-    tenantId?: string,
-    caller?: any,
-  ): Promise<void> {
+  async unlinkUserFromEmployee(userId: string, tenantId?: string, caller?: any): Promise<void> {
     // Make sure the target user is in the caller's tenant (404s on mismatch).
     await this.findOne(userId, tenantId);
 
@@ -667,18 +663,13 @@ export class UsersService {
       qb.andWhere('user.tenant_id = :tenantId', { tenantId });
     }
     if (options.search) {
-      qb.andWhere(
-        '(user.username ILIKE :q OR user.full_name ILIKE :q OR user.email ILIKE :q)',
-        { q: `%${options.search}%` },
-      );
+      qb.andWhere('(user.username ILIKE :q OR user.full_name ILIKE :q OR user.email ILIKE :q)', {
+        q: `%${options.search}%`,
+      });
     }
 
     const total = await qb.getCount();
-    const rows = await qb
-      .orderBy('user.full_name', 'ASC')
-      .limit(limit)
-      .offset(offset)
-      .getMany();
+    const rows = await qb.orderBy('user.full_name', 'ASC').limit(limit).offset(offset).getMany();
 
     return {
       data: rows.map((u) => ({
@@ -704,9 +695,7 @@ export class UsersService {
     const limit = Math.min(Math.max(options.limit ?? 50, 1), 500);
     const offset = Math.max(options.offset ?? 0, 0);
 
-    const qb = this.employeeRepository
-      .createQueryBuilder('emp')
-      .where('emp.user_id IS NULL');
+    const qb = this.employeeRepository.createQueryBuilder('emp').where('emp.user_id IS NULL');
 
     if (tenantId) {
       qb.andWhere('emp.tenant_id = :tenantId', { tenantId });
@@ -823,7 +812,11 @@ export class UsersService {
 
     // Fix 5: validate password against tenant's PasswordPolicy before hashing
     if (updateUserDto.password) {
-      await this.validatePasswordAgainstPolicy(updateUserDto.password, user.tenantId, user.facilityId);
+      await this.validatePasswordAgainstPolicy(
+        updateUserDto.password,
+        user.tenantId,
+        user.facilityId,
+      );
       const saltRoundsConfig = this.configService.get<string>('BCRYPT_ROUNDS', '12');
       const saltRounds = parseInt(saltRoundsConfig, 10) || 12;
       user.passwordHash = await bcrypt.hash(updateUserDto.password, saltRounds);
@@ -915,7 +908,9 @@ export class UsersService {
           .andWhere('u.deletedAt IS NULL')
           .getCount();
         if (adminCount === 0) {
-          throw new BadRequestException('Cannot delete the last administrator for this organization');
+          throw new BadRequestException(
+            'Cannot delete the last administrator for this organization',
+          );
         }
       }
     }
@@ -998,7 +993,7 @@ export class UsersService {
   }
 
   async removeRole(userId: string, roleId: string, tenantId?: string): Promise<void> {
-    const where: any = { userId, roleId };
+    const where = { userId, roleId };
     // user_role records may have NULL tenant_id (assigned before multi-tenant)
     const userRole = await this.userRoleRepository.findOne({ where, relations: ['role'] });
 
@@ -1368,7 +1363,9 @@ export class UsersService {
     // Guard: file size limit (5 MB)
     const MAX_FILE_SIZE = 5 * 1024 * 1024;
     if (file.size > MAX_FILE_SIZE) {
-      throw new BadRequestException(`File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum is 5 MB.`);
+      throw new BadRequestException(
+        `File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum is 5 MB.`,
+      );
     }
 
     const rows = this.parseImportFile(file);
@@ -1462,7 +1459,11 @@ export class UsersService {
         errors.push({ row: rowNum, field: 'full_name', message: 'Full name is required' });
         hasError = true;
       } else if (fullName.length > 150) {
-        errors.push({ row: rowNum, field: 'full_name', message: 'Full name is too long (max 150 chars)' });
+        errors.push({
+          row: rowNum,
+          field: 'full_name',
+          message: 'Full name is too long (max 150 chars)',
+        });
         hasError = true;
       }
 

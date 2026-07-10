@@ -144,7 +144,7 @@ export class MaternityController {
   @AuthWithPermissions('maternity.create')
   @ApiOperation({ summary: 'Record baby outcome' })
   recordBabyOutcome(@Body() dto: RecordBabyOutcomeDto, @Request() req: any) {
-    return this.maternityService.recordBabyOutcome(dto, req.user?.tenantId);
+    return this.maternityService.recordBabyOutcome(dto, req.user.id, req.user?.tenantId);
   }
 
   @Get('labour/:id/outcomes')

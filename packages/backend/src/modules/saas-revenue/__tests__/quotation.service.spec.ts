@@ -164,7 +164,7 @@ describe('QuotationService — acceptQuotation()', () => {
         maxUsers: 10,
         expiresAt: new Date('2025-01-01'),
       };
-      const plan = { maxUsers: 50 };
+      const plan: any = { maxUsers: 50 };
       const periodEnd = new Date('2027-06-20');
 
       // Update path

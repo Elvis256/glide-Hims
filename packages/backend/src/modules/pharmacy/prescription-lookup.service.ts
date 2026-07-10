@@ -1,12 +1,11 @@
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
-import { Prescription, PrescriptionItem, PrescriptionStatus } from '../../database/entities/prescription.entity';
+import {
+  Prescription,
+  PrescriptionItem,
+  PrescriptionStatus,
+} from '../../database/entities/prescription.entity';
 import { Encounter } from '../../database/entities/encounter.entity';
 import { Patient } from '../../database/entities/patient.entity';
 import { Item } from '../../database/entities/inventory.entity';
@@ -103,7 +102,7 @@ export class PrescriptionLookupService {
       prescriber: prescriber
         ? {
             id: prescriber.id,
-            name: (prescriber as any).name || (prescriber as any).fullName || prescriber.email,
+            name: prescriber.fullName || prescriber.email,
           }
         : null,
       items,
@@ -177,7 +176,7 @@ export class PrescriptionLookupService {
       });
 
       const price = inventoryItem ? Number(inventoryItem.sellingPrice ?? 0) : 0;
-      const unit = inventoryItem ? (inventoryItem.unit || 'unit') : 'unit';
+      const unit = inventoryItem ? inventoryItem.unit || 'unit' : 'unit';
 
       cartItems.push({
         productId: inventoryItem?.id ?? rxItem.drugCode,

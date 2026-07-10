@@ -51,10 +51,7 @@ export function eqCents(a: MoneyCents, b: MoneyCents): boolean {
  * Compare two decimal-string/number money amounts at cents precision.
  * Returns -1 / 0 / 1 like a standard comparator.
  */
-export function cmpMoney(
-  a: string | number,
-  b: string | number,
-): -1 | 0 | 1 {
+export function cmpMoney(a: string | number, b: string | number): -1 | 0 | 1 {
   const ac = toCents(a);
   const bc = toCents(b);
   if (ac < bc) return -1;

@@ -288,7 +288,7 @@ export class SyncService {
 
     switch (change.operation) {
       case SyncOperation.CREATE: {
-        const insertPayload = { ...change.payload };
+        const insertPayload: any = { ...change.payload };
         if (tenantId) insertPayload.tenant_id = tenantId;
         const columns = Object.keys(insertPayload).map((k) => this.validateColumnName(k));
         await this.dataSource.query(

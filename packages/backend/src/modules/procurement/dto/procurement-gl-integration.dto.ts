@@ -1,4 +1,14 @@
-import { IsString, IsNumber, IsDate, IsOptional, IsEnum, IsUUID, Min, Max, IsBoolean } from 'class-validator';
+import {
+  IsString,
+  IsNumber,
+  IsDate,
+  IsOptional,
+  IsEnum,
+  IsUUID,
+  Min,
+  Max,
+  IsBoolean,
+} from 'class-validator';
 import { MAX_MONEY, NUMBER_OPTS } from '../../../common/constants/validation.constants';
 
 export enum EncumbranceStatusType {

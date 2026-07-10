@@ -14,7 +14,11 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
-import { AdminMFAService, MFASetupResponse, MFAVerifyResponse } from '../services/admin-mfa.service';
+import {
+  AdminMFAService,
+  MFASetupResponse,
+  MFAVerifyResponse,
+} from '../services/admin-mfa.service';
 import {
   InitiateMFASetupDto,
   VerifyMFASetupDto,
@@ -24,7 +28,7 @@ import {
   ForceEnableMFADto,
   AdminMFAStatusDto,
 } from '../dto/admin-mfa.dto';
-import { CurrentUser } from '../../../common/decorators/current-user.decorator';
+import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { User } from '../../../database/entities/user.entity';
 
 @ApiTags('Admin - 2FA / MFA')
@@ -142,9 +146,7 @@ export class AdminMFAController {
   @Get('status')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Get current 2FA status' })
-  async getMFAStatus(
-    @CurrentUser() user: User,
-  ): Promise<{
+  async getMFAStatus(@CurrentUser() user: User): Promise<{
     mfaEnabled: boolean;
     backupCodesRemaining: number;
   }> {

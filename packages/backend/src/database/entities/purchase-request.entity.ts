@@ -26,6 +26,7 @@ export enum PRPriority {
 @Index(['requestNumber'], { unique: true })
 @Index(['status'])
 @Index(['createdAt'])
+@Index(['facilityId', 'status'])
 export class PurchaseRequest extends BaseEntity {
   @Column({ name: 'request_number', unique: true })
   requestNumber: string;

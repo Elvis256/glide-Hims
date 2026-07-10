@@ -45,14 +45,8 @@ export class AuditService {
       const { action, entityType, entityId, userId, tenantId, changes, metadata } = params;
 
       // Build change summary
-      const oldValue = changes?.reduce(
-        (acc, c) => ({ ...acc, [c.field]: c.oldValue }),
-        {},
-      );
-      const newValue = changes?.reduce(
-        (acc, c) => ({ ...acc, [c.field]: c.newValue }),
-        {},
-      );
+      const oldValue = changes?.reduce((acc, c) => ({ ...acc, [c.field]: c.oldValue }), {});
+      const newValue = changes?.reduce((acc, c) => ({ ...acc, [c.field]: c.newValue }), {});
 
       const auditLog = this.auditRepo.create({
         userId,
@@ -68,9 +62,7 @@ export class AuditService {
       });
 
       const saved = await this.auditRepo.save(auditLog);
-      this.logger.debug(
-        `Audit logged: ${action} on ${entityType}/${entityId} by user ${userId}`,
-      );
+      this.logger.debug(`Audit logged: ${action} on ${entityType}/${entityId} by user ${userId}`);
       return saved;
     } catch (error) {
       this.logger.error(`Failed to log audit: ${error.message}`, error.stack);

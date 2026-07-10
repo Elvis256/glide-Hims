@@ -55,7 +55,9 @@ describe('End-to-End Deployment & Update Workflows', () => {
   };
 
   const mockUpdateDistributionService = {
-    initiatePhased: jest.fn().mockResolvedValue({ rolloutId: 'rollout-123', status: 'phase1_running' }),
+    initiatePhased: jest
+      .fn()
+      .mockResolvedValue({ rolloutId: 'rollout-123', status: 'phase1_running' }),
     distributeUpdate: jest.fn().mockResolvedValue({ rolloutId: 'rollout-1' }),
     getRolloutProgress: jest.fn().mockResolvedValue({ status: 'in_progress' }),
   };
@@ -117,9 +119,7 @@ describe('End-to-End Deployment & Update Workflows', () => {
     }).compile();
 
     deploymentService = module.get<DeploymentService>(DeploymentService);
-    updateDistributionService = module.get<UpdateDistributionService>(
-      UpdateDistributionService,
-    );
+    updateDistributionService = module.get<UpdateDistributionService>(UpdateDistributionService);
     rolloutOrchestrationService = module.get<RolloutOrchestrationService>(
       RolloutOrchestrationService,
     );
@@ -152,10 +152,7 @@ describe('End-to-End Deployment & Update Workflows', () => {
       };
 
       mockRepositories.deploymentRepository.findOne.mockResolvedValue(mockDeployment);
-      const deployment = await deploymentService.getDeployment(
-        tenantId,
-        deploymentIds[0],
-      );
+      const deployment = await deploymentService.getDeployment(tenantId, deploymentIds[0]);
       expect(deployment).toBeDefined();
 
       // Step 2: Initiate phased update distribution
@@ -188,9 +185,7 @@ describe('End-to-End Deployment & Update Workflows', () => {
         phases: rolloutConfig.phases,
       };
 
-      const orchestrateResult = await rolloutOrchestrationService.scheduleRollout(
-        schedule,
-      );
+      const orchestrateResult = await rolloutOrchestrationService.scheduleRollout(schedule);
       expect(orchestrateResult.scheduled).toBe(true);
 
       // Step 4: Coordinate data sync across all deployments
@@ -244,9 +239,7 @@ describe('End-to-End Deployment & Update Workflows', () => {
       };
 
       // Trigger auto-rollback
-      const rollbackResult = await rolloutOrchestrationService.autoRollback(
-        criticalFailure,
-      );
+      const rollbackResult = await rolloutOrchestrationService.autoRollback(criticalFailure);
 
       expect(rollbackResult.rolled_back).toBe(true);
 
@@ -277,16 +270,13 @@ describe('End-to-End Deployment & Update Workflows', () => {
       };
 
       // Step 2: Detect anomalies
-      const anomalyResult = await healthMetricsCollectorService.detectAnomalies(
-        anomalousMetrics,
-      );
+      const anomalyResult = await healthMetricsCollectorService.detectAnomalies(anomalousMetrics);
 
       expect(anomalyResult.hasAnomalies).toBe(true);
 
       // Step 3: Calculate health score
-      const healthResult = await healthMetricsCollectorService.calculateHealthScore(
-        anomalousMetrics,
-      );
+      const healthResult =
+        await healthMetricsCollectorService.calculateHealthScore(anomalousMetrics);
 
       // Step 4: Send escalating alerts
       const alerts = [];
@@ -351,10 +341,7 @@ describe('End-to-End Deployment & Update Workflows', () => {
       };
 
       // Acknowledge alert
-      const acknowledgeResult = await alertingService.acknowledgeAlert(
-        alertId,
-        'engineer-1',
-      );
+      const acknowledgeResult = await alertingService.acknowledgeAlert(alertId, 'engineer-1');
 
       expect(acknowledgeResult.status).toBe('acknowledged');
 
@@ -363,10 +350,12 @@ describe('End-to-End Deployment & Update Workflows', () => {
 
       const stats = await alertingService.getAlertStatistics();
 
-      expect(stats).toEqual(expect.objectContaining({
-        totalAlerts: expect.any(Number),
-        byCategory: expect.any(Object),
-      }));
+      expect(stats).toEqual(
+        expect.objectContaining({
+          totalAlerts: expect.any(Number),
+          byCategory: expect.any(Object),
+        }),
+      );
     });
   });
 
@@ -385,10 +374,12 @@ describe('End-to-End Deployment & Update Workflows', () => {
         version: 'v2.5.0',
       });
 
-      expect(syncResult).toEqual(expect.objectContaining({
-        synced: true,
-        deploymentCount: 100,
-      }));
+      expect(syncResult).toEqual(
+        expect.objectContaining({
+          synced: true,
+          deploymentCount: 100,
+        }),
+      );
 
       // Verify health of all deployments post-sync
       for (let i = 0; i < 5; i++) {
@@ -408,10 +399,7 @@ describe('End-to-End Deployment & Update Workflows', () => {
   describe('Failure Recovery & Resilience', () => {
     it('should handle and recover from partial deployment failures', async () => {
       const rolloutId = 'rollout-partial-failure';
-      const deploymentIds = Array.from(
-        { length: 10 },
-        (_, i) => `deploy-${i + 1}`,
-      );
+      const deploymentIds = Array.from({ length: 10 }, (_, i) => `deploy-${i + 1}`);
 
       // Simulate partial failure (3 out of 10 deployments fail)
       mockRepositories.rolloutRepository.findOne.mockResolvedValue({
@@ -424,9 +412,11 @@ describe('End-to-End Deployment & Update Workflows', () => {
       // Attempt retry for failed deployments
       const retryResult = await masterDataSyncService.retrySync(rolloutId, 3);
 
-      expect(retryResult).toEqual(expect.objectContaining({
-        syncId: rolloutId,
-      }));
+      expect(retryResult).toEqual(
+        expect.objectContaining({
+          syncId: rolloutId,
+        }),
+      );
 
       // Verify recovered deployments health
       const healthCheck = await healthMetricsCollectorService.calculateHealthScore({
@@ -524,7 +514,8 @@ describe('End-to-End Deployment & Update Workflows', () => {
         healthResults.push(health);
       }
 
-      const averageHealth = healthResults.reduce((sum, h) => sum + h.healthScore, 0) / healthResults.length;
+      const averageHealth =
+        healthResults.reduce((sum, h) => sum + h.healthScore, 0) / healthResults.length;
       expect(averageHealth).toBeGreaterThan(0);
     });
 

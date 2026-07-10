@@ -131,7 +131,13 @@ export class PrescriptionsService {
     // found in inventory falls through (no DDI/allergy check possible) but
     // is still allowed — caller may be prescribing free-text.
     const drugIds: string[] = [];
-    const linesLite: { drugId?: string; drugCode?: string; drugName: string; dose?: string; frequency?: string }[] = [];
+    const linesLite: {
+      drugId?: string;
+      drugCode?: string;
+      drugName: string;
+      dose?: string;
+      frequency?: string;
+    }[] = [];
     for (const item of dto.items) {
       const inv = await this.inventoryRepo.findOne({
         where: [
@@ -158,7 +164,7 @@ export class PrescriptionsService {
       }
     }
 
-    const patientIdForSafety = (encounter as any).patientId as string | undefined;
+    const patientIdForSafety: string | undefined = encounter.patientId;
     const safety = await this.medicationSafety.runSafetyChecks({
       patientId: patientIdForSafety,
       drugIds,
@@ -314,7 +320,7 @@ export class PrescriptionsService {
         });
         let unitPrice = 0;
         if (invItem) {
-          unitPrice = Number((invItem as any).sellingPrice) || 0;
+          unitPrice = Number(invItem.sellingPrice) || 0;
         }
         await this.billingService.addBillableItem(
           {
@@ -476,17 +482,28 @@ export class PrescriptionsService {
       ],
     });
     if (inv) {
-      const patientId = (item.prescription?.encounter as any)?.patientId as string | undefined;
+      const patientId: string | undefined = item.prescription?.encounter?.patientId;
       const safety = await this.medicationSafety.runSafetyChecks({
         patientId,
         drugIds: [inv.id],
-        lines: [{ drugId: inv.id, drugCode: item.drugCode, drugName: item.drugName, dose: item.dose, frequency: item.frequency }],
+        lines: [
+          {
+            drugId: inv.id,
+            drugCode: item.drugCode,
+            drugName: item.drugName,
+            dose: item.dose,
+            frequency: item.frequency,
+          },
+        ],
         tenantId,
       });
       if (safety.blocked) {
-        const summary = safety.blockingAlerts.length > 0
-          ? safety.blockingAlerts.map(a => `${a.kind.toUpperCase()} (${a.severity}): ${a.description}`).join('; ')
-          : `Safety check degraded: ${safety.degradedReasons.join('; ')}`;
+        const summary =
+          safety.blockingAlerts.length > 0
+            ? safety.blockingAlerts
+                .map((a) => `${a.kind.toUpperCase()} (${a.severity}): ${a.description}`)
+                .join('; ')
+            : `Safety check degraded: ${safety.degradedReasons.join('; ')}`;
         throw new BadRequestException(
           `MEDICATION SAFETY BLOCK: ${summary}. Cannot dispense ${item.drugName}. Override at pharmacy POS required.`,
         );
@@ -498,9 +515,9 @@ export class PrescriptionsService {
     let resolvedPrice = 0;
     if (inv) {
       resolvedPrice =
-        Number((inv as any).retailPrice) ||
-        Number((inv as any).sellingPrice) ||
-        Number((inv as any).unitCost) ||
+        Number(inv.retailPrice) ||
+        Number(inv.sellingPrice) ||
+        Number(inv.unitCost) ||
         0;
     }
     if (resolvedPrice <= 0) {
@@ -609,7 +626,13 @@ export class PrescriptionsService {
       // Resolve drug IDs for all prescription items
       const drugIds: string[] = [];
       const drugIdMap = new Map<string, string>(); // prescriptionItemId -> inventoryItemId
-      const linesLite: { drugId?: string; drugCode?: string; drugName: string; dose?: string; frequency?: string }[] = [];
+      const linesLite: {
+        drugId?: string;
+        drugCode?: string;
+        drugName: string;
+        dose?: string;
+        frequency?: string;
+      }[] = [];
       for (const item of prescription.items) {
         const inventoryItem = await inventoryRepo.findOne({
           where: [
@@ -637,7 +660,7 @@ export class PrescriptionsService {
         }
       }
 
-      const patientIdForSafety = (prescription.encounter as any)?.patientId as string | undefined;
+      const patientIdForSafety: string | undefined = prescription.encounter?.patientId;
       const safety = await this.medicationSafety.runSafetyChecks({
         patientId: patientIdForSafety,
         drugIds,
@@ -1396,9 +1419,7 @@ export class PrescriptionsService {
       const days = (to.getTime() - from.getTime()) / 86_400_000;
       if (days < 0) throw new BadRequestException('dateTo must be after dateFrom');
       if (days > MAX_RANGE_DAYS) {
-        throw new BadRequestException(
-          `Date range exceeds maximum of ${MAX_RANGE_DAYS} days`,
-        );
+        throw new BadRequestException(`Date range exceeds maximum of ${MAX_RANGE_DAYS} days`);
       }
     }
 

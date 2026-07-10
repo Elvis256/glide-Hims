@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+  Logger,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, LessThanOrEqual, MoreThanOrEqual, DataSource } from 'typeorm';
 import {
@@ -88,11 +94,7 @@ export class PettyCashService {
         // Custodian SoD: only the assigned custodian may record
         // expenses against the fund. Without this, any user with the
         // finance.manage permission can drain any petty-cash float.
-        if (
-          actingUserId &&
-          fund.custodianId &&
-          actingUserId !== fund.custodianId
-        ) {
+        if (actingUserId && fund.custodianId && actingUserId !== fund.custodianId) {
           throw new ForbiddenException(
             'Only the assigned custodian can record expenses against this petty cash fund',
           );
@@ -150,8 +152,7 @@ export class PettyCashService {
       const imprestCents = toCents(fund.imprestAmount);
       const balanceCents = toCents(fund.currentBalance);
       const headroomCents = Math.max(imprestCents - balanceCents, 0);
-      const requestedCents =
-        amount && amount > 0 ? toCents(amount) : headroomCents;
+      const requestedCents = amount && amount > 0 ? toCents(amount) : headroomCents;
 
       if (headroomCents <= 0) {
         throw new BadRequestException(
@@ -159,9 +160,7 @@ export class PettyCashService {
         );
       }
       if (requestedCents <= 0) {
-        throw new BadRequestException(
-          'Replenishment amount must be greater than zero',
-        );
+        throw new BadRequestException('Replenishment amount must be greater than zero');
       }
       const actualCents = Math.min(requestedCents, headroomCents);
       const actualAmount = fromCents(actualCents);

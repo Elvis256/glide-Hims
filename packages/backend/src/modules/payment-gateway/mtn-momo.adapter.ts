@@ -35,16 +35,13 @@ export class MtnMomoAdapter implements PaymentGatewayAdapter {
   isConfigured(): boolean {
     return Boolean(
       this.config.get('MTN_MOMO_PRIMARY_KEY') &&
-        this.config.get('MTN_MOMO_API_USER_ID') &&
-        this.config.get('MTN_MOMO_API_KEY'),
+      this.config.get('MTN_MOMO_API_USER_ID') &&
+      this.config.get('MTN_MOMO_API_KEY'),
     );
   }
 
   private get baseUrl(): string {
-    return (
-      this.config.get<string>('MTN_MOMO_BASE_URL') ||
-      'https://sandbox.momodeveloper.mtn.com'
-    );
+    return this.config.get<string>('MTN_MOMO_BASE_URL') || 'https://sandbox.momodeveloper.mtn.com';
   }
 
   private async getToken(): Promise<string> {
@@ -112,8 +109,7 @@ export class MtnMomoAdapter implements PaymentGatewayAdapter {
       {
         headers: {
           Authorization: `Bearer ${token}`,
-          'X-Target-Environment':
-            this.config.get<string>('MTN_MOMO_TARGET_ENV') || 'sandbox',
+          'X-Target-Environment': this.config.get<string>('MTN_MOMO_TARGET_ENV') || 'sandbox',
           'Ocp-Apim-Subscription-Key': this.config.get<string>('MTN_MOMO_PRIMARY_KEY')!,
         },
       },
@@ -127,22 +123,14 @@ export class MtnMomoAdapter implements PaymentGatewayAdapter {
     return 'pending';
   }
 
-  async parseWebhook(
-    _headers: Record<string, string>,
-    body: any,
-  ): Promise<NormalisedWebhookEvent> {
+  async parseWebhook(_headers: Record<string, string>, body: any): Promise<NormalisedWebhookEvent> {
     const status = String(body?.status || '').toUpperCase();
     return {
       providerTransactionId: body?.referenceId || body?.financialTransactionId,
       internalReference: body?.externalId,
       amount: Number(body?.amount || 0),
       currency: body?.currency || 'UGX',
-      status:
-        status === 'SUCCESSFUL'
-          ? 'success'
-          : status === 'FAILED'
-            ? 'failed'
-            : 'pending',
+      status: status === 'SUCCESSFUL' ? 'success' : status === 'FAILED' ? 'failed' : 'pending',
       channel: 'mobile_money',
       externalReference: body?.financialTransactionId,
       customerPhone: body?.payer?.partyId,

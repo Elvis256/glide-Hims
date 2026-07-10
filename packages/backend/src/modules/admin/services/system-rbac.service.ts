@@ -1,4 +1,11 @@
-import { Injectable, Logger, OnModuleInit, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
@@ -53,7 +60,11 @@ export class SystemRbacService implements OnModuleInit {
     return role;
   }
 
-  async createRole(dto: { name: string; description?: string; permissions: string[] }): Promise<SystemAdminRole> {
+  async createRole(dto: {
+    name: string;
+    description?: string;
+    permissions: string[];
+  }): Promise<SystemAdminRole> {
     const existing = await this.roleRepo.findOne({ where: { name: dto.name } });
     if (existing) throw new BadRequestException(`Role "${dto.name}" already exists`);
 
@@ -75,7 +86,10 @@ export class SystemRbacService implements OnModuleInit {
     );
   }
 
-  async updateRole(id: string, dto: { name?: string; description?: string; permissions?: string[] }): Promise<SystemAdminRole> {
+  async updateRole(
+    id: string,
+    dto: { name?: string; description?: string; permissions?: string[] },
+  ): Promise<SystemAdminRole> {
     const role = await this.getRole(id);
     if (role.isBuiltIn && dto.permissions) {
       throw new ForbiddenException('Cannot modify permissions of built-in roles');
@@ -102,7 +116,9 @@ export class SystemRbacService implements OnModuleInit {
 
     const assignments = await this.assignmentRepo.count({ where: { systemAdminRoleId: id } });
     if (assignments > 0) {
-      throw new BadRequestException(`Cannot delete role with ${assignments} active assignment(s). Remove assignments first.`);
+      throw new BadRequestException(
+        `Cannot delete role with ${assignments} active assignment(s). Remove assignments first.`,
+      );
     }
     await this.roleRepo.softRemove(role);
   }
@@ -115,7 +131,11 @@ export class SystemRbacService implements OnModuleInit {
     return this.assignmentRepo.find({ where, order: { createdAt: 'DESC' } });
   }
 
-  async assignRole(userId: string, roleId: string, scopedTenantId?: string): Promise<SystemAdminRoleAssignment> {
+  async assignRole(
+    userId: string,
+    roleId: string,
+    scopedTenantId?: string,
+  ): Promise<SystemAdminRoleAssignment> {
     const role = await this.getRole(roleId);
     if (!role.isActive) throw new BadRequestException('Cannot assign inactive role');
 
@@ -150,7 +170,9 @@ export class SystemRbacService implements OnModuleInit {
       if (assignment.scopedTenantId && tenantId && assignment.scopedTenantId !== tenantId) {
         continue;
       }
-      const role = await this.roleRepo.findOne({ where: { id: assignment.systemAdminRoleId, isActive: true } });
+      const role = await this.roleRepo.findOne({
+        where: { id: assignment.systemAdminRoleId, isActive: true },
+      });
       if (role) {
         role.permissions.forEach((p) => perms.add(p));
       }

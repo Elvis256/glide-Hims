@@ -1,4 +1,10 @@
-import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, In } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -10,6 +16,7 @@ import { ApprovalAction, ApprovalActionType } from '../../database/entities/appr
 import {
   OrgApprovalResolverService,
   ResolvedChainPreview,
+  ResolvedStep,
   ResolveApprovalChainInput,
 } from '../procurement/org-approval-resolver.service';
 
@@ -111,7 +118,7 @@ export class ApprovalsService {
         module: input.module,
         documentType: input.documentType,
         documentId: input.documentId,
-      } as any,
+      },
       order: { approvalLevel: 'ASC' },
     });
     if (existing.length > 0) return existing;
@@ -129,14 +136,12 @@ export class ApprovalsService {
 
     const steps = preview.steps.length
       ? preview.steps
-      : [{ approvalLevel: 1, approverId: null, requiredRole: 'manager' } as any];
+      : [{ approvalLevel: 1, approverId: null, requiredRole: 'manager' } as ResolvedStep];
 
     const saved: ProcurementApprovalChain[] = [];
     for (const step of steps) {
-      const slaHours = (step as any).slaHours ?? null;
-      const slaDueAt = slaHours
-        ? new Date(Date.now() + slaHours * 3600 * 1000)
-        : undefined;
+      const slaHours = step.slaHours ?? null;
+      const slaDueAt = slaHours ? new Date(Date.now() + slaHours * 3600 * 1000) : undefined;
       const row = this.chainRepo.create({
         module: input.module,
         documentId: input.documentId,
@@ -145,9 +150,9 @@ export class ApprovalsService {
         approvalLevel: step.approvalLevel,
         requiredRole: step.requiredRole,
         approverId: step.approverId || undefined,
-        groupId: (step as any).groupId || undefined,
-        quorumType: (step as any).quorumType || undefined,
-        quorumCount: (step as any).quorumCount || undefined,
+        groupId: step.groupId || undefined,
+        quorumType: step.quorumType || undefined,
+        quorumCount: step.quorumCount || undefined,
         slaHours: slaHours ?? undefined,
         slaDueAt,
         status: ApprovalChainStatus.PENDING,
@@ -167,7 +172,11 @@ export class ApprovalsService {
     });
 
     this.events.emit('approval.submitted', {
-      documentRef: { module: input.module, documentType: input.documentType, documentId: input.documentId },
+      documentRef: {
+        module: input.module,
+        documentType: input.documentType,
+        documentId: input.documentId,
+      },
       chainId: saved[0]?.id,
       stepCount: saved.length,
       source: preview.source,
@@ -202,16 +211,15 @@ export class ApprovalsService {
     return rows.map((r) => {
       const key = `${r.approverId || ''}|${r.groupId || ''}`;
       const enriched = namesByKey.get(key) || {};
-      const approver = (r as any).approver;
-      const approvedBy = (r as any).approvedBy;
+      const approver = r.approver;
+      const approvedBy = r.approvedBy;
       return {
         id: r.id,
         approvalLevel: r.approvalLevel,
         requiredRole: r.requiredRole,
         approverId: r.approverId ?? null,
         approverName:
-          enriched.approverName ||
-          (approver ? approver.fullName || approver.email : null),
+          enriched.approverName || (approver ? approver.fullName || approver.email : null),
         groupId: r.groupId ?? null,
         groupName: enriched.groupName ?? null,
         quorumType: r.quorumType ?? null,
@@ -237,10 +245,7 @@ export class ApprovalsService {
    *   4. The step's `requiredRole` starts with `role:` and the actor holds
    *      that role.
    */
-  async assertCanAct(
-    step: ProcurementApprovalChain,
-    actorUserId: string,
-  ): Promise<void> {
+  async assertCanAct(step: ProcurementApprovalChain, actorUserId: string): Promise<void> {
     if (!actorUserId) throw new ForbiddenException('Authentication required');
     if (step.approverId && step.approverId === actorUserId) return;
     if (step.groupId) {
@@ -299,9 +304,7 @@ export class ApprovalsService {
   /**
    * Returns user IDs who can act on a chain step (used to populate inbox).
    */
-  async resolvePotentialApprovers(
-    step: ProcurementApprovalChain,
-  ): Promise<string[]> {
+  async resolvePotentialApprovers(step: ProcurementApprovalChain): Promise<string[]> {
     const ids = new Set<string>();
     if (step.approverId) ids.add(step.approverId);
     if (step.groupId) {
@@ -406,7 +409,11 @@ export class ApprovalsService {
     });
 
     this.events.emit('approval.step.approved', {
-      documentRef: { module: step.module, documentType: step.documentType, documentId: step.documentId },
+      documentRef: {
+        module: step.module,
+        documentType: step.documentType,
+        documentId: step.documentId,
+      },
       chainStepId: step.id,
       approvalLevel: step.approvalLevel,
       actorUserId: actor.userId,
@@ -419,11 +426,15 @@ export class ApprovalsService {
         documentType: step.documentType,
         documentId: step.documentId,
         status: ApprovalChainStatus.PENDING,
-      } as any,
+      },
     });
     if (remaining === 0) {
       this.events.emit('approval.completed', {
-        documentRef: { module: step.module, documentType: step.documentType, documentId: step.documentId },
+        documentRef: {
+          module: step.module,
+          documentType: step.documentType,
+          documentId: step.documentId,
+        },
         tenantId: step.tenantId,
       });
     }
@@ -464,14 +475,22 @@ export class ApprovalsService {
     });
 
     this.events.emit('approval.step.rejected', {
-      documentRef: { module: step.module, documentType: step.documentType, documentId: step.documentId },
+      documentRef: {
+        module: step.module,
+        documentType: step.documentType,
+        documentId: step.documentId,
+      },
       chainStepId: step.id,
       approvalLevel: step.approvalLevel,
       actorUserId: actor.userId,
       tenantId: step.tenantId,
     });
     this.events.emit('approval.rejected', {
-      documentRef: { module: step.module, documentType: step.documentType, documentId: step.documentId },
+      documentRef: {
+        module: step.module,
+        documentType: step.documentType,
+        documentId: step.documentId,
+      },
       reason: comment,
       tenantId: step.tenantId,
     });
@@ -485,7 +504,7 @@ export class ApprovalsService {
         documentType: ref.documentType,
         documentId: ref.documentId,
         status: ApprovalChainStatus.PENDING,
-      } as any,
+      },
     });
     if (rows.length === 0) {
       throw new BadRequestException('No pending approvals to recall');
@@ -539,7 +558,11 @@ export class ApprovalsService {
       afterJson: { escalatedAt: step.escalatedAt, escalateToUserId: escalateToUserId ?? null },
     });
     this.events.emit('approval.step.escalated', {
-      documentRef: { module: step.module, documentType: step.documentType, documentId: step.documentId },
+      documentRef: {
+        module: step.module,
+        documentType: step.documentType,
+        documentId: step.documentId,
+      },
       chainStepId: step.id,
       escalateToUserId: escalateToUserId ?? null,
       tenantId: step.tenantId,

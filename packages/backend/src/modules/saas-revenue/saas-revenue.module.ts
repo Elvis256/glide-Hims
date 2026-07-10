@@ -5,8 +5,16 @@ import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import {
-  SaasPlan, SaasSubscription, SaasInvoice, SaasPayment, SaasCoupon, SaasSubscriptionEvent, SaasEmailLog, SaasPaymentMethod,
-  SaasWebhookEndpoint, SaasWebhookDelivery,
+  SaasPlan,
+  SaasSubscription,
+  SaasInvoice,
+  SaasPayment,
+  SaasCoupon,
+  SaasSubscriptionEvent,
+  SaasEmailLog,
+  SaasPaymentMethod,
+  SaasWebhookEndpoint,
+  SaasWebhookDelivery,
 } from './saas.entity';
 import { SaasPaymentProof } from './payment-proof.entity';
 import { SaasPriceCatalogItem, SaasQuotation, SaasQuotationRevision } from './quotation.entity';
@@ -45,15 +53,33 @@ import { UsageMeterController } from './usage-meter.controller';
 @Module({
   imports: [
     TypeOrmModule.forFeature([
-      SaasPlan, SaasSubscription, SaasInvoice, SaasPayment, SaasCoupon, SaasSubscriptionEvent, SaasEmailLog, SaasPaymentMethod,
-      SaasWebhookEndpoint, SaasWebhookDelivery,
+      SaasPlan,
+      SaasSubscription,
+      SaasInvoice,
+      SaasPayment,
+      SaasCoupon,
+      SaasSubscriptionEvent,
+      SaasEmailLog,
+      SaasPaymentMethod,
+      SaasWebhookEndpoint,
+      SaasWebhookDelivery,
       SaasPaymentProof,
-      SaasPriceCatalogItem, SaasQuotation, SaasQuotationRevision,
+      SaasPriceCatalogItem,
+      SaasQuotation,
+      SaasQuotationRevision,
       SaasContract,
-      ClientOnboarding, ClientOnboardingItem,
+      ClientOnboarding,
+      ClientOnboardingItem,
       ClientHealthScore,
-      License, Lead, LeadActivity, Tenant, Deployment,
-      UsageMeterEvent, UsageMeterAggregate, UsageQuota, UsageAlert,
+      License,
+      Lead,
+      LeadActivity,
+      Tenant,
+      Deployment,
+      UsageMeterEvent,
+      UsageMeterAggregate,
+      UsageQuota,
+      UsageAlert,
     ]),
     MulterModule.register({
       storage: diskStorage({
@@ -65,12 +91,7 @@ import { UsageMeterController } from './usage-meter.controller';
         },
       }),
       fileFilter: (_req, file, callback) => {
-        const allowedTypes = [
-          'application/pdf',
-          'image/jpeg',
-          'image/png',
-          'image/jpg',
-        ];
+        const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'];
         if (allowedTypes.includes(file.mimetype)) {
           callback(null, true);
         } else {
@@ -102,6 +123,13 @@ import { UsageMeterController } from './usage-meter.controller';
     PesapalService,
     WebhookDispatcherService,
   ],
-  exports: [SaasRevenueService, QuotationService, ContractService, OnboardingService, ClientHealthService, UsageMeterService],
+  exports: [
+    SaasRevenueService,
+    QuotationService,
+    ContractService,
+    OnboardingService,
+    ClientHealthService,
+    UsageMeterService,
+  ],
 })
 export class SaasRevenueModule {}

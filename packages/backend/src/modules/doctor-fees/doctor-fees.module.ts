@@ -9,7 +9,9 @@ import { DoctorFeesService } from './doctor-fees.service';
 import { DoctorFeesController } from './doctor-fees.controller';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([DoctorFeeProfile, ServiceCatalog, Department, User, Encounter])],
+  imports: [
+    TypeOrmModule.forFeature([DoctorFeeProfile, ServiceCatalog, Department, User, Encounter]),
+  ],
   controllers: [DoctorFeesController],
   providers: [DoctorFeesService],
   exports: [DoctorFeesService],

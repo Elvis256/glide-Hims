@@ -37,6 +37,7 @@ export enum LabourOutcome {
 }
 
 @Entity('labour_records')
+@Index(['facilityId', 'status'])
 export class LabourRecord {
   @PrimaryGeneratedColumn('uuid')
   id: string;

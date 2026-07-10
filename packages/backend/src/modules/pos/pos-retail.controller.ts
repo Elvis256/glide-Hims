@@ -31,9 +31,7 @@ import {
 @RequireModule('pos')
 @Controller('pos')
 export class PosRetailController {
-  constructor(
-    private readonly service: PosRetailService,
-  ) {}
+  constructor(private readonly service: PosRetailService) {}
 
   // ─── B1: Returns ──────────────────────────────────────────────────────────
 
@@ -165,10 +163,6 @@ export class PosRetailController {
     @Request() req: any,
   ) {
     const parsedLimit = limit ? Math.min(parseInt(limit, 10) || 10, 50) : 10;
-    return this.service.getPatientRecentPurchases(
-      patientId,
-      req.user.tenantId,
-      parsedLimit,
-    );
+    return this.service.getPatientRecentPurchases(patientId, req.user.tenantId, parsedLimit);
   }
 }

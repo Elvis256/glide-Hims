@@ -155,9 +155,7 @@ describe('LabService', () => {
     jest.clearAllMocks();
 
     // Default: transaction just invokes the callback with a mock manager
-    mockDataSource.transaction.mockImplementation(async (cb: any) =>
-      cb(createMockManager()),
-    );
+    mockDataSource.transaction.mockImplementation(async (cb: any) => cb(createMockManager()));
   });
 
   // -----------------------------------------------------------------------
@@ -171,9 +169,7 @@ describe('LabService', () => {
         category: 'hematology',
         sampleType: 'blood',
         price: 50,
-        referenceRanges: [
-          { parameter: 'WBC', unit: '10^3/uL', normalMin: 4.5, normalMax: 11.0 },
-        ],
+        referenceRanges: [{ parameter: 'WBC', unit: '10^3/uL', normalMin: 4.5, normalMax: 11.0 }],
       };
 
       // No existing test with same code
@@ -319,9 +315,9 @@ describe('LabService', () => {
 
       mockDataSource.transaction.mockImplementation(async (cb: any) => cb(manager));
 
-      await expect(
-        service.receiveSample(SAMPLE_ID, {} as any, USER_ID, TENANT_ID),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.receiveSample(SAMPLE_ID, {} as any, USER_ID, TENANT_ID)).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 
@@ -371,9 +367,9 @@ describe('LabService', () => {
 
       mockDataSource.transaction.mockImplementation(async (cb: any) => cb(manager));
 
-      await expect(
-        service.startProcessing(SAMPLE_ID, USER_ID, TENANT_ID),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.startProcessing(SAMPLE_ID, USER_ID, TENANT_ID)).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 
@@ -388,9 +384,7 @@ describe('LabService', () => {
         status: SampleStatus.PROCESSING,
         labTest: {
           id: LAB_TEST_ID,
-          referenceRanges: [
-            { parameter: 'WBC', unit: '10^3/uL', normalMin: 4.5, normalMax: 11.0 },
-          ],
+          referenceRanges: [{ parameter: 'WBC', unit: '10^3/uL', normalMin: 4.5, normalMax: 11.0 }],
         },
         patient: { id: PATIENT_ID },
         order: { id: ORDER_ID },
@@ -455,9 +449,9 @@ describe('LabService', () => {
         unit: '10^3/uL',
       };
 
-      await expect(
-        service.enterResult(SAMPLE_ID, dto as any, USER_ID, TENANT_ID),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.enterResult(SAMPLE_ID, dto as any, USER_ID, TENANT_ID)).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 
@@ -472,7 +466,7 @@ describe('LabService', () => {
         parameter: 'WBC',
         value: '7.5',
         status: ResultStatus.ENTERED,
-        enteredById: USER_ID,        // technician
+        enteredById: USER_ID, // technician
         abnormalFlag: 'normal',
       };
 
@@ -586,9 +580,7 @@ describe('LabService', () => {
       });
 
       // All results for the sample are released (only the one being released)
-      manager.find.mockResolvedValue([
-        { ...validatedResult, status: ResultStatus.RELEASED },
-      ]);
+      manager.find.mockResolvedValue([{ ...validatedResult, status: ResultStatus.RELEASED }]);
 
       manager.save.mockImplementation(async (entity: any) => {
         return { ...entity, id: entity.id || RESULT_ID };
@@ -618,12 +610,12 @@ describe('LabService', () => {
 
       mockDataSource.transaction.mockImplementation(async (cb: any) => cb(manager));
 
-      await expect(
-        service.releaseResult(RESULT_ID, USER_ID, TENANT_ID),
-      ).rejects.toThrow(BadRequestException);
-      await expect(
-        service.releaseResult(RESULT_ID, USER_ID, TENANT_ID),
-      ).rejects.toThrow(/must be validated before release/);
+      await expect(service.releaseResult(RESULT_ID, USER_ID, TENANT_ID)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.releaseResult(RESULT_ID, USER_ID, TENANT_ID)).rejects.toThrow(
+        /must be validated before release/,
+      );
     });
   });
 });

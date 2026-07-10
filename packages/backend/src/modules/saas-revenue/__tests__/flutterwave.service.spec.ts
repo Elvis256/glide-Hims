@@ -15,14 +15,8 @@ describe('FlutterwaveService', () => {
     if (!secretHash) return false;
     if (!rawSignature) return false;
     try {
-      const computed = crypto
-        .createHmac('sha256', secretHash)
-        .update(rawBody)
-        .digest('hex');
-      return crypto.timingSafeEqual(
-        Buffer.from(rawSignature),
-        Buffer.from(computed),
-      );
+      const computed = crypto.createHmac('sha256', secretHash).update(rawBody).digest('hex');
+      return crypto.timingSafeEqual(Buffer.from(rawSignature), Buffer.from(computed));
     } catch {
       return false;
     }
@@ -32,10 +26,7 @@ describe('FlutterwaveService', () => {
     const body = JSON.stringify({ event: 'charge.completed', data: { id: 123 } });
 
     it('returns true for valid HMAC signature', () => {
-      const sig = crypto
-        .createHmac('sha256', SECRET_HASH)
-        .update(body)
-        .digest('hex');
+      const sig = crypto.createHmac('sha256', SECRET_HASH).update(body).digest('hex');
       expect(verifyWebhookSignature(sig, body, SECRET_HASH)).toBe(true);
     });
 

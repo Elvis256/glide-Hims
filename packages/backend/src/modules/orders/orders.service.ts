@@ -102,14 +102,21 @@ export class OrdersService {
 
     const savedOrder = await this.orderRepository.save(order);
 
-    this.auditLogService.log({
-      action: 'CREATE_ORDER',
-      entityType: 'Order',
-      entityId: savedOrder.id,
-      userId,
-      tenantId,
-      newValue: { orderNumber, orderType: dto.orderType, status: OrderStatus.PENDING, encounterId: dto.encounterId },
-    }).catch(() => {});
+    this.auditLogService
+      .log({
+        action: 'CREATE_ORDER',
+        entityType: 'Order',
+        entityId: savedOrder.id,
+        userId,
+        tenantId,
+        newValue: {
+          orderNumber,
+          orderType: dto.orderType,
+          status: OrderStatus.PENDING,
+          encounterId: dto.encounterId,
+        },
+      })
+      .catch(() => {});
 
     // Auto-create imaging_orders record for radiology orders
     if (dto.orderType === OrderType.RADIOLOGY) {
@@ -417,15 +424,17 @@ export class OrdersService {
     if (tenantId) updateWhere.tenantId = tenantId;
     await this.orderRepository.update(updateWhere, updateData);
 
-    this.auditLogService.log({
-      action: 'UPDATE_ORDER_STATUS',
-      entityType: 'Order',
-      entityId: id,
-      userId,
-      tenantId,
-      oldValue: { status: order.status },
-      newValue: { status: dto.status },
-    }).catch(() => {});
+    this.auditLogService
+      .log({
+        action: 'UPDATE_ORDER_STATUS',
+        entityType: 'Order',
+        entityId: id,
+        userId,
+        tenantId,
+        oldValue: { status: order.status },
+        newValue: { status: dto.status },
+      })
+      .catch(() => {});
 
     return this.findById(id, tenantId);
   }
@@ -521,15 +530,17 @@ export class OrdersService {
 
     const saved = await this.orderRepository.save(order);
 
-    this.auditLogService.log({
-      action: 'CANCEL_ORDER',
-      entityType: 'Order',
-      entityId: id,
-      userId,
-      tenantId,
-      oldValue: { status: oldStatus },
-      newValue: { status: OrderStatus.CANCELLED, reason },
-    }).catch(() => {});
+    this.auditLogService
+      .log({
+        action: 'CANCEL_ORDER',
+        entityType: 'Order',
+        entityId: id,
+        userId,
+        tenantId,
+        oldValue: { status: oldStatus },
+        newValue: { status: OrderStatus.CANCELLED, reason },
+      })
+      .catch(() => {});
 
     return saved;
   }

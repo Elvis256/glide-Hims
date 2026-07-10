@@ -37,8 +37,8 @@ export interface LicenseRenewalEntry {
 
 export interface LicenseRenewalReport {
   critical: LicenseRenewalEntry[]; // <= 7 days
-  high: LicenseRenewalEntry[];     // <= 14 days
-  medium: LicenseRenewalEntry[];   // <= 30 days
+  high: LicenseRenewalEntry[]; // <= 14 days
+  medium: LicenseRenewalEntry[]; // <= 30 days
   totalExpiring: number;
 }
 
@@ -137,12 +137,14 @@ export class LicenseService implements OnModuleInit {
         await this.licenseRepository.save(license);
         fixed++;
         // Fix 8: audit log for auto-healed signatures
-        this.logger.warn(JSON.stringify({
-          type: 'LICENSE_SIGNATURE_HEALED',
-          licenseKey: license.licenseKey,
-          tenantId: license.tenantId,
-          timestamp: new Date().toISOString(),
-        }));
+        this.logger.warn(
+          JSON.stringify({
+            type: 'LICENSE_SIGNATURE_HEALED',
+            licenseKey: license.licenseKey,
+            tenantId: license.tenantId,
+            timestamp: new Date().toISOString(),
+          }),
+        );
       }
     }
 
@@ -604,7 +606,8 @@ export class LicenseService implements OnModuleInit {
     try {
       const now = new Date();
       // Find all active licenses whose expiry date is in the past
-      const expired = await this.licenseRepository.createQueryBuilder('license')
+      const expired = await this.licenseRepository
+        .createQueryBuilder('license')
         .where('license.status = :status', { status: 'active' })
         .andWhere('license.expiresAt < :now', { now })
         .getMany();
@@ -613,7 +616,9 @@ export class LicenseService implements OnModuleInit {
         for (const license of expired) {
           license.status = 'expired';
           await this.licenseRepository.save(license);
-          this.logger.log(`License ${license.licenseKey} (Tenant ${license.tenantId}) marked as expired.`);
+          this.logger.log(
+            `License ${license.licenseKey} (Tenant ${license.tenantId}) marked as expired.`,
+          );
         }
         this.logger.log(`Marked ${expired.length} license(s) as expired.`);
       }
@@ -656,7 +661,8 @@ export class LicenseService implements OnModuleInit {
       thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
 
       // Find all active licenses expiring within 30 days
-      const expiring = await this.licenseRepository.createQueryBuilder('license')
+      const expiring = await this.licenseRepository
+        .createQueryBuilder('license')
         .where('license.status = :status', { status: 'active' })
         .andWhere('license.expires_at <= :deadline', { deadline: thirtyDaysFromNow })
         .andWhere('license.expires_at > :now', { now })
@@ -738,7 +744,8 @@ export class LicenseService implements OnModuleInit {
     const deadline = new Date(now);
     deadline.setDate(deadline.getDate() + withinDays);
 
-    const expiring = await this.licenseRepository.createQueryBuilder('license')
+    const expiring = await this.licenseRepository
+      .createQueryBuilder('license')
       .where('license.status = :status', { status: 'active' })
       .andWhere('license.expires_at <= :deadline', { deadline })
       .andWhere('license.expires_at > :now', { now })
@@ -770,7 +777,8 @@ export class LicenseService implements OnModuleInit {
     const now = new Date();
 
     // Find all expired licenses
-    const expired = await this.licenseRepository.createQueryBuilder('license')
+    const expired = await this.licenseRepository
+      .createQueryBuilder('license')
       .where('license.status = :status', { status: 'expired' })
       .getMany();
 
@@ -903,15 +911,15 @@ export class LicenseService implements OnModuleInit {
       organizationName,
       email,
       licenseType: type,
-      maxUsers: type === 'trial' ? 5 : (type === 'standard' ? 25 : (type === 'professional' ? 50 : 100)),
-      maxFacilities: type === 'trial' ? 1 : (type === 'standard' ? 3 : (type === 'professional' ? 10 : 50)),
+      maxUsers:
+        type === 'trial' ? 5 : type === 'standard' ? 25 : type === 'professional' ? 50 : 100,
+      maxFacilities:
+        type === 'trial' ? 1 : type === 'standard' ? 3 : type === 'professional' ? 10 : 50,
       validityDays: type === 'trial' ? 30 : 365,
       tenantId,
     };
 
-    this.logger.log(
-      `Auto-generating ${type} license for tenant ${tenantId} (${organizationName})`,
-    );
+    this.logger.log(`Auto-generating ${type} license for tenant ${tenantId} (${organizationName})`);
 
     return this.generateLicense(dto);
   }
@@ -1014,7 +1022,12 @@ export class LicenseService implements OnModuleInit {
   }
 
   // Fix 8: include status and expiresAt in the signed fields to prevent tampering
-  private computeSignature(license: Pick<License, 'licenseKey' | 'organizationName' | 'licenseType' | 'maxUsers' | 'maxFacilities'> & { status?: string; expiresAt?: Date }): string {
+  private computeSignature(
+    license: Pick<
+      License,
+      'licenseKey' | 'organizationName' | 'licenseType' | 'maxUsers' | 'maxFacilities'
+    > & { status?: string; expiresAt?: Date },
+  ): string {
     const payload = JSON.stringify({
       key: license.licenseKey,
       org: license.organizationName,

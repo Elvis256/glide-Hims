@@ -1,6 +1,14 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, ILike, FindOptionsWhere, DataSource, EntityManager, IsNull } from 'typeorm';
+import {
+  Repository,
+  Like,
+  ILike,
+  FindOptionsWhere,
+  DataSource,
+  EntityManager,
+  IsNull,
+} from 'typeorm';
 import {
   Item,
   StockLedger,
@@ -34,9 +42,7 @@ export class InventoryService {
     // transaction so two concurrent createItem calls cannot both read the
     // same max-suffix and produce duplicate item codes (P1).
     return this.dataSource.transaction(async (manager) => {
-      const code =
-        dto.code?.trim() ||
-        (await this.generateItemCode(manager, dto.isDrug, tenantId));
+      const code = dto.code?.trim() || (await this.generateItemCode(manager, dto.isDrug, tenantId));
 
       const existing = await manager.findOne(Item, {
         where: { code, ...(tenantId ? { tenantId } : {}) },
@@ -94,7 +100,7 @@ export class InventoryService {
     // Build base filter conditions
     const baseWhere: FindOptionsWhere<Item> = {};
     if (tenantId) {
-      (baseWhere as any).tenantId = tenantId;
+      baseWhere.tenantId = tenantId;
     }
     if (category) {
       baseWhere.category = category;

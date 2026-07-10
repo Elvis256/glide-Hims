@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, LessThanOrEqual, MoreThanOrEqual, In } from 'typeorm';
+import { Repository, Between, LessThanOrEqual, MoreThanOrEqual, In, DataSource } from 'typeorm';
 import {
   AntenatalRegistration,
   PregnancyStatus,
@@ -59,6 +59,7 @@ export class MaternityService {
     @InjectRepository(ImmunizationSchedule)
     private immunizationRepo: Repository<ImmunizationSchedule>,
     private readonly auditLogService: AuditLogService,
+    private readonly dataSource: DataSource,
   ) {}
 
   // ============ ANC REGISTRATION ============
@@ -122,18 +123,20 @@ export class MaternityService {
       registrationDate: new Date(),
       status: PregnancyStatus.ACTIVE,
     });
-    if (tenantId) (registration as any).tenantId = tenantId;
+    if (tenantId) registration.tenantId = tenantId;
 
     const saved = await this.ancRepo.save(registration);
 
-    this.auditLogService.log({
-      action: 'REGISTER_ANTENATAL',
-      entityType: 'MaternityCase',
-      entityId: saved.id,
-      userId: userId,
-      tenantId: tenantId,
-      newValue: { status: saved.status },
-    }).catch(() => {});
+    this.auditLogService
+      .log({
+        action: 'REGISTER_ANTENATAL',
+        entityType: 'MaternityCase',
+        entityId: saved.id,
+        userId: userId,
+        tenantId: tenantId,
+        newValue: { status: saved.status },
+      })
+      .catch(() => {});
 
     return saved;
   }
@@ -256,18 +259,20 @@ export class MaternityService {
       nextVisitDate: dto.nextVisitDate ? new Date(dto.nextVisitDate) : undefined,
       seenById: userId,
     });
-    if (tenantId) (visit as any).tenantId = tenantId;
+    if (tenantId) visit.tenantId = tenantId;
 
     const savedVisit = await this.visitRepo.save(visit);
 
-    this.auditLogService.log({
-      action: 'RECORD_ANC_VISIT',
-      entityType: 'MaternityVisit',
-      entityId: savedVisit.id,
-      userId: userId,
-      tenantId: tenantId,
-      newValue: { status: (savedVisit as any).status },
-    }).catch(() => {});
+    this.auditLogService
+      .log({
+        action: 'RECORD_ANC_VISIT',
+        entityType: 'MaternityVisit',
+        entityId: savedVisit.id,
+        userId: userId,
+        tenantId: tenantId,
+        newValue: { visitNumber: savedVisit.visitNumber },
+      })
+      .catch(() => {});
 
     return savedVisit;
   }
@@ -325,18 +330,20 @@ export class MaternityService {
       cervicalDilation: dto.cervicalDilation,
       status: LabourStatus.ADMITTED,
     });
-    if (tenantId) (labour as any).tenantId = tenantId;
+    if (tenantId) labour.tenantId = tenantId;
 
     const savedLabour = await this.labourRepo.save(labour);
 
-    this.auditLogService.log({
-      action: 'ADMIT_LABOUR',
-      entityType: 'MaternityCase',
-      entityId: savedLabour.id,
-      userId: userId,
-      tenantId: tenantId,
-      newValue: { status: savedLabour.status },
-    }).catch(() => {});
+    this.auditLogService
+      .log({
+        action: 'ADMIT_LABOUR',
+        entityType: 'MaternityCase',
+        entityId: savedLabour.id,
+        userId: userId,
+        tenantId: tenantId,
+        newValue: { status: savedLabour.status },
+      })
+      .catch(() => {});
 
     return savedLabour;
   }
@@ -358,26 +365,34 @@ export class MaternityService {
     dto: UpdateLabourProgressDto,
     tenantId?: string,
   ): Promise<LabourRecord> {
-    const labour = await this.getLabourById(id, tenantId);
+    return this.dataSource.transaction(async (manager) => {
+      const labourRepoTx = manager.getRepository(LabourRecord);
 
-    if (dto.cervicalDilation !== undefined) labour.cervicalDilation = dto.cervicalDilation;
-    if (dto.station !== undefined) labour.station = dto.station;
-    if (dto.membranesIntact !== undefined) {
-      labour.membranesIntact = dto.membranesIntact;
-      if (!dto.membranesIntact && !labour.membraneRuptureTime) {
-        labour.membraneRuptureTime = new Date();
+      const labour = await labourRepoTx.findOne({
+        where: { id, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!labour) throw new NotFoundException('Labour record not found');
+
+      if (dto.cervicalDilation !== undefined) labour.cervicalDilation = dto.cervicalDilation;
+      if (dto.station !== undefined) labour.station = dto.station;
+      if (dto.membranesIntact !== undefined) {
+        labour.membranesIntact = dto.membranesIntact;
+        if (!dto.membranesIntact && !labour.membraneRuptureTime) {
+          labour.membraneRuptureTime = new Date();
+        }
       }
-    }
-    if (dto.liquorColor) labour.liquorColor = dto.liquorColor;
+      if (dto.liquorColor) labour.liquorColor = dto.liquorColor;
 
-    // Update stage based on dilation
-    if (labour.cervicalDilation && labour.cervicalDilation < 10) {
-      labour.status = LabourStatus.FIRST_STAGE;
-    } else if (labour.cervicalDilation === 10) {
-      labour.status = LabourStatus.SECOND_STAGE;
-    }
+      // Update stage based on dilation
+      if (labour.cervicalDilation && labour.cervicalDilation < 10) {
+        labour.status = LabourStatus.FIRST_STAGE;
+      } else if (labour.cervicalDilation === 10) {
+        labour.status = LabourStatus.SECOND_STAGE;
+      }
 
-    return this.labourRepo.save(labour);
+      return labourRepoTx.save(labour);
+    });
   }
 
   async recordDelivery(
@@ -386,41 +401,57 @@ export class MaternityService {
     userId: string,
     tenantId?: string,
   ): Promise<LabourRecord> {
-    const labour = await this.getLabourById(id, tenantId);
+    return this.dataSource.transaction(async (manager) => {
+      const labourRepoTx = manager.getRepository(LabourRecord);
+      const ancRepoTx = manager.getRepository(AntenatalRegistration);
 
-    labour.deliveryTime = new Date();
-    labour.deliveryMode = dto.deliveryMode;
-    if (dto.deliveryNotes) labour.deliveryNotes = dto.deliveryNotes;
-    if (dto.placentaComplete !== undefined) labour.placentaComplete = dto.placentaComplete;
-    labour.placentaDeliveryTime = new Date();
-    if (dto.bloodLossMl !== undefined) labour.bloodLossMl = dto.bloodLossMl;
-    if (dto.perineumStatus) labour.perineumStatus = dto.perineumStatus;
-    if (dto.episiotomyDone !== undefined) labour.episiotomyDone = dto.episiotomyDone;
-    if (dto.complications) labour.complications = dto.complications;
-    labour.deliveredById = userId;
-    labour.status = LabourStatus.DELIVERED;
+      const labour = await labourRepoTx.findOne({
+        where: { id, ...(tenantId ? { tenantId } : {}) },
+        relations: ['registration', 'registration.patient', 'facility', 'deliveredBy'],
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!labour) throw new NotFoundException('Labour record not found');
 
-    // Update ANC registration status
-    await this.ancRepo.update(
-      { id: labour.registrationId, ...(tenantId ? { tenantId } : {}) },
-      { status: PregnancyStatus.DELIVERED },
-    );
+      labour.deliveryTime = new Date();
+      labour.deliveryMode = dto.deliveryMode;
+      if (dto.deliveryNotes) labour.deliveryNotes = dto.deliveryNotes;
+      if (dto.placentaComplete !== undefined) labour.placentaComplete = dto.placentaComplete;
+      labour.placentaDeliveryTime = new Date();
+      if (dto.bloodLossMl !== undefined) labour.bloodLossMl = dto.bloodLossMl;
+      if (dto.perineumStatus) labour.perineumStatus = dto.perineumStatus;
+      if (dto.episiotomyDone !== undefined) labour.episiotomyDone = dto.episiotomyDone;
+      if (dto.complications) labour.complications = dto.complications;
+      labour.deliveredById = userId;
+      labour.status = LabourStatus.DELIVERED;
 
-    const savedDelivery = await this.labourRepo.save(labour);
+      // Update ANC registration status (atomic with labour save)
+      await ancRepoTx.update(
+        { id: labour.registrationId, ...(tenantId ? { tenantId } : {}) },
+        { status: PregnancyStatus.DELIVERED },
+      );
 
-    this.auditLogService.log({
-      action: 'RECORD_DELIVERY',
-      entityType: 'MaternityCase',
-      entityId: savedDelivery.id,
-      userId: userId,
-      tenantId: tenantId,
-      newValue: { status: savedDelivery.status },
-    }).catch(() => {});
+      const savedDelivery = await labourRepoTx.save(labour);
 
-    return savedDelivery;
+      this.auditLogService
+        .log({
+          action: 'RECORD_DELIVERY',
+          entityType: 'MaternityCase',
+          entityId: savedDelivery.id,
+          userId: userId,
+          tenantId: tenantId,
+          newValue: { status: savedDelivery.status },
+        })
+        .catch(() => {});
+
+      return savedDelivery;
+    });
   }
 
-  async recordBabyOutcome(dto: RecordBabyOutcomeDto, tenantId?: string): Promise<DeliveryOutcome> {
+  async recordBabyOutcome(
+    dto: RecordBabyOutcomeDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<DeliveryOutcome> {
     const labour = await this.labourRepo.findOne({
       where: { id: dto.labourRecordId, ...(tenantId ? { tenantId } : {}) },
     });
@@ -449,17 +480,20 @@ export class MaternityService {
           ? BabyStatus.DECEASED
           : BabyStatus.ALIVE,
     });
-    if (tenantId) (outcome as any).tenantId = tenantId;
+    if (tenantId) outcome.tenantId = tenantId;
 
     const savedOutcome = await this.outcomeRepo.save(outcome);
 
-    this.auditLogService.log({
-      action: 'RECORD_BABY_OUTCOME',
-      entityType: 'BabyOutcome',
-      entityId: savedOutcome.id,
-      tenantId: tenantId,
-      newValue: { status: savedOutcome.babyStatus },
-    }).catch(() => {});
+    this.auditLogService
+      .log({
+        action: 'RECORD_BABY_OUTCOME',
+        entityType: 'BabyOutcome',
+        entityId: savedOutcome.id,
+        userId: userId,
+        tenantId: tenantId,
+        newValue: { status: savedOutcome.babyStatus },
+      })
+      .catch(() => {});
 
     return savedOutcome;
   }
@@ -634,7 +668,7 @@ export class MaternityService {
       nextVisitDate: dto.nextVisitDate ? new Date(dto.nextVisitDate) : undefined,
       seenById: userId,
     });
-    if (tenantId) (visit as any).tenantId = tenantId;
+    if (tenantId) visit.tenantId = tenantId;
 
     return this.pncRepo.save(visit);
   }
@@ -779,7 +813,7 @@ export class MaternityService {
       notes: dto.notes,
       checkedById: userId,
     });
-    if (tenantId) (wellness as any).tenantId = tenantId;
+    if (tenantId) wellness.tenantId = tenantId;
 
     return this.babyWellnessRepo.save(wellness);
   }
@@ -832,7 +866,7 @@ export class MaternityService {
         gracePeriodEnd,
         status: ImmunizationStatus.SCHEDULED,
       });
-      if (tenantId) (schedule as any).tenantId = tenantId;
+      if (tenantId) schedule.tenantId = tenantId;
 
       schedules.push(schedule);
     }
@@ -874,33 +908,50 @@ export class MaternityService {
     userId: string,
     tenantId?: string,
   ): Promise<ImmunizationSchedule> {
-    const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    return this.dataSource.transaction(async (manager) => {
+      const immunizationRepoTx = manager.getRepository(ImmunizationSchedule);
 
-    const schedule = await this.immunizationRepo.findOne({ where });
-    if (!schedule) throw new NotFoundException('Immunization schedule not found');
+      const schedule = await immunizationRepoTx.findOne({
+        where: { id, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!schedule) throw new NotFoundException('Immunization schedule not found');
 
-    if (schedule.status === ImmunizationStatus.ADMINISTERED) {
-      throw new BadRequestException('Vaccine already administered');
-    }
+      if (schedule.status === ImmunizationStatus.ADMINISTERED) {
+        throw new BadRequestException('Vaccine already administered');
+      }
 
-    schedule.status = ImmunizationStatus.ADMINISTERED;
-    schedule.administeredAt = new Date();
-    schedule.administeredById = userId;
-    if (dto.batchNumber) schedule.batchNumber = dto.batchNumber;
-    if (dto.expiryDate) schedule.expiryDate = new Date(dto.expiryDate);
-    if (dto.manufacturer) schedule.manufacturer = dto.manufacturer;
-    if (dto.siteOfAdministration) schedule.siteOfAdministration = dto.siteOfAdministration;
-    if (dto.route) schedule.route = dto.route;
-    schedule.adverseReaction = dto.adverseReaction || false;
-    if (dto.adverseReaction) {
-      if (dto.reactionSeverity) schedule.reactionSeverity = dto.reactionSeverity;
-      if (dto.reactionDescription) schedule.reactionDescription = dto.reactionDescription;
-      if (dto.reactionTreatment) schedule.reactionTreatment = dto.reactionTreatment;
-    }
-    if (dto.notes) schedule.notes = dto.notes;
+      schedule.status = ImmunizationStatus.ADMINISTERED;
+      schedule.administeredAt = new Date();
+      schedule.administeredById = userId;
+      if (dto.batchNumber) schedule.batchNumber = dto.batchNumber;
+      if (dto.expiryDate) schedule.expiryDate = new Date(dto.expiryDate);
+      if (dto.manufacturer) schedule.manufacturer = dto.manufacturer;
+      if (dto.siteOfAdministration) schedule.siteOfAdministration = dto.siteOfAdministration;
+      if (dto.route) schedule.route = dto.route;
+      schedule.adverseReaction = dto.adverseReaction || false;
+      if (dto.adverseReaction) {
+        if (dto.reactionSeverity) schedule.reactionSeverity = dto.reactionSeverity;
+        if (dto.reactionDescription) schedule.reactionDescription = dto.reactionDescription;
+        if (dto.reactionTreatment) schedule.reactionTreatment = dto.reactionTreatment;
+      }
+      if (dto.notes) schedule.notes = dto.notes;
 
-    return this.immunizationRepo.save(schedule);
+      const saved = await immunizationRepoTx.save(schedule);
+
+      this.auditLogService
+        .log({
+          action: 'VACCINE_ADMINISTERED',
+          entityType: 'Immunization',
+          entityId: saved.id,
+          userId: userId,
+          tenantId: tenantId,
+          newValue: { vaccine: saved.vaccineName, doseNumber: saved.doseNumber },
+        })
+        .catch(() => {});
+
+      return saved;
+    });
   }
 
   async getImmunizationsDue(

@@ -212,16 +212,10 @@ export class LicenseController {
   @Post('batch/extend')
   @Auth()
   @ApiOperation({ summary: 'Batch extend licenses expiring within N days' })
-  async batchExtend(
-    @Body() body: { days: number; withinDays: number },
-    @Request() req: any,
-  ) {
+  async batchExtend(@Body() body: { days: number; withinDays: number }, @Request() req: any) {
     this.requireSystemAdmin(req);
     if (!body?.days || !body?.withinDays) {
-      throw new HttpException(
-        'Both "days" and "withinDays" are required',
-        HttpStatus.BAD_REQUEST,
-      );
+      throw new HttpException('Both "days" and "withinDays" are required', HttpStatus.BAD_REQUEST);
     }
     return this.licenseService.batchExtendExpiring(body.days, body.withinDays);
   }

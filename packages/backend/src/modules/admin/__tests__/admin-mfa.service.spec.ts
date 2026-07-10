@@ -1,8 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
-import { AdminMFAService } from '../admin-mfa.service';
-import { User } from '../../../../database/entities/user.entity';
+import { AdminMFAService } from '../services/admin-mfa.service';
+import { User } from '../../../database/entities/user.entity';
 import { Repository } from 'typeorm';
 
 describe('AdminMFAService', () => {
@@ -15,8 +15,8 @@ describe('AdminMFAService', () => {
     email: 'admin@glide-hims.local',
     isSystemAdmin: true,
     mfaEnabled: false,
-    mfaSecret: null,
-    backupCodes: null,
+    mfaSecret: undefined,
+    backupCodes: undefined,
   };
 
   const mockUserRepository = {
@@ -195,9 +195,7 @@ describe('AdminMFAService', () => {
     it('should throw error if 2FA not enabled', async () => {
       mockUserRepository.findOne.mockResolvedValue(mockUser);
 
-      await expect(service.regenerateBackupCodes('admin-123')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.regenerateBackupCodes('admin-123')).rejects.toThrow(BadRequestException);
     });
   });
 

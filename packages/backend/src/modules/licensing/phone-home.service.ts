@@ -173,7 +173,8 @@ export class PhoneHomeService {
 
     if (updateAvailable) {
       // Always provide the license-gated source-bundle URL
-      const baseUrl = this.configService.get<string>('CONTROL_PLANE_URL') ||
+      const baseUrl =
+        this.configService.get<string>('CONTROL_PLANE_URL') ||
         'https://hmisdemo.itsolutionsuganda.com';
       updateUrl =
         latestVersion?.downloadUrl ||
@@ -324,7 +325,9 @@ export class PhoneHomeService {
     let appVersion = '1.0.0';
     try {
       appVersion = require('../../../package.json').version || '1.0.0';
-    } catch { /* fallback */ }
+    } catch {
+      /* fallback */
+    }
 
     const payload: PhoneHomePayload = {
       licenseKey,

@@ -44,7 +44,9 @@ export class ReplicationService {
   }
 
   async getPendingChanges(tenantId: string, deploymentId?: string): Promise<ChangeSet[]> {
-    const query = this.changesetRepository.createQueryBuilder('c').where('c.tenantId = :tenantId', { tenantId });
+    const query = this.changesetRepository
+      .createQueryBuilder('c')
+      .where('c.tenantId = :tenantId', { tenantId });
 
     if (deploymentId) {
       query.andWhere('c.deploymentId = :deploymentId', { deploymentId });
@@ -53,8 +55,14 @@ export class ReplicationService {
     return query.orderBy('c.createdAt', 'ASC').getMany();
   }
 
-  async getReplicationHistory(tenantId: string, deploymentId?: string, limit = 50): Promise<ReplicationLog[]> {
-    const query = this.replicationLogRepository.createQueryBuilder('r').where('r.tenantId = :tenantId', { tenantId });
+  async getReplicationHistory(
+    tenantId: string,
+    deploymentId?: string,
+    limit = 50,
+  ): Promise<ReplicationLog[]> {
+    const query = this.replicationLogRepository
+      .createQueryBuilder('r')
+      .where('r.tenantId = :tenantId', { tenantId });
 
     if (deploymentId) {
       query.andWhere('r.deploymentId = :deploymentId', { deploymentId });

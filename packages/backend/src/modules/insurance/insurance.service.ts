@@ -379,7 +379,7 @@ export class InsuranceService {
     const lockKey = `insurance:claim-number:${facilityId}:${prefix}`;
     await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [lockKey]);
     const count = await manager.count(InsuranceClaim, {
-      where: { facilityId, claimNumber: Between(`${prefix}0001`, `${prefix}9999`) as any },
+      where: { facilityId, claimNumber: Between(`${prefix}0001`, `${prefix}9999`) },
     });
     return `${prefix}${String(count + 1).padStart(4, '0')}`;
   }
@@ -766,7 +766,10 @@ export class InsuranceService {
       });
       if (!claim) throw new NotFoundException('Claim not found');
 
-      if (claim.status !== ClaimStatus.APPROVED && claim.status !== ClaimStatus.PARTIALLY_APPROVED) {
+      if (
+        claim.status !== ClaimStatus.APPROVED &&
+        claim.status !== ClaimStatus.PARTIALLY_APPROVED
+      ) {
         throw new BadRequestException(
           'Claim must be approved (or partially approved) to record payment',
         );
@@ -818,7 +821,7 @@ export class InsuranceService {
       // billing failure rolls back the claim flip and the policy increment.
       // recordInsuranceClaimPayment is idempotent on transactionReference,
       // so retries are safe even if upstream calls this method more than once.
-      let mirror: any = null;
+      let mirror = null;
       if (savedClaim.invoiceId && delta > 0) {
         mirror = await this.billingService.recordInsuranceClaimPayment(
           savedClaim.invoiceId,
@@ -892,7 +895,7 @@ export class InsuranceService {
     const lockKey = `insurance:preauth-number:${facilityId}:${prefix}`;
     await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [lockKey]);
     const count = await manager.count(PreAuthorization, {
-      where: { facilityId, authNumber: Between(`${prefix}0001`, `${prefix}9999`) as any },
+      where: { facilityId, authNumber: Between(`${prefix}0001`, `${prefix}9999`) },
     });
     return `${prefix}${String(count + 1).padStart(4, '0')}`;
   }

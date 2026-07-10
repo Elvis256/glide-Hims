@@ -9,8 +9,15 @@
  */
 
 export const ZERO_DECIMAL_CURRENCIES = new Set([
-  'UGX', 'KES', 'TZS', 'RWF',
-  'JPY', 'KRW', 'VND', 'CLP', 'PYG',
+  'UGX',
+  'KES',
+  'TZS',
+  'RWF',
+  'JPY',
+  'KRW',
+  'VND',
+  'CLP',
+  'PYG',
 ]);
 
 /** Convert internal minor-unit amount to the major-unit value a gateway expects. */

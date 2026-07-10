@@ -1,5 +1,13 @@
 import {
-  Controller, Get, Post, Patch, Delete, Body, Param, Query, Request,
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  Query,
+  Request,
   ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
@@ -22,7 +30,8 @@ export class ApiKeyController {
   @AuthWithPermissions('system.manage')
   @ApiOperation({ summary: 'Create API key (returns raw key once)' })
   async create(
-    @Body() dto: {
+    @Body()
+    dto: {
       name: string;
       scopes: string[];
       rateLimitPerHour?: number;
@@ -69,7 +78,8 @@ export class ApiKeyController {
   @ApiOperation({ summary: 'Update API key' })
   async update(
     @Param('id') id: string,
-    @Body() dto: {
+    @Body()
+    dto: {
       name?: string;
       scopes?: string[];
       rateLimitPerHour?: number;

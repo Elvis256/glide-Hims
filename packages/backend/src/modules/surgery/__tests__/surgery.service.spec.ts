@@ -552,12 +552,12 @@ describe('SurgeryService', () => {
         checklist: [{ item: 'Identity verified', checked: true }],
       };
 
-      await expect(
-        service.updatePreOpChecklist('case-1', dto as any, 'tenant-1'),
-      ).rejects.toThrow(BadRequestException);
-      await expect(
-        service.updatePreOpChecklist('case-1', dto as any, 'tenant-1'),
-      ).rejects.toThrow(/Cannot update pre-op checklist at this stage/);
+      await expect(service.updatePreOpChecklist('case-1', dto as any, 'tenant-1')).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.updatePreOpChecklist('case-1', dto as any, 'tenant-1')).rejects.toThrow(
+        /Cannot update pre-op checklist at this stage/,
+      );
     });
   });
 });

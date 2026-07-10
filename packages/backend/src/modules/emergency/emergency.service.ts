@@ -125,22 +125,24 @@ export class EmergencyService {
         `[AUDIT] Emergency case registered: ${caseNumber}, patientId: ${dto.patientId}, userId: ${userId}, facilityId: ${facilityId}`,
       );
 
-      this.auditLogService.log({
-        action: 'REGISTER_EMERGENCY_CASE',
-        entityType: 'EmergencyCase',
-        entityId: savedCase.id,
-        userId,
-        tenantId,
-        oldValue: undefined,
-        newValue: {
-          caseNumber: savedCase.caseNumber,
-          patientId: dto.patientId,
-          chiefComplaint: savedCase.chiefComplaint,
-          arrivalMode: savedCase.arrivalMode,
-          status: savedCase.status,
-          facilityId,
-        },
-      }).catch(() => {});
+      this.auditLogService
+        .log({
+          action: 'REGISTER_EMERGENCY_CASE',
+          entityType: 'EmergencyCase',
+          entityId: savedCase.id,
+          userId,
+          tenantId,
+          oldValue: undefined,
+          newValue: {
+            caseNumber: savedCase.caseNumber,
+            patientId: dto.patientId,
+            chiefComplaint: savedCase.chiefComplaint,
+            arrivalMode: savedCase.arrivalMode,
+            status: savedCase.status,
+            facilityId,
+          },
+        })
+        .catch(() => {});
 
       return savedCase;
     });
@@ -196,15 +198,17 @@ export class EmergencyService {
       `[AUDIT] Emergency case triaged: ${emergencyCase.caseNumber}, level: ${dto.triageLevel}, nurseId: ${nurseId}`,
     );
 
-    this.auditLogService.log({
-      action: 'TRIAGE_CASE',
-      entityType: 'EmergencyCase',
-      entityId: savedCase.id,
-      userId: nurseId,
-      tenantId,
-      oldValue: { triageLevel: oldTriageLevel, status: oldStatus },
-      newValue: { triageLevel: savedCase.triageLevel, status: savedCase.status },
-    }).catch(() => {});
+    this.auditLogService
+      .log({
+        action: 'TRIAGE_CASE',
+        entityType: 'EmergencyCase',
+        entityId: savedCase.id,
+        userId: nurseId,
+        tenantId,
+        oldValue: { triageLevel: oldTriageLevel, status: oldStatus },
+        newValue: { triageLevel: savedCase.triageLevel, status: savedCase.status },
+      })
+      .catch(() => {});
 
     // Mirror triage vitals into the canonical `vitals` table so the patient
     // timeline and critical-vital alerting see them. Best-effort: failures
@@ -284,19 +288,21 @@ export class EmergencyService {
       `[AUDIT] Treatment started: ${emergencyCase.caseNumber}, doctorId: ${emergencyCase.attendingDoctorId}`,
     );
 
-    this.auditLogService.log({
-      action: 'START_TREATMENT',
-      entityType: 'EmergencyCase',
-      entityId: savedCase.id,
-      userId: doctorId,
-      tenantId,
-      oldValue: { status: TriageStatus.TRIAGED },
-      newValue: {
-        status: savedCase.status,
-        attendingDoctorId: savedCase.attendingDoctorId,
-        treatmentStartTime: savedCase.treatmentStartTime,
-      },
-    }).catch(() => {});
+    this.auditLogService
+      .log({
+        action: 'START_TREATMENT',
+        entityType: 'EmergencyCase',
+        entityId: savedCase.id,
+        userId: doctorId,
+        tenantId,
+        oldValue: { status: TriageStatus.TRIAGED },
+        newValue: {
+          status: savedCase.status,
+          attendingDoctorId: savedCase.attendingDoctorId,
+          treatmentStartTime: savedCase.treatmentStartTime,
+        },
+      })
+      .catch(() => {});
 
     return savedCase;
   }
@@ -351,19 +357,21 @@ export class EmergencyService {
       `[AUDIT] Emergency case discharged: ${emergencyCase.caseNumber}, diagnosis: ${dto.primaryDiagnosis}`,
     );
 
-    this.auditLogService.log({
-      action: 'DISCHARGE_EMERGENCY_CASE',
-      entityType: 'EmergencyCase',
-      entityId: savedCase.id,
-      userId: undefined,
-      tenantId,
-      oldValue: { status: oldStatus },
-      newValue: {
-        status: savedCase.status,
-        dischargeTime: savedCase.dischargeTime,
-        primaryDiagnosis: savedCase.primaryDiagnosis,
-      },
-    }).catch(() => {});
+    this.auditLogService
+      .log({
+        action: 'DISCHARGE_EMERGENCY_CASE',
+        entityType: 'EmergencyCase',
+        entityId: savedCase.id,
+        userId: undefined,
+        tenantId,
+        oldValue: { status: oldStatus },
+        newValue: {
+          status: savedCase.status,
+          dischargeTime: savedCase.dischargeTime,
+          primaryDiagnosis: savedCase.primaryDiagnosis,
+        },
+      })
+      .catch(() => {});
 
     return savedCase;
   }

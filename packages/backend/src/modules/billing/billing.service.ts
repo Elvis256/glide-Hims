@@ -11,7 +11,7 @@ import {
   PaymentType,
 } from '../../database/entities/invoice.entity';
 import { Encounter, EncounterStatus } from '../../database/entities/encounter.entity';
-import { Queue, QueueStatus } from '../../database/entities/queue.entity';
+import { Queue, QueueStatus, ServicePoint } from '../../database/entities/queue.entity';
 import { Facility } from '../../database/entities/facility.entity';
 import { ChargeType } from '../../database/entities/invoice.entity';
 import {
@@ -96,10 +96,7 @@ export class BillingService {
    * failure, pricing error, GL crash) would leave a permanent gap in the
    * receipt sequence, which fails URA / tax-audit reviews.
    */
-  private async generateReceiptNumber(
-    manager: EntityManager,
-    tenantId?: string,
-  ): Promise<string> {
+  private async generateReceiptNumber(manager: EntityManager, tenantId?: string): Promise<string> {
     const today = new Date();
     const datePrefix = today.toISOString().slice(0, 10).replace(/-/g, '');
 
@@ -209,7 +206,12 @@ export class BillingService {
               .where('inv.insurance_policy_id = :policyId', { policyId: dto.insurancePolicyId })
               .andWhere('inv.patient_id = :patientId', { patientId: dto.patientId })
               .andWhere('inv.status NOT IN (:...excluded)', {
-                excluded: [InvoiceStatus.DRAFT, InvoiceStatus.CANCELLED, InvoiceStatus.REFUNDED, InvoiceStatus.WRITTEN_OFF],
+                excluded: [
+                  InvoiceStatus.DRAFT,
+                  InvoiceStatus.CANCELLED,
+                  InvoiceStatus.REFUNDED,
+                  InvoiceStatus.WRITTEN_OFF,
+                ],
               })
               .andWhere(tenantId ? 'inv.tenant_id = :tenantId' : '1=1', { tenantId })
               .getRawOne<{ used: string }>();
@@ -257,11 +259,11 @@ export class BillingService {
     }
 
     // Wrap invoice number generation, save, GL posting, and encounter update
-     // in a single transaction. The advisory lock taken by generateInvoiceNumber
-     // (pg_advisory_xact_lock) is released at THIS transaction's commit, which
-     // is also when the invoice row becomes visible — so concurrent createInvoice
-     // calls cannot race to claim the same INV number.
-     const saved = await this.dataSource.transaction(async (manager) => {
+    // in a single transaction. The advisory lock taken by generateInvoiceNumber
+    // (pg_advisory_xact_lock) is released at THIS transaction's commit, which
+    // is also when the invoice row becomes visible — so concurrent createInvoice
+    // calls cannot race to claim the same INV number.
+    const saved = await this.dataSource.transaction(async (manager) => {
       const invoiceNumber = await this.generateInvoiceNumber(manager, tenantId);
 
       const invoice = this.invoiceRepository.create({
@@ -320,7 +322,9 @@ export class BillingService {
     // Best-effort auto-deduction of consumable inventory items linked to
     // each invoiced service. Failures are logged but never block invoicing.
     await this.autoDeductServiceConsumables(saved, dto, userId, tenantId).catch((err) => {
-      this.logger.warn(`Auto-deduct consumables failed for ${saved.invoiceNumber}: ${err?.message || err}`);
+      this.logger.warn(
+        `Auto-deduct consumables failed for ${saved.invoiceNumber}: ${err?.message || err}`,
+      );
     });
 
     // Notify cashiers/billing staff that a new bill is awaiting payment.
@@ -330,13 +334,15 @@ export class BillingService {
       await this.inAppNotifications.notifyInvoiceCreated({
         invoiceId: fullForNotif.id,
         invoiceNumber: fullForNotif.invoiceNumber,
-        patientName: (fullForNotif as any)?.patient?.fullName,
+        patientName: fullForNotif.patient?.fullName,
         totalAmount: Number(fullForNotif.totalAmount) || 0,
-        facilityId: (fullForNotif as any)?.encounter?.facilityId,
+        facilityId: fullForNotif.encounter?.facilityId,
         tenantId,
       });
     } catch (err: any) {
-      this.logger.warn(`notifyInvoiceCreated failed for ${fullForNotif.invoiceNumber}: ${err?.message || err}`);
+      this.logger.warn(
+        `notifyInvoiceCreated failed for ${fullForNotif.invoiceNumber}: ${err?.message || err}`,
+      );
     }
 
     return fullForNotif;
@@ -381,7 +387,9 @@ export class BillingService {
         throw new BadRequestException(`Unit price cannot be negative: ${it.description}`);
       }
       if (it.unitPrice === 0) {
-        warnings.push(`Item "${it.description}" has a zero unit price — it will be rejected on invoice creation.`);
+        warnings.push(
+          `Item "${it.description}" has a zero unit price — it will be rejected on invoice creation.`,
+        );
       }
     }
 
@@ -510,7 +518,10 @@ export class BillingService {
 
     for (const item of dto.items) {
       if (!item.serviceCode) continue;
-      const consumables = await this.servicesService.getConsumablesByCode(item.serviceCode, tenantId);
+      const consumables = await this.servicesService.getConsumablesByCode(
+        item.serviceCode,
+        tenantId,
+      );
       for (const c of consumables) {
         const totalQty = Number(c.quantity) * Number(item.quantity || 1);
         try {
@@ -553,7 +564,10 @@ export class BillingService {
     const items = await this.itemRepository.find({ where: { invoiceId: invoice.id } });
     for (const item of items) {
       if (!item.serviceCode) continue;
-      const consumables = await this.servicesService.getConsumablesByCode(item.serviceCode, tenantId);
+      const consumables = await this.servicesService.getConsumablesByCode(
+        item.serviceCode,
+        tenantId,
+      );
       for (const c of consumables) {
         const totalQty = Number(c.quantity) * Number(item.quantity || 1);
         try {
@@ -702,7 +716,11 @@ export class BillingService {
       }
       // P1: Allow adding items to PARTIALLY_PAID invoices (hospital setting — services
       // happen before payment completes). Aligned with addBillableItem() behavior.
-      if (invoice.status === InvoiceStatus.CANCELLED || invoice.status === InvoiceStatus.REFUNDED || invoice.status === InvoiceStatus.WRITTEN_OFF) {
+      if (
+        invoice.status === InvoiceStatus.CANCELLED ||
+        invoice.status === InvoiceStatus.REFUNDED ||
+        invoice.status === InvoiceStatus.WRITTEN_OFF
+      ) {
         throw new BadRequestException(`Cannot add items to a ${invoice.status} invoice`);
       }
 
@@ -742,12 +760,19 @@ export class BillingService {
         throw new NotFoundException('Invoice not found');
       }
 
-      if (invoice.status === InvoiceStatus.PAID || invoice.status === InvoiceStatus.PARTIALLY_PAID) {
+      if (
+        invoice.status === InvoiceStatus.PAID ||
+        invoice.status === InvoiceStatus.PARTIALLY_PAID
+      ) {
         throw new BadRequestException(
           'Cannot update item price on a paid or partially paid invoice',
         );
       }
-      if (invoice.status === InvoiceStatus.CANCELLED || invoice.status === InvoiceStatus.REFUNDED || invoice.status === InvoiceStatus.WRITTEN_OFF) {
+      if (
+        invoice.status === InvoiceStatus.CANCELLED ||
+        invoice.status === InvoiceStatus.REFUNDED ||
+        invoice.status === InvoiceStatus.WRITTEN_OFF
+      ) {
         throw new BadRequestException(`Cannot update item price on a ${invoice.status} invoice`);
       }
 
@@ -796,7 +821,11 @@ export class BillingService {
           'Cannot remove items from a partially paid invoice — refund or void the existing payments first',
         );
       }
-      if (invoice.status === InvoiceStatus.CANCELLED || invoice.status === InvoiceStatus.REFUNDED || invoice.status === InvoiceStatus.WRITTEN_OFF) {
+      if (
+        invoice.status === InvoiceStatus.CANCELLED ||
+        invoice.status === InvoiceStatus.REFUNDED ||
+        invoice.status === InvoiceStatus.WRITTEN_OFF
+      ) {
         throw new BadRequestException(`Cannot remove items from a ${invoice.status} invoice`);
       }
 
@@ -839,7 +868,10 @@ export class BillingService {
 
     // P0: Use currency.ts add/subtract to avoid floating-point drift on decimal columns
     const subtotal = invoice.items.reduce((sum, item) => add(sum, Number(item.amount)), 0);
-    const totalAmount = subtract(add(subtotal, Number(invoice.taxAmount)), Number(invoice.discountAmount));
+    const totalAmount = subtract(
+      add(subtotal, Number(invoice.taxAmount)),
+      Number(invoice.discountAmount),
+    );
     const balanceDue = subtract(totalAmount, Number(invoice.amountPaid));
 
     const insuranceAmount = invoice.items.reduce(
@@ -894,7 +926,10 @@ export class BillingService {
 
       // P0: Use currency.ts add/subtract to avoid floating-point drift on decimal columns
       const subtotal = invoice.items.reduce((sum, item) => add(sum, Number(item.amount)), 0);
-      const totalAmount = subtract(add(subtotal, Number(invoice.taxAmount)), Number(invoice.discountAmount));
+      const totalAmount = subtract(
+        add(subtotal, Number(invoice.taxAmount)),
+        Number(invoice.discountAmount),
+      );
       const balanceDue = subtract(totalAmount, Number(invoice.amountPaid));
 
       // Calculate insurance breakdown
@@ -954,10 +989,7 @@ export class BillingService {
       // Insurance method validation: an INSURANCE payment must be against an
       // INSURANCE invoice. The reverse (cash on insurance invoice) is allowed
       // for co-payments and patient responsibility settlements.
-      if (
-        dto.method === PaymentMethod.INSURANCE &&
-        invoice.paymentType !== PaymentType.INSURANCE
-      ) {
+      if (dto.method === PaymentMethod.INSURANCE && invoice.paymentType !== PaymentType.INSURANCE) {
         throw new BadRequestException(
           `Cannot record an INSURANCE payment on a ${invoice.paymentType} invoice. Convert the invoice payment type first or use a cash/card method.`,
         );
@@ -1064,9 +1096,7 @@ export class BillingService {
                 (facility?.settings as Record<string, unknown> | undefined)?.prePayMode,
               );
               if (prePayMode) {
-                const lineChargeTypes = new Set(
-                  (invoice.items || []).map((it) => it.chargeType),
-                );
+                const lineChargeTypes = new Set((invoice.items || []).map((it) => it.chargeType));
                 let nextServicePoint: string | null = null;
                 if (lineChargeTypes.has(ChargeType.LAB)) {
                   nextServicePoint = 'laboratory';
@@ -1081,7 +1111,7 @@ export class BillingService {
                     { id: queueEntry.id },
                     {
                       previousServicePoint: queueEntry.servicePoint,
-                      servicePoint: nextServicePoint as any,
+                      servicePoint: nextServicePoint as ServicePoint,
                     },
                   );
                   this.logger.log(
@@ -1186,23 +1216,27 @@ export class BillingService {
       }
 
       // Audit log: every successful payment must be traceable to the cashier.
-      await this.auditLogService.log({
-        userId,
-        action: 'PAYMENT_RECORDED',
-        entityType: 'Payment',
-        entityId: savedPayment.id,
-        newValue: {
-          receiptNumber,
-          invoiceId: invoice.id,
-          amount: Number(savedPayment.amount),
-          method: savedPayment.method,
-          status: savedPayment.status,
-          invoiceFullyPaid,
-        },
-        ...(tenantId ? { tenantId } : {}),
-      }).catch((err) =>
-        this.logger.error(`Audit log failed for recordPayment ${savedPayment.id}: ${err.message}`),
-      );
+      await this.auditLogService
+        .log({
+          userId,
+          action: 'PAYMENT_RECORDED',
+          entityType: 'Payment',
+          entityId: savedPayment.id,
+          newValue: {
+            receiptNumber,
+            invoiceId: invoice.id,
+            amount: Number(savedPayment.amount),
+            method: savedPayment.method,
+            status: savedPayment.status,
+            invoiceFullyPaid,
+          },
+          ...(tenantId ? { tenantId } : {}),
+        })
+        .catch((err) =>
+          this.logger.error(
+            `Audit log failed for recordPayment ${savedPayment.id}: ${err.message}`,
+          ),
+        );
 
       // Notify the assigned doctor that the patient has cleared billing and is
       // now back in the queue. Fire-and-forget; never block the cashier.
@@ -1211,13 +1245,13 @@ export class BillingService {
           const queueEntry = await manager.findOne(Queue, {
             where: { encounterId: invoice.encounterId },
             relations: ['patient'],
-            order: { createdAt: 'DESC' } as any,
+            order: { createdAt: 'DESC' },
           });
           if (queueEntry?.assignedDoctorId) {
             this.inAppNotifications
               .notifyPaymentCleared({
                 doctorUserId: queueEntry.assignedDoctorId,
-                patientName: (queueEntry.patient as any)?.fullName || 'Patient',
+                patientName: queueEntry.patient?.fullName || 'Patient',
                 invoiceNumber: invoice.invoiceNumber,
                 amount: Number(invoice.totalAmount) || 0,
                 facilityId: queueEntry.facilityId,
@@ -1249,7 +1283,13 @@ export class BillingService {
   }
 
   async listPayments(
-    params: { startDate?: string; endDate?: string; method?: string; page?: number; limit?: number },
+    params: {
+      startDate?: string;
+      endDate?: string;
+      method?: string;
+      page?: number;
+      limit?: number;
+    },
     tenantId?: string,
   ): Promise<{ data: Payment[]; total: number }> {
     const page = params.page || 1;
@@ -1401,18 +1441,20 @@ export class BillingService {
       }
 
       // Audit log: payment void is high-sensitivity
-      await this.auditLogService.log({
-        userId,
-        action: 'PAYMENT_VOIDED',
-        entityType: 'Payment',
-        entityId: payment.id,
-        oldValue: { status: PaymentStatus.COMPLETED, amount: Number(payment.amount) },
-        newValue: { status: PaymentStatus.VOIDED, receiptNumber: payment.receiptNumber },
-        reason,
-        ...(tenantId ? { tenantId } : {}),
-      }).catch((err) =>
-        this.logger.error(`Audit log failed for voidPayment ${payment.id}: ${err.message}`),
-      );
+      await this.auditLogService
+        .log({
+          userId,
+          action: 'PAYMENT_VOIDED',
+          entityType: 'Payment',
+          entityId: payment.id,
+          oldValue: { status: PaymentStatus.COMPLETED, amount: Number(payment.amount) },
+          newValue: { status: PaymentStatus.VOIDED, receiptNumber: payment.receiptNumber },
+          reason,
+          ...(tenantId ? { tenantId } : {}),
+        })
+        .catch((err) =>
+          this.logger.error(`Audit log failed for voidPayment ${payment.id}: ${err.message}`),
+        );
 
       return payment;
     });
@@ -1450,9 +1492,7 @@ export class BillingService {
 
       if (!original) throw new NotFoundException('Payment not found');
       if (original.status !== PaymentStatus.COMPLETED) {
-        throw new BadRequestException(
-          `Cannot refund a payment with status '${original.status}'`,
-        );
+        throw new BadRequestException(`Cannot refund a payment with status '${original.status}'`);
       }
       if (original.receivedById === userId) {
         throw new BadRequestException(
@@ -1477,10 +1517,7 @@ export class BillingService {
         })
         .andWhere('p.status = :st', { st: PaymentStatus.REFUNDED })
         .getMany();
-      const alreadyRefunded = priorRefunds.reduce(
-        (sum, p) => sum + Math.abs(Number(p.amount)),
-        0,
-      );
+      const alreadyRefunded = priorRefunds.reduce((sum, p) => sum + Math.abs(Number(p.amount)), 0);
       const remaining = Number(original.amount) - alreadyRefunded;
       if (refundAmount > remaining) {
         throw new BadRequestException(
@@ -1489,7 +1526,10 @@ export class BillingService {
       }
 
       // P0: Use advisory-locked receipt generator instead of Date.now() suffix (collision risk)
-      const refundReceipt = (await this.generateReceiptNumber(manager, tenantId)).replace(/^RCP/, 'REF');
+      const refundReceipt = (await this.generateReceiptNumber(manager, tenantId)).replace(
+        /^RCP/,
+        'REF',
+      );
 
       const refund = manager.create(Payment, {
         receiptNumber: refundReceipt,
@@ -1509,8 +1549,7 @@ export class BillingService {
       // by checking for counter-payments. Mark as REFUNDED (not VOIDED) for clarity.
       if (alreadyRefunded + refundAmount >= Number(original.amount)) {
         original.status = PaymentStatus.REFUNDED;
-        original.notes =
-          `${original.notes || ''}\nFully refunded by ${userId}: ${reason}`.trim();
+        original.notes = `${original.notes || ''}\nFully refunded by ${userId}: ${reason}`.trim();
         await paymentRepo.save(original);
       }
 
@@ -1549,26 +1588,29 @@ export class BillingService {
               tenantId,
             )
             .catch((err) =>
-              this.logger.error(
-                `GL reversal failed for refund ${refundReceipt}: ${err.message}`,
-                { receiptNumber: refundReceipt, refundAmount, error: err.stack },
-              ),
+              this.logger.error(`GL reversal failed for refund ${refundReceipt}: ${err.message}`, {
+                receiptNumber: refundReceipt,
+                refundAmount,
+                error: err.stack,
+              }),
             );
         }
       }
 
-      await this.auditLogService.log({
-        userId,
-        action: 'PAYMENT_REFUNDED',
-        entityType: 'Payment',
-        entityId: original.id,
-        oldValue: { amount: Number(original.amount), receiptNumber: original.receiptNumber },
-        newValue: { refundAmount, refundReceipt, status: original.status },
-        reason,
-        ...(tenantId ? { tenantId } : {}),
-      }).catch((err) =>
-        this.logger.error(`Audit log failed for refundPayment ${original.id}: ${err.message}`),
-      );
+      await this.auditLogService
+        .log({
+          userId,
+          action: 'PAYMENT_REFUNDED',
+          entityType: 'Payment',
+          entityId: original.id,
+          oldValue: { amount: Number(original.amount), receiptNumber: original.receiptNumber },
+          newValue: { refundAmount, refundReceipt, status: original.status },
+          reason,
+          ...(tenantId ? { tenantId } : {}),
+        })
+        .catch((err) =>
+          this.logger.error(`Audit log failed for refundPayment ${original.id}: ${err.message}`),
+        );
 
       return savedRefund;
     });
@@ -1689,7 +1731,13 @@ export class BillingService {
     const cardAmount = byMethod[PaymentMethod.CARD] || 0;
     const bankTransferAmount = byMethod[PaymentMethod.BANK_TRANSFER] || 0;
     const insuranceAmount = byMethod[PaymentMethod.INSURANCE] || 0;
-    const otherAmount = totalCollected - cashAmount - mobileMoneyAmount - cardAmount - bankTransferAmount - insuranceAmount;
+    const otherAmount =
+      totalCollected -
+      cashAmount -
+      mobileMoneyAmount -
+      cardAmount -
+      bankTransferAmount -
+      insuranceAmount;
 
     return {
       totalCollected,
@@ -1779,7 +1827,9 @@ export class BillingService {
     // Filter out cancelled / refunded
     const active = invoices.filter(
       (inv) =>
-        inv.status !== InvoiceStatus.CANCELLED && inv.status !== InvoiceStatus.REFUNDED && inv.status !== InvoiceStatus.WRITTEN_OFF,
+        inv.status !== InvoiceStatus.CANCELLED &&
+        inv.status !== InvoiceStatus.REFUNDED &&
+        inv.status !== InvoiceStatus.WRITTEN_OFF,
     );
 
     let grandTotal = 0;
@@ -1815,7 +1865,7 @@ export class BillingService {
         totalAmount: Number(inv.totalAmount),
         amountPaid: Number(inv.amountPaid),
         balanceDue: Number(inv.balanceDue),
-        paymentType: (inv.paymentType as any) ?? null,
+        paymentType: inv.paymentType ?? null,
         items,
       };
     });
@@ -1907,11 +1957,13 @@ export class BillingService {
       const saved = await manager.save(Invoice, invoice);
 
       // Enhancement B: Reverse consumable inventory deductions for cancelled invoice
-      await this.autoReverseServiceConsumables(invoice, userId || 'system', tenantId).catch((err) => {
-        this.logger.warn(
-          `Auto-reverse consumables failed for cancelled ${invoice.invoiceNumber}: ${err?.message || err}`,
-        );
-      });
+      await this.autoReverseServiceConsumables(invoice, userId || 'system', tenantId).catch(
+        (err) => {
+          this.logger.warn(
+            `Auto-reverse consumables failed for cancelled ${invoice.invoiceNumber}: ${err?.message || err}`,
+          );
+        },
+      );
 
       // Post GL reversal: CR Accounts Receivable, DR Revenue (reverses the original posting)
       if (invoice.encounter?.facilityId && Number(invoice.totalAmount) > 0) {
@@ -1939,18 +1991,24 @@ export class BillingService {
       }
 
       if (userId) {
-        await this.auditLogService.log({
-          userId,
-          action: 'INVOICE_CANCELLED',
-          entityType: 'Invoice',
-          entityId: invoice.id,
-          oldValue: { status: 'previous', totalAmount: Number(invoice.totalAmount), invoiceNumber: invoice.invoiceNumber },
-          newValue: { status: InvoiceStatus.CANCELLED },
-          reason,
-          ...(tenantId ? { tenantId } : {}),
-        }).catch((err) =>
-          this.logger.error(`Audit log failed for cancelInvoice ${invoice.id}: ${err.message}`),
-        );
+        await this.auditLogService
+          .log({
+            userId,
+            action: 'INVOICE_CANCELLED',
+            entityType: 'Invoice',
+            entityId: invoice.id,
+            oldValue: {
+              status: 'previous',
+              totalAmount: Number(invoice.totalAmount),
+              invoiceNumber: invoice.invoiceNumber,
+            },
+            newValue: { status: InvoiceStatus.CANCELLED },
+            reason,
+            ...(tenantId ? { tenantId } : {}),
+          })
+          .catch((err) =>
+            this.logger.error(`Audit log failed for cancelInvoice ${invoice.id}: ${err.message}`),
+          );
       }
 
       return saved;
@@ -2071,18 +2129,24 @@ export class BillingService {
       }
 
       if (userId) {
-        await this.auditLogService.log({
-          userId,
-          action: 'INVOICE_REFUNDED',
-          entityType: 'Invoice',
-          entityId: invoice.id,
-          oldValue: { totalAmount: Number(invoice.totalAmount), amountPaid: refundAmount, invoiceNumber: invoice.invoiceNumber },
-          newValue: { status: InvoiceStatus.REFUNDED, refundAmount },
-          reason: reason || 'No reason provided',
-          ...(tenantId ? { tenantId } : {}),
-        }).catch((err) =>
-          this.logger.error(`Audit log failed for refundInvoice ${invoice.id}: ${err.message}`),
-        );
+        await this.auditLogService
+          .log({
+            userId,
+            action: 'INVOICE_REFUNDED',
+            entityType: 'Invoice',
+            entityId: invoice.id,
+            oldValue: {
+              totalAmount: Number(invoice.totalAmount),
+              amountPaid: refundAmount,
+              invoiceNumber: invoice.invoiceNumber,
+            },
+            newValue: { status: InvoiceStatus.REFUNDED, refundAmount },
+            reason: reason || 'No reason provided',
+            ...(tenantId ? { tenantId } : {}),
+          })
+          .catch((err) =>
+            this.logger.error(`Audit log failed for refundInvoice ${invoice.id}: ${err.message}`),
+          );
       }
 
       return saved;
@@ -2140,7 +2204,7 @@ export class BillingService {
             balanceDue: 0,
             status: InvoiceStatus.PENDING,
             ...(params.insurancePolicyId ? { insurancePolicyId: params.insurancePolicyId } : {}),
-            ...(params.paymentType ? { paymentType: params.paymentType as any } : {}),
+            ...(params.paymentType ? { paymentType: params.paymentType as PaymentType } : {}),
             ...(tenantId ? { tenantId } : {}),
           }),
         );
@@ -2249,7 +2313,7 @@ export class BillingService {
         if (!invoice.insurancePolicyId) {
           await manager.update(Invoice, invoice.id, {
             insurancePolicyId: encounter.insurancePolicyId,
-            paymentType: 'insurance' as any,
+            paymentType: PaymentType.INSURANCE,
           });
         }
       }
@@ -2280,24 +2344,24 @@ export class BillingService {
       await this.recalculateInvoice(invoice.id, tenantId);
 
       // P1: Audit log for billable item additions
-      this.auditLogService.log({
-        userId,
-        action: 'BILLABLE_ITEM_ADDED',
-        entityType: 'InvoiceItem',
-        entityId: item.id,
-        newValue: {
-          invoiceId: invoice.id,
-          invoiceNumber: invoice.invoiceNumber,
-          serviceCode: params.serviceCode,
-          description: params.description,
-          quantity: params.quantity,
-          unitPrice: resolvedUnitPrice,
-          amount,
-        },
-        ...(tenantId ? { tenantId } : {}),
-      }).catch((err) =>
-        this.logger.error(`Audit log failed for addBillableItem: ${err.message}`),
-      );
+      this.auditLogService
+        .log({
+          userId,
+          action: 'BILLABLE_ITEM_ADDED',
+          entityType: 'InvoiceItem',
+          entityId: item.id,
+          newValue: {
+            invoiceId: invoice.id,
+            invoiceNumber: invoice.invoiceNumber,
+            serviceCode: params.serviceCode,
+            description: params.description,
+            quantity: params.quantity,
+            unitPrice: resolvedUnitPrice,
+            amount,
+          },
+          ...(tenantId ? { tenantId } : {}),
+        })
+        .catch((err) => this.logger.error(`Audit log failed for addBillableItem: ${err.message}`));
 
       return item;
     });
@@ -2333,12 +2397,13 @@ export class BillingService {
       });
       if (!invoice) return false;
       const terminalStatuses: InvoiceStatus[] = [
-        InvoiceStatus.PAID, InvoiceStatus.CANCELLED, InvoiceStatus.REFUNDED, InvoiceStatus.WRITTEN_OFF,
+        InvoiceStatus.PAID,
+        InvoiceStatus.CANCELLED,
+        InvoiceStatus.REFUNDED,
+        InvoiceStatus.WRITTEN_OFF,
       ];
       if (terminalStatuses.includes(invoice.status)) {
-        throw new BadRequestException(
-          `Cannot modify items on a ${invoice.status} invoice`,
-        );
+        throw new BadRequestException(`Cannot modify items on a ${invoice.status} invoice`);
       }
 
       const oldAmount = existing.amount;
@@ -2357,17 +2422,23 @@ export class BillingService {
 
       // P1: Audit log
       if (userId) {
-        this.auditLogService.log({
-          userId,
-          action: 'BILLABLE_ITEM_UPDATED',
-          entityType: 'InvoiceItem',
-          entityId: existing.id,
-          oldValue: { amount: Number(oldAmount) },
-          newValue: { quantity: existing.quantity, unitPrice: existing.unitPrice, amount: existing.amount },
-          ...(tenantId ? { tenantId } : {}),
-        }).catch((err) =>
-          this.logger.error(`Audit log failed for updateBillableItem: ${err.message}`),
-        );
+        this.auditLogService
+          .log({
+            userId,
+            action: 'BILLABLE_ITEM_UPDATED',
+            entityType: 'InvoiceItem',
+            entityId: existing.id,
+            oldValue: { amount: Number(oldAmount) },
+            newValue: {
+              quantity: existing.quantity,
+              unitPrice: existing.unitPrice,
+              amount: existing.amount,
+            },
+            ...(tenantId ? { tenantId } : {}),
+          })
+          .catch((err) =>
+            this.logger.error(`Audit log failed for updateBillableItem: ${err.message}`),
+          );
       }
 
       return true;
@@ -2395,12 +2466,13 @@ export class BillingService {
       });
       if (!invoice) return false;
       const terminalStatuses: InvoiceStatus[] = [
-        InvoiceStatus.PAID, InvoiceStatus.CANCELLED, InvoiceStatus.REFUNDED, InvoiceStatus.WRITTEN_OFF,
+        InvoiceStatus.PAID,
+        InvoiceStatus.CANCELLED,
+        InvoiceStatus.REFUNDED,
+        InvoiceStatus.WRITTEN_OFF,
       ];
       if (terminalStatuses.includes(invoice.status)) {
-        throw new BadRequestException(
-          `Cannot remove items from a ${invoice.status} invoice`,
-        );
+        throw new BadRequestException(`Cannot remove items from a ${invoice.status} invoice`);
       }
 
       const invoiceId = existing.invoiceId;
@@ -2415,21 +2487,23 @@ export class BillingService {
 
       // P1: Audit log
       if (userId) {
-        this.auditLogService.log({
-          userId,
-          action: 'BILLABLE_ITEM_REMOVED',
-          entityType: 'InvoiceItem',
-          entityId: removedItem.id,
-          oldValue: {
-            invoiceId,
-            serviceCode: removedItem.serviceCode,
-            description: removedItem.description,
-            amount: Number(removedItem.amount),
-          },
-          ...(tenantId ? { tenantId } : {}),
-        }).catch((err) =>
-          this.logger.error(`Audit log failed for removeBillableItem: ${err.message}`),
-        );
+        this.auditLogService
+          .log({
+            userId,
+            action: 'BILLABLE_ITEM_REMOVED',
+            entityType: 'InvoiceItem',
+            entityId: removedItem.id,
+            oldValue: {
+              invoiceId,
+              serviceCode: removedItem.serviceCode,
+              description: removedItem.description,
+              amount: Number(removedItem.amount),
+            },
+            ...(tenantId ? { tenantId } : {}),
+          })
+          .catch((err) =>
+            this.logger.error(`Audit log failed for removeBillableItem: ${err.message}`),
+          );
       }
 
       return true;
@@ -2532,11 +2606,15 @@ export class BillingService {
         .innerJoin('item.invoice', 'inv')
         .where('item.invoice_id IN (:...ids)', { ids: invoiceIds })
         .andWhere('inv.status NOT IN (:...excludedStatuses)', {
-          excludedStatuses: [InvoiceStatus.CANCELLED, InvoiceStatus.REFUNDED, InvoiceStatus.WRITTEN_OFF],
+          excludedStatuses: [
+            InvoiceStatus.CANCELLED,
+            InvoiceStatus.REFUNDED,
+            InvoiceStatus.WRITTEN_OFF,
+          ],
         })
         .getMany();
 
-      const breakdown = { opd: 0, lab: 0, pharmacy: 0, imaging: 0, procedures: 0, other: 0 };
+      const breakdown: any = { opd: 0, lab: 0, pharmacy: 0, imaging: 0, procedures: 0, other: 0 };
       for (const item of items) {
         const amount = Number(item.amount) || Number(item.quantity) * Number(item.unitPrice);
         const chargeType = (item.chargeType || 'other').toLowerCase();
@@ -2607,9 +2685,7 @@ export class BillingService {
       const dueDate = inv.dueDate ? new Date(inv.dueDate) : new Date(inv.createdAt);
       if (!inv.dueDate) dueDate.setDate(dueDate.getDate() + 30); // Default 30-day terms
       const agingBase = inv.dueDate ? new Date(inv.dueDate) : new Date(inv.createdAt);
-      const aging = Math.floor(
-        (now.getTime() - agingBase.getTime()) / (1000 * 60 * 60 * 24),
-      );
+      const aging = Math.floor((now.getTime() - agingBase.getTime()) / (1000 * 60 * 60 * 24));
 
       return {
         id: inv.id,
@@ -2820,18 +2896,24 @@ export class BillingService {
         }
       }
 
-      await this.auditLogService.log({
-        userId,
-        action: 'INVOICE_WRITTEN_OFF',
-        entityType: 'Invoice',
-        entityId: invoice.id,
-        oldValue: { balanceDue: writeOffAmount, status: 'previous', invoiceNumber: invoice.invoiceNumber },
-        newValue: { status: InvoiceStatus.WRITTEN_OFF, writeOffAmount, glPosted },
-        reason,
-        ...(tenantId ? { tenantId } : {}),
-      }).catch((err) =>
-        this.logger.error(`Audit log failed for writeOffInvoice ${invoice.id}: ${err.message}`),
-      );
+      await this.auditLogService
+        .log({
+          userId,
+          action: 'INVOICE_WRITTEN_OFF',
+          entityType: 'Invoice',
+          entityId: invoice.id,
+          oldValue: {
+            balanceDue: writeOffAmount,
+            status: 'previous',
+            invoiceNumber: invoice.invoiceNumber,
+          },
+          newValue: { status: InvoiceStatus.WRITTEN_OFF, writeOffAmount, glPosted },
+          reason,
+          ...(tenantId ? { tenantId } : {}),
+        })
+        .catch((err) =>
+          this.logger.error(`Audit log failed for writeOffInvoice ${invoice.id}: ${err.message}`),
+        );
 
       return saved;
     });
@@ -2849,7 +2931,13 @@ export class BillingService {
     const invoice = payment.invoice;
 
     // Enhancement C: Load facility for URA-compliant receipt fields (name, address, TIN, logo)
-    let facility: { name?: string; address?: string; tin?: string; logoUrl?: string; phone?: string } = {};
+    let facility: {
+      name?: string;
+      address?: string;
+      tin?: string;
+      logoUrl?: string;
+      phone?: string;
+    } = {};
     const facilityId = invoice?.encounter?.facilityId;
     if (facilityId) {
       const fac = await this.dataSource.getRepository(Facility).findOne({

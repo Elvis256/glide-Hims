@@ -31,6 +31,25 @@ import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { DocumentCategory } from '../../database/entities/patient-document.entity';
 import { validateFileContent } from '../../common/file-validation';
 
+interface JwtUser {
+  id: string;
+  sub: string;
+  username: string;
+  email: string;
+  tenantId?: string;
+  facilityId?: string;
+  roles: string[];
+  isSystemAdmin: boolean;
+  permissions?: string[];
+  impersonating?: boolean;
+  originalTenantId?: string | null;
+  impersonationGrantId?: string;
+}
+
+interface AuthenticatedRequest extends Request {
+  user?: JwtUser;
+}
+
 @ApiTags('patients')
 @Controller('patients')
 export class PatientsController {
@@ -39,9 +58,9 @@ export class PatientsController {
   @Post()
   @AuthWithPermissions('patients.create')
   @ApiOperation({ summary: 'Register new patient' })
-  async create(@Body() dto: CreatePatientDto, @Req() req: Request) {
-    const userId = (req as any).user?.id;
-    const tenantId = (req as any).user?.tenantId;
+  async create(@Body() dto: CreatePatientDto, @Req() req: AuthenticatedRequest) {
+    const userId = req.user!.id;
+    const tenantId = req.user!.tenantId;
     const patient = await this.patientsService.create(dto, userId, tenantId);
     return { message: 'Patient registered', data: patient };
   }
@@ -49,17 +68,17 @@ export class PatientsController {
   @Post('check-duplicates')
   @AuthWithPermissions('patients.read')
   @ApiOperation({ summary: 'Check for duplicate patients before registration' })
-  async checkDuplicates(@Body() dto: CreatePatientDto, @Req() req: Request) {
-    return this.patientsService.checkDuplicates(dto, (req as any).user?.tenantId);
+  async checkDuplicates(@Body() dto: CreatePatientDto, @Req() req: AuthenticatedRequest) {
+    return this.patientsService.checkDuplicates(dto, req.user!.tenantId);
   }
 
   @Get()
   @AuthWithPermissions('patients.read')
   @ApiOperation({ summary: 'Search patients' })
   @ApiQuery({ name: 'facilityId', required: false, description: 'Filter by facility' })
-  async findAll(@Query() query: PatientSearchDto, @Req() req: Request) {
-    const tenantId = (req as any).user?.tenantId;
-    const facilityId = (req as any).query?.facilityId || (req as any).user?.facilityId;
+  async findAll(@Query() query: PatientSearchDto, @Req() req: AuthenticatedRequest) {
+    const tenantId = req.user!.tenantId;
+    const facilityId = (req.query?.facilityId as string | undefined) || req.user!.facilityId;
     return this.patientsService.findAll(query, tenantId, facilityId);
   }
 
@@ -67,8 +86,8 @@ export class PatientsController {
   @Get('document-categories')
   @AuthWithPermissions('patients.read')
   @ApiOperation({ summary: 'Get available document categories for current user' })
-  async getDocumentCategories(@Req() req: Request) {
-    const userRoles = (req as any).user?.roles || [];
+  async getDocumentCategories(@Req() req: AuthenticatedRequest) {
+    const userRoles = req.user!.roles || [];
     const categories = this.patientsService.getAccessibleCategories(userRoles);
     return {
       data: categories.map((cat) => ({
@@ -81,20 +100,20 @@ export class PatientsController {
   @Get('mrn/:mrn')
   @AuthWithPermissions('patients.read')
   @ApiOperation({ summary: 'Get patient by MRN' })
-  async findByMRN(@Param('mrn') mrn: string, @Req() req: Request) {
-    const tenantId = (req as any).user?.tenantId;
+  async findByMRN(@Param('mrn') mrn: string, @Req() req: AuthenticatedRequest) {
+    const tenantId = req.user!.tenantId;
     return this.patientsService.findByMRN(mrn, tenantId);
   }
 
   @Get('documents/:documentId')
   @AuthWithPermissions('patients.read')
   @ApiOperation({ summary: 'Get document metadata' })
-  async getDocument(@Param('documentId', ParseUUIDPipe) documentId: string, @Req() req: Request) {
-    const userRoles = (req as any).user?.roles || [];
+  async getDocument(@Param('documentId', ParseUUIDPipe) documentId: string, @Req() req: AuthenticatedRequest) {
+    const userRoles = req.user!.roles || [];
     const document = await this.patientsService.getDocument(
       documentId,
       userRoles,
-      (req as any).user?.tenantId,
+      req.user!.tenantId,
     );
     return { data: document };
   }
@@ -105,14 +124,14 @@ export class PatientsController {
   async downloadDocument(
     @Param('documentId', ParseUUIDPipe) documentId: string,
     @Query('inline') inline: string | undefined,
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
     @Res() res: Response,
   ) {
-    const userRoles = (req as any).user?.roles || [];
+    const userRoles = req.user!.roles || [];
     const document = await this.patientsService.getDocument(
       documentId,
       userRoles,
-      (req as any).user?.tenantId,
+      req.user!.tenantId,
     );
 
     if (!existsSync(document.filePath)) {
@@ -134,8 +153,7 @@ export class PatientsController {
       .replace(/\.{2,}/g, '.') // collapse consecutive dots
       .slice(0, 200); // cap length
 
-    const disposition =
-      inline === '1' || inline === 'true' ? 'inline' : 'attachment';
+    const disposition = inline === '1' || inline === 'true' ? 'inline' : 'attachment';
     res.setHeader('Content-Type', document.fileType || 'application/octet-stream');
     res.setHeader('Content-Disposition', `${disposition}; filename="${safeName}"`);
 
@@ -148,15 +166,15 @@ export class PatientsController {
   @ApiOperation({ summary: 'Delete patient document' })
   async deleteDocument(
     @Param('documentId', ParseUUIDPipe) documentId: string,
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
   ) {
-    const userId = (req as any).user?.id;
-    const userRoles = (req as any).user?.roles || [];
+    const userId = req.user!.id;
+    const userRoles = req.user!.roles || [];
     await this.patientsService.deleteDocument(
       documentId,
       userId,
       userRoles,
-      (req as any).user?.tenantId,
+      req.user!.tenantId,
     );
     return { message: 'Document deleted' };
   }
@@ -166,18 +184,18 @@ export class PatientsController {
   @Get('notes/:noteId')
   @AuthWithPermissions('patients.read')
   @ApiOperation({ summary: 'Get note by ID' })
-  async getNote(@Param('noteId', ParseUUIDPipe) noteId: string, @Req() req: Request) {
-    const note = await this.patientsService.getNote(noteId, (req as any).user?.tenantId);
+  async getNote(@Param('noteId', ParseUUIDPipe) noteId: string, @Req() req: AuthenticatedRequest) {
+    const note = await this.patientsService.getNote(noteId, req.user!.tenantId);
     return { data: note };
   }
 
   @Delete('notes/:noteId')
   @AuthWithPermissions('patients.update')
   @ApiOperation({ summary: 'Delete patient note' })
-  async deleteNote(@Param('noteId', ParseUUIDPipe) noteId: string, @Req() req: Request) {
-    const userId = (req as any).user?.id;
-    const userRoles = (req as any).user?.roles || [];
-    await this.patientsService.deleteNote(noteId, userId, userRoles, (req as any).user?.tenantId);
+  async deleteNote(@Param('noteId', ParseUUIDPipe) noteId: string, @Req() req: AuthenticatedRequest) {
+    const userId = req.user!.id;
+    const userRoles = req.user!.roles || [];
+    await this.patientsService.deleteNote(noteId, userId, userRoles, req.user!.tenantId);
     return { message: 'Note deleted' };
   }
 
@@ -185,8 +203,8 @@ export class PatientsController {
   @Get(':id')
   @AuthWithPermissions('patients.read')
   @ApiOperation({ summary: 'Get patient by ID' })
-  async findOne(@Param('id', ParseUUIDPipe) id: string, @Req() req: Request) {
-    const tenantId = (req as any).user?.tenantId;
+  async findOne(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthenticatedRequest) {
+    const tenantId = req.user!.tenantId;
     return this.patientsService.findOne(id, tenantId);
   }
 
@@ -195,12 +213,8 @@ export class PatientsController {
   @ApiOperation({
     summary: 'Generate a printable PNG QR card for the patient (encodes patient portal deeplink)',
   })
-  async qrCard(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Req() req: Request,
-    @Res() res: Response,
-  ) {
-    const tenantId = (req as any).user?.tenantId;
+  async qrCard(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthenticatedRequest, @Res() res: Response) {
+    const tenantId = req.user!.tenantId;
     const patient = await this.patientsService.findOne(id, tenantId);
     // Lazy require keeps qrcode out of the cold-start path for non-QR routes.
     const QR = await import('qrcode');
@@ -214,10 +228,7 @@ export class PatientsController {
       width: 512,
     });
     res.setHeader('Content-Type', 'image/png');
-    res.setHeader(
-      'Content-Disposition',
-      `inline; filename="qr-card-${patient.mrn}.png"`,
-    );
+    res.setHeader('Content-Disposition', `inline; filename="qr-card-${patient.mrn}.png"`);
     res.setHeader('Cache-Control', 'private, max-age=300');
     return res.send(png);
   }
@@ -228,17 +239,17 @@ export class PatientsController {
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdatePatientDto,
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
   ) {
-    const patient = await this.patientsService.update(id, dto, (req as any).user?.tenantId);
+    const patient = await this.patientsService.update(id, dto, req.user!.tenantId);
     return { message: 'Patient updated', data: patient };
   }
 
   @Delete(':id')
   @AuthWithPermissions('patients.delete')
   @ApiOperation({ summary: 'Delete patient (soft delete)' })
-  async remove(@Param('id', ParseUUIDPipe) id: string, @Req() req: Request) {
-    await this.patientsService.remove(id, (req as any).user?.tenantId);
+  async remove(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthenticatedRequest) {
+    await this.patientsService.remove(id, req.user!.tenantId);
     return { message: 'Patient deleted' };
   }
 
@@ -265,7 +276,7 @@ export class PatientsController {
     @Param('id', ParseUUIDPipe) patientId: string,
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: UploadDocumentDto,
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
   ) {
     // Validate file content matches declared MIME type (prevent disguised executables)
     if (file?.path) {
@@ -274,13 +285,13 @@ export class PatientsController {
         throw new BadRequestException('File content does not match declared type');
       }
     }
-    const userId = (req as any).user?.id;
+    const userId = req.user!.id;
     const document = await this.patientsService.uploadDocument(
       patientId,
       file,
       dto,
       userId,
-      (req as any).user?.tenantId,
+      req.user!.tenantId,
     );
     return { message: 'Document uploaded', data: document };
   }
@@ -292,14 +303,14 @@ export class PatientsController {
   async getDocuments(
     @Param('id', ParseUUIDPipe) patientId: string,
     @Query('category') category: DocumentCategory,
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
   ) {
-    const userRoles = (req as any).user?.roles || [];
+    const userRoles = req.user!.roles || [];
     const documents = await this.patientsService.getDocuments(
       patientId,
       userRoles,
       category,
-      (req as any).user?.tenantId,
+      req.user!.tenantId,
     );
     return { data: documents };
   }
@@ -307,12 +318,12 @@ export class PatientsController {
   @Get(':id/documents/stats')
   @AuthWithPermissions('patients.read')
   @ApiOperation({ summary: 'Get document statistics for patient' })
-  async getDocumentStats(@Param('id', ParseUUIDPipe) patientId: string, @Req() req: Request) {
-    const userRoles = (req as any).user?.roles || [];
+  async getDocumentStats(@Param('id', ParseUUIDPipe) patientId: string, @Req() req: AuthenticatedRequest) {
+    const userRoles = req.user!.roles || [];
     const stats = await this.patientsService.getDocumentStats(
       patientId,
       userRoles,
-      (req as any).user?.tenantId,
+      req.user!.tenantId,
     );
     return { data: stats };
   }
@@ -325,14 +336,14 @@ export class PatientsController {
   async createNote(
     @Param('id', ParseUUIDPipe) patientId: string,
     @Body() dto: CreateNoteDto,
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
   ) {
-    const userId = (req as any).user?.id;
+    const userId = req.user!.id;
     const note = await this.patientsService.createNote(
       patientId,
       dto,
       userId,
-      (req as any).user?.tenantId,
+      req.user!.tenantId,
     );
     return { message: 'Note created', data: note };
   }
@@ -340,8 +351,8 @@ export class PatientsController {
   @Get(':id/notes')
   @AuthWithPermissions('patients.read')
   @ApiOperation({ summary: 'Get patient notes' })
-  async getNotes(@Param('id', ParseUUIDPipe) patientId: string, @Req() req: Request) {
-    const notes = await this.patientsService.getNotes(patientId, (req as any).user?.tenantId);
+  async getNotes(@Param('id', ParseUUIDPipe) patientId: string, @Req() req: AuthenticatedRequest) {
+    const notes = await this.patientsService.getNotes(patientId, req.user!.tenantId);
     return { data: notes };
   }
 
@@ -354,10 +365,10 @@ export class PatientsController {
     @Param('primaryId', ParseUUIDPipe) primaryId: string,
     @Param('secondaryId', ParseUUIDPipe) secondaryId: string,
     @Body() body: MergePatientDto,
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
   ) {
-    const userId = (req as any).user?.id;
-    const tenantId = (req as any).user?.tenantId;
+    const userId = req.user!.id;
+    const tenantId = req.user!.tenantId;
     if (!tenantId) throw new BadRequestException('Tenant ID is required');
     const result = await this.patientsService.mergePatients(
       primaryId,
@@ -372,8 +383,8 @@ export class PatientsController {
   @Get('merges/history')
   @AuthWithPermissions('patients.read')
   @ApiOperation({ summary: 'Get merge history' })
-  async getMergeHistory(@Req() req: Request) {
-    const tenantId = (req as any).user?.tenantId;
+  async getMergeHistory(@Req() req: AuthenticatedRequest) {
+    const tenantId = req.user!.tenantId;
     if (!tenantId) throw new BadRequestException('Tenant ID is required');
     return this.patientsService.getMergeHistory(tenantId);
   }
@@ -386,12 +397,12 @@ export class PatientsController {
   async linkUser(
     @Param('id', ParseUUIDPipe) patientId: string,
     @Body() body: LinkUserDto,
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
   ) {
     const patient = await this.patientsService.linkUser(
       patientId,
       body.userId,
-      (req as any).user?.tenantId,
+      req.user!.tenantId,
     );
     return { message: 'User linked to patient successfully', data: patient };
   }
@@ -399,16 +410,16 @@ export class PatientsController {
   @Delete(':id/unlink-user')
   @AuthWithPermissions('patients.update')
   @ApiOperation({ summary: 'Unlink user account from patient' })
-  async unlinkUser(@Param('id', ParseUUIDPipe) patientId: string, @Req() req: Request) {
-    const patient = await this.patientsService.unlinkUser(patientId, (req as any).user?.tenantId);
+  async unlinkUser(@Param('id', ParseUUIDPipe) patientId: string, @Req() req: AuthenticatedRequest) {
+    const patient = await this.patientsService.unlinkUser(patientId, req.user!.tenantId);
     return { message: 'User unlinked from patient', data: patient };
   }
 
   @Get(':id/linked-user')
   @AuthWithPermissions('patients.read')
   @ApiOperation({ summary: 'Get linked user information for patient' })
-  async getLinkedUser(@Param('id', ParseUUIDPipe) patientId: string, @Req() req: Request) {
-    const result = await this.patientsService.getLinkedUser(patientId, (req as any).user?.tenantId);
+  async getLinkedUser(@Param('id', ParseUUIDPipe) patientId: string, @Req() req: AuthenticatedRequest) {
+    const result = await this.patientsService.getLinkedUser(patientId, req.user!.tenantId);
     return { data: result };
   }
 }

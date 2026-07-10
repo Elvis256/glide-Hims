@@ -56,10 +56,7 @@ export class LicenseBootstrapService implements OnApplicationBootstrap {
     }
 
     // Verify HMAC signature before trusting the file
-    const secretKey =
-      data.secretKey ||
-      this.configService.get<string>('LICENSE_SECRET_KEY') ||
-      '';
+    const secretKey = data.secretKey || this.configService.get<string>('LICENSE_SECRET_KEY') || '';
     if (!this.verifyFileSignature(data, secretKey)) {
       this.logger.error('License file signature verification failed — file may be tampered');
       return;
@@ -88,9 +85,7 @@ export class LicenseBootstrapService implements OnApplicationBootstrap {
           `License updated from offline file: ${data.licenseKey} (new expiry: ${data.expiresAt})`,
         );
       } else {
-        this.logger.debug(
-          `License ${data.licenseKey} already up-to-date in local DB — skipping`,
-        );
+        this.logger.debug(`License ${data.licenseKey} already up-to-date in local DB — skipping`);
       }
       return;
     }
@@ -117,10 +112,7 @@ export class LicenseBootstrapService implements OnApplicationBootstrap {
     this.logger.log(`License bootstrapped from offline file: ${data.licenseKey}`);
   }
 
-  private verifyFileSignature(
-    data: Record<string, any>,
-    secretKey: string,
-  ): boolean {
+  private verifyFileSignature(data: Record<string, any>, secretKey: string): boolean {
     if (!secretKey || !data.signature) return false;
 
     const payload = JSON.stringify({
@@ -130,20 +122,12 @@ export class LicenseBootstrapService implements OnApplicationBootstrap {
       users: data.maxUsers,
       facilities: data.maxFacilities,
       status: data.status,
-      expiresAt: data.expiresAt
-        ? new Date(data.expiresAt).toISOString()
-        : undefined,
+      expiresAt: data.expiresAt ? new Date(data.expiresAt).toISOString() : undefined,
     });
 
-    const expected = crypto
-      .createHmac('sha256', secretKey)
-      .update(payload)
-      .digest('hex');
+    const expected = crypto.createHmac('sha256', secretKey).update(payload).digest('hex');
 
     if (expected.length !== data.signature.length) return false;
-    return crypto.timingSafeEqual(
-      Buffer.from(expected),
-      Buffer.from(data.signature),
-    );
+    return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(data.signature));
   }
 }

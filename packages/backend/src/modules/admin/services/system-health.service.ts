@@ -53,7 +53,10 @@ export class SystemHealthService {
       try {
         await collector();
       } catch (err) {
-        this.logger.error(`Metric collection error: ${(err as Error).message}`, (err as Error).stack);
+        this.logger.error(
+          `Metric collection error: ${(err as Error).message}`,
+          (err as Error).stack,
+        );
       }
     }
 
@@ -61,7 +64,10 @@ export class SystemHealthService {
     try {
       await this.checkAlertRules();
     } catch (err) {
-      this.logger.error(`Alert rule evaluation error: ${(err as Error).message}`, (err as Error).stack);
+      this.logger.error(
+        `Alert rule evaluation error: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
     }
   }
 
@@ -77,7 +83,10 @@ export class SystemHealthService {
       });
       this.logger.log(`Purged ${result.affected ?? 0} old system metrics (older than 7 days)`);
     } catch (err) {
-      this.logger.error(`Failed to purge old metrics: ${(err as Error).message}`, (err as Error).stack);
+      this.logger.error(
+        `Failed to purge old metrics: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
     }
   }
 
@@ -142,7 +151,7 @@ export class SystemHealthService {
   private async collectDiskMetric(recordedAt: Date): Promise<void> {
     try {
       const { execSync } = require('child_process');
-      const output = execSync("df -B1 / | tail -1", { encoding: 'utf8', timeout: 5000 });
+      const output = execSync('df -B1 / | tail -1', { encoding: 'utf8', timeout: 5000 });
       const parts = output.trim().split(/\s+/);
       // df output: Filesystem 1B-blocks Used Available Use% Mounted
       if (parts.length >= 5) {
@@ -196,7 +205,10 @@ export class SystemHealthService {
           idleConnections: parseInt(stats.idle_connections, 10) || 0,
           totalConnections,
           maxConnections,
-          utilizationPercent: maxConnections === 0 ? 0 : Math.round((totalConnections / maxConnections) * 10000) / 100,
+          utilizationPercent:
+            maxConnections === 0
+              ? 0
+              : Math.round((totalConnections / maxConnections) * 10000) / 100,
         },
       });
     } catch (err) {
@@ -275,14 +287,17 @@ export class SystemHealthService {
     const since = new Date(Date.now() - hours * 60 * 60 * 1000);
 
     // Fetch the latest metric for each metric type
-    const latestMetrics = await this.dataSource.query(`
+    const latestMetrics = await this.dataSource.query(
+      `
       SELECT DISTINCT ON (metric_type)
         id, metric_type AS "metricType", value, unit, metadata, recorded_at AS "recordedAt"
       FROM system_metrics
       WHERE recorded_at >= $1
         AND deleted_at IS NULL
       ORDER BY metric_type, recorded_at DESC
-    `, [since]);
+    `,
+      [since],
+    );
 
     const metricsMap: Record<string, any> = {};
     for (const m of latestMetrics) {
@@ -324,7 +339,7 @@ export class SystemHealthService {
       .getMany();
 
     return rows.map((r) => ({
-      value: parseFloat(r.value as any),
+      value: parseFloat(String(r.value)),
       unit: r.unit,
       metadata: r.metadata,
       recordedAt: r.recordedAt,
@@ -395,7 +410,7 @@ export class SystemHealthService {
         patients: patientCount,
         encounters: encounterCount,
         estimatedStorageBytes: storageEstimateBytes,
-        estimatedStorageMB: Math.round(storageEstimateBytes / (1024 * 1024) * 100) / 100,
+        estimatedStorageMB: Math.round((storageEstimateBytes / (1024 * 1024)) * 100) / 100,
       },
       createdAt: tenant.created_at,
     };
@@ -455,8 +470,8 @@ export class SystemHealthService {
 
     if (!latestMetric) return;
 
-    const value = parseFloat(latestMetric.value as any);
-    const threshold = parseFloat(rule.threshold as any);
+    const value = parseFloat(String(latestMetric.value));
+    const threshold = parseFloat(String(rule.threshold));
     const breached = this.isThresholdBreached(value, rule.operator, threshold);
 
     if (!breached) return;
@@ -549,21 +564,18 @@ export class SystemHealthService {
       ]);
 
       if (adminUserIds.length > 0) {
-        await this.notificationsService.notifyMany(
-          adminUserIds,
-          {
-            type: InAppNotificationType.GENERAL,
-            title: `System Alert: ${rule.name}`,
-            message: alert.message,
-            metadata: {
-              referenceType: 'system_alert',
-              referenceId: alert.id,
-              severity: alert.severity,
-              metricType: alert.metricType,
-              metricValue: alert.metricValue,
-            },
+        await this.notificationsService.notifyMany(adminUserIds, {
+          type: InAppNotificationType.GENERAL,
+          title: `System Alert: ${rule.name}`,
+          message: alert.message,
+          metadata: {
+            referenceType: 'system_alert',
+            referenceId: alert.id,
+            severity: alert.severity,
+            metricType: alert.metricType,
+            metricValue: alert.metricValue,
           },
-        );
+        });
       }
     } catch (err) {
       this.logger.warn(`Failed to send in-app alert notifications: ${(err as Error).message}`);

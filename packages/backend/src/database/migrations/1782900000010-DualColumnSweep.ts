@@ -50,7 +50,9 @@ export class DualColumnSweep1782900000010 implements MigrationInterface {
         );
       } else {
         // Snake column missing entirely — rename camel to snake.
-        await queryRunner.query(`ALTER TABLE "${p.table}" RENAME COLUMN "${p.camel}" TO "${p.snake}"`);
+        await queryRunner.query(
+          `ALTER TABLE "${p.table}" RENAME COLUMN "${p.camel}" TO "${p.snake}"`,
+        );
         continue;
       }
 

@@ -27,7 +27,11 @@ export class ClientHealthScore {
   @Column({ type: 'integer', default: 0 }) deploymentScore: number;
 
   @Column({ type: 'jsonb', nullable: true }) componentDetails: Record<string, any> | null;
-  @Column({ type: 'jsonb', nullable: true }) alerts: Array<{ level: string; message: string; createdAt: string }> | null;
+  @Column({ type: 'jsonb', nullable: true }) alerts: Array<{
+    level: string;
+    message: string;
+    createdAt: string;
+  }> | null;
 
   @Column({ type: 'timestamp', nullable: true }) lastCalculatedAt: Date | null;
 

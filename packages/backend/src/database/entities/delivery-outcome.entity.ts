@@ -24,6 +24,7 @@ export enum BabyStatus {
 }
 
 @Entity('delivery_outcomes')
+@Index(['labourRecordId'])
 export class DeliveryOutcome {
   @PrimaryGeneratedColumn('uuid')
   id: string;

@@ -7,7 +7,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, Like, DataSource, EntityManager, ILike, In } from 'typeorm';
+import { Repository, Between, Like, DataSource, EntityManager, ILike, In, DeepPartial } from 'typeorm';
 import { LabTest, LabTestStatus } from '../../database/entities/lab-test.entity';
 import { LabSample, SampleStatus } from '../../database/entities/lab-sample.entity';
 import { LabResult, ResultStatus, AbnormalFlag } from '../../database/entities/lab-result.entity';
@@ -113,8 +113,8 @@ export class LabService {
 
   private validateDateRange(fromDate?: string | Date, toDate?: string | Date): void {
     if (!fromDate || !toDate) return;
-    const f = new Date(fromDate as any).getTime();
-    const t = new Date(toDate as any).getTime();
+    const f = fromDate instanceof Date ? fromDate.getTime() : new Date(fromDate).getTime();
+    const t = toDate instanceof Date ? toDate.getTime() : new Date(toDate).getTime();
     if (!Number.isFinite(f) || !Number.isFinite(t)) return;
     if (f > t) {
       throw new BadRequestException('fromDate must be on or before toDate.');
@@ -123,7 +123,7 @@ export class LabService {
 
   // ========== LAB TEST CATALOG ==========
   async createLabTest(dto: CreateLabTestDto, tenantId?: string): Promise<LabTest> {
-    this.validateReferenceRanges(dto.referenceRanges as any[]);
+    this.validateReferenceRanges(dto.referenceRanges);
 
     const existing = await this.labTestRepo.findOne({
       where: { code: dto.code, ...(tenantId ? { tenantId } : {}) },
@@ -158,7 +158,7 @@ export class LabService {
   }
 
   async updateLabTest(id: string, dto: UpdateLabTestDto, tenantId?: string): Promise<LabTest> {
-    this.validateReferenceRanges(dto.referenceRanges as any[]);
+    this.validateReferenceRanges(dto.referenceRanges);
     const test = await this.getLabTest(id, tenantId);
     Object.assign(test, dto);
     return this.labTestRepo.save(test);
@@ -321,7 +321,7 @@ export class LabService {
         const order = await this.orderRepo.findOne({
           where: { id: dto.orderId, ...(tenantId ? { tenantId } : {}) },
         });
-        const testEntry = (order?.testCodes as any[])?.find((t: any) => t.code === dto.labTestCode);
+        const testEntry = order?.testCodes?.find((t) => t.code === dto.labTestCode);
         if (testEntry?.name) {
           const stopWords = new Set([
             'test',
@@ -679,7 +679,9 @@ export class LabService {
 
       this.logger.warn(
         `Sample rejected: ${sample.sampleNumber} by user ${userId}, reason: ${dto.rejectionReason}` +
-          (revertedOrderId ? ` (order ${revertedOrderId} reverted to PENDING for re-collection)` : ''),
+          (revertedOrderId
+            ? ` (order ${revertedOrderId} reverted to PENDING for re-collection)`
+            : ''),
       );
 
       // Notify ordering doctor (outside critical path; failure non-fatal)
@@ -749,7 +751,7 @@ export class LabService {
           oldValue: payload.previousStatus ? { status: payload.previousStatus } : undefined,
           newValue: payload.newValue,
           ...(payload.tenantId ? { tenantId: payload.tenantId } : {}),
-        } as any),
+        } as DeepPartial<AuditLog>),
       );
     } catch (err) {
       this.logger.warn(`Lab audit write failed (${payload.action}): ${(err as Error).message}`);
@@ -877,8 +879,8 @@ export class LabService {
         let critHigh: number | undefined;
         let rangeResolved = false;
         if (sample.labTest?.referenceRanges && dto.parameter) {
-          const refRange = (sample.labTest.referenceRanges as any[]).find(
-            (r: any) => r.parameter === dto.parameter,
+          const refRange = sample.labTest.referenceRanges.find(
+            (r) => r.parameter === dto.parameter,
           );
           if (refRange) {
             rangeResolved = true;
@@ -1058,9 +1060,14 @@ export class LabService {
         throw new BadRequestException('Result must be validated before release');
       }
 
+      // P1: two-person rule — releaser must differ from validator
+      if (result.validatedById && result.validatedById === userId) {
+        throw new BadRequestException('Releaser must differ from validator');
+      }
+
       // Lock the sample row to prevent concurrent modifications
       const lockedSample = await manager.findOne(LabSample, {
-        where: { id: result.sampleId },
+        where: { id: result.sampleId, ...(tenantId ? { tenantId } : {}) },
         lock: { mode: 'pessimistic_write' },
       });
       if (lockedSample && lockedSample.status === SampleStatus.REJECTED) {
@@ -1115,9 +1122,14 @@ export class LabService {
         try {
           const fullSample = await manager.findOne(LabSample, {
             where: { id: result.sampleId },
-            relations: ['order', 'order.encounter', 'order.encounter.patient', 'order.encounter.facility'],
+            relations: [
+              'order',
+              'order.encounter',
+              'order.encounter.patient',
+              'order.encounter.facility',
+            ],
           });
-          const patient = fullSample?.order?.encounter?.patient as any;
+          const patient = fullSample?.order?.encounter?.patient;
           const facility = fullSample?.order?.encounter?.facility;
           const facilityId = fullSample?.order?.encounter?.facilityId;
           if (patient && facilityId) {
@@ -1194,14 +1206,16 @@ export class LabService {
       // amend a PENDING/ENTERED/VALIDATED result and the unreviewed value
       // would be silently archived into `previousValues` as if it had been
       // a released-then-amended value, polluting the chain-of-custody.
-      const amendableStatuses: ResultStatus[] = [
-        ResultStatus.RELEASED,
-        ResultStatus.AMENDED,
-      ];
+      const amendableStatuses: ResultStatus[] = [ResultStatus.RELEASED, ResultStatus.AMENDED];
       if (!amendableStatuses.includes(result.status as ResultStatus)) {
         throw new BadRequestException(
           `Cannot amend a result in '${result.status}' status. Only released or already-amended results may be amended.`,
         );
+      }
+
+      // P1: segregation of duties — amender must differ from releaser
+      if (result.releasedById && result.releasedById === userId) {
+        throw new BadRequestException('Amender must differ from the user who released the result');
       }
 
       // Store previous value (append to history acquired under the lock)
@@ -1229,8 +1243,8 @@ export class LabService {
         let rangeResolved = false;
         const sample = await this.getSample(result.sampleId, tenantId);
         if (sample.labTest?.referenceRanges && result.parameter) {
-          const refRange = (sample.labTest.referenceRanges as any[]).find(
-            (r: any) => r.parameter === result.parameter,
+          const refRange = sample.labTest.referenceRanges.find(
+            (r) => r.parameter === result.parameter,
           );
           if (refRange) {
             rangeResolved = true;
@@ -1400,6 +1414,12 @@ export class LabService {
   }
 
   async getTurnaroundStats(facilityId: string, days = 7, tenantId?: string): Promise<any[]> {
+    // P1: validate facility exists and belongs to tenant
+    const facility = await this.facilityRepo.findOne({
+      where: { id: facilityId, ...(tenantId ? { tenantId } : {}) },
+    });
+    if (!facility) throw new NotFoundException('Facility not found');
+
     // Validate days parameter to prevent injection and ensure reasonable bounds
     const safeDays = Math.min(Math.max(Math.floor(days), 1), 365);
 
@@ -1438,7 +1458,15 @@ export class LabService {
     return AbnormalFlag.NORMAL;
   }
 
-  async getCriticalResults(facilityId?: string, tenantId?: string): Promise<LabResult[]> {
+  async getCriticalResults(
+    facilityId?: string,
+    tenantId?: string,
+    page = 1,
+    limit = 50,
+  ): Promise<{ data: LabResult[]; total: number }> {
+    const safePage = Math.max(Math.floor(page), 1);
+    const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 200);
+
     const qb = this.resultRepo
       .createQueryBuilder('result')
       .leftJoinAndSelect('result.sample', 'sample')
@@ -1447,8 +1475,7 @@ export class LabService {
       .where('result.abnormalFlag IN (:...flags)', {
         flags: [AbnormalFlag.CRITICAL_LOW, AbnormalFlag.CRITICAL_HIGH],
       })
-      .orderBy('result.createdAt', 'DESC')
-      .take(200);
+      .orderBy('result.createdAt', 'DESC');
 
     if (tenantId) {
       // P0: filter on the result row's own tenant_id, not the joined
@@ -1458,9 +1485,16 @@ export class LabService {
       qb.andWhere('result.tenant_id = :tenantId', { tenantId });
     }
     if (facilityId) {
+      // P1: inner-join through sample to ensure only results from that
+      // facility appear (left join would include results with NULL sample).
       qb.andWhere('sample.facilityId = :facilityId', { facilityId });
     }
 
-    return qb.getMany();
+    const [data, total] = await qb
+      .skip((safePage - 1) * safeLimit)
+      .take(safeLimit)
+      .getManyAndCount();
+
+    return { data, total };
   }
 }

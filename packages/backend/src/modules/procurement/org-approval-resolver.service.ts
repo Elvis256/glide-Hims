@@ -2,7 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import * as jsonLogic from 'json-logic-js';
-import { ProcurementApprovalChain, ApprovalChainStatus } from '../../database/entities/procurement-approval-chain.entity';
+import {
+  ProcurementApprovalChain,
+  ApprovalChainStatus,
+} from '../../database/entities/procurement-approval-chain.entity';
 import {
   ApprovalDelegation,
   ApprovalPolicyDocType,
@@ -73,7 +76,9 @@ export class OrgApprovalResolverService {
    * Returns the saved chain rows. If no policy matches, falls back to
    * direct-manager → department-head, then finally a single "manager" role step.
    */
-  async buildAndPersistChain(input: ResolveApprovalChainInput): Promise<ProcurementApprovalChain[]> {
+  async buildAndPersistChain(
+    input: ResolveApprovalChainInput,
+  ): Promise<ProcurementApprovalChain[]> {
     const { documentId, documentType, tenantId } = input;
 
     const preview = await this.resolveStepsWithMetadata(input);
@@ -91,9 +96,7 @@ export class OrgApprovalResolverService {
     const saved: ProcurementApprovalChain[] = [];
     for (const step of steps) {
       const slaHours = step.slaHours ?? null;
-      const slaDueAt = slaHours
-        ? new Date(Date.now() + slaHours * 3600 * 1000)
-        : undefined;
+      const slaDueAt = slaHours ? new Date(Date.now() + slaHours * 3600 * 1000) : undefined;
       const row = this.chainRepo.create({
         documentId,
         documentType,
@@ -127,13 +130,16 @@ export class OrgApprovalResolverService {
    * Same as resolveSteps but also returns the source label and matched policy
    * so the UI can show "Using policy X" vs "Falling back to default manager chain".
    */
-  async resolveStepsWithMetadata(
-    input: ResolveApprovalChainInput,
-  ): Promise<ResolvedChainPreview> {
+  async resolveStepsWithMetadata(input: ResolveApprovalChainInput): Promise<ResolvedChainPreview> {
     const policy = await this.findBestPolicy(input);
     let source: ResolvedChainPreview['source'] = policy ? 'policy' : 'default-manager-chain';
 
-    let rawSteps: Array<Partial<ResolvedStep> & { rawType: ApprovalPolicyStepType; stepRow?: ProcurementApprovalPolicyStep }> = [];
+    let rawSteps: Array<
+      Partial<ResolvedStep> & {
+        rawType: ApprovalPolicyStepType;
+        stepRow?: ProcurementApprovalPolicyStep;
+      }
+    > = [];
 
     if (policy) {
       const stepRows = await this.stepRepo.find({
@@ -221,11 +227,7 @@ export class OrgApprovalResolverService {
       }
 
       // Skip self approval
-      if (
-        approverId &&
-        approverId === input.requesterId &&
-        (s.stepRow?.skipIfSelf ?? true)
-      ) {
+      if (approverId && approverId === input.requesterId && (s.stepRow?.skipIfSelf ?? true)) {
         // Try to escalate one level up via direct manager chain
         const escalated = await this.resolveDirectManager(approverId, input.tenantId, 1);
         if (escalated && escalated !== input.requesterId) {
@@ -246,8 +248,8 @@ export class OrgApprovalResolverService {
         groupId: s.groupId || null,
         quorumType: s.quorumType,
         quorumCount: s.quorumCount,
-        slaHours: (s as any).slaHours ?? null,
-        escalateToUserId: (s as any).escalateToUserId ?? null,
+        slaHours: s.slaHours ?? null,
+        escalateToUserId: s.escalateToUserId ?? null,
       });
     }
 
@@ -293,7 +295,7 @@ export class OrgApprovalResolverService {
     const groupNameById = new Map<string, string>();
     if (groupIds.length) {
       const groups = await this.groupRepo.find({
-        where: { id: In(groupIds), tenantId } as any,
+        where: { id: In(groupIds), tenantId },
       });
       for (const g of groups) groupNameById.set(g.id, g.name);
     }
@@ -310,7 +312,9 @@ export class OrgApprovalResolverService {
 
   // ---------- Internals ----------
 
-  private async findBestPolicy(input: ResolveApprovalChainInput): Promise<ProcurementApprovalPolicy | null> {
+  private async findBestPolicy(
+    input: ResolveApprovalChainInput,
+  ): Promise<ProcurementApprovalPolicy | null> {
     const qb = this.policyRepo
       .createQueryBuilder('p')
       .where('p.tenantId = :tenantId', { tenantId: input.tenantId })
@@ -381,16 +385,14 @@ export class OrgApprovalResolverService {
           where: {
             tenantId: input.tenantId,
             positionId: step.positionId,
-          } as any,
+          },
         });
         return employee?.userId
           ? { approverId: employee.userId, requiredRole: 'position approver' }
           : null;
       }
       case ApprovalPolicyStepType.SPECIFIC_USER: {
-        return step.userId
-          ? { approverId: step.userId, requiredRole: 'specific user' }
-          : null;
+        return step.userId ? { approverId: step.userId, requiredRole: 'specific user' } : null;
       }
       case ApprovalPolicyStepType.GROUP: {
         if (!step.groupId) return null;
@@ -418,11 +420,11 @@ export class OrgApprovalResolverService {
     let currentUserId: string | null = userId;
     for (let i = 0; i < Math.max(1, levelsUp); i++) {
       const emp = await this.employeeRepo.findOne({
-        where: { userId: currentUserId, tenantId } as any,
+        where: { userId: currentUserId, tenantId },
       });
       if (!emp || !emp.managerId) return null;
       const mgrEmp = await this.employeeRepo.findOne({
-        where: { id: emp.managerId, tenantId } as any,
+        where: { id: emp.managerId, tenantId },
       });
       if (!mgrEmp || !mgrEmp.userId) return null;
       currentUserId = mgrEmp.userId;
@@ -439,12 +441,12 @@ export class OrgApprovalResolverService {
     let depth = 0;
     while (did && depth < 10) {
       const dept = await this.departmentRepo.findOne({
-        where: { id: did, tenantId } as any,
+        where: { id: did, tenantId },
       });
       if (!dept) return null;
-      if ((dept as any).headUserId) return (dept as any).headUserId;
+      if (dept.headUserId) return dept.headUserId;
       if (!escalateToParent) return null;
-      did = (dept as any).parentId || null;
+      did = dept.parentId || null;
       depth++;
     }
     return null;
@@ -482,13 +484,13 @@ export class OrgApprovalResolverService {
     chain: ProcurementApprovalChain,
     approvedUserIds: string[],
   ): Promise<boolean> {
-    if (!(chain as any).groupId) return true;
+    if (!chain.groupId) return true;
     const group = await this.groupRepo.findOne({
-      where: { id: (chain as any).groupId, tenantId: chain.tenantId } as any,
+      where: { id: chain.groupId, tenantId: chain.tenantId },
     });
     if (!group) return true;
     const members = await this.groupMemberRepo.find({
-      where: { groupId: group.id, tenantId: chain.tenantId } as any,
+      where: { groupId: group.id, tenantId: chain.tenantId },
     });
     const memberIds = new Set(members.map((m) => m.userId));
     const approvalsByMembers = approvedUserIds.filter((u) => memberIds.has(u)).length;

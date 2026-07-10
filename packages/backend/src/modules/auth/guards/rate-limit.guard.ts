@@ -130,7 +130,13 @@ export class RateLimitGuard implements CanActivate {
    * Returns both per-(ip, user) and IP-wide blocks.
    */
   async listBlocked(): Promise<
-    Array<{ kind: 'ip' | 'user'; ip: string; username?: string; blockedUntil: string; remainingSeconds: number }>
+    Array<{
+      kind: 'ip' | 'user';
+      ip: string;
+      username?: string;
+      blockedUntil: string;
+      remainingSeconds: number;
+    }>
   > {
     const out: Array<any> = [];
     const now = Date.now();
@@ -192,7 +198,9 @@ export class RateLimitGuard implements CanActivate {
     await this.cacheService.del(`ratelimit:ip-login:${ip}`);
     await this.cacheService.del(`ratelimit:ip-block:${ip}`);
     cleared += 2;
-    RateLimitGuard.logger.log(`[ADMIN] Unblock IP ${ip}${username ? ` for user ${username}` : ''} — cleared ${cleared} keys`);
+    RateLimitGuard.logger.log(
+      `[ADMIN] Unblock IP ${ip}${username ? ` for user ${username}` : ''} — cleared ${cleared} keys`,
+    );
     return { cleared };
   }
 

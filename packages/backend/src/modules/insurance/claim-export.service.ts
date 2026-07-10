@@ -3,7 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between } from 'typeorm';
 import { InsuranceClaim, ClaimStatus } from '../../database/entities/insurance-claim.entity';
 import { ClaimItem } from '../../database/entities/claim-item.entity';
-import { InsuranceProvider, ClaimSubmissionMethod } from '../../database/entities/insurance-provider.entity';
+import {
+  InsuranceProvider,
+  ClaimSubmissionMethod,
+} from '../../database/entities/insurance-provider.entity';
 
 /**
  * Generates artefacts insurers can ingest: CSV batch (NHIS-style portal upload),
@@ -20,7 +23,8 @@ export class ClaimExportService {
   constructor(
     @InjectRepository(InsuranceClaim) private readonly claimRepo: Repository<InsuranceClaim>,
     @InjectRepository(ClaimItem) private readonly itemRepo: Repository<ClaimItem>,
-    @InjectRepository(InsuranceProvider) private readonly providerRepo: Repository<InsuranceProvider>,
+    @InjectRepository(InsuranceProvider)
+    private readonly providerRepo: Repository<InsuranceProvider>,
   ) {}
 
   /**
@@ -56,7 +60,7 @@ export class ClaimExportService {
       where: {
         providerId,
         ...(tenantId ? { tenantId } : {}),
-        serviceDate: Between(from, to) as any,
+        serviceDate: Between(from, to),
       },
       relations: ['patient', 'policy', 'items', 'encounter'],
       order: { serviceDate: 'ASC' },
@@ -96,7 +100,7 @@ export class ClaimExportService {
         rows.push([
           provider.code || '',
           claim.claimNumber,
-          (claim as any).policy?.memberNumber || '',
+          claim.policy?.memberNumber || '',
           claim.patient?.fullName || '',
           claim.patient?.dateOfBirth ? this.toDate(claim.patient.dateOfBirth) : '',
           claim.patient?.gender || '',
@@ -131,7 +135,10 @@ export class ClaimExportService {
    * Streams a single-claim PDF form. Returns the assembled buffer so the
    * controller can set headers and send it.
    */
-  async generateClaimPdf(claimId: string, tenantId?: string): Promise<{ filename: string; pdf: Buffer }> {
+  async generateClaimPdf(
+    claimId: string,
+    tenantId?: string,
+  ): Promise<{ filename: string; pdf: Buffer }> {
     const claim = await this.claimRepo.findOne({
       where: { id: claimId, ...(tenantId ? { tenantId } : {}) },
       relations: ['provider', 'policy', 'patient', 'items', 'encounter', 'facility'],
@@ -139,7 +146,7 @@ export class ClaimExportService {
     if (!claim) throw new NotFoundException('Claim not found');
 
     // Lazy-import pdfkit so non-PDF endpoints don't pay startup cost.
-    const PDFDocumentMod: any = await import('pdfkit');
+    const PDFDocumentMod = await import('pdfkit');
     const PDFDocument = PDFDocumentMod.default || PDFDocumentMod;
     const doc = new PDFDocument({ size: 'A4', margin: 40 });
     const chunks: Buffer[] = [];
@@ -151,13 +158,18 @@ export class ClaimExportService {
     // Header
     doc.fontSize(16).font('Helvetica-Bold').text('INSURANCE CLAIM FORM', { align: 'center' });
     doc.moveDown(0.3);
-    doc.fontSize(10).font('Helvetica').text(claim.facility?.name || '', { align: 'center' });
+    doc
+      .fontSize(10)
+      .font('Helvetica')
+      .text(claim.facility?.name || '', { align: 'center' });
     doc.moveDown(0.5);
     doc
       .fontSize(8)
       .fillColor('#666')
-      .text(`Claim #: ${claim.claimNumber}    Status: ${claim.status.toUpperCase()}    Generated: ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`,
-        { align: 'center' });
+      .text(
+        `Claim #: ${claim.claimNumber}    Status: ${claim.status.toUpperCase()}    Generated: ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`,
+        { align: 'center' },
+      );
     doc.moveDown(1).fillColor('black');
 
     // Provider + Patient
@@ -165,8 +177,8 @@ export class ClaimExportService {
     doc.fontSize(9).font('Helvetica-Bold').text('INSURER', 40, top);
     doc.font('Helvetica').text(claim.provider?.name || '', 40, top + 12);
     doc.text(`Code: ${claim.provider?.code || ''}`, 40, top + 24);
-    doc.text(`Member #: ${(claim as any).policy?.memberNumber || ''}`, 40, top + 36);
-    doc.text(`Policy #: ${(claim as any).policy?.policyNumber || ''}`, 40, top + 48);
+    doc.text(`Member #: ${claim.policy?.memberNumber || ''}`, 40, top + 36);
+    doc.text(`Policy #: ${claim.policy?.policyNumber || ''}`, 40, top + 48);
 
     doc.font('Helvetica-Bold').text('PATIENT', 320, top);
     doc.font('Helvetica').text(claim.patient?.fullName || '', 320, top + 12);
@@ -193,9 +205,7 @@ export class ClaimExportService {
         }`,
       );
     }
-    doc.text(
-      `Primary Dx: ${claim.diagnosisCode || ''} ${claim.primaryDiagnosis || ''}`.trim(),
-    );
+    doc.text(`Primary Dx: ${claim.diagnosisCode || ''} ${claim.primaryDiagnosis || ''}`.trim());
     if (claim.secondaryDiagnoses?.length) {
       doc.text(`Secondary: ${claim.secondaryDiagnoses.join(', ')}`);
     }
@@ -213,7 +223,13 @@ export class ClaimExportService {
       { x: 485, w: 70, label: 'Total', align: 'right' as const },
     ];
     doc.font('Helvetica-Bold').fontSize(9);
-    cols.forEach((c) => doc.text(c.label, c.x, doc.y, { width: c.w, align: (c as any).align || 'left', continued: false }));
+    cols.forEach((c) =>
+      doc.text(c.label, c.x, doc.y, {
+        width: c.w,
+        align: c.align || 'left',
+        continued: false,
+      }),
+    );
     doc.moveDown(0.2);
     doc.moveTo(40, doc.y).lineTo(555, doc.y).strokeColor('#999').stroke();
     doc.moveDown(0.2).strokeColor('black').font('Helvetica');
@@ -272,7 +288,7 @@ export class ClaimExportService {
     const payload = {
       claimNumber: claim.claimNumber,
       providerCode: provider.code,
-      memberNumber: (claim as any).policy?.memberNumber,
+      memberNumber: claim.policy?.memberNumber,
       patient: {
         name: claim.patient?.fullName,
         dob: claim.patient?.dateOfBirth ? this.toDate(claim.patient.dateOfBirth) : null,

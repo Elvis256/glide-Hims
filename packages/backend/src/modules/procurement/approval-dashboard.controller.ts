@@ -40,11 +40,7 @@ export class ApprovalDashboardController {
     @Param('documentId') documentId: string,
     @Request() req?: any,
   ) {
-    return this.dashboardService.getApprovalHistory(
-      documentId,
-      documentType,
-      req?.user?.tenantId,
-    );
+    return this.dashboardService.getApprovalHistory(documentId, documentType, req?.user?.tenantId);
   }
 
   /**
@@ -53,10 +49,7 @@ export class ApprovalDashboardController {
    */
   @Get('bottlenecks')
   @AuthWithPermissions('procurement.read')
-  async getBottlenecks(
-    @Query('facilityId') facilityId: string,
-    @Request() req?: any,
-  ) {
+  async getBottlenecks(@Query('facilityId') facilityId: string, @Request() req?: any) {
     return this.dashboardService.getApprovalBottlenecks(facilityId, req?.user?.tenantId);
   }
 
@@ -70,11 +63,7 @@ export class ApprovalDashboardController {
     @Query('days') days: number = 5,
     @Request() req?: any,
   ) {
-    return this.dashboardService.getEscalationCandidates(
-      facilityId,
-      days,
-      req?.user?.tenantId,
-    );
+    return this.dashboardService.getEscalationCandidates(facilityId, days, req?.user?.tenantId);
   }
 
   /**
@@ -83,10 +72,7 @@ export class ApprovalDashboardController {
    */
   @Get('summary')
   @AuthWithPermissions('procurement.read')
-  async getDashboardSummary(
-    @Query('facilityId') facilityId: string,
-    @Request() req?: any,
-  ) {
+  async getDashboardSummary(@Query('facilityId') facilityId: string, @Request() req?: any) {
     try {
       const summary = await this.dashboardService.getDashboardSummary(
         facilityId,

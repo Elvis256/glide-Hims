@@ -33,10 +33,7 @@ export class PaymentGatewayController {
   @AuthWithPermissions('billing.read')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Check the live status of a previously-initiated gateway transaction' })
-  async getStatus(
-    @Param('provider') provider: string,
-    @Param('txnId') txnId: string,
-  ) {
+  async getStatus(@Param('provider') provider: string, @Param('txnId') txnId: string) {
     return this.service.getStatus(provider, txnId);
   }
 

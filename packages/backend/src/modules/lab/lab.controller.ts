@@ -143,8 +143,7 @@ export class LabController {
     // results; pending/entered/validated stay invisible until QC release.
     // System admins (cross-tenant ops) always see everything.
     const userPerms: string[] = req.user?.permissions || [];
-    const canSeeUnreleased =
-      !!req.user?.isSystemAdmin || userPerms.includes('labqc.view');
+    const canSeeUnreleased = !!req.user?.isSystemAdmin || userPerms.includes('labqc.view');
     return this.labService.getResults(sampleId, req.user?.tenantId, { canSeeUnreleased });
   }
 
@@ -173,8 +172,20 @@ export class LabController {
   @AuthWithPermissions('lab.read')
   @ApiOperation({ summary: 'Get critical lab results (critical_low / critical_high)' })
   @ApiQuery({ name: 'facilityId', required: false })
-  getCriticalResults(@Query('facilityId') facilityId: string | undefined, @Request() req: any) {
-    return this.labService.getCriticalResults(facilityId, req.user?.tenantId);
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  getCriticalResults(
+    @Query('facilityId') facilityId: string | undefined,
+    @Query('page') page: number | undefined,
+    @Query('limit') limit: number | undefined,
+    @Request() req: any,
+  ) {
+    return this.labService.getCriticalResults(
+      facilityId,
+      req.user?.tenantId,
+      page ? Number(page) : undefined,
+      limit ? Number(limit) : undefined,
+    );
   }
 
   // ========== DASHBOARD ==========
@@ -211,8 +222,7 @@ export class LabController {
       throw new BadRequestException('Valid facilityId UUID is required');
     }
     const parsed = parseInt(String(days ?? ''), 10);
-    const safeDays =
-      Number.isFinite(parsed) && parsed >= 1 && parsed <= 365 ? parsed : undefined;
+    const safeDays = Number.isFinite(parsed) && parsed >= 1 && parsed <= 365 ? parsed : undefined;
     return this.labService.getTurnaroundStats(facilityId, safeDays, req.user?.tenantId);
   }
 }

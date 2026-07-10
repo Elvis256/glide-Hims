@@ -1,9 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import {
-  BadRequestException,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
@@ -153,9 +149,7 @@ describe('ChronicCare validation', () => {
 
     it('RecordVisitDto accepts an ISO date or empty body', async () => {
       expect(await violations(RecordVisitDto, {})).toEqual([]);
-      expect(
-        await violations(RecordVisitDto, { nextFollowUpDate: '2025-06-01' }),
-      ).toEqual([]);
+      expect(await violations(RecordVisitDto, { nextFollowUpDate: '2025-06-01' })).toEqual([]);
     });
   });
 

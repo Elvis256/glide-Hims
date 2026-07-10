@@ -95,10 +95,7 @@ export class TrialBalanceService {
    * Get trial balance for a facility and period
    * Groups all GL entries by account and sums debits/credits
    */
-  async getTrialBalance(
-    facilityId: string,
-    fiscalPeriodId: string,
-  ): Promise<TrialBalance> {
+  async getTrialBalance(facilityId: string, fiscalPeriodId: string): Promise<TrialBalance> {
     // Verify fiscal period exists
     const period = await this.fiscalPeriodRepo.findOne({
       where: { id: fiscalPeriodId },
@@ -141,7 +138,10 @@ export class TrialBalanceService {
     });
 
     // Group by account and sum debits/credits
-    const accountMap = new Map<string, { debit: number; credit: number; account: ChartOfAccount }>();
+    const accountMap = new Map<
+      string,
+      { debit: number; credit: number; account: ChartOfAccount }
+    >();
 
     for (const line of lines) {
       if (!accountMap.has(line.accountId)) {
@@ -325,8 +325,9 @@ export class TrialBalanceService {
       period1TrialBalance: period1TB,
       period2Id,
       period2TrialBalance: period2TB,
-      accountChanges: accountChanges.sort((a, b) =>
-        Math.abs(b.debitChange + b.creditChange) - Math.abs(a.debitChange + a.creditChange),
+      accountChanges: accountChanges.sort(
+        (a, b) =>
+          Math.abs(b.debitChange + b.creditChange) - Math.abs(a.debitChange + a.creditChange),
       ),
     };
   }
@@ -361,10 +362,7 @@ export class TrialBalanceService {
   /**
    * Get accounts by type (for filtering)
    */
-  async getAccountsByType(
-    facilityId: string,
-    accountType: AccountType,
-  ): Promise<ChartOfAccount[]> {
+  async getAccountsByType(facilityId: string, accountType: AccountType): Promise<ChartOfAccount[]> {
     return await this.chartOfAccountRepo.find({
       where: {
         facilityId,

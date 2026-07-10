@@ -1,12 +1,4 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  Post,
-  Query,
-  Request,
-} from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Request } from '@nestjs/common';
 import { ApprovalsService, DocumentRef } from './approvals.service';
 import { ApprovalsSeederService } from './approvals-seeder.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
@@ -25,9 +17,10 @@ function actorFrom(req: AuthedRequest) {
   return {
     userId: req.user?.id || '',
     ipAddress: req.ip,
-    userAgent: typeof req.headers?.['user-agent'] === 'string'
-      ? (req.headers!['user-agent'] as string)
-      : undefined,
+    userAgent:
+      typeof req.headers?.['user-agent'] === 'string'
+        ? (req.headers!['user-agent'] as string)
+        : undefined,
   };
 }
 
@@ -89,10 +82,7 @@ export class ApprovalsController {
     @Query('documentId') documentId: string,
     @Request() req: AuthedRequest,
   ) {
-    return this.approvals.listActions(
-      { module, documentType, documentId },
-      req.user?.tenantId,
-    );
+    return this.approvals.listActions({ module, documentType, documentId }, req.user?.tenantId);
   }
 
   // ---- Act ----

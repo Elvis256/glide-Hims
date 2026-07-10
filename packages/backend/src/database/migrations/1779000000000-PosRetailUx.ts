@@ -224,7 +224,11 @@ export class PosRetailUx1779000000000 implements MigrationInterface {
     await queryRunner.query(`DROP TABLE IF EXISTS pharmacy_return_items`);
     await queryRunner.query(`DROP TABLE IF EXISTS pharmacy_returns`);
 
-    await queryRunner.query(`ALTER TABLE pharmacy_sale_items DROP COLUMN IF EXISTS discount_amount, DROP COLUMN IF EXISTS discount_reason`);
-    await queryRunner.query(`ALTER TABLE pharmacy_sales DROP COLUMN IF EXISTS voided_at, DROP COLUMN IF EXISTS void_reason, DROP COLUMN IF EXISTS voided_by_id, DROP COLUMN IF EXISTS discount_approver_id, DROP COLUMN IF EXISTS discount_approval_reason`);
+    await queryRunner.query(
+      `ALTER TABLE pharmacy_sale_items DROP COLUMN IF EXISTS discount_amount, DROP COLUMN IF EXISTS discount_reason`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE pharmacy_sales DROP COLUMN IF EXISTS voided_at, DROP COLUMN IF EXISTS void_reason, DROP COLUMN IF EXISTS voided_by_id, DROP COLUMN IF EXISTS discount_approver_id, DROP COLUMN IF EXISTS discount_approval_reason`,
+    );
   }
 }

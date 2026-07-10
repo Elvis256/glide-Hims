@@ -41,8 +41,7 @@ export class AuditLogsController {
   ) {
     if (opts.userId) qb.andWhere('a.userId = :uid', { uid: opts.userId });
     if (opts.action) qb.andWhere('a.action ILIKE :act', { act: `%${opts.action}%` });
-    if (opts.entityType)
-      qb.andWhere('a.entityType ILIKE :et', { et: `%${opts.entityType}%` });
+    if (opts.entityType) qb.andWhere('a.entityType ILIKE :et', { et: `%${opts.entityType}%` });
     if (opts.from) qb.andWhere('a.createdAt >= :from', { from: new Date(opts.from) });
     if (opts.to) qb.andWhere('a.createdAt <= :to', { to: new Date(opts.to) });
     if (opts.q) {
@@ -230,11 +229,7 @@ export class AuditLogsController {
     let offset = 0;
     let hasMore = true;
     while (hasMore) {
-      const rows = await qb
-        .orderBy('a.createdAt', 'DESC')
-        .skip(offset)
-        .take(PAGE_SIZE)
-        .getMany();
+      const rows = await qb.orderBy('a.createdAt', 'DESC').skip(offset).take(PAGE_SIZE).getMany();
       for (const r of rows as any[]) {
         const flat = {
           ...r,

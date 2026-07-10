@@ -1,4 +1,9 @@
-import { BadRequestException, UnauthorizedException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  UnauthorizedException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 
 /**
@@ -83,7 +88,9 @@ const PASSWORD_POLICY_FLOOR = {
 function enforcePasswordPolicyFloor(data: Record<string, any>): void {
   const floor = PASSWORD_POLICY_FLOOR;
   if (data.minLength != null && data.minLength < floor.minLength)
-    throw new BadRequestException(`minLength cannot be below platform minimum of ${floor.minLength}`);
+    throw new BadRequestException(
+      `minLength cannot be below platform minimum of ${floor.minLength}`,
+    );
   if (data.requireUppercase === false && floor.requireUppercase)
     throw new BadRequestException('requireUppercase cannot be disabled');
   if (data.requireLowercase === false && floor.requireLowercase)
@@ -93,11 +100,20 @@ function enforcePasswordPolicyFloor(data: Record<string, any>): void {
   if (data.requireSpecialChars === false && floor.requireSpecialChars)
     throw new BadRequestException('requireSpecialChars cannot be disabled');
   if (data.maxFailedAttempts != null && data.maxFailedAttempts > floor.maxFailedAttempts)
-    throw new BadRequestException(`maxFailedAttempts cannot exceed platform max of ${floor.maxFailedAttempts}`);
-  if (data.lockoutDurationMinutes != null && data.lockoutDurationMinutes < floor.lockoutDurationMinutes)
-    throw new BadRequestException(`lockoutDurationMinutes cannot be below ${floor.lockoutDurationMinutes}`);
+    throw new BadRequestException(
+      `maxFailedAttempts cannot exceed platform max of ${floor.maxFailedAttempts}`,
+    );
+  if (
+    data.lockoutDurationMinutes != null &&
+    data.lockoutDurationMinutes < floor.lockoutDurationMinutes
+  )
+    throw new BadRequestException(
+      `lockoutDurationMinutes cannot be below ${floor.lockoutDurationMinutes}`,
+    );
   if (data.passwordHistoryCount != null && data.passwordHistoryCount < floor.passwordHistoryCount)
-    throw new BadRequestException(`passwordHistoryCount cannot be below ${floor.passwordHistoryCount}`);
+    throw new BadRequestException(
+      `passwordHistoryCount cannot be below ${floor.passwordHistoryCount}`,
+    );
   if (data.expiryDays != null && data.expiryDays > floor.expiryDays)
     throw new BadRequestException(`expiryDays cannot exceed ${floor.expiryDays}`);
 }
@@ -158,15 +174,15 @@ describe('Auth Security', () => {
     });
 
     it('rejects blacklisted password', () => {
-      expect(() =>
-        validatePasswordPolicy('password', { ...strictPolicy, minLength: 4 }),
-      ).toThrow('too common');
+      expect(() => validatePasswordPolicy('password', { ...strictPolicy, minLength: 4 })).toThrow(
+        'too common',
+      );
     });
 
     it('blacklist is case-insensitive', () => {
-      expect(() =>
-        validatePasswordPolicy('PASSWORD', { ...strictPolicy, minLength: 4 }),
-      ).toThrow('too common');
+      expect(() => validatePasswordPolicy('PASSWORD', { ...strictPolicy, minLength: 4 })).toThrow(
+        'too common',
+      );
     });
 
     it('uses custom allowedSpecialChars when provided', () => {
@@ -335,8 +351,7 @@ describe('Auth Security', () => {
       const user = { id: 'u1', tenantId: 'tenant-a', isSystemAdmin: true };
       const loginTenantId = 'tenant-b';
 
-      const blocked =
-        loginTenantId && user.tenantId !== loginTenantId && !user.isSystemAdmin;
+      const blocked = loginTenantId && user.tenantId !== loginTenantId && !user.isSystemAdmin;
       expect(blocked).toBe(false);
     });
 
@@ -344,8 +359,7 @@ describe('Auth Security', () => {
       const user = { id: 'u1', tenantId: 'tenant-a', isSystemAdmin: false };
       const loginTenantId = 'tenant-a';
 
-      const blocked =
-        loginTenantId && user.tenantId !== loginTenantId && !user.isSystemAdmin;
+      const blocked = loginTenantId && user.tenantId !== loginTenantId && !user.isSystemAdmin;
       expect(blocked).toBe(false);
     });
   });
@@ -372,8 +386,7 @@ describe('Auth Security', () => {
       const loginTenantId = undefined;
       const deploymentMode = 'multi-tenant';
 
-      const blocked =
-        !loginTenantId && deploymentMode === 'multi-tenant' && !user.isSystemAdmin;
+      const blocked = !loginTenantId && deploymentMode === 'multi-tenant' && !user.isSystemAdmin;
       expect(blocked).toBe(false);
     });
 
@@ -382,8 +395,7 @@ describe('Auth Security', () => {
       const loginTenantId = undefined;
       const deploymentMode: string = 'on-premise';
 
-      const blocked =
-        !loginTenantId && deploymentMode === 'multi-tenant' && !user.isSystemAdmin;
+      const blocked = !loginTenantId && deploymentMode === 'multi-tenant' && !user.isSystemAdmin;
       expect(blocked).toBe(false);
     });
   });
@@ -439,11 +451,7 @@ describe('Auth Security', () => {
 
     it('throws 403 when non-sysadmin targets sysadmin', () => {
       expect(() =>
-        adminResetGuard(
-          { id: 'u1', tenantId: 'tenant-a', isSystemAdmin: true },
-          'tenant-a',
-          false,
-        ),
+        adminResetGuard({ id: 'u1', tenantId: 'tenant-a', isSystemAdmin: true }, 'tenant-a', false),
       ).toThrow('Cannot reset password for system administrators');
     });
 
@@ -459,21 +467,13 @@ describe('Auth Security', () => {
 
     it('allows sysadmin to reset sysadmin', () => {
       expect(() =>
-        adminResetGuard(
-          { id: 'u1', tenantId: 'tenant-a', isSystemAdmin: true },
-          'tenant-a',
-          true,
-        ),
+        adminResetGuard({ id: 'u1', tenantId: 'tenant-a', isSystemAdmin: true }, 'tenant-a', true),
       ).not.toThrow();
     });
 
     it('allows sysadmin cross-tenant reset (no callerTenantId)', () => {
       expect(() =>
-        adminResetGuard(
-          { id: 'u1', tenantId: 'tenant-b', isSystemAdmin: false },
-          undefined,
-          true,
-        ),
+        adminResetGuard({ id: 'u1', tenantId: 'tenant-b', isSystemAdmin: false }, undefined, true),
       ).not.toThrow();
     });
   });

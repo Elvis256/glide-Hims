@@ -157,7 +157,10 @@ async function bootstrap() {
 
   // CORS Configuration
   const corsOrigins = configService.get<string>('CORS_ORIGINS', 'http://localhost:5173');
-  const origins = corsOrigins.split(',').map((o) => o.trim()).filter(Boolean);
+  const origins = corsOrigins
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
   for (const origin of origins) {
     try {
       new URL(origin);

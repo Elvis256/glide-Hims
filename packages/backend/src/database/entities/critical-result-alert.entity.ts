@@ -16,11 +16,7 @@ import { User } from './user.entity';
  */
 export type CriticalResultResourceType = 'lab' | 'radiology';
 
-export type CriticalResultSeverity =
-  | 'critical_low'
-  | 'critical_high'
-  | 'critical'
-  | 'abnormal';
+export type CriticalResultSeverity = 'critical_low' | 'critical_high' | 'critical' | 'abnormal';
 
 export type CriticalResultStatus =
   | 'pending'

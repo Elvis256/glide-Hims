@@ -124,7 +124,10 @@ describe('InventoryService', () => {
 
       await service.createItem({ code: 'X', name: 'Y' } as any, 't1');
 
-      expect(mockItemRepo.create).toHaveBeenCalledWith(Item, expect.objectContaining({ tenantId: 't1' }));
+      expect(mockItemRepo.create).toHaveBeenCalledWith(
+        Item,
+        expect.objectContaining({ tenantId: 't1' }),
+      );
     });
   });
 

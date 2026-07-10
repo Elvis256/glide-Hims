@@ -1,13 +1,4 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Post,
-  Req,
-  Res,
-  UseGuards,
-  HttpCode,
-} from '@nestjs/common';
+import { Body, Controller, Get, Post, Req, Res, UseGuards, HttpCode } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { Public } from '../auth/decorators/public.decorator';
 import { PatientPortalService } from './patient-portal.service';
@@ -38,10 +29,7 @@ export class PatientPortalController {
   @HttpCode(200)
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiOperation({ summary: 'Verify the OTP and receive a patient access token' })
-  async verifyOtp(
-    @Body() dto: VerifyOtpDto,
-    @Res({ passthrough: true }) res: Response,
-  ) {
+  async verifyOtp(@Body() dto: VerifyOtpDto, @Res({ passthrough: true }) res: Response) {
     const { accessToken, patient } = await this.service.verifyOtp(dto.phone, dto.code);
     // F-04: token is set as an httpOnly cookie so XSS cannot exfiltrate it.
     res.cookie(PORTAL_COOKIE, accessToken, {

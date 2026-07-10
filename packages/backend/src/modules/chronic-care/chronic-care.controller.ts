@@ -115,11 +115,7 @@ export class ChronicCareController {
   @Post(':id/record-visit')
   @AuthWithPermissions('chronic.create')
   @ApiOperation({ summary: 'Record a visit and update next follow-up' })
-  async recordVisit(
-    @Param('id') id: string,
-    @Body() dto: RecordVisitDto,
-    @Request() req?: any,
-  ) {
+  async recordVisit(@Param('id') id: string, @Body() dto: RecordVisitDto, @Request() req?: any) {
     return this.chronicCareService.recordVisit(id, dto?.nextFollowUpDate, req?.user?.tenantId);
   }
 

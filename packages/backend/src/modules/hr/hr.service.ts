@@ -9,7 +9,17 @@ import {
   Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, MoreThanOrEqual, LessThanOrEqual, In, IsNull, Not, DataSource } from 'typeorm';
+import {
+  Repository,
+  Between,
+  MoreThanOrEqual,
+  LessThanOrEqual,
+  In,
+  IsNull,
+  Not,
+  DataSource,
+  DeepPartial,
+} from 'typeorm';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { Employee, EmploymentStatus } from '../../database/entities/employee.entity';
 import { AttendanceRecord } from '../../database/entities/attendance.entity';
@@ -22,18 +32,19 @@ import {
   ShiftSwapRequest,
   SwapRequestStatus,
 } from '../../database/entities/shift-swap-request.entity';
-import { JobPosting, JobStatus } from '../../database/entities/job-posting.entity';
+import { JobPosting, JobStatus, EmploymentType as JobEmploymentType } from '../../database/entities/job-posting.entity';
 import { JobApplication, ApplicationStatus } from '../../database/entities/job-application.entity';
 import {
   PerformanceAppraisal,
   AppraisalStatus,
+  AppraisalPeriod,
 } from '../../database/entities/performance-appraisal.entity';
-import { TrainingProgram, TrainingStatus } from '../../database/entities/training-program.entity';
+import { TrainingProgram, TrainingStatus, TrainingType } from '../../database/entities/training-program.entity';
 import {
   TrainingEnrollment,
   EnrollmentStatus,
 } from '../../database/entities/training-enrollment.entity';
-import { User } from '../../database/entities/user.entity';
+import { User, StaffCategory, EmploymentType as UserEmploymentType } from '../../database/entities/user.entity';
 import { Department } from '../../database/entities/department.entity';
 import {
   StaffDocument,
@@ -45,7 +56,8 @@ import {
   DisciplinaryType,
   DisciplinaryStatus,
 } from '../../database/entities/disciplinary-action.entity';
-import { SalaryHistory, SalaryChangeType } from '../../database/entities/salary-history.entity';import {
+import { SalaryHistory, SalaryChangeType } from '../../database/entities/salary-history.entity';
+import {
   OnboardingTask,
   OnboardingCategory,
   OnboardingTaskStatus,
@@ -187,7 +199,8 @@ export class HrService {
 
     if (tenantId) qb.andWhere('u.tenantId = :tenantId', { tenantId });
     if (options.status) qb.andWhere('u.status = :status', { status: options.status });
-    if (options.departmentId) qb.andWhere('u.departmentId = :deptId', { deptId: options.departmentId });
+    if (options.departmentId)
+      qb.andWhere('u.departmentId = :deptId', { deptId: options.departmentId });
     if (facilityId) {
       // Match by user.facilityId OR by any user_role at that facility
       // (legacy users have NULL users.facility_id and rely on role-scoped facility)
@@ -273,8 +286,8 @@ export class HrService {
     const user = await this.getStaffById(id, tenantId);
 
     if (dto.jobTitle !== undefined) user.jobTitle = dto.jobTitle;
-    if (dto.staffCategory !== undefined) user.staffCategory = dto.staffCategory as any;
-    if (dto.employmentType !== undefined) user.employmentType = dto.employmentType as any;
+    if (dto.staffCategory !== undefined) user.staffCategory = dto.staffCategory as StaffCategory;
+    if (dto.employmentType !== undefined) user.employmentType = dto.employmentType as UserEmploymentType;
     if (dto.departmentId !== undefined) user.departmentId = dto.departmentId;
     if (dto.facilityId !== undefined) user.facilityId = dto.facilityId;
     if (dto.dateOfBirth !== undefined) user.dateOfBirth = new Date(dto.dateOfBirth);
@@ -298,9 +311,7 @@ export class HrService {
 
   async getStaffDashboard(facilityId?: string, tenantId?: string) {
     const baseQb = () => {
-      const qb = this.userRepo
-        .createQueryBuilder('u')
-        .where('u.deletedAt IS NULL');
+      const qb = this.userRepo.createQueryBuilder('u').where('u.deletedAt IS NULL');
       if (tenantId) qb.andWhere('u.tenantId = :tenantId', { tenantId });
       if (facilityId) {
         qb.andWhere(
@@ -356,7 +367,7 @@ export class HrService {
   async getStaffByCategory(category: string, tenantId?: string) {
     return this.userRepo.find({
       where: {
-        staffCategory: category as any,
+        staffCategory: category as StaffCategory,
         deletedAt: IsNull(),
         ...(tenantId ? { tenantId } : {}),
       },
@@ -463,10 +474,10 @@ export class HrService {
       facilityId: dto.facilityId,
       departmentId: dto.departmentId,
       jobTitle: dto.jobTitle,
-      staffCategory: dto.staffCategory as any,
-      employmentType: dto.employmentType as any,
+      staffCategory: dto.staffCategory as StaffCategory,
+      employmentType: dto.employmentType as UserEmploymentType,
       dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
-      gender: dto.gender as any,
+      gender: dto.gender,
       hireDate: dto.hireDate ? new Date(dto.hireDate) : new Date(),
       basicSalary: dto.basicSalary,
       nationalId: dto.nationalId,
@@ -577,9 +588,9 @@ export class HrService {
       where: { userId, ...(tenantId ? { tenantId } : {}) },
     });
     if (employee) {
-      employee.status = 'terminated' as any;
+      employee.status = EmploymentStatus.TERMINATED;
       if (dto.terminationDate) {
-        (employee as any).terminationDate = new Date(dto.terminationDate);
+        employee.terminationDate = new Date(dto.terminationDate);
       }
       await this.employeeRepo.save(employee);
       checklist['employeeRecordUpdated'] = true;
@@ -637,7 +648,7 @@ export class HrService {
   ): Promise<{ departmentId?: string; department?: string }> {
     if (departmentId) {
       const dept = await this.departmentRepo.findOne({
-        where: { id: departmentId, ...(tenantId ? { tenantId } : {}) } as any,
+        where: { id: departmentId, ...(tenantId ? { tenantId } : {}) },
       });
       if (!dept) {
         throw new BadRequestException('Department not found in this tenant');
@@ -661,7 +672,7 @@ export class HrService {
     // creates can both compute the same number and collide. Retry up to 5x
     // on unique-violation (Postgres error code 23505) before giving up.
     const resolvedDept = await this.resolveDepartmentFields(
-      (dto as any).departmentId,
+      dto.departmentId,
       dto.department,
       tenantId,
     );
@@ -750,7 +761,7 @@ export class HrService {
 
   async updateEmployee(id: string, dto: UpdateEmployeeDto, tenantId?: string): Promise<Employee> {
     const employee = await this.getEmployeeById(id, tenantId);
-    const incomingDeptId = (dto as any).departmentId;
+    const incomingDeptId = dto.departmentId;
     const incomingDeptText = dto.department;
     // Only re-resolve when the caller actually touched a department field.
     // departmentId, when present, is canonical; otherwise text is the source
@@ -762,18 +773,18 @@ export class HrService {
         incomingDeptText,
         tenantId,
       );
-      employee.departmentId = (resolved.departmentId ?? null) as any;
-      employee.department = (resolved.department ?? null) as any;
+      employee.departmentId = resolved.departmentId ?? undefined;
+      employee.department = (resolved.department ?? null) as string;
       // Important: clear the loaded relation object so TypeORM doesn't
       // overwrite our direct departmentId write with the stale FK from
       // the previously-loaded Department.
-      (employee as any).departmentRef = resolved.departmentId
-        ? ({ id: resolved.departmentId } as any)
-        : null;
+      employee.departmentRef = resolved.departmentId
+        ? ({ id: resolved.departmentId } as unknown as Department)
+        : undefined;
     }
     // Remove department fields from dto so Object.assign below doesn't
     // re-overwrite the resolved values with raw input.
-    const { department: _d, departmentId: _di, ...rest } = dto as any;
+    const { department: _d, departmentId: _di, ...rest } = dto;
     Object.assign(employee, rest);
     return this.employeeRepo.save(employee);
   }
@@ -943,7 +954,13 @@ export class HrService {
 
   async getAttendance(
     facilityId: string,
-    options: { employeeId?: string; startDate?: string; endDate?: string },
+    options: {
+      employeeId?: string;
+      startDate?: string;
+      endDate?: string;
+      page?: number;
+      limit?: number;
+    },
     tenantId?: string,
   ) {
     const where: any = { facilityId };
@@ -953,11 +970,18 @@ export class HrService {
       where.date = Between(new Date(options.startDate), new Date(options.endDate));
     }
 
-    return this.attendanceRepo.find({
+    const page = Math.max(1, options.page || 1);
+    const limit = Math.min(200, Math.max(1, options.limit || 50));
+
+    const [data, total] = await this.attendanceRepo.findAndCount({
       where,
       relations: ['employee'],
       order: { date: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
     });
+
+    return { data, total, page, limit };
   }
 
   // ============ LEAVE MANAGEMENT ============
@@ -992,9 +1016,7 @@ export class HrService {
       })
       .getOne();
     if (overlap) {
-      throw new BadRequestException(
-        'An overlapping leave request already exists for this period',
-      );
+      throw new BadRequestException('An overlapping leave request already exists for this period');
     }
 
     // Check leave balance for annual/sick leave
@@ -1031,10 +1053,10 @@ export class HrService {
           module: 'hr',
           documentType: 'leave',
           documentId: saved.id,
-          tenantId: tenantId || (saved as any).tenantId || '',
+          tenantId: tenantId || saved.tenantId || '',
           requesterId: employee.userId,
           amount: daysRequested,
-          departmentId: (employee as any).departmentId || null,
+          departmentId: employee.departmentId || null,
           category: dto.leaveType,
         });
       } catch (e) {
@@ -1058,46 +1080,58 @@ export class HrService {
     approved: boolean,
     note?: string,
   ): Promise<void> {
-    const leave = await this.leaveRepo.findOne({
-      where: { id: leaveId },
-      relations: ['employee'],
-    });
-    if (!leave || leave.status !== LeaveStatus.PENDING) return;
-    leave.status = approved ? LeaveStatus.APPROVED : LeaveStatus.REJECTED;
-    leave.approvedById = actorUserId || (null as unknown as string);
-    leave.approvedAt = new Date();
-    if (note) leave.approvalNotes = note;
-    if (approved && leave.employee) {
-      const employee = leave.employee;
-      if (leave.leaveType === LeaveType.ANNUAL) {
-        if (employee.annualLeaveBalance < leave.daysRequested) {
-          this.logger.warn(
-            `[HR] Auto-approval would overdraw annual balance for employee ${employee.id}; marking REJECTED`,
-          );
-          leave.status = LeaveStatus.REJECTED;
-          leave.approvalNotes =
-            (leave.approvalNotes ? leave.approvalNotes + '\n' : '') +
-            '[Insufficient annual leave balance at approval time]';
-        } else {
-          employee.annualLeaveBalance -= leave.daysRequested;
-          await this.employeeRepo.save(employee);
-        }
-      } else if (leave.leaveType === LeaveType.SICK) {
-        if (employee.sickLeaveBalance < leave.daysRequested) {
-          leave.status = LeaveStatus.REJECTED;
-          leave.approvalNotes =
-            (leave.approvalNotes ? leave.approvalNotes + '\n' : '') +
-            '[Insufficient sick leave balance at approval time]';
-        } else {
-          employee.sickLeaveBalance -= leave.daysRequested;
-          await this.employeeRepo.save(employee);
+    await this.dataSource.transaction(async (manager) => {
+      const leaveRepo = manager.getRepository(LeaveRequest);
+      const employeeRepo = manager.getRepository(Employee);
+
+      const leave = await leaveRepo.findOne({
+        where: { id: leaveId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!leave || leave.status !== LeaveStatus.PENDING) return;
+
+      leave.status = approved ? LeaveStatus.APPROVED : LeaveStatus.REJECTED;
+      leave.approvedById = actorUserId || (null as unknown as string);
+      leave.approvedAt = new Date();
+      if (note) leave.approvalNotes = note;
+
+      if (approved) {
+        const employee = await employeeRepo.findOne({
+          where: { id: leave.employeeId },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (employee) {
+          if (leave.leaveType === LeaveType.ANNUAL) {
+            if (employee.annualLeaveBalance < leave.daysRequested) {
+              this.logger.warn(
+                `[HR] Auto-approval would overdraw annual balance for employee ${employee.id}; marking REJECTED`,
+              );
+              leave.status = LeaveStatus.REJECTED;
+              leave.approvalNotes =
+                (leave.approvalNotes ? leave.approvalNotes + '\n' : '') +
+                '[Insufficient annual leave balance at approval time]';
+            } else {
+              employee.annualLeaveBalance -= leave.daysRequested;
+              await employeeRepo.save(employee);
+            }
+          } else if (leave.leaveType === LeaveType.SICK) {
+            if (employee.sickLeaveBalance < leave.daysRequested) {
+              leave.status = LeaveStatus.REJECTED;
+              leave.approvalNotes =
+                (leave.approvalNotes ? leave.approvalNotes + '\n' : '') +
+                '[Insufficient sick leave balance at approval time]';
+            } else {
+              employee.sickLeaveBalance -= leave.daysRequested;
+              await employeeRepo.save(employee);
+            }
+          }
         }
       }
-    }
-    await this.leaveRepo.save(leave);
-    this.logger.log(
-      `[HR_NOTIFY] leave.${leave.status.toLowerCase()} (via approvals) leaveId=${leave.id}`,
-    );
+      await leaveRepo.save(leave);
+      this.logger.log(
+        `[HR_NOTIFY] leave.${leave.status.toLowerCase()} (via approvals) leaveId=${leave.id}`,
+      );
+    });
   }
 
   async approveLeave(
@@ -1106,55 +1140,79 @@ export class HrService {
     userId: string,
     tenantId?: string,
   ): Promise<LeaveRequest> {
-    const leave = await this.leaveRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
-      relations: ['employee'],
-    });
-    if (!leave) throw new NotFoundException('Leave request not found');
+    return this.dataSource.transaction(async (manager) => {
+      const leaveRepo = manager.getRepository(LeaveRequest);
+      const employeeRepo = manager.getRepository(Employee);
 
-    if (leave.status !== LeaveStatus.PENDING) {
-      throw new BadRequestException('Leave request has already been processed');
-    }
+      const leave = await leaveRepo.findOne({
+        where: { id, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!leave) throw new NotFoundException('Leave request not found');
 
-    leave.status = dto.approved ? LeaveStatus.APPROVED : LeaveStatus.REJECTED;
-    leave.approvedById = userId;
-    leave.approvedAt = new Date();
-    if (dto.notes) leave.approvalNotes = dto.notes;
-
-    // Update leave balance if approved (re-check at approval time to avoid race)
-    if (dto.approved) {
-      const employee = leave.employee;
-      if (leave.leaveType === LeaveType.ANNUAL) {
-        if (employee.annualLeaveBalance < leave.daysRequested) {
-          throw new BadRequestException(
-            `Cannot approve: insufficient annual leave balance (${employee.annualLeaveBalance} available, ${leave.daysRequested} requested).`,
-          );
-        }
-        employee.annualLeaveBalance -= leave.daysRequested;
-      } else if (leave.leaveType === LeaveType.SICK) {
-        if (employee.sickLeaveBalance < leave.daysRequested) {
-          throw new BadRequestException(
-            `Cannot approve: insufficient sick leave balance (${employee.sickLeaveBalance} available, ${leave.daysRequested} requested).`,
-          );
-        }
-        employee.sickLeaveBalance -= leave.daysRequested;
+      if (leave.status !== LeaveStatus.PENDING) {
+        throw new BadRequestException('Leave request has already been processed');
       }
-      await this.employeeRepo.save(employee);
-      this.logger.log(
-        `[HR_NOTIFY] leave.approved employeeId=${employee.id} type=${leave.leaveType} days=${leave.daysRequested}`,
-      );
-    } else {
-      this.logger.log(
-        `[HR_NOTIFY] leave.rejected employeeId=${leave.employeeId} type=${leave.leaveType}`,
-      );
-    }
 
-    return this.leaveRepo.save(leave);
+      leave.status = dto.approved ? LeaveStatus.APPROVED : LeaveStatus.REJECTED;
+      leave.approvedById = userId;
+      leave.approvedAt = new Date();
+      if (dto.notes) leave.approvalNotes = dto.notes;
+
+      if (dto.approved) {
+        const employee = await employeeRepo.findOne({
+          where: { id: leave.employeeId },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!employee) throw new NotFoundException('Employee not found');
+
+        if (leave.leaveType === LeaveType.ANNUAL) {
+          if (employee.annualLeaveBalance < leave.daysRequested) {
+            throw new BadRequestException(
+              `Cannot approve: insufficient annual leave balance (${employee.annualLeaveBalance} available, ${leave.daysRequested} requested).`,
+            );
+          }
+          employee.annualLeaveBalance -= leave.daysRequested;
+        } else if (leave.leaveType === LeaveType.SICK) {
+          if (employee.sickLeaveBalance < leave.daysRequested) {
+            throw new BadRequestException(
+              `Cannot approve: insufficient sick leave balance (${employee.sickLeaveBalance} available, ${leave.daysRequested} requested).`,
+            );
+          }
+          employee.sickLeaveBalance -= leave.daysRequested;
+        }
+        await employeeRepo.save(employee);
+        this.logger.log(
+          `[HR_NOTIFY] leave.approved employeeId=${employee.id} type=${leave.leaveType} days=${leave.daysRequested}`,
+        );
+      } else {
+        this.logger.log(
+          `[HR_NOTIFY] leave.rejected employeeId=${leave.employeeId} type=${leave.leaveType}`,
+        );
+      }
+
+      const saved = await leaveRepo.save(leave);
+
+      await this.writeAudit({
+        action: dto.approved ? 'LEAVE_APPROVED' : 'LEAVE_REJECTED',
+        entityType: 'LeaveRequest',
+        entityId: id,
+        actorUserId: userId,
+        tenantId,
+        newValue: {
+          status: saved.status,
+          leaveType: leave.leaveType,
+          daysRequested: leave.daysRequested,
+        },
+      });
+
+      return saved;
+    });
   }
 
   async getLeaveRequests(
     facilityId: string,
-    options: { status?: LeaveStatus; employeeId?: string },
+    options: { status?: LeaveStatus; employeeId?: string; page?: number; limit?: number },
     tenantId?: string,
   ) {
     const qb = this.leaveRepo
@@ -1170,7 +1228,16 @@ export class HrService {
       qb.andWhere('leave.employeeId = :employeeId', { employeeId: options.employeeId });
     }
 
-    return qb.orderBy('leave.createdAt', 'DESC').getMany();
+    const page = Math.max(1, options.page || 1);
+    const limit = Math.min(200, Math.max(1, options.limit || 50));
+
+    const [data, total] = await qb
+      .orderBy('leave.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
+    return { data, total, page, limit };
   }
 
   // ============ PAYROLL ============
@@ -1188,38 +1255,54 @@ export class HrService {
     userId: string,
     tenantId?: string,
   ): Promise<PayrollRun> {
-    // Check if payroll already exists for this month
-    const existing = await this.payrollRunRepo.findOne({
-      where: {
+    return this.dataSource.transaction(async (manager) => {
+      const prRepo = manager.getRepository(PayrollRun);
+
+      // Lock-based duplicate check prevents concurrent creates for same month
+      const existing = await prRepo
+        .createQueryBuilder('p')
+        .setLock('pessimistic_write')
+        .where('p.facilityId = :facilityId AND p.month = :month AND p.year = :year', {
+          facilityId: dto.facilityId,
+          month: dto.month,
+          year: dto.year,
+        })
+        .andWhere(tenantId ? 'p.tenantId = :tenantId' : '1=1', tenantId ? { tenantId } : {})
+        .getOne();
+      if (existing) {
+        throw new BadRequestException(`Payroll for ${dto.month}/${dto.year} already exists`);
+      }
+
+      const payrollNumber = await this.generatePayrollNumber(dto.facilityId, dto.month, dto.year);
+
+      const payPeriodStart = new Date(dto.year, dto.month - 1, 1);
+      const payPeriodEnd = new Date(dto.year, dto.month, 0);
+
+      const payroll = prRepo.create({
+        payrollNumber,
         facilityId: dto.facilityId,
         month: dto.month,
         year: dto.year,
+        payPeriodStart,
+        payPeriodEnd,
+        status: PayrollStatus.DRAFT,
+        createdById: userId,
         ...(tenantId ? { tenantId } : {}),
-      },
+      });
+
+      const saved = await prRepo.save(payroll);
+
+      await this.writeAudit({
+        action: 'PAYROLL_CREATED',
+        entityType: 'PayrollRun',
+        entityId: saved.id,
+        actorUserId: userId,
+        tenantId,
+        newValue: { payrollNumber: saved.payrollNumber, month: dto.month, year: dto.year },
+      });
+
+      return saved;
     });
-    if (existing) {
-      throw new BadRequestException(`Payroll for ${dto.month}/${dto.year} already exists`);
-    }
-
-    const payrollNumber = await this.generatePayrollNumber(dto.facilityId, dto.month, dto.year);
-
-    // Calculate pay period
-    const payPeriodStart = new Date(dto.year, dto.month - 1, 1);
-    const payPeriodEnd = new Date(dto.year, dto.month, 0);
-
-    const payroll = this.payrollRunRepo.create({
-      payrollNumber,
-      facilityId: dto.facilityId,
-      month: dto.month,
-      year: dto.year,
-      payPeriodStart,
-      payPeriodEnd,
-      status: PayrollStatus.DRAFT,
-      createdById: userId,
-      ...(tenantId ? { tenantId } : {}),
-    });
-
-    return this.payrollRunRepo.save(payroll);
   }
 
   async processPayroll(id: string, tenantId?: string): Promise<PayrollRun> {
@@ -1249,6 +1332,7 @@ export class HrService {
           facilityId: payroll.facilityId,
           status: 'active',
           deletedAt: IsNull(),
+          ...(tenantId ? { tenantId } : {}),
         },
       });
 
@@ -1271,7 +1355,10 @@ export class HrService {
       let totalNssf = 0;
 
       for (const emp of paidStaff) {
-        const allowancesTotal = (emp.allowances || []).reduce((sum, a) => sum + Number(a.amount), 0);
+        const allowancesTotal = (emp.allowances || []).reduce(
+          (sum, a) => sum + Number(a.amount),
+          0,
+        );
         const grossSalary = Number(emp.basicSalary) + allowancesTotal;
 
         const nssfSalaryCap = Math.min(grossSalary, 500000);
@@ -1372,33 +1459,38 @@ export class HrService {
   }
 
   async approvePayrollRun(id: string, userId: string, tenantId?: string): Promise<PayrollRun> {
-    const payroll = await this.payrollRunRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+    return this.dataSource.transaction(async (manager) => {
+      const prRepo = manager.getRepository(PayrollRun);
+      const payroll = await prRepo.findOne({
+        where: { id, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!payroll) throw new NotFoundException('Payroll run not found');
+      if (payroll.status !== PayrollStatus.DRAFT) {
+        throw new BadRequestException('Only draft payroll runs can be approved');
+      }
+      payroll.status = PayrollStatus.APPROVED;
+      payroll.approvedById = userId;
+      payroll.approvedAt = new Date();
+      this.logger.log(`[HR_NOTIFY] payroll.approved id=${id} approver=${userId}`);
+      const saved = await prRepo.save(payroll);
+
+      await this.writeAudit({
+        action: 'PAYROLL_APPROVED',
+        entityType: 'PayrollRun',
+        entityId: id,
+        actorUserId: userId,
+        tenantId,
+        newValue: {
+          status: PayrollStatus.APPROVED,
+          payrollNumber: payroll.payrollNumber,
+          totalNet: payroll.totalNet,
+          totalGross: payroll.totalGross,
+        },
+        oldValue: { status: PayrollStatus.DRAFT },
+      });
+      return saved;
     });
-    if (!payroll) throw new NotFoundException('Payroll run not found');
-    if (payroll.status !== PayrollStatus.DRAFT) {
-      throw new BadRequestException('Only draft payroll runs can be approved');
-    }
-    payroll.status = PayrollStatus.APPROVED;
-    (payroll as any).approvedById = userId;
-    (payroll as any).approvedAt = new Date();
-    this.logger.log(`[HR_NOTIFY] payroll.approved id=${id} approver=${userId}`);
-    const saved = await this.payrollRunRepo.save(payroll);
-    await this.writeAudit({
-      action: 'PAYROLL_APPROVED',
-      entityType: 'PayrollRun',
-      entityId: id,
-      actorUserId: userId,
-      tenantId,
-      newValue: {
-        status: PayrollStatus.APPROVED,
-        payrollNumber: payroll.payrollNumber,
-        totalNet: payroll.totalNet,
-        totalGross: payroll.totalGross,
-      },
-      oldValue: { status: PayrollStatus.DRAFT },
-    });
-    return saved;
   }
 
   async markPayrollPaid(id: string, tenantId?: string): Promise<PayrollRun> {
@@ -1419,10 +1511,9 @@ export class HrService {
       if (payroll.status !== PayrollStatus.COMPLETED) {
         throw new BadRequestException('Only completed payroll runs can be marked paid');
       }
-      await manager.getRepository(Payslip).update(
-        { payrollRunId: id, ...(tenantId ? { tenantId } : {}) },
-        { isPaid: true },
-      );
+      await manager
+        .getRepository(Payslip)
+        .update({ payrollRunId: id, ...(tenantId ? { tenantId } : {}) }, { isPaid: true });
       payroll.status = PayrollStatus.PAID;
       const saved = await manager.save(payroll);
       this.logger.log(`[HR_NOTIFY] payroll.paid id=${id}`);
@@ -1454,7 +1545,7 @@ export class HrService {
     });
     const rows = ['EmployeeId,EmployeeName,GrossSalary,PAYE'];
     for (const s of slips) {
-      const name = (s as any).employee?.fullName || '';
+      const name = s.employee?.fullName || '';
       rows.push(`${s.employeeId},"${name}",${s.grossSalary},${s.paye}`);
     }
     return rows.join('\n');
@@ -1471,10 +1562,8 @@ export class HrService {
     });
     const rows = ['EmployeeId,EmployeeName,GrossSalary,NSSFEmployee,NSSFEmployer'];
     for (const s of slips) {
-      const name = (s as any).employee?.fullName || '';
-      rows.push(
-        `${s.employeeId},"${name}",${s.grossSalary},${s.nssfEmployee},${s.nssfEmployer}`,
-      );
+      const name = s.employee?.fullName || '';
+      rows.push(`${s.employeeId},"${name}",${s.grossSalary},${s.nssfEmployee},${s.nssfEmployer}`);
     }
     return rows.join('\n');
   }
@@ -1490,7 +1579,7 @@ export class HrService {
     });
     const rows = ['BeneficiaryName,BankName,AccountNumber,Amount,Reference'];
     for (const s of slips) {
-      const e: any = (s as any).employee || {};
+      const e = s.employee;
       rows.push(
         `"${e.fullName || ''}","${e.bankName || ''}","${e.bankAccountNumber || ''}",${s.netSalary},${payroll.payrollNumber}`,
       );
@@ -1939,29 +2028,33 @@ export class HrService {
   // ============ SHIFT SWAP ============
 
   async requestShiftSwap(dto: RequestShiftSwapDto, tenantId?: string): Promise<ShiftSwapRequest> {
-    const requesterRoster = await this.rosterRepo.findOne({
-      where: { id: dto.requesterRosterId, ...(tenantId ? { tenantId } : {}) },
-      relations: ['employee'],
+    return this.dataSource.transaction(async (manager) => {
+      const rosterRepo = manager.getRepository(StaffRoster);
+      const swapRepo = manager.getRepository(ShiftSwapRequest);
+
+      const requesterRoster = await rosterRepo.findOne({
+        where: { id: dto.requesterRosterId, ...(tenantId ? { tenantId } : {}) },
+        relations: ['employee'],
+      });
+      if (!requesterRoster) throw new NotFoundException('Requester roster not found');
+
+      const swap = swapRepo.create({
+        facilityId: requesterRoster.facilityId,
+        requesterId: requesterRoster.employeeId,
+        requesterRosterId: dto.requesterRosterId,
+        targetEmployeeId: dto.targetEmployeeId,
+        targetRosterId: dto.targetRosterId,
+        isMutualSwap: !!dto.targetRosterId,
+        reason: dto.reason,
+        status: SwapRequestStatus.PENDING,
+        ...(tenantId ? { tenantId } : {}),
+      });
+
+      requesterRoster.status = RosterStatus.SWAP_PENDING;
+      await rosterRepo.save(requesterRoster);
+
+      return swapRepo.save(swap);
     });
-    if (!requesterRoster) throw new NotFoundException('Requester roster not found');
-
-    const swap = this.swapRepo.create({
-      facilityId: requesterRoster.facilityId,
-      requesterId: requesterRoster.employeeId,
-      requesterRosterId: dto.requesterRosterId,
-      targetEmployeeId: dto.targetEmployeeId,
-      targetRosterId: dto.targetRosterId,
-      isMutualSwap: !!dto.targetRosterId,
-      reason: dto.reason,
-      status: SwapRequestStatus.PENDING,
-      ...(tenantId ? { tenantId } : {}),
-    });
-
-    // Update requester's roster status
-    requesterRoster.status = RosterStatus.SWAP_PENDING;
-    await this.rosterRepo.save(requesterRoster);
-
-    return this.swapRepo.save(swap);
   }
 
   async respondToSwapRequest(
@@ -1970,22 +2063,26 @@ export class HrService {
     userId: string,
     tenantId?: string,
   ): Promise<ShiftSwapRequest> {
-    const swap = await this.swapRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
-      relations: ['requesterRoster', 'targetRoster'],
+    return this.dataSource.transaction(async (manager) => {
+      const swapRepo = manager.getRepository(ShiftSwapRequest);
+      const rosterRepo = manager.getRepository(StaffRoster);
+
+      const swap = await swapRepo.findOne({
+        where: { id, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!swap) throw new NotFoundException('Swap request not found');
+
+      swap.targetAccepted = accepted;
+      swap.targetRespondedAt = new Date();
+
+      if (!accepted) {
+        swap.status = SwapRequestStatus.REJECTED;
+        await rosterRepo.update(swap.requesterRosterId, { status: RosterStatus.SCHEDULED });
+      }
+
+      return swapRepo.save(swap);
     });
-    if (!swap) throw new NotFoundException('Swap request not found');
-
-    swap.targetAccepted = accepted;
-    swap.targetRespondedAt = new Date();
-
-    if (!accepted) {
-      swap.status = SwapRequestStatus.REJECTED;
-      // Revert requester's roster status
-      await this.rosterRepo.update(swap.requesterRosterId, { status: RosterStatus.SCHEDULED });
-    }
-
-    return this.swapRepo.save(swap);
   }
 
   async approveSwapRequest(
@@ -1994,50 +2091,68 @@ export class HrService {
     userId: string,
     tenantId?: string,
   ): Promise<ShiftSwapRequest> {
-    const swap = await this.swapRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
-      relations: ['requesterRoster', 'targetRoster'],
-    });
-    if (!swap) throw new NotFoundException('Swap request not found');
+    return this.dataSource.transaction(async (manager) => {
+      const swapRepo = manager.getRepository(ShiftSwapRequest);
+      const rosterRepo = manager.getRepository(StaffRoster);
 
-    if (!swap.targetAccepted) {
-      throw new BadRequestException('Target employee has not accepted the swap request');
-    }
+      const swap = await swapRepo.findOne({
+        where: { id, ...(tenantId ? { tenantId } : {}) },
+        relations: ['requesterRoster', 'targetRoster'],
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!swap) throw new NotFoundException('Swap request not found');
 
-    if (dto.approved) {
-      swap.status = SwapRequestStatus.APPROVED;
-      swap.approvedById = userId;
-      swap.approvedAt = new Date();
-
-      // Execute the swap
-      if (swap.isMutualSwap && swap.targetRosterId) {
-        // Mutual swap - exchange employees
-        const tempEmployee = swap.requesterRoster.employeeId;
-        await this.rosterRepo.update(swap.requesterRosterId, {
-          employeeId: swap.targetEmployeeId,
-          originalEmployeeId: tempEmployee,
-          status: RosterStatus.CONFIRMED,
-        });
-        await this.rosterRepo.update(swap.targetRosterId, {
-          employeeId: tempEmployee,
-          originalEmployeeId: swap.targetEmployeeId,
-          status: RosterStatus.CONFIRMED,
-        });
-      } else {
-        // Simple takeover
-        await this.rosterRepo.update(swap.requesterRosterId, {
-          employeeId: swap.targetEmployeeId,
-          originalEmployeeId: swap.requesterId,
-          status: RosterStatus.CONFIRMED,
-        });
+      if (!swap.targetAccepted) {
+        throw new BadRequestException('Target employee has not accepted the swap request');
       }
-    } else {
-      swap.status = SwapRequestStatus.REJECTED;
-      if (dto.rejectionReason) swap.rejectionReason = dto.rejectionReason;
-      await this.rosterRepo.update(swap.requesterRosterId, { status: RosterStatus.SCHEDULED });
-    }
 
-    return this.swapRepo.save(swap);
+      if (dto.approved) {
+        swap.status = SwapRequestStatus.APPROVED;
+        swap.approvedById = userId;
+        swap.approvedAt = new Date();
+
+        if (swap.isMutualSwap && swap.targetRosterId) {
+          const tempEmployee = swap.requesterRoster.employeeId;
+          await rosterRepo.update(swap.requesterRosterId, {
+            employeeId: swap.targetEmployeeId,
+            originalEmployeeId: tempEmployee,
+            status: RosterStatus.CONFIRMED,
+          });
+          await rosterRepo.update(swap.targetRosterId, {
+            employeeId: tempEmployee,
+            originalEmployeeId: swap.targetEmployeeId,
+            status: RosterStatus.CONFIRMED,
+          });
+        } else {
+          await rosterRepo.update(swap.requesterRosterId, {
+            employeeId: swap.targetEmployeeId,
+            originalEmployeeId: swap.requesterId,
+            status: RosterStatus.CONFIRMED,
+          });
+        }
+      } else {
+        swap.status = SwapRequestStatus.REJECTED;
+        if (dto.rejectionReason) swap.rejectionReason = dto.rejectionReason;
+        await rosterRepo.update(swap.requesterRosterId, { status: RosterStatus.SCHEDULED });
+      }
+
+      const saved = await swapRepo.save(swap);
+
+      await this.writeAudit({
+        action: dto.approved ? 'SHIFT_SWAP_APPROVED' : 'SHIFT_SWAP_REJECTED',
+        entityType: 'ShiftSwapRequest',
+        entityId: id,
+        actorUserId: userId,
+        tenantId,
+        newValue: {
+          status: saved.status,
+          requesterId: swap.requesterId,
+          targetEmployeeId: swap.targetEmployeeId,
+        },
+      });
+
+      return saved;
+    });
   }
 
   async getSwapRequests(
@@ -2748,7 +2863,7 @@ export class HrService {
       notes: data.notes,
       status: DocumentStatus.PENDING,
       ...(tenantId ? { tenantId } : {}),
-    } as any);
+    } as DeepPartial<StaffDocument>);
 
     return this.documentRepo.save(document);
   }
@@ -2831,7 +2946,7 @@ export class HrService {
           where: {
             employeeId: emp.id,
             status: LeaveStatus.APPROVED,
-            startDate: Between(new Date(yearStart), new Date(yearEnd)) as any,
+            startDate: Between(new Date(yearStart), new Date(yearEnd)),
             ...(tenantId ? { tenantId } : {}),
           },
         });
@@ -2938,11 +3053,11 @@ export class HrService {
     await this.writeAudit({
       action: 'EMPLOYEE_SALARY_CHANGED',
       entityType: 'Employee',
-      entityId: (dto?.employeeId as string) || (result as any)?.employeeId,
+      entityId: (dto?.employeeId as string) || result?.employeeId,
       actorUserId: userId,
       tenantId,
       newValue: {
-        salaryHistoryId: (result as any)?.id,
+        salaryHistoryId: result?.id,
         newSalary: dto?.newSalary,
         previousSalary: dto?.previousSalary,
         changeType: dto?.changeType,

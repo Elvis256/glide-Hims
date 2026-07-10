@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Put, Param, Body, Query, Request, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { SupplierFinanceService } from './supplier-finance.service';
 import {
   PaymentVoucherStatus,
@@ -43,12 +43,16 @@ export class SupplierFinanceController {
   @AuthWithPermissions('finance.read')
   @Get('payments')
   @ApiOperation({ summary: 'List payment vouchers' })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
   async listPaymentVouchers(
     @Query('facilityId') facilityId: string,
     @Query('status') status?: PaymentVoucherStatus,
     @Query('supplierId') supplierId?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
     @Request() req?: any,
   ) {
     return this.supplierFinanceService.listPaymentVouchers(
@@ -58,6 +62,8 @@ export class SupplierFinanceController {
         supplierId,
         startDate: startDate ? new Date(startDate) : undefined,
         endDate: endDate ? new Date(endDate) : undefined,
+        page: page ? +page : undefined,
+        limit: limit ? +limit : undefined,
       },
       req?.user?.tenantId,
     );
@@ -74,7 +80,7 @@ export class SupplierFinanceController {
   @Post('payments/:id/submit')
   @ApiOperation({ summary: 'Submit payment voucher for approval' })
   async submitPaymentVoucher(@Param('id') id: string, @Request() req: any) {
-    return this.supplierFinanceService.submitPaymentVoucher(id, req.user?.tenantId);
+    return this.supplierFinanceService.submitPaymentVoucher(id, req.user.id, req.user?.tenantId);
   }
 
   @AuthWithPermissions('finance.manage')
@@ -104,7 +110,7 @@ export class SupplierFinanceController {
   @Post('payments/:id/cancel')
   @ApiOperation({ summary: 'Cancel payment voucher' })
   async cancelPaymentVoucher(@Param('id') id: string, @Request() req: any) {
-    return this.supplierFinanceService.cancelPaymentVoucher(id, req.user?.tenantId);
+    return this.supplierFinanceService.cancelPaymentVoucher(id, req.user.id, req.user?.tenantId);
   }
 
   // ==================== CREDIT/DEBIT NOTES ====================
@@ -125,7 +131,12 @@ export class SupplierFinanceController {
     @CurrentUser() user: any,
     @Request() req: any,
   ) {
-    return this.supplierFinanceService.createDebitNoteFromGRN(grnId, body || {}, user.id, req.user?.tenantId);
+    return this.supplierFinanceService.createDebitNoteFromGRN(
+      grnId,
+      body || {},
+      user.id,
+      req.user?.tenantId,
+    );
   }
 
   @AuthWithPermissions('finance.manage')
@@ -142,6 +153,8 @@ export class SupplierFinanceController {
   @AuthWithPermissions('finance.read')
   @Get('credit-notes')
   @ApiOperation({ summary: 'List credit/debit notes' })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
   async listCreditNotes(
     @Query('facilityId') facilityId: string,
     @Query('noteType') noteType?: CreditNoteType,
@@ -149,6 +162,8 @@ export class SupplierFinanceController {
     @Query('supplierId') supplierId?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
     @Request() req?: any,
   ) {
     return this.supplierFinanceService.listCreditNotes(
@@ -159,6 +174,8 @@ export class SupplierFinanceController {
         supplierId,
         startDate: startDate ? new Date(startDate) : undefined,
         endDate: endDate ? new Date(endDate) : undefined,
+        page: page ? +page : undefined,
+        limit: limit ? +limit : undefined,
       },
       req?.user?.tenantId,
     );
@@ -190,6 +207,7 @@ export class SupplierFinanceController {
       id,
       data.paymentVoucherId,
       data.amount,
+      req.user.id,
       req.user?.tenantId,
     );
   }
@@ -198,7 +216,7 @@ export class SupplierFinanceController {
   @Post('credit-notes/:id/cancel')
   @ApiOperation({ summary: 'Cancel credit/debit note' })
   async cancelCreditNote(@Param('id') id: string, @Request() req: any) {
-    return this.supplierFinanceService.cancelCreditNote(id, req.user?.tenantId);
+    return this.supplierFinanceService.cancelCreditNote(id, req.user.id, req.user?.tenantId);
   }
 
   // ==================== REPORTS ====================

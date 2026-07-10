@@ -332,15 +332,10 @@ export class BudgetService {
       }
       const spent = fromCents(spentCents);
 
-      this.logger.debug(
-        `Calculated budget spent for facility ${facilityId}: ${spent}`,
-      );
+      this.logger.debug(`Calculated budget spent for facility ${facilityId}: ${spent}`);
       return spent;
     } catch (error) {
-      this.logger.error(
-        `Error calculating budget spent: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`Error calculating budget spent: ${error.message}`, error.stack);
       throw error;
     }
   }
@@ -353,10 +348,7 @@ export class BudgetService {
    * soon as a reservation flipped to APPROVED it disappeared from
    * the availability calculation, double-counting the budget).
    */
-  async calculateBudgetReserved(
-    budgetId: string,
-    tenantId?: string,
-  ): Promise<number> {
+  async calculateBudgetReserved(budgetId: string, tenantId?: string): Promise<number> {
     const where: any = {
       budgetId,
       status: In([ReservationStatus.PENDING, ReservationStatus.APPROVED]),
@@ -364,9 +356,7 @@ export class BudgetService {
     if (tenantId) where.tenantId = tenantId;
 
     const reservations = await this.reservationRepo.find({ where });
-    return fromCents(
-      reservations.reduce((sum, r) => sum + toCents(r.reservedAmount), 0),
-    );
+    return fromCents(reservations.reduce((sum, r) => sum + toCents(r.reservedAmount), 0));
   }
 
   /**
@@ -383,17 +373,9 @@ export class BudgetService {
   }> {
     try {
       const currentYear = new Date().getFullYear();
-      const budget = await this.getFacilityBudgetForYear(
-        facilityId,
-        currentYear,
-        tenantId,
-      );
+      const budget = await this.getFacilityBudgetForYear(facilityId, currentYear, tenantId);
 
-      const spent = await this.calculateBudgetSpent(
-        facilityId,
-        budget.fiscalYearStart,
-        tenantId,
-      );
+      const spent = await this.calculateBudgetSpent(facilityId, budget.fiscalYearStart, tenantId);
       const reserved = await this.calculateBudgetReserved(budget.id, tenantId);
 
       const available = fromCents(
@@ -407,10 +389,7 @@ export class BudgetService {
         available: Math.max(0, available), // Never negative
       };
     } catch (error) {
-      this.logger.error(
-        `Error calculating available budget: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`Error calculating available budget: ${error.message}`, error.stack);
       throw error;
     }
   }
@@ -425,10 +404,7 @@ export class BudgetService {
     tenantId?: string,
   ): Promise<boolean> {
     try {
-      const { available } = await this.calculateBudgetAvailable(
-        facilityId,
-        tenantId,
-      );
+      const { available } = await this.calculateBudgetAvailable(facilityId, tenantId);
 
       if (amount > available) {
         throw new BadRequestException(
@@ -441,10 +417,7 @@ export class BudgetService {
       if (error instanceof BadRequestException) {
         throw error;
       }
-      this.logger.error(
-        `Error validating budget: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`Error validating budget: ${error.message}`, error.stack);
       throw error;
     }
   }
@@ -480,14 +453,10 @@ export class BudgetService {
         if (tenantId) {
           qb.andWhere('b.tenant_id = :tenantId', { tenantId });
         }
-        const budget = await qb
-          .orderBy('b.fiscal_year_start', 'DESC')
-          .getOne();
+        const budget = await qb.orderBy('b.fiscal_year_start', 'DESC').getOne();
 
         if (!budget) {
-          throw new NotFoundException(
-            `No active budget for facility ${facilityId}`,
-          );
+          throw new NotFoundException(`No active budget for facility ${facilityId}`);
         }
 
         // Recompute remaining capacity inside the lock so the check is
@@ -496,18 +465,14 @@ export class BudgetService {
           where: {
             budgetId: budget.id,
             ...(tenantId ? { tenantId } : {}),
-            status: In([
-              ReservationStatus.PENDING,
-              ReservationStatus.APPROVED,
-            ]),
+            status: In([ReservationStatus.PENDING, ReservationStatus.APPROVED]),
           },
         });
         const reservedTotalCents = reservations.reduce(
           (sum, r) => sum + toCents(r.reservedAmount),
           0,
         );
-        const remainingCents =
-          toCents(budget.totalBudgetAllocation) - reservedTotalCents;
+        const remainingCents = toCents(budget.totalBudgetAllocation) - reservedTotalCents;
         const remaining = fromCents(remainingCents);
 
         if (toCents(amount) > remainingCents) {
@@ -528,15 +493,10 @@ export class BudgetService {
 
         const saved = await reservationRepo.save(reservation);
 
-        this.logger.log(
-          `Reserved $${amount} budget for ${documentType} ${documentId}`,
-        );
+        this.logger.log(`Reserved $${amount} budget for ${documentType} ${documentId}`);
         return saved;
       } catch (error) {
-        this.logger.error(
-          `Error reserving budget: ${error.message}`,
-          error.stack,
-        );
+        this.logger.error(`Error reserving budget: ${error.message}`, error.stack);
         throw error;
       }
     });
@@ -545,10 +505,7 @@ export class BudgetService {
   /**
    * Update reservation status when PR/PO is approved
    */
-  async approveReservation(
-    reservationId: string,
-    tenantId?: string,
-  ): Promise<BudgetReservation> {
+  async approveReservation(reservationId: string, tenantId?: string): Promise<BudgetReservation> {
     const where: any = { id: reservationId };
     if (tenantId) where.tenantId = tenantId;
 
@@ -564,10 +521,7 @@ export class BudgetService {
   /**
    * Release a budget reservation (e.g., when PR/PO is rejected or cancelled)
    */
-  async releaseReservation(
-    reservationId: string,
-    tenantId?: string,
-  ): Promise<BudgetReservation> {
+  async releaseReservation(reservationId: string, tenantId?: string): Promise<BudgetReservation> {
     const where: any = { id: reservationId };
     if (tenantId) where.tenantId = tenantId;
 
@@ -584,10 +538,7 @@ export class BudgetService {
   /**
    * Mark reservation as spent when GRN is posted
    */
-  async markReservationSpent(
-    documentId: string,
-    tenantId?: string,
-  ): Promise<void> {
+  async markReservationSpent(documentId: string, tenantId?: string): Promise<void> {
     const where: any = { documentId, status: ReservationStatus.APPROVED };
     if (tenantId) where.tenantId = tenantId;
 

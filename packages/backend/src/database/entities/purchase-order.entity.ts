@@ -22,6 +22,8 @@ export enum POStatus {
 @Index(['status'])
 @Index(['createdAt'])
 @Index(['supplier'])
+@Index(['facilityId', 'status'])
+@Index(['supplierId', 'status'])
 export class PurchaseOrder extends BaseEntity {
   @Column({ name: 'order_number', unique: true })
   orderNumber: string;

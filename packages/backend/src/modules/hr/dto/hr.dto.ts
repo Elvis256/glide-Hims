@@ -126,7 +126,9 @@ export class CreateEmployeeDto {
   @IsString()
   department?: string;
 
-  @ApiPropertyOptional({ description: 'FK to departments.id (preferred over free-text department)' })
+  @ApiPropertyOptional({
+    description: 'FK to departments.id (preferred over free-text department)',
+  })
   @IsOptional()
   @IsUUID()
   departmentId?: string;
@@ -194,7 +196,9 @@ export class UpdateEmployeeDto {
   @IsString()
   department?: string;
 
-  @ApiPropertyOptional({ description: 'FK to departments.id (preferred over free-text department)' })
+  @ApiPropertyOptional({
+    description: 'FK to departments.id (preferred over free-text department)',
+  })
   @IsOptional()
   @IsUUID()
   departmentId?: string;

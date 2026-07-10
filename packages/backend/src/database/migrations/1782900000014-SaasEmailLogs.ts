@@ -20,10 +20,18 @@ export class SaasEmailLogs1782900000014 implements MigrationInterface {
         "createdAt" TIMESTAMP NOT NULL DEFAULT now()
       )
     `);
-    await q.query(`CREATE INDEX IF NOT EXISTS idx_saas_email_logs_tenant ON saas_email_logs ("tenantId")`);
-    await q.query(`CREATE INDEX IF NOT EXISTS idx_saas_email_logs_template ON saas_email_logs ("templateKey")`);
-    await q.query(`CREATE INDEX IF NOT EXISTS idx_saas_email_logs_status ON saas_email_logs (status)`);
-    await q.query(`CREATE INDEX IF NOT EXISTS idx_saas_email_logs_created ON saas_email_logs ("createdAt")`);
+    await q.query(
+      `CREATE INDEX IF NOT EXISTS idx_saas_email_logs_tenant ON saas_email_logs ("tenantId")`,
+    );
+    await q.query(
+      `CREATE INDEX IF NOT EXISTS idx_saas_email_logs_template ON saas_email_logs ("templateKey")`,
+    );
+    await q.query(
+      `CREATE INDEX IF NOT EXISTS idx_saas_email_logs_status ON saas_email_logs (status)`,
+    );
+    await q.query(
+      `CREATE INDEX IF NOT EXISTS idx_saas_email_logs_created ON saas_email_logs ("createdAt")`,
+    );
   }
 
   public async down(q: QueryRunner): Promise<void> {

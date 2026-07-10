@@ -11,10 +11,7 @@ import {
   FinanceApprovalChain,
   FinanceApprovalStatus,
 } from '../../database/entities/finance-approval-chain.entity';
-import {
-  JournalEntry,
-  JournalStatus,
-} from '../../database/entities/journal-entry.entity';
+import { JournalEntry, JournalStatus } from '../../database/entities/journal-entry.entity';
 import { AuditLog } from '../../database/entities/audit-log.entity';
 import { maxMoney } from '../../common/utils/money';
 
@@ -142,9 +139,7 @@ export class FinanceApprovalService {
         .getOne();
 
       if (!entry) {
-        throw new NotFoundException(
-          `Journal entry ${journalEntryId} not found`,
-        );
+        throw new NotFoundException(`Journal entry ${journalEntryId} not found`);
       }
 
       if (entry.status !== JournalStatus.DRAFT) {
@@ -154,9 +149,7 @@ export class FinanceApprovalService {
       }
 
       if (facilityId && entry.facilityId && entry.facilityId !== facilityId) {
-        throw new ForbiddenException(
-          'Journal entry belongs to a different facility',
-        );
+        throw new ForbiddenException('Journal entry belongs to a different facility');
       }
 
       // Refuse to re-submit if a non-rejected approval chain already exists.
@@ -164,23 +157,16 @@ export class FinanceApprovalService {
         .getRepository(FinanceApprovalChain)
         .find({ where: { journalEntryId } });
 
-      if (
-        existingChain.some(
-          (c) => c.status !== FinanceApprovalStatus.REJECTED,
-        )
-      ) {
-        throw new BadRequestException(
-          'Approval chain already exists for this entry',
-        );
+      if (existingChain.some((c) => c.status !== FinanceApprovalStatus.REJECTED)) {
+        throw new BadRequestException('Approval chain already exists for this entry');
       }
 
       // Sprint-6: preserve the rejected chain as audit history. Instead
       // of deleting prior REJECTED rows, increment the attempt counter
       // so the new chain coexists with old ones under the
       // (journal_entry_id, approval_level, attempt) UNIQUE index.
-      const nextAttempt = existingChain.length === 0
-        ? 1
-        : Math.max(...existingChain.map((c) => c.attempt ?? 1)) + 1;
+      const nextAttempt =
+        existingChain.length === 0 ? 1 : Math.max(...existingChain.map((c) => c.attempt ?? 1)) + 1;
 
       const amount = maxMoney(entry.totalDebit ?? 0, entry.totalCredit ?? 0);
       const requiredLevels = await this.getRequiredApprovalsForAmount(amount);
@@ -197,9 +183,7 @@ export class FinanceApprovalService {
         }),
       );
 
-      const savedChain = await manager
-        .getRepository(FinanceApprovalChain)
-        .save(chainEntries);
+      const savedChain = await manager.getRepository(FinanceApprovalChain).save(chainEntries);
 
       entry.status = JournalStatus.SUBMITTED;
       entry.submittedByUserId = userId;
@@ -209,13 +193,11 @@ export class FinanceApprovalService {
 
       await manager.getRepository(JournalEntry).save(entry);
 
-      this.logAudit(
-        'JOURNAL_ENTRY_SUBMITTED',
-        journalEntryId,
-        userId,
-        tid,
-        { amount, requiredLevels: requiredLevels.length, comments },
-      );
+      this.logAudit('JOURNAL_ENTRY_SUBMITTED', journalEntryId, userId, tid, {
+        amount,
+        requiredLevels: requiredLevels.length,
+        comments,
+      });
 
       this.notifyFirstLevelApprovers(entry, requiredLevels[0], entry.facilityId);
 
@@ -262,9 +244,7 @@ export class FinanceApprovalService {
       return [];
     }
 
-    const entryIds = Array.from(
-      new Set(pendingChains.map((c) => c.journalEntryId)),
-    );
+    const entryIds = Array.from(new Set(pendingChains.map((c) => c.journalEntryId)));
 
     const entries = await this.journalEntryRepo.find({
       where: { id: In(entryIds), tenantId: tid },
@@ -280,13 +260,9 @@ export class FinanceApprovalService {
         ...entry,
         approvalChains: allChains.filter((c) => c.journalEntryId === entry.id),
         currentApprovalLevel:
-          pendingChains.find((c) => c.journalEntryId === entry.id)
-            ?.approvalLevel || 0,
+          pendingChains.find((c) => c.journalEntryId === entry.id)?.approvalLevel || 0,
       }))
-      .sort(
-        (a, b) =>
-          (a.submittedAt?.getTime() || 0) - (b.submittedAt?.getTime() || 0),
-      );
+      .sort((a, b) => (a.submittedAt?.getTime() || 0) - (b.submittedAt?.getTime() || 0));
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -319,9 +295,7 @@ export class FinanceApprovalService {
         .getOne();
 
       if (!entry) {
-        throw new NotFoundException(
-          `Journal entry ${journalEntryId} not found`,
-        );
+        throw new NotFoundException(`Journal entry ${journalEntryId} not found`);
       }
 
       if (entry.status !== JournalStatus.SUBMITTED) {
@@ -332,14 +306,10 @@ export class FinanceApprovalService {
 
       // Segregation of duties: preparer / submitter cannot approve their own entry.
       if (entry.submittedByUserId && entry.submittedByUserId === userId) {
-        throw new ForbiddenException(
-          'You cannot approve a journal entry you submitted',
-        );
+        throw new ForbiddenException('You cannot approve a journal entry you submitted');
       }
       if (entry.createdById && entry.createdById === userId) {
-        throw new ForbiddenException(
-          'You cannot approve a journal entry you created',
-        );
+        throw new ForbiddenException('You cannot approve a journal entry you created');
       }
 
       // Load the chain (also locked) for this role.
@@ -364,29 +334,24 @@ export class FinanceApprovalService {
       }
 
       if (chainEntry.status !== FinanceApprovalStatus.PENDING) {
-        throw new BadRequestException(
-          `Approval already processed (status: ${chainEntry.status})`,
-        );
+        throw new BadRequestException(`Approval already processed (status: ${chainEntry.status})`);
       }
 
       // Out-of-order guard: every lower level must already be APPROVED.
       // Restrict to the CURRENT attempt — rejected attempts must not
       // bleed into the completeness evaluation of the new chain.
-      const lowerLevels = await manager
-        .getRepository(FinanceApprovalChain)
-        .find({
-          where: {
-            journalEntryId,
-            tenantId: tid,
-            attempt: chainEntry.attempt,
-          },
-          order: { approvalLevel: 'ASC' },
-        });
+      const lowerLevels = await manager.getRepository(FinanceApprovalChain).find({
+        where: {
+          journalEntryId,
+          tenantId: tid,
+          attempt: chainEntry.attempt,
+        },
+        order: { approvalLevel: 'ASC' },
+      });
 
       const blocking = lowerLevels.find(
         (c) =>
-          c.approvalLevel < chainEntry.approvalLevel &&
-          c.status !== FinanceApprovalStatus.APPROVED,
+          c.approvalLevel < chainEntry.approvalLevel && c.status !== FinanceApprovalStatus.APPROVED,
       );
       if (blocking) {
         throw new BadRequestException(
@@ -403,9 +368,7 @@ export class FinanceApprovalService {
           c.approvedById === userId,
       );
       if (alreadyApprovedByUser) {
-        throw new ForbiddenException(
-          'You have already approved a different level of this entry',
-        );
+        throw new ForbiddenException('You have already approved a different level of this entry');
       }
 
       chainEntry.status = FinanceApprovalStatus.APPROVED;
@@ -416,42 +379,30 @@ export class FinanceApprovalService {
       await manager.getRepository(FinanceApprovalChain).save(chainEntry);
 
       // Recompute completeness — only consider the CURRENT attempt.
-      const refreshed = await manager
-        .getRepository(FinanceApprovalChain)
-        .find({
-          where: {
-            journalEntryId,
-            tenantId: tid,
-            attempt: chainEntry.attempt,
-          },
-        });
+      const refreshed = await manager.getRepository(FinanceApprovalChain).find({
+        where: {
+          journalEntryId,
+          tenantId: tid,
+          attempt: chainEntry.attempt,
+        },
+      });
 
-      const allApproved = refreshed.every(
-        (c) => c.status === FinanceApprovalStatus.APPROVED,
-      );
+      const allApproved = refreshed.every((c) => c.status === FinanceApprovalStatus.APPROVED);
 
       if (allApproved) {
         entry.status = JournalStatus.APPROVED;
         await manager.getRepository(JournalEntry).save(entry);
       }
 
-      this.logAudit(
-        'JOURNAL_ENTRY_APPROVED',
-        journalEntryId,
-        userId,
-        tid,
-        {
-          approvalLevel: chainEntry.approvalLevel,
-          role: userRole,
-          allApproved,
-          comments,
-        },
-      );
+      this.logAudit('JOURNAL_ENTRY_APPROVED', journalEntryId, userId, tid, {
+        approvalLevel: chainEntry.approvalLevel,
+        role: userRole,
+        allApproved,
+        comments,
+      });
 
       if (!allApproved) {
-        const nextChain = refreshed.find(
-          (c) => c.approvalLevel === chainEntry.approvalLevel + 1,
-        );
+        const nextChain = refreshed.find((c) => c.approvalLevel === chainEntry.approvalLevel + 1);
         if (nextChain) {
           this.notifyNextLevelApprover(entry, nextChain);
         }
@@ -495,9 +446,7 @@ export class FinanceApprovalService {
         .getOne();
 
       if (!entry) {
-        throw new NotFoundException(
-          `Journal entry ${journalEntryId} not found`,
-        );
+        throw new NotFoundException(`Journal entry ${journalEntryId} not found`);
       }
 
       if (entry.status !== JournalStatus.SUBMITTED) {
@@ -507,9 +456,7 @@ export class FinanceApprovalService {
       }
 
       if (entry.submittedByUserId && entry.submittedByUserId === userId) {
-        throw new ForbiddenException(
-          'You cannot reject a journal entry you submitted',
-        );
+        throw new ForbiddenException('You cannot reject a journal entry you submitted');
       }
 
       const chainEntry = await manager
@@ -562,13 +509,11 @@ export class FinanceApprovalService {
       entry.status = JournalStatus.DRAFT;
       await manager.getRepository(JournalEntry).save(entry);
 
-      this.logAudit(
-        'JOURNAL_ENTRY_REJECTED',
-        journalEntryId,
-        userId,
-        tid,
-        { approvalLevel: chainEntry.approvalLevel, role: userRole, rejectionReason },
-      );
+      this.logAudit('JOURNAL_ENTRY_REJECTED', journalEntryId, userId, tid, {
+        approvalLevel: chainEntry.approvalLevel,
+        role: userRole,
+        rejectionReason,
+      });
 
       this.notifyEntryRejected(entry, userRole, rejectionReason);
     });
@@ -578,18 +523,13 @@ export class FinanceApprovalService {
   // Read-side helpers
   // ─────────────────────────────────────────────────────────────────────────
 
-  async isReadyToPost(
-    journalEntryId: string,
-    tenantId?: string,
-  ): Promise<boolean> {
+  async isReadyToPost(journalEntryId: string, tenantId?: string): Promise<boolean> {
     const tid = this.requireTenant(tenantId || 'default-tenant');
     const entry = await this.journalEntryRepo.findOne({
       where: { id: journalEntryId, tenantId: tid },
     });
     if (!entry) {
-      throw new NotFoundException(
-        `Journal entry ${journalEntryId} not found`,
-      );
+      throw new NotFoundException(`Journal entry ${journalEntryId} not found`);
     }
     return entry.status === JournalStatus.APPROVED;
   }
@@ -647,9 +587,7 @@ export class FinanceApprovalService {
     tenantId: string,
     details: any,
   ): void {
-    this.logger.log(
-      `[AUDIT] ${action} entity=${entityId} user=${userId} tenant=${tenantId}`,
-    );
+    this.logger.log(`[AUDIT] ${action} entity=${entityId} user=${userId} tenant=${tenantId}`);
     // Fire-and-forget persistent audit row. Failure must not break the
     // business transaction (it has already committed by the time we get here).
     this.auditLogRepo
@@ -681,19 +619,13 @@ export class FinanceApprovalService {
     );
   }
 
-  private notifyNextLevelApprover(
-    entry: JournalEntry,
-    chainEntry: FinanceApprovalChain,
-  ): void {
+  private notifyNextLevelApprover(entry: JournalEntry, chainEntry: FinanceApprovalChain): void {
     this.logger.debug(
       `[NOTIFY] Next-level approver for entry ${entry.id}: level=${chainEntry.approvalLevel}, role=${chainEntry.requiredRole}`,
     );
   }
 
-  private notifyEntryReadyToPost(
-    entry: JournalEntry,
-    approverUserId: string,
-  ): void {
+  private notifyEntryReadyToPost(entry: JournalEntry, approverUserId: string): void {
     this.logger.debug(
       `[NOTIFY] Entry ${entry.id} ready to post (final approver=${approverUserId})`,
     );
@@ -704,8 +636,6 @@ export class FinanceApprovalService {
     rejectorRole: string,
     rejectionReason: string,
   ): void {
-    this.logger.debug(
-      `[NOTIFY] Entry ${entry.id} rejected by ${rejectorRole}: ${rejectionReason}`,
-    );
+    this.logger.debug(`[NOTIFY] Entry ${entry.id} rejected by ${rejectorRole}: ${rejectionReason}`);
   }
 }

@@ -274,10 +274,7 @@ export class UsageMeterService {
   /**
    * Check quota and trigger alert if threshold exceeded
    */
-  private async checkAndAlertQuota(
-    tenantId: string,
-    metricType: UsageMetricType,
-  ): Promise<void> {
+  private async checkAndAlertQuota(tenantId: string, metricType: UsageMetricType): Promise<void> {
     const check = await this.checkQuota(tenantId, metricType);
     if (check.usagePercentage === 0) return;
 

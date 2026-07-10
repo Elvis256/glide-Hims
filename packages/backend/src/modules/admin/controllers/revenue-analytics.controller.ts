@@ -1,7 +1,4 @@
-import {
-  Controller, Get, Query, Request,
-  ForbiddenException,
-} from '@nestjs/common';
+import { Controller, Get, Query, Request, ForbiddenException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AuthWithPermissions } from '../../auth/decorators/auth.decorator';
 import { RevenueAnalyticsService } from '../services/revenue-analytics.service';
@@ -38,10 +35,7 @@ export class RevenueAnalyticsController {
   @AuthWithPermissions('system.manage')
   @ApiOperation({ summary: 'Tenant usage metrics' })
   @ApiQuery({ name: 'tenantId', required: false })
-  async getTenantUsage(
-    @Query('tenantId') tenantId: string,
-    @Request() req: any,
-  ) {
+  async getTenantUsage(@Query('tenantId') tenantId: string, @Request() req: any) {
     this.requireSystemAdmin(req);
     return this.revenueService.getTenantUsageMetrics(tenantId);
   }

@@ -41,17 +41,13 @@ export class AuditLogsAppendOnly1782900000033 implements MigrationInterface {
       END;
       $$ LANGUAGE plpgsql;
     `);
-    await queryRunner.query(
-      `DROP TRIGGER IF EXISTS trg_audit_logs_no_update ON audit_logs`,
-    );
+    await queryRunner.query(`DROP TRIGGER IF EXISTS trg_audit_logs_no_update ON audit_logs`);
     await queryRunner.query(`
       CREATE TRIGGER trg_audit_logs_no_update
         BEFORE UPDATE ON audit_logs
         FOR EACH ROW EXECUTE FUNCTION audit_logs_block_update();
     `);
-    await queryRunner.query(
-      `DROP TRIGGER IF EXISTS trg_audit_logs_no_delete ON audit_logs`,
-    );
+    await queryRunner.query(`DROP TRIGGER IF EXISTS trg_audit_logs_no_delete ON audit_logs`);
     await queryRunner.query(`
       CREATE TRIGGER trg_audit_logs_no_delete
         BEFORE DELETE ON audit_logs

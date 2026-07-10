@@ -34,7 +34,7 @@ export class IdentityGuardService {
     if (tenantId) where.tenantId = tenantId;
     const user = await this.users.findOne({ where });
     if (!user) throw new NotFoundException('User not found in this tenant');
-    if ((user as any).status && (user as any).status !== 'active') {
+    if (user.status && user.status !== 'active') {
       throw new ForbiddenException('User account is not active');
     }
     return user;
@@ -46,16 +46,10 @@ export class IdentityGuardService {
       where: { userId, ...(tenantId ? { tenantId } : {}) } as any,
       relations: ['role'],
     });
-    return links
-      .map((l) => l.role?.name?.toLowerCase())
-      .filter((n): n is string => Boolean(n));
+    return links.map((l) => l.role?.name?.toLowerCase()).filter((n): n is string => Boolean(n));
   }
 
-  async userHasAnyRole(
-    userId: string,
-    fragments: string[],
-    tenantId?: string,
-  ): Promise<boolean> {
+  async userHasAnyRole(userId: string, fragments: string[], tenantId?: string): Promise<boolean> {
     const names = await this.getUserRoleNames(userId, tenantId);
     return names.some((n) => fragments.some((f) => n.includes(f)));
   }
@@ -67,9 +61,8 @@ export class IdentityGuardService {
    * Throws ForbiddenException with code WITNESS_INVALID otherwise.
    */
   async assertWitness(opts: WitnessOptions): Promise<User> {
-    const fragments = (opts.allowedRoleFragments?.length
-      ? opts.allowedRoleFragments
-      : DEFAULT_WITNESS_ROLES
+    const fragments = (
+      opts.allowedRoleFragments?.length ? opts.allowedRoleFragments : DEFAULT_WITNESS_ROLES
     ).map((s) => s.toLowerCase());
     const ctx = opts.context ? ` for ${opts.context}` : '';
 
@@ -95,7 +88,7 @@ export class IdentityGuardService {
         message: `Witness user not found in this tenant${ctx}.`,
       });
     }
-    if ((witness as any).status && (witness as any).status !== 'active') {
+    if (witness.status && witness.status !== 'active') {
       throw new ForbiddenException({
         code: 'WITNESS_INVALID',
         message: `Witness account is not active${ctx}.`,

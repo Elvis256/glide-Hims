@@ -63,8 +63,9 @@ export class PosRetailEventListener {
 
       // Emit to SMS worker (actual SMS module picks this up)
       // We don't import the SMS module directly to avoid circular dependency.
-      this.logger.log(`SMS receipt queued for sale ${saleId} → ${customerPhone}: ${message.slice(0, 60)}...`);
-
+      this.logger.log(
+        `SMS receipt queued for sale ${saleId} → ${customerPhone}: ${message.slice(0, 60)}...`,
+      );
     } catch (err) {
       this.logger.warn(`SMS receipt failed for sale ${saleId}: ${err.message}`);
     }

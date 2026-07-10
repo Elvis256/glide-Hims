@@ -157,11 +157,7 @@ export class PermissionsController {
   @AuthWithPermissions('roles.create')
   @ApiOperation({ summary: 'Create permission' })
   async createPermission(@Body() dto: CreatePermissionDto, @Request() req: any) {
-    const permission = await this.rolesService.createPermission(
-      dto,
-      req.user?.tenantId,
-      req.user,
-    );
+    const permission = await this.rolesService.createPermission(dto, req.user?.tenantId, req.user);
     return { message: 'Permission created', data: permission };
   }
 

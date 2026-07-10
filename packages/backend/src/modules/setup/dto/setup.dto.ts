@@ -162,7 +162,8 @@ export class SettingsDto {
   enabledModules?: string[];
 
   @ApiPropertyOptional({
-    description: 'Workflow mode: "simple" (single shared queue) or "departmental" (per-department queues)',
+    description:
+      'Workflow mode: "simple" (single shared queue) or "departmental" (per-department queues)',
     example: 'simple',
     enum: ['simple', 'departmental'],
   })

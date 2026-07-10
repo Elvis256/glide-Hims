@@ -64,7 +64,11 @@ export class QuotationController {
 
   @Put('price-catalog/:id')
   @ApiOperation({ summary: 'Update a price catalog item' })
-  async updateCatalogItem(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateCatalogItemDto) {
+  async updateCatalogItem(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateCatalogItemDto,
+  ) {
     this.assertAdmin(req);
     return this.service.updateCatalogItem(id, dto);
   }

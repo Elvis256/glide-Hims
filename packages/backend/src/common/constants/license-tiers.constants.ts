@@ -20,7 +20,10 @@ export function tierRank(tier?: string | null): number {
   return LICENSE_TIER_RANK[String(tier).toLowerCase()] ?? 0;
 }
 
-export function meetsTier(actual: string | null | undefined, required: string | null | undefined): boolean {
+export function meetsTier(
+  actual: string | null | undefined,
+  required: string | null | undefined,
+): boolean {
   if (!required) return true;
   return tierRank(actual) >= tierRank(required);
 }

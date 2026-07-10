@@ -1,13 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Param,
-  Query,
-  Body,
-  Request,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Post, Param, Query, Body, Request, UseGuards } from '@nestjs/common';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';

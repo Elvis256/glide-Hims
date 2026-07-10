@@ -220,7 +220,8 @@ export class CriticalResultsService {
     return {
       total: all.length,
       pending: all.filter((a) => a.status === 'pending').length,
-      acknowledged: all.filter((a) => a.status === 'acknowledged' || a.status === 'resolved').length,
+      acknowledged: all.filter((a) => a.status === 'acknowledged' || a.status === 'resolved')
+        .length,
       escalated: all.filter((a) => a.status === 'escalated').length,
       cancelled: all.filter((a) => a.status === 'cancelled').length,
       slaBreached: all.filter(

@@ -8,7 +8,14 @@ describe('Procurement Approval Chain - Phase 2C Unit Tests', () => {
         level4MaxAmount: null,
       };
       const amount = 400;
-      const level = amount <= thresholds.level1MaxAmount ? 1 : amount <= thresholds.level2MaxAmount ? 2 : amount <= thresholds.level3MaxAmount ? 3 : 4;
+      const level =
+        amount <= thresholds.level1MaxAmount
+          ? 1
+          : amount <= thresholds.level2MaxAmount
+            ? 2
+            : amount <= thresholds.level3MaxAmount
+              ? 3
+              : 4;
       expect(level).toBe(1);
     });
 
@@ -20,7 +27,14 @@ describe('Procurement Approval Chain - Phase 2C Unit Tests', () => {
         level4MaxAmount: null,
       };
       const amount = 2500;
-      const level = amount <= thresholds.level1MaxAmount ? 1 : amount <= thresholds.level2MaxAmount ? 2 : amount <= thresholds.level3MaxAmount ? 3 : 4;
+      const level =
+        amount <= thresholds.level1MaxAmount
+          ? 1
+          : amount <= thresholds.level2MaxAmount
+            ? 2
+            : amount <= thresholds.level3MaxAmount
+              ? 3
+              : 4;
       expect(level).toBe(2);
     });
 
@@ -32,7 +46,14 @@ describe('Procurement Approval Chain - Phase 2C Unit Tests', () => {
         level4MaxAmount: null,
       };
       const amount = 10000;
-      const level = amount <= thresholds.level1MaxAmount ? 1 : amount <= thresholds.level2MaxAmount ? 2 : amount <= thresholds.level3MaxAmount ? 3 : 4;
+      const level =
+        amount <= thresholds.level1MaxAmount
+          ? 1
+          : amount <= thresholds.level2MaxAmount
+            ? 2
+            : amount <= thresholds.level3MaxAmount
+              ? 3
+              : 4;
       expect(level).toBe(3);
     });
 
@@ -44,7 +65,14 @@ describe('Procurement Approval Chain - Phase 2C Unit Tests', () => {
         level4MaxAmount: null,
       };
       const amount = 75000;
-      const level = amount <= thresholds.level1MaxAmount ? 1 : amount <= thresholds.level2MaxAmount ? 2 : amount <= thresholds.level3MaxAmount ? 3 : 4;
+      const level =
+        amount <= thresholds.level1MaxAmount
+          ? 1
+          : amount <= thresholds.level2MaxAmount
+            ? 2
+            : amount <= thresholds.level3MaxAmount
+              ? 3
+              : 4;
       expect(level).toBe(4);
     });
 
@@ -55,11 +83,11 @@ describe('Procurement Approval Chain - Phase 2C Unit Tests', () => {
         level3MaxAmount: 50000,
         level4MaxAmount: null,
       };
-      
+
       // At boundary: $500 equals max, stays at level 1
       const level1 = 500 <= thresholds.level1MaxAmount ? 1 : 2;
       expect(level1).toBe(1);
-      
+
       // Just above boundary: $501 moves to level 2
       const level1b = 501 <= thresholds.level1MaxAmount ? 1 : 2;
       expect(level1b).toBe(2);
@@ -69,11 +97,13 @@ describe('Procurement Approval Chain - Phase 2C Unit Tests', () => {
       expect(level2).toBe(1);
 
       // At $5000 boundary: stays at level 2
-      const level3 = 5000 <= thresholds.level1MaxAmount ? 1 : 5000 <= thresholds.level2MaxAmount ? 2 : 3;
+      const level3 =
+        5000 <= thresholds.level1MaxAmount ? 1 : 5000 <= thresholds.level2MaxAmount ? 2 : 3;
       expect(level3).toBe(2);
 
       // Just above $5000: moves to level 3
-      const level3b = 5001 <= thresholds.level1MaxAmount ? 1 : 5001 <= thresholds.level2MaxAmount ? 2 : 3;
+      const level3b =
+        5001 <= thresholds.level1MaxAmount ? 1 : 5001 <= thresholds.level2MaxAmount ? 2 : 3;
       expect(level3b).toBe(3);
     });
   });
@@ -241,11 +271,11 @@ describe('Procurement Approval Chain - Phase 2C Unit Tests', () => {
       // 1. PR submission (reserve budget)
       // 2. First approval (validate still available)
       // 3. Final approval (confirm and lock)
-      
+
       const reservedAmount = 75000;
       const currentlySpent = 30000;
       const availableAfterApproval = 100000 - currentlySpent - reservedAmount;
-      
+
       expect(availableAfterApproval).toBeGreaterThanOrEqual(-5000); // Negative indicates overspend
     });
   });
@@ -266,7 +296,7 @@ describe('Procurement Approval Chain - Phase 2C Unit Tests', () => {
     });
 
     it('should immediately set PR status to REJECTED', () => {
-      const pr = { status: 'PENDING_APPROVAL' };
+      const pr: any = { status: 'PENDING_APPROVAL' };
       pr.status = 'REJECTED';
       expect(pr.status).toBe('REJECTED');
     });
@@ -289,10 +319,10 @@ describe('Procurement Approval Chain - Phase 2C Unit Tests', () => {
   describe('Multi-Level Approval Workflow Scenarios', () => {
     it('Scenario 1: $300 PR (1-level approval)', () => {
       // $300 amount
-      const thresholds = { level1MaxAmount: 500 };
+      const thresholds: any = { level1MaxAmount: 500 };
       const amount = 300;
       const approvalsNeeded = amount <= thresholds.level1MaxAmount ? 1 : 2;
-      
+
       expect(approvalsNeeded).toBe(1); // Only manager approval
     });
 
@@ -304,12 +334,15 @@ describe('Procurement Approval Chain - Phase 2C Unit Tests', () => {
         level3MaxAmount: 50000,
       };
       const amount = 3000;
-      const approvalsNeeded = 
-        amount <= thresholds.level1MaxAmount ? 1 
-        : amount <= thresholds.level2MaxAmount ? 2 
-        : amount <= thresholds.level3MaxAmount ? 3 
-        : 4;
-      
+      const approvalsNeeded =
+        amount <= thresholds.level1MaxAmount
+          ? 1
+          : amount <= thresholds.level2MaxAmount
+            ? 2
+            : amount <= thresholds.level3MaxAmount
+              ? 3
+              : 4;
+
       expect(approvalsNeeded).toBe(2); // Manager → Finance
     });
 
@@ -321,12 +354,15 @@ describe('Procurement Approval Chain - Phase 2C Unit Tests', () => {
         level3MaxAmount: 50000,
       };
       const amount = 25000;
-      const approvalsNeeded = 
-        amount <= thresholds.level1MaxAmount ? 1 
-        : amount <= thresholds.level2MaxAmount ? 2 
-        : amount <= thresholds.level3MaxAmount ? 3 
-        : 4;
-      
+      const approvalsNeeded =
+        amount <= thresholds.level1MaxAmount
+          ? 1
+          : amount <= thresholds.level2MaxAmount
+            ? 2
+            : amount <= thresholds.level3MaxAmount
+              ? 3
+              : 4;
+
       expect(approvalsNeeded).toBe(3); // Manager → Finance → Director
     });
 
@@ -338,12 +374,15 @@ describe('Procurement Approval Chain - Phase 2C Unit Tests', () => {
         level3MaxAmount: 50000,
       };
       const amount = 75000;
-      const approvalsNeeded = 
-        amount <= thresholds.level1MaxAmount ? 1 
-        : amount <= thresholds.level2MaxAmount ? 2 
-        : amount <= thresholds.level3MaxAmount ? 3 
-        : 4;
-      
+      const approvalsNeeded =
+        amount <= thresholds.level1MaxAmount
+          ? 1
+          : amount <= thresholds.level2MaxAmount
+            ? 2
+            : amount <= thresholds.level3MaxAmount
+              ? 3
+              : 4;
+
       expect(approvalsNeeded).toBe(4); // Manager → Finance → Director → CFO
     });
 
@@ -357,7 +396,7 @@ describe('Procurement Approval Chain - Phase 2C Unit Tests', () => {
       chain[0].status = 'APPROVED';
 
       const prStatus = chain[1].status === 'PENDING' ? 'PENDING_APPROVAL' : 'APPROVED';
-      
+
       expect(chain[0].status).toBe('APPROVED');
       expect(chain[1].status).toBe('PENDING');
       expect(prStatus).toBe('PENDING_APPROVAL');

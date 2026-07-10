@@ -1,6 +1,13 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, EntityManager, Between, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
+import {
+  Repository,
+  DataSource,
+  EntityManager,
+  Between,
+  LessThanOrEqual,
+  MoreThanOrEqual,
+} from 'typeorm';
 import {
   SampleReferral,
   ReferralStage,
@@ -32,10 +39,7 @@ export class SampleReferralService {
     private inAppNotificationsService: InAppNotificationsService,
   ) {}
 
-  private async generateReferralNumber(
-    manager: EntityManager,
-    tenantId?: string,
-  ): Promise<string> {
+  private async generateReferralNumber(manager: EntityManager, tenantId?: string): Promise<string> {
     const now = new Date();
     const prefix = `SRF-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
 
@@ -338,10 +342,7 @@ export class SampleReferralService {
 
     const tatQb = this.referralRepo
       .createQueryBuilder('ref')
-      .select(
-        'AVG(EXTRACT(EPOCH FROM (ref.resultReadyAt - ref.collectedAt)) / 86400.0)',
-        'avgDays',
-      )
+      .select('AVG(EXTRACT(EPOCH FROM (ref.resultReadyAt - ref.collectedAt)) / 86400.0)', 'avgDays')
       .addSelect('COUNT(*)', 'completed')
       .addSelect(
         `SUM(CASE WHEN EXTRACT(EPOCH FROM (ref.resultReadyAt - ref.collectedAt)) / 86400.0 <= 7 THEN 1 ELSE 0 END)`,

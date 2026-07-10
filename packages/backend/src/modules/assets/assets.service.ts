@@ -1,4 +1,11 @@
-import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef, Optional } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Inject,
+  forwardRef,
+  Optional,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, LessThan, In, DataSource } from 'typeorm';
 import {
@@ -115,7 +122,12 @@ export class AssetsService {
     }
   }
 
-  private async genSequentialNumber(prefix: string, tenantId: string | undefined, repo: Repository<any>, field: string): Promise<string> {
+  private async genSequentialNumber(
+    prefix: string,
+    tenantId: string | undefined,
+    repo: Repository<any>,
+    field: string,
+  ): Promise<string> {
     const year = new Date().getFullYear();
     const row = await repo
       .createQueryBuilder('e')
@@ -135,7 +147,12 @@ export class AssetsService {
 
   async createAsset(data: Partial<FixedAsset>, ctx?: ActorContext): Promise<FixedAsset> {
     if (!data.assetCode) {
-      data.assetCode = await this.genSequentialNumber('AST', ctx?.tenantId, this.assetRepo, 'assetCode');
+      data.assetCode = await this.genSequentialNumber(
+        'AST',
+        ctx?.tenantId,
+        this.assetRepo,
+        'assetCode',
+      );
     }
     const asset = this.assetRepo.create({
       ...data,
@@ -153,11 +170,16 @@ export class AssetsService {
       const cat = await this.categoryRepo.findOne({ where: { id: data.categoryId } });
       if (cat) {
         asset.assetClass = asset.assetClass || cat.assetClass;
-        if (!asset.usefulLifeMonths && cat.defaultUsefulLifeMonths) asset.usefulLifeMonths = cat.defaultUsefulLifeMonths;
-        if (!asset.depreciationMethod && cat.defaultDepreciationMethod) asset.depreciationMethod = cat.defaultDepreciationMethod;
-        if (!asset.depreciationRate && cat.defaultDepreciationRate) asset.depreciationRate = cat.defaultDepreciationRate;
-        if (!asset.calibrationIntervalDays && cat.defaultCalibrationIntervalDays) asset.calibrationIntervalDays = cat.defaultCalibrationIntervalDays;
-        if (!asset.maintenanceIntervalDays && cat.defaultMaintenanceIntervalDays) asset.maintenanceIntervalDays = cat.defaultMaintenanceIntervalDays;
+        if (!asset.usefulLifeMonths && cat.defaultUsefulLifeMonths)
+          asset.usefulLifeMonths = cat.defaultUsefulLifeMonths;
+        if (!asset.depreciationMethod && cat.defaultDepreciationMethod)
+          asset.depreciationMethod = cat.defaultDepreciationMethod;
+        if (!asset.depreciationRate && cat.defaultDepreciationRate)
+          asset.depreciationRate = cat.defaultDepreciationRate;
+        if (!asset.calibrationIntervalDays && cat.defaultCalibrationIntervalDays)
+          asset.calibrationIntervalDays = cat.defaultCalibrationIntervalDays;
+        if (!asset.maintenanceIntervalDays && cat.defaultMaintenanceIntervalDays)
+          asset.maintenanceIntervalDays = cat.defaultMaintenanceIntervalDays;
       }
     }
 
@@ -194,7 +216,11 @@ export class AssetsService {
     return saved;
   }
 
-  async updateAsset(id: string, data: Partial<FixedAsset>, ctx?: ActorContext): Promise<FixedAsset> {
+  async updateAsset(
+    id: string,
+    data: Partial<FixedAsset>,
+    ctx?: ActorContext,
+  ): Promise<FixedAsset> {
     const asset = await this.assetRepo.findOne({
       where: { id, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
     });
@@ -267,9 +293,12 @@ export class AssetsService {
       .leftJoinAndSelect('asset.custodian', 'custodian')
       .where('asset.facilityId = :facilityId', { facilityId });
 
-    if (filters?.category) qb.andWhere('asset.category = :category', { category: filters.category });
-    if (filters?.categoryId) qb.andWhere('asset.categoryId = :categoryId', { categoryId: filters.categoryId });
-    if (filters?.assetClass) qb.andWhere('asset.assetClass = :assetClass', { assetClass: filters.assetClass });
+    if (filters?.category)
+      qb.andWhere('asset.category = :category', { category: filters.category });
+    if (filters?.categoryId)
+      qb.andWhere('asset.categoryId = :categoryId', { categoryId: filters.categoryId });
+    if (filters?.assetClass)
+      qb.andWhere('asset.assetClass = :assetClass', { assetClass: filters.assetClass });
     if (filters?.criticalityLevel)
       qb.andWhere('asset.criticalityLevel = :crit', { crit: filters.criticalityLevel });
     if (filters?.status) qb.andWhere('asset.status = :status', { status: filters.status });
@@ -333,101 +362,121 @@ export class AssetsService {
     month: number,
     ctx?: ActorContext,
   ): Promise<AssetDepreciation[]> {
-    const assets = await this.assetRepo.find({
-      where: {
-        facilityId,
-        status: AssetStatus.ACTIVE,
-        ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
-      },
-    });
+    return this.dataSource.transaction(async (manager) => {
+      const assetRepoTx = manager.getRepository(FixedAsset);
+      const depRepoTx = manager.getRepository(AssetDepreciation);
 
-    const results: AssetDepreciation[] = [];
-
-    for (const asset of assets) {
-      const existing = await this.depreciationRepo.findOne({
+      // Lock all active assets for this facility to prevent concurrent depreciation runs
+      const assets = await assetRepoTx.find({
         where: {
+          facilityId,
+          status: AssetStatus.ACTIVE,
+          ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
+        },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      const results: AssetDepreciation[] = [];
+
+      for (const asset of assets) {
+        const existing = await depRepoTx.findOne({
+          where: {
+            assetId: asset.id,
+            periodYear: year,
+            periodMonth: month,
+            ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
+          },
+        });
+        if (existing) continue;
+
+        const depStartDate = new Date(asset.depreciationStartDate);
+        const periodDate = new Date(year, month - 1, 1);
+        if (periodDate < depStartDate) continue;
+        if (Number(asset.bookValue) <= Number(asset.salvageValue)) continue;
+
+        const monthlyDep = this.calculateMonthlyDepreciation(asset);
+        const depAmount = Math.min(
+          monthlyDep,
+          Number(asset.bookValue) - Number(asset.salvageValue),
+        );
+
+        const depRecord = depRepoTx.create({
           assetId: asset.id,
           periodYear: year,
           periodMonth: month,
+          openingBookValue: asset.bookValue,
+          depreciationAmount: depAmount,
+          accumulatedDepreciation: Number(asset.accumulatedDepreciation) + depAmount,
+          closingBookValue: Number(asset.bookValue) - depAmount,
+          isPosted: false,
           ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
-        },
-      });
-      if (existing) continue;
+        });
 
-      const depStartDate = new Date(asset.depreciationStartDate);
-      const periodDate = new Date(year, month - 1, 1);
-      if (periodDate < depStartDate) continue;
-      if (Number(asset.bookValue) <= Number(asset.salvageValue)) continue;
+        const saved = await depRepoTx.save(depRecord);
+        results.push(saved);
 
-      const monthlyDep = this.calculateMonthlyDepreciation(asset);
-      const depAmount = Math.min(monthlyDep, Number(asset.bookValue) - Number(asset.salvageValue));
-
-      const depRecord = this.depreciationRepo.create({
-        assetId: asset.id,
-        periodYear: year,
-        periodMonth: month,
-        openingBookValue: asset.bookValue,
-        depreciationAmount: depAmount,
-        accumulatedDepreciation: Number(asset.accumulatedDepreciation) + depAmount,
-        closingBookValue: Number(asset.bookValue) - depAmount,
-        isPosted: false,
-        ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
-      });
-
-      const saved = await this.depreciationRepo.save(depRecord);
-      results.push(saved);
-
-      asset.accumulatedDepreciation = Number(asset.accumulatedDepreciation) + depAmount;
-      asset.bookValue = Number(asset.bookValue) - depAmount;
-      await this.assetRepo.save(asset);
-    }
-
-    // Post a single aggregated journal entry to GL (depreciation expense vs accumulated depreciation)
-    if (results.length > 0 && this.finance && ctx?.userId) {
-      try {
-        const total = results.reduce((s, r) => s + Number(r.depreciationAmount), 0);
-        const accounts: any[] = await this.dataSource.query(
-          `SELECT id, code FROM chart_of_accounts WHERE code = ANY($1) AND ($2::uuid IS NULL OR tenant_id = $2) LIMIT 10`,
-          [['6500', '1599'], ctx.tenantId || null],
-        );
-        const expenseAcc = accounts.find((a: any) => a.code === '6500');
-        const accumDepAcc = accounts.find((a: any) => a.code === '1599');
-        if (expenseAcc && accumDepAcc) {
-          const journal = await this.finance.createJournalEntry(
-            {
-              facilityId,
-              journalDate: new Date(year, month - 1, 28).toISOString(),
-              journalType: 'DEPRECIATION' as any,
-              description: `Monthly asset depreciation ${year}-${String(month).padStart(2, '0')}`,
-              reference: `DEPR-${year}-${String(month).padStart(2, '0')}`,
-              lines: [
-                { accountId: expenseAcc.id, debit: total, credit: 0, description: 'Depreciation expense' },
-                { accountId: accumDepAcc.id, debit: 0, credit: total, description: 'Accumulated depreciation' },
-              ],
-            } as any,
-            ctx.userId,
-            ctx.tenantId,
-          );
-          for (const r of results) {
-            r.isPosted = true;
-            r.journalEntryId = journal.id;
-            r.postedBy = ctx.userId;
-            r.postedAt = new Date();
-            await this.depreciationRepo.save(r);
-          }
-        }
-      } catch {
-        // GL posting is best-effort; depreciation records still created
+        asset.accumulatedDepreciation = Number(asset.accumulatedDepreciation) + depAmount;
+        asset.bookValue = Number(asset.bookValue) - depAmount;
+        await assetRepoTx.save(asset);
       }
-    }
 
-    await this.audit(ctx, 'asset.depreciation.run', 'asset_depreciation', undefined, null, {
-      facilityId,
-      year,
-      month,
-      count: results.length,
+      // GL posting is best-effort outside the main transaction
+      if (results.length > 0 && this.finance && ctx?.userId) {
+        try {
+          const total = results.reduce((s, r) => s + Number(r.depreciationAmount), 0);
+          const accounts: any[] = await this.dataSource.query(
+            `SELECT id, code FROM chart_of_accounts WHERE code = ANY($1) AND ($2::uuid IS NULL OR tenant_id = $2) LIMIT 10`,
+            [['6500', '1599'], ctx.tenantId || null],
+          );
+          const expenseAcc = accounts.find((a: any) => a.code === '6500');
+          const accumDepAcc = accounts.find((a: any) => a.code === '1599');
+          if (expenseAcc && accumDepAcc) {
+            const journal = await this.finance.createJournalEntry(
+              {
+                facilityId,
+                journalDate: new Date(year, month - 1, 28).toISOString(),
+                journalType: 'DEPRECIATION',
+                description: `Monthly asset depreciation ${year}-${String(month).padStart(2, '0')}`,
+                reference: `DEPR-${year}-${String(month).padStart(2, '0')}`,
+                lines: [
+                  {
+                    accountId: expenseAcc.id,
+                    debit: total,
+                    credit: 0,
+                    description: 'Depreciation expense',
+                  },
+                  {
+                    accountId: accumDepAcc.id,
+                    debit: 0,
+                    credit: total,
+                    description: 'Accumulated depreciation',
+                  },
+                ],
+              } as any,
+              ctx.userId,
+              ctx.tenantId,
+            );
+            for (const r of results) {
+              r.isPosted = true;
+              r.journalEntryId = journal.id;
+              r.postedBy = ctx.userId;
+              r.postedAt = new Date();
+              await depRepoTx.save(r);
+            }
+          }
+        } catch {
+          // GL posting is best-effort; depreciation records still created
+        }
+      }
+
+      await this.audit(ctx, 'asset.depreciation.run', 'asset_depreciation', undefined, null, {
+        facilityId,
+        year,
+        month,
+        count: results.length,
+      });
+      return results;
     });
-    return results;
   }
 
   async getDepreciationSchedule(assetId: string, tenantId?: string): Promise<AssetDepreciation[]> {
@@ -464,45 +513,58 @@ export class AssetsService {
     return {
       totalAssets: assets.length,
       totalCost: assets.reduce((s, a) => s + Number(a.totalCost), 0),
-      totalAccumulatedDepreciation: assets.reduce((s, a) => s + Number(a.accumulatedDepreciation), 0),
+      totalAccumulatedDepreciation: assets.reduce(
+        (s, a) => s + Number(a.accumulatedDepreciation),
+        0,
+      ),
       totalBookValue: assets.reduce((s, a) => s + Number(a.bookValue), 0),
       periodDepreciation: periodDeps.reduce((s, d) => s + Number(d.depreciationAmount), 0),
-      periodPostedToGl: periodDeps.filter((d) => d.isPosted).reduce((s, d) => s + Number(d.depreciationAmount), 0),
+      periodPostedToGl: periodDeps
+        .filter((d) => d.isPosted)
+        .reduce((s, d) => s + Number(d.depreciationAmount), 0),
       byCategory,
     };
   }
 
   // ==================== MAINTENANCE ====================
 
-  async recordMaintenance(data: Partial<AssetMaintenance>, ctx?: ActorContext): Promise<AssetMaintenance> {
-    const asset = await this.assetRepo.findOne({
-      where: { id: data.assetId, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
-    });
-    if (!asset) throw new NotFoundException('Asset not found');
+  async recordMaintenance(
+    data: Partial<AssetMaintenance>,
+    ctx?: ActorContext,
+  ): Promise<AssetMaintenance> {
+    return this.dataSource.transaction(async (manager) => {
+      const assetRepoTx = manager.getRepository(FixedAsset);
+      const maintRepo = manager.getRepository(AssetMaintenance);
 
-    const m = this.maintenanceRepo.create({
-      ...data,
-      facilityId: data.facilityId || asset.facilityId,
-      ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
-    });
-    const saved = await this.maintenanceRepo.save(m);
+      const asset = await assetRepoTx.findOne({
+        where: { id: data.assetId, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!asset) throw new NotFoundException('Asset not found');
 
-    if (data.nextDueDate) {
-      asset.nextMaintenanceDate = data.nextDueDate;
-    }
-    // calibration sub-flow
-    if ((data.type || '').toLowerCase() === 'calibration') {
-      asset.lastCalibrationDate = data.maintenanceDate || new Date();
-      if (asset.calibrationIntervalDays) {
-        const next = new Date(asset.lastCalibrationDate);
-        next.setDate(next.getDate() + asset.calibrationIntervalDays);
-        asset.nextCalibrationDue = next;
+      const m = maintRepo.create({
+        ...data,
+        facilityId: data.facilityId || asset.facilityId,
+        ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
+      });
+      const saved = await maintRepo.save(m);
+
+      if (data.nextDueDate) {
+        asset.nextMaintenanceDate = data.nextDueDate;
       }
-    }
-    await this.assetRepo.save(asset);
+      if ((data.type || '').toLowerCase() === 'calibration') {
+        asset.lastCalibrationDate = data.maintenanceDate || new Date();
+        if (asset.calibrationIntervalDays) {
+          const next = new Date(asset.lastCalibrationDate);
+          next.setDate(next.getDate() + asset.calibrationIntervalDays);
+          asset.nextCalibrationDue = next;
+        }
+      }
+      await assetRepoTx.save(asset);
 
-    await this.audit(ctx, 'asset.maintenance.record', 'asset_maintenance', saved.id, null, saved);
-    return saved;
+      await this.audit(ctx, 'asset.maintenance.record', 'asset_maintenance', saved.id, null, saved);
+      return saved;
+    });
   }
 
   async getMaintenanceHistory(assetId: string, tenantId?: string): Promise<AssetMaintenance[]> {
@@ -512,7 +574,11 @@ export class AssetsService {
     });
   }
 
-  async getMaintenanceDue(facilityId: string, daysAhead = 30, tenantId?: string): Promise<FixedAsset[]> {
+  async getMaintenanceDue(
+    facilityId: string,
+    daysAhead = 30,
+    tenantId?: string,
+  ): Promise<FixedAsset[]> {
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + daysAhead);
     return this.assetRepo.find({
@@ -526,7 +592,11 @@ export class AssetsService {
     });
   }
 
-  async getCalibrationDue(facilityId: string, daysAhead = 30, tenantId?: string): Promise<FixedAsset[]> {
+  async getCalibrationDue(
+    facilityId: string,
+    daysAhead = 30,
+    tenantId?: string,
+  ): Promise<FixedAsset[]> {
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + daysAhead);
     return this.assetRepo.find({
@@ -540,7 +610,11 @@ export class AssetsService {
     });
   }
 
-  async getAmcExpiring(facilityId: string, daysAhead = 60, tenantId?: string): Promise<FixedAsset[]> {
+  async getAmcExpiring(
+    facilityId: string,
+    daysAhead = 60,
+    tenantId?: string,
+  ): Promise<FixedAsset[]> {
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + daysAhead);
     return this.assetRepo.find({
@@ -553,7 +627,11 @@ export class AssetsService {
     });
   }
 
-  async getWarrantyExpiring(facilityId: string, daysAhead = 60, tenantId?: string): Promise<FixedAsset[]> {
+  async getWarrantyExpiring(
+    facilityId: string,
+    daysAhead = 60,
+    tenantId?: string,
+  ): Promise<FixedAsset[]> {
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + daysAhead);
     return this.assetRepo.find({
@@ -569,50 +647,64 @@ export class AssetsService {
   // ==================== TRANSFERS (with approval workflow) ====================
 
   async initiateTransfer(data: Partial<AssetTransfer>, ctx?: ActorContext): Promise<AssetTransfer> {
-    const asset = await this.assetRepo.findOne({
-      where: { id: data.assetId, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
-    });
-    if (!asset) throw new NotFoundException('Asset not found');
-    if (asset.status !== AssetStatus.ACTIVE) {
-      throw new BadRequestException(`Cannot transfer asset in status ${asset.status}`);
-    }
+    return this.dataSource.transaction(async (manager) => {
+      const assetRepoTx = manager.getRepository(FixedAsset);
+      const xferRepo = manager.getRepository(AssetTransfer);
+      const approvalRepo = manager.getRepository(AssetTransferApproval);
 
-    const xferNo = await this.genSequentialNumber('XFR', ctx?.tenantId, this.transferRepo, 'transferNumber');
+      const asset = await assetRepoTx.findOne({
+        where: { id: data.assetId, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+      });
+      if (!asset) throw new NotFoundException('Asset not found');
+      if (asset.status !== AssetStatus.ACTIVE) {
+        throw new BadRequestException(`Cannot transfer asset in status ${asset.status}`);
+      }
 
-    const transfer = this.transferRepo.create({
-      ...data,
-      transferNumber: xferNo,
-      transferDate: data.transferDate || new Date(),
-      transferredBy: ctx?.userId || data.transferredBy!,
-      fromFacilityId: asset.facilityId,
-      fromDepartmentId: asset.departmentId,
-      status: 'pending',
-      ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
-    });
-    const saved = await this.transferRepo.save(transfer);
-
-    // Pre-create approval rows for the workflow stages
-    const stages: TransferApprovalStage[] = [
-      TransferApprovalStage.ORIGIN_DEPT_HEAD,
-      TransferApprovalStage.RECEIVING_DEPT_HEAD,
-      TransferApprovalStage.STORE_KEEPER,
-    ];
-    for (const stage of stages) {
-      await this.transferApprovalRepo.save(
-        this.transferApprovalRepo.create({
-          transferId: saved.id,
-          stage,
-          decision: 'pending',
-          ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
-        }),
+      const xferNo = await this.genSequentialNumber(
+        'XFR',
+        ctx?.tenantId,
+        this.transferRepo,
+        'transferNumber',
       );
-    }
 
-    await this.audit(ctx, 'asset.transfer.initiate', 'asset_transfer', saved.id, null, saved);
-    return saved;
+      const transfer = xferRepo.create({
+        ...data,
+        transferNumber: xferNo,
+        transferDate: data.transferDate || new Date(),
+        transferredBy: ctx?.userId || data.transferredBy!,
+        fromFacilityId: asset.facilityId,
+        fromDepartmentId: asset.departmentId,
+        status: 'pending',
+        ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
+      });
+      const saved = await xferRepo.save(transfer);
+
+      const stages: TransferApprovalStage[] = [
+        TransferApprovalStage.ORIGIN_DEPT_HEAD,
+        TransferApprovalStage.RECEIVING_DEPT_HEAD,
+        TransferApprovalStage.STORE_KEEPER,
+      ];
+      for (const stage of stages) {
+        await approvalRepo.save(
+          approvalRepo.create({
+            transferId: saved.id,
+            stage,
+            decision: 'pending',
+            ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
+          }),
+        );
+      }
+
+      await this.audit(ctx, 'asset.transfer.initiate', 'asset_transfer', saved.id, null, saved);
+      return saved;
+    });
   }
 
-  async listTransfers(facilityId: string, status?: string, tenantId?: string): Promise<AssetTransfer[]> {
+  async listTransfers(
+    facilityId: string,
+    status?: string,
+    tenantId?: string,
+  ): Promise<AssetTransfer[]> {
     const qb = this.transferRepo
       .createQueryBuilder('t')
       .leftJoinAndSelect('t.asset', 'asset')
@@ -635,8 +727,8 @@ export class AssetsService {
         stage === TransferApprovalStage.ORIGIN_DEPT_HEAD
           ? 'assets.transfer.approve.origin'
           : stage === TransferApprovalStage.RECEIVING_DEPT_HEAD
-          ? 'assets.transfer.approve.receiving'
-          : 'assets.transfer.approve.store';
+            ? 'assets.transfer.approve.receiving'
+            : 'assets.transfer.approve.store';
       const has = await this.userHasPermission(ctx.userId, stagePerm);
       if (!has) {
         throw new BadRequestException(
@@ -645,49 +737,62 @@ export class AssetsService {
       }
     }
 
-    const transfer = await this.transferRepo.findOne({
-      where: { id: transferId, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
-      relations: ['approvals'],
-    });
-    if (!transfer) throw new NotFoundException('Transfer not found');
+    return this.dataSource.transaction(async (manager) => {
+      const xferRepo = manager.getRepository(AssetTransfer);
+      const approvalRepo = manager.getRepository(AssetTransferApproval);
 
-    const approval = transfer.approvals?.find((a) => a.stage === stage);
-    if (!approval) throw new BadRequestException(`Approval stage ${stage} not found`);
-    if (approval.decision !== 'pending') {
-      throw new BadRequestException(`Stage ${stage} already decided as ${approval.decision}`);
-    }
+      const transfer = await xferRepo.findOne({
+        where: { id: transferId, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+        relations: ['approvals'],
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!transfer) throw new NotFoundException('Transfer not found');
 
-    approval.decision = decision;
-    approval.decidedBy = ctx?.userId;
-    approval.decidedAt = new Date();
-    approval.comments = comments;
-    await this.transferApprovalRepo.save(approval);
+      const approval = transfer.approvals?.find((a) => a.stage === stage);
+      if (!approval) throw new BadRequestException(`Approval stage ${stage} not found`);
+      if (approval.decision !== 'pending') {
+        throw new BadRequestException(`Stage ${stage} already decided as ${approval.decision}`);
+      }
 
-    if (decision === 'rejected') {
-      transfer.status = 'rejected';
-      await this.transferRepo.save(transfer);
-      await this.audit(ctx, 'asset.transfer.reject', 'asset_transfer', transferId, null, { stage, comments });
+      approval.decision = decision;
+      approval.decidedBy = ctx?.userId;
+      approval.decidedAt = new Date();
+      approval.comments = comments;
+      await approvalRepo.save(approval);
+
+      if (decision === 'rejected') {
+        transfer.status = 'rejected';
+        await xferRepo.save(transfer);
+        await this.audit(ctx, 'asset.transfer.reject', 'asset_transfer', transferId, null, {
+          stage,
+          comments,
+        });
+        return transfer;
+      }
+
+      // Re-read approvals within the lock to determine overall status
+      const all = transfer.approvals!;
+      if (
+        all.find((a) => a.stage === TransferApprovalStage.STORE_KEEPER)?.decision === 'approved'
+      ) {
+        transfer.status = 'in_transit';
+      } else if (
+        all.find((a) => a.stage === TransferApprovalStage.RECEIVING_DEPT_HEAD)?.decision ===
+        'approved'
+      ) {
+        transfer.status = 'receiving_approved';
+      } else if (
+        all.find((a) => a.stage === TransferApprovalStage.ORIGIN_DEPT_HEAD)?.decision === 'approved'
+      ) {
+        transfer.status = 'origin_approved';
+      }
+      await xferRepo.save(transfer);
+
+      await this.audit(ctx, 'asset.transfer.approve', 'asset_transfer', transferId, null, {
+        stage,
+      });
       return transfer;
-    }
-
-    // Update overall status based on which stages are approved
-    const fresh = await this.transferRepo.findOne({ where: { id: transferId }, relations: ['approvals'] });
-    const all = fresh!.approvals;
-    if (all.find((a) => a.stage === TransferApprovalStage.STORE_KEEPER)?.decision === 'approved') {
-      transfer.status = 'in_transit';
-    } else if (
-      all.find((a) => a.stage === TransferApprovalStage.RECEIVING_DEPT_HEAD)?.decision === 'approved'
-    ) {
-      transfer.status = 'receiving_approved';
-    } else if (
-      all.find((a) => a.stage === TransferApprovalStage.ORIGIN_DEPT_HEAD)?.decision === 'approved'
-    ) {
-      transfer.status = 'origin_approved';
-    }
-    await this.transferRepo.save(transfer);
-
-    await this.audit(ctx, 'asset.transfer.approve', 'asset_transfer', transferId, null, { stage });
-    return transfer;
+    });
   }
 
   async completeTransfer(
@@ -696,51 +801,59 @@ export class AssetsService {
     conditionOnReceipt?: string,
     ctx?: ActorContext,
   ): Promise<AssetTransfer> {
-    const transfer = await this.transferRepo.findOne({
-      where: { id: transferId, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
-      relations: ['approvals'],
-    });
-    if (!transfer) throw new NotFoundException('Transfer not found');
-    if (transfer.status === 'completed') return transfer;
-    if (transfer.status !== 'in_transit' && transfer.status !== 'receiving_approved') {
-      throw new BadRequestException(
-        `Cannot complete transfer in status ${transfer.status}; must be in_transit or receiving_approved`,
+    return this.dataSource.transaction(async (manager) => {
+      const xferRepo = manager.getRepository(AssetTransfer);
+      const assetRepoTx = manager.getRepository(FixedAsset);
+      const locRepo = manager.getRepository(AssetLocationHistory);
+
+      const transfer = await xferRepo.findOne({
+        where: { id: transferId, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+        relations: ['approvals'],
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!transfer) throw new NotFoundException('Transfer not found');
+      if (transfer.status === 'completed') return transfer;
+      if (transfer.status !== 'in_transit' && transfer.status !== 'receiving_approved') {
+        throw new BadRequestException(
+          `Cannot complete transfer in status ${transfer.status}; must be in_transit or receiving_approved`,
+        );
+      }
+
+      const asset = await assetRepoTx.findOne({
+        where: { id: transfer.assetId, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!asset) throw new NotFoundException('Asset not found');
+
+      asset.facilityId = transfer.toFacilityId;
+      asset.departmentId = transfer.toDepartmentId || undefined;
+      if (transfer.toCustodianId) asset.custodianId = transfer.toCustodianId;
+      asset.condition = (conditionOnReceipt as any) || asset.condition;
+      await assetRepoTx.save(asset);
+
+      transfer.status = 'completed';
+      transfer.receivedBy = receivedBy;
+      transfer.receivedDate = new Date();
+      const saved = await xferRepo.save(transfer);
+
+      await locRepo.save(
+        locRepo.create({
+          assetId: asset.id,
+          facilityId: asset.facilityId,
+          departmentId: asset.departmentId,
+          roomId: asset.roomId,
+          custodianId: asset.custodianId,
+          movedAt: new Date(),
+          movedBy: ctx?.userId,
+          reason: 'transfer',
+          referenceId: transferId,
+          ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
+        }),
       );
-    }
 
-    const asset = await this.assetRepo.findOne({
-      where: { id: transfer.assetId, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+      await this.audit(ctx, 'asset.transfer.complete', 'asset_transfer', saved.id, null, saved);
+      return saved;
     });
-    if (!asset) throw new NotFoundException('Asset not found');
-
-    asset.facilityId = transfer.toFacilityId;
-    asset.departmentId = transfer.toDepartmentId || undefined;
-    if (transfer.toCustodianId) asset.custodianId = transfer.toCustodianId;
-    asset.condition = (conditionOnReceipt as any) || asset.condition;
-    await this.assetRepo.save(asset);
-
-    transfer.status = 'completed';
-    transfer.receivedBy = receivedBy;
-    transfer.receivedDate = new Date();
-    const saved = await this.transferRepo.save(transfer);
-
-    await this.locationHistoryRepo.save(
-      this.locationHistoryRepo.create({
-        assetId: asset.id,
-        facilityId: asset.facilityId,
-        departmentId: asset.departmentId,
-        roomId: asset.roomId,
-        custodianId: asset.custodianId,
-        movedAt: new Date(),
-        movedBy: ctx?.userId,
-        reason: 'transfer',
-        referenceId: transferId,
-        ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
-      }),
-    );
-
-    await this.audit(ctx, 'asset.transfer.complete', 'asset_transfer', saved.id, null, saved);
-    return saved;
   }
 
   async getTransferHistory(assetId: string, tenantId?: string): Promise<AssetTransfer[]> {
@@ -754,32 +867,47 @@ export class AssetsService {
   // ==================== ALLOCATIONS ====================
 
   async createAllocation(data: any, ctx?: ActorContext): Promise<AssetAllocation> {
-    const asset = await this.assetRepo.findOne({
-      where: { id: data.assetId, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
-    });
-    if (!asset) throw new NotFoundException('Asset not found');
+    return this.dataSource.transaction(async (manager) => {
+      const assetRepoTx = manager.getRepository(FixedAsset);
+      const allocRepo = manager.getRepository(AssetAllocation);
 
-    // Reject if asset has an open allocation
-    const open = await this.allocationRepo.findOne({
-      where: {
-        assetId: data.assetId,
-        status: In([AllocationStatus.REQUESTED, AllocationStatus.DEPT_HEAD_APPROVED, AllocationStatus.ALLOCATED]),
+      const asset = await assetRepoTx.findOne({
+        where: { id: data.assetId, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!asset) throw new NotFoundException('Asset not found');
+
+      // Reject if asset has an open allocation (checked under lock)
+      const open = await allocRepo.findOne({
+        where: {
+          assetId: data.assetId,
+          status: In([
+            AllocationStatus.REQUESTED,
+            AllocationStatus.DEPT_HEAD_APPROVED,
+            AllocationStatus.ALLOCATED,
+          ]),
+          ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
+        },
+      });
+      if (open) throw new BadRequestException('Asset already has an open allocation');
+
+      const no = await this.genSequentialNumber(
+        'ALC',
+        ctx?.tenantId,
+        this.allocationRepo,
+        'allocationNumber',
+      );
+      const allocation = allocRepo.create({
+        ...data,
+        allocationNumber: no,
+        requestedBy: ctx?.userId || data.requestedBy,
+        status: AllocationStatus.REQUESTED,
         ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
-      },
+      });
+      const saved = (await allocRepo.save(allocation)) as unknown as AssetAllocation;
+      await this.audit(ctx, 'asset.allocation.request', 'asset_allocation', saved.id, null, saved);
+      return saved;
     });
-    if (open) throw new BadRequestException('Asset already has an open allocation');
-
-    const no = await this.genSequentialNumber('ALC', ctx?.tenantId, this.allocationRepo, 'allocationNumber');
-    const allocation = this.allocationRepo.create({
-      ...data,
-      allocationNumber: no,
-      requestedBy: ctx?.userId || data.requestedBy,
-      status: AllocationStatus.REQUESTED,
-      ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
-    });
-    const saved = (await this.allocationRepo.save(allocation)) as unknown as AssetAllocation;
-    await this.audit(ctx, 'asset.allocation.request', 'asset_allocation', saved.id, null, saved);
-    return saved;
   }
 
   async listAllocations(
@@ -792,7 +920,8 @@ export class AssetsService {
       .leftJoinAndSelect('a.asset', 'asset')
       .leftJoinAndSelect('a.custodian', 'custodian')
       .where('a.facilityId = :f', { f: facilityId });
-    if (filters?.status && filters.status !== 'All') qb.andWhere('a.status = :s', { s: filters.status });
+    if (filters?.status && filters.status !== 'All')
+      qb.andWhere('a.status = :s', { s: filters.status });
     if (filters?.custodianId) qb.andWhere('a.custodianId = :c', { c: filters.custodianId });
     if (filters?.assetId) qb.andWhere('a.assetId = :ai', { ai: filters.assetId });
     if (tenantId) qb.andWhere('a.tenant_id = :t', { t: tenantId });
@@ -805,62 +934,77 @@ export class AssetsService {
     comments: string | undefined,
     ctx?: ActorContext,
   ): Promise<AssetAllocation> {
-    const a = await this.allocationRepo.findOne({
-      where: { id, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+    return this.dataSource.transaction(async (manager) => {
+      const allocRepo = manager.getRepository(AssetAllocation);
+
+      const a = await allocRepo.findOne({
+        where: { id, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!a) throw new NotFoundException('Allocation not found');
+      if (a.status !== AllocationStatus.REQUESTED) {
+        throw new BadRequestException(`Cannot approve allocation in status ${a.status}`);
+      }
+      if (decision === 'rejected') {
+        a.status = AllocationStatus.REJECTED;
+        a.notes = [a.notes, comments].filter(Boolean).join(' | ');
+      } else {
+        a.status = AllocationStatus.DEPT_HEAD_APPROVED;
+        a.approvedBy = ctx?.userId;
+        a.approvedAt = new Date();
+      }
+      const saved = await allocRepo.save(a);
+      await this.audit(ctx, `asset.allocation.${decision}`, 'asset_allocation', id, null, saved);
+      return saved;
     });
-    if (!a) throw new NotFoundException('Allocation not found');
-    if (a.status !== AllocationStatus.REQUESTED) {
-      throw new BadRequestException(`Cannot approve allocation in status ${a.status}`);
-    }
-    if (decision === 'rejected') {
-      a.status = AllocationStatus.REJECTED;
-      a.notes = [a.notes, comments].filter(Boolean).join(' | ');
-    } else {
-      a.status = AllocationStatus.DEPT_HEAD_APPROVED;
-      a.approvedBy = ctx?.userId;
-      a.approvedAt = new Date();
-    }
-    const saved = await this.allocationRepo.save(a);
-    await this.audit(ctx, `asset.allocation.${decision}`, 'asset_allocation', id, null, saved);
-    return saved;
   }
 
   async issueAllocation(id: string, ctx?: ActorContext): Promise<AssetAllocation> {
-    const a = await this.allocationRepo.findOne({
-      where: { id, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+    return this.dataSource.transaction(async (manager) => {
+      const allocRepo = manager.getRepository(AssetAllocation);
+      const assetRepoTx = manager.getRepository(FixedAsset);
+      const locRepo = manager.getRepository(AssetLocationHistory);
+
+      const a = await allocRepo.findOne({
+        where: { id, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!a) throw new NotFoundException('Allocation not found');
+      if (a.status !== AllocationStatus.DEPT_HEAD_APPROVED) {
+        throw new BadRequestException('Allocation must be approved by dept head before issue');
+      }
+
+      const asset = await assetRepoTx.findOne({
+        where: { id: a.assetId, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!asset) throw new NotFoundException('Asset not found');
+      asset.custodianId = a.custodianId;
+      if (a.departmentId) asset.departmentId = a.departmentId;
+      if (a.roomId) asset.roomId = a.roomId;
+      await assetRepoTx.save(asset);
+
+      a.status = AllocationStatus.ALLOCATED;
+      const saved = await allocRepo.save(a);
+
+      await locRepo.save(
+        locRepo.create({
+          assetId: asset.id,
+          facilityId: asset.facilityId,
+          departmentId: asset.departmentId,
+          roomId: asset.roomId,
+          custodianId: asset.custodianId,
+          movedAt: new Date(),
+          movedBy: ctx?.userId,
+          reason: 'allocation',
+          referenceId: id,
+          ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
+        }),
+      );
+
+      await this.audit(ctx, 'asset.allocation.issue', 'asset_allocation', id, null, saved);
+      return saved;
     });
-    if (!a) throw new NotFoundException('Allocation not found');
-    if (a.status !== AllocationStatus.DEPT_HEAD_APPROVED) {
-      throw new BadRequestException('Allocation must be approved by dept head before issue');
-    }
-
-    const asset = await this.assetRepo.findOne({ where: { id: a.assetId } });
-    if (!asset) throw new NotFoundException('Asset not found');
-    asset.custodianId = a.custodianId;
-    if (a.departmentId) asset.departmentId = a.departmentId;
-    if (a.roomId) asset.roomId = a.roomId;
-    await this.assetRepo.save(asset);
-
-    a.status = AllocationStatus.ALLOCATED;
-    const saved = await this.allocationRepo.save(a);
-
-    await this.locationHistoryRepo.save(
-      this.locationHistoryRepo.create({
-        assetId: asset.id,
-        facilityId: asset.facilityId,
-        departmentId: asset.departmentId,
-        roomId: asset.roomId,
-        custodianId: asset.custodianId,
-        movedAt: new Date(),
-        movedBy: ctx?.userId,
-        reason: 'allocation',
-        referenceId: id,
-        ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
-      }),
-    );
-
-    await this.audit(ctx, 'asset.allocation.issue', 'asset_allocation', id, null, saved);
-    return saved;
   }
 
   async returnAllocation(
@@ -870,67 +1014,83 @@ export class AssetsService {
     notes?: string,
     ctx?: ActorContext,
   ): Promise<AssetAllocation> {
-    const a = await this.allocationRepo.findOne({
-      where: { id, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+    return this.dataSource.transaction(async (manager) => {
+      const allocRepo = manager.getRepository(AssetAllocation);
+
+      const a = await allocRepo.findOne({
+        where: { id, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!a) throw new NotFoundException('Allocation not found');
+      if (a.status !== AllocationStatus.ALLOCATED) {
+        throw new BadRequestException('Only ALLOCATED can be returned');
+      }
+      a.status = AllocationStatus.RETURNED;
+      a.actualReturnDate = new Date(returnDate);
+      a.conditionOnReturn = conditionOnReturn;
+      if (notes) a.notes = [a.notes, notes].filter(Boolean).join(' | ');
+      const saved = await allocRepo.save(a);
+      await this.audit(ctx, 'asset.allocation.return', 'asset_allocation', id, null, saved);
+      return saved;
     });
-    if (!a) throw new NotFoundException('Allocation not found');
-    if (a.status !== AllocationStatus.ALLOCATED) {
-      throw new BadRequestException('Only ALLOCATED can be returned');
-    }
-    a.status = AllocationStatus.RETURNED;
-    a.actualReturnDate = new Date(returnDate);
-    a.conditionOnReturn = conditionOnReturn;
-    if (notes) a.notes = [a.notes, notes].filter(Boolean).join(' | ');
-    const saved = await this.allocationRepo.save(a);
-    await this.audit(ctx, 'asset.allocation.return', 'asset_allocation', id, null, saved);
-    return saved;
   }
 
   // ==================== DISPOSAL (full workflow) ====================
 
   async createDisposalRequest(data: any, ctx?: ActorContext): Promise<AssetDisposal> {
-    const asset = await this.assetRepo.findOne({
-      where: { id: data.assetId, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
-    });
-    if (!asset) throw new NotFoundException('Asset not found');
-    if (asset.status === AssetStatus.DISPOSED || asset.status === AssetStatus.WRITTEN_OFF) {
-      throw new BadRequestException(`Asset already in status ${asset.status}`);
-    }
+    return this.dataSource.transaction(async (manager) => {
+      const assetRepoTx = manager.getRepository(FixedAsset);
+      const dispRepo = manager.getRepository(AssetDisposal);
 
-    const open = await this.disposalRepo.findOne({
-      where: {
+      const asset = await assetRepoTx.findOne({
+        where: { id: data.assetId, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!asset) throw new NotFoundException('Asset not found');
+      if (asset.status === AssetStatus.DISPOSED || asset.status === AssetStatus.WRITTEN_OFF) {
+        throw new BadRequestException(`Asset already in status ${asset.status}`);
+      }
+
+      const open = await dispRepo.findOne({
+        where: {
+          assetId: data.assetId,
+          status: In([
+            DisposalStatus.REQUESTED,
+            DisposalStatus.BIOMED_REVIEW,
+            DisposalStatus.COMMITTEE_APPROVAL,
+            DisposalStatus.APPROVED,
+          ]),
+          ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
+        },
+      });
+      if (open) throw new BadRequestException('Asset already has an open disposal request');
+
+      const no = await this.genSequentialNumber(
+        'DSP',
+        ctx?.tenantId,
+        this.disposalRepo,
+        'disposalNumber',
+      );
+      const isMedical = asset.assetClass === AssetClass.MEDICAL;
+      const disposal = dispRepo.create({
+        disposalNumber: no,
         assetId: data.assetId,
-        status: In([
-          DisposalStatus.REQUESTED,
-          DisposalStatus.BIOMED_REVIEW,
-          DisposalStatus.COMMITTEE_APPROVAL,
-          DisposalStatus.APPROVED,
-        ]),
+        facilityId: data.facilityId || asset.facilityId,
+        method: data.method,
+        reason: data.reason,
+        expectedValue: Number(data.expectedValue) || 0,
+        buyer: data.buyer,
+        requestedDate: new Date(),
+        requestedBy: ctx?.userId!,
+        status: isMedical ? DisposalStatus.BIOMED_REVIEW : DisposalStatus.COMMITTEE_APPROVAL,
+        attachments: data.attachments,
+        notes: data.notes,
         ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
-      },
+      });
+      const saved = await dispRepo.save(disposal);
+      await this.audit(ctx, 'asset.disposal.request', 'asset_disposal', saved.id, null, saved);
+      return saved;
     });
-    if (open) throw new BadRequestException('Asset already has an open disposal request');
-
-    const no = await this.genSequentialNumber('DSP', ctx?.tenantId, this.disposalRepo, 'disposalNumber');
-    const isMedical = asset.assetClass === AssetClass.MEDICAL;
-    const disposal = this.disposalRepo.create({
-      disposalNumber: no,
-      assetId: data.assetId,
-      facilityId: data.facilityId || asset.facilityId,
-      method: data.method,
-      reason: data.reason,
-      expectedValue: Number(data.expectedValue) || 0,
-      buyer: data.buyer,
-      requestedDate: new Date(),
-      requestedBy: ctx?.userId!,
-      status: isMedical ? DisposalStatus.BIOMED_REVIEW : DisposalStatus.COMMITTEE_APPROVAL,
-      attachments: data.attachments,
-      notes: data.notes,
-      ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
-    });
-    const saved = await this.disposalRepo.save(disposal);
-    await this.audit(ctx, 'asset.disposal.request', 'asset_disposal', saved.id, null, saved);
-    return saved;
   }
 
   async listDisposals(
@@ -942,8 +1102,10 @@ export class AssetsService {
       .createQueryBuilder('d')
       .leftJoinAndSelect('d.asset', 'asset')
       .where('d.facilityId = :f', { f: facilityId });
-    if (filters?.status && filters.status !== 'All') qb.andWhere('d.status = :s', { s: filters.status });
-    if (filters?.method && filters.method !== 'All') qb.andWhere('d.method = :m', { m: filters.method });
+    if (filters?.status && filters.status !== 'All')
+      qb.andWhere('d.status = :s', { s: filters.status });
+    if (filters?.method && filters.method !== 'All')
+      qb.andWhere('d.method = :m', { m: filters.method });
     if (tenantId) qb.andWhere('d.tenant_id = :t', { t: tenantId });
     return qb.orderBy('d.createdAt', 'DESC').getMany();
   }
@@ -954,20 +1116,33 @@ export class AssetsService {
     recommendation: 'approve' | 'reject',
     ctx?: ActorContext,
   ): Promise<AssetDisposal> {
-    const d = await this.disposalRepo.findOne({
-      where: { id, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+    return this.dataSource.transaction(async (manager) => {
+      const dispRepo = manager.getRepository(AssetDisposal);
+
+      const d = await dispRepo.findOne({
+        where: { id, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!d) throw new NotFoundException('Disposal not found');
+      if (d.status !== DisposalStatus.BIOMED_REVIEW) {
+        throw new BadRequestException('Disposal not awaiting biomed review');
+      }
+      d.biomedReviewedBy = ctx?.userId;
+      d.biomedReviewedAt = new Date();
+      d.biomedAssessment = assessment;
+      d.status =
+        recommendation === 'approve' ? DisposalStatus.COMMITTEE_APPROVAL : DisposalStatus.REJECTED;
+      const saved = await dispRepo.save(d);
+      await this.audit(
+        ctx,
+        `asset.disposal.biomed_${recommendation}`,
+        'asset_disposal',
+        id,
+        null,
+        saved,
+      );
+      return saved;
     });
-    if (!d) throw new NotFoundException('Disposal not found');
-    if (d.status !== DisposalStatus.BIOMED_REVIEW) {
-      throw new BadRequestException('Disposal not awaiting biomed review');
-    }
-    d.biomedReviewedBy = ctx?.userId;
-    d.biomedReviewedAt = new Date();
-    d.biomedAssessment = assessment;
-    d.status = recommendation === 'approve' ? DisposalStatus.COMMITTEE_APPROVAL : DisposalStatus.REJECTED;
-    const saved = await this.disposalRepo.save(d);
-    await this.audit(ctx, `asset.disposal.biomed_${recommendation}`, 'asset_disposal', id, null, saved);
-    return saved;
   }
 
   async committeeDecision(
@@ -977,39 +1152,50 @@ export class AssetsService {
     comments: string | undefined,
     ctx?: ActorContext,
   ): Promise<AssetDisposal> {
-    const d = await this.disposalRepo.findOne({
-      where: { id, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
-    });
-    if (!d) throw new NotFoundException('Disposal not found');
-    if (d.status !== DisposalStatus.COMMITTEE_APPROVAL) {
-      throw new BadRequestException('Disposal not awaiting committee approval');
-    }
-    const approvals = d.committeeApprovals || [];
-    if (approvals.find((a) => a.userId === ctx?.userId)) {
-      throw new BadRequestException('You have already voted on this disposal');
-    }
-    approvals.push({
-      userId: ctx?.userId!,
-      role,
-      decision,
-      at: new Date().toISOString(),
-      comments,
-    });
-    d.committeeApprovals = approvals;
+    return this.dataSource.transaction(async (manager) => {
+      const dispRepo = manager.getRepository(AssetDisposal);
 
-    if (decision === 'rejected') {
-      d.status = DisposalStatus.REJECTED;
-    } else {
-      // Need at least 2 distinct-role approvals to proceed (Auditor + Admin/FM)
-      const approved = approvals.filter((a) => a.decision === 'approved');
-      const distinctRoles = new Set(approved.map((a) => a.role));
-      if (distinctRoles.size >= 2) {
-        d.status = DisposalStatus.APPROVED;
+      const d = await dispRepo.findOne({
+        where: { id, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!d) throw new NotFoundException('Disposal not found');
+      if (d.status !== DisposalStatus.COMMITTEE_APPROVAL) {
+        throw new BadRequestException('Disposal not awaiting committee approval');
       }
-    }
-    const saved = await this.disposalRepo.save(d);
-    await this.audit(ctx, `asset.disposal.committee_${decision}`, 'asset_disposal', id, null, saved);
-    return saved;
+      const approvals = d.committeeApprovals || [];
+      if (approvals.find((a) => a.userId === ctx?.userId)) {
+        throw new BadRequestException('You have already voted on this disposal');
+      }
+      approvals.push({
+        userId: ctx?.userId!,
+        role,
+        decision,
+        at: new Date().toISOString(),
+        comments,
+      });
+      d.committeeApprovals = approvals;
+
+      if (decision === 'rejected') {
+        d.status = DisposalStatus.REJECTED;
+      } else {
+        const approved = approvals.filter((a) => a.decision === 'approved');
+        const distinctRoles = new Set(approved.map((a) => a.role));
+        if (distinctRoles.size >= 2) {
+          d.status = DisposalStatus.APPROVED;
+        }
+      }
+      const saved = await dispRepo.save(d);
+      await this.audit(
+        ctx,
+        `asset.disposal.committee_${decision}`,
+        'asset_disposal',
+        id,
+        null,
+        saved,
+      );
+      return saved;
+    });
   }
 
   async completeDisposal(
@@ -1017,88 +1203,128 @@ export class AssetsService {
     body: { disposalDate: string; actualValue: number; buyer?: string; notes?: string },
     ctx?: ActorContext,
   ): Promise<AssetDisposal> {
-    const d = await this.disposalRepo.findOne({
-      where: { id, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
-    });
-    if (!d) throw new NotFoundException('Disposal not found');
-    if (d.status !== DisposalStatus.APPROVED) {
-      throw new BadRequestException('Disposal must be APPROVED before completion');
-    }
+    return this.dataSource.transaction(async (manager) => {
+      const dispRepo = manager.getRepository(AssetDisposal);
+      const assetRepoTx = manager.getRepository(FixedAsset);
 
-    const asset = await this.assetRepo.findOne({ where: { id: d.assetId } });
-    if (!asset) throw new NotFoundException('Asset not found');
-
-    d.disposalDate = new Date(body.disposalDate);
-    d.actualValue = Number(body.actualValue) || 0;
-    d.buyer = body.buyer || d.buyer;
-    d.completedBy = ctx?.userId;
-    d.status = DisposalStatus.COMPLETED;
-    if (body.notes) d.notes = [d.notes, body.notes].filter(Boolean).join(' | ');
-
-    asset.disposalDate = d.disposalDate;
-    asset.disposalValue = d.actualValue;
-    asset.disposalReason = d.reason;
-    asset.status = d.method === DisposalMethod.WRITE_OFF ? AssetStatus.WRITTEN_OFF : AssetStatus.DISPOSED;
-    await this.assetRepo.save(asset);
-
-    // Post gain/loss to GL
-    if (this.finance && ctx?.userId) {
-      try {
-        const bookValue = Number(asset.bookValue);
-        const proceeds = d.actualValue;
-        const accumDep = Number(asset.accumulatedDepreciation);
-        const cost = Number(asset.totalCost);
-        const gainLoss = proceeds - bookValue;
-
-        const accounts: any[] = await this.dataSource.query(
-          `SELECT id, code FROM chart_of_accounts WHERE code = ANY($1) AND ($2::uuid IS NULL OR tenant_id = $2)`,
-          [['1100', '1500', '1599', '7100', '8100'], ctx.tenantId || null],
-        );
-        const cash = accounts.find((a: any) => a.code === '1100');
-        const fixedAssetAcc = accounts.find((a: any) => a.code === '1500');
-        const accumDepAcc = accounts.find((a: any) => a.code === '1599');
-        const gainAcc = accounts.find((a: any) => a.code === '7100');
-        const lossAcc = accounts.find((a: any) => a.code === '8100');
-
-        if (cash && fixedAssetAcc && accumDepAcc && (gainAcc || lossAcc)) {
-          const lines: any[] = [
-            { accountId: cash.id, debit: proceeds, credit: 0, description: `Disposal proceeds ${asset.assetCode}` },
-            { accountId: accumDepAcc.id, debit: accumDep, credit: 0, description: 'Reverse accumulated depreciation' },
-            { accountId: fixedAssetAcc.id, debit: 0, credit: cost, description: 'Remove asset cost' },
-          ];
-          if (gainLoss > 0 && gainAcc) {
-            lines.push({ accountId: gainAcc.id, debit: 0, credit: gainLoss, description: 'Gain on disposal' });
-          } else if (gainLoss < 0 && lossAcc) {
-            lines.push({ accountId: lossAcc.id, debit: -gainLoss, credit: 0, description: 'Loss on disposal' });
-          }
-          const journal = await this.finance.createJournalEntry(
-            {
-              facilityId: asset.facilityId,
-              journalDate: d.disposalDate.toISOString(),
-              journalType: 'DISPOSAL' as any,
-              description: `Asset disposal ${asset.assetCode} (${d.disposalNumber})`,
-              reference: d.disposalNumber,
-              lines,
-            } as any,
-            ctx.userId,
-            ctx.tenantId,
-          );
-          d.journalEntryId = journal.id;
-        }
-      } catch {
-        // best-effort GL posting
+      const d = await dispRepo.findOne({
+        where: { id, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!d) throw new NotFoundException('Disposal not found');
+      if (d.status !== DisposalStatus.APPROVED) {
+        throw new BadRequestException('Disposal must be APPROVED before completion');
       }
-    }
 
-    const saved = await this.disposalRepo.save(d);
-    await this.audit(ctx, 'asset.disposal.complete', 'asset_disposal', id, null, saved);
-    return saved;
+      const asset = await assetRepoTx.findOne({
+        where: { id: d.assetId, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!asset) throw new NotFoundException('Asset not found');
+
+      d.disposalDate = new Date(body.disposalDate);
+      d.actualValue = Number(body.actualValue) || 0;
+      d.buyer = body.buyer || d.buyer;
+      d.completedBy = ctx?.userId;
+      d.status = DisposalStatus.COMPLETED;
+      if (body.notes) d.notes = [d.notes, body.notes].filter(Boolean).join(' | ');
+
+      asset.disposalDate = d.disposalDate;
+      asset.disposalValue = d.actualValue;
+      asset.disposalReason = d.reason;
+      asset.status =
+        d.method === DisposalMethod.WRITE_OFF ? AssetStatus.WRITTEN_OFF : AssetStatus.DISPOSED;
+      await assetRepoTx.save(asset);
+
+      // Post gain/loss to GL (best-effort)
+      if (this.finance && ctx?.userId) {
+        try {
+          const bookValue = Number(asset.bookValue);
+          const proceeds = d.actualValue;
+          const accumDep = Number(asset.accumulatedDepreciation);
+          const cost = Number(asset.totalCost);
+          const gainLoss = proceeds - bookValue;
+
+          const accounts: any[] = await this.dataSource.query(
+            `SELECT id, code FROM chart_of_accounts WHERE code = ANY($1) AND ($2::uuid IS NULL OR tenant_id = $2)`,
+            [['1100', '1500', '1599', '7100', '8100'], ctx.tenantId || null],
+          );
+          const cash = accounts.find((a: any) => a.code === '1100');
+          const fixedAssetAcc = accounts.find((a: any) => a.code === '1500');
+          const accumDepAcc = accounts.find((a: any) => a.code === '1599');
+          const gainAcc = accounts.find((a: any) => a.code === '7100');
+          const lossAcc = accounts.find((a: any) => a.code === '8100');
+
+          if (cash && fixedAssetAcc && accumDepAcc && (gainAcc || lossAcc)) {
+            const lines: any[] = [
+              {
+                accountId: cash.id,
+                debit: proceeds,
+                credit: 0,
+                description: `Disposal proceeds ${asset.assetCode}`,
+              },
+              {
+                accountId: accumDepAcc.id,
+                debit: accumDep,
+                credit: 0,
+                description: 'Reverse accumulated depreciation',
+              },
+              {
+                accountId: fixedAssetAcc.id,
+                debit: 0,
+                credit: cost,
+                description: 'Remove asset cost',
+              },
+            ];
+            if (gainLoss > 0 && gainAcc) {
+              lines.push({
+                accountId: gainAcc.id,
+                debit: 0,
+                credit: gainLoss,
+                description: 'Gain on disposal',
+              });
+            } else if (gainLoss < 0 && lossAcc) {
+              lines.push({
+                accountId: lossAcc.id,
+                debit: -gainLoss,
+                credit: 0,
+                description: 'Loss on disposal',
+              });
+            }
+            const journal = await this.finance.createJournalEntry(
+              {
+                facilityId: asset.facilityId,
+                journalDate: d.disposalDate.toISOString(),
+                journalType: 'DISPOSAL',
+                description: `Asset disposal ${asset.assetCode} (${d.disposalNumber})`,
+                reference: d.disposalNumber,
+                lines,
+              } as any,
+              ctx.userId,
+              ctx.tenantId,
+            );
+            d.journalEntryId = journal.id;
+          }
+        } catch {
+          // best-effort GL posting
+        }
+      }
+
+      const saved = await dispRepo.save(d);
+      await this.audit(ctx, 'asset.disposal.complete', 'asset_disposal', id, null, saved);
+      return saved;
+    });
   }
 
   // Legacy quick-disposal (kept for backward-compatibility)
   async disposeAsset(
     id: string,
-    data: { disposalDate: Date; disposalValue: number; disposalReason: string; status: AssetStatus },
+    data: {
+      disposalDate: Date;
+      disposalValue: number;
+      disposalReason: string;
+      status: AssetStatus;
+    },
     ctx?: ActorContext,
   ): Promise<FixedAsset> {
     const asset = await this.assetRepo.findOne({
@@ -1116,7 +1342,10 @@ export class AssetsService {
 
   // ==================== CATEGORIES ====================
 
-  async listCategories(filters: { assetClass?: string; isActive?: boolean }, tenantId?: string): Promise<AssetCategory[]> {
+  async listCategories(
+    filters: { assetClass?: string; isActive?: boolean },
+    tenantId?: string,
+  ): Promise<AssetCategory[]> {
     const qb = this.categoryRepo.createQueryBuilder('c').orderBy('c.code', 'ASC');
     if (filters.assetClass) qb.where('c.assetClass = :ac', { ac: filters.assetClass });
     if (filters.isActive !== undefined) qb.andWhere('c.isActive = :a', { a: filters.isActive });
@@ -1125,7 +1354,10 @@ export class AssetsService {
   }
 
   async createCategory(data: any, ctx?: ActorContext): Promise<AssetCategory> {
-    const cat = this.categoryRepo.create({ ...data, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) });
+    const cat = this.categoryRepo.create({
+      ...data,
+      ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
+    });
     const saved = (await this.categoryRepo.save(cat)) as unknown as AssetCategory;
     await this.audit(ctx, 'asset.category.create', 'asset_category', saved.id, null, saved);
     return saved;
@@ -1144,7 +1376,8 @@ export class AssetsService {
 
   async deleteCategory(id: string, ctx?: ActorContext): Promise<void> {
     const used = await this.assetRepo.count({ where: { categoryId: id } });
-    if (used > 0) throw new BadRequestException(`Category in use by ${used} assets — deactivate instead`);
+    if (used > 0)
+      throw new BadRequestException(`Category in use by ${used} assets — deactivate instead`);
     await this.categoryRepo.softDelete(id);
     await this.audit(ctx, 'asset.category.delete', 'asset_category', id, null, null);
   }
@@ -1158,7 +1391,11 @@ export class AssetsService {
     });
   }
 
-  async recordLocation(assetId: string, data: any, ctx?: ActorContext): Promise<AssetLocationHistory> {
+  async recordLocation(
+    assetId: string,
+    data: any,
+    ctx?: ActorContext,
+  ): Promise<AssetLocationHistory> {
     const asset = await this.assetRepo.findOne({
       where: { id: assetId, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
     });
@@ -1205,7 +1442,8 @@ export class AssetsService {
     const byClass: Record<string, any> = {};
     for (const a of assets) {
       const k = a.assetClass || 'unclassified';
-      if (!byClass[k]) byClass[k] = { count: 0, cost: 0, accumulated: 0, bookValue: 0, replacement: 0 };
+      if (!byClass[k])
+        byClass[k] = { count: 0, cost: 0, accumulated: 0, bookValue: 0, replacement: 0 };
       byClass[k].count++;
       byClass[k].cost += Number(a.totalCost);
       byClass[k].accumulated += Number(a.accumulatedDepreciation);
@@ -1215,7 +1453,10 @@ export class AssetsService {
 
     return {
       totalOriginalCost: assets.reduce((s, a) => s + Number(a.totalCost), 0),
-      totalAccumulatedDepreciation: assets.reduce((s, a) => s + Number(a.accumulatedDepreciation), 0),
+      totalAccumulatedDepreciation: assets.reduce(
+        (s, a) => s + Number(a.accumulatedDepreciation),
+        0,
+      ),
       totalNetBookValue: assets.reduce((s, a) => s + Number(a.bookValue), 0),
       totalMarketValue: assets.reduce((s, a) => s + Number(a.currentMarketValue || a.bookValue), 0),
       totalReplacementCost: assets.reduce((s, a) => s + Number(a.replacementCost || 0), 0),
@@ -1277,9 +1518,19 @@ export class AssetsService {
       '10y+': { count: 0, bookValue: 0 },
     };
     for (const a of assets) {
-      const ageYrs = (now.getTime() - new Date(a.acquisitionDate).getTime()) / (365.25 * 24 * 3600 * 1000);
+      const ageYrs =
+        (now.getTime() - new Date(a.acquisitionDate).getTime()) / (365.25 * 24 * 3600 * 1000);
       const bv = Number(a.bookValue);
-      const k = ageYrs < 1 ? '0-1y' : ageYrs < 3 ? '1-3y' : ageYrs < 5 ? '3-5y' : ageYrs < 10 ? '5-10y' : '10y+';
+      const k =
+        ageYrs < 1
+          ? '0-1y'
+          : ageYrs < 3
+            ? '1-3y'
+            : ageYrs < 5
+              ? '3-5y'
+              : ageYrs < 10
+                ? '5-10y'
+                : '10y+';
       buckets[k].count++;
       buckets[k].bookValue += bv;
     }

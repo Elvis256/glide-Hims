@@ -295,9 +295,7 @@ export class PosComplianceFoundations1778000000000 implements MigrationInterface
     await queryRunner.query(`DROP TABLE IF EXISTS "efris_configs"`);
     await queryRunner.query(`DROP TABLE IF EXISTS "efris_documents"`);
 
-    await queryRunner.query(
-      `ALTER TABLE "pos_payment_splits" DROP COLUMN IF EXISTS "shift_id"`,
-    );
+    await queryRunner.query(`ALTER TABLE "pos_payment_splits" DROP COLUMN IF EXISTS "shift_id"`);
 
     await queryRunner.query(`
       ALTER TABLE "controlled_substance_logs"

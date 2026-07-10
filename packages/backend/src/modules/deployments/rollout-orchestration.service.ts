@@ -36,7 +36,7 @@ export class RolloutOrchestrationService {
     let rollout: any;
     try {
       rollout = await this.rolloutRepository.findOne({
-        where: { id: rolloutId } as any,
+        where: { id: rolloutId },
       });
     } catch (e) {
       // ignore
@@ -82,7 +82,7 @@ export class RolloutOrchestrationService {
     let rollout: any;
     try {
       rollout = await this.rolloutRepository.findOne({
-        where: { id: rolloutId } as any,
+        where: { id: rolloutId },
       });
     } catch (e) {
       // ignore

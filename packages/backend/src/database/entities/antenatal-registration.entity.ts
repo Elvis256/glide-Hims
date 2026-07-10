@@ -29,6 +29,7 @@ export enum RiskLevel {
 }
 
 @Entity('antenatal_registrations')
+@Index(['facilityId', 'status'])
 export class AntenatalRegistration {
   @PrimaryGeneratedColumn('uuid')
   id: string;

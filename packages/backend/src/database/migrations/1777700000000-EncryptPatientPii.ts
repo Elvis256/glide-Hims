@@ -101,10 +101,7 @@ export class EncryptPatientPii1777700000000 implements MigrationInterface {
       }
       if (updates.length === 0) continue;
       params.push(row.id);
-      await queryRunner.query(
-        `UPDATE patients SET ${updates.join(', ')} WHERE id = $${i}`,
-        params,
-      );
+      await queryRunner.query(`UPDATE patients SET ${updates.join(', ')} WHERE id = $${i}`, params);
     }
 
     // 5. Recreate indexes against the hash columns.
@@ -151,10 +148,7 @@ export class EncryptPatientPii1777700000000 implements MigrationInterface {
       }
       if (updates.length === 0) continue;
       params.push(row.id);
-      await queryRunner.query(
-        `UPDATE patients SET ${updates.join(', ')} WHERE id = $${i}`,
-        params,
-      );
+      await queryRunner.query(`UPDATE patients SET ${updates.join(', ')} WHERE id = $${i}`, params);
     }
 
     await queryRunner.query(`DROP INDEX IF EXISTS "IDX_patients_email_hash"`);

@@ -7,7 +7,10 @@ config({ path: join(__dirname, '../../.env') });
 export default new DataSource({
   type: 'sqlite',
   database: process.env.SQLITE_PATH || '/data/glide-hims.db',
-  entities: [join(__dirname, '../**/*.entity{.ts,.js}'), join(__dirname, '../**/*.entities{.ts,.js}')],
+  entities: [
+    join(__dirname, '../**/*.entity{.ts,.js}'),
+    join(__dirname, '../**/*.entities{.ts,.js}'),
+  ],
   migrations: [join(__dirname, '../database/migrations/*{.ts,.js}')],
   synchronize: false,
   logging: process.env.NODE_ENV !== 'production',

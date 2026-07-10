@@ -161,48 +161,48 @@ describe('Auth Security', () => {
 
   describe('MFA Policy Enforcement', () => {
     it('should block login when policy requires MFA but user has not enrolled', () => {
-      const policy = { requireMfa: true };
-      const user = { mfaEnabled: false, isSystemAdmin: false };
+      const policy: any = { requireMfa: true };
+      const user: any = { mfaEnabled: false, isSystemAdmin: false };
 
       const shouldBlock = policy.requireMfa && !user.mfaEnabled;
       expect(shouldBlock).toBe(true);
     });
 
     it('should allow login when policy requires MFA and user has enrolled', () => {
-      const policy = { requireMfa: true };
-      const user = { mfaEnabled: true, isSystemAdmin: false };
+      const policy: any = { requireMfa: true };
+      const user: any = { mfaEnabled: true, isSystemAdmin: false };
 
       const shouldBlock = policy.requireMfa && !user.mfaEnabled;
       expect(shouldBlock).toBe(false);
     });
 
     it('should allow login when policy does not require MFA', () => {
-      const policy = { requireMfa: false };
-      const user = { mfaEnabled: false, isSystemAdmin: false };
+      const policy: any = { requireMfa: false };
+      const user: any = { mfaEnabled: false, isSystemAdmin: false };
 
       const shouldBlock = policy.requireMfa && !user.mfaEnabled;
       expect(shouldBlock).toBe(false);
     });
 
     it('should set mustEnrollMfa flag for system admins without MFA', () => {
-      const user = { isSystemAdmin: true, mfaEnabled: false };
-      const policy = { requireMfa: false };
+      const user: any = { isSystemAdmin: true, mfaEnabled: false };
+      const policy: any = { requireMfa: false };
 
       const mustEnrollMfa = !user.mfaEnabled && (user.isSystemAdmin || policy.requireMfa);
       expect(mustEnrollMfa).toBe(true);
     });
 
     it('should set mustEnrollMfa flag when policy requires MFA', () => {
-      const user = { isSystemAdmin: false, mfaEnabled: false };
-      const policy = { requireMfa: true };
+      const user: any = { isSystemAdmin: false, mfaEnabled: false };
+      const policy: any = { requireMfa: true };
 
       const mustEnrollMfa = !user.mfaEnabled && (user.isSystemAdmin || policy.requireMfa);
       expect(mustEnrollMfa).toBe(true);
     });
 
     it('should not set mustEnrollMfa when user already has MFA enabled', () => {
-      const user = { isSystemAdmin: true, mfaEnabled: true };
-      const policy = { requireMfa: true };
+      const user: any = { isSystemAdmin: true, mfaEnabled: true };
+      const policy: any = { requireMfa: true };
 
       const mustEnrollMfa = !user.mfaEnabled && (user.isSystemAdmin || policy.requireMfa);
       expect(mustEnrollMfa).toBe(false);
@@ -211,11 +211,7 @@ describe('Auth Security', () => {
 
   describe('Production Environment Validation', () => {
     it('should require MFA_ENCRYPTION_KEY in production', () => {
-      const requiredInProduction = [
-        'MFA_ENCRYPTION_KEY',
-        'PII_ENCRYPTION_KEY',
-        'PII_HASH_KEY',
-      ];
+      const requiredInProduction = ['MFA_ENCRYPTION_KEY', 'PII_ENCRYPTION_KEY', 'PII_HASH_KEY'];
       const env: Record<string, string> = {}; // Empty = missing
 
       const missing = requiredInProduction.filter((key) => !env[key]);
@@ -223,11 +219,7 @@ describe('Auth Security', () => {
     });
 
     it('should pass when all required keys are present', () => {
-      const requiredInProduction = [
-        'MFA_ENCRYPTION_KEY',
-        'PII_ENCRYPTION_KEY',
-        'PII_HASH_KEY',
-      ];
+      const requiredInProduction = ['MFA_ENCRYPTION_KEY', 'PII_ENCRYPTION_KEY', 'PII_HASH_KEY'];
       const env: Record<string, string> = {
         MFA_ENCRYPTION_KEY: 'some-key',
         PII_ENCRYPTION_KEY: 'some-key',
@@ -283,7 +275,10 @@ describe('Auth Security', () => {
 
     it('should parse comma-separated origins correctly', () => {
       const corsString = 'https://a.com, https://b.com ,https://c.com';
-      const origins = corsString.split(',').map((o) => o.trim()).filter(Boolean);
+      const origins = corsString
+        .split(',')
+        .map((o) => o.trim())
+        .filter(Boolean);
 
       expect(origins).toEqual(['https://a.com', 'https://b.com', 'https://c.com']);
       origins.forEach((o) => expect(validateOrigin(o)).toBe(true));

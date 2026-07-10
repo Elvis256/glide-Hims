@@ -34,6 +34,11 @@ import { Public } from './decorators/public.decorator';
 import { RateLimitGuard } from './guards/rate-limit.guard';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
 
+interface AuthenticatedRequest extends Request {
+  user?: { id: string; tenantId?: string; facilityId?: string; roles?: string[]; permissions?: string[]; isSystemAdmin?: boolean; };
+}
+
+
 @ApiTags('authentication')
 @Controller('auth')
 export class AuthController {
@@ -91,7 +96,7 @@ export class AuthController {
   @ApiResponse({ status: 429, description: 'Too many login attempts' })
   async login(
     @Body() loginDto: LoginDto,
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
     @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponseDto> {
     const ip = this.getClientIp(req);
@@ -156,12 +161,12 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Invalid refresh token' })
   async refreshToken(
     @Body() dto: RefreshTokenDto,
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
     @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponseDto> {
     // Prefer cookie-based refresh token, fall back to body for backward compat
     const token = req.cookies?.refreshToken || dto.refreshToken;
-    const ipAddress = (req as any).ip || req.headers['x-forwarded-for']?.toString();
+    const ipAddress = req.ip || req.headers['x-forwarded-for']?.toString();
     const userAgent = req.headers['user-agent'];
     try {
       const result = await this.authService.refreshToken(token, ipAddress, userAgent);
@@ -240,9 +245,9 @@ export class AuthController {
   @Auth()
   @ApiOperation({ summary: 'Get current user info with accessible modules' })
   @ApiResponse({ status: 200, description: 'User info with permissions and accessible modules' })
-  async getMe(@CurrentUser('id') userId: string, @Req() req: Request) {
+  async getMe(@CurrentUser('id') userId: string, @Req() req: AuthenticatedRequest) {
     const me = await this.authService.getMe(userId);
-    const u: any = (req as any).user || {};
+    const u = req.user as any || {};
     return {
       ...me,
       impersonating: !!u.impersonating,
@@ -258,13 +263,19 @@ export class AuthController {
   async startImpersonation(
     @Body() body: { tenantId: string; reason?: string },
     @CurrentUser('id') userId: string,
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const ip = (req as any).ip || (req.socket as any)?.remoteAddress || '';
+    const ip = req.ip || req.socket?.remoteAddress || '';
     const ua = req.get('user-agent') || '';
-    const result = await this.authService.impersonateTenant(userId, body.tenantId, body.reason, ip, ua);
-    this.setAuthCookies(res, result.accessToken, result.refreshToken, (result as any).expiresIn);
+    const result = await this.authService.impersonateTenant(
+      userId,
+      body.tenantId,
+      body.reason,
+      ip,
+      ua,
+    );
+    this.setAuthCookies(res, result.accessToken, result.refreshToken, result.expiresIn);
     return result;
   }
 
@@ -274,14 +285,14 @@ export class AuthController {
   @ApiOperation({ summary: 'System admin: end an active tenant impersonation' })
   async endImpersonation(
     @CurrentUser('id') userId: string,
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const ip = (req as any).ip || (req.socket as any)?.remoteAddress || '';
+    const ip = req.ip || req.socket?.remoteAddress || '';
     const ua = req.get('user-agent') || '';
-    const u: any = (req as any).user || {};
+    const u = req.user || {};
     const result = await this.authService.endImpersonation(userId, u, ip, ua);
-    this.setAuthCookies(res, result.accessToken, result.refreshToken, (result as any).expiresIn);
+    this.setAuthCookies(res, result.accessToken, result.refreshToken, result.expiresIn);
     return result;
   }
 
@@ -398,10 +409,7 @@ export class AuthController {
   @AuthWithPermissions('users.update')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Force-revoke any session in tenant (admin)' })
-  async adminRevokeSession(
-    @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: any,
-  ) {
+  async adminRevokeSession(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: any) {
     await this.sessionService.adminRevokeSession(id, user.tenantId);
     return { message: 'Session revoked' };
   }
@@ -461,7 +469,7 @@ export class AuthController {
   async enterTenant(
     @Body('tenantId', ParseUUIDPipe) tenantId: string,
     @CurrentUser() user: any,
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
     @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponseDto> {
     const ip = this.getClientIp(req);

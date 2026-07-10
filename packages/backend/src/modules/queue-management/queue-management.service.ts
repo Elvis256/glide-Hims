@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, In, Between, Like, EntityManager, IsNull } from 'typeorm';
+import { Repository, DataSource, In, Between, Like, EntityManager, IsNull, DeepPartial } from 'typeorm';
 import {
   Queue,
   QueueDisplay,
@@ -247,9 +247,7 @@ export class QueueManagementService {
    *      payerType ∈ cash | mobile_money | card | insurance | hospital_scheme | staff | membership
    * These values can be set per-tenant in Admin → System Settings.
    */
-  async getBillingDefaults(
-    tenantId?: string,
-  ): Promise<{
+  async getBillingDefaults(tenantId?: string): Promise<{
     mode: 'pre_pay' | 'post_pay';
     consultationFee: number | null;
     modeByPayer: Record<string, 'pre_pay' | 'post_pay'>;
@@ -265,9 +263,7 @@ export class QueueManagementService {
       'membership',
     ].map((p) => `billing.mode.${p}`);
     const allKeys = [...baseKeys, ...payerKeys];
-    const where = tenantId
-      ? { tenantId, key: In(allKeys) }
-      : { key: In(allKeys) };
+    const where = tenantId ? { tenantId, key: In(allKeys) } : { key: In(allKeys) };
     const rows = await this.systemSettingRepository.find({ where: where as any });
     const map = new Map<string, any>();
     for (const r of rows) map.set(r.key, r.value);
@@ -380,10 +376,9 @@ export class QueueManagementService {
     while (true) {
       try {
         txResult = await this.dataSource.transaction(async (manager) => {
-          await manager.query(
-            'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
-            [`queue:${facilityId}:${servicePointPrefix}:${queueDateKey}`],
-          );
+          await manager.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
+            `queue:${facilityId}:${servicePointPrefix}:${queueDateKey}`,
+          ]);
 
           const ticketNumber = await this.generateTicketNumber(
             facilityId,
@@ -415,8 +410,7 @@ export class QueueManagementService {
             // Persist the billing mode resolved during validation so the
             // doctor's Sign & Complete gate can distinguish post-pay
             // (pay at checkout) from pre-pay (clear before being seen).
-            billingMode:
-              dto.billingMode || (validation as any).billingMode || 'post_pay',
+            billingMode: dto.billingMode || validation.billingMode || 'post_pay',
             ...(tenantId ? { tenantId } : {}),
           });
           const txEncounter = (await manager.save(encounter)) as Encounter;
@@ -561,7 +555,7 @@ export class QueueManagementService {
     // Notify the assigned doctor (or department doctors) that a patient is queued.
     // Best-effort: failures must not block ticket issuance.
     try {
-      const patientName = (result?.patient as any)?.fullName || 'Patient';
+      const patientName = result?.patient?.fullName || 'Patient';
       await this.inAppNotifications.notifyPatientQueued({
         patientName,
         ticketNumber: result?.ticketNumber,
@@ -578,7 +572,7 @@ export class QueueManagementService {
     // If a billable invoice was created (pay-at-billing flow), ping cashiers.
     if (savedInvoice) {
       try {
-        const patientName = (result?.patient as any)?.fullName || 'Patient';
+        const patientName = result?.patient?.fullName || 'Patient';
         await this.inAppNotifications.notifyInvoiceCreated({
           invoiceId: savedInvoice.id,
           invoiceNumber: savedInvoice.invoiceNumber,
@@ -720,7 +714,10 @@ export class QueueManagementService {
     // 6. Tenant default
     const billingDefaults = await this.getBillingDefaults(tenantId);
     if (billingDefaults.consultationFee != null) {
-      return { fee: billingDefaults.consultationFee, source: 'system_setting:billing.consultationFee' };
+      return {
+        fee: billingDefaults.consultationFee,
+        source: 'system_setting:billing.consultationFee',
+      };
     }
     return { fee: null, source: 'unresolved' };
   }
@@ -947,10 +944,9 @@ export class QueueManagementService {
     if (viewAll) {
       // Admin/manager view: every consultation queue entry in the facility,
       // plus anything explicitly assigned to a doctor at any service point.
-      qb.andWhere(
-        '(queue.servicePoint = :consultation OR queue.assigned_doctor_id IS NOT NULL)',
-        { consultation: ServicePoint.CONSULTATION },
-      );
+      qb.andWhere('(queue.servicePoint = :consultation OR queue.assigned_doctor_id IS NOT NULL)', {
+        consultation: ServicePoint.CONSULTATION,
+      });
     } else if (myOnly) {
       // Only patients explicitly assigned to this doctor
       qb.andWhere('queue.assigned_doctor_id = :doctorId', { doctorId });
@@ -1061,8 +1057,7 @@ export class QueueManagementService {
       // they themselves are a doctor on duty) → the single on-duty doctor for
       // this department (only when unambiguous).
       queue.roomNumber =
-        (await this.resolveRoomFromDuty(queue, userId, facilityId, tenantId)) ||
-        queue.roomNumber;
+        (await this.resolveRoomFromDuty(queue, userId, facilityId, tenantId)) || queue.roomNumber;
     }
 
     const saved = await this.queueRepository.save(queue);
@@ -1080,7 +1075,7 @@ export class QueueManagementService {
     this.inAppNotifications
       .notifyPatientCalled({
         queueId: saved.id,
-        patientName: (queue.patient as any)?.fullName || 'Patient',
+        patientName: queue.patient?.fullName || 'Patient',
         ticketNumber: queue.ticketNumber,
         servicePoint: queue.servicePoint,
         counterNumber: queue.counterNumber || undefined,
@@ -1088,14 +1083,17 @@ export class QueueManagementService {
         facilityId,
         tenantId,
       })
-      .catch((e) =>
-        this.logger.warn('notifyPatientCalled failed: ' + (e?.message || e)),
-      );
+      .catch((e) => this.logger.warn('notifyPatientCalled failed: ' + (e?.message || e)));
 
     return saved;
   }
 
-  async recallPatient(id: string, userId: string, tenantId?: string, facilityId?: string): Promise<Queue> {
+  async recallPatient(
+    id: string,
+    userId: string,
+    tenantId?: string,
+    facilityId?: string,
+  ): Promise<Queue> {
     const queue = await this.findOne(id, tenantId);
     const recallableStatuses = [
       QueueStatus.CALLED,
@@ -1115,7 +1113,7 @@ export class QueueManagementService {
 
     // Refresh room from the doctor's on-duty record so a doctor who switched
     // rooms between calls is announced correctly.
-    const fid = facilityId || (queue as any).facilityId || (queue.facility as any)?.id;
+    const fid = facilityId || queue.facilityId || queue.facility?.id;
     if (fid) {
       const room = await this.resolveRoomFromDuty(queue, userId, fid, tenantId);
       if (room) queue.roomNumber = room;
@@ -1129,7 +1127,7 @@ export class QueueManagementService {
     this.inAppNotifications
       .notifyPatientCalled({
         queueId: saved.id,
-        patientName: (queue.patient as any)?.fullName || 'Patient',
+        patientName: queue.patient?.fullName || 'Patient',
         ticketNumber: queue.ticketNumber,
         servicePoint: queue.servicePoint,
         counterNumber: queue.counterNumber || undefined,
@@ -1137,9 +1135,7 @@ export class QueueManagementService {
         facilityId: fid,
         tenantId,
       })
-      .catch((e) =>
-        this.logger.warn('notifyPatientCalled (recall) failed: ' + (e?.message || e)),
-      );
+      .catch((e) => this.logger.warn('notifyPatientCalled (recall) failed: ' + (e?.message || e)));
     return saved;
   }
 
@@ -1183,11 +1179,7 @@ export class QueueManagementService {
         where: {
           ...baseWhere,
           departmentId: queue.departmentId,
-          status: In([
-            DutyStatus.ON_DUTY,
-            DutyStatus.IN_CONSULTATION,
-            DutyStatus.ON_BREAK,
-          ]),
+          status: In([DutyStatus.ON_DUTY, DutyStatus.IN_CONSULTATION, DutyStatus.ON_BREAK]),
         },
       });
       const withRoom = duties.filter((d) => !!d.roomNumber);
@@ -1438,12 +1430,12 @@ export class QueueManagementService {
     );
 
     // Reset per-service-point fields; preserve cross-service context (use null, not undefined)
-    queue.calledAt = null as any;
-    queue.serviceStartedAt = null as any;
-    queue.servingUserId = null as any;
+    queue.calledAt = null;
+    queue.serviceStartedAt = null;
+    queue.servingUserId = null;
     queue.callCount = 0;
-    queue.counterNumber = null as any;
-    queue.roomNumber = null as any;
+    queue.counterNumber = null;
+    queue.roomNumber = null;
 
     try {
       const saved = await this.queueRepository.save(queue);
@@ -1508,7 +1500,7 @@ export class QueueManagementService {
       .then((withPatient) =>
         this.inAppNotifications.notifyPatientTransferred({
           queueId: saved.id,
-          patientName: (withPatient?.patient as any)?.fullName || 'Patient',
+          patientName: withPatient?.patient?.fullName || 'Patient',
           fromServicePoint: prevServicePoint,
           toServicePoint: dto.nextServicePoint,
           reason: dto.transferReason,
@@ -1516,9 +1508,7 @@ export class QueueManagementService {
           tenantId,
         }),
       )
-      .catch((e) =>
-        this.logger.warn('notifyPatientTransferred failed: ' + (e?.message || e)),
-      );
+      .catch((e) => this.logger.warn('notifyPatientTransferred failed: ' + (e?.message || e)));
   }
 
   // ─── System-driven service point move (no transition validation) ─────────
@@ -1696,8 +1686,8 @@ export class QueueManagementService {
       today,
       tenantId,
     );
-    queue.calledAt = undefined as any;
-    queue.skipReason = undefined as any;
+    queue.calledAt = null;
+    queue.skipReason = null;
     const saved = await this.queueRepository.save(queue);
     await this.writeAuditLog(id, 'PATIENT_REQUEUED', userId, prevStatus, QueueStatus.WAITING);
     return saved;
@@ -1728,8 +1718,8 @@ export class QueueManagementService {
     const queue = await this.findOne(id, tenantId);
     if (!queue.onHold) throw new BadRequestException('Queue entry is not on hold');
     queue.onHold = false;
-    queue.holdReason = undefined as any;
-    queue.holdStartedAt = undefined as any;
+    queue.holdReason = null;
+    queue.holdStartedAt = null;
     const saved = await this.queueRepository.save(queue);
     await this.writeAuditLog(id, 'QUEUE_UNHELD', userId, queue.status, queue.status);
     return saved;
@@ -1864,7 +1854,7 @@ export class QueueManagementService {
       ...dto,
       facilityId,
       ...(tenantId ? { tenantId } : {}),
-    } as any);
+    } as DeepPartial<QueueDisplay>);
     return this.queueDisplayRepository.save(display) as unknown as QueueDisplay;
   }
 
@@ -2205,11 +2195,7 @@ export class QueueManagementService {
         .where(baseWhere, {
           facilityId,
           today,
-          activeStatuses: [
-            DutyStatus.ON_DUTY,
-            DutyStatus.IN_CONSULTATION,
-            DutyStatus.ON_BREAK,
-          ],
+          activeStatuses: [DutyStatus.ON_DUTY, DutyStatus.IN_CONSULTATION, DutyStatus.ON_BREAK],
         })
         .orderBy('duty.current_queue_count', 'ASC')
         .addOrderBy('duty.check_in_time', 'ASC')
@@ -2222,7 +2208,10 @@ export class QueueManagementService {
       const matched = await buildQb()
         .andWhere('duty.department_id = :departmentId', { departmentId })
         .getMany();
-      const eligible = await this.filterByWorkingDays(matched.map((m) => m.doctorId), tenantId);
+      const eligible = await this.filterByWorkingDays(
+        matched.map((m) => m.doctorId),
+        tenantId,
+      );
       if (eligible.length > 0) return eligible[0];
     }
 

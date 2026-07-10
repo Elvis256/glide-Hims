@@ -50,8 +50,6 @@ export class AddTenantIdToAuditLogs1782900000001 implements MigrationInterface {
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`DROP INDEX IF EXISTS idx_audit_logs_tenant_id`);
-    await queryRunner.query(
-      `ALTER TABLE audit_logs DROP COLUMN IF EXISTS tenant_id`,
-    );
+    await queryRunner.query(`ALTER TABLE audit_logs DROP COLUMN IF EXISTS tenant_id`);
   }
 }

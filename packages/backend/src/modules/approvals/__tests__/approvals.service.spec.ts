@@ -58,7 +58,10 @@ describe('ApprovalsService', () => {
         ApprovalsService,
         { provide: getRepositoryToken(ProcurementApprovalChain), useValue: chainRepo },
         { provide: getRepositoryToken(ApprovalAction), useValue: actionRepo },
-        { provide: OrgApprovalResolverService, useValue: { resolveStepsWithMetadata: jest.fn(), enrichSteps: jest.fn() } },
+        {
+          provide: OrgApprovalResolverService,
+          useValue: { resolveStepsWithMetadata: jest.fn(), enrichSteps: jest.fn() },
+        },
         { provide: EventEmitter2, useValue: events },
         { provide: DataSource, useValue: dataSource },
       ],
@@ -99,15 +102,11 @@ describe('ApprovalsService', () => {
 
     it('rejects unrelated users', async () => {
       const step = baseStep({ approverId: 'someone-else', requiredRole: 'manager' });
-      await expect(service.assertCanAct(step, 'user-X')).rejects.toBeInstanceOf(
-        ForbiddenException,
-      );
+      await expect(service.assertCanAct(step, 'user-X')).rejects.toBeInstanceOf(ForbiddenException);
     });
 
     it('rejects when no actor', async () => {
-      await expect(service.assertCanAct(baseStep(), '')).rejects.toBeInstanceOf(
-        ForbiddenException,
-      );
+      await expect(service.assertCanAct(baseStep(), '')).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
 

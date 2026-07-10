@@ -12,7 +12,10 @@ import {
 import { BatchStockBalance } from '../../../database/entities/batch-stock.entity';
 import { Prescription, PrescriptionItem } from '../../../database/entities/prescription.entity';
 import { AuditLog } from '../../../database/entities/audit-log.entity';
-import { DrugClassification, DrugInteraction } from '../../../database/entities/drug-classification.entity';
+import {
+  DrugClassification,
+  DrugInteraction,
+} from '../../../database/entities/drug-classification.entity';
 import { DrugInteractionOverride } from '../../../database/entities/drug-interaction-override.entity';
 import { ControlledSubstanceLog } from '../../../database/entities/controlled-substance.entity';
 import { ReceiptReprint, RetailCustomer } from '../../../database/entities/pos-retail.entity';
@@ -44,7 +47,9 @@ describe('PharmacyService', () => {
   const mockReprintRepo = {};
   const mockRetailCustomerRepo = {};
   const mockFinanceService = {};
-  const mockInventoryService = { applyStockMovement: jest.fn().mockResolvedValue({ id: 'ledger-1' }) };
+  const mockInventoryService = {
+    applyStockMovement: jest.fn().mockResolvedValue({ id: 'ledger-1' }),
+  };
   const mockPosShiftGuard = {
     assertOpenShift: jest.fn().mockResolvedValue({ id: 'shift-1' }),
     assertActiveRegister: jest.fn().mockResolvedValue(true),

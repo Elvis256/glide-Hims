@@ -1,12 +1,26 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Deployment, DeploymentType, DeploymentStatus } from '../../database/entities/deployment.entity';
+import {
+  Deployment,
+  DeploymentType,
+  DeploymentStatus,
+} from '../../database/entities/deployment.entity';
 import { DeploymentVersion } from '../../database/entities/deployment-version.entity';
 import { DeploymentConfig } from '../../database/entities/deployment-config.entity';
 import { License } from '../../database/entities/license.entity';
 import { In } from 'typeorm';
-import { CreateDeploymentDto, UpdateDeploymentDto, DeploymentResponseDto, ProvisionDeploymentDto } from './deployment.dto';
+import {
+  CreateDeploymentDto,
+  UpdateDeploymentDto,
+  DeploymentResponseDto,
+  ProvisionDeploymentDto,
+} from './deployment.dto';
 import { TenantsService } from '../tenants/tenants.service';
 import { LicenseService } from '../licensing/license.service';
 
@@ -47,9 +61,7 @@ export class DeploymentService {
     return `${key.slice(0, 6)}…${key.slice(-4)}`;
   }
 
-  private async loadLicensesForTenants(
-    tenantIds: string[],
-  ): Promise<Map<string, License>> {
+  private async loadLicensesForTenants(tenantIds: string[]): Promise<Map<string, License>> {
     const map = new Map<string, License>();
     const ids = Array.from(new Set(tenantIds.filter(Boolean)));
     if (ids.length === 0) return map;
@@ -96,18 +108,22 @@ export class DeploymentService {
     if (!orgName) throw new BadRequestException('Organization name is required');
 
     const userFacingType: 'cloud' | 'hybrid' | 'standalone' =
-      dto.type === 'standalone' ? 'standalone'
-        : dto.type === 'cloud' ? 'cloud'
-          : 'hybrid';
+      dto.type === 'standalone' ? 'standalone' : dto.type === 'cloud' ? 'cloud' : 'hybrid';
     const tier: DeploymentTier =
       dto.tier === 'community' || dto.tier === 'professional' || dto.tier === 'enterprise'
         ? dto.tier
         : 'professional';
     const dbType =
-      userFacingType === 'standalone' ? DeploymentType.ONPREMISE
-        : userFacingType === 'cloud' ? DeploymentType.CLOUD
+      userFacingType === 'standalone'
+        ? DeploymentType.ONPREMISE
+        : userFacingType === 'cloud'
+          ? DeploymentType.CLOUD
           : DeploymentType.HYBRID;
-    const domain = dto.domain?.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '') || '';
+    const domain =
+      dto.domain
+        ?.trim()
+        .replace(/^https?:\/\//i, '')
+        .replace(/\/+$/, '') || '';
     const apiEndpoint = domain ? `https://${domain}` : '';
     const maxUsersRaw = typeof dto.maxUsers === 'number' ? dto.maxUsers : Number(dto.maxUsers);
     const maxUsers = Number.isFinite(maxUsersRaw) && maxUsersRaw > 0 ? Math.floor(maxUsersRaw) : 50;
@@ -158,7 +174,11 @@ export class DeploymentService {
       );
     }
 
-    return { ...this.mapToResponse(saved), organizationName: orgName, tenantSlug: tenant.slug } as any;
+    return {
+      ...this.mapToResponse(saved),
+      organizationName: orgName,
+      tenantSlug: tenant.slug,
+    } as any;
   }
 
   private async alignLicenseWithDeployment(args: {
@@ -233,7 +253,13 @@ export class DeploymentService {
         organizationName: r.organization_name,
         tenantSlug: r.tenant_slug,
         name: r.name,
-        type: r.config?.userFacingType || (r.deployment_type === 'onpremise' ? 'standalone' : r.deployment_type === 'cloud' ? 'cloud' : 'hybrid'),
+        type:
+          r.config?.userFacingType ||
+          (r.deployment_type === 'onpremise'
+            ? 'standalone'
+            : r.deployment_type === 'cloud'
+              ? 'cloud'
+              : 'hybrid'),
         deploymentType: r.deployment_type,
         status: r.status,
         apiEndpoint: r.api_endpoint,
@@ -298,7 +324,7 @@ export class DeploymentService {
         })
       : null;
 
-    let tenant: any = null;
+    let tenant = null;
     try {
       const t = deployment.tenantId ? await this.tenantsService.findOne(deployment.tenantId) : null;
       tenant = t ? { id: t.id, name: t.name, slug: t.slug } : null;
@@ -308,15 +334,25 @@ export class DeploymentService {
 
     const metadataTier = deployment.config?.tier || null;
     const metadataMaxUsers = deployment.config?.maxUsers || null;
-    const licenseTierEquivalent = license ? LICENSE_TYPE_TO_TIER[license.licenseType] || null : null;
-    const tierDrift = license && metadataTier && licenseTierEquivalent && metadataTier !== licenseTierEquivalent;
-    const usersDrift = license && metadataMaxUsers != null && license.maxUsers !== metadataMaxUsers;
-    const drift = (tierDrift || usersDrift)
-      ? {
-          tier: tierDrift ? { metadata: metadataTier, license: licenseTierEquivalent, licenseType: license.licenseType } : null,
-          maxUsers: usersDrift ? { metadata: metadataMaxUsers, license: license.maxUsers } : null,
-        }
+    const licenseTierEquivalent = license
+      ? LICENSE_TYPE_TO_TIER[license.licenseType] || null
       : null;
+    const tierDrift =
+      license && metadataTier && licenseTierEquivalent && metadataTier !== licenseTierEquivalent;
+    const usersDrift = license && metadataMaxUsers != null && license.maxUsers !== metadataMaxUsers;
+    const drift =
+      tierDrift || usersDrift
+        ? {
+            tier: tierDrift
+              ? {
+                  metadata: metadataTier,
+                  license: licenseTierEquivalent,
+                  licenseType: license.licenseType,
+                }
+              : null,
+            maxUsers: usersDrift ? { metadata: metadataMaxUsers, license: license.maxUsers } : null,
+          }
+        : null;
 
     return {
       id: deployment.id,
@@ -324,7 +360,13 @@ export class DeploymentService {
       tenant,
       name: deployment.name,
       organizationName: deployment.name,
-      type: deployment.config?.userFacingType || (deployment.deploymentType === DeploymentType.ONPREMISE ? 'standalone' : deployment.deploymentType === DeploymentType.CLOUD ? 'cloud' : 'hybrid'),
+      type:
+        deployment.config?.userFacingType ||
+        (deployment.deploymentType === DeploymentType.ONPREMISE
+          ? 'standalone'
+          : deployment.deploymentType === DeploymentType.CLOUD
+            ? 'cloud'
+            : 'hybrid'),
       deploymentType: deployment.deploymentType,
       status: deployment.status,
       apiEndpoint: deployment.apiEndpoint,
@@ -357,7 +399,9 @@ export class DeploymentService {
     };
   }
 
-  async requestHealthPoll(deploymentId: string): Promise<{ deploymentId: string; pollRequestedAt: string }> {
+  async requestHealthPoll(
+    deploymentId: string,
+  ): Promise<{ deploymentId: string; pollRequestedAt: string }> {
     const deployment = await this.deploymentRepository.findOne({ where: { id: deploymentId } });
     if (!deployment) {
       throw new NotFoundException('Deployment not found');
@@ -379,7 +423,12 @@ export class DeploymentService {
     }
   }
 
-  async syncMetadataFromLicense(deploymentId: string): Promise<{ deploymentId: string; tier: string; maxUsers: number; previous: { tier: any; maxUsers: any } }> {
+  async syncMetadataFromLicense(deploymentId: string): Promise<{
+    deploymentId: string;
+    tier: string;
+    maxUsers: number;
+    previous: { tier: any; maxUsers: any };
+  }> {
     const deployment = await this.deploymentRepository.findOne({ where: { id: deploymentId } });
     if (!deployment) throw new NotFoundException('Deployment not found');
     if (!deployment.tenantId) throw new BadRequestException('Deployment has no tenant');
@@ -391,7 +440,10 @@ export class DeploymentService {
     if (!license) throw new NotFoundException('No license found for this deployment');
 
     const newTier = LICENSE_TYPE_TO_TIER[license.licenseType] || 'professional';
-    const previous = { tier: deployment.config?.tier ?? null, maxUsers: deployment.config?.maxUsers ?? null };
+    const previous = {
+      tier: deployment.config?.tier ?? null,
+      maxUsers: deployment.config?.maxUsers ?? null,
+    };
 
     deployment.config = {
       ...(deployment.config || {}),
@@ -403,7 +455,10 @@ export class DeploymentService {
     return { deploymentId, tier: newTier, maxUsers: license.maxUsers, previous };
   }
 
-  async updateNotes(deploymentId: string, notes: string): Promise<{ deploymentId: string; notes: string; updatedAt: string }> {
+  async updateNotes(
+    deploymentId: string,
+    notes: string,
+  ): Promise<{ deploymentId: string; notes: string; updatedAt: string }> {
     const deployment = await this.deploymentRepository.findOne({ where: { id: deploymentId } });
     if (!deployment) throw new NotFoundException('Deployment not found');
     deployment.notes = notes.trim() || undefined;
@@ -475,7 +530,7 @@ export class DeploymentService {
         reachable: false,
         statusCode: null,
         latencyMs,
-        error: isAbort ? 'Request timed out after 7s' : (err?.message || 'Network error'),
+        error: isAbort ? 'Request timed out after 7s' : err?.message || 'Network error',
         checkedAt,
       };
     } finally {
@@ -483,7 +538,9 @@ export class DeploymentService {
     }
   }
 
-  async generateInstallerBundle(deploymentId: string): Promise<{ filename: string; content: string; mimeType: string }> {
+  async generateInstallerBundle(
+    deploymentId: string,
+  ): Promise<{ filename: string; content: string; mimeType: string }> {
     const deployment = await this.deploymentRepository.findOne({ where: { id: deploymentId } });
     if (!deployment) {
       throw new NotFoundException('Deployment not found');
@@ -494,7 +551,9 @@ export class DeploymentService {
       (deployment.deploymentType === DeploymentType.ONPREMISE ? 'standalone' : 'hybrid');
 
     if (deployment.deploymentType === DeploymentType.CLOUD) {
-      throw new BadRequestException('Installer bundles are only available for hybrid or standalone deployments');
+      throw new BadRequestException(
+        'Installer bundles are only available for hybrid or standalone deployments',
+      );
     }
 
     const license = deployment.tenantId
@@ -511,7 +570,11 @@ export class DeploymentService {
     const installerUrl = `${phoneHomeUrl.replace(/\/+$/, '')}/api/v1/deployments/installers/${userFacingType}`;
 
     const orgName = deployment.name || 'glide-hims';
-    const orgSlug = orgName.replace(/[^a-z0-9]+/gi, '-').toLowerCase().replace(/(^-|-$)/g, '') || 'install';
+    const orgSlug =
+      orgName
+        .replace(/[^a-z0-9]+/gi, '-')
+        .toLowerCase()
+        .replace(/(^-|-$)/g, '') || 'install';
     const filename = `glide-hims-bootstrap-${orgSlug}-${userFacingType}.sh`;
 
     const tenantNameSafe = orgName.replace(/"/g, '\\"');
@@ -588,8 +651,13 @@ export class DeploymentService {
     };
   }
 
-  async listDeployments(tenantId: string, filters?: { type?: DeploymentType; status?: DeploymentStatus }): Promise<DeploymentResponseDto[]> {
-    const query = this.deploymentRepository.createQueryBuilder('d').where('d.tenantId = :tenantId', { tenantId });
+  async listDeployments(
+    tenantId: string,
+    filters?: { type?: DeploymentType; status?: DeploymentStatus },
+  ): Promise<DeploymentResponseDto[]> {
+    const query = this.deploymentRepository
+      .createQueryBuilder('d')
+      .where('d.tenantId = :tenantId', { tenantId });
 
     if (filters?.type) {
       query.andWhere('d.deploymentType = :type', { type: filters.type });
@@ -603,7 +671,11 @@ export class DeploymentService {
     return deployments.map((d) => this.mapToResponse(d));
   }
 
-  async updateDeployment(tenantId: string, deploymentId: string, dto: UpdateDeploymentDto): Promise<DeploymentResponseDto> {
+  async updateDeployment(
+    tenantId: string,
+    deploymentId: string,
+    dto: UpdateDeploymentDto,
+  ): Promise<DeploymentResponseDto> {
     const deployment = await this.deploymentRepository.findOne({
       where: { id: deploymentId, tenantId },
     });
@@ -636,7 +708,11 @@ export class DeploymentService {
     await this.deploymentRepository.remove(deployment);
   }
 
-  async activateDeployment(tenantId: string, deploymentId: string, versionId: string): Promise<DeploymentResponseDto> {
+  async activateDeployment(
+    tenantId: string,
+    deploymentId: string,
+    versionId: string,
+  ): Promise<DeploymentResponseDto> {
     const deployment = await this.deploymentRepository.findOne({
       where: { id: deploymentId, tenantId },
     });

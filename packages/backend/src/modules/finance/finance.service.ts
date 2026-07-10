@@ -649,23 +649,14 @@ export class FinanceService {
       });
       if (!journal) throw new NotFoundException('Journal entry not found');
 
-      if (
-        journal.status !== JournalStatus.DRAFT &&
-        journal.status !== JournalStatus.APPROVED
-      ) {
-        throw new BadRequestException(
-          'Only draft or fully approved entries can be posted',
-        );
+      if (journal.status !== JournalStatus.DRAFT && journal.status !== JournalStatus.APPROVED) {
+        throw new BadRequestException('Only draft or fully approved entries can be posted');
       }
 
       // F12: re-validate debit==credit at post-time using cents-rounded math.
       // Lines may have been mutated after creation; never trust journal.totalDebit/Credit.
-      const recomputedDebit = sumCents(
-        ...(journal.lines ?? []).map((l) => l.debit ?? 0),
-      );
-      const recomputedCredit = sumCents(
-        ...(journal.lines ?? []).map((l) => l.credit ?? 0),
-      );
+      const recomputedDebit = sumCents(...(journal.lines ?? []).map((l) => l.debit ?? 0));
+      const recomputedCredit = sumCents(...(journal.lines ?? []).map((l) => l.credit ?? 0));
       if (!eqCents(recomputedDebit, recomputedCredit)) {
         throw new BadRequestException(
           `Journal entry is unbalanced: debit=${fromCents(recomputedDebit)} credit=${fromCents(recomputedCredit)}`,
@@ -725,9 +716,7 @@ export class FinanceService {
           adjustmentCents = creditCents - debitCents;
         }
 
-        account.currentBalance = fromCents(
-          toCents(account.currentBalance) + adjustmentCents,
-        );
+        account.currentBalance = fromCents(toCents(account.currentBalance) + adjustmentCents);
         await manager.save(ChartOfAccount, account);
       }
 
@@ -1732,7 +1721,7 @@ export class FinanceService {
     const results = await this.accountRepo.manager.query(query, params);
 
     // Summarize by bucket
-    const summary = { current: 0, '1-30': 0, '31-60': 0, '61-90': 0, '90+': 0, total: 0 };
+    const summary: any = { current: 0, '1-30': 0, '31-60': 0, '61-90': 0, '90+': 0, total: 0 };
     for (const row of results) {
       const amt = Number(row.balance_due);
       summary[row.aging_bucket as keyof typeof summary] += amt;
@@ -1798,7 +1787,7 @@ export class FinanceService {
       const debit = Number(line.total_debit) || 0;
       const credit = Number(line.total_credit) || 0;
       const net = credit - debit;
-      const item = { code: line.code, name: line.name, amount: 0 };
+      const item: any = { code: line.code, name: line.name, amount: 0 };
 
       switch (line.category) {
         case 'service_revenue':

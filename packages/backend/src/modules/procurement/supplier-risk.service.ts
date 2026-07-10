@@ -36,7 +36,7 @@ export class SupplierRiskService {
       // Get supplier details
       const supplierWhere: any = { id: supplierId };
       if (tenantId) supplierWhere.tenantId = tenantId;
-      
+
       const supplier = await this.supplierRepo.findOne({
         where: supplierWhere,
       });
@@ -101,10 +101,7 @@ export class SupplierRiskService {
    * Get supplier risk score (0-100)
    * Higher score = higher risk
    */
-  async getSupplierRiskScore(
-    supplierId: string,
-    tenantId?: string,
-  ): Promise<number> {
+  async getSupplierRiskScore(supplierId: string, tenantId?: string): Promise<number> {
     try {
       const supplierWhere: any = { id: supplierId };
       if (tenantId) supplierWhere.tenantId = tenantId;

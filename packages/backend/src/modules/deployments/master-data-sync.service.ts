@@ -51,7 +51,11 @@ export class MasterDataSyncService {
   /**
    * Sync specific changesets to a deployment
    */
-  async syncToDeployment(tenantId: string, deploymentId: string, changesets: ChangeSet[]): Promise<any> {
+  async syncToDeployment(
+    tenantId: string,
+    deploymentId: string,
+    changesets: ChangeSet[],
+  ): Promise<any> {
     const replicationLog = this.replicationLogRepository.create({
       tenantId,
       deploymentId,

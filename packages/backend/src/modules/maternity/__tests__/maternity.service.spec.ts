@@ -138,9 +138,7 @@ describe('MaternityService', () => {
           status: PregnancyStatus.ACTIVE,
         }),
       );
-      expect(ancRepo.save).toHaveBeenCalledWith(
-        expect.objectContaining({ tenantId }),
-      );
+      expect(ancRepo.save).toHaveBeenCalledWith(expect.objectContaining({ tenantId }));
       expect(result.id).toBe('reg-uuid-1');
       expect(mockAuditLogService.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'REGISTER_ANTENATAL' }),
@@ -297,9 +295,7 @@ describe('MaternityService', () => {
           cervicalDilation: 4,
         }),
       );
-      expect(labourRepo.save).toHaveBeenCalledWith(
-        expect.objectContaining({ tenantId }),
-      );
+      expect(labourRepo.save).toHaveBeenCalledWith(expect.objectContaining({ tenantId }));
       expect(result.status).toBe(LabourStatus.ADMITTED);
       expect(mockAuditLogService.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'ADMIT_LABOUR' }),
@@ -347,10 +343,9 @@ describe('MaternityService', () => {
       expect(result.bloodLossMl).toBe(350);
 
       // Should update ANC registration to DELIVERED
-      expect(ancRepo.update).toHaveBeenCalledWith(
-        expect.objectContaining({ id: registrationId }),
-        { status: PregnancyStatus.DELIVERED },
-      );
+      expect(ancRepo.update).toHaveBeenCalledWith(expect.objectContaining({ id: registrationId }), {
+        status: PregnancyStatus.DELIVERED,
+      });
       expect(mockAuditLogService.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'RECORD_DELIVERY' }),
       );
@@ -428,9 +423,7 @@ describe('MaternityService', () => {
           babyStatus: BabyStatus.ALIVE,
         }),
       );
-      expect(outcomeRepo.save).toHaveBeenCalledWith(
-        expect.objectContaining({ tenantId }),
-      );
+      expect(outcomeRepo.save).toHaveBeenCalledWith(expect.objectContaining({ tenantId }));
       expect(result.babyStatus).toBe(BabyStatus.ALIVE);
       expect(mockAuditLogService.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'RECORD_BABY_OUTCOME' }),

@@ -1,4 +1,10 @@
-import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as crypto from 'crypto';
@@ -17,14 +23,17 @@ export class ApiKeyService {
 
   // ===== API Key Management =====
 
-  async createApiKey(dto: {
-    name: string;
-    scopes: string[];
-    rateLimitPerHour?: number;
-    expiresInDays?: number;
-    ipWhitelist?: string;
-    tenantId?: string;
-  }, createdBy: string): Promise<{ apiKey: ApiKey; rawKey: string }> {
+  async createApiKey(
+    dto: {
+      name: string;
+      scopes: string[];
+      rateLimitPerHour?: number;
+      expiresInDays?: number;
+      ipWhitelist?: string;
+      tenantId?: string;
+    },
+    createdBy: string,
+  ): Promise<{ apiKey: ApiKey; rawKey: string }> {
     // Generate a random API key
     const rawKey = `glide_${crypto.randomBytes(32).toString('base64url')}`;
     const keyHash = crypto.createHash('sha256').update(rawKey).digest('hex');
@@ -66,13 +75,16 @@ export class ApiKeyService {
     return key;
   }
 
-  async updateApiKey(id: string, dto: {
-    name?: string;
-    scopes?: string[];
-    rateLimitPerHour?: number;
-    isActive?: boolean;
-    ipWhitelist?: string;
-  }): Promise<ApiKey> {
+  async updateApiKey(
+    id: string,
+    dto: {
+      name?: string;
+      scopes?: string[];
+      rateLimitPerHour?: number;
+      isActive?: boolean;
+      ipWhitelist?: string;
+    },
+  ): Promise<ApiKey> {
     const key = await this.getApiKey(id);
     if (dto.name !== undefined) key.name = dto.name;
     if (dto.scopes !== undefined) key.scopes = dto.scopes;
@@ -93,13 +105,16 @@ export class ApiKeyService {
     const oldKey = await this.getApiKey(id);
 
     // Create a new key with the same settings
-    const result = await this.createApiKey({
-      name: oldKey.name,
-      scopes: oldKey.scopes,
-      rateLimitPerHour: oldKey.rateLimitPerHour,
-      ipWhitelist: oldKey.ipWhitelist,
-      tenantId: oldKey.tenantId,
-    }, createdBy);
+    const result = await this.createApiKey(
+      {
+        name: oldKey.name,
+        scopes: oldKey.scopes,
+        rateLimitPerHour: oldKey.rateLimitPerHour,
+        ipWhitelist: oldKey.ipWhitelist,
+        tenantId: oldKey.tenantId,
+      },
+      createdBy,
+    );
 
     // Revoke the old key
     oldKey.isActive = false;
@@ -129,7 +144,13 @@ export class ApiKeyService {
     active: number;
     expired: number;
     totalUsage: number;
-    keys: Array<{ id: string; name: string; prefix: string; usageCount: number; lastUsed: Date | null }>;
+    keys: Array<{
+      id: string;
+      name: string;
+      prefix: string;
+      usageCount: number;
+      lastUsed: Date | null;
+    }>;
   }> {
     const keys = await this.apiKeyRepo.find({ order: { usageCount: 'DESC' } });
     const now = new Date();
@@ -165,7 +186,11 @@ export class ApiKeyService {
     return this.webhookLogRepo.save(this.webhookLogRepo.create(dto));
   }
 
-  async listWebhookLogs(webhookId?: string, tenantId?: string, limit = 100): Promise<WebhookDeliveryLog[]> {
+  async listWebhookLogs(
+    webhookId?: string,
+    tenantId?: string,
+    limit = 100,
+  ): Promise<WebhookDeliveryLog[]> {
     const where: any = {};
     if (webhookId) where.webhookId = webhookId;
     if (tenantId) where.tenantId = tenantId;
@@ -193,7 +218,10 @@ export class ApiKeyService {
       total: logs.length,
       successful,
       failed: logs.filter((l) => l.status === 'failed').length,
-      avgDurationMs: durations.length > 0 ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : 0,
+      avgDurationMs:
+        durations.length > 0
+          ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
+          : 0,
     };
   }
 }

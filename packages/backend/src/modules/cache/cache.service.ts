@@ -218,7 +218,9 @@ export class CacheService implements OnModuleInit, OnModuleDestroy {
       if (re.test(k)) seen.add(k);
     }
     // Strip prefix on the way out so callers see logical keys
-    return Array.from(seen).map((k) => (k.startsWith(this.keyPrefix) ? k.slice(this.keyPrefix.length) : k));
+    return Array.from(seen).map((k) =>
+      k.startsWith(this.keyPrefix) ? k.slice(this.keyPrefix.length) : k,
+    );
   }
 
   async exists(key: string): Promise<boolean> {

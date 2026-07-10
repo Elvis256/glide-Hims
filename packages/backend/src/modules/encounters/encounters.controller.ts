@@ -91,11 +91,7 @@ export class EncountersController {
     if (!facilityId) {
       return [];
     }
-    return this.encountersService.getLabQueue(
-      facilityId,
-      query.departmentId,
-      req.user?.tenantId,
-    );
+    return this.encountersService.getLabQueue(facilityId, query.departmentId, req.user?.tenantId);
   }
 
   @Get(':id/can-complete')
@@ -114,10 +110,20 @@ export class EncountersController {
     const effectiveFacilityId = facilityId || req.headers['x-facility-id'] || req.user?.facilityId;
     if (!effectiveFacilityId) {
       return {
-        total: 0, waiting: 0, inConsultation: 0, inProgress: 0, completed: 0,
-        cancelled: 0, pendingPayment: 0, pendingLab: 0, pendingPharmacy: 0,
-        averageWaitMinutes: null, bouncedEncounters: 0, totalBounces: 0,
-        bounceRate: 0, departmentBreakdown: [],
+        total: 0,
+        waiting: 0,
+        inConsultation: 0,
+        inProgress: 0,
+        completed: 0,
+        cancelled: 0,
+        pendingPayment: 0,
+        pendingLab: 0,
+        pendingPharmacy: 0,
+        averageWaitMinutes: null,
+        bouncedEncounters: 0,
+        totalBounces: 0,
+        bounceRate: 0,
+        departmentBreakdown: [],
       };
     }
     return this.encountersService.getTodayStats(effectiveFacilityId, req.user?.tenantId);

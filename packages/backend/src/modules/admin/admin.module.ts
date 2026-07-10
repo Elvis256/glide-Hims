@@ -30,10 +30,12 @@ import { SystemMetric } from '../../database/entities/system-metric.entity';
 import { AlertRule } from '../../database/entities/alert-rule.entity';
 import { SystemAlert } from '../../database/entities/system-alert.entity';
 import { Session } from '../../database/entities/session.entity';
-import { SystemAdminRole, SystemAdminRoleAssignment } from '../../database/entities/system-admin-role.entity';
+import {
+  SystemAdminRole,
+  SystemAdminRoleAssignment,
+} from '../../database/entities/system-admin-role.entity';
 import { ApiKey, WebhookDeliveryLog } from '../../database/entities/api-key.entity';
 import { User } from '../../database/entities/user.entity';
-import { Organization } from '../../database/entities/organization.entity';
 import { License } from '../../database/entities/license.entity';
 import { AuthModule } from '../auth/auth.module';
 import { SystemSettingsModule } from '../system-settings/system-settings.module';
@@ -56,7 +58,7 @@ import { InAppNotificationsModule } from '../in-app-notifications/in-app-notific
       SystemAdminRoleAssignment,
       ApiKey,
       WebhookDeliveryLog,
-      Organization,
+      Tenant,
       License,
     ]),
     AuthModule,
@@ -88,6 +90,14 @@ import { InAppNotificationsModule } from '../in-app-notifications/in-app-notific
     ApiKeyController,
     RevenueAnalyticsController,
   ],
-  exports: [AdminService, AdminMFAService, AdminAuditService, TenantService, SystemHealthService, SystemRbacService, ApiKeyService],
+  exports: [
+    AdminService,
+    AdminMFAService,
+    AdminAuditService,
+    TenantService,
+    SystemHealthService,
+    SystemRbacService,
+    ApiKeyService,
+  ],
 })
 export class AdminModule {}

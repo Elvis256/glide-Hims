@@ -11,7 +11,15 @@ import {
 import { ServiceConsumable } from '../../database/entities/service-consumable.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([ServiceCategory, Service, ServicePrice, ServicePackage, ServiceConsumable])],
+  imports: [
+    TypeOrmModule.forFeature([
+      ServiceCategory,
+      Service,
+      ServicePrice,
+      ServicePackage,
+      ServiceConsumable,
+    ]),
+  ],
   controllers: [ServicesController],
   providers: [ServicesService],
   exports: [ServicesService],

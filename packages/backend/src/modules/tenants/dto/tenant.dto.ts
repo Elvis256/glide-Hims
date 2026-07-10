@@ -58,4 +58,3 @@ export class TenantListQueryDto {
   @IsString()
   status?: string;
 }
-

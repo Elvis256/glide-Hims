@@ -27,7 +27,9 @@ export class SaasQuotationsAndPriceCatalog1782900000036 implements MigrationInte
         "updatedAt"     TIMESTAMPTZ NOT NULL DEFAULT now()
       );
     `);
-    await queryRunner.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_price_catalog_code ON saas_price_catalog (code);`);
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_price_catalog_code ON saas_price_catalog (code);`,
+    );
 
     // ----- saas_quotations -----
     await queryRunner.query(`
@@ -68,9 +70,15 @@ export class SaasQuotationsAndPriceCatalog1782900000036 implements MigrationInte
         "updatedAt"             TIMESTAMPTZ NOT NULL DEFAULT now()
       );
     `);
-    await queryRunner.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_quotation_number ON saas_quotations ("quotationNumber");`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_quotation_lead ON saas_quotations (lead_id);`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_quotation_status ON saas_quotations (status);`);
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_quotation_number ON saas_quotations ("quotationNumber");`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_quotation_lead ON saas_quotations (lead_id);`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_quotation_status ON saas_quotations (status);`,
+    );
 
     // ----- saas_quotation_revisions -----
     await queryRunner.query(`
@@ -89,7 +97,9 @@ export class SaasQuotationsAndPriceCatalog1782900000036 implements MigrationInte
         UNIQUE (quotation_id, "revisionNumber")
       );
     `);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_revision_quotation ON saas_quotation_revisions (quotation_id);`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_revision_quotation ON saas_quotation_revisions (quotation_id);`,
+    );
 
     // ----- Add quotationId to saas_subscriptions -----
     await queryRunner.query(`

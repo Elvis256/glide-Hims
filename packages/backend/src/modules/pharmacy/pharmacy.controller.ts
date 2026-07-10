@@ -104,7 +104,11 @@ export class PharmacyController {
   @Post('sales/:id/cancel')
   @AuthWithPermissions('pharmacy.delete')
   @ApiOperation({ summary: 'Cancel pending sale' })
-  cancelSale(@Param('id', ParseUUIDPipe) id: string, @Body() dto: { reason?: string }, @Request() req: any) {
+  cancelSale(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: { reason?: string },
+    @Request() req: any,
+  ) {
     return this.service.cancelSale(id, req.user?.id, dto?.reason, req.user?.tenantId);
   }
 
@@ -369,13 +373,20 @@ export class PharmacyController {
 
   @Get('sales/:id/receipt')
   @AuthWithPermissions('pos.receipt.reprint')
-  @ApiOperation({ summary: 'Get receipt data; duplicate=true logs a reprint and adds DUPLICATE watermark flag' })
+  @ApiOperation({
+    summary: 'Get receipt data; duplicate=true logs a reprint and adds DUPLICATE watermark flag',
+  })
   getReceipt(
     @Param('id', ParseUUIDPipe) id: string,
     @Query('duplicate') duplicate: string,
     @Request() req: any,
   ) {
-    return this.service.getReceipt(id, { duplicate: duplicate === 'true' }, req.user?.id, req.user?.tenantId);
+    return this.service.getReceipt(
+      id,
+      { duplicate: duplicate === 'true' },
+      req.user?.id,
+      req.user?.tenantId,
+    );
   }
 
   @Get('receipts/history')
@@ -387,8 +398,17 @@ export class PharmacyController {
     @Query('to') to?: string,
     @Query('cashierId') cashierId?: string,
     @Query('saleNumber') saleNumber?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
-    return this.service.listReceiptHistory(req.user?.tenantId, { from, to, cashierId, saleNumber });
+    return this.service.listReceiptHistory(req.user?.tenantId, {
+      from,
+      to,
+      cashierId,
+      saleNumber,
+      page: Number(page) || 1,
+      limit: Math.min(Number(limit) || 50, 200),
+    });
   }
 
   // ─── C3: Drug Interaction Check ────────────────────────────────────────────
@@ -401,11 +421,7 @@ export class PharmacyController {
     @Query('patientId') patientId?: string,
     @Query('itemIds') itemIdsRaw?: string | string[],
   ) {
-    const itemIds = Array.isArray(itemIdsRaw)
-      ? itemIdsRaw
-      : itemIdsRaw
-      ? [itemIdsRaw]
-      : [];
+    const itemIds = Array.isArray(itemIdsRaw) ? itemIdsRaw : itemIdsRaw ? [itemIdsRaw] : [];
     return this.service.checkInteractions(itemIds, patientId, req.user?.tenantId);
   }
 
@@ -413,7 +429,8 @@ export class PharmacyController {
   @AuthWithPermissions('pos.interaction.override')
   @ApiOperation({ summary: 'Record a drug-interaction override after manager PIN confirmation' })
   recordInteractionOverride(
-    @Body() body: {
+    @Body()
+    body: {
       saleId?: string;
       patientId?: string;
       warnings: any[];
@@ -433,7 +450,9 @@ export class PharmacyController {
 
   @Get('controlled/register')
   @AuthWithPermissions('pharmacy.controlled.read')
-  @ApiOperation({ summary: 'List controlled substance dispensing/receipt logs for the current facility' })
+  @ApiOperation({
+    summary: 'List controlled substance dispensing/receipt logs for the current facility',
+  })
   getControlledRegister(
     @Request() req: any,
     @Query('from') from?: string,
@@ -455,7 +474,9 @@ export class PharmacyController {
 
   @Post('controlled/reconcile')
   @AuthWithPermissions('pharmacy.controlled.reconcile')
-  @ApiOperation({ summary: 'Submit a physical count for controlled substances and receive a variance report' })
+  @ApiOperation({
+    summary: 'Submit a physical count for controlled substances and receive a variance report',
+  })
   reconcileControlledSubstances(
     @Body() body: { counts: { itemId: string; physicalCount: number }[]; notes?: string },
     @Request() req: any,

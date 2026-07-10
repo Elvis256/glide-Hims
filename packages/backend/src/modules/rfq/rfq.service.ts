@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not } from 'typeorm';
 import {
@@ -44,6 +45,7 @@ export class RFQService {
     @InjectRepository(Supplier) private supplierRepo: Repository<Supplier>,
     @InjectRepository(User) private userRepo: Repository<User>,
     @InjectRepository(PurchaseOrder) private poRepo: Repository<PurchaseOrder>,
+    private eventEmitter?: EventEmitter2,
   ) {}
 
   private getRequiredApprovals(totalAmount: number): number {
@@ -255,7 +257,9 @@ export class RFQService {
     rfq.sentDate = new Date();
     await this.rfqRepo.save(rfq);
 
-    // TODO: Send email notifications to vendors
+    if (this.eventEmitter) {
+      this.eventEmitter.emit('rfq.sent', { rfq });
+    }
 
     return this.findOne(id, tenantId);
   }
@@ -613,9 +617,7 @@ export class RFQService {
       (q) => q.status === QuotationStatus.SELECTED,
     );
     if (hasSelectedQuotation) {
-      throw new BadRequestException(
-        'Cannot cancel an RFQ that already has a selected quotation',
-      );
+      throw new BadRequestException('Cannot cancel an RFQ that already has a selected quotation');
     }
     rfq.status = RFQStatus.CANCELLED;
     await this.rfqRepo.save(rfq);
@@ -631,9 +633,7 @@ export class RFQService {
     }
     const hasQuotations = (rfq.quotations || []).length > 0;
     if (hasQuotations) {
-      throw new BadRequestException(
-        'Cannot delete an RFQ that already has quotations attached',
-      );
+      throw new BadRequestException('Cannot delete an RFQ that already has quotations attached');
     }
     await this.rfqRepo.softRemove(rfq);
     return { deleted: true, id };

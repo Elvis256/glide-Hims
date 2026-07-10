@@ -7,7 +7,7 @@ export class RolesGuard implements CanActivate {
 
   canActivate(context: ExecutionContext): boolean {
     const requiredRoles = this.reflector.get<string[]>('roles', context.getHandler());
-    
+
     if (!requiredRoles) {
       return true; // No roles required
     }
@@ -20,9 +20,11 @@ export class RolesGuard implements CanActivate {
     }
 
     const hasRole = requiredRoles.some((role) => user.roles.includes(role));
-    
+
     if (!hasRole) {
-      throw new ForbiddenException(`User does not have required roles: ${requiredRoles.join(', ')}`);
+      throw new ForbiddenException(
+        `User does not have required roles: ${requiredRoles.join(', ')}`,
+      );
     }
 
     return true;

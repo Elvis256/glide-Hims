@@ -1,11 +1,4 @@
-import {
-  IsString,
-  IsOptional,
-  IsIn,
-  IsDateString,
-  MaxLength,
-  IsUUID,
-} from 'class-validator';
+import { IsString, IsOptional, IsIn, IsDateString, MaxLength, IsUUID } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 const ALLERGY_TYPES = ['allergy', 'intolerance'] as const;

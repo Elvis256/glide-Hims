@@ -55,9 +55,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  *
  * Live DB confirmed all four return 0 prior to this migration.
  */
-export class FinanceConstraintsHardening1782900000006
-  implements MigrationInterface
-{
+export class FinanceConstraintsHardening1782900000006 implements MigrationInterface {
   name = 'FinanceConstraintsHardening1782900000006';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

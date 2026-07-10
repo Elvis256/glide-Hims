@@ -6,6 +6,7 @@ import {
   UpdateDateColumn,
   ManyToOne,
   JoinColumn,
+  Index,
 } from 'typeorm';
 import { Facility } from './facility.entity';
 import { User } from './user.entity';
@@ -58,6 +59,7 @@ export enum StaffCategory {
 }
 
 @Entity('employees')
+@Index(['facilityId', 'status'])
 export class Employee {
   @PrimaryGeneratedColumn('uuid')
   id: string;

@@ -153,28 +153,28 @@ export class Queue extends BaseEntity {
   serviceDurationMinutes: number;
 
   @Column({ name: 'called_at', type: 'timestamptz', nullable: true })
-  calledAt: Date;
+  calledAt: Date | null;
 
   @Column({ name: 'service_started_at', type: 'timestamptz', nullable: true })
-  serviceStartedAt: Date;
+  serviceStartedAt: Date | null;
 
   @Column({ name: 'service_ended_at', type: 'timestamptz', nullable: true })
-  serviceEndedAt: Date;
+  serviceEndedAt: Date | null;
 
   @Column({ name: 'call_count', default: 0 })
   callCount: number;
 
   @Column({ name: 'counter_number', nullable: true })
-  counterNumber: string;
+  counterNumber: string | null;
 
   @Column({ name: 'room_number', nullable: true })
-  roomNumber: string;
+  roomNumber: string | null;
 
   @Column({ name: 'notes', type: 'text', nullable: true })
   notes: string;
 
   @Column({ name: 'skip_reason', type: 'text', nullable: true })
-  skipReason: string;
+  skipReason: string | null;
 
   @Column({ name: 'transfer_reason', type: 'text', nullable: true })
   transferReason: string;
@@ -211,10 +211,10 @@ export class Queue extends BaseEntity {
   onHold: boolean;
 
   @Column({ name: 'hold_reason', type: 'text', nullable: true })
-  holdReason: string;
+  holdReason: string | null;
 
   @Column({ name: 'hold_started_at', type: 'timestamptz', nullable: true })
-  holdStartedAt: Date;
+  holdStartedAt: Date | null;
 
   // Previous service point — for preserving context on transfer
   @Column({ name: 'previous_service_point', type: 'varchar', nullable: true })
@@ -258,7 +258,7 @@ export class Queue extends BaseEntity {
   servingUser: User;
 
   @Column({ name: 'serving_user_id', nullable: true })
-  servingUserId: string;
+  servingUserId: string | null;
 
   @ManyToOne(() => User)
   @JoinColumn({ name: 'created_by_id' })

@@ -8,11 +8,7 @@ import { InAppNotificationsModule } from '../in-app-notifications/in-app-notific
 import { AuditModule } from '../../common/interceptors/audit.module';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([Vital, Encounter]),
-    InAppNotificationsModule,
-    AuditModule,
-  ],
+  imports: [TypeOrmModule.forFeature([Vital, Encounter]), InAppNotificationsModule, AuditModule],
   controllers: [VitalsController],
   providers: [VitalsService],
   exports: [VitalsService],

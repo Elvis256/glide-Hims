@@ -12,11 +12,13 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { AllergiesService } from './allergies.service';
-import {
-  CreatePatientAllergyBodyDto,
-  UpdatePatientAllergyBodyDto,
-} from './allergies.dto';
+import { CreatePatientAllergyBodyDto, UpdatePatientAllergyBodyDto } from './allergies.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+
+interface AuthenticatedRequest extends Request {
+  user?: { id: string; tenantId?: string; facilityId?: string; roles?: string[]; permissions?: string[]; isSystemAdmin?: boolean; };
+}
+
 
 @ApiTags('allergies')
 @Controller('patients/:patientId/allergies')
@@ -26,8 +28,8 @@ export class AllergiesController {
   @Get()
   @AuthWithPermissions('patients.read')
   @ApiOperation({ summary: 'List allergies for a patient' })
-  list(@Param('patientId', ParseUUIDPipe) patientId: string, @Req() req: Request) {
-    const tenantId = (req as any).user?.tenantId;
+  list(@Param('patientId', ParseUUIDPipe) patientId: string, @Req() req: AuthenticatedRequest) {
+    const tenantId = req.user?.tenantId;
     return this.allergies.list(patientId, tenantId);
   }
 
@@ -37,10 +39,10 @@ export class AllergiesController {
   create(
     @Param('patientId', ParseUUIDPipe) patientId: string,
     @Body() body: CreatePatientAllergyBodyDto,
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
   ) {
-    const userId = (req as any).user?.id;
-    const tenantId = (req as any).user?.tenantId;
+    const userId = req.user?.id;
+    const tenantId = req.user?.tenantId;
     return this.allergies.create({ ...body, patientId }, userId, tenantId);
   }
 
@@ -51,10 +53,10 @@ export class AllergiesController {
     @Param('patientId', ParseUUIDPipe) patientId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: UpdatePatientAllergyBodyDto,
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
   ) {
-    const userId = (req as any).user?.id;
-    const tenantId = (req as any).user?.tenantId;
+    const userId = req.user?.id;
+    const tenantId = req.user?.tenantId;
     return this.allergies.update(id, body, tenantId, patientId, userId);
   }
 
@@ -64,23 +66,25 @@ export class AllergiesController {
   inactivate(
     @Param('patientId', ParseUUIDPipe) patientId: string,
     @Param('id', ParseUUIDPipe) id: string,
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
   ) {
-    const userId = (req as any).user?.id;
-    const tenantId = (req as any).user?.tenantId;
+    const userId = req.user?.id;
+    const tenantId = req.user?.tenantId;
     return this.allergies.inactivate(id, tenantId, patientId, userId);
   }
 
   @Delete(':id')
   @AuthWithPermissions('allergies.delete')
-  @ApiOperation({ summary: 'Soft-delete an allergy (admin/clinician-lead only; prefer inactivate)' })
+  @ApiOperation({
+    summary: 'Soft-delete an allergy (admin/clinician-lead only; prefer inactivate)',
+  })
   async remove(
     @Param('patientId', ParseUUIDPipe) patientId: string,
     @Param('id', ParseUUIDPipe) id: string,
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
   ) {
-    const userId = (req as any).user?.id;
-    const tenantId = (req as any).user?.tenantId;
+    const userId = req.user?.id;
+    const tenantId = req.user?.tenantId;
     await this.allergies.remove(id, tenantId, patientId, userId);
     return { ok: true };
   }

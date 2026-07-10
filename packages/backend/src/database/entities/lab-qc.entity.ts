@@ -107,6 +107,7 @@ export class QCMaterial extends BaseEntity {
 
 @Entity('qc_results')
 @Index(['facilityId', 'testCode', 'runDate'])
+@Index(['qcMaterialId', 'facilityId'])
 export class QCResult extends BaseEntity {
   @Column({ type: 'uuid', name: 'facility_id' })
   facilityId: string;

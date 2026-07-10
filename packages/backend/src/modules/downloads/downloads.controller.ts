@@ -31,8 +31,7 @@ export class DownloadsController {
     const items = await this.svc.listPublished(channel);
     const tier = await this.svc.tierForTenant(req.user?.tenantId);
     // filter out installers gated above the caller's tier and annotate
-    return items
-      .filter((i) => meetsTier(tier, i.minLicenseTier));
+    return items.filter((i) => meetsTier(tier, i.minLicenseTier));
   }
 
   @Get('audit')

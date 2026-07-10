@@ -131,4 +131,3 @@ export class LeadActivity {
   @CreateDateColumn()
   createdAt: Date;
 }
-

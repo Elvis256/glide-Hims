@@ -178,7 +178,13 @@ export class UsersController {
     if (!req.user?.isSystemAdmin) {
       throw new ForbiddenException('Only system administrators can perform this action');
     }
-    const result = await this.authService.adminResetPassword(id, dto.newPassword, req.user.sub, undefined, req.user.isSystemAdmin);
+    const result = await this.authService.adminResetPassword(
+      id,
+      dto.newPassword,
+      req.user.sub,
+      undefined,
+      req.user.isSystemAdmin,
+    );
     return { message: 'Password reset successfully', data: result };
   }
 

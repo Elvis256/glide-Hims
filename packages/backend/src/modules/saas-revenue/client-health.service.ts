@@ -31,7 +31,9 @@ export class ClientHealthService {
       where: tenantIds.map((id) => ({ id })),
       select: ['id', 'name', 'slug'],
     });
-    const tmap = new Map(tenantEntities.map((t) => [t.id, { id: t.id, name: t.name, slug: t.slug }]));
+    const tmap = new Map(
+      tenantEntities.map((t) => [t.id, { id: t.id, name: t.name, slug: t.slug }]),
+    );
 
     return rows.map((r) => ({ ...r, tenant: tmap.get(r.tenantId) ?? null }));
   }
@@ -47,12 +49,13 @@ export class ClientHealthService {
     const healthy = all.filter((s) => s.healthStatus === 'healthy').length;
     const atRisk = all.filter((s) => s.healthStatus === 'at_risk').length;
     const critical = all.filter((s) => s.healthStatus === 'critical').length;
-    const avgScore = all.length > 0 ? Math.round(all.reduce((sum, s) => sum + s.overallScore, 0) / all.length) : 0;
+    const avgScore =
+      all.length > 0 ? Math.round(all.reduce((sum, s) => sum + s.overallScore, 0) / all.length) : 0;
     return { total: all.length, healthy, atRisk, critical, avgScore };
   }
 
   async recalculateAll() {
-    const activeSubs = await this.subs.find({ where: { status: 'active' as any } });
+    const activeSubs = await this.subs.find({ where: { status: 'active' } });
     let calculated = 0;
     for (const sub of activeSubs) {
       await this.calculateForTenant(sub.tenantId, sub.id);
@@ -66,7 +69,11 @@ export class ClientHealthService {
     // Payment score: based on invoice payment history
     let paymentScore = 70; // default
     if (subscriptionId) {
-      const invoices = await this.invoices.find({ where: { subscriptionId }, order: { issuedAt: 'DESC' }, take: 12 });
+      const invoices = await this.invoices.find({
+        where: { subscriptionId },
+        order: { issuedAt: 'DESC' },
+        take: 12,
+      });
       if (invoices.length > 0) {
         const paidOnTime = invoices.filter((inv) => inv.status === 'paid').length;
         paymentScore = Math.round((paidOnTime / invoices.length) * 100);
@@ -111,17 +118,28 @@ export class ClientHealthService {
     // Overall weighted
     const overallScore = Math.round(
       paymentScore * 0.3 +
-      usageScore * 0.25 +
-      deploymentScore * 0.2 +
-      supportScore * 0.15 +
-      adoptionScore * 0.1,
+        usageScore * 0.25 +
+        deploymentScore * 0.2 +
+        supportScore * 0.15 +
+        adoptionScore * 0.1,
     );
 
-    const healthStatus: HealthStatus = overallScore >= 70 ? 'healthy' : overallScore >= 40 ? 'at_risk' : 'critical';
+    const healthStatus: HealthStatus =
+      overallScore >= 70 ? 'healthy' : overallScore >= 40 ? 'at_risk' : 'critical';
 
     const alerts: Array<{ level: string; message: string; createdAt: string }> = [];
-    if (paymentScore < 50) alerts.push({ level: 'warning', message: 'Low payment score — past-due invoices', createdAt: new Date().toISOString() });
-    if (usageScore < 40) alerts.push({ level: 'critical', message: 'Low usage — subscription may be inactive', createdAt: new Date().toISOString() });
+    if (paymentScore < 50)
+      alerts.push({
+        level: 'warning',
+        message: 'Low payment score — past-due invoices',
+        createdAt: new Date().toISOString(),
+      });
+    if (usageScore < 40)
+      alerts.push({
+        level: 'critical',
+        message: 'Low usage — subscription may be inactive',
+        createdAt: new Date().toISOString(),
+      });
 
     // Upsert
     let existing = await this.scores.findOne({ where: { tenantId } });
@@ -139,7 +157,11 @@ export class ClientHealthService {
     existing.alerts = alerts;
     existing.lastCalculatedAt = new Date();
     existing.componentDetails = {
-      paymentScore, usageScore, deploymentScore, supportScore, adoptionScore,
+      paymentScore,
+      usageScore,
+      deploymentScore,
+      supportScore,
+      adoptionScore,
     };
 
     const saved = await this.scores.save(existing);

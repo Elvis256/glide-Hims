@@ -218,6 +218,20 @@ export class ControlledSubstanceBuyerDto {
   @IsString()
   @MaxLength(64)
   prescriberLicense?: string;
+
+  @ApiProperty({
+    required: false,
+    description: 'UUID of a system user acting as witness (Schedule II/III)',
+  })
+  @IsOptional()
+  @IsUUID()
+  witnessId?: string;
+
+  @ApiProperty({ required: false, description: 'Witness full name (Schedule II/III dispensing)' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  witnessName?: string;
 }
 
 export class CompleteSaleDto {

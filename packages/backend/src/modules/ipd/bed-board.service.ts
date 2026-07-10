@@ -70,7 +70,7 @@ export class BedBoardService {
         ward: {
           id: ward.id,
           name: ward.name,
-          code: (ward as any).code || '',
+          code: ward.code || '',
           totalBeds: wardBeds.length,
           occupied: wardBeds.filter((b) => b.status === BedStatus.OCCUPIED).length,
           available: wardBeds.filter((b) => b.status === BedStatus.AVAILABLE).length,
@@ -111,12 +111,7 @@ export class BedBoardService {
    * discharged admissions in the window; daily census lists the average daily
    * occupancy per ward (admitted-on-day / total-beds).
    */
-  async getCensus(
-    facilityId: string,
-    dateFrom: string,
-    dateTo: string,
-    tenantId?: string,
-  ) {
+  async getCensus(facilityId: string, dateFrom: string, dateTo: string, tenantId?: string) {
     const start = new Date(dateFrom);
     const end = new Date(dateTo);
     end.setHours(23, 59, 59, 999);
@@ -137,8 +132,12 @@ export class BedBoardService {
     // Discharges within window — used for ALOS + turnover
     const discharges = await this.admissionRepo.find({
       where: {
-        status: In([AdmissionStatus.DISCHARGED, AdmissionStatus.DECEASED, AdmissionStatus.ABSCONDED]),
-        dischargeDate: Between(start, end) as any,
+        status: In([
+          AdmissionStatus.DISCHARGED,
+          AdmissionStatus.DECEASED,
+          AdmissionStatus.ABSCONDED,
+        ]),
+        dischargeDate: Between(start, end),
         ...(tenantId ? { tenantId } : {}),
       },
       select: ['id', 'admissionDate', 'dischargeDate', 'wardId'],
@@ -185,9 +184,7 @@ export class BedBoardService {
       });
     }
 
-    const avgDaily = days.length
-      ? days.reduce((a, d) => a + d.occupied, 0) / days.length
-      : 0;
+    const avgDaily = days.length ? days.reduce((a, d) => a + d.occupied, 0) / days.length : 0;
 
     return {
       window: { from: start.toISOString().slice(0, 10), to: end.toISOString().slice(0, 10) },
@@ -289,9 +286,9 @@ export class BedBoardService {
         const rate = Number(s.bed!.dailyRate || 0);
         return {
           serviceCode: `BED-${s.bed!.bedNumber}`,
-          description: `${s.ward?.name || 'Ward'} bed ${s.bed!.bedNumber} (${
-            s.from.toISOString().slice(0, 10)
-          } → ${s.to.toISOString().slice(0, 10)}, ${days}d)`,
+          description: `${s.ward?.name || 'Ward'} bed ${s.bed!.bedNumber} (${s.from
+            .toISOString()
+            .slice(0, 10)} → ${s.to.toISOString().slice(0, 10)}, ${days}d)`,
           chargeType: 'bed' as const,
           quantity: days,
           unitPrice: rate,

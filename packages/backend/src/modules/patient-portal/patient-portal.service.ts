@@ -79,7 +79,7 @@ export class PatientPortalService {
     await this.notifications
       .sendSmsToPatient({
         patient: { phone: patient.phone, smsOptOut: patient.smsOptOut, fullName: patient.fullName },
-        facilityId: (patient.metadata as any)?.facilityId || '',
+        facilityId: String((patient.metadata as Record<string, unknown>)?.facilityId || ''),
         message,
         tenantId: patient.tenantId,
         transactional: true, // OTPs bypass opt-out

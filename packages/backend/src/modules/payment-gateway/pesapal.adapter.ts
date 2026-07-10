@@ -38,10 +38,7 @@ export class PesapalAdapter implements PaymentGatewayAdapter {
   }
 
   private get baseUrl(): string {
-    return (
-      this.config.get<string>('PESAPAL_BASE_URL') ||
-      'https://pay.pesapal.com/v3/api'
-    );
+    return this.config.get<string>('PESAPAL_BASE_URL') || 'https://pay.pesapal.com/v3/api';
   }
 
   private async getAuthToken(): Promise<string> {
@@ -67,8 +64,7 @@ export class PesapalAdapter implements PaymentGatewayAdapter {
     }
     const token = await this.getAuthToken();
     const merchantReference = req.idempotencyKey || `INV-${req.invoiceId}-${Date.now()}`;
-    const callbackUrl =
-      req.callbackUrl || this.config.get<string>('PESAPAL_CALLBACK_URL') || '';
+    const callbackUrl = req.callbackUrl || this.config.get<string>('PESAPAL_CALLBACK_URL') || '';
 
     const res = await fetch(`${this.baseUrl}/Transactions/SubmitOrderRequest`, {
       method: 'POST',
@@ -124,10 +120,7 @@ export class PesapalAdapter implements PaymentGatewayAdapter {
     return 'pending';
   }
 
-  async parseWebhook(
-    _headers: Record<string, string>,
-    body: any,
-  ): Promise<NormalisedWebhookEvent> {
+  async parseWebhook(_headers: Record<string, string>, body: any): Promise<NormalisedWebhookEvent> {
     // Pesapal IPN gives orderTrackingId + orderMerchantReference; we re-fetch status.
     const trackingId = body?.OrderTrackingId || body?.orderTrackingId;
     const status = trackingId ? await this.getStatus(trackingId) : 'pending';

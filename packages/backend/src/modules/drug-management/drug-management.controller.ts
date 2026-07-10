@@ -1,4 +1,16 @@
-import { Controller, Get, Post, Put, Param, Body, Query, UseGuards, Request, ParseUUIDPipe, BadRequestException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Param,
+  Body,
+  Query,
+  UseGuards,
+  Request,
+  ParseUUIDPipe,
+  BadRequestException,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { DrugManagementService } from './drug-management.service';
@@ -114,7 +126,10 @@ export class DrugManagementController {
   @Get('classifications/item/:itemId')
   @AuthWithPermissions('pharmacy.read')
   @ApiOperation({ summary: 'Get classification by item ID' })
-  async getClassificationByItem(@Param('itemId', ParseUUIDPipe) itemId: string, @Request() req: any) {
+  async getClassificationByItem(
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+    @Request() req: any,
+  ) {
     return this.drugService.getClassification(itemId, req.user?.tenantId);
   }
 
@@ -148,7 +163,10 @@ export class DrugManagementController {
   @Get('interactions/drug/:drugId')
   @AuthWithPermissions('pharmacy.read')
   @ApiOperation({ summary: 'Get interactions for a drug' })
-  async getInteractionsForDrug(@Param('drugId', ParseUUIDPipe) drugId: string, @Request() req: any) {
+  async getInteractionsForDrug(
+    @Param('drugId', ParseUUIDPipe) drugId: string,
+    @Request() req: any,
+  ) {
     return this.drugService.getInteractionsForDrug(drugId, req.user?.tenantId);
   }
 

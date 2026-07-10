@@ -87,7 +87,9 @@ export class CreateQuotationDto {
   @IsOptional() @IsString() @MaxLength(20) deploymentType?: string;
   @IsOptional() @IsString() @MaxLength(255) deploymentDomain?: string;
 
-  @IsArray() @ValidateNested({ each: true }) @Type(() => LineItemDto)
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => LineItemDto)
   lineItems: LineItemDto[];
 }
 
@@ -121,12 +123,17 @@ export class UpdateQuotationDto {
   @IsOptional() @IsString() @MaxLength(20) deploymentType?: string;
   @IsOptional() @IsString() @MaxLength(255) deploymentDomain?: string;
 
-  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => LineItemDto)
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => LineItemDto)
   lineItems?: LineItemDto[];
 }
 
 export class CreateRevisionDto {
-  @IsArray() @ValidateNested({ each: true }) @Type(() => LineItemDto)
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => LineItemDto)
   lineItems: LineItemDto[];
   @IsOptional() @IsString() changeNotes?: string;
 }

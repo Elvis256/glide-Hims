@@ -190,9 +190,17 @@ export class ConflictResolutionEngine {
   /**
    * Compute 3-way merge for data conflicts
    */
-  async computeThreeWayMerge(baseVersion: any, localVersion: any, remoteVersion: any): Promise<any> {
+  async computeThreeWayMerge(
+    baseVersion: any,
+    localVersion: any,
+    remoteVersion: any,
+  ): Promise<any> {
     const merged: any = {};
-    const baseKeys = new Set([...Object.keys(baseVersion), ...Object.keys(localVersion), ...Object.keys(remoteVersion)]);
+    const baseKeys = new Set([
+      ...Object.keys(baseVersion),
+      ...Object.keys(localVersion),
+      ...Object.keys(remoteVersion),
+    ]);
 
     for (const key of baseKeys) {
       const base = baseVersion[key];

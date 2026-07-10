@@ -58,10 +58,7 @@ export class ChronicCareService {
     return patient;
   }
 
-  private async requireChronicDiagnosis(
-    diagnosisId: string,
-    tenantId: string,
-  ): Promise<Diagnosis> {
+  private async requireChronicDiagnosis(diagnosisId: string, tenantId: string): Promise<Diagnosis> {
     const diagnosis = await this.diagnosisRepo.findOne({
       where: { id: diagnosisId, tenantId },
     });
@@ -132,7 +129,6 @@ export class ChronicCareService {
       .andWhere('cc.deletedAt IS NULL')
       .andWhere('cc.tenant_id = :tenantId', { tenantId: tid });
 
-
     if (query.diagnosisId) {
       qb.andWhere('cc.diagnosisId = :diagnosisId', { diagnosisId: query.diagnosisId });
     }
@@ -202,7 +198,7 @@ export class ChronicCareService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const baseWhere: any = { facilityId: fid, tenantId: tid };
+    const baseWhere = { facilityId: fid, tenantId: tid };
 
     const upcomingQb = this.chronicRepo
       .createQueryBuilder('cc')
@@ -363,9 +359,8 @@ export class ChronicCareService {
     condition.lastVisit = new Date();
 
     if (nextFollowUpDate) {
-      const parsed = nextFollowUpDate instanceof Date
-        ? nextFollowUpDate
-        : new Date(nextFollowUpDate as any);
+      const parsed =
+        nextFollowUpDate instanceof Date ? nextFollowUpDate : new Date(nextFollowUpDate as any);
       if (isNaN(parsed.getTime())) {
         throw new BadRequestException('Invalid nextFollowUpDate');
       }

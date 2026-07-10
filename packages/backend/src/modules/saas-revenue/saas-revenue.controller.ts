@@ -1,6 +1,20 @@
 import {
-  BadRequestException, Body, Controller, Delete, ForbiddenException, Get, Headers, Param, Post, Put, Query,
-  RawBodyRequest, Req, Res, UploadedFile, UseInterceptors,
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  ForbiddenException,
+  Get,
+  Headers,
+  Param,
+  Post,
+  Put,
+  Query,
+  RawBodyRequest,
+  Req,
+  Res,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
@@ -11,8 +25,16 @@ import { Public } from '../auth/decorators/public.decorator';
 import { SaasRevenueService } from './saas-revenue.service';
 import { SaasMailerService, EMAIL_TEMPLATES_META, EmailTemplateKey } from './saas-mailer.service';
 import {
-  CreatePlanDto, UpdatePlanDto, CreateSubscriptionDto, ChangePlanDto, RecordPaymentDto, CreateCouponDto, UpdateCouponDto,
-  ConvertLeadDto, InitCheckoutDto, CreateManualInvoiceDto,
+  CreatePlanDto,
+  UpdatePlanDto,
+  CreateSubscriptionDto,
+  ChangePlanDto,
+  RecordPaymentDto,
+  CreateCouponDto,
+  UpdateCouponDto,
+  ConvertLeadDto,
+  InitCheckoutDto,
+  CreateManualInvoiceDto,
 } from './dtos';
 
 function ensureAdmin(req: any) {
@@ -40,35 +62,57 @@ export class SaasRevenueController {
   }
 
   @Get('plans/:id')
-  getPlan(@Param('id') id: string) { return this.svc.getPlan(id); }
+  getPlan(@Param('id') id: string) {
+    return this.svc.getPlan(id);
+  }
 
   @Post('plans')
-  createPlan(@Req() req: any, @Body() dto: CreatePlanDto) { ensureAdmin(req); return this.svc.createPlan(dto); }
+  createPlan(@Req() req: any, @Body() dto: CreatePlanDto) {
+    ensureAdmin(req);
+    return this.svc.createPlan(dto);
+  }
 
   @Put('plans/:id')
-  updatePlan(@Req() req: any, @Param('id') id: string, @Body() dto: UpdatePlanDto) { ensureAdmin(req); return this.svc.updatePlan(id, dto); }
+  updatePlan(@Req() req: any, @Param('id') id: string, @Body() dto: UpdatePlanDto) {
+    ensureAdmin(req);
+    return this.svc.updatePlan(id, dto);
+  }
 
   @Delete('plans/:id')
-  deletePlan(@Req() req: any, @Param('id') id: string) { ensureAdmin(req); return this.svc.deletePlan(id); }
+  deletePlan(@Req() req: any, @Param('id') id: string) {
+    ensureAdmin(req);
+    return this.svc.deletePlan(id);
+  }
 
   // ---------- Coupons ----------
   @Get('coupons')
-  listCoupons(@Req() req: any) { ensureAdmin(req); return this.svc.listCoupons(); }
+  listCoupons(@Req() req: any) {
+    ensureAdmin(req);
+    return this.svc.listCoupons();
+  }
 
   @Post('coupons')
-  createCoupon(@Req() req: any, @Body() dto: CreateCouponDto) { ensureAdmin(req); return this.svc.createCoupon(dto); }
+  createCoupon(@Req() req: any, @Body() dto: CreateCouponDto) {
+    ensureAdmin(req);
+    return this.svc.createCoupon(dto);
+  }
 
   @Put('coupons/:id')
   updateCoupon(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateCouponDto) {
-    ensureAdmin(req); return this.svc.updateCoupon(id, dto as any);
+    ensureAdmin(req);
+    return this.svc.updateCoupon(id, dto as any);
   }
 
   @Delete('coupons/:id')
-  deleteCoupon(@Req() req: any, @Param('id') id: string) { ensureAdmin(req); return this.svc.deleteCoupon(id); }
+  deleteCoupon(@Req() req: any, @Param('id') id: string) {
+    ensureAdmin(req);
+    return this.svc.deleteCoupon(id);
+  }
 
   @Get('coupons/:id/redemptions')
   couponRedemptions(@Req() req: any, @Param('id') id: string) {
-    ensureAdmin(req); return this.svc.listCouponRedemptions(id);
+    ensureAdmin(req);
+    return this.svc.listCouponRedemptions(id);
   }
 
   @Public()
@@ -80,55 +124,105 @@ export class SaasRevenueController {
     @Query('seats') seats?: string,
   ) {
     if (!code?.trim()) return { valid: false, reason: 'Coupon code required' };
-    return this.svc.previewCoupon(code.trim(), planId, billingInterval || 'monthly', seats ? parseInt(seats, 10) : 1);
+    return this.svc.previewCoupon(
+      code.trim(),
+      planId,
+      billingInterval || 'monthly',
+      seats ? parseInt(seats, 10) : 1,
+    );
   }
 
   // ---------- Subscriptions ----------
   @Get('subscriptions')
-  listSubs(@Req() req: any, @Query('status') status?: string, @Query('tenantId') tenantId?: string) {
-    ensureAdmin(req); return this.svc.listSubscriptions({ status, tenantId });
+  listSubs(
+    @Req() req: any,
+    @Query('status') status?: string,
+    @Query('tenantId') tenantId?: string,
+  ) {
+    ensureAdmin(req);
+    return this.svc.listSubscriptions({ status, tenantId });
   }
 
   @Get('subscriptions/:id')
-  getSub(@Req() req: any, @Param('id') id: string) { ensureAdmin(req); return this.svc.getSubscription(id); }
+  getSub(@Req() req: any, @Param('id') id: string) {
+    ensureAdmin(req);
+    return this.svc.getSubscription(id);
+  }
 
   @Post('subscriptions')
-  createSub(@Req() req: any, @Body() dto: CreateSubscriptionDto) { ensureAdmin(req); return this.svc.createSubscription(dto, req.user?.id); }
+  createSub(@Req() req: any, @Body() dto: CreateSubscriptionDto) {
+    ensureAdmin(req);
+    return this.svc.createSubscription(dto, req.user?.id);
+  }
 
   @Put('subscriptions/:id')
-  updateSub(@Req() req: any, @Param('id') id: string, @Body() dto: { billingEmail?: string | null; billingCurrency?: string | null; autoRenew?: boolean }) {
+  updateSub(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body()
+    dto: { billingEmail?: string | null; billingCurrency?: string | null; autoRenew?: boolean },
+  ) {
     ensureAdmin(req);
     return this.svc.updateSubscription(id, dto || {}, req.user?.id);
   }
 
   @Post('subscriptions/:id/change-plan')
-  changePlan(@Req() req: any, @Param('id') id: string, @Body() dto: ChangePlanDto) { ensureAdmin(req); return this.svc.changePlan(id, dto, req.user?.id); }
+  changePlan(@Req() req: any, @Param('id') id: string, @Body() dto: ChangePlanDto) {
+    ensureAdmin(req);
+    return this.svc.changePlan(id, dto, req.user?.id);
+  }
 
   @Post('subscriptions/:id/cancel')
-  cancel(@Req() req: any, @Param('id') id: string, @Body() body: { atPeriodEnd?: boolean; reason?: string }) {
-    ensureAdmin(req); return this.svc.cancelSubscription(id, body?.atPeriodEnd ?? true, body?.reason, req.user?.id);
+  cancel(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: { atPeriodEnd?: boolean; reason?: string },
+  ) {
+    ensureAdmin(req);
+    return this.svc.cancelSubscription(id, body?.atPeriodEnd ?? true, body?.reason, req.user?.id);
   }
 
   @Post('subscriptions/:id/pause')
-  pause(@Req() req: any, @Param('id') id: string) { ensureAdmin(req); return this.svc.pauseSubscription(id, req.user?.id); }
+  pause(@Req() req: any, @Param('id') id: string) {
+    ensureAdmin(req);
+    return this.svc.pauseSubscription(id, req.user?.id);
+  }
 
   @Post('subscriptions/:id/resume')
-  resume(@Req() req: any, @Param('id') id: string) { ensureAdmin(req); return this.svc.resumeSubscription(id, req.user?.id); }
+  resume(@Req() req: any, @Param('id') id: string) {
+    ensureAdmin(req);
+    return this.svc.resumeSubscription(id, req.user?.id);
+  }
 
   @Post('subscriptions/:id/sync-license')
-  syncLicense(@Req() req: any, @Param('id') id: string) { ensureAdmin(req); return this.svc.syncLicenseFromSubscription(id).then(() => ({ ok: true })); }
+  syncLicense(@Req() req: any, @Param('id') id: string) {
+    ensureAdmin(req);
+    return this.svc.syncLicenseFromSubscription(id).then(() => ({ ok: true }));
+  }
 
   @Post('subscriptions/:id/sync-price')
-  syncPrice(@Req() req: any, @Param('id') id: string) { ensureAdmin(req); return this.svc.syncSubscriptionPrice(id, req.user?.id); }
+  syncPrice(@Req() req: any, @Param('id') id: string) {
+    ensureAdmin(req);
+    return this.svc.syncSubscriptionPrice(id, req.user?.id);
+  }
 
   // ---------- Invoices ----------
   @Get('invoices')
-  listInv(@Req() req: any, @Query('status') status?: string, @Query('tenantId') tenantId?: string, @Query('subscriptionId') sId?: string) {
-    ensureAdmin(req); return this.svc.listInvoices({ status, tenantId, subscriptionId: sId });
+  listInv(
+    @Req() req: any,
+    @Query('status') status?: string,
+    @Query('tenantId') tenantId?: string,
+    @Query('subscriptionId') sId?: string,
+  ) {
+    ensureAdmin(req);
+    return this.svc.listInvoices({ status, tenantId, subscriptionId: sId });
   }
 
   @Get('invoices/:id')
-  getInv(@Req() req: any, @Param('id') id: string) { ensureAdmin(req); return this.svc.getInvoice(id); }
+  getInv(@Req() req: any, @Param('id') id: string) {
+    ensureAdmin(req);
+    return this.svc.getInvoice(id);
+  }
 
   @Post('invoices')
   createManualInvoice(@Req() req: any, @Body() dto: CreateManualInvoiceDto) {
@@ -138,14 +232,22 @@ export class SaasRevenueController {
 
   @Post('invoices/:id/payments')
   recordPayment(@Req() req: any, @Param('id') id: string, @Body() dto: RecordPaymentDto) {
-    ensureAdmin(req); return this.svc.recordPayment(id, dto, req.user?.id);
+    ensureAdmin(req);
+    return this.svc.recordPayment(id, dto, req.user?.id);
   }
 
   @Post('invoices/:id/void')
-  voidInv(@Req() req: any, @Param('id') id: string) { ensureAdmin(req); return this.svc.voidInvoice(id, req.user?.id); }
+  voidInv(@Req() req: any, @Param('id') id: string) {
+    ensureAdmin(req);
+    return this.svc.voidInvoice(id, req.user?.id);
+  }
 
   @Post('payments/:id/refund')
-  refundPayment(@Req() req: any, @Param('id') id: string, @Body() dto: { amountMinor?: number; reason?: string }) {
+  refundPayment(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: { amountMinor?: number; reason?: string },
+  ) {
     ensureAdmin(req);
     return this.svc.refundPayment(id, dto || {}, req.user?.id);
   }
@@ -183,7 +285,12 @@ export class SaasRevenueController {
   }
 
   @Get('payment-proofs/:proofId/download')
-  async downloadPaymentProof(@Req() req: any, @Param('proofId') proofId: string, @Query('inline') inline: string | undefined, @Res() res: Response) {
+  async downloadPaymentProof(
+    @Req() req: any,
+    @Param('proofId') proofId: string,
+    @Query('inline') inline: string | undefined,
+    @Res() res: Response,
+  ) {
     ensureAdmin(req);
     const proof = await this.svc.getPaymentProof(proofId);
 
@@ -210,9 +317,13 @@ export class SaasRevenueController {
   }
 
   @Post('payments/:id/verify')
-  verifyPayment(@Req() req: any, @Param('id') id: string, @Body() dto: { status: 'verified' | 'rejected'; notes?: string }) {
+  verifyPayment(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: { status: 'verified' | 'rejected'; notes?: string },
+  ) {
     ensureAdmin(req);
-    return this.svc.verifyPayment(id, dto || {} as any, req.user?.id);
+    return this.svc.verifyPayment(id, dto || ({} as any), req.user?.id);
   }
 
   @Post('invoices/:id/send-email')
@@ -231,24 +342,42 @@ export class SaasRevenueController {
 
   // ---------- Vendor billing identity (system-wide settings) ----------
   @Get('billing-settings')
-  getBillingSettings(@Req() req: any) { ensureAdmin(req); return this.svc.getVendorBilling(); }
+  getBillingSettings(@Req() req: any) {
+    ensureAdmin(req);
+    return this.svc.getVendorBilling();
+  }
 
   @Put('billing-settings')
-  updateBillingSettings(@Req() req: any, @Body() dto: any) { ensureAdmin(req); return this.svc.updateVendorBilling(dto || {}); }
+  updateBillingSettings(@Req() req: any, @Body() dto: any) {
+    ensureAdmin(req);
+    return this.svc.updateVendorBilling(dto || {});
+  }
 
   // ---------- Dunning rules (system-wide) ----------
   @Get('dunning-rules')
-  getDunningRules(@Req() req: any) { ensureAdmin(req); return this.svc.getDunningRules(); }
+  getDunningRules(@Req() req: any) {
+    ensureAdmin(req);
+    return this.svc.getDunningRules();
+  }
 
   @Put('dunning-rules')
-  updateDunningRules(@Req() req: any, @Body() dto: any) { ensureAdmin(req); return this.svc.updateDunningRules(dto || {}); }
+  updateDunningRules(@Req() req: any, @Body() dto: any) {
+    ensureAdmin(req);
+    return this.svc.updateDunningRules(dto || {});
+  }
 
   // ---------- VAT / tax rules (system-wide) ----------
   @Get('vat-rules')
-  getVatRules(@Req() req: any) { ensureAdmin(req); return this.svc.getVatSettings(); }
+  getVatRules(@Req() req: any) {
+    ensureAdmin(req);
+    return this.svc.getVatSettings();
+  }
 
   @Put('vat-rules')
-  updateVatRules(@Req() req: any, @Body() dto: any) { ensureAdmin(req); return this.svc.updateVatSettings(dto || {}); }
+  updateVatRules(@Req() req: any, @Body() dto: any) {
+    ensureAdmin(req);
+    return this.svc.updateVatSettings(dto || {});
+  }
 
   // ---------- Email templates ----------
   // All endpoints accept an optional `tenantId` query param to act on a
@@ -260,14 +389,24 @@ export class SaasRevenueController {
   }
 
   @Get('email-templates/:key')
-  async getEmailTemplate(@Req() req: any, @Param('key') key: string, @Query('tenantId') tenantId?: string) {
+  async getEmailTemplate(
+    @Req() req: any,
+    @Param('key') key: string,
+    @Query('tenantId') tenantId?: string,
+  ) {
     ensureAdmin(req);
     if (!(key in EMAIL_TEMPLATES_META)) throw new ForbiddenException('Unknown template');
     const meta = EMAIL_TEMPLATES_META[key as EmailTemplateKey];
     const current = await this.mailer.getTemplate(key as EmailTemplateKey, tenantId);
     const history = await this.mailer.getTemplateHistory(key as EmailTemplateKey, tenantId);
     const storedHere = await this.mailer.getStoredTemplate(key as EmailTemplateKey, tenantId);
-    return { ...meta, current, history, hasOverride: !!storedHere, scope: tenantId ? 'tenant' : 'global' };
+    return {
+      ...meta,
+      current,
+      history,
+      hasOverride: !!storedHere,
+      scope: tenantId ? 'tenant' : 'global',
+    };
   }
 
   @Put('email-templates/:key')
@@ -279,7 +418,8 @@ export class SaasRevenueController {
   ) {
     ensureAdmin(req);
     if (!(key in EMAIL_TEMPLATES_META)) throw new ForbiddenException('Unknown template');
-    if (!body?.subject?.trim() || !body?.body?.trim()) throw new ForbiddenException('subject and body are required');
+    if (!body?.subject?.trim() || !body?.body?.trim())
+      throw new ForbiddenException('subject and body are required');
     await this.mailer.setTemplate(
       key as EmailTemplateKey,
       { subject: body.subject, body: body.body },
@@ -289,7 +429,11 @@ export class SaasRevenueController {
   }
 
   @Delete('email-templates/:key')
-  async resetEmailTemplate(@Req() req: any, @Param('key') key: string, @Query('tenantId') tenantId?: string) {
+  async resetEmailTemplate(
+    @Req() req: any,
+    @Param('key') key: string,
+    @Query('tenantId') tenantId?: string,
+  ) {
     ensureAdmin(req);
     if (!(key in EMAIL_TEMPLATES_META)) throw new ForbiddenException('Unknown template');
     const defaults = await this.mailer.resetTemplate(key as EmailTemplateKey, tenantId);
@@ -305,8 +449,12 @@ export class SaasRevenueController {
   ) {
     ensureAdmin(req);
     if (!(key in EMAIL_TEMPLATES_META)) throw new ForbiddenException('Unknown template');
-    if (typeof body?.versionIndex !== 'number' || body.versionIndex < 0) throw new ForbiddenException('versionIndex required');
-    await this.mailer.revertTemplate(key as EmailTemplateKey, body.versionIndex, { tenantId, actorId: req.user?.id });
+    if (typeof body?.versionIndex !== 'number' || body.versionIndex < 0)
+      throw new ForbiddenException('versionIndex required');
+    await this.mailer.revertTemplate(key as EmailTemplateKey, body.versionIndex, {
+      tenantId,
+      actorId: req.user?.id,
+    });
     return { ok: true };
   }
 
@@ -373,16 +521,23 @@ export class SaasRevenueController {
 
   // ---------- Revenue dashboard ----------
   @Get('revenue/dashboard')
-  dashboard(@Req() req: any) { ensureAdmin(req); return this.svc.getRevenueDashboard(); }
+  dashboard(@Req() req: any) {
+    ensureAdmin(req);
+    return this.svc.getRevenueDashboard();
+  }
 
   @Get('revenue/plans/:planId')
   planAnalytics(@Req() req: any, @Param('planId') planId: string) {
-    ensureAdmin(req); return this.svc.getPlanAnalytics(planId);
+    ensureAdmin(req);
+    return this.svc.getPlanAnalytics(planId);
   }
 
   // ---------- Cron triggers (admin manual run) ----------
   @Post('cron/run')
-  manualCron(@Req() req: any) { ensureAdmin(req); return this.svc.renewalTick().then(() => ({ ok: true })); }
+  manualCron(@Req() req: any) {
+    ensureAdmin(req);
+    return this.svc.renewalTick().then(() => ({ ok: true }));
+  }
 
   // ---------- Public pricing (no auth) ----------
   @Public()
@@ -394,13 +549,21 @@ export class SaasRevenueController {
   // ---------- Currency / FX rates (system-wide) ----------
   @Public()
   @Get('public/currency-rates')
-  getPublicCurrencyRates() { return this.svc.getCurrencyRates(); }
+  getPublicCurrencyRates() {
+    return this.svc.getCurrencyRates();
+  }
 
   @Get('currency-rates')
-  getCurrencyRates(@Req() req: any) { ensureAdmin(req); return this.svc.getCurrencyRates(); }
+  getCurrencyRates(@Req() req: any) {
+    ensureAdmin(req);
+    return this.svc.getCurrencyRates();
+  }
 
   @Put('currency-rates')
-  updateCurrencyRates(@Req() req: any, @Body() dto: any) { ensureAdmin(req); return this.svc.updateCurrencyRates(dto || {}); }
+  updateCurrencyRates(@Req() req: any, @Body() dto: any) {
+    ensureAdmin(req);
+    return this.svc.updateCurrencyRates(dto || {});
+  }
 
   @Post('currency-rates/refresh')
   refreshCurrencyRates(@Req() req: any, @Body() dto: any) {
@@ -418,7 +581,8 @@ export class SaasRevenueController {
   // ---------- Tenant self-serve billing portal ----------
   @Get('portal/me')
   myBilling(@Req() req: any) {
-    if (req.user?.isSystemAdmin && req.query?.tenantId) return this.svc.getMyBilling(String(req.query.tenantId));
+    if (req.user?.isSystemAdmin && req.query?.tenantId)
+      return this.svc.getMyBilling(String(req.query.tenantId));
     return this.svc.getMyBilling(ensureTenant(req));
   }
 
@@ -432,7 +596,10 @@ export class SaasRevenueController {
 
   @Get('portal/invoices')
   myInvoices(@Req() req: any, @Query('status') status?: string) {
-    const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
+    const tenantId =
+      req.user?.isSystemAdmin && req.query?.tenantId
+        ? String(req.query.tenantId)
+        : ensureTenant(req);
     return this.svc.listMyInvoices(tenantId, status);
   }
 
@@ -446,7 +613,8 @@ export class SaasRevenueController {
   async myInvoicePdf(@Req() req: any, @Param('id') id: string, @Res() res: Response) {
     const tenantId = req.user?.isSystemAdmin ? undefined : ensureTenant(req);
     const inv = await this.svc.getInvoice(id);
-    if (tenantId && inv.tenantId !== tenantId && inv.billingPayerTenantId !== tenantId) throw new ForbiddenException('Invoice does not belong to your tenant');
+    if (tenantId && inv.tenantId !== tenantId && inv.billingPayerTenantId !== tenantId)
+      throw new ForbiddenException('Invoice does not belong to your tenant');
     const buf = await this.svc.renderInvoicePdf(id, tenantId);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${inv.invoiceNumber}.pdf"`);
@@ -457,13 +625,24 @@ export class SaasRevenueController {
   // ---------- Tenant statements (multi-currency, FX-aware) ----------
   @Get('portal/statement')
   myStatement(@Req() req: any, @Query('from') from?: string, @Query('to') to?: string) {
-    const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
+    const tenantId =
+      req.user?.isSystemAdmin && req.query?.tenantId
+        ? String(req.query.tenantId)
+        : ensureTenant(req);
     return this.svc.buildMyStatement(tenantId, { from, to });
   }
 
   @Get('portal/statement.csv')
-  async myStatementCsv(@Req() req: any, @Res() res: Response, @Query('from') from?: string, @Query('to') to?: string) {
-    const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
+  async myStatementCsv(
+    @Req() req: any,
+    @Res() res: Response,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    const tenantId =
+      req.user?.isSystemAdmin && req.query?.tenantId
+        ? String(req.query.tenantId)
+        : ensureTenant(req);
     const csv = await this.svc.renderMyStatementCsv(tenantId, { from, to });
     const stamp = new Date().toISOString().slice(0, 10);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
@@ -472,8 +651,16 @@ export class SaasRevenueController {
   }
 
   @Get('portal/statement.pdf')
-  async myStatementPdf(@Req() req: any, @Res() res: Response, @Query('from') from?: string, @Query('to') to?: string) {
-    const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
+  async myStatementPdf(
+    @Req() req: any,
+    @Res() res: Response,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    const tenantId =
+      req.user?.isSystemAdmin && req.query?.tenantId
+        ? String(req.query.tenantId)
+        : ensureTenant(req);
     const buf = await this.svc.renderMyStatementPdf(tenantId, { from, to });
     const stamp = new Date().toISOString().slice(0, 10);
     res.setHeader('Content-Type', 'application/pdf');
@@ -485,7 +672,10 @@ export class SaasRevenueController {
   // ---------- Multi-org billing (one tenant pays for many) ----------
   @Get('portal/managed-organizations')
   myManagedOrgs(@Req() req: any) {
-    const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
+    const tenantId =
+      req.user?.isSystemAdmin && req.query?.tenantId
+        ? String(req.query.tenantId)
+        : ensureTenant(req);
     return this.svc.listMyManagedSubscriptions(tenantId);
   }
 
@@ -497,93 +687,160 @@ export class SaasRevenueController {
   ) {
     if (!req.user?.isSystemAdmin) throw new ForbiddenException('System admin required');
     const v = dto?.payerTenantId ?? null;
-    return this.svc.setSubscriptionPayer(id, v && String(v).length > 0 ? String(v) : null, req.user?.id);
+    return this.svc.setSubscriptionPayer(
+      id,
+      v && String(v).length > 0 ? String(v) : null,
+      req.user?.id,
+    );
   }
 
   @Get('portal/payment-methods')
   myPaymentMethods(@Req() req: any) {
-    const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
+    const tenantId =
+      req.user?.isSystemAdmin && req.query?.tenantId
+        ? String(req.query.tenantId)
+        : ensureTenant(req);
     return this.svc.listMyPaymentMethods(tenantId);
   }
 
   @Post('portal/payment-methods')
   myAddPaymentMethod(@Req() req: any, @Body() dto: any) {
-    const tenantId = req.user?.isSystemAdmin && req.body?.tenantId ? String(req.body.tenantId) : ensureTenant(req);
+    const tenantId =
+      req.user?.isSystemAdmin && req.body?.tenantId ? String(req.body.tenantId) : ensureTenant(req);
     return this.svc.addMyPaymentMethod(tenantId, dto || {});
   }
 
   @Put('portal/payment-methods/:id/default')
   mySetDefaultPaymentMethod(@Req() req: any, @Param('id') id: string) {
-    const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
+    const tenantId =
+      req.user?.isSystemAdmin && req.query?.tenantId
+        ? String(req.query.tenantId)
+        : ensureTenant(req);
     return this.svc.setDefaultPaymentMethod(tenantId, id);
   }
 
   @Delete('portal/payment-methods/:id')
   myDeletePaymentMethod(@Req() req: any, @Param('id') id: string) {
-    const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
+    const tenantId =
+      req.user?.isSystemAdmin && req.query?.tenantId
+        ? String(req.query.tenantId)
+        : ensureTenant(req);
     return this.svc.deleteMyPaymentMethod(tenantId, id);
   }
 
   // ---------- Webhooks (tenant-side) ----------
   @Get('portal/webhook-event-types')
-  myWebhookEventTypes() { return this.svc.webhookEventTypes(); }
+  myWebhookEventTypes() {
+    return this.svc.webhookEventTypes();
+  }
 
   @Get('portal/webhooks')
   myListWebhooks(@Req() req: any) {
-    const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
+    const tenantId =
+      req.user?.isSystemAdmin && req.query?.tenantId
+        ? String(req.query.tenantId)
+        : ensureTenant(req);
     return this.svc.listMyWebhookEndpoints(tenantId);
   }
 
   @Post('portal/webhooks')
-  myCreateWebhook(@Req() req: any, @Body() dto: { url: string; events?: string[]; description?: string }) {
-    const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
+  myCreateWebhook(
+    @Req() req: any,
+    @Body() dto: { url: string; events?: string[]; description?: string },
+  ) {
+    const tenantId =
+      req.user?.isSystemAdmin && req.query?.tenantId
+        ? String(req.query.tenantId)
+        : ensureTenant(req);
     return this.svc.createMyWebhookEndpoint(tenantId, dto);
   }
 
   @Put('portal/webhooks/:id')
-  myUpdateWebhook(@Req() req: any, @Param('id') id: string, @Body() dto: { url?: string; events?: string[]; description?: string | null; enabled?: boolean }) {
-    const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
+  myUpdateWebhook(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body()
+    dto: { url?: string; events?: string[]; description?: string | null; enabled?: boolean },
+  ) {
+    const tenantId =
+      req.user?.isSystemAdmin && req.query?.tenantId
+        ? String(req.query.tenantId)
+        : ensureTenant(req);
     return this.svc.updateMyWebhookEndpoint(tenantId, id, dto);
   }
 
   @Delete('portal/webhooks/:id')
   myDeleteWebhook(@Req() req: any, @Param('id') id: string) {
-    const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
+    const tenantId =
+      req.user?.isSystemAdmin && req.query?.tenantId
+        ? String(req.query.tenantId)
+        : ensureTenant(req);
     return this.svc.deleteMyWebhookEndpoint(tenantId, id);
   }
 
   @Post('portal/webhooks/:id/rotate-secret')
   myRotateWebhookSecret(@Req() req: any, @Param('id') id: string) {
-    const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
+    const tenantId =
+      req.user?.isSystemAdmin && req.query?.tenantId
+        ? String(req.query.tenantId)
+        : ensureTenant(req);
     return this.svc.rotateMyWebhookSecret(tenantId, id);
   }
 
   @Post('portal/webhooks/:id/test')
   myTestWebhook(@Req() req: any, @Param('id') id: string) {
-    const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
+    const tenantId =
+      req.user?.isSystemAdmin && req.query?.tenantId
+        ? String(req.query.tenantId)
+        : ensureTenant(req);
     return this.svc.testMyWebhookEndpoint(tenantId, id);
   }
 
   @Get('portal/webhook-deliveries')
-  myWebhookDeliveries(@Req() req: any, @Query('endpointId') endpointId?: string, @Query('status') status?: string, @Query('limit') limit?: string) {
-    const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
-    return this.svc.listMyWebhookDeliveries(tenantId, { endpointId, status, limit: limit ? Number(limit) : undefined });
+  myWebhookDeliveries(
+    @Req() req: any,
+    @Query('endpointId') endpointId?: string,
+    @Query('status') status?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const tenantId =
+      req.user?.isSystemAdmin && req.query?.tenantId
+        ? String(req.query.tenantId)
+        : ensureTenant(req);
+    return this.svc.listMyWebhookDeliveries(tenantId, {
+      endpointId,
+      status,
+      limit: limit ? Number(limit) : undefined,
+    });
   }
 
   @Post('portal/webhook-deliveries/:id/retry')
   myRetryWebhookDelivery(@Req() req: any, @Param('id') id: string) {
-    const tenantId = req.user?.isSystemAdmin && req.query?.tenantId ? String(req.query.tenantId) : ensureTenant(req);
+    const tenantId =
+      req.user?.isSystemAdmin && req.query?.tenantId
+        ? String(req.query.tenantId)
+        : ensureTenant(req);
     return this.svc.retryMyWebhookDelivery(tenantId, id);
   }
 
   @Post('portal/checkout')
   myCheckout(@Req() req: any, @Body() dto: InitCheckoutDto) {
     const tenantId = req.user?.isSystemAdmin ? undefined : ensureTenant(req);
-    const redirectUrl = dto.redirectUrl || `${process.env.PUBLIC_BASE_URL || ''}/billing-portal/return`;
+    const redirectUrl =
+      dto.redirectUrl || `${process.env.PUBLIC_BASE_URL || ''}/billing-portal/return`;
     const originUrl = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get?.('host') || ''}`;
     return this.svc.initCheckout(
       dto.invoiceId,
-      { redirectUrl, customerEmail: dto.customerEmail, customerName: dto.customerName, customerPhone: dto.customerPhone, gateway: dto.gateway, originUrl, savedPaymentMethodId: dto.savedPaymentMethodId, enableRecurring: dto.enableRecurring },
+      {
+        redirectUrl,
+        customerEmail: dto.customerEmail,
+        customerName: dto.customerName,
+        customerPhone: dto.customerPhone,
+        gateway: dto.gateway,
+        originUrl,
+        savedPaymentMethodId: dto.savedPaymentMethodId,
+        enableRecurring: dto.enableRecurring,
+      },
       tenantId,
     );
   }
@@ -594,19 +851,32 @@ export class SaasRevenueController {
     @Body() dto: { invoiceId: string; paymentMethodId: string; redirectUrl?: string },
   ) {
     const tenantId = req.user?.isSystemAdmin ? undefined : ensureTenant(req);
-    const redirectUrl = dto.redirectUrl || `${process.env.PUBLIC_BASE_URL || ''}/billing-portal/return`;
+    const redirectUrl =
+      dto.redirectUrl || `${process.env.PUBLIC_BASE_URL || ''}/billing-portal/return`;
     const originUrl = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get?.('host') || ''}`;
     if (tenantId) await this.svc.getMyInvoice(tenantId, dto.invoiceId);
     const gateway = await this.svc.detectSavedTokenGateway(dto.paymentMethodId);
     if (gateway === 'flutterwave') {
-      return this.svc.chargeSavedFlutterwaveToken(dto.invoiceId, dto.paymentMethodId, { redirectUrl, originUrl }, req.user?.id);
+      return this.svc.chargeSavedFlutterwaveToken(
+        dto.invoiceId,
+        dto.paymentMethodId,
+        { redirectUrl, originUrl },
+        req.user?.id,
+      );
     }
-    return this.svc.chargeSavedPesapalToken(dto.invoiceId, dto.paymentMethodId, { redirectUrl, originUrl }, req.user?.id);
+    return this.svc.chargeSavedPesapalToken(
+      dto.invoiceId,
+      dto.paymentMethodId,
+      { redirectUrl, originUrl },
+      req.user?.id,
+    );
   }
 
   @Public()
   @Get('public/gateways')
-  publicGateways() { return this.svc.gatewaysStatus(); }
+  publicGateways() {
+    return this.svc.gatewaysStatus();
+  }
 
   // ---------- Webhooks (public, signature-verified) ----------
   @Public()
@@ -621,7 +891,10 @@ export class SaasRevenueController {
   @Get('webhooks/pesapal')
   async pesapalIpnGet(@Req() req: any) {
     const q = req.query || {};
-    return this.svc.handlePesapalIpn(q.OrderTrackingId || q.orderTrackingId, q.OrderMerchantReference || q.merchantReference);
+    return this.svc.handlePesapalIpn(
+      q.OrderTrackingId || q.orderTrackingId,
+      q.OrderMerchantReference || q.merchantReference,
+    );
   }
 
   @Public()
@@ -629,6 +902,9 @@ export class SaasRevenueController {
   async pesapalIpnPost(@Req() req: any) {
     const b = req.body || {};
     const q = req.query || {};
-    return this.svc.handlePesapalIpn(b.OrderTrackingId || q.OrderTrackingId, b.OrderMerchantReference || q.OrderMerchantReference);
+    return this.svc.handlePesapalIpn(
+      b.OrderTrackingId || q.OrderTrackingId,
+      b.OrderMerchantReference || q.OrderMerchantReference,
+    );
   }
 }

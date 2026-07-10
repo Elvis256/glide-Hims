@@ -163,7 +163,11 @@ export class ReportsController {
   @Get('statutory/hmis108')
   @SkipTransform()
   @AuthWithModule('reports', 'reports.statutory.read')
-  async hmis108(@Query() q: HmisMonthlyDto, @Req() req: any, @Res({ passthrough: true }) res: Response) {
+  async hmis108(
+    @Query() q: HmisMonthlyDto,
+    @Req() req: any,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     const data = await this.svc.getHmis108(q, req.user?.tenantId);
     return this.respondStatutory(data, data.rows, `HMIS108_${q.period}`, q.format, res);
   }
@@ -171,7 +175,11 @@ export class ReportsController {
   @Get('statutory/hmis122')
   @SkipTransform()
   @AuthWithModule('reports', 'reports.statutory.read')
-  async hmis122(@Query() q: HmisMonthlyDto, @Req() req: any, @Res({ passthrough: true }) res: Response) {
+  async hmis122(
+    @Query() q: HmisMonthlyDto,
+    @Req() req: any,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     const data = await this.svc.getHmis122(q, req.user?.tenantId);
     return this.respondStatutory(data, data.rows, `HMIS122_${q.period}`, q.format, res);
   }
@@ -179,7 +187,11 @@ export class ReportsController {
   @Get('statutory/eidsr')
   @SkipTransform()
   @AuthWithModule('reports', 'reports.statutory.read')
-  async eidsr(@Query() q: HmisWeeklyDto, @Req() req: any, @Res({ passthrough: true }) res: Response) {
+  async eidsr(
+    @Query() q: HmisWeeklyDto,
+    @Req() req: any,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     const data = await this.svc.getEidsr(q, req.user?.tenantId);
     return this.respondStatutory(data, data.rows, `eIDSR_${q.week}`, q.format, res);
   }
@@ -187,7 +199,11 @@ export class ReportsController {
   @Get('statutory/mtrac')
   @SkipTransform()
   @AuthWithModule('reports', 'reports.statutory.read')
-  async mtrac(@Query() q: HmisWeeklyDto, @Req() req: any, @Res({ passthrough: true }) res: Response) {
+  async mtrac(
+    @Query() q: HmisWeeklyDto,
+    @Req() req: any,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     const data = await this.svc.getMtrac(q, req.user?.tenantId);
     return this.respondStatutory(data, data.rows, `mTrac_${q.week}`, q.format, res);
   }
@@ -208,7 +224,10 @@ export class ReportsController {
     if (format === 'xlsx') {
       assertExportSize(rows);
       const buf = rowsToXlsx(rows, filename);
-      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader(
+        'Content-Type',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      );
       res.setHeader('Content-Disposition', `attachment; filename="${filename}.xlsx"`);
       return new StreamableFile(buf);
     }

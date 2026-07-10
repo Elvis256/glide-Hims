@@ -38,15 +38,11 @@ export class AirtelMoneyAdapter implements PaymentGatewayAdapter {
   constructor(private readonly config: ConfigService) {}
 
   isConfigured(): boolean {
-    return Boolean(
-      this.config.get('AIRTEL_CLIENT_ID') && this.config.get('AIRTEL_CLIENT_SECRET'),
-    );
+    return Boolean(this.config.get('AIRTEL_CLIENT_ID') && this.config.get('AIRTEL_CLIENT_SECRET'));
   }
 
   private get baseUrl(): string {
-    return (
-      this.config.get<string>('AIRTEL_BASE_URL') || 'https://openapiuat.airtel.africa'
-    );
+    return this.config.get<string>('AIRTEL_BASE_URL') || 'https://openapiuat.airtel.africa';
   }
 
   private get country(): string {
@@ -144,8 +140,7 @@ export class AirtelMoneyAdapter implements PaymentGatewayAdapter {
     }
 
     // Airtel returns its own transaction id in data.data.transaction.id; fall back to externalId
-    const providerTxnId =
-      data?.data?.transaction?.id || externalId || referenceId;
+    const providerTxnId = data?.data?.transaction?.id || externalId || referenceId;
 
     return {
       providerTransactionId: providerTxnId,
@@ -158,17 +153,14 @@ export class AirtelMoneyAdapter implements PaymentGatewayAdapter {
   async getStatus(providerTransactionId: string): Promise<GatewayStatus> {
     if (!this.isConfigured()) return 'pending';
     const token = await this.getToken();
-    const res = await fetch(
-      `${this.baseUrl}/standard/v1/payments/${providerTransactionId}`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: '*/*',
-          'X-Country': this.country,
-          'X-Currency': this.currency,
-        },
+    const res = await fetch(`${this.baseUrl}/standard/v1/payments/${providerTransactionId}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: '*/*',
+        'X-Country': this.country,
+        'X-Currency': this.currency,
       },
-    );
+    });
     if (!res.ok) return 'pending';
     const data: any = await res.json();
     const status = String(data?.data?.transaction?.status || '').toUpperCase();
@@ -179,10 +171,7 @@ export class AirtelMoneyAdapter implements PaymentGatewayAdapter {
     return 'pending';
   }
 
-  async parseWebhook(
-    headers: Record<string, string>,
-    body: any,
-  ): Promise<NormalisedWebhookEvent> {
+  async parseWebhook(headers: Record<string, string>, body: any): Promise<NormalisedWebhookEvent> {
     // Airtel sends a callback with `transaction.status_code` and a hash for verification.
     // Real prod should validate `x-signature` against AIRTEL_CALLBACK_SECRET (HMAC-SHA256).
     const expectedSecret = this.config.get<string>('AIRTEL_CALLBACK_SECRET');

@@ -159,7 +159,11 @@ describe('GLReconciliationService', () => {
 
       chartOfAccountRepo.find.mockResolvedValue(mockAccounts);
 
-      const summary = await service.getReconciliationSummary(facilityId, fiscalPeriodId, 'tenant-1');
+      const summary = await service.getReconciliationSummary(
+        facilityId,
+        fiscalPeriodId,
+        'tenant-1',
+      );
 
       expect(summary).toBeDefined();
       expect(summary.totalAccounts).toBe(3);
@@ -174,7 +178,11 @@ describe('GLReconciliationService', () => {
 
       chartOfAccountRepo.find.mockResolvedValue([]);
 
-      const summary = await service.getReconciliationSummary(facilityId, fiscalPeriodId, 'tenant-1');
+      const summary = await service.getReconciliationSummary(
+        facilityId,
+        fiscalPeriodId,
+        'tenant-1',
+      );
 
       expect(summary.totalAccounts).toBe(0);
       expect(summary.reconciledAccounts).toBe(0);
@@ -333,17 +341,10 @@ describe('GLReconciliationService', () => {
       const accountId = 'acc-1';
       const facilityId = 'facility-1';
 
-      chartOfAccountRepo.findOne.mockRejectedValue(
-        new Error('Database connection error'),
-      );
+      chartOfAccountRepo.findOne.mockRejectedValue(new Error('Database connection error'));
 
       await expect(
-        service.generateReconciliationReport(
-          accountId,
-          'period-1',
-          facilityId,
-          'tenant-1',
-        ),
+        service.generateReconciliationReport(accountId, 'period-1', facilityId, 'tenant-1'),
       ).rejects.toThrow('Database connection error');
     });
   });

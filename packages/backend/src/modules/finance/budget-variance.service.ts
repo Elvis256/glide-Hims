@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between } from 'typeorm';
+import { Repository, Between, FindOptionsWhere } from 'typeorm';
 import { Budget, BudgetLine } from '../../database/entities/finance-extended.entity';
 import { JournalEntryLine } from '../../database/entities/journal-entry-line.entity';
 import { ChartOfAccount, AccountType } from '../../database/entities/chart-of-account.entity';
@@ -107,16 +107,11 @@ export class BudgetVarianceService {
     const totalBudget = variances.reduce((sum, v) => sum + v.budgetedAmount, 0);
     const totalActual = variances.reduce((sum, v) => sum + v.actualAmount, 0);
     const totalVariance = totalBudget - totalActual;
-    const percentVariance =
-      totalBudget > 0 ? (totalVariance / totalBudget) * 100 : 0;
+    const percentVariance = totalBudget > 0 ? (totalVariance / totalBudget) * 100 : 0;
 
-    const underBudgetCount = variances.filter(
-      (v) => v.status === 'under',
-    ).length;
+    const underBudgetCount = variances.filter((v) => v.status === 'under').length;
     const overBudgetCount = variances.filter((v) => v.status === 'over').length;
-    const onTargetCount = variances.filter(
-      (v) => v.status === 'on-target',
-    ).length;
+    const onTargetCount = variances.filter((v) => v.status === 'on-target').length;
 
     return {
       period,
@@ -173,10 +168,7 @@ export class BudgetVarianceService {
     lines.forEach((line) => {
       const accountId = line.accountId;
       const current = actualsByAccount.get(accountId) || 0;
-      actualsByAccount.set(
-        accountId,
-        current + (line.debit - line.credit),
-      );
+      actualsByAccount.set(accountId, current + (line.debit - line.credit));
     });
 
     // Calculate variances
@@ -184,8 +176,7 @@ export class BudgetVarianceService {
       const actualAmount = Math.abs(actualsByAccount.get(budgetLine.accountId) || 0);
       const budgetedAmount = Math.abs(budgetLine.budgetedAmount);
       const absoluteVariance = budgetedAmount - actualAmount;
-      const percentVariance =
-        budgetedAmount > 0 ? (absoluteVariance / budgetedAmount) * 100 : 0;
+      const percentVariance = budgetedAmount > 0 ? (absoluteVariance / budgetedAmount) * 100 : 0;
 
       let status: 'under' | 'over' | 'on-target';
       if (actualAmount > budgetedAmount * 1.1) {
@@ -294,10 +285,8 @@ export class BudgetVarianceService {
 
     return Array.from(costCenterMap.values()).map((cc) => {
       const variance = cc.budgeted - cc.actual;
-      const percentVariance =
-        cc.budgeted > 0 ? (variance / cc.budgeted) * 100 : 0;
-      const burnRate =
-        cc.budgeted > 0 ? (cc.actual / cc.budgeted) * 100 : 0;
+      const percentVariance = cc.budgeted > 0 ? (variance / cc.budgeted) * 100 : 0;
+      const burnRate = cc.budgeted > 0 ? (cc.actual / cc.budgeted) * 100 : 0;
 
       return {
         costCenterId: cc.id,
@@ -354,10 +343,7 @@ export class BudgetVarianceService {
     // Calculate percentages
     return Array.from(accountMap.values()).map((at) => ({
       ...at,
-      percentVariance:
-        at.budgetedAmount > 0
-          ? (at.variance / at.budgetedAmount) * 100
-          : 0,
+      percentVariance: at.budgetedAmount > 0 ? (at.variance / at.budgetedAmount) * 100 : 0,
     }));
   }
 
@@ -392,9 +378,7 @@ export class BudgetVarianceService {
     // a NEGATIVE percentVariance. The previous filter
     //   v.percentVariance > threshold
     // never matched any over-budget line (Budget audit F5).
-    return variances.filter(
-      (v) => v.status === 'over' && v.percentVariance < -threshold,
-    );
+    return variances.filter((v) => v.status === 'over' && v.percentVariance < -threshold);
   }
 
   /**
@@ -408,9 +392,7 @@ export class BudgetVarianceService {
   ): Promise<BudgetVarianceItem[]> {
     const variances = await this.getDetailedVariances(facilityId, period, tenantId);
 
-    return variances.filter(
-      (v) => v.status === 'under' && v.percentVariance > threshold,
-    );
+    return variances.filter((v) => v.status === 'under' && v.percentVariance > threshold);
   }
 
   /**
@@ -441,9 +423,8 @@ export class BudgetVarianceService {
 
     // Estimate pace
     const pacePercentage = (daysElapsed / daysInMonth) * 100;
-    const burnRate = summary.totalBudget > 0
-      ? (summary.totalActual / summary.totalBudget) * 100
-      : 0;
+    const burnRate =
+      summary.totalBudget > 0 ? (summary.totalActual / summary.totalBudget) * 100 : 0;
 
     return {
       currentPeriod: period,

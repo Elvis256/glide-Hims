@@ -6,14 +6,14 @@ import {
   AdminAuditLog,
   AdminAuditAction,
   AdminAuditEntityType,
-} from '../../database/entities/admin-audit-log.entity';
+} from '../../../database/entities/admin-audit-log.entity';
 
 describe('AdminAuditService', () => {
   let service: AdminAuditService;
   let repository: Repository<AdminAuditLog>;
   let module: TestingModule;
 
-  const mockAuditLog: AdminAuditLog = {
+  const mockAuditLog = {
     id: 'log-123',
     adminUserId: 'admin-001',
     tenantId: 'tenant-001',
@@ -27,10 +27,11 @@ describe('AdminAuditService', () => {
     userAgent: 'Mozilla/5.0',
     changeReason: 'Onboarding new client',
     systemGenerated: false,
-    result: 'success',
+    result: 'success' as const,
     createdAt: new Date('2024-01-15T10:00:00Z'),
+    updatedAt: new Date('2024-01-15T10:00:00Z'),
     isArchived: false,
-  };
+  } as AdminAuditLog;
 
   const mockQueryBuilder = {
     andWhere: jest.fn(),
@@ -135,10 +136,9 @@ describe('AdminAuditService', () => {
 
       await service.queryAuditLogs({ adminUserId: 'admin-001' });
 
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        'log.adminUserId = :adminUserId',
-        { adminUserId: 'admin-001' },
-      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith('log.adminUserId = :adminUserId', {
+        adminUserId: 'admin-001',
+      });
     });
 
     it('should filter by tenantId', async () => {
@@ -147,10 +147,9 @@ describe('AdminAuditService', () => {
 
       await service.queryAuditLogs({ tenantId: 'tenant-001' });
 
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        'log.tenantId = :tenantId',
-        { tenantId: 'tenant-001' },
-      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith('log.tenantId = :tenantId', {
+        tenantId: 'tenant-001',
+      });
     });
 
     it('should filter by action', async () => {
@@ -159,10 +158,9 @@ describe('AdminAuditService', () => {
 
       await service.queryAuditLogs({ action: AdminAuditAction.CREATE });
 
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        'log.action = :action',
-        { action: AdminAuditAction.CREATE },
-      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith('log.action = :action', {
+        action: AdminAuditAction.CREATE,
+      });
     });
 
     it('should filter by date range', async () => {
@@ -215,7 +213,10 @@ describe('AdminAuditService', () => {
     it('should find logs for specific entity', async () => {
       jest.spyOn(repository, 'find').mockResolvedValue([mockAuditLog]);
 
-      const result = await service.getEntityAuditTrail(AdminAuditEntityType.ORGANIZATION, 'org-001');
+      const result = await service.getEntityAuditTrail(
+        AdminAuditEntityType.ORGANIZATION,
+        'org-001',
+      );
 
       expect(result).toEqual([mockAuditLog]);
       expect(repository.find).toHaveBeenCalledWith({
@@ -239,10 +240,9 @@ describe('AdminAuditService', () => {
     it('should filter by adminUserId', async () => {
       await service.getAdminActivityLog('admin-001');
 
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        'log.adminUserId = :adminUserId',
-        { adminUserId: 'admin-001' },
-      );
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith('log.adminUserId = :adminUserId', {
+        adminUserId: 'admin-001',
+      });
     });
 
     it('should filter by date range when provided', async () => {
@@ -250,10 +250,9 @@ describe('AdminAuditService', () => {
 
       await service.getAdminActivityLog('admin-001', { startDate });
 
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        'log.createdAt >= :startDate',
-        { startDate },
-      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith('log.createdAt >= :startDate', {
+        startDate,
+      });
     });
 
     it('should apply custom limit', async () => {
@@ -420,10 +419,9 @@ describe('AdminAuditService', () => {
 
       await service.getActionStats('tenant-001');
 
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        'log.tenantId = :tenantId',
-        { tenantId: 'tenant-001' },
-      );
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith('log.tenantId = :tenantId', {
+        tenantId: 'tenant-001',
+      });
     });
   });
 

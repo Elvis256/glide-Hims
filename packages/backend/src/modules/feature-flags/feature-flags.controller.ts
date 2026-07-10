@@ -24,10 +24,7 @@ export class FeatureFlagsController {
   @Get('check/:featureKey')
   @Auth()
   @ApiOperation({ summary: 'Check if a feature is enabled' })
-  async checkFeature(
-    @Param('featureKey') featureKey: string,
-    @Request() req: any,
-  ) {
+  async checkFeature(@Param('featureKey') featureKey: string, @Request() req: any) {
     const tid = req.user?.tenantId;
     if (!tid) throw new BadRequestException('Tenant context required');
     const enabled = await this.featureFlagsService.isEnabled(featureKey, tid);
@@ -64,10 +61,7 @@ export class FeatureFlagsController {
   @Get(':featureKey/value')
   @Auth()
   @ApiOperation({ summary: 'Get feature flag value' })
-  async getFlagValue(
-    @Param('featureKey') featureKey: string,
-    @Request() req: any,
-  ) {
+  async getFlagValue(@Param('featureKey') featureKey: string, @Request() req: any) {
     const tid = req.user?.tenantId;
     if (!tid) throw new BadRequestException('Tenant context required');
     const value = await this.featureFlagsService.getValue(featureKey, tid);

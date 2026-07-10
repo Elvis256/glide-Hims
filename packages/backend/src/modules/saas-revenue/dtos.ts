@@ -1,4 +1,14 @@
-import { IsArray, IsBoolean, IsEnum, IsInt, IsOptional, IsString, IsUUID, Min, MaxLength } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Min,
+  MaxLength,
+} from 'class-validator';
 
 export class CreatePlanDto {
   @IsString() @MaxLength(100) code: string;

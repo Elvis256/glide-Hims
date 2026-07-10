@@ -154,7 +154,10 @@ export class InsuranceController {
   @Get('patients/:patientId/policies')
   @AuthWithPermissions('insurance.policies.read')
   @ApiOperation({ summary: 'Get patient active policies' })
-  async getPatientPolicies(@Param('patientId', ParseUUIDPipe) patientId: string, @Request() req: any) {
+  async getPatientPolicies(
+    @Param('patientId', ParseUUIDPipe) patientId: string,
+    @Request() req: any,
+  ) {
     return this.insuranceService.getPatientActivePolicies(patientId, req.user?.tenantId);
   }
 
@@ -243,8 +246,15 @@ export class InsuranceController {
   @Get('claims/:id/pdf')
   @AuthWithPermissions('insurance.claims.read')
   @ApiOperation({ summary: 'Download printable claim form (PDF)' })
-  async claimPdf(@Param('id', ParseUUIDPipe) id: string, @Request() req: any, @Res() res: Response) {
-    const { filename, pdf } = await this.claimExportService.generateClaimPdf(id, req.user?.tenantId);
+  async claimPdf(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Request() req: any,
+    @Res() res: Response,
+  ) {
+    const { filename, pdf } = await this.claimExportService.generateClaimPdf(
+      id,
+      req.user?.tenantId,
+    );
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
     res.setHeader('Content-Length', pdf.length.toString());
@@ -279,21 +289,33 @@ export class InsuranceController {
   @Post('claims/:id/approve')
   @AuthWithPermissions('insurance.claims.process')
   @ApiOperation({ summary: 'Approve claim' })
-  async approveClaim(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ProcessClaimDto, @Request() req: any) {
+  async approveClaim(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ProcessClaimDto,
+    @Request() req: any,
+  ) {
     return this.insuranceService.processClaim(id, dto, true, req.user?.tenantId, req.user?.id);
   }
 
   @Post('claims/:id/reject')
   @AuthWithPermissions('insurance.claims.process')
   @ApiOperation({ summary: 'Reject claim' })
-  async rejectClaim(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ProcessClaimDto, @Request() req: any) {
+  async rejectClaim(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ProcessClaimDto,
+    @Request() req: any,
+  ) {
     return this.insuranceService.processClaim(id, dto, false, req.user?.tenantId, req.user?.id);
   }
 
   @Post('claims/:id/payment')
   @AuthWithPermissions('insurance.claims.process')
   @ApiOperation({ summary: 'Record payment' })
-  async recordPayment(@Param('id', ParseUUIDPipe) id: string, @Body() dto: RecordPaymentDto, @Request() req: any) {
+  async recordPayment(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RecordPaymentDto,
+    @Request() req: any,
+  ) {
     return this.insuranceService.recordPayment(id, dto, req.user?.tenantId, req.user?.id);
   }
 
@@ -354,7 +376,11 @@ export class InsuranceController {
   @Post('pre-auth/:id/deny')
   @AuthWithPermissions('insurance.preauth.process')
   @ApiOperation({ summary: 'Deny pre-authorization' })
-  async denyPreAuth(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ProcessPreAuthDto, @Request() req: any) {
+  async denyPreAuth(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ProcessPreAuthDto,
+    @Request() req: any,
+  ) {
     return this.insuranceService.processPreAuth(id, dto, false, req.user?.tenantId, req.user?.id);
   }
 

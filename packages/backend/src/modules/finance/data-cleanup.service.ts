@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  ForbiddenException,
-} from '@nestjs/common';
+import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan, In } from 'typeorm';
 import { JournalEntryLine } from '../../database/entities/journal-entry-line.entity';
@@ -126,7 +122,7 @@ export class DataCleanupService {
     cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
 
     const count = await this.auditLogRepo.count({
-      where: { tenantId: tid, createdAt: LessThan(cutoffDate) } as any,
+      where: { tenantId: tid, createdAt: LessThan(cutoffDate) },
     });
 
     return { auditRecordsBeyondRetention: count };
@@ -143,9 +139,7 @@ export class DataCleanupService {
     const duplicates = await this.detectDuplicateEntries(tenantId, true);
     const oldLogs = await this.reportOldAuditLogs(tenantId, 365);
 
-    const total =
-      orphaned.orphanedCount +
-      duplicates.affectedEntries.length;
+    const total = orphaned.orphanedCount + duplicates.affectedEntries.length;
 
     return {
       orphanedEntries: orphaned.orphanedCount,
@@ -178,8 +172,7 @@ export class DataCleanupService {
     const duplicates = await this.detectDuplicateEntries(tenantId, dryRun);
     const auditLogs = await this.reportOldAuditLogs(tenantId, 365);
 
-    const totalAffected =
-      (orphaned.deletedCount || 0) + duplicates.affectedEntries.length;
+    const totalAffected = (orphaned.deletedCount || 0) + duplicates.affectedEntries.length;
 
     return {
       timestamp: new Date(),

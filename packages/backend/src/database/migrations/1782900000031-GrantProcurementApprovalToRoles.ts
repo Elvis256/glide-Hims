@@ -17,9 +17,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  *
  * Idempotent: ON CONFLICT DO NOTHING on role_permissions.
  */
-export class GrantProcurementApprovalToRoles1782900000031
-  implements MigrationInterface
-{
+export class GrantProcurementApprovalToRoles1782900000031 implements MigrationInterface {
   name = 'GrantProcurementApprovalToRoles1782900000031';
 
   private readonly grants: Array<{ role: string; permission: string }> = [

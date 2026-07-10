@@ -83,7 +83,7 @@ export class AdherenceService {
 
         for (const time of timeSlots) {
           const record = this.adherenceRepo.create({
-            patientId: prescription.encounter ? (prescription.encounter as any).patientId : '',
+            patientId: prescription.encounter ? prescription.encounter.patientId : '',
             prescriptionItemId: item.id,
             scheduledDate,
             scheduledTime: time,

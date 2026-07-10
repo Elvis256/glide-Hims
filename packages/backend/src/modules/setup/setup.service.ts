@@ -409,7 +409,7 @@ export class SetupService {
       // Skip single-user preset when license allows many users
       if (preset.singleUserMode && license.maxUsers > 5) continue;
 
-      const overlap = preset.enabledModules.filter(m => moduleSet.has(m)).length;
+      const overlap = preset.enabledModules.filter((m) => moduleSet.has(m)).length;
       const total = new Set([...preset.enabledModules, ...licenseModules]).size;
       // Jaccard-like score: overlap / union
       const score = total > 0 ? overlap / total : 0;
@@ -427,15 +427,18 @@ export class SetupService {
    * Build licenseDefaults from the first active license (hybrid/on-premise only).
    * Returns undefined if no license found or on SaaS deployments.
    */
-  private async getLicenseDefaults(deploymentMode: string): Promise<{
-    organizationName: string;
-    enabledModules: string[];
-    maxFacilities: number;
-    maxUsers: number;
-    licenseType: string;
-    suggestedPreset?: string;
-    features?: Record<string, boolean>;
-  } | undefined> {
+  private async getLicenseDefaults(deploymentMode: string): Promise<
+    | {
+        organizationName: string;
+        enabledModules: string[];
+        maxFacilities: number;
+        maxUsers: number;
+        licenseType: string;
+        suggestedPreset?: string;
+        features?: Record<string, boolean>;
+      }
+    | undefined
+  > {
     if (deploymentMode === 'saas') return undefined;
 
     try {
@@ -522,7 +525,9 @@ export class SetupService {
         tenantSlug: tenant.slug,
         tenantCount,
         // Only include license defaults when setup is incomplete
-        ...(!isSetupComplete ? { licenseDefaults: await this.getLicenseDefaults(deploymentMode) } : {}),
+        ...(!isSetupComplete
+          ? { licenseDefaults: await this.getLicenseDefaults(deploymentMode) }
+          : {}),
       };
     } catch (error) {
       // If tables don't exist yet, setup is not complete
@@ -778,7 +783,8 @@ export class SetupService {
           key: 'workflow_mode',
           value: dto.settings?.workflowMode || 'simple',
           tenantId: tenant.id,
-          description: 'Workflow mode: "simple" (single shared queue) or "departmental" (per-department queues)',
+          description:
+            'Workflow mode: "simple" (single shared queue) or "departmental" (per-department queues)',
         },
       ];
 
@@ -913,7 +919,9 @@ export class SetupService {
     } catch (err) {
       // Non-fatal: tenant setup should not roll back if seeding fails for
       // an exotic reason. Log and continue.
-      this.logger.warn(`Failed to seed default department for facility ${facilityId}: ${err.message}`);
+      this.logger.warn(
+        `Failed to seed default department for facility ${facilityId}: ${err.message}`,
+      );
     }
   }
 
@@ -1117,7 +1125,8 @@ export class SetupService {
           key: 'workflow_mode',
           value: dto.settings?.workflowMode || 'simple',
           tenantId: tenant.id,
-          description: 'Workflow mode: "simple" (single shared queue) or "departmental" (per-department queues)',
+          description:
+            'Workflow mode: "simple" (single shared queue) or "departmental" (per-department queues)',
         },
       ];
       for (const setting of settings) {
@@ -1170,7 +1179,9 @@ export class SetupService {
             this.logger.warn(`Plan '${dto.plan.code}' not found — skipping subscription creation`);
           }
         } catch (err: any) {
-          this.logger.warn(`Failed to auto-create subscription for ${tenant.slug}: ${err?.message || err}`);
+          this.logger.warn(
+            `Failed to auto-create subscription for ${tenant.slug}: ${err?.message || err}`,
+          );
         }
       }
 
@@ -1415,7 +1426,8 @@ export class SetupService {
           key: 'workflow_mode',
           value: dto.settings?.workflowMode || 'simple',
           tenantId: tenant.id,
-          description: 'Workflow mode: "simple" (single shared queue) or "departmental" (per-department queues)',
+          description:
+            'Workflow mode: "simple" (single shared queue) or "departmental" (per-department queues)',
         },
       ];
       for (const setting of settings) {

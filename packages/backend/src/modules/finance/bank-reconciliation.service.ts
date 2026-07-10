@@ -104,7 +104,12 @@ export class BankReconciliationService {
     const existingByKey = new Map<string, BankReconciliationItem>();
     for (const e of existing) {
       existingByKey.set(
-        fingerprint(e.statementReference, e.statementDescription, e.statementDate, e.statementAmount),
+        fingerprint(
+          e.statementReference,
+          e.statementDescription,
+          e.statementDate,
+          e.statementAmount,
+        ),
         e,
       );
     }
@@ -272,11 +277,7 @@ export class BankReconciliationService {
     });
   }
 
-  async complete(
-    reconId: string,
-    userId: string,
-    tenantId?: string,
-  ): Promise<BankReconciliation> {
+  async complete(reconId: string, userId: string, tenantId?: string): Promise<BankReconciliation> {
     const tid = requireTenant(tenantId);
     if (!userId) throw new ForbiddenException('Authenticated user required');
 

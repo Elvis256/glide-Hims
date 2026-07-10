@@ -306,9 +306,7 @@ export class InAppNotificationsService {
       tenantId,
     } = opts;
 
-    const title = ticketNumber
-      ? `New Patient in Queue (${ticketNumber})`
-      : 'New Patient in Queue';
+    const title = ticketNumber ? `New Patient in Queue (${ticketNumber})` : 'New Patient in Queue';
     const message = `${patientName} is waiting at ${servicePoint}`;
     const base = {
       facilityId,
@@ -322,9 +320,8 @@ export class InAppNotificationsService {
       await this.create({ ...base, targetUserId: assignedDoctorId }, tenantId);
       return;
     }
-    const roles = departmentRoleHints && departmentRoleHints.length
-      ? departmentRoleHints
-      : ['doctor'];
+    const roles =
+      departmentRoleHints && departmentRoleHints.length ? departmentRoleHints : ['doctor'];
     const userIds = await this.getUserIdsByRole(roles, facilityId, tenantId);
     if (userIds.length === 0) return;
     await this.notifyMany(userIds, base, tenantId);
@@ -394,15 +391,8 @@ export class InAppNotificationsService {
     facilityId?: string;
     tenantId?: string;
   }) {
-    const {
-      queueId,
-      patientName,
-      fromServicePoint,
-      toServicePoint,
-      reason,
-      facilityId,
-      tenantId,
-    } = opts;
+    const { queueId, patientName, fromServicePoint, toServicePoint, reason, facilityId, tenantId } =
+      opts;
     const roleMap: Record<string, string[]> = {
       laboratory: ['lab technician', 'lab', 'laboratory'],
       radiology: ['radiologist', 'radiology', 'radiographer'],

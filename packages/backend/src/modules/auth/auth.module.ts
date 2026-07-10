@@ -338,7 +338,7 @@ export class AuthModule implements OnModuleInit {
               name: roleName,
               description: `Auto-seeded role: ${roleName}`,
               isSystemRole: true,
-              status: 'active' as any,
+              status: 'active',
             } as any),
           );
           role = Array.isArray(created) ? created[0] : (created as any);

@@ -47,9 +47,7 @@ async function main(): Promise<void> {
   await qr.connect();
 
   try {
-    const facilityClause = facilityFilter
-      ? 'AND b.facility_id = $1'
-      : '';
+    const facilityClause = facilityFilter ? 'AND b.facility_id = $1' : '';
     const params = facilityFilter ? [facilityFilter] : [];
 
     const query = `
@@ -96,7 +94,9 @@ async function main(): Promise<void> {
     const rows: DriftRow[] = await qr.query(query, params);
 
     if (rows.length === 0) {
-      console.log('✅ No inventory drift detected. batch_stock_balances and stock_balances are in sync.');
+      console.log(
+        '✅ No inventory drift detected. batch_stock_balances and stock_balances are in sync.',
+      );
       return;
     }
 

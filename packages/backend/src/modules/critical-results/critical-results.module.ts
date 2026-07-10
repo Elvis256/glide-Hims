@@ -7,11 +7,7 @@ import { InAppNotificationsModule } from '../in-app-notifications/in-app-notific
 import { AuthModule } from '../auth/auth.module';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([CriticalResultAlert]),
-    InAppNotificationsModule,
-    AuthModule,
-  ],
+  imports: [TypeOrmModule.forFeature([CriticalResultAlert]), InAppNotificationsModule, AuthModule],
   controllers: [CriticalResultsController],
   providers: [CriticalResultsService],
   exports: [CriticalResultsService],

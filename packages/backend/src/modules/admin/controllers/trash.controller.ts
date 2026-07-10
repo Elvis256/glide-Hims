@@ -36,11 +36,7 @@ export class TrashController {
   @ApiOperation({ summary: 'List soft-deleted records across supported types' })
   @ApiQuery({ name: 'type', required: false })
   @ApiQuery({ name: 'limit', required: false })
-  async list(
-    @Query('type') type?: string,
-    @Query('limit') limit?: number,
-    @Request() req?: any,
-  ) {
+  async list(@Query('type') type?: string, @Query('limit') limit?: number, @Request() req?: any) {
     const tenantId = req?.user?.tenantId;
     const userPerms: string[] = req?.user?.permissions || [];
     const types = type ? [type] : Object.keys(TRASH_TYPES);
@@ -57,7 +53,7 @@ export class TrashController {
         where,
         withDeleted: true,
         take: Number(limit) || 100,
-        order: { deletedAt: 'DESC' as any },
+        order: { deletedAt: 'DESC' },
       });
       for (const it of items as any[]) {
         result.push({
@@ -75,11 +71,7 @@ export class TrashController {
   @Post(':type/:id/restore')
   @AuthWithPermissions('users.delete')
   @ApiOperation({ summary: 'Restore a soft-deleted record' })
-  async restore(
-    @Param('type') type: string,
-    @Param('id') id: string,
-    @Request() req?: any,
-  ) {
+  async restore(@Param('type') type: string, @Param('id') id: string, @Request() req?: any) {
     const meta = TRASH_TYPES[type];
     if (!meta) throw new BadRequestException(`Unsupported trash type: ${type}`);
     // Fix 11: check type-specific permission
@@ -99,7 +91,7 @@ export class TrashController {
     // wrong semantics: future refactors that re-use the criteria
     // builder would silently drop tenant isolation. Keep the explicit
     // tenant filter so the SQL itself is safe in isolation.
-    const restoreCriteria: any = tenantId ? { id, tenantId } : { id };
+    const restoreCriteria = tenantId ? { id, tenantId } : { id };
     await repo.restore(restoreCriteria);
     return { success: true, type, id, label: meta.label };
   }

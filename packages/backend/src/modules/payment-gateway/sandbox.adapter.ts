@@ -53,10 +53,7 @@ export class SandboxGatewayAdapter implements PaymentGatewayAdapter {
     return 'success';
   }
 
-  async parseWebhook(
-    _headers: Record<string, string>,
-    body: any,
-  ): Promise<NormalisedWebhookEvent> {
+  async parseWebhook(_headers: Record<string, string>, body: any): Promise<NormalisedWebhookEvent> {
     return {
       providerTransactionId: body?.providerTransactionId || `SBX-${Date.now()}`,
       invoiceId: body?.invoiceId,

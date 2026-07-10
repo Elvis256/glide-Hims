@@ -164,7 +164,7 @@ describe('Tenant Isolation Security', () => {
 
   describe('Tenant Context Validation', () => {
     it('should reject requests without tenantId for non-public endpoints', () => {
-      const user = { id: 'user-123', tenantId: undefined, isSystemAdmin: false };
+      const user: any = { id: 'user-123', tenantId: undefined, isSystemAdmin: false };
       const isPublic = false;
 
       const shouldReject = !isPublic && user && !user.isSystemAdmin && !user.tenantId;
@@ -172,7 +172,7 @@ describe('Tenant Isolation Security', () => {
     });
 
     it('should allow system admin without tenantId', () => {
-      const user = { id: 'admin-123', tenantId: undefined, isSystemAdmin: true };
+      const user: any = { id: 'admin-123', tenantId: undefined, isSystemAdmin: true };
       const isPublic = false;
 
       const shouldReject = !isPublic && user && !user.isSystemAdmin && !user.tenantId;
@@ -180,7 +180,7 @@ describe('Tenant Isolation Security', () => {
     });
 
     it('should allow public endpoints without tenantId', () => {
-      const user = { id: 'user-123', tenantId: undefined, isSystemAdmin: false };
+      const user: any = { id: 'user-123', tenantId: undefined, isSystemAdmin: false };
       const isPublic = true;
 
       const shouldReject = !isPublic && user && !user.isSystemAdmin && !user.tenantId;
@@ -188,7 +188,7 @@ describe('Tenant Isolation Security', () => {
     });
 
     it('should allow regular user with tenantId', () => {
-      const user = { id: 'user-123', tenantId: 'tenant-456', isSystemAdmin: false };
+      const user: any = { id: 'user-123', tenantId: 'tenant-456', isSystemAdmin: false };
       const isPublic = false;
 
       const shouldReject = !isPublic && user && !user.isSystemAdmin && !user.tenantId;

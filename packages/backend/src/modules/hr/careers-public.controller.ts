@@ -92,9 +92,6 @@ export class CareersPublicController {
     @Query('tenantId') tenantId?: string,
   ) {
     const resolvedTenantId = await this.resolveTenantId(tenantSlug, tenantId);
-    return this.hrService.createJobApplication(
-      { ...dto, jobPostingId: id },
-      resolvedTenantId,
-    );
+    return this.hrService.createJobApplication({ ...dto, jobPostingId: id }, resolvedTenantId);
   }
 }

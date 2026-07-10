@@ -17,4 +17,3 @@ export const SystemAdminOnly = () =>
     SetMetadata(SYSTEM_ADMIN_ONLY_KEY, true),
     UseGuards(AuthGuard('jwt'), PermissionsGuard),
   );
-

@@ -153,7 +153,11 @@ export class VitalsService {
           }
           // Charge nurses on this facility (best-effort role lookup)
           const nurseIds = await this.inAppNotifications
-            .getUserIdsByRole(['charge_nurse', 'nurse_supervisor', 'nurse'], encounter.facilityId, tenantId)
+            .getUserIdsByRole(
+              ['charge_nurse', 'nurse_supervisor', 'nurse'],
+              encounter.facilityId,
+              tenantId,
+            )
             .catch(() => [] as string[]);
           targets.push(...nurseIds);
           const unique = [...new Set(targets)].filter(Boolean);
@@ -190,11 +194,17 @@ export class VitalsService {
             action: 'VITAL_CRITICAL_RECORDED',
             entityType: 'Vital',
             entityId: savedVital.id,
-            newValue: { alerts: criticals, encounterId: encounter.id, patientId: encounter.patientId },
+            newValue: {
+              alerts: criticals,
+              encounterId: encounter.id,
+              patientId: encounter.patientId,
+            },
             ...(tenantId ? { tenantId } : {}),
           })
           .catch((err) =>
-            this.logger.error(`Audit log failed for critical vital ${savedVital.id}: ${err.message}`),
+            this.logger.error(
+              `Audit log failed for critical vital ${savedVital.id}: ${err.message}`,
+            ),
           );
       }
     }

@@ -46,7 +46,7 @@ export class DisposalService {
   }
 
   async findAll(query: DisposalQueryDto, tenantId?: string) {
-    const where: FindOptionsWhere<DisposalRecord> = {};
+    const where: any = {};
 
     if (query.facilityId) where.facilityId = query.facilityId;
     if (query.disposalMethod) where.disposalMethod = query.disposalMethod;

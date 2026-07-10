@@ -31,8 +31,8 @@ describe('TenantContextGuard', () => {
   });
 
   it('rejects a non-admin user with empty-string tenantId', () => {
-    expect(() =>
-      guard.canActivate(ctx({ id: 'u1', tenantId: '', isSystemAdmin: false })),
-    ).toThrow(ForbiddenException);
+    expect(() => guard.canActivate(ctx({ id: 'u1', tenantId: '', isSystemAdmin: false }))).toThrow(
+      ForbiddenException,
+    );
   });
 });

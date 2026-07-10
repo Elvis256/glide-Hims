@@ -71,7 +71,7 @@ export class MembershipController {
   async togglePlan(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     const scheme = await this.service.findScheme(id, req.user?.tenantId);
     if (!scheme) throw new NotFoundException(`Plan ${id} not found`);
-    return this.service.updateScheme(id, { isActive: !scheme.isActive } as any, req.user?.tenantId);
+    return this.service.updateScheme(id, { isActive: !scheme.isActive }, req.user?.tenantId);
   }
 
   // ============ SCHEMES (original routes kept for backward compatibility) ============
@@ -141,7 +141,7 @@ export class MembershipController {
   @AuthWithPermissions('membership.update')
   @ApiOperation({ summary: 'Cancel patient membership' })
   async cancelMembership(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
-    return this.service.updateMembership(id, { status: 'cancelled' } as any, req.user?.tenantId);
+    return this.service.updateMembership(id, { status: 'cancelled' }, req.user?.tenantId);
   }
 
   @Post('memberships/:id/renew')
@@ -154,7 +154,7 @@ export class MembershipController {
   ) {
     return this.service.updateMembership(
       id,
-      { endDate: dto.endDate, status: 'active' } as any,
+      { endDate: dto.endDate, status: 'active' },
       req.user?.tenantId,
     );
   }

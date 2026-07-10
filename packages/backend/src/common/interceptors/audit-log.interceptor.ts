@@ -1,4 +1,11 @@
-import { Injectable, NestInterceptor, ExecutionContext, CallHandler, Logger, HttpException } from '@nestjs/common';
+import {
+  Injectable,
+  NestInterceptor,
+  ExecutionContext,
+  CallHandler,
+  Logger,
+  HttpException,
+} from '@nestjs/common';
 import { Observable, from, throwError } from 'rxjs';
 import { tap, catchError, mergeMap } from 'rxjs/operators';
 import { DataSource } from 'typeorm';
@@ -141,9 +148,7 @@ export class AuditLogInterceptor implements NestInterceptor {
       const entityType = parts[apiIndex + 1];
       const potentialId = parts[apiIndex + 2];
       const entityId =
-        potentialId && UUID_RE.test(potentialId)
-          ? potentialId
-          : response?.data?.id || response?.id;
+        potentialId && UUID_RE.test(potentialId) ? potentialId : response?.data?.id || response?.id;
       return { entityType, entityId };
     }
     return { entityType: 'unknown' };
@@ -241,7 +246,8 @@ export class AuditLogInterceptor implements NestInterceptor {
     statusCode?: number;
     errorMessage?: string;
   }): Promise<void> {
-    const { request, action, entityType, entityId, body, oldValue, statusCode, errorMessage } = args;
+    const { request, action, entityType, entityId, body, oldValue, statusCode, errorMessage } =
+      args;
     const user = request.user;
 
     let actorType: string = 'tenant_user';
@@ -282,9 +288,7 @@ export class AuditLogInterceptor implements NestInterceptor {
       entityType,
       entityId,
       oldValue,
-      newValue: ['PUT', 'PATCH', 'POST'].includes(request.method)
-        ? this.sanitize(body)
-        : undefined,
+      newValue: ['PUT', 'PATCH', 'POST'].includes(request.method) ? this.sanitize(body) : undefined,
       ipAddress: this.getClientIp(request),
       userAgent: request.headers['user-agent'],
       actorType,

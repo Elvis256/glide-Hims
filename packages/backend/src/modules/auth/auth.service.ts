@@ -481,7 +481,8 @@ export class AuthService {
       refreshToken,
       expiresIn: expiresInSeconds,
       mustChangePassword: user.mustChangePassword || undefined,
-      mustEnrollMfa: !user.mfaEnabled && (user.isSystemAdmin || mfaPolicy?.requireMfa) ? true : undefined,
+      mustEnrollMfa:
+        !user.mfaEnabled && (user.isSystemAdmin || mfaPolicy?.requireMfa) ? true : undefined,
       user: {
         id: user.id,
         username: user.username,
@@ -900,7 +901,7 @@ export class AuthService {
     this.enforcePasswordPolicyFloor(data);
     // Tenant users are locked into their tenant. System admins can target
     // any tenant explicitly via the body (kept for platform-admin tooling).
-    const effectiveTenantId = isSystemAdmin ? data.tenantId ?? tenantId : tenantId;
+    const effectiveTenantId = isSystemAdmin ? (data.tenantId ?? tenantId) : tenantId;
     if (!effectiveTenantId && !isSystemAdmin) {
       throw new ForbiddenException('Tenant context required to create a password policy');
     }
@@ -934,7 +935,7 @@ export class AuthService {
     });
     if (!policy) throw new BadRequestException('Policy not found');
     // Don't allow tenant rebinding via update (cross-tenant move).
-    const { tenantId: _bodyTenant, ...safe } = data as any;
+    const { tenantId: _bodyTenant, ...safe } = data;
     Object.assign(policy, safe);
     return this.passwordPolicyRepository.save(policy);
   }
@@ -1004,11 +1005,16 @@ export class AuthService {
     if (!targetTenantId) throw new BadRequestException('targetTenantId is required');
     const tenant = await this.tenantRepository.findOne({ where: { id: targetTenantId } });
     if (!tenant) throw new NotFoundException('Target tenant not found');
-    if ((tenant as any).status && (tenant as any).status !== 'active') {
-      this.logger.warn(`Admin ${admin.username} impersonating non-active tenant ${tenant.id} (${(tenant as any).status})`);
+    if (tenant.status && tenant.status !== 'active') {
+      this.logger.warn(
+        `Admin ${admin.username} impersonating non-active tenant ${tenant.id} (${tenant.status})`,
+      );
     }
 
-    const userRoles = await this.userRoleRepository.find({ where: { userId: admin.id }, relations: ['role'] });
+    const userRoles = await this.userRoleRepository.find({
+      where: { userId: admin.id },
+      relations: ['role'],
+    });
     const roles = userRoles.map((ur) => ur.role.name);
     const grantId = crypto.randomUUID();
 
@@ -1035,33 +1041,55 @@ export class AuthService {
     const expiresInConfig = this.configService.get<string>('JWT_EXPIRES_IN', '8h');
     const expiresInSeconds = this.parseExpiryToSeconds(expiresInConfig);
 
-    await this.refreshTokenService.createRefreshToken(admin.id, targetTenantId, refreshToken, ipAddress, userAgent);
-    await this.sessionService.createSession(admin.id, targetTenantId, refreshToken, ipAddress, userAgent);
+    await this.refreshTokenService.createRefreshToken(
+      admin.id,
+      targetTenantId,
+      refreshToken,
+      ipAddress,
+      userAgent,
+    );
+    await this.sessionService.createSession(
+      admin.id,
+      targetTenantId,
+      refreshToken,
+      ipAddress,
+      userAgent,
+    );
 
     // Audit
     try {
       const auditLog = this.dataSource.getRepository(AuditLog).create({
         userId: admin.id,
-        username: admin.username,
         action: 'tenant.impersonate.start',
         entityType: 'tenants',
         entityId: targetTenantId,
         tenantId: targetTenantId,
         ipAddress,
         userAgent,
-        reason: reason || null,
-        newValue: { grantId, targetTenantId, targetTenantName: tenant.name, originalTenantId: admin.tenantId ?? null },
+        reason: reason || undefined,
+        newValue: {
+          grantId,
+          targetTenantId,
+          targetTenantName: tenant.name,
+          originalTenantId: admin.tenantId ?? null,
+        },
         statusCode: 200,
         actorType: 'user',
-      } as any);
+      });
       await this.dataSource.getRepository(AuditLog).save(auditLog);
     } catch (e) {
-      this.logger.error(`Failed to write impersonation audit: ${(e as any)?.message}`);
+      this.logger.error(`Failed to write impersonation audit: ${(e as Error)?.message}`);
     }
-    this.logger.warn(`IMPERSONATION START admin=${admin.username} → tenant=${tenant.name} (${tenant.id}) reason="${reason ?? ''}" grant=${grantId}`);
+    this.logger.warn(
+      `IMPERSONATION START admin=${admin.username} → tenant=${tenant.name} (${tenant.id}) reason="${reason ?? ''}" grant=${grantId}`,
+    );
 
     let modules: string[] = [];
-    try { modules = (await this.getMe(admin.id)).accessibleModules || []; } catch { /* non-critical */ }
+    try {
+      modules = (await this.getMe(admin.id)).accessibleModules || [];
+    } catch {
+      /* non-critical */
+    }
 
     return {
       accessToken,
@@ -1077,8 +1105,8 @@ export class AuthService {
         accessibleModules: modules,
         isSystemAdmin: true,
         tenantId: targetTenantId,
-      } as any,
-    } as any;
+      },
+    };
   }
 
   /**
@@ -1087,16 +1115,25 @@ export class AuthService {
    */
   async endImpersonation(
     adminUserId: string,
-    currentJwt: { impersonating?: boolean; originalTenantId?: string | null; impersonationGrantId?: string; tenantId?: string },
+    currentJwt: {
+      impersonating?: boolean;
+      originalTenantId?: string | null;
+      impersonationGrantId?: string;
+      tenantId?: string;
+    },
     ipAddress: string,
     userAgent: string,
   ): Promise<AuthResponseDto> {
     const admin = await this.userRepository.findOne({ where: { id: adminUserId } });
     if (!admin) throw new UnauthorizedException('User not found');
-    if (!admin.isSystemAdmin) throw new ForbiddenException('Only system administrators may end impersonation');
+    if (!admin.isSystemAdmin)
+      throw new ForbiddenException('Only system administrators may end impersonation');
     if (!currentJwt?.impersonating) throw new BadRequestException('Not currently impersonating');
 
-    const userRoles = await this.userRoleRepository.find({ where: { userId: admin.id }, relations: ['role'] });
+    const userRoles = await this.userRoleRepository.find({
+      where: { userId: admin.id },
+      relations: ['role'],
+    });
     const roles = userRoles.map((ur) => ur.role.name);
     const restoredTenantId = currentJwt.originalTenantId ?? admin.tenantId ?? undefined;
 
@@ -1119,8 +1156,20 @@ export class AuthService {
     const expiresInConfig = this.configService.get<string>('JWT_EXPIRES_IN', '8h');
     const expiresInSeconds = this.parseExpiryToSeconds(expiresInConfig);
 
-    await this.refreshTokenService.createRefreshToken(admin.id, restoredTenantId, refreshToken, ipAddress, userAgent);
-    await this.sessionService.createSession(admin.id, restoredTenantId, refreshToken, ipAddress, userAgent);
+    await this.refreshTokenService.createRefreshToken(
+      admin.id,
+      restoredTenantId,
+      refreshToken,
+      ipAddress,
+      userAgent,
+    );
+    await this.sessionService.createSession(
+      admin.id,
+      restoredTenantId,
+      refreshToken,
+      ipAddress,
+      userAgent,
+    );
 
     try {
       const auditLog = this.dataSource.getRepository(AuditLog).create({
@@ -1132,7 +1181,10 @@ export class AuthService {
         tenantId: currentJwt.tenantId || null,
         ipAddress,
         userAgent,
-        oldValue: { grantId: currentJwt.impersonationGrantId, impersonatedTenantId: currentJwt.tenantId },
+        oldValue: {
+          grantId: currentJwt.impersonationGrantId,
+          impersonatedTenantId: currentJwt.tenantId,
+        },
         newValue: { restoredTenantId: restoredTenantId ?? null },
         statusCode: 200,
         actorType: 'user',
@@ -1141,10 +1193,16 @@ export class AuthService {
     } catch (e) {
       this.logger.error(`Failed to write end-impersonation audit: ${(e as any)?.message}`);
     }
-    this.logger.warn(`IMPERSONATION END admin=${admin.username} grant=${currentJwt.impersonationGrantId}`);
+    this.logger.warn(
+      `IMPERSONATION END admin=${admin.username} grant=${currentJwt.impersonationGrantId}`,
+    );
 
     let modules: string[] = [];
-    try { modules = (await this.getMe(admin.id)).accessibleModules || []; } catch { /* non-critical */ }
+    try {
+      modules = (await this.getMe(admin.id)).accessibleModules || [];
+    } catch {
+      /* non-critical */
+    }
 
     return {
       accessToken,
@@ -1160,8 +1218,8 @@ export class AuthService {
         accessibleModules: modules,
         isSystemAdmin: true,
         tenantId: restoredTenantId,
-      } as any,
-    } as any;
+      },
+    };
   }
 
   async getMe(userId: string) {
@@ -1179,9 +1237,10 @@ export class AuthService {
     const roleIds = userRoles.map((ur) => ur.roleId);
 
     // Resolve role permissions (recursive CTE) + direct permissions in parallel
-    const rolePermPromise = roleIds.length > 0
-      ? this.userRoleRepository.manager.query(
-          `WITH RECURSIVE role_tree AS (
+    const rolePermPromise =
+      roleIds.length > 0
+        ? this.userRoleRepository.manager.query(
+            `WITH RECURSIVE role_tree AS (
              SELECT id FROM roles WHERE id IN (${roleIds.map((_, i) => `$${i + 1}`).join(', ')})
              UNION
              SELECT r.parent_role_id FROM roles r
@@ -1191,9 +1250,9 @@ export class AuthService {
            SELECT DISTINCT p.code FROM role_tree rt
            JOIN role_permissions rp ON rp.role_id = rt.id
            JOIN permissions p ON p.id = rp.permission_id`,
-          roleIds,
-        )
-      : Promise.resolve([]);
+            roleIds,
+          )
+        : Promise.resolve([]);
 
     const directPermPromise = this.userPermissionRepository.find({
       where: { userId: user.id },
@@ -1225,18 +1284,21 @@ export class AuthService {
           [user.tenantId],
         ),
         this.tenantRepository.findOne({ where: { id: user.tenantId } }),
-        this.userRoleRepository.manager.query(
-          `SELECT enabled_modules FROM licenses
+        this.userRoleRepository.manager
+          .query(
+            `SELECT enabled_modules FROM licenses
            WHERE tenant_id = $1 AND status = 'active'
            ORDER BY created_at DESC LIMIT 1`,
-          [user.tenantId],
-        ).catch(() => [] as any[]),
+            [user.tenantId],
+          )
+          .catch(() => [] as any[]),
       ]);
 
       // Parse settings into a map
       const settingsMap: Record<string, any> = {};
       for (const row of settingsRows || []) {
-        settingsMap[row.key] = typeof row.value === 'string' ? row.value.replace(/^"|"$/g, '') : row.value;
+        settingsMap[row.key] =
+          typeof row.value === 'string' ? row.value.replace(/^"|"$/g, '') : row.value;
       }
 
       // Priority 1: system_settings enabled_modules
@@ -1249,7 +1311,11 @@ export class AuthService {
       }
 
       // Priority 2: tenant.settings.enabledModules
-      if (!tenantEnabledModules && tenantRow?.settings?.enabledModules && Array.isArray(tenantRow.settings.enabledModules)) {
+      if (
+        !tenantEnabledModules &&
+        tenantRow?.settings?.enabledModules &&
+        Array.isArray(tenantRow.settings.enabledModules)
+      ) {
         tenantEnabledModules = tenantRow.settings.enabledModules;
       }
 
@@ -1573,7 +1639,11 @@ export class AuthService {
   /**
    * Admin: Unlock a locked user account
    */
-  async unlockAccount(userId: string, adminUserId: string, callerTenantId?: string): Promise<{ message: string }> {
+  async unlockAccount(
+    userId: string,
+    adminUserId: string,
+    callerTenantId?: string,
+  ): Promise<{ message: string }> {
     // Fix 6: add tenantId to where clause to prevent cross-tenant unlock
     const where: any = { id: userId };
     if (callerTenantId) where.tenantId = callerTenantId;
@@ -1595,7 +1665,10 @@ export class AuthService {
   /**
    * Admin: Get account lockout status
    */
-  async getAccountLockoutStatus(userId: string, callerTenantId?: string): Promise<{
+  async getAccountLockoutStatus(
+    userId: string,
+    callerTenantId?: string,
+  ): Promise<{
     isLocked: boolean;
     failedAttempts: number;
     lockedUntil: Date | null;

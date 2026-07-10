@@ -114,7 +114,7 @@ export class LabelService {
   }
 
   async getTemplates(tenantId?: string, language?: string) {
-    const where: Record<string, any> = {};
+    const where: any = {};
     if (tenantId) where.tenantId = tenantId;
     if (language) where.language = language;
     return this.templateRepo.find({ where, order: { language: 'ASC', isDefault: 'DESC' } });
@@ -142,7 +142,7 @@ export class LabelService {
   }
 
   async getTranslations(tenantId?: string, language?: string) {
-    const where: Record<string, any> = {};
+    const where: any = {};
     if (tenantId) where.tenantId = tenantId;
     if (language) where.language = language;
     return this.translationRepo.find({ where, order: { drugName: 'ASC' } });

@@ -2,6 +2,7 @@ import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm
 import { BaseEntity } from './base.entity';
 import { Facility } from './facility.entity';
 import { ChartOfAccount } from './chart-of-account.entity';
+import { FiscalPeriod } from './fiscal-period.entity';
 
 // ─── Cost Center ────────────────────────────────────────────────────────────
 
@@ -560,4 +561,130 @@ export class InterFacilityTransaction extends BaseEntity {
 
   @Column({ name: 'journal_entry_id', type: 'uuid', nullable: true })
   journalEntryId: string;
+}
+
+// ─── GL Reconciliation ──────────────────────────────────────────────────────
+
+export enum GlReconciliationStatus {
+  PENDING = 'pending',
+  IN_PROGRESS = 'in_progress',
+  RECONCILED = 'reconciled',
+  PARTIAL = 'partial',
+}
+
+@Entity('gl_reconciliation_status')
+@Index(['facilityId', 'accountId', 'fiscalPeriodId'], { unique: true })
+@Index(['facilityId', 'status'])
+export class GlReconciliation extends BaseEntity {
+  @Column({ name: 'facility_id', type: 'uuid' })
+  facilityId: string;
+
+  @ManyToOne(() => Facility)
+  @JoinColumn({ name: 'facility_id' })
+  facility: Facility;
+
+  @Column({ name: 'account_id', type: 'uuid' })
+  accountId: string;
+
+  @ManyToOne(() => ChartOfAccount)
+  @JoinColumn({ name: 'account_id' })
+  account: ChartOfAccount;
+
+  @Column({ name: 'fiscal_period_id', type: 'uuid' })
+  fiscalPeriodId: string;
+
+  @ManyToOne(() => FiscalPeriod)
+  @JoinColumn({ name: 'fiscal_period_id' })
+  fiscalPeriod: FiscalPeriod;
+
+  @Column({ name: 'gl_total', type: 'decimal', precision: 15, scale: 2, default: 0 })
+  glTotal: number;
+
+  @Column({ name: 'external_total', type: 'decimal', precision: 15, scale: 2, default: 0 })
+  externalTotal: number;
+
+  @Column({ name: 'difference', type: 'decimal', precision: 15, scale: 2, default: 0 })
+  difference: number;
+
+  @Column({
+    type: 'enum',
+    enum: GlReconciliationStatus,
+    default: GlReconciliationStatus.PENDING,
+  })
+  status: GlReconciliationStatus;
+
+  @Column({ name: 'reconciled_by', type: 'uuid', nullable: true })
+  reconciledBy: string;
+
+  @Column({ name: 'reconciled_at', type: 'timestamp', nullable: true })
+  reconciledAt: Date;
+
+  @Column({ name: 'item_count', type: 'int', default: 0 })
+  itemCount: number;
+
+  @Column({ type: 'text', nullable: true })
+  notes: string;
+
+  @OneToMany(() => GlReconciliationItem, (item) => item.reconciliation, { cascade: true })
+  items: GlReconciliationItem[];
+}
+
+export enum GlReconciliationItemType {
+  GL_ENTRY = 'gl_entry',
+  EXTERNAL_ENTRY = 'external_entry',
+  ADJUSTMENT = 'adjustment',
+}
+
+export enum GlReconciliationItemMatchStatus {
+  MATCHED = 'matched',
+  UNMATCHED = 'unmatched',
+  ADJUSTED = 'adjusted',
+}
+
+@Entity('gl_reconciliation_items')
+@Index(['reconciliationId', 'matchStatus'])
+export class GlReconciliationItem extends BaseEntity {
+  @Column({ name: 'reconciliation_id', type: 'uuid' })
+  reconciliationId: string;
+
+  @ManyToOne(() => GlReconciliation, (recon) => recon.items, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'reconciliation_id' })
+  reconciliation: GlReconciliation;
+
+  @Column({
+    name: 'item_type',
+    type: 'enum',
+    enum: GlReconciliationItemType,
+    default: GlReconciliationItemType.GL_ENTRY,
+  })
+  itemType: GlReconciliationItemType;
+
+  @Column({ name: 'journal_entry_id', type: 'uuid', nullable: true })
+  journalEntryId: string;
+
+  @Column({ name: 'external_reference', nullable: true })
+  externalReference: string;
+
+  @Column({ type: 'decimal', precision: 15, scale: 2 })
+  amount: number;
+
+  @Column({ name: 'entry_date', type: 'date' })
+  entryDate: Date;
+
+  @Column({ nullable: true })
+  description: string;
+
+  @Column({
+    name: 'match_status',
+    type: 'enum',
+    enum: GlReconciliationItemMatchStatus,
+    default: GlReconciliationItemMatchStatus.UNMATCHED,
+  })
+  matchStatus: GlReconciliationItemMatchStatus;
+
+  @Column({ name: 'matched_with_id', type: 'uuid', nullable: true })
+  matchedWithId: string;
+
+  @Column({ type: 'text', nullable: true })
+  notes: string;
 }

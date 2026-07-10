@@ -44,7 +44,7 @@ export class ApprovalsNotifier {
   async onSubmitted(evt: ApprovalEvent) {
     try {
       const firstStep = await this.chainRepo.findOne({
-        where: { id: evt.chainId } as any,
+        where: { id: evt.chainId },
       });
       if (!firstStep) return;
       const userIds = await this.approvals.resolvePotentialApprovers(firstStep);
@@ -65,7 +65,7 @@ export class ApprovalsNotifier {
   async onEscalated(evt: ApprovalEvent) {
     try {
       if (!evt.chainStepId) return;
-      const step = await this.chainRepo.findOne({ where: { id: evt.chainStepId } as any });
+      const step = await this.chainRepo.findOne({ where: { id: evt.chainStepId } });
       if (!step) return;
       const targets = new Set<string>();
       const orig = await this.approvals.resolvePotentialApprovers(step);
@@ -106,7 +106,7 @@ export class ApprovalsNotifier {
           documentType: evt.documentRef.documentType,
           documentId: evt.documentRef.documentId,
           action: 'submit',
-        } as any,
+        },
       });
       const requesterId = submitAction?.actorUserId;
       if (!requesterId) return;

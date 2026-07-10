@@ -9,9 +9,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * SetupService) for any tenant whose settings JSON is missing the key.
  * Existing settings keys are preserved.
  */
-export class BackfillTenantFacilityMode1782800000000
-  implements MigrationInterface
-{
+export class BackfillTenantFacilityMode1782800000000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     // settings IS NULL  -> initialize with { facilityMode: 'hospital' }
     await queryRunner.query(`

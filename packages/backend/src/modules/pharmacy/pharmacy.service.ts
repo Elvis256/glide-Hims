@@ -7,7 +7,15 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, In, DataSource, LessThanOrEqual, EntityManager, IsNull } from 'typeorm';
+import {
+  Repository,
+  Between,
+  In,
+  DataSource,
+  LessThanOrEqual,
+  EntityManager,
+  IsNull,
+} from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   PharmacySale,
@@ -56,6 +64,8 @@ import { InventoryService } from '../inventory/inventory.service';
 import { EfrisDocumentType } from '../../database/entities/pos-compliance.entity';
 import { ReceiptReprint, RetailCustomer } from '../../database/entities/pos-retail.entity';
 import { MedicationSafetyService } from '../allergies/medication-safety.service';
+import { Patient } from '../../database/entities/patient.entity';
+import { Store } from '../../database/entities/store.entity';
 
 // C4: VAT rate is loaded per-tenant from efris_config, fallback to UG default.
 // This is retrieved in getDefaultVatRate() which caches the result.
@@ -262,9 +272,7 @@ export class PharmacyService {
     // must be supplied so X/Z reports can attribute the sale correctly.
     if (saleChannel === SaleChannel.RETAIL_POS) {
       if (!dto.posShiftId || !dto.posRegisterId) {
-        throw new BadRequestException(
-          'Retail POS sales require both posShiftId and posRegisterId',
-        );
+        throw new BadRequestException('Retail POS sales require both posShiftId and posRegisterId');
       }
     }
 
@@ -306,17 +314,8 @@ export class PharmacyService {
         // If retail_pos channel, lock & validate the shift right now (cart creation)
         // so we fail fast before assembling line items.
         if (saleChannel === SaleChannel.RETAIL_POS) {
-          await this.posShiftGuard.assertOpenShift(
-            manager,
-            dto.posShiftId!,
-            tenantId!,
-            userId,
-          );
-          await this.posShiftGuard.assertActiveRegister(
-            manager,
-            dto.posRegisterId!,
-            tenantId!,
-          );
+          await this.posShiftGuard.assertOpenShift(manager, dto.posShiftId!, tenantId!, userId);
+          await this.posShiftGuard.assertActiveRegister(manager, dto.posRegisterId!, tenantId!);
         }
 
         const sale = manager.create(PharmacySale, {
@@ -425,12 +424,7 @@ export class PharmacyService {
    * Returns active items with prices/stock updated since `since` timestamp.
    * Controlled substances are flagged `cacheable=false` so they cannot be sold offline.
    */
-  async getItemsSyncBundle(
-    tenantId: string | undefined,
-    since?: string,
-    limit = 100,
-    offset = 0,
-  ) {
+  async getItemsSyncBundle(tenantId: string | undefined, since?: string, limit = 100, offset = 0) {
     const qb = this.inventoryRepo
       .createQueryBuilder('item')
       .select([
@@ -516,7 +510,7 @@ export class PharmacyService {
         .select(['p.id', 'p.mrn', 'p.fullName'])
         .where('p.id = :id', { id: sale.patientId })
         .getOne();
-      (sale as any).patient = patient;
+      sale.patient = patient as Patient;
     }
     if (!sale) throw new NotFoundException('Sale not found');
     // C3: filter soft-deleted sale items
@@ -555,16 +549,16 @@ export class PharmacyService {
 
       // Load items + store separately to avoid Postgres
       // "FOR UPDATE cannot be applied to the nullable side of an outer join".
-      sale.items = (await manager.find(PharmacySaleItem, {
+      sale.items = await manager.find(PharmacySaleItem, {
         where: { saleId: sale.id, deletedAt: IsNull() },
-      })) as any;
+      });
       if (sale.storeId) {
-        sale.store = (await manager
+        sale.store = await manager
           .query(
             `SELECT id, facility_id AS "facilityId" FROM pharmacy_stores WHERE id = $1 LIMIT 1`,
             [sale.storeId],
           )
-          .then((rows: any[]) => rows?.[0])) as any;
+          .then((rows: any[]) => rows?.[0]) as Store;
       }
 
       // Get facility ID from the sale's store
@@ -579,22 +573,25 @@ export class PharmacyService {
       const batchStockRepo = manager.getRepository(BatchStockBalance);
 
       // Medication safety checks (DDI between basket items; allergy checks if patientId present)
-      const saleItems = sale.items as any[];
-      const drugIds = saleItems.map((i: any) => i.itemId).filter(Boolean);
+      const saleItems = sale.items;
+      const drugIds = saleItems.map((i) => i.itemId).filter(Boolean);
       if (drugIds.length > 0) {
         try {
           const safetyResult = await this.medicationSafetyService.runSafetyChecks({
-            patientId: (sale as any).patientId || undefined,
+            patientId: sale.patientId || undefined,
             drugIds,
-            lines: saleItems.map((i: any) => ({
+            lines: saleItems.map((i) => ({
               drugId: i.itemId,
-              drugName: i.itemName || i.name || 'Unknown',
+              drugName: i.itemName || 'Unknown',
             })),
             tenantId,
           });
           if (safetyResult.blocked) {
             const reasons = safetyResult.blockingAlerts
-              .map((a) => `${a.pairedDrugName || a.drugName || 'Drug'}: ${a.description || a.severity}`)
+              .map(
+                (a) =>
+                  `${a.pairedDrugName || a.drugName || 'Drug'}: ${a.description || a.severity}`,
+              )
               .join('; ');
             throw new BadRequestException(
               `Medication safety check failed: ${reasons || 'Blocking alerts detected'}. An override is required to proceed.`,
@@ -618,7 +615,7 @@ export class PharmacyService {
       // FEFO auto-allocation: for any sale item without an explicit batchNumber,
       // pick the earliest-expiring batch that has enough available stock.
       // Manual batch selections are respected but expired batches are still rejected below.
-      for (const item of sale.items as any[]) {
+      for (const item of sale.items) {
         if (item.batchNumber) continue;
 
         // Resolve whether this item demands batch/expiry tracking; we need to
@@ -708,6 +705,10 @@ export class PharmacyService {
         }
       }
 
+      // Normalize to midnight for consistent expiry comparisons regardless of time-of-day
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
       // Validate and deduct stock using pre-locked records
       for (const item of sale.items) {
         const inventoryWhere: any = { id: item.itemId };
@@ -784,33 +785,40 @@ export class PharmacyService {
                 quantity: item.quantity,
                 saleNumber: sale.saleNumber,
                 schedule,
-                prescriptionReference:
-                  (item as any).prescriptionReference || sale.prescriptionId || null,
+                prescriptionReference: sale.prescriptionId || null,
               },
               tenantId,
             }),
           );
 
           // Typed structured log for the controlled substance register.
+          // Compute running balance: stockMap reflects deductions from prior loop
+          // iterations, so (current - this item's qty) = balance after this dispense.
+          const ctrlStockBal = stockMap.get(item.itemId);
+          const ctrlRunningBalance = (ctrlStockBal?.totalQuantity || 0) - item.quantity;
+
           const ctrlLogRepo = manager.getRepository(ControlledSubstanceLog);
-          await ctrlLogRepo.save(
-            ctrlLogRepo.create({
-              pharmacySaleItemId: (item as any).id,
-              prescriptionItemId: (item as any).prescriptionItemId || null,
-              drugScheduleAtSale: schedule,
-              quantityDispensed: item.quantity,
-              isOtcPermitted: !sale.prescriptionId,
-              buyerName: buyer?.buyerName || sale.customerName || null,
-              buyerIdType: buyer?.buyerIdType || null,
-              buyerIdNumber: buyer?.buyerIdNumber || null,
-              buyerPhone: buyer?.buyerPhone || sale.customerPhone || null,
-              prescriberName: buyer?.prescriberName || null,
-              prescriberLicense: buyer?.prescriberLicense || null,
-              pharmacistId: userId,
-              dispensedAt: new Date(),
-              ...(tenantId ? { tenantId } : {}),
-            } as any),
-          );
+          const ctrlLogEntry: Partial<ControlledSubstanceLog> = {
+            pharmacySaleItemId: item.id,
+            prescriptionItemId: item.prescriptionItemId || undefined,
+            drugSchedule: schedule,
+            quantityDispensed: item.quantity,
+            runningBalance: ctrlRunningBalance,
+            dispensedById: userId,
+            facilityId,
+            isOtcPermitted: !sale.prescriptionId,
+            buyerName: buyer?.buyerName || sale.customerName || undefined,
+            buyerIdType: buyer?.buyerIdType || undefined,
+            buyerIdNumber: buyer?.buyerIdNumber || undefined,
+            buyerPhone: buyer?.buyerPhone || sale.customerPhone || undefined,
+            prescriberName: buyer?.prescriberName || undefined,
+            prescriberLicense: buyer?.prescriberLicense || undefined,
+            pharmacistId: userId,
+            witnessId: buyer?.witnessId || undefined,
+            witnessName: buyer?.witnessName || undefined,
+            ...(tenantId ? { tenantId } : {}),
+          };
+          await ctrlLogRepo.save(ctrlLogRepo.create(ctrlLogEntry));
 
           this.logger.warn(
             `CONTROLLED SUBSTANCE DISPENSED: item=${inventoryItem.name}, schedule=${schedule}, qty=${item.quantity}, user=${userId}, sale=${sale.saleNumber}`,
@@ -832,7 +840,7 @@ export class PharmacyService {
         }
 
         // Block dispensing of expired stock (DTO-provided expiry)
-        if (item.expiryDate && new Date(item.expiryDate) < new Date()) {
+        if (item.expiryDate && new Date(item.expiryDate) < today) {
           throw new BadRequestException(
             `Item ${inventoryItem.name} batch ${item.batchNumber || 'N/A'} is expired. Expired stock cannot be sold.`,
           );
@@ -841,7 +849,7 @@ export class PharmacyService {
         // Also validate expiry from database batch records, not just DTO
         if (item.batchNumber) {
           const batchRecord = batchStockMap.get(`${item.itemId}:${item.batchNumber}`);
-          if (batchRecord && new Date(batchRecord.expiryDate) < new Date()) {
+          if (batchRecord && new Date(batchRecord.expiryDate) < today) {
             throw new BadRequestException(
               `Item ${inventoryItem.name} batch ${item.batchNumber} is expired according to database records. Expired stock cannot be sold.`,
             );
@@ -916,7 +924,7 @@ export class PharmacyService {
       // Lock the prescription_item row to prevent two concurrent sales from each
       // reading qty=0, both dispensing N, and both writing qty=N (over-dispense).
       if (sale.prescriptionId) {
-        const prescRxItems = (sale.items as any[]).filter((si) => si.prescriptionItemId);
+        const prescRxItems = sale.items.filter((si) => si.prescriptionItemId);
         for (const si of prescRxItems) {
           const rxItem = await manager.findOne(PrescriptionItem, {
             where: { id: si.prescriptionItemId },
@@ -979,15 +987,16 @@ export class PharmacyService {
       // POS shift recording — for retail-counter sales, record the payment splits
       // against the shift and bump cached totals. This is what X/Z reports read from.
       if (sale.saleChannel === SaleChannel.RETAIL_POS && sale.posShiftId) {
-        const splits = (dto.paymentSplits && dto.paymentSplits.length > 0)
-          ? dto.paymentSplits
-          : [
-              {
-                paymentMethod: dto.paymentMethod || sale.paymentMethod || 'cash',
-                amount: Number(sale.totalAmount),
-                transactionReference: dto.transactionReference || sale.transactionReference,
-              },
-            ];
+        const splits =
+          dto.paymentSplits && dto.paymentSplits.length > 0
+            ? dto.paymentSplits
+            : [
+                {
+                  paymentMethod: dto.paymentMethod || sale.paymentMethod || 'cash',
+                  amount: Number(sale.totalAmount),
+                  transactionReference: dto.transactionReference || sale.transactionReference,
+                },
+              ];
         // Re-lock the shift inside this tx (assertOpenShift returns the locked row).
         const lockedShift = await this.posShiftGuard.assertOpenShift(
           manager,
@@ -1011,12 +1020,8 @@ export class PharmacyService {
       // enabled EFRIS submission.
       try {
         const cfg = tenantId ? await this.efrisService.getConfig(tenantId) : null;
-        if (
-          cfg?.isEnabled &&
-          cfg?.submitOnCompletion &&
-          sale.saleChannel !== SaleChannel.LEGACY
-        ) {
-          const payload = this.efrisService.buildInvoicePayload(sale, sale.items as any[], cfg);
+        if (cfg?.isEnabled && cfg?.submitOnCompletion && sale.saleChannel !== SaleChannel.LEGACY) {
+          const payload = this.efrisService.buildInvoicePayload(sale, sale.items, cfg);
           await this.efrisService.enqueueDocument(
             manager,
             {
@@ -1058,7 +1063,8 @@ export class PharmacyService {
 
     // B8: upsert retail customer record (fire-and-forget)
     if (sale.customerPhone && tenantId) {
-      this.retailCustomerRepo.findOne({ where: { phone: sale.customerPhone, tenantId } })
+      this.retailCustomerRepo
+        .findOne({ where: { phone: sale.customerPhone, tenantId } })
         .then((customer) => {
           const now = new Date();
           if (customer) {
@@ -1088,31 +1094,50 @@ export class PharmacyService {
   }
 
   async cancelSale(id: string, userId: string, reason?: string, tenantId?: string) {
-    const sale = await this.findSale(id, tenantId);
-    if (sale.status === SaleStatus.COMPLETED) {
-      throw new BadRequestException('Cannot cancel a completed sale. Use refund endpoint for completed sales.');
-    }
-    const oldStatus = sale.status;
-    sale.status = SaleStatus.CANCELLED;
-    const saved = await this.saleRepo.save(sale);
+    return this.dataSource.transaction(async (manager) => {
+      const saleRepo = manager.getRepository(PharmacySale);
+      const sale = await saleRepo.findOne({
+        where: { id, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!sale) throw new NotFoundException('Sale not found');
 
-    // H1: audit log on cancellation
-    const auditRepo = this.dataSource.getRepository(AuditLog);
-    await auditRepo
-      .save(
-        auditRepo.create({
-          action: 'SALE_CANCELLED',
-          entityType: 'PharmacySale',
-          entityId: id,
-          userId,
-          oldValue: { status: oldStatus },
-          newValue: { status: SaleStatus.CANCELLED, reason: reason || null },
-          ...(tenantId ? { tenantId } : {}),
-        }),
-      )
-      .catch((err) => this.logger.error(`Audit log failed for sale cancel ${id}: ${err.message}`));
+      if (sale.status === SaleStatus.COMPLETED) {
+        throw new BadRequestException(
+          'Cannot cancel a completed sale. Use refund endpoint for completed sales.',
+        );
+      }
+      if (sale.status === SaleStatus.CANCELLED) {
+        return sale; // idempotent
+      }
 
-    return saved;
+      const oldStatus = sale.status;
+      sale.status = SaleStatus.CANCELLED;
+      sale.voidedById = userId;
+      sale.voidedAt = new Date();
+      if (reason) sale.voidReason = reason;
+      const saved = await saleRepo.save(sale);
+
+      // H1: audit log on cancellation
+      const auditRepo = manager.getRepository(AuditLog);
+      await auditRepo
+        .save(
+          auditRepo.create({
+            action: 'SALE_CANCELLED',
+            entityType: 'PharmacySale',
+            entityId: id,
+            userId,
+            oldValue: { status: oldStatus },
+            newValue: { status: SaleStatus.CANCELLED, reason: reason || null },
+            ...(tenantId ? { tenantId } : {}),
+          }),
+        )
+        .catch((err) =>
+          this.logger.error(`Audit log failed for sale cancel ${id}: ${err.message}`),
+        );
+
+      return saved;
+    });
   }
 
   async getDailySummary(storeId?: string, date?: string, facilityId?: string, tenantId?: string) {
@@ -1414,7 +1439,10 @@ export class PharmacyService {
       const existingWhere: any = { itemId, facilityId, batchNumber };
       if (tenantId) existingWhere.tenantId = tenantId;
       if (storeId) existingWhere.storeId = storeId;
-      const existing = await batchRepo.findOne({ where: existingWhere });
+      const existing = await batchRepo.findOne({
+        where: existingWhere,
+        lock: { mode: 'pessimistic_write' },
+      });
 
       let batch: BatchStockBalance;
       if (existing) {
@@ -1462,6 +1490,30 @@ export class PharmacyService {
         userId,
         tenantId,
       });
+
+      // Audit log for every batch receipt
+      const auditRepoGeneric = manager.getRepository(AuditLog);
+      await auditRepoGeneric
+        .save(
+          auditRepoGeneric.create({
+            action: 'BATCH_RECEIVED',
+            entityType: 'BatchStockBalance',
+            entityId: batch.id,
+            userId,
+            newValue: {
+              itemId,
+              itemName: item.name,
+              batchNumber,
+              quantity,
+              facilityId,
+              expiryDate: parsedExpiry.toISOString().slice(0, 10),
+            },
+            ...(tenantId ? { tenantId } : {}),
+          }),
+        )
+        .catch((err) =>
+          this.logger.error(`Batch receive audit failed for batch ${batch.id}: ${err.message}`),
+        );
 
       // P1: controlled-substance receipt audit. Narcotics inspectors require a
       // chain-of-custody record from receipt → dispense; we already log
@@ -1602,51 +1654,101 @@ export class PharmacyService {
     userId: string,
     notes?: string,
   ) {
-    // Check for existing active alert for same item+batch
-    const where: any = { itemId, facilityId, tenantId, status: ExpiryAlertStatus.NEAR_EXPIRY };
-    if (batchNumber) where.batchNumber = batchNumber;
+    return this.dataSource.transaction(async (manager) => {
+      const expiryAlertRepo = manager.getRepository(ExpiryAlert);
 
-    let alert = await this.expiryAlertRepo.findOne({ where });
+      // Check for existing active alert for same item+batch
+      const where: any = { itemId, facilityId, tenantId, status: ExpiryAlertStatus.NEAR_EXPIRY };
+      if (batchNumber) where.batchNumber = batchNumber;
 
-    if (alert) {
-      alert.status = ExpiryAlertStatus.QUARANTINED;
-      alert.actionTaken = 'quarantined';
-      alert.actionDate = new Date();
-      alert.actionBy = userId;
-      if (notes) alert.notes = notes;
-      return this.expiryAlertRepo.save(alert);
-    }
+      let alert = await expiryAlertRepo.findOne({ where });
 
-    // Create new expiry alert in quarantined state
-    const item = await this.inventoryRepo.findOne({ where: { id: itemId, tenantId } });
-    if (!item) throw new NotFoundException('Item not found');
+      if (alert) {
+        alert.status = ExpiryAlertStatus.QUARANTINED;
+        alert.actionTaken = 'quarantined';
+        alert.actionDate = new Date();
+        alert.actionBy = userId;
+        if (notes) alert.notes = notes;
 
-    // Get quantity from stock ledger
-    const stockQuery = this.movementRepo
-      .createQueryBuilder('sl')
-      .select('SUM(sl.quantity)', 'totalQty')
-      .where('sl.itemId = :itemId', { itemId })
-      .andWhere('sl.facilityId = :facilityId', { facilityId })
-      .andWhere('sl.tenantId = :tenantId', { tenantId });
-    if (batchNumber) stockQuery.andWhere('sl.batchNumber = :batchNumber', { batchNumber });
-    const stockResult = await stockQuery.getRawOne();
+        const saved = await expiryAlertRepo.save(alert);
 
-    alert = this.expiryAlertRepo.create({
-      itemId,
-      batchNumber: batchNumber || undefined,
-      expiryDate: new Date(),
-      alertDate: new Date(),
-      quantity: Number(stockResult?.totalQty || 0),
-      status: ExpiryAlertStatus.QUARANTINED,
-      actionTaken: 'quarantined',
-      actionDate: new Date(),
-      actionBy: userId,
-      notes: notes || undefined,
-      facilityId,
-      tenantId,
+        // Mark batch as quarantined within the same transaction
+        if (batchNumber) {
+          const batchWhere: any = { itemId, facilityId, batchNumber };
+          if (tenantId) batchWhere.tenantId = tenantId;
+          await manager
+            .getRepository(BatchStockBalance)
+            .update(batchWhere, { status: 'quarantined' });
+        }
+
+        await manager.getRepository(AuditLog).save(
+          manager.getRepository(AuditLog).create({
+            action: 'BATCH_QUARANTINED',
+            entityType: 'ExpiryAlert',
+            entityId: saved.id,
+            userId,
+            newValue: { itemId, batchNumber, facilityId, notes },
+            ...(tenantId ? { tenantId } : {}),
+          }),
+        );
+
+        return saved;
+      }
+
+      // Create new expiry alert in quarantined state
+      const item = await manager.getRepository(Item).findOne({ where: { id: itemId, tenantId } });
+      if (!item) throw new NotFoundException('Item not found');
+
+      // Get quantity from stock ledger
+      const stockQuery = manager
+        .getRepository(StockLedger)
+        .createQueryBuilder('sl')
+        .select('SUM(sl.quantity)', 'totalQty')
+        .where('sl.itemId = :itemId', { itemId })
+        .andWhere('sl.facilityId = :facilityId', { facilityId })
+        .andWhere('sl.tenantId = :tenantId', { tenantId });
+      if (batchNumber) stockQuery.andWhere('sl.batchNumber = :batchNumber', { batchNumber });
+      const stockResult = await stockQuery.getRawOne();
+
+      alert = expiryAlertRepo.create({
+        itemId,
+        batchNumber: batchNumber || undefined,
+        expiryDate: new Date(),
+        alertDate: new Date(),
+        quantity: Number(stockResult?.totalQty || 0),
+        status: ExpiryAlertStatus.QUARANTINED,
+        actionTaken: 'quarantined',
+        actionDate: new Date(),
+        actionBy: userId,
+        notes: notes || undefined,
+        facilityId,
+        tenantId,
+      });
+
+      const saved = await expiryAlertRepo.save(alert);
+
+      // Mark batch as quarantined within the same transaction
+      if (batchNumber) {
+        const batchWhere: any = { itemId, facilityId, batchNumber };
+        if (tenantId) batchWhere.tenantId = tenantId;
+        await manager
+          .getRepository(BatchStockBalance)
+          .update(batchWhere, { status: 'quarantined' });
+      }
+
+      await manager.getRepository(AuditLog).save(
+        manager.getRepository(AuditLog).create({
+          action: 'BATCH_QUARANTINED',
+          entityType: 'ExpiryAlert',
+          entityId: saved.id,
+          userId,
+          newValue: { itemId, batchNumber, facilityId, notes },
+          ...(tenantId ? { tenantId } : {}),
+        }),
+      );
+
+      return saved;
     });
-
-    return this.expiryAlertRepo.save(alert);
   }
 
   async processExpiredItem(
@@ -1658,24 +1760,50 @@ export class PharmacyService {
     batchNumber?: string,
     notes?: string,
   ) {
-    const where: any = {
-      itemId,
-      facilityId,
-      tenantId,
-      status: ExpiryAlertStatus.QUARANTINED,
-    };
-    if (batchNumber) where.batchNumber = batchNumber;
+    return this.dataSource.transaction(async (manager) => {
+      const expiryAlertRepo = manager.getRepository(ExpiryAlert);
 
-    const alert = await this.expiryAlertRepo.findOne({ where });
-    if (!alert) throw new NotFoundException('No quarantined alert found for this item');
+      const where: any = {
+        itemId,
+        facilityId,
+        tenantId,
+        status: ExpiryAlertStatus.QUARANTINED,
+      };
+      if (batchNumber) where.batchNumber = batchNumber;
 
-    alert.status = action === 'dispose' ? ExpiryAlertStatus.DISPOSED : ExpiryAlertStatus.RETURNED;
-    alert.actionTaken = action;
-    alert.actionDate = new Date();
-    alert.actionBy = userId;
-    if (notes) alert.notes = notes;
+      const alert = await expiryAlertRepo.findOne({ where });
+      if (!alert) throw new NotFoundException('No quarantined alert found for this item');
 
-    return this.expiryAlertRepo.save(alert);
+      const newStatus =
+        action === 'dispose' ? ExpiryAlertStatus.DISPOSED : ExpiryAlertStatus.RETURNED;
+      alert.status = newStatus;
+      alert.actionTaken = action;
+      alert.actionDate = new Date();
+      alert.actionBy = userId;
+      if (notes) alert.notes = notes;
+
+      const saved = await expiryAlertRepo.save(alert);
+
+      // Update batch status to expired (disposed/returned stock is no longer active)
+      if (batchNumber) {
+        const batchWhere: any = { itemId, facilityId, batchNumber };
+        if (tenantId) batchWhere.tenantId = tenantId;
+        await manager.getRepository(BatchStockBalance).update(batchWhere, { status: 'expired' });
+      }
+
+      await manager.getRepository(AuditLog).save(
+        manager.getRepository(AuditLog).create({
+          action: 'EXPIRED_ITEM_PROCESSED',
+          entityType: 'ExpiryAlert',
+          entityId: saved.id,
+          userId,
+          newValue: { itemId, batchNumber, facilityId, action, notes },
+          ...(tenantId ? { tenantId } : {}),
+        }),
+      );
+
+      return saved;
+    });
   }
 
   async getExpiryReport(tenantId: string, facilityId: string) {
@@ -1745,7 +1873,9 @@ export class PharmacyService {
 
     let reprintCount = 0;
     if (options.duplicate) {
-      const existing = await this.reprintRepo.findOne({ where: { saleId, ...(tenantId ? { tenantId } : {}) } });
+      const existing = await this.reprintRepo.findOne({
+        where: { saleId, ...(tenantId ? { tenantId } : {}) },
+      });
       if (existing) {
         existing.reprintCount += 1;
         existing.reprintedAt = new Date();
@@ -1771,8 +1901,19 @@ export class PharmacyService {
 
   async listReceiptHistory(
     tenantId: string,
-    query: { from?: string; to?: string; cashierId?: string; saleNumber?: string },
+    query: {
+      from?: string;
+      to?: string;
+      cashierId?: string;
+      saleNumber?: string;
+      page?: number;
+      limit?: number;
+    },
   ) {
+    const page = Math.max(query.page || 1, 1);
+    const limit = Math.min(Math.max(query.limit || 50, 1), 200);
+    const offset = (page - 1) * limit;
+
     const qb = this.saleRepo
       .createQueryBuilder('s')
       .leftJoinAndSelect('s.soldBy', 'user')
@@ -1780,14 +1921,15 @@ export class PharmacyService {
       .where('s.tenant_id = :tenantId', { tenantId })
       .andWhere('s.status = :status', { status: SaleStatus.COMPLETED })
       .orderBy('s.created_at', 'DESC')
-      .take(200);
+      .skip(offset)
+      .take(limit);
 
     if (query.from) qb.andWhere('s.created_at >= :from', { from: new Date(query.from) });
     if (query.to) qb.andWhere('s.created_at <= :to', { to: new Date(query.to) });
     if (query.cashierId) qb.andWhere('s.sold_by_id = :cashierId', { cashierId: query.cashierId });
     if (query.saleNumber) qb.andWhere('s.sale_number ILIKE :sn', { sn: `%${query.saleNumber}%` });
 
-    const sales = await qb.getMany();
+    const [sales, total] = await qb.getManyAndCount();
 
     const reprintMap = new Map<string, number>();
     if (sales.length > 0) {
@@ -1801,7 +1943,12 @@ export class PharmacyService {
       }
     }
 
-    return sales.map((s) => ({ ...s, reprintCount: reprintMap.get(s.id) || 0 }));
+    return {
+      data: sales.map((s) => ({ ...s, reprintCount: reprintMap.get(s.id) || 0 })),
+      total,
+      page,
+      limit,
+    };
   }
 
   // ─── C1: Patient recent purchases ─────────────────────────────────────────
@@ -1810,11 +1957,7 @@ export class PharmacyService {
    * Returns the last N pharmacy sales for a given patient.
    * Used by the POS "link patient" side panel.
    */
-  async getPatientRecentPurchases(
-    patientId: string,
-    tenantId: string,
-    limit = 10,
-  ) {
+  async getPatientRecentPurchases(patientId: string, tenantId: string, limit = 10) {
     const sales = await this.saleRepo.find({
       where: { patientId, tenantId, status: SaleStatus.COMPLETED },
       relations: ['items'],
@@ -1893,7 +2036,7 @@ export class PharmacyService {
       .getMany();
 
     // Build a lookup set for fast pair matching
-    const interactionMap = new Map<string, typeof interactions[0]>();
+    const interactionMap = new Map<string, (typeof interactions)[0]>();
     for (const ix of interactions) {
       // Normalise key so (a,b) and (b,a) resolve to the same entry
       const k1 = `${ix.drugAId}:${ix.drugBId}`;
@@ -1911,9 +2054,10 @@ export class PharmacyService {
         if (interaction) {
           const drug1Item = itemMap.get(aId) ?? historyItems.find((h) => h.id === aId);
           const drug2Item = itemMap.get(bId) ?? historyItems.find((h) => h.id === bId);
-          const drug2Source = itemIds.includes(bId) ? 'cart' as const : 'history' as const;
+          const drug2Source = itemIds.includes(bId) ? ('cart' as const) : ('history' as const);
 
-          const severity = interaction.severity === 'contraindicated' ? 'severe' : interaction.severity;
+          const severity =
+            interaction.severity === 'contraindicated' ? 'severe' : interaction.severity;
           warnings.push({
             severity,
             drug1: { id: aId, name: (drug1Item as any)?.name ?? aId },
@@ -1972,6 +2116,7 @@ export class PharmacyService {
       .leftJoinAndSelect('log.witness', 'witness')
       .where('log.facilityId = :facilityId', { facilityId: opts.facilityId });
 
+    if (opts.tenantId) qb.andWhere('log.tenant_id = :tenantId', { tenantId: opts.tenantId });
     if (opts.from) qb.andWhere('log.createdAt >= :from', { from: opts.from });
     if (opts.to) qb.andWhere('log.createdAt <= :to', { to: opts.to });
     if (opts.schedule) qb.andWhere('log.drugSchedule = :schedule', { schedule: opts.schedule });
@@ -1996,78 +2141,88 @@ export class PharmacyService {
     const itemIds = opts.counts.map((c) => c.itemId);
     if (itemIds.length === 0) throw new BadRequestException('No items provided');
 
-    // Fetch controlled items with their system stock
-    const items = await this.inventoryRepo
-      .createQueryBuilder('i')
-      .where('i.id IN (:...ids)', { ids: itemIds })
-      .andWhere('i.isControlled = true')
-      .getMany();
+    return this.dataSource.transaction(async (manager) => {
+      // Fetch controlled items with their system stock
+      const itemQb = manager
+        .getRepository(Item)
+        .createQueryBuilder('i')
+        .where('i.id IN (:...ids)', { ids: itemIds })
+        .andWhere('i.isControlled = true');
+      if (opts.tenantId) itemQb.andWhere('i.tenant_id = :tenantId', { tenantId: opts.tenantId });
+      const items = await itemQb.getMany();
 
-    const itemMap = new Map(items.map((i) => [i.id, i]));
+      const itemMap = new Map(items.map((i) => [i.id, i]));
 
-    // Fetch system stock balances for these items at this facility
-    const balances = await this.stockBalanceRepo
-      .createQueryBuilder('sb')
-      .where('sb.itemId IN (:...ids)', { ids: itemIds })
-      .andWhere('sb.facilityId = :facilityId', { facilityId: opts.facilityId })
-      .getMany();
-    const balanceMap = new Map(balances.map((b) => [b.itemId, Number(b.totalQuantity)]));
+      // Fetch system stock balances for these items at this facility (locked for consistency)
+      const balQb = manager
+        .getRepository(StockBalance)
+        .createQueryBuilder('sb')
+        .setLock('pessimistic_read')
+        .where('sb.itemId IN (:...ids)', { ids: itemIds })
+        .andWhere('sb.facilityId = :facilityId', { facilityId: opts.facilityId });
+      if (opts.tenantId) balQb.andWhere('sb.tenant_id = :tenantId', { tenantId: opts.tenantId });
+      const balances = await balQb.getMany();
+      const balanceMap = new Map(balances.map((b) => [b.itemId, Number(b.totalQuantity)]));
 
-    const variances: {
-      itemId: string;
-      itemName: string;
-      systemBalance: number;
-      physicalCount: number;
-      variance: number;
-      status: 'match' | 'shortage' | 'overage';
-    }[] = [];
+      const variances: {
+        itemId: string;
+        itemName: string;
+        systemBalance: number;
+        physicalCount: number;
+        variance: number;
+        status: 'match' | 'shortage' | 'overage';
+      }[] = [];
 
-    for (const count of opts.counts) {
-      const item = itemMap.get(count.itemId);
-      if (!item) continue; // skip non-controlled or not-found
+      for (const count of opts.counts) {
+        const item = itemMap.get(count.itemId);
+        if (!item) continue; // skip non-controlled or not-found
 
-      const systemBalance = balanceMap.get(count.itemId) || 0;
-      const variance = count.physicalCount - systemBalance;
-      variances.push({
-        itemId: count.itemId,
-        itemName: item.name,
-        systemBalance,
-        physicalCount: count.physicalCount,
-        variance,
-        status: variance === 0 ? 'match' : variance < 0 ? 'shortage' : 'overage',
-      });
-    }
+        const systemBalance = balanceMap.get(count.itemId) || 0;
+        const variance = count.physicalCount - systemBalance;
+        variances.push({
+          itemId: count.itemId,
+          itemName: item.name,
+          systemBalance,
+          physicalCount: count.physicalCount,
+          variance,
+          status: variance === 0 ? 'match' : variance < 0 ? 'shortage' : 'overage',
+        });
+      }
 
-    // Log discrepancies to audit
-    const discrepancies = variances.filter((v) => v.status !== 'match');
-    if (discrepancies.length > 0) {
-      await this.auditLogRepo.save({
-        action: 'CONTROLLED_SUBSTANCE_RECONCILIATION',
-        entityType: 'controlled_substance_reconciliation',
-        userId: opts.userId,
-        tenantId: opts.tenantId,
-        newValue: {
-          facilityId: opts.facilityId,
-          notes: opts.notes,
-          discrepancies,
-          totalItems: variances.length,
-          matchCount: variances.length - discrepancies.length,
-        },
-      });
-      this.logger.warn(
-        `Controlled substance reconciliation: ${discrepancies.length} discrepancies found at facility ${opts.facilityId}`,
-      );
-    }
+      // Log discrepancies to audit
+      const discrepancies = variances.filter((v) => v.status !== 'match');
+      if (discrepancies.length > 0) {
+        const auditRepo = manager.getRepository(AuditLog);
+        await auditRepo.save(
+          auditRepo.create({
+            action: 'CONTROLLED_SUBSTANCE_RECONCILED',
+            entityType: 'controlled_substance_reconciliation',
+            userId: opts.userId,
+            ...(opts.tenantId ? { tenantId: opts.tenantId } : {}),
+            newValue: {
+              facilityId: opts.facilityId,
+              notes: opts.notes,
+              discrepancies,
+              totalItems: variances.length,
+              matchCount: variances.length - discrepancies.length,
+            },
+          }),
+        );
+        this.logger.warn(
+          `Controlled substance reconciliation: ${discrepancies.length} discrepancies found at facility ${opts.facilityId}`,
+        );
+      }
 
-    return {
-      reconciledAt: new Date().toISOString(),
-      facilityId: opts.facilityId,
-      totalItems: variances.length,
-      matches: variances.filter((v) => v.status === 'match').length,
-      shortages: variances.filter((v) => v.status === 'shortage').length,
-      overages: variances.filter((v) => v.status === 'overage').length,
-      items: variances,
-    };
+      return {
+        reconciledAt: new Date().toISOString(),
+        facilityId: opts.facilityId,
+        totalItems: variances.length,
+        matches: variances.filter((v) => v.status === 'match').length,
+        shortages: variances.filter((v) => v.status === 'shortage').length,
+        overages: variances.filter((v) => v.status === 'overage').length,
+        items: variances,
+      };
+    });
   }
 }
 

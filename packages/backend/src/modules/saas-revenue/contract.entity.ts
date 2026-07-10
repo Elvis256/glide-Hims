@@ -23,7 +23,9 @@ export class SaasContract {
   @Column({ length: 30 }) @Index({ unique: true }) contractNumber: string;
 
   // FKs
-  @Column({ type: 'uuid', nullable: true, name: 'quotation_id' }) @Index() quotationId: string | null;
+  @Column({ type: 'uuid', nullable: true, name: 'quotation_id' }) @Index() quotationId:
+    | string
+    | null;
   @Column({ type: 'uuid', nullable: true, name: 'subscription_id' }) subscriptionId: string | null;
   @Column({ type: 'uuid', nullable: true, name: 'tenant_id' }) @Index() tenantId: string | null;
 

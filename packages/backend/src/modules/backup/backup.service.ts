@@ -1,4 +1,10 @@
-import { Injectable, Logger, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, LessThan } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -188,10 +194,7 @@ export class BackupService {
 
         try {
           // Delete existing tenant data for this table
-          await queryRunner.query(
-            `DELETE FROM "${table}" WHERE tenant_id = $1`,
-            [tenantId],
-          );
+          await queryRunner.query(`DELETE FROM "${table}" WHERE tenant_id = $1`, [tenantId]);
 
           // Re-insert rows from backup
           for (const row of rows) {
@@ -295,7 +298,10 @@ export class BackupService {
    * instead we surface a download URL, file checksum, and copy-paste commands the
    * on-prem operator runs locally to restore into the tenant box.
    */
-  async getRestoreInstructions(snapshotId: string, downloadBaseUrl: string): Promise<{
+  async getRestoreInstructions(
+    snapshotId: string,
+    downloadBaseUrl: string,
+  ): Promise<{
     snapshotId: string;
     filename: string;
     sizeBytes: number;
@@ -307,7 +313,8 @@ export class BackupService {
   }> {
     const backup = await this.findById(snapshotId);
     if (!backup) throw new NotFoundException('Snapshot not found');
-    if (!fs.existsSync(backup.filePath)) throw new NotFoundException('Snapshot file missing on disk');
+    if (!fs.existsSync(backup.filePath))
+      throw new NotFoundException('Snapshot file missing on disk');
 
     const buf = fs.readFileSync(backup.filePath);
     const sha256 = crypto.createHash('sha256').update(buf).digest('hex');
@@ -316,7 +323,8 @@ export class BackupService {
     let detectedFormat: 'sql' | 'pg_custom' | 'tar' | 'json' | 'unknown' = 'unknown';
     if (lower.endsWith('.sql')) detectedFormat = 'sql';
     else if (lower.endsWith('.dump') || lower.endsWith('.pgdump')) detectedFormat = 'pg_custom';
-    else if (lower.endsWith('.tar') || lower.endsWith('.tar.gz') || lower.endsWith('.tgz')) detectedFormat = 'tar';
+    else if (lower.endsWith('.tar') || lower.endsWith('.tar.gz') || lower.endsWith('.tgz'))
+      detectedFormat = 'tar';
     else if (lower.endsWith('.json')) detectedFormat = 'json';
 
     const downloadUrl = `${downloadBaseUrl.replace(/\/+$/, '')}/api/v1/deployments/snapshots/${snapshotId}/download`;
@@ -331,7 +339,10 @@ export class BackupService {
         label: 'Download (authenticated)',
         command: `curl -L -o ${backup.filename} -H "Cookie: $GLIDE_AUTH_COOKIE" "${downloadUrl}"`,
       },
-      { label: 'Verify checksum', command: `echo "${sha256}  ${backup.filename}" | shasum -a 256 -c` },
+      {
+        label: 'Verify checksum',
+        command: `echo "${sha256}  ${backup.filename}" | shasum -a 256 -c`,
+      },
     ];
 
     if (detectedFormat === 'sql') {
@@ -359,7 +370,9 @@ export class BackupService {
         command: `node ./scripts/restore-json-snapshot.js --tenant=<tenant-id> --file=${backup.filename}`,
       });
     } else {
-      warnings.push('Unrecognised file extension — confirm the snapshot format manually before restoring.');
+      warnings.push(
+        'Unrecognised file extension — confirm the snapshot format manually before restoring.',
+      );
     }
 
     this.logger.log(`Restore instructions issued for snapshot ${snapshotId} (${backup.filename})`);
@@ -567,10 +580,7 @@ export class BackupService {
       for (const schedule of schedules) {
         if (!schedule.tenantId) continue;
         const current = retentionByTenant.get(schedule.tenantId) ?? Infinity;
-        retentionByTenant.set(
-          schedule.tenantId,
-          Math.min(current, schedule.retentionDays),
-        );
+        retentionByTenant.set(schedule.tenantId, Math.min(current, schedule.retentionDays));
       }
 
       let totalPurged = 0;

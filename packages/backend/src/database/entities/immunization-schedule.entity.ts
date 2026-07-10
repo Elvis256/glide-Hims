@@ -63,6 +63,7 @@ export enum AdverseReactionSeverity {
 }
 
 @Entity('immunization_schedules')
+@Index(['facilityId', 'status', 'dueDate'])
 export class ImmunizationSchedule {
   @PrimaryGeneratedColumn('uuid')
   id: string;
