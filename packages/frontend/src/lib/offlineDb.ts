@@ -15,6 +15,7 @@ export interface PendingSale {
   status: 'pending' | 'syncing' | 'synced' | 'error';
   errorReason?: string;
   attempts: number;
+  serverSaleId?: string; // Tracks partial sync (created but not completed)
 }
 
 export interface OfflineSalePayload {

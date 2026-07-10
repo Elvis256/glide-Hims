@@ -103,31 +103,31 @@ export default function EncounterDetailPage() {
   const currentStepIndex = statusSteps.findIndex(s => s.key === encounter.status);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 animate-fade-in pb-10">
       {/* Header */}
       <div className="flex items-center gap-4">
         <button
           onClick={() => navigate('/encounters')}
-          className="p-2 hover:bg-gray-100 rounded-lg"
+          className="p-3 bg-surface-100 hover:bg-surface-200 text-surface-600 hover:text-surface-900 rounded-xl transition-all hover:-translate-x-1"
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
         <div className="flex-1">
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold text-gray-900">{encounter.patient.fullName}</h1>
-            <span className="font-mono text-sm bg-blue-50 text-blue-700 px-2 py-1 rounded">
+          <h1 className="text-3xl font-bold text-surface-900 tracking-tight">{encounter.patient.fullName}</h1>
+            <span className="font-mono text-sm font-semibold bg-brand-50 text-brand-700 px-2.5 py-1 rounded-lg border border-brand-100">
               {encounter.visitNumber}
             </span>
           </div>
-          <p className="text-gray-500">
-            MRN: {encounter.patient.mrn} • {encounter.type.toUpperCase()} Visit
+          <p className="text-surface-500 mt-2 font-medium">
+            <span className="text-surface-900 font-semibold">MRN: {encounter.patient.mrn}</span> • {encounter.type.toUpperCase()} Visit
             {encounter.chiefComplaint && ` • ${encounter.chiefComplaint}`}
           </p>
         </div>
       </div>
 
       {/* Status Progress */}
-      <div className="card">
+      <div className="card border-none px-8 py-6">
         <div className="flex items-center justify-between">
           {statusSteps.map((step, index) => {
             const isCompleted = index < currentStepIndex;
@@ -137,19 +137,19 @@ export default function EncounterDetailPage() {
               <div key={step.key} className="flex-1 flex items-center">
                 <div className="flex flex-col items-center flex-1">
                   <div
-                    className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                    className={`w-10 h-10 rounded-full flex items-center justify-center font-bold shadow-sm transition-colors ${
                       isCompleted
-                        ? 'bg-green-500 text-white'
+                        ? 'bg-emerald-500 text-white shadow-emerald-500/30'
                         : isCurrent
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-gray-200 text-gray-400'
+                        ? 'bg-brand-500 text-white shadow-brand-500/30 ring-4 ring-brand-50'
+                        : 'bg-surface-100 text-surface-400 border border-surface-200'
                     }`}
                   >
                     {isCompleted ? <CheckCircle className="w-5 h-5" /> : index + 1}
                   </div>
                   <span
-                    className={`text-xs mt-1 ${
-                      isCompleted || isCurrent ? 'text-gray-900 font-medium' : 'text-gray-400'
+                    className={`text-xs mt-3 ${
+                      isCompleted || isCurrent ? 'text-surface-900 font-bold' : 'text-surface-400 font-medium'
                     }`}
                   >
                     {step.label}
@@ -157,8 +157,8 @@ export default function EncounterDetailPage() {
                 </div>
                 {index < statusSteps.length - 1 && (
                   <div
-                    className={`h-1 flex-1 mx-2 rounded ${
-                      index < currentStepIndex ? 'bg-green-500' : 'bg-gray-200'
+                    className={`h-1 flex-1 mx-3 rounded-full ${
+                      index < currentStepIndex ? 'bg-emerald-400' : 'bg-surface-200'
                     }`}
                   />
                 )}
@@ -182,10 +182,10 @@ export default function EncounterDetailPage() {
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key as any)}
-              className={`flex items-center gap-2 pb-3 px-1 border-b-2 transition-colors ${
+              className={`flex items-center gap-2 pb-4 px-2 border-b-2 font-semibold transition-all ${
                 activeTab === tab.key
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  ? 'border-brand-600 text-brand-600'
+                  : 'border-transparent text-surface-500 hover:text-surface-800 hover:border-surface-300'
               }`}
             >
               <tab.icon className="w-4 h-4" />

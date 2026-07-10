@@ -1,10 +1,10 @@
 import { lazy } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route } from 'react-router-dom';
 import ModuleRoute from '../components/ModuleRoute';
 import RoleRoute, {
-  AdminRoute, ClinicalRoute, FinanceRoute, LabTechRoute,
+  AdminRoute, ClinicalRoute, FinanceRoute,
   PharmacistRoute, DoctorRoute, NurseRoute, CashierRoute,
-  StoreKeeperRoute, RadiologyRoute, InsuranceRoute, ReceptionistRoute
+  StoreKeeperRoute, InsuranceRoute, ReceptionistRoute
 } from '../components/RoleRoute';
 import { ROLES } from '../components/RoleRoute';
 import ProtectedRoute from '../components/ProtectedRoute';
@@ -32,10 +32,6 @@ const ViewAppointmentsPage = lazy(() => import('../pages/ViewAppointmentsPage'))
 const DoctorSchedulesPage = lazy(() => import('../pages/DoctorSchedulesPage'));
 const ManageAppointmentsPage = lazy(() => import('../pages/ManageAppointmentsPage'));
 const InventoryPage = lazy(() => import('../pages/InventoryPage'));
-const RadiologyPage = lazy(() => import('../pages/RadiologyPage'));
-const EmergencyPage = lazy(() => import('../pages/EmergencyPage'));
-const IPDTheatrePage = lazy(() => import('../pages/ipd/TheatrePage'));
-const IPDMaternityPage = lazy(() => import('../pages/ipd/MaternityPage'));
 const InsuranceDashboardPage = lazy(() => import('../pages/insurance/InsuranceDashboardPage'));
 const InsurancePage = lazy(() => import('../pages/InsurancePage'));
 const MembershipPage = lazy(() => import('../pages/MembershipPage'));
@@ -53,7 +49,6 @@ const DrugInteractionsDatabasePage = lazy(() => import('../pages/drug-management
 const UsersPage = lazy(() => import('../pages/UsersPage'));
 const RolesPage = lazy(() => import('../pages/RolesPage'));
 const CashierPage = lazy(() => import('../pages/CashierPage'));
-const LabPage = lazy(() => import('../pages/LabPage'));
 const WardManagementPage = lazy(() => import('../pages/WardManagementPage'));
 const FinancePage = lazy(() => import('../pages/FinancePage'));
 const AnalyticsPage = lazy(() => import('../pages/AnalyticsPage'));
@@ -61,8 +56,6 @@ const ServicesPage = lazy(() => import('../pages/ServicesPage'));
 const OrdersPage = lazy(() => import('../pages/OrdersPage'));
 const VitalsPage = lazy(() => import('../pages/VitalsPage'));
 const TreatmentPlansPage = lazy(() => import('../pages/TreatmentPlansPage'));
-const ControlledSubstancesRegisterPage = lazy(() => import('../pages/pharmacy/ControlledSubstancesRegisterPage'));
-const SupplierRankingsPage = lazy(() => import('../pages/pharmacy/SupplierRankingsPage'));
 const ItemClassificationsPage = lazy(() => import('../pages/settings/ItemClassificationsPage'));
 const OfflineQueuePage = lazy(() => import('../pages/sync/OfflineQueuePage'));
 const ProviderDirectoryPage = lazy(() => import('../pages/providers/ProviderDirectoryPage'));
@@ -72,44 +65,24 @@ const AllergyClassesPage = lazy(() => import('../pages/drug-management/AllergyCl
 export default function CoreRoutes() {
   return (
     <Routes>
-<Route path="/pharmacy/controlled-register" element={<ModuleRoute module="pharmacy"><PharmacistRoute><ControlledSubstancesRegisterPage /></PharmacistRoute></ModuleRoute>} />
-                
-                {/* Pharmacy procurement & suppliers — audit Phase 3.1: redirect to canonical /procurement/* */}
-                <Route path="/pharmacy/requisitions" element={<Navigate to="/procurement/requisitions" replace />} />
-                <Route path="/pharmacy/rfq" element={<Navigate to="/procurement/rfq" replace />} />
-                <Route path="/pharmacy/quotes/compare" element={<Navigate to="/procurement/quotes/compare" replace />} />
-                <Route path="/pharmacy/po" element={<Navigate to="/procurement/orders" replace />} />
-                <Route path="/pharmacy/grn" element={<Navigate to="/procurement/grn" replace />} />
-                <Route path="/pharmacy/invoices/match" element={<Navigate to="/procurement/invoices/match" replace />} />
-                <Route path="/pharmacy/supplier-payments" element={<Navigate to="/procurement/vendors/payments" replace />} />
-                <Route path="/pharmacy/suppliers" element={<Navigate to="/procurement/vendors" replace />} />
-                <Route path="/pharmacy/suppliers/contracts" element={<Navigate to="/procurement/vendors/contracts" replace />} />
-                <Route path="/pharmacy/suppliers/ratings" element={<Navigate to="/procurement/vendors/ratings" replace />} />
-                <Route path="/pharmacy/suppliers/prices" element={<Navigate to="/procurement/vendors/prices" replace />} />
-                <Route path="/pharmacy/supplier-rankings" element={<ModuleRoute module="pharmacy"><PharmacistRoute><SupplierRankingsPage /></PharmacistRoute></ModuleRoute>} />
+{/* Pharmacy routes moved to PharmacyRoutes */}
                 
                 
                 
                 
                 
                 
-                {/* /stores/expiry/{soon,expired} merged into /stores/expiry — page already filters internally (audit Phase 1.5) */}
-                <Route path="/stores/expiry/soon" element={<Navigate to="/stores/expiry?filter=soon" replace />} />
-                <Route path="/stores/expiry/expired" element={<Navigate to="/stores/expiry?filter=expired" replace />} />
+                {/* Stores expiry redirects moved to StoresRoutes */}
                 <Route path="/settings/classifications" element={<ModuleRoute module="stores"><AdminRoute><ItemClassificationsPage /></AdminRoute></ModuleRoute>} />
                 
                 {/* OPD */}
                 <Route path="/encounters/:id" element={<ModuleRoute module="doctors"><ClinicalRoute><EncounterDetailPage /></ClinicalRoute></ModuleRoute>} />
                 {/* Clinical */}
-                <Route path="/pharmacy" element={<Navigate to="/pharmacy/dashboard" replace />} />
                 <Route path="/cashier" element={<ModuleRoute module="billing"><CashierRoute><CashierPage /></CashierRoute></ModuleRoute>} />
                 <Route path="/inventory" element={<ModuleRoute module="stores"><StoreKeeperRoute><InventoryPage /></StoreKeeperRoute></ModuleRoute>} />
-                <Route path="/lab" element={<ModuleRoute module="diagnostics"><LabTechRoute><LabPage /></LabTechRoute></ModuleRoute>} />
-                <Route path="/radiology" element={<ModuleRoute module="diagnostics"><RadiologyRoute><RadiologyPage /></RadiologyRoute></ModuleRoute>} />
+                {/* /lab and /radiology handled by LaboratoryRoutes and RadiologyRoutes index routes */}
                 <Route path="/wards" element={<ModuleRoute module="ipd"><ClinicalRoute><WardManagementPage /></ClinicalRoute></ModuleRoute>} />
-                <Route path="/emergency" element={<ModuleRoute module="emergency"><ClinicalRoute><EmergencyPage /></ClinicalRoute></ModuleRoute>} />
-                <Route path="/theatre" element={<ModuleRoute module="ipd"><DoctorRoute><IPDTheatrePage /></DoctorRoute></ModuleRoute>} />
-                <Route path="/maternity" element={<ModuleRoute module="ipd"><ClinicalRoute><IPDMaternityPage /></ClinicalRoute></ModuleRoute>} />
+                {/* /emergency handled by EmergencyRoutes index; /theatre and /maternity handled by IPDRoutes */}
                 {/* Admin & Finance */}
                 <Route path="/hr/*" element={<HRRoutes />} />
                 <Route path="/finance" element={<ModuleRoute module="finance"><FinanceRoute><FinancePage /></FinanceRoute></ModuleRoute>} />
@@ -118,7 +91,7 @@ export default function CoreRoutes() {
                 <Route path="/analytics" element={<AdminRoute><AnalyticsPage /></AdminRoute>} />
                 <Route path="/membership" element={<ModuleRoute module="billing"><AdminRoute><MembershipPage /></AdminRoute></ModuleRoute>} />
                 <Route path="/services" element={<AdminRoute><ServicesPage /></AdminRoute>} />
-                <Route path="/stores" element={<Navigate to="/inventory" replace />} />
+                {/* /stores handled by StoresRoutes index redirect */}
                 <Route path="/orders" element={<ModuleRoute module="doctors"><DoctorRoute><OrdersPage /></DoctorRoute></ModuleRoute>} />
                 <Route path="/tenants" element={<AdminRoute><TenantsPage /></AdminRoute>} />
                 <Route path="/vitals" element={<ModuleRoute module="nursing"><ClinicalRoute><VitalsPage /></ClinicalRoute></ModuleRoute>} />
