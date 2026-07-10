@@ -262,22 +262,46 @@ const defaultPermissions = [
   { code: 'assets.create', name: 'Create Assets', module: 'assets' },
   { code: 'assets.update', name: 'Update Assets', module: 'assets' },
   { code: 'assets.delete', name: 'Delete Assets', module: 'assets' },
-  { code: 'assets.categories.manage', name: 'Manage Asset Categories (taxonomy)', module: 'assets' },
+  {
+    code: 'assets.categories.manage',
+    name: 'Manage Asset Categories (taxonomy)',
+    module: 'assets',
+  },
   { code: 'assets.depreciation.run', name: 'Run Monthly Depreciation', module: 'assets' },
   { code: 'assets.maintenance.record', name: 'Record Asset Maintenance', module: 'assets' },
   { code: 'assets.calibration.record', name: 'Record Equipment Calibration', module: 'assets' },
   { code: 'assets.transfer.initiate', name: 'Initiate Asset Transfer', module: 'assets' },
   { code: 'assets.transfer.approve', name: 'Approve Asset Transfer (any stage)', module: 'assets' },
-  { code: 'assets.transfer.approve.origin', name: 'Approve Transfer (Origin Dept Head)', module: 'assets' },
-  { code: 'assets.transfer.approve.receiving', name: 'Approve Transfer (Receiving Dept Head)', module: 'assets' },
-  { code: 'assets.transfer.approve.store', name: 'Approve Transfer (Store Keeper)', module: 'assets' },
+  {
+    code: 'assets.transfer.approve.origin',
+    name: 'Approve Transfer (Origin Dept Head)',
+    module: 'assets',
+  },
+  {
+    code: 'assets.transfer.approve.receiving',
+    name: 'Approve Transfer (Receiving Dept Head)',
+    module: 'assets',
+  },
+  {
+    code: 'assets.transfer.approve.store',
+    name: 'Approve Transfer (Store Keeper)',
+    module: 'assets',
+  },
   { code: 'assets.transfer.complete', name: 'Complete Asset Transfer / Receipt', module: 'assets' },
   { code: 'assets.allocation.request', name: 'Request Asset Allocation', module: 'assets' },
-  { code: 'assets.allocation.approve', name: 'Approve Asset Allocation (Dept Head)', module: 'assets' },
+  {
+    code: 'assets.allocation.approve',
+    name: 'Approve Asset Allocation (Dept Head)',
+    module: 'assets',
+  },
   { code: 'assets.allocation.issue', name: 'Issue Allocated Asset', module: 'assets' },
   { code: 'assets.allocation.return', name: 'Return Allocated Asset', module: 'assets' },
   { code: 'assets.disposal.request', name: 'Request Asset Disposal', module: 'assets' },
-  { code: 'assets.disposal.biomed_review', name: 'Biomed Engineer Disposal Review', module: 'assets' },
+  {
+    code: 'assets.disposal.biomed_review',
+    name: 'Biomed Engineer Disposal Review',
+    module: 'assets',
+  },
   { code: 'assets.disposal.committee', name: 'Disposal Committee Decision', module: 'assets' },
   { code: 'assets.disposal.complete', name: 'Complete Asset Disposal', module: 'assets' },
   { code: 'assets.audit.read', name: 'View Asset Audit Trail', module: 'assets' },
@@ -333,7 +357,11 @@ const defaultPermissions = [
 
   // Reports
   { code: 'reports.read', name: 'View Reports', module: 'reports' },
-  { code: 'reports.statutory.read', name: 'View Statutory Reports (HMIS108/122/eIDSR/mTrac)', module: 'reports' },
+  {
+    code: 'reports.statutory.read',
+    name: 'View Statutory Reports (HMIS108/122/eIDSR/mTrac)',
+    module: 'reports',
+  },
 
   // Admin
   { code: 'admin.read', name: 'View Admin Dashboard', module: 'admin' },
@@ -364,7 +392,11 @@ const defaultPermissions = [
   { code: 'finance.journals.read', name: 'View Journal Entries', module: 'finance' },
   { code: 'finance.journals.create', name: 'Create Journal Entries', module: 'finance' },
   { code: 'finance.journals.post', name: 'Post Journal Entries', module: 'finance' },
-  { code: 'finance.journals.submit', name: 'Submit Journal Entries for Approval', module: 'finance' },
+  {
+    code: 'finance.journals.submit',
+    name: 'Submit Journal Entries for Approval',
+    module: 'finance',
+  },
   { code: 'finance.journals.approve', name: 'Approve Journal Entries', module: 'finance' },
   { code: 'finance.journals.reverse', name: 'Reverse Posted Journal Entries', module: 'finance' },
   { code: 'finance.periods.read', name: 'View Fiscal Periods', module: 'finance' },
@@ -373,7 +405,11 @@ const defaultPermissions = [
   { code: 'finance.periods.open', name: 'Re-open Closed Fiscal Periods', module: 'finance' },
   { code: 'finance.periods.lock', name: 'Lock Fiscal Periods', module: 'finance' },
   { code: 'finance.reports.read', name: 'View Financial Reports', module: 'finance' },
-  { code: 'finance.admin', name: 'Finance Administration (cleanup, integrity, compliance)', module: 'finance' },
+  {
+    code: 'finance.admin',
+    name: 'Finance Administration (cleanup, integrity, compliance)',
+    module: 'finance',
+  },
 
   // Insurance Sub-permissions (granular)
   { code: 'insurance.claims.read', name: 'View Insurance Claims', module: 'insurance' },
@@ -435,10 +471,28 @@ const defaultRoles = [
   { name: 'HR Manager', description: 'Human resources management', isSystemRole: true },
   { name: 'Radiologist', description: 'Radiology staff', isSystemRole: true },
   { name: 'Accountant', description: 'Finance and accounting staff', isSystemRole: true },
-  { name: 'Biomed Engineer', description: 'Biomedical engineering — calibration, medical equipment review & disposal sign-off', isSystemRole: true },
-  { name: 'Facility Manager', description: 'Facility / asset operations oversight', isSystemRole: true },
-  { name: 'Auditor', description: 'Read-only access to audit trails and reports for compliance review', isSystemRole: true },
-  { name: 'Department Head', description: 'Heads a clinical or operational department; approves allocations and originating transfers', isSystemRole: true },
+  {
+    name: 'Biomed Engineer',
+    description:
+      'Biomedical engineering — calibration, medical equipment review & disposal sign-off',
+    isSystemRole: true,
+  },
+  {
+    name: 'Facility Manager',
+    description: 'Facility / asset operations oversight',
+    isSystemRole: true,
+  },
+  {
+    name: 'Auditor',
+    description: 'Read-only access to audit trails and reports for compliance review',
+    isSystemRole: true,
+  },
+  {
+    name: 'Department Head',
+    description:
+      'Heads a clinical or operational department; approves allocations and originating transfers',
+    isSystemRole: true,
+  },
 ];
 
 export async function seed(dataSource: DataSource) {
@@ -598,7 +652,8 @@ export async function seed(dataSource: DataSource) {
       'stores.read',
       'billing.read',
     ],
-    Nurse: [      'facilities.read',
+    Nurse: [
+      'facilities.read',
       'dashboard.read',
       'patients.read',
       'patients.update',
@@ -667,7 +722,8 @@ export async function seed(dataSource: DataSource) {
       'triage.read',
       'services.read',
     ],
-    'Lab Technician': [      'facilities.read',
+    'Lab Technician': [
+      'facilities.read',
       'dashboard.read',
       'patients.read',
       'encounters.read',

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import * as crypto from 'crypto';
 import { AuditLog } from '../../database/entities/audit-log.entity';
 
 @Injectable()
@@ -29,7 +30,38 @@ export class AuditLogService {
     attemptedIdentifier?: string;
     errorMessage?: string;
   }): Promise<AuditLog> {
-    return this.auditLogRepository.save(this.auditLogRepository.create(data));
+    const previousLog = await this.auditLogRepository.findOne({
+      where: {},
+      order: { createdAt: 'DESC' },
+      select: ['hash'],
+    });
+
+    const previousHash = previousLog?.hash || undefined;
+
+    // Create a deterministic payload string for hashing
+    const payloadString = JSON.stringify({
+      action: data.action,
+      entityType: data.entityType,
+      entityId: data.entityId,
+      userId: data.userId,
+      tenantId: data.tenantId,
+      oldValue: data.oldValue || null,
+      newValue: data.newValue || null,
+    });
+
+    const hash = crypto
+      .createHash('sha256')
+      .update(payloadString)
+      .update(previousHash || 'genesis')
+      .digest('hex');
+
+    return this.auditLogRepository.save(
+      this.auditLogRepository.create({
+        ...data,
+        hash,
+        previousHash,
+      }),
+    );
   }
 
   async findByEntity(entityType: string, entityId: string, tenantId?: string) {
@@ -84,9 +116,13 @@ export class AuditLogService {
       qb.andWhere('log.action = :action', { action: filters.action });
     }
     if (filters.entityType) {
-      const types = filters.entityType.split(',').map((s) => s.trim()).filter(Boolean);
+      const types = filters.entityType
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
       if (types.length === 1) qb.andWhere('log.entityType = :entityType', { entityType: types[0] });
-      else if (types.length > 1) qb.andWhere('log.entityType IN (:...entityTypes)', { entityTypes: types });
+      else if (types.length > 1)
+        qb.andWhere('log.entityType IN (:...entityTypes)', { entityTypes: types });
     }
     if (filters.entityId) {
       qb.andWhere('log.entityId = :entityId', { entityId: filters.entityId });

@@ -132,12 +132,8 @@ describe('EmergencyService', () => {
     };
 
     // First save call is for the encounter, second is for the emergency case
-    mockManager.create
-      .mockReturnValueOnce(fakeEncounter)
-      .mockReturnValueOnce(fakeCase);
-    mockManager.save
-      .mockResolvedValueOnce(fakeEncounter)
-      .mockResolvedValueOnce(fakeCase);
+    mockManager.create.mockReturnValueOnce(fakeEncounter).mockReturnValueOnce(fakeCase);
+    mockManager.save.mockResolvedValueOnce(fakeEncounter).mockResolvedValueOnce(fakeCase);
 
     const dto = {
       patientId: PATIENT_ID,
@@ -171,9 +167,9 @@ describe('EmergencyService', () => {
       chiefComplaint: 'Headache',
     } as any;
 
-    await expect(
-      service.registerCase(dto, FACILITY_ID, USER_ID, TENANT_ID),
-    ).rejects.toThrow(NotFoundException);
+    await expect(service.registerCase(dto, FACILITY_ID, USER_ID, TENANT_ID)).rejects.toThrow(
+      NotFoundException,
+    );
   });
 
   // =====================================================================
@@ -245,9 +241,9 @@ describe('EmergencyService', () => {
 
     const dto = { triageLevel: TriageLevel.URGENT } as any;
 
-    await expect(
-      service.triageCase(CASE_ID, dto, USER_ID, TENANT_ID),
-    ).rejects.toThrow(BadRequestException);
+    await expect(service.triageCase(CASE_ID, dto, USER_ID, TENANT_ID)).rejects.toThrow(
+      BadRequestException,
+    );
   });
 
   // =====================================================================
@@ -303,9 +299,9 @@ describe('EmergencyService', () => {
 
     const dto = { attendingDoctorId: 'doctor-001' } as any;
 
-    await expect(
-      service.startTreatment(CASE_ID, dto, USER_ID, TENANT_ID),
-    ).rejects.toThrow(BadRequestException);
+    await expect(service.startTreatment(CASE_ID, dto, USER_ID, TENANT_ID)).rejects.toThrow(
+      BadRequestException,
+    );
   });
 
   // =====================================================================
@@ -361,9 +357,9 @@ describe('EmergencyService', () => {
 
     const dto = { primaryDiagnosis: 'N/A' } as any;
 
-    await expect(
-      service.dischargeCase(CASE_ID, dto, TENANT_ID),
-    ).rejects.toThrow(BadRequestException);
+    await expect(service.dischargeCase(CASE_ID, dto, TENANT_ID)).rejects.toThrow(
+      BadRequestException,
+    );
   });
 
   // =====================================================================
@@ -378,9 +374,9 @@ describe('EmergencyService', () => {
 
     const dto = { primaryDiagnosis: 'N/A' } as any;
 
-    await expect(
-      service.dischargeCase(CASE_ID, dto, TENANT_ID),
-    ).rejects.toThrow(BadRequestException);
+    await expect(service.dischargeCase(CASE_ID, dto, TENANT_ID)).rejects.toThrow(
+      BadRequestException,
+    );
   });
 
   // =====================================================================
@@ -391,9 +387,9 @@ describe('EmergencyService', () => {
 
     const dto = { triageLevel: TriageLevel.URGENT } as any;
 
-    await expect(
-      service.triageCase('nonexistent-id', dto, USER_ID, TENANT_ID),
-    ).rejects.toThrow(NotFoundException);
+    await expect(service.triageCase('nonexistent-id', dto, USER_ID, TENANT_ID)).rejects.toThrow(
+      NotFoundException,
+    );
   });
 
   // =====================================================================
@@ -404,9 +400,9 @@ describe('EmergencyService', () => {
 
     const dto = { attendingDoctorId: 'doctor-001' } as any;
 
-    await expect(
-      service.startTreatment('nonexistent-id', dto, USER_ID, TENANT_ID),
-    ).rejects.toThrow(NotFoundException);
+    await expect(service.startTreatment('nonexistent-id', dto, USER_ID, TENANT_ID)).rejects.toThrow(
+      NotFoundException,
+    );
   });
 
   // =====================================================================
@@ -417,8 +413,8 @@ describe('EmergencyService', () => {
 
     const dto = { primaryDiagnosis: 'N/A' } as any;
 
-    await expect(
-      service.dischargeCase('nonexistent-id', dto, TENANT_ID),
-    ).rejects.toThrow(NotFoundException);
+    await expect(service.dischargeCase('nonexistent-id', dto, TENANT_ID)).rejects.toThrow(
+      NotFoundException,
+    );
   });
 });

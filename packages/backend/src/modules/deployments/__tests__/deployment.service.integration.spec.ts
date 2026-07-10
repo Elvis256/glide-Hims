@@ -3,7 +3,11 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { DeploymentService } from '../deployment.service';
-import { Deployment, DeploymentType, DeploymentStatus } from '../../../database/entities/deployment.entity';
+import {
+  Deployment,
+  DeploymentType,
+  DeploymentStatus,
+} from '../../../database/entities/deployment.entity';
 import { DeploymentVersion } from '../../../database/entities/deployment-version.entity';
 import { DeploymentConfig } from '../../../database/entities/deployment-config.entity';
 import { License } from '../../../database/entities/license.entity';
@@ -83,9 +87,7 @@ describe('DeploymentService Integration Tests', () => {
     }).compile();
 
     service = module.get<DeploymentService>(DeploymentService);
-    deploymentRepository = module.get<Repository<Deployment>>(
-      getRepositoryToken(Deployment),
-    );
+    deploymentRepository = module.get<Repository<Deployment>>(getRepositoryToken(Deployment));
     versionRepository = module.get<Repository<DeploymentVersion>>(
       getRepositoryToken(DeploymentVersion),
     );
@@ -130,23 +132,27 @@ describe('DeploymentService Integration Tests', () => {
       expect(result.name).toBe(tenant.name);
       expect(mockTenantsService.findOne).toHaveBeenCalledWith(tenant.id);
       expect(mockTenantsService.create).not.toHaveBeenCalled();
-      expect(mockDeploymentRepository.create).toHaveBeenCalledWith(expect.objectContaining({
-        tenantId: tenant.id,
-        name: tenant.name,
-        deploymentType: DeploymentType.HYBRID,
-        status: DeploymentStatus.PENDING,
-        config: expect.objectContaining({
-          userFacingType: 'hybrid',
-          tier: 'enterprise',
+      expect(mockDeploymentRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantId: tenant.id,
+          name: tenant.name,
+          deploymentType: DeploymentType.HYBRID,
+          status: DeploymentStatus.PENDING,
+          config: expect.objectContaining({
+            userFacingType: 'hybrid',
+            tier: 'enterprise',
+            maxUsers: 50,
+          }),
+        }),
+      );
+      expect(mockLicenseService.generateLicense).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantId: tenant.id,
+          organizationName: tenant.name,
+          licenseType: 'enterprise',
           maxUsers: 50,
         }),
-      }));
-      expect(mockLicenseService.generateLicense).toHaveBeenCalledWith(expect.objectContaining({
-        tenantId: tenant.id,
-        organizationName: tenant.name,
-        licenseType: 'enterprise',
-        maxUsers: 50,
-      }));
+      );
     });
   });
 
@@ -180,12 +186,14 @@ describe('DeploymentService Integration Tests', () => {
       expect(result).toBeDefined();
       expect(result.id).toBe('deploy-1');
       expect(result.name).toBe(dto.name);
-      expect(mockDeploymentRepository.create).toHaveBeenCalledWith(expect.objectContaining({
-        tenantId,
-        name: dto.name,
-        deploymentType: dto.type,
-        status: DeploymentStatus.PENDING,
-      }));
+      expect(mockDeploymentRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantId,
+          name: dto.name,
+          deploymentType: dto.type,
+          status: DeploymentStatus.PENDING,
+        }),
+      );
       expect(mockDeploymentRepository.save).toHaveBeenCalled();
     });
 
@@ -198,9 +206,7 @@ describe('DeploymentService Integration Tests', () => {
         apiUrl: 'https://api.prod.example.com',
       };
 
-      await expect(service.createDeployment(tenantId, dto)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.createDeployment(tenantId, dto)).rejects.toThrow(BadRequestException);
     });
   });
 
@@ -237,9 +243,9 @@ describe('DeploymentService Integration Tests', () => {
 
       mockDeploymentRepository.findOne.mockResolvedValue(null);
 
-      await expect(
-        service.getDeployment(tenantId, deploymentId),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.getDeployment(tenantId, deploymentId)).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -292,10 +298,7 @@ describe('DeploymentService Integration Tests', () => {
 
       await service.listDeployments(tenantId, { type });
 
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        'd.deploymentType = :type',
-        { type },
-      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith('d.deploymentType = :type', { type });
     });
   });
 
@@ -368,9 +371,9 @@ describe('DeploymentService Integration Tests', () => {
 
       mockDeploymentRepository.findOne.mockResolvedValue(mockDeployment);
 
-      await expect(
-        service.deleteDeployment(tenantId, deploymentId),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.deleteDeployment(tenantId, deploymentId)).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 
@@ -391,9 +394,11 @@ describe('DeploymentService Integration Tests', () => {
         deploymentId,
       };
 
-      mockDeploymentRepository.findOne
-        .mockResolvedValueOnce(mockDeployment)
-        .mockResolvedValueOnce({ ...mockDeployment, status: DeploymentStatus.ACTIVE, currentVersion: versionId });
+      mockDeploymentRepository.findOne.mockResolvedValueOnce(mockDeployment).mockResolvedValueOnce({
+        ...mockDeployment,
+        status: DeploymentStatus.ACTIVE,
+        currentVersion: versionId,
+      });
       mockVersionRepository.findOne.mockResolvedValue(mockVersion);
       mockDeploymentRepository.save.mockResolvedValue({
         ...mockDeployment,
@@ -426,11 +431,13 @@ describe('DeploymentService Integration Tests', () => {
 
       const result = await service.getDeploymentHealth(tenantId, deploymentId);
 
-      expect(result).toEqual(expect.objectContaining({
-        id: deploymentId,
-        status: DeploymentStatus.ACTIVE,
-        currentVersion: '1.0.0',
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          id: deploymentId,
+          status: DeploymentStatus.ACTIVE,
+          currentVersion: '1.0.0',
+        }),
+      );
     });
   });
 });

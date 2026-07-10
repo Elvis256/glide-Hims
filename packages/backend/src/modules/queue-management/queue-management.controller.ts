@@ -287,12 +287,7 @@ export class QueueManagementController {
     if (!body?.triageData || typeof body.triageData !== 'object') {
       throw new BadRequestException('triageData is required');
     }
-    return this.queueService.saveTriageData(
-      id,
-      body.triageData,
-      req.user.sub,
-      req.user?.tenantId,
-    );
+    return this.queueService.saveTriageData(id, body.triageData, req.user.sub, req.user?.tenantId);
   }
 
   @Post(':id/hold')

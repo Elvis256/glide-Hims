@@ -66,8 +66,8 @@ export class AdminService {
 
     return {
       total_tenants: count,
-      active_tenants: tenants.filter(t => t.status === 'active').length,
-      suspended_tenants: tenants.filter(t => t.status === 'suspended').length,
+      active_tenants: tenants.filter((t) => t.status === 'active').length,
+      suspended_tenants: tenants.filter((t) => t.status === 'suspended').length,
       total_users: tenants.reduce((sum, t) => sum + t.user_count, 0),
       total_deployments: verifiedCount,
       tenants,

@@ -41,17 +41,27 @@ export class SystemHealthController {
 
   @Get('metrics/history')
   @ApiOperation({ summary: 'Get metric time series history' })
-  @ApiQuery({ name: 'metricType', required: true, description: 'Metric type (cpu, memory, disk, db_connections, api_latency, active_users, tenant_count)' })
+  @ApiQuery({
+    name: 'metricType',
+    required: true,
+    description:
+      'Metric type (cpu, memory, disk, db_connections, api_latency, active_users, tenant_count)',
+  })
   @ApiQuery({ name: 'hours', required: false, description: 'Lookback hours (default: 24)' })
-  async getMetricHistory(
-    @Query('metricType') metricType: string,
-    @Query('hours') hours?: number,
-  ) {
+  async getMetricHistory(@Query('metricType') metricType: string, @Query('hours') hours?: number) {
     if (!metricType) {
       throw new BadRequestException('metricType query parameter is required');
     }
 
-    const validTypes = ['cpu', 'memory', 'disk', 'db_connections', 'api_latency', 'active_users', 'tenant_count'];
+    const validTypes = [
+      'cpu',
+      'memory',
+      'disk',
+      'db_connections',
+      'api_latency',
+      'active_users',
+      'tenant_count',
+    ];
     if (!validTypes.includes(metricType)) {
       throw new BadRequestException(`Invalid metricType. Valid types: ${validTypes.join(', ')}`);
     }
@@ -94,8 +104,16 @@ export class SystemHealthController {
 
   @Get('alerts')
   @ApiOperation({ summary: 'List system alerts' })
-  @ApiQuery({ name: 'status', required: false, description: 'Filter by status (open, acknowledged, resolved)' })
-  @ApiQuery({ name: 'severity', required: false, description: 'Filter by severity (critical, high, medium, low, info)' })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    description: 'Filter by status (open, acknowledged, resolved)',
+  })
+  @ApiQuery({
+    name: 'severity',
+    required: false,
+    description: 'Filter by severity (critical, high, medium, low, info)',
+  })
   @ApiQuery({ name: 'limit', required: false, description: 'Max results (default: 50)' })
   @ApiQuery({ name: 'offset', required: false, description: 'Offset for pagination' })
   async getAlerts(
@@ -113,7 +131,11 @@ export class SystemHealthController {
     return {
       statusCode: 200,
       data: result.data,
-      meta: { total: result.total, limit: limit ? Number(limit) : 50, offset: offset ? Number(offset) : 0 },
+      meta: {
+        total: result.total,
+        limit: limit ? Number(limit) : 50,
+        offset: offset ? Number(offset) : 0,
+      },
     };
   }
 
@@ -215,17 +237,33 @@ export class SystemHealthController {
       throw new BadRequestException('name is required and must be a string');
     }
 
-    const validMetricTypes = ['cpu', 'memory', 'disk', 'db_connections', 'api_latency', 'active_users', 'tenant_count'];
+    const validMetricTypes = [
+      'cpu',
+      'memory',
+      'disk',
+      'db_connections',
+      'api_latency',
+      'active_users',
+      'tenant_count',
+    ];
     if (!body.metricType || !validMetricTypes.includes(body.metricType)) {
-      throw new BadRequestException(`metricType is required and must be one of: ${validMetricTypes.join(', ')}`);
+      throw new BadRequestException(
+        `metricType is required and must be one of: ${validMetricTypes.join(', ')}`,
+      );
     }
 
     const validOperators = ['gt', 'lt', 'gte', 'lte', 'eq'];
     if (!body.operator || !validOperators.includes(body.operator)) {
-      throw new BadRequestException(`operator is required and must be one of: ${validOperators.join(', ')}`);
+      throw new BadRequestException(
+        `operator is required and must be one of: ${validOperators.join(', ')}`,
+      );
     }
 
-    if (body.threshold === undefined || body.threshold === null || typeof body.threshold !== 'number') {
+    if (
+      body.threshold === undefined ||
+      body.threshold === null ||
+      typeof body.threshold !== 'number'
+    ) {
       throw new BadRequestException('threshold is required and must be a number');
     }
 

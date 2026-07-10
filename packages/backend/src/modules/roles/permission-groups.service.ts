@@ -38,11 +38,9 @@ export class PermissionGroupsService {
       throw new NotFoundException('One or more permissions not found');
     }
     if (!tenantId) return;
-    const bad = perms.find((p) => (p as any).tenantId && (p as any).tenantId !== tenantId);
+    const bad = perms.find((p) => p.tenantId && p.tenantId !== tenantId);
     if (bad) {
-      throw new ForbiddenException(
-        'Cannot attach a permission that belongs to a different tenant',
-      );
+      throw new ForbiddenException('Cannot attach a permission that belongs to a different tenant');
     }
   }
 
@@ -130,7 +128,7 @@ export class PermissionGroupsService {
 
     if (dto.permissionIds?.length) {
       await this.assertPermissionsAccessible(dto.permissionIds, tenantId);
-      const effectiveTenantId = tenantId || (saved as any).tenantId;
+      const effectiveTenantId = tenantId || saved.tenantId;
       const groupPerms: GroupPermission[] = dto.permissionIds.map((pid) =>
         this.groupPermRepository.create({
           groupId: saved.id,
@@ -170,7 +168,7 @@ export class PermissionGroupsService {
     await this.assertPermissionsAccessible(permissionIds, tenantId);
     await this.groupPermRepository.delete({ groupId });
     if (permissionIds.length > 0) {
-      const effectiveTenantId = tenantId || (group as any).tenantId;
+      const effectiveTenantId = tenantId || group.tenantId;
       const groupPerms: GroupPermission[] = permissionIds.map((pid) =>
         this.groupPermRepository.create({
           groupId,

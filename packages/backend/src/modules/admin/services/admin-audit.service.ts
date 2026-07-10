@@ -3,11 +3,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThanOrEqual, LessThanOrEqual, Between } from 'typeorm';
 import { REQUEST } from '@nestjs/core';
 import { Request } from 'express';
+import * as crypto from 'crypto';
 import {
   AdminAuditLog,
   AdminAuditAction,
   AdminAuditEntityType,
-} from '../../database/entities/admin-audit-log.entity';
+} from '../../../database/entities/admin-audit-log.entity';
 
 interface AdminAuditLogInput {
   adminUserId?: string;
@@ -73,6 +74,30 @@ export class AdminAuditService {
         'unknown';
       auditLog.userAgent = this.request.headers['user-agent'] as string;
     }
+
+    const previousLog = await this.auditLogRepository.findOne({
+      where: {},
+      order: { createdAt: 'DESC' },
+      select: ['hash'],
+    });
+
+    auditLog.previousHash = previousLog?.hash || undefined;
+
+    const payloadString = JSON.stringify({
+      action: auditLog.action,
+      entityType: auditLog.entityType,
+      entityId: auditLog.entityId,
+      userId: auditLog.adminUserId,
+      tenantId: auditLog.tenantId,
+      oldValue: auditLog.oldValues || null,
+      newValue: auditLog.newValues || null,
+    });
+
+    auditLog.hash = crypto
+      .createHash('sha256')
+      .update(payloadString)
+      .update(auditLog.previousHash || 'genesis')
+      .digest('hex');
 
     return this.auditLogRepository.save(auditLog);
   }
@@ -273,12 +298,28 @@ export class AdminAuditService {
       return { valid: false };
     }
 
-    // TODO: Implement cryptographic verification
-    // In production: compute SHA256 hash of log fields and verify against stored checksum
-    // For now, just confirm log exists and is not archived (not tampered)
+    // Compute SHA256 hash of log fields and verify against stored checksum
+    const payloadString = JSON.stringify({
+      action: log.action,
+      entityType: log.entityType,
+      entityId: log.entityId,
+      userId: log.adminUserId,
+      tenantId: log.tenantId,
+      oldValue: log.oldValues || null,
+      newValue: log.newValues || null,
+    });
+
+    const computedHash = crypto
+      .createHash('sha256')
+      .update(payloadString)
+      .update(log.previousHash || 'genesis')
+      .digest('hex');
+
+    const isValid = computedHash === log.hash;
+
     return {
-      valid: true,
-      checksum: `${log.id}:${log.createdAt.getTime()}`,
+      valid: isValid,
+      checksum: log.hash || `${log.id}:${log.createdAt.getTime()}`,
     };
   }
 
@@ -325,7 +366,9 @@ export class AdminAuditService {
       log.changeReason || '',
     ]);
 
-    const csv = [headers, ...rows].map((row) => row.map((cell) => `"${cell}"`).join(',')).join('\n');
+    const csv = [headers, ...rows]
+      .map((row) => row.map((cell) => `"${cell}"`).join(','))
+      .join('\n');
 
     return csv;
   }
@@ -333,10 +376,7 @@ export class AdminAuditService {
   /**
    * Count logs by action type (for dashboard/analytics)
    */
-  async getActionStats(
-    tenantId?: string,
-    since?: Date,
-  ): Promise<Record<AdminAuditAction, number>> {
+  async getActionStats(tenantId?: string, since?: Date): Promise<Record<AdminAuditAction, number>> {
     let qb = this.auditLogRepository
       .createQueryBuilder('log')
       .select('log.action', 'action')

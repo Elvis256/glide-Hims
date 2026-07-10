@@ -19,7 +19,8 @@ export class ContractService {
   constructor(
     @InjectRepository(SaasContract) private readonly contracts: Repository<SaasContract>,
     @InjectRepository(SaasQuotation) private readonly quotations: Repository<SaasQuotation>,
-    @InjectRepository(SaasQuotationRevision) private readonly revisions: Repository<SaasQuotationRevision>,
+    @InjectRepository(SaasQuotationRevision)
+    private readonly revisions: Repository<SaasQuotationRevision>,
     private readonly saasRevenue: SaasRevenueService,
     private readonly events: EventEmitter2,
   ) {}
@@ -27,7 +28,11 @@ export class ContractService {
   async listContracts(filters: { status?: string } = {}) {
     const where: any = {};
     if (filters.status) where.status = filters.status;
-    const [items, total] = await this.contracts.findAndCount({ where, order: { createdAt: 'DESC' }, take: 200 });
+    const [items, total] = await this.contracts.findAndCount({
+      where,
+      order: { createdAt: 'DESC' },
+      take: 200,
+    });
     return { items, total };
   }
 
@@ -80,15 +85,23 @@ export class ContractService {
 
     // Build terms text from quotation data
     let vendor: any;
-    try { vendor = await this.saasRevenue.getVendorBilling(); } catch { vendor = { legalName: 'Glide HIMS' }; }
+    try {
+      vendor = await this.saasRevenue.getVendorBilling();
+    } catch {
+      vendor = { legalName: 'Glide HIMS' };
+    }
     const vendorName = vendor.tradingName || vendor.legalName || 'Glide HIMS';
 
     const lineDescriptions = (rev?.lineItems || [])
-      .map((l: any, i: number) => `  ${i + 1}. ${l.description || 'Custom Service'} (Qty: ${l.quantity})`)
+      .map(
+        (l: any, i: number) =>
+          `  ${i + 1}. ${l.description || 'Custom Service'} (Qty: ${l.quantity})`,
+      )
       .join('\n');
 
-    const zeroDecimal = new Set(['UGX','KES','TZS','RWF','JPY','KRW','VND','CLP','PYG']);
-    const fmtCurrency = (n: number) => `${q.currency} ${(n / (zeroDecimal.has(q.currency) ? 1 : 100)).toLocaleString()}`;
+    const zeroDecimal = new Set(['UGX', 'KES', 'TZS', 'RWF', 'JPY', 'KRW', 'VND', 'CLP', 'PYG']);
+    const fmtCurrency = (n: number) =>
+      `${q.currency} ${(n / (zeroDecimal.has(q.currency) ? 1 : 100)).toLocaleString()}`;
 
     const termsText = [
       `SOFTWARE LICENSE & SERVICE AGREEMENT`,
@@ -123,34 +136,39 @@ export class ContractService {
       `This contract shall be governed by and construed in accordance with the laws of the Republic of Uganda.`,
     ].join('\n');
 
-    const contract = await this.createContract({
-      quotationId: q.id,
-      subscriptionId: q.subscriptionId,
-      tenantId: opts.tenantId ?? null,
-      clientName: q.clientName,
-      clientOrganization: q.clientOrganization,
-      startDate: now,
-      endDate,
-      totalValueMinor: rev?.totalMinor ?? 0,
-      currency: q.currency,
-      autoRenew: true,
-      termsText,
-      notes: q.notes || null,
-      metadata: {
-        quotationNumber: q.quotationNumber,
-        billingInterval: interval,
-        seats: q.seats,
-        deploymentType: q.deploymentType,
-        lineItemCount: rev?.lineItems?.length ?? 0,
+    const contract = await this.createContract(
+      {
+        quotationId: q.id,
+        subscriptionId: q.subscriptionId,
+        tenantId: opts.tenantId ?? null,
+        clientName: q.clientName,
+        clientOrganization: q.clientOrganization,
+        startDate: now,
+        endDate,
+        totalValueMinor: rev?.totalMinor ?? 0,
+        currency: q.currency,
+        autoRenew: true,
+        termsText,
+        notes: q.notes || null,
+        metadata: {
+          quotationNumber: q.quotationNumber,
+          billingInterval: interval,
+          seats: q.seats,
+          deploymentType: q.deploymentType,
+          lineItemCount: rev?.lineItems?.length ?? 0,
+        },
       },
-    }, createdBy);
+      createdBy,
+    );
 
     // Auto-activate if requested (e.g. from quotation acceptance flow)
     if (opts.autoActivate) {
       contract.status = 'active';
       await this.contracts.save(contract);
       this.events.emit('contract.activated', { contractId: contract.id });
-      this.logger.log(`Contract ${contract.contractNumber} auto-activated from quotation ${q.quotationNumber}`);
+      this.logger.log(
+        `Contract ${contract.contractNumber} auto-activated from quotation ${q.quotationNumber}`,
+      );
     }
 
     return contract;
@@ -178,11 +196,20 @@ export class ContractService {
   async renderContractHtml(id: string): Promise<string> {
     const c = await this.getContract(id);
     let vendor: any;
-    try { vendor = await this.saasRevenue.getVendorBilling(); } catch { vendor = { legalName: 'Glide HIMS' }; }
-    const esc = (s: any) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]!));
+    try {
+      vendor = await this.saasRevenue.getVendorBilling();
+    } catch {
+      vendor = { legalName: 'Glide HIMS' };
+    }
+    const esc = (s: any) =>
+      String(s ?? '').replace(
+        /[&<>"']/g,
+        (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!,
+      );
     const fmtD = (d: any) => (d ? new Date(d).toISOString().slice(0, 10) : '—');
-    const zeroDecimal = new Set(['UGX','KES','TZS','RWF','JPY','KRW','VND','CLP','PYG']);
-    const fmt = (n: number) => `${c.currency} ${(n / (zeroDecimal.has(c.currency) ? 1 : 100)).toLocaleString()}`;
+    const zeroDecimal = new Set(['UGX', 'KES', 'TZS', 'RWF', 'JPY', 'KRW', 'VND', 'CLP', 'PYG']);
+    const fmt = (n: number) =>
+      `${c.currency} ${(n / (zeroDecimal.has(c.currency) ? 1 : 100)).toLocaleString()}`;
 
     return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8" /><title>Contract ${esc(c.contractNumber)}</title>
@@ -215,7 +242,11 @@ ${c.signatories?.length ? `<h2>Signatories</h2>${c.signatories.map((s) => `<div 
   async cronRenewalReminders() {
     const noticeCutoff = new Date(Date.now() + 30 * 86400000);
     const contracts = await this.contracts.find({
-      where: { status: 'active' as ContractStatus, autoRenew: true, endDate: LessThan(noticeCutoff) },
+      where: {
+        status: 'active' as ContractStatus,
+        autoRenew: true,
+        endDate: LessThan(noticeCutoff),
+      },
     });
     for (const c of contracts) {
       this.events.emit('contract.renewal_reminder', { contractId: c.id });

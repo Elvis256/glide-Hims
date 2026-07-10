@@ -93,45 +93,52 @@ export class ComplianceAutomationService {
       period: { from: thirtyDaysAgo.toISOString(), to: now.toISOString() },
     };
 
-    const backupStatus = successful > 0 && (failed / Math.max(total, 1)) < 0.1
-      ? 'compliant'
-      : successful > 0
-      ? 'partial'
-      : 'non_compliant';
+    const backupStatus =
+      successful > 0 && failed / Math.max(total, 1) < 0.1
+        ? 'compliant'
+        : successful > 0
+          ? 'partial'
+          : 'non_compliant';
 
-    evidence.push(this.buildEvidence({
-      framework: 'SOC2',
-      controlId: 'CC6.1',
-      controlName: 'Data Backup and Recovery',
-      evidenceType: 'automated',
-      status: backupStatus,
-      data: backupData,
-      notes: `${successful}/${total} backups successful. Restore tested: ${restoreTested}`,
-    }));
+    evidence.push(
+      this.buildEvidence({
+        framework: 'SOC2',
+        controlId: 'CC6.1',
+        controlName: 'Data Backup and Recovery',
+        evidenceType: 'automated',
+        status: backupStatus,
+        data: backupData,
+        notes: `${successful}/${total} backups successful. Restore tested: ${restoreTested}`,
+      }),
+    );
 
     // ISO27001 A.12.3.1 - Information Backup
-    evidence.push(this.buildEvidence({
-      framework: 'ISO27001',
-      controlId: 'A.12.3.1',
-      controlName: 'Information Backup',
-      evidenceType: 'automated',
-      status: backupStatus,
-      data: backupData,
-      notes: `Backup policy coverage: ${total > 0 ? 'active' : 'inactive'}`,
-    }));
+    evidence.push(
+      this.buildEvidence({
+        framework: 'ISO27001',
+        controlId: 'A.12.3.1',
+        controlName: 'Information Backup',
+        evidenceType: 'automated',
+        status: backupStatus,
+        data: backupData,
+        notes: `Backup policy coverage: ${total > 0 ? 'active' : 'inactive'}`,
+      }),
+    );
 
     // HIPAA - Contingency Plan (Data Backup)
-    evidence.push(this.buildEvidence({
-      framework: 'HIPAA',
-      controlId: '164.308(a)(7)(ii)(A)',
-      controlName: 'Data Backup Plan',
-      evidenceType: 'automated',
-      status: backupStatus,
-      data: backupData,
-      notes: restoreTested
-        ? 'Backup and restore tested within the last 30 days'
-        : 'WARNING: No restore test performed in the last 30 days',
-    }));
+    evidence.push(
+      this.buildEvidence({
+        framework: 'HIPAA',
+        controlId: '164.308(a)(7)(ii)(A)',
+        controlName: 'Data Backup Plan',
+        evidenceType: 'automated',
+        status: backupStatus,
+        data: backupData,
+        notes: restoreTested
+          ? 'Backup and restore tested within the last 30 days'
+          : 'WARNING: No restore test performed in the last 30 days',
+      }),
+    );
 
     return evidence;
   }
@@ -192,44 +199,51 @@ export class ComplianceAutomationService {
     // Access review is compliant if no excessive stale accounts and MFA rate > 50%
     const mfaRate = totalUsers > 0 ? mfaEnabled / totalUsers : 0;
     const staleRate = totalUsers > 0 ? staleAccounts / totalUsers : 0;
-    const accessStatus = mfaRate >= 0.8 && staleRate < 0.2
-      ? 'compliant'
-      : mfaRate >= 0.5
-      ? 'partial'
-      : 'non_compliant';
+    const accessStatus =
+      mfaRate >= 0.8 && staleRate < 0.2
+        ? 'compliant'
+        : mfaRate >= 0.5
+          ? 'partial'
+          : 'non_compliant';
 
     // SOC2 CC6.3 - Access Control
-    evidence.push(this.buildEvidence({
-      framework: 'SOC2',
-      controlId: 'CC6.3',
-      controlName: 'Role-Based Access and Privileged Account Review',
-      evidenceType: 'automated',
-      status: accessStatus,
-      data: accessData,
-      notes: `${privilegedAccounts} privileged accounts, ${staleAccounts} stale accounts, MFA rate: ${accessData.mfaRate}%`,
-    }));
+    evidence.push(
+      this.buildEvidence({
+        framework: 'SOC2',
+        controlId: 'CC6.3',
+        controlName: 'Role-Based Access and Privileged Account Review',
+        evidenceType: 'automated',
+        status: accessStatus,
+        data: accessData,
+        notes: `${privilegedAccounts} privileged accounts, ${staleAccounts} stale accounts, MFA rate: ${accessData.mfaRate}%`,
+      }),
+    );
 
     // ISO27001 A.9.2.5 - Review of User Access Rights
-    evidence.push(this.buildEvidence({
-      framework: 'ISO27001',
-      controlId: 'A.9.2.5',
-      controlName: 'Review of User Access Rights',
-      evidenceType: 'automated',
-      status: accessStatus,
-      data: accessData,
-      notes: `${staleAccounts} accounts with no login in 90+ days require review`,
-    }));
+    evidence.push(
+      this.buildEvidence({
+        framework: 'ISO27001',
+        controlId: 'A.9.2.5',
+        controlName: 'Review of User Access Rights',
+        evidenceType: 'automated',
+        status: accessStatus,
+        data: accessData,
+        notes: `${staleAccounts} accounts with no login in 90+ days require review`,
+      }),
+    );
 
     // HIPAA - Access Control
-    evidence.push(this.buildEvidence({
-      framework: 'HIPAA',
-      controlId: '164.312(a)(1)',
-      controlName: 'Access Control',
-      evidenceType: 'automated',
-      status: accessStatus,
-      data: accessData,
-      notes: `MFA enabled: ${mfaEnabled}/${totalUsers} users (${accessData.mfaRate}%)`,
-    }));
+    evidence.push(
+      this.buildEvidence({
+        framework: 'HIPAA',
+        controlId: '164.312(a)(1)',
+        controlName: 'Access Control',
+        evidenceType: 'automated',
+        status: accessStatus,
+        data: accessData,
+        notes: `MFA enabled: ${mfaEnabled}/${totalUsers} users (${accessData.mfaRate}%)`,
+      }),
+    );
 
     return evidence;
   }
@@ -284,10 +298,10 @@ export class ComplianceAutomationService {
     const slaStatus = !hasMetrics
       ? 'not_assessed'
       : availability >= 99.9
-      ? 'compliant'
-      : availability >= 99.0
-      ? 'partial'
-      : 'non_compliant';
+        ? 'compliant'
+        : availability >= 99.0
+          ? 'partial'
+          : 'non_compliant';
 
     return this.buildEvidence({
       framework: 'INTERNAL',
@@ -358,59 +372,68 @@ export class ComplianceAutomationService {
     // Determine overall security status
     const securityChecks = [passwordPolicyExists, rateLimitEnabled, auditActive];
     const passedChecks = securityChecks.filter(Boolean).length;
-    const securityStatus = passedChecks === securityChecks.length
-      ? 'compliant'
-      : passedChecks > 0
-      ? 'partial'
-      : 'non_compliant';
+    const securityStatus =
+      passedChecks === securityChecks.length
+        ? 'compliant'
+        : passedChecks > 0
+          ? 'partial'
+          : 'non_compliant';
 
     // SOC2 CC6.6 - System Security
-    evidence.push(this.buildEvidence({
-      framework: 'SOC2',
-      controlId: 'CC6.6',
-      controlName: 'Security Controls - Authentication and Rate Limiting',
-      evidenceType: 'automated',
-      status: securityStatus,
-      data: securityData,
-      notes: `Password policy: ${passwordPolicyExists ? 'configured' : 'MISSING'}, Rate limiting: ${rateLimitEnabled ? 'enabled' : 'DISABLED'}, Audit logging: ${auditActive ? 'active' : 'INACTIVE'}`,
-    }));
+    evidence.push(
+      this.buildEvidence({
+        framework: 'SOC2',
+        controlId: 'CC6.6',
+        controlName: 'Security Controls - Authentication and Rate Limiting',
+        evidenceType: 'automated',
+        status: securityStatus,
+        data: securityData,
+        notes: `Password policy: ${passwordPolicyExists ? 'configured' : 'MISSING'}, Rate limiting: ${rateLimitEnabled ? 'enabled' : 'DISABLED'}, Audit logging: ${auditActive ? 'active' : 'INACTIVE'}`,
+      }),
+    );
 
     // ISO27001 A.9.4.3 - Password Management
-    evidence.push(this.buildEvidence({
-      framework: 'ISO27001',
-      controlId: 'A.9.4.3',
-      controlName: 'Password Management System',
-      evidenceType: 'automated',
-      status: passwordPolicyExists ? 'compliant' : 'non_compliant',
-      data: { passwordPolicyExists, passwordPolicies: passwordPolicyData },
-      notes: passwordPolicyExists
-        ? 'Password policies are configured in system settings'
-        : 'No password policies found in system settings',
-    }));
+    evidence.push(
+      this.buildEvidence({
+        framework: 'ISO27001',
+        controlId: 'A.9.4.3',
+        controlName: 'Password Management System',
+        evidenceType: 'automated',
+        status: passwordPolicyExists ? 'compliant' : 'non_compliant',
+        data: { passwordPolicyExists, passwordPolicies: passwordPolicyData },
+        notes: passwordPolicyExists
+          ? 'Password policies are configured in system settings'
+          : 'No password policies found in system settings',
+      }),
+    );
 
     // SOC2 CC7.2 - Monitoring
-    evidence.push(this.buildEvidence({
-      framework: 'SOC2',
-      controlId: 'CC7.2',
-      controlName: 'System Monitoring and Audit Logging',
-      evidenceType: 'automated',
-      status: auditActive ? 'compliant' : 'non_compliant',
-      data: { auditLoggingActive: auditActive, recentAuditEntries: recentAuditCount },
-      notes: `${recentAuditCount} audit log entries in the last 7 days`,
-    }));
+    evidence.push(
+      this.buildEvidence({
+        framework: 'SOC2',
+        controlId: 'CC7.2',
+        controlName: 'System Monitoring and Audit Logging',
+        evidenceType: 'automated',
+        status: auditActive ? 'compliant' : 'non_compliant',
+        data: { auditLoggingActive: auditActive, recentAuditEntries: recentAuditCount },
+        notes: `${recentAuditCount} audit log entries in the last 7 days`,
+      }),
+    );
 
     // HIPAA - Audit Controls
-    evidence.push(this.buildEvidence({
-      framework: 'HIPAA',
-      controlId: '164.312(b)',
-      controlName: 'Audit Controls',
-      evidenceType: 'automated',
-      status: auditActive ? 'compliant' : 'non_compliant',
-      data: { auditLoggingActive: auditActive, recentAuditEntries: recentAuditCount },
-      notes: auditActive
-        ? `Audit logging is active with ${recentAuditCount} entries in last 7 days`
-        : 'WARNING: No recent audit log activity detected',
-    }));
+    evidence.push(
+      this.buildEvidence({
+        framework: 'HIPAA',
+        controlId: '164.312(b)',
+        controlName: 'Audit Controls',
+        evidenceType: 'automated',
+        status: auditActive ? 'compliant' : 'non_compliant',
+        data: { auditLoggingActive: auditActive, recentAuditEntries: recentAuditCount },
+        notes: auditActive
+          ? `Audit logging is active with ${recentAuditCount} entries in last 7 days`
+          : 'WARNING: No recent audit log activity detected',
+      }),
+    );
 
     return evidence;
   }
@@ -474,7 +497,9 @@ export class ComplianceAutomationService {
       }
     }
 
-    this.logger.log(`Compliance evidence collection completed: ${collected} collected, ${errors.length} errors`);
+    this.logger.log(
+      `Compliance evidence collection completed: ${collected} collected, ${errors.length} errors`,
+    );
     return { collected, errors };
   }
 
@@ -518,9 +543,8 @@ export class ComplianceAutomationService {
     const notAssessed = uniqueEvidence.filter((e) => e.status === 'not_assessed').length;
     const totalControls = uniqueEvidence.length;
 
-    const complianceScore = totalControls > 0
-      ? Math.round(((compliant + partial * 0.5) / totalControls) * 100)
-      : 0;
+    const complianceScore =
+      totalControls > 0 ? Math.round(((compliant + partial * 0.5) / totalControls) * 100) : 0;
 
     const controls = uniqueEvidence.map((e) => ({
       controlId: e.controlId,
@@ -618,7 +642,12 @@ export class ComplianceAutomationService {
     frameworks: { framework: string; score: number; totalControls: number; compliant: number }[];
   }> {
     const frameworks = ['SOC2', 'ISO27001', 'HIPAA', 'INTERNAL'];
-    const results: { framework: string; score: number; totalControls: number; compliant: number }[] = [];
+    const results: {
+      framework: string;
+      score: number;
+      totalControls: number;
+      compliant: number;
+    }[] = [];
 
     for (const framework of frameworks) {
       const report = await this.generateComplianceReport(framework);
@@ -632,9 +661,10 @@ export class ComplianceAutomationService {
       }
     }
 
-    const overallScore = results.length > 0
-      ? Math.round(results.reduce((sum, r) => sum + r.score, 0) / results.length)
-      : 0;
+    const overallScore =
+      results.length > 0
+        ? Math.round(results.reduce((sum, r) => sum + r.score, 0) / results.length)
+        : 0;
 
     return { overallScore, frameworks: results };
   }
@@ -653,10 +683,7 @@ export class ComplianceAutomationService {
     notes?: string;
   }): ComplianceEvidence {
     const now = new Date();
-    const hash = crypto
-      .createHash('sha256')
-      .update(JSON.stringify(params.data))
-      .digest('hex');
+    const hash = crypto.createHash('sha256').update(JSON.stringify(params.data)).digest('hex');
 
     const nextReviewAt = new Date(now);
     nextReviewAt.setDate(nextReviewAt.getDate() + 30);
@@ -685,7 +712,8 @@ export class ComplianceAutomationService {
       '164.308(a)(7)(ii)(A)': 'Implement and test a data backup plan; document restore procedures',
       'CC6.3': 'Review privileged accounts and enforce MFA for all users',
       'A.9.2.5': 'Conduct periodic user access reviews and disable stale accounts',
-      '164.312(a)(1)': 'Implement role-based access control and enforce multi-factor authentication',
+      '164.312(a)(1)':
+        'Implement role-based access control and enforce multi-factor authentication',
       'SLA-001': 'Implement system health monitoring and track availability metrics',
       'CC6.6': 'Review and enforce password policies, rate limiting, and audit logging',
       'A.9.4.3': 'Configure and enforce password complexity, rotation, and history policies',

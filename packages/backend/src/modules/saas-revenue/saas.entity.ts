@@ -22,7 +22,11 @@ export type SubscriptionStatus =
   | 'paused';
 export type SaasInvoiceStatus = 'draft' | 'open' | 'paid' | 'void' | 'uncollectible';
 export type SaasPaymentStatus = 'succeeded' | 'failed' | 'pending' | 'refunded';
-export type SaasPaymentVerificationStatus = 'unverified' | 'pending_verification' | 'verified' | 'rejected';
+export type SaasPaymentVerificationStatus =
+  | 'unverified'
+  | 'pending_verification'
+  | 'verified'
+  | 'rejected';
 export type CouponDiscountType = 'percent' | 'fixed';
 export type SubscriptionEventType =
   | 'created'
@@ -77,7 +81,9 @@ export class SaasSubscription {
   @PrimaryGeneratedColumn('uuid') id: string;
 
   @Column({ type: 'uuid' }) @Index() tenantId: string;
-  @Column({ type: 'uuid', nullable: true, name: 'billing_payer_tenant_id' }) @Index() billingPayerTenantId: string | null;
+  @Column({ type: 'uuid', nullable: true, name: 'billing_payer_tenant_id' })
+  @Index()
+  billingPayerTenantId: string | null;
   @Column({ type: 'uuid', nullable: true }) deploymentId: string | null;
   @Column({ type: 'uuid', nullable: true }) leadId: string | null;
   @Column({ type: 'uuid', nullable: true }) quotationId: string | null;
@@ -87,7 +93,8 @@ export class SaasSubscription {
   @Column({ type: 'varchar', length: 30, default: 'trial' }) @Index() status: SubscriptionStatus;
   @Column({ type: 'varchar', length: 20, default: 'monthly' }) billingInterval: BillingInterval;
   @Column({ type: 'varchar', length: 3, default: 'UGX' }) currency: string;
-  @Column({ type: 'varchar', length: 3, nullable: true, name: 'billing_currency' }) billingCurrency: string | null;
+  @Column({ type: 'varchar', length: 3, nullable: true, name: 'billing_currency' })
+  billingCurrency: string | null;
   @Column({ type: 'integer', default: 0 }) unitPriceMinor: number; // snapshot at start
   @Column({ type: 'integer', default: 1 }) seats: number;
 
@@ -107,8 +114,12 @@ export class SaasSubscription {
 
   @Column({ default: true }) autoRenew: boolean;
   @Column({ default: false }) cancelAtPeriodEnd: boolean;
-  @Column({ type: 'varchar', length: 255, nullable: true, name: 'billing_email' }) billingEmail: string | null;
-  @Column({ type: 'varchar', length: 255, nullable: true, name: 'billing_name' }) billingName: string | null;
+  @Column({ type: 'varchar', length: 255, nullable: true, name: 'billing_email' }) billingEmail:
+    | string
+    | null;
+  @Column({ type: 'varchar', length: 255, nullable: true, name: 'billing_name' }) billingName:
+    | string
+    | null;
   @Column({ type: 'text', nullable: true }) notes: string | null;
   @Column({ type: 'jsonb', nullable: true }) metadata: Record<string, any> | null;
 
@@ -129,10 +140,14 @@ export class SaasInvoice {
   @Column({ length: 50 }) @Index({ unique: true }) invoiceNumber: string;
 
   @Column({ type: 'uuid', name: 'subscription_id' }) @Index() subscriptionId: string;
-  @ManyToOne(() => SaasSubscription, (s) => s.invoices) @JoinColumn({ name: 'subscription_id' }) subscription: SaasSubscription;
+  @ManyToOne(() => SaasSubscription, (s) => s.invoices)
+  @JoinColumn({ name: 'subscription_id' })
+  subscription: SaasSubscription;
 
   @Column({ type: 'uuid' }) tenantId: string;
-  @Column({ type: 'uuid', nullable: true, name: 'billing_payer_tenant_id' }) billingPayerTenantId: string | null;
+  @Column({ type: 'uuid', nullable: true, name: 'billing_payer_tenant_id' }) billingPayerTenantId:
+    | string
+    | null;
 
   @Column({ type: 'varchar', length: 30, default: 'draft' }) @Index() status: SaasInvoiceStatus;
   @Column({ type: 'varchar', length: 3, default: 'UGX' }) currency: string;
@@ -142,7 +157,8 @@ export class SaasInvoice {
   @Column({ type: 'integer', default: 0 }) taxMinor: number;
   @Column({ type: 'integer', default: 0 }) totalMinor: number;
   @Column({ type: 'integer', default: 0 }) amountPaidMinor: number;
-  @Column({ type: 'numeric', precision: 18, scale: 6, default: 1, name: 'fx_rate_to_base' }) fxRateToBase: string;
+  @Column({ type: 'numeric', precision: 18, scale: 6, default: 1, name: 'fx_rate_to_base' })
+  fxRateToBase: string;
 
   @Column({ type: 'timestamp' }) issuedAt: Date;
   @Column({ type: 'timestamp' }) dueAt: Date;
@@ -153,7 +169,10 @@ export class SaasInvoice {
 
   @Column({ type: 'text', nullable: true }) memo: string | null;
   @Column({ type: 'jsonb', nullable: true }) lines: Array<{
-    description: string; quantity: number; unitPriceMinor: number; amountMinor: number;
+    description: string;
+    quantity: number;
+    unitPriceMinor: number;
+    amountMinor: number;
   }> | null;
 
   @CreateDateColumn() createdAt: Date;
@@ -167,7 +186,9 @@ export class SaasPayment {
   @Column({ type: 'uuid' }) @Index() invoiceId: string;
   @Column({ type: 'uuid' }) subscriptionId: string;
   @Column({ type: 'uuid' }) tenantId: string;
-  @Column({ type: 'uuid', nullable: true, name: 'billing_payer_tenant_id' }) billingPayerTenantId: string | null;
+  @Column({ type: 'uuid', nullable: true, name: 'billing_payer_tenant_id' }) billingPayerTenantId:
+    | string
+    | null;
 
   @Column({ type: 'varchar', length: 3, default: 'UGX' }) currency: string;
   @Column({ type: 'integer' }) amountMinor: number;
@@ -177,13 +198,15 @@ export class SaasPayment {
   @Column({ type: 'varchar', length: 200, nullable: true }) gatewayRef: string | null;
   @Column({ type: 'varchar', length: 50, nullable: true }) method: string | null; // card / bank / momo / cash
   @Column({ type: 'jsonb', nullable: true }) gatewayPayload: Record<string, any> | null;
-  @Column({ type: 'numeric', precision: 18, scale: 6, default: 1, name: 'fx_rate_to_base' }) fxRateToBase: string;
+  @Column({ type: 'numeric', precision: 18, scale: 6, default: 1, name: 'fx_rate_to_base' })
+  fxRateToBase: string;
 
   @Column({ type: 'timestamp' }) paidAt: Date;
   @Column({ type: 'uuid', nullable: true }) recordedBy: string | null;
   @Column({ type: 'text', nullable: true }) notes: string | null;
 
-  @Column({ type: 'varchar', length: 30, default: 'unverified' }) verificationStatus: SaasPaymentVerificationStatus;
+  @Column({ type: 'varchar', length: 30, default: 'unverified' })
+  verificationStatus: SaasPaymentVerificationStatus;
   @Column({ type: 'uuid', nullable: true }) verifiedBy: string | null;
   @Column({ type: 'timestamp', nullable: true }) verifiedAt: Date | null;
   @Column({ type: 'text', nullable: true }) verificationNotes: string | null;

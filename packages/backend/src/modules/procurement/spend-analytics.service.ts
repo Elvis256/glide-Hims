@@ -96,11 +96,7 @@ export class SpendAnalyticsService {
 
     const totalSpend = rows.reduce((s, r) => s + Number(r.total_spend || 0), 0);
 
-    const priorCategoryTotals = await this.getPriorPeriodCategoryTotals(
-      tid,
-      startDate,
-      endDate,
-    );
+    const priorCategoryTotals = await this.getPriorPeriodCategoryTotals(tid, startDate, endDate);
 
     return rows.map((r) => {
       const current = Number(r.total_spend || 0);
@@ -132,9 +128,8 @@ export class SpendAnalyticsService {
     const spanMs = endDate.getTime() - startDate.getTime();
     const priorEnd = new Date(startDate.getTime());
     const priorStart = new Date(startDate.getTime() - spanMs);
-    const rows: Array<{ category: string; total_spend: string }> =
-      await this.poRepository.query(
-        `SELECT COALESCE(ic.name, 'Uncategorised') AS category,
+    const rows: Array<{ category: string; total_spend: string }> = await this.poRepository.query(
+      `SELECT COALESCE(ic.name, 'Uncategorised') AS category,
                 SUM(poi.line_total)::numeric AS total_spend
          FROM purchase_orders po
          JOIN purchase_order_items poi ON poi.purchase_order_id = po.id
@@ -145,8 +140,8 @@ export class SpendAnalyticsService {
            AND po.deleted_at IS NULL
            AND po.created_at BETWEEN $2 AND $3
          GROUP BY ic.name`,
-        [tenantId, priorStart, priorEnd],
-      );
+      [tenantId, priorStart, priorEnd],
+    );
     return new Map(rows.map((r) => [r.category, Number(r.total_spend || 0)]));
   }
 
@@ -195,7 +190,7 @@ export class SpendAnalyticsService {
     return rows.map((r) => {
       const totalSpend = Number(r.total_spend || 0);
       const orderCount = Number(r.order_count || 0);
-      const budget = r.department_id ? budgets.get(r.department_id) ?? null : null;
+      const budget = r.department_id ? (budgets.get(r.department_id) ?? null) : null;
       return {
         departmentId: r.department_id ?? 'unassigned',
         departmentName: r.department_name ?? 'Unassigned',
@@ -216,15 +211,14 @@ export class SpendAnalyticsService {
     // Optional department_budgets table — silently returns empty map when the
     // table doesn't exist (older deployments) so the analytics still render.
     try {
-      const rows: Array<{ department_id: string; amount: string }> =
-        await this.poRepository.query(
-          `SELECT department_id, SUM(amount)::numeric AS amount
+      const rows: Array<{ department_id: string; amount: string }> = await this.poRepository.query(
+        `SELECT department_id, SUM(amount)::numeric AS amount
            FROM department_budgets
            WHERE tenant_id = $1
              ${startDate && endDate ? 'AND period_start <= $3 AND period_end >= $2' : ''}
            GROUP BY department_id`,
-          startDate && endDate ? [tenantId, startDate, endDate] : [tenantId],
-        );
+        startDate && endDate ? [tenantId, startDate, endDate] : [tenantId],
+      );
       return new Map(rows.map((r) => [r.department_id, Number(r.amount || 0)]));
     } catch {
       return new Map();
@@ -312,8 +306,7 @@ export class SpendAnalyticsService {
     }
 
     const avg = recent.reduce((s, t) => s + t.totalSpend, 0) / recent.length;
-    const variance =
-      recent.reduce((s, t) => s + (t.totalSpend - avg) ** 2, 0) / recent.length;
+    const variance = recent.reduce((s, t) => s + (t.totalSpend - avg) ** 2, 0) / recent.length;
     const stdDev = Math.sqrt(variance);
     const cv = avg > 0 ? stdDev / avg : 1;
     const confidence = Math.max(0, Math.min(99, 100 * (1 - cv)));

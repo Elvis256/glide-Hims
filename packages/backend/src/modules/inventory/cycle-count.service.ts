@@ -54,7 +54,7 @@ export class CycleCountService {
     const items: Partial<CycleCountItem>[] = stockBalances.map((sb) => ({
       cycleCountId: saved.id,
       itemId: sb.itemId,
-      itemName: (sb as any).item?.name || 'Unknown',
+      itemName: sb.item?.name || 'Unknown',
       itemCode: (sb as any).item?.itemCode || null,
       systemQuantity: Number(sb.totalQuantity),
       unitCost: Number((sb as any).item?.costPrice || 0),
@@ -82,7 +82,10 @@ export class CycleCountService {
   ): Promise<CycleCountItem> {
     const cycleCount = await this.findOne(cycleCountId, tenantId);
 
-    if (cycleCount.status === CycleCountStatus.COMPLETED || cycleCount.status === CycleCountStatus.CANCELLED) {
+    if (
+      cycleCount.status === CycleCountStatus.COMPLETED ||
+      cycleCount.status === CycleCountStatus.CANCELLED
+    ) {
       throw new BadRequestException('Cannot record counts on a completed/cancelled cycle count');
     }
 
@@ -106,9 +109,12 @@ export class CycleCountService {
 
     // Determine variance status (5% tolerance threshold)
     const tolerancePercent = 5;
-    const absVariancePercent = Number(item.systemQuantity) > 0
-      ? (Math.abs(item.variance) / Number(item.systemQuantity)) * 100
-      : (item.variance !== 0 ? 100 : 0);
+    const absVariancePercent =
+      Number(item.systemQuantity) > 0
+        ? (Math.abs(item.variance) / Number(item.systemQuantity)) * 100
+        : item.variance !== 0
+          ? 100
+          : 0;
 
     if (item.variance === 0) {
       item.varianceStatus = VarianceStatus.NONE;
@@ -280,7 +286,10 @@ export class CycleCountService {
 
     const itemsCounted = items.filter((i) => i.countedQuantity !== null).length;
     const varianceCount = items.filter((i) => i.variance && i.variance !== 0).length;
-    const totalVarianceValue = items.reduce((sum, i) => sum + Math.abs(Number(i.varianceValue || 0)), 0);
+    const totalVarianceValue = items.reduce(
+      (sum, i) => sum + Math.abs(Number(i.varianceValue || 0)),
+      0,
+    );
 
     await this.cycleCountRepo.update(cycleCountId, {
       itemsCounted,

@@ -59,8 +59,7 @@ export class EfrisService {
     const cfg = await manager.findOne(EfrisConfig, { where: { tenantId: input.tenantId } });
     const repo = manager.getRepository(EfrisDocument);
     const key =
-      idempotencyKey ||
-      `sale:${input.saleId}:${input.documentType || EfrisDocumentType.INVOICE}`;
+      idempotencyKey || `sale:${input.saleId}:${input.documentType || EfrisDocumentType.INVOICE}`;
 
     const existing = await repo.findOne({
       where: { tenantId: input.tenantId, idempotencyKey: key },

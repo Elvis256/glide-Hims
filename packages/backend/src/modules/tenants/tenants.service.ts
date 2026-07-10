@@ -111,7 +111,12 @@ export class TenantsService implements OnModuleInit {
     // Modules come from the hospital preset (safe default for new orgs).
     try {
       const preset = getPreset('hospital' as any);
-      const enabledModules = preset?.enabledModules || ['patients', 'encounters', 'billing', 'reports'];
+      const enabledModules = preset?.enabledModules || [
+        'patients',
+        'encounters',
+        'billing',
+        'reports',
+      ];
       await this.licenseService.generateLicense({
         organizationName: saved.name,
         email: (dto as any).email || `admin@${saved.slug}.local`,
@@ -124,7 +129,9 @@ export class TenantsService implements OnModuleInit {
       });
       this.logger.log(`Issued 30-day trial license for tenant ${saved.slug}`);
     } catch (err: any) {
-      this.logger.warn(`Failed to auto-issue trial license for ${saved.slug}: ${err?.message || err}`);
+      this.logger.warn(
+        `Failed to auto-issue trial license for ${saved.slug}: ${err?.message || err}`,
+      );
     }
 
     return saved;
@@ -346,17 +353,13 @@ export class TenantsService implements OnModuleInit {
 
     const tenant = await this.findOne(tenantId);
     const previousMode: string | null =
-      (tenant.settings && (tenant.settings as any).facilityMode) || null;
-    const previousPreset = previousMode
-      ? getPreset(previousMode as FacilityMode)
-      : null;
+      ((tenant.settings && (tenant.settings as Record<string, unknown>).facilityMode) as string) || null;
+    const previousPreset = previousMode ? getPreset(previousMode as FacilityMode) : null;
 
     const previousModules = new Set(previousPreset?.enabledModules || []);
     const newModules = new Set(preset.enabledModules);
     const addedModules = preset.enabledModules.filter((m) => !previousModules.has(m));
-    const removedModules = (previousPreset?.enabledModules || []).filter(
-      (m) => !newModules.has(m),
-    );
+    const removedModules = (previousPreset?.enabledModules || []).filter((m) => !newModules.has(m));
 
     const syncEnabledModules = options.syncEnabledModules ?? true;
 

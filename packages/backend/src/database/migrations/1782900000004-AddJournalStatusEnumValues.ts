@@ -13,9 +13,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * cannot be removed in a transactional way, so the down migration is
  * a no-op.
  */
-export class AddJournalStatusEnumValues1782900000004
-  implements MigrationInterface
-{
+export class AddJournalStatusEnumValues1782900000004 implements MigrationInterface {
   name = 'AddJournalStatusEnumValues1782900000004';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

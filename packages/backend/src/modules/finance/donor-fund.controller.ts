@@ -109,11 +109,7 @@ export class DonorFundController {
     @Body() body: ApproveInterFacilityDto,
     @Request() req: any,
   ) {
-    return this.donorFundService.approveInterFacility(
-      id,
-      req.user?.id,
-      req.user?.tenantId,
-    );
+    return this.donorFundService.approveInterFacility(id, req.user?.id, req.user?.tenantId);
   }
 
   @Patch('inter-facility/:id/settle')
@@ -124,10 +120,6 @@ export class DonorFundController {
     @Body() body: SettleInterFacilityDto,
     @Request() req: any,
   ) {
-    return this.donorFundService.settleInterFacility(
-      id,
-      req.user?.id,
-      req.user?.tenantId,
-    );
+    return this.donorFundService.settleInterFacility(id, req.user?.id, req.user?.tenantId);
   }
 }

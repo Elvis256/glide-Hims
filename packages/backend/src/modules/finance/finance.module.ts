@@ -47,6 +47,8 @@ import {
   BankReconciliationItem,
   PettyCashFund,
   PettyCashTransaction,
+  GlReconciliation,
+  GlReconciliationItem,
 } from '../../database/entities/finance-extended.entity';
 import { FacilityBudget } from '../../database/entities/facility-budget.entity';
 import { BudgetReservation } from '../../database/entities/budget-reservation.entity';
@@ -74,6 +76,8 @@ import { SystemSettingsModule } from '../system-settings/system-settings.module'
       BankReconciliationItem,
       PettyCashFund,
       PettyCashTransaction,
+      GlReconciliation,
+      GlReconciliationItem,
       FacilityBudget,
       BudgetReservation,
       FinanceApprovalChain,

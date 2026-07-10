@@ -74,16 +74,12 @@ describe('Phase 2-4 Advanced Services Integration Tests', () => {
       ],
     }).compile();
 
-    updateDistributionService = module.get<UpdateDistributionService>(
-      UpdateDistributionService,
-    );
+    updateDistributionService = module.get<UpdateDistributionService>(UpdateDistributionService);
     rolloutOrchestrationService = module.get<RolloutOrchestrationService>(
       RolloutOrchestrationService,
     );
     masterDataSyncService = module.get<MasterDataSyncService>(MasterDataSyncService);
-    conflictResolutionEngine = module.get<ConflictResolutionEngine>(
-      ConflictResolutionEngine,
-    );
+    conflictResolutionEngine = module.get<ConflictResolutionEngine>(ConflictResolutionEngine);
 
     jest.clearAllMocks();
   });
@@ -133,11 +129,13 @@ describe('Phase 2-4 Advanced Services Integration Tests', () => {
 
       const result = await updateDistributionService.executePhase(rolloutId, 1);
 
-      expect(result).toEqual(expect.objectContaining({
-        phase: 1,
-        percentage: 10,
-        deploymentCount: 10,
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          phase: 1,
+          percentage: 10,
+          deploymentCount: 10,
+        }),
+      );
     });
 
     it('should handle phase rollback on failure', async () => {
@@ -153,10 +151,12 @@ describe('Phase 2-4 Advanced Services Integration Tests', () => {
 
       const result = await updateDistributionService.rollbackPhase(rolloutId);
 
-      expect(result).toEqual(expect.objectContaining({
-        rolled_back: true,
-        phase: 1,
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          rolled_back: true,
+          phase: 1,
+        }),
+      );
     });
 
     it('should validate deployment compatibility', async () => {
@@ -186,10 +186,12 @@ describe('Phase 2-4 Advanced Services Integration Tests', () => {
 
       const result = await rolloutOrchestrationService.scheduleRollout(schedule);
 
-      expect(result).toEqual(expect.objectContaining({
-        scheduled: true,
-        rolloutId: schedule.rolloutId,
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          scheduled: true,
+          rolloutId: schedule.rolloutId,
+        }),
+      );
     });
 
     it('should monitor rollout health during execution', async () => {
@@ -222,10 +224,12 @@ describe('Phase 2-4 Advanced Services Integration Tests', () => {
 
       const result = await rolloutOrchestrationService.autoRollback(criticalFailure);
 
-      expect(result).toEqual(expect.objectContaining({
-        rolled_back: true,
-        reason: 'critical_failure_detected',
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          rolled_back: true,
+          reason: 'critical_failure_detected',
+        }),
+      );
     });
 
     it('should calculate ETA for rollout completion', async () => {
@@ -242,11 +246,13 @@ describe('Phase 2-4 Advanced Services Integration Tests', () => {
 
       const result = await rolloutOrchestrationService.calculateETA(rolloutId);
 
-      expect(result).toEqual(expect.objectContaining({
-        rolloutId,
-        remainingDeployments: 40,
-        estimatedTimeSeconds: expect.any(Number),
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          rolloutId,
+          remainingDeployments: 40,
+          estimatedTimeSeconds: expect.any(Number),
+        }),
+      );
     });
   });
 
@@ -261,10 +267,12 @@ describe('Phase 2-4 Advanced Services Integration Tests', () => {
 
       const result = await masterDataSyncService.coordinateSync(syncConfig);
 
-      expect(result).toEqual(expect.objectContaining({
-        synced: true,
-        deploymentCount: 3,
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          synced: true,
+          deploymentCount: 3,
+        }),
+      );
     });
 
     it('should retry failed sync operations', async () => {
@@ -282,10 +290,12 @@ describe('Phase 2-4 Advanced Services Integration Tests', () => {
 
       const result = await masterDataSyncService.retrySync(syncId, maxRetries);
 
-      expect(result).toEqual(expect.objectContaining({
-        syncId,
-        completed: true,
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          syncId,
+          completed: true,
+        }),
+      );
     });
 
     it('should handle partial deployment failures gracefully', async () => {
@@ -296,11 +306,13 @@ describe('Phase 2-4 Advanced Services Integration Tests', () => {
 
       const result = await masterDataSyncService.syncWithFallback(syncConfig);
 
-      expect(result).toEqual(expect.objectContaining({
-        totalDeployments: 3,
-        successfulDeployments: expect.any(Number),
-        failedDeployments: expect.any(Number),
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          totalDeployments: 3,
+          successfulDeployments: expect.any(Number),
+          failedDeployments: expect.any(Number),
+        }),
+      );
     });
 
     it('should generate sync audit log', async () => {
@@ -308,11 +320,13 @@ describe('Phase 2-4 Advanced Services Integration Tests', () => {
 
       const result = await masterDataSyncService.generateAuditLog(syncId);
 
-      expect(result).toEqual(expect.objectContaining({
-        syncId,
-        timestamp: expect.any(Date),
-        events: expect.any(Array),
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          syncId,
+          timestamp: expect.any(Date),
+          events: expect.any(Array),
+        }),
+      );
     });
   });
 
@@ -322,16 +336,14 @@ describe('Phase 2-4 Advanced Services Integration Tests', () => {
       const current = { version: '1.0.0', config: { timeout: 60 } };
       const incoming = { version: '1.0.0', config: { timeout: 45 } };
 
-      const result = await conflictResolutionEngine.detect3WayConflict(
-        base,
-        current,
-        incoming,
-      );
+      const result = await conflictResolutionEngine.detect3WayConflict(base, current, incoming);
 
-      expect(result).toEqual(expect.objectContaining({
-        hasConflict: expect.any(Boolean),
-        conflictingFields: expect.any(Array),
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          hasConflict: expect.any(Boolean),
+          conflictingFields: expect.any(Array),
+        }),
+      );
     });
 
     it('should automatically resolve compatible changes', async () => {
@@ -341,10 +353,12 @@ describe('Phase 2-4 Advanced Services Integration Tests', () => {
 
       const result = await conflictResolutionEngine.autoResolve(changeA, changeB);
 
-      expect(result).toEqual(expect.objectContaining({
-        resolved: true,
-        strategy: 'merge',
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          resolved: true,
+          strategy: 'merge',
+        }),
+      );
     });
 
     it('should escalate conflicting changes for manual review', async () => {
@@ -357,11 +371,13 @@ describe('Phase 2-4 Advanced Services Integration Tests', () => {
 
       const result = await conflictResolutionEngine.escalateConflict(conflict);
 
-      expect(result).toEqual(expect.objectContaining({
-        escalated: true,
-        escalationId: expect.any(String),
-        requiresManualReview: true,
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          escalated: true,
+          escalationId: expect.any(String),
+          requiresManualReview: true,
+        }),
+      );
     });
 
     it('should apply resolution strategy to conflicts', async () => {
@@ -374,11 +390,13 @@ describe('Phase 2-4 Advanced Services Integration Tests', () => {
 
       const result = await conflictResolutionEngine.applyStrategy(conflict);
 
-      expect(result).toEqual(expect.objectContaining({
-        resolved: true,
-        finalValue: 60,
-        strategy: 'prefer_incoming',
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          resolved: true,
+          finalValue: 60,
+          strategy: 'prefer_incoming',
+        }),
+      );
     });
   });
 

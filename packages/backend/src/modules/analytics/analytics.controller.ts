@@ -33,9 +33,7 @@ export class AnalyticsController {
     const user = req.user;
     if (!user?.tenantId) {
       if (!user?.isSystemAdmin) {
-        throw new ForbiddenException(
-          'Tenant context required for admin dashboard analytics',
-        );
+        throw new ForbiddenException('Tenant context required for admin dashboard analytics');
       }
       this.logger.warn(
         JSON.stringify({

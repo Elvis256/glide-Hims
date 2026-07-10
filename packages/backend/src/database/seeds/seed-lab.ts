@@ -569,11 +569,7 @@ export async function seedLabTests(dataSource: DataSource) {
 
   // Deduplicate tenants — one catalog per tenant, not per facility.
   const tenantIds = Array.from(
-    new Set(
-      facilities
-        .map((f) => (f as any).tenantId || (f as any).tenant_id)
-        .filter(Boolean),
-    ),
+    new Set(facilities.map((f) => (f as any).tenantId || (f as any).tenant_id).filter(Boolean)),
   );
 
   let totalCreated = 0;
@@ -620,7 +616,9 @@ export async function seedLabTests(dataSource: DataSource) {
     console.log(`  tenant ${tenantId}: +${created} created, ${skipped} skipped`);
   }
 
-  console.log(`\n✅ Lab catalog: ${totalCreated} created, ${totalSkipped} skipped across ${tenantIds.length} tenant(s)`);
+  console.log(
+    `\n✅ Lab catalog: ${totalCreated} created, ${totalSkipped} skipped across ${tenantIds.length} tenant(s)`,
+  );
   console.log('🧪 Lab test seed complete!\n');
 }
 

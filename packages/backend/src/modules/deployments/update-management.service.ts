@@ -72,7 +72,10 @@ export class UpdateManagementService {
   async pauseRollout(rolloutId: string): Promise<UpdateRollout> {
     const rollout = await this.rolloutRepository.findOne({ where: { id: rolloutId } });
     if (!rollout) throw new NotFoundException('Rollout not found');
-    if (rollout.status !== UpdateRolloutStatus.IN_PROGRESS && rollout.status !== UpdateRolloutStatus.SCHEDULED) {
+    if (
+      rollout.status !== UpdateRolloutStatus.IN_PROGRESS &&
+      rollout.status !== UpdateRolloutStatus.SCHEDULED
+    ) {
       throw new BadRequestException(`Cannot pause a rollout in status "${rollout.status}"`);
     }
     rollout.status = UpdateRolloutStatus.PAUSED;
@@ -114,12 +117,18 @@ export class UpdateManagementService {
   async cancelRollout(rolloutId: string, reason?: string): Promise<UpdateRollout> {
     const rollout = await this.rolloutRepository.findOne({ where: { id: rolloutId } });
     if (!rollout) throw new NotFoundException('Rollout not found');
-    if (rollout.status === UpdateRolloutStatus.COMPLETED || rollout.status === UpdateRolloutStatus.ROLLED_BACK) {
+    if (
+      rollout.status === UpdateRolloutStatus.COMPLETED ||
+      rollout.status === UpdateRolloutStatus.ROLLED_BACK
+    ) {
       throw new BadRequestException(`Rollout already finalized (${rollout.status})`);
     }
     rollout.status = UpdateRolloutStatus.ROLLED_BACK;
     rollout.rolledBackAt = new Date();
-    rollout.rollbackReason = { reason: reason || 'cancelled by admin', cancelledAt: new Date().toISOString() };
+    rollout.rollbackReason = {
+      reason: reason || 'cancelled by admin',
+      cancelledAt: new Date().toISOString(),
+    };
     return this.rolloutRepository.save(rollout);
   }
 
@@ -539,10 +548,13 @@ export class UpdateManagementService {
 
     const success = reports.filter((r) => r.status === DeploymentReportStatus.SUCCESS).length;
     const failed = reports.filter((r) => r.status === DeploymentReportStatus.FAILED).length;
-    const rolledBack = reports.filter((r) => r.status === DeploymentReportStatus.ROLLED_BACK).length;
+    const rolledBack = reports.filter(
+      (r) => r.status === DeploymentReportStatus.ROLLED_BACK,
+    ).length;
     const simulated = reports.filter(
       (r) =>
-        (r.ipAddress === '::1' || r.ipAddress === '127.0.0.1') ||
+        r.ipAddress === '::1' ||
+        r.ipAddress === '127.0.0.1' ||
         (r.hardwareId && /^agent-/i.test(r.hardwareId)),
     ).length;
     const reported = reports.length;
@@ -637,7 +649,11 @@ export class UpdateManagementService {
 
   private calculateProgress(rollout: UpdateRollout): number {
     if (rollout.status === UpdateRolloutStatus.COMPLETED) return 100;
-    if (rollout.status === UpdateRolloutStatus.FAILED || rollout.status === UpdateRolloutStatus.ROLLED_BACK) return 0;
+    if (
+      rollout.status === UpdateRolloutStatus.FAILED ||
+      rollout.status === UpdateRolloutStatus.ROLLED_BACK
+    )
+      return 0;
     if (rollout.status === UpdateRolloutStatus.PAUSED) return 50;
     return 25;
   }

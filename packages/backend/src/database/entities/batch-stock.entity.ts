@@ -17,6 +17,7 @@ export type BatchStockStatus = 'active' | 'quarantined' | 'expired' | 'recalled'
 @Index(['itemId', 'facilityId'])
 @Index(['expiryDate'])
 @Index(['batchNumber'])
+@Index(['facilityId', 'status', 'expiryDate'])
 export class BatchStockBalance {
   @PrimaryGeneratedColumn('uuid')
   id: string;

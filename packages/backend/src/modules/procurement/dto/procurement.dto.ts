@@ -14,7 +14,11 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PRPriority, PRStatus } from '../../../database/entities/purchase-request.entity';
-import { MAX_MONEY, MAX_QUANTITY, NUMBER_OPTS } from '../../../common/constants/validation.constants';
+import {
+  MAX_MONEY,
+  MAX_QUANTITY,
+  NUMBER_OPTS,
+} from '../../../common/constants/validation.constants';
 import { POStatus } from '../../../database/entities/purchase-order.entity';
 import { GRNStatus } from '../../../database/entities/goods-receipt.entity';
 

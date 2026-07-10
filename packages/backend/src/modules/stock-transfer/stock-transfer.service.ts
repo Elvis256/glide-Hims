@@ -232,7 +232,7 @@ export class StockTransferService {
         const quantity = transferItem.approvedQuantity ?? transferItem.requestedQuantity;
         if (quantity <= 0) continue;
 
-        // Update batch stock (source)
+        // Update batch stock (source) — pessimistic lock prevents concurrent ship double-deduction
         const sourceBatch = await manager.findOne(BatchStockBalance, {
           where: {
             itemId: transferItem.itemId,
@@ -240,6 +240,7 @@ export class StockTransferService {
             batchNumber: transferItem.batchNumber,
             ...(tenantId ? { tenantId } : {}),
           },
+          lock: { mode: 'pessimistic_write' },
         });
         if (sourceBatch) {
           if (Number(sourceBatch.quantity) < quantity) {
@@ -346,7 +347,7 @@ export class StockTransferService {
 
         // === ADD to destination facility ===
 
-        // Update or create batch_stock_balances (destination)
+        // Update or create batch_stock_balances (destination) — pessimistic lock prevents lost updates
         let destBatch = await manager.findOne(BatchStockBalance, {
           where: {
             itemId: transferItem.itemId,
@@ -354,6 +355,7 @@ export class StockTransferService {
             batchNumber: transferItem.batchNumber,
             ...(tenantId ? { tenantId } : {}),
           },
+          lock: { mode: 'pessimistic_write' },
         });
 
         if (destBatch) {
@@ -373,13 +375,14 @@ export class StockTransferService {
           await manager.save(BatchStockBalance, destBatch);
         }
 
-        // Update stock_balances (destination)
+        // Update stock_balances (destination) — pessimistic lock prevents lost updates
         let toBalance = await manager.findOne(StockBalance, {
           where: {
             itemId: transferItem.itemId,
             facilityId: transfer.toFacilityId,
             ...(tenantId ? { tenantId } : {}),
           },
+          lock: { mode: 'pessimistic_write' },
         });
         const toNewTotal = (toBalance?.totalQuantity || 0) + quantity;
 
@@ -480,10 +483,30 @@ export class StockTransferService {
       );
     }
 
-    // If in-transit, restore stock to source since it was deducted at ship time
-    if (transfer.status === TransferStatus.IN_TRANSIT) {
-      await this.dataSource.transaction(async (manager) => {
-        for (const transferItem of transfer.items) {
+    // Wrap everything in a transaction so stock restoration + status update are atomic.
+    // If in-transit, restore stock to source since it was deducted at ship time.
+    return this.dataSource.transaction(async (manager) => {
+      // Re-fetch with pessimistic lock inside transaction
+      const lockedTransfer = await manager.findOne(StockTransfer, {
+        where: { id, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+        relations: ['items'],
+      });
+      if (!lockedTransfer) throw new NotFoundException(`Stock transfer ${id} not found`);
+
+      // Re-check status under lock
+      if (
+        lockedTransfer.status !== TransferStatus.REQUESTED &&
+        lockedTransfer.status !== TransferStatus.APPROVED &&
+        lockedTransfer.status !== TransferStatus.IN_TRANSIT
+      ) {
+        throw new BadRequestException(
+          `Cannot cancel transfer in "${lockedTransfer.status}" status.`,
+        );
+      }
+
+      if (lockedTransfer.status === TransferStatus.IN_TRANSIT) {
+        for (const transferItem of lockedTransfer.items) {
           const quantity = transferItem.approvedQuantity ?? transferItem.requestedQuantity;
           if (quantity <= 0) continue;
 
@@ -491,10 +514,11 @@ export class StockTransferService {
           const sourceBatch = await manager.findOne(BatchStockBalance, {
             where: {
               itemId: transferItem.itemId,
-              facilityId: transfer.fromFacilityId,
+              facilityId: lockedTransfer.fromFacilityId,
               batchNumber: transferItem.batchNumber,
               ...(tenantId ? { tenantId } : {}),
             },
+            lock: { mode: 'pessimistic_write' },
           });
           if (sourceBatch) {
             sourceBatch.quantity = Number(sourceBatch.quantity) + quantity;
@@ -505,7 +529,7 @@ export class StockTransferService {
           const fromBalance = await manager.findOne(StockBalance, {
             where: {
               itemId: transferItem.itemId,
-              facilityId: transfer.fromFacilityId,
+              facilityId: lockedTransfer.fromFacilityId,
               ...(tenantId ? { tenantId } : {}),
             },
             lock: { mode: 'pessimistic_write' },
@@ -519,7 +543,7 @@ export class StockTransferService {
             // Reversal ledger entry
             const reversalLedger = manager.create(StockLedger, {
               itemId: transferItem.itemId,
-              facilityId: transfer.fromFacilityId,
+              facilityId: lockedTransfer.fromFacilityId,
               quantity,
               balanceAfter: Number(fromBalance.totalQuantity),
               movementType: MovementType.TRANSFER_IN,
@@ -527,21 +551,21 @@ export class StockTransferService {
               expiryDate: transferItem.expiryDate,
               unitCost: transferItem.unitCost,
               referenceType: 'stock_transfer',
-              referenceId: transfer.id,
-              notes: `Transfer ${transfer.transferNumber} cancelled - stock restored`,
+              referenceId: lockedTransfer.id,
+              notes: `Transfer ${lockedTransfer.transferNumber} cancelled - stock restored`,
               createdById: userId,
               ...(tenantId ? { tenantId } : {}),
             });
             await manager.save(StockLedger, reversalLedger);
           }
         }
-      });
-    }
+      }
 
-    transfer.status = TransferStatus.CANCELLED;
-    transfer.cancellationReason = dto?.reason || null;
+      lockedTransfer.status = TransferStatus.CANCELLED;
+      lockedTransfer.cancellationReason = dto?.reason || null;
 
-    return this.transferRepository.save(transfer);
+      return manager.save(StockTransfer, lockedTransfer);
+    });
   }
 
   // ============ DASHBOARD ============

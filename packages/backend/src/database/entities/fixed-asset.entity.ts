@@ -102,6 +102,8 @@ export enum AssetCondition {
   unique: true,
   where: 'deleted_at IS NULL AND serial_number IS NOT NULL',
 })
+@Index(['facilityId', 'status'])
+@Index(['facilityId', 'categoryId'])
 export class FixedAsset extends BaseEntity {
   @Column({ type: 'uuid', name: 'facility_id' })
   facilityId: string;
@@ -453,6 +455,7 @@ export class AssetMaintenance extends BaseEntity {
 }
 
 @Entity('asset_transfers')
+@Index(['assetId', 'status'])
 export class AssetTransfer extends BaseEntity {
   @Column({ type: 'uuid', name: 'asset_id' })
   assetId: string;
@@ -564,7 +567,13 @@ export class AssetCategory extends BaseEntity {
   })
   defaultDepreciationMethod?: DepreciationMethod;
 
-  @Column({ type: 'decimal', precision: 5, scale: 2, nullable: true, name: 'default_depreciation_rate' })
+  @Column({
+    type: 'decimal',
+    precision: 5,
+    scale: 2,
+    nullable: true,
+    name: 'default_depreciation_rate',
+  })
   defaultDepreciationRate?: number;
 
   @Column({ type: 'int', nullable: true, name: 'default_calibration_interval_days' })
@@ -585,6 +594,7 @@ export class AssetCategory extends BaseEntity {
 // ====================================================================
 @Entity('asset_disposals')
 @Index(['tenantId', 'disposalNumber'], { unique: true, where: 'deleted_at IS NULL' })
+@Index(['assetId', 'status'])
 export class AssetDisposal extends BaseEntity {
   @Column({ type: 'varchar', length: 50, name: 'disposal_number' })
   disposalNumber: string;
@@ -635,7 +645,13 @@ export class AssetDisposal extends BaseEntity {
 
   // committee approval (auditor + admin)
   @Column({ type: 'jsonb', nullable: true, name: 'committee_approvals' })
-  committeeApprovals?: { userId: string; role: string; decision: string; at: string; comments?: string }[];
+  committeeApprovals?: {
+    userId: string;
+    role: string;
+    decision: string;
+    at: string;
+    comments?: string;
+  }[];
 
   @Column({ type: 'date', nullable: true, name: 'disposal_date' })
   disposalDate?: Date;
@@ -658,6 +674,7 @@ export class AssetDisposal extends BaseEntity {
 // ====================================================================
 @Entity('asset_allocations')
 @Index(['tenantId', 'allocationNumber'], { unique: true, where: 'deleted_at IS NULL' })
+@Index(['assetId', 'status'])
 export class AssetAllocation extends BaseEntity {
   @Column({ type: 'varchar', length: 50, name: 'allocation_number' })
   allocationNumber: string;

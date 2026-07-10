@@ -89,7 +89,7 @@ export class DataIntegrityService {
 
     for (const row of unbalanced) {
       const account = await this.coaRepo.findOne({
-        where: { id: row.account_id, tenantId: tid } as any,
+        where: { id: row.account_id, tenantId: tid },
       });
       if (!account) continue;
 
@@ -223,7 +223,12 @@ export class DataIntegrityService {
     timestamp: Date;
     overallStatus: string;
     sections: {
-      glBalance: { isBalanced: boolean; totalDebits: number; totalCredits: number; difference: number };
+      glBalance: {
+        isBalanced: boolean;
+        totalDebits: number;
+        totalCredits: number;
+        difference: number;
+      };
       unbalancedAccounts: { unbalancedCount: number };
       masterData: { isValid: boolean; orphanedEntries: number; accountsWithoutType: number };
       anomalies: { anomalyCount: number };

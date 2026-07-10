@@ -1,18 +1,11 @@
-import {
-  IsUUID,
-  IsEnum,
-  IsNumber,
-  IsString,
-  IsOptional,
-  IsObject,
-  Min,
-} from 'class-validator';
+import { IsUUID, IsEnum, IsNumber, IsString, IsOptional, IsObject, Min } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { CashDrawerEventType } from '../../database/entities/pos-compliance.entity';
 
 export class CreateDrawerEventDto {
   @ApiProperty() @IsUUID() shiftId: string;
-  @ApiProperty({ enum: CashDrawerEventType }) @IsEnum(CashDrawerEventType)
+  @ApiProperty({ enum: CashDrawerEventType })
+  @IsEnum(CashDrawerEventType)
   eventType: CashDrawerEventType;
   @ApiProperty({ required: false, default: 0 })
   @IsOptional()

@@ -34,13 +34,21 @@ export class OrgAdminController {
 
   @Put('departments/:id/head')
   @AuthWithPermissions('procurement.manage')
-  setDepartmentHead(@Param('id') id: string, @Body() body: { headUserId: string | null }, @Request() req: any) {
+  setDepartmentHead(
+    @Param('id') id: string,
+    @Body() body: { headUserId: string | null },
+    @Request() req: any,
+  ) {
     return this.orgAdmin.setDepartmentHead(id, body.headUserId, req.user?.tenantId);
   }
 
   @Put('departments/:id/parent')
   @AuthWithPermissions('procurement.manage')
-  setDepartmentParent(@Param('id') id: string, @Body() body: { parentId: string | null }, @Request() req: any) {
+  setDepartmentParent(
+    @Param('id') id: string,
+    @Body() body: { parentId: string | null },
+    @Request() req: any,
+  ) {
     return this.orgAdmin.setDepartmentParent(id, body.parentId, req.user?.tenantId);
   }
 
@@ -53,13 +61,21 @@ export class OrgAdminController {
 
   @Put('employees/:id/manager')
   @AuthWithPermissions('procurement.manage')
-  setEmployeeManager(@Param('id') id: string, @Body() body: { managerId: string | null }, @Request() req: any) {
+  setEmployeeManager(
+    @Param('id') id: string,
+    @Body() body: { managerId: string | null },
+    @Request() req: any,
+  ) {
     return this.orgAdmin.setEmployeeManager(id, body.managerId, req.user?.tenantId);
   }
 
   @Put('employees/:id/position')
   @AuthWithPermissions('procurement.manage')
-  setEmployeePosition(@Param('id') id: string, @Body() body: { positionId: string | null }, @Request() req: any) {
+  setEmployeePosition(
+    @Param('id') id: string,
+    @Body() body: { positionId: string | null },
+    @Request() req: any,
+  ) {
     return this.orgAdmin.setEmployeePosition(id, body.positionId, req.user?.tenantId);
   }
 

@@ -51,9 +51,7 @@ export class ApprovalsSlaService {
     }
   }
 
-  private async lookupEscalationTarget(
-    step: ProcurementApprovalChain,
-  ): Promise<string | null> {
+  private async lookupEscalationTarget(step: ProcurementApprovalChain): Promise<string | null> {
     try {
       const row = await this.stepRepo
         .createQueryBuilder('s')

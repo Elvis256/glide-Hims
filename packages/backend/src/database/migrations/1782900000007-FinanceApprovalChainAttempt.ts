@@ -29,9 +29,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * — and per pre-flight there are no journal entries with multiple
  * historical chain cycles in the live DB to disambiguate.
  */
-export class FinanceApprovalChainAttempt1782900000007
-  implements MigrationInterface
-{
+export class FinanceApprovalChainAttempt1782900000007 implements MigrationInterface {
   name = 'FinanceApprovalChainAttempt1782900000007';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

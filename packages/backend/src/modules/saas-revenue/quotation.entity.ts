@@ -23,13 +23,7 @@ export type CatalogItemCategory =
   | 'support'
   | 'other';
 
-export type QuotationStatus =
-  | 'draft'
-  | 'sent'
-  | 'accepted'
-  | 'rejected'
-  | 'expired'
-  | 'superseded';
+export type QuotationStatus = 'draft' | 'sent' | 'accepted' | 'rejected' | 'expired' | 'superseded';
 
 export interface QuotationLineItem {
   catalogItemId?: string | null;
@@ -90,7 +84,8 @@ export class SaasQuotation {
 
   // Pricing
   @Column({ type: 'varchar', length: 3, default: 'UGX' }) currency: string;
-  @Column({ type: 'numeric', precision: 18, scale: 6, default: 1, name: 'fx_rate_to_base' }) fxRateToBase: string;
+  @Column({ type: 'numeric', precision: 18, scale: 6, default: 1, name: 'fx_rate_to_base' })
+  fxRateToBase: string;
   @Column({ type: 'varchar', length: 20, default: 'monthly' }) billingInterval: string;
   @Column({ type: 'integer', default: 1 }) seats: number;
 
@@ -122,8 +117,11 @@ export class SaasQuotation {
   @Column({ type: 'uuid', nullable: true, name: 'contract_id' }) contractId: string | null;
 
   // Deployment (auto-provisioned on acceptance)
-  @Column({ type: 'varchar', length: 20, nullable: true, name: 'deployment_type' }) deploymentType: string | null;
-  @Column({ type: 'varchar', length: 255, nullable: true, name: 'deployment_domain' }) deploymentDomain: string | null;
+  @Column({ type: 'varchar', length: 20, nullable: true, name: 'deployment_type' }) deploymentType:
+    | string
+    | null;
+  @Column({ type: 'varchar', length: 255, nullable: true, name: 'deployment_domain' })
+  deploymentDomain: string | null;
   @Column({ type: 'uuid', nullable: true, name: 'deployment_id' }) deploymentId: string | null;
 
   // Notes

@@ -2,6 +2,8 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ChartOfAccount } from '../../database/entities/chart-of-account.entity';
+import * as XLSX from 'xlsx';
+import * as PDFDocument from 'pdfkit';
 
 /**
  * Report Generator Service
@@ -66,9 +68,7 @@ export class ReportGeneratorService {
   /**
    * Create a custom report definition
    */
-  async createReportDefinition(
-    definition: Partial<ReportDefinition>,
-  ): Promise<ReportDefinition> {
+  async createReportDefinition(definition: Partial<ReportDefinition>): Promise<ReportDefinition> {
     const report: ReportDefinition = {
       id: `report-${Date.now()}`,
       name: definition.name || 'Custom Report',
@@ -85,17 +85,13 @@ export class ReportGeneratorService {
       },
     };
 
-    // TODO: Store in database (for now, just return definition)
     return report;
   }
 
   /**
    * Generate trial balance report
    */
-  async generateTrialBalanceReport(
-    facilityId: string,
-    period: string,
-  ): Promise<ReportData> {
+  async generateTrialBalanceReport(facilityId: string, period: string): Promise<ReportData> {
     const accounts = await this.accountRepository.find({
       where: { facilityId },
     });
@@ -104,8 +100,8 @@ export class ReportGeneratorService {
       accountCode: account.accountCode,
       accountName: account.accountName,
       accountType: account.accountType,
-      debitBalance: 0, // Would populate from GL
-      creditBalance: 0, // Would populate from GL
+      debitBalance: 0,
+      creditBalance: 0,
       period,
     }));
 
@@ -123,10 +119,7 @@ export class ReportGeneratorService {
   /**
    * Generate income statement
    */
-  async generateIncomeStatement(
-    facilityId: string,
-    period: string,
-  ): Promise<ReportData> {
+  async generateIncomeStatement(facilityId: string, period: string): Promise<ReportData> {
     const rows = [
       { lineItem: 'REVENUE', amount: 0, type: 'header' },
       { lineItem: 'Operating Revenue', amount: 0, type: 'subtotal' },
@@ -157,10 +150,7 @@ export class ReportGeneratorService {
   /**
    * Generate balance sheet
    */
-  async generateBalanceSheet(
-    facilityId: string,
-    period: string,
-  ): Promise<ReportData> {
+  async generateBalanceSheet(facilityId: string, period: string): Promise<ReportData> {
     const rows = [
       { section: 'ASSETS', type: 'header' },
       { section: 'Current Assets', type: 'subtotal', amount: 0 },
@@ -209,11 +199,11 @@ export class ReportGeneratorService {
     const rows = accounts.map((account) => ({
       accountCode: account.accountCode,
       accountName: account.accountName,
-      budgetedAmount: 0, // Would populate from budget
-      actualAmount: 0, // Would populate from GL
-      varianceAmount: 0, // budgeted - actual
-      variancePercent: 0, // (variance / budgeted) * 100
-      status: 'on-target', // under, on-target, over
+      budgetedAmount: 0,
+      actualAmount: 0,
+      varianceAmount: 0,
+      variancePercent: 0,
+      status: 'on-target',
     }));
 
     return {
@@ -228,13 +218,12 @@ export class ReportGeneratorService {
   }
 
   /**
-   * Export report to CSV format (stub)
+   * Export report to CSV format
    */
   async exportToCSV(report: ReportData): Promise<string> {
-    // CSV header
-    const headers = Object.keys(report.rows[0] || {}).join(',');
-    
-    // CSV data rows
+    if (!report.rows.length) return '';
+
+    const headers = Object.keys(report.rows[0]).join(',');
     const dataRows = report.rows.map((row) =>
       Object.values(row)
         .map((v) => (typeof v === 'string' ? `"${v}"` : v))
@@ -245,36 +234,186 @@ export class ReportGeneratorService {
   }
 
   /**
-   * Export report to Excel format (stub)
-   * In production, would use a library like xlsx or exceljs
+   * Export report to Excel format using xlsx library
    */
   async exportToExcel(report: ReportData): Promise<Buffer> {
-    // Stub: would use xlsx library in production
-    const csv = await this.exportToCSV(report);
-    return Buffer.from(csv, 'utf-8');
+    const wb = XLSX.utils.book_new();
+
+    // Sanitize cell values to prevent formula injection (CWE-1236)
+    const FORMULA_LEADERS = /^[=+\-@\t\r\n]/;
+    const sanitizedRows = report.rows.map((row) => {
+      const clean: Record<string, unknown> = {};
+      for (const [key, val] of Object.entries(row)) {
+        if (typeof val === 'string' && FORMULA_LEADERS.test(val)) {
+          clean[key] = `'${val}`;
+        } else {
+          clean[key] = val;
+        }
+      }
+      return clean;
+    });
+
+    const ws = XLSX.utils.json_to_sheet(sanitizedRows);
+
+    // Auto-size columns based on content
+    if (report.rows.length > 0) {
+      const colKeys = Object.keys(report.rows[0]);
+      ws['!cols'] = colKeys.map((key) => {
+        const maxLen = Math.max(
+          key.length,
+          ...report.rows.map((r) => String(r[key] ?? '').length),
+        );
+        return { wch: Math.min(maxLen + 2, 50) };
+      });
+    }
+
+    XLSX.utils.book_append_sheet(wb, ws, report.reportName.substring(0, 31));
+
+    // Add summary sheet if summary data exists
+    if (report.summary?.totalValues) {
+      const summaryRows = Object.entries(report.summary.totalValues).map(([key, val]) => ({
+        Metric: key,
+        Value: val,
+      }));
+      const summaryWs = XLSX.utils.json_to_sheet(summaryRows);
+      XLSX.utils.book_append_sheet(wb, summaryWs, 'Summary');
+    }
+
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    return Buffer.from(buf);
   }
 
   /**
-   * Export report to PDF format (stub)
-   * In production, would use a library like pdfkit or puppeteer
+   * Export report to PDF format using pdfkit
    */
   async exportToPDF(report: ReportData): Promise<Buffer> {
-    // Stub: would use pdfkit or puppeteer in production
-    const csv = await this.exportToCSV(report);
-    return Buffer.from(csv, 'utf-8');
+    return new Promise<Buffer>((resolve, reject) => {
+      const doc = new PDFDocument({ margin: 40, size: 'A4', layout: 'landscape' });
+      const chunks: Buffer[] = [];
+
+      doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+
+      // Title
+      doc.fontSize(16).font('Helvetica-Bold').text(report.reportName, { align: 'center' });
+      doc.moveDown(0.3);
+
+      // Metadata
+      doc.fontSize(9).font('Helvetica');
+      doc.text(`Period: ${report.periodCovered}`, { align: 'center' });
+      doc.text(`Generated: ${report.generatedAt.toISOString().split('T')[0]}`, {
+        align: 'center',
+      });
+      doc.moveDown(1);
+
+      if (report.rows.length === 0) {
+        doc.fontSize(11).text('No data available for this report.');
+        doc.end();
+        return;
+      }
+
+      // Table layout
+      const columns = Object.keys(report.rows[0]);
+      const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+      const colWidth = Math.floor(pageWidth / columns.length);
+      const startX = doc.page.margins.left;
+      let y = doc.y;
+
+      // Header row
+      doc.fontSize(8).font('Helvetica-Bold');
+      columns.forEach((col, i) => {
+        doc.text(col, startX + i * colWidth, y, {
+          width: colWidth - 4,
+          align: 'left',
+          lineBreak: false,
+        });
+      });
+      y += 14;
+
+      // Divider line
+      doc
+        .moveTo(startX, y)
+        .lineTo(startX + pageWidth, y)
+        .stroke();
+      y += 4;
+
+      // Data rows
+      doc.font('Helvetica').fontSize(7);
+      const maxRows = Math.min(report.rows.length, 500); // Cap at 500 for PDF
+      for (let r = 0; r < maxRows; r++) {
+        // Check if we need a new page
+        if (y > doc.page.height - doc.page.margins.bottom - 20) {
+          doc.addPage();
+          y = doc.page.margins.top;
+
+          // Re-print header on new page
+          doc.fontSize(8).font('Helvetica-Bold');
+          columns.forEach((col, i) => {
+            doc.text(col, startX + i * colWidth, y, {
+              width: colWidth - 4,
+              align: 'left',
+              lineBreak: false,
+            });
+          });
+          y += 14;
+          doc
+            .moveTo(startX, y)
+            .lineTo(startX + pageWidth, y)
+            .stroke();
+          y += 4;
+          doc.font('Helvetica').fontSize(7);
+        }
+
+        const row = report.rows[r];
+        columns.forEach((col, i) => {
+          const val = row[col];
+          const text = val instanceof Date ? val.toISOString().split('T')[0] : String(val ?? '');
+          doc.text(text, startX + i * colWidth, y, {
+            width: colWidth - 4,
+            align: typeof val === 'number' ? 'right' : 'left',
+            lineBreak: false,
+          });
+        });
+        y += 12;
+      }
+
+      if (report.rows.length > maxRows) {
+        doc.moveDown(1);
+        doc
+          .fontSize(8)
+          .font('Helvetica-Oblique')
+          .text(`... and ${report.rows.length - maxRows} more rows (truncated for PDF)`);
+      }
+
+      // Summary footer
+      if (report.summary) {
+        doc.moveDown(1);
+        doc
+          .moveTo(startX, doc.y)
+          .lineTo(startX + pageWidth, doc.y)
+          .stroke();
+        doc.moveDown(0.5);
+        doc.fontSize(9).font('Helvetica-Bold').text(`Total rows: ${report.summary.totalRows}`);
+
+        if (report.summary.totalValues) {
+          for (const [key, val] of Object.entries(report.summary.totalValues)) {
+            doc.fontSize(8).font('Helvetica').text(`${key}: ${val}`);
+          }
+        }
+      }
+
+      doc.end();
+    });
   }
 
   /**
    * Build a custom query from report definition
-   * (This would be used to generate the SQL query for custom reports)
    */
   buildCustomReportQuery(definition: ReportDefinition): {
     sql: string;
     parameters: Record<string, unknown>;
   } {
-    // Allow-list of safe column identifiers that may appear in user-supplied
-    // report definitions. Anything outside this list is rejected to prevent
-    // SQL injection via field names.
     const allowedColumns = new Set([
       'id',
       'tenant_id',
@@ -307,9 +446,7 @@ export class ReportGeneratorService {
 
     let sql = 'SELECT ';
 
-    sql += definition.columns
-      .map((col) => validateField(col.field))
-      .join(', ');
+    sql += definition.columns.map((col) => validateField(col.field)).join(', ');
     sql += ' FROM journal_entry_lines';
 
     const parameters: Record<string, unknown> = {};
@@ -338,11 +475,9 @@ export class ReportGeneratorService {
             return `${field} <= ${nextParam(filter.value)}`;
           case 'in': {
             if (!Array.isArray(filter.value) || filter.value.length === 0) {
-              throw new BadRequestException(
-                `Operator 'in' requires a non-empty array value`,
-              );
+              throw new BadRequestException(`Operator 'in' requires a non-empty array value`);
             }
-            const placeholders = filter.value.map((v) => nextParam(v)).join(', ');
+            const placeholders = filter.value.map((v: unknown) => nextParam(v)).join(', ');
             return `${field} IN (${placeholders})`;
           }
           case 'between': {

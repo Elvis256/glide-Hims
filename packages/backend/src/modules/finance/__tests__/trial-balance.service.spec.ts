@@ -3,7 +3,11 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { TrialBalanceService } from '../trial-balance.service';
 import { JournalEntry, JournalStatus } from '../../../database/entities/journal-entry.entity';
 import { JournalEntryLine } from '../../../database/entities/journal-entry-line.entity';
-import { ChartOfAccount, AccountType, AccountCategory } from '../../../database/entities/chart-of-account.entity';
+import {
+  ChartOfAccount,
+  AccountType,
+  AccountCategory,
+} from '../../../database/entities/chart-of-account.entity';
 import { FiscalPeriod } from '../../../database/entities/fiscal-period.entity';
 
 describe('TrialBalanceService', () => {
@@ -292,7 +296,12 @@ describe('TrialBalanceService', () => {
           accountId: 'acc-1',
           debit: 1000,
           credit: 0,
-          account: { id: 'acc-1', accountCode: '1000', accountName: 'Cash', accountType: AccountType.ASSET },
+          account: {
+            id: 'acc-1',
+            accountCode: '1000',
+            accountName: 'Cash',
+            accountType: AccountType.ASSET,
+          },
         },
       ];
 
@@ -302,7 +311,12 @@ describe('TrialBalanceService', () => {
           accountId: 'acc-1',
           debit: 2000,
           credit: 0,
-          account: { id: 'acc-1', accountCode: '1000', accountName: 'Cash', accountType: AccountType.ASSET },
+          account: {
+            id: 'acc-1',
+            accountCode: '1000',
+            accountName: 'Cash',
+            accountType: AccountType.ASSET,
+          },
         },
       ];
 

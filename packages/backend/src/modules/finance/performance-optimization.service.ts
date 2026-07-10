@@ -129,20 +129,14 @@ export class PerformanceOptimizationService {
       `;
 
       const indexes = await this.dataSource.query(query);
-      const existingIndexNames = new Set(
-        indexes.map((i: any) => i.index_name),
-      );
+      const existingIndexNames = new Set(indexes.map((i: any) => i.index_name));
 
-      const missing = this.recommendedIndexes.filter(
-        (idx) => !existingIndexNames.has(idx.name),
-      );
+      const missing = this.recommendedIndexes.filter((idx) => !existingIndexNames.has(idx.name));
 
       const missingWithImpact = missing.map((idx) => ({
         ...idx,
         estimatedImpact:
-          idx.priority === 'HIGH'
-            ? '20-40% query improvement'
-            : '5-15% query improvement',
+          idx.priority === 'HIGH' ? '20-40% query improvement' : '5-15% query improvement',
       }));
 
       return {
@@ -170,11 +164,7 @@ export class PerformanceOptimizationService {
   }> {
     this.logger.debug('Optimizing table statistics');
 
-    const tables = [
-      'journal_entry_line',
-      'audit_logs',
-      'chart_of_accounts',
-    ];
+    const tables = ['journal_entry_line', 'audit_logs', 'chart_of_accounts'];
 
     let optimized = 0;
     for (const table of tables) {
@@ -232,14 +222,15 @@ export class PerformanceOptimizationService {
           tableName: t.table_name,
           fragmentationPercent: frag,
           status: frag > 20 ? 'HIGH' : frag > 10 ? 'MODERATE' : 'HEALTHY',
-          recommendedAction:
-            frag > 20 ? 'VACUUM FULL' : frag > 10 ? 'MONITOR' : 'NONE',
+          recommendedAction: frag > 20 ? 'VACUUM FULL' : frag > 10 ? 'MONITOR' : 'NONE',
         };
       });
 
-      const totalFrag = results.length > 0
-        ? results.reduce((sum: number, r: any) => sum + r.fragmentationPercent, 0) / results.length
-        : 0;
+      const totalFrag =
+        results.length > 0
+          ? results.reduce((sum: number, r: any) => sum + r.fragmentationPercent, 0) /
+            results.length
+          : 0;
 
       return {
         tables: results,
@@ -270,13 +261,17 @@ export class PerformanceOptimizationService {
 
     try {
       // Use pg_stat_statements if available
-      const rows = await this.dataSource.query(`
+      const rows = await this.dataSource
+        .query(
+          `
         SELECT query, ROUND(mean_exec_time::numeric, 2) AS mean_ms, calls
         FROM pg_stat_statements
         WHERE mean_exec_time > 100
         ORDER BY mean_exec_time DESC
         LIMIT 10
-      `).catch(() => []);
+      `,
+        )
+        .catch(() => []);
 
       if (rows.length > 0) {
         const slowQueries = rows.map((r: any) => ({
@@ -284,7 +279,9 @@ export class PerformanceOptimizationService {
           executionTimeMs: parseFloat(r.mean_ms) || 0,
           estimatedOptimization: 'Review query plan with EXPLAIN ANALYZE',
         }));
-        const avgTime = slowQueries.reduce((sum: number, q: any) => sum + q.executionTimeMs, 0) / slowQueries.length;
+        const avgTime =
+          slowQueries.reduce((sum: number, q: any) => sum + q.executionTimeMs, 0) /
+          slowQueries.length;
         return {
           slowQueryCount: slowQueries.length,
           averageQueryTimeMs: Math.round(avgTime),
@@ -330,7 +327,9 @@ export class PerformanceOptimizationService {
         FROM pg_stat_database WHERE datname = current_database()
       `);
       if (cacheResult[0]?.ratio) cacheHitRate = parseFloat(cacheResult[0].ratio);
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
 
     const metrics = {
       indexHealth: indexHealth.healthScore,
@@ -364,9 +363,7 @@ export class PerformanceOptimizationService {
       recommendations.push('Run VACUUM FULL on highly fragmented tables');
     }
     if (slowQueries.slowQueryCount > 0) {
-      recommendations.push(
-        `Review and optimize ${slowQueries.slowQueryCount} slow queries`,
-      );
+      recommendations.push(`Review and optimize ${slowQueries.slowQueryCount} slow queries`);
     }
     if (recommendations.length === 0) {
       recommendations.push('Database performance is optimal');
@@ -388,9 +385,7 @@ export class PerformanceOptimizationService {
     createdCount?: number;
     estimatedImprovementPercent: number;
   }> {
-    this.logger.debug(
-      `Creating recommended indexes (dryRun: ${dryRun})`,
-    );
+    this.logger.debug(`Creating recommended indexes (dryRun: ${dryRun})`);
 
     const health = await this.analyzeIndexHealth();
     const toCreate = health.missingIndexes;
@@ -413,9 +408,7 @@ export class PerformanceOptimizationService {
     const improvementEstimate =
       toCreate.length > 0
         ? toCreate
-            .map((idx) =>
-              idx.priority === 'HIGH' ? 30 : 10,
-            )
+            .map((idx) => (idx.priority === 'HIGH' ? 30 : 10))
             .reduce((a, b) => Math.min(a + b, 40), 0)
         : 0;
 
@@ -451,9 +444,7 @@ export class PerformanceOptimizationService {
         `Create ${indexes.missingIndexes.length} recommended indexes (1-2 hours work)`,
       );
     }
-    if (
-      fragmentation.tables.some((t) => t.status === 'HIGH')
-    ) {
+    if (fragmentation.tables.some((t) => t.status === 'HIGH')) {
       quickWins.push('Run VACUUM FULL on fragmented tables (30 min)');
     }
 

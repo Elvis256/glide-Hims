@@ -51,6 +51,10 @@ export class CreateEncounterDto {
   @IsOptional()
   insurancePolicyId?: string;
 
+  @IsString()
+  @IsOptional()
+  corporateAccountId?: string;
+
   @IsIn(['pre_pay', 'post_pay'])
   @IsOptional()
   billingMode?: 'pre_pay' | 'post_pay';

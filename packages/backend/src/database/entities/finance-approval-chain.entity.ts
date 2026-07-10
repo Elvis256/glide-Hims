@@ -18,7 +18,11 @@ export enum FinanceApprovalStatus {
 }
 
 @Entity('finance_approval_chains')
-@Index('uq_finance_approval_journal_level_attempt', ['journalEntryId', 'approvalLevel', 'attempt'], { unique: true })
+@Index(
+  'uq_finance_approval_journal_level_attempt',
+  ['journalEntryId', 'approvalLevel', 'attempt'],
+  { unique: true },
+)
 @Index(['status'])
 @Index(['facilityId', 'requiredRole'])
 export class FinanceApprovalChain {
@@ -49,7 +53,8 @@ export class FinanceApprovalChain {
     name: 'attempt',
     type: 'smallint',
     default: 1,
-    comment: 'Resubmission attempt number (1-based). Each rejection-and-resubmit cycle creates a new chain with attempt = previous + 1, preserving the rejected chain as audit history.',
+    comment:
+      'Resubmission attempt number (1-based). Each rejection-and-resubmit cycle creates a new chain with attempt = previous + 1, preserving the rejected chain as audit history.',
   })
   attempt: number;
 

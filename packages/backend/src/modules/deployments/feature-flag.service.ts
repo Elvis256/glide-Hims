@@ -15,7 +15,8 @@ export class FeatureFlagService {
   ) {}
 
   async toggleFeature(tenantId: string, dto: ToggleFeatureFlagDto): Promise<any> {
-    const enabled = typeof dto.isEnabled === 'string' ? dto.isEnabled.toLowerCase() === 'true' : dto.isEnabled;
+    const enabled =
+      typeof dto.isEnabled === 'string' ? dto.isEnabled.toLowerCase() === 'true' : dto.isEnabled;
 
     const feature = await this.featureModuleRepository.findOne({
       where: { tenantId, moduleKey: dto.featureKey },

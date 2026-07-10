@@ -1,4 +1,14 @@
-import { IsString, IsInt, IsBoolean, IsOptional, IsNotEmpty, Min, Max, IsArray, IsUUID } from 'class-validator';
+import {
+  IsString,
+  IsInt,
+  IsBoolean,
+  IsOptional,
+  IsNotEmpty,
+  Min,
+  Max,
+  IsArray,
+  IsUUID,
+} from 'class-validator';
 
 export class CreatePasswordPolicyDto {
   @IsString()

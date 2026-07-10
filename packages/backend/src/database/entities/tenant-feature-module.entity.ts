@@ -10,7 +10,7 @@ import {
 } from 'typeorm';
 import { Tenant } from './tenant.entity';
 
-@Entity("tenant_feature_modules")
+@Entity('tenant_feature_modules')
 @Index(['tenantId', 'moduleKey'])
 export class TenantFeatureModule {
   @PrimaryGeneratedColumn('uuid')

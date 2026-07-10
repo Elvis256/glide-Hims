@@ -23,9 +23,7 @@ export class StateMachine<S extends string> {
   validate(from: S, to: S): void {
     if (from === to) return;
     if (!this.canTransition(from, to)) {
-      throw new BadRequestException(
-        `Cannot transition from '${from}' to '${to}'`,
-      );
+      throw new BadRequestException(`Cannot transition from '${from}' to '${to}'`);
     }
   }
 

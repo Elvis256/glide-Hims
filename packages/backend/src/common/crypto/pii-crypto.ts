@@ -18,13 +18,7 @@
  * If PII_ENCRYPTION_KEY is missing the helpers fall back to plaintext storage
  * (with a one-time warning) so dev/local databases keep working without setup.
  */
-import {
-  createCipheriv,
-  createDecipheriv,
-  createHmac,
-  randomBytes,
-  scryptSync,
-} from 'crypto';
+import { createCipheriv, createDecipheriv, createHmac, randomBytes, scryptSync } from 'crypto';
 import type { ValueTransformer } from 'typeorm';
 
 const VERSION_PREFIX = 'v1:';
@@ -57,8 +51,7 @@ function getHashKey(): Buffer {
   if (hashKeyCache) return hashKeyCache;
   // Prefer a dedicated key, but fall back to deriving one from the AES passphrase
   // so deployments that only set PII_ENCRYPTION_KEY still get deterministic hashes.
-  const passphrase =
-    process.env.PII_HASH_KEY || process.env.PII_ENCRYPTION_KEY || '';
+  const passphrase = process.env.PII_HASH_KEY || process.env.PII_ENCRYPTION_KEY || '';
   if (!passphrase && !warnedMissingHash) {
     console.warn(
       '[pii-crypto] No PII_HASH_KEY / PII_ENCRYPTION_KEY set — blind-index hashes will use an empty key (DEV ONLY).',

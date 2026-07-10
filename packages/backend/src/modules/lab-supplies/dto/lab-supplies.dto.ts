@@ -96,6 +96,9 @@ export class UpdateReagentDto {
 
 // ============ REAGENT LOTS ============
 export class ReceiveLotDto {
+  @IsUUID()
+  facilityId: string;
+
   @IsString()
   lotNumber: string;
 

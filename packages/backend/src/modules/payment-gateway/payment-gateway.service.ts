@@ -115,7 +115,8 @@ export class PaymentGatewayService {
     }
     // If the gateway gave us back the internalReference (our INV-... or idempotencyKey),
     // we can settle the invoice here. We require either invoiceId or internalReference.
-    const invoiceId = event.invoiceId || this.parseInvoiceIdFromInternalRef(event.internalReference);
+    const invoiceId =
+      event.invoiceId || this.parseInvoiceIdFromInternalRef(event.internalReference);
     if (!invoiceId) {
       this.logger.warn(`Webhook accepted but no invoiceId found in payload`);
       return event;
@@ -131,8 +132,7 @@ export class PaymentGatewayService {
               : event.channel === 'bank_transfer'
                 ? PaymentMethod.BANK_TRANSFER
                 : PaymentMethod.MOBILE_MONEY,
-          transactionReference:
-            event.externalReference || event.providerTransactionId,
+          transactionReference: event.externalReference || event.providerTransactionId,
           receivedById: 'gateway',
           notes: `Auto-recorded via ${providerKey} webhook`,
         } as any,

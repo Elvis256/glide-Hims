@@ -57,9 +57,15 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     // Don't log 401/403/404 as errors — they're expected
     if (status >= 500) {
-      this.logger.error(`${request.method} ${request.url} ${status} [requestId=${requestId}]`, JSON.stringify(responseBody));
+      this.logger.error(
+        `${request.method} ${request.url} ${status} [requestId=${requestId}]`,
+        JSON.stringify(responseBody),
+      );
     } else if (status >= 400 && status !== 401 && status !== 403 && status !== 404) {
-      this.logger.warn(`${request.method} ${request.url} ${status} [requestId=${requestId}]`, JSON.stringify(responseBody));
+      this.logger.warn(
+        `${request.method} ${request.url} ${status} [requestId=${requestId}]`,
+        JSON.stringify(responseBody),
+      );
     }
 
     response.status(status).json(responseBody);

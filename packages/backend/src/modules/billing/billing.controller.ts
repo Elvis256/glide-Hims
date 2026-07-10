@@ -191,7 +191,13 @@ export class BillingController {
       }
     }
     return this.billingService.listPayments(
-      { startDate: query.startDate, endDate: query.endDate, method: query.method, page: query.page, limit: query.limit },
+      {
+        startDate: query.startDate,
+        endDate: query.endDate,
+        method: query.method,
+        page: query.page,
+        limit: query.limit,
+      },
       req?.user?.tenantId,
     );
   }
@@ -268,7 +274,7 @@ export class BillingController {
       throw new BadRequestException('facilityId is required');
     }
     const allowed = ['daily', 'weekly', 'monthly'] as const;
-    if (period && !allowed.includes(period as any)) {
+    if (period && !(allowed as readonly string[]).includes(period)) {
       throw new BadRequestException(`period must be one of: ${allowed.join(', ')}`);
     }
     return this.billingService.getRevenueDashboard(

@@ -12,7 +12,13 @@ import {
 
 export type OnboardingStatus = 'not_started' | 'in_progress' | 'completed' | 'blocked';
 export type OnboardingItemStatus = 'pending' | 'in_progress' | 'completed' | 'skipped' | 'blocked';
-export type OnboardingPhase = 'setup' | 'configuration' | 'data_migration' | 'training' | 'testing' | 'go_live';
+export type OnboardingPhase =
+  | 'setup'
+  | 'configuration'
+  | 'data_migration'
+  | 'training'
+  | 'testing'
+  | 'go_live';
 
 @Entity('client_onboardings')
 export class ClientOnboarding {
@@ -23,7 +29,9 @@ export class ClientOnboarding {
   @Column({ type: 'uuid', nullable: true, name: 'quotation_id' }) quotationId: string | null;
   @Column({ type: 'uuid', nullable: true, name: 'subscription_id' }) subscriptionId: string | null;
 
-  @Column({ type: 'varchar', length: 30, default: 'not_started' }) @Index() status: OnboardingStatus;
+  @Column({ type: 'varchar', length: 30, default: 'not_started' })
+  @Index()
+  status: OnboardingStatus;
   @Column({ type: 'integer', default: 0 }) progressPercent: number;
 
   @Column({ type: 'timestamp', nullable: true }) targetGoLiveDate: Date | null;

@@ -2,7 +2,10 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { FinanceApprovalService } from '../finance-approval.service';
-import { FinanceApprovalChain, FinanceApprovalStatus } from '../../../database/entities/finance-approval-chain.entity';
+import {
+  FinanceApprovalChain,
+  FinanceApprovalStatus,
+} from '../../../database/entities/finance-approval-chain.entity';
 import { JournalEntry, JournalStatus } from '../../../database/entities/journal-entry.entity';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 
@@ -33,7 +36,11 @@ describe('FinanceApprovalService', () => {
     return entry;
   };
 
-  const mockApprovalChain = (entryId: string, level: number, role: string): FinanceApprovalChain => {
+  const mockApprovalChain = (
+    entryId: string,
+    level: number,
+    role: string,
+  ): FinanceApprovalChain => {
     const chain = new FinanceApprovalChain();
     chain.id = `550e8400-e29b-41d4-a716-446655440${level}00`;
     chain.journalEntryId = entryId;

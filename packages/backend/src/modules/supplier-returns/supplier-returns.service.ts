@@ -84,7 +84,7 @@ export class SupplierReturnsService {
   }
 
   async findAll(query: SupplierReturnQueryDto, tenantId?: string) {
-    const where: FindOptionsWhere<SupplierReturn> = {};
+    const where: any = {};
 
     if (query.facilityId) where.facilityId = query.facilityId;
     if (query.supplierId) where.supplierId = query.supplierId;

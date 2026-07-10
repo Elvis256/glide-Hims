@@ -117,9 +117,9 @@ describe('Reports validation', () => {
 
     it('rejects a facility that does not belong to the tenant', async () => {
       dsQueryMock.mockResolvedValueOnce([]); // requireFacility → no row
-      await expect(
-        svc.getDashboard({ facilityId: FACILITY } as any, TENANT),
-      ).rejects.toThrow(NotFoundException);
+      await expect(svc.getDashboard({ facilityId: FACILITY } as any, TENANT)).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('accepts a facility that belongs to the tenant and proceeds to query', async () => {
@@ -139,10 +139,7 @@ describe('Reports validation', () => {
         .mockResolvedValueOnce([{ ok: 1 }]) // requireFacility ok
         .mockResolvedValueOnce([]); // requireDepartment empty
       await expect(
-        svc.getDashboard(
-          { facilityId: FACILITY, departmentId: DEPT } as any,
-          TENANT,
-        ),
+        svc.getDashboard({ facilityId: FACILITY, departmentId: DEPT } as any, TENANT),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -167,9 +164,9 @@ describe('Reports validation', () => {
     });
 
     it('rejects a missing tenant context', async () => {
-      await expect(
-        svc.getDashboard({ facilityId: FACILITY } as any, undefined),
-      ).rejects.toThrow(/Missing tenant context/);
+      await expect(svc.getDashboard({ facilityId: FACILITY } as any, undefined)).rejects.toThrow(
+        /Missing tenant context/,
+      );
     });
 
     it('getStock rejects a store that does not belong to facility/tenant', async () => {
@@ -190,10 +187,7 @@ describe('Reports validation', () => {
         .mockResolvedValueOnce([{ ok: 1 }]) // requireFacility
         .mockResolvedValueOnce([{ ok: 1 }]) // requireStore
         .mockResolvedValueOnce([]); // stock query
-      const res = await svc.getStock(
-        { facilityId: FACILITY, storeId: STORE } as any,
-        TENANT,
-      );
+      const res = await svc.getStock({ facilityId: FACILITY, storeId: STORE } as any, TENANT);
       expect(res).toMatchObject({ totalItems: 0, totalValue: 0, lowStock: 0 });
     });
 
@@ -204,7 +198,12 @@ describe('Reports validation', () => {
         .mockResolvedValueOnce([]); // requireItem -> empty
       await expect(
         svc.getConsumption(
-          { facilityId: FACILITY, itemId: ITEM, startDate: '2025-01-01', endDate: '2025-02-01' } as any,
+          {
+            facilityId: FACILITY,
+            itemId: ITEM,
+            startDate: '2025-01-01',
+            endDate: '2025-02-01',
+          } as any,
           TENANT,
         ),
       ).rejects.toThrow(NotFoundException);
@@ -218,7 +217,12 @@ describe('Reports validation', () => {
         .mockResolvedValueOnce([{ ok: 1 }]) // requireItem
         .mockResolvedValue([]); // consumption sub-queries
       const res = await svc.getConsumption(
-        { facilityId: FACILITY, itemId: ITEM, startDate: '2025-01-01', endDate: '2025-02-01' } as any,
+        {
+          facilityId: FACILITY,
+          itemId: ITEM,
+          startDate: '2025-01-01',
+          endDate: '2025-02-01',
+        } as any,
         TENANT,
       );
       expect(res).toHaveProperty('byItem');

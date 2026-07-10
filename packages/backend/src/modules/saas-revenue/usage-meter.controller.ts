@@ -41,7 +41,8 @@ export class UsageMeterController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Record a usage event',
-    description: 'Log a usage event (API call, storage, SMS, etc.). Quota checks happen automatically.',
+    description:
+      'Log a usage event (API call, storage, SMS, etc.). Quota checks happen automatically.',
   })
   @ApiResponse({
     status: 201,
@@ -62,10 +63,7 @@ export class UsageMeterController {
     status: 429,
     description: 'Quota exceeded (hard limit)',
   })
-  async recordUsage(
-    @CurrentTenant() tenantId: string,
-    @Body() dto: RecordUsageDto,
-  ) {
+  async recordUsage(@CurrentTenant() tenantId: string, @Body() dto: RecordUsageDto) {
     return this.usageMeterService.recordUsage(
       tenantId,
       dto.metricType,
@@ -106,7 +104,9 @@ export class UsageMeterController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
   ): Promise<UsageReportResponse> {
-    const start = startDate ? new Date(startDate) : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    const start = startDate
+      ? new Date(startDate)
+      : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
     const end = endDate ? new Date(endDate) : new Date();
 
     if (start >= end) {
@@ -125,9 +125,7 @@ export class UsageMeterController {
     summary: 'Get current usage status',
     description: 'Quick overview of usage vs quota for all enabled metrics.',
   })
-  async getUsageStatus(
-    @CurrentTenant() tenantId: string,
-  ): Promise<
+  async getUsageStatus(@CurrentTenant() tenantId: string): Promise<
     Array<{
       metricType: string;
       currentUsage: number;
@@ -148,7 +146,11 @@ export class UsageMeterController {
       limit: m.monthlyLimit,
       usagePercentage: Number(m.usagePercentage || 0),
       status:
-        Number(m.usagePercentage || 0) >= 100 ? 'critical' : Number(m.usagePercentage || 0) >= 80 ? 'warning' : 'ok',
+        Number(m.usagePercentage || 0) >= 100
+          ? 'critical'
+          : Number(m.usagePercentage || 0) >= 80
+            ? 'warning'
+            : 'ok',
     }));
   }
 
@@ -268,7 +270,9 @@ export class UsageMeterController {
       throw new BadRequestException('Only system admins can view other tenant usage');
     }
 
-    const start = startDate ? new Date(startDate) : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    const start = startDate
+      ? new Date(startDate)
+      : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
     const end = endDate ? new Date(endDate) : new Date();
 
     if (start >= end) {

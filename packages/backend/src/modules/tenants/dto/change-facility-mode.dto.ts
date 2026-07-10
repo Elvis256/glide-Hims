@@ -19,8 +19,8 @@ export class ChangeFacilityModeDto {
   @ApiPropertyOptional({
     default: true,
     description:
-      'When true (default), refresh the tenant\'s enabled_modules override from the new preset ' +
-      'so the change is reflected in the sidebar immediately. When false, the operator\'s existing ' +
+      "When true (default), refresh the tenant's enabled_modules override from the new preset " +
+      "so the change is reflected in the sidebar immediately. When false, the operator's existing " +
       'custom module list is preserved (the mode change becomes metadata-only).',
   })
   @IsOptional()

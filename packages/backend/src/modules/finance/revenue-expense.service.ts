@@ -92,14 +92,10 @@ export class RevenueExpenseService {
       relations: ['journalEntry', 'account'],
     });
 
-    const revenueItems: Map<
-      string,
-      { code: string; description: string; amount: number }
-    > = new Map();
-    const expenseItems: Map<
-      string,
-      { code: string; description: string; amount: number }
-    > = new Map();
+    const revenueItems: Map<string, { code: string; description: string; amount: number }> =
+      new Map();
+    const expenseItems: Map<string, { code: string; description: string; amount: number }> =
+      new Map();
 
     let totalRevenue = 0;
     let totalExpense = 0;
@@ -144,10 +140,7 @@ export class RevenueExpenseService {
   /**
    * Get revenue breakdown by cost center
    */
-  async getRevenueByCostCenter(
-    facilityId: string,
-    period: string,
-  ): Promise<CostCenterBreakdown[]> {
+  async getRevenueByCostCenter(facilityId: string, period: string): Promise<CostCenterBreakdown[]> {
     const [pY, pM] = period.split('-').map((n) => parseInt(n, 10));
     const startDate = new Date(pY, pM - 1, 1);
     const endDate = new Date(pY, pM, 0); // last day of period month
@@ -213,10 +206,7 @@ export class RevenueExpenseService {
   /**
    * Get expense breakdown by cost center
    */
-  async getExpenseByCostCenter(
-    facilityId: string,
-    period: string,
-  ): Promise<CostCenterBreakdown[]> {
+  async getExpenseByCostCenter(facilityId: string, period: string): Promise<CostCenterBreakdown[]> {
     const [pY, pM] = period.split('-').map((n) => parseInt(n, 10));
     const startDate = new Date(pY, pM - 1, 1);
     const endDate = new Date(pY, pM, 0); // last day of period month
@@ -343,24 +333,15 @@ export class RevenueExpenseService {
       totalCredit: at.credit,
       netAmount: at.debit - at.credit,
       accountCount: at.accounts.size,
-      percentage:
-        totalAmount > 0
-          ? ((Math.abs(at.debit - at.credit) / totalAmount) * 100)
-          : 0,
+      percentage: totalAmount > 0 ? (Math.abs(at.debit - at.credit) / totalAmount) * 100 : 0,
     }));
   }
 
   /**
    * Get department breakdown (derived from cost centers)
    */
-  async getDepartmentBreakdown(
-    facilityId: string,
-    period: string,
-  ): Promise<DepartmentBreakdown[]> {
-    const costCenters = await this.getRevenueByCostCenter(
-      facilityId,
-      period,
-    );
+  async getDepartmentBreakdown(facilityId: string, period: string): Promise<DepartmentBreakdown[]> {
+    const costCenters = await this.getRevenueByCostCenter(facilityId, period);
 
     // Group by department (would need actual department mapping in real system)
     const deptMap = new Map<string, DepartmentBreakdown>();
@@ -412,10 +393,7 @@ export class RevenueExpenseService {
         accountCode: item.code,
         accountName: item.description,
         amount: item.amount,
-        percentage:
-          summary.totalRevenue > 0
-            ? (item.amount / summary.totalRevenue) * 100
-            : 0,
+        percentage: summary.totalRevenue > 0 ? (item.amount / summary.totalRevenue) * 100 : 0,
       }));
   }
 
@@ -443,10 +421,7 @@ export class RevenueExpenseService {
         accountCode: item.code,
         accountName: item.description,
         amount: item.amount,
-        percentage:
-          summary.totalExpense > 0
-            ? (item.amount / summary.totalExpense) * 100
-            : 0,
+        percentage: summary.totalExpense > 0 ? (item.amount / summary.totalExpense) * 100 : 0,
       }));
   }
 }

@@ -240,8 +240,12 @@ export class OrgAwareApprovalRouting1782600000000 implements MigrationInterface 
     await queryRunner.query(`DROP TABLE IF EXISTS "procurement_approval_policies";`);
     await queryRunner.query(`DROP TABLE IF EXISTS "approver_group_members";`);
     await queryRunner.query(`DROP TABLE IF EXISTS "approver_groups";`);
-    await queryRunner.query(`ALTER TABLE "employees" DROP CONSTRAINT IF EXISTS "FK_employees_position";`);
-    await queryRunner.query(`ALTER TABLE "employees" DROP CONSTRAINT IF EXISTS "FK_employees_manager";`);
+    await queryRunner.query(
+      `ALTER TABLE "employees" DROP CONSTRAINT IF EXISTS "FK_employees_position";`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "employees" DROP CONSTRAINT IF EXISTS "FK_employees_manager";`,
+    );
     await queryRunner.query(`ALTER TABLE "employees" DROP COLUMN IF EXISTS "position_id";`);
     await queryRunner.query(`ALTER TABLE "employees" DROP COLUMN IF EXISTS "manager_id";`);
     await queryRunner.query(`DROP TABLE IF EXISTS "positions";`);

@@ -2,7 +2,11 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { DeploymentHealth, HealthStatus } from '../../database/entities/deployment-health.entity';
-import { DeploymentAlert, AlertSeverity, AlertStatus } from '../../database/entities/deployment-alert.entity';
+import {
+  DeploymentAlert,
+  AlertSeverity,
+  AlertStatus,
+} from '../../database/entities/deployment-alert.entity';
 import { Deployment, DeploymentStatus } from '../../database/entities/deployment.entity';
 
 @Injectable()
@@ -137,7 +141,11 @@ export class MonitoringService {
     };
   }
 
-  async getHealthHistory(tenantId: string, deploymentId: string, limit = 100): Promise<DeploymentHealth[]> {
+  async getHealthHistory(
+    tenantId: string,
+    deploymentId: string,
+    limit = 100,
+  ): Promise<DeploymentHealth[]> {
     return this.healthRepository.find({
       where: { deploymentId },
       order: { createdAt: 'DESC' },
@@ -145,7 +153,11 @@ export class MonitoringService {
     });
   }
 
-  async getAlerts(tenantId: string, deploymentId?: string, filters?: { severity?: AlertSeverity; status?: AlertStatus }): Promise<DeploymentAlert[]> {
+  async getAlerts(
+    tenantId: string,
+    deploymentId?: string,
+    filters?: { severity?: AlertSeverity; status?: AlertStatus },
+  ): Promise<DeploymentAlert[]> {
     const query = this.alertRepository.createQueryBuilder('a');
 
     if (deploymentId) {

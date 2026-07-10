@@ -97,7 +97,10 @@ export abstract class TenantAwareRepository<T extends BaseEntity> extends Reposi
     Object.entries(criteria).forEach(([key, value]) => {
       qb.andWhere(`${this.metadata.tableName}.${key} = :${key}`, { [key]: value });
     });
-    return qb.delete().execute().then(() => void 0);
+    return qb
+      .delete()
+      .execute()
+      .then(() => void 0);
   }
 
   /**

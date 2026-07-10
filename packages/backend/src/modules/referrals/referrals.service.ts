@@ -37,7 +37,7 @@ export class ReferralsService {
       expiryDate,
       status: ReferralStatus.PENDING,
     });
-    if (tenantId) (referral as any).tenantId = tenantId;
+    if (tenantId) referral.tenantId = tenantId;
 
     return this.referralRepository.save(referral);
   }

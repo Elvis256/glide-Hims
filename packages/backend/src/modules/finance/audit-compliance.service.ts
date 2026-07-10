@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  ForbiddenException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, Logger, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan, LessThan } from 'typeorm';
 import { AuditLog } from '../../database/entities/audit-log.entity';
@@ -123,9 +118,7 @@ export class AuditComplianceService {
       .getCount();
 
     const percentCompliance =
-      totalRecords === 0
-        ? 100
-        : Math.round(((totalRecords - overdueRecords) / totalRecords) * 100);
+      totalRecords === 0 ? 100 : Math.round(((totalRecords - overdueRecords) / totalRecords) * 100);
 
     const nextReview = new Date();
     nextReview.setDate(nextReview.getDate() + 30);
@@ -164,9 +157,10 @@ export class AuditComplianceService {
   }> {
     const tid = this.requireTenant(tenantId);
     // Defensive coercion: query strings arrive as strings in some setups.
-    const days = Number.isFinite(Number(periodDays)) && Number(periodDays) > 0
-      ? Math.floor(Number(periodDays))
-      : 90;
+    const days =
+      Number.isFinite(Number(periodDays)) && Number(periodDays) > 0
+        ? Math.floor(Number(periodDays))
+        : 90;
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
 
@@ -187,9 +181,7 @@ export class AuditComplianceService {
       const userId = record.userId || 'SYSTEM';
       byUser[userId] = (byUser[userId] || 0) + 1;
 
-      if (
-        ['DELETE', 'UPDATE', 'MODIFY', 'CHANGE_APPROVAL'].includes(action)
-      ) {
+      if (['DELETE', 'UPDATE', 'MODIFY', 'CHANGE_APPROVAL'].includes(action)) {
         critical.push({
           id: record.id,
           action,
@@ -205,8 +197,7 @@ export class AuditComplianceService {
       }
     }
 
-    const criticalCountRatio =
-      critical.length > 0 ? Math.min(critical.length / 100, 1) : 0;
+    const criticalCountRatio = critical.length > 0 ? Math.min(critical.length / 100, 1) : 0;
     const complianceScore = Math.round((1 - criticalCountRatio) * 100);
 
     return {
@@ -285,16 +276,11 @@ export class AuditComplianceService {
       });
     }
 
-    const auditTrail = await this.generateComplianceAudit(
-      includePeriodDays,
-      tid,
-    );
+    const auditTrail = await this.generateComplianceAudit(includePeriodDays, tid);
 
     const recommendations: string[] = [];
     if (auditTrail.complianceScore < 80) {
-      recommendations.push(
-        'Review and increase controls for critical operations',
-      );
+      recommendations.push('Review and increase controls for critical operations');
     }
     if (auditTrail.criticalOperations.length > 50) {
       recommendations.push('Investigate high volume of critical operations');

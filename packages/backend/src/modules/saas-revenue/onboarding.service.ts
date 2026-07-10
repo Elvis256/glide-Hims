@@ -2,7 +2,12 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { InjectRepository } from '@nestjs/typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Repository } from 'typeorm';
-import { ClientOnboarding, ClientOnboardingItem, OnboardingPhase, OnboardingItemStatus } from './onboarding.entity';
+import {
+  ClientOnboarding,
+  ClientOnboardingItem,
+  OnboardingPhase,
+  OnboardingItemStatus,
+} from './onboarding.entity';
 import { SaasQuotation, SaasQuotationRevision } from './quotation.entity';
 import { SaasSubscription } from './saas.entity';
 import { Tenant } from '../../database/entities/tenant.entity';
@@ -10,29 +15,101 @@ import { Tenant } from '../../database/entities/tenant.entity';
 // Default onboarding template items grouped by phase
 const DEFAULT_TEMPLATE: Array<{ phase: OnboardingPhase; title: string; description: string }> = [
   // Setup
-  { phase: 'setup', title: 'Tenant accessible and admin account created', description: 'Verify tenant login works' },
-  { phase: 'setup', title: 'License activated', description: 'Ensure subscription license is active with correct modules' },
-  { phase: 'setup', title: 'Initial health check passed', description: 'Deployment health check returns OK' },
+  {
+    phase: 'setup',
+    title: 'Tenant accessible and admin account created',
+    description: 'Verify tenant login works',
+  },
+  {
+    phase: 'setup',
+    title: 'License activated',
+    description: 'Ensure subscription license is active with correct modules',
+  },
+  {
+    phase: 'setup',
+    title: 'Initial health check passed',
+    description: 'Deployment health check returns OK',
+  },
   // Configuration
-  { phase: 'configuration', title: 'Facility details configured', description: 'Organization name, address, logo, contact info' },
-  { phase: 'configuration', title: 'User roles and permissions set up', description: 'Admin, clinical, finance roles configured' },
-  { phase: 'configuration', title: 'Enabled modules configured', description: 'Activate purchased modules and disable unused ones' },
-  { phase: 'configuration', title: 'Billing tariffs configured', description: 'Service prices, insurance schemes, and payment methods' },
+  {
+    phase: 'configuration',
+    title: 'Facility details configured',
+    description: 'Organization name, address, logo, contact info',
+  },
+  {
+    phase: 'configuration',
+    title: 'User roles and permissions set up',
+    description: 'Admin, clinical, finance roles configured',
+  },
+  {
+    phase: 'configuration',
+    title: 'Enabled modules configured',
+    description: 'Activate purchased modules and disable unused ones',
+  },
+  {
+    phase: 'configuration',
+    title: 'Billing tariffs configured',
+    description: 'Service prices, insurance schemes, and payment methods',
+  },
   // Data Migration
-  { phase: 'data_migration', title: 'Patient data migration', description: 'Import existing patient records (if applicable)' },
-  { phase: 'data_migration', title: 'Drug catalog imported', description: 'Import formulary / drug list' },
-  { phase: 'data_migration', title: 'Lab catalog imported', description: 'Import lab test catalog and reference ranges' },
+  {
+    phase: 'data_migration',
+    title: 'Patient data migration',
+    description: 'Import existing patient records (if applicable)',
+  },
+  {
+    phase: 'data_migration',
+    title: 'Drug catalog imported',
+    description: 'Import formulary / drug list',
+  },
+  {
+    phase: 'data_migration',
+    title: 'Lab catalog imported',
+    description: 'Import lab test catalog and reference ranges',
+  },
   // Training
-  { phase: 'training', title: 'Admin training completed', description: 'System administration, user management, settings' },
-  { phase: 'training', title: 'Clinical staff training completed', description: 'Patient flow, encounters, lab, pharmacy' },
-  { phase: 'training', title: 'Finance staff training completed', description: 'Billing, insurance claims, reporting' },
+  {
+    phase: 'training',
+    title: 'Admin training completed',
+    description: 'System administration, user management, settings',
+  },
+  {
+    phase: 'training',
+    title: 'Clinical staff training completed',
+    description: 'Patient flow, encounters, lab, pharmacy',
+  },
+  {
+    phase: 'training',
+    title: 'Finance staff training completed',
+    description: 'Billing, insurance claims, reporting',
+  },
   // Testing
-  { phase: 'testing', title: 'End-to-end workflow validated', description: 'Full patient journey from registration to discharge' },
-  { phase: 'testing', title: 'Reporting validation completed', description: 'Key reports generate correctly with test data' },
+  {
+    phase: 'testing',
+    title: 'End-to-end workflow validated',
+    description: 'Full patient journey from registration to discharge',
+  },
+  {
+    phase: 'testing',
+    title: 'Reporting validation completed',
+    description: 'Key reports generate correctly with test data',
+  },
   // Go-Live
-  { phase: 'go_live', title: 'Go-live date confirmed with client', description: 'Final sign-off from client stakeholders' },
-  { phase: 'go_live', title: 'Backup schedule configured', description: 'Automated backups running and verified' },
-  { phase: 'go_live', title: 'Support handover completed', description: 'Client knows how to reach support, escalation path clear' },
+  {
+    phase: 'go_live',
+    title: 'Go-live date confirmed with client',
+    description: 'Final sign-off from client stakeholders',
+  },
+  {
+    phase: 'go_live',
+    title: 'Backup schedule configured',
+    description: 'Automated backups running and verified',
+  },
+  {
+    phase: 'go_live',
+    title: 'Support handover completed',
+    description: 'Client knows how to reach support, escalation path clear',
+  },
 ];
 
 @Injectable()
@@ -41,10 +118,13 @@ export class OnboardingService {
 
   constructor(
     @InjectRepository(ClientOnboarding) private readonly onboardings: Repository<ClientOnboarding>,
-    @InjectRepository(ClientOnboardingItem) private readonly items: Repository<ClientOnboardingItem>,
+    @InjectRepository(ClientOnboardingItem)
+    private readonly items: Repository<ClientOnboardingItem>,
     @InjectRepository(SaasQuotation) private readonly quotations: Repository<SaasQuotation>,
-    @InjectRepository(SaasQuotationRevision) private readonly revisions: Repository<SaasQuotationRevision>,
-    @InjectRepository(SaasSubscription) private readonly subscriptions: Repository<SaasSubscription>,
+    @InjectRepository(SaasQuotationRevision)
+    private readonly revisions: Repository<SaasQuotationRevision>,
+    @InjectRepository(SaasSubscription)
+    private readonly subscriptions: Repository<SaasSubscription>,
     @InjectRepository(Tenant) private readonly tenants: Repository<Tenant>,
     private readonly events: EventEmitter2,
   ) {}
@@ -70,7 +150,10 @@ export class OnboardingService {
       tmap = new Map(tenantEntities.map((t) => [t.id, { id: t.id, name: t.name, slug: t.slug }]));
     }
 
-    const items = rows.map((r) => ({ ...r, tenant: r.tenantId ? tmap.get(r.tenantId) ?? null : null }));
+    const items = rows.map((r) => ({
+      ...r,
+      tenant: r.tenantId ? (tmap.get(r.tenantId) ?? null) : null,
+    }));
     return { items, total };
   }
 
@@ -78,8 +161,18 @@ export class OnboardingService {
     const o = await this.onboardings.findOne({ where: { id }, relations: ['items'] });
     if (!o) throw new NotFoundException('Onboarding not found');
     // Sort items by phase order then sortOrder
-    const phaseOrder: Record<string, number> = { setup: 0, configuration: 1, data_migration: 2, training: 3, testing: 4, go_live: 5 };
-    o.items?.sort((a, b) => (phaseOrder[a.phase] ?? 99) - (phaseOrder[b.phase] ?? 99) || a.sortOrder - b.sortOrder);
+    const phaseOrder: Record<string, number> = {
+      setup: 0,
+      configuration: 1,
+      data_migration: 2,
+      training: 3,
+      testing: 4,
+      go_live: 5,
+    };
+    o.items?.sort(
+      (a, b) =>
+        (phaseOrder[a.phase] ?? 99) - (phaseOrder[b.phase] ?? 99) || a.sortOrder - b.sortOrder,
+    );
     return o;
   }
 
@@ -116,7 +209,10 @@ export class OnboardingService {
     // Resolve tenantId from the linked subscription
     let tenantId: string | null = null;
     if (q.subscriptionId) {
-      const sub = await this.subscriptions.findOne({ where: { id: q.subscriptionId }, select: ['id', 'tenantId'] });
+      const sub = await this.subscriptions.findOne({
+        where: { id: q.subscriptionId },
+        select: ['id', 'tenantId'],
+      });
       tenantId = sub?.tenantId ?? null;
     }
 
@@ -128,7 +224,11 @@ export class OnboardingService {
     });
   }
 
-  async updateItem(onboardingId: string, itemId: string, dto: Partial<ClientOnboardingItem>): Promise<ClientOnboardingItem> {
+  async updateItem(
+    onboardingId: string,
+    itemId: string,
+    dto: Partial<ClientOnboardingItem>,
+  ): Promise<ClientOnboardingItem> {
     const item = await this.items.findOne({ where: { id: itemId, onboardingId } });
     if (!item) throw new NotFoundException('Onboarding item not found');
 
@@ -151,7 +251,8 @@ export class OnboardingService {
     const allItems = await this.items.find({ where: { onboardingId } });
     const completable = allItems.filter((i) => i.status !== 'skipped');
     const completed = completable.filter((i) => i.status === 'completed');
-    const progress = completable.length > 0 ? Math.round((completed.length / completable.length) * 100) : 0;
+    const progress =
+      completable.length > 0 ? Math.round((completed.length / completable.length) * 100) : 0;
 
     const onboarding = await this.onboardings.findOne({ where: { id: onboardingId } });
     if (!onboarding) return;

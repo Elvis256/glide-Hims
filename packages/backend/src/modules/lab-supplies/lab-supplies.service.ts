@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan, MoreThan, Between } from 'typeorm';
+import { Repository, DataSource, LessThan, MoreThan, Between } from 'typeorm';
 import {
   LabReagent,
   ReagentLot,
@@ -21,9 +21,12 @@ import {
   QCStatus,
   evaluateWestgardRules,
 } from '../../database/entities/lab-qc.entity';
+import { AuditLogService } from '../../common/interceptors/audit-log.service';
 
 @Injectable()
 export class LabSuppliesService {
+  private readonly logger = new Logger(LabSuppliesService.name);
+
   constructor(
     @InjectRepository(LabReagent)
     private reagentRepo: Repository<LabReagent>,
@@ -43,6 +46,8 @@ export class LabSuppliesService {
     private qcResultRepo: Repository<QCResult>,
     @InjectRepository(QCLeveyJenningsData)
     private ljDataRepo: Repository<QCLeveyJenningsData>,
+    private dataSource: DataSource,
+    private auditLogService: AuditLogService,
   ) {}
 
   // ==================== REAGENTS ====================
@@ -120,25 +125,63 @@ export class LabSuppliesService {
 
   // ==================== REAGENT LOTS ====================
 
-  async receiveLot(data: Partial<ReagentLot>, tenantId?: string): Promise<ReagentLot> {
-    const reagent = await this.reagentRepo.findOne({
-      where: { id: data.reagentId, ...(tenantId ? { tenantId } : {}) },
+  async receiveLot(
+    data: Partial<ReagentLot>,
+    tenantId?: string,
+    userId?: string,
+  ): Promise<ReagentLot> {
+    // P1: validate expiry > received date
+    if (data.expiryDate && data.receivedDate) {
+      const expiry = new Date(data.expiryDate);
+      const received = new Date(data.receivedDate);
+      if (expiry < received) {
+        throw new BadRequestException('Expiry date cannot be before received date');
+      }
+    }
+
+    // P0: wrap in transaction with pessimistic lock to prevent lost stock updates
+    return this.dataSource.transaction(async (manager) => {
+      const reagent = await manager.findOne(LabReagent, {
+        where: { id: data.reagentId, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!reagent) throw new NotFoundException('Reagent not found');
+
+      const lot = manager.getRepository(ReagentLot).create({
+        ...data,
+        currentQuantity: data.initialQuantity,
+        ...(tenantId ? { tenantId } : {}),
+      });
+      const saved = await manager.save(lot);
+
+      // Update reagent stock under lock
+      reagent.stockQuantity = Number(reagent.stockQuantity) + Number(data.initialQuantity);
+      this.applyReagentStatus(reagent);
+      await manager.save(reagent);
+
+      // Audit
+      try {
+        await this.auditLogService.log({
+          action: 'REAGENT_LOT_RECEIVED',
+          entityType: 'ReagentLot',
+          entityId: saved.id,
+          userId,
+          tenantId,
+          newValue: {
+            lotId: saved.id,
+            reagentId: reagent.id,
+            reagentName: reagent.name,
+            initialQuantity: data.initialQuantity,
+            lotNumber: data.lotNumber,
+            facilityId: data.facilityId,
+          },
+        });
+      } catch (e) {
+        this.logger.warn(`Audit log failed (REAGENT_LOT_RECEIVED): ${(e as Error).message}`);
+      }
+
+      return saved;
     });
-    if (!reagent) throw new NotFoundException('Reagent not found');
-
-    const lot = this.lotRepo.create({
-      ...data,
-      currentQuantity: data.initialQuantity,
-      ...(tenantId ? { tenantId } : {}),
-    });
-    const saved = await this.lotRepo.save(lot);
-
-    // Update reagent stock
-    reagent.stockQuantity = Number(reagent.stockQuantity) + Number(data.initialQuantity);
-    await this.updateReagentStatus(reagent);
-    await this.reagentRepo.save(reagent);
-
-    return saved;
   }
 
   async openLot(lotId: string, tenantId?: string): Promise<ReagentLot> {
@@ -153,38 +196,68 @@ export class LabSuppliesService {
   async recordConsumption(
     data: Partial<ReagentConsumption>,
     tenantId?: string,
+    userId?: string,
   ): Promise<ReagentConsumption> {
-    const lot = await this.lotRepo.findOne({
-      where: { id: data.lotId, ...(tenantId ? { tenantId } : {}) },
-      relations: ['reagent'],
+    // P0: wrap in transaction with pessimistic lock to prevent stock going negative
+    return this.dataSource.transaction(async (manager) => {
+      const lot = await manager.findOne(ReagentLot, {
+        where: { id: data.lotId, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!lot) throw new NotFoundException('Lot not found');
+
+      if (Number(lot.currentQuantity) < Number(data.quantityUsed)) {
+        throw new BadRequestException('Insufficient quantity in lot');
+      }
+
+      const consumption = manager.getRepository(ReagentConsumption).create({
+        ...data,
+        consumedAt: new Date(),
+        facilityId: lot.facilityId,
+        ...(tenantId ? { tenantId } : {}),
+      });
+      const saved = await manager.save(consumption);
+
+      // Update lot quantity
+      lot.currentQuantity = Number(lot.currentQuantity) - Number(data.quantityUsed);
+      await manager.save(lot);
+
+      // Update reagent stock (lock reagent too)
+      const reagent = await manager.findOne(LabReagent, {
+        where: { id: lot.reagentId, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (reagent) {
+        reagent.stockQuantity = Number(reagent.stockQuantity) - Number(data.quantityUsed);
+        this.applyReagentStatus(reagent);
+        await manager.save(reagent);
+      }
+
+      // Audit
+      try {
+        await this.auditLogService.log({
+          action: 'REAGENT_CONSUMED',
+          entityType: 'ReagentConsumption',
+          entityId: saved.id,
+          userId,
+          tenantId,
+          newValue: {
+            consumptionId: saved.id,
+            lotId: lot.id,
+            quantityUsed: data.quantityUsed,
+            remainingQuantity: lot.currentQuantity,
+            facilityId: lot.facilityId,
+          },
+        });
+      } catch (e) {
+        this.logger.warn(`Audit log failed (REAGENT_CONSUMED): ${(e as Error).message}`);
+      }
+
+      return saved;
     });
-    if (!lot) throw new NotFoundException('Lot not found');
-
-    if (Number(lot.currentQuantity) < Number(data.quantityUsed)) {
-      throw new BadRequestException('Insufficient quantity in lot');
-    }
-
-    const consumption = this.consumptionRepo.create({
-      ...data,
-      consumedAt: new Date(),
-      ...(tenantId ? { tenantId } : {}),
-    });
-    const saved = await this.consumptionRepo.save(consumption);
-
-    // Update lot quantity
-    lot.currentQuantity = Number(lot.currentQuantity) - Number(data.quantityUsed);
-    await this.lotRepo.save(lot);
-
-    // Update reagent stock
-    const reagent = lot.reagent;
-    reagent.stockQuantity = Number(reagent.stockQuantity) - Number(data.quantityUsed);
-    await this.updateReagentStatus(reagent);
-    await this.reagentRepo.save(reagent);
-
-    return saved;
   }
 
-  private async updateReagentStatus(reagent: LabReagent, tenantId?: string): Promise<void> {
+  private applyReagentStatus(reagent: LabReagent): void {
     if (reagent.stockQuantity <= 0) {
       reagent.status = ReagentStatus.OUT_OF_STOCK;
     } else if (reagent.stockQuantity <= reagent.reorderLevel) {
@@ -297,11 +370,17 @@ export class LabSuppliesService {
   async recordCalibration(
     data: Partial<EquipmentCalibration>,
     tenantId?: string,
+    userId?: string,
   ): Promise<EquipmentCalibration> {
     const equipment = await this.equipmentRepo.findOne({
       where: { id: data.equipmentId, ...(tenantId ? { tenantId } : {}) },
     });
     if (!equipment) throw new NotFoundException('Equipment not found');
+
+    // P1: reject calibration on decommissioned/retired equipment
+    if (equipment.status === EquipmentStatus.DECOMMISSIONED) {
+      throw new BadRequestException(`Cannot calibrate equipment with status '${equipment.status}'`);
+    }
 
     const calibration = this.calibrationRepo.create({ ...data, ...(tenantId ? { tenantId } : {}) });
     const saved = await this.calibrationRepo.save(calibration);
@@ -316,10 +395,35 @@ export class LabSuppliesService {
       equipment.nextCalibrationDate = nextDate;
     }
 
-    equipment.calibrationStatus = data.passed
-      ? CalibrationStatus.CURRENT
-      : CalibrationStatus.OVERDUE;
+    if (data.passed) {
+      equipment.calibrationStatus = CalibrationStatus.CURRENT;
+    } else {
+      // P1: failed calibration → equipment out of service
+      equipment.calibrationStatus = CalibrationStatus.OVERDUE;
+      equipment.status = EquipmentStatus.OUT_OF_SERVICE;
+    }
     await this.equipmentRepo.save(equipment);
+
+    // Audit
+    try {
+      await this.auditLogService.log({
+        action: 'EQUIPMENT_CALIBRATED',
+        entityType: 'EquipmentCalibration',
+        entityId: saved.id,
+        userId,
+        tenantId,
+        newValue: {
+          calibrationId: saved.id,
+          equipmentId: equipment.id,
+          equipmentName: equipment.name,
+          passed: data.passed,
+          calibrationDate: data.calibrationDate,
+          equipmentStatus: equipment.status,
+        },
+      });
+    } catch (e) {
+      this.logger.warn(`Audit log failed (EQUIPMENT_CALIBRATED): ${(e as Error).message}`);
+    }
 
     return saved;
   }
@@ -327,11 +431,19 @@ export class LabSuppliesService {
   async recordEquipmentMaintenance(
     data: Partial<EquipmentMaintenance>,
     tenantId?: string,
+    userId?: string,
   ): Promise<EquipmentMaintenance> {
     const equipment = await this.equipmentRepo.findOne({
       where: { id: data.equipmentId, ...(tenantId ? { tenantId } : {}) },
     });
     if (!equipment) throw new NotFoundException('Equipment not found');
+
+    // P1: reject maintenance on decommissioned/retired equipment
+    if (equipment.status === EquipmentStatus.DECOMMISSIONED) {
+      throw new BadRequestException(
+        `Cannot perform maintenance on equipment with status '${equipment.status}'`,
+      );
+    }
 
     const maintenance = this.maintenanceRepo.create({ ...data, ...(tenantId ? { tenantId } : {}) });
     const saved = await this.maintenanceRepo.save(maintenance);
@@ -346,6 +458,26 @@ export class LabSuppliesService {
       equipment.nextMaintenanceDate = nextDate;
     }
     await this.equipmentRepo.save(equipment);
+
+    // Audit
+    try {
+      await this.auditLogService.log({
+        action: 'EQUIPMENT_MAINTAINED',
+        entityType: 'EquipmentMaintenance',
+        entityId: saved.id,
+        userId,
+        tenantId,
+        newValue: {
+          maintenanceId: saved.id,
+          equipmentId: equipment.id,
+          equipmentName: equipment.name,
+          maintenanceType: data.type,
+          maintenanceDate: data.maintenanceDate,
+        },
+      });
+    } catch (e) {
+      this.logger.warn(`Audit log failed (EQUIPMENT_MAINTAINED): ${(e as Error).message}`);
+    }
 
     return saved;
   }
@@ -370,15 +502,21 @@ export class LabSuppliesService {
 
   // ==================== QC RESULTS ====================
 
-  async recordQCResult(data: Partial<QCResult>, tenantId?: string): Promise<QCResult> {
+  async recordQCResult(
+    data: Partial<QCResult>,
+    tenantId?: string,
+    userId?: string,
+  ): Promise<QCResult> {
     const material = await this.qcMaterialRepo.findOne({
       where: { id: data.qcMaterialId, ...(tenantId ? { tenantId } : {}) },
     });
     if (!material) throw new NotFoundException('QC Material not found');
 
+    // P0: use data.resultValue (entity field) — callers must map DTO 'value' to 'resultValue'
+    const resultValue = Number(data.resultValue);
+
     // Calculate z-score
-    const zScore =
-      (Number(data.resultValue) - Number(material.targetMean)) / Number(material.targetSd);
+    const zScore = (resultValue - Number(material.targetMean)) / Number(material.targetSd);
 
     // Get previous results for Westgard evaluation
     const previousResults = await this.qcResultRepo.find({
@@ -393,14 +531,16 @@ export class LabSuppliesService {
 
     const previousValues = previousResults.map((r) => Number(r.resultValue));
     const evaluation = evaluateWestgardRules(
-      Number(data.resultValue),
+      resultValue,
       Number(material.targetMean),
       Number(material.targetSd),
       previousValues,
     );
 
+    // P0: stamp performedBy from JWT user
     const result = this.qcResultRepo.create({
       ...data,
+      performedBy: userId || data.performedBy,
       targetMean: material.targetMean,
       targetSd: material.targetSd,
       zScore,
@@ -409,7 +549,32 @@ export class LabSuppliesService {
       ...(tenantId ? { tenantId } : {}),
     });
 
-    return this.qcResultRepo.save(result);
+    const saved = await this.qcResultRepo.save(result);
+
+    // Audit
+    try {
+      await this.auditLogService.log({
+        action: 'QC_RESULT_RECORDED',
+        entityType: 'QCResult',
+        entityId: saved.id,
+        userId,
+        tenantId,
+        newValue: {
+          qcResultId: saved.id,
+          qcMaterialId: material.id,
+          testCode: data.testCode,
+          resultValue,
+          zScore,
+          status: evaluation.status,
+          violatedRules: evaluation.violatedRules,
+          facilityId: data.facilityId,
+        },
+      });
+    } catch (e) {
+      this.logger.warn(`Audit log failed (QC_RESULT_RECORDED): ${(e as Error).message}`);
+    }
+
+    return saved;
   }
 
   async getQCResults(

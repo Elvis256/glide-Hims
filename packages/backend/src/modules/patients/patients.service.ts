@@ -159,9 +159,7 @@ export class PatientsService {
       // (different DOB, different phone). Override is via explicit
       // `forceCreate: true` in the DTO (audit-logged below).
       const dupResult = await this.checkDuplicates(dto, tenantId);
-      const hasHighConfidence = dupResult.duplicates.some(
-        (d) => d.confidenceLevel === 'high',
-      );
+      const hasHighConfidence = dupResult.duplicates.some((d) => d.confidenceLevel === 'high');
       if (hasHighConfidence && !(dto as any).forceCreate) {
         throw new ConflictException({
           message:
@@ -307,7 +305,10 @@ export class PatientsService {
     // Check for duplicate national ID if updating
     if (dto.nationalId && dto.nationalId !== patient.nationalId) {
       const existing = await this.patientRepository.findOne({
-        where: { nationalIdHash: hashPii(dto.nationalId, 'generic'), ...(tenantId ? { tenantId } : {}) },
+        where: {
+          nationalIdHash: hashPii(dto.nationalId, 'generic'),
+          ...(tenantId ? { tenantId } : {}),
+        },
       });
       if (existing) {
         throw new ConflictException('Patient with this National ID already exists');
@@ -331,7 +332,10 @@ export class PatientsService {
     // 1. Check by national ID (if provided)
     if (dto.nationalId) {
       const byNationalId = await this.patientRepository.find({
-        where: { nationalIdHash: hashPii(dto.nationalId, 'generic'), ...(tenantId ? { tenantId } : {}) },
+        where: {
+          nationalIdHash: hashPii(dto.nationalId, 'generic'),
+          ...(tenantId ? { tenantId } : {}),
+        },
       });
       candidates.push(...byNationalId);
     }

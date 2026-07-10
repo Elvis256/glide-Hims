@@ -30,7 +30,7 @@ export class AlertRule extends BaseEntity {
   @Column({ name: 'cooldown_minutes', type: 'int', default: 60 })
   cooldownMinutes: number;
 
-  @Column({ name: 'notify_channels', type: 'jsonb', default: () => "'[\"in_app\"]'" })
+  @Column({ name: 'notify_channels', type: 'jsonb', default: () => '\'["in_app"]\'' })
   notifyChannels: string[];
 
   @Column({ name: 'last_triggered_at', type: 'timestamptz', nullable: true })

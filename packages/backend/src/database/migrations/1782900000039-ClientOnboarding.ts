@@ -25,8 +25,12 @@ export class ClientOnboarding1782900000039 implements MigrationInterface {
         "updatedAt"           TIMESTAMPTZ NOT NULL DEFAULT now()
       );
     `);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_onboarding_tenant ON client_onboardings (tenant_id);`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_onboarding_status ON client_onboardings (status);`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_onboarding_tenant ON client_onboardings (tenant_id);`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_onboarding_status ON client_onboardings (status);`,
+    );
 
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS client_onboarding_items (
@@ -44,7 +48,9 @@ export class ClientOnboarding1782900000039 implements MigrationInterface {
         "createdAt"     TIMESTAMPTZ NOT NULL DEFAULT now()
       );
     `);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_onboarding_item_onboarding ON client_onboarding_items (onboarding_id);`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_onboarding_item_onboarding ON client_onboarding_items (onboarding_id);`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

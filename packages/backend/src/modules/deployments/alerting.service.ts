@@ -1,7 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { DeploymentAlert, AlertSeverity, AlertStatus } from '../../database/entities/deployment-alert.entity';
+import {
+  DeploymentAlert,
+  AlertSeverity,
+  AlertStatus,
+} from '../../database/entities/deployment-alert.entity';
 import { Deployment } from '../../database/entities/deployment.entity';
 
 export enum AlertChannel {
@@ -15,7 +19,10 @@ export enum AlertChannel {
 @Injectable()
 export class AlertingService {
   private readonly logger = new Logger(AlertingService.name);
-  private alertChannelHandlers: Map<AlertChannel, (alert: DeploymentAlert, config: any) => Promise<void>>;
+  private alertChannelHandlers: Map<
+    AlertChannel,
+    (alert: DeploymentAlert, config: any) => Promise<void>
+  >;
   private sentAlertCache = new Map<string, number>();
 
   constructor(
@@ -59,7 +66,7 @@ export class AlertingService {
       actualSeverity = deploymentIdOrConfig.severity as AlertSeverity;
       actualChannels = deploymentIdOrConfig.channel
         ? [deploymentIdOrConfig.channel as AlertChannel]
-        : (deploymentIdOrConfig.channels || [AlertChannel.EMAIL]);
+        : deploymentIdOrConfig.channels || [AlertChannel.EMAIL];
       actualConfig = deploymentIdOrConfig.config || deploymentIdOrConfig;
     }
 
@@ -67,7 +74,7 @@ export class AlertingService {
     const alertKey = `${deploymentId}:${actualTitle}:${actualSeverity}`;
     const nowTime = Date.now();
     const lastSentTime = this.sentAlertCache.get(alertKey);
-    if (lastSentTime && (nowTime - lastSentTime < 5000)) {
+    if (lastSentTime && nowTime - lastSentTime < 5000) {
       return {
         sent: false,
         reason: 'duplicate_within_window',
@@ -135,7 +142,10 @@ export class AlertingService {
       sent: true,
       channel: primaryChannel,
       deliveryStatus: primaryChannel === AlertChannel.EMAIL ? 'delivered' : undefined,
-      incidentId: primaryChannel === AlertChannel.PAGERDUTY ? 'incident-' + Math.random().toString(36).substring(7) : undefined,
+      incidentId:
+        primaryChannel === AlertChannel.PAGERDUTY
+          ? 'incident-' + Math.random().toString(36).substring(7)
+          : undefined,
       httpStatus: primaryChannel === AlertChannel.WEBHOOK ? 200 : undefined,
     };
   }

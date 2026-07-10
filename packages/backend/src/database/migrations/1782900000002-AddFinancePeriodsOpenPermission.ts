@@ -6,9 +6,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * coupled the two operations. We seed the new permission and grant it to
  * any role that already has finance.periods.close so behaviour is preserved.
  */
-export class AddFinancePeriodsOpenPermission1782900000002
-  implements MigrationInterface
-{
+export class AddFinancePeriodsOpenPermission1782900000002 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
       `INSERT INTO permissions (code, name, module)

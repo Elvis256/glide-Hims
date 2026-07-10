@@ -1,11 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Param,
-  Query,
-  Logger,
-} from '@nestjs/common';
+import { Controller, Get, Post, Param, Query, Logger } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { ComplianceAutomationService } from './compliance-automation.service';
@@ -15,9 +8,7 @@ import { ComplianceAutomationService } from './compliance-automation.service';
 export class ComplianceAutomationController {
   private readonly logger = new Logger(ComplianceAutomationController.name);
 
-  constructor(
-    private readonly complianceAutomationService: ComplianceAutomationService,
-  ) {}
+  constructor(private readonly complianceAutomationService: ComplianceAutomationService) {}
 
   @Post('collect')
   @AuthWithPermissions('admin.system')
@@ -31,8 +22,16 @@ export class ComplianceAutomationController {
   @Get('evidence')
   @AuthWithPermissions('admin.system')
   @ApiOperation({ summary: 'List compliance evidence with optional filtering' })
-  @ApiQuery({ name: 'framework', required: false, description: 'Filter by framework (SOC2, ISO27001, HIPAA, INTERNAL)' })
-  @ApiQuery({ name: 'status', required: false, description: 'Filter by status (compliant, non_compliant, partial, not_assessed)' })
+  @ApiQuery({
+    name: 'framework',
+    required: false,
+    description: 'Filter by framework (SOC2, ISO27001, HIPAA, INTERNAL)',
+  })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    description: 'Filter by status (compliant, non_compliant, partial, not_assessed)',
+  })
   @ApiQuery({ name: 'from', required: false, description: 'Filter from date (ISO string)' })
   @ApiQuery({ name: 'to', required: false, description: 'Filter to date (ISO string)' })
   @ApiResponse({ status: 200, description: 'List of compliance evidence' })
@@ -78,7 +77,10 @@ export class ComplianceAutomationController {
   @Get('report/:framework')
   @AuthWithPermissions('admin.system')
   @ApiOperation({ summary: 'Generate compliance report for a framework' })
-  @ApiParam({ name: 'framework', description: 'Compliance framework (SOC2, ISO27001, HIPAA, INTERNAL)' })
+  @ApiParam({
+    name: 'framework',
+    description: 'Compliance framework (SOC2, ISO27001, HIPAA, INTERNAL)',
+  })
   @ApiResponse({ status: 200, description: 'Compliance report' })
   async getReport(@Param('framework') framework: string) {
     return this.complianceAutomationService.generateComplianceReport(framework);

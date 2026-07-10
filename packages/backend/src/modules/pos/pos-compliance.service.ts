@@ -8,10 +8,7 @@ import {
   PosZReport,
   CashDrawerEventType,
 } from '../../database/entities/pos-compliance.entity';
-import {
-  CreateDrawerEventDto,
-  GenerateZReportDto,
-} from './pos-compliance.dto';
+import { CreateDrawerEventDto, GenerateZReportDto } from './pos-compliance.dto';
 
 /**
  * Compliance-grade POS operations that must produce immutable, auditable rows:
@@ -90,7 +87,10 @@ export class PosComplianceService {
       shiftId: shift.id,
       registerName: shift.register?.name,
       cashier: shift.cashier
-        ? { id: shift.cashier.id, name: (shift.cashier as any).fullName || (shift.cashier as any).username }
+        ? {
+            id: shift.cashier.id,
+            name: shift.cashier.fullName || shift.cashier.username,
+          }
         : null,
       openedAt: shift.openedAt,
       status: shift.status,
@@ -145,9 +145,7 @@ export class PosComplianceService {
         generatedAt: new Date().toISOString(),
         notes: dto.notes,
       };
-      const payloadHash = createHash('sha256')
-        .update(JSON.stringify(payload))
-        .digest('hex');
+      const payloadHash = createHash('sha256').update(JSON.stringify(payload)).digest('hex');
 
       const z = manager.create(PosZReport, {
         shiftId,
@@ -313,7 +311,7 @@ export class PosComplianceService {
       .getRepository(PosZReport)
       .createQueryBuilder('z')
       .where('z.tenant_id = :tid', { tid: tenantId })
-      .andWhere("DATE(z.generated_at) = CURRENT_DATE")
+      .andWhere('DATE(z.generated_at) = CURRENT_DATE')
       .getCount();
     return `Z-${dateStr}-${String(count + 1).padStart(4, '0')}`;
   }

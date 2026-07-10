@@ -12,7 +12,11 @@ import { BadRequestException } from '@nestjs/common';
 
 // ── helpers (replicate core logic) ──────────────────────────────────────────
 
-function applyDiscount(amount: number, discountPercent: number, discountFixedMinor: number): number {
+function applyDiscount(
+  amount: number,
+  discountPercent: number,
+  discountFixedMinor: number,
+): number {
   let d = Math.floor((amount * discountPercent) / 100);
   d += Math.floor(discountFixedMinor);
   return Math.max(amount - d, 0);
@@ -190,14 +194,14 @@ describe('SaasRevenueService', () => {
     describe('license field updates', () => {
       it('sets expiresAt to subscription currentPeriodEnd', () => {
         const periodEnd = new Date('2027-06-01');
-        const license = { expiresAt: null as Date | null };
+        const license: any = { expiresAt: null as Date | null };
         license.expiresAt = periodEnd;
         expect(license.expiresAt).toBe(periodEnd);
       });
 
       it('syncs maxUsers from plan', () => {
-        const plan = { maxUsers: 100 };
-        const license = { maxUsers: 50 };
+        const plan: any = { maxUsers: 100 };
+        const license: any = { maxUsers: 50 };
         license.maxUsers = plan.maxUsers;
         expect(license.maxUsers).toBe(100);
       });
@@ -300,7 +304,12 @@ describe('SaasRevenueService', () => {
     });
 
     it('adjusts invoice amountPaidMinor on refund', () => {
-      const invoice = { amountPaidMinor: 100000, totalMinor: 100000, status: 'paid' as string, paidAt: new Date() as Date | null };
+      const invoice = {
+        amountPaidMinor: 100000,
+        totalMinor: 100000,
+        status: 'paid' as string,
+        paidAt: new Date() as Date | null,
+      };
       const refundAmount = 50000;
 
       invoice.amountPaidMinor = Math.max(invoice.amountPaidMinor - refundAmount, 0);

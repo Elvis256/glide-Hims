@@ -16,9 +16,15 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
 export class FixDemoDataInconsistencies1782900000046 implements MigrationInterface {
   public async up(runner: QueryRunner): Promise<void> {
     // ─── 1. Fix "ENVIROMENT" → "ENVIRONMENT" typo ───────────────────
-    await runner.query(`UPDATE tenants SET name = REPLACE(name, 'ENVIROMENT', 'ENVIRONMENT'), slug = REPLACE(slug, 'enviroment', 'environment') WHERE name LIKE '%ENVIROMENT%'`);
-    await runner.query(`UPDATE deployments SET name = REPLACE(name, 'ENVIROMENT', 'ENVIRONMENT') WHERE name LIKE '%ENVIROMENT%'`);
-    await runner.query(`UPDATE licenses SET organization_name = REPLACE(organization_name, 'ENVIROMENT', 'ENVIRONMENT') WHERE organization_name LIKE '%ENVIROMENT%'`);
+    await runner.query(
+      `UPDATE tenants SET name = REPLACE(name, 'ENVIROMENT', 'ENVIRONMENT'), slug = REPLACE(slug, 'enviroment', 'environment') WHERE name LIKE '%ENVIROMENT%'`,
+    );
+    await runner.query(
+      `UPDATE deployments SET name = REPLACE(name, 'ENVIROMENT', 'ENVIRONMENT') WHERE name LIKE '%ENVIROMENT%'`,
+    );
+    await runner.query(
+      `UPDATE licenses SET organization_name = REPLACE(organization_name, 'ENVIROMENT', 'ENVIRONMENT') WHERE organization_name LIKE '%ENVIROMENT%'`,
+    );
 
     // ─── 2. Fix "TESR" facility name ────────────────────────────────
     await runner.query(`UPDATE facilities SET name = 'TEST' WHERE name = 'TESR'`);
@@ -114,7 +120,8 @@ export class FixDemoDataInconsistencies1782900000046 implements MigrationInterfa
 
     for (const row of tenants) {
       // Create onboarding record
-      const [ob] = await runner.query(`
+      const [ob] = await runner.query(
+        `
         INSERT INTO client_onboardings (
           id, tenant_id, subscription_id, status,
           "progressPercent", "createdAt", "updatedAt"
@@ -122,39 +129,116 @@ export class FixDemoDataInconsistencies1782900000046 implements MigrationInterfa
           gen_random_uuid(), $1, $2, 'not_started', 0, NOW(), NOW()
         )
         RETURNING id
-      `, [row.tenant_id, row.subscription_id]);
+      `,
+        [row.tenant_id, row.subscription_id],
+      );
 
       // Insert default 17 checklist items
       const items = [
-        { phase: 'setup',          title: 'Tenant accessible and admin account created',   desc: 'Verify tenant login works' },
-        { phase: 'setup',          title: 'License activated',                             desc: 'Ensure subscription license is active with correct modules' },
-        { phase: 'setup',          title: 'Initial health check passed',                   desc: 'Deployment health check returns OK' },
-        { phase: 'configuration',  title: 'Facility details configured',                   desc: 'Organization name, address, logo, contact info' },
-        { phase: 'configuration',  title: 'User roles and permissions set up',             desc: 'Admin, clinical, finance roles configured' },
-        { phase: 'configuration',  title: 'Enabled modules configured',                   desc: 'Activate purchased modules and disable unused ones' },
-        { phase: 'configuration',  title: 'Billing tariffs configured',                   desc: 'Service prices, insurance schemes, and payment methods' },
-        { phase: 'data_migration', title: 'Patient data migration',                       desc: 'Import existing patient records (if applicable)' },
-        { phase: 'data_migration', title: 'Drug catalog imported',                        desc: 'Import formulary / drug list' },
-        { phase: 'data_migration', title: 'Lab catalog imported',                         desc: 'Import lab test catalog and reference ranges' },
-        { phase: 'training',       title: 'Admin training completed',                     desc: 'System administration, user management, settings' },
-        { phase: 'training',       title: 'Clinical staff training completed',            desc: 'Patient flow, encounters, lab, pharmacy' },
-        { phase: 'training',       title: 'Finance staff training completed',             desc: 'Billing, insurance claims, reporting' },
-        { phase: 'testing',        title: 'End-to-end workflow validated',                desc: 'Full patient journey from registration to discharge' },
-        { phase: 'testing',        title: 'Reporting validation completed',               desc: 'Key reports generate correctly with test data' },
-        { phase: 'go_live',        title: 'Go-live date confirmed with client',           desc: 'Final sign-off from client stakeholders' },
-        { phase: 'go_live',        title: 'Backup schedule configured',                   desc: 'Automated backups running and verified' },
-        { phase: 'go_live',        title: 'Support handover completed',                   desc: 'Client knows how to reach support, escalation path clear' },
+        {
+          phase: 'setup',
+          title: 'Tenant accessible and admin account created',
+          desc: 'Verify tenant login works',
+        },
+        {
+          phase: 'setup',
+          title: 'License activated',
+          desc: 'Ensure subscription license is active with correct modules',
+        },
+        {
+          phase: 'setup',
+          title: 'Initial health check passed',
+          desc: 'Deployment health check returns OK',
+        },
+        {
+          phase: 'configuration',
+          title: 'Facility details configured',
+          desc: 'Organization name, address, logo, contact info',
+        },
+        {
+          phase: 'configuration',
+          title: 'User roles and permissions set up',
+          desc: 'Admin, clinical, finance roles configured',
+        },
+        {
+          phase: 'configuration',
+          title: 'Enabled modules configured',
+          desc: 'Activate purchased modules and disable unused ones',
+        },
+        {
+          phase: 'configuration',
+          title: 'Billing tariffs configured',
+          desc: 'Service prices, insurance schemes, and payment methods',
+        },
+        {
+          phase: 'data_migration',
+          title: 'Patient data migration',
+          desc: 'Import existing patient records (if applicable)',
+        },
+        {
+          phase: 'data_migration',
+          title: 'Drug catalog imported',
+          desc: 'Import formulary / drug list',
+        },
+        {
+          phase: 'data_migration',
+          title: 'Lab catalog imported',
+          desc: 'Import lab test catalog and reference ranges',
+        },
+        {
+          phase: 'training',
+          title: 'Admin training completed',
+          desc: 'System administration, user management, settings',
+        },
+        {
+          phase: 'training',
+          title: 'Clinical staff training completed',
+          desc: 'Patient flow, encounters, lab, pharmacy',
+        },
+        {
+          phase: 'training',
+          title: 'Finance staff training completed',
+          desc: 'Billing, insurance claims, reporting',
+        },
+        {
+          phase: 'testing',
+          title: 'End-to-end workflow validated',
+          desc: 'Full patient journey from registration to discharge',
+        },
+        {
+          phase: 'testing',
+          title: 'Reporting validation completed',
+          desc: 'Key reports generate correctly with test data',
+        },
+        {
+          phase: 'go_live',
+          title: 'Go-live date confirmed with client',
+          desc: 'Final sign-off from client stakeholders',
+        },
+        {
+          phase: 'go_live',
+          title: 'Backup schedule configured',
+          desc: 'Automated backups running and verified',
+        },
+        {
+          phase: 'go_live',
+          title: 'Support handover completed',
+          desc: 'Client knows how to reach support, escalation path clear',
+        },
       ];
 
       for (let i = 0; i < items.length; i++) {
-        await runner.query(`
+        await runner.query(
+          `
           INSERT INTO client_onboarding_items (
             id, onboarding_id, phase, title, description,
             "sortOrder", status, "createdAt"
           ) VALUES (
             gen_random_uuid(), $1, $2, $3, $4, $5, 'pending', NOW()
           )
-        `, [ob.id, items[i].phase, items[i].title, items[i].desc, i + 1]);
+        `,
+          [ob.id, items[i].phase, items[i].title, items[i].desc, i + 1],
+        );
       }
     }
 

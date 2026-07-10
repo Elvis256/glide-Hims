@@ -1,11 +1,4 @@
-import {
-  toCents,
-  fromCents,
-  sumCents,
-  eqCents,
-  cmpMoney,
-  maxMoney,
-} from '../money';
+import { toCents, fromCents, sumCents, eqCents, cmpMoney, maxMoney } from '../money';
 
 describe('common/utils/money', () => {
   describe('toCents', () => {

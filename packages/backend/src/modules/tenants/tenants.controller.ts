@@ -124,10 +124,10 @@ export class TenantsController {
   @Patch(':id/facility-mode')
   @AuthWithPermissions('tenants.update')
   @ApiOperation({
-    summary: 'Change a tenant\'s facility mode (promote/demote)',
+    summary: "Change a tenant's facility mode (promote/demote)",
     description:
       'Updates tenants.settings.facilityMode and the matching system_settings rows. ' +
-      'When syncEnabledModules is true (default), the tenant\'s enabled module list is ' +
+      "When syncEnabledModules is true (default), the tenant's enabled module list is " +
       'refreshed from the new preset so the change takes effect immediately. No data is ' +
       'destroyed on demotion — hidden modules return on promotion back.',
   })

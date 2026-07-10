@@ -291,7 +291,7 @@ export class FinanceController {
   async getPaymentMethods(@Request() req: any) {
     try {
       const setting = await this.settingsService.getByKey(PAYMENT_METHODS_KEY, req.user?.tenantId);
-      return (setting.value as any[]) ?? [];
+      return setting.value ?? [];
     } catch {
       return [];
     }
@@ -304,11 +304,11 @@ export class FinanceController {
     let methods: any[] = [];
     try {
       const setting = await this.settingsService.getByKey(PAYMENT_METHODS_KEY, req.user?.tenantId);
-      methods = (setting.value as any[]) ?? [];
+      methods = setting.value ?? [];
     } catch {
       /* not found — start with empty */
     }
-    const newMethod = { ...body, id: `pm_${Date.now()}`, isActive: (body as any).isActive ?? true };
+    const newMethod = { ...body, id: `pm_${Date.now()}`, isActive: true };
     methods.push(newMethod);
     await this.settingsService.upsert(
       PAYMENT_METHODS_KEY,
@@ -326,7 +326,7 @@ export class FinanceController {
     let methods: any[] = [];
     try {
       const setting = await this.settingsService.getByKey(PAYMENT_METHODS_KEY, req.user?.tenantId);
-      methods = (setting.value as any[]) ?? [];
+      methods = setting.value ?? [];
     } catch {
       /* not found — start with empty */
     }
@@ -345,7 +345,7 @@ export class FinanceController {
   async getCurrencies(@Request() req: any) {
     try {
       const setting = await this.settingsService.getByKey(CURRENCIES_KEY, req.user?.tenantId);
-      return (setting.value as any[]) ?? [];
+      return setting.value ?? [];
     } catch {
       return [];
     }
@@ -358,7 +358,7 @@ export class FinanceController {
     let currencies: any[] = [];
     try {
       const setting = await this.settingsService.getByKey(CURRENCIES_KEY, req.user?.tenantId);
-      currencies = (setting.value as any[]) ?? [];
+      currencies = setting.value ?? [];
     } catch {
       /* empty */
     }
@@ -374,7 +374,7 @@ export class FinanceController {
     let currencies: any[] = [];
     try {
       const setting = await this.settingsService.getByKey(CURRENCIES_KEY, req.user?.tenantId);
-      currencies = (setting.value as any[]) ?? [];
+      currencies = setting.value ?? [];
     } catch {
       /* empty */
     }
@@ -406,7 +406,7 @@ export class FinanceController {
     let currencies: any[] = [];
     try {
       const setting = await this.settingsService.getByKey(CURRENCIES_KEY, req.user?.tenantId);
-      currencies = (setting.value as any[]) ?? [];
+      currencies = setting.value ?? [];
     } catch {
       /* empty */
     }
@@ -424,7 +424,7 @@ export class FinanceController {
     let currencies: any[] = [];
     try {
       const setting = await this.settingsService.getByKey(CURRENCIES_KEY, req.user?.tenantId);
-      currencies = (setting.value as any[]) ?? [];
+      currencies = setting.value ?? [];
     } catch {
       /* empty */
     }
@@ -440,7 +440,7 @@ export class FinanceController {
     let currencies: any[] = [];
     try {
       const setting = await this.settingsService.getByKey(CURRENCIES_KEY, req.user?.tenantId);
-      currencies = (setting.value as any[]) ?? [];
+      currencies = setting.value ?? [];
     } catch {
       /* empty */
     }
@@ -458,7 +458,7 @@ export class FinanceController {
     let currencies: any[] = [];
     try {
       const setting = await this.settingsService.getByKey(CURRENCIES_KEY, req.user?.tenantId);
-      currencies = (setting.value as any[]) ?? [];
+      currencies = setting.value ?? [];
     } catch {
       /* empty */
     }
@@ -474,7 +474,7 @@ export class FinanceController {
   async getExchangeRates(@Request() req: any) {
     try {
       const setting = await this.settingsService.getByKey(EXCHANGE_RATES_KEY, req.user?.tenantId);
-      return (setting.value as any[]) ?? [];
+      return setting.value ?? [];
     } catch {
       return [];
     }
@@ -491,7 +491,7 @@ export class FinanceController {
     let rates: any[] = [];
     try {
       const setting = await this.settingsService.getByKey(EXCHANGE_RATES_KEY, req.user?.tenantId);
-      rates = (setting.value as any[]) ?? [];
+      rates = setting.value ?? [];
     } catch {
       /* empty */
     }
@@ -508,7 +508,7 @@ export class FinanceController {
     let rates: any[] = [];
     try {
       const setting = await this.settingsService.getByKey(EXCHANGE_RATES_KEY, req.user?.tenantId);
-      rates = (setting.value as any[]) ?? [];
+      rates = setting.value ?? [];
     } catch {
       /* empty */
     }
@@ -539,7 +539,7 @@ export class FinanceController {
     let rates: any[] = [];
     try {
       const setting = await this.settingsService.getByKey(EXCHANGE_RATES_KEY, req.user?.tenantId);
-      rates = (setting.value as any[]) ?? [];
+      rates = setting.value ?? [];
     } catch {
       /* empty */
     }
@@ -557,7 +557,7 @@ export class FinanceController {
     let rates: any[] = [];
     try {
       const setting = await this.settingsService.getByKey(EXCHANGE_RATES_KEY, req.user?.tenantId);
-      rates = (setting.value as any[]) ?? [];
+      rates = setting.value ?? [];
     } catch {
       /* empty */
     }
@@ -738,7 +738,11 @@ export class FinanceController {
   @Get('approvals/pending')
   @AuthWithPermissions('finance.journals.read')
   @ApiOperation({ summary: 'Get pending approvals for user' })
-  @ApiQuery({ name: 'role', required: false, description: 'Filter by role (uses user role if not provided)' })
+  @ApiQuery({
+    name: 'role',
+    required: false,
+    description: 'Filter by role (uses user role if not provided)',
+  })
   @ApiQuery({ name: 'facilityId', required: false, description: 'Filter by facility' })
   async getPendingApprovalsForRole(
     @Query('role') role?: string,
@@ -881,10 +885,7 @@ export class FinanceController {
   ) {
     const facilityId = req?.user?.facilityId;
 
-    const trialBalance = await this.trialBalanceService.getTrialBalance(
-      facilityId,
-      fiscalPeriodId,
-    );
+    const trialBalance = await this.trialBalanceService.getTrialBalance(facilityId, fiscalPeriodId);
 
     return {
       success: true,
@@ -947,10 +948,7 @@ export class FinanceController {
   ) {
     const facilityId = req?.user?.facilityId;
 
-    const variances = await this.trialBalanceService.detectVariances(
-      facilityId,
-      fiscalPeriodId,
-    );
+    const variances = await this.trialBalanceService.detectVariances(facilityId, fiscalPeriodId);
 
     return {
       success: true,
@@ -970,10 +968,7 @@ export class FinanceController {
   ) {
     const facilityId = req?.user?.facilityId;
 
-    const balance = await this.trialBalanceService.getAccountBalance(
-      accountId,
-      fiscalPeriodId,
-    );
+    const balance = await this.trialBalanceService.getAccountBalance(accountId, fiscalPeriodId);
 
     return {
       success: true,
@@ -1085,16 +1080,10 @@ export class FinanceController {
   @Get('analytics/gl-summary/:period')
   @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get aggregated GL data for a period' })
-  async getGLSummary(
-    @Param('period') period: string,
-    @Request() req: any,
-  ) {
+  async getGLSummary(@Param('period') period: string, @Request() req: any) {
     const facilityId = req?.user?.facilityId;
 
-    const summary = await this.glAnalyticsService.getAggregatedGLData(
-      facilityId,
-      period,
-    );
+    const summary = await this.glAnalyticsService.getAggregatedGLData(facilityId, period);
 
     return {
       success: true,
@@ -1130,16 +1119,10 @@ export class FinanceController {
   @Get('revenue-expense/:period')
   @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get revenue and expense summary for a period' })
-  async getRevenueExpenseSummary(
-    @Param('period') period: string,
-    @Request() req: any,
-  ) {
+  async getRevenueExpenseSummary(@Param('period') period: string, @Request() req: any) {
     const facilityId = req?.user?.facilityId;
 
-    const summary = await this.revenueExpenseService.getRevenueExpenseSummary(
-      facilityId,
-      period,
-    );
+    const summary = await this.revenueExpenseService.getRevenueExpenseSummary(facilityId, period);
 
     return {
       success: true,
@@ -1150,16 +1133,10 @@ export class FinanceController {
   @Get('revenue-expense/by-cost-center/:period')
   @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get revenue breakdown by cost center' })
-  async getRevenueByCC(
-    @Param('period') period: string,
-    @Request() req: any,
-  ) {
+  async getRevenueByCC(@Param('period') period: string, @Request() req: any) {
     const facilityId = req?.user?.facilityId;
 
-    const breakdown = await this.revenueExpenseService.getRevenueByCostCenter(
-      facilityId,
-      period,
-    );
+    const breakdown = await this.revenueExpenseService.getRevenueByCostCenter(facilityId, period);
 
     return {
       success: true,
@@ -1170,16 +1147,10 @@ export class FinanceController {
   @Get('expense/by-cost-center/:period')
   @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get expense breakdown by cost center' })
-  async getExpenseByCC(
-    @Param('period') period: string,
-    @Request() req: any,
-  ) {
+  async getExpenseByCC(@Param('period') period: string, @Request() req: any) {
     const facilityId = req?.user?.facilityId;
 
-    const breakdown = await this.revenueExpenseService.getExpenseByCostCenter(
-      facilityId,
-      period,
-    );
+    const breakdown = await this.revenueExpenseService.getExpenseByCostCenter(facilityId, period);
 
     return {
       success: true,
@@ -1190,16 +1161,10 @@ export class FinanceController {
   @Get('revenue-expense/by-account-type/:period')
   @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get revenue/expense analysis by account type' })
-  async getRevenueExpenseByAccountType(
-    @Param('period') period: string,
-    @Request() req: any,
-  ) {
+  async getRevenueExpenseByAccountType(@Param('period') period: string, @Request() req: any) {
     const facilityId = req?.user?.facilityId;
 
-    const analysis = await this.revenueExpenseService.getRevenueByAccountType(
-      facilityId,
-      period,
-    );
+    const analysis = await this.revenueExpenseService.getRevenueByAccountType(facilityId, period);
 
     return {
       success: true,
@@ -1258,10 +1223,7 @@ export class FinanceController {
   @Get('budget-variance/:period')
   @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get budget variance summary for a period' })
-  async getBudgetVarianceSummary(
-    @Param('period') period: string,
-    @Request() req: any,
-  ) {
+  async getBudgetVarianceSummary(@Param('period') period: string, @Request() req: any) {
     const facilityId = req?.user?.facilityId;
     const tenantId = req?.user?.tenantId;
 
@@ -1280,10 +1242,7 @@ export class FinanceController {
   @Get('budget-variance/detailed/:period')
   @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get detailed budget variance for each account' })
-  async getDetailedVariances(
-    @Param('period') period: string,
-    @Request() req: any,
-  ) {
+  async getDetailedVariances(@Param('period') period: string, @Request() req: any) {
     const facilityId = req?.user?.facilityId;
     const tenantId = req?.user?.tenantId;
 
@@ -1302,10 +1261,7 @@ export class FinanceController {
   @Get('budget-variance/by-cost-center/:period')
   @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get budget vs actual by cost center' })
-  async getBudgetByCC(
-    @Param('period') period: string,
-    @Request() req: any,
-  ) {
+  async getBudgetByCC(@Param('period') period: string, @Request() req: any) {
     const facilityId = req?.user?.facilityId;
     const tenantId = req?.user?.tenantId;
 
@@ -1324,10 +1280,7 @@ export class FinanceController {
   @Get('budget-variance/by-account-type/:period')
   @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get budget variance by account type' })
-  async getBudgetVarianceByAccountType(
-    @Param('period') period: string,
-    @Request() req: any,
-  ) {
+  async getBudgetVarianceByAccountType(@Param('period') period: string, @Request() req: any) {
     const facilityId = req?.user?.facilityId;
     const tenantId = req?.user?.tenantId;
 
@@ -1396,10 +1349,7 @@ export class FinanceController {
   @Get('budget-variance/burn-rate/:period')
   @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get budget burn rate for a period' })
-  async getBudgetBurnRate(
-    @Param('period') period: string,
-    @Request() req: any,
-  ) {
+  async getBudgetBurnRate(@Param('period') period: string, @Request() req: any) {
     const facilityId = req?.user?.facilityId;
     const tenantId = req?.user?.tenantId;
 
@@ -1432,10 +1382,7 @@ export class FinanceController {
   @Post('reports/generate')
   @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Generate a report (trial balance, income statement, etc.)' })
-  async generateReport(
-    @Body() dto: GenerateReportDto,
-    @Request() req: any,
-  ) {
+  async generateReport(@Body() dto: GenerateReportDto, @Request() req: any) {
     const facilityId = req?.user?.facilityId;
 
     let report;
@@ -1447,16 +1394,10 @@ export class FinanceController {
         );
         break;
       case 'income-statement':
-        report = await this.reportGeneratorService.generateIncomeStatement(
-          facilityId,
-          dto.period,
-        );
+        report = await this.reportGeneratorService.generateIncomeStatement(facilityId, dto.period);
         break;
       case 'balance-sheet':
-        report = await this.reportGeneratorService.generateBalanceSheet(
-          facilityId,
-          dto.period,
-        );
+        report = await this.reportGeneratorService.generateBalanceSheet(facilityId, dto.period);
         break;
       case 'variance':
         report = await this.reportGeneratorService.generateVarianceReport(
@@ -1478,10 +1419,7 @@ export class FinanceController {
   @Post('reports/export-csv')
   @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Export report to CSV format' })
-  async exportReportCSV(
-    @Body() dto: GenerateReportDto,
-    @Request() req: any,
-  ) {
+  async exportReportCSV(@Body() dto: GenerateReportDto, @Request() req: any) {
     const facilityId = req?.user?.facilityId;
 
     let report;
@@ -1493,16 +1431,10 @@ export class FinanceController {
         );
         break;
       case 'income-statement':
-        report = await this.reportGeneratorService.generateIncomeStatement(
-          facilityId,
-          dto.period,
-        );
+        report = await this.reportGeneratorService.generateIncomeStatement(facilityId, dto.period);
         break;
       case 'balance-sheet':
-        report = await this.reportGeneratorService.generateBalanceSheet(
-          facilityId,
-          dto.period,
-        );
+        report = await this.reportGeneratorService.generateBalanceSheet(facilityId, dto.period);
         break;
       case 'variance':
         report = await this.reportGeneratorService.generateVarianceReport(
@@ -1538,10 +1470,7 @@ export class FinanceController {
   @Post('cleanup/execute')
   @AuthWithPermissions('finance.admin')
   @ApiOperation({ summary: 'Execute full cleanup cycle' })
-  async executeCleanup(
-    @Query('dryRun') dryRun: boolean = true,
-    @Request() req: any,
-  ) {
+  async executeCleanup(@Query('dryRun') dryRun: boolean = true, @Request() req: any) {
     return {
       success: true,
       data: await this.dataCleanupService.executeFullCleanup(req.user?.tenantId, dryRun),
@@ -1551,10 +1480,7 @@ export class FinanceController {
   @Post('cleanup/orphaned')
   @AuthWithPermissions('finance.admin')
   @ApiOperation({ summary: 'Detect and remove orphaned entries' })
-  async cleanupOrphaned(
-    @Query('dryRun') dryRun: boolean = true,
-    @Request() req: any,
-  ) {
+  async cleanupOrphaned(@Query('dryRun') dryRun: boolean = true, @Request() req: any) {
     return {
       success: true,
       data: await this.dataCleanupService.detectOrphanedEntries(req.user?.tenantId, dryRun),
@@ -1564,10 +1490,7 @@ export class FinanceController {
   @Post('cleanup/duplicates')
   @AuthWithPermissions('finance.admin')
   @ApiOperation({ summary: 'Detect and remove duplicate entries' })
-  async cleanupDuplicates(
-    @Query('dryRun') dryRun: boolean = true,
-    @Request() req: any,
-  ) {
+  async cleanupDuplicates(@Query('dryRun') dryRun: boolean = true, @Request() req: any) {
     return {
       success: true,
       data: await this.dataCleanupService.detectDuplicateEntries(req.user?.tenantId, dryRun),
@@ -1577,16 +1500,10 @@ export class FinanceController {
   @Get('cleanup/audit-logs')
   @AuthWithPermissions('finance.admin')
   @ApiOperation({ summary: 'Report old audit logs (does NOT delete — audit logs are append-only)' })
-  async reportAuditLogs(
-    @Query('retentionDays') retentionDays: number = 365,
-    @Request() req: any,
-  ) {
+  async reportAuditLogs(@Query('retentionDays') retentionDays: number = 365, @Request() req: any) {
     return {
       success: true,
-      data: await this.dataCleanupService.reportOldAuditLogs(
-        req.user?.tenantId,
-        retentionDays,
-      ),
+      data: await this.dataCleanupService.reportOldAuditLogs(req.user?.tenantId, retentionDays),
     };
   }
 
@@ -1673,10 +1590,7 @@ export class FinanceController {
   @Get('compliance/status/:policyName')
   @AuthWithPermissions('finance.admin')
   @ApiOperation({ summary: 'Check compliance status' })
-  async checkComplianceStatus(
-    @Param('policyName') policyName: string,
-    @Request() req: any,
-  ) {
+  async checkComplianceStatus(@Param('policyName') policyName: string, @Request() req: any) {
     return {
       success: true,
       data: await this.auditComplianceService.checkComplianceStatus(
@@ -1690,10 +1604,7 @@ export class FinanceController {
   @AuthWithPermissions('finance.admin')
   @ApiOperation({ summary: 'Generate compliance audit trail' })
   @ApiQuery({ name: 'periodDays', required: false })
-  async generateComplianceAudit(
-    @Query('periodDays') periodDays: number = 90,
-    @Request() req: any,
-  ) {
+  async generateComplianceAudit(@Query('periodDays') periodDays: number = 90, @Request() req: any) {
     return {
       success: true,
       data: await this.auditComplianceService.generateComplianceAudit(
@@ -1723,8 +1634,7 @@ export class FinanceController {
   @Post('compliance/archive')
   @AuthWithPermissions('finance.admin')
   @ApiOperation({
-    summary:
-      'Report audit-log archive candidates (READ-ONLY; never deletes rows)',
+    summary: 'Report audit-log archive candidates (READ-ONLY; never deletes rows)',
   })
   @ApiQuery({ name: 'dryRun', required: false })
   @ApiQuery({ name: 'archiveDate', required: false })
@@ -1750,9 +1660,7 @@ export class FinanceController {
   async verifyAuditIntegrity(@Request() req: any) {
     return {
       success: true,
-      data: await this.auditComplianceService.verifyAuditIntegrity(
-        req?.user?.tenantId,
-      ),
+      data: await this.auditComplianceService.verifyAuditIntegrity(req?.user?.tenantId),
     };
   }
 
@@ -1821,15 +1729,10 @@ export class FinanceController {
   @AuthWithPermissions('finance.admin')
   @ApiOperation({ summary: 'Create recommended indexes' })
   @ApiQuery({ name: 'dryRun', required: false })
-  async createRecommendedIndexes(
-    @Query('dryRun') dryRun: boolean = true,
-    @Request() req: any,
-  ) {
+  async createRecommendedIndexes(@Query('dryRun') dryRun: boolean = true, @Request() req: any) {
     return {
       success: true,
-      data: await this.performanceOptimizationService.createRecommendedIndexes(
-        dryRun,
-      ),
+      data: await this.performanceOptimizationService.createRecommendedIndexes(dryRun),
     };
   }
 

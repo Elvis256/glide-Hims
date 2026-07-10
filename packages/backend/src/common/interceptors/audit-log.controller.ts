@@ -1,4 +1,13 @@
-import { Controller, Get, Param, ParseUUIDPipe, Query, Headers, Request, Res } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Query,
+  Headers,
+  Request,
+  Res,
+} from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { Response } from 'express';
 import { AuthWithPermissions } from '../../modules/auth/decorators/auth.decorator';
@@ -67,7 +76,13 @@ export class AuditLogController {
     const result = await this.auditLogService.findAllPaginated({
       page: 1,
       limit: 5000,
-      userId, action, entityType, entityId, startDate, endDate, search,
+      userId,
+      action,
+      entityType,
+      entityId,
+      startDate,
+      endDate,
+      search,
       tenantId: isSystemAdmin ? undefined : req?.user?.tenantId,
     });
     const esc = (v: any) => {
@@ -75,20 +90,52 @@ export class AuditLogController {
       const s = typeof v === 'object' ? JSON.stringify(v) : String(v);
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
-    const header = ['createdAt','actorType','user','action','entityType','entityId','requestMethod','requestUrl','statusCode','ipAddress','reason','oldValue','newValue'];
+    const header = [
+      'createdAt',
+      'actorType',
+      'user',
+      'action',
+      'entityType',
+      'entityId',
+      'requestMethod',
+      'requestUrl',
+      'statusCode',
+      'ipAddress',
+      'reason',
+      'oldValue',
+      'newValue',
+    ];
     const lines = [header.join(',')];
     for (const r of result.data as any[]) {
       const u = r.user;
-      const userLabel = u ? ([u.firstName, u.lastName].filter(Boolean).join(' ') || u.username || u.email || u.id || '') : (r.attemptedIdentifier || r.userId || '');
-      lines.push([
-        r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
-        r.actorType, userLabel, r.action, r.entityType, r.entityId,
-        r.requestMethod, r.requestUrl, r.statusCode, r.ipAddress,
-        r.reason, r.oldValue, r.newValue,
-      ].map(esc).join(','));
+      const userLabel = u
+        ? [u.firstName, u.lastName].filter(Boolean).join(' ') || u.username || u.email || u.id || ''
+        : r.attemptedIdentifier || r.userId || '';
+      lines.push(
+        [
+          r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
+          r.actorType,
+          userLabel,
+          r.action,
+          r.entityType,
+          r.entityId,
+          r.requestMethod,
+          r.requestUrl,
+          r.statusCode,
+          r.ipAddress,
+          r.reason,
+          r.oldValue,
+          r.newValue,
+        ]
+          .map(esc)
+          .join(','),
+      );
     }
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="audit-log-${new Date().toISOString().slice(0, 10)}.csv"`);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="audit-log-${new Date().toISOString().slice(0, 10)}.csv"`,
+    );
     res.send(lines.join('\n'));
   }
 

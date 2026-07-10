@@ -132,7 +132,12 @@ export class HrController {
     const u = req?.user;
     if (!u) return requested;
     if (u.isSystemAdmin) return requested;
-    const allowed = u.allFacilityIds && u.allFacilityIds.length > 0 ? u.allFacilityIds : (u.facilityId ? [u.facilityId] : []);
+    const allowed =
+      u.allFacilityIds && u.allFacilityIds.length > 0
+        ? u.allFacilityIds
+        : u.facilityId
+          ? [u.facilityId]
+          : [];
     if (allowed.length === 0) return requested;
     if (requested && allowed.includes(requested)) return requested;
     return allowed[0];
@@ -171,7 +176,8 @@ export class HrController {
   @Header('Link', '</api/v1/hr/employees>; rel="successor-version"')
   @ApiOperation({
     deprecated: true,
-    summary: 'Create new staff member (deprecated — use POST /users with employeeProfile, or POST /hr/employees)',
+    summary:
+      'Create new staff member (deprecated — use POST /users with employeeProfile, or POST /hr/employees)',
   })
   async createStaff(@Body() dto: CreateStaffDto, @Request() req: any) {
     return this.hrService.createStaff(dto as any, req.user?.tenantId);
@@ -324,10 +330,7 @@ export class HrController {
     @Query('facilityId') facilityId: string,
     @Request() req: any,
   ) {
-    const effectiveFacility = requireUUID(
-      facilityId || req.user?.facilityId,
-      'facilityId',
-    );
+    const effectiveFacility = requireUUID(facilityId || req.user?.facilityId, 'facilityId');
     return this.hrService.recordAttendance(dto, effectiveFacility, req.user?.tenantId);
   }
 
@@ -339,15 +342,8 @@ export class HrController {
     @Query('facilityId') facilityId: string,
     @Request() req: any,
   ) {
-    const targetId = await this.hrService.resolveAttendanceTarget(
-      employeeId,
-      req.user,
-      'clock-in',
-    );
-    const effectiveFacility = requireUUID(
-      facilityId || req.user?.facilityId,
-      'facilityId',
-    );
+    const targetId = await this.hrService.resolveAttendanceTarget(employeeId, req.user, 'clock-in');
+    const effectiveFacility = requireUUID(facilityId || req.user?.facilityId, 'facilityId');
     return this.hrService.clockIn(targetId, effectiveFacility, req.user?.tenantId);
   }
 
@@ -364,10 +360,7 @@ export class HrController {
       req.user,
       'clock-out',
     );
-    const effectiveFacility = requireUUID(
-      facilityId || req.user?.facilityId,
-      'facilityId',
-    );
+    const effectiveFacility = requireUUID(facilityId || req.user?.facilityId, 'facilityId');
     return this.hrService.clockOut(targetId, effectiveFacility, req.user?.tenantId);
   }
 
@@ -378,16 +371,26 @@ export class HrController {
   @ApiQuery({ name: 'employeeId', required: false })
   @ApiQuery({ name: 'startDate', required: false })
   @ApiQuery({ name: 'endDate', required: false })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
   async getAttendance(
     @Query('facilityId') facilityId: string,
     @Query('employeeId') employeeId?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
     @Request() req?: any,
   ) {
     return this.hrService.getAttendance(
       facilityId,
-      { employeeId, startDate, endDate },
+      {
+        employeeId,
+        startDate,
+        endDate,
+        page: page ? +page : undefined,
+        limit: limit ? +limit : undefined,
+      },
       req?.user?.tenantId,
     );
   }
@@ -413,13 +416,21 @@ export class HrController {
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'status', required: false, enum: LeaveStatus })
   @ApiQuery({ name: 'employeeId', required: false })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
   async getLeaveRequests(
     @Query('facilityId') facilityId: string,
     @Query('status') status?: LeaveStatus,
     @Query('employeeId') employeeId?: string,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
     @Request() req?: any,
   ) {
-    return this.hrService.getLeaveRequests(facilityId, { status, employeeId }, req?.user?.tenantId);
+    return this.hrService.getLeaveRequests(
+      facilityId,
+      { status, employeeId, page: page ? +page : undefined, limit: limit ? +limit : undefined },
+      req?.user?.tenantId,
+    );
   }
 
   // ============ PAYROLL ============

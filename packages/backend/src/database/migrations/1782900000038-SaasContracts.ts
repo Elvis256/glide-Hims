@@ -33,10 +33,18 @@ export class SaasContracts1782900000038 implements MigrationInterface {
         "updatedAt"           TIMESTAMPTZ NOT NULL DEFAULT now()
       );
     `);
-    await queryRunner.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_contract_number ON saas_contracts ("contractNumber");`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_contract_quotation ON saas_contracts (quotation_id);`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_contract_tenant ON saas_contracts (tenant_id);`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_contract_status ON saas_contracts (status);`);
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_contract_number ON saas_contracts ("contractNumber");`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_contract_quotation ON saas_contracts (quotation_id);`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_contract_tenant ON saas_contracts (tenant_id);`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_contract_status ON saas_contracts (status);`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

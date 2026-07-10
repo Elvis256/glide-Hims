@@ -421,7 +421,7 @@ export class PricingEngineService {
 
   async deleteInsurancePriceList(id: string, tenantId?: string): Promise<void> {
     if (tenantId) {
-      const entity = await this.insurancePriceListRepo.findOne({ where: { id, tenantId } as any });
+      const entity = await this.insurancePriceListRepo.findOne({ where: { id, tenantId } });
       if (!entity) throw new NotFoundException('Insurance price list not found');
     }
     await this.insurancePriceListRepo.softDelete(id);
@@ -549,14 +549,21 @@ export class PricingEngineService {
     });
     const saved = await this.pricingRuleRepo.save(rule);
     // P1: Audit log on pricing rule creation
-    this.auditLogService.log({
-      userId,
-      action: 'PRICING_RULE_CREATED',
-      entityType: 'PricingRule',
-      entityId: saved.id,
-      newValue: { name: saved.name, ruleType: saved.ruleType, discountType: saved.discountType, discountValue: saved.discountValue },
-      ...(tenantId ? { tenantId } : {}),
-    }).catch(() => {});
+    this.auditLogService
+      .log({
+        userId,
+        action: 'PRICING_RULE_CREATED',
+        entityType: 'PricingRule',
+        entityId: saved.id,
+        newValue: {
+          name: saved.name,
+          ruleType: saved.ruleType,
+          discountType: saved.discountType,
+          discountValue: saved.discountValue,
+        },
+        ...(tenantId ? { tenantId } : {}),
+      })
+      .catch(() => {});
     return saved;
   }
 
@@ -572,39 +579,51 @@ export class PricingEngineService {
     if (!rule) {
       throw new NotFoundException('Pricing rule not found');
     }
-    const oldValue = { name: rule.name, discountValue: rule.discountValue, isActive: rule.isActive };
+    const oldValue = {
+      name: rule.name,
+      discountValue: rule.discountValue,
+      isActive: rule.isActive,
+    };
     Object.assign(rule, dto);
     const saved = await this.pricingRuleRepo.save(rule);
     // P1: Audit log on pricing rule update
     if (userId) {
-      this.auditLogService.log({
-        userId,
-        action: 'PRICING_RULE_UPDATED',
-        entityType: 'PricingRule',
-        entityId: id,
-        oldValue,
-        newValue: { name: saved.name, discountValue: saved.discountValue, isActive: saved.isActive },
-        ...(tenantId ? { tenantId } : {}),
-      }).catch(() => {});
+      this.auditLogService
+        .log({
+          userId,
+          action: 'PRICING_RULE_UPDATED',
+          entityType: 'PricingRule',
+          entityId: id,
+          oldValue,
+          newValue: {
+            name: saved.name,
+            discountValue: saved.discountValue,
+            isActive: saved.isActive,
+          },
+          ...(tenantId ? { tenantId } : {}),
+        })
+        .catch(() => {});
     }
     return saved;
   }
 
   async deletePricingRule(id: string, userId?: string, tenantId?: string): Promise<void> {
     if (tenantId) {
-      const entity = await this.pricingRuleRepo.findOne({ where: { id, tenantId } as any });
+      const entity = await this.pricingRuleRepo.findOne({ where: { id, tenantId } });
       if (!entity) throw new NotFoundException('Pricing rule not found');
     }
     await this.pricingRuleRepo.softDelete(id);
     // P1: Audit log on pricing rule deletion
     if (userId) {
-      this.auditLogService.log({
-        userId,
-        action: 'PRICING_RULE_DELETED',
-        entityType: 'PricingRule',
-        entityId: id,
-        ...(tenantId ? { tenantId } : {}),
-      }).catch(() => {});
+      this.auditLogService
+        .log({
+          userId,
+          action: 'PRICING_RULE_DELETED',
+          entityType: 'PricingRule',
+          entityId: id,
+          ...(tenantId ? { tenantId } : {}),
+        })
+        .catch(() => {});
     }
   }
 
@@ -647,7 +666,7 @@ export class PricingEngineService {
   }
   async deleteTaxRate(id: string, tenantId?: string): Promise<void> {
     if (tenantId) {
-      const entity = await this.taxRateRepo.findOne({ where: { id, tenantId } as any });
+      const entity = await this.taxRateRepo.findOne({ where: { id, tenantId } });
       if (!entity) throw new NotFoundException('Tax rate not found');
     }
     await this.taxRateRepo.softDelete(id);
@@ -673,7 +692,7 @@ export class PricingEngineService {
   }
   async deleteTaxExemption(id: string, tenantId?: string): Promise<void> {
     if (tenantId) {
-      const entity = await this.taxExemptionRepo.findOne({ where: { id, tenantId } as any });
+      const entity = await this.taxExemptionRepo.findOne({ where: { id, tenantId } });
       if (!entity) throw new NotFoundException('Tax exemption not found');
     }
     await this.taxExemptionRepo.softDelete(id);

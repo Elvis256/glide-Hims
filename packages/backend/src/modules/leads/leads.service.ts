@@ -72,7 +72,12 @@ export class LeadsService {
 
   async addActivity(
     leadId: string,
-    data: { type: LeadActivityType; content?: string; metadata?: Record<string, any>; actorId?: string },
+    data: {
+      type: LeadActivityType;
+      content?: string;
+      metadata?: Record<string, any>;
+      actorId?: string;
+    },
   ): Promise<LeadActivity> {
     const activity = this.activities.create({
       leadId,
@@ -106,7 +111,14 @@ export class LeadsService {
 
   async getLeadPipeline() {
     const all = await this.repo.find({
-      select: ['id', 'status', 'priority', 'estimatedArrMinor', 'estimatedArrCurrency', 'createdAt'],
+      select: [
+        'id',
+        'status',
+        'priority',
+        'estimatedArrMinor',
+        'estimatedArrCurrency',
+        'createdAt',
+      ],
     });
     const byStatus: Record<string, { count: number; totalArr: number }> = {};
     for (const l of all) {

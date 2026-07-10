@@ -1,4 +1,14 @@
-import { Body, Controller, ForbiddenException, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+} from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { OnboardingService } from './onboarding.service';
 
@@ -34,7 +44,12 @@ export class OnboardingController {
 
   @Patch(':id/items/:itemId')
   @ApiOperation({ summary: 'Update an onboarding item' })
-  async updateItem(@Req() req: any, @Param('id') id: string, @Param('itemId') itemId: string, @Body() dto: any) {
+  async updateItem(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Param('itemId') itemId: string,
+    @Body() dto: any,
+  ) {
     this.assertAdmin(req);
     return this.service.updateItem(id, itemId, dto);
   }

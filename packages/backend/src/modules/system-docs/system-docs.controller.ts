@@ -40,9 +40,7 @@ const OPERATOR_PAGES = [
 const ALL_SLUGS = new Set([...PUBLIC_PAGES, ...OPERATOR_PAGES].map((p) => p.slug));
 
 function existingPages(pages: { slug: string; title: string }[]) {
-  return pages.filter((p) =>
-    fs.existsSync(path.join(DOCS_ROOT, `${p.slug}.html`)),
-  );
+  return pages.filter((p) => fs.existsSync(path.join(DOCS_ROOT, `${p.slug}.html`)));
 }
 
 @ApiTags('system-docs')
@@ -66,11 +64,7 @@ export class SystemDocsController {
   @Get(':slug')
   @AuthWithPermissions()
   @ApiOperation({ summary: 'Render a documentation page (system admin only)' })
-  async getPage(
-    @Param('slug') rawSlug: string,
-    @Request() req: any,
-    @Res() res: Response,
-  ) {
+  async getPage(@Param('slug') rawSlug: string, @Request() req: any, @Res() res: Response) {
     if (!req.user?.isSystemAdmin) {
       throw new ForbiddenException('System admin access required');
     }

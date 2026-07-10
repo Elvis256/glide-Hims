@@ -1,16 +1,13 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import {
-  Repository,
-  In,
-  LessThan,
-  LessThanOrEqual,
-  IsNull,
-  MoreThan,
-  Not,
-  Between,
-} from 'typeorm';
+import { Repository, In, LessThan, LessThanOrEqual, IsNull, MoreThan, Not, Between, DeepPartial } from 'typeorm';
 import {
   SaasPlan,
   SaasSubscription,
@@ -50,7 +47,11 @@ import { SaasMailerService } from './saas-mailer.service';
 import { fmtMoney } from './currency-utils';
 import { FlutterwaveService } from './flutterwave.service';
 import { PesapalService } from './pesapal.service';
-import { WebhookDispatcherService, WebhookEventType, WEBHOOK_EVENT_TYPES } from './webhook-dispatcher.service';
+import {
+  WebhookDispatcherService,
+  WebhookEventType,
+  WEBHOOK_EVENT_TYPES,
+} from './webhook-dispatcher.service';
 import * as crypto from 'crypto';
 import { Lead } from '../leads/lead.entity';
 import { SystemSettingsService } from '../system-settings/system-settings.service';
@@ -100,14 +101,14 @@ export const VAT_RULES_KEY = 'vat_rules';
 
 export interface VatRule {
   country: string;
-  rate: number;            // percent
+  rate: number; // percent
   taxNumberLabel?: string; // e.g. 'TIN', 'VAT No.'
 }
 
 export interface VatSettings {
   enabled: boolean;
-  taxLabel: string;        // default 'VAT' — shown on invoices
-  defaultRate: number;     // applied when no country match
+  taxLabel: string; // default 'VAT' — shown on invoices
+  defaultRate: number; // applied when no country match
   rules: VatRule[];
 }
 
@@ -126,8 +127,8 @@ const DEFAULT_VAT_SETTINGS: VatSettings = {
 export const CURRENCY_RATES_KEY = 'currency_rates';
 
 export interface CurrencyRates {
-  base: string;                        // e.g. 'UGX'
-  rates: Record<string, number>;       // 1 base unit = N target units (e.g. UGX→KES ≈ 0.034)
+  base: string; // e.g. 'UGX'
+  rates: Record<string, number>; // 1 base unit = N target units (e.g. UGX→KES ≈ 0.034)
   updatedAt: string | null;
 }
 
@@ -154,14 +155,19 @@ export class SaasRevenueService {
     @InjectRepository(SaasInvoice) private readonly invoices: Repository<SaasInvoice>,
     @InjectRepository(SaasPayment) private readonly payments: Repository<SaasPayment>,
     @InjectRepository(SaasCoupon) private readonly coupons: Repository<SaasCoupon>,
-    @InjectRepository(SaasSubscriptionEvent) private readonly events: Repository<SaasSubscriptionEvent>,
+    @InjectRepository(SaasSubscriptionEvent)
+    private readonly events: Repository<SaasSubscriptionEvent>,
     @InjectRepository(License) private readonly licenses: Repository<License>,
     @InjectRepository(Lead) private readonly leads: Repository<Lead>,
     @InjectRepository(Tenant) private readonly tenants: Repository<Tenant>,
-    @InjectRepository(SaasPaymentMethod) private readonly paymentMethods: Repository<SaasPaymentMethod>,
-    @InjectRepository(SaasWebhookEndpoint) private readonly webhookEndpoints: Repository<SaasWebhookEndpoint>,
-    @InjectRepository(SaasWebhookDelivery) private readonly webhookDeliveries: Repository<SaasWebhookDelivery>,
-    @InjectRepository(SaasPaymentProof) private readonly paymentProofs: Repository<SaasPaymentProof>,
+    @InjectRepository(SaasPaymentMethod)
+    private readonly paymentMethods: Repository<SaasPaymentMethod>,
+    @InjectRepository(SaasWebhookEndpoint)
+    private readonly webhookEndpoints: Repository<SaasWebhookEndpoint>,
+    @InjectRepository(SaasWebhookDelivery)
+    private readonly webhookDeliveries: Repository<SaasWebhookDelivery>,
+    @InjectRepository(SaasPaymentProof)
+    private readonly paymentProofs: Repository<SaasPaymentProof>,
     private readonly mailer: SaasMailerService,
     private readonly flw: FlutterwaveService,
     private readonly pesapal: PesapalService,
@@ -203,7 +209,12 @@ export class SaasRevenueService {
     if (!merged.legalName || !merged.legalName.trim()) {
       throw new BadRequestException('legalName is required');
     }
-    await this.settings.upsert(VENDOR_BILLING_KEY, merged, undefined, 'Vendor billing identity used on SaaS invoices');
+    await this.settings.upsert(
+      VENDOR_BILLING_KEY,
+      merged,
+      undefined,
+      'Vendor billing identity used on SaaS invoices',
+    );
     return merged;
   }
 
@@ -217,8 +228,14 @@ export class SaasRevenueService {
       return {
         enabled: v.enabled ?? DEFAULT_DUNNING_RULES.enabled,
         graceDays: Math.max(0, Number(v.graceDays ?? DEFAULT_DUNNING_RULES.graceDays)),
-        reminderIntervalDays: Math.max(1, Number(v.reminderIntervalDays ?? DEFAULT_DUNNING_RULES.reminderIntervalDays)),
-        churnAfterDays: Math.max(1, Number(v.churnAfterDays ?? DEFAULT_DUNNING_RULES.churnAfterDays)),
+        reminderIntervalDays: Math.max(
+          1,
+          Number(v.reminderIntervalDays ?? DEFAULT_DUNNING_RULES.reminderIntervalDays),
+        ),
+        churnAfterDays: Math.max(
+          1,
+          Number(v.churnAfterDays ?? DEFAULT_DUNNING_RULES.churnAfterDays),
+        ),
       };
     } catch {
       return { ...DEFAULT_DUNNING_RULES };
@@ -230,13 +247,21 @@ export class SaasRevenueService {
     const merged: DunningRules = {
       enabled: dto.enabled ?? current.enabled,
       graceDays: Math.max(0, Number(dto.graceDays ?? current.graceDays)),
-      reminderIntervalDays: Math.max(1, Number(dto.reminderIntervalDays ?? current.reminderIntervalDays)),
+      reminderIntervalDays: Math.max(
+        1,
+        Number(dto.reminderIntervalDays ?? current.reminderIntervalDays),
+      ),
       churnAfterDays: Math.max(1, Number(dto.churnAfterDays ?? current.churnAfterDays)),
     };
     if (merged.churnAfterDays < merged.graceDays) {
       throw new BadRequestException('churnAfterDays must be greater than or equal to graceDays');
     }
-    await this.settings.upsert(DUNNING_RULES_KEY, merged, undefined, 'SaaS dunning schedule (grace period, reminder cadence, auto-churn)');
+    await this.settings.upsert(
+      DUNNING_RULES_KEY,
+      merged,
+      undefined,
+      'SaaS dunning schedule (grace period, reminder cadence, auto-churn)',
+    );
     return merged;
   }
 
@@ -251,11 +276,15 @@ export class SaasRevenueService {
         enabled: v.enabled ?? DEFAULT_VAT_SETTINGS.enabled,
         taxLabel: v.taxLabel ?? DEFAULT_VAT_SETTINGS.taxLabel,
         defaultRate: Math.max(0, Number(v.defaultRate ?? DEFAULT_VAT_SETTINGS.defaultRate)),
-        rules: Array.isArray(v.rules) ? v.rules.map((r) => ({
-          country: String(r.country || '').trim(),
-          rate: Math.max(0, Number(r.rate ?? 0)),
-          taxNumberLabel: r.taxNumberLabel?.trim() || undefined,
-        })).filter((r) => r.country.length > 0) : DEFAULT_VAT_SETTINGS.rules,
+        rules: Array.isArray(v.rules)
+          ? v.rules
+              .map((r) => ({
+                country: String(r.country || '').trim(),
+                rate: Math.max(0, Number(r.rate ?? 0)),
+                taxNumberLabel: r.taxNumberLabel?.trim() || undefined,
+              }))
+              .filter((r) => r.country.length > 0)
+          : DEFAULT_VAT_SETTINGS.rules,
       };
     } catch {
       return { ...DEFAULT_VAT_SETTINGS, rules: [...DEFAULT_VAT_SETTINGS.rules] };
@@ -268,11 +297,15 @@ export class SaasRevenueService {
       enabled: dto.enabled ?? current.enabled,
       taxLabel: (dto.taxLabel ?? current.taxLabel).trim() || 'VAT',
       defaultRate: Math.max(0, Number(dto.defaultRate ?? current.defaultRate)),
-      rules: Array.isArray(dto.rules) ? dto.rules.map((r) => ({
-        country: String(r.country || '').trim(),
-        rate: Math.max(0, Number(r.rate ?? 0)),
-        taxNumberLabel: r.taxNumberLabel?.trim() || undefined,
-      })).filter((r) => r.country.length > 0) : current.rules,
+      rules: Array.isArray(dto.rules)
+        ? dto.rules
+            .map((r) => ({
+              country: String(r.country || '').trim(),
+              rate: Math.max(0, Number(r.rate ?? 0)),
+              taxNumberLabel: r.taxNumberLabel?.trim() || undefined,
+            }))
+            .filter((r) => r.country.length > 0)
+        : current.rules,
     };
     if (merged.defaultRate > 100 || merged.rules.some((r) => r.rate > 100)) {
       throw new BadRequestException('Tax rates must be between 0 and 100');
@@ -311,7 +344,12 @@ export class SaasRevenueService {
     }
     rates[base] = 1;
     const merged: CurrencyRates = { base, rates, updatedAt: new Date().toISOString() };
-    await this.settings.upsert(CURRENCY_RATES_KEY, merged, undefined, 'SaaS plan FX rates relative to base');
+    await this.settings.upsert(
+      CURRENCY_RATES_KEY,
+      merged,
+      undefined,
+      'SaaS plan FX rates relative to base',
+    );
     return merged;
   }
 
@@ -337,14 +375,21 @@ export class SaasRevenueService {
    * (no API key required). Falls back to exchangerate.host if env override is set.
    * Preserves currencies already in our table — only updates values for matches.
    */
-  async refreshCurrencyRatesFromProvider(opts?: { providerUrl?: string }): Promise<CurrencyRates & { _refreshed: { provider: string; updated: string[]; missing: string[] } }> {
+  async refreshCurrencyRatesFromProvider(opts?: {
+    providerUrl?: string;
+  }): Promise<
+    CurrencyRates & { _refreshed: { provider: string; updated: string[]; missing: string[] } }
+  > {
     const current = await this.getCurrencyRates();
     const base = (current.base || 'UGX').toUpperCase();
-    const tpl = opts?.providerUrl || process.env.SAAS_FX_PROVIDER_URL || 'https://open.er-api.com/v6/latest/{base}';
+    const tpl =
+      opts?.providerUrl ||
+      process.env.SAAS_FX_PROVIDER_URL ||
+      'https://open.er-api.com/v6/latest/{base}';
     const url = tpl.replace('{base}', encodeURIComponent(base));
     let body: any;
     try {
-      const fetchFn: any = (globalThis as any).fetch;
+      const fetchFn = (globalThis as any).fetch;
       if (!fetchFn) throw new Error('fetch unavailable in runtime');
       const res = await fetchFn(url, { method: 'GET', headers: { Accept: 'application/json' } });
       if (!res.ok) throw new Error(`provider HTTP ${res.status}`);
@@ -353,7 +398,8 @@ export class SaasRevenueService {
       throw new BadRequestException(`FX provider fetch failed: ${e?.message || e}`);
     }
     // Normalise — support open.er-api.com {result, rates} and exchangerate.host {success, rates}
-    const providerRates: Record<string, number> = (body && (body.rates || body.conversion_rates)) || {};
+    const providerRates: Record<string, number> =
+      (body && (body.rates || body.conversion_rates)) || {};
     if (!providerRates || typeof providerRates !== 'object' || !Object.keys(providerRates).length) {
       throw new BadRequestException('FX provider returned no rates');
     }
@@ -361,13 +407,23 @@ export class SaasRevenueService {
     const missing: string[] = [];
     const merged: Record<string, number> = { ...current.rates };
     for (const ccy of Object.keys(current.rates)) {
-      if (ccy === base) { merged[ccy] = 1; continue; }
+      if (ccy === base) {
+        merged[ccy] = 1;
+        continue;
+      }
       const v = Number(providerRates[ccy]);
-      if (isFinite(v) && v > 0) { merged[ccy] = v; updated.push(ccy); }
-      else missing.push(ccy);
+      if (isFinite(v) && v > 0) {
+        merged[ccy] = v;
+        updated.push(ccy);
+      } else missing.push(ccy);
     }
     const out: CurrencyRates = { base, rates: merged, updatedAt: new Date().toISOString() };
-    await this.settings.upsert(CURRENCY_RATES_KEY, out, undefined, `SaaS plan FX rates refreshed from ${url}`);
+    await this.settings.upsert(
+      CURRENCY_RATES_KEY,
+      out,
+      undefined,
+      `SaaS plan FX rates refreshed from ${url}`,
+    );
     return { ...out, _refreshed: { provider: url, updated, missing } } as any;
   }
 
@@ -377,7 +433,9 @@ export class SaasRevenueService {
       if (process.env.SAAS_FX_AUTOREFRESH === 'off') return;
       const r = await this.refreshCurrencyRatesFromProvider();
       // eslint-disable-next-line no-console
-      console.log(`[saas-fx] cron refresh ok base=${r.base} updated=${(r as any)._refreshed?.updated?.length || 0} missing=${(r as any)._refreshed?.missing?.length || 0}`);
+      console.log(
+        `[saas-fx] cron refresh ok base=${r.base} updated=${r._refreshed?.updated?.length || 0} missing=${r._refreshed?.missing?.length || 0}`,
+      );
     } catch (e: any) {
       // eslint-disable-next-line no-console
       console.warn(`[saas-fx] cron refresh failed: ${e?.message || e}`);
@@ -385,29 +443,43 @@ export class SaasRevenueService {
   }
 
   async listPublicPlansLocalized(currency?: string) {
-    const plans = await this.plans.find({ where: { isActive: true, isPublic: true } as any, order: { sortOrder: 'ASC', priceMonthlyMinor: 'ASC' } });
+    const plans = await this.plans.find({
+      where: { isActive: true, isPublic: true },
+      order: { sortOrder: 'ASC', priceMonthlyMinor: 'ASC' },
+    });
     if (!currency) return plans;
     const target = currency.toUpperCase();
     const fx = await this.getCurrencyRates();
-    return Promise.all(plans.map(async (p) => {
-      if (p.currency === target) return p;
-      const m = await this.convertMinor(p.priceMonthlyMinor, p.currency, target);
-      const a = await this.convertMinor(p.priceAnnualMinor, p.currency, target);
-      if (m === null || a === null) return p;
-      return { ...p, currency: target, priceMonthlyMinor: m, priceAnnualMinor: a, _converted: true, _baseCurrency: p.currency, _fxBase: fx.base } as any;
-    }));
+    return Promise.all(
+      plans.map(async (p) => {
+        if (p.currency === target) return p;
+        const m = await this.convertMinor(p.priceMonthlyMinor, p.currency, target);
+        const a = await this.convertMinor(p.priceAnnualMinor, p.currency, target);
+        if (m === null || a === null) return p;
+        return {
+          ...p,
+          currency: target,
+          priceMonthlyMinor: m,
+          priceAnnualMinor: a,
+          _converted: true,
+          _baseCurrency: p.currency,
+          _fxBase: fx.base,
+        } as any;
+      }),
+    );
   }
-
 
   /**
    * Resolve the tax rate to apply for a tenant. Returns 0 (no tax) when
    * VAT is globally disabled or no rule matches and defaultRate is 0.
    */
-  private async resolveTaxForTenant(tenantId: string): Promise<{ rate: number; label: string; country: string }> {
+  private async resolveTaxForTenant(
+    tenantId: string,
+  ): Promise<{ rate: number; label: string; country: string }> {
     const vat = await this.getVatSettings();
     if (!vat.enabled) return { rate: 0, label: vat.taxLabel, country: '' };
     const tenant = await this.tenants.findOne({ where: { id: tenantId } });
-    const country = (tenant?.settings as any)?.country?.trim() || '';
+    const country = (tenant?.settings?.country as string | undefined)?.trim() || '';
     const match = country
       ? vat.rules.find((r) => r.country.toLowerCase() === country.toLowerCase())
       : null;
@@ -419,19 +491,50 @@ export class SaasRevenueService {
   // ============================================================
   async renderInvoiceHtml(id: string, requireTenantId?: string): Promise<string> {
     const inv = await this.getInvoice(id);
-    if (requireTenantId && inv.tenantId !== requireTenantId && inv.billingPayerTenantId !== requireTenantId) {
+    if (
+      requireTenantId &&
+      inv.tenantId !== requireTenantId &&
+      inv.billingPayerTenantId !== requireTenantId
+    ) {
       throw new ForbiddenException('Invoice does not belong to your tenant');
     }
     const sub = await this.subs.findOne({ where: { id: inv.subscriptionId } });
     const plan = sub ? await this.plans.findOne({ where: { id: sub.planId } }) : null;
-    const tenant = await this.tenants.findOne({ where: { id: inv.tenantId }, select: ['id', 'name', 'slug'] as any });
+    const tenant = await this.tenants.findOne({
+      where: { id: inv.tenantId },
+      select: ['id', 'name', 'slug'],
+    });
     const vendor = await this.getVendorBilling();
     const fmt = (n: number) => this.fmtMoney(n, inv.currency);
     const fmtD = (d: any) => (d ? new Date(d).toISOString().slice(0, 10) : '—');
-    const esc = (s: any) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
-    const lines = (inv.lines || []) as Array<{ description: string; quantity: number; unitPriceMinor: number; amountMinor: number }>;
-    const paidRows = (inv as any).payments as Array<{ paidAt: any; amountMinor: number; gateway: string; method?: string | null; gatewayRef?: string | null }> | undefined;
-    const vendorAddr = [vendor.addressLine1, vendor.addressLine2, [vendor.city, vendor.country].filter(Boolean).join(', ')].filter(Boolean).map((l) => `<div>${esc(l)}</div>`).join('');
+    const esc = (s: any) =>
+      String(s ?? '').replace(
+        /[&<>"']/g,
+        (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,
+      );
+    const lines = (inv.lines || []) as Array<{
+      description: string;
+      quantity: number;
+      unitPriceMinor: number;
+      amountMinor: number;
+    }>;
+    const paidRows = (inv as any).payments as
+      | Array<{
+          paidAt: any;
+          amountMinor: number;
+          gateway: string;
+          method?: string | null;
+          gatewayRef?: string | null;
+        }>
+      | undefined;
+    const vendorAddr = [
+      vendor.addressLine1,
+      vendor.addressLine2,
+      [vendor.city, vendor.country].filter(Boolean).join(', '),
+    ]
+      .filter(Boolean)
+      .map((l) => `<div>${esc(l)}</div>`)
+      .join('');
 
     return `<!doctype html>
 <html lang="en"><head>
@@ -501,22 +604,30 @@ export class SaasRevenueService {
   <table class="totals">
     <tr><td class="right" style="width:80%">Subtotal</td><td class="right">${fmt(inv.subtotalMinor)}</td></tr>
     ${inv.discountMinor > 0 ? `<tr><td class="right">Discount</td><td class="right">-${fmt(inv.discountMinor)}</td></tr>` : ''}
-    ${inv.taxMinor > 0 ? (() => {
-      const base = inv.subtotalMinor - inv.discountMinor;
-      const rate = base > 0 ? Math.round((inv.taxMinor / base) * 1000) / 10 : 0;
-      const label = rate > 0 ? `Tax (${rate}%)` : 'Tax';
-      return `<tr><td class="right">${label}</td><td class="right">${fmt(inv.taxMinor)}</td></tr>`;
-    })() : ''}
+    ${
+      inv.taxMinor > 0
+        ? (() => {
+            const base = inv.subtotalMinor - inv.discountMinor;
+            const rate = base > 0 ? Math.round((inv.taxMinor / base) * 1000) / 10 : 0;
+            const label = rate > 0 ? `Tax (${rate}%)` : 'Tax';
+            return `<tr><td class="right">${label}</td><td class="right">${fmt(inv.taxMinor)}</td></tr>`;
+          })()
+        : ''
+    }
     <tr class="grand"><td class="right">Total due</td><td class="right">${fmt(inv.totalMinor)}</td></tr>
     ${inv.amountPaidMinor > 0 ? `<tr><td class="right">Paid</td><td class="right">-${fmt(inv.amountPaidMinor)}</td></tr>` : ''}
     ${inv.amountPaidMinor > 0 && inv.amountPaidMinor < inv.totalMinor ? `<tr class="grand"><td class="right">Balance</td><td class="right">${fmt(inv.totalMinor - inv.amountPaidMinor)}</td></tr>` : ''}
   </table>
 
-  ${paidRows && paidRows.length ? `
+  ${
+    paidRows && paidRows.length
+      ? `
     <h2 style="margin-top:32px">Payments</h2>
     <table><thead><tr><th>Date</th><th>Gateway</th><th>Method</th><th>Reference</th><th class="right">Amount</th></tr></thead>
     <tbody>${paidRows.map((p) => `<tr><td>${fmtD(p.paidAt)}</td><td>${esc(p.gateway)}</td><td>${esc(p.method || '—')}</td><td class="muted">${esc(p.gatewayRef || '—')}</td><td class="right">${fmt(p.amountMinor)}</td></tr>`).join('')}</tbody>
-    </table>` : ''}
+    </table>`
+      : ''
+  }
 
   ${inv.memo ? `<div class="footer">${esc(inv.memo)}</div>` : ''}
   ${vendor.invoiceFooter ? `<div class="footer">${esc(vendor.invoiceFooter)}</div>` : ''}
@@ -539,7 +650,7 @@ export class SaasRevenueService {
   }
 
   createPlan(dto: CreatePlanDto) {
-    return this.plans.save(this.plans.create(dto as any));
+    return this.plans.save(this.plans.create(dto as DeepPartial<SaasPlan>));
   }
 
   async updatePlan(id: string, dto: UpdatePlanDto) {
@@ -549,8 +660,13 @@ export class SaasRevenueService {
   }
 
   async deletePlan(id: string) {
-    const subCount = await this.subs.count({ where: { planId: id, status: Not('churned' as any) } as any });
-    if (subCount > 0) throw new BadRequestException(`Plan has ${subCount} active subscription(s); deactivate instead.`);
+    const subCount = await this.subs.count({
+      where: { planId: id, status: Not('churned') },
+    });
+    if (subCount > 0)
+      throw new BadRequestException(
+        `Plan has ${subCount} active subscription(s); deactivate instead.`,
+      );
     await this.plans.delete(id);
     return { deleted: true };
   }
@@ -582,20 +698,32 @@ export class SaasRevenueService {
     const next: Partial<SaasCoupon> = { ...dto };
     if (dto.code) next.code = String(dto.code).toUpperCase().trim();
     if ('expiresAt' in dto) {
-      next.expiresAt = dto.expiresAt ? new Date(dto.expiresAt as any) : null;
+      next.expiresAt = dto.expiresAt ? new Date(dto.expiresAt) : null;
     }
     Object.assign(c, next);
     return this.coupons.save(c);
   }
 
-  async previewCoupon(code: string, planId?: string, billingInterval: 'monthly' | 'annual' = 'monthly', seats = 1) {
+  async previewCoupon(
+    code: string,
+    planId?: string,
+    billingInterval: 'monthly' | 'annual' = 'monthly',
+    seats = 1,
+  ) {
     const c = await this.findValidCoupon(code, planId);
-    if (!c) return { valid: false, reason: 'Coupon code is invalid, expired, exhausted, or not applicable to this plan.' };
-    let baseMinor = 0; let currency = c.currency;
+    if (!c)
+      return {
+        valid: false,
+        reason: 'Coupon code is invalid, expired, exhausted, or not applicable to this plan.',
+      };
+    let baseMinor = 0;
+    let currency = c.currency;
     if (planId) {
       const plan = await this.plans.findOne({ where: { id: planId } });
       if (plan) {
-        baseMinor = (billingInterval === 'annual' ? plan.priceAnnualMinor : plan.priceMonthlyMinor) * Math.max(seats, 1);
+        baseMinor =
+          (billingInterval === 'annual' ? plan.priceAnnualMinor : plan.priceMonthlyMinor) *
+          Math.max(seats, 1);
         currency = plan.currency || currency;
       }
     }
@@ -637,31 +765,42 @@ export class SaasRevenueService {
   }
 
   async findValidCoupon(code: string, planId?: string): Promise<SaasCoupon | null> {
-    const c = await this.coupons.findOne({ where: { code: code.toUpperCase().trim(), isActive: true } });
+    const c = await this.coupons.findOne({
+      where: { code: code.toUpperCase().trim(), isActive: true },
+    });
     if (!c) return null;
     if (c.expiresAt && c.expiresAt < new Date()) return null;
     if (c.maxRedemptions != null && c.timesRedeemed >= c.maxRedemptions) return null;
-    if (planId && c.appliesToPlanIds && c.appliesToPlanIds.length > 0 && !c.appliesToPlanIds.includes(planId)) return null;
+    if (
+      planId &&
+      c.appliesToPlanIds &&
+      c.appliesToPlanIds.length > 0 &&
+      !c.appliesToPlanIds.includes(planId)
+    )
+      return null;
     return c;
   }
 
   // ============================================================
   // SUBSCRIPTIONS
   // ============================================================
-  private async tenantMap(ids: string[]): Promise<Map<string, { id: string; name: string; slug: string }>> {
+  private async tenantMap(
+    ids: string[],
+  ): Promise<Map<string, { id: string; name: string; slug: string }>> {
     const m = new Map<string, { id: string; name: string; slug: string }>();
     const unique = Array.from(new Set(ids.filter(Boolean)));
     if (unique.length === 0) return m;
     const rows = await this.tenants.find({
-      where: { id: In(unique) as any },
-      select: ['id', 'name', 'slug'] as any,
+      where: { id: In(unique) },
+      select: ['id', 'name', 'slug'],
     });
     for (const t of rows) m.set(t.id, { id: t.id, name: t.name, slug: t.slug });
     return m;
   }
 
   async listSubscriptions(opts: { status?: string; tenantId?: string; q?: string } = {}) {
-    const qb = this.subs.createQueryBuilder('s')
+    const qb = this.subs
+      .createQueryBuilder('s')
       .leftJoinAndSelect('s.plan', 'plan')
       .orderBy('s.createdAt', 'DESC');
     if (opts.status) qb.andWhere('s.status = :status', { status: opts.status });
@@ -692,9 +831,10 @@ export class SaasRevenueService {
     const tmap = await this.tenantMap([s.tenantId]);
     const tenant = tmap.get(s.tenantId) ?? null;
     // Compute current plan price for the same billing interval (for grandfathering UI).
-    const currentPlanUnitPriceMinor = s.billingInterval === 'annual'
-      ? (s.plan?.priceAnnualMinor ?? s.unitPriceMinor)
-      : (s.plan?.priceMonthlyMinor ?? s.unitPriceMinor);
+    const currentPlanUnitPriceMinor =
+      s.billingInterval === 'annual'
+        ? (s.plan?.priceAnnualMinor ?? s.unitPriceMinor)
+        : (s.plan?.priceMonthlyMinor ?? s.unitPriceMinor);
     const isPriceLockedBelow = currentPlanUnitPriceMinor > s.unitPriceMinor;
     const isPriceLockedAbove = currentPlanUnitPriceMinor < s.unitPriceMinor;
     return {
@@ -713,14 +853,21 @@ export class SaasRevenueService {
     const sub = await this.subs.findOne({ where: { id } });
     if (!sub) throw new NotFoundException('Subscription not found');
     const plan = await this.getPlan(sub.planId);
-    const newUnit = sub.billingInterval === 'annual' ? plan.priceAnnualMinor : plan.priceMonthlyMinor;
+    const newUnit =
+      sub.billingInterval === 'annual' ? plan.priceAnnualMinor : plan.priceMonthlyMinor;
     if (newUnit === sub.unitPriceMinor) {
       return { ...(await this.getSubscription(sub.id)), changed: false };
     }
     const oldUnit = sub.unitPriceMinor;
     sub.unitPriceMinor = newUnit;
     await this.subs.save(sub);
-    await this.recordEvent(sub.id, 'plan_changed', `Unit price synced from ${sub.currency} ${(oldUnit / 100).toLocaleString()} to ${sub.currency} ${(newUnit / 100).toLocaleString()} (${sub.billingInterval})`, { oldUnit, newUnit, source: 'sync-price' }, actorId);
+    await this.recordEvent(
+      sub.id,
+      'plan_changed',
+      `Unit price synced from ${sub.currency} ${(oldUnit / 100).toLocaleString()} to ${sub.currency} ${(newUnit / 100).toLocaleString()} (${sub.billingInterval})`,
+      { oldUnit, newUnit, source: 'sync-price' },
+      actorId,
+    );
     return { ...(await this.getSubscription(sub.id)), changed: true, oldUnit, newUnit };
   }
 
@@ -763,18 +910,24 @@ export class SaasRevenueService {
       currentPeriodEnd: periodEnd,
       nextRenewalAt: periodEnd,
       autoRenew: dto.autoRenew ?? true,
-      billingEmail: (dto as any).billingEmail ?? null,
-      billingName: (dto as any).billingName ?? null,
+      billingEmail: dto.billingEmail ?? null,
+      billingName: dto.billingName ?? null,
       notes: dto.notes ?? null,
     });
-    const saved = await this.subs.save(sub );
+    const saved = await this.subs.save(sub);
 
     if (coupon) {
       coupon.timesRedeemed += 1;
       await this.coupons.save(coupon);
     }
 
-    await this.recordEvent(saved.id, status === 'trial' ? 'trial_started' : 'created', 'Subscription created', { planCode: plan.code }, actorId);
+    await this.recordEvent(
+      saved.id,
+      status === 'trial' ? 'trial_started' : 'created',
+      'Subscription created',
+      { planCode: plan.code },
+      actorId,
+    );
 
     // Issue first invoice for active (non-trial) subscriptions immediately.
     if (status === 'active') {
@@ -799,30 +952,59 @@ export class SaasRevenueService {
     if (sub.status === 'cancelled' || sub.status === 'churned') sub.status = 'active';
     await this.subs.save(sub);
 
-    await this.recordEvent(sub.id, 'plan_changed', `Plan changed to ${newPlan.name} (${interval})`, { planId: newPlan.id }, actorId);
+    await this.recordEvent(
+      sub.id,
+      'plan_changed',
+      `Plan changed to ${newPlan.name} (${interval})`,
+      { planId: newPlan.id },
+      actorId,
+    );
     await this.syncLicenseFromSubscription(sub.id);
     return this.getSubscription(sub.id);
   }
 
-  async cancelSubscription(id: string, atPeriodEnd: boolean, reason: string | undefined, actorId?: string) {
+  async cancelSubscription(
+    id: string,
+    atPeriodEnd: boolean,
+    reason: string | undefined,
+    actorId?: string,
+  ) {
     const sub = await this.subs.findOne({ where: { id } });
     if (!sub) throw new NotFoundException('Subscription not found');
     if (atPeriodEnd) {
       sub.cancelAtPeriodEnd = true;
       sub.autoRenew = false;
       await this.subs.save(sub);
-      await this.recordEvent(sub.id, 'cancelled', `Cancellation scheduled at period end. Reason: ${reason ?? 'n/a'}`, null, actorId);
+      await this.recordEvent(
+        sub.id,
+        'cancelled',
+        `Cancellation scheduled at period end. Reason: ${reason ?? 'n/a'}`,
+        null,
+        actorId,
+      );
     } else {
       sub.status = 'cancelled';
       sub.cancelledAt = new Date();
       sub.autoRenew = false;
       await this.subs.save(sub);
-      await this.recordEvent(sub.id, 'cancelled', `Cancelled immediately. Reason: ${reason ?? 'n/a'}`, null, actorId);
+      await this.recordEvent(
+        sub.id,
+        'cancelled',
+        `Cancelled immediately. Reason: ${reason ?? 'n/a'}`,
+        null,
+        actorId,
+      );
     }
-    this.webhooks.enqueue(sub.tenantId, 'subscription.cancelled', {
-      subscriptionId: sub.id, planId: sub.planId, atPeriodEnd: !!atPeriodEnd,
-      reason: reason ?? null, periodEnd: sub.currentPeriodEnd, cancelledAt: sub.cancelledAt,
-    }).catch(() => {});
+    this.webhooks
+      .enqueue(sub.tenantId, 'subscription.cancelled', {
+        subscriptionId: sub.id,
+        planId: sub.planId,
+        atPeriodEnd: !!atPeriodEnd,
+        reason: reason ?? null,
+        periodEnd: sub.currentPeriodEnd,
+        cancelledAt: sub.cancelledAt,
+      })
+      .catch(() => {});
     return this.getSubscription(sub.id);
   }
 
@@ -876,7 +1058,10 @@ export class SaasRevenueService {
   async getInvoice(id: string) {
     const inv = await this.invoices.findOne({ where: { id } });
     if (!inv) throw new NotFoundException();
-    const payments = await this.payments.find({ where: { invoiceId: id }, order: { paidAt: 'DESC' } });
+    const payments = await this.payments.find({
+      where: { invoiceId: id },
+      order: { paidAt: 'DESC' },
+    });
     return { ...inv, payments };
   }
 
@@ -886,18 +1071,40 @@ export class SaasRevenueService {
     const sub = await this.subs.findOne({ where: { id: inv.subscriptionId } });
     const plan = sub ? await this.plans.findOne({ where: { id: sub.planId } }) : null;
     const tenant = await this.tenants.findOne({ where: { id: inv.tenantId } });
-    const to = (overrideTo && overrideTo.trim()) || sub?.billingEmail || (tenant as any)?.contactEmail || (tenant as any)?.adminEmail || null;
-    if (!to) throw new BadRequestException('No recipient email available — set billingEmail on the subscription or pass `to` in the request body.');
+    const to =
+      (overrideTo && overrideTo.trim()) ||
+      sub?.billingEmail ||
+      (tenant as any)?.contactEmail ||
+      (tenant as any)?.adminEmail ||
+      null;
+    if (!to)
+      throw new BadRequestException(
+        'No recipient email available — set billingEmail on the subscription or pass `to` in the request body.',
+      );
     try {
-      await this.mailer.sendInvoiceIssued(to, inv as any, plan ?? undefined);
-      await this.recordEvent(inv.subscriptionId, 'invoice_issued', `Invoice ${inv.invoiceNumber} re-sent to ${to}`, { invoiceId: inv.id, to });
+      await this.mailer.sendInvoiceIssued(to, inv, plan ?? undefined);
+      await this.recordEvent(
+        inv.subscriptionId,
+        'invoice_issued',
+        `Invoice ${inv.invoiceNumber} re-sent to ${to}`,
+        { invoiceId: inv.id, to },
+      );
       return { ok: true, to };
     } catch (e: any) {
       throw new BadRequestException(`Failed to send: ${e?.message || 'unknown error'}`);
     }
   }
 
-  async createManualInvoice(dto: { subscriptionId: string; lines: Array<{ description: string; quantity: number; unitPriceMinor: number }>; memo?: string; dueInDays?: number; sendEmail?: boolean }, actorId?: string) {
+  async createManualInvoice(
+    dto: {
+      subscriptionId: string;
+      lines: Array<{ description: string; quantity: number; unitPriceMinor: number }>;
+      memo?: string;
+      dueInDays?: number;
+      sendEmail?: boolean;
+    },
+    actorId?: string,
+  ) {
     const sub = await this.subs.findOne({ where: { id: dto.subscriptionId } });
     if (!sub) throw new NotFoundException('Subscription not found');
     if (!dto.lines?.length) throw new BadRequestException('At least one line item is required');
@@ -943,21 +1150,33 @@ export class SaasRevenueService {
     });
     const saved = await this.invoices.save(inv);
 
-    await this.recordEvent(sub.id, 'invoice_issued', `Manual invoice ${invoiceNumber} issued for ${this.fmtMoney(total, sub.currency)}`, { invoiceId: saved.id, manual: true }, actorId);
+    await this.recordEvent(
+      sub.id,
+      'invoice_issued',
+      `Manual invoice ${invoiceNumber} issued for ${this.fmtMoney(total, sub.currency)}`,
+      { invoiceId: saved.id, manual: true },
+      actorId,
+    );
 
     if (dto.sendEmail) {
       const plan = await this.plans.findOne({ where: { id: sub.planId } });
       const tenant = await this.tenants.findOne({ where: { id: sub.tenantId } });
-      const to = sub.billingEmail || (tenant as any)?.contactEmail || (tenant as any)?.adminEmail || null;
+      const to =
+        sub.billingEmail || (tenant as any)?.contactEmail || (tenant as any)?.adminEmail || null;
       if (to) {
-        this.mailer.sendInvoiceIssued(to, saved as any, plan ?? undefined).catch(() => {});
+        this.mailer.sendInvoiceIssued(to, saved, plan ?? undefined).catch(() => {});
       }
     }
 
     return saved;
   }
 
-  async issueRenewalInvoice(sub: SaasSubscription, periodStart: Date, periodEnd: Date, actorId?: string) {
+  async issueRenewalInvoice(
+    sub: SaasSubscription,
+    periodStart: Date,
+    periodEnd: Date,
+    actorId?: string,
+  ) {
     // Check coupon expiry based on durationMonths
     if (sub.couponId && sub.couponAppliedAt) {
       const coupon = await this.coupons.findOne({ where: { id: sub.couponId } });
@@ -991,7 +1210,10 @@ export class SaasRevenueService {
     const sourceCcy = (sub.currency || 'UGX').toUpperCase();
     const billingCcy = (sub.billingCurrency || sourceCcy).toUpperCase();
     const fxApplied = billingCcy !== sourceCcy;
-    let invSubtotal = subtotal, invDiscount = discount, invTax = tax, invTotal = total;
+    let invSubtotal = subtotal,
+      invDiscount = discount,
+      invTax = tax,
+      invTotal = total;
     let invUnitPrice = sub.unitPriceMinor;
     let fxRate = 1;
     let fxMemo: string | null = null;
@@ -1002,9 +1224,15 @@ export class SaasRevenueService {
       const co = await this.convertMinor(total, sourceCcy, billingCcy);
       const cu = await this.convertMinor(sub.unitPriceMinor, sourceCcy, billingCcy);
       if (cs == null || cd == null || ct == null || co == null || cu == null) {
-        throw new BadRequestException(`Cannot convert invoice from ${sourceCcy} to ${billingCcy}: missing FX rate. Add the rate at /system/currency-rates or clear the subscription's billing currency.`);
+        throw new BadRequestException(
+          `Cannot convert invoice from ${sourceCcy} to ${billingCcy}: missing FX rate. Add the rate at /system/currency-rates or clear the subscription's billing currency.`,
+        );
       }
-      invSubtotal = cs; invDiscount = cd; invTax = ct; invTotal = co; invUnitPrice = cu;
+      invSubtotal = cs;
+      invDiscount = cd;
+      invTax = ct;
+      invTotal = co;
+      invUnitPrice = cu;
       fxRate = subtotal > 0 ? invSubtotal / subtotal : 1;
       fxMemo = `Converted from ${sourceCcy} ${this.fmtMoney(total, sourceCcy)} at rate ${fxRate.toFixed(6)}.`;
     }
@@ -1022,7 +1250,7 @@ export class SaasRevenueService {
       taxMinor: invTax,
       totalMinor: invTotal,
       amountPaidMinor: 0,
-      fxRateToBase: fxRate.toFixed(6) as any,
+      fxRateToBase: fxRate.toFixed(6),
       issuedAt: new Date(),
       dueAt: this.addDays(new Date(), 7),
       periodStart,
@@ -1037,46 +1265,79 @@ export class SaasRevenueService {
         },
       ],
     });
-    const saved = await this.invoices.save(inv );
+    const saved = await this.invoices.save(inv);
     sub.lastInvoicedAt = new Date();
     await this.subs.save(sub);
-    await this.recordEvent(sub.id, 'invoice_issued', `Invoice ${invoiceNumber} issued for ${this.fmtMoney(invTotal, billingCcy)}${fxApplied ? ` (FX ${sourceCcy}→${billingCcy})` : ''}`, { invoiceId: saved.id, fxApplied, fxRate, sourceCcy, billingCcy }, actorId);
+    await this.recordEvent(
+      sub.id,
+      'invoice_issued',
+      `Invoice ${invoiceNumber} issued for ${this.fmtMoney(invTotal, billingCcy)}${fxApplied ? ` (FX ${sourceCcy}→${billingCcy})` : ''}`,
+      { invoiceId: saved.id, fxApplied, fxRate, sourceCcy, billingCcy },
+      actorId,
+    );
     const invoiceTo = await this.resolveBillingEmail(sub);
     if (invoiceTo) {
       const plan = await this.plans.findOne({ where: { id: sub.planId } });
       this.mailer.sendInvoiceIssued(invoiceTo, saved, plan ?? undefined).catch(() => {});
     }
-    this.webhooks.enqueue(sub.tenantId, 'invoice.issued', {
-      invoiceId: saved.id, invoiceNumber, subscriptionId: sub.id,
-      totalMinor: saved.totalMinor, currency: saved.currency,
-      issuedAt: saved.issuedAt, dueAt: saved.dueAt,
-      fxApplied, fxRate, sourceCurrency: sourceCcy, billingCurrency: billingCcy,
-    }).catch(() => {});
+    this.webhooks
+      .enqueue(sub.tenantId, 'invoice.issued', {
+        invoiceId: saved.id,
+        invoiceNumber,
+        subscriptionId: sub.id,
+        totalMinor: saved.totalMinor,
+        currency: saved.currency,
+        issuedAt: saved.issuedAt,
+        dueAt: saved.dueAt,
+        fxApplied,
+        fxRate,
+        sourceCurrency: sourceCcy,
+        billingCurrency: billingCcy,
+      })
+      .catch(() => {});
     return saved;
   }
 
-  async updateSubscription(id: string, dto: { billingEmail?: string | null; billingCurrency?: string | null; autoRenew?: boolean }, actorId?: string) {
+  async updateSubscription(
+    id: string,
+    dto: { billingEmail?: string | null; billingCurrency?: string | null; autoRenew?: boolean },
+    actorId?: string,
+  ) {
     const sub = await this.subs.findOne({ where: { id } });
     if (!sub) throw new NotFoundException();
     const changes: string[] = [];
     if (dto.billingEmail !== undefined) {
       const v = dto.billingEmail ? String(dto.billingEmail).trim() : null;
-      if (v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) throw new BadRequestException('Invalid billing email');
-      if (v !== sub.billingEmail) { sub.billingEmail = v; changes.push(`billingEmail=${v ?? 'null'}`); }
+      if (v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v))
+        throw new BadRequestException('Invalid billing email');
+      if (v !== sub.billingEmail) {
+        sub.billingEmail = v;
+        changes.push(`billingEmail=${v ?? 'null'}`);
+      }
     }
     if (dto.billingCurrency !== undefined) {
       const raw = dto.billingCurrency ? String(dto.billingCurrency).trim().toUpperCase() : null;
-      if (raw && raw.length !== 3) throw new BadRequestException('Billing currency must be a 3-letter code');
+      if (raw && raw.length !== 3)
+        throw new BadRequestException('Billing currency must be a 3-letter code');
       if (raw && raw !== (sub.currency || '').toUpperCase()) {
         // Validate FX rate exists either way
         const fx = await this.getCurrencyRates();
-        const knows = (raw === fx.base) || !!fx.rates[raw];
-        if (!knows) throw new BadRequestException(`No FX rate for ${raw}. Add it at /system/currency-rates first.`);
+        const knows = raw === fx.base || !!fx.rates[raw];
+        if (!knows)
+          throw new BadRequestException(
+            `No FX rate for ${raw}. Add it at /system/currency-rates first.`,
+          );
       }
       const next = raw && raw !== (sub.currency || '').toUpperCase() ? raw : null;
-      if (next !== sub.billingCurrency) { sub.billingCurrency = next; changes.push(`billingCurrency=${next ?? 'null'}`); }
+      if (next !== sub.billingCurrency) {
+        sub.billingCurrency = next;
+        changes.push(`billingCurrency=${next ?? 'null'}`);
+      }
     }
-    if (dto.autoRenew !== undefined && dto.autoRenew !== sub.autoRenew) { sub.autoRenew = !!dto.autoRenew; changes.push(`autoRenew=${sub.autoRenew}`); }
+    if (dto.autoRenew !== undefined && dto.autoRenew !== sub.autoRenew) {
+      sub.autoRenew = !!dto.autoRenew;
+      changes.push(`autoRenew=${sub.autoRenew}`);
+    }
     if (changes.length === 0) return this.getSubscription(sub.id);
     await this.subs.save(sub);
     await this.recordEvent(sub.id, 'note', `Updated: ${changes.join(', ')}`, { changes }, actorId);
@@ -1121,24 +1382,49 @@ export class SaasRevenueService {
       if (sub.status === 'past_due' || sub.status === 'trial') {
         const wasTrial = sub.status === 'trial';
         sub.status = 'active';
-        await this.recordEvent(sub.id, wasTrial ? 'trial_converted' : 'activated', 'Subscription activated by payment', { invoiceId: inv.id }, actorId);
+        await this.recordEvent(
+          sub.id,
+          wasTrial ? 'trial_converted' : 'activated',
+          'Subscription activated by payment',
+          { invoiceId: inv.id },
+          actorId,
+        );
       }
       await this.subs.save(sub);
     }
-    await this.recordEvent(sub.id, 'payment_recorded', `Payment ${this.fmtMoney(dto.amountMinor, inv.currency)} via ${dto.gateway ?? 'manual'}`, { paymentId: savedPay.id, invoiceId: inv.id }, actorId);
+    await this.recordEvent(
+      sub.id,
+      'payment_recorded',
+      `Payment ${this.fmtMoney(dto.amountMinor, inv.currency)} via ${dto.gateway ?? 'manual'}`,
+      { paymentId: savedPay.id, invoiceId: inv.id },
+      actorId,
+    );
     await this.syncLicenseFromSubscription(sub.id);
     const receiptTo = await this.resolveBillingEmail(sub);
     if (receiptTo) this.mailer.sendPaymentReceipt(receiptTo, savedPay, inv).catch(() => {});
-    this.webhooks.enqueue(sub.tenantId, 'payment.recorded', {
-      paymentId: savedPay.id, invoiceId: inv.id, subscriptionId: sub.id,
-      amountMinor: savedPay.amountMinor, currency: savedPay.currency, gateway: savedPay.gateway, method: savedPay.method,
-      paidAt: savedPay.paidAt,
-    }).catch(() => {});
+    this.webhooks
+      .enqueue(sub.tenantId, 'payment.recorded', {
+        paymentId: savedPay.id,
+        invoiceId: inv.id,
+        subscriptionId: sub.id,
+        amountMinor: savedPay.amountMinor,
+        currency: savedPay.currency,
+        gateway: savedPay.gateway,
+        method: savedPay.method,
+        paidAt: savedPay.paidAt,
+      })
+      .catch(() => {});
     if (inv.status === 'paid') {
-      this.webhooks.enqueue(sub.tenantId, 'invoice.paid', {
-        invoiceId: inv.id, invoiceNumber: inv.invoiceNumber, subscriptionId: sub.id,
-        totalMinor: inv.totalMinor, currency: inv.currency, paidAt: inv.paidAt,
-      }).catch(() => {});
+      this.webhooks
+        .enqueue(sub.tenantId, 'invoice.paid', {
+          invoiceId: inv.id,
+          invoiceNumber: inv.invoiceNumber,
+          subscriptionId: sub.id,
+          totalMinor: inv.totalMinor,
+          currency: inv.currency,
+          paidAt: inv.paidAt,
+        })
+        .catch(() => {});
     }
     return savedPay;
   }
@@ -1147,7 +1433,12 @@ export class SaasRevenueService {
   // PAYMENT PROOF & VERIFICATION
   // ============================================================
 
-  async uploadPaymentProof(paymentId: string, file: Express.Multer.File, uploadedBy: string, notes?: string) {
+  async uploadPaymentProof(
+    paymentId: string,
+    file: Express.Multer.File,
+    uploadedBy: string,
+    notes?: string,
+  ) {
     const pay = await this.payments.findOne({ where: { id: paymentId } });
     if (!pay) throw new NotFoundException('Payment not found');
     const proof = this.paymentProofs.create({
@@ -1172,11 +1463,17 @@ export class SaasRevenueService {
     return proof;
   }
 
-  async verifyPayment(paymentId: string, dto: { status: 'verified' | 'rejected'; notes?: string }, verifierId: string) {
+  async verifyPayment(
+    paymentId: string,
+    dto: { status: 'verified' | 'rejected'; notes?: string },
+    verifierId: string,
+  ) {
     const pay = await this.payments.findOne({ where: { id: paymentId } });
     if (!pay) throw new NotFoundException('Payment not found');
-    if (pay.verificationStatus === 'verified') throw new BadRequestException('Payment already verified');
-    if (dto.status !== 'verified' && dto.status !== 'rejected') throw new BadRequestException('Status must be verified or rejected');
+    if (pay.verificationStatus === 'verified')
+      throw new BadRequestException('Payment already verified');
+    if (dto.status !== 'verified' && dto.status !== 'rejected')
+      throw new BadRequestException('Status must be verified or rejected');
 
     pay.verificationStatus = dto.status;
     pay.verifiedBy = verifierId;
@@ -1184,9 +1481,13 @@ export class SaasRevenueService {
     pay.verificationNotes = dto.notes ?? null;
     await this.payments.save(pay);
 
-    await this.recordEvent(pay.subscriptionId, 'payment_recorded',
+    await this.recordEvent(
+      pay.subscriptionId,
+      'payment_recorded',
       `Payment ${this.fmtMoney(pay.amountMinor, pay.currency)} ${dto.status} by verifier`,
-      { paymentId: pay.id, verificationStatus: dto.status }, verifierId);
+      { paymentId: pay.id, verificationStatus: dto.status },
+      verifierId,
+    );
 
     return pay;
   }
@@ -1204,23 +1505,36 @@ export class SaasRevenueService {
     if (inv.status === 'paid') throw new BadRequestException('Cannot void a paid invoice');
     inv.status = 'void';
     await this.invoices.save(inv);
-    await this.recordEvent(inv.subscriptionId, 'note', `Invoice ${inv.invoiceNumber} voided`, null, actorId);
+    await this.recordEvent(
+      inv.subscriptionId,
+      'note',
+      `Invoice ${inv.invoiceNumber} voided`,
+      null,
+      actorId,
+    );
     return inv;
   }
 
-  async refundPayment(paymentId: string, dto: { amountMinor?: number; reason?: string }, actorId?: string) {
+  async refundPayment(
+    paymentId: string,
+    dto: { amountMinor?: number; reason?: string },
+    actorId?: string,
+  ) {
     const pay = await this.payments.findOne({ where: { id: paymentId } });
     if (!pay) throw new NotFoundException('Payment not found');
     if (pay.status === 'refunded') throw new BadRequestException('Payment already fully refunded');
-    if (pay.status !== 'succeeded') throw new BadRequestException(`Cannot refund a ${pay.status} payment`);
+    if (pay.status !== 'succeeded')
+      throw new BadRequestException(`Cannot refund a ${pay.status} payment`);
 
     const meta = (pay.gatewayPayload || {}) as Record<string, any>;
     const alreadyRefunded = Number(meta.refundedMinor || 0);
     const refundable = pay.amountMinor - alreadyRefunded;
     if (refundable <= 0) throw new BadRequestException('Nothing left to refund');
 
-    const amount = dto.amountMinor && dto.amountMinor > 0 ? Math.floor(dto.amountMinor) : refundable;
-    if (amount > refundable) throw new BadRequestException(`Refund exceeds refundable balance (${refundable})`);
+    const amount =
+      dto.amountMinor && dto.amountMinor > 0 ? Math.floor(dto.amountMinor) : refundable;
+    if (amount > refundable)
+      throw new BadRequestException(`Refund exceeds refundable balance (${refundable})`);
 
     const reason = (dto.reason || '').trim() || null;
 
@@ -1235,17 +1549,26 @@ export class SaasRevenueService {
           gatewayRefundId = refundResult.refundId;
         } else {
           gatewayRefundStatus = 'refund_pending';
-          this.logger.warn(`Flutterwave refund failed for payment ${paymentId}: ${refundResult.error} — recorded locally as refund_pending`);
+          this.logger.warn(
+            `Flutterwave refund failed for payment ${paymentId}: ${refundResult.error} — recorded locally as refund_pending`,
+          );
         }
       }
     }
 
-    const refundRecord = { at: new Date().toISOString(), amountMinor: amount, reason, by: actorId || null, gatewayRefundId, gatewayRefundStatus };
+    const refundRecord = {
+      at: new Date().toISOString(),
+      amountMinor: amount,
+      reason,
+      by: actorId || null,
+      gatewayRefundId,
+      gatewayRefundStatus,
+    };
     const newRefundedTotal = alreadyRefunded + amount;
     pay.gatewayPayload = {
       ...meta,
       refundedMinor: newRefundedTotal,
-      refunds: [...((meta.refunds as any[]) || []), refundRecord],
+      refunds: [...(meta.refunds || []), refundRecord],
     };
     if (newRefundedTotal >= pay.amountMinor) pay.status = 'refunded';
     await this.payments.save(pay);
@@ -1269,10 +1592,17 @@ export class SaasRevenueService {
     );
     const subForRefund = await this.subs.findOne({ where: { id: pay.subscriptionId } });
     if (subForRefund) {
-      this.webhooks.enqueue(subForRefund.tenantId, 'payment.refunded', {
-        paymentId: pay.id, invoiceId: pay.invoiceId, subscriptionId: pay.subscriptionId,
-        amountMinor: amount, currency: pay.currency, reason, refundedTotalMinor: newRefundedTotal,
-      }).catch(() => {});
+      this.webhooks
+        .enqueue(subForRefund.tenantId, 'payment.refunded', {
+          paymentId: pay.id,
+          invoiceId: pay.invoiceId,
+          subscriptionId: pay.subscriptionId,
+          amountMinor: amount,
+          currency: pay.currency,
+          reason,
+          refundedTotalMinor: newRefundedTotal,
+        })
+        .catch(() => {});
     }
 
     return pay;
@@ -1285,11 +1615,14 @@ export class SaasRevenueService {
     const subs = await this.subs.find({ relations: ['plan'] });
     const active = subs.filter((s) => s.status === 'active' || s.status === 'past_due');
     const trial = subs.filter((s) => s.status === 'trial');
-    const churned30d = subs.filter((s) => s.churnedAt && s.churnedAt > this.addDays(new Date(), -30));
+    const churned30d = subs.filter(
+      (s) => s.churnedAt && s.churnedAt > this.addDays(new Date(), -30),
+    );
 
     // MRR: convert annual to monthly.
     const mrrMinor = active.reduce((acc, s) => {
-      const monthly = s.billingInterval === 'annual' ? Math.round(s.unitPriceMinor / 12) : s.unitPriceMinor;
+      const monthly =
+        s.billingInterval === 'annual' ? Math.round(s.unitPriceMinor / 12) : s.unitPriceMinor;
       const net = this.applyDiscount(monthly * s.seats, s);
       return acc + net;
     }, 0);
@@ -1298,7 +1631,9 @@ export class SaasRevenueService {
 
     // Last 12 months revenue (paid invoices).
     const since = this.addDays(new Date(), -365);
-    const paidInv = await this.invoices.find({ where: { status: 'paid', paidAt: MoreThan(since) } });
+    const paidInv = await this.invoices.find({
+      where: { status: 'paid', paidAt: MoreThan(since) },
+    });
     const monthly = new Map<string, number>();
     for (const inv of paidInv) {
       if (!inv.paidAt) continue;
@@ -1310,17 +1645,21 @@ export class SaasRevenueService {
       .map(([month, total]) => ({ month, totalMinor: total }));
 
     // Churn rate (last 30d): churned / (active at start of period). Simplified: churned30d / (active + churned30d).
-    const churnRatePct = active.length + churned30d.length === 0 ? 0 : (churned30d.length / (active.length + churned30d.length)) * 100;
+    const churnRatePct =
+      active.length + churned30d.length === 0
+        ? 0
+        : (churned30d.length / (active.length + churned30d.length)) * 100;
 
     // Outstanding A/R (open + past_due invoices).
-    const openInv = await this.invoices.find({ where: { status: In(['open']) as any } });
+    const openInv = await this.invoices.find({ where: { status: In(['open']) } });
     const outstandingMinor = openInv.reduce((a, i) => a + (i.totalMinor - i.amountPaidMinor), 0);
     const overdue = openInv.filter((i) => i.dueAt < new Date());
 
     // Top customers by lifetime revenue.
     const allPaid = await this.invoices.find({ where: { status: 'paid' } });
     const byTenant = new Map<string, number>();
-    for (const i of allPaid) byTenant.set(i.tenantId, (byTenant.get(i.tenantId) ?? 0) + i.totalMinor);
+    for (const i of allPaid)
+      byTenant.set(i.tenantId, (byTenant.get(i.tenantId) ?? 0) + i.totalMinor);
     const topRaw = Array.from(byTenant.entries())
       .sort(([, a], [, b]) => b - a)
       .slice(0, 10);
@@ -1346,37 +1685,76 @@ export class SaasRevenueService {
       if (!pid) continue;
       lifetimeByPlan.set(pid, (lifetimeByPlan.get(pid) || 0) + (i.amountPaidMinor || i.totalMinor));
     }
-    const byPlan = new Map<string, {
-      planId: string; planName: string; planCode?: string; tier?: string;
-      count: number; trialCount: number; churnedCount: number; pastDueCount: number;
-      mrrMinor: number; arrMinor: number; lifetimeMinor: number; arpaMinor: number;
-      sharePct: number;
-    }>();
+    const byPlan = new Map<
+      string,
+      {
+        planId: string;
+        planName: string;
+        planCode?: string;
+        tier?: string;
+        count: number;
+        trialCount: number;
+        churnedCount: number;
+        pastDueCount: number;
+        mrrMinor: number;
+        arrMinor: number;
+        lifetimeMinor: number;
+        arpaMinor: number;
+        sharePct: number;
+      }
+    >();
     for (const s of active) {
       const k = s.planId;
-      const monthlyAmt = s.billingInterval === 'annual' ? Math.round(s.unitPriceMinor / 12) : s.unitPriceMinor;
+      const monthlyAmt =
+        s.billingInterval === 'annual' ? Math.round(s.unitPriceMinor / 12) : s.unitPriceMinor;
       const net = this.applyDiscount(monthlyAmt * s.seats, s);
       const cur = byPlan.get(k) ?? {
-        planId: k, planName: s.plan?.name ?? '?', planCode: s.plan?.code, tier: s.plan?.tier,
-        count: 0, trialCount: 0, churnedCount: 0, pastDueCount: 0,
-        mrrMinor: 0, arrMinor: 0, lifetimeMinor: 0, arpaMinor: 0, sharePct: 0,
+        planId: k,
+        planName: s.plan?.name ?? '?',
+        planCode: s.plan?.code,
+        tier: s.plan?.tier,
+        count: 0,
+        trialCount: 0,
+        churnedCount: 0,
+        pastDueCount: 0,
+        mrrMinor: 0,
+        arrMinor: 0,
+        lifetimeMinor: 0,
+        arpaMinor: 0,
+        sharePct: 0,
       };
       cur.count += 1;
       cur.mrrMinor += net;
       byPlan.set(k, cur);
     }
     // Make sure every plan that has trial/churned/past-due/lifetime shows up too.
-    const allPlanIds = new Set<string>([...byPlan.keys(), ...subsByPlanId.keys(), ...lifetimeByPlan.keys()]);
+    const allPlanIds = new Set<string>([
+      ...byPlan.keys(),
+      ...subsByPlanId.keys(),
+      ...lifetimeByPlan.keys(),
+    ]);
     for (const pid of allPlanIds) {
       const planSubs = subsByPlanId.get(pid) || [];
       const sample = planSubs[0];
       const cur = byPlan.get(pid) ?? {
-        planId: pid, planName: sample?.plan?.name ?? '?', planCode: sample?.plan?.code, tier: sample?.plan?.tier,
-        count: 0, trialCount: 0, churnedCount: 0, pastDueCount: 0,
-        mrrMinor: 0, arrMinor: 0, lifetimeMinor: 0, arpaMinor: 0, sharePct: 0,
+        planId: pid,
+        planName: sample?.plan?.name ?? '?',
+        planCode: sample?.plan?.code,
+        tier: sample?.plan?.tier,
+        count: 0,
+        trialCount: 0,
+        churnedCount: 0,
+        pastDueCount: 0,
+        mrrMinor: 0,
+        arrMinor: 0,
+        lifetimeMinor: 0,
+        arpaMinor: 0,
+        sharePct: 0,
       };
       cur.trialCount = planSubs.filter((s) => s.status === 'trial').length;
-      cur.churnedCount = planSubs.filter((s) => s.status === 'churned' || s.status === 'cancelled').length;
+      cur.churnedCount = planSubs.filter(
+        (s) => s.status === 'churned' || s.status === 'cancelled',
+      ).length;
       cur.pastDueCount = planSubs.filter((s) => s.status === 'past_due').length;
       cur.arrMinor = cur.mrrMinor * 12;
       cur.lifetimeMinor = lifetimeByPlan.get(pid) || 0;
@@ -1393,13 +1771,16 @@ export class SaasRevenueService {
     for (const h of horizons) {
       const end = this.addDays(now, h);
       forecast[`d${h}Minor`] = active
-        .filter((s) => s.autoRenew && s.nextRenewalAt && s.nextRenewalAt <= end && s.nextRenewalAt > now)
+        .filter(
+          (s) => s.autoRenew && s.nextRenewalAt && s.nextRenewalAt <= end && s.nextRenewalAt > now,
+        )
         .reduce((a, s) => a + this.applyDiscount(s.unitPriceMinor * s.seats, s), 0);
     }
 
     // Expiring soon (renewal within 14 days).
-    const expiringRaw = active
-      .filter((s) => s.nextRenewalAt && s.nextRenewalAt <= this.addDays(now, 14));
+    const expiringRaw = active.filter(
+      (s) => s.nextRenewalAt && s.nextRenewalAt <= this.addDays(now, 14),
+    );
     const expiringTenants = await this.tenantMap(expiringRaw.map((s) => s.tenantId));
     const expiringSoon = expiringRaw.map((s) => ({
       id: s.id,
@@ -1414,7 +1795,10 @@ export class SaasRevenueService {
 
     // LTV (avg revenue per customer / monthly churn). Simplified.
     const arpa = active.length > 0 ? mrrMinor / active.length : 0;
-    const monthlyChurn = active.length + churned30d.length === 0 ? 0 : churned30d.length / (active.length + churned30d.length);
+    const monthlyChurn =
+      active.length + churned30d.length === 0
+        ? 0
+        : churned30d.length / (active.length + churned30d.length);
     const ltvMinor = monthlyChurn > 0 ? Math.round(arpa / monthlyChurn) : arpa * 24; // cap at 24 months if no churn yet
 
     return {
@@ -1449,10 +1833,13 @@ export class SaasRevenueService {
     const active = subs.filter((s) => s.status === 'active' || s.status === 'past_due');
     const trial = subs.filter((s) => s.status === 'trial');
     const churned = subs.filter((s) => s.status === 'churned' || s.status === 'cancelled');
-    const churned30d = subs.filter((s) => s.churnedAt && s.churnedAt > this.addDays(new Date(), -30));
+    const churned30d = subs.filter(
+      (s) => s.churnedAt && s.churnedAt > this.addDays(new Date(), -30),
+    );
 
     const mrrMinor = active.reduce((acc, s) => {
-      const monthly = s.billingInterval === 'annual' ? Math.round(s.unitPriceMinor / 12) : s.unitPriceMinor;
+      const monthly =
+        s.billingInterval === 'annual' ? Math.round(s.unitPriceMinor / 12) : s.unitPriceMinor;
       return acc + this.applyDiscount(monthly * s.seats, s);
     }, 0);
     const arrMinor = mrrMinor * 12;
@@ -1460,11 +1847,13 @@ export class SaasRevenueService {
 
     // Per-plan invoice/payment metrics.
     const subIds = subs.map((s) => s.id);
-    const planInv = subIds.length ? await this.invoices.find({ where: { subscriptionId: In(subIds) as any } }) : [];
+    const planInv = subIds.length
+      ? await this.invoices.find({ where: { subscriptionId: In(subIds) } })
+      : [];
     const paid = planInv.filter((i) => i.status === 'paid');
     const lifetimeMinor = paid.reduce((a, i) => a + (i.amountPaidMinor || i.totalMinor), 0);
     const outstandingMinor = planInv
-      .filter((i) => ['open', 'past_due', 'uncollectible'].includes(i.status as any))
+      .filter((i) => ['open', 'past_due', 'uncollectible'].includes(i.status as string))
       .reduce((a, i) => a + Math.max(0, i.totalMinor - (i.amountPaidMinor || 0)), 0);
 
     // 12-month revenue trend for this plan.
@@ -1481,17 +1870,32 @@ export class SaasRevenueService {
       .map(([month, total]) => ({ month, totalMinor: total }));
 
     // Conversion: trial → active. Use churnedAt-less subs that left trial.
-    const startedTrial = subs.filter((s) => s.trialEndsAt || s.status === 'trial' || s.status === 'active' || s.status === 'churned' || s.status === 'cancelled');
-    const convertedFromTrial = startedTrial.filter((s) => s.status === 'active' || s.status === 'past_due');
-    const trialConversionPct = startedTrial.length > 0 ? +((convertedFromTrial.length / startedTrial.length) * 100).toFixed(1) : 0;
+    const startedTrial = subs.filter(
+      (s) =>
+        s.trialEndsAt ||
+        s.status === 'trial' ||
+        s.status === 'active' ||
+        s.status === 'churned' ||
+        s.status === 'cancelled',
+    );
+    const convertedFromTrial = startedTrial.filter(
+      (s) => s.status === 'active' || s.status === 'past_due',
+    );
+    const trialConversionPct =
+      startedTrial.length > 0
+        ? +((convertedFromTrial.length / startedTrial.length) * 100).toFixed(1)
+        : 0;
 
     // Churn (per-plan, 30d).
-    const churnRatePct = active.length + churned30d.length === 0
-      ? 0
-      : +((churned30d.length / (active.length + churned30d.length)) * 100).toFixed(2);
+    const churnRatePct =
+      active.length + churned30d.length === 0
+        ? 0
+        : +((churned30d.length / (active.length + churned30d.length)) * 100).toFixed(2);
 
     // Recent customers on this plan.
-    const recentSubs = [...active, ...trial].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)).slice(0, 20);
+    const recentSubs = [...active, ...trial]
+      .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))
+      .slice(0, 20);
     const tmap = await this.tenantMap(recentSubs.map((s) => s.tenantId));
     const customers = recentSubs.map((s) => ({
       subscriptionId: s.id,
@@ -1501,7 +1905,8 @@ export class SaasRevenueService {
       billingInterval: s.billingInterval,
       seats: s.seats,
       mrrMinor: this.applyDiscount(
-        (s.billingInterval === 'annual' ? Math.round(s.unitPriceMinor / 12) : s.unitPriceMinor) * s.seats,
+        (s.billingInterval === 'annual' ? Math.round(s.unitPriceMinor / 12) : s.unitPriceMinor) *
+          s.seats,
         s,
       ),
       currency: s.currency,
@@ -1511,9 +1916,14 @@ export class SaasRevenueService {
 
     return {
       plan: {
-        id: plan.id, code: plan.code, name: plan.name, tier: plan.tier,
-        priceMonthlyMinor: plan.priceMonthlyMinor, priceAnnualMinor: plan.priceAnnualMinor,
-        currency: plan.currency, isActive: plan.isActive,
+        id: plan.id,
+        code: plan.code,
+        name: plan.name,
+        tier: plan.tier,
+        priceMonthlyMinor: plan.priceMonthlyMinor,
+        priceAnnualMinor: plan.priceAnnualMinor,
+        currency: plan.currency,
+        isActive: plan.isActive,
       },
       counts: {
         total: subs.length,
@@ -1553,7 +1963,7 @@ export class SaasRevenueService {
   async processTrialExpiry() {
     const now = new Date();
     const expired = await this.subs.find({
-      where: { status: 'trial' as any, trialEndsAt: LessThanOrEqual(now) },
+      where: { status: 'trial', trialEndsAt: LessThanOrEqual(now) },
     });
     for (const s of expired) {
       // Convert to active and issue first invoice.
@@ -1572,9 +1982,7 @@ export class SaasRevenueService {
   async processRenewals() {
     const now = new Date();
     const due = await this.subs.find({
-      where: [
-        { status: 'active' as any, autoRenew: true, nextRenewalAt: LessThanOrEqual(now) },
-      ],
+      where: [{ status: 'active', autoRenew: true, nextRenewalAt: LessThanOrEqual(now) }],
     });
     let count = 0;
     for (const s of due) {
@@ -1608,7 +2016,7 @@ export class SaasRevenueService {
     const now = new Date();
     // Mark overdue invoices' subscriptions as past_due.
     const overdueInv = await this.invoices.find({
-      where: { status: 'open' as any, dueAt: LessThanOrEqual(now) },
+      where: { status: 'open', dueAt: LessThanOrEqual(now) },
     });
     for (const inv of overdueInv) {
       const sub = await this.subs.findOne({ where: { id: inv.subscriptionId } });
@@ -1619,13 +2027,17 @@ export class SaasRevenueService {
         sub.failedPaymentAttempts += 1;
         sub.lastDunningAt = now;
         await this.subs.save(sub);
-        await this.recordEvent(sub.id, 'past_due', `Invoice ${inv.invoiceNumber} ${daysOverdue}d overdue`);
+        await this.recordEvent(
+          sub.id,
+          'past_due',
+          `Invoice ${inv.invoiceNumber} ${daysOverdue}d overdue`,
+        );
         const to = await this.resolveBillingEmail(sub);
         this.mailer.sendDunning(to, sub, inv, daysOverdue).catch(() => {});
       } else if (
         sub.status === 'past_due' &&
         daysOverdue > rules.graceDays &&
-        ((daysOverdue - rules.graceDays) % rules.reminderIntervalDays === 0)
+        (daysOverdue - rules.graceDays) % rules.reminderIntervalDays === 0
       ) {
         // Send a reminder every reminderIntervalDays after the grace period.
         // Guard: skip if we already sent a dunning email today (cron runs hourly).
@@ -1643,7 +2055,11 @@ export class SaasRevenueService {
         sub.status = 'churned';
         sub.churnedAt = now;
         await this.subs.save(sub);
-        await this.recordEvent(sub.id, 'churned', `Auto-churn after ${rules.churnAfterDays}d unpaid`);
+        await this.recordEvent(
+          sub.id,
+          'churned',
+          `Auto-churn after ${rules.churnAfterDays}d unpaid`,
+        );
         await this.syncLicenseFromSubscription(sub.id);
         // Notify tenant and dispatch webhook on auto-churn
         this.webhooks.enqueue(sub.tenantId, 'subscription.churned', {
@@ -1670,7 +2086,11 @@ export class SaasRevenueService {
       const windowStart = new Date(now.getTime() + (days - 0.5) * 86400000);
       const windowEnd = new Date(now.getTime() + (days + 0.5) * 86400000);
       const upcoming = await this.subs.find({
-        where: { status: 'active' as any, autoRenew: true, nextRenewalAt: Between(windowStart, windowEnd) },
+        where: {
+          status: 'active',
+          autoRenew: true,
+          nextRenewalAt: Between(windowStart, windowEnd),
+        },
         relations: ['plan'],
       });
       for (const sub of upcoming) {
@@ -1692,7 +2112,7 @@ export class SaasRevenueService {
       const windowStart = new Date(now.getTime() + (days - 0.5) * 86400000);
       const windowEnd = new Date(now.getTime() + (days + 0.5) * 86400000);
       const expiring = await this.subs.find({
-        where: { status: 'trial' as any, trialEndsAt: Between(windowStart, windowEnd) },
+        where: { status: 'trial', trialEndsAt: Between(windowStart, windowEnd) },
         relations: ['plan'],
       });
       for (const sub of expiring) {
@@ -1716,18 +2136,36 @@ export class SaasRevenueService {
     if (!lic) return; // license auto-created via deployment provisioning workflow elsewhere
     const targetType = TIER_TO_LICENSE[sub.plan.tier] ?? 'professional';
     let changed = false;
-    if (lic.licenseType !== targetType) { lic.licenseType = targetType; changed = true; }
-    if (sub.plan.maxUsers && lic.maxUsers !== sub.plan.maxUsers) { lic.maxUsers = sub.plan.maxUsers; changed = true; }
-    if (sub.currentPeriodEnd && (!lic.expiresAt || lic.expiresAt.getTime() !== sub.currentPeriodEnd.getTime())) {
+    if (lic.licenseType !== targetType) {
+      lic.licenseType = targetType;
+      changed = true;
+    }
+    if (sub.plan.maxUsers && lic.maxUsers !== sub.plan.maxUsers) {
+      lic.maxUsers = sub.plan.maxUsers;
+      changed = true;
+    }
+    if (
+      sub.currentPeriodEnd &&
+      (!lic.expiresAt || lic.expiresAt.getTime() !== sub.currentPeriodEnd.getTime())
+    ) {
       lic.expiresAt = sub.currentPeriodEnd;
       changed = true;
     }
     if (sub.status === 'churned' || sub.status === 'cancelled') {
-      if (lic.status !== 'expired') { lic.status = 'expired'; changed = true; }
+      if (lic.status !== 'expired') {
+        lic.status = 'expired';
+        changed = true;
+      }
     } else if (sub.status === 'paused') {
-      if (lic.status !== 'suspended') { lic.status = 'suspended'; changed = true; }
+      if (lic.status !== 'suspended') {
+        lic.status = 'suspended';
+        changed = true;
+      }
     } else if (sub.status === 'active' || sub.status === 'trial') {
-      if (lic.status !== 'active') { lic.status = 'active'; changed = true; }
+      if (lic.status !== 'active') {
+        lic.status = 'active';
+        changed = true;
+      }
     }
     // Sync enabledModules from plan to license
     if (sub.plan?.enabledModules?.length) {
@@ -1756,8 +2194,22 @@ export class SaasRevenueService {
   // ============================================================
   // HELPERS
   // ============================================================
-  private async recordEvent(subscriptionId: string, type: SubscriptionEventType, message?: string, payload?: any, actorId?: string) {
-    return this.events.save(this.events.create(<Partial<SaasSubscriptionEvent>>{ subscriptionId, type, message: message ?? null, payload: payload ?? null, actorId: actorId ?? null }));
+  private async recordEvent(
+    subscriptionId: string,
+    type: SubscriptionEventType,
+    message?: string,
+    payload?: any,
+    actorId?: string,
+  ) {
+    return this.events.save(
+      this.events.create(<Partial<SaasSubscriptionEvent>>{
+        subscriptionId,
+        type,
+        message: message ?? null,
+        payload: payload ?? null,
+        actorId: actorId ?? null,
+      }),
+    );
   }
 
   private async nextInvoiceNumber(): Promise<string> {
@@ -1768,9 +2220,12 @@ export class SaasRevenueService {
     const mgr = this.invoices.manager;
     await mgr.query(`SELECT pg_advisory_lock($1)`, [lockId]);
     try {
-      const last = await this.invoices.createQueryBuilder('i')
+      const last = await this.invoices
+        .createQueryBuilder('i')
         .where('i.invoiceNumber LIKE :p', { p: `${prefix}%` })
-        .orderBy('i.invoiceNumber', 'DESC').limit(1).getOne();
+        .orderBy('i.invoiceNumber', 'DESC')
+        .limit(1)
+        .getOne();
       let nextSeq = 1;
       if (last) {
         const m = last.invoiceNumber.match(/(\d+)$/);
@@ -1783,7 +2238,9 @@ export class SaasRevenueService {
   }
 
   private addDays(d: Date, days: number) {
-    const r = new Date(d); r.setDate(r.getDate() + days); return r;
+    const r = new Date(d);
+    r.setDate(r.getDate() + days);
+    return r;
   }
   private addPeriod(d: Date, interval: BillingInterval) {
     const r = new Date(d);
@@ -1805,7 +2262,10 @@ export class SaasRevenueService {
   // PUBLIC PRICING (no auth)
   // ============================================================
   async listPublicPlans() {
-    return this.plans.find({ where: { isActive: true, isPublic: true } as any, order: { sortOrder: 'ASC', priceMonthlyMinor: 'ASC' } });
+    return this.plans.find({
+      where: { isActive: true, isPublic: true },
+      order: { sortOrder: 'ASC', priceMonthlyMinor: 'ASC' },
+    });
   }
 
   // ============================================================
@@ -1814,12 +2274,21 @@ export class SaasRevenueService {
   async convertLead(leadId: string, dto: any, actorId?: string) {
     const lead = await this.leads.findOne({ where: { id: leadId } });
     const billingEmail = dto.billingEmail ?? lead?.email ?? null;
-    const billingName = lead?.fullName ?? null;
-    const created = await this.createSubscription({
-      tenantId: dto.tenantId, planId: dto.planId, billingInterval: dto.billingInterval,
-      seats: dto.seats ?? 1, leadId, startTrial: dto.startTrial ?? false, autoRenew: true,
-      billingEmail, billingName,
-    } as any, actorId);
+    const billingName = lead?.fullName ?? undefined;
+    const created = await this.createSubscription(
+      {
+        tenantId: dto.tenantId,
+        planId: dto.planId,
+        billingInterval: dto.billingInterval,
+        seats: dto.seats ?? 1,
+        leadId,
+        startTrial: dto.startTrial ?? false,
+        autoRenew: true,
+        billingEmail,
+        billingName,
+      },
+      actorId,
+    );
     if (lead) {
       lead.status = 'won';
       await this.leads.save(lead);
@@ -1846,16 +2315,27 @@ export class SaasRevenueService {
 
   async initCheckout(
     invoiceId: string,
-    opts: { redirectUrl: string; customerEmail?: string; customerName?: string; customerPhone?: string; gateway?: 'flutterwave' | 'pesapal'; originUrl?: string; savedPaymentMethodId?: string; enableRecurring?: boolean },
+    opts: {
+      redirectUrl: string;
+      customerEmail?: string;
+      customerName?: string;
+      customerPhone?: string;
+      gateway?: 'flutterwave' | 'pesapal';
+      originUrl?: string;
+      savedPaymentMethodId?: string;
+      enableRecurring?: boolean;
+    },
     tenantId?: string,
   ) {
     const inv = await this.invoices.findOne({ where: { id: invoiceId } });
     if (!inv) throw new NotFoundException('Invoice not found');
-    if (tenantId && inv.tenantId !== tenantId && inv.billingPayerTenantId !== tenantId) throw new ForbiddenException('Cross-tenant access');
+    if (tenantId && inv.tenantId !== tenantId && inv.billingPayerTenantId !== tenantId)
+      throw new ForbiddenException('Cross-tenant access');
     if (inv.status === 'paid') throw new BadRequestException('Invoice already paid');
     const sub = await this.subs.findOne({ where: { id: inv.subscriptionId } });
     const due = inv.totalMinor - inv.amountPaidMinor;
-    const customerEmail = opts.customerEmail || sub?.billingEmail || `tenant-${inv.tenantId}@noemail.local`;
+    const customerEmail =
+      opts.customerEmail || sub?.billingEmail || `tenant-${inv.tenantId}@noemail.local`;
     const txRef = `inv_${inv.id.slice(0, 8)}_${Date.now()}`;
     const gateway = opts.gateway || 'flutterwave';
     if (gateway === 'pesapal') {
@@ -1864,15 +2344,23 @@ export class SaasRevenueService {
       let accountNumber: string | undefined;
       let pmRecord: SaasPaymentMethod | null = null;
       if (opts.savedPaymentMethodId) {
-        pmRecord = await this.paymentMethods.findOne({ where: { id: opts.savedPaymentMethodId, tenantId: inv.tenantId } });
+        pmRecord = await this.paymentMethods.findOne({
+          where: { id: opts.savedPaymentMethodId, tenantId: inv.tenantId },
+        });
         if (!pmRecord) throw new NotFoundException('Saved payment method not found');
-        accountNumber = (pmRecord.metadata as any)?.accountNumber;
+        accountNumber = String((pmRecord.metadata as Record<string, unknown>)?.accountNumber || '');
       } else {
         // Auto-pick default Pesapal method if any exists.
-        const def = await this.paymentMethods.findOne({ where: { tenantId: inv.tenantId, isDefault: true } });
-        if (def && (def.metadata as any)?.gateway === 'pesapal' && (def.metadata as any)?.accountNumber) {
+        const def = await this.paymentMethods.findOne({
+          where: { tenantId: inv.tenantId, isDefault: true },
+        });
+        if (
+          def &&
+          def.metadata?.gateway === 'pesapal' &&
+          def.metadata?.accountNumber
+        ) {
           pmRecord = def;
-          accountNumber = (def.metadata as any).accountNumber;
+          accountNumber = def.metadata.accountNumber;
         }
       }
       if (!accountNumber && opts.enableRecurring) {
@@ -1880,22 +2368,41 @@ export class SaasRevenueService {
         // charges can re-use it.
         accountNumber = `psp_${inv.tenantId.slice(0, 8)}_${(sub?.id ?? inv.id).slice(0, 8)}`;
       }
-      const subscription = opts.enableRecurring && sub
-        ? { frequency: (sub.billingInterval === 'annual' ? 'YEARLY' : 'MONTHLY') as 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY' }
-        : undefined;
-      const result = await this.pesapal.initCheckout({
-        txRef,
-        amount: due,
+      const subscription =
+        opts.enableRecurring && sub
+          ? {
+              frequency: (sub.billingInterval === 'annual' ? 'YEARLY' : 'MONTHLY') as
+                | 'DAILY'
+                | 'WEEKLY'
+                | 'MONTHLY'
+                | 'YEARLY',
+            }
+          : undefined;
+      const result = await this.pesapal.initCheckout(
+        {
+          txRef,
+          amount: due,
+          currency: inv.currency,
+          customerEmail,
+          customerName: opts.customerName || sub?.billingName || undefined,
+          customerPhone: opts.customerPhone,
+          callbackUrl: opts.redirectUrl,
+          description: `Invoice ${inv.invoiceNumber}`,
+          accountNumber,
+          subscription,
+        },
+        opts.originUrl,
+      );
+      return {
+        ...result,
+        gateway: 'pesapal',
+        invoiceId: inv.id,
+        amountMinor: due,
         currency: inv.currency,
-        customerEmail,
-        customerName: opts.customerName || sub?.billingName || undefined,
-        customerPhone: opts.customerPhone,
-        callbackUrl: opts.redirectUrl,
-        description: `Invoice ${inv.invoiceNumber}`,
+        txRef,
         accountNumber,
-        subscription,
-      }, opts.originUrl);
-      return { ...result, gateway: 'pesapal', invoiceId: inv.id, amountMinor: due, currency: inv.currency, txRef, accountNumber, recurringEnrolled: !!subscription };
+        recurringEnrolled: !!subscription,
+      };
     }
     const result = await this.flw.initCheckout({
       txRef,
@@ -1904,9 +2411,20 @@ export class SaasRevenueService {
       customerEmail,
       customerName: opts.customerName || sub?.billingName || undefined,
       redirectUrl: opts.redirectUrl,
-      meta: { invoiceId: inv.id, subscriptionId: inv.subscriptionId, tenantId: inv.tenantId, description: `Invoice ${inv.invoiceNumber}` },
+      meta: {
+        invoiceId: inv.id,
+        subscriptionId: inv.subscriptionId,
+        tenantId: inv.tenantId,
+        description: `Invoice ${inv.invoiceNumber}`,
+      },
     });
-    return { ...result, gateway: 'flutterwave', invoiceId: inv.id, amountMinor: due, currency: inv.currency };
+    return {
+      ...result,
+      gateway: 'flutterwave',
+      invoiceId: inv.id,
+      amountMinor: due,
+      currency: inv.currency,
+    };
   }
 
   /**
@@ -1925,9 +2443,11 @@ export class SaasRevenueService {
     const inv = await this.invoices.findOne({ where: { id: invoiceId } });
     if (!inv) throw new NotFoundException('Invoice not found');
     if (inv.status === 'paid') throw new BadRequestException('Invoice already paid');
-    const pm = await this.paymentMethods.findOne({ where: { id: paymentMethodId, tenantId: inv.tenantId } });
+    const pm = await this.paymentMethods.findOne({
+      where: { id: paymentMethodId, tenantId: inv.tenantId },
+    });
     if (!pm) throw new NotFoundException('Saved payment method not found');
-    const meta = (pm.metadata || {}) as any;
+    const meta = pm.metadata || {};
     if (meta.gateway !== 'pesapal' || !meta.accountNumber) {
       throw new BadRequestException('Saved method is not a Pesapal-tokenised instrument');
     }
@@ -1935,16 +2455,19 @@ export class SaasRevenueService {
     const due = inv.totalMinor - inv.amountPaidMinor;
     const txRef = `recur_${inv.id.slice(0, 8)}_${Date.now()}`;
     const customerEmail = sub?.billingEmail || `tenant-${inv.tenantId}@noemail.local`;
-    const result = await this.pesapal.initCheckout({
-      txRef,
-      amount: due,
-      currency: inv.currency,
-      customerEmail,
-      customerName: sub?.billingName || undefined,
-      callbackUrl: opts.redirectUrl,
-      description: `Auto-charge ${inv.invoiceNumber}`,
-      accountNumber: meta.accountNumber,
-    }, opts.originUrl);
+    const result = await this.pesapal.initCheckout(
+      {
+        txRef,
+        amount: due,
+        currency: inv.currency,
+        customerEmail,
+        customerName: sub?.billingName || undefined,
+        callbackUrl: opts.redirectUrl,
+        description: `Auto-charge ${inv.invoiceNumber}`,
+        accountNumber: meta.accountNumber,
+      },
+      opts.originUrl,
+    );
     await this.recordEvent(
       inv.subscriptionId,
       'note',
@@ -1952,7 +2475,15 @@ export class SaasRevenueService {
       { invoiceId: inv.id, paymentMethodId, txRef, orderTrackingId: result.orderTrackingId },
       actorId,
     );
-    return { ...result, gateway: 'pesapal' as const, invoiceId: inv.id, amountMinor: due, currency: inv.currency, txRef, paymentMethodId };
+    return {
+      ...result,
+      gateway: 'pesapal' as const,
+      invoiceId: inv.id,
+      amountMinor: due,
+      currency: inv.currency,
+      txRef,
+      paymentMethodId,
+    };
   }
 
   async handleFlutterwaveWebhook(rawBody: string, signature: string | undefined) {
@@ -1985,14 +2516,14 @@ export class SaasRevenueService {
     const inv = await this.invoices.findOne({ where: { id: invoiceId } });
     if (!inv) return { ok: false };
     await this.recordPayment(inv.id, {
-      amountMinor: verified.amount ?? (inv.totalMinor - inv.amountPaidMinor),
+      amountMinor: verified.amount ?? inv.totalMinor - inv.amountPaidMinor,
       currency: verified.currency ?? inv.currency,
       gateway: 'flutterwave',
       gatewayRef: String(txId),
       method: data?.payment_type || 'card',
       paidAt: new Date().toISOString(),
       notes: `Flutterwave tx_ref=${txRef ?? ''}`,
-    } as any);
+    });
     // Persist gateway payload on the latest payment.
     const latest = await this.payments.findOne({ where: { gatewayRef: String(txId) } });
     if (latest) {
@@ -2000,7 +2531,7 @@ export class SaasRevenueService {
       await this.payments.save(latest);
     }
     // Persist saved-card token on first successful charge so future renewals can auto-debit.
-    const card = (verified.raw as any)?.card || data?.card || {};
+    const card = (verified.raw as Record<string, unknown>)?.card || data?.card || {};
     const cardToken: string | undefined = card?.token;
     if (cardToken) {
       const matched = await this.paymentMethods
@@ -2012,7 +2543,7 @@ export class SaasRevenueService {
         const existingPm = await this.paymentMethods.findOne({ where: { tenantId: inv.tenantId } });
         const pm = this.paymentMethods.create({
           tenantId: inv.tenantId,
-          kind: 'card' as any,
+          kind: 'card',
           label: `Flutterwave · ${card?.type || 'card'} ****${card?.last_4digits || ''}`,
           brand: card?.type || 'card',
           last4: card?.last_4digits || undefined,
@@ -2027,7 +2558,9 @@ export class SaasRevenueService {
           },
         });
         await this.paymentMethods.save(pm);
-        this.logger.log(`Saved Flutterwave card token for tenant=${inv.tenantId} last4=${card?.last_4digits || '?'}`);
+        this.logger.log(
+          `Saved Flutterwave card token for tenant=${inv.tenantId} last4=${card?.last_4digits || '?'}`,
+        );
       }
     }
     return { ok: true };
@@ -2039,10 +2572,12 @@ export class SaasRevenueService {
    * webhook (`charge.completed`) fires for the new transaction.
    */
   /** Inspect a saved payment method's metadata to choose the right charge path. */
-  async detectSavedTokenGateway(paymentMethodId: string): Promise<'flutterwave' | 'pesapal' | null> {
+  async detectSavedTokenGateway(
+    paymentMethodId: string,
+  ): Promise<'flutterwave' | 'pesapal' | null> {
     const pm = await this.paymentMethods.findOne({ where: { id: paymentMethodId } });
     if (!pm) return null;
-    const g = (pm.metadata as any)?.gateway;
+    const g = (pm.metadata as Record<string, unknown>)?.gateway;
     return g === 'flutterwave' || g === 'pesapal' ? g : null;
   }
 
@@ -2064,11 +2599,13 @@ export class SaasRevenueService {
     if (pm.tenantId !== inv.tenantId && pm.tenantId !== inv.billingPayerTenantId) {
       throw new ForbiddenException('Payment method does not belong to invoice tenant');
     }
-    const meta: any = pm.metadata || {};
+    const meta = pm.metadata || {};
     if (meta.gateway !== 'flutterwave' || !meta.token) {
       throw new BadRequestException('Selected payment method has no saved Flutterwave token');
     }
-    const sub = inv.subscriptionId ? await this.subs.findOne({ where: { id: inv.subscriptionId } }) : null;
+    const sub = inv.subscriptionId
+      ? await this.subs.findOne({ where: { id: inv.subscriptionId } })
+      : null;
     const tenant = await this.tenants.findOne({ where: { id: inv.tenantId } });
     const customerEmail = sub?.billingEmail || `tenant-${inv.tenantId}@noemail.local`;
     const customerName = tenant?.name || 'Customer';
@@ -2093,19 +2630,36 @@ export class SaasRevenueService {
       { invoiceId: inv.id, paymentMethodId, txRef, transactionId: result.transactionId },
       actorId,
     );
-    return { ok: true, gateway: 'flutterwave' as const, invoiceId: inv.id, amountMinor: due, currency: inv.currency, txRef, paymentMethodId, transactionId: result.transactionId, status: result.status };
+    return {
+      ok: true,
+      gateway: 'flutterwave' as const,
+      invoiceId: inv.id,
+      amountMinor: due,
+      currency: inv.currency,
+      txRef,
+      paymentMethodId,
+      transactionId: result.transactionId,
+      status: result.status,
+    };
   }
 
   // ---------- Pesapal IPN ----------
-  async handlePesapalIpn(orderTrackingId: string | undefined, merchantReference: string | undefined) {
+  async handlePesapalIpn(
+    orderTrackingId: string | undefined,
+    merchantReference: string | undefined,
+  ) {
     if (!orderTrackingId) return { ok: false, error: 'missing orderTrackingId' };
     const verified = await this.pesapal.verifyTransaction(orderTrackingId);
     if (!verified.ok) {
-      this.logger.warn(`Pesapal IPN tx=${orderTrackingId} not completed (status=${verified.status})`);
+      this.logger.warn(
+        `Pesapal IPN tx=${orderTrackingId} not completed (status=${verified.status})`,
+      );
       return { ok: true, ignored: true, status: verified.status };
     }
     // Idempotency
-    const existing = await this.payments.findOne({ where: { gatewayRef: String(orderTrackingId) } });
+    const existing = await this.payments.findOne({
+      where: { gatewayRef: String(orderTrackingId) },
+    });
     if (existing) return { ok: true, duplicate: true };
     // Locate invoice via merchant reference (txRef like inv_<8>_<ts>)
     const ref = merchantReference || verified.merchantReference || '';
@@ -2120,22 +2674,24 @@ export class SaasRevenueService {
       .getOne();
     if (!inv) return { ok: false, error: 'invoice not found' };
     await this.recordPayment(inv.id, {
-      amountMinor: verified.amount ?? (inv.totalMinor - inv.amountPaidMinor),
+      amountMinor: verified.amount ?? inv.totalMinor - inv.amountPaidMinor,
       currency: verified.currency ?? inv.currency,
       gateway: 'pesapal',
       gatewayRef: String(orderTrackingId),
       method: 'pesapal',
       paidAt: new Date().toISOString(),
       notes: `Pesapal merchant_ref=${ref}`,
-    } as any);
+    });
     const latest = await this.payments.findOne({ where: { gatewayRef: String(orderTrackingId) } });
     if (latest) {
       latest.gatewayPayload = verified.raw;
       await this.payments.save(latest);
     }
     // Persist saved-token payment method on first successful enrollment.
-    const acct = (verified.raw as any)?.account_number || (verified.raw as any)?.payment_account
-      || (verified.raw as any)?.billing_address?.account_number;
+    const acct =
+      verified.raw?.account_number ||
+      verified.raw?.payment_account ||
+      verified.raw?.billing_address?.account_number;
     if (acct) {
       const existingPm = await this.paymentMethods.findOne({
         where: { tenantId: inv.tenantId },
@@ -2146,25 +2702,29 @@ export class SaasRevenueService {
         .andWhere(`pm.metadata ->> 'accountNumber' = :acct`, { acct: String(acct) })
         .getOne();
       if (!matched) {
-        const last4 = (verified.raw as any)?.confirmation_code
-          ? String((verified.raw as any).confirmation_code).slice(-4)
+        const last4 = verified.raw?.confirmation_code
+          ? String(verified.raw.confirmation_code).slice(-4)
           : String(acct).slice(-4);
         const pm = this.paymentMethods.create({
           tenantId: inv.tenantId,
-          kind: ((verified.raw as any)?.payment_method?.toLowerCase()?.includes('mobile') ? 'mobile_money' : 'card') as any,
-          label: `Pesapal · ${(verified.raw as any)?.payment_method || 'saved'}`,
-          brand: (verified.raw as any)?.payment_method || 'pesapal',
+          kind: (verified.raw?.payment_method?.toLowerCase()?.includes('mobile')
+            ? 'mobile_money'
+            : 'card') as SaasPaymentMethodKind,
+          label: `Pesapal · ${verified.raw?.payment_method || 'saved'}`,
+          brand: verified.raw?.payment_method || 'pesapal',
           last4,
           isDefault: !existingPm,
           metadata: {
             gateway: 'pesapal',
             accountNumber: String(acct),
             firstSeenTrackingId: String(orderTrackingId),
-            paymentMethod: (verified.raw as any)?.payment_method,
+            paymentMethod: verified.raw?.payment_method,
           },
         });
         await this.paymentMethods.save(pm);
-        this.logger.log(`Saved Pesapal token for tenant=${inv.tenantId} account=${String(acct).slice(0, 12)}…`);
+        this.logger.log(
+          `Saved Pesapal token for tenant=${inv.tenantId} account=${String(acct).slice(0, 12)}…`,
+        );
       }
     }
     return { ok: true };
@@ -2179,17 +2739,31 @@ export class SaasRevenueService {
     const plansRows = planIds.length ? await this.plans.find({ where: { id: In(planIds) } }) : [];
     const pmap = new Map(plansRows.map((p) => [p.id, p]));
     const subscriptions = subsRows.map((s) => ({ ...s, plan: pmap.get(s.planId) ?? null }));
-    const active = subscriptions.find((s) => ['active', 'trial', 'past_due'].includes(s.status)) || subscriptions[0] || null;
-    const invoiceRows = await this.invoices.find({ where: { tenantId }, order: { issuedAt: 'DESC' }, take: 100 });
+    const active =
+      subscriptions.find((s) => ['active', 'trial', 'past_due'].includes(s.status)) ||
+      subscriptions[0] ||
+      null;
+    const invoiceRows = await this.invoices.find({
+      where: { tenantId },
+      order: { issuedAt: 'DESC' },
+      take: 100,
+    });
     const outstandingMinor = invoiceRows
-      .filter((i) => ['open', 'past_due', 'uncollectible'].includes(i.status as any))
+      .filter((i) => ['open', 'past_due', 'uncollectible'].includes(i.status as string))
       .reduce((sum, i) => sum + Math.max(0, i.totalMinor - (i.amountPaidMinor || 0)), 0);
     const lifetimeMinor = invoiceRows
       .filter((i) => i.status === 'paid')
       .reduce((sum, i) => sum + (i.amountPaidMinor || i.totalMinor), 0);
     const currency = active?.currency || invoiceRows[0]?.currency || 'UGX';
-    const methods = await this.paymentMethods.find({ where: { tenantId }, order: { isDefault: 'DESC', createdAt: 'DESC' } });
-    const paymentsRows = await this.payments.find({ where: { tenantId }, order: { paidAt: 'DESC' }, take: 50 });
+    const methods = await this.paymentMethods.find({
+      where: { tenantId },
+      order: { isDefault: 'DESC', createdAt: 'DESC' },
+    });
+    const paymentsRows = await this.payments.find({
+      where: { tenantId },
+      order: { paidAt: 'DESC' },
+      take: 50,
+    });
     return {
       activeSubscription: active,
       subscriptions,
@@ -2201,14 +2775,17 @@ export class SaasRevenueService {
         outstandingMinor,
         lifetimeMinor,
         currency,
-        outstandingCount: invoiceRows.filter((i) => ['open', 'past_due', 'uncollectible'].includes(i.status as any)).length,
+        outstandingCount: invoiceRows.filter((i) =>
+          ['open', 'past_due', 'uncollectible'].includes(i.status as string),
+        ).length,
         nextRenewal: active?.currentPeriodEnd || null,
       },
     };
   }
 
   async listMyInvoices(tenantId: string, status?: string) {
-    const qb = this.invoices.createQueryBuilder('i')
+    const qb = this.invoices
+      .createQueryBuilder('i')
       .where('(i.tenantId = :tid OR i.billing_payer_tenant_id = :tid)', { tid: tenantId })
       .orderBy('i.issuedAt', 'DESC')
       .take(200);
@@ -2234,7 +2811,7 @@ export class SaasRevenueService {
     const tenantIds = Array.from(new Set(subs.map((s) => s.tenantId)));
     const planIds = Array.from(new Set(subs.map((s) => s.planId)));
     const [tenants, plans] = await Promise.all([
-      this.tenants.find({ where: { id: In(tenantIds) }, select: ['id', 'name', 'slug'] as any }),
+      this.tenants.find({ where: { id: In(tenantIds) }, select: ['id', 'name', 'slug'] }),
       this.plans.find({ where: { id: In(planIds) } }),
     ]);
     const tMap = new Map(tenants.map((t) => [t.id, t]));
@@ -2246,7 +2823,11 @@ export class SaasRevenueService {
     }));
   }
 
-  async setSubscriptionPayer(subscriptionId: string, payerTenantId: string | null, actorId?: string) {
+  async setSubscriptionPayer(
+    subscriptionId: string,
+    payerTenantId: string | null,
+    actorId?: string,
+  ) {
     const sub = await this.subs.findOne({ where: { id: subscriptionId } });
     if (!sub) throw new NotFoundException('Subscription not found');
     if (payerTenantId) {
@@ -2260,10 +2841,14 @@ export class SaasRevenueService {
     sub.billingPayerTenantId = payerTenantId;
     await this.subs.save(sub);
     // Propagate to all open/draft invoices so the payer immediately sees them.
-    await this.invoices.createQueryBuilder()
+    await this.invoices
+      .createQueryBuilder()
       .update()
       .set({ billingPayerTenantId: payerTenantId })
-      .where('subscription_id = :sid AND status IN (:...sts)', { sid: sub.id, sts: ['draft', 'open', 'past_due'] })
+      .where('subscription_id = :sid AND status IN (:...sts)', {
+        sid: sub.id,
+        sts: ['draft', 'open', 'past_due'],
+      })
       .execute();
     await this.recordEvent(
       sub.id,
@@ -2279,28 +2864,51 @@ export class SaasRevenueService {
 
   async renderInvoicePdf(id: string, requireTenantId?: string): Promise<Buffer> {
     const inv = await this.getInvoice(id);
-    if (requireTenantId && inv.tenantId !== requireTenantId && inv.billingPayerTenantId !== requireTenantId) {
+    if (
+      requireTenantId &&
+      inv.tenantId !== requireTenantId &&
+      inv.billingPayerTenantId !== requireTenantId
+    ) {
       throw new ForbiddenException('Invoice does not belong to your tenant');
     }
     const sub = await this.subs.findOne({ where: { id: inv.subscriptionId } });
     const plan = sub ? await this.plans.findOne({ where: { id: sub.planId } }) : null;
-    const tenant = await this.tenants.findOne({ where: { id: inv.tenantId }, select: ['id', 'name', 'slug'] as any });
+    const tenant = await this.tenants.findOne({
+      where: { id: inv.tenantId },
+      select: ['id', 'name', 'slug'],
+    });
     const vendor = await this.getVendorBilling();
     const fmt = (n: number) => this.fmtMoney(n, inv.currency);
     const fmtD = (d: any) => (d ? new Date(d).toISOString().slice(0, 10) : '—');
-    const lines = (inv.lines || []) as Array<{ description: string; quantity: number; unitPriceMinor: number; amountMinor: number }>;
-    const paidRows = ((inv as any).payments || []) as Array<{ paidAt: any; amountMinor: number; gateway: string; method?: string | null; gatewayRef?: string | null }>;
+    const lines = (inv.lines || []) as Array<{
+      description: string;
+      quantity: number;
+      unitPriceMinor: number;
+      amountMinor: number;
+    }>;
+    const paidRows = ((inv as any).payments || []) as Array<{
+      paidAt: any;
+      amountMinor: number;
+      gateway: string;
+      method?: string | null;
+      gatewayRef?: string | null;
+    }>;
 
-    const PDFDocumentMod: any = await import('pdfkit');
+    const PDFDocumentMod = await import('pdfkit');
     const PDFDocument = PDFDocumentMod.default || PDFDocumentMod;
     const doc = new PDFDocument({ size: 'A4', margin: 40 });
     const chunks: Buffer[] = [];
     doc.on('data', (c: Buffer) => chunks.push(c));
-    const done: Promise<Buffer> = new Promise((resolve) => doc.on('end', () => resolve(Buffer.concat(chunks))));
+    const done: Promise<Buffer> = new Promise((resolve) =>
+      doc.on('end', () => resolve(Buffer.concat(chunks))),
+    );
 
     // Header — vendor (left) / INVOICE (right)
     const top = doc.y;
-    doc.fontSize(16).font('Helvetica-Bold').text(vendor.tradingName || vendor.legalName, 40, top);
+    doc
+      .fontSize(16)
+      .font('Helvetica-Bold')
+      .text(vendor.tradingName || vendor.legalName, 40, top);
     doc.fontSize(9).font('Helvetica').fillColor('#555');
     if (vendor.legalName && vendor.legalName !== vendor.tradingName) doc.text(vendor.legalName);
     if (vendor.addressLine1) doc.text(vendor.addressLine1);
@@ -2312,13 +2920,20 @@ export class SaasRevenueService {
     if (vendor.phone) doc.text(vendor.phone);
     doc.fillColor('black');
 
-    doc.fontSize(20).font('Helvetica-Bold').text('INVOICE', 380, top, { width: 175, align: 'right' });
-    doc.fontSize(10).font('Helvetica').fillColor('#555')
+    doc
+      .fontSize(20)
+      .font('Helvetica-Bold')
+      .text('INVOICE', 380, top, { width: 175, align: 'right' });
+    doc
+      .fontSize(10)
+      .font('Helvetica')
+      .fillColor('#555')
       .text(`# ${inv.invoiceNumber}`, 380, top + 24, { width: 175, align: 'right' })
       .text(`Status: ${inv.status.toUpperCase()}`, 380, top + 38, { width: 175, align: 'right' })
       .text(`Issued: ${fmtD(inv.issuedAt)}`, 380, top + 52, { width: 175, align: 'right' })
       .text(`Due: ${fmtD(inv.dueAt)}`, 380, top + 66, { width: 175, align: 'right' });
-    if (inv.paidAt) doc.text(`Paid: ${fmtD(inv.paidAt)}`, 380, top + 80, { width: 175, align: 'right' });
+    if (inv.paidAt)
+      doc.text(`Paid: ${fmtD(inv.paidAt)}`, 380, top + 80, { width: 175, align: 'right' });
     doc.fillColor('black');
 
     doc.y = Math.max(doc.y, top + 110);
@@ -2328,16 +2943,27 @@ export class SaasRevenueService {
     // Bill-to + Subscription
     const blockTop = doc.y;
     doc.fontSize(8).fillColor('#64748b').font('Helvetica-Bold').text('BILL TO', 40, blockTop);
-    doc.fontSize(10).fillColor('black').font('Helvetica-Bold').text(tenant?.name || inv.tenantId, 40, blockTop + 12);
+    doc
+      .fontSize(10)
+      .fillColor('black')
+      .font('Helvetica-Bold')
+      .text(tenant?.name || inv.tenantId, 40, blockTop + 12);
     doc.font('Helvetica').fontSize(9).fillColor('#555');
     if (tenant?.slug) doc.text(tenant.slug, 40);
     if (sub?.billingName) doc.text(sub.billingName, 40);
     if (sub?.billingEmail) doc.text(sub.billingEmail, 40);
 
     doc.fontSize(8).fillColor('#64748b').font('Helvetica-Bold').text('SUBSCRIPTION', 320, blockTop);
-    doc.fontSize(10).fillColor('black').font('Helvetica').text(`${plan?.name || '—'} (${sub?.billingInterval || ''})`, 320, blockTop + 12);
+    doc
+      .fontSize(10)
+      .fillColor('black')
+      .font('Helvetica')
+      .text(`${plan?.name || '—'} (${sub?.billingInterval || ''})`, 320, blockTop + 12);
     if (inv.periodStart || inv.periodEnd) {
-      doc.fontSize(9).fillColor('#555').text(`Period: ${fmtD(inv.periodStart)} → ${fmtD(inv.periodEnd)}`, 320);
+      doc
+        .fontSize(9)
+        .fillColor('#555')
+        .text(`Period: ${fmtD(inv.periodStart)} → ${fmtD(inv.periodEnd)}`, 320);
     }
     doc.fillColor('black');
 
@@ -2353,7 +2979,12 @@ export class SaasRevenueService {
     doc.text('Amount', 470, tableTop, { width: 85, align: 'right' });
     doc.fillColor('black').font('Helvetica');
     let y = tableTop + 16;
-    doc.moveTo(40, y - 4).lineTo(555, y - 4).strokeColor('#e2e8f0').stroke().strokeColor('black');
+    doc
+      .moveTo(40, y - 4)
+      .lineTo(555, y - 4)
+      .strokeColor('#e2e8f0')
+      .stroke()
+      .strokeColor('black');
     for (const ln of lines) {
       const desc = ln.description || '';
       doc.text(desc, 40, y, { width: 280 });
@@ -2361,7 +2992,10 @@ export class SaasRevenueService {
       doc.text(fmt(ln.unitPriceMinor || 0), 380, y, { width: 80, align: 'right' });
       doc.text(fmt(ln.amountMinor || 0), 470, y, { width: 85, align: 'right' });
       y += 18;
-      if (y > 740) { doc.addPage(); y = 40; }
+      if (y > 740) {
+        doc.addPage();
+        y = 40;
+      }
     }
     doc.moveTo(40, y).lineTo(555, y).strokeColor('#cbd5e1').stroke().strokeColor('black');
     y += 8;
@@ -2377,37 +3011,64 @@ export class SaasRevenueService {
       doc.text(fmt(val), 470, y, { width: 85, align: 'right' });
       y += 16;
     }
-    doc.moveTo(380, y).lineTo(555, y).strokeColor('#0f172a').lineWidth(1.2).stroke().lineWidth(1).strokeColor('black');
+    doc
+      .moveTo(380, y)
+      .lineTo(555, y)
+      .strokeColor('#0f172a')
+      .lineWidth(1.2)
+      .stroke()
+      .lineWidth(1)
+      .strokeColor('black');
     y += 6;
     doc.fontSize(12).font('Helvetica-Bold').text('Total', 380, y, { width: 80, align: 'right' });
     doc.text(fmt(inv.totalMinor), 470, y, { width: 85, align: 'right' });
     y += 18;
-    doc.fontSize(10).font('Helvetica').fillColor('#065f46').text('Paid', 380, y, { width: 80, align: 'right' });
+    doc
+      .fontSize(10)
+      .font('Helvetica')
+      .fillColor('#065f46')
+      .text('Paid', 380, y, { width: 80, align: 'right' });
     doc.text(fmt(inv.amountPaidMinor || 0), 470, y, { width: 85, align: 'right' });
     y += 16;
     const balance = Math.max(0, inv.totalMinor - (inv.amountPaidMinor || 0));
-    doc.fillColor(balance > 0 ? '#b91c1c' : '#0f172a').font('Helvetica-Bold').text('Balance due', 380, y, { width: 80, align: 'right' });
+    doc
+      .fillColor(balance > 0 ? '#b91c1c' : '#0f172a')
+      .font('Helvetica-Bold')
+      .text('Balance due', 380, y, { width: 80, align: 'right' });
     doc.text(fmt(balance), 470, y, { width: 85, align: 'right' });
     doc.fillColor('black').font('Helvetica');
     y += 24;
 
     // Payments
     if (paidRows.length) {
-      if (y > 700) { doc.addPage(); y = 40; }
+      if (y > 700) {
+        doc.addPage();
+        y = 40;
+      }
       doc.fontSize(10).font('Helvetica-Bold').text('Payments', 40, y);
       y += 14;
       doc.fontSize(9).font('Helvetica').fillColor('#475569');
       for (const p of paidRows) {
-        doc.text(`${fmtD(p.paidAt)}  •  ${p.gateway}${p.method ? ' / ' + p.method : ''}  •  ${fmt(p.amountMinor)}${p.gatewayRef ? '  ref ' + p.gatewayRef : ''}`, 40, y);
+        doc.text(
+          `${fmtD(p.paidAt)}  •  ${p.gateway}${p.method ? ' / ' + p.method : ''}  •  ${fmt(p.amountMinor)}${p.gatewayRef ? '  ref ' + p.gatewayRef : ''}`,
+          40,
+          y,
+        );
         y += 14;
-        if (y > 760) { doc.addPage(); y = 40; }
+        if (y > 760) {
+          doc.addPage();
+          y = 40;
+        }
       }
       doc.fillColor('black');
     }
 
     // Footer
     if (vendor.invoiceFooter) {
-      doc.fontSize(8).fillColor('#64748b').text(vendor.invoiceFooter, 40, 770, { width: 515, align: 'center' });
+      doc
+        .fontSize(8)
+        .fillColor('#64748b')
+        .text(vendor.invoiceFooter, 40, 770, { width: 515, align: 'center' });
     }
 
     doc.end();
@@ -2418,46 +3079,63 @@ export class SaasRevenueService {
   // TENANT STATEMENTS (multi-currency, FX-aware)
   // ============================================================
   async buildMyStatement(tenantId: string, opts: { from?: string; to?: string } = {}) {
-    const tenant = await this.tenants.findOne({ where: { id: tenantId }, select: ['id', 'name', 'slug'] as any });
+    const tenant = await this.tenants.findOne({
+      where: { id: tenantId },
+      select: ['id', 'name', 'slug'],
+    });
     if (!tenant) throw new NotFoundException('Tenant not found');
     const vendor = await this.getVendorBilling();
     const baseCcy = (vendor.defaultCurrency || 'UGX').toUpperCase();
 
     // Date window: default last 12 full months.
     const to = opts.to ? new Date(opts.to) : new Date();
-    const from = opts.from ? new Date(opts.from) : new Date(to.getFullYear() - 1, to.getMonth(), to.getDate());
+    const from = opts.from
+      ? new Date(opts.from)
+      : new Date(to.getFullYear() - 1, to.getMonth(), to.getDate());
     if (isNaN(+from) || isNaN(+to)) throw new BadRequestException('Invalid date range');
 
     const invoices = await this.invoices.find({
-      where: { tenantId, issuedAt: Between(from, to) as any },
+      where: { tenantId, issuedAt: Between(from, to) },
       order: { issuedAt: 'ASC' },
     });
     const payments = await this.payments.find({
-      where: { tenantId, paidAt: Between(from, to) as any },
+      where: { tenantId, paidAt: Between(from, to) },
       order: { paidAt: 'ASC' },
     });
 
     const openingInvoices = await this.invoices.find({
-      where: { tenantId, issuedAt: LessThan(from) as any },
+      where: { tenantId, issuedAt: LessThan(from) },
     });
     const openingPayments = await this.payments.find({
-      where: { tenantId, paidAt: LessThan(from) as any },
+      where: { tenantId, paidAt: LessThan(from) },
     });
 
-    const sumInBase = (rows: Array<{ totalMinor?: number; amountMinor?: number; currency: string; fxRateToBase: any }>, kind: 'invoice' | 'payment') => {
+    const sumInBase = (
+      rows: Array<{
+        totalMinor?: number;
+        amountMinor?: number;
+        currency: string;
+        fxRateToBase: any;
+      }>,
+      kind: 'invoice' | 'payment',
+    ) => {
       let total = 0;
       for (const r of rows) {
-        const minor = kind === 'invoice' ? (r.totalMinor || 0) : (r.amountMinor || 0);
+        const minor = kind === 'invoice' ? r.totalMinor || 0 : r.amountMinor || 0;
         const rate = Number(r.fxRateToBase || 1) || 1;
         total += Math.round(minor * rate);
       }
       return total;
     };
 
-    const openingBalanceBase = sumInBase(openingInvoices as any, 'invoice') - sumInBase(openingPayments as any, 'payment');
+    const openingBalanceBase =
+      sumInBase(openingInvoices, 'invoice') - sumInBase(openingPayments, 'payment');
 
     // Per-currency breakdown for the period.
-    const byCcy = new Map<string, { currency: string; invoiced: number; paid: number; outstanding: number }>();
+    const byCcy = new Map<
+      string,
+      { currency: string; invoiced: number; paid: number; outstanding: number }
+    >();
     const bumpC = (ccy: string, key: 'invoiced' | 'paid', minor: number) => {
       const k = (ccy || baseCcy).toUpperCase();
       const cur = byCcy.get(k) || { currency: k, invoiced: 0, paid: 0, outstanding: 0 };
@@ -2471,7 +3149,18 @@ export class SaasRevenueService {
     for (const c of byCcy.values()) c.outstanding = c.invoiced - c.paid;
 
     // Build a chronological ledger with running base-currency balance.
-    type Row = { date: Date; type: 'invoice' | 'payment'; ref: string; description: string; currency: string; amountMinor: number; fxRate: number; baseMinor: number; signedBaseMinor: number; runningBalanceBase: number };
+    type Row = {
+      date: Date;
+      type: 'invoice' | 'payment';
+      ref: string;
+      description: string;
+      currency: string;
+      amountMinor: number;
+      fxRate: number;
+      baseMinor: number;
+      signedBaseMinor: number;
+      runningBalanceBase: number;
+    };
     const ledger: Row[] = [];
     let running = openingBalanceBase;
     const events: Array<{ date: Date; row: Omit<Row, 'runningBalanceBase'> }> = [];
@@ -2480,7 +3169,17 @@ export class SaasRevenueService {
       const baseMinor = Math.round((inv.totalMinor || 0) * rate);
       events.push({
         date: inv.issuedAt,
-        row: { date: inv.issuedAt, type: 'invoice', ref: inv.invoiceNumber, description: `Invoice ${inv.invoiceNumber}`, currency: inv.currency, amountMinor: inv.totalMinor || 0, fxRate: rate, baseMinor, signedBaseMinor: baseMinor },
+        row: {
+          date: inv.issuedAt,
+          type: 'invoice',
+          ref: inv.invoiceNumber,
+          description: `Invoice ${inv.invoiceNumber}`,
+          currency: inv.currency,
+          amountMinor: inv.totalMinor || 0,
+          fxRate: rate,
+          baseMinor,
+          signedBaseMinor: baseMinor,
+        },
       });
     }
     for (const p of payments) {
@@ -2489,7 +3188,17 @@ export class SaasRevenueService {
       const signed = (p.status === 'refunded' ? +1 : -1) * baseMinor;
       events.push({
         date: p.paidAt,
-        row: { date: p.paidAt, type: 'payment', ref: p.gatewayRef || p.id.slice(0, 8), description: `Payment ${p.gateway}${p.method ? ` (${p.method})` : ''}${p.status === 'refunded' ? ' — REFUND' : ''}`, currency: p.currency, amountMinor: p.amountMinor || 0, fxRate: rate, baseMinor, signedBaseMinor: signed },
+        row: {
+          date: p.paidAt,
+          type: 'payment',
+          ref: p.gatewayRef || p.id.slice(0, 8),
+          description: `Payment ${p.gateway}${p.method ? ` (${p.method})` : ''}${p.status === 'refunded' ? ' — REFUND' : ''}`,
+          currency: p.currency,
+          amountMinor: p.amountMinor || 0,
+          fxRate: rate,
+          baseMinor,
+          signedBaseMinor: signed,
+        },
       });
     }
     events.sort((a, b) => +a.date - +b.date);
@@ -2499,15 +3208,19 @@ export class SaasRevenueService {
     }
 
     const totals = {
-      invoicedBase: sumInBase(invoices as any, 'invoice'),
-      paidBase: ledger.filter((r) => r.type === 'payment' && r.signedBaseMinor < 0).reduce((s, r) => s + Math.abs(r.signedBaseMinor), 0),
-      refundedBase: ledger.filter((r) => r.type === 'payment' && r.signedBaseMinor > 0).reduce((s, r) => s + r.signedBaseMinor, 0),
+      invoicedBase: sumInBase(invoices, 'invoice'),
+      paidBase: ledger
+        .filter((r) => r.type === 'payment' && r.signedBaseMinor < 0)
+        .reduce((s, r) => s + Math.abs(r.signedBaseMinor), 0),
+      refundedBase: ledger
+        .filter((r) => r.type === 'payment' && r.signedBaseMinor > 0)
+        .reduce((s, r) => s + r.signedBaseMinor, 0),
       openingBalanceBase,
       closingBalanceBase: running,
     };
 
     return {
-      tenant: { id: tenant.id, name: tenant.name, slug: (tenant as any).slug },
+      tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug },
       vendor,
       period: { from: from.toISOString(), to: to.toISOString() },
       baseCurrency: baseCcy,
@@ -2517,7 +3230,10 @@ export class SaasRevenueService {
     };
   }
 
-  async renderMyStatementCsv(tenantId: string, opts: { from?: string; to?: string } = {}): Promise<string> {
+  async renderMyStatementCsv(
+    tenantId: string,
+    opts: { from?: string; to?: string } = {},
+  ): Promise<string> {
     const s = await this.buildMyStatement(tenantId, opts);
     const esc = (v: any) => {
       if (v === null || v === undefined) return '';
@@ -2528,39 +3244,79 @@ export class SaasRevenueService {
     lines.push(`# Statement for ${s.tenant.name}`);
     lines.push(`# Period: ${s.period.from.slice(0, 10)} to ${s.period.to.slice(0, 10)}`);
     lines.push(`# Base currency: ${s.baseCurrency}`);
-    lines.push(`# Opening balance (${s.baseCurrency}): ${(s.totals.openingBalanceBase / 100).toFixed(2)}`);
+    lines.push(
+      `# Opening balance (${s.baseCurrency}): ${(s.totals.openingBalanceBase / 100).toFixed(2)}`,
+    );
     lines.push('');
-    lines.push(['Date', 'Type', 'Ref', 'Description', 'Currency', 'Amount', 'FX rate to base', `Base amount (${s.baseCurrency})`, `Signed base`, `Running balance (${s.baseCurrency})`].map(esc).join(','));
+    lines.push(
+      [
+        'Date',
+        'Type',
+        'Ref',
+        'Description',
+        'Currency',
+        'Amount',
+        'FX rate to base',
+        `Base amount (${s.baseCurrency})`,
+        `Signed base`,
+        `Running balance (${s.baseCurrency})`,
+      ]
+        .map(esc)
+        .join(','),
+    );
     for (const r of s.ledger) {
-      lines.push([
-        new Date(r.date).toISOString().slice(0, 10),
-        r.type, r.ref, r.description, r.currency,
-        (r.amountMinor / 100).toFixed(2),
-        r.fxRate.toString(),
-        (r.baseMinor / 100).toFixed(2),
-        (r.signedBaseMinor / 100).toFixed(2),
-        (r.runningBalanceBase / 100).toFixed(2),
-      ].map(esc).join(','));
+      lines.push(
+        [
+          new Date(r.date).toISOString().slice(0, 10),
+          r.type,
+          r.ref,
+          r.description,
+          r.currency,
+          (r.amountMinor / 100).toFixed(2),
+          r.fxRate.toString(),
+          (r.baseMinor / 100).toFixed(2),
+          (r.signedBaseMinor / 100).toFixed(2),
+          (r.runningBalanceBase / 100).toFixed(2),
+        ]
+          .map(esc)
+          .join(','),
+      );
     }
     lines.push('');
-    lines.push(`# Closing balance (${s.baseCurrency}): ${(s.totals.closingBalanceBase / 100).toFixed(2)}`);
+    lines.push(
+      `# Closing balance (${s.baseCurrency}): ${(s.totals.closingBalanceBase / 100).toFixed(2)}`,
+    );
     lines.push('');
     lines.push('# Per-currency breakdown');
     lines.push(['Currency', 'Invoiced', 'Paid', 'Outstanding'].map(esc).join(','));
     for (const c of s.byCurrency) {
-      lines.push([c.currency, (c.invoiced / 100).toFixed(2), (c.paid / 100).toFixed(2), (c.outstanding / 100).toFixed(2)].map(esc).join(','));
+      lines.push(
+        [
+          c.currency,
+          (c.invoiced / 100).toFixed(2),
+          (c.paid / 100).toFixed(2),
+          (c.outstanding / 100).toFixed(2),
+        ]
+          .map(esc)
+          .join(','),
+      );
     }
     return lines.join('\n') + '\n';
   }
 
-  async renderMyStatementPdf(tenantId: string, opts: { from?: string; to?: string } = {}): Promise<Buffer> {
+  async renderMyStatementPdf(
+    tenantId: string,
+    opts: { from?: string; to?: string } = {},
+  ): Promise<Buffer> {
     const s = await this.buildMyStatement(tenantId, opts);
-    const PDFDocumentMod: any = await import('pdfkit');
+    const PDFDocumentMod = await import('pdfkit');
     const PDFDocument = PDFDocumentMod.default || PDFDocumentMod;
     const doc = new PDFDocument({ size: 'A4', margin: 40 });
     const chunks: Buffer[] = [];
     doc.on('data', (c: Buffer) => chunks.push(c));
-    const done: Promise<Buffer> = new Promise((resolve) => doc.on('end', () => resolve(Buffer.concat(chunks))));
+    const done: Promise<Buffer> = new Promise((resolve) =>
+      doc.on('end', () => resolve(Buffer.concat(chunks))),
+    );
 
     const fmtBase = (n: number) => this.fmtMoney(n, s.baseCurrency);
     const fmtCcy = (n: number, c: string) => this.fmtMoney(n, c);
@@ -2568,16 +3324,29 @@ export class SaasRevenueService {
 
     // Header
     const top = doc.y;
-    doc.fontSize(16).font('Helvetica-Bold').text(s.vendor.tradingName || s.vendor.legalName || 'Statement', 40, top);
+    doc
+      .fontSize(16)
+      .font('Helvetica-Bold')
+      .text(s.vendor.tradingName || s.vendor.legalName || 'Statement', 40, top);
     doc.fontSize(9).font('Helvetica').fillColor('#555');
-    if (s.vendor.legalName && s.vendor.legalName !== s.vendor.tradingName) doc.text(s.vendor.legalName);
+    if (s.vendor.legalName && s.vendor.legalName !== s.vendor.tradingName)
+      doc.text(s.vendor.legalName);
     if (s.vendor.addressLine1) doc.text(s.vendor.addressLine1);
     if (s.vendor.email) doc.text(s.vendor.email);
     doc.fillColor('black');
 
-    doc.fontSize(20).font('Helvetica-Bold').text('STATEMENT', 380, top, { width: 175, align: 'right' });
-    doc.fontSize(10).font('Helvetica').fillColor('#555')
-      .text(`${fmtD(s.period.from)} → ${fmtD(s.period.to)}`, 380, top + 24, { width: 175, align: 'right' })
+    doc
+      .fontSize(20)
+      .font('Helvetica-Bold')
+      .text('STATEMENT', 380, top, { width: 175, align: 'right' });
+    doc
+      .fontSize(10)
+      .font('Helvetica')
+      .fillColor('#555')
+      .text(`${fmtD(s.period.from)} → ${fmtD(s.period.to)}`, 380, top + 24, {
+        width: 175,
+        align: 'right',
+      })
       .text(`Base: ${s.baseCurrency}`, 380, top + 38, { width: 175, align: 'right' });
     doc.fillColor('black');
 
@@ -2587,7 +3356,11 @@ export class SaasRevenueService {
 
     // Bill-to
     doc.fontSize(8).fillColor('#64748b').font('Helvetica-Bold').text('BILL TO', 40, doc.y);
-    doc.fontSize(11).fillColor('black').font('Helvetica-Bold').text(s.tenant.name, 40, doc.y + 2);
+    doc
+      .fontSize(11)
+      .fillColor('black')
+      .font('Helvetica-Bold')
+      .text(s.tenant.name, 40, doc.y + 2);
     if (s.tenant.slug) doc.fontSize(9).font('Helvetica').fillColor('#555').text(s.tenant.slug, 40);
     doc.fillColor('black').moveDown(0.6);
 
@@ -2606,18 +3379,25 @@ export class SaasRevenueService {
     doc.text(fmtBase(s.totals.paidBase), 310, boxY + 24, { width: 60 });
     doc.text(fmtBase(s.totals.refundedBase), 380, boxY + 24, { width: 80 });
     const closingColor = s.totals.closingBalanceBase > 0 ? '#b91c1c' : '#15803d';
-    doc.fillColor(closingColor).text(fmtBase(s.totals.closingBalanceBase), 470, boxY + 24, { width: 80 });
+    doc
+      .fillColor(closingColor)
+      .text(fmtBase(s.totals.closingBalanceBase), 470, boxY + 24, { width: 80 });
     doc.fillColor('black');
     doc.y = boxY + 64;
     doc.moveDown(0.4);
 
     // Per-currency breakdown
     if (s.byCurrency.length > 1) {
-      doc.fontSize(9).font('Helvetica-Bold').fillColor('#475569').text('Per-currency breakdown', 40);
+      doc
+        .fontSize(9)
+        .font('Helvetica-Bold')
+        .fillColor('#475569')
+        .text('Per-currency breakdown', 40);
       doc.moveDown(0.2);
       const ch = doc.y;
       doc.fontSize(8).fillColor('#64748b');
-      doc.text('Currency', 40, ch); doc.text('Invoiced', 140, ch, { width: 120, align: 'right' });
+      doc.text('Currency', 40, ch);
+      doc.text('Invoiced', 140, ch, { width: 120, align: 'right' });
       doc.text('Paid', 270, ch, { width: 120, align: 'right' });
       doc.text('Outstanding', 400, ch, { width: 150, align: 'right' });
       let cy = ch + 12;
@@ -2637,22 +3417,39 @@ export class SaasRevenueService {
     doc.moveDown(0.2);
     let y = doc.y;
     doc.fontSize(8).fillColor('#64748b');
-    doc.text('Date', 40, y); doc.text('Type', 90, y); doc.text('Ref', 130, y);
+    doc.text('Date', 40, y);
+    doc.text('Type', 90, y);
+    doc.text('Ref', 130, y);
     doc.text('Amount', 230, y, { width: 100, align: 'right' });
     doc.text(`Base (${s.baseCurrency})`, 340, y, { width: 90, align: 'right' });
     doc.text('Balance', 440, y, { width: 110, align: 'right' });
     y += 12;
-    doc.moveTo(40, y - 2).lineTo(555, y - 2).strokeColor('#e2e8f0').stroke().strokeColor('black');
+    doc
+      .moveTo(40, y - 2)
+      .lineTo(555, y - 2)
+      .strokeColor('#e2e8f0')
+      .stroke()
+      .strokeColor('black');
     doc.fillColor('black').font('Helvetica');
     for (const r of s.ledger) {
-      if (y > 760) { doc.addPage(); y = 40; }
+      if (y > 760) {
+        doc.addPage();
+        y = 40;
+      }
       doc.text(fmtD(r.date), 40, y);
       doc.text(r.type, 90, y);
       doc.text(r.ref, 130, y, { width: 100 });
       doc.text(fmtCcy(r.amountMinor, r.currency), 230, y, { width: 100, align: 'right' });
-      const signDisp = r.signedBaseMinor < 0 ? `-${fmtBase(Math.abs(r.signedBaseMinor))}` : fmtBase(r.signedBaseMinor);
-      doc.fillColor(r.signedBaseMinor < 0 ? '#15803d' : '#b91c1c').text(signDisp, 340, y, { width: 90, align: 'right' });
-      doc.fillColor('black').text(fmtBase(r.runningBalanceBase), 440, y, { width: 110, align: 'right' });
+      const signDisp =
+        r.signedBaseMinor < 0
+          ? `-${fmtBase(Math.abs(r.signedBaseMinor))}`
+          : fmtBase(r.signedBaseMinor);
+      doc
+        .fillColor(r.signedBaseMinor < 0 ? '#15803d' : '#b91c1c')
+        .text(signDisp, 340, y, { width: 90, align: 'right' });
+      doc
+        .fillColor('black')
+        .text(fmtBase(r.runningBalanceBase), 440, y, { width: 110, align: 'right' });
       y += 14;
     }
     if (s.ledger.length === 0) {
@@ -2664,12 +3461,29 @@ export class SaasRevenueService {
   }
 
   async listMyPaymentMethods(tenantId: string) {
-    return this.paymentMethods.find({ where: { tenantId }, order: { isDefault: 'DESC', createdAt: 'DESC' } });
+    return this.paymentMethods.find({
+      where: { tenantId },
+      order: { isDefault: 'DESC', createdAt: 'DESC' },
+    });
   }
 
-  async addMyPaymentMethod(tenantId: string, dto: { kind?: SaasPaymentMethodKind; label?: string; brand?: string; last4?: string; expMonth?: number; expYear?: number; holderName?: string; isDefault?: boolean }) {
+  async addMyPaymentMethod(
+    tenantId: string,
+    dto: {
+      kind?: SaasPaymentMethodKind;
+      label?: string;
+      brand?: string;
+      last4?: string;
+      expMonth?: number;
+      expYear?: number;
+      holderName?: string;
+      isDefault?: boolean;
+    },
+  ) {
     const kind = (dto.kind || 'card') as SaasPaymentMethodKind;
-    const label = (dto.label || '').trim() || `${kind === 'card' ? 'Card' : kind === 'mobile_money' ? 'Mobile money' : kind === 'bank' ? 'Bank' : 'Method'}${dto.last4 ? ' •••• ' + dto.last4 : ''}`;
+    const label =
+      (dto.label || '').trim() ||
+      `${kind === 'card' ? 'Card' : kind === 'mobile_money' ? 'Mobile money' : kind === 'bank' ? 'Bank' : 'Method'}${dto.last4 ? ' •••• ' + dto.last4 : ''}`;
     const last4 = dto.last4 ? String(dto.last4).replace(/\D/g, '').slice(-4) : null;
     const pm = this.paymentMethods.create({
       tenantId,
@@ -2710,8 +3524,14 @@ export class SaasRevenueService {
     const wasDefault = pm.isDefault;
     await this.paymentMethods.delete({ id, tenantId });
     if (wasDefault) {
-      const next = await this.paymentMethods.findOne({ where: { tenantId }, order: { createdAt: 'DESC' } });
-      if (next) { next.isDefault = true; await this.paymentMethods.save(next); }
+      const next = await this.paymentMethods.findOne({
+        where: { tenantId },
+        order: { createdAt: 'DESC' },
+      });
+      if (next) {
+        next.isDefault = true;
+        await this.paymentMethods.save(next);
+      }
     }
     return { ok: true };
   }
@@ -2719,44 +3539,68 @@ export class SaasRevenueService {
   // ============================================================
   // TENANT-SIDE WEBHOOKS
   // ============================================================
-  webhookEventTypes(): string[] { return [...WEBHOOK_EVENT_TYPES]; }
+  webhookEventTypes(): string[] {
+    return [...WEBHOOK_EVENT_TYPES];
+  }
 
   async listMyWebhookEndpoints(tenantId: string) {
-    const rows = await this.webhookEndpoints.find({ where: { tenantId }, order: { createdAt: 'DESC' } });
+    const rows = await this.webhookEndpoints.find({
+      where: { tenantId },
+      order: { createdAt: 'DESC' },
+    });
     return rows.map((r) => ({ ...r, secret: this.maskSecret(r.secret) }));
   }
 
-  async createMyWebhookEndpoint(tenantId: string, dto: { url: string; events?: string[]; description?: string }) {
-    if (!dto.url || !/^https?:\/\//i.test(dto.url)) throw new BadRequestException('A valid http(s) URL is required');
-    const events = (dto.events || []).filter((e) => e === '*' || (WEBHOOK_EVENT_TYPES as readonly string[]).includes(e));
+  async createMyWebhookEndpoint(
+    tenantId: string,
+    dto: { url: string; events?: string[]; description?: string },
+  ) {
+    if (!dto.url || !/^https?:\/\//i.test(dto.url))
+      throw new BadRequestException('A valid http(s) URL is required');
+    const events = (dto.events || []).filter(
+      (e) => e === '*' || (WEBHOOK_EVENT_TYPES as readonly string[]).includes(e),
+    );
     if (!events.length) events.push('*');
     const secret = `whsec_${crypto.randomBytes(24).toString('base64url')}`;
     const ep = this.webhookEndpoints.create({
-      tenantId, url: dto.url.trim(), secret, events,
+      tenantId,
+      url: dto.url.trim(),
+      secret,
+      events,
       description: dto.description?.trim() || null,
-      enabled: true, consecutiveFailures: 0,
+      enabled: true,
+      consecutiveFailures: 0,
     });
     const saved = await this.webhookEndpoints.save(ep);
     // Return the secret ONCE in cleartext so the tenant can copy it.
     return { ...saved, secret, secretRevealed: true };
   }
 
-  async updateMyWebhookEndpoint(tenantId: string, id: string, dto: { url?: string; events?: string[]; description?: string | null; enabled?: boolean }) {
+  async updateMyWebhookEndpoint(
+    tenantId: string,
+    id: string,
+    dto: { url?: string; events?: string[]; description?: string | null; enabled?: boolean },
+  ) {
     const ep = await this.webhookEndpoints.findOne({ where: { id, tenantId } });
     if (!ep) throw new NotFoundException('Endpoint not found');
     if (dto.url !== undefined) {
-      if (!/^https?:\/\//i.test(dto.url)) throw new BadRequestException('A valid http(s) URL is required');
+      if (!/^https?:\/\//i.test(dto.url))
+        throw new BadRequestException('A valid http(s) URL is required');
       ep.url = dto.url.trim();
     }
     if (dto.events !== undefined) {
-      const events = dto.events.filter((e) => e === '*' || (WEBHOOK_EVENT_TYPES as readonly string[]).includes(e));
+      const events = dto.events.filter(
+        (e) => e === '*' || (WEBHOOK_EVENT_TYPES as readonly string[]).includes(e),
+      );
       ep.events = events.length ? events : ['*'];
     }
     if (dto.description !== undefined) ep.description = dto.description?.toString().trim() || null;
     if (dto.enabled !== undefined) {
       ep.enabled = !!dto.enabled;
-      if (ep.enabled) { ep.consecutiveFailures = 0; ep.disabledAt = null; }
-      else if (!ep.disabledAt) ep.disabledAt = new Date();
+      if (ep.enabled) {
+        ep.consecutiveFailures = 0;
+        ep.disabledAt = null;
+      } else if (!ep.disabledAt) ep.disabledAt = new Date();
     }
     await this.webhookEndpoints.save(ep);
     return { ...ep, secret: this.maskSecret(ep.secret) };
@@ -2784,12 +3628,16 @@ export class SaasRevenueService {
     return this.webhooks.sendTestPing(ep);
   }
 
-  async listMyWebhookDeliveries(tenantId: string, opts: { endpointId?: string; status?: string; limit?: number } = {}) {
+  async listMyWebhookDeliveries(
+    tenantId: string,
+    opts: { endpointId?: string; status?: string; limit?: number } = {},
+  ) {
     const where: any = { tenantId };
     if (opts.endpointId) where.endpointId = opts.endpointId;
     if (opts.status) where.status = opts.status;
     const rows = await this.webhookDeliveries.find({
-      where, order: { createdAt: 'DESC' },
+      where,
+      order: { createdAt: 'DESC' },
       take: Math.min(Math.max(opts.limit || 50, 1), 200),
     });
     return rows;

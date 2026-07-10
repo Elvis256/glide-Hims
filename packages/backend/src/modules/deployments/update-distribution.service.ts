@@ -1,7 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan, In } from 'typeorm';
-import { UpdateRollout, UpdateRolloutStatus, UpdateRolloutPhase } from '../../database/entities/update-rollout.entity';
+import { Repository, LessThan, In, DeepPartial } from 'typeorm';
+import {
+  UpdateRollout,
+  UpdateRolloutStatus,
+  UpdateRolloutPhase,
+} from '../../database/entities/update-rollout.entity';
 import { Deployment } from '../../database/entities/deployment.entity';
 
 @Injectable()
@@ -164,7 +168,7 @@ export class UpdateDistributionService {
     version: string;
     phases: any[];
   }): Promise<any> {
-    const rollout = this.rolloutRepository.create(params as any) as unknown as UpdateRollout;
+    const rollout = this.rolloutRepository.create(params as DeepPartial<UpdateRollout>);
     const saved = await this.rolloutRepository.save(rollout);
     return {
       ...saved,

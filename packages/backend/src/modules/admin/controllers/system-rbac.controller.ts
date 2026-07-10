@@ -1,5 +1,13 @@
 import {
-  Controller, Get, Post, Patch, Delete, Body, Param, Query, Request,
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  Query,
+  Request,
   ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
@@ -39,7 +47,10 @@ export class SystemRbacController {
   @Post('roles')
   @AuthWithPermissions('system.manage')
   @ApiOperation({ summary: 'Create system admin role' })
-  async createRole(@Body() dto: { name: string; description?: string; permissions: string[] }, @Request() req: any) {
+  async createRole(
+    @Body() dto: { name: string; description?: string; permissions: string[] },
+    @Request() req: any,
+  ) {
     this.requireSystemAdmin(req);
     return this.rbacService.createRole(dto);
   }

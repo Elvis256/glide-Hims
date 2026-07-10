@@ -37,7 +37,10 @@ export enum SampleType {
 // `uq_lab_tests_tenant_code` (partial unique on (tenant_id, code) WHERE
 // deleted_at IS NULL); the entity decorator is aligned here so two tenants
 // can both define e.g. 'CBC' without colliding.
-@Index('uq_lab_tests_tenant_code', ['tenantId', 'code'], { unique: true, where: '"deleted_at" IS NULL' })
+@Index('uq_lab_tests_tenant_code', ['tenantId', 'code'], {
+  unique: true,
+  where: '"deleted_at" IS NULL',
+})
 export class LabTest extends BaseEntity {
   @Column()
   code: string;

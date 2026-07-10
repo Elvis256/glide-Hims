@@ -22,7 +22,10 @@ import {
 } from '../../database/entities/drug-label-template.entity';
 import { TemperatureLog, TemperatureSensor } from '../../database/entities/temperature-log.entity';
 import { AuditLog } from '../../database/entities/audit-log.entity';
-import { DrugClassification, DrugInteraction } from '../../database/entities/drug-classification.entity';
+import {
+  DrugClassification,
+  DrugInteraction,
+} from '../../database/entities/drug-classification.entity';
 import { DrugInteractionOverride } from '../../database/entities/drug-interaction-override.entity';
 import { ControlledSubstanceLog } from '../../database/entities/controlled-substance.entity';
 import { ReceiptReprint, RetailCustomer } from '../../database/entities/pos-retail.entity';
@@ -63,7 +66,13 @@ import { AllergiesModule } from '../allergies/allergies.module';
     ]),
   ],
   controllers: [PharmacyController, PrescriptionController],
-  providers: [PharmacyService, LabelService, TemperatureService, PharmacyDashboardService, PrescriptionLookupService],
+  providers: [
+    PharmacyService,
+    LabelService,
+    TemperatureService,
+    PharmacyDashboardService,
+    PrescriptionLookupService,
+  ],
   exports: [PharmacyService, LabelService, TemperatureService, PharmacyDashboardService],
 })
 export class PharmacyModule {}

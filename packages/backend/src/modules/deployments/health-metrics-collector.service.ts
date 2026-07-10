@@ -81,10 +81,10 @@ export class HealthMetricsCollectorService {
       where: { tenantId },
     });
 
-    const statuses: Record<string, number> = { 
-      healthy: 0, 
-      warning: 0, 
-      critical: 0, 
+    const statuses: Record<string, number> = {
+      healthy: 0,
+      warning: 0,
+      critical: 0,
       offline: 0,
       degraded: 0,
     };
@@ -131,7 +131,9 @@ export class HealthMetricsCollectorService {
   /**
    * Detect anomalies in metrics
    */
-  async detectAnomalies(deploymentIdOrMetrics: any): Promise<any[] & { hasAnomalies?: boolean; anomalies?: any[] }> {
+  async detectAnomalies(
+    deploymentIdOrMetrics: any,
+  ): Promise<any[] & { hasAnomalies?: boolean; anomalies?: any[] }> {
     if (deploymentIdOrMetrics && typeof deploymentIdOrMetrics === 'object') {
       const metrics = deploymentIdOrMetrics;
       const cpu = metrics.cpuUsage ?? metrics.cpuUsagePercent ?? 50;
@@ -140,9 +142,12 @@ export class HealthMetricsCollectorService {
       const responseTime = metrics.responseTime ?? 100;
       const anomalies = [];
       if (cpu > 90) anomalies.push({ metric: 'cpuUsage', type: 'cpu_spike', severity: 'high' });
-      if (memory > 90) anomalies.push({ metric: 'memoryUsage', type: 'memory_spike', severity: 'high' });
-      if (error > 0.05) anomalies.push({ metric: 'errorRate', type: 'error_spike', severity: 'high' });
-      if (responseTime > 4000) anomalies.push({ metric: 'responseTime', type: 'latency_spike', severity: 'high' });
+      if (memory > 90)
+        anomalies.push({ metric: 'memoryUsage', type: 'memory_spike', severity: 'high' });
+      if (error > 0.05)
+        anomalies.push({ metric: 'errorRate', type: 'error_spike', severity: 'high' });
+      if (responseTime > 4000)
+        anomalies.push({ metric: 'responseTime', type: 'latency_spike', severity: 'high' });
       const result: any = anomalies;
       result.hasAnomalies = anomalies.length > 0;
       result.anomalies = anomalies;

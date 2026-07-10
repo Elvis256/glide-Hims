@@ -50,7 +50,10 @@ export class DoctorFeesService {
   }
 
   /** Batch-fetch profiles for multiple doctors in a single query. */
-  async getProfiles(doctorIds: string[], tenantId?: string): Promise<Map<string, DoctorFeeProfile>> {
+  async getProfiles(
+    doctorIds: string[],
+    tenantId?: string,
+  ): Promise<Map<string, DoctorFeeProfile>> {
     if (doctorIds.length === 0) return new Map();
     const where: any = { doctorId: In(doctorIds) };
     if (tenantId) where.tenantId = tenantId;
@@ -78,7 +81,10 @@ export class DoctorFeesService {
     if (feeMode === DoctorFeeMode.FLAT && (dto.flatFee == null || dto.flatFee <= 0)) {
       throw new BadRequestException('flatFee is required for flat fee mode');
     }
-    if (feeMode === DoctorFeeMode.PERCENT_OF_SPECIALTY && (dto.percentOfSpecialty == null || dto.percentOfSpecialty <= 0)) {
+    if (
+      feeMode === DoctorFeeMode.PERCENT_OF_SPECIALTY &&
+      (dto.percentOfSpecialty == null || dto.percentOfSpecialty <= 0)
+    ) {
       throw new BadRequestException('percentOfSpecialty is required for percent_of_specialty mode');
     }
     if (feeMode === DoctorFeeMode.SPLIT) {
@@ -98,7 +104,8 @@ export class DoctorFeesService {
       } as Partial<DoctorFeeProfile>) as DoctorFeeProfile;
     }
     Object.assign(existing!, {
-      employmentType: dto.employmentType ?? existing!.employmentType ?? DoctorEmploymentType.EMPLOYED,
+      employmentType:
+        dto.employmentType ?? existing!.employmentType ?? DoctorEmploymentType.EMPLOYED,
       feeMode,
       flatFee: dto.flatFee ?? null,
       percentOfSpecialty: dto.percentOfSpecialty ?? null,
@@ -151,7 +158,11 @@ export class DoctorFeesService {
     const code = (dept.code || dept.name || '').trim().toUpperCase().replace(/\s+/g, '_');
     if (code) {
       const svc = await this.serviceRepo.findOne({
-        where: { code: `OPD-CONSULT-${code}`, isActive: true, ...(tenantId ? { tenantId } : {}) } as any,
+        where: {
+          code: `OPD-CONSULT-${code}`,
+          isActive: true,
+          ...(tenantId ? { tenantId } : {}),
+        } as any,
       });
       if (svc) return Number(svc.basePrice);
     }

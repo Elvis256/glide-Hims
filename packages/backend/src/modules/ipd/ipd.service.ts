@@ -484,7 +484,7 @@ export class IpdService {
             userId,
             tenantId,
           );
-          invoiceId = (invoice as any).id;
+          invoiceId = invoice.id;
           saved.metadata = {
             ...(saved.metadata || {}),
             inpatientInvoiceId: invoiceId,
@@ -735,7 +735,9 @@ export class IpdService {
         const allergies = admission?.patient?.allergies || [];
         const drug = med.drugName.toLowerCase();
         const hit = allergies.find((a) => {
-          const tag = String(a || '').trim().toLowerCase();
+          const tag = String(a || '')
+            .trim()
+            .toLowerCase();
           return tag.length > 2 && drug.includes(tag);
         });
         if (hit && !dto.allergyOverrideReason) {
@@ -757,10 +759,7 @@ export class IpdService {
 
       // C5: dose tracking — increment quantityDispensed on the linked Rx item
       // so prescription remaining-count reflects what was actually given.
-      if (
-        dto.status === MedicationStatus.ADMINISTERED &&
-        med.prescriptionItemId
-      ) {
+      if (dto.status === MedicationStatus.ADMINISTERED && med.prescriptionItemId) {
         await manager.increment(
           PrescriptionItem,
           { id: med.prescriptionItemId },

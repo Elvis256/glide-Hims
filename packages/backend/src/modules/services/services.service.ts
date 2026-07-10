@@ -183,7 +183,7 @@ export class ServicesService {
     return this.packageRepo.remove(pkg);
   }
 
-// ─── Service Consumables (auto-deduct items when service is rendered) ───
+  // ─── Service Consumables (auto-deduct items when service is rendered) ───
 
   async listConsumables(serviceId: string, tenantId?: string) {
     return this.consumableRepo.find({

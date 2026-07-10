@@ -23,6 +23,9 @@ export enum SamplePriority {
 
 @Entity('lab_samples')
 @Index(['status', 'createdAt'])
+@Index(['orderId', 'labTestId'])
+@Index(['facilityId', 'status', 'createdAt'])
+@Index(['facilityId', 'collectionTime'])
 export class LabSample extends BaseEntity {
   @Column({ unique: true })
   sampleNumber: string;

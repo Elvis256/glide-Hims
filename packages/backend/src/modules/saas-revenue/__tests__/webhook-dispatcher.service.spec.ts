@@ -92,7 +92,9 @@ describe('WebhookDispatcherService', () => {
       const ep = makeEndpoint({ events: ['invoice.issued'] });
       mockEndpointRepo.find.mockResolvedValueOnce([ep]);
 
-      const count = await service.enqueue('tenant-1', 'invoice.issued' as any, { invoiceId: 'inv-1' });
+      const count = await service.enqueue('tenant-1', 'invoice.issued' as any, {
+        invoiceId: 'inv-1',
+      });
       expect(count).toBe(1);
       expect(mockDeliveryRepo.save).toHaveBeenCalled();
     });

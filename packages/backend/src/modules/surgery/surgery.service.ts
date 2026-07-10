@@ -51,7 +51,7 @@ export class SurgeryService {
       ...dto,
       type: dto.type as TheatreType,
     });
-    if (tenantId) (theatre as any).tenantId = tenantId;
+    if (tenantId) theatre.tenantId = tenantId;
     return this.theatreRepo.save(theatre);
   }
 
@@ -175,18 +175,24 @@ export class SurgeryService {
         createdById: userId,
         status: SurgeryStatus.SCHEDULED,
       });
-      if (tenantId) (surgeryCase as any).tenantId = tenantId;
+      if (tenantId) surgeryCase.tenantId = tenantId;
 
       const saved = await manager.save(surgeryCase);
 
-      this.auditLogService.log({
-        action: 'SCHEDULE_SURGERY',
-        entityType: 'SurgeryCase',
-        entityId: saved.id,
-        userId,
-        tenantId,
-        newValue: { caseNumber: saved.caseNumber, status: SurgeryStatus.SCHEDULED, procedureName: dto.procedureName },
-      }).catch(() => {});
+      this.auditLogService
+        .log({
+          action: 'SCHEDULE_SURGERY',
+          entityType: 'SurgeryCase',
+          entityId: saved.id,
+          userId,
+          tenantId,
+          newValue: {
+            caseNumber: saved.caseNumber,
+            status: SurgeryStatus.SCHEDULED,
+            procedureName: dto.procedureName,
+          },
+        })
+        .catch(() => {});
 
       return saved;
     });
@@ -311,14 +317,16 @@ export class SurgeryService {
 
     const saved = await this.surgeryCaseRepo.save(surgeryCase);
 
-    this.auditLogService.log({
-      action: 'START_SURGERY',
-      entityType: 'SurgeryCase',
-      entityId: id,
-      tenantId,
-      oldValue: { status: SurgeryStatus.PRE_OP },
-      newValue: { status: SurgeryStatus.IN_PROGRESS },
-    }).catch(() => {});
+    this.auditLogService
+      .log({
+        action: 'START_SURGERY',
+        entityType: 'SurgeryCase',
+        entityId: id,
+        tenantId,
+        oldValue: { status: SurgeryStatus.PRE_OP },
+        newValue: { status: SurgeryStatus.IN_PROGRESS },
+      })
+      .catch(() => {});
 
     return saved;
   }
@@ -370,14 +378,16 @@ export class SurgeryService {
 
     const saved = await this.surgeryCaseRepo.save(surgeryCase);
 
-    this.auditLogService.log({
-      action: 'COMPLETE_SURGERY',
-      entityType: 'SurgeryCase',
-      entityId: id,
-      tenantId,
-      oldValue: { status: SurgeryStatus.IN_PROGRESS },
-      newValue: { status: SurgeryStatus.POST_OP },
-    }).catch(() => {});
+    this.auditLogService
+      .log({
+        action: 'COMPLETE_SURGERY',
+        entityType: 'SurgeryCase',
+        entityId: id,
+        tenantId,
+        oldValue: { status: SurgeryStatus.IN_PROGRESS },
+        newValue: { status: SurgeryStatus.POST_OP },
+      })
+      .catch(() => {});
 
     return saved;
   }
@@ -418,14 +428,18 @@ export class SurgeryService {
 
     const saved = await this.surgeryCaseRepo.save(surgeryCase);
 
-    this.auditLogService.log({
-      action: 'CANCEL_SURGERY',
-      entityType: 'SurgeryCase',
-      entityId: id,
-      tenantId,
-      oldValue: { status: surgeryCase.status === SurgeryStatus.POSTPONED ? 'previous' : 'previous' },
-      newValue: { status: saved.status, reason: dto.reason },
-    }).catch(() => {});
+    this.auditLogService
+      .log({
+        action: 'CANCEL_SURGERY',
+        entityType: 'SurgeryCase',
+        entityId: id,
+        tenantId,
+        oldValue: {
+          status: surgeryCase.status === SurgeryStatus.POSTPONED ? 'previous' : 'previous',
+        },
+        newValue: { status: saved.status, reason: dto.reason },
+      })
+      .catch(() => {});
 
     return saved;
   }
@@ -609,7 +623,7 @@ export class SurgeryService {
       notes: dto.notes,
       recordedById: userId,
     });
-    if (tenantId) (consumable as any).tenantId = tenantId;
+    if (tenantId) consumable.tenantId = tenantId;
 
     const saved = await this.consumableRepo.save(consumable);
 

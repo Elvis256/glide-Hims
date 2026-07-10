@@ -79,7 +79,9 @@ export class RevenueAnalyticsService {
         (licenseStats?.enterpriseCount || 0) * tierPricing.enterprise;
 
       // Monthly MRR growth (last 6 months)
-      const growth = await this.dataSource.query(`
+      const growth = await this.dataSource
+        .query(
+          `
         SELECT
           TO_CHAR(DATE_TRUNC('month', l.created_at), 'YYYY-MM') AS period,
           COUNT(*)::int AS new_licenses
@@ -87,7 +89,9 @@ export class RevenueAnalyticsService {
         WHERE l.deleted_at IS NULL AND l.status = 'active' AND l.created_at >= NOW() - INTERVAL '6 months'
         GROUP BY DATE_TRUNC('month', l.created_at)
         ORDER BY period
-      `).catch(() => []);
+      `,
+        )
+        .catch(() => []);
 
       return {
         mrr,
@@ -96,18 +100,30 @@ export class RevenueAnalyticsService {
         activeTenants: Number(tenantStats?.activeTenants || 0),
         trialTenants: Number(licenseStats?.trialCount || 0),
         churnedTenants: Number(tenantStats?.churnedTenants || 0),
-        averageRevenuePerTenant: tenantStats?.activeTenants > 0 ? Math.round(mrr / tenantStats.activeTenants) : 0,
+        averageRevenuePerTenant:
+          tenantStats?.activeTenants > 0 ? Math.round(mrr / tenantStats.activeTenants) : 0,
         growth: growth.map((g: any) => ({ period: g.period, mrr: g.new_licenses })),
       };
     } catch (err) {
       this.logger.warn(`Revenue overview query failed: ${(err as Error).message}`);
-      return { mrr: 0, arr: 0, totalTenants: 0, activeTenants: 0, trialTenants: 0, churnedTenants: 0, averageRevenuePerTenant: 0, growth: [] };
+      return {
+        mrr: 0,
+        arr: 0,
+        totalTenants: 0,
+        activeTenants: 0,
+        trialTenants: 0,
+        churnedTenants: 0,
+        averageRevenuePerTenant: 0,
+        growth: [],
+      };
     }
   }
 
   async getChurnAnalytics(): Promise<ChurnAnalytics> {
     try {
-      const atRisk = await this.dataSource.query(`
+      const atRisk = await this.dataSource
+        .query(
+          `
         WITH tenant_activity AS (
           SELECT
             t.id AS tenant_id,
@@ -136,20 +152,31 @@ export class RevenueAnalyticsService {
         WHERE last_login IS NULL OR last_login < NOW() - INTERVAL '14 days' OR recent_encounters = 0
         ORDER BY days_since_login DESC
         LIMIT 50
-      `).catch(() => []);
+      `,
+        )
+        .catch(() => []);
 
-      const totalActive = await this.dataSource.query(`
+      const totalActive = await this.dataSource
+        .query(
+          `
         SELECT COUNT(*)::int AS count FROM tenants WHERE status = 'active' AND deleted_at IS NULL
-      `).catch(() => [{ count: 0 }]);
+      `,
+        )
+        .catch(() => [{ count: 0 }]);
 
-      const churned = await this.dataSource.query(`
+      const churned = await this.dataSource
+        .query(
+          `
         SELECT COUNT(*)::int AS count FROM tenants WHERE status = 'suspended' AND deleted_at IS NULL
         AND updated_at >= NOW() - INTERVAL '30 days'
-      `).catch(() => [{ count: 0 }]);
+      `,
+        )
+        .catch(() => [{ count: 0 }]);
 
-      const churnRate = totalActive[0]?.count > 0
-        ? Math.round((churned[0]?.count / totalActive[0]?.count) * 10000) / 100
-        : 0;
+      const churnRate =
+        totalActive[0]?.count > 0
+          ? Math.round((churned[0]?.count / totalActive[0]?.count) * 10000) / 100
+          : 0;
 
       return {
         churnRate,
@@ -160,7 +187,8 @@ export class RevenueAnalyticsService {
           else if (daysSinceLogin > 14) riskFactors.push('No login in 14+ days');
           if (Number(t.recent_encounters) === 0) riskFactors.push('No encounters in 30 days');
           if (Number(t.active_users) === 0) riskFactors.push('No active users');
-          if (Number(t.active_users) < Number(t.total_users) * 0.3) riskFactors.push('Low user engagement (<30%)');
+          if (Number(t.active_users) < Number(t.total_users) * 0.3)
+            riskFactors.push('Low user engagement (<30%)');
 
           return {
             tenantId: t.tenant_id,
@@ -184,7 +212,8 @@ export class RevenueAnalyticsService {
       const whereClause = tenantId ? 'AND t.id = $1' : '';
       const params = tenantId ? [tenantId] : [];
 
-      const rows = await this.dataSource.query(`
+      const rows = await this.dataSource.query(
+        `
         SELECT
           t.id AS "tenantId",
           t.name AS "organizationName",
@@ -203,7 +232,9 @@ export class RevenueAnalyticsService {
         WHERE t.deleted_at IS NULL ${whereClause}
         GROUP BY t.id, t.name, t.status, l.license_type, l.expires_at
         ORDER BY "totalEncounters" DESC
-      `, params);
+      `,
+        params,
+      );
 
       return rows.map((r: any) => ({
         ...r,
@@ -234,16 +265,22 @@ export class RevenueAnalyticsService {
     }>;
   }> {
     try {
-      const [stats] = await this.dataSource.query(`
+      const [stats] = await this.dataSource
+        .query(
+          `
         SELECT
           COUNT(*) FILTER (WHERE license_type = 'trial')::int AS "totalTrials",
           COUNT(*) FILTER (WHERE license_type != 'trial' AND tenant_id IN (
             SELECT tenant_id FROM licenses WHERE license_type = 'trial'
           ))::int AS "convertedTrials"
         FROM licenses WHERE deleted_at IS NULL
-      `).catch(() => [{ totalTrials: 0, convertedTrials: 0 }]);
+      `,
+        )
+        .catch(() => [{ totalTrials: 0, convertedTrials: 0 }]);
 
-      const activeTrials = await this.dataSource.query(`
+      const activeTrials = await this.dataSource
+        .query(
+          `
         SELECT
           l.tenant_id AS "tenantId",
           t.name,
@@ -254,12 +291,17 @@ export class RevenueAnalyticsService {
         JOIN tenants t ON t.id = l.tenant_id
         WHERE l.license_type = 'trial' AND l.status = 'active' AND l.deleted_at IS NULL
         ORDER BY "trialDaysRemaining" ASC
-      `).catch(() => []);
+      `,
+        )
+        .catch(() => []);
 
       return {
         totalTrials: Number(stats?.totalTrials || 0),
         convertedTrials: Number(stats?.convertedTrials || 0),
-        conversionRate: stats?.totalTrials > 0 ? Math.round((stats.convertedTrials / stats.totalTrials) * 100) : 0,
+        conversionRate:
+          stats?.totalTrials > 0
+            ? Math.round((stats.convertedTrials / stats.totalTrials) * 100)
+            : 0,
         activeTrials: activeTrials.map((t: any) => ({
           ...t,
           trialDaysRemaining: Math.max(0, Math.round(Number(t.trialDaysRemaining))),

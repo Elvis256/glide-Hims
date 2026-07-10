@@ -46,11 +46,11 @@ export enum AdminAuditEntityType {
  * Integrity: No updates/deletes, only inserts
  */
 @Entity('admin_audit_log')
-@Index(['adminUserId', 'createdAt'], { name: 'idx_admin_audit_admin_time' })
-@Index(['tenantId', 'action', 'createdAt'], { name: 'idx_admin_audit_tenant_action_time' })
-@Index(['entityType', 'entityId', 'createdAt'], { name: 'idx_admin_audit_entity_time' })
-@Index(['action', 'createdAt'], { name: 'idx_admin_audit_action_time' })
-@Index(['createdAt'], { name: 'idx_admin_audit_time' })
+@Index('idx_admin_audit_admin_time', ['adminUserId', 'createdAt'])
+@Index('idx_admin_audit_tenant_action_time', ['tenantId', 'action', 'createdAt'])
+@Index('idx_admin_audit_entity_time', ['entityType', 'entityId', 'createdAt'])
+@Index('idx_admin_audit_action_time', ['action', 'createdAt'])
+@Index('idx_admin_audit_time', ['createdAt'])
 export class AdminAuditLog extends BaseEntity {
   @Column({ type: 'uuid', name: 'admin_user_id', nullable: true })
   adminUserId?: string;
@@ -125,4 +125,10 @@ export class AdminAuditLog extends BaseEntity {
 
   @Column({ type: 'varchar', length: 255, nullable: true, name: 'archive_location' })
   archiveLocation?: string; // S3 path, cold storage, etc.
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  hash?: string;
+
+  @Column({ name: 'previous_hash', type: 'varchar', length: 64, nullable: true })
+  previousHash?: string;
 }

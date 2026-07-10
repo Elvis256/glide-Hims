@@ -75,11 +75,7 @@ export class BatchRecallService {
     return saved;
   }
 
-  async quarantineBatch(
-    recallId: string,
-    userId: string,
-    tenantId?: string,
-  ): Promise<BatchRecall> {
+  async quarantineBatch(recallId: string, userId: string, tenantId?: string): Promise<BatchRecall> {
     const recall = await this.findOne(recallId, tenantId);
 
     if (recall.status === RecallStatus.COMPLETED || recall.status === RecallStatus.CANCELLED) {
@@ -90,7 +86,7 @@ export class BatchRecallService {
     const result = await this.batchStockRepo
       .createQueryBuilder()
       .update(BatchStockBalance)
-      .set({ status: 'recalled' as any })
+      .set({ status: 'recalled' })
       .where('batchNumber = :batchNumber', { batchNumber: recall.batchNumber })
       .andWhere('itemId = :itemId', { itemId: recall.itemId })
       .andWhere("status != 'recalled'")
@@ -150,11 +146,15 @@ export class BatchRecallService {
         ${tenantId ? 'AND ps.tenant_id = $3' : ''}
       ORDER BY ps.completed_at DESC
       `,
-      tenantId ? [recall.batchNumber, recall.itemId, tenantId] : [recall.batchNumber, recall.itemId],
+      tenantId
+        ? [recall.batchNumber, recall.itemId, tenantId]
+        : [recall.batchNumber, recall.itemId],
     );
 
     // Update affected patients count
-    const uniquePatients = new Set(results.filter((r: any) => r.patientId).map((r: any) => r.patientId));
+    const uniquePatients = new Set(
+      results.filter((r: any) => r.patientId).map((r: any) => r.patientId),
+    );
     recall.affectedPatientsCount = uniquePatients.size;
     await this.recallRepo.save(recall);
 

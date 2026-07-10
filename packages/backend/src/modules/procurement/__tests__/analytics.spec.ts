@@ -66,7 +66,9 @@ describe('procurement analytics — tenant scoping & determinism', () => {
       await expect(spend.getCategorySpend(undefined)).rejects.toBeInstanceOf(BadRequestException);
       await expect(spend.getDepartmentSpend(undefined)).rejects.toBeInstanceOf(BadRequestException);
       await expect(spend.getSpendTrends(undefined)).rejects.toBeInstanceOf(BadRequestException);
-      await expect(spend.getBudgetUtilization(undefined)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(spend.getBudgetUtilization(undefined)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
       await expect(spend.getSpendForecast(undefined)).rejects.toBeInstanceOf(BadRequestException);
       await expect(spend.getTopSpendItems(undefined)).rejects.toBeInstanceOf(BadRequestException);
     });
@@ -107,20 +109,22 @@ describe('procurement analytics — tenant scoping & determinism', () => {
 
   describe('SupplierAnalyticsService', () => {
     it('rejects missing tenantId', async () => {
-      await expect(suppliers.getSupplierMetrics(undefined)).rejects.toBeInstanceOf(BadRequestException);
-      await expect(
-        suppliers.getSupplierSpendTrends(undefined, 'sup-1'),
-      ).rejects.toBeInstanceOf(BadRequestException);
-      await expect(
-        suppliers.getSupplierRiskScore(undefined, 'sup-1'),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(suppliers.getSupplierMetrics(undefined)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      await expect(suppliers.getSupplierSpendTrends(undefined, 'sup-1')).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      await expect(suppliers.getSupplierRiskScore(undefined, 'sup-1')).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
     });
 
-    it('scopes supplier lookup by tenantId (cannot read another tenant\'s supplier)', async () => {
+    it("scopes supplier lookup by tenantId (cannot read another tenant's supplier)", async () => {
       supplierRepo.findOne.mockResolvedValueOnce(null);
-      await expect(
-        suppliers.getSupplierSpendTrends('t-1', 'sup-other-tenant'),
-      ).rejects.toThrow(/Supplier not found/);
+      await expect(suppliers.getSupplierSpendTrends('t-1', 'sup-other-tenant')).rejects.toThrow(
+        /Supplier not found/,
+      );
       expect(supplierRepo.findOne).toHaveBeenCalledWith({
         where: { id: 'sup-other-tenant', tenantId: 't-1' },
       });

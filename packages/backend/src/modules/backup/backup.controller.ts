@@ -56,11 +56,7 @@ export class BackupController {
   @ApiParam({ name: 'id', description: 'Schedule ID' })
   @ApiResponse({ status: 200, description: 'Schedule updated' })
   @ApiResponse({ status: 404, description: 'Schedule not found' })
-  async updateSchedule(
-    @Param('id') id: string,
-    @Body() dto: any,
-    @Request() req: any,
-  ) {
+  async updateSchedule(@Param('id') id: string, @Body() dto: any, @Request() req: any) {
     const tenantId = req.user?.tenantId;
     return this.backupService.updateSchedule(id, dto, tenantId);
   }

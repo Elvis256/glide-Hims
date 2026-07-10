@@ -141,6 +141,8 @@ export class PosHospitalBridge1780000000000 implements MigrationInterface {
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`DROP TABLE IF EXISTS drug_interaction_overrides`);
     await queryRunner.query(`ALTER TABLE drug_classifications DROP COLUMN IF EXISTS interactions`);
-    await queryRunner.query(`ALTER TABLE pharmacy_sale_items DROP COLUMN IF EXISTS prescription_item_id`);
+    await queryRunner.query(
+      `ALTER TABLE pharmacy_sale_items DROP COLUMN IF EXISTS prescription_item_id`,
+    );
   }
 }

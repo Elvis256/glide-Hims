@@ -19,9 +19,13 @@ export class FlutterwaveService {
   private secretHash = process.env.FLW_WEBHOOK_HASH;
   private base = process.env.FLW_BASE_URL || 'https://api.flutterwave.com/v3';
 
-  isConfigured() { return !!this.secretKey; }
+  isConfigured() {
+    return !!this.secretKey;
+  }
 
-  async initCheckout(args: FlutterwaveInitArgs): Promise<{ link: string; provider: 'flutterwave' | 'mock' }> {
+  async initCheckout(
+    args: FlutterwaveInitArgs,
+  ): Promise<{ link: string; provider: 'flutterwave' | 'mock' }> {
     if (!this.isConfigured()) {
       this.logger.warn('FLW_SECRET_KEY not set — returning mock checkout link for dev');
       const link = `${args.redirectUrl}?status=successful&tx_ref=${encodeURIComponent(args.txRef)}&transaction_id=MOCK-${Date.now()}`;
@@ -34,8 +38,12 @@ export class FlutterwaveService {
       redirect_url: args.redirectUrl,
       customer: { email: args.customerEmail, name: args.customerName },
       meta: args.meta || {},
-      payment_options: 'card,mobilemoneyuganda,mobilemoneyrwanda,mobilemoneyghana,mpesa,banktransfer',
-      customizations: { title: 'Glide-HIMS subscription', description: args.meta?.description ?? 'Subscription payment' },
+      payment_options:
+        'card,mobilemoneyuganda,mobilemoneyrwanda,mobilemoneyghana,mpesa,banktransfer',
+      customizations: {
+        title: 'Glide-HIMS subscription',
+        description: args.meta?.description ?? 'Subscription payment',
+      },
     };
     const res = await fetch(`${this.base}/payments`, {
       method: 'POST',
@@ -52,16 +60,28 @@ export class FlutterwaveService {
 
   verifyWebhookSignature(rawSignature: string | undefined, rawBody: string): boolean {
     if (!this.secretHash) {
-      this.logger.error('FLW_WEBHOOK_HASH not configured — rejecting webhook. Set the env var to accept Flutterwave webhooks.');
+      this.logger.error(
+        'FLW_WEBHOOK_HASH not configured — rejecting webhook. Set the env var to accept Flutterwave webhooks.',
+      );
       return false;
     }
     if (!rawSignature) return false;
     const computed = crypto.createHmac('sha256', this.secretHash).update(rawBody).digest('hex');
-    try { return crypto.timingSafeEqual(Buffer.from(rawSignature), Buffer.from(computed)); }
-    catch { return false; }
+    try {
+      return crypto.timingSafeEqual(Buffer.from(rawSignature), Buffer.from(computed));
+    } catch {
+      return false;
+    }
   }
 
-  async verifyTransaction(transactionId: string | number): Promise<{ ok: boolean; amount?: number; currency?: string; status?: string; tx_ref?: string; raw?: any }> {
+  async verifyTransaction(transactionId: string | number): Promise<{
+    ok: boolean;
+    amount?: number;
+    currency?: string;
+    status?: string;
+    tx_ref?: string;
+    raw?: any;
+  }> {
     if (!this.isConfigured() && String(transactionId).startsWith('MOCK-')) {
       return { ok: true, status: 'successful', raw: { mock: true } };
     }
@@ -74,10 +94,20 @@ export class FlutterwaveService {
     const json: any = await res.json();
     if (!res.ok || json.status !== 'success') return { ok: false, raw: json };
     const d = json.data;
-    return { ok: d?.status === 'successful', amount: majorToMinor(d?.amount ?? 0, d?.currency ?? ''), currency: d?.currency, status: d?.status, tx_ref: d?.tx_ref, raw: d };
+    return {
+      ok: d?.status === 'successful',
+      amount: majorToMinor(d?.amount ?? 0, d?.currency ?? ''),
+      currency: d?.currency,
+      status: d?.status,
+      tx_ref: d?.tx_ref,
+      raw: d,
+    };
   }
 
-  async refundTransaction(transactionId: string, amountMajor: number): Promise<{ ok: boolean; refundId?: string; error?: string }> {
+  async refundTransaction(
+    transactionId: string,
+    amountMajor: number,
+  ): Promise<{ ok: boolean; refundId?: string; error?: string }> {
     if (!this.isConfigured() && String(transactionId).startsWith('MOCK-')) {
       this.logger.warn('FLW_SECRET_KEY not set — returning mock refund');
       return { ok: true, refundId: `MOCK-REFUND-${Date.now()}` };
@@ -120,12 +150,24 @@ export class FlutterwaveService {
   }): Promise<{ ok: boolean; transactionId?: string | number; status?: string; raw?: any }> {
     if (!this.isConfigured()) {
       this.logger.warn('FLW_SECRET_KEY not set — returning mock tokenized charge');
-      return { ok: true, transactionId: `MOCK-${Date.now()}`, status: 'successful', raw: { mock: true } };
+      return {
+        ok: true,
+        transactionId: `MOCK-${Date.now()}`,
+        status: 'successful',
+        raw: { mock: true },
+      };
     }
     const body: any = {
       token: args.token,
       currency: args.currency,
-      country: args.currency === 'NGN' ? 'NG' : args.currency === 'KES' ? 'KE' : args.currency === 'GHS' ? 'GH' : 'UG',
+      country:
+        args.currency === 'NGN'
+          ? 'NG'
+          : args.currency === 'KES'
+            ? 'KE'
+            : args.currency === 'GHS'
+              ? 'GH'
+              : 'UG',
       amount: minorToMajor(args.amountMinor, args.currency),
       email: args.customerEmail,
       first_name: (args.customerName || '').split(' ')[0] || 'Customer',
@@ -144,6 +186,11 @@ export class FlutterwaveService {
       this.logger.error(`Flutterwave tokenized charge failed: ${JSON.stringify(json)}`);
       return { ok: false, raw: json };
     }
-    return { ok: json.data?.status === 'successful' || json.data?.status === 'pending', transactionId: json.data?.id, status: json.data?.status, raw: json.data };
+    return {
+      ok: json.data?.status === 'successful' || json.data?.status === 'pending',
+      transactionId: json.data?.id,
+      status: json.data?.status,
+      raw: json.data,
+    };
   }
 }

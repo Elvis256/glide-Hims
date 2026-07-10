@@ -89,7 +89,11 @@ export class PosRetailService {
 
   // ─── B1: Returns ──────────────────────────────────────────────────────────
 
-  async createReturn(dto: CreateReturnDto, userId: string, tenantId: string): Promise<PharmacyReturn> {
+  async createReturn(
+    dto: CreateReturnDto,
+    userId: string,
+    tenantId: string,
+  ): Promise<PharmacyReturn> {
     const sale = await this.saleRepo.findOne({
       where: { id: dto.originalSaleId, tenantId },
       relations: ['items', 'store'],
@@ -151,7 +155,14 @@ export class PosRetailService {
       // Restock inventory (where restockable = true)
       for (const { saleItem, qtyReturned, restockable } of returnItemsData) {
         if (restockable && facilityId) {
-          await this.restockItem(manager, saleItem.itemId, qtyReturned, facilityId, tenantId, sale.id);
+          await this.restockItem(
+            manager,
+            saleItem.itemId,
+            qtyReturned,
+            facilityId,
+            tenantId,
+            sale.id,
+          );
         }
       }
 
@@ -367,14 +378,7 @@ export class PosRetailService {
       // Restock all items
       if (facilityId) {
         for (const item of sale.items) {
-          await this.restockItem(
-            manager,
-            item.itemId,
-            item.quantity,
-            facilityId,
-            tenantId,
-            saleId,
-          );
+          await this.restockItem(manager, item.itemId, item.quantity, facilityId, tenantId, saleId);
         }
       }
 
@@ -425,7 +429,10 @@ export class PosRetailService {
     });
 
     this.eventEmitter.emit('pharmacy.sale.voided', { saleId, tenantId, userId });
-    return this.saleRepo.findOne({ where: { id: saleId, tenantId }, relations: ['items'] }) as Promise<PharmacySale>;
+    return this.saleRepo.findOne({
+      where: { id: saleId, tenantId },
+      relations: ['items'],
+    }) as Promise<PharmacySale>;
   }
 
   async setManagerPin(pin: string, tenantId: string): Promise<void> {
@@ -433,11 +440,18 @@ export class PosRetailService {
       throw new BadRequestException('Manager PIN must be at least 4 characters');
     }
     const hash = await bcrypt.hash(pin, 10);
-    await this.settingsService.upsert('pos.manager_pin', hash, tenantId, 'Manager PIN (bcrypt hash)');
+    await this.settingsService.upsert(
+      'pos.manager_pin',
+      hash,
+      tenantId,
+      'Manager PIN (bcrypt hash)',
+    );
   }
 
   async verifyManagerPin(pin: string, tenantId: string): Promise<void> {
-    const setting = await this.settingsService.getByKey('pos.manager_pin', tenantId).catch(() => null);
+    const setting = await this.settingsService
+      .getByKey('pos.manager_pin', tenantId)
+      .catch(() => null);
     if (!setting?.value) {
       throw new ForbiddenException('Manager PIN is not configured. Set it in POS Settings.');
     }
@@ -549,12 +563,16 @@ export class PosRetailService {
   }
 
   private async getDiscountThresholdPct(tenantId: string): Promise<number> {
-    const s = await this.settingsService.getByKey('pos.discount.threshold_percent', tenantId).catch(() => null);
+    const s = await this.settingsService
+      .getByKey('pos.discount.threshold_percent', tenantId)
+      .catch(() => null);
     return s ? parseFloat(s.value) : 10;
   }
 
   private async getDiscountThresholdAmt(tenantId: string): Promise<number> {
-    const s = await this.settingsService.getByKey('pos.discount.threshold_amount', tenantId).catch(() => null);
+    const s = await this.settingsService
+      .getByKey('pos.discount.threshold_amount', tenantId)
+      .catch(() => null);
     return s ? parseFloat(s.value) : 50000;
   }
 
@@ -565,7 +583,12 @@ export class PosRetailService {
     options: GetReprintReceiptOptions,
     userId: string,
     tenantId: string,
-  ): Promise<{ sale: PharmacySale; isDuplicate: boolean; reprintCount: number; existingReturns: PharmacyReturn[] }> {
+  ): Promise<{
+    sale: PharmacySale;
+    isDuplicate: boolean;
+    reprintCount: number;
+    existingReturns: PharmacyReturn[];
+  }> {
     const sale = await this.saleRepo.findOne({
       where: { id: saleId, tenantId },
       relations: ['items', 'store', 'patient', 'soldBy'],
@@ -671,7 +694,11 @@ export class PosRetailService {
 
   // ─── B7: Quick Keys ───────────────────────────────────────────────────────
 
-  async upsertQuickKey(dto: UpsertQuickKeyDto, createdById: string, tenantId: string): Promise<PosQuickKey> {
+  async upsertQuickKey(
+    dto: UpsertQuickKeyDto,
+    createdById: string,
+    tenantId: string,
+  ): Promise<PosQuickKey> {
     const existing = await this.quickKeyRepo.findOne({
       where: {
         tenantId,

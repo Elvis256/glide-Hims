@@ -464,7 +464,7 @@ export class NotificationsService {
 
   async processReminder(reminder: PatientReminder): Promise<void> {
     try {
-      const tenantId = (reminder as any).tenantId;
+      const tenantId = reminder.tenantId;
       const configs = await this.getConfig(reminder.facilityId, undefined, tenantId);
       const patient =
         reminder.patient ||

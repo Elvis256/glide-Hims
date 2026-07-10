@@ -250,7 +250,14 @@ export class PharmacySaleItem extends BaseEntity {
   instructions: string;
 
   // ── B4: Per-line discount ──────────────────────────────────────────────────
-  @Column({ name: 'discount_amount', type: 'decimal', precision: 12, scale: 2, default: 0, nullable: true })
+  @Column({
+    name: 'discount_amount',
+    type: 'decimal',
+    precision: 12,
+    scale: 2,
+    default: 0,
+    nullable: true,
+  })
   discountAmount: number;
 
   @Column({ name: 'discount_reason', type: 'text', nullable: true })

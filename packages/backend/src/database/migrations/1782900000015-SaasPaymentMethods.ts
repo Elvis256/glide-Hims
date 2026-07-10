@@ -22,8 +22,12 @@ export class SaasPaymentMethods1782900000015 implements MigrationInterface {
         CONSTRAINT "PK_saas_payment_methods" PRIMARY KEY ("id")
       );
     `);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_saas_pm_tenant" ON "saas_payment_methods" ("tenantId");`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_saas_pm_default" ON "saas_payment_methods" ("isDefault");`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_saas_pm_tenant" ON "saas_payment_methods" ("tenantId");`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_saas_pm_default" ON "saas_payment_methods" ("isDefault");`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

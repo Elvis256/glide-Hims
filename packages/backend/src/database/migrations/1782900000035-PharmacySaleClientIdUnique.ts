@@ -47,8 +47,6 @@ export class PharmacySaleClientIdUnique1782900000035 implements MigrationInterfa
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(
-      `DROP INDEX IF EXISTS pharmacy_sales_tenant_client_sale_uniq;`,
-    );
+    await queryRunner.query(`DROP INDEX IF EXISTS pharmacy_sales_tenant_client_sale_uniq;`);
   }
 }

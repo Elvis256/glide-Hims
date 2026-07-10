@@ -58,4 +58,10 @@ export class AuditLog extends BaseEntity {
 
   @Column({ name: 'status_code', type: 'int', nullable: true })
   statusCode?: number;
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  hash?: string;
+
+  @Column({ name: 'previous_hash', type: 'varchar', length: 64, nullable: true })
+  previousHash?: string;
 }

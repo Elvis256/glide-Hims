@@ -13,10 +13,7 @@ const TRASH_TYPES: Record<string, { entity: string; label: string; permission: s
 };
 
 // Simulates the listing filter logic from the trash controller
-function filterAllowedTypes(
-  requestedType: string | undefined,
-  userPerms: string[],
-): string[] {
+function filterAllowedTypes(requestedType: string | undefined, userPerms: string[]): string[] {
   const types = requestedType ? [requestedType] : Object.keys(TRASH_TYPES);
   const allowed: string[] = [];
   for (const t of types) {
@@ -29,10 +26,7 @@ function filterAllowedTypes(
 }
 
 // Simulates restore permission check
-function assertRestorePermission(
-  type: string,
-  userPerms: string[],
-): void {
+function assertRestorePermission(type: string, userPerms: string[]): void {
   const meta = TRASH_TYPES[type];
   if (!meta) throw new BadRequestException(`Unsupported trash type: ${type}`);
   if (userPerms.length > 0 && !userPerms.includes(meta.permission)) {
@@ -96,9 +90,7 @@ describe('Trash Permissions', () => {
     });
 
     it('does not throw when permission matches', () => {
-      expect(() =>
-        assertRestorePermission('users', ['users.delete']),
-      ).not.toThrow();
+      expect(() => assertRestorePermission('users', ['users.delete'])).not.toThrow();
     });
 
     it('does not throw when permissions array is empty (no RBAC enforcement)', () => {

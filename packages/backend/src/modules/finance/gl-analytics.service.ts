@@ -106,15 +106,10 @@ export class GLAnalyticsService {
     });
 
     // Group by period
-    const periodMap = new Map<
-      string,
-      { debits: number; credits: number; entries: number }
-    >();
+    const periodMap = new Map<string, { debits: number; credits: number; entries: number }>();
 
     lines.forEach((line) => {
-      const period = line.journalEntry.journalDate
-        .toISOString()
-        .substring(0, 7);
+      const period = line.journalEntry.journalDate.toISOString().substring(0, 7);
       if (!periodMap.has(period)) {
         periodMap.set(period, { debits: 0, credits: 0, entries: 0 });
       }
@@ -151,8 +146,7 @@ export class GLAnalyticsService {
     const averageBalance = balances.reduce((a, b) => a + b, 0) / balances.length;
     const changePercent =
       trends.length > 1 && trends[0].balance !== 0
-        ? ((trends[trends.length - 1].balance - trends[0].balance) /
-            Math.abs(trends[0].balance)) *
+        ? ((trends[trends.length - 1].balance - trends[0].balance) / Math.abs(trends[0].balance)) *
           100
         : 0;
 
@@ -178,13 +172,9 @@ export class GLAnalyticsService {
     period2: string,
   ): Promise<PeriodComparison> {
     const startDate1 = new Date(`${period1}-01`);
-    const endDate1 = new Date(
-      `${period1}-${new Date(period1 + '-01').getDate()}`,
-    );
+    const endDate1 = new Date(`${period1}-${new Date(period1 + '-01').getDate()}`);
     const startDate2 = new Date(`${period2}-01`);
-    const endDate2 = new Date(
-      `${period2}-${new Date(period2 + '-01').getDate()}`,
-    );
+    const endDate2 = new Date(`${period2}-${new Date(period2 + '-01').getDate()}`);
 
     // Get all lines for period1
     const lines1 = await this.journalEntryLineRepository.find({
@@ -215,17 +205,13 @@ export class GLAnalyticsService {
     const period2Balances = this.aggregateLinesByAccount(lines2);
 
     // Compare
-    const allAccountCodes = new Set([
-      ...period1Balances.keys(),
-      ...period2Balances.keys(),
-    ]);
+    const allAccountCodes = new Set([...period1Balances.keys(), ...period2Balances.keys()]);
 
     const comparisons = Array.from(allAccountCodes).map((code) => {
       const p1Balance = period1Balances.get(code) || 0;
       const p2Balance = period2Balances.get(code) || 0;
       const absoluteChange = p2Balance - p1Balance;
-      const percentChange =
-        p1Balance !== 0 ? (absoluteChange / Math.abs(p1Balance)) * 100 : 0;
+      const percentChange = p1Balance !== 0 ? (absoluteChange / Math.abs(p1Balance)) * 100 : 0;
 
       return {
         accountCode: code,
@@ -234,13 +220,11 @@ export class GLAnalyticsService {
         period2Balance: p2Balance,
         absoluteChange,
         percentChange,
-        variance: (
-          absoluteChange > 0.01
-            ? 'increase'
-            : absoluteChange < -0.01
-              ? 'decrease'
-              : 'no-change'
-        ) as 'increase' | 'decrease' | 'no-change',
+        variance: (absoluteChange > 0.01
+          ? 'increase'
+          : absoluteChange < -0.01
+            ? 'decrease'
+            : 'no-change') as 'increase' | 'decrease' | 'no-change',
       };
     });
 
@@ -257,14 +241,9 @@ export class GLAnalyticsService {
    * Get aggregated GL data for a period
    * Total debits, credits, item counts, etc.
    */
-  async getAggregatedGLData(
-    facilityId: string,
-    period: string,
-  ): Promise<AggregatedGLData> {
+  async getAggregatedGLData(facilityId: string, period: string): Promise<AggregatedGLData> {
     const startDate = new Date(`${period}-01`);
-    const endDate = new Date(
-      `${period}-${new Date(period + '-01').getDate()}`,
-    );
+    const endDate = new Date(`${period}-${new Date(period + '-01').getDate()}`);
 
     const lines = await this.journalEntryLineRepository.find({
       where: {
@@ -278,10 +257,7 @@ export class GLAnalyticsService {
     });
 
     const totalDebits = lines.reduce((sum, line) => sum + line.debit, 0);
-    const totalCredits = lines.reduce(
-      (sum, line) => sum + line.credit,
-      0,
-    );
+    const totalCredits = lines.reduce((sum, line) => sum + line.credit, 0);
 
     const uniqueAccounts = new Set(lines.map((l) => l.accountId)).size;
     const entries = new Set(lines.map((l) => l.journalEntryId)).size;
@@ -325,9 +301,7 @@ export class GLAnalyticsService {
     }
 
     const startDate = new Date(`${period}-01`);
-    const endDate = new Date(
-      `${period}-${new Date(period + '-01').getDate()}`,
-    );
+    const endDate = new Date(`${period}-${new Date(period + '-01').getDate()}`);
 
     const lines = await this.journalEntryLineRepository.find({
       where: {
@@ -341,15 +315,11 @@ export class GLAnalyticsService {
       relations: ['journalEntry'],
     });
 
-    const actualBalance = lines.reduce(
-      (sum, line) => sum + (line.debit - line.credit),
-      0,
-    );
+    const actualBalance = lines.reduce((sum, line) => sum + (line.debit - line.credit), 0);
 
     const expected = expectedBalance || 0;
     const absoluteVariance = actualBalance - expected;
-    const percentVariance =
-      expected !== 0 ? Math.abs(absoluteVariance / expected) * 100 : 0;
+    const percentVariance = expected !== 0 ? Math.abs(absoluteVariance / expected) * 100 : 0;
 
     return {
       accountCode: account.accountCode,
@@ -365,9 +335,7 @@ export class GLAnalyticsService {
   /**
    * Helper: Aggregate journal lines by account
    */
-  private aggregateLinesByAccount(
-    lines: JournalEntryLine[],
-  ): Map<string, number> {
+  private aggregateLinesByAccount(lines: JournalEntryLine[]): Map<string, number> {
     const balances = new Map<string, number>();
 
     lines.forEach((line) => {
@@ -397,9 +365,7 @@ export class GLAnalyticsService {
     }>
   > {
     const startDate = new Date(`${period}-01`);
-    const endDate = new Date(
-      `${period}-${new Date(period + '-01').getDate()}`,
-    );
+    const endDate = new Date(`${period}-${new Date(period + '-01').getDate()}`);
 
     const lines = await this.journalEntryLineRepository.find({
       where: {
@@ -441,10 +407,7 @@ export class GLAnalyticsService {
     });
 
     return Array.from(accountVolumes.values())
-      .sort(
-        (a, b) =>
-          Math.abs(b.debits + b.credits) - Math.abs(a.debits + a.credits),
-      )
+      .sort((a, b) => Math.abs(b.debits + b.credits) - Math.abs(a.debits + a.credits))
       .slice(0, limit)
       .map((v) => ({
         accountCode: v.code,

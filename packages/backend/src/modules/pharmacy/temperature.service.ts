@@ -143,7 +143,7 @@ export class TemperatureService {
   }
 
   async getSensors(tenantId?: string, facilityId?: string) {
-    const where: Record<string, any> = {};
+    const where: any = {};
     if (tenantId) where.tenantId = tenantId;
     if (facilityId) where.facilityId = facilityId;
 

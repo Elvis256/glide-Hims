@@ -9,8 +9,8 @@ import {
   UsageAlert,
   UsageMetricType,
   UsageAggregationPeriod,
-} from '../../../../database/entities/usage-meter.entity';
-import { Tenant } from '../../../../database/entities/tenant.entity';
+} from '../../../database/entities/usage-meter.entity';
+import { Tenant } from '../../../database/entities/tenant.entity';
 import { Repository } from 'typeorm';
 
 describe('UsageMeterService', () => {
@@ -84,7 +84,9 @@ describe('UsageMeterService', () => {
 
     service = module.get<UsageMeterService>(UsageMeterService);
     eventRepository = module.get<Repository<UsageMeterEvent>>(getRepositoryToken(UsageMeterEvent));
-    aggregateRepository = module.get<Repository<UsageMeterAggregate>>(getRepositoryToken(UsageMeterAggregate));
+    aggregateRepository = module.get<Repository<UsageMeterAggregate>>(
+      getRepositoryToken(UsageMeterAggregate),
+    );
     quotaRepository = module.get<Repository<UsageQuota>>(getRepositoryToken(UsageQuota));
     alertRepository = module.get<Repository<UsageAlert>>(getRepositoryToken(UsageAlert));
     tenantRepository = module.get<Repository<Tenant>>(getRepositoryToken(Tenant));
@@ -94,7 +96,7 @@ describe('UsageMeterService', () => {
 
   describe('recordUsage', () => {
     it('should record a usage event', async () => {
-      mockTenantRepository.findOne.mockResolvedValue(mockTenant);
+      mockRepositories.tenantRepository.findOne.mockResolvedValue(mockTenant);
       mockRepositories.eventRepository.create.mockReturnValue({
         id: 'event-123',
         tenantId: 'tenant-123',
@@ -125,7 +127,7 @@ describe('UsageMeterService', () => {
     });
 
     it('should throw error if tenant not found', async () => {
-      mockTenantRepository.findOne.mockResolvedValue(null);
+      mockRepositories.tenantRepository.findOne.mockResolvedValue(null);
 
       await expect(
         service.recordUsage('nonexistent', UsageMetricType.API_CALLS, 1),
@@ -147,15 +149,15 @@ describe('UsageMeterService', () => {
         totalAmount: 100,
       };
 
-      mockTenantRepository.findOne.mockResolvedValue(mockTenant);
+      mockRepositories.tenantRepository.findOne.mockResolvedValue(mockTenant);
       mockRepositories.eventRepository.create.mockReturnValue({});
       mockRepositories.eventRepository.save.mockResolvedValue({});
       mockRepositories.quotaRepository.findOne.mockResolvedValue(quota);
       mockRepositories.aggregateRepository.findOne.mockResolvedValue(aggregate);
 
-      await expect(
-        service.recordUsage('tenant-123', UsageMetricType.API_CALLS, 1),
-      ).rejects.toThrow(HttpException);
+      await expect(service.recordUsage('tenant-123', UsageMetricType.API_CALLS, 1)).rejects.toThrow(
+        HttpException,
+      );
     });
   });
 

@@ -1,10 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import {
-  NotFoundException,
-  BadRequestException,
-  ConflictException,
-} from '@nestjs/common';
+import { NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 import { PrescriptionsService } from '../prescriptions.service';
 import {
@@ -15,15 +11,8 @@ import {
   PrescriptionStatus,
 } from '../../../database/entities/prescription.entity';
 import { ControlledSubstanceLog } from '../../../database/entities/controlled-substance.entity';
-import {
-  Encounter,
-  EncounterStatus,
-} from '../../../database/entities/encounter.entity';
-import {
-  Item,
-  StockBalance,
-  StockLedger,
-} from '../../../database/entities/inventory.entity';
+import { Encounter, EncounterStatus } from '../../../database/entities/encounter.entity';
+import { Item, StockBalance, StockLedger } from '../../../database/entities/inventory.entity';
 import { BillingService } from '../../billing/billing.service';
 import { InAppNotificationsService } from '../../in-app-notifications/in-app-notifications.service';
 import { QueueManagementService } from '../../queue-management/queue-management.service';
@@ -284,7 +273,7 @@ describe('PrescriptionsService', () => {
     it('should create a prescription, move encounter to PENDING_PHARMACY, and return it', async () => {
       const encounter = mockEncounter();
       encounterRepo.findOne
-        .mockResolvedValueOnce(encounter)   // first call: encounter lookup
+        .mockResolvedValueOnce(encounter) // first call: encounter lookup
         .mockResolvedValueOnce({ ...encounter, patient: encounter.patient } as any); // for notification lookup
 
       inventoryRepo.findOne.mockResolvedValue(null); // no inventory match — free-text prescribing
@@ -353,9 +342,7 @@ describe('PrescriptionsService', () => {
       encounterRepo.findOne.mockResolvedValueOnce(encounter);
       inventoryRepo.findOne.mockResolvedValue(null);
 
-      (medicationSafetyService.runSafetyChecks as jest.Mock).mockResolvedValueOnce(
-        safetyBlocked(),
-      );
+      (medicationSafetyService.runSafetyChecks as jest.Mock).mockResolvedValueOnce(safetyBlocked());
 
       const dto = {
         encounterId: ENCOUNTER_ID,
@@ -371,9 +358,7 @@ describe('PrescriptionsService', () => {
         ],
       };
 
-      await expect(service.create(dto, USER_ID, TENANT_ID)).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(service.create(dto, USER_ID, TENANT_ID)).rejects.toThrow(ConflictException);
 
       // Transaction should NOT have been called
       expect(dataSource.transaction).not.toHaveBeenCalled();
@@ -391,9 +376,7 @@ describe('PrescriptionsService', () => {
         .mockResolvedValueOnce({ ...encounter, patient: encounter.patient } as any);
       inventoryRepo.findOne.mockResolvedValue(null);
 
-      (medicationSafetyService.runSafetyChecks as jest.Mock).mockResolvedValueOnce(
-        safetyBlocked(),
-      );
+      (medicationSafetyService.runSafetyChecks as jest.Mock).mockResolvedValueOnce(safetyBlocked());
 
       const savedPrescription = mockPrescription();
       mockManager.save.mockResolvedValue(savedPrescription);
@@ -496,9 +479,7 @@ describe('PrescriptionsService', () => {
       );
 
       // Verify item quantity updated
-      expect(itemRepo.save).toHaveBeenCalledWith(
-        expect.objectContaining({ quantityDispensed: 5 }),
-      );
+      expect(itemRepo.save).toHaveBeenCalledWith(expect.objectContaining({ quantityDispensed: 5 }));
     });
   });
 
@@ -558,9 +539,7 @@ describe('PrescriptionsService', () => {
         lastMovementAt: new Date(),
       } as any);
 
-      prescriptionRepo.save.mockImplementation((entity) =>
-        Promise.resolve(entity as any),
-      );
+      prescriptionRepo.save.mockImplementation((entity) => Promise.resolve(entity as any));
 
       const result = await service.cancelPrescription(PRESCRIPTION_ID, TENANT_ID);
 
@@ -587,12 +566,12 @@ describe('PrescriptionsService', () => {
 
       prescriptionRepo.findOne.mockResolvedValue(rx);
 
-      await expect(
-        service.cancelPrescription(PRESCRIPTION_ID, TENANT_ID),
-      ).rejects.toThrow(BadRequestException);
-      await expect(
-        service.cancelPrescription(PRESCRIPTION_ID, TENANT_ID),
-      ).rejects.toThrow(/Cannot cancel a fully dispensed prescription/);
+      await expect(service.cancelPrescription(PRESCRIPTION_ID, TENANT_ID)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.cancelPrescription(PRESCRIPTION_ID, TENANT_ID)).rejects.toThrow(
+        /Cannot cancel a fully dispensed prescription/,
+      );
     });
   });
 
@@ -608,9 +587,7 @@ describe('PrescriptionsService', () => {
 
       // findOne is used inside updateStatus via this.findOne()
       prescriptionRepo.findOne.mockResolvedValue(rx);
-      prescriptionRepo.save.mockImplementation((entity) =>
-        Promise.resolve(entity as any),
-      );
+      prescriptionRepo.save.mockImplementation((entity) => Promise.resolve(entity as any));
 
       const dto = { status: 'dispensing' as const };
 
@@ -634,12 +611,12 @@ describe('PrescriptionsService', () => {
 
       const dto = { status: 'pending' as const };
 
-      await expect(
-        service.updateStatus(PRESCRIPTION_ID, dto as any, TENANT_ID),
-      ).rejects.toThrow(BadRequestException);
-      await expect(
-        service.updateStatus(PRESCRIPTION_ID, dto as any, TENANT_ID),
-      ).rejects.toThrow(/terminal state/);
+      await expect(service.updateStatus(PRESCRIPTION_ID, dto as any, TENANT_ID)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.updateStatus(PRESCRIPTION_ID, dto as any, TENANT_ID)).rejects.toThrow(
+        /terminal state/,
+      );
     });
   });
 
@@ -650,12 +627,10 @@ describe('PrescriptionsService', () => {
     it('should throw NotFoundException when prescription does not exist', async () => {
       prescriptionRepo.findOne.mockResolvedValue(null);
 
-      await expect(
-        service.findOne('nonexistent-id', TENANT_ID),
-      ).rejects.toThrow(NotFoundException);
-      await expect(
-        service.findOne('nonexistent-id', TENANT_ID),
-      ).rejects.toThrow(/Prescription not found/);
+      await expect(service.findOne('nonexistent-id', TENANT_ID)).rejects.toThrow(NotFoundException);
+      await expect(service.findOne('nonexistent-id', TENANT_ID)).rejects.toThrow(
+        /Prescription not found/,
+      );
     });
   });
 
@@ -701,12 +676,8 @@ describe('PrescriptionsService', () => {
         ],
       };
 
-      await expect(service.create(dto, USER_ID, TENANT_ID)).rejects.toThrow(
-        NotFoundException,
-      );
-      await expect(service.create(dto, USER_ID, TENANT_ID)).rejects.toThrow(
-        /Encounter not found/,
-      );
+      await expect(service.create(dto, USER_ID, TENANT_ID)).rejects.toThrow(NotFoundException);
+      await expect(service.create(dto, USER_ID, TENANT_ID)).rejects.toThrow(/Encounter not found/);
     });
   });
 
@@ -732,9 +703,7 @@ describe('PrescriptionsService', () => {
         ],
       };
 
-      await expect(service.create(dto, USER_ID, TENANT_ID)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.create(dto, USER_ID, TENANT_ID)).rejects.toThrow(BadRequestException);
       await expect(service.create(dto, USER_ID, TENANT_ID)).rejects.toThrow(
         /Cannot create prescription for encounter/,
       );
@@ -752,9 +721,7 @@ describe('PrescriptionsService', () => {
       });
 
       prescriptionRepo.findOne.mockResolvedValue(rx);
-      prescriptionRepo.save.mockImplementation((entity) =>
-        Promise.resolve(entity as any),
-      );
+      prescriptionRepo.save.mockImplementation((entity) => Promise.resolve(entity as any));
 
       const dto = { status: 'collected' as const };
 
@@ -778,12 +745,12 @@ describe('PrescriptionsService', () => {
 
       const dto = { status: 'dispensing' as const };
 
-      await expect(
-        service.updateStatus(PRESCRIPTION_ID, dto, TENANT_ID),
-      ).rejects.toThrow(BadRequestException);
-      await expect(
-        service.updateStatus(PRESCRIPTION_ID, dto, TENANT_ID),
-      ).rejects.toThrow(/terminal state/);
+      await expect(service.updateStatus(PRESCRIPTION_ID, dto, TENANT_ID)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.updateStatus(PRESCRIPTION_ID, dto, TENANT_ID)).rejects.toThrow(
+        /terminal state/,
+      );
     });
   });
 });

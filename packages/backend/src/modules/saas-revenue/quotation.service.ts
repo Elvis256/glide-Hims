@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -14,12 +9,17 @@ import {
   SaasQuotationRevision,
   QuotationLineItem,
   QuotationStatus,
+  CatalogItemCategory,
 } from './quotation.entity';
-import { SaasSubscription, SaasPlan } from './saas.entity';
+import { SaasSubscription, SaasPlan, BillingInterval } from './saas.entity';
 import { Lead } from '../leads/lead.entity';
 import { Tenant } from '../../database/entities/tenant.entity';
 import { License } from '../../database/entities/license.entity';
-import { Deployment, DeploymentType, DeploymentStatus } from '../../database/entities/deployment.entity';
+import {
+  Deployment,
+  DeploymentType,
+  DeploymentStatus,
+} from '../../database/entities/deployment.entity';
 import { SaasRevenueService, VendorBillingSettings } from './saas-revenue.service';
 import { SaasMailerService } from './saas-mailer.service';
 import { ContractService } from './contract.service';
@@ -38,9 +38,11 @@ export class QuotationService {
   private readonly logger = new Logger(QuotationService.name);
 
   constructor(
-    @InjectRepository(SaasPriceCatalogItem) private readonly catalog: Repository<SaasPriceCatalogItem>,
+    @InjectRepository(SaasPriceCatalogItem)
+    private readonly catalog: Repository<SaasPriceCatalogItem>,
     @InjectRepository(SaasQuotation) private readonly quotations: Repository<SaasQuotation>,
-    @InjectRepository(SaasQuotationRevision) private readonly revisions: Repository<SaasQuotationRevision>,
+    @InjectRepository(SaasQuotationRevision)
+    private readonly revisions: Repository<SaasQuotationRevision>,
     @InjectRepository(Lead) private readonly leads: Repository<Lead>,
     @InjectRepository(Tenant) private readonly tenants: Repository<Tenant>,
     @InjectRepository(SaasPlan) private readonly plans: Repository<SaasPlan>,
@@ -67,7 +69,7 @@ export class QuotationService {
       code: dto.code,
       name: dto.name,
       description: dto.description ?? null,
-      category: (dto.category as any) ?? 'module',
+      category: (dto.category ?? 'module') as CatalogItemCategory,
       unitPriceMinor: dto.unitPriceMinor,
       currency: dto.currency ?? 'UGX',
       isActive: dto.isActive ?? true,
@@ -98,7 +100,9 @@ export class QuotationService {
   async createQuotation(dto: CreateQuotationDto, createdBy?: string): Promise<SaasQuotation> {
     const quotationNumber = await this.nextQuotationNumber();
     const now = new Date();
-    const validUntil = dto.validUntil ? new Date(dto.validUntil) : new Date(now.getTime() + 30 * 86400000);
+    const validUntil = dto.validUntil
+      ? new Date(dto.validUntil)
+      : new Date(now.getTime() + 30 * 86400000);
 
     const quotation = this.quotations.create({
       quotationNumber,
@@ -155,7 +159,9 @@ export class QuotationService {
     return q;
   }
 
-  async listQuotations(filters: { status?: string; leadId?: string; subscriptionIds?: string[] } = {}) {
+  async listQuotations(
+    filters: { status?: string; leadId?: string; subscriptionIds?: string[] } = {},
+  ) {
     const where: any = {};
     if (filters.status) where.status = filters.status;
     if (filters.leadId) where.leadId = filters.leadId;
@@ -179,7 +185,11 @@ export class QuotationService {
     return this.listQuotations({ subscriptionIds });
   }
 
-  async updateQuotation(id: string, dto: UpdateQuotationDto, actorId?: string): Promise<SaasQuotation> {
+  async updateQuotation(
+    id: string,
+    dto: UpdateQuotationDto,
+    actorId?: string,
+  ): Promise<SaasQuotation> {
     const q = await this.getQuotation(id);
     if (q.status !== 'draft') throw new BadRequestException('Can only update draft quotations');
 
@@ -200,7 +210,8 @@ export class QuotationService {
     if (dto.whtRatePercent !== undefined) q.whtRatePercent = String(dto.whtRatePercent);
     if (dto.discountPercent !== undefined) q.discountPercent = String(dto.discountPercent);
     if (dto.discountFixedMinor !== undefined) q.discountFixedMinor = dto.discountFixedMinor;
-    if (dto.validUntil !== undefined) q.validUntil = dto.validUntil ? new Date(dto.validUntil) : null;
+    if (dto.validUntil !== undefined)
+      q.validUntil = dto.validUntil ? new Date(dto.validUntil) : null;
     if (dto.notes !== undefined) q.notes = dto.notes ?? null;
     if (dto.internalNotes !== undefined) q.internalNotes = dto.internalNotes ?? null;
     if (dto.deploymentType !== undefined) q.deploymentType = dto.deploymentType ?? null;
@@ -260,7 +271,11 @@ export class QuotationService {
   // Revisions
   // ==========================================================================
 
-  async createRevision(quotationId: string, dto: CreateRevisionDto, createdBy?: string): Promise<SaasQuotationRevision> {
+  async createRevision(
+    quotationId: string,
+    dto: CreateRevisionDto,
+    createdBy?: string,
+  ): Promise<SaasQuotationRevision> {
     const q = await this.getQuotation(quotationId);
     if (q.status !== 'draft' && q.status !== 'sent') {
       throw new BadRequestException('Cannot create revision for quotation in status: ' + q.status);
@@ -353,145 +368,156 @@ export class QuotationService {
     const rev = await this.getRevision(q.id, q.currentRevisionNumber);
 
     // Execute the auto-provision transaction
-    return this.dataSource.transaction(async (manager) => {
-      // 1. Update quotation status
-      q.status = 'accepted';
-      q.acceptedAt = new Date();
+    return this.dataSource
+      .transaction(async (manager) => {
+        // 1. Update quotation status
+        q.status = 'accepted';
+        q.acceptedAt = new Date();
 
-      // 2. Update lead status → 'won' if linked
-      if (q.leadId) {
-        await manager.update(Lead, q.leadId, { status: 'won' });
-      }
+        // 2. Update lead status → 'won' if linked
+        if (q.leadId) {
+          await manager.update(Lead, q.leadId, { status: 'won' });
+        }
 
-      // 3. Find or create Tenant
-      let tenant: Tenant | null = null;
-      if (q.clientOrganization) {
-        tenant = await manager.findOne(Tenant, {
-          where: { name: q.clientOrganization },
-        });
-      }
-      if (!tenant) {
-        const slug = (q.clientOrganization || q.clientName)
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, '-')
-          .replace(/^-|-$/g, '')
-          .slice(0, 50);
-        tenant = manager.create(Tenant, {
-          name: q.clientOrganization || q.clientName,
-          slug: slug + '-' + Date.now().toString(36),
-          isActive: true,
-        });
-        tenant = await manager.save(Tenant, tenant);
-      }
+        // 3. Find or create Tenant
+        let tenant: Tenant | null = null;
+        if (q.clientOrganization) {
+          tenant = await manager.findOne(Tenant, {
+            where: { name: q.clientOrganization },
+          });
+        }
+        if (!tenant) {
+          const slug = (q.clientOrganization || q.clientName)
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-|-$/g, '')
+            .slice(0, 50);
+          tenant = manager.create(Tenant, {
+            name: q.clientOrganization || q.clientName,
+            slug: slug + '-' + Date.now().toString(36),
+            isActive: true,
+          });
+          tenant = await manager.save(Tenant, tenant);
+        }
 
-      // 4. Find or use default plan
-      let plan: SaasPlan | null = null;
-      if (q.planId) {
-        plan = await manager.findOne(SaasPlan, { where: { id: q.planId } });
-      }
-      if (!plan) {
-        plan = await manager.findOne(SaasPlan, { where: { isActive: true }, order: { sortOrder: 'ASC' } });
-      }
-      if (!plan) throw new BadRequestException('No SaaS plan available for subscription');
+        // 4. Find or use default plan
+        let plan: SaasPlan | null = null;
+        if (q.planId) {
+          plan = await manager.findOne(SaasPlan, { where: { id: q.planId } });
+        }
+        if (!plan) {
+          plan = await manager.findOne(SaasPlan, {
+            where: { isActive: true },
+            order: { sortOrder: 'ASC' },
+          });
+        }
+        if (!plan) throw new BadRequestException('No SaaS plan available for subscription');
 
-      // 5. Create SaasSubscription
-      const now = new Date();
-      const interval = (q.billingInterval || 'monthly') as any;
-      const periodEnd = new Date(now);
-      if (interval === 'yearly') periodEnd.setFullYear(periodEnd.getFullYear() + 1);
-      else periodEnd.setMonth(periodEnd.getMonth() + 1);
-      const sub = manager.create(SaasSubscription, {
-        tenantId: tenant.id,
-        planId: plan.id,
-        status: 'active',
-        billingInterval: interval,
-        currency: q.currency,
-        unitPriceMinor: rev.totalMinor,
-        seats: q.seats,
-        startDate: now,
-        currentPeriodStart: now,
-        currentPeriodEnd: periodEnd,
-        nextRenewalAt: periodEnd,
-        autoRenew: true,
-        billingEmail: q.clientEmail,
-        billingName: q.clientName,
-        notes: `Auto-provisioned from quotation ${q.quotationNumber}`,
-      });
-      const savedSub = await manager.save(SaasSubscription, sub);
-
-      // 6. Align License
-      const existingLicense = await manager.findOne(License, { where: { tenantId: tenant.id } });
-      if (existingLicense) {
-        existingLicense.status = 'active';
-        existingLicense.maxUsers = plan.maxUsers ?? existingLicense.maxUsers;
-        existingLicense.expiresAt = periodEnd;
-        await manager.save(License, existingLicense);
-      } else {
-        const license = manager.create(License, {
+        // 5. Create SaasSubscription
+        const now = new Date();
+        const interval = (q.billingInterval || 'monthly') as BillingInterval;
+        const periodEnd = new Date(now);
+        if (interval === 'annual') periodEnd.setFullYear(periodEnd.getFullYear() + 1);
+        else periodEnd.setMonth(periodEnd.getMonth() + 1);
+        const sub = manager.create(SaasSubscription, {
           tenantId: tenant.id,
-          licenseType: (plan.tier === 'enterprise' ? 'enterprise' : plan.tier === 'professional' ? 'professional' : 'standard') as any,
+          planId: plan.id,
           status: 'active',
-          maxUsers: plan.maxUsers ?? 50,
-          enabledModules: plan.enabledModules ?? [],
-          expiresAt: periodEnd,
+          billingInterval: interval,
+          currency: q.currency,
+          unitPriceMinor: rev.totalMinor,
+          seats: q.seats,
+          startDate: now,
+          currentPeriodStart: now,
+          currentPeriodEnd: periodEnd,
+          nextRenewalAt: periodEnd,
+          autoRenew: true,
+          billingEmail: q.clientEmail,
+          billingName: q.clientName,
+          notes: `Auto-provisioned from quotation ${q.quotationNumber}`,
         });
-        await manager.save(License, license);
-      }
+        const savedSub = await manager.save(SaasSubscription, sub);
 
-      // 7. Auto-create Deployment if deploymentType is set
-      if (q.deploymentType) {
-        const deployType = q.deploymentType === 'standalone'
-          ? DeploymentType.ONPREMISE
-          : DeploymentType.HYBRID;
-        const deployment = manager.create(Deployment, {
-          tenantId: tenant.id,
-          deploymentType: deployType,
-          name: `${tenant.name} — ${deployType}`,
-          status: DeploymentStatus.PENDING,
-          apiEndpoint: q.deploymentDomain || `https://${tenant.slug}.glidehims.com`,
-          currentVersion: '1.0.0',
-          config: { provisionedFrom: 'quotation', quotationId: q.id },
+        // 6. Align License
+        const existingLicense = await manager.findOne(License, { where: { tenantId: tenant.id } });
+        if (existingLicense) {
+          existingLicense.status = 'active';
+          existingLicense.maxUsers = plan.maxUsers ?? existingLicense.maxUsers;
+          existingLicense.expiresAt = periodEnd;
+          await manager.save(License, existingLicense);
+        } else {
+          const license = manager.create(License, {
+            tenantId: tenant.id,
+            licenseType: plan.tier === 'enterprise'
+              ? 'enterprise'
+              : plan.tier === 'professional'
+                ? 'professional'
+                : 'standard',
+            status: 'active',
+            maxUsers: plan.maxUsers ?? 50,
+            enabledModules: plan.enabledModules ?? [],
+            expiresAt: periodEnd,
+          });
+          await manager.save(License, license);
+        }
+
+        // 7. Auto-create Deployment if deploymentType is set
+        if (q.deploymentType) {
+          const deployType =
+            q.deploymentType === 'standalone' ? DeploymentType.ONPREMISE : DeploymentType.HYBRID;
+          const deployment = manager.create(Deployment, {
+            tenantId: tenant.id,
+            deploymentType: deployType,
+            name: `${tenant.name} — ${deployType}`,
+            status: DeploymentStatus.PENDING,
+            apiEndpoint: q.deploymentDomain || `https://${tenant.slug}.glidehims.com`,
+            currentVersion: '1.0.0',
+            config: { provisionedFrom: 'quotation', quotationId: q.id },
+          });
+          const savedDeployment = await manager.save(Deployment, deployment);
+          q.deploymentId = savedDeployment.id;
+        }
+
+        // 8. Link back
+        q.subscriptionId = savedSub.id;
+        await manager.save(SaasQuotation, q);
+
+        return q;
+      })
+      .then(async (savedQ) => {
+        // Auto-create contract from quotation
+        try {
+          // Resolve tenantId from the subscription we just created
+          let tenantId: string | undefined;
+          if (savedQ.subscriptionId) {
+            const sub = await this.dataSource
+              .getRepository(SaasSubscription)
+              .findOne({ where: { id: savedQ.subscriptionId }, select: ['tenantId'] });
+            tenantId = sub?.tenantId ?? undefined;
+          }
+          const contract = await this.contractService.createContractFromQuotation(
+            savedQ.id,
+            undefined,
+            { tenantId, autoActivate: true },
+          );
+          if (contract) {
+            savedQ.contractId = contract.id;
+            await this.quotations.save(savedQ);
+          }
+        } catch (e) {
+          this.logger.warn(
+            `Auto-contract creation failed for quotation ${savedQ.id}: ${e?.message || e}`,
+          );
+        }
+        // After commit: emit events
+        this.events.emit('quotation.accepted', {
+          quotationId: savedQ.id,
+          subscriptionId: savedQ.subscriptionId,
         });
-        const savedDeployment = await manager.save(Deployment, deployment);
-        q.deploymentId = savedDeployment.id;
-      }
+        this.events.emit('subscription.created', { subscriptionId: savedQ.subscriptionId });
 
-      // 8. Link back
-      q.subscriptionId = savedSub.id;
-      await manager.save(SaasQuotation, q);
-
-      return q;
-    }).then(async (savedQ) => {
-      // Auto-create contract from quotation
-      try {
-        // Resolve tenantId from the subscription we just created
-        let tenantId: string | undefined;
-        if (savedQ.subscriptionId) {
-          const sub = await this.dataSource.getRepository(SaasSubscription)
-            .findOne({ where: { id: savedQ.subscriptionId }, select: ['tenantId'] });
-          tenantId = sub?.tenantId ?? undefined;
-        }
-        const contract = await this.contractService.createContractFromQuotation(
-          savedQ.id,
-          undefined,
-          { tenantId, autoActivate: true },
-        );
-        if (contract) {
-          savedQ.contractId = contract.id;
-          await this.quotations.save(savedQ);
-        }
-      } catch (e) {
-        this.logger.warn(`Auto-contract creation failed for quotation ${savedQ.id}: ${e?.message || e}`);
-      }
-      // After commit: emit events
-      this.events.emit('quotation.accepted', {
-        quotationId: savedQ.id,
-        subscriptionId: savedQ.subscriptionId,
+        return this.getQuotation(savedQ.id);
       });
-      this.events.emit('subscription.created', { subscriptionId: savedQ.subscriptionId });
-
-      return this.getQuotation(savedQ.id);
-    });
   }
 
   async rejectQuotation(id: string, reason?: string): Promise<SaasQuotation> {
@@ -502,7 +528,9 @@ export class QuotationService {
 
     q.status = 'rejected';
     q.rejectedAt = new Date();
-    if (reason) q.internalNotes = (q.internalNotes ? q.internalNotes + '\n' : '') + `Rejection reason: ${reason}`;
+    if (reason)
+      q.internalNotes =
+        (q.internalNotes ? q.internalNotes + '\n' : '') + `Rejection reason: ${reason}`;
     await this.quotations.save(q);
 
     this.events.emit('quotation.rejected', { quotationId: q.id, reason });
@@ -549,14 +577,24 @@ export class QuotationService {
     const q = await this.getQuotation(id);
     const rev = await this.getRevision(q.id, q.currentRevisionNumber);
     let vendor: VendorBillingSettings;
-    try { vendor = await this.saasRevenue.getVendorBilling(); }
-    catch { vendor = { legalName: 'Glide HIMS' }; }
+    try {
+      vendor = await this.saasRevenue.getVendorBilling();
+    } catch {
+      vendor = { legalName: 'Glide HIMS' };
+    }
 
     const fmt = (n: number) => fmtMoneyCurrency(n, q.currency);
     const fmtD = (d: any) => (d ? new Date(d).toISOString().slice(0, 10) : '—');
     const esc = this.esc;
     const lines = rev.lineItems || [];
-    const vendorAddr = [vendor.addressLine1, vendor.addressLine2, [vendor.city, vendor.country].filter(Boolean).join(', ')].filter(Boolean).map((l) => `<div>${esc(l)}</div>`).join('');
+    const vendorAddr = [
+      vendor.addressLine1,
+      vendor.addressLine2,
+      [vendor.city, vendor.country].filter(Boolean).join(', '),
+    ]
+      .filter(Boolean)
+      .map((l) => `<div>${esc(l)}</div>`)
+      .join('');
 
     return `<!doctype html>
 <html lang="en"><head>
@@ -657,29 +695,29 @@ export class QuotationService {
       quantity: d.quantity,
       unitPriceMinor: d.unitPriceMinor,
       amountMinor: d.quantity * d.unitPriceMinor,
-      category: (d.category as any) ?? 'module',
+      category: (d.category ?? 'module') as CatalogItemCategory,
     }));
   }
 
   private computeTotals(lineItems: QuotationLineItem[], q: SaasQuotation) {
     const subtotalMinor = lineItems.reduce((sum, l) => sum + l.amountMinor, 0);
 
-    const discountPct = parseFloat(q.discountPercent as any) || 0;
+    const discountPct = parseFloat(q.discountPercent) || 0;
     const discountFixed = q.discountFixedMinor || 0;
-    const discountMinor = Math.round(subtotalMinor * discountPct / 100) + discountFixed;
+    const discountMinor = Math.round((subtotalMinor * discountPct) / 100) + discountFixed;
 
     const afterDiscount = subtotalMinor - discountMinor;
 
     let taxMinor = 0;
     if (q.includeVat) {
-      const vatRate = parseFloat(q.vatRatePercent as any) || 0;
-      taxMinor = Math.round(afterDiscount * vatRate / 100);
+      const vatRate = parseFloat(q.vatRatePercent) || 0;
+      taxMinor = Math.round((afterDiscount * vatRate) / 100);
     }
 
     let whtMinor = 0;
     if (q.deductWht) {
-      const whtRate = parseFloat(q.whtRatePercent as any) || 0;
-      whtMinor = Math.round(afterDiscount * whtRate / 100);
+      const whtRate = parseFloat(q.whtRatePercent) || 0;
+      whtMinor = Math.round((afterDiscount * whtRate) / 100);
     }
 
     const totalMinor = afterDiscount + taxMinor - whtMinor;
@@ -705,8 +743,9 @@ export class QuotationService {
   }
 
   private esc(s: any): string {
-    return String(s ?? '').replace(/[&<>"']/g, (c) =>
-      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!),
+    return String(s ?? '').replace(
+      /[&<>"']/g,
+      (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,
     );
   }
 

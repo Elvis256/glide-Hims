@@ -1,13 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Patch,
-  Delete,
-  Body,
-  Param,
-  Request,
-} from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Request } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { SystemSettingsService } from '../../system-settings/system-settings.service';
 import { AuthWithPermissions } from '../../auth/decorators/auth.decorator';
@@ -19,7 +10,11 @@ const WEBHOOKS = 'integrations.webhooks';
 const EMAIL_TPL = 'integrations.email_templates';
 const SSO_CFG = 'integrations.sso';
 
-async function readArray(svc: SystemSettingsService, key: string, tenantId?: string): Promise<any[]> {
+async function readArray(
+  svc: SystemSettingsService,
+  key: string,
+  tenantId?: string,
+): Promise<any[]> {
   try {
     const rec = await svc.getByKey(key, tenantId);
     return Array.isArray(rec.value) ? rec.value : [];

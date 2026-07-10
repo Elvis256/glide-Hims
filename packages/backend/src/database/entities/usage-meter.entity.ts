@@ -1,4 +1,12 @@
-import { Entity, Column, ManyToOne, JoinColumn, Index, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import {
+  Entity,
+  Column,
+  ManyToOne,
+  JoinColumn,
+  Index,
+  CreateDateColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Tenant } from './tenant.entity';
 
@@ -25,8 +33,8 @@ export enum UsageAggregationPeriod {
  * One record per event (granular tracking)
  */
 @Entity('usage_meter_event')
-@Index(['tenantId', 'metricType', 'createdAt'], { name: 'idx_usage_tenant_metric_time' })
-@Index(['tenantId', 'metricType'], { name: 'idx_usage_tenant_metric' })
+@Index('idx_usage_tenant_metric_time', ['tenantId', 'metricType', 'createdAt'])
+@Index('idx_usage_tenant_metric', ['tenantId', 'metricType'])
 export class UsageMeterEvent extends BaseEntity {
   @Column({ type: 'uuid', name: 'tenant_id' })
   tenantId: string;
@@ -63,10 +71,8 @@ export class UsageMeterEvent extends BaseEntity {
  * Pre-aggregated for faster queries (dashboard, billing)
  */
 @Entity('usage_meter_aggregate')
-@Index(['tenantId', 'metricType', 'period', 'periodStart'], {
-  name: 'idx_usage_aggregate_tenant_metric_period',
-})
-@Index(['tenantId', 'periodStart'], { name: 'idx_usage_aggregate_tenant_time' })
+@Index('idx_usage_aggregate_tenant_metric_period', ['tenantId', 'metricType', 'period', 'periodStart'])
+@Index('idx_usage_aggregate_tenant_time', ['tenantId', 'periodStart'])
 export class UsageMeterAggregate extends BaseEntity {
   @Column({ type: 'uuid', name: 'tenant_id' })
   tenantId: string;
@@ -115,7 +121,7 @@ export class UsageMeterAggregate extends BaseEntity {
  * Enforced against actual usage
  */
 @Entity('usage_quota')
-@Index(['tenantId', 'metricType'], { name: 'idx_quota_tenant_metric' })
+@Index('idx_quota_tenant_metric', ['tenantId', 'metricType'])
 export class UsageQuota extends BaseEntity {
   @Column({ type: 'uuid', name: 'tenant_id' })
   tenantId: string;
@@ -158,8 +164,8 @@ export class UsageQuota extends BaseEntity {
  * Track when tenants hit limits
  */
 @Entity('usage_alert')
-@Index(['tenantId', 'metricType', 'createdAt'], { name: 'idx_alert_tenant_metric_time' })
-@Index(['tenantId', 'resolvedAt'], { name: 'idx_alert_tenant_resolved' })
+@Index('idx_alert_tenant_metric_time', ['tenantId', 'metricType', 'createdAt'])
+@Index('idx_alert_tenant_resolved', ['tenantId', 'resolvedAt'])
 export class UsageAlert extends BaseEntity {
   @Column({ type: 'uuid', name: 'tenant_id' })
   tenantId: string;

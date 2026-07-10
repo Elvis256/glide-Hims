@@ -26,8 +26,12 @@ export class ClientHealthScores1782900000040 implements MigrationInterface {
         "updatedAt"           TIMESTAMPTZ NOT NULL DEFAULT now()
       );
     `);
-    await queryRunner.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_health_tenant ON client_health_scores (tenant_id);`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_health_status ON client_health_scores ("healthStatus");`);
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_health_tenant ON client_health_scores (tenant_id);`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_health_status ON client_health_scores ("healthStatus");`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

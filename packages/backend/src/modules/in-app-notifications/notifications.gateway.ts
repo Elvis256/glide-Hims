@@ -39,7 +39,7 @@ export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisco
     try {
       const token =
         (client.handshake.auth?.token as string) || (client.handshake.query?.token as string);
-      
+
       // Allow connection without token (will be limited functionality)
       // but prioritize authenticated connections
       if (token) {
@@ -58,7 +58,7 @@ export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisco
           this.logger.warn(`JWT verification failed: ${error.message}`);
         }
       }
-      
+
       // Allow unauthenticated connections but mark them
       client.data.userId = `anonymous:${client.id}`;
       this.logger.log(`Client connected (unauthenticated): ${client.id}`);

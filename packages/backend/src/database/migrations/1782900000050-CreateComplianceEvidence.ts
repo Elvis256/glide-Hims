@@ -24,11 +24,21 @@ export class CreateComplianceEvidence1782900000050 implements MigrationInterface
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_compliance_evidence_tenant_id" ON "compliance_evidence" ("tenant_id")`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_compliance_evidence_framework" ON "compliance_evidence" ("framework")`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_compliance_evidence_control_id" ON "compliance_evidence" ("control_id")`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_compliance_evidence_status" ON "compliance_evidence" ("status")`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_compliance_evidence_collected_at" ON "compliance_evidence" ("collected_at")`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_compliance_evidence_tenant_id" ON "compliance_evidence" ("tenant_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_compliance_evidence_framework" ON "compliance_evidence" ("framework")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_compliance_evidence_control_id" ON "compliance_evidence" ("control_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_compliance_evidence_status" ON "compliance_evidence" ("status")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_compliance_evidence_collected_at" ON "compliance_evidence" ("collected_at")`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

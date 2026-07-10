@@ -1,7 +1,10 @@
 import { Injectable, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { ProcurementApprovalChain, ApprovalChainStatus } from '../../database/entities/procurement-approval-chain.entity';
+import {
+  ProcurementApprovalChain,
+  ApprovalChainStatus,
+} from '../../database/entities/procurement-approval-chain.entity';
 import { PurchaseRequest } from '../../database/entities/purchase-request.entity';
 import { PurchaseOrder } from '../../database/entities/purchase-order.entity';
 
@@ -35,9 +38,10 @@ export class ApprovalDashboardService {
 
     const result = [];
     for (const chain of chains) {
-      const doc = chain.documentType === 'PR'
-        ? await this.prRepository.findOne({ where: { id: chain.documentId } })
-        : await this.poRepository.findOne({ where: { id: chain.documentId } });
+      const doc =
+        chain.documentType === 'PR'
+          ? await this.prRepository.findOne({ where: { id: chain.documentId } })
+          : await this.poRepository.findOne({ where: { id: chain.documentId } });
 
       if (!doc || (facilityId && doc.facilityId !== facilityId)) {
         continue;
@@ -46,8 +50,14 @@ export class ApprovalDashboardService {
       result.push({
         documentId: chain.documentId,
         documentType: chain.documentType,
-        documentNumber: chain.documentType === 'PR' ? (doc as PurchaseRequest).requestNumber : (doc as PurchaseOrder).orderNumber,
-        amount: chain.documentType === 'PR' ? (doc as PurchaseRequest).totalEstimated : (doc as PurchaseOrder).totalAmount,
+        documentNumber:
+          chain.documentType === 'PR'
+            ? (doc as PurchaseRequest).requestNumber
+            : (doc as PurchaseOrder).orderNumber,
+        amount:
+          chain.documentType === 'PR'
+            ? (doc as PurchaseRequest).totalEstimated
+            : (doc as PurchaseOrder).totalAmount,
         createdAt: doc.createdAt,
         level: chain.approvalLevel,
         requiredRole: chain.requiredRole,
@@ -83,7 +93,9 @@ export class ApprovalDashboardService {
       level: chain.approvalLevel,
       requiredRole: chain.requiredRole,
       status: chain.status,
-      approver: chain.approver ? { id: chain.approver.id, fullName: chain.approver.fullName } : null,
+      approver: chain.approver
+        ? { id: chain.approver.id, fullName: chain.approver.fullName }
+        : null,
       approvedBy: chain.approvedBy
         ? { id: chain.approvedBy.id, fullName: chain.approvedBy.fullName }
         : null,
@@ -108,9 +120,10 @@ export class ApprovalDashboardService {
     const levelStats = new Map<number, { totalDays: number; count: number }>();
 
     for (const chain of chains) {
-      const doc = chain.documentType === 'PR'
-        ? await this.prRepository.findOne({ where: { id: chain.documentId } })
-        : await this.poRepository.findOne({ where: { id: chain.documentId } });
+      const doc =
+        chain.documentType === 'PR'
+          ? await this.prRepository.findOne({ where: { id: chain.documentId } })
+          : await this.poRepository.findOne({ where: { id: chain.documentId } });
 
       if (!doc || doc.facilityId !== facilityId) {
         continue;
@@ -166,9 +179,10 @@ export class ApprovalDashboardService {
     const escalations = [];
     for (const chain of chains) {
       if (new Date(chain.createdAt) < cutoffDate) {
-        const doc = chain.documentType === 'PR'
-          ? await this.prRepository.findOne({ where: { id: chain.documentId } })
-          : await this.poRepository.findOne({ where: { id: chain.documentId } });
+        const doc =
+          chain.documentType === 'PR'
+            ? await this.prRepository.findOne({ where: { id: chain.documentId } })
+            : await this.poRepository.findOne({ where: { id: chain.documentId } });
 
         if (!doc || doc.facilityId !== facilityId) {
           continue;
@@ -177,14 +191,22 @@ export class ApprovalDashboardService {
         escalations.push({
           documentId: chain.documentId,
           documentType: chain.documentType,
-          documentNumber: chain.documentType === 'PR' ? (doc as PurchaseRequest).requestNumber : (doc as PurchaseOrder).orderNumber,
-          amount: chain.documentType === 'PR' ? (doc as PurchaseRequest).totalEstimated : (doc as PurchaseOrder).totalAmount,
+          documentNumber:
+            chain.documentType === 'PR'
+              ? (doc as PurchaseRequest).requestNumber
+              : (doc as PurchaseOrder).orderNumber,
+          amount:
+            chain.documentType === 'PR'
+              ? (doc as PurchaseRequest).totalEstimated
+              : (doc as PurchaseOrder).totalAmount,
           level: chain.approvalLevel,
           requiredRole: chain.requiredRole,
           daysPending: Math.floor(
             (Date.now() - new Date(chain.createdAt).getTime()) / (1000 * 60 * 60 * 24),
           ),
-          approver: chain.approver ? { id: chain.approver.id, fullName: chain.approver.fullName } : null,
+          approver: chain.approver
+            ? { id: chain.approver.id, fullName: chain.approver.fullName }
+            : null,
         });
       }
     }
@@ -228,9 +250,7 @@ export class ApprovalDashboardService {
     }
 
     // Get bottlenecks and escalations
-    const bottlenecks = facilityId
-      ? await this.getApprovalBottlenecks(facilityId, tenantId)
-      : [];
+    const bottlenecks = facilityId ? await this.getApprovalBottlenecks(facilityId, tenantId) : [];
     const escalations = facilityId
       ? await this.getEscalationCandidates(facilityId, 5, tenantId)
       : [];
@@ -247,9 +267,10 @@ export class ApprovalDashboardService {
     let approvedCount = 0;
 
     for (const chain of approvedChains) {
-      const doc = chain.documentType === 'PR'
-        ? await this.prRepository.findOne({ where: { id: chain.documentId } })
-        : await this.poRepository.findOne({ where: { id: chain.documentId } });
+      const doc =
+        chain.documentType === 'PR'
+          ? await this.prRepository.findOne({ where: { id: chain.documentId } })
+          : await this.poRepository.findOne({ where: { id: chain.documentId } });
 
       if (doc && (!facilityId || doc.facilityId === facilityId)) {
         const days = Math.floor(

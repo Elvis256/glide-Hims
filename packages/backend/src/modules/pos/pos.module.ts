@@ -19,10 +19,7 @@ import {
   PricingTier,
   Delivery,
 } from '../../database/entities/pos.entity';
-import {
-  PosCashDrawerEvent,
-  PosZReport,
-} from '../../database/entities/pos-compliance.entity';
+import { PosCashDrawerEvent, PosZReport } from '../../database/entities/pos-compliance.entity';
 import {
   PharmacyReturn,
   PharmacyReturnItem,
@@ -33,11 +30,7 @@ import {
   ReceiptReprint,
 } from '../../database/entities/pos-retail.entity';
 import { PharmacySale, PharmacySaleItem } from '../../database/entities/pharmacy-sale.entity';
-import {
-  Item,
-  StockBalance,
-  StockLedger,
-} from '../../database/entities/inventory.entity';
+import { Item, StockBalance, StockLedger } from '../../database/entities/inventory.entity';
 import { EfrisModule } from '../efris/efris.module';
 import { SystemSettingsModule } from '../system-settings/system-settings.module';
 import { FinanceModule } from '../finance/finance.module';
@@ -75,7 +68,20 @@ import { PosRetailEventListener } from './pos-retail.listener';
     ]),
   ],
   controllers: [PosController, PosComplianceController, PosRetailController],
-  providers: [PosService, PosComplianceService, PosShiftGuardService, PosRetailService, PosRetailEventListener, PosMomoService],
-  exports: [PosService, PosComplianceService, PosShiftGuardService, PosRetailService, PosMomoService],
+  providers: [
+    PosService,
+    PosComplianceService,
+    PosShiftGuardService,
+    PosRetailService,
+    PosRetailEventListener,
+    PosMomoService,
+  ],
+  exports: [
+    PosService,
+    PosComplianceService,
+    PosShiftGuardService,
+    PosRetailService,
+    PosMomoService,
+  ],
 })
 export class PosModule {}

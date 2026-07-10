@@ -1,13 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Param,
-  Query,
-  Body,
-  Request,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Post, Param, Query, Body, Request, UseGuards } from '@nestjs/common';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
@@ -66,11 +57,6 @@ export class BatchRecallController {
   @Post(':id/complete')
   @AuthWithPermissions('inventory.create')
   async completeRecall(@Param('id') id: string, @Body() dto: any, @Request() req: any) {
-    return this.batchRecallService.completeRecall(
-      id,
-      req.user?.id,
-      dto?.notes,
-      req.user?.tenantId,
-    );
+    return this.batchRecallService.completeRecall(id, req.user?.id, dto?.notes, req.user?.tenantId);
   }
 }

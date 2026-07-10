@@ -33,6 +33,7 @@ import {
   Item,
 } from '../../database/entities/inventory.entity';
 import { ItemCategory } from '../../database/entities/item-classification.entity';
+import { AuditLog } from '../../database/entities/audit-log.entity';
 import { Supplier, SupplierStatus } from '../../database/entities/supplier.entity';
 import {
   VendorQuotation,
@@ -301,12 +302,12 @@ export class ProcurementService {
       }
     }
 
-    if (dto.departmentId !== undefined) pr.departmentId = dto.departmentId || (null as any);
+    if (dto.departmentId !== undefined) pr.departmentId = dto.departmentId || undefined;
     if (dto.priority !== undefined) pr.priority = dto.priority;
     if (dto.justification !== undefined) pr.justification = dto.justification;
     if (dto.notes !== undefined) pr.notes = dto.notes;
     if (dto.requiredDate !== undefined) {
-      pr.requiredDate = dto.requiredDate ? new Date(dto.requiredDate) : (undefined as any);
+      pr.requiredDate = dto.requiredDate ? new Date(dto.requiredDate) : undefined;
     }
 
     if (dto.items) {
@@ -331,40 +332,50 @@ export class ProcurementService {
         }
       }
 
-      await this.prItemRepo.delete({ purchaseRequestId: prId });
-
-      const newItems = dto.items.map((item) =>
-        this.prItemRepo.create({
-          purchaseRequestId: prId,
-          itemId: item.itemId,
-          itemCode: item.itemCode,
-          itemName: item.itemName,
-          itemUnit: item.itemUnit || 'unit',
-          quantityRequested: item.quantityRequested,
-          unitPriceEstimated: item.unitPriceEstimated || 0,
-          specifications: item.specifications,
-          notes: item.notes,
-          ...(tenantId || (pr as any).tenantId
-            ? { tenantId: tenantId || (pr as any).tenantId }
-            : {}),
-        }),
-      );
-      await this.prItemRepo.save(newItems);
-
       pr.totalEstimated = dto.items.reduce(
         (sum, i) => sum + i.quantityRequested * Number(i.unitPriceEstimated || 0),
         0,
       );
     }
 
-    await this.prRepo.update(prId, {
-      departmentId: pr.departmentId,
-      priority: pr.priority,
-      justification: pr.justification,
-      notes: pr.notes,
-      requiredDate: pr.requiredDate,
-      totalEstimated: pr.totalEstimated,
+    // Wrap header update + item replace in a single transaction so we never
+    // persist a PR with missing items if the insert fails (audit BUG-002).
+    await this.dataSource.transaction(async (manager) => {
+      const prRepo = manager.getRepository(PurchaseRequest);
+      const prItemRepo = manager.getRepository(PurchaseRequestItem);
+
+      await prRepo.update(prId, {
+        departmentId: pr.departmentId,
+        priority: pr.priority,
+        justification: pr.justification,
+        notes: pr.notes,
+        requiredDate: pr.requiredDate,
+        totalEstimated: pr.totalEstimated,
+      });
+
+      if (dto.items) {
+        await prItemRepo.delete({ purchaseRequestId: prId });
+
+        const newItems = dto.items.map((item) =>
+          prItemRepo.create({
+            purchaseRequestId: prId,
+            itemId: item.itemId,
+            itemCode: item.itemCode,
+            itemName: item.itemName,
+            itemUnit: item.itemUnit || 'unit',
+            quantityRequested: item.quantityRequested,
+            unitPriceEstimated: item.unitPriceEstimated || 0,
+            specifications: item.specifications,
+            notes: item.notes,
+            ...(tenantId || pr.tenantId
+              ? { tenantId: tenantId || pr.tenantId }
+              : {}),
+          }),
+        );
+        await prItemRepo.save(newItems);
+      }
     });
+
     this.logger.log(`Updated PR ${pr.requestNumber}`);
     return this.getPurchaseRequest(prId, tenantId);
   }
@@ -379,7 +390,7 @@ export class ProcurementService {
     tenantId?: string,
   ): Promise<PurchaseRequest> {
     const pr = await this.getPurchaseRequest(prId, tenantId);
-    
+
     if (pr.status !== PRStatus.DRAFT) {
       throw new BadRequestException(
         `Cannot add items to PR in ${pr.status} status. Only DRAFT PRs can be modified.`,
@@ -421,9 +432,7 @@ export class ProcurementService {
         unitPriceEstimated: item.unitPriceEstimated || 0,
         specifications: item.specifications,
         notes: item.notes,
-        ...(tenantId || (pr as any).tenantId
-          ? { tenantId: tenantId || (pr as any).tenantId }
-          : {}),
+        ...(tenantId || pr.tenantId ? { tenantId: tenantId || pr.tenantId } : {}),
       }),
     );
 
@@ -499,10 +508,7 @@ export class ProcurementService {
     }
 
     // Update item
-    await this.prItemRepo.update(
-      { purchaseRequestId: prId, id: itemId },
-      updates,
-    );
+    await this.prItemRepo.update({ purchaseRequestId: prId, id: itemId }, updates);
 
     // Recalculate total
     const allItems = await this.prItemRepo.find({ where: { purchaseRequestId: prId } });
@@ -611,9 +617,7 @@ export class ProcurementService {
           category: (pr as any).category || null,
         });
       } catch (error) {
-        this.logger.warn(
-          `Failed to create approval chain for PR ${pr.id}: ${error.message}`,
-        );
+        this.logger.warn(`Failed to create approval chain for PR ${pr.id}: ${error.message}`);
         // Don't fail PR submission if approval chain fails
       }
 
@@ -696,9 +700,9 @@ export class ProcurementService {
       const acceptedRoles = synonyms[requiredRoleLower] || [requiredRoleLower, 'super admin'];
 
       let matched = false;
-      if ((nextChain as any).approverId) {
+      if (nextChain.approverId) {
         // Specific user routing: only that user (or Super Admin) can approve.
-        matched = (nextChain as any).approverId === userId || isSuperAdmin;
+        matched = nextChain.approverId === userId || isSuperAdmin;
         if (!matched) {
           throw new BadRequestException(
             `This approval is assigned to a specific user. You are not the designated approver.`,
@@ -750,7 +754,8 @@ export class ProcurementService {
               );
             }
             item.quantityApproved = approved.quantityApproved;
-            totalEstimatedApproved += approved.quantityApproved * Number(item.unitPriceEstimated || 0);
+            totalEstimatedApproved +=
+              approved.quantityApproved * Number(item.unitPriceEstimated || 0);
           }
         }
       } else {
@@ -773,9 +778,7 @@ export class ProcurementService {
           throw error;
         }
         // Log but don't fail if budget service unavailable (e.g., no budget configured)
-        this.logger.warn(
-          `Budget validation skipped for PR ${id}: ${error.message}`,
-        );
+        this.logger.warn(`Budget validation skipped for PR ${id}: ${error.message}`);
       }
 
       await prItemRepo.save(pr.items);
@@ -845,7 +848,7 @@ export class ProcurementService {
       pr.approvedById = userId;
       pr.approvedAt = new Date();
       pr.rejectionReason = dto.rejectionReason;
-      
+
       // Phase 3: Log rejection for audit trail
       try {
         await this.auditService.logPRReject({
@@ -888,176 +891,179 @@ export class ProcurementService {
         const poItemRepo = manager.getRepository(PurchaseOrderItem);
         const chainRepo = manager.getRepository(ProcurementApprovalChain);
 
-      // Validate facility exists
-      const facilityWhere: any = { id: dto.facilityId };
-      if (tenantId) facilityWhere.tenantId = tenantId;
-      const facility = await facilityRepo.findOne({ where: facilityWhere });
-      if (!facility) {
-        throw new BadRequestException('Facility not found or does not belong to this tenant');
-      }
-
-      // Validate department exists (if provided for direct PO)
-      if (dto.departmentId) {
-        const deptWhere: any = { id: dto.departmentId };
-        if (tenantId) deptWhere.tenantId = tenantId;
-        const department = await deptRepo.findOne({ where: deptWhere });
-        if (!department) {
-          throw new BadRequestException('Department not found or does not belong to this tenant');
+        // Validate facility exists
+        const facilityWhere: any = { id: dto.facilityId };
+        if (tenantId) facilityWhere.tenantId = tenantId;
+        const facility = await facilityRepo.findOne({ where: facilityWhere });
+        if (!facility) {
+          throw new BadRequestException('Facility not found or does not belong to this tenant');
         }
-      }
 
-      // Verify supplier is active before creating PO
-      const supplier = await this.supplierRepo.findOne({
-        where: { id: dto.supplierId, ...(tenantId ? { tenantId } : {}) },
-      });
-      if (!supplier) throw new NotFoundException('Supplier not found');
-      if (supplier.status !== SupplierStatus.ACTIVE) {
-        throw new BadRequestException(
-          `Cannot create PO for ${supplier.status} supplier. Only active suppliers are allowed.`,
-        );
-      }
-
-      const orderNumber = await this.generatePONumber(dto.facilityId, tenantId);
-
-      // Calculate totals
-      let subtotal = 0;
-      let taxAmount = 0;
-      let discountAmount = 0;
-
-      const itemsWithTotals = dto.items.map((item) => {
-        const lineGross = item.quantityOrdered * item.unitPrice;
-        const lineDiscount = (lineGross * (item.discountPercent || 0)) / 100;
-        const lineNet = lineGross - lineDiscount;
-        const lineTax = (lineNet * (item.taxRate || 0)) / 100;
-        const lineTotal = lineNet + lineTax;
-
-        subtotal += lineNet;
-        taxAmount += lineTax;
-        discountAmount += lineDiscount;
-
-        return { ...item, lineTotal };
-      });
-
-      const totalAmount = subtotal + taxAmount;
-
-      // Phase 2: Budget Validation for Direct PO
-      try {
-        await this.budgetService.validateBudgetSufficient(dto.facilityId, totalAmount, tenantId);
-      } catch (error) {
-        if (error instanceof BadRequestException) {
-          throw error;
+        // Validate department exists (if provided for direct PO)
+        if (dto.departmentId) {
+          const deptWhere: any = { id: dto.departmentId };
+          if (tenantId) deptWhere.tenantId = tenantId;
+          const department = await deptRepo.findOne({ where: deptWhere });
+          if (!department) {
+            throw new BadRequestException('Department not found or does not belong to this tenant');
+          }
         }
-        // Log but don't fail if budget service unavailable (graceful degradation)
-        this.logger.warn(
-          `Budget validation skipped for PO ${orderNumber}: ${error.message}`,
-        );
-      }
 
-      // Phase 3: Supplier Risk Validation
-      const { allowed: supplierAllowed, warnings: supplierWarnings } =
-        await this.supplierRiskService.validateSupplierForOrder(
-          dto.supplierId,
-          dto.facilityId,
+        // Verify supplier is active before creating PO
+        const supplier = await this.supplierRepo.findOne({
+          where: { id: dto.supplierId, ...(tenantId ? { tenantId } : {}) },
+        });
+        if (!supplier) throw new NotFoundException('Supplier not found');
+        if (supplier.status !== SupplierStatus.ACTIVE) {
+          throw new BadRequestException(
+            `Cannot create PO for ${supplier.status} supplier. Only active suppliers are allowed.`,
+          );
+        }
+
+        const orderNumber = await this.generatePONumber(dto.facilityId, tenantId);
+
+        // Calculate totals
+        let subtotal = 0;
+        let taxAmount = 0;
+        let discountAmount = 0;
+
+        const itemsWithTotals = dto.items.map((item) => {
+          const lineGross = item.quantityOrdered * item.unitPrice;
+          const lineDiscount = (lineGross * (item.discountPercent || 0)) / 100;
+          const lineNet = lineGross - lineDiscount;
+          const lineTax = (lineNet * (item.taxRate || 0)) / 100;
+          const lineTotal = lineNet + lineTax;
+
+          subtotal += lineNet;
+          taxAmount += lineTax;
+          discountAmount += lineDiscount;
+
+          return { ...item, lineTotal };
+        });
+
+        const totalAmount = subtotal + taxAmount;
+
+        // Phase 2: Budget Validation for Direct PO
+        try {
+          await this.budgetService.validateBudgetSufficient(dto.facilityId, totalAmount, tenantId);
+        } catch (error) {
+          if (error instanceof BadRequestException) {
+            throw error;
+          }
+          // Log but don't fail if budget service unavailable (graceful degradation)
+          this.logger.warn(`Budget validation skipped for PO ${orderNumber}: ${error.message}`);
+        }
+
+        // Phase 3: Supplier Risk Validation
+        const { allowed: supplierAllowed, warnings: supplierWarnings } =
+          await this.supplierRiskService.validateSupplierForOrder(
+            dto.supplierId,
+            dto.facilityId,
+            totalAmount,
+            tenantId,
+          );
+
+        if (!supplierAllowed) {
+          throw new BadRequestException(`Cannot create PO: ${supplierWarnings.join('; ')}`);
+        }
+
+        if (supplierWarnings.length > 0) {
+          this.logger.warn(
+            `Supplier risk warnings for PO ${orderNumber}: ${supplierWarnings.join('; ')}`,
+          );
+        }
+
+        // Check for RFQ requirement
+        const rfqRequired = this.supplierRiskService.isRFQRequired(totalAmount);
+        if (rfqRequired) {
+          this.logger.warn(
+            `PO ${orderNumber} amount ($${totalAmount.toLocaleString()}) exceeds RFQ threshold. Competitive bidding recommended.`,
+          );
+        }
+
+        const po = poRepo.create({
+          orderNumber,
+          facilityId: dto.facilityId,
+          departmentId: dto.departmentId,
+          costCenterId: dto.costCenterId,
+          supplierId: dto.supplierId,
+          purchaseRequestId: dto.purchaseRequestId,
+          orderDate: dto.orderDate ? new Date(dto.orderDate) : new Date(),
+          expectedDelivery: dto.expectedDelivery ? new Date(dto.expectedDelivery) : undefined,
+          paymentTerms: dto.paymentTerms,
+          deliveryAddress: dto.deliveryAddress,
+          subtotal,
+          taxAmount,
+          discountAmount,
           totalAmount,
-          tenantId,
-        );
-
-      if (!supplierAllowed) {
-        throw new BadRequestException(
-          `Cannot create PO: ${supplierWarnings.join('; ')}`,
-        );
-      }
-
-      if (supplierWarnings.length > 0) {
-        this.logger.warn(
-          `Supplier risk warnings for PO ${orderNumber}: ${supplierWarnings.join('; ')}`,
-        );
-      }
-
-      // Check for RFQ requirement
-      const rfqRequired = this.supplierRiskService.isRFQRequired(totalAmount);
-      if (rfqRequired) {
-        this.logger.warn(
-          `PO ${orderNumber} amount ($${totalAmount.toLocaleString()}) exceeds RFQ threshold. Competitive bidding recommended.`,
-        );
-      }
-
-      const po = poRepo.create({
-        orderNumber,
-        facilityId: dto.facilityId,
-        departmentId: dto.departmentId,
-        costCenterId: dto.costCenterId,
-        supplierId: dto.supplierId,
-        purchaseRequestId: dto.purchaseRequestId,
-        orderDate: dto.orderDate ? new Date(dto.orderDate) : new Date(),
-        expectedDelivery: dto.expectedDelivery ? new Date(dto.expectedDelivery) : undefined,
-        paymentTerms: dto.paymentTerms,
-        deliveryAddress: dto.deliveryAddress,
-        subtotal,
-        taxAmount,
-        discountAmount,
-        totalAmount,
-        terms: dto.terms,
-        notes: dto.notes,
-        emergencyJustification: dto.emergencyJustification,
-        status: POStatus.DRAFT,
-        createdById: userId,
-        createdFrom: 'manual',
-        ...(tenantId ? { tenantId } : {}),
-      });
-
-      const savedPO = await poRepo.save(po);
-
-      // Create items
-      const items = itemsWithTotals.map((item) =>
-        poItemRepo.create({
-          purchaseOrderId: (savedPO as PurchaseOrder).id,
-          itemId: item.itemId,
-          itemCode: item.itemCode,
-          itemName: item.itemName,
-          itemUnit: item.itemUnit || 'unit',
-          quantityOrdered: item.quantityOrdered,
-          unitPrice: item.unitPrice,
-          taxRate: item.taxRate || 0,
-          discountPercent: item.discountPercent || 0,
-          lineTotal: item.lineTotal,
-          notes: item.notes,
+          terms: dto.terms,
+          notes: dto.notes,
+          emergencyJustification: dto.emergencyJustification,
+          status: POStatus.DRAFT,
+          createdById: userId,
+          createdFrom: 'manual',
           ...(tenantId ? { tenantId } : {}),
-        }),
-      );
+        });
 
-      await poItemRepo.save(items);
+        const savedPO = await poRepo.save(po);
 
-      // Phase 2: Create Approval Chain (org-aware resolver if configured,
-      // legacy tier ladder fallback)
-      try {
-        await this.createApprovalChain(
-          (savedPO as PurchaseOrder).id,
-          'PO',
-          totalAmount,
-          dto.facilityId,
-          tenantId,
-          {
-            requesterId: userId,
-            departmentId: dto.departmentId || null,
-            category: null,
-          },
+        // Create items
+        const items = itemsWithTotals.map((item) =>
+          poItemRepo.create({
+            purchaseOrderId: (savedPO as PurchaseOrder).id,
+            itemId: item.itemId,
+            itemCode: item.itemCode,
+            itemName: item.itemName,
+            itemUnit: item.itemUnit || 'unit',
+            quantityOrdered: item.quantityOrdered,
+            unitPrice: item.unitPrice,
+            taxRate: item.taxRate || 0,
+            discountPercent: item.discountPercent || 0,
+            lineTotal: item.lineTotal,
+            notes: item.notes,
+            ...(tenantId ? { tenantId } : {}),
+          }),
         );
-      } catch (error) {
-        this.logger.warn(
-          `Failed to create approval chain for PO ${orderNumber}: ${error.message}`,
-        );
-      }
 
-      // Re-fetch within the active transaction so relations are loaded
-      // from the same connection that just wrote the rows (otherwise a
-      // default-pool read can miss the uncommitted insert and 404).
-      const fetched = await poRepo.findOne({
-        where: { id: (savedPO as PurchaseOrder).id, deletedAt: IsNull() },
-        relations: ['items', 'supplier', 'purchaseRequest', 'createdBy', 'approvedBy', 'facility'],
-      });
-      if (!fetched) throw new NotFoundException('Purchase order not found');
-      return fetched;
+        await poItemRepo.save(items);
+
+        // Phase 2: Create Approval Chain (org-aware resolver if configured,
+        // legacy tier ladder fallback)
+        try {
+          await this.createApprovalChain(
+            (savedPO as PurchaseOrder).id,
+            'PO',
+            totalAmount,
+            dto.facilityId,
+            tenantId,
+            {
+              requesterId: userId,
+              departmentId: dto.departmentId || null,
+              category: null,
+            },
+          );
+        } catch (error) {
+          this.logger.warn(
+            `Failed to create approval chain for PO ${orderNumber}: ${error.message}`,
+          );
+        }
+
+        // Re-fetch within the active transaction so relations are loaded
+        // from the same connection that just wrote the rows (otherwise a
+        // default-pool read can miss the uncommitted insert and 404).
+        const fetched = await poRepo.findOne({
+          where: { id: (savedPO as PurchaseOrder).id, deletedAt: IsNull() },
+          relations: [
+            'items',
+            'supplier',
+            'purchaseRequest',
+            'createdBy',
+            'approvedBy',
+            'facility',
+          ],
+        });
+        if (!fetched) throw new NotFoundException('Purchase order not found');
+        return fetched;
       }),
     );
   }
@@ -1327,11 +1333,17 @@ export class ProcurementService {
             'Segregation of duties: the PO creator cannot approve their own purchase order',
           );
         }
-        this.logger.warn(`Super Admin self-approval: user ${userId} approving own PO ${po.orderNumber}`);
+        this.logger.warn(
+          `Super Admin self-approval: user ${userId} approving own PO ${po.orderNumber}`,
+        );
       }
 
       // Phase 2C: Get next pending approval in chain (if any)
-      const chainWhere: any = { documentId: id, documentType: 'PO', status: ApprovalChainStatus.PENDING };
+      const chainWhere: any = {
+        documentId: id,
+        documentType: 'PO',
+        status: ApprovalChainStatus.PENDING,
+      };
       if (tenantId) chainWhere.tenantId = tenantId;
 
       const nextChain = await chainRepo.findOne({
@@ -1343,8 +1355,8 @@ export class ProcurementService {
         // Multi-level approval workflow is configured for this PO
         // Verify user has required role
         const userRolesList = userRoles || (await this.usersService.getUserRoles(userId, tenantId));
-        const userRoleNames = (userRolesList as any[]).map((r: any) => 
-          typeof r === 'string' ? r.toLowerCase() : r.name?.toLowerCase() || ''
+        const userRoleNames = (userRolesList as any[]).map((r: any) =>
+          typeof r === 'string' ? r.toLowerCase() : r.name?.toLowerCase() || '',
         );
         const requiredRoleLower = nextChain.requiredRole.toLowerCase();
 
@@ -1358,8 +1370,8 @@ export class ProcurementService {
         const acceptedRoles = synonyms[requiredRoleLower] || [requiredRoleLower, 'super admin'];
         const isSuperAdminUser = userRoleNames.includes('super admin');
 
-        if ((nextChain as any).approverId) {
-          if ((nextChain as any).approverId !== userId && !isSuperAdminUser) {
+        if (nextChain.approverId) {
+          if (nextChain.approverId !== userId && !isSuperAdminUser) {
             throw new BadRequestException(
               `This approval is assigned to a specific user. You are not the designated approver.`,
             );
@@ -1403,7 +1415,9 @@ export class ProcurementService {
           po.status = POStatus.APPROVED;
           po.approvedById = userId;
           po.approvedAt = new Date();
-          this.logger.log(`PO ${id} fully approved after ${nextChain.approvalLevel} approval levels`);
+          this.logger.log(
+            `PO ${id} fully approved after ${nextChain.approvalLevel} approval levels`,
+          );
         } else {
           // More approvals needed → stay PENDING_APPROVAL
           po.status = POStatus.PENDING_APPROVAL;
@@ -1445,23 +1459,78 @@ export class ProcurementService {
     });
   }
 
-  async sendPurchaseOrder(id: string, tenantId?: string): Promise<PurchaseOrder> {
-    const po = await this.getPurchaseOrder(id, tenantId);
-    if (po.status !== POStatus.APPROVED) {
-      throw new BadRequestException('PO must be approved before sending');
-    }
-    po.status = POStatus.SENT;
-    po.sentAt = new Date();
-    return this.poRepo.save(po);
+  async sendPurchaseOrder(id: string, userId: string, tenantId?: string): Promise<PurchaseOrder> {
+    return this.dataSource.transaction(async (manager) => {
+      const poRepo = manager.getRepository(PurchaseOrder);
+      const po = await poRepo.findOne({
+        where: { id, deletedAt: IsNull(), ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!po) throw new NotFoundException('Purchase order not found');
+
+      if (po.status !== POStatus.APPROVED) {
+        throw new BadRequestException('PO must be approved before sending');
+      }
+
+      po.status = POStatus.SENT;
+      po.sentAt = new Date();
+      const saved = await poRepo.save(po);
+
+      await manager.getRepository(AuditLog).save(
+        manager.getRepository(AuditLog).create({
+          action: 'PO_SENT',
+          entityType: 'PurchaseOrder',
+          entityId: id,
+          userId,
+          newValue: { status: POStatus.SENT, sentAt: po.sentAt },
+          ...(tenantId ? { tenantId } : {}),
+        }),
+      );
+
+      return saved;
+    });
   }
 
-  async cancelPurchaseOrder(id: string, tenantId?: string): Promise<PurchaseOrder> {
-    const po = await this.getPurchaseOrder(id, tenantId);
-    if ([POStatus.FULLY_RECEIVED, POStatus.CLOSED].includes(po.status)) {
-      throw new BadRequestException('Cannot cancel a received or closed PO');
-    }
-    po.status = POStatus.CANCELLED;
-    return this.poRepo.save(po);
+  async cancelPurchaseOrder(
+    id: string,
+    userId: string,
+    tenantId?: string,
+    reason?: string,
+  ): Promise<PurchaseOrder> {
+    return this.dataSource.transaction(async (manager) => {
+      const poRepo = manager.getRepository(PurchaseOrder);
+      const po = await poRepo.findOne({
+        where: { id, deletedAt: IsNull(), ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!po) throw new NotFoundException('Purchase order not found');
+
+      if ([POStatus.FULLY_RECEIVED, POStatus.CLOSED].includes(po.status)) {
+        throw new BadRequestException('Cannot cancel a received or closed PO');
+      }
+      if (po.status === POStatus.CANCELLED) {
+        return po; // idempotent
+      }
+
+      const oldStatus = po.status;
+      po.status = POStatus.CANCELLED;
+
+      const saved = await poRepo.save(po);
+
+      await manager.getRepository(AuditLog).save(
+        manager.getRepository(AuditLog).create({
+          action: 'PO_CANCELLED',
+          entityType: 'PurchaseOrder',
+          entityId: id,
+          userId,
+          oldValue: { status: oldStatus },
+          newValue: { status: POStatus.CANCELLED, reason: reason || null },
+          ...(tenantId ? { tenantId } : {}),
+        }),
+      );
+
+      return saved;
+    });
   }
 
   // ============ GOODS RECEIPT NOTE ============
@@ -1488,8 +1557,11 @@ export class ProcurementService {
       totalValue += lineTotal;
       return { ...item, lineTotal };
     });
+    // Normalize to midnight for consistent expiry comparisons regardless of time-of-day
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
     for (const item of itemsWithTotals) {
-      if (item.expiryDate && new Date(item.expiryDate) < new Date()) {
+      if (item.expiryDate && new Date(item.expiryDate) < today) {
         throw new BadRequestException(
           `Cannot receive item ${item.itemName || item.itemCode || item.itemId} with past expiry date: ${item.expiryDate}. Reject expired goods at receiving dock.`,
         );
@@ -1721,32 +1793,62 @@ export class ProcurementService {
     userId: string,
     tenantId?: string,
   ): Promise<GoodsReceiptNote> {
-    const grn = await this.getGoodsReceipt(id, tenantId);
-    if (grn.status !== GRNStatus.DRAFT && grn.status !== GRNStatus.PENDING_INSPECTION) {
-      throw new BadRequestException('GRN is not available for inspection');
-    }
+    return this.dataSource.transaction(async (manager) => {
+      const grnRepo = manager.getRepository(GoodsReceiptNote);
+      const grnItemRepo = manager.getRepository(GoodsReceiptItem);
 
-    // Update items with inspection results
-    for (const inspected of dto.inspectedItems) {
-      const item = grn.items.find((i) => i.itemId === inspected.itemId);
-      if (item) {
-        item.quantityAccepted = inspected.quantityAccepted;
-        item.quantityRejected = inspected.quantityRejected;
-        if (inspected.rejectionReason) {
-          item.rejectionReason = inspected.rejectionReason;
-        }
-        await this.grnItemRepo.save(item);
+      const grn = await grnRepo.findOne({
+        where: { id, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!grn) throw new NotFoundException('GRN not found');
+
+      // Load items inside the transaction
+      grn.items = await grnItemRepo.find({ where: { goodsReceiptNoteId: grn.id } });
+
+      if (grn.status !== GRNStatus.DRAFT && grn.status !== GRNStatus.PENDING_INSPECTION) {
+        throw new BadRequestException('GRN is not available for inspection');
       }
-    }
 
-    grn.status = GRNStatus.INSPECTED;
-    grn.inspectedById = userId;
-    grn.inspectedAt = new Date();
-    if (dto.inspectionNotes) {
-      grn.inspectionNotes = dto.inspectionNotes;
-    }
+      // Update items with inspection results
+      for (const inspected of dto.inspectedItems) {
+        const item = grn.items.find((i) => i.itemId === inspected.itemId);
+        if (item) {
+          item.quantityAccepted = inspected.quantityAccepted;
+          item.quantityRejected = inspected.quantityRejected;
+          if (inspected.rejectionReason) {
+            item.rejectionReason = inspected.rejectionReason;
+          }
+          await grnItemRepo.save(item);
+        }
+      }
 
-    return this.grnRepo.save(grn);
+      grn.status = GRNStatus.INSPECTED;
+      grn.inspectedById = userId;
+      grn.inspectedAt = new Date();
+      if (dto.inspectionNotes) {
+        grn.inspectionNotes = dto.inspectionNotes;
+      }
+
+      const saved = await grnRepo.save(grn);
+
+      await manager.getRepository(AuditLog).save(
+        manager.getRepository(AuditLog).create({
+          action: 'GRN_INSPECTED',
+          entityType: 'GoodsReceiptNote',
+          entityId: id,
+          userId,
+          newValue: {
+            grnNumber: grn.grnNumber,
+            status: GRNStatus.INSPECTED,
+            inspectedItems: dto.inspectedItems.length,
+          },
+          ...(tenantId ? { tenantId } : {}),
+        }),
+      );
+
+      return saved;
+    });
   }
 
   async approveGoodsReceipt(
@@ -1755,41 +1857,62 @@ export class ProcurementService {
     tenantId?: string,
     userRoles?: string[],
   ): Promise<GoodsReceiptNote> {
-    const grn = await this.getGoodsReceipt(id, tenantId);
+    return this.dataSource.transaction(async (manager) => {
+      const grnRepo = manager.getRepository(GoodsReceiptNote);
 
-    // Mandatory inspection before approval
-    if (grn.status !== GRNStatus.INSPECTED) {
-      throw new BadRequestException(
-        'GRN must be inspected before approval. Current status: ' + grn.status,
+      const grn = await grnRepo.findOne({
+        where: { id, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!grn) throw new NotFoundException('GRN not found');
+
+      // Mandatory inspection before approval
+      if (grn.status !== GRNStatus.INSPECTED) {
+        throw new BadRequestException(
+          'GRN must be inspected before approval. Current status: ' + grn.status,
+        );
+      }
+
+      // Segregation of duties: inspector cannot approve their own GRN
+      // (Super Admin override allowed for platform unblocking)
+      const userRolesList = userRoles
+        ? userRoles.map((r) => ({ name: r }))
+        : await this.usersService.getUserRoles(userId, tenantId);
+      const userRoleNames = (userRolesList as any[]).map((r: any) =>
+        (typeof r === 'string' ? r : r.name || '').toLowerCase(),
       );
-    }
+      const isSuperAdmin = userRoleNames.includes('super admin');
 
-    // Segregation of duties: inspector cannot approve their own GRN
-    // (Super Admin override allowed for platform unblocking)
-    const userRolesList = userRoles
-      ? userRoles.map((r) => ({ name: r }))
-      : await this.usersService.getUserRoles(userId, tenantId);
-    const userRoleNames = (userRolesList as any[]).map((r: any) =>
-      (typeof r === 'string' ? r : r.name || '').toLowerCase(),
-    );
-    const isSuperAdmin = userRoleNames.includes('super admin');
+      if (grn.inspectedById === userId && !isSuperAdmin) {
+        throw new BadRequestException(
+          'Segregation of duties violation: the inspector cannot approve the same GRN',
+        );
+      }
 
-    if (grn.inspectedById === userId && !isSuperAdmin) {
-      throw new BadRequestException(
-        'Segregation of duties violation: the inspector cannot approve the same GRN',
+      if (grn.inspectedById === userId && isSuperAdmin) {
+        this.logger.warn(
+          `Super Admin override: user ${userId} both inspected and approved GRN ${grn.grnNumber}`,
+        );
+      }
+
+      grn.status = GRNStatus.APPROVED;
+      grn.approvedById = userId;
+      grn.approvedAt = new Date();
+      const saved = await grnRepo.save(grn);
+
+      await manager.getRepository(AuditLog).save(
+        manager.getRepository(AuditLog).create({
+          action: 'GRN_APPROVED',
+          entityType: 'GoodsReceiptNote',
+          entityId: id,
+          userId,
+          newValue: { grnNumber: grn.grnNumber, status: GRNStatus.APPROVED },
+          ...(tenantId ? { tenantId } : {}),
+        }),
       );
-    }
 
-    if (grn.inspectedById === userId && isSuperAdmin) {
-      this.logger.warn(
-        `Super Admin override: user ${userId} both inspected and approved GRN ${grn.grnNumber}`,
-      );
-    }
-
-    grn.status = GRNStatus.APPROVED;
-    grn.approvedById = userId;
-    grn.approvedAt = new Date();
-    return this.grnRepo.save(grn);
+      return saved;
+    });
   }
 
   async postGoodsReceipt(id: string, userId: string, tenantId?: string): Promise<GoodsReceiptNote> {
@@ -2067,28 +2190,46 @@ export class ProcurementService {
 
     if (type === 'pr') {
       prId = id;
-      const pos = await this.poRepo.find({ where: { purchaseRequestId: prId, ...tFilter }, select: ['id'] });
+      const pos = await this.poRepo.find({
+        where: { purchaseRequestId: prId, ...tFilter },
+        select: ['id'],
+      });
       poIds = pos.map((p) => p.id);
     } else if (type === 'po') {
       poIds = [id];
-      const po = await this.poRepo.findOne({ where: { id, ...tFilter }, select: ['id', 'purchaseRequestId'] });
+      const po = await this.poRepo.findOne({
+        where: { id, ...tFilter },
+        select: ['id', 'purchaseRequestId'],
+      });
       if (!po) throw new NotFoundException('Purchase order not found');
       prId = po.purchaseRequestId || undefined;
     } else if (type === 'grn') {
       grnIds = [id];
-      const grn = await this.grnRepo.findOne({ where: { id, ...tFilter }, select: ['id', 'purchaseOrderId'] });
+      const grn = await this.grnRepo.findOne({
+        where: { id, ...tFilter },
+        select: ['id', 'purchaseOrderId'],
+      });
       if (!grn) throw new NotFoundException('GRN not found');
       if (grn.purchaseOrderId) {
         poIds = [grn.purchaseOrderId];
-        const po = await this.poRepo.findOne({ where: { id: grn.purchaseOrderId, ...tFilter }, select: ['id', 'purchaseRequestId'] });
+        const po = await this.poRepo.findOne({
+          where: { id: grn.purchaseOrderId, ...tFilter },
+          select: ['id', 'purchaseRequestId'],
+        });
         prId = po?.purchaseRequestId || undefined;
       }
     } else if (type === 'invoice') {
-      const inv = await this.invoiceMatchRepo.findOne({ where: { id, ...tFilter }, select: ['id', 'purchaseOrderId', 'grnId'] });
+      const inv = await this.invoiceMatchRepo.findOne({
+        where: { id, ...tFilter },
+        select: ['id', 'purchaseOrderId', 'grnId'],
+      });
       if (!inv) throw new NotFoundException('Invoice match not found');
       if (inv.purchaseOrderId) {
         poIds = [inv.purchaseOrderId];
-        const po = await this.poRepo.findOne({ where: { id: inv.purchaseOrderId, ...tFilter }, select: ['id', 'purchaseRequestId'] });
+        const po = await this.poRepo.findOne({
+          where: { id: inv.purchaseOrderId, ...tFilter },
+          select: ['id', 'purchaseRequestId'],
+        });
         prId = po?.purchaseRequestId || undefined;
       }
       if (inv.grnId) grnIds = [inv.grnId];
@@ -2096,10 +2237,16 @@ export class ProcurementService {
 
     // Discover all GRNs from PO chain
     if (poIds.length && !grnIds.length) {
-      const grns = await this.grnRepo.find({ where: { purchaseOrderId: In(poIds), ...tFilter }, select: ['id'] });
+      const grns = await this.grnRepo.find({
+        where: { purchaseOrderId: In(poIds), ...tFilter },
+        select: ['id'],
+      });
       grnIds = grns.map((g) => g.id);
     } else if (poIds.length && grnIds.length) {
-      const more = await this.grnRepo.find({ where: { purchaseOrderId: In(poIds), ...tFilter }, select: ['id'] });
+      const more = await this.grnRepo.find({
+        where: { purchaseOrderId: In(poIds), ...tFilter },
+        select: ['id'],
+      });
       grnIds = Array.from(new Set([...grnIds, ...more.map((g) => g.id)]));
     }
 
@@ -2139,7 +2286,15 @@ export class ProcurementService {
   async searchTraceDocuments(
     q: string,
     tenantId?: string,
-  ): Promise<Array<{ type: 'pr' | 'po' | 'grn' | 'invoice'; id: string; number: string; status: string; createdAt: Date }>> {
+  ): Promise<
+    Array<{
+      type: 'pr' | 'po' | 'grn' | 'invoice';
+      id: string;
+      number: string;
+      status: string;
+      createdAt: Date;
+    }>
+  > {
     const term = `%${q.toLowerCase()}%`;
     const tFilter = tenantId ? { tenantId } : {};
 
@@ -2167,18 +2322,50 @@ export class ProcurementService {
         .getMany(),
       this.invoiceMatchRepo
         .createQueryBuilder('inv')
-        .where('(LOWER(inv.vendorInvoiceNumber) LIKE :term OR LOWER(inv.matchNumber) LIKE :term)', { term })
+        .where('(LOWER(inv.vendorInvoiceNumber) LIKE :term OR LOWER(inv.matchNumber) LIKE :term)', {
+          term,
+        })
         .andWhere(tenantId ? 'inv.tenantId = :tenantId' : '1=1', { tenantId })
-        .select(['inv.id', 'inv.vendorInvoiceNumber', 'inv.matchNumber', 'inv.status', 'inv.createdAt'])
+        .select([
+          'inv.id',
+          'inv.vendorInvoiceNumber',
+          'inv.matchNumber',
+          'inv.status',
+          'inv.createdAt',
+        ])
         .limit(10)
         .getMany(),
     ]);
 
     return [
-      ...prs.map((p) => ({ type: 'pr' as const, id: p.id, number: p.requestNumber, status: p.status, createdAt: p.createdAt })),
-      ...pos.map((p) => ({ type: 'po' as const, id: p.id, number: p.orderNumber, status: p.status, createdAt: p.createdAt })),
-      ...grns.map((g) => ({ type: 'grn' as const, id: g.id, number: g.grnNumber, status: g.status, createdAt: g.createdAt })),
-      ...invoices.map((i: any) => ({ type: 'invoice' as const, id: i.id, number: i.vendorInvoiceNumber || i.matchNumber, status: i.status, createdAt: i.createdAt })),
+      ...prs.map((p) => ({
+        type: 'pr' as const,
+        id: p.id,
+        number: p.requestNumber,
+        status: p.status,
+        createdAt: p.createdAt,
+      })),
+      ...pos.map((p) => ({
+        type: 'po' as const,
+        id: p.id,
+        number: p.orderNumber,
+        status: p.status,
+        createdAt: p.createdAt,
+      })),
+      ...grns.map((g) => ({
+        type: 'grn' as const,
+        id: g.id,
+        number: g.grnNumber,
+        status: g.status,
+        createdAt: g.createdAt,
+      })),
+      ...invoices.map((i: any) => ({
+        type: 'invoice' as const,
+        id: i.id,
+        number: i.vendorInvoiceNumber || i.matchNumber,
+        status: i.status,
+        createdAt: i.createdAt,
+      })),
     ].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
   }
 
@@ -2192,11 +2379,29 @@ export class ProcurementService {
    *
    * Suggested target = max(maxStockLevel - currentStock, reorderLevel * 2 - currentStock).
    */
-  async runAutoReorderDraftPRs(opts?: { tenantId?: string; facilityId?: string; userId?: string; dryRun?: boolean }): Promise<{
+  async runAutoReorderDraftPRs(opts?: {
+    tenantId?: string;
+    facilityId?: string;
+    userId?: string;
+    dryRun?: boolean;
+  }): Promise<{
     facilitiesProcessed: number;
     prsCreated: number;
     itemsSkipped: number;
-    drafts: Array<{ facilityId: string; tenantId?: string; itemCount: number; prNumber?: string; prId?: string; items: Array<{ itemId: string; itemName: string; available: number; reorderLevel: number; suggestedQty: number }> }>;
+    drafts: Array<{
+      facilityId: string;
+      tenantId?: string;
+      itemCount: number;
+      prNumber?: string;
+      prId?: string;
+      items: Array<{
+        itemId: string;
+        itemName: string;
+        available: number;
+        reorderLevel: number;
+        suggestedQty: number;
+      }>;
+    }>;
   }> {
     const dryRun = !!opts?.dryRun;
     const drafts: any[] = [];
@@ -2223,7 +2428,7 @@ export class ProcurementService {
     const groups = new Map<string, typeof lowStock>();
     for (const sb of lowStock) {
       const key = `${sb.tenantId || ''}::${sb.facilityId}`;
-      if (!groups.has(key)) groups.set(key, [] as any);
+      if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(sb);
     }
 
@@ -2237,7 +2442,13 @@ export class ProcurementService {
       const recentOpenPRs = await this.prRepo.find({
         where: {
           facilityId,
-          status: In([PRStatus.DRAFT, PRStatus.PENDING_APPROVAL, PRStatus.APPROVED, PRStatus.PARTIALLY_ORDERED, PRStatus.FULLY_ORDERED]),
+          status: In([
+            PRStatus.DRAFT,
+            PRStatus.PENDING_APPROVAL,
+            PRStatus.APPROVED,
+            PRStatus.PARTIALLY_ORDERED,
+            PRStatus.FULLY_ORDERED,
+          ]),
           createdAt: Between(sevenDaysAgo, new Date()),
           ...tFilter,
         },
@@ -2286,10 +2497,12 @@ export class ProcurementService {
           itemId: i.itemId,
           itemName: i.itemName,
           available: Number(toReorder.find((x) => x.itemId === i.itemId)?.availableQuantity || 0),
-          reorderLevel: Number(toReorder.find((x) => x.itemId === i.itemId)?.item.reorderLevel || 0),
+          reorderLevel: Number(
+            toReorder.find((x) => x.itemId === i.itemId)?.item.reorderLevel || 0,
+          ),
           suggestedQty: i.quantityRequested,
         })),
-      } as any;
+      };
 
       if (dryRun) {
         drafts.push(draftSummary);
@@ -2298,7 +2511,10 @@ export class ProcurementService {
 
       try {
         const requestNumber = await this.generatePRNumber(facilityId, tenantId || undefined);
-        const totalEstimated = items.reduce((s, it) => s + it.quantityRequested * (it.unitPriceEstimated || 0), 0);
+        const totalEstimated = items.reduce(
+          (s, it) => s + it.quantityRequested * (it.unitPriceEstimated || 0),
+          0,
+        );
 
         const pr = this.prRepo.create({
           requestNumber,
@@ -2308,7 +2524,8 @@ export class ProcurementService {
           totalEstimated,
           notes: `System-generated draft from reorder-level monitor at ${new Date().toISOString()}`,
           status: PRStatus.DRAFT,
-          requestedById: opts?.userId || (recentOpenPRs[0]?.requestedById as string) || undefined as any,
+          requestedById:
+            opts?.userId || recentOpenPRs[0]?.requestedById || (undefined as unknown as string),
           ...(tenantId ? { tenantId } : {}),
         });
         const savedPR = await this.prRepo.save(pr);
@@ -2329,8 +2546,14 @@ export class ProcurementService {
         await this.prItemRepo.save(prItems);
 
         prsCreated++;
-        drafts.push({ ...draftSummary, prNumber: (savedPR as PurchaseRequest).requestNumber, prId: (savedPR as PurchaseRequest).id });
-        this.logger.log(`Auto-created draft PR ${(savedPR as PurchaseRequest).requestNumber} with ${items.length} items for facility ${facilityId}`);
+        drafts.push({
+          ...draftSummary,
+          prNumber: (savedPR as PurchaseRequest).requestNumber,
+          prId: (savedPR as PurchaseRequest).id,
+        });
+        this.logger.log(
+          `Auto-created draft PR ${(savedPR as PurchaseRequest).requestNumber} with ${items.length} items for facility ${facilityId}`,
+        );
       } catch (err: any) {
         this.logger.error(`Failed to auto-create PR for facility ${facilityId}: ${err.message}`);
       }
@@ -2381,7 +2604,7 @@ export class ProcurementService {
         level1MaxAmount: 500000,
         level2MaxAmount: 5000000,
         level3MaxAmount: 50000000,
-        level4MaxAmount: null as any,
+        level4MaxAmount: undefined,
         requireJustificationMin: 5000000,
         isActive: true,
       });
@@ -2395,10 +2618,7 @@ export class ProcurementService {
   /**
    * Calculate approval level (1-4) based on amount and thresholds
    */
-  private calculateApprovalLevel(
-    amount: number,
-    thresholds: ProcurementApprovalThreshold,
-  ): number {
+  private calculateApprovalLevel(amount: number, thresholds: ProcurementApprovalThreshold): number {
     const amt = Number(amount);
 
     if (amt <= Number(thresholds.level1MaxAmount)) return 1;
@@ -2479,10 +2699,7 @@ export class ProcurementService {
       );
       return chains;
     } catch (error) {
-      this.logger.error(
-        `Error creating approval chain: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`Error creating approval chain: ${error.message}`, error.stack);
       throw error;
     }
   }
@@ -2527,10 +2744,7 @@ export class ProcurementService {
   /**
    * Check if all approvals are complete
    */
-  async isApprovalChainComplete(
-    documentId: string,
-    tenantId?: string,
-  ): Promise<boolean> {
+  async isApprovalChainComplete(documentId: string, tenantId?: string): Promise<boolean> {
     const where: any = { documentId };
     if (tenantId) where.tenantId = tenantId;
 
@@ -2547,7 +2761,7 @@ export class ProcurementService {
   async getEnrichedApprovalChain(documentId: string, tenantId?: string) {
     // Determine documentType by probing one row (PR vs PO ambiguity)
     const sample = await this.approvalChainRepo.findOne({
-      where: { documentId } as any,
+      where: { documentId },
       order: { approvalLevel: 'ASC' },
     });
     if (!sample) return [];
@@ -2570,15 +2784,15 @@ export class ProcurementService {
     if (rows.length === 0) return [];
 
     const namesByKey = await this.orgApprovalResolver.enrichSteps(
-      rows.map((r) => ({ approverId: r.approverId, groupId: (r as any).groupId })),
+      rows.map((r) => ({ approverId: r.approverId, groupId: r.groupId })),
       tenantId || '',
     );
 
     return rows.map((r) => {
-      const key = `${r.approverId || ''}|${(r as any).groupId || ''}`;
+      const key = `${r.approverId || ''}|${r.groupId || ''}`;
       const enriched = namesByKey.get(key) || {};
-      const approver = (r as any).approver;
-      const approvedBy = (r as any).approvedBy;
+      const approver = r.approver;
+      const approvedBy = r.approvedBy;
       return {
         id: r.id,
         approvalLevel: r.approvalLevel,
@@ -2586,16 +2800,18 @@ export class ProcurementService {
         approverId: r.approverId ?? null,
         approverName:
           enriched.approverName ||
-          (approver ? [approver.firstName, approver.lastName].filter(Boolean).join(' ') || approver.email : null),
-        groupId: (r as any).groupId ?? null,
+          (approver
+            ? approver.fullName || approver.email
+            : null),
+        groupId: r.groupId ?? null,
         groupName: enriched.groupName ?? null,
         status: r.status,
-        approvedById: (r as any).approvedById ?? null,
+        approvedById: r.approvedById ?? null,
         approvedByName: approvedBy
-          ? [approvedBy.firstName, approvedBy.lastName].filter(Boolean).join(' ') || approvedBy.email
+          ? approvedBy.fullName || approvedBy.email
           : null,
-        approvedAt: (r as any).approvedAt ?? null,
-        comments: (r as any).comments ?? null,
+        approvedAt: r.approvedAt ?? null,
+        comments: r.comments ?? null,
         createdAt: r.createdAt,
       };
     });
@@ -2629,9 +2845,7 @@ export class ProcurementService {
       });
 
       if (!chain) {
-        throw new NotFoundException(
-          `No pending approval found for ${documentType} ${documentId}`,
-        );
+        throw new NotFoundException(`No pending approval found for ${documentType} ${documentId}`);
       }
 
       // Mark as approved

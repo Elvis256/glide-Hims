@@ -16,17 +16,16 @@ import {
   AdminAuditLog,
   AdminAuditAction,
   AdminAuditEntityType,
-} from '../../database/entities/admin-audit-log.entity';
+} from '../../../database/entities/admin-audit-log.entity';
 import {
   QueryAuditLogsDto,
   GetEntityAuditTrailDto,
   ExportAuditLogsDto,
   AdminActivityReportDto,
 } from '../dto/admin-audit.dto';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { UserRole } from '../../database/entities/user.entity';
-import { User } from '../../database/entities/user.entity';
+import { CurrentUser } from '../../auth/decorators/current-user.decorator';
+import { User } from '../../../database/entities/user.entity';
+import { SystemAdminOnly } from '../../auth/decorators/system-admin-only.decorator';
 
 /**
  * Admin Audit Log API
@@ -38,7 +37,7 @@ import { User } from '../../database/entities/user.entity';
 @ApiTags('admin/audit-logs')
 @ApiBearerAuth()
 @Controller('admin/audit-logs')
-@Roles(UserRole.SYSTEM_ADMIN)
+@SystemAdminOnly()
 export class AdminAuditController {
   constructor(private auditService: AdminAuditService) {}
 
@@ -108,8 +107,8 @@ export class AdminAuditController {
   @ApiResponse({ status: 200, description: 'Admin activity log', type: [AdminAuditLog] })
   async getAdminActivityLog(
     @Param('adminUserId') adminUserId: string,
-    @Query('hours') hours?: string,
-    @Query('limit') limit?: string,
+    @Query('hours') hours: string,
+    @Query('limit') limit: string,
     @CurrentUser() user: User,
   ): Promise<AdminAuditLog[]> {
     const since = hours ? new Date(Date.now() - parseInt(hours) * 3600000) : undefined;
@@ -130,7 +129,7 @@ export class AdminAuditController {
   @ApiResponse({ status: 200, description: 'Tenant audit trail', type: [AdminAuditLog] })
   async getTenantAuditTrail(
     @Param('tenantId') tenantId: string,
-    @Query('limit') limit?: string,
+    @Query('limit') limit: string,
     @CurrentUser() user: User,
   ): Promise<AdminAuditLog[]> {
     return this.auditService.getTenantAuditTrail(tenantId, limit ? parseInt(limit) : 1000);
@@ -155,8 +154,8 @@ export class AdminAuditController {
   @HttpCode(200)
   async searchAuditLogs(
     @Body('searchTerm') searchTerm: string,
-    @Query('limit') limit?: string,
-    @Query('offset') offset?: string,
+    @Query('limit') limit: string,
+    @Query('offset') offset: string,
     @CurrentUser() user: User,
   ): Promise<{ data: AdminAuditLog[]; total: number }> {
     if (!searchTerm || searchTerm.length < 2) {
@@ -181,8 +180,8 @@ export class AdminAuditController {
     schema: { type: 'object', additionalProperties: { type: 'number' } },
   })
   async getActionStats(
-    @Query('tenantId') tenantId?: string,
-    @Query('hours') hours?: string,
+    @Query('tenantId') tenantId: string,
+    @Query('hours') hours: string,
     @CurrentUser() user: User,
   ): Promise<Record<string, number>> {
     const since = hours ? new Date(Date.now() - parseInt(hours) * 3600000) : undefined;
@@ -201,7 +200,7 @@ export class AdminAuditController {
     type: [AdminAuditLog],
   })
   async detectAnomalies(
-    @Query('hours') hours?: string,
+    @Query('hours') hours: string,
     @CurrentUser() user: User,
   ): Promise<AdminAuditLog[]> {
     return this.auditService.detectAnomalies(hours ? parseInt(hours) : 24);

@@ -133,14 +133,21 @@ export class RadiologyService {
         `Imaging order created: ${orderNumber} for patient ${dto.patientId} by user ${userId}`,
       );
 
-      this.auditLogService.log({
-        action: 'CREATE_IMAGING_ORDER',
-        entityType: 'ImagingOrder',
-        entityId: savedOrder.id,
-        userId,
-        tenantId,
-        newValue: { orderNumber, studyType: dto.studyType, patientId: dto.patientId, status: ImagingOrderStatus.ORDERED },
-      }).catch(() => {});
+      this.auditLogService
+        .log({
+          action: 'CREATE_IMAGING_ORDER',
+          entityType: 'ImagingOrder',
+          entityId: savedOrder.id,
+          userId,
+          tenantId,
+          newValue: {
+            orderNumber,
+            studyType: dto.studyType,
+            patientId: dto.patientId,
+            status: ImagingOrderStatus.ORDERED,
+          },
+        })
+        .catch(() => {});
 
       return savedOrder;
     });
@@ -239,14 +246,16 @@ export class RadiologyService {
 
     const saved = await this.orderRepo.save(order);
 
-    this.auditLogService.log({
-      action: 'SCHEDULE_IMAGING',
-      entityType: 'ImagingOrder',
-      entityId: id,
-      tenantId,
-      oldValue: { status: oldStatus },
-      newValue: { status: ImagingOrderStatus.SCHEDULED, scheduledAt: dto.scheduledAt },
-    }).catch(() => {});
+    this.auditLogService
+      .log({
+        action: 'SCHEDULE_IMAGING',
+        entityType: 'ImagingOrder',
+        entityId: id,
+        tenantId,
+        oldValue: { status: oldStatus },
+        newValue: { status: ImagingOrderStatus.SCHEDULED, scheduledAt: dto.scheduledAt },
+      })
+      .catch(() => {});
 
     return saved;
   }
@@ -265,15 +274,17 @@ export class RadiologyService {
     const savedOrder = await this.orderRepo.save(order);
     this.logger.log(`Imaging started: ${order.orderNumber} by user ${userId}`);
 
-    this.auditLogService.log({
-      action: 'START_IMAGING',
-      entityType: 'ImagingOrder',
-      entityId: id,
-      userId,
-      tenantId,
-      oldValue: { status: oldStatus },
-      newValue: { status: ImagingOrderStatus.IN_PROGRESS },
-    }).catch(() => {});
+    this.auditLogService
+      .log({
+        action: 'START_IMAGING',
+        entityType: 'ImagingOrder',
+        entityId: id,
+        userId,
+        tenantId,
+        oldValue: { status: oldStatus },
+        newValue: { status: ImagingOrderStatus.IN_PROGRESS },
+      })
+      .catch(() => {});
 
     return savedOrder;
   }
@@ -302,15 +313,17 @@ export class RadiologyService {
       `Imaging completed: ${order.orderNumber} by user ${userId}, images: ${order.imageCount}`,
     );
 
-    this.auditLogService.log({
-      action: 'COMPLETE_IMAGING',
-      entityType: 'ImagingOrder',
-      entityId: id,
-      userId,
-      tenantId,
-      oldValue: { status: ImagingOrderStatus.IN_PROGRESS },
-      newValue: { status: ImagingOrderStatus.COMPLETED, imageCount: order.imageCount },
-    }).catch(() => {});
+    this.auditLogService
+      .log({
+        action: 'COMPLETE_IMAGING',
+        entityType: 'ImagingOrder',
+        entityId: id,
+        userId,
+        tenantId,
+        oldValue: { status: ImagingOrderStatus.IN_PROGRESS },
+        newValue: { status: ImagingOrderStatus.COMPLETED, imageCount: order.imageCount },
+      })
+      .catch(() => {});
 
     return savedOrder;
   }
@@ -372,14 +385,20 @@ export class RadiologyService {
       `Imaging result created for order ${order.orderNumber} by user ${userId}${dto.isCritical ? ' [CRITICAL]' : ''}`,
     );
 
-    this.auditLogService.log({
-      action: 'CREATE_IMAGING_RESULT',
-      entityType: 'ImagingResult',
-      entityId: result.id,
-      userId,
-      tenantId,
-      newValue: { orderId: order.id, isCritical: dto.isCritical, findingCategory: dto.findingCategory },
-    }).catch(() => {});
+    this.auditLogService
+      .log({
+        action: 'CREATE_IMAGING_RESULT',
+        entityType: 'ImagingResult',
+        entityId: result.id,
+        userId,
+        tenantId,
+        newValue: {
+          orderId: order.id,
+          isCritical: dto.isCritical,
+          findingCategory: dto.findingCategory,
+        },
+      })
+      .catch(() => {});
 
     // Auto-post GL entry: DR Accounts Receivable, CR Radiology Revenue
     if (order.facilityId) {
@@ -423,10 +442,10 @@ export class RadiologyService {
       }
 
       // Notify patient via SMS (fire-and-forget; suppressed for critical findings to avoid alarm)
-      const patient = fullOrder?.patient as any;
+      const patient = fullOrder?.patient;
       if (patient && order.facilityId && !dto.isCritical) {
         const fname = String(patient.fullName || 'patient').split(' ')[0];
-        const facName = (fullOrder as any)?.facility?.name || 'the facility';
+        const facName = fullOrder?.facility?.name || 'the facility';
         const study = order.studyType || 'imaging';
         const msg =
           `Hello ${fname}, your ${study} results from ${facName} are ready. ` +
@@ -449,9 +468,13 @@ export class RadiologyService {
           resourceId: result.id,
           orderId: order.id,
           patientId: order.patientId,
-          encounterId: (order as any).encounterId,
+          encounterId: order.encounterId,
           severity: isCrit ? 'critical' : 'abnormal',
-          summary: `${order.studyType || 'Imaging'}: ${dto.impression || dto.findings || 'Critical finding'}`.slice(0, 500),
+          summary:
+            `${order.studyType || 'Imaging'}: ${dto.impression || dto.findings || 'Critical finding'}`.slice(
+              0,
+              500,
+            ),
           flaggedById: userId,
           assignedToId: order.orderedById,
           tenantId,

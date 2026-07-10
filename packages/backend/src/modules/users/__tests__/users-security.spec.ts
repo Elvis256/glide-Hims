@@ -16,10 +16,7 @@ describe('Users Security', () => {
   // ── self-deletion guard ────────────────────────────────────────────
 
   describe('self-deletion guard', () => {
-    function removeSelfCheck(
-      targetId: string,
-      caller?: { id?: string; userId?: string },
-    ): void {
+    function removeSelfCheck(targetId: string, caller?: { id?: string; userId?: string }): void {
       const callerId = caller?.id || caller?.userId;
       if (callerId && callerId === targetId) {
         throw new BadRequestException('Cannot delete your own account');
@@ -60,15 +57,15 @@ describe('Users Security', () => {
     }
 
     it('throws when non-sysadmin tries to delete sysadmin', () => {
-      expect(() =>
-        sysAdminDeleteCheck({ isSystemAdmin: true }, { isSystemAdmin: false }),
-      ).toThrow('Cannot delete system administrator accounts');
+      expect(() => sysAdminDeleteCheck({ isSystemAdmin: true }, { isSystemAdmin: false })).toThrow(
+        'Cannot delete system administrator accounts',
+      );
     });
 
     it('throws when caller has no isSystemAdmin flag', () => {
-      expect(() =>
-        sysAdminDeleteCheck({ isSystemAdmin: true }, {}),
-      ).toThrow('Cannot delete system administrator accounts');
+      expect(() => sysAdminDeleteCheck({ isSystemAdmin: true }, {})).toThrow(
+        'Cannot delete system administrator accounts',
+      );
     });
 
     it('allows sysadmin to delete sysadmin', () => {
@@ -87,14 +84,9 @@ describe('Users Security', () => {
   // ── last-admin deletion guard ──────────────────────────────────────
 
   describe('last-admin deletion guard', () => {
-    function lastAdminCheck(
-      adminCountExcludingTarget: number,
-      tenantId?: string,
-    ): void {
+    function lastAdminCheck(adminCountExcludingTarget: number, tenantId?: string): void {
       if (tenantId && adminCountExcludingTarget === 0) {
-        throw new BadRequestException(
-          'Cannot delete the last administrator for this organization',
-        );
+        throw new BadRequestException('Cannot delete the last administrator for this organization');
       }
     }
 
@@ -176,9 +168,7 @@ describe('Users Security', () => {
       caller?: { isSystemAdmin?: boolean },
     ): void {
       if (dto.isSystemAdmin && caller && !caller.isSystemAdmin) {
-        throw new BadRequestException(
-          'Only platform administrators may create system-admin users',
-        );
+        throw new BadRequestException('Only platform administrators may create system-admin users');
       }
     }
 
@@ -201,9 +191,7 @@ describe('Users Security', () => {
     });
 
     it('passes when no caller context (internal service call)', () => {
-      expect(() =>
-        checkSysAdminCreation({ isSystemAdmin: true }, undefined),
-      ).not.toThrow();
+      expect(() => checkSysAdminCreation({ isSystemAdmin: true }, undefined)).not.toThrow();
     });
   });
 
@@ -258,14 +246,8 @@ describe('Users Security', () => {
       );
 
       expect(mockQuery).toHaveBeenCalledTimes(2);
-      expect(mockQuery).toHaveBeenCalledWith(
-        expect.stringContaining('sessions'),
-        [userId],
-      );
-      expect(mockQuery).toHaveBeenCalledWith(
-        expect.stringContaining('refresh_tokens'),
-        [userId],
-      );
+      expect(mockQuery).toHaveBeenCalledWith(expect.stringContaining('sessions'), [userId]);
+      expect(mockQuery).toHaveBeenCalledWith(expect.stringContaining('refresh_tokens'), [userId]);
     });
 
     it('does not block user operation if session tables fail', async () => {
@@ -290,7 +272,7 @@ describe('Users Security', () => {
       const userId = 'user-789';
 
       // Simulate deactivateUser flow
-      const user = { id: userId, status: 'active' as string };
+      const user: any = { id: userId, status: 'active' as string };
       user.status = 'inactive';
       await revokeUserSessions(userId);
 

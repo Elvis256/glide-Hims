@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { OnEvent } from '@nestjs/event-emitter';
+import { OnEvent, EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { LeadActivity } from '../leads/lead.entity';
@@ -20,6 +20,7 @@ export class LifecycleEventsListener {
     @InjectRepository(SaasQuotation) private readonly quotations: Repository<SaasQuotation>,
     private readonly onboardingService: OnboardingService,
     private readonly healthService: ClientHealthService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   // =========================================================================
@@ -30,7 +31,9 @@ export class LifecycleEventsListener {
   async onQuotationCreated(payload: { quotationId: string; leadId?: string }) {
     this.logger.log(`Quotation created: ${payload.quotationId}`);
     if (payload.leadId) {
-      await this.insertLeadActivity(payload.leadId, 'quotation_created', `Quotation created`, { quotationId: payload.quotationId });
+      await this.insertLeadActivity(payload.leadId, 'quotation_created', `Quotation created`, {
+        quotationId: payload.quotationId,
+      });
     }
   }
 
@@ -39,7 +42,12 @@ export class LifecycleEventsListener {
     this.logger.log(`Quotation sent: ${payload.quotationId}`);
     const q = await this.quotations.findOne({ where: { id: payload.quotationId } });
     if (q?.leadId) {
-      await this.insertLeadActivity(q.leadId, 'quotation_sent', `Quotation sent to ${payload.clientEmail || 'client'}`, { quotationId: payload.quotationId });
+      await this.insertLeadActivity(
+        q.leadId,
+        'quotation_sent',
+        `Quotation sent to ${payload.clientEmail || 'client'}`,
+        { quotationId: payload.quotationId },
+      );
     }
   }
 
@@ -48,7 +56,12 @@ export class LifecycleEventsListener {
     this.logger.log(`Quotation accepted: ${payload.quotationId}`);
     const q = await this.quotations.findOne({ where: { id: payload.quotationId } });
     if (q?.leadId) {
-      await this.insertLeadActivity(q.leadId, 'quotation_accepted', `Quotation accepted — subscription created`, { quotationId: payload.quotationId, subscriptionId: payload.subscriptionId });
+      await this.insertLeadActivity(
+        q.leadId,
+        'quotation_accepted',
+        `Quotation accepted — subscription created`,
+        { quotationId: payload.quotationId, subscriptionId: payload.subscriptionId },
+      );
     }
 
     // Auto-create onboarding
@@ -65,7 +78,12 @@ export class LifecycleEventsListener {
     this.logger.log(`Quotation rejected: ${payload.quotationId}`);
     const q = await this.quotations.findOne({ where: { id: payload.quotationId } });
     if (q?.leadId) {
-      await this.insertLeadActivity(q.leadId, 'quotation_rejected', `Quotation rejected${payload.reason ? ': ' + payload.reason : ''}`, { quotationId: payload.quotationId });
+      await this.insertLeadActivity(
+        q.leadId,
+        'quotation_rejected',
+        `Quotation rejected${payload.reason ? ': ' + payload.reason : ''}`,
+        { quotationId: payload.quotationId },
+      );
     }
   }
 
@@ -93,18 +111,34 @@ export class LifecycleEventsListener {
 
   @OnEvent('client_health.critical')
   async onHealthCritical(payload: { tenantId: string; overallScore: number }) {
-    this.logger.warn(`CRITICAL health alert for tenant ${payload.tenantId} — score: ${payload.overallScore}`);
-    // TODO: send alert email to account manager
+    this.logger.warn(
+      `CRITICAL health alert for tenant ${payload.tenantId} — score: ${payload.overallScore}`,
+    );
+    this.eventEmitter.emit('email.send', {
+      to: 'account-managers@glide-hims.com',
+      subject: `CRITICAL: Tenant ${payload.tenantId} health score dropped to ${payload.overallScore}`,
+      body: `Please review tenant ${payload.tenantId} immediately.`
+    });
   }
 
   // =========================================================================
   // Helpers
   // =========================================================================
 
-  private async insertLeadActivity(leadId: string, type: string, content: string, metadata?: Record<string, any>) {
+  private async insertLeadActivity(
+    leadId: string,
+    type: string,
+    content: string,
+    metadata?: Record<string, any>,
+  ) {
     try {
       await this.leadActivities.save(
-        this.leadActivities.create({ leadId, type: type as any, content, metadata: metadata ?? null }),
+        this.leadActivities.create({
+          leadId,
+          type: type as any,
+          content,
+          metadata: metadata ?? null,
+        }),
       );
     } catch (e: any) {
       this.logger.warn(`Failed to insert lead activity: ${e?.message}`);

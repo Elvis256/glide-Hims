@@ -158,9 +158,7 @@ export class DonorFundService {
         fund.status = FundStatus.EXHAUSTED;
       }
 
-      this.logger.log(
-        `Donor fund ${fundId} disbursed ${amount} by user ${userId}: ${description}`,
-      );
+      this.logger.log(`Donor fund ${fundId} disbursed ${amount} by user ${userId}: ${description}`);
       return repo.save(fund);
     });
   }
@@ -198,7 +196,7 @@ export class DonorFundService {
     tenantId?: string,
   ): Promise<InterFacilityTransaction[]> {
     const tid = requireTenant(tenantId);
-    const baseWhere: any = { tenantId: tid };
+    const baseWhere = { tenantId: tid };
     const where: any[] = facilityId
       ? [
           { ...baseWhere, sourceFacilityId: facilityId },

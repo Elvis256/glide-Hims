@@ -19,7 +19,9 @@ export class DownloadsService {
     @InjectRepository(License) private readonly licenses: Repository<License>,
   ) {}
 
-  storageDir() { return STORAGE_DIR; }
+  storageDir() {
+    return STORAGE_DIR;
+  }
 
   async listPublished(channel?: string) {
     const where: any = { isPublished: true };
@@ -75,8 +77,8 @@ export class DownloadsService {
   async tierForTenant(tenantId?: string | null): Promise<string> {
     if (!tenantId) return 'trial';
     const lic = await this.licenses.findOne({
-      where: { tenantId, status: 'active' as any },
-      order: { expiresAt: 'DESC' as any },
+      where: { tenantId, status: 'active' },
+      order: { expiresAt: 'DESC' },
     });
     return lic?.licenseType || 'trial';
   }
@@ -119,10 +121,7 @@ export class DownloadsService {
   }
 
   async listLogs(installerId?: string, limit = 100) {
-    const qb = this.logs
-      .createQueryBuilder('d')
-      .orderBy('d."createdAt"', 'DESC')
-      .limit(limit);
+    const qb = this.logs.createQueryBuilder('d').orderBy('d."createdAt"', 'DESC').limit(limit);
     if (installerId) qb.where('d."installerId" = :id', { id: installerId });
     return qb.getMany();
   }

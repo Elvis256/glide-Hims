@@ -138,7 +138,7 @@ export class ApprovalsSeederService {
     let skipped = 0;
     for (const def of this.defaultPolicies()) {
       const existing = await this.policyRepo.findOne({
-        where: { tenantId, name: def.name } as any,
+        where: { tenantId, name: def.name },
       });
       if (existing) {
         skipped++;

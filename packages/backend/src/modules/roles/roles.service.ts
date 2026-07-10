@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { Role } from '../../database/entities/role.entity';
@@ -201,7 +206,7 @@ export class RolesService {
       throw new ConflictException('Cannot rename system roles');
     }
     // Strip privilege-escalation flags unless caller is a platform admin.
-    const sanitized: any = { ...dto };
+    const sanitized = { ...dto };
     if ('isSystemRole' in sanitized && !caller?.isSystemAdmin) {
       delete sanitized.isSystemRole;
     }
@@ -423,9 +428,7 @@ export class RolesService {
     // a privilege-escalation surface — they could create codes that later
     // logic comes to trust, or shadow existing codes.
     if (!caller?.isSystemAdmin) {
-      throw new ForbiddenException(
-        'Only platform administrators may create permission codes',
-      );
+      throw new ForbiddenException('Only platform administrators may create permission codes');
     }
     const existing = await this.permissionRepository.findOne({ where: { code: dto.code } });
     if (existing) throw new ConflictException('Permission code already exists');

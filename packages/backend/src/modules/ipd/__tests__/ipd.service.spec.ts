@@ -1,18 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import {
-  BadRequestException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 
 import { IpdService } from '../ipd.service';
 import { Ward } from '../../../database/entities/ward.entity';
 import { Bed, BedStatus } from '../../../database/entities/bed.entity';
-import {
-  Admission,
-  AdmissionStatus,
-} from '../../../database/entities/admission.entity';
+import { Admission, AdmissionStatus } from '../../../database/entities/admission.entity';
 import { NursingNote } from '../../../database/entities/nursing-note.entity';
 import {
   MedicationAdministration,
@@ -251,25 +245,16 @@ describe('IpdService', () => {
       const result = await service.createAdmission(dto as any, USER_ID, TENANT_ID);
 
       // Bed should be marked as OCCUPIED
-      expect(mgr.update).toHaveBeenCalledWith(
-        Bed,
-        BED_ID,
-        { status: BedStatus.OCCUPIED },
-      );
+      expect(mgr.update).toHaveBeenCalledWith(Bed, BED_ID, { status: BedStatus.OCCUPIED });
 
       // Ward counts should be updated
-      expect(mgr.update).toHaveBeenCalledWith(
-        Ward,
-        WARD_ID,
-        { totalBeds: 10, occupiedBeds: 5 },
-      );
+      expect(mgr.update).toHaveBeenCalledWith(Ward, WARD_ID, { totalBeds: 10, occupiedBeds: 5 });
 
       // Encounter updated to IPD + ADMITTED
-      expect(mgr.update).toHaveBeenCalledWith(
-        Encounter,
-        ENCOUNTER_ID,
-        { type: EncounterType.IPD, status: EncounterStatus.ADMITTED },
-      );
+      expect(mgr.update).toHaveBeenCalledWith(Encounter, ENCOUNTER_ID, {
+        type: EncounterType.IPD,
+        status: EncounterStatus.ADMITTED,
+      });
 
       // Billing was attempted
       expect(billingService.addBillableItem).toHaveBeenCalled();
@@ -300,13 +285,13 @@ describe('IpdService', () => {
         bedId: BED_ID,
       };
 
-      await expect(
-        service.createAdmission(dto as any, USER_ID, TENANT_ID),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.createAdmission(dto as any, USER_ID, TENANT_ID)).rejects.toThrow(
+        BadRequestException,
+      );
 
-      await expect(
-        service.createAdmission(dto as any, USER_ID, TENANT_ID),
-      ).rejects.toThrow(/already admitted/);
+      await expect(service.createAdmission(dto as any, USER_ID, TENANT_ID)).rejects.toThrow(
+        /already admitted/,
+      );
     });
 
     // -------------------------------------------------------------------
@@ -333,13 +318,13 @@ describe('IpdService', () => {
         bedId: BED_ID,
       };
 
-      await expect(
-        service.createAdmission(dto as any, USER_ID, TENANT_ID),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.createAdmission(dto as any, USER_ID, TENANT_ID)).rejects.toThrow(
+        BadRequestException,
+      );
 
-      await expect(
-        service.createAdmission(dto as any, USER_ID, TENANT_ID),
-      ).rejects.toThrow(/not available/);
+      await expect(service.createAdmission(dto as any, USER_ID, TENANT_ID)).rejects.toThrow(
+        /not available/,
+      );
     });
 
     // -------------------------------------------------------------------
@@ -359,9 +344,9 @@ describe('IpdService', () => {
         bedId: uuid('nonexistent'),
       };
 
-      await expect(
-        service.createAdmission(dto as any, USER_ID, TENANT_ID),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.createAdmission(dto as any, USER_ID, TENANT_ID)).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -391,9 +376,7 @@ describe('IpdService', () => {
         .mockResolvedValueOnce(4); // occupiedBeds
 
       // save returns the updated admission
-      mgr.save.mockImplementation((entity: any) =>
-        Promise.resolve({ ...entity }),
-      );
+      mgr.save.mockImplementation((entity: any) => Promise.resolve({ ...entity }));
 
       // bedBoardService returns no charge lines (simple case)
       bedBoardService.computeBedDayCharges.mockResolvedValue([]);
@@ -405,23 +388,14 @@ describe('IpdService', () => {
         dischargeDiagnosis: 'Malaria',
       };
 
-      const result = await service.dischargePatient(
-        ADMISSION_ID,
-        dto as any,
-        USER_ID,
-        TENANT_ID,
-      );
+      const result = await service.dischargePatient(ADMISSION_ID, dto as any, USER_ID, TENANT_ID);
 
       expect(result.status).toBe(AdmissionStatus.DISCHARGED);
       expect(result.dischargedById).toBe(USER_ID);
       expect(result.dischargeDate).toBeInstanceOf(Date);
 
       // Bed set to CLEANING
-      expect(mgr.update).toHaveBeenCalledWith(
-        Bed,
-        BED_ID,
-        { status: BedStatus.CLEANING },
-      );
+      expect(mgr.update).toHaveBeenCalledWith(Bed, BED_ID, { status: BedStatus.CLEANING });
 
       // Encounter completed
       expect(mgr.update).toHaveBeenCalledWith(
@@ -481,7 +455,7 @@ describe('IpdService', () => {
 
       qbChain.getOne
         .mockResolvedValueOnce(admission) // admission lock
-        .mockResolvedValueOnce(newBed);   // new bed lock
+        .mockResolvedValueOnce(newBed); // new bed lock
 
       // Ward bed stat aggregation
       qbChain.getRawMany.mockResolvedValueOnce([
@@ -489,9 +463,7 @@ describe('IpdService', () => {
         { wardId: WARD_ID_2, total: 8, occupied: 3 },
       ]);
 
-      mgr.save.mockImplementation((entity: any) =>
-        Promise.resolve({ ...entity }),
-      );
+      mgr.save.mockImplementation((entity: any) => Promise.resolve({ ...entity }));
 
       dataSource.transaction.mockImplementation((cb: any) => cb(mgr));
 
@@ -502,26 +474,13 @@ describe('IpdService', () => {
         notes: 'Step-up to ICU',
       };
 
-      const result = await service.transferBed(
-        ADMISSION_ID,
-        dto as any,
-        USER_ID,
-        TENANT_ID,
-      );
+      const result = await service.transferBed(ADMISSION_ID, dto as any, USER_ID, TENANT_ID);
 
       // Old bed set to CLEANING
-      expect(mgr.update).toHaveBeenCalledWith(
-        Bed,
-        BED_ID,
-        { status: BedStatus.CLEANING },
-      );
+      expect(mgr.update).toHaveBeenCalledWith(Bed, BED_ID, { status: BedStatus.CLEANING });
 
       // New bed set to OCCUPIED
-      expect(mgr.update).toHaveBeenCalledWith(
-        Bed,
-        BED_ID_2,
-        { status: BedStatus.OCCUPIED },
-      );
+      expect(mgr.update).toHaveBeenCalledWith(Bed, BED_ID_2, { status: BedStatus.OCCUPIED });
 
       // Transfer record was saved
       expect(mgr.save).toHaveBeenCalledWith(
@@ -581,9 +540,7 @@ describe('IpdService', () => {
       };
 
       (bedRepo.findOne as jest.Mock).mockResolvedValueOnce(bed);
-      (bedRepo.save as jest.Mock).mockImplementation((b: any) =>
-        Promise.resolve({ ...b }),
-      );
+      (bedRepo.save as jest.Mock).mockImplementation((b: any) => Promise.resolve({ ...b }));
       (bedRepo.count as jest.Mock)
         .mockResolvedValueOnce(10) // totalBeds
         .mockResolvedValueOnce(3); // occupiedBeds
@@ -604,21 +561,19 @@ describe('IpdService', () => {
         wardId: WARD_ID,
       });
 
-      await expect(
-        service.markBedAvailable(BED_ID, TENANT_ID),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.markBedAvailable(BED_ID, TENANT_ID)).rejects.toThrow(
+        BadRequestException,
+      );
 
-      await expect(
-        service.markBedAvailable(BED_ID, TENANT_ID),
-      ).rejects.toThrow(/cleaning/);
+      await expect(service.markBedAvailable(BED_ID, TENANT_ID)).rejects.toThrow(/cleaning/);
     });
 
     it('should throw NotFoundException when bed does not exist', async () => {
       (bedRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
 
-      await expect(
-        service.markBedAvailable(uuid('nope'), TENANT_ID),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.markBedAvailable(uuid('nope'), TENANT_ID)).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -637,13 +592,13 @@ describe('IpdService', () => {
         content: 'Patient resting well',
       };
 
-      await expect(
-        service.createNursingNote(dto as any, USER_ID, TENANT_ID),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.createNursingNote(dto as any, USER_ID, TENANT_ID)).rejects.toThrow(
+        BadRequestException,
+      );
 
-      await expect(
-        service.createNursingNote(dto as any, USER_ID, TENANT_ID),
-      ).rejects.toThrow(/non-active admission/);
+      await expect(service.createNursingNote(dto as any, USER_ID, TENANT_ID)).rejects.toThrow(
+        /non-active admission/,
+      );
     });
 
     it('should create a nursing note for an active admission', async () => {
@@ -705,9 +660,7 @@ describe('IpdService', () => {
           patient: { allergies: [] },
         });
 
-      mgr.save.mockImplementation((entity: any) =>
-        Promise.resolve({ ...entity }),
-      );
+      mgr.save.mockImplementation((entity: any) => Promise.resolve({ ...entity }));
 
       dataSource.transaction.mockImplementation((cb: any) => cb(mgr));
 
@@ -717,12 +670,7 @@ describe('IpdService', () => {
         notes: 'Given with food',
       };
 
-      const result = await service.administerMedication(
-        MED_ID,
-        dto as any,
-        USER_ID,
-        TENANT_ID,
-      );
+      const result = await service.administerMedication(MED_ID, dto as any, USER_ID, TENANT_ID);
 
       expect(result.status).toBe(MedicationStatus.ADMINISTERED);
       expect(result.administeredById).toBe(USER_ID);
@@ -814,9 +762,7 @@ describe('IpdService', () => {
           patient: { allergies: ['amoxicillin'] },
         });
 
-      mgr.save.mockImplementation((entity: any) =>
-        Promise.resolve({ ...entity }),
-      );
+      mgr.save.mockImplementation((entity: any) => Promise.resolve({ ...entity }));
 
       dataSource.transaction.mockImplementation((cb: any) => cb(mgr));
 
@@ -825,12 +771,7 @@ describe('IpdService', () => {
         allergyOverrideReason: 'No alternative available, patient consented',
       };
 
-      const result = await service.administerMedication(
-        MED_ID,
-        dto as any,
-        USER_ID,
-        TENANT_ID,
-      );
+      const result = await service.administerMedication(MED_ID, dto as any, USER_ID, TENANT_ID);
 
       expect(result.status).toBe(MedicationStatus.ADMINISTERED);
     });
@@ -847,7 +788,7 @@ describe('IpdService', () => {
       // to return different values on successive calls
       admissionQb.getCount
         .mockResolvedValueOnce(25) // activeAdmissions
-        .mockResolvedValueOnce(5)  // todayAdmissions
+        .mockResolvedValueOnce(5) // todayAdmissions
         .mockResolvedValueOnce(3); // todayDischarges
 
       // Spy on getWardOccupancy — it uses wardRepo.createQueryBuilder

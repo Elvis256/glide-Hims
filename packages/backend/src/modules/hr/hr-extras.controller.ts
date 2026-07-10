@@ -20,10 +20,7 @@ import {
   PipStatus,
 } from '../../database/entities/performance-improvement-plan.entity';
 import { EmployeeGoal, GoalStatus } from '../../database/entities/employee-goal.entity';
-import {
-  LetterTemplate,
-  LetterTemplateType,
-} from '../../database/entities/letter-template.entity';
+import { LetterTemplate, LetterTemplateType } from '../../database/entities/letter-template.entity';
 import { Employee } from '../../database/entities/employee.entity';
 
 @ApiTags('HR - PIP / Goals / Letters')
@@ -216,7 +213,10 @@ export class HrExtrasController {
     const ctx: Record<string, any> = { ...(body.variables || {}) };
     if (body.employeeId) {
       const emp = await this.employeeRepo.findOne({
-        where: { id: body.employeeId, ...(req.user?.tenantId ? { tenantId: req.user.tenantId } : {}) },
+        where: {
+          id: body.employeeId,
+          ...(req.user?.tenantId ? { tenantId: req.user.tenantId } : {}),
+        },
       });
       if (emp) ctx.employee = emp;
     }

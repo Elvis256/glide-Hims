@@ -18,6 +18,8 @@ export enum GRNStatus {
 @Index(['grnNumber'], { unique: true })
 @Index(['status'])
 @Index(['receivedAt'])
+@Index(['facilityId', 'status'])
+@Index(['purchaseOrderId'])
 export class GoodsReceiptNote extends BaseEntity {
   @Column({ name: 'grn_number', unique: true })
   grnNumber: string;

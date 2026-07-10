@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner, Table, TableIndex, TableForeignKey } from 'typeorm';
 
-export class AddPhase3SyncReplicationEntities1777300000000
-  implements MigrationInterface
-{
+export class AddPhase3SyncReplicationEntities1777300000000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Create replication_logs table
     await queryRunner.createTable(

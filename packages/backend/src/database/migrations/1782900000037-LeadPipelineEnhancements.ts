@@ -11,10 +11,18 @@ export class LeadPipelineEnhancements1782900000037 implements MigrationInterface
     // Add pipeline columns to leads (no explicit name: in entity → camelCase)
     await queryRunner.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "assignedTo" UUID;`);
     await queryRunner.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS priority VARCHAR(20);`);
-    await queryRunner.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "lastContactedAt" TIMESTAMPTZ;`);
-    await queryRunner.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "nextFollowUpAt" TIMESTAMPTZ;`);
-    await queryRunner.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "estimatedArrMinor" INTEGER NOT NULL DEFAULT 0;`);
-    await queryRunner.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS "estimatedArrCurrency" VARCHAR(3) NOT NULL DEFAULT 'UGX';`);
+    await queryRunner.query(
+      `ALTER TABLE leads ADD COLUMN IF NOT EXISTS "lastContactedAt" TIMESTAMPTZ;`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE leads ADD COLUMN IF NOT EXISTS "nextFollowUpAt" TIMESTAMPTZ;`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE leads ADD COLUMN IF NOT EXISTS "estimatedArrMinor" INTEGER NOT NULL DEFAULT 0;`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE leads ADD COLUMN IF NOT EXISTS "estimatedArrCurrency" VARCHAR(3) NOT NULL DEFAULT 'UGX';`,
+    );
 
     // Create lead_activities table
     await queryRunner.query(`
@@ -28,8 +36,12 @@ export class LeadPipelineEnhancements1782900000037 implements MigrationInterface
         "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
       );
     `);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_lead_activities_lead ON lead_activities (lead_id);`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_lead_activities_type ON lead_activities (type);`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_lead_activities_lead ON lead_activities (lead_id);`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS idx_lead_activities_type ON lead_activities (type);`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

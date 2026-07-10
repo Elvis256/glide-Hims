@@ -1,4 +1,22 @@
-import { Controller, Get, Post, Put, Delete, Param, Body, Req, Res, Query, HttpCode, HttpStatus, ForbiddenException, NotFoundException, BadRequestException, UseInterceptors, UploadedFile } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Param,
+  Body,
+  Req,
+  Res,
+  Query,
+  HttpCode,
+  HttpStatus,
+  ForbiddenException,
+  NotFoundException,
+  BadRequestException,
+  UseInterceptors,
+  UploadedFile,
+} from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -13,7 +31,13 @@ import { MonitoringService } from './monitoring.service';
 import { BackupService } from '../backup/backup.service';
 import { Public } from '../auth/decorators/public.decorator';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
-import { CreateDeploymentDto, UpdateDeploymentDto, ToggleFeatureFlagDto, ProvisionDeploymentDto, CreateUpdateRolloutDto } from './deployment.dto';
+import {
+  CreateDeploymentDto,
+  UpdateDeploymentDto,
+  ToggleFeatureFlagDto,
+  ProvisionDeploymentDto,
+  CreateUpdateRolloutDto,
+} from './deployment.dto';
 
 @Controller('deployments')
 @AuthWithPermissions('system.manage')
@@ -63,7 +87,7 @@ export class DeploymentController {
 
     // For system admins, use the tenantId from the DTO if provided, otherwise fallback to their context.
     // This allows admins to create deployments for any tenant while maintaining security for regular users.
-    const tenantId = (isSysAdmin && dto?.tenantId) ? dto.tenantId : this.getUserTenantId(req);
+    const tenantId = isSysAdmin && dto?.tenantId ? dto.tenantId : this.getUserTenantId(req);
     return this.deploymentService.createDeployment(tenantId, dto as CreateDeploymentDto);
   }
 
@@ -193,37 +217,38 @@ export class DeploymentController {
   @Get('source-bundle')
   @Public()
   @Throttle({ default: { ttl: 60000, limit: 3 } })
-  async serveSourceBundle(
-    @Query('licenseKey') licenseKey: string,
-    @Res() res: Response,
-  ) {
+  async serveSourceBundle(@Query('licenseKey') licenseKey: string, @Res() res: Response) {
     await this.deploymentService.assertValidInstallerLicense(licenseKey);
 
     const projectRoot = path.resolve(__dirname, '..', '..', '..', '..', '..');
     const filename = `glide-hims-source-${new Date().toISOString().slice(0, 10)}.tar.gz`;
-    const tar = spawn('tar', [
-      '--exclude=./.git',
-      '--exclude=./node_modules',
-      '--exclude=./packages/*/node_modules',
-      '--exclude=./packages/backend/dist',
-      '--exclude=./packages/*/.env',
-      '--exclude=./packages/backend/uploads*',
-      '--exclude=./packages/backend/backups*',
-      '--exclude=./packages/frontend/dist',
-      '--exclude=./packages/*/coverage',
-      '--exclude=./.env',
-      '--exclude=./backups*',
-      '--exclude=./coverage',
-      '--exclude=./*.log',
-      '--exclude=./deployment/dist',
-      '--exclude=./wildcard.key',
-      '--exclude=./wildcard.crt',
-      '-czf',
-      '-',
-      '-C',
-      projectRoot,
-      '.',
-    ], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const tar = spawn(
+      'tar',
+      [
+        '--exclude=./.git',
+        '--exclude=./node_modules',
+        '--exclude=./packages/*/node_modules',
+        '--exclude=./packages/backend/dist',
+        '--exclude=./packages/*/.env',
+        '--exclude=./packages/backend/uploads*',
+        '--exclude=./packages/backend/backups*',
+        '--exclude=./packages/frontend/dist',
+        '--exclude=./packages/*/coverage',
+        '--exclude=./.env',
+        '--exclude=./backups*',
+        '--exclude=./coverage',
+        '--exclude=./*.log',
+        '--exclude=./deployment/dist',
+        '--exclude=./wildcard.key',
+        '--exclude=./wildcard.crt',
+        '-czf',
+        '-',
+        '-C',
+        projectRoot,
+        '.',
+      ],
+      { stdio: ['ignore', 'pipe', 'pipe'] },
+    );
 
     res.setHeader('Content-Type', 'application/gzip');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -253,13 +278,12 @@ export class DeploymentController {
   @Get('installers/:type')
   @Public()
   @Throttle({ default: { ttl: 60000, limit: 10 } })
-  async serveInstallerScript(
-    @Param('type') type: string,
-    @Res() res: Response,
-  ) {
+  async serveInstallerScript(@Param('type') type: string, @Res() res: Response) {
     const allowed = ['hybrid', 'standalone'];
     if (!allowed.includes(type)) {
-      throw new BadRequestException(`Unknown installer type "${type}". Allowed: ${allowed.join(', ')}`);
+      throw new BadRequestException(
+        `Unknown installer type "${type}". Allowed: ${allowed.join(', ')}`,
+      );
     }
 
     // Walk up from dist/modules/deployments → project root
@@ -292,10 +316,7 @@ export class DeploymentController {
   }
 
   @Get('snapshots/:snapshotId/restore-instructions')
-  async getRestoreInstructions(
-    @Req() req: Request,
-    @Param('snapshotId') snapshotId: string,
-  ) {
+  async getRestoreInstructions(@Req() req: Request, @Param('snapshotId') snapshotId: string) {
     if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
     const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol;
     const host = (req.headers['x-forwarded-host'] as string) || req.headers['host'];
@@ -305,7 +326,8 @@ export class DeploymentController {
 
   @Post('features/toggle')
   async toggleFeature(@Req() req: Request, @Body() dto: ToggleFeatureFlagDto) {
-    const tenantId = this.isSystemAdmin(req) && dto.tenantId ? dto.tenantId : this.getUserTenantId(req);
+    const tenantId =
+      this.isSystemAdmin(req) && dto.tenantId ? dto.tenantId : this.getUserTenantId(req);
     return this.featureFlagService.toggleFeature(tenantId, dto);
   }
 
@@ -340,7 +362,11 @@ export class DeploymentController {
   }
 
   @Put(':deploymentId')
-  async updateDeployment(@Req() req: Request, @Param('deploymentId') deploymentId: string, @Body() dto: UpdateDeploymentDto) {
+  async updateDeployment(
+    @Req() req: Request,
+    @Param('deploymentId') deploymentId: string,
+    @Body() dto: UpdateDeploymentDto,
+  ) {
     const tenantId = this.getUserTenantId(req);
     return this.deploymentService.updateDeployment(tenantId, deploymentId, dto);
   }
@@ -353,7 +379,11 @@ export class DeploymentController {
   }
 
   @Post(':deploymentId/activate/:versionId')
-  async activateDeployment(@Req() req: Request, @Param('deploymentId') deploymentId: string, @Param('versionId') versionId: string) {
+  async activateDeployment(
+    @Req() req: Request,
+    @Param('deploymentId') deploymentId: string,
+    @Param('versionId') versionId: string,
+  ) {
     const tenantId = this.getUserTenantId(req);
     return this.deploymentService.activateDeployment(tenantId, deploymentId, versionId);
   }
@@ -424,10 +454,7 @@ export class DeploymentController {
   }
 
   @Post(':deploymentId/sync-from-license')
-  async syncFromLicense(
-    @Req() req: Request,
-    @Param('deploymentId') deploymentId: string,
-  ) {
+  async syncFromLicense(@Req() req: Request, @Param('deploymentId') deploymentId: string) {
     if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
     return this.deploymentService.syncMetadataFromLicense(deploymentId);
   }
@@ -541,7 +568,12 @@ export class DeploymentController {
     @Body() dto: { title: string; severity: string },
   ) {
     const tenantId = this.getUserTenantId(req);
-    return this.monitoringService.createAlert(tenantId, deploymentId, dto.title, dto.severity as any);
+    return this.monitoringService.createAlert(
+      tenantId,
+      deploymentId,
+      dto.title,
+      dto.severity as any,
+    );
   }
 
   // (alerts list + resolve are declared in the STATIC-PREFIX ROUTES section above)

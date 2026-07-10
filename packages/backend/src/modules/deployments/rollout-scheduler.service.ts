@@ -96,7 +96,11 @@ export class RolloutSchedulerService {
         r.status = UpdateRolloutStatus.COMPLETED;
         r.currentPhase = UpdateRolloutPhase.PHASE_3;
         r.endDate = now;
-        r.metadata = { ...meta, completedAt: now.toISOString(), reason: 'all deployments processed' };
+        r.metadata = {
+          ...meta,
+          completedAt: now.toISOString(),
+          reason: 'all deployments processed',
+        };
         await this.rolloutRepository.save(r);
         this.logger.log(`Completed rollout ${r.id} (all deployments processed)`);
         continue;

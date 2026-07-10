@@ -8,15 +8,12 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, Between } from 'typeorm';
-import { 
+import {
   GoodsReceiptNote,
   GoodsReceiptItem,
   GRNStatus,
 } from '../../database/entities/goods-receipt.entity';
-import { 
-  PurchaseOrder, 
-  PurchaseOrderItem 
-} from '../../database/entities/purchase-order.entity';
+import { PurchaseOrder, PurchaseOrderItem } from '../../database/entities/purchase-order.entity';
 import { ChartOfAccount } from '../../database/entities/chart-of-account.entity';
 import { JournalEntry, JournalStatus } from '../../database/entities/journal-entry.entity';
 import { JournalEntryLine } from '../../database/entities/journal-entry-line.entity';
@@ -24,9 +21,10 @@ import { Supplier } from '../../database/entities/supplier.entity';
 import { Item } from '../../database/entities/inventory.entity';
 import { FinanceService } from '../finance/finance.service';
 import { BudgetService } from '../finance/budget.service';
-import { 
+import {
   EncumbranceDto,
   EncumbranceStatus,
+  EncumbranceStatusType,
   ThreeWayMatchDto,
   ReconciliationReportDto,
   MatchStatus,
@@ -103,7 +101,9 @@ export class ProcurementGLIntegrationService {
     });
 
     if (!inventoryAccount || !apAccount) {
-      throw new BadRequestException('Required GL accounts (inventory / accounts payable) not configured');
+      throw new BadRequestException(
+        'Required GL accounts (inventory / accounts payable) not configured',
+      );
     }
 
     const totalAmount = Number(grn.totalValue || 0);
@@ -155,9 +155,7 @@ export class ProcurementGLIntegrationService {
       ];
       await lineRepo.save(lines);
 
-      this.logger.log(
-        `Posted GRN ${grnId} to GL. Entry: ${savedEntry.id}, Amount: ${totalAmount}`,
-      );
+      this.logger.log(`Posted GRN ${grnId} to GL. Entry: ${savedEntry.id}, Amount: ${totalAmount}`);
 
       return {
         success: true,
@@ -171,11 +169,7 @@ export class ProcurementGLIntegrationService {
   /**
    * Encumber budget on PO creation
    */
-  async encumberBudgetForPO(
-    poId: string,
-    departmentId: string,
-    tenantId?: string,
-  ): Promise<any> {
+  async encumberBudgetForPO(poId: string, departmentId: string, tenantId?: string): Promise<any> {
     const where: any = { id: poId };
     if (tenantId) where.tenantId = tenantId;
     const po = await this.poRepo.findOne({ where, relations: ['items'] });
@@ -286,7 +280,7 @@ export class ProcurementGLIntegrationService {
       poNumber: po.orderNumber,
       amount: Number(po.totalAmount || 0),
       departmentId,
-      status: 'active' as any,
+      status: EncumbranceStatusType.ACTIVE,
       createdDate: po.createdAt,
       releasedDate: undefined,
     }));

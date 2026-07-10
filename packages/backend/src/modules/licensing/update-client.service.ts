@@ -30,11 +30,7 @@ export class UpdateClientService {
   /**
    * Called by phone-home service when an update is available.
    */
-  async handleUpdateAvailable(info: {
-    version: string;
-    updateUrl: string;
-    rolloutId?: string;
-  }) {
+  async handleUpdateAvailable(info: { version: string; updateUrl: string; rolloutId?: string }) {
     if (!this.enabled) return;
 
     this.logger.log(`Update available: v${info.version} — url: ${info.updateUrl}`);
@@ -48,7 +44,7 @@ export class UpdateClientService {
     } else {
       this.logger.log(
         'AUTO_UPDATE disabled — update stored for manual trigger. ' +
-        'An admin can apply it via POST /api/v1/license/trigger-update',
+          'An admin can apply it via POST /api/v1/license/trigger-update',
       );
     }
   }
@@ -74,15 +70,18 @@ export class UpdateClientService {
   /**
    * Get the currently stored available update info (if any).
    */
-  async getAvailableUpdate(): Promise<{ version: string; url: string; rolloutId?: string; detectedAt: string } | null> {
+  async getAvailableUpdate(): Promise<{
+    version: string;
+    url: string;
+    rolloutId?: string;
+    detectedAt: string;
+  } | null> {
     try {
       const rows = await this.dataSource.query(
         `SELECT value FROM system_settings WHERE key = 'available_update' LIMIT 1`,
       );
       if (rows.length && rows[0].value) {
-        return typeof rows[0].value === 'string'
-          ? JSON.parse(rows[0].value)
-          : rows[0].value;
+        return typeof rows[0].value === 'string' ? JSON.parse(rows[0].value) : rows[0].value;
       }
     } catch {
       // table may not exist on fresh installs
@@ -121,7 +120,8 @@ export class UpdateClientService {
 
     const scriptPath = path.resolve(__dirname, '..', '..', '..', '..', 'update-glide.sh');
     const licenseKey = this.configService.get<string>('LICENSE_KEY') || '';
-    const platformUrl = this.configService.get<string>('PHONE_HOME_URL') ||
+    const platformUrl =
+      this.configService.get<string>('PHONE_HOME_URL') ||
       'https://hmisdemo.itsolutionsuganda.com/api';
 
     this.logger.log(`Starting update: script=${scriptPath}, url=${updateUrl}`);
@@ -161,7 +161,9 @@ export class UpdateClientService {
           await this.dataSource.query(
             `DELETE FROM system_settings WHERE key = 'available_update' AND tenant_id IS NULL`,
           );
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       }
     });
 
@@ -178,11 +180,16 @@ export class UpdateClientService {
   ) {
     try {
       const reportUrl = `${platformUrl.replace(/\/api\/?$/, '')}/api/v1/deployments/rollouts/${rolloutId}/report`;
-      await axios.post(reportUrl, {
-        licenseKey,
-        status: status === 'success' ? 'success' : 'failed',
-        errorMessage: status === 'failed' ? `Update script exited with code ${exitCode}` : undefined,
-      }, { timeout: 15000 });
+      await axios.post(
+        reportUrl,
+        {
+          licenseKey,
+          status: status === 'success' ? 'success' : 'failed',
+          errorMessage:
+            status === 'failed' ? `Update script exited with code ${exitCode}` : undefined,
+        },
+        { timeout: 15000 },
+      );
       this.logger.log(`Reported update result (${status}) to platform`);
     } catch (err) {
       this.logger.warn(`Failed to report update result: ${(err as Error).message}`);

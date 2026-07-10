@@ -185,11 +185,7 @@ export class ReportsService {
    * either NULL facility_id (shared catalog) or a row tied to the supplied
    * facility.
    */
-  private async requireItem(
-    tenantId: string,
-    facilityId: string,
-    itemId?: string,
-  ): Promise<void> {
+  private async requireItem(tenantId: string, facilityId: string, itemId?: string): Promise<void> {
     if (!itemId) return;
     const [row] = await this.ds.query(
       `SELECT 1 FROM items
@@ -252,8 +248,9 @@ export class ReportsService {
       [tid, q.facilityId, start, end],
     );
 
-    const topMedications = await this.ds.query(
-      `SELECT i.name AS name,
+    const topMedications = await this.ds
+      .query(
+        `SELECT i.name AS name,
               SUM(ABS(sl.quantity))::int AS quantity
        FROM stock_ledger sl
        JOIN items i ON i.id = sl.item_id
@@ -265,28 +262,33 @@ export class ReportsService {
        GROUP BY i.name
        ORDER BY quantity DESC
        LIMIT 10`,
-      [tid, q.facilityId, start, end],
-    ).catch(() => []);
+        [tid, q.facilityId, start, end],
+      )
+      .catch(() => []);
 
-    const [lowStockRow] = await this.ds.query(
-      `SELECT COUNT(*)::int AS low_stock
+    const [lowStockRow] = await this.ds
+      .query(
+        `SELECT COUNT(*)::int AS low_stock
        FROM stock_balances sb
        JOIN items i ON i.id = sb.item_id
        WHERE sb.tenant_id = $1 AND sb.facility_id = $2
          AND sb.available_quantity <= COALESCE(i.reorder_level, 10)`,
-      [tid, q.facilityId],
-    ).catch(() => [{ low_stock: 0 }]);
+        [tid, q.facilityId],
+      )
+      .catch(() => [{ low_stock: 0 }]);
 
-    const [criticalRow] = await this.ds.query(
-      `SELECT COUNT(*)::int AS critical
+    const [criticalRow] = await this.ds
+      .query(
+        `SELECT COUNT(*)::int AS critical
        FROM critical_result_alerts cra
        LEFT JOIN encounters e ON e.id = cra.encounter_id
        WHERE cra.tenant_id = $1
          AND (e.facility_id = $2 OR cra.encounter_id IS NULL)
          AND cra.created_at BETWEEN $3 AND $4
          AND cra.deleted_at IS NULL`,
-      [tid, q.facilityId, start, end],
-    ).catch(() => [{ critical: 0 }]);
+        [tid, q.facilityId, start, end],
+      )
+      .catch(() => [{ critical: 0 }]);
 
     return {
       period: { start, end },
@@ -471,37 +473,44 @@ export class ReportsService {
     const { start, end } = this.resolveRange(q.startDate, q.endDate);
 
     const [summary, trend, byCause, byAge] = await Promise.all([
-      this.ds.query(
-        `SELECT COUNT(*)::int AS deaths
+      this.ds
+        .query(
+          `SELECT COUNT(*)::int AS deaths
          FROM admissions a
          JOIN encounters e ON e.id = a."encounterId"
          WHERE a.tenant_id = $1 AND e.facility_id = $2
            AND a.status = 'deceased'
            AND a."dischargeDate" BETWEEN $3 AND $4
            AND a.deleted_at IS NULL`,
-        [tid, q.facilityId, start, end],
-      ).catch(() => [{ deaths: 0 }]),
-      this.ds.query(
-        `SELECT date_trunc('day', a."dischargeDate") AS day, COUNT(*)::int AS count
+          [tid, q.facilityId, start, end],
+        )
+        .catch(() => [{ deaths: 0 }]),
+      this.ds
+        .query(
+          `SELECT date_trunc('day', a."dischargeDate") AS day, COUNT(*)::int AS count
          FROM admissions a
          JOIN encounters e ON e.id = a."encounterId"
          WHERE a.tenant_id = $1 AND e.facility_id = $2
            AND a.status = 'deceased'
            AND a."dischargeDate" BETWEEN $3 AND $4
          GROUP BY 1 ORDER BY 1`,
-        [tid, q.facilityId, start, end],
-      ).catch(() => []),
-      this.ds.query(
-        `SELECT COALESCE(a."dischargeDiagnosis", 'Unknown') AS cause, COUNT(*)::int AS count
+          [tid, q.facilityId, start, end],
+        )
+        .catch(() => []),
+      this.ds
+        .query(
+          `SELECT COALESCE(a."dischargeDiagnosis", 'Unknown') AS cause, COUNT(*)::int AS count
          FROM admissions a
          JOIN encounters e ON e.id = a."encounterId"
          WHERE a.tenant_id = $1 AND e.facility_id = $2 AND a.status = 'deceased'
            AND a."dischargeDate" BETWEEN $3 AND $4
          GROUP BY 1 ORDER BY count DESC LIMIT 20`,
-        [tid, q.facilityId, start, end],
-      ).catch(() => []),
-      this.ds.query(
-        `SELECT
+          [tid, q.facilityId, start, end],
+        )
+        .catch(() => []),
+      this.ds
+        .query(
+          `SELECT
            CASE WHEN EXTRACT(YEAR FROM AGE(p.date_of_birth, a."dischargeDate")) < 5 THEN '<5' ELSE '>=5' END AS age_band,
            p.gender,
            COUNT(*)::int AS count
@@ -511,8 +520,9 @@ export class ReportsService {
          WHERE a.tenant_id = $1 AND e.facility_id = $2 AND a.status = 'deceased'
            AND a."dischargeDate" BETWEEN $3 AND $4
          GROUP BY 1, 2`,
-        [tid, q.facilityId, start, end],
-      ).catch(() => []),
+          [tid, q.facilityId, start, end],
+        )
+        .catch(() => []),
     ]);
 
     return {
@@ -546,16 +556,18 @@ export class ReportsService {
          GROUP BY 1 ORDER BY 1`,
         [tid, q.facilityId, start, end],
       ),
-      this.ds.query(
-        `SELECT ii.charge_type AS service_type, COALESCE(SUM(ii.amount),0)::float AS amount
+      this.ds
+        .query(
+          `SELECT ii.charge_type AS service_type, COALESCE(SUM(ii.amount),0)::float AS amount
          FROM invoice_items ii
          JOIN invoices i ON i.id = ii.invoice_id
          LEFT JOIN encounters e ON e.id = i.encounter_id
          WHERE i.tenant_id = $1 AND (e.facility_id = $2 OR i.encounter_id IS NULL)
            AND i.created_at BETWEEN $3 AND $4 AND i.deleted_at IS NULL
          GROUP BY ii.charge_type ORDER BY amount DESC`,
-        [tid, q.facilityId, start, end],
-      ).catch(() => []),
+          [tid, q.facilityId, start, end],
+        )
+        .catch(() => []),
       this.ds.query(
         `SELECT COALESCE(SUM(i.total_amount),0)::float AS gross,
                 COALESCE(SUM(i.discount_amount),0)::float AS discounts,
@@ -718,7 +730,9 @@ export class ReportsService {
     );
 
     const totalValue = rows.reduce((s: number, r: any) => s + Number(r.value || 0), 0);
-    const lowStock = rows.filter((r: any) => Number(r.on_hand) <= Number(r.reorder_level || 10)).length;
+    const lowStock = rows.filter(
+      (r: any) => Number(r.on_hand) <= Number(r.reorder_level || 10),
+    ).length;
     return { totalItems: rows.length, totalValue, lowStock, items: rows };
   }
 
@@ -776,8 +790,9 @@ export class ReportsService {
     await this.requireFacility(tid, q.facilityId);
     const days = q.daysAhead ?? 90;
 
-    const items = await this.ds.query(
-      `SELECT bs.id, bs.batch_number, bs.expiry_date, bs.quantity::float AS quantity,
+    const items = await this.ds
+      .query(
+        `SELECT bs.id, bs.batch_number, bs.expiry_date, bs.quantity::float AS quantity,
               i.name AS item_name, i.code AS item_code,
               i.unit_cost::float AS unit_cost,
               (bs.quantity * i.unit_cost)::float AS value,
@@ -788,19 +803,33 @@ export class ReportsService {
          AND bs.expiry_date <= CURRENT_DATE + ($3 || ' days')::interval
          AND bs.quantity > 0
        ORDER BY bs.expiry_date ASC`,
-      [tid, q.facilityId, days],
-    ).catch(() => []);
+        [tid, q.facilityId, days],
+      )
+      .catch(() => []);
 
     const expired = items.filter((r: any) => Number(r.days_until_expiry) < 0);
-    const within30 = items.filter((r: any) => Number(r.days_until_expiry) >= 0 && Number(r.days_until_expiry) <= 30);
-    const within90 = items.filter((r: any) => Number(r.days_until_expiry) > 30 && Number(r.days_until_expiry) <= 90);
+    const within30 = items.filter(
+      (r: any) => Number(r.days_until_expiry) >= 0 && Number(r.days_until_expiry) <= 30,
+    );
+    const within90 = items.filter(
+      (r: any) => Number(r.days_until_expiry) > 30 && Number(r.days_until_expiry) <= 90,
+    );
 
     return {
       daysAhead: days,
       totals: {
-        expired: { count: expired.length, value: expired.reduce((s: number, r: any) => s + Number(r.value || 0), 0) },
-        within30: { count: within30.length, value: within30.reduce((s: number, r: any) => s + Number(r.value || 0), 0) },
-        within90: { count: within90.length, value: within90.reduce((s: number, r: any) => s + Number(r.value || 0), 0) },
+        expired: {
+          count: expired.length,
+          value: expired.reduce((s: number, r: any) => s + Number(r.value || 0), 0),
+        },
+        within30: {
+          count: within30.length,
+          value: within30.reduce((s: number, r: any) => s + Number(r.value || 0), 0),
+        },
+        within90: {
+          count: within90.length,
+          value: within90.reduce((s: number, r: any) => s + Number(r.value || 0), 0),
+        },
       },
       items,
     };
@@ -813,7 +842,9 @@ export class ReportsService {
   private parsePeriodMonth(period: string): { start: Date; end: Date } {
     const [y, m] = period.split('-').map(Number);
     if (!Number.isInteger(y) || !Number.isInteger(m) || y < 2000 || y > 2099 || m < 1 || m > 12) {
-      throw new BadRequestException(`Invalid period "${period}" — expected YYYY-MM with year 2000-2099`);
+      throw new BadRequestException(
+        `Invalid period "${period}" — expected YYYY-MM with year 2000-2099`,
+      );
     }
     const start = new Date(Date.UTC(y, m - 1, 1));
     const end = new Date(Date.UTC(y, m, 1));
@@ -823,7 +854,9 @@ export class ReportsService {
   private parsePeriodWeek(week: string): { start: Date; end: Date } {
     const [y, w] = week.split('-').map(Number);
     if (!Number.isInteger(y) || !Number.isInteger(w) || y < 2000 || y > 2099 || w < 1 || w > 53) {
-      throw new BadRequestException(`Invalid week "${week}" — expected YYYY-WW with year 2000-2099`);
+      throw new BadRequestException(
+        `Invalid week "${week}" — expected YYYY-WW with year 2000-2099`,
+      );
     }
     // ISO week: Monday is day 1
     const jan4 = new Date(Date.UTC(y, 0, 4));
@@ -883,8 +916,9 @@ export class ReportsService {
     await this.requireFacility(tid, q.facilityId);
     const { start, end } = this.parsePeriodMonth(q.period);
 
-    const rows = await this.ds.query(
-      `SELECT lt.category,
+    const rows = await this.ds
+      .query(
+        `SELECT lt.category,
               COUNT(*)::int AS samples,
               SUM(CASE WHEN ls.status IN ('completed','reported','verified') THEN 1 ELSE 0 END)::int AS reported,
               SUM(CASE WHEN ls.status = 'rejected' THEN 1 ELSE 0 END)::int AS rejected
@@ -894,11 +928,12 @@ export class ReportsService {
          AND ls.created_at >= $2 AND ls.created_at < $3
          AND ls.deleted_at IS NULL
        GROUP BY lt.category ORDER BY samples DESC`,
-      [tid, start, end],
-    ).catch((e: any) => {
-      this.logger.warn(`HMIS122 query failed: ${e.message}`);
-      return [];
-    });
+        [tid, start, end],
+      )
+      .catch((e: any) => {
+        this.logger.warn(`HMIS122 query failed: ${e.message}`);
+        return [];
+      });
 
     return {
       report: 'HMIS 122',
@@ -939,18 +974,22 @@ export class ReportsService {
     );
 
     // Compute deaths per disease from admissions joined by ICD prefix in dischargeDiagnosis
-    const deathsByDisease = await this.ds.query(
-      `SELECT a."dischargeDiagnosis" AS discharge_diagnosis, COUNT(*)::int AS deaths
+    const deathsByDisease = await this.ds
+      .query(
+        `SELECT a."dischargeDiagnosis" AS discharge_diagnosis, COUNT(*)::int AS deaths
        FROM admissions a
        JOIN encounters e ON e.id = a."encounterId"
        WHERE a.tenant_id = $1 AND e.facility_id = $2 AND a.status = 'deceased'
          AND a."dischargeDate" >= $3 AND a."dischargeDate" < $4
        GROUP BY 1`,
-      [tid, q.facilityId, start, end],
-    ).catch(() => []);
+        [tid, q.facilityId, start, end],
+      )
+      .catch(() => []);
 
     for (const r of rows) {
-      const match = deathsByDisease.find((d: any) => (d.discharge_diagnosis || '').toLowerCase().includes((r.disease || '').toLowerCase()));
+      const match = deathsByDisease.find((d: any) =>
+        (d.discharge_diagnosis || '').toLowerCase().includes((r.disease || '').toLowerCase()),
+      );
       if (match) r.deaths = Number(match.deaths);
     }
 
@@ -971,7 +1010,9 @@ export class ReportsService {
     await this.requireFacility(tid, q.facilityId);
     const { start, end } = this.parsePeriodWeek(q.week);
 
-    const tracerLikes = MTRAC_TRACER_ITEMS.map((_, i) => `i.name ILIKE $${3 + i} OR i.generic_name ILIKE $${3 + i}`).join(' OR ');
+    const tracerLikes = MTRAC_TRACER_ITEMS.map(
+      (_, i) => `i.name ILIKE $${3 + i} OR i.generic_name ILIKE $${3 + i}`,
+    ).join(' OR ');
     const params = [tid, q.facilityId, ...MTRAC_TRACER_ITEMS.map((n) => `%${n}%`)];
 
     const stockoutRows = await this.ds.query(
@@ -987,8 +1028,9 @@ export class ReportsService {
       params,
     );
 
-    const consumptionRows = await this.ds.query(
-      `SELECT i.name AS item, SUM(ABS(sl.quantity))::int AS dispensed
+    const consumptionRows = await this.ds
+      .query(
+        `SELECT i.name AS item, SUM(ABS(sl.quantity))::int AS dispensed
        FROM stock_ledger sl
        JOIN items i ON i.id = sl.item_id
        WHERE sl.tenant_id = $1 AND sl.facility_id = $2
@@ -997,8 +1039,9 @@ export class ReportsService {
          AND sl.quantity < 0
          AND (${MTRAC_TRACER_ITEMS.map((_, i) => `i.name ILIKE $${5 + i} OR i.generic_name ILIKE $${5 + i}`).join(' OR ')})
        GROUP BY i.name`,
-      [tid, q.facilityId, start, end, ...MTRAC_TRACER_ITEMS.map((n) => `%${n}%`)],
-    ).catch(() => []);
+        [tid, q.facilityId, start, end, ...MTRAC_TRACER_ITEMS.map((n) => `%${n}%`)],
+      )
+      .catch(() => []);
 
     const consMap = new Map(consumptionRows.map((r: any) => [r.item, Number(r.dispensed)]));
     for (const r of stockoutRows) r.dispensed_in_week = consMap.get(r.item) || 0;

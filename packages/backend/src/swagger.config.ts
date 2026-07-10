@@ -40,10 +40,7 @@ export async function setupSwagger(app: INestApplication) {
       'https://glide-hims.example.com/support',
       'support@glide-hims.example.com',
     )
-    .setLicense(
-      'Apache 2.0',
-      'https://www.apache.org/licenses/LICENSE-2.0.html',
-    )
+    .setLicense('Apache 2.0', 'https://www.apache.org/licenses/LICENSE-2.0.html')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);

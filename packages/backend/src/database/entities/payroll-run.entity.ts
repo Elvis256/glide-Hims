@@ -7,6 +7,7 @@ import {
   ManyToOne,
   JoinColumn,
   OneToMany,
+  Index,
 } from 'typeorm';
 import { Facility } from './facility.entity';
 import { User } from './user.entity';
@@ -21,6 +22,7 @@ export enum PayrollStatus {
 }
 
 @Entity('payroll_runs')
+@Index(['facilityId', 'month', 'year'])
 export class PayrollRun {
   @PrimaryGeneratedColumn('uuid')
   id: string;

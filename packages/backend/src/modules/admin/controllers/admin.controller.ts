@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  UseGuards,
+  Query,
+} from '@nestjs/common';
 import { AdminService } from '../services/admin.service';
 import { AdminGuard } from '../../../common/guards/admin.guard';
 import { IsAdmin } from '../../../common/decorators/current-tenant.decorator';

@@ -433,4 +433,3 @@ export class RecordLocationDto {
   @IsOptional() @IsString() reason?: string;
   @IsOptional() @IsString() notes?: string;
 }
-

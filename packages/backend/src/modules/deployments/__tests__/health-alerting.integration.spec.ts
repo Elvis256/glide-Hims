@@ -65,15 +65,24 @@ describe('Phase 4 Health & Alerting Integration Tests', () => {
     healthRepository = module.get<Repository<DeploymentHealth>>(
       getRepositoryToken(DeploymentHealth),
     );
-    alertRepository = module.get<Repository<DeploymentAlert>>(
-      getRepositoryToken(DeploymentAlert),
-    );
+    alertRepository = module.get<Repository<DeploymentAlert>>(getRepositoryToken(DeploymentAlert));
 
     mockDeploymentRepository.findOne.mockResolvedValue({ id: 'deploy-1', tenantId: 'tenant-1' });
     mockHealthRepository.create.mockImplementation((arg) => ({ ...arg, createdAt: new Date() }));
-    mockHealthRepository.save.mockImplementation(async (arg) => ({ ...arg, createdAt: new Date() }));
-    mockAlertRepository.create.mockImplementation((arg) => ({ ...arg, id: 'alert-1', createdAt: new Date() }));
-    mockAlertRepository.save.mockImplementation(async (arg) => ({ ...arg, id: 'alert-1', createdAt: new Date() }));
+    mockHealthRepository.save.mockImplementation(async (arg) => ({
+      ...arg,
+      createdAt: new Date(),
+    }));
+    mockAlertRepository.create.mockImplementation((arg) => ({
+      ...arg,
+      id: 'alert-1',
+      createdAt: new Date(),
+    }));
+    mockAlertRepository.save.mockImplementation(async (arg) => ({
+      ...arg,
+      id: 'alert-1',
+      createdAt: new Date(),
+    }));
 
     jest.clearAllMocks();
   });
@@ -95,10 +104,12 @@ describe('Phase 4 Health & Alerting Integration Tests', () => {
 
       const result = await healthMetricsCollectorService.collectMetrics(deploymentId);
 
-      expect(result).toEqual(expect.objectContaining({
-        deploymentId,
-        timestamp: expect.any(Date),
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          deploymentId,
+          timestamp: expect.any(Date),
+        }),
+      );
     });
 
     it('should detect anomalies in metrics', async () => {
@@ -112,17 +123,17 @@ describe('Phase 4 Health & Alerting Integration Tests', () => {
         errorRate: 0.15, // Elevated
       };
 
-      const result = await healthMetricsCollectorService.detectAnomalies(
-        anomalousMetrics,
-      );
+      const result = await healthMetricsCollectorService.detectAnomalies(anomalousMetrics);
 
-      expect(result).toEqual(expect.objectContaining({
-        hasAnomalies: true,
-        anomalies: expect.arrayContaining([
-          expect.objectContaining({ metric: 'cpuUsage' }),
-          expect.objectContaining({ metric: 'responseTime' }),
-        ]),
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          hasAnomalies: true,
+          anomalies: expect.arrayContaining([
+            expect.objectContaining({ metric: 'cpuUsage' }),
+            expect.objectContaining({ metric: 'responseTime' }),
+          ]),
+        }),
+      );
     });
 
     it('should calculate health score', async () => {
@@ -137,15 +148,15 @@ describe('Phase 4 Health & Alerting Integration Tests', () => {
         uptime: 99.9,
       };
 
-      const result = await healthMetricsCollectorService.calculateHealthScore(
-        metrics,
-      );
+      const result = await healthMetricsCollectorService.calculateHealthScore(metrics);
 
-      expect(result).toEqual(expect.objectContaining({
-        deploymentId,
-        healthScore: expect.any(Number),
-        status: expect.stringMatching(/^(healthy|degraded|critical)$/),
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          deploymentId,
+          healthScore: expect.any(Number),
+          status: expect.stringMatching(/^(healthy|degraded|critical)$/),
+        }),
+      );
     });
 
     it('should store metrics history for trend analysis', async () => {
@@ -156,15 +167,14 @@ describe('Phase 4 Health & Alerting Integration Tests', () => {
         { timestamp: new Date('2024-01-03'), cpuUsage: 50 },
       ];
 
-      const result = await healthMetricsCollectorService.storeMetricsHistory(
-        deploymentId,
-        metrics,
-      );
+      const result = await healthMetricsCollectorService.storeMetricsHistory(deploymentId, metrics);
 
-      expect(result).toEqual(expect.objectContaining({
-        stored: true,
-        recordCount: 3,
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          stored: true,
+          recordCount: 3,
+        }),
+      );
     });
 
     it('should identify performance trends', async () => {
@@ -175,11 +185,13 @@ describe('Phase 4 Health & Alerting Integration Tests', () => {
         7, // Last 7 days
       );
 
-      expect(result).toEqual(expect.objectContaining({
-        deploymentId,
-        trend: expect.stringMatching(/^(improving|degrading|stable)$/),
-        trend_percentage: expect.any(Number),
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          deploymentId,
+          trend: expect.stringMatching(/^(improving|degrading|stable)$/),
+          trend_percentage: expect.any(Number),
+        }),
+      );
     });
   });
 
@@ -196,11 +208,13 @@ describe('Phase 4 Health & Alerting Integration Tests', () => {
 
       const result = await alertingService.sendAlert(alert);
 
-      expect(result).toEqual(expect.objectContaining({
-        sent: true,
-        channel: 'email',
-        deliveryStatus: 'delivered',
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          sent: true,
+          channel: 'email',
+          deliveryStatus: 'delivered',
+        }),
+      );
     });
 
     it('should send SMS alerts for immediate action items', async () => {
@@ -214,10 +228,12 @@ describe('Phase 4 Health & Alerting Integration Tests', () => {
 
       const result = await alertingService.sendAlert(alert);
 
-      expect(result).toEqual(expect.objectContaining({
-        sent: true,
-        channel: 'sms',
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          sent: true,
+          channel: 'sms',
+        }),
+      );
     });
 
     it('should post alerts to Slack channel', async () => {
@@ -231,10 +247,12 @@ describe('Phase 4 Health & Alerting Integration Tests', () => {
 
       const result = await alertingService.sendAlert(alert);
 
-      expect(result).toEqual(expect.objectContaining({
-        sent: true,
-        channel: 'slack',
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          sent: true,
+          channel: 'slack',
+        }),
+      );
     });
 
     it('should trigger PagerDuty incidents for critical alerts', async () => {
@@ -248,11 +266,13 @@ describe('Phase 4 Health & Alerting Integration Tests', () => {
 
       const result = await alertingService.sendAlert(alert);
 
-      expect(result).toEqual(expect.objectContaining({
-        sent: true,
-        channel: 'pagerduty',
-        incidentId: expect.any(String),
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          sent: true,
+          channel: 'pagerduty',
+          incidentId: expect.any(String),
+        }),
+      );
     });
 
     it('should send webhook notifications to custom endpoints', async () => {
@@ -266,11 +286,13 @@ describe('Phase 4 Health & Alerting Integration Tests', () => {
 
       const result = await alertingService.sendAlert(alert);
 
-      expect(result).toEqual(expect.objectContaining({
-        sent: true,
-        channel: 'webhook',
-        httpStatus: 200,
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          sent: true,
+          channel: 'webhook',
+          httpStatus: 200,
+        }),
+      );
     });
 
     it('should deduplicate alerts within time window', async () => {
@@ -310,10 +332,12 @@ describe('Phase 4 Health & Alerting Integration Tests', () => {
 
       const result = await alertingService.createEscalationPolicy(escalationPolicy);
 
-      expect(result).toEqual(expect.objectContaining({
-        created: true,
-        policyId: expect.any(String),
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          created: true,
+          policyId: expect.any(String),
+        }),
+      );
     });
 
     it('should acknowledge and resolve alerts', async () => {
@@ -326,11 +350,13 @@ describe('Phase 4 Health & Alerting Integration Tests', () => {
 
       const result = await alertingService.acknowledgeAlert(alertId, 'user-123');
 
-      expect(result).toEqual(expect.objectContaining({
-        alertId,
-        status: 'acknowledged',
-        acknowledgedBy: 'user-123',
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          alertId,
+          status: 'acknowledged',
+          acknowledgedBy: 'user-123',
+        }),
+      );
     });
 
     it('should track alert history and statistics', async () => {
@@ -345,12 +371,14 @@ describe('Phase 4 Health & Alerting Integration Tests', () => {
 
       const result = await alertingService.getAlertStatistics();
 
-      expect(result).toEqual(expect.objectContaining({
-        totalAlerts: expect.any(Number),
-        byCategory: expect.objectContaining({
-          critical: expect.any(Number),
+      expect(result).toEqual(
+        expect.objectContaining({
+          totalAlerts: expect.any(Number),
+          byCategory: expect.objectContaining({
+            critical: expect.any(Number),
+          }),
         }),
-      }));
+      );
     });
   });
 
@@ -367,9 +395,7 @@ describe('Phase 4 Health & Alerting Integration Tests', () => {
       };
 
       // Collect metrics
-      const healthResult = await healthMetricsCollectorService.calculateHealthScore(
-        metrics,
-      );
+      const healthResult = await healthMetricsCollectorService.calculateHealthScore(metrics);
 
       // Trigger alert if health is critical
       if (healthResult.status === 'critical') {
@@ -397,9 +423,7 @@ describe('Phase 4 Health & Alerting Integration Tests', () => {
       };
 
       // Detect anomalies
-      const anomalyResult = await healthMetricsCollectorService.detectAnomalies(
-        anomalousMetrics,
-      );
+      const anomalyResult = await healthMetricsCollectorService.detectAnomalies(anomalousMetrics);
 
       if (anomalyResult.hasAnomalies) {
         // Escalate to PagerDuty
@@ -424,9 +448,7 @@ describe('Phase 4 Health & Alerting Integration Tests', () => {
         status: 'critical',
       };
 
-      const healthResult = await healthMetricsCollectorService.calculateHealthScore(
-        metrics,
-      );
+      const healthResult = await healthMetricsCollectorService.calculateHealthScore(metrics);
 
       if (healthResult.status === 'critical') {
         // Send to multiple channels

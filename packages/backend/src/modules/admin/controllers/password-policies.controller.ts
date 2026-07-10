@@ -1,14 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Patch,
-  Delete,
-  Body,
-  Param,
-  Query,
-  Request,
-} from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Request } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from '../../auth/auth.service';
 import { AuthWithPermissions } from '../../auth/decorators/auth.decorator';
@@ -35,11 +25,7 @@ export class PasswordPoliciesController {
   @AuthWithPermissions('settings.update')
   @ApiOperation({ summary: 'Create password policy' })
   async create(@Body() dto: CreatePasswordPolicyDto, @Request() req: any) {
-    return this.authService.createPasswordPolicy(
-      dto,
-      req.user?.tenantId,
-      req.user?.isSystemAdmin,
-    );
+    return this.authService.createPasswordPolicy(dto, req.user?.tenantId, req.user?.isSystemAdmin);
   }
 
   @Patch(':id')
@@ -58,11 +44,7 @@ export class PasswordPoliciesController {
   @AuthWithPermissions('settings.update')
   @ApiOperation({ summary: 'Delete password policy' })
   async remove(@Param('id') id: string, @Request() req: any) {
-    await this.authService.deletePasswordPolicy(
-      id,
-      req.user?.tenantId,
-      req.user?.isSystemAdmin,
-    );
+    await this.authService.deletePasswordPolicy(id, req.user?.tenantId, req.user?.isSystemAdmin);
     return { success: true };
   }
 }

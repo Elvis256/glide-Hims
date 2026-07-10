@@ -17,7 +17,15 @@ import { FollowUpsModule } from '../follow-ups/follow-ups.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Encounter, Patient, Service, ClinicalNote, InsurancePolicy, Facility, Department]),
+    TypeOrmModule.forFeature([
+      Encounter,
+      Patient,
+      Service,
+      ClinicalNote,
+      InsurancePolicy,
+      Facility,
+      Department,
+    ]),
     InAppNotificationsModule,
     forwardRef(() => BillingModule),
     forwardRef(() => QueueManagementModule),

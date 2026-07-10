@@ -643,7 +643,7 @@ export class ScheduledTasksService {
                 doctorId: appt.doctorId,
               },
               facilityId: appt.facilityId,
-              tenantId: (appt as any).tenantId,
+              tenantId: appt.facility?.tenantId,
             });
             await this.notificationRepo.save(notification);
             inAppSent++;
@@ -664,7 +664,7 @@ export class ScheduledTasksService {
                 patientId: appt.patientId,
               },
               facilityId: appt.facilityId,
-              tenantId: (appt as any).tenantId,
+              tenantId: appt.facility?.tenantId,
             });
             await this.notificationRepo.save(doctorNotification);
             inAppSent++;
@@ -677,7 +677,7 @@ export class ScheduledTasksService {
               const smsConfigs = await this.notificationsService.getConfig(
                 appt.facilityId,
                 NotificationType.SMS,
-                (appt as any).tenantId,
+                appt.facility?.tenantId,
               );
               const smsConfig = smsConfigs.find((c) => c.isEnabled);
               if (smsConfig) {
@@ -761,7 +761,7 @@ export class ScheduledTasksService {
             where: { type: InAppNotificationType.GENERAL, title: '⏰ Appointment Today (Soon)' },
             order: { createdAt: 'DESC' },
             relations: [],
-          } as any);
+          });
           // Use metadata appointmentId match instead
           const exists = await this.notificationRepo
             .createQueryBuilder('n')
@@ -770,8 +770,10 @@ export class ScheduledTasksService {
             .getOne();
           if (exists || already?.metadata?.appointmentId === appt.id) continue;
 
-          const patient = appt.patient as any;
-          const doctorName = appt.doctor ? `Dr. ${appt.doctor.fullName || ''}`.trim() : 'your doctor';
+          const patient = appt.patient;
+          const doctorName = appt.doctor
+            ? `Dr. ${appt.doctor.fullName || ''}`.trim()
+            : 'your doctor';
           const facName = appt.facility?.name || 'the facility';
 
           // SMS to patient
@@ -779,7 +781,7 @@ export class ScheduledTasksService {
             await this.notificationsService.sendSmsToPatient({
               patient,
               facilityId: appt.facilityId,
-              tenantId: (appt as any).tenantId,
+              tenantId: appt.facility?.tenantId,
               message: `Reminder: Your appointment with ${doctorName} at ${facName} is at ${startTime} today. Please arrive 15 minutes early.`,
             });
             sent++;
@@ -795,7 +797,7 @@ export class ScheduledTasksService {
                 message: `Your appointment with ${doctorName} starts at ${startTime}.`,
                 metadata: { appointmentId: appt.id, shortReminder: 'true' },
                 facilityId: appt.facilityId,
-                tenantId: (appt as any).tenantId,
+                tenantId: appt.facility?.tenantId,
               }),
             );
           }
@@ -841,9 +843,8 @@ export class ScheduledTasksService {
       let sent = 0;
       for (const inv of invoices) {
         try {
-          const patient: any = (inv as any).patient;
-          const facilityId =
-            (inv as any).encounter?.facilityId || (inv as any).facilityId;
+          const patient = inv.patient;
+          const facilityId = inv.encounter?.facilityId;
           if (!patient?.phone || !facilityId) continue;
 
           // Throttle: once per 7 days per invoice
@@ -855,7 +856,7 @@ export class ScheduledTasksService {
             .getOne();
           if (recent) continue;
 
-          const facName = (inv as any).encounter?.facility?.name || 'the facility';
+          const facName = inv.encounter?.facility?.name || 'the facility';
           const fname = String(patient.fullName || 'patient').split(' ')[0];
           const balance = Number(inv.balanceDue || 0).toLocaleString();
           const msg =
@@ -865,24 +866,26 @@ export class ScheduledTasksService {
           await this.notificationsService.sendSmsToPatient({
             patient,
             facilityId,
-            tenantId: (inv as any).tenantId,
+            tenantId: inv.tenantId,
             message: msg,
           });
 
           await this.notificationRepo.save(
             this.notificationRepo.create({
-              targetUserId: patient.userId || null,
+              targetUserId: patient.userId ?? undefined,
               type: InAppNotificationType.GENERAL,
               title: '💰 Outstanding Balance Reminder',
               message: msg,
               metadata: { invoiceId: inv.id, balanceReminder: 'true' },
               facilityId,
-              tenantId: (inv as any).tenantId,
-            } as any),
+              tenantId: inv.tenantId,
+            }),
           );
           sent++;
         } catch (e) {
-          this.logger.warn(`Balance reminder failed for invoice ${inv.id}: ${(e as Error).message}`);
+          this.logger.warn(
+            `Balance reminder failed for invoice ${inv.id}: ${(e as Error).message}`,
+          );
         }
       }
       this.logger.log(
@@ -971,11 +974,7 @@ export class ScheduledTasksService {
       const stale = await this.encounterRepo
         .createQueryBuilder('e')
         .where('e.status IN (:...statuses)', {
-          statuses: [
-            EncounterStatus.REGISTERED,
-            EncounterStatus.TRIAGE,
-            EncounterStatus.WAITING,
-          ],
+          statuses: [EncounterStatus.REGISTERED, EncounterStatus.TRIAGE, EncounterStatus.WAITING],
         })
         .andWhere('e.created_at < :cutoff', { cutoff })
         .limit(500)

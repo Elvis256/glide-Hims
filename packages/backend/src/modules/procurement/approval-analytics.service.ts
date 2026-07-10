@@ -56,9 +56,7 @@ export class ApprovalAnalyticsService {
     if (pendingOrders.length === 0) return [];
 
     const oldestOrder = pendingOrders.reduce((oldest, current) =>
-      (current.createdAt || new Date()) < (oldest.createdAt || new Date())
-        ? current
-        : oldest,
+      (current.createdAt || new Date()) < (oldest.createdAt || new Date()) ? current : oldest,
     );
 
     const waitTimeHours = Math.floor(
@@ -205,8 +203,7 @@ export class ApprovalAnalyticsService {
 
     for (const order of recentOrders) {
       const timeToApprove =
-        ((order.updatedAt?.getTime() || 0) - (order.createdAt?.getTime() || 0)) /
-        (1000 * 60 * 60);
+        ((order.updatedAt?.getTime() || 0) - (order.createdAt?.getTime() || 0)) / (1000 * 60 * 60);
       if (timeToApprove <= slaTarget) compliant++;
       else nonCompliant++;
     }

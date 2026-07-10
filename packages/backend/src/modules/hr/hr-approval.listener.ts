@@ -26,11 +26,7 @@ export class HrApprovalListener {
   async onCompleted(evt: ApprovalCompletedEvent) {
     if (!this.matches(evt)) return;
     try {
-      await this.hr.finalizeLeaveFromApproval(
-        evt.documentRef.documentId,
-        evt.actorUserId,
-        true,
-      );
+      await this.hr.finalizeLeaveFromApproval(evt.documentRef.documentId, evt.actorUserId, true);
     } catch (e) {
       this.logger.warn(`Finalize leave failed: ${(e as Error).message}`);
     }

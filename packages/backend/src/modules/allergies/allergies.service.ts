@@ -36,7 +36,9 @@ export interface CreatePatientAllergyDto {
   notes?: string;
 }
 
-export interface UpdatePatientAllergyDto extends Partial<Omit<CreatePatientAllergyDto, 'patientId'>> {
+export interface UpdatePatientAllergyDto extends Partial<
+  Omit<CreatePatientAllergyDto, 'patientId'>
+> {
   status?: AllergyStatus;
 }
 
@@ -135,7 +137,11 @@ export class AllergiesService {
     });
   }
 
-  async create(dto: CreatePatientAllergyDto, userId?: string, tenantId?: string): Promise<PatientAllergy> {
+  async create(
+    dto: CreatePatientAllergyDto,
+    userId?: string,
+    tenantId?: string,
+  ): Promise<PatientAllergy> {
     if (!dto.allergen?.trim()) {
       throw new BadRequestException('allergen is required');
     }
@@ -227,12 +233,7 @@ export class AllergiesService {
     return this.update(id, { status: 'inactive' }, tenantId, patientId, userId);
   }
 
-  async remove(
-    id: string,
-    tenantId?: string,
-    patientId?: string,
-    userId?: string,
-  ): Promise<void> {
+  async remove(id: string, tenantId?: string, patientId?: string, userId?: string): Promise<void> {
     const row = await this.loadScoped(id, tenantId, patientId);
     await this.allergyRepo.softRemove(row);
     await this.writeAudit('ALLERGY_DELETED', row, userId, tenantId);

@@ -42,10 +42,14 @@ export class AdminMFAService {
     }
 
     // Generate TOTP secret (base32 encoded random bytes)
-    const secret = OTPAuth.authenticator.generateSecret({
-      name: `Glide-HIMS Admin (${admin.email})`,
+    const secret = new OTPAuth.Secret({ size: 20 });
+    const totp = new OTPAuth.TOTP({
       issuer: 'Glide-HIMS',
-      length: 32,
+      label: `Glide-HIMS Admin (${admin.email})`,
+      algorithm: 'SHA1',
+      digits: 6,
+      period: 30,
+      secret: secret
     });
 
     // Generate QR code for authenticator app
@@ -96,7 +100,7 @@ export class AdminMFAService {
     // Update user with MFA enabled and backup codes
     admin.mfaEnabled = true;
     admin.mfaSecret = admin.mfaSecret; // Already set from generation step
-    admin.backupCodes = hashedCodes as any;
+    admin.backupCodes = hashedCodes;
 
     await this.userRepository.save(admin);
 
@@ -134,7 +138,7 @@ export class AdminMFAService {
         if (!backupCodesData[i].used && this.verifyBackupCode(totpCode, backupCodesData[i].code)) {
           // Mark backup code as used
           backupCodesData[i].used = true;
-          admin.backupCodes = backupCodesData as any;
+          admin.backupCodes = backupCodesData;
           await this.userRepository.save(admin);
           return true;
         }
@@ -161,8 +165,8 @@ export class AdminMFAService {
     }
 
     admin.mfaEnabled = false;
-    admin.mfaSecret = null as any;
-    admin.backupCodes = null as any;
+    admin.mfaSecret = undefined;
+    admin.backupCodes = undefined;
 
     await this.userRepository.save(admin);
 
@@ -184,9 +188,8 @@ export class AdminMFAService {
       return 0;
     }
 
-    return (admin.backupCodes as Array<{ code: string; used: boolean }>).filter(
-      (bc) => !bc.used,
-    ).length;
+    return (admin.backupCodes as Array<{ code: string; used: boolean }>).filter((bc) => !bc.used)
+      .length;
   }
 
   /**
@@ -207,7 +210,7 @@ export class AdminMFAService {
       used: false,
     }));
 
-    admin.backupCodes = hashedCodes as any;
+    admin.backupCodes = hashedCodes;
     await this.userRepository.save(admin);
 
     return backupCodes;
@@ -247,12 +250,12 @@ export class AdminMFAService {
     if (!secret || !code) return false;
 
     try {
-      const totp = new OTPAuth.authenticator({
+      const totp = new OTPAuth.TOTP({
         secret,
       });
 
       // Allow for time drift: current and ±1 window (60 seconds total)
-      return totp.check(code, { window: 1 });
+      return totp.validate({ token: code, window: 1 }) !== null;
     } catch (error) {
       console.error('TOTP verification error:', error);
       return false;
@@ -307,12 +310,8 @@ export class AdminMFAService {
 
     // Generate new secret if not already set
     if (!admin.mfaSecret) {
-      const secret = authenticator.generateSecret({
-        name: `Glide-HIMS Admin (${admin.email})`,
-        issuer: 'Glide-HIMS',
-        length: 32,
-      });
-      admin.mfaSecret = secret.toString();
+      const secret = new OTPAuth.Secret({ size: 20 });
+      admin.mfaSecret = secret.base32;
     }
 
     // Generate backup codes
@@ -323,7 +322,7 @@ export class AdminMFAService {
     }));
 
     admin.mfaEnabled = true;
-    admin.backupCodes = hashedCodes as any;
+    admin.backupCodes = hashedCodes;
 
     await this.userRepository.save(admin);
 

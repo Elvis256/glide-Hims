@@ -36,9 +36,7 @@ export class HrAdminSecurityHardening1782900000032 implements MigrationInterface
          WHERE table_name = 'password_policies' AND column_name = 'tenant_id'`,
     );
     if (!hasCol.length) {
-      await queryRunner.query(
-        `ALTER TABLE "password_policies" ADD COLUMN "tenant_id" uuid NULL`,
-      );
+      await queryRunner.query(`ALTER TABLE "password_policies" ADD COLUMN "tenant_id" uuid NULL`);
       // Backfill tenant_id from facility, where the policy was facility-scoped.
       await queryRunner.query(
         `UPDATE "password_policies" pp

@@ -1,4 +1,16 @@
-import { IsString, IsOptional, IsNumber, IsUUID, IsDateString, MaxLength, Min, Max, Validate, ValidatorConstraint, ValidatorConstraintInterface } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsNumber,
+  IsUUID,
+  IsDateString,
+  MaxLength,
+  Min,
+  Max,
+  Validate,
+  ValidatorConstraint,
+  ValidatorConstraintInterface,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 @ValidatorConstraint({ name: 'NotInFuture', async: false })

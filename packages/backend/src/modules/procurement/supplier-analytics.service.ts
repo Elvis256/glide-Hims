@@ -112,13 +112,10 @@ export class SupplierAnalyticsService {
     }
 
     for (const metric of metricsMap.values()) {
-      metric.avgOrderValue =
-        metric.orderCount > 0 ? metric.totalSpend / metric.orderCount : 0;
+      metric.avgOrderValue = metric.orderCount > 0 ? metric.totalSpend / metric.orderCount : 0;
     }
 
-    return Array.from(metricsMap.values()).sort(
-      (a, b) => b.totalSpend - a.totalSpend,
-    );
+    return Array.from(metricsMap.values()).sort((a, b) => b.totalSpend - a.totalSpend);
   }
 
   private async attachDeliveryAndQuality(
@@ -225,10 +222,7 @@ export class SupplierAnalyticsService {
         },
       });
 
-      const spend = orders.reduce(
-        (sum, o) => sum + parseFloat(String(o.totalAmount || 0)),
-        0,
-      );
+      const spend = orders.reduce((sum, o) => sum + parseFloat(String(o.totalAmount || 0)), 0);
       const period = monthStart.toISOString().slice(0, 7);
 
       let trend: 'increasing' | 'decreasing' | 'stable' | null = null;
@@ -274,11 +268,7 @@ export class SupplierAnalyticsService {
         : 0;
 
     const topPerformers = metrics
-      .filter(
-        (m) =>
-          (m.qualityScore ?? 0) >= avgQualityScore &&
-          (m.onTimeDeliveryRate ?? 0) >= 98,
-      )
+      .filter((m) => (m.qualityScore ?? 0) >= avgQualityScore && (m.onTimeDeliveryRate ?? 0) >= 98)
       .sort((a, b) => (b.qualityScore ?? 0) - (a.qualityScore ?? 0))
       .slice(0, 5);
 
@@ -322,10 +312,7 @@ export class SupplierAnalyticsService {
       factors.push('Low quality score');
     }
 
-    if (
-      supplierMetrics.onTimeDeliveryRate !== null &&
-      supplierMetrics.onTimeDeliveryRate < 95
-    ) {
+    if (supplierMetrics.onTimeDeliveryRate !== null && supplierMetrics.onTimeDeliveryRate < 95) {
       riskScore += 25;
       factors.push('Late deliveries');
     }

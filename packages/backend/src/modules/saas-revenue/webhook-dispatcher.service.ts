@@ -23,7 +23,7 @@ export const WEBHOOK_EVENT_TYPES = [
   'subscription.paused',
   'subscription.resumed',
 ] as const;
-export type WebhookEventType = typeof WEBHOOK_EVENT_TYPES[number];
+export type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number];
 
 @Injectable()
 export class WebhookDispatcherService {
@@ -31,15 +31,23 @@ export class WebhookDispatcherService {
   private cronEnabled = process.env.SAAS_WEBHOOKS_CRON !== 'off';
 
   constructor(
-    @InjectRepository(SaasWebhookEndpoint) private readonly endpoints: Repository<SaasWebhookEndpoint>,
-    @InjectRepository(SaasWebhookDelivery) private readonly deliveries: Repository<SaasWebhookDelivery>,
+    @InjectRepository(SaasWebhookEndpoint)
+    private readonly endpoints: Repository<SaasWebhookEndpoint>,
+    @InjectRepository(SaasWebhookDelivery)
+    private readonly deliveries: Repository<SaasWebhookDelivery>,
   ) {}
 
   /** Queue a delivery for every enabled endpoint of the given tenant subscribed to this event. */
-  async enqueue(tenantId: string, eventType: WebhookEventType, data: Record<string, any>): Promise<number> {
+  async enqueue(
+    tenantId: string,
+    eventType: WebhookEventType,
+    data: Record<string, any>,
+  ): Promise<number> {
     if (!tenantId) return 0;
     const all = await this.endpoints.find({ where: { tenantId, enabled: true } });
-    const matching = all.filter((e) => !e.events?.length || e.events.includes(eventType) || e.events.includes('*'));
+    const matching = all.filter(
+      (e) => !e.events?.length || e.events.includes(eventType) || e.events.includes('*'),
+    );
     if (!matching.length) return 0;
     const rows = matching.map((ep) =>
       this.deliveries.create({
@@ -61,14 +69,17 @@ export class WebhookDispatcherService {
   @Cron(CronExpression.EVERY_MINUTE, { name: 'saas-webhook-dispatcher' })
   async cronTick(): Promise<void> {
     if (!this.cronEnabled) return;
-    try { await this.flush(); }
-    catch (e: any) { this.logger.error(`Webhook cron failed: ${e?.message}`); }
+    try {
+      await this.flush();
+    } catch (e: any) {
+      this.logger.error(`Webhook cron failed: ${e?.message}`);
+    }
   }
 
   /** Process up to N pending deliveries that are due. */
   async flush(limit = 50): Promise<{ processed: number; succeeded: number; failed: number }> {
     const due = await this.deliveries.find({
-      where: { status: 'pending' as any, nextAttemptAt: LessThanOrEqual(new Date()) },
+      where: { status: 'pending', nextAttemptAt: LessThanOrEqual(new Date()) },
       order: { nextAttemptAt: 'ASC' },
       take: limit,
     });
@@ -76,14 +87,23 @@ export class WebhookDispatcherService {
     let failed = 0;
     for (const d of due) {
       const ok = await this.attemptDelivery(d);
-      if (ok) succeeded++; else failed++;
+      if (ok) succeeded++;
+      else failed++;
     }
     return { processed: due.length, succeeded, failed };
   }
 
   /** Send a one-off test ping; not persisted as a delivery. */
-  async sendTestPing(endpoint: SaasWebhookEndpoint): Promise<{ ok: boolean; statusCode?: number; error?: string; bodyPreview?: string }> {
-    const payload = { eventId: crypto.randomUUID(), eventType: 'ping', tenantId: endpoint.tenantId, data: { message: 'Hello from Glide-HIMS' }, timestamp: new Date().toISOString() };
+  async sendTestPing(
+    endpoint: SaasWebhookEndpoint,
+  ): Promise<{ ok: boolean; statusCode?: number; error?: string; bodyPreview?: string }> {
+    const payload = {
+      eventId: crypto.randomUUID(),
+      eventType: 'ping',
+      tenantId: endpoint.tenantId,
+      data: { message: 'Hello from Glide-HIMS' },
+      timestamp: new Date().toISOString(),
+    };
     return this.dispatch(endpoint, payload);
   }
 
@@ -96,7 +116,14 @@ export class WebhookDispatcherService {
       await this.deliveries.save(d);
       return false;
     }
-    const body = { eventId: d.eventId, eventType: d.eventType, tenantId: d.tenantId, data: d.payload, timestamp: new Date().toISOString(), attempt: d.attempts + 1 };
+    const body = {
+      eventId: d.eventId,
+      eventType: d.eventType,
+      tenantId: d.tenantId,
+      data: d.payload,
+      timestamp: new Date().toISOString(),
+      attempt: d.attempts + 1,
+    };
     const result = await this.dispatch(ep, body);
     d.attempts += 1;
     d.lastAttemptAt = new Date();
@@ -117,20 +144,26 @@ export class WebhookDispatcherService {
     if (ep.consecutiveFailures >= AUTO_DISABLE_AFTER) {
       ep.enabled = false;
       ep.disabledAt = new Date();
-      this.logger.warn(`Webhook endpoint ${ep.id} (${ep.url}) auto-disabled after ${ep.consecutiveFailures} consecutive failures`);
+      this.logger.warn(
+        `Webhook endpoint ${ep.id} (${ep.url}) auto-disabled after ${ep.consecutiveFailures} consecutive failures`,
+      );
     }
     await this.endpoints.save(ep);
     if (d.attempts >= MAX_ATTEMPTS) {
       d.status = 'failed';
     } else {
-      const backoff = BACKOFF_MIN_SECONDS[Math.min(d.attempts - 1, BACKOFF_MIN_SECONDS.length - 1)] || 60;
+      const backoff =
+        BACKOFF_MIN_SECONDS[Math.min(d.attempts - 1, BACKOFF_MIN_SECONDS.length - 1)] || 60;
       d.nextAttemptAt = new Date(Date.now() + backoff * 1000);
     }
     await this.deliveries.save(d);
     return false;
   }
 
-  private async dispatch(ep: SaasWebhookEndpoint, body: any): Promise<{ ok: boolean; statusCode?: number; error?: string; bodyPreview?: string }> {
+  private async dispatch(
+    ep: SaasWebhookEndpoint,
+    body: any,
+  ): Promise<{ ok: boolean; statusCode?: number; error?: string; bodyPreview?: string }> {
     const raw = JSON.stringify(body);
     const sig = crypto.createHmac('sha256', ep.secret).update(raw).digest('hex');
     const controller = new AbortController();
@@ -153,7 +186,13 @@ export class WebhookDispatcherService {
       const ok = res.status >= 200 && res.status < 300;
       return { ok, statusCode: res.status, bodyPreview: text.slice(0, 500) };
     } catch (e: any) {
-      return { ok: false, error: e?.name === 'AbortError' ? `Timeout after ${REQUEST_TIMEOUT_MS}ms` : (e?.message || 'Request failed') };
+      return {
+        ok: false,
+        error:
+          e?.name === 'AbortError'
+            ? `Timeout after ${REQUEST_TIMEOUT_MS}ms`
+            : e?.message || 'Request failed',
+      };
     } finally {
       clearTimeout(timer);
     }

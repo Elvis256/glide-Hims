@@ -15,9 +15,10 @@ import {
   PayerType,
 } from '../../database/entities/encounter.entity';
 import { InsurancePolicy, CoverageType } from '../../database/entities/insurance-policy.entity';
-import { Invoice } from '../../database/entities/invoice.entity';
+import { Invoice, InvoiceStatus } from '../../database/entities/invoice.entity';
 import { Patient } from '../../database/entities/patient.entity';
 import { Facility } from '../../database/entities/facility.entity';
+import { InAppNotificationType } from '../../database/entities/in-app-notification.entity';
 import { Department } from '../../database/entities/department.entity';
 import { Service } from '../../database/entities/service-category.entity';
 import { ClinicalNote } from '../../database/entities/clinical-note.entity';
@@ -130,7 +131,12 @@ export class EncountersService {
    * type. Each entry lists codes to try in order; the first match wins.
    * If no match is found, billing is skipped (not failed) and a warning is logged.
    */
-  private static readonly CONSULT_SERVICE_CODES: Partial<Record<EncounterType, { codes: string[]; namePattern: string; fallbackCode: string; fallbackName: string }>> = {
+  private static readonly CONSULT_SERVICE_CODES: Partial<
+    Record<
+      EncounterType,
+      { codes: string[]; namePattern: string; fallbackCode: string; fallbackName: string }
+    >
+  > = {
     [EncounterType.OPD]: {
       codes: ['CON-OPD', 'CONSULTATION', 'OPD', 'OPD-CONSULT'],
       namePattern: '%opd consultation%',
@@ -222,7 +228,9 @@ export class EncountersService {
         where: { id: dto.departmentId, facilityId: dto.facilityId },
       });
       if (!department) {
-        throw new BadRequestException('Department not found or does not belong to the specified facility');
+        throw new BadRequestException(
+          'Department not found or does not belong to the specified facility',
+        );
       }
       if (department.status !== 'active') {
         throw new BadRequestException(`Department is ${department.status}, not active`);
@@ -256,10 +264,7 @@ export class EncountersService {
       // A.5: Validate coverage type matches encounter type
       const encounterType = dto.type || EncounterType.OPD;
       const policyCoverage = policy.coverageType;
-      if (
-        policyCoverage !== CoverageType.COMPREHENSIVE &&
-        policyCoverage !== CoverageType.BOTH
-      ) {
+      if (policyCoverage !== CoverageType.COMPREHENSIVE && policyCoverage !== CoverageType.BOTH) {
         const compatibleTypes = EncountersService.COVERAGE_TYPE_MAP[encounterType] || [];
         if (compatibleTypes.length > 0 && !compatibleTypes.includes(policyCoverage)) {
           throw new BadRequestException(
@@ -269,12 +274,11 @@ export class EncountersService {
       }
     }
 
-    // Fix 6: Warn for corporate payer without corporate account validation
-    // TODO: add corporateAccountId field and full validation in a future step
+    // Corporate account validation
     if (dto.payerType === PayerType.CORPORATE) {
-      this.logger.warn(
-        `Encounter for patient ${dto.patientId} uses CORPORATE payer type but no corporate account validation exists yet`,
-      );
+      if (!dto.corporateAccountId) {
+        throw new BadRequestException('corporateAccountId is required when payerType is CORPORATE');
+      }
     }
 
     return this.dataSource.transaction(async (manager) => {
@@ -444,7 +448,9 @@ export class EncountersService {
     }
 
     if (attendingProviderId) {
-      qb.andWhere('encounter.attending_provider_id = :attendingProviderId', { attendingProviderId });
+      qb.andWhere('encounter.attending_provider_id = :attendingProviderId', {
+        attendingProviderId,
+      });
     }
 
     if (payerType) {
@@ -513,7 +519,12 @@ export class EncountersService {
     EncounterStatus.CANCELLED,
   ];
 
-  async update(id: string, dto: UpdateEncounterDto, userId: string, tenantId?: string): Promise<Encounter> {
+  async update(
+    id: string,
+    dto: UpdateEncounterDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<Encounter> {
     // Validate provider before transaction (cheap fail-fast)
     if (dto.attendingProviderId) {
       await this.identityGuard.assertAssignableProvider(dto.attendingProviderId, tenantId);
@@ -554,9 +565,7 @@ export class EncountersService {
           where: { id: dto.departmentId, facilityId: encounter.facilityId },
         });
         if (!dept) {
-          throw new BadRequestException(
-            'Department does not belong to this encounter\'s facility',
-          );
+          throw new BadRequestException("Department does not belong to this encounter's facility");
         }
       }
 
@@ -569,8 +578,8 @@ export class EncountersService {
         'attendingProviderId',
       ];
       for (const field of trackableFields) {
-        if (dto[field] !== undefined && dto[field] !== (encounter as any)[field]) {
-          changes[field] = { old: (encounter as any)[field], new: dto[field] };
+        if (dto[field] !== undefined && dto[field] !== (encounter as unknown as Record<string, unknown>)[field]) {
+          changes[field] = { old: (encounter as unknown as Record<string, unknown>)[field], new: dto[field] };
         }
       }
 
@@ -588,12 +597,8 @@ export class EncountersService {
           action: 'UPDATE',
           entityType: 'encounter',
           entityId: id,
-          oldValue: Object.fromEntries(
-            Object.entries(result.changes).map(([k, v]) => [k, v.old]),
-          ),
-          newValue: Object.fromEntries(
-            Object.entries(result.changes).map(([k, v]) => [k, v.new]),
-          ),
+          oldValue: Object.fromEntries(Object.entries(result.changes).map(([k, v]) => [k, v.old])),
+          newValue: Object.fromEntries(Object.entries(result.changes).map(([k, v]) => [k, v.new])),
         })
         .catch((err) => this.logger.warn(`Audit log failed: ${err.message}`));
     }
@@ -660,8 +665,16 @@ export class EncountersService {
       EncounterStatus.IN_CONSULTATION,
       EncounterStatus.CANCELLED,
     ],
-    [EncounterStatus.ADMITTED]: [EncounterStatus.READY_FOR_DISCHARGE, EncounterStatus.DISCHARGED, EncounterStatus.CANCELLED],
-    [EncounterStatus.READY_FOR_DISCHARGE]: [EncounterStatus.DISCHARGED, EncounterStatus.ADMITTED, EncounterStatus.CANCELLED],
+    [EncounterStatus.ADMITTED]: [
+      EncounterStatus.READY_FOR_DISCHARGE,
+      EncounterStatus.DISCHARGED,
+      EncounterStatus.CANCELLED,
+    ],
+    [EncounterStatus.READY_FOR_DISCHARGE]: [
+      EncounterStatus.DISCHARGED,
+      EncounterStatus.ADMITTED,
+      EncounterStatus.CANCELLED,
+    ],
   });
 
   private validateStatusTransition(current: EncounterStatus, target: EncounterStatus): void {
@@ -847,7 +860,10 @@ export class EncountersService {
     id: string,
     reason: string,
     userId: string,
-    targetStatus: EncounterStatus.RETURN_TO_DOCTOR | EncounterStatus.RETURN_TO_PHARMACY | EncounterStatus.RETURN_TO_LAB,
+    targetStatus:
+      | EncounterStatus.RETURN_TO_DOCTOR
+      | EncounterStatus.RETURN_TO_PHARMACY
+      | EncounterStatus.RETURN_TO_LAB,
     bounceCountKey: 'doctorBounceCount' | 'pharmacyBounceCount' | 'labBounceCount',
     bounceHistoryKey: 'doctorBounceHistory' | 'pharmacyBounceHistory' | 'labBounceHistory',
     reasonKey: string,
@@ -946,7 +962,7 @@ export class EncountersService {
         ),
         {
           facilityId: saved.facilityId,
-          type: 'general' as any,
+          type: InAppNotificationType.GENERAL,
           title: `Patient Returned to ${returnLabel}`,
           message: `${patientName} (${saved.visitNumber}) returned to ${returnLabel.toLowerCase()}: ${reason}`,
           metadata: { referenceType: 'encounter', referenceId: saved.id },
@@ -954,7 +970,9 @@ export class EncountersService {
         saved.tenantId,
       );
     } catch (err) {
-      this.logger.error(`Failed to notify ${returnLabel} on return for encounter ${saved.id}: ${err}`);
+      this.logger.error(
+        `Failed to notify ${returnLabel} on return for encounter ${saved.id}: ${err}`,
+      );
     }
 
     // Additionally notify the attending doctor directly (for returnToDoctor)
@@ -977,23 +995,33 @@ export class EncountersService {
     const typeBounceCount = saved.metadata?.[bounceCountKey] || 0;
     if (typeBounceCount >= EncountersService.ESCALATION_THRESHOLD) {
       this.inAppNotificationsService
-        .getUserIdsByRole(['supervisor', 'head of department', 'medical director'], saved.facilityId, saved.tenantId)
+        .getUserIdsByRole(
+          ['supervisor', 'head of department', 'medical director'],
+          saved.facilityId,
+          saved.tenantId,
+        )
         .then((supervisorIds) => {
           if (supervisorIds.length > 0) {
             return this.inAppNotificationsService.notifyMany(
               supervisorIds,
               {
                 facilityId: saved.facilityId,
-                type: 'general' as any,
+                type: InAppNotificationType.GENERAL,
                 title: `${returnLabel} Bounce Alert (${typeBounceCount}x)`,
                 message: `${patientName} (${saved.visitNumber}) has been returned to ${returnLabel.toLowerCase()} ${typeBounceCount} times. Reason: ${reason}. Please review.`,
-                metadata: { referenceType: 'encounter', referenceId: saved.id, bounceCount: typeBounceCount },
+                metadata: {
+                  referenceType: 'encounter',
+                  referenceId: saved.id,
+                  bounceCount: typeBounceCount,
+                },
               },
               saved.tenantId,
             );
           }
         })
-        .catch((err) => this.logger.warn(`Supervisor escalation notification failed: ${err.message}`));
+        .catch((err) =>
+          this.logger.warn(`Supervisor escalation notification failed: ${err.message}`),
+        );
     }
   }
 
@@ -1004,16 +1032,23 @@ export class EncountersService {
     tenantId?: string,
   ): Promise<Encounter> {
     const saved = await this.executeReturn(
-      id, reason, userId,
+      id,
+      reason,
+      userId,
       EncounterStatus.RETURN_TO_DOCTOR,
-      'doctorBounceCount', 'doctorBounceHistory',
-      'returnReason', 'returnedAt',
+      'doctorBounceCount',
+      'doctorBounceHistory',
+      'returnReason',
+      'returnedAt',
       tenantId,
     );
 
     await this.handleReturnSideEffects(
-      saved, reason, userId,
-      'RETURN_TO_DOCTOR', EncounterStatus.RETURN_TO_DOCTOR,
+      saved,
+      reason,
+      userId,
+      'RETURN_TO_DOCTOR',
+      EncounterStatus.RETURN_TO_DOCTOR,
       'doctorBounceCount',
       ['doctor', 'physician', 'medical officer'],
       'Doctor',
@@ -1029,16 +1064,23 @@ export class EncountersService {
     tenantId?: string,
   ): Promise<Encounter> {
     const saved = await this.executeReturn(
-      id, reason, userId,
+      id,
+      reason,
+      userId,
       EncounterStatus.RETURN_TO_PHARMACY,
-      'pharmacyBounceCount', 'pharmacyBounceHistory',
-      'pharmacyReturnReason', 'pharmacyReturnedAt',
+      'pharmacyBounceCount',
+      'pharmacyBounceHistory',
+      'pharmacyReturnReason',
+      'pharmacyReturnedAt',
       tenantId,
     );
 
     await this.handleReturnSideEffects(
-      saved, reason, userId,
-      'RETURN_TO_PHARMACY', EncounterStatus.RETURN_TO_PHARMACY,
+      saved,
+      reason,
+      userId,
+      'RETURN_TO_PHARMACY',
+      EncounterStatus.RETURN_TO_PHARMACY,
       'pharmacyBounceCount',
       ['pharmacist', 'pharmacy'],
       'Pharmacy',
@@ -1054,16 +1096,23 @@ export class EncountersService {
     tenantId?: string,
   ): Promise<Encounter> {
     const saved = await this.executeReturn(
-      id, reason, userId,
+      id,
+      reason,
+      userId,
       EncounterStatus.RETURN_TO_LAB,
-      'labBounceCount', 'labBounceHistory',
-      'labReturnReason', 'labReturnedAt',
+      'labBounceCount',
+      'labBounceHistory',
+      'labReturnReason',
+      'labReturnedAt',
       tenantId,
     );
 
     await this.handleReturnSideEffects(
-      saved, reason, userId,
-      'RETURN_TO_LAB', EncounterStatus.RETURN_TO_LAB,
+      saved,
+      reason,
+      userId,
+      'RETURN_TO_LAB',
+      EncounterStatus.RETURN_TO_LAB,
       'labBounceCount',
       ['lab technician', 'laboratory', 'lab'],
       'Lab',
@@ -1079,10 +1128,12 @@ export class EncountersService {
    */
   private enrichQueueItems(encounters: Encounter[]): (Encounter & QueueItem)[] {
     const now = Date.now();
-    return encounters.map((e) => Object.assign(e, {
-      waitMinutes: Math.round((now - new Date(e.startTime).getTime()) / 60000),
-      isUrgent: e.type === EncounterType.EMERGENCY,
-    }));
+    return encounters.map((e) =>
+      Object.assign(e, {
+        waitMinutes: Math.round((now - new Date(e.startTime).getTime()) / 60000),
+        isUrgent: e.type === EncounterType.EMERGENCY,
+      }),
+    );
   }
 
   /**
@@ -1141,14 +1192,8 @@ export class EncountersService {
     qb.limit(500);
 
     // Priority: EMERGENCY first, then RETURN_TO_DOCTOR, then FIFO by queue number
-    qb.orderBy(
-      `CASE WHEN encounter.type = 'emergency' THEN 0 ELSE 1 END`,
-      'ASC',
-    )
-      .addOrderBy(
-        `CASE WHEN encounter.status = 'return_to_doctor' THEN 0 ELSE 1 END`,
-        'ASC',
-      )
+    qb.orderBy(`CASE WHEN encounter.type = 'emergency' THEN 0 ELSE 1 END`, 'ASC')
+      .addOrderBy(`CASE WHEN encounter.status = 'return_to_doctor' THEN 0 ELSE 1 END`, 'ASC')
       .addOrderBy('encounter.queue_number', 'ASC');
 
     const encounters = await qb.getMany();
@@ -1171,10 +1216,7 @@ export class EncountersService {
       .leftJoinAndSelect('encounter.attendingProvider', 'provider')
       .where('encounter.facility_id = :facilityId', { facilityId })
       .andWhere('encounter.status IN (:...statuses)', {
-        statuses: [
-          EncounterStatus.PENDING_PHARMACY,
-          EncounterStatus.RETURN_TO_PHARMACY,
-        ],
+        statuses: [EncounterStatus.PENDING_PHARMACY, EncounterStatus.RETURN_TO_PHARMACY],
       });
 
     if (tenantId) {
@@ -1213,10 +1255,7 @@ export class EncountersService {
       .leftJoinAndSelect('encounter.attendingProvider', 'provider')
       .where('encounter.facility_id = :facilityId', { facilityId })
       .andWhere('encounter.status IN (:...statuses)', {
-        statuses: [
-          EncounterStatus.PENDING_LAB,
-          EncounterStatus.RETURN_TO_LAB,
-        ],
+        statuses: [EncounterStatus.PENDING_LAB, EncounterStatus.RETURN_TO_LAB],
       });
 
     if (tenantId) {
@@ -1230,10 +1269,10 @@ export class EncountersService {
     qb.limit(500);
 
     // RETURN_TO_LAB first (re-work), then FIFO
-    qb.orderBy(
-      `CASE WHEN encounter.status = 'return_to_lab' THEN 0 ELSE 1 END`,
+    qb.orderBy(`CASE WHEN encounter.status = 'return_to_lab' THEN 0 ELSE 1 END`, 'ASC').addOrderBy(
+      'encounter.queue_number',
       'ASC',
-    ).addOrderBy('encounter.queue_number', 'ASC');
+    );
 
     const encounters = await qb.getMany();
     return this.enrichQueueItems(encounters);
@@ -1257,7 +1296,7 @@ export class EncountersService {
     undispensedPrescriptionCount?: number;
     hasClinicalNote?: boolean;
   }> {
-    const reasons: string[] = [];  // blockers — prevent completion
+    const reasons: string[] = []; // blockers — prevent completion
     const warnings: string[] = []; // non-blocking — surface to UI but allow completion
 
     const encounter = await this.encounterRepository.findOne({
@@ -1278,7 +1317,11 @@ export class EncountersService {
       return { canComplete: false, reasons: ['Encounter has been cancelled'], warnings };
     }
     if (encounter.status === EncounterStatus.ADMITTED) {
-      return { canComplete: false, reasons: ['Encounter is currently ADMITTED — discharge from IPD instead'], warnings };
+      return {
+        canComplete: false,
+        reasons: ['Encounter is currently ADMITTED — discharge from IPD instead'],
+        warnings,
+      };
     }
 
     // Run remaining checks in parallel for efficiency
@@ -1335,10 +1378,7 @@ export class EncountersService {
     // --- Blocker (pre_pay) / Info (post_pay): unpaid invoices ---
     let unpaidBalance = 0;
     if (unpaidInvoices.length > 0) {
-      unpaidBalance = unpaidInvoices.reduce(
-        (sum, inv) => sum + Number(inv.balanceDue),
-        0,
-      );
+      unpaidBalance = unpaidInvoices.reduce((sum, inv) => sum + Number(inv.balanceDue), 0);
       const isPostPay = encounter.billingMode === 'post_pay';
       if (!isPostPay) {
         reasons.push(
@@ -1356,9 +1396,7 @@ export class EncountersService {
 
     // --- Warning: undispensed prescriptions ---
     if (undispensedRx > 0) {
-      warnings.push(
-        `${undispensedRx} prescription(s) not yet dispensed/collected.`,
-      );
+      warnings.push(`${undispensedRx} prescription(s) not yet dispensed/collected.`);
     }
 
     return {
@@ -1396,9 +1434,7 @@ export class EncountersService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const tenantFilter = tenantId
-      ? 'encounter.tenant_id = :tenantId'
-      : '1=1';
+    const tenantFilter = tenantId ? 'encounter.tenant_id = :tenantId' : '1=1';
 
     // Main summary query — single pass over today's encounters
     const qb = this.encounterRepository
@@ -1416,10 +1452,7 @@ export class EncountersService {
         `SUM(CASE WHEN encounter.status IN ('completed', 'discharged') THEN 1 ELSE 0 END)`,
         'completed',
       )
-      .addSelect(
-        `SUM(CASE WHEN encounter.status = 'cancelled' THEN 1 ELSE 0 END)`,
-        'cancelled',
-      )
+      .addSelect(`SUM(CASE WHEN encounter.status = 'cancelled' THEN 1 ELSE 0 END)`, 'cancelled')
       .addSelect(
         `SUM(CASE WHEN encounter.status = 'pending_payment' THEN 1 ELSE 0 END)`,
         'pendingPayment',
@@ -1481,7 +1514,9 @@ export class EncountersService {
     ]);
 
     const inConsultation = parseInt(result.inConsultation, 10) || 0;
-    const avgWait = result.averageWaitMinutes ? Math.round(parseFloat(result.averageWaitMinutes)) : null;
+    const avgWait = result.averageWaitMinutes
+      ? Math.round(parseFloat(result.averageWaitMinutes))
+      : null;
     const total = parseInt(result.total, 10) || 0;
     const bouncedEncounters = parseInt(bounceResult?.bouncedEncounters, 10) || 0;
     const totalBounces = parseInt(bounceResult?.totalBounces, 10) || 0;
@@ -1536,7 +1571,11 @@ export class EncountersService {
         .createQueryBuilder(Prescription, 'rx')
         .where('rx.encounter_id = :id', { id })
         .andWhere('rx.status NOT IN (:...terminalStatuses)', {
-          terminalStatuses: [PrescriptionStatus.DISPENSED, PrescriptionStatus.COLLECTED, PrescriptionStatus.CANCELLED],
+          terminalStatuses: [
+            PrescriptionStatus.DISPENSED,
+            PrescriptionStatus.COLLECTED,
+            PrescriptionStatus.CANCELLED,
+          ],
         })
         .getCount();
       if (activeRxCount > 0) {
@@ -1570,7 +1609,7 @@ export class EncountersService {
         .getMany();
 
       for (const inv of unpaidInvoices) {
-        inv.status = 'cancelled' as any;
+        inv.status = InvoiceStatus.CANCELLED;
         (inv as any).cancellationReason = 'Auto-cancelled: linked encounter deleted';
         await manager.save(Invoice, inv);
       }
@@ -1610,7 +1649,12 @@ export class EncountersService {
     dto: CompleteConsultationDto,
     userId: string,
     tenantId?: string,
-  ): Promise<{ encounter: Encounter; clinicalNoteId: string; followUpId?: string; clinicalNoteScore: number }> {
+  ): Promise<{
+    encounter: Encounter;
+    clinicalNoteId: string;
+    followUpId?: string;
+    clinicalNoteScore: number;
+  }> {
     const clinicalNoteScore = this.computeNoteCompletenessScore(dto);
 
     const result = await this.dataSource.transaction(async (manager) => {
@@ -1769,7 +1813,12 @@ export class EncountersService {
       }
     }
 
-    return { encounter: result.encounter, clinicalNoteId: result.clinicalNoteId, followUpId, clinicalNoteScore };
+    return {
+      encounter: result.encounter,
+      clinicalNoteId: result.clinicalNoteId,
+      followUpId,
+      clinicalNoteScore,
+    };
   }
 
   /**

@@ -94,20 +94,37 @@ describe('Load Tests - 1000+ Deployments', () => {
       ],
     }).compile();
 
-    updateDistributionService = module.get<UpdateDistributionService>(
-      UpdateDistributionService,
-    );
+    updateDistributionService = module.get<UpdateDistributionService>(UpdateDistributionService);
     masterDataSyncService = module.get<MasterDataSyncService>(MasterDataSyncService);
     healthMetricsCollectorService = module.get<HealthMetricsCollectorService>(
       HealthMetricsCollectorService,
     );
     alertingService = module.get<AlertingService>(AlertingService);
 
-    mockRepositories.deploymentRepository.findOne.mockResolvedValue({ id: 'deploy-1', tenantId: 'tenant-1' });
-    mockRepositories.alertRepository.save.mockImplementation(async (arg) => ({ ...arg, id: 'alert-1', createdAt: new Date() }));
-    mockRepositories.alertRepository.create.mockImplementation((arg) => ({ ...arg, id: 'alert-1', createdAt: new Date() }));
-    mockRepositories.healthRepository.save.mockImplementation(async (arg) => ({ ...arg, id: 'health-1', createdAt: new Date() }));
-    mockRepositories.healthRepository.create.mockImplementation((arg) => ({ ...arg, id: 'health-1', createdAt: new Date() }));
+    mockRepositories.deploymentRepository.findOne.mockResolvedValue({
+      id: 'deploy-1',
+      tenantId: 'tenant-1',
+    });
+    mockRepositories.alertRepository.save.mockImplementation(async (arg) => ({
+      ...arg,
+      id: 'alert-1',
+      createdAt: new Date(),
+    }));
+    mockRepositories.alertRepository.create.mockImplementation((arg) => ({
+      ...arg,
+      id: 'alert-1',
+      createdAt: new Date(),
+    }));
+    mockRepositories.healthRepository.save.mockImplementation(async (arg) => ({
+      ...arg,
+      id: 'health-1',
+      createdAt: new Date(),
+    }));
+    mockRepositories.healthRepository.create.mockImplementation((arg) => ({
+      ...arg,
+      id: 'health-1',
+      createdAt: new Date(),
+    }));
 
     jest.clearAllMocks();
   });
@@ -211,9 +228,11 @@ describe('Load Tests - 1000+ Deployments', () => {
 
       const retryTime = Date.now() - startTime;
 
-      expect(retryResult).toEqual(expect.objectContaining({
-        syncId: 'sync-1000',
-      }));
+      expect(retryResult).toEqual(
+        expect.objectContaining({
+          syncId: 'sync-1000',
+        }),
+      );
 
       expect(retryTime).toBeLessThan(5000); // Retries should be fast
     });
@@ -329,7 +348,8 @@ describe('Load Tests - 1000+ Deployments', () => {
 
       const calculationTime = Date.now() - startTime;
 
-      const averageScore = healthScores.reduce((sum, h) => sum + h.healthScore, 0) / healthScores.length;
+      const averageScore =
+        healthScores.reduce((sum, h) => sum + h.healthScore, 0) / healthScores.length;
 
       expect(averageScore).toBeGreaterThan(0);
       expect(calculationTime).toBeLessThan(2000); // Calculations within 2 seconds
@@ -384,7 +404,9 @@ describe('Load Tests - 1000+ Deployments', () => {
       const throttleTime = Date.now() - startTime;
 
       const sent = results.filter((r) => r.sent).length;
-      const throttled = results.filter((r) => !r.sent && r.reason === 'duplicate_within_window').length;
+      const throttled = results.filter(
+        (r) => !r.sent && r.reason === 'duplicate_within_window',
+      ).length;
 
       expect(sent).toBeLessThan(10); // Most should be throttled
       expect(throttled).toBeGreaterThan(40);
@@ -405,11 +427,9 @@ describe('Load Tests - 1000+ Deployments', () => {
             severity: 'warning',
             title: `Alert to ${channel}`,
             channel: channel as any,
-            recipients:
-              channel === 'email' ? ['ops@example.com'] : undefined,
+            recipients: channel === 'email' ? ['ops@example.com'] : undefined,
             slackChannel: channel === 'slack' ? '#alerts' : undefined,
-            webhookUrl:
-              channel === 'webhook' ? 'https://example.com/alerts' : undefined,
+            webhookUrl: channel === 'webhook' ? 'https://example.com/alerts' : undefined,
           });
 
           if (result.sent) {
@@ -460,8 +480,7 @@ describe('Load Tests - 1000+ Deployments', () => {
         phases: [{ percentage: 100, deploymentCount: 1000, duration: 1800 }],
       });
 
-      benchmarks['Update Distribution (1000 deployments)'].actualTime =
-        Date.now() - startTime;
+      benchmarks['Update Distribution (1000 deployments)'].actualTime = Date.now() - startTime;
 
       // Verify benchmarks
       Object.entries(benchmarks).forEach(([name, { threshold, actualTime }]) => {
@@ -510,7 +529,9 @@ describe('Load Tests - 1000+ Deployments', () => {
 
       // Calculate variance
       const avgTime = resultsPerIteration.reduce((a, b) => a + b, 0) / iterations;
-      const variance = resultsPerIteration.reduce((sum, time) => sum + Math.pow(time - avgTime, 2), 0) / iterations;
+      const variance =
+        resultsPerIteration.reduce((sum, time) => sum + Math.pow(time - avgTime, 2), 0) /
+        iterations;
 
       // Variance should be low (consistent performance)
       expect(Math.sqrt(variance)).toBeLessThan(avgTime * 5.0 + 50);

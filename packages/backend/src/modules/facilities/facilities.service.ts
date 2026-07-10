@@ -116,7 +116,7 @@ export class FacilitiesService {
 
   private sanitizeDepartments(departments: Department[], countMap: Map<string, number>) {
     return departments.map((d) => {
-      const { headUser, ...rest } = d as any;
+      const { headUser, ...rest } = d;
       return {
         ...rest,
         staffCount: countMap.get(d.id) || 0,
@@ -196,7 +196,7 @@ export class FacilitiesService {
     if (tenantId) staffCountWhere.tenantId = tenantId;
     const staffCount = await this.userRepository.count({ where: staffCountWhere });
 
-    const { headUser, ...rest } = department as any;
+    const { headUser, ...rest } = department;
     return {
       ...rest,
       staffCount,

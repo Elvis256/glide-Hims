@@ -3,11 +3,17 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
 export class AuditRemediationPhase11782900000042 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Gap 1: GRN Segregation of Duties — add approval columns
-    await queryRunner.query(`ALTER TABLE "goods_receipt_notes" ADD COLUMN IF NOT EXISTS "approved_by_id" uuid NULL`);
-    await queryRunner.query(`ALTER TABLE "goods_receipt_notes" ADD COLUMN IF NOT EXISTS "approved_at" timestamptz NULL`);
+    await queryRunner.query(
+      `ALTER TABLE "goods_receipt_notes" ADD COLUMN IF NOT EXISTS "approved_by_id" uuid NULL`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "goods_receipt_notes" ADD COLUMN IF NOT EXISTS "approved_at" timestamptz NULL`,
+    );
 
     // Gap 2: GL currentBalance Version Column — defense-in-depth against stale writes
-    await queryRunner.query(`ALTER TABLE "chart_of_accounts" ADD COLUMN IF NOT EXISTS "version" integer NOT NULL DEFAULT 1`);
+    await queryRunner.query(
+      `ALTER TABLE "chart_of_accounts" ADD COLUMN IF NOT EXISTS "version" integer NOT NULL DEFAULT 1`,
+    );
 
     // Gap 4: Batch Recall tables
     await queryRunner.query(`
@@ -58,9 +64,15 @@ export class AuditRemediationPhase11782900000042 implements MigrationInterface {
         CONSTRAINT "UQ_batch_recalls_recall_number" UNIQUE ("recall_number")
       )
     `);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_batch_recalls_status" ON "batch_recalls" ("status")`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_batch_recalls_batch_number" ON "batch_recalls" ("batch_number")`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_batch_recalls_tenant_id" ON "batch_recalls" ("tenant_id")`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_batch_recalls_status" ON "batch_recalls" ("status")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_batch_recalls_batch_number" ON "batch_recalls" ("batch_number")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_batch_recalls_tenant_id" ON "batch_recalls" ("tenant_id")`,
+    );
 
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "batch_recall_actions" (
@@ -79,7 +91,9 @@ export class AuditRemediationPhase11782900000042 implements MigrationInterface {
         CONSTRAINT "FK_batch_recall_actions_recall" FOREIGN KEY ("recall_id") REFERENCES "batch_recalls"("id") ON DELETE CASCADE
       )
     `);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_batch_recall_actions_recall_id" ON "batch_recall_actions" ("recall_id")`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_batch_recall_actions_recall_id" ON "batch_recall_actions" ("recall_id")`,
+    );
 
     // Gap 5: Cycle Count tables
     await queryRunner.query(`
@@ -120,9 +134,15 @@ export class AuditRemediationPhase11782900000042 implements MigrationInterface {
         CONSTRAINT "UQ_cycle_counts_count_number" UNIQUE ("count_number")
       )
     `);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_cycle_counts_status" ON "cycle_counts" ("status")`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_cycle_counts_facility_created" ON "cycle_counts" ("facility_id", "created_at")`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_cycle_counts_tenant_id" ON "cycle_counts" ("tenant_id")`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_cycle_counts_status" ON "cycle_counts" ("status")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_cycle_counts_facility_created" ON "cycle_counts" ("facility_id", "created_at")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_cycle_counts_tenant_id" ON "cycle_counts" ("tenant_id")`,
+    );
 
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "cycle_count_items" (
@@ -149,11 +169,17 @@ export class AuditRemediationPhase11782900000042 implements MigrationInterface {
         CONSTRAINT "FK_cycle_count_items_cycle_count" FOREIGN KEY ("cycle_count_id") REFERENCES "cycle_counts"("id") ON DELETE CASCADE
       )
     `);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_cycle_count_items_cycle_count_id" ON "cycle_count_items" ("cycle_count_id")`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_cycle_count_items_item_id" ON "cycle_count_items" ("item_id")`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_cycle_count_items_cycle_count_id" ON "cycle_count_items" ("cycle_count_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_cycle_count_items_item_id" ON "cycle_count_items" ("item_id")`,
+    );
 
     // Gap 6a: Disposal witness2 column
-    await queryRunner.query(`ALTER TABLE "disposal_records" ADD COLUMN IF NOT EXISTS "witness2" varchar NULL`);
+    await queryRunner.query(
+      `ALTER TABLE "disposal_records" ADD COLUMN IF NOT EXISTS "witness2" varchar NULL`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
@@ -173,7 +199,11 @@ export class AuditRemediationPhase11782900000042 implements MigrationInterface {
 
     await queryRunner.query(`ALTER TABLE "chart_of_accounts" DROP COLUMN IF EXISTS "version"`);
 
-    await queryRunner.query(`ALTER TABLE "goods_receipt_notes" DROP COLUMN IF EXISTS "approved_at"`);
-    await queryRunner.query(`ALTER TABLE "goods_receipt_notes" DROP COLUMN IF EXISTS "approved_by_id"`);
+    await queryRunner.query(
+      `ALTER TABLE "goods_receipt_notes" DROP COLUMN IF EXISTS "approved_at"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "goods_receipt_notes" DROP COLUMN IF EXISTS "approved_by_id"`,
+    );
   }
 }

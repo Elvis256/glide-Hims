@@ -200,10 +200,7 @@ export class UpdateManagerService {
     appliedAt: Date = new Date(),
   ): Promise<{ fileName: string; appliedAt: string }> {
     const markerFile = path.join(this.UPDATES_DIR, `.${updateFile}.applied`);
-    fs.writeFileSync(
-      markerFile,
-      JSON.stringify({ appliedAt: appliedAt.toISOString() }, null, 2),
-    );
+    fs.writeFileSync(markerFile, JSON.stringify({ appliedAt: appliedAt.toISOString() }, null, 2));
 
     return {
       fileName: updateFile,

@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner, Table, TableIndex, TableForeignKey } from 'typeorm';
 
-export class AddPhase2UpdateDistributionEntities1777200000000
-  implements MigrationInterface
-{
+export class AddPhase2UpdateDistributionEntities1777200000000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Create release_candidates table
     await queryRunner.createTable(
@@ -135,14 +133,7 @@ export class AddPhase2UpdateDistributionEntities1777200000000
           {
             name: 'status',
             type: 'enum',
-            enum: [
-              'scheduled',
-              'in_progress',
-              'paused',
-              'completed',
-              'rolled_back',
-              'failed',
-            ],
+            enum: ['scheduled', 'in_progress', 'paused', 'completed', 'rolled_back', 'failed'],
             default: "'scheduled'",
           },
           {

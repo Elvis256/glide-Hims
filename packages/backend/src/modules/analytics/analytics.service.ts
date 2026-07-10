@@ -976,7 +976,7 @@ export class AnalyticsService {
     });
 
     // Get recent completed encounters
-    const encounterWhere: any = { facilityId, status: 'completed' as any };
+    const encounterWhere: any = { facilityId, status: 'completed' };
     if (tenantId) encounterWhere.tenantId = tenantId;
     const recentEncounters = await this.encounterRepo.find({
       where: encounterWhere,
@@ -995,7 +995,7 @@ export class AnalyticsService {
     });
 
     // Get recent lab results (via sample -> patient)
-    const labResultWhere: any = { status: 'validated' as any };
+    const labResultWhere: any = { status: 'validated' };
     if (tenantId) labResultWhere.tenantId = tenantId;
     const recentLabResults = await this.labResultRepo.find({
       where: labResultWhere,

@@ -20,7 +20,13 @@ import { ScheduleModule } from '@nestjs/schedule';
     ScheduleModule.forRoot(),
   ],
   controllers: [LicenseController, PhoneHomeController],
-  providers: [LicenseService, PhoneHomeService, LicenseGuard, LicenseBootstrapService, UpdateClientService],
+  providers: [
+    LicenseService,
+    PhoneHomeService,
+    LicenseGuard,
+    LicenseBootstrapService,
+    UpdateClientService,
+  ],
   exports: [LicenseService, PhoneHomeService, LicenseGuard, UpdateClientService],
 })
 export class LicensingModule {}

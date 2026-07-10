@@ -21,7 +21,9 @@ export class SaasWebhooks1782900000017 implements MigrationInterface {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );
     `);
-    await q.query(`CREATE INDEX IF NOT EXISTS ix_saas_webhook_endpoints_tenant ON saas_webhook_endpoints(tenant_id);`);
+    await q.query(
+      `CREATE INDEX IF NOT EXISTS ix_saas_webhook_endpoints_tenant ON saas_webhook_endpoints(tenant_id);`,
+    );
     await q.query(`
       CREATE TABLE IF NOT EXISTS saas_webhook_deliveries (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -41,9 +43,15 @@ export class SaasWebhooks1782900000017 implements MigrationInterface {
         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );
     `);
-    await q.query(`CREATE INDEX IF NOT EXISTS ix_saas_webhook_deliveries_status_next ON saas_webhook_deliveries(status, next_attempt_at);`);
-    await q.query(`CREATE INDEX IF NOT EXISTS ix_saas_webhook_deliveries_tenant ON saas_webhook_deliveries(tenant_id);`);
-    await q.query(`CREATE INDEX IF NOT EXISTS ix_saas_webhook_deliveries_endpoint ON saas_webhook_deliveries(endpoint_id);`);
+    await q.query(
+      `CREATE INDEX IF NOT EXISTS ix_saas_webhook_deliveries_status_next ON saas_webhook_deliveries(status, next_attempt_at);`,
+    );
+    await q.query(
+      `CREATE INDEX IF NOT EXISTS ix_saas_webhook_deliveries_tenant ON saas_webhook_deliveries(tenant_id);`,
+    );
+    await q.query(
+      `CREATE INDEX IF NOT EXISTS ix_saas_webhook_deliveries_endpoint ON saas_webhook_deliveries(endpoint_id);`,
+    );
   }
 
   public async down(q: QueryRunner): Promise<void> {

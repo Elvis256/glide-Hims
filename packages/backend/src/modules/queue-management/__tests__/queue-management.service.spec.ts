@@ -61,7 +61,7 @@ describe('QueueManagementService.validateQueueRequest', () => {
     patientId: '11111111-1111-1111-1111-111111111111',
     servicePoint: ServicePoint.CONSULTATION,
     departmentId: '22222222-2222-2222-2222-222222222222',
-    visitType: 'new_visit' as any,
+    visitType: 'new_visit',
     paymentType: 'cash',
     patientConditionFlags: [],
   };

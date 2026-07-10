@@ -9,6 +9,7 @@ import { DrugSchedule } from './drug-classification.entity';
 @Index(['dispensationId'])
 @Index(['drugSchedule', 'createdAt'])
 @Index(['facilityId', 'createdAt'])
+@Index(['facilityId', 'drugSchedule'])
 @Index(['pharmacySaleItemId'])
 export class ControlledSubstanceLog extends BaseEntity {
   @Column({ name: 'prescription_item_id', nullable: true })
@@ -55,6 +56,9 @@ export class ControlledSubstanceLog extends BaseEntity {
   @ManyToOne(() => User, { nullable: true })
   @JoinColumn({ name: 'witness_id' })
   witness: User;
+
+  @Column({ name: 'witness_name', length: 255, nullable: true })
+  witnessName: string;
 
   @Column({ name: 'witness_signature', type: 'text', nullable: true })
   witnessSignature: string;

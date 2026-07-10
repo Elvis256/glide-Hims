@@ -119,7 +119,11 @@ export class LabSuppliesController {
     @Body() data: ReceiveLotDto,
     @Request() req: any,
   ) {
-    return this.labSuppliesService.receiveLot({ ...data, reagentId } as any, req.user?.tenantId);
+    return this.labSuppliesService.receiveLot(
+      { ...data, reagentId } as any,
+      req.user?.tenantId,
+      req.user?.id,
+    );
   }
 
   @AuthWithPermissions('inventory.update')
@@ -137,7 +141,11 @@ export class LabSuppliesController {
     @Body() data: RecordConsumptionDto,
     @Request() req: any,
   ) {
-    return this.labSuppliesService.recordConsumption({ ...data, lotId }, req.user?.tenantId);
+    return this.labSuppliesService.recordConsumption(
+      { ...data, lotId },
+      req.user?.tenantId,
+      req.user?.id,
+    );
   }
 
   // ==================== EQUIPMENT ====================
@@ -204,6 +212,7 @@ export class LabSuppliesController {
     return this.labSuppliesService.recordCalibration(
       { ...data, equipmentId } as any,
       req.user?.tenantId,
+      req.user?.id,
     );
   }
 
@@ -218,6 +227,7 @@ export class LabSuppliesController {
     return this.labSuppliesService.recordEquipmentMaintenance(
       { ...data, equipmentId } as any,
       req.user?.tenantId,
+      req.user?.id,
     );
   }
 
@@ -247,7 +257,12 @@ export class LabSuppliesController {
   @Post('qc-results')
   @ApiOperation({ summary: 'Record QC result' })
   async recordQCResult(@Body() data: RecordQCResultDto, @Request() req: any) {
-    return this.labSuppliesService.recordQCResult(data, req.user?.tenantId);
+    // P0: map DTO 'value' to entity 'resultValue' and stamp userId
+    return this.labSuppliesService.recordQCResult(
+      { ...data, resultValue: data.value, runDate: new Date() } as any,
+      req.user?.tenantId,
+      req.user?.id,
+    );
   }
 
   @AuthWithPermissions('inventory.read')

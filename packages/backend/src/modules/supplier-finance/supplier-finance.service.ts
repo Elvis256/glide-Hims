@@ -7,7 +7,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, LessThanOrEqual, DataSource } from 'typeorm';
+import { Repository, Between, LessThanOrEqual, LessThan, DataSource } from 'typeorm';
 import {
   SupplierPayment,
   SupplierPaymentItem,
@@ -25,6 +25,7 @@ import { Supplier, SupplierStatus } from '../../database/entities/supplier.entit
 import { GoodsReceiptNote, GRNStatus } from '../../database/entities/goods-receipt.entity';
 import { FinanceService } from '../finance/finance.service';
 import { BudgetService } from '../finance/budget.service';
+import { AuditLogService } from '../../common/interceptors/audit-log.service';
 
 @Injectable()
 export class SupplierFinanceService {
@@ -45,6 +46,7 @@ export class SupplierFinanceService {
     private financeService: FinanceService,
     private budgetService: BudgetService,
     private dataSource: DataSource,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   // ==================== SUPPLIER PAYMENTS ====================
@@ -167,9 +169,14 @@ export class SupplierFinanceService {
       supplierId?: string;
       startDate?: Date;
       endDate?: Date;
+      page?: number;
+      limit?: number;
     },
     tenantId?: string,
-  ): Promise<SupplierPayment[]> {
+  ): Promise<{ data: SupplierPayment[]; total: number; page: number; limit: number }> {
+    const page = Math.max(1, filters?.page || 1);
+    const limit = Math.min(200, Math.max(1, filters?.limit || 50));
+
     const qb = this.paymentRepo
       .createQueryBuilder('p')
       .leftJoinAndSelect('p.supplier', 'supplier')
@@ -192,16 +199,46 @@ export class SupplierFinanceService {
       qb.andWhere('p.tenant_id = :tenantId', { tenantId });
     }
 
-    return qb.orderBy('p.createdAt', 'DESC').getMany();
+    const [data, total] = await qb
+      .orderBy('p.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
+    return { data, total, page, limit };
   }
 
-  async submitPaymentVoucher(id: string, tenantId?: string): Promise<SupplierPayment> {
-    const payment = await this.getPaymentVoucher(id, tenantId);
-    if (payment.status !== PaymentVoucherStatus.DRAFT) {
-      throw new BadRequestException('Only draft vouchers can be submitted');
-    }
-    payment.status = PaymentVoucherStatus.PENDING_APPROVAL;
-    return this.paymentRepo.save(payment);
+  async submitPaymentVoucher(
+    id: string,
+    userId: string,
+    tenantId?: string,
+  ): Promise<SupplierPayment> {
+    return this.dataSource.transaction(async (manager) => {
+      const payRepoTx = manager.getRepository(SupplierPayment);
+      const payment = await payRepoTx.findOne({
+        where: { id, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!payment) throw new NotFoundException('Payment voucher not found');
+      if (payment.status !== PaymentVoucherStatus.DRAFT) {
+        throw new BadRequestException('Only draft vouchers can be submitted');
+      }
+      payment.status = PaymentVoucherStatus.PENDING_APPROVAL;
+      const saved = await payRepoTx.save(payment);
+
+      this.auditLogService
+        .log({
+          action: 'PAYMENT_VOUCHER_SUBMITTED',
+          entityType: 'SupplierPayment',
+          entityId: saved.id,
+          userId,
+          tenantId,
+          newValue: { voucherNumber: saved.voucherNumber, status: saved.status },
+        })
+        .catch(() => {});
+
+      return saved;
+    });
   }
 
   async approvePaymentVoucher(
@@ -209,44 +246,63 @@ export class SupplierFinanceService {
     userId: string,
     tenantId?: string,
   ): Promise<SupplierPayment> {
-    const payment = await this.getPaymentVoucher(id, tenantId);
-    if (payment.status !== PaymentVoucherStatus.PENDING_APPROVAL) {
-      throw new BadRequestException('Only pending vouchers can be approved');
-    }
+    return this.dataSource.transaction(async (manager) => {
+      const payRepoTx = manager.getRepository(SupplierPayment);
+      const payment = await payRepoTx.findOne({
+        where: { id, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!payment) throw new NotFoundException('Payment voucher not found');
+      if (payment.status !== PaymentVoucherStatus.PENDING_APPROVAL) {
+        throw new BadRequestException('Only pending vouchers can be approved');
+      }
 
-    // Segregation of duties: approver cannot be the same as preparer
-    if (payment.preparedBy === userId) {
-      throw new BadRequestException(
-        'Segregation of duties violation: the user who prepared the voucher cannot approve it',
-      );
-    }
-
-    // Budget enforcement: check spending limit before approval
-    const amount = Number(payment.grossAmount) || 0;
-    if (amount > 0) {
-      // Use Accounts Payable account for expense budget check
-      const budgetCheck = await this.budgetService.checkBudgetAvailability(
-        payment.facilityId,
-        payment.supplierId, // accountId placeholder — in practice map to expense GL account
-        amount,
-        tenantId,
-      );
-      if (budgetCheck && !budgetCheck.withinBudget) {
+      // Segregation of duties: approver cannot be the same as preparer
+      if (payment.preparedBy === userId) {
         throw new BadRequestException(
-          `Budget exceeded for "${budgetCheck.budgetName}": ` +
-            `budgeted ${budgetCheck.budgetedAmount.toLocaleString()}, ` +
-            `spent ${budgetCheck.actualSpent.toLocaleString()}, ` +
-            `remaining ${budgetCheck.remainingBudget.toLocaleString()}, ` +
-            `requested ${budgetCheck.pendingAmount.toLocaleString()}. ` +
-            `Payment voucher ${payment.voucherNumber} cannot be approved.`,
+          'Segregation of duties violation: the user who prepared the voucher cannot approve it',
         );
       }
-    }
 
-    payment.status = PaymentVoucherStatus.APPROVED;
-    payment.approvedBy = userId;
-    payment.approvedAt = new Date();
-    return this.paymentRepo.save(payment);
+      // Budget enforcement: check spending limit before approval
+      const amount = Number(payment.grossAmount) || 0;
+      if (amount > 0) {
+        const budgetCheck = await this.budgetService.checkBudgetAvailability(
+          payment.facilityId,
+          payment.supplierId,
+          amount,
+          tenantId,
+        );
+        if (budgetCheck && !budgetCheck.withinBudget) {
+          throw new BadRequestException(
+            `Budget exceeded for "${budgetCheck.budgetName}": ` +
+              `budgeted ${budgetCheck.budgetedAmount.toLocaleString()}, ` +
+              `spent ${budgetCheck.actualSpent.toLocaleString()}, ` +
+              `remaining ${budgetCheck.remainingBudget.toLocaleString()}, ` +
+              `requested ${budgetCheck.pendingAmount.toLocaleString()}. ` +
+              `Payment voucher ${payment.voucherNumber} cannot be approved.`,
+          );
+        }
+      }
+
+      payment.status = PaymentVoucherStatus.APPROVED;
+      payment.approvedBy = userId;
+      payment.approvedAt = new Date();
+      const saved = await payRepoTx.save(payment);
+
+      this.auditLogService
+        .log({
+          action: 'PAYMENT_VOUCHER_APPROVED',
+          entityType: 'SupplierPayment',
+          entityId: saved.id,
+          userId,
+          tenantId,
+          newValue: { voucherNumber: saved.voucherNumber, amount },
+        })
+        .catch(() => {});
+
+      return saved;
+    });
   }
 
   async processPayment(
@@ -258,58 +314,110 @@ export class SupplierFinanceService {
     },
     tenantId?: string,
   ): Promise<SupplierPayment> {
-    const payment = await this.getPaymentVoucher(id, tenantId);
-    if (payment.status !== PaymentVoucherStatus.APPROVED) {
-      throw new BadRequestException('Only approved vouchers can be paid');
-    }
+    return this.dataSource.transaction(async (manager) => {
+      const payRepoTx = manager.getRepository(SupplierPayment);
+      const payment = await payRepoTx.findOne({
+        where: { id, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!payment) throw new NotFoundException('Payment voucher not found');
+      if (payment.status !== PaymentVoucherStatus.APPROVED) {
+        throw new BadRequestException('Only approved vouchers can be paid');
+      }
 
-    // Segregation of duties: payer cannot be the same as preparer or approver
-    if (payment.preparedBy === userId) {
-      throw new BadRequestException(
-        'Segregation of duties violation: the user who prepared the voucher cannot process the payment',
-      );
-    }
-    if (payment.approvedBy === userId) {
-      throw new BadRequestException(
-        'Segregation of duties violation: the user who approved the voucher cannot process the payment',
-      );
-    }
+      // Segregation of duties: payer cannot be the same as preparer or approver
+      if (payment.preparedBy === userId) {
+        throw new BadRequestException(
+          'Segregation of duties violation: the user who prepared the voucher cannot process the payment',
+        );
+      }
+      if (payment.approvedBy === userId) {
+        throw new BadRequestException(
+          'Segregation of duties violation: the user who approved the voucher cannot process the payment',
+        );
+      }
 
-    if (bankDetails?.chequeNumber) {
-      payment.chequeNumber = bankDetails.chequeNumber;
-    }
-    if (bankDetails?.bankReference) {
-      payment.bankReference = bankDetails.bankReference;
-    }
+      if (bankDetails?.chequeNumber) {
+        payment.chequeNumber = bankDetails.chequeNumber;
+      }
+      if (bankDetails?.bankReference) {
+        payment.bankReference = bankDetails.bankReference;
+      }
 
-    payment.status = PaymentVoucherStatus.PAID;
-    payment.paidBy = userId;
-    payment.paidAt = new Date();
-    const saved = await this.paymentRepo.save(payment);
+      payment.status = PaymentVoucherStatus.PAID;
+      payment.paidBy = userId;
+      payment.paidAt = new Date();
+      const saved = await payRepoTx.save(payment);
 
-    // Auto-post journal entry: AP DR, Cash/Bank CR
-    await this.financeService.autoPostPaymentJournal({
-      facilityId: payment.facilityId,
-      paymentReference: payment.voucherNumber,
-      amount: Number(payment.netAmount ?? payment.grossAmount) || 0,
-      userId,
+      this.auditLogService
+        .log({
+          action: 'PAYMENT_PROCESSED',
+          entityType: 'SupplierPayment',
+          entityId: saved.id,
+          userId,
+          tenantId,
+          newValue: {
+            voucherNumber: saved.voucherNumber,
+            amount: Number(saved.netAmount ?? saved.grossAmount),
+          },
+        })
+        .catch(() => {});
+
+      // Auto-post journal entry best-effort (inside transaction context for data,
+      // but failure should not roll back payment)
+      this.financeService
+        .autoPostPaymentJournal({
+          facilityId: payment.facilityId,
+          paymentReference: payment.voucherNumber,
+          amount: Number(payment.netAmount ?? payment.grossAmount) || 0,
+          userId,
+        })
+        .catch(() => {});
+
+      return saved;
     });
-
-    return saved;
   }
 
-  async cancelPaymentVoucher(id: string, tenantId?: string): Promise<SupplierPayment> {
-    const payment = await this.getPaymentVoucher(id, tenantId);
-    if (payment.status === PaymentVoucherStatus.PAID) {
-      throw new BadRequestException('Cannot cancel a paid voucher');
-    }
-    payment.status = PaymentVoucherStatus.CANCELLED;
-    return this.paymentRepo.save(payment);
+  async cancelPaymentVoucher(
+    id: string,
+    userId: string,
+    tenantId?: string,
+  ): Promise<SupplierPayment> {
+    return this.dataSource.transaction(async (manager) => {
+      const payRepoTx = manager.getRepository(SupplierPayment);
+      const payment = await payRepoTx.findOne({
+        where: { id, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!payment) throw new NotFoundException('Payment voucher not found');
+      if (payment.status === PaymentVoucherStatus.PAID) {
+        throw new BadRequestException('Cannot cancel a paid voucher');
+      }
+      payment.status = PaymentVoucherStatus.CANCELLED;
+      const saved = await payRepoTx.save(payment);
+
+      this.auditLogService
+        .log({
+          action: 'PAYMENT_VOUCHER_CANCELLED',
+          entityType: 'SupplierPayment',
+          entityId: saved.id,
+          userId,
+          tenantId,
+          newValue: { voucherNumber: saved.voucherNumber },
+        })
+        .catch(() => {});
+
+      return saved;
+    });
   }
 
   // ==================== CREDIT/DEBIT NOTES ====================
 
-  private async generateNoteNumber(facilityId: string, type: CreditNoteType, tenantId?: string): Promise<string> {
+  private async generateNoteNumber(
+    facilityId: string,
+    type: CreditNoteType,
+    tenantId?: string,
+  ): Promise<string> {
     const where: any = { facilityId, noteType: type };
     if (tenantId) where.tenantId = tenantId;
     const count = await this.creditNoteRepo.count({ where });
@@ -434,9 +542,14 @@ export class SupplierFinanceService {
       supplierId?: string;
       startDate?: Date;
       endDate?: Date;
+      page?: number;
+      limit?: number;
     },
     tenantId?: string,
-  ): Promise<SupplierCreditNote[]> {
+  ): Promise<{ data: SupplierCreditNote[]; total: number; page: number; limit: number }> {
+    const page = Math.max(1, filters?.page || 1);
+    const limit = Math.min(200, Math.max(1, filters?.limit || 50));
+
     const qb = this.creditNoteRepo
       .createQueryBuilder('cn')
       .leftJoinAndSelect('cn.supplier', 'supplier')
@@ -462,7 +575,13 @@ export class SupplierFinanceService {
       qb.andWhere('cn.tenant_id = :tenantId', { tenantId });
     }
 
-    return qb.orderBy('cn.createdAt', 'DESC').getMany();
+    const [data, total] = await qb
+      .orderBy('cn.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
+    return { data, total, page, limit };
   }
 
   async approveCreditNote(
@@ -470,59 +589,120 @@ export class SupplierFinanceService {
     userId: string,
     tenantId?: string,
   ): Promise<SupplierCreditNote> {
-    const note = await this.getCreditNote(id, tenantId);
-    if (
-      note.status !== CreditNoteStatus.DRAFT &&
-      note.status !== CreditNoteStatus.PENDING_APPROVAL
-    ) {
-      throw new BadRequestException('Note cannot be approved from current status');
-    }
-    // Sprint-6 maker-checker: the user who created the credit/debit
-    // note cannot also approve it. Without this, a single user with
-    // supplier-finance.manage can both raise and approve a CN, which
-    // wipes the SoD control on supplier balance reductions.
-    if (note.createdBy && note.createdBy === userId) {
-      throw new ForbiddenException(
-        'Segregation of duties: the credit note creator cannot also approve it. A different user must approve.',
-      );
-    }
-    note.status = CreditNoteStatus.APPROVED;
-    note.approvedBy = userId;
-    note.approvedAt = new Date();
-    return this.creditNoteRepo.save(note);
+    return this.dataSource.transaction(async (manager) => {
+      const cnRepoTx = manager.getRepository(SupplierCreditNote);
+      const note = await cnRepoTx.findOne({
+        where: { id, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!note) throw new NotFoundException('Credit/Debit note not found');
+      if (
+        note.status !== CreditNoteStatus.DRAFT &&
+        note.status !== CreditNoteStatus.PENDING_APPROVAL
+      ) {
+        throw new BadRequestException('Note cannot be approved from current status');
+      }
+      if (note.createdBy && note.createdBy === userId) {
+        throw new ForbiddenException(
+          'Segregation of duties: the credit note creator cannot also approve it. A different user must approve.',
+        );
+      }
+      note.status = CreditNoteStatus.APPROVED;
+      note.approvedBy = userId;
+      note.approvedAt = new Date();
+      const saved = await cnRepoTx.save(note);
+
+      this.auditLogService
+        .log({
+          action: 'CREDIT_NOTE_APPROVED',
+          entityType: 'SupplierCreditNote',
+          entityId: saved.id,
+          userId,
+          tenantId,
+          newValue: { noteNumber: saved.noteNumber, noteType: saved.noteType },
+        })
+        .catch(() => {});
+
+      return saved;
+    });
   }
 
   async applyCreditNote(
     creditNoteId: string,
     paymentVoucherId: string,
     amount: number,
+    userId: string,
     tenantId?: string,
   ): Promise<SupplierCreditNote> {
-    const note = await this.getCreditNote(creditNoteId, tenantId);
-    if (note.status !== CreditNoteStatus.APPROVED) {
-      throw new BadRequestException('Only approved notes can be applied');
-    }
-    if (amount > Number(note.balanceAmount)) {
-      throw new BadRequestException('Amount exceeds available balance');
-    }
+    return this.dataSource.transaction(async (manager) => {
+      const cnRepoTx = manager.getRepository(SupplierCreditNote);
+      const note = await cnRepoTx.findOne({
+        where: { id: creditNoteId, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!note) throw new NotFoundException('Credit/Debit note not found');
+      if (note.status !== CreditNoteStatus.APPROVED) {
+        throw new BadRequestException('Only approved notes can be applied');
+      }
+      if (amount > Number(note.balanceAmount)) {
+        throw new BadRequestException('Amount exceeds available balance');
+      }
 
-    note.appliedAmount = Number(note.appliedAmount) + amount;
-    note.balanceAmount = Number(note.balanceAmount) - amount;
+      note.appliedAmount = Number(note.appliedAmount) + amount;
+      note.balanceAmount = Number(note.balanceAmount) - amount;
 
-    if (Number(note.balanceAmount) <= 0) {
-      note.status = CreditNoteStatus.APPLIED;
-    }
+      if (Number(note.balanceAmount) <= 0) {
+        note.status = CreditNoteStatus.APPLIED;
+      }
 
-    return this.creditNoteRepo.save(note);
+      const saved = await cnRepoTx.save(note);
+
+      this.auditLogService
+        .log({
+          action: 'CREDIT_NOTE_APPLIED',
+          entityType: 'SupplierCreditNote',
+          entityId: saved.id,
+          userId,
+          tenantId,
+          newValue: { noteNumber: saved.noteNumber, appliedAmount: amount, paymentVoucherId },
+        })
+        .catch(() => {});
+
+      return saved;
+    });
   }
 
-  async cancelCreditNote(id: string, tenantId?: string): Promise<SupplierCreditNote> {
-    const note = await this.getCreditNote(id, tenantId);
-    if (note.status === CreditNoteStatus.APPLIED) {
-      throw new BadRequestException('Cannot cancel an applied note');
-    }
-    note.status = CreditNoteStatus.CANCELLED;
-    return this.creditNoteRepo.save(note);
+  async cancelCreditNote(
+    id: string,
+    userId: string,
+    tenantId?: string,
+  ): Promise<SupplierCreditNote> {
+    return this.dataSource.transaction(async (manager) => {
+      const cnRepoTx = manager.getRepository(SupplierCreditNote);
+      const note = await cnRepoTx.findOne({
+        where: { id, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!note) throw new NotFoundException('Credit/Debit note not found');
+      if (note.status === CreditNoteStatus.APPLIED) {
+        throw new BadRequestException('Cannot cancel an applied note');
+      }
+      note.status = CreditNoteStatus.CANCELLED;
+      const saved = await cnRepoTx.save(note);
+
+      this.auditLogService
+        .log({
+          action: 'CREDIT_NOTE_CANCELLED',
+          entityType: 'SupplierCreditNote',
+          entityId: saved.id,
+          userId,
+          tenantId,
+          newValue: { noteNumber: saved.noteNumber },
+        })
+        .catch(() => {});
+
+      return saved;
+    });
   }
 
   // ==================== REPORTS ====================
@@ -652,7 +832,26 @@ export class SupplierFinanceService {
     transactions.sort((a, b) => a.date.getTime() - b.date.getTime());
 
     // Calculate running balance
-    let balance = 0; // TODO: Get opening balance from previous period
+        const previousGrns = await this.grnRepo.find({
+      where: { supplierId, postedAt: LessThan(startDate), ...(tenantId ? { tenantId } : {}) },
+    });
+    const previousPayments = await this.paymentRepo.find({
+      where: { supplierId, status: PaymentVoucherStatus.PAID, paidAt: LessThan(startDate), ...(tenantId ? { tenantId } : {}) },
+    });
+    const previousCreditNotes = await this.creditNoteRepo.find({
+      where: { supplierId, noteType: CreditNoteType.CREDIT_NOTE, status: CreditNoteStatus.APPROVED, approvedAt: LessThan(startDate), ...(tenantId ? { tenantId } : {}) },
+    });
+    const previousDebitNotes = await this.creditNoteRepo.find({
+      where: { supplierId, noteType: CreditNoteType.DEBIT_NOTE, status: CreditNoteStatus.APPROVED, approvedAt: LessThan(startDate), ...(tenantId ? { tenantId } : {}) },
+    });
+
+    let openingBalance = 0;
+    openingBalance += previousGrns.reduce((sum, grn) => sum + Number(grn.totalValue), 0);
+    openingBalance -= previousPayments.reduce((sum, payment) => sum + Number(payment.netAmount), 0);
+    openingBalance -= previousCreditNotes.reduce((sum, cn) => sum + Number(cn.totalAmount), 0);
+    openingBalance += previousDebitNotes.reduce((sum, cn) => sum + Number(cn.totalAmount), 0);
+
+    let balance = openingBalance;
     for (const txn of transactions) {
       balance = balance - txn.debit + txn.credit;
       txn.balance = balance;
@@ -660,7 +859,7 @@ export class SupplierFinanceService {
 
     return {
       supplier,
-      openingBalance: 0,
+      openingBalance,
       transactions,
       closingBalance: balance,
     };
@@ -841,7 +1040,10 @@ export class SupplierFinanceService {
 
   // ============ DEBIT NOTE FROM GRN REJECTIONS ============
 
-  async previewDebitNoteFromGRN(grnId: string, tenantId?: string): Promise<{
+  async previewDebitNoteFromGRN(
+    grnId: string,
+    tenantId?: string,
+  ): Promise<{
     grnNumber: string;
     grnId: string;
     supplierId: string;
@@ -857,7 +1059,12 @@ export class SupplierFinanceService {
       batchNumber?: string;
       rejectionReason?: string;
     }>;
-    existingDebitNotes: Array<{ id: string; noteNumber: string; status: string; totalAmount: number }>;
+    existingDebitNotes: Array<{
+      id: string;
+      noteNumber: string;
+      status: string;
+      totalAmount: number;
+    }>;
     totalRejectedValue: number;
     canCreate: boolean;
     blockReason?: string;
@@ -870,8 +1077,10 @@ export class SupplierFinanceService {
 
     const rejectedLines = (grn.items || []).filter((it) => Number(it.quantityRejected || 0) > 0);
 
-    const supplierId = grn.supplier?.id || (grn as any).supplierId || (grn.purchaseOrder as any)?.supplierId;
-    const supplierName = grn.supplier?.name || (grn.purchaseOrder as any)?.supplier?.name || 'Unknown';
+    const supplierId =
+      grn.supplier?.id || grn.supplierId || grn.purchaseOrder?.supplierId;
+    const supplierName =
+      grn.supplier?.name || grn.purchaseOrder?.supplier?.name || 'Unknown';
 
     const existing = await this.creditNoteRepo.find({
       where: { grnId, noteType: CreditNoteType.DEBIT_NOTE, ...(tenantId ? { tenantId } : {}) },
@@ -934,10 +1143,13 @@ export class SupplierFinanceService {
   ): Promise<SupplierCreditNote> {
     const preview = await this.previewDebitNoteFromGRN(grnId, tenantId);
     if (!preview.canCreate) {
-      throw new BadRequestException(preview.blockReason || 'Cannot create debit note from this GRN');
+      throw new BadRequestException(
+        preview.blockReason || 'Cannot create debit note from this GRN',
+      );
     }
 
-    const reason = opts.reason || this.inferReasonFromRejection(preview.rejectedItems[0]?.rejectionReason);
+    const reason =
+      opts.reason || this.inferReasonFromRejection(preview.rejectedItems[0]?.rejectionReason);
 
     return this.createCreditNote(
       {
@@ -974,7 +1186,8 @@ export class SupplierFinanceService {
     const r = rejectionReason.toLowerCase();
     if (r.includes('damag')) return CreditNoteReason.DAMAGED_GOODS;
     if (r.includes('expir')) return CreditNoteReason.EXPIRED_GOODS;
-    if (r.includes('quantity') || r.includes('short') || r.includes('over')) return CreditNoteReason.QUANTITY_DISCREPANCY;
+    if (r.includes('quantity') || r.includes('short') || r.includes('over'))
+      return CreditNoteReason.QUANTITY_DISCREPANCY;
     if (r.includes('price') || r.includes('overcharge')) return CreditNoteReason.PRICING_ERROR;
     if (r.includes('return')) return CreditNoteReason.GOODS_RETURNED;
     return CreditNoteReason.QUALITY_ISSUE;

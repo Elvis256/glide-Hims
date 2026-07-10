@@ -86,7 +86,7 @@ describe('csvEscape (formula-injection prevention)', () => {
     it('formula leader with comma → prefixed then quoted', () => {
       const result = csvEscape('=A,B');
       // Gets ' prefix, then comma triggers quoting
-      expect(result).toBe("\"'=A,B\"");
+      expect(result).toBe('"\'=A,B"');
     });
   });
 });

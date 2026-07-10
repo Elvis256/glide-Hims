@@ -26,9 +26,7 @@ function computeSignature(license: LicenseFields, secretKey: string): string {
     users: license.maxUsers,
     facilities: license.maxFacilities,
     status: license.status,
-    expiresAt: license.expiresAt
-      ? new Date(license.expiresAt).toISOString()
-      : undefined,
+    expiresAt: license.expiresAt ? new Date(license.expiresAt).toISOString() : undefined,
   });
   return crypto.createHmac('sha256', secretKey).update(payload).digest('hex');
 }
@@ -40,10 +38,7 @@ function verifySignature(
   if (!license.signature) return false;
   const expected = computeSignature(license, secretKey);
   if (license.signature.length !== expected.length) return false;
-  return crypto.timingSafeEqual(
-    Buffer.from(license.signature),
-    Buffer.from(expected),
-  );
+  return crypto.timingSafeEqual(Buffer.from(license.signature), Buffer.from(expected));
 }
 
 const baseLicense: LicenseFields = {
@@ -89,7 +84,10 @@ describe('License Signature', () => {
 
     it('changes when licenseType changes', () => {
       const standard = computeSignature({ ...baseLicense, licenseType: 'standard' }, TEST_SECRET);
-      const enterprise = computeSignature({ ...baseLicense, licenseType: 'enterprise' }, TEST_SECRET);
+      const enterprise = computeSignature(
+        { ...baseLicense, licenseType: 'enterprise' },
+        TEST_SECRET,
+      );
       expect(standard).not.toBe(enterprise);
     });
 
