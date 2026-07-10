@@ -17,10 +17,10 @@ export class DrugDiseaseInteraction extends BaseEntity {
   @Column({ name: 'drug_id', type: 'uuid', nullable: true })
   drugId: string | null;
 
-  @Column({ name: 'atc_code', nullable: true })
+  @Column({ type: 'varchar', length: 20, name: 'atc_code', nullable: true })
   atcCode: string | null;
 
-  @Column({ name: 'icd10_code' })
+  @Column({ type: 'varchar', length: 20, name: 'icd10_code' })
   icd10Code: string;
 
   @Column({

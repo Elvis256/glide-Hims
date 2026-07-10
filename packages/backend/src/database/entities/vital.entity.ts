@@ -37,16 +37,16 @@ export class Vital extends BaseEntity {
   @Column({ type: 'decimal', precision: 4, scale: 1, nullable: true })
   temperature: number; // Celsius
 
-  @Column({ nullable: true })
+  @Column({ type: 'int', nullable: true })
   pulse: number; // beats per minute
 
-  @Column({ name: 'bp_systolic', nullable: true })
+  @Column({ type: 'int', name: 'bp_systolic', nullable: true })
   bpSystolic: number; // mmHg
 
-  @Column({ name: 'bp_diastolic', nullable: true })
+  @Column({ type: 'int', name: 'bp_diastolic', nullable: true })
   bpDiastolic: number; // mmHg
 
-  @Column({ name: 'respiratory_rate', nullable: true })
+  @Column({ type: 'int', name: 'respiratory_rate', nullable: true })
   respiratoryRate: number; // breaths per minute
 
   @Column({ name: 'oxygen_saturation', type: 'decimal', precision: 5, scale: 2, nullable: true })
@@ -64,7 +64,7 @@ export class Vital extends BaseEntity {
   @Column({ name: 'blood_glucose', type: 'decimal', precision: 6, scale: 2, nullable: true })
   bloodGlucose: number; // mg/dL
 
-  @Column({ name: 'pain_scale', nullable: true })
+  @Column({ type: 'smallint', name: 'pain_scale', nullable: true })
   painScale: number; // 0-10
 
   @Column({ type: 'text', nullable: true })
@@ -78,14 +78,14 @@ export class Vital extends BaseEntity {
   @JoinColumn({ name: 'encounter_id' })
   encounter: Encounter | null;
 
-  @Column({ name: 'encounter_id', nullable: true })
+  @Column({ type: 'uuid', name: 'encounter_id', nullable: true })
   encounterId: string | null;
 
   @ManyToOne(() => Patient, { nullable: true })
   @JoinColumn({ name: 'patient_id' })
   patient: Patient | null;
 
-  @Column({ name: 'patient_id', nullable: true })
+  @Column({ type: 'uuid', name: 'patient_id', nullable: true })
   patientId: string | null;
 
   @Column({ type: 'varchar', length: 32, default: VitalSource.OPD_ENCOUNTER })
@@ -99,7 +99,7 @@ export class Vital extends BaseEntity {
   @JoinColumn({ name: 'recorded_by_id' })
   recordedBy: User;
 
-  @Column({ name: 'recorded_by_id' })
+  @Column({ type: 'uuid', name: 'recorded_by_id' })
   recordedById: string;
 
   // --- Early Warning Score fields ---
