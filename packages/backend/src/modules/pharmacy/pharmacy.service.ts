@@ -4,6 +4,7 @@ import {
   BadRequestException,
   Inject,
   forwardRef,
+  Optional,
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -64,6 +65,7 @@ import { InventoryService } from '../inventory/inventory.service';
 import { EfrisDocumentType } from '../../database/entities/pos-compliance.entity';
 import { ReceiptReprint, RetailCustomer } from '../../database/entities/pos-retail.entity';
 import { MedicationSafetyService } from '../allergies/medication-safety.service';
+import { BillingService } from '../billing/billing.service';
 import { Patient } from '../../database/entities/patient.entity';
 import { Store } from '../../database/entities/store.entity';
 
@@ -115,6 +117,9 @@ export class PharmacyService {
     private eventEmitter: EventEmitter2,
     private inventoryService: InventoryService,
     private medicationSafetyService: MedicationSafetyService,
+    @Optional()
+    @Inject(forwardRef(() => BillingService))
+    private billingService?: BillingService,
   ) {}
 
   /**
@@ -332,6 +337,7 @@ export class PharmacyService {
           prescriptionId: dto.prescriptionId,
           paymentMethod: dto.paymentMethod || 'cash',
           transactionReference: dto.transactionReference,
+          encounterId: dto.encounterId || null,
           subtotal: Number(subtotalNet.toFixed(2)),
           discountAmount,
           taxAmount: Number(totalTax.toFixed(2)),
@@ -1060,6 +1066,36 @@ export class PharmacyService {
       customerName: sale.customerName,
       totalAmount: Number(sale.totalAmount),
     });
+
+    // Revenue integrity: bridge pharmacy sale items to encounter invoice
+    if (sale.encounterId && sale.patientId && this.billingService) {
+      const saleItems = await this.saleItemRepo.find({ where: { saleId: sale.id } });
+      for (const item of saleItems) {
+        try {
+          await this.billingService.addBillableItem(
+            {
+              encounterId: sale.encounterId,
+              patientId: sale.patientId,
+              serviceCode: item.itemCode,
+              description: item.itemName,
+              quantity: item.quantity,
+              unitPrice: Number(item.unitPrice),
+              chargeType: 'pharmacy',
+              referenceType: 'pharmacy_sale_item',
+              referenceId: item.id,
+            },
+            userId,
+            tenantId,
+          );
+        } catch (err) {
+          // Non-blocking: sale is already completed (GL journal posted).
+          // addBillableItem is idempotent (referenceType+referenceId dedup).
+          this.logger.warn(
+            `Failed to bridge pharmacy item ${item.id} to encounter invoice: ${err.message}`,
+          );
+        }
+      }
+    }
 
     // B8: upsert retail customer record (fire-and-forget)
     if (sale.customerPhone && tenantId) {

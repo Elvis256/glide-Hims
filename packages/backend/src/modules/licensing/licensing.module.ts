@@ -6,17 +6,28 @@ import { PhoneHomeService } from './phone-home.service';
 import { PhoneHomeController } from './phone-home.controller';
 import { LicenseBootstrapService } from './license-bootstrap.service';
 import { UpdateClientService } from './update-client.service';
+import { SubscriptionLimitsService } from './subscription-limits.service';
 import { License } from '../../database/entities/license.entity';
 import { PhoneHomeRecord } from '../../database/entities/phone-home-record.entity';
 import { AppVersion } from '../../database/entities/app-version.entity';
 import { Deployment } from '../../database/entities/deployment.entity';
 import { UpdateRollout } from '../../database/entities/update-rollout.entity';
+import { User } from '../../database/entities/user.entity';
+import { Facility } from '../../database/entities/facility.entity';
 import { LicenseGuard } from './guards/license.guard';
 import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([License, PhoneHomeRecord, AppVersion, Deployment, UpdateRollout]),
+    TypeOrmModule.forFeature([
+      License,
+      PhoneHomeRecord,
+      AppVersion,
+      Deployment,
+      UpdateRollout,
+      User,
+      Facility,
+    ]),
     ScheduleModule.forRoot(),
   ],
   controllers: [LicenseController, PhoneHomeController],
@@ -26,7 +37,14 @@ import { ScheduleModule } from '@nestjs/schedule';
     LicenseGuard,
     LicenseBootstrapService,
     UpdateClientService,
+    SubscriptionLimitsService,
   ],
-  exports: [LicenseService, PhoneHomeService, LicenseGuard, UpdateClientService],
+  exports: [
+    LicenseService,
+    PhoneHomeService,
+    LicenseGuard,
+    UpdateClientService,
+    SubscriptionLimitsService,
+  ],
 })
 export class LicensingModule {}

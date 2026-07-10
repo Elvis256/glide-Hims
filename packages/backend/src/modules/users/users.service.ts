@@ -4,6 +4,9 @@ import {
   ConflictException,
   BadRequestException,
   Logger,
+  Optional,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like, ILike, DataSource, IsNull, In, EntityManager } from 'typeorm';
@@ -31,6 +34,7 @@ import {
   AssignPermissionDto,
 } from './dto/user.dto';
 import { BulkImportResult, BulkImportRowError } from './dto/bulk-import.dto';
+import { SubscriptionLimitsService } from '../licensing/subscription-limits.service';
 import * as XLSX from 'xlsx';
 
 // Improvement #6: Role → StaffCategory mapping utility
@@ -76,6 +80,9 @@ export class UsersService {
     private auditLogRepository: Repository<AuditLog>,
     private configService: ConfigService,
     private dataSource: DataSource,
+    @Optional()
+    @Inject(forwardRef(() => SubscriptionLimitsService))
+    private subscriptionLimitsService?: SubscriptionLimitsService,
   ) {}
 
   /**
@@ -148,6 +155,11 @@ export class UsersService {
     caller?: { id?: string; userId?: string; isSystemAdmin?: boolean; roles?: string[] },
   ): Promise<User & { employee?: Employee }> {
     const { employeeProfile, employeeId, roleId, facilityId, ...userData } = createUserDto;
+
+    // Subscription limit check — before any writes
+    if (tenantId && this.subscriptionLimitsService) {
+      await this.subscriptionLimitsService.checkUserLimit(tenantId);
+    }
 
     // NOTE: Employee link is optional. Required for staff users, but patient users
     // (e.g., for hospital insurance biometric verification) don't need employee records.

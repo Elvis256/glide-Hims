@@ -5,6 +5,7 @@ import {
   IsUUID,
   IsDateString,
   IsNumber,
+  IsBoolean,
   Min,
   Max,
   MaxLength,
@@ -62,6 +63,10 @@ export class CreateEncounterDto {
   @IsUUID()
   @IsOptional()
   attendingProviderId?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  debtOverride?: boolean;
 }
 
 /** Strip HTML tags from a string value (defense-in-depth for stored XSS). */

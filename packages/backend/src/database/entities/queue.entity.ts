@@ -284,6 +284,9 @@ export class Queue extends BaseEntity {
 
   @Column({ name: 'assigned_doctor_id', nullable: true })
   assignedDoctorId: string;
+
+  @Column({ type: 'uuid', name: 'appointment_id', nullable: true })
+  appointmentId: string | null;
 }
 
 // Queue display configuration

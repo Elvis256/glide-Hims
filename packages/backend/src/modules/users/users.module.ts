@@ -11,6 +11,7 @@ import { AuditLog } from '../../database/entities/audit-log.entity';
 import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
 import { AuthModule } from '../auth/auth.module';
+import { LicensingModule } from '../licensing/licensing.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { AuthModule } from '../auth/auth.module';
       AuditLog,
     ]),
     forwardRef(() => AuthModule),
+    forwardRef(() => LicensingModule),
   ],
   controllers: [UsersController],
   providers: [UsersService],

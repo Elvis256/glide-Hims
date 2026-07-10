@@ -106,6 +106,18 @@ export class AppointmentsController {
     );
   }
 
+  @Post(':id/check-in')
+  @AuthWithPermissions('appointments.update')
+  @ApiOperation({ summary: 'Check in an appointment and create queue entry' })
+  checkIn(
+    @Param('id') id: string,
+    @Headers('x-facility-id') facilityId: string,
+    @CurrentUser() user: { id: string },
+    @Request() req: any,
+  ) {
+    return this.appointmentsService.checkIn(id, facilityId, user.id, req.user?.tenantId);
+  }
+
   @Delete(':id')
   @AuthWithPermissions('appointments.delete')
   @ApiOperation({ summary: 'Delete an appointment' })

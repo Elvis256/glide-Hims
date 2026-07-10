@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, Optional, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Facility } from '../../database/entities/facility.entity';
@@ -12,6 +12,7 @@ import {
   CreateDepartmentDto,
   UpdateDepartmentDto,
 } from './dto/facility.dto';
+import { SubscriptionLimitsService } from '../licensing/subscription-limits.service';
 
 export interface CreateUnitDto {
   facilityId: string;
@@ -44,10 +45,18 @@ export class FacilitiesService {
     private userRepository: Repository<User>,
     @InjectRepository(Employee)
     private employeeRepository: Repository<Employee>,
+    @Optional()
+    @Inject(forwardRef(() => SubscriptionLimitsService))
+    private subscriptionLimitsService?: SubscriptionLimitsService,
   ) {}
 
   // Facility CRUD
   async createFacility(dto: CreateFacilityDto, tenantId?: string): Promise<Facility> {
+    // Subscription limit check
+    if (tenantId && this.subscriptionLimitsService) {
+      await this.subscriptionLimitsService.checkFacilityLimit(tenantId);
+    }
+
     const facility = this.facilityRepository.create({
       ...dto,
       status: 'active',

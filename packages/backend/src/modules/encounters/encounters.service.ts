@@ -211,6 +211,21 @@ export class EncountersService {
       throw new NotFoundException('Patient not found');
     }
 
+    // Debt blocking: prevent new non-emergency encounters for delinquent patients
+    const encounterType = dto.type || EncounterType.OPD;
+    if (
+      patient.blocksNewVisits &&
+      encounterType !== EncounterType.EMERGENCY &&
+      !(dto as any).debtOverride
+    ) {
+      throw new BadRequestException({
+        message: 'Patient account is blocked due to outstanding debt. Clear balance or use debtOverride for authorized exceptions.',
+        code: 'PATIENT_DEBT_BLOCKED',
+        debtStatus: patient.debtStatus,
+        totalOutstandingBalance: Number(patient.totalOutstandingBalance),
+      });
+    }
+
     // Fix 1: Validate facility exists and is active
     const facility = await this.facilityRepository.findOne({
       where: { id: dto.facilityId, ...(tenantId ? { tenantId } : {}) },

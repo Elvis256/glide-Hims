@@ -3,6 +3,15 @@ import { BaseEntity } from './base.entity';
 import { User } from './user.entity';
 import { piiColumnTransformer, hashPii } from '../../common/crypto/pii-crypto';
 
+export enum PatientDebtStatus {
+  NONE = 'none',
+  CURRENT = 'current',
+  OVERDUE_30 = 'overdue_30',
+  OVERDUE_60 = 'overdue_60',
+  OVERDUE_90 = 'overdue_90',
+  COLLECTIONS = 'collections',
+}
+
 @Entity('patients')
 @Index(['mrn'], { unique: true, where: 'deleted_at IS NULL' })
 // Uniqueness on national ID is enforced via the blind-index hash column because
@@ -101,6 +110,24 @@ export class Patient extends BaseEntity {
 
   @Column({ type: 'boolean', default: false, name: 'email_opt_out' })
   emailOptOut: boolean;
+
+  // ─── Debt tracking ──────────────────────────────────────────────────────
+  @Column({
+    type: 'enum',
+    enum: ['none', 'current', 'overdue_30', 'overdue_60', 'overdue_90', 'collections'],
+    default: 'none',
+    name: 'debt_status',
+  })
+  debtStatus: PatientDebtStatus;
+
+  @Column({ type: 'decimal', precision: 14, scale: 2, default: 0, name: 'total_outstanding_balance' })
+  totalOutstandingBalance: number;
+
+  @Column({ type: 'boolean', default: false, name: 'blocks_new_visits' })
+  blocksNewVisits: boolean;
+
+  @Column({ type: 'timestamptz', nullable: true, name: 'debt_last_calculated_at' })
+  debtLastCalculatedAt: Date | null;
 
   /**
    * Keep blind-index hash columns in sync with their plaintext sources on every
