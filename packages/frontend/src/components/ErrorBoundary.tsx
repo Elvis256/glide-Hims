@@ -28,6 +28,27 @@ export class ErrorBoundary extends Component<Props, State> {
     logger.componentError(this.props.level || 'component', error, {
       componentStack: errorInfo.componentStack || undefined,
     });
+
+    // Auto-reload on chunk load errors (stale deployment)
+    if (this.isChunkLoadError(error)) {
+      const reloadKey = 'chunk_error_reload';
+      if (!sessionStorage.getItem(reloadKey)) {
+        sessionStorage.setItem(reloadKey, '1');
+        window.location.reload();
+      }
+    } else {
+      // Clear the flag so future chunk errors can trigger a reload
+      sessionStorage.removeItem('chunk_error_reload');
+    }
+  }
+
+  private isChunkLoadError(error: Error): boolean {
+    const msg = error.message || '';
+    return (
+      error.name === 'ChunkLoadError' ||
+      msg.includes('Loading chunk') ||
+      msg.includes('dynamically imported module')
+    );
   }
 
   handleReset = () => {
@@ -62,16 +83,6 @@ export class ErrorBoundary extends Component<Props, State> {
                 ? 'The application encountered an unexpected error. Please try refreshing the page.'
                 : 'This section encountered an error. You can try again or navigate away.'}
             </p>
-            {this.state.error && (
-              <details className="mb-4 text-left">
-                <summary className="text-sm text-gray-500 cursor-pointer">Error Details</summary>
-                <pre className="mt-2 text-xs bg-gray-100 p-3 rounded overflow-auto max-h-40">
-                  {this.state.error.message}
-                  {'\n'}
-                  {this.state.error.stack}
-                </pre>
-              </details>
-            )}
             <div className="flex gap-3 justify-center">
               <button
                 onClick={this.handleReset}
