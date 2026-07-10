@@ -42,38 +42,59 @@ export async function syncPendingSales(onProgress?: SyncProgressCallback): Promi
 
     let attempt = 0;
     let succeeded = false;
+    
+    // We keep track of serverSaleId in memory in case we successfully create the sale 
+    // but fail to complete it. We also load it from the DB if a previous attempt partially succeeded.
+    let currentServerSaleId = sale.serverSaleId;
 
     while (attempt < MAX_TRANSIENT_RETRIES) {
       try {
-        // POST with clientSaleId for idempotency
-        const createRes = await api.post('/pharmacy/sales', {
-          ...sale.payload,
-          saleChannel: 'retail_pos',
-        });
-        const created = createRes.data as { id: string; saleNumber: string };
+        // STEP 1: Create the sale (if not already created)
+        if (!currentServerSaleId) {
+          const createRes = await api.post('/pharmacy/sales', {
+            ...sale.payload,
+            saleChannel: 'retail_pos',
+          });
+          currentServerSaleId = createRes.data?.id;
+          
+          if (currentServerSaleId) {
+            // Persist the partial state so we don't recreate the sale if the complete call fails
+            await offlineDb.pendingSales.update(sale.clientSaleId, { 
+              serverSaleId: currentServerSaleId 
+            });
+          }
+        }
 
-        // Complete the sale
-        await api.post(`/pharmacy/sales/${created.id}/complete`, {
-          amountPaid: sale.payload.amountPaid,
-          paymentMethod: sale.payload.paymentMethod,
-        });
+        // STEP 2: Complete the sale
+        if (currentServerSaleId) {
+          await api.post(`/pharmacy/sales/${currentServerSaleId}/complete`, {
+            amountPaid: sale.payload.amountPaid,
+            paymentMethod: sale.payload.paymentMethod,
+          });
+        } else {
+          throw new Error('Failed to obtain serverSaleId during sync');
+        }
 
+        // STEP 3: Mark as fully synced
         await offlineDb.pendingSales.update(sale.clientSaleId, { status: 'synced' });
         synced++;
         onProgress?.(synced, pending.length);
         succeeded = true;
-        break;
+        break; // Break out of the retry loop on success
+
       } catch (err: unknown) {
         attempt++;
         const res = (err as any)?.response;
 
-        // Idempotent: already synced
-        if (res?.status === 200 && res?.data?.id) {
-          await offlineDb.pendingSales.update(sale.clientSaleId, { status: 'synced' });
-          synced++;
-          onProgress?.(synced, pending.length);
-          succeeded = true;
-          break;
+        // If the backend returns 409 Conflict or 200 indicating idempotency for the FIRST step,
+        // extract the ID and let the loop retry the SECOND step.
+        if (!currentServerSaleId && (res?.status === 200 || res?.status === 409) && res?.data?.id) {
+          currentServerSaleId = res.data.id;
+          await offlineDb.pendingSales.update(sale.clientSaleId, { 
+            serverSaleId: currentServerSaleId 
+          });
+          // Continue to next attempt iteration without backing off, so we immediately try completing it
+          continue;
         }
 
         // Permanent conflict — move to error queue
@@ -93,7 +114,7 @@ export async function syncPendingSales(onProgress?: SyncProgressCallback): Promi
             occurredAt: new Date().toISOString(),
             discarded: false,
           });
-          break;
+          break; // Break out of the retry loop, permanent failure
         }
 
         // Transient — exponential backoff

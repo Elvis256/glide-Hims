@@ -17,10 +17,12 @@ const LabReportsPage = lazy(() => import('../pages/lab/LabReportsPage'));
 const LabAnalyticsPage = lazy(() => import('../pages/lab/LabAnalyticsPage'));
 const SampleReferralPage = lazy(() => import('../pages/lab/SampleReferralPage'));
 const CriticalResultsReadOnlyPage = lazy(() => import('../components/CriticalResultsReadOnlyPage'));
+const LabPage = lazy(() => import('../pages/LabPage'));
 
 export default function LaboratoryRoutes() {
   return (
     <Routes>
+      <Route index element={<ModuleRoute module="diagnostics"><LabTechRoute><LabPage /></LabTechRoute></ModuleRoute>} />
       <Route path="queue" element={<ModuleRoute module="diagnostics"><LabTechRoute><LabQueuePage /></LabTechRoute></ModuleRoute>} />
       <Route path="samples" element={<ModuleRoute module="diagnostics"><LabTechRoute><SampleCollectionPage /></LabTechRoute></ModuleRoute>} />
       <Route path="results" element={<ModuleRoute module="diagnostics"><LabTechRoute><ResultsEntryPage /></LabTechRoute></ModuleRoute>} />

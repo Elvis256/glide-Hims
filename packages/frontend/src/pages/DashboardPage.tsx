@@ -343,14 +343,14 @@ export default function DashboardPage() {
   })();
 
   return (
-    <div className="p-6 space-y-6 bg-gray-50 min-h-[calc(100vh-120px)]">
+    <div className="p-6 md:p-8 space-y-8 bg-surface-50 min-h-[calc(100vh-120px)] animate-fade-in">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
+          <h1 className="text-3xl font-bold text-surface-900 tracking-tight">
             {hospitalName || 'Dashboard'}
           </h1>
-          <p className="text-gray-500 mt-1">
+          <p className="text-surface-500 mt-1.5 font-medium">
             {biz.welcomeText} • {new Date().toLocaleDateString('en-UG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
           </p>
         </div>
@@ -361,7 +361,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Quick Stats — business-type-specific KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
         {isLoading ? (
           <div className="col-span-full flex justify-center py-8">
             <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
@@ -466,19 +466,21 @@ export default function DashboardPage() {
 
       {/* Quick Actions — only show links the user has permissions for */}
       {visibleQuickLinks.length > 0 && (
-      <div className="bg-white rounded-xl border shadow-sm p-4">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
+      <div className="card border-none p-6 md:p-8">
+        <h2 className="text-xl font-bold text-surface-900 mb-6 flex items-center gap-2">
+          Quick Actions
+        </h2>
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
           {visibleQuickLinks.map((link) => (
             <Link
               key={link.name}
               to={link.href}
-              className="flex flex-col items-center gap-2 p-4 rounded-xl border border-gray-200 hover:border-gray-300 hover:shadow-md transition-all group"
+              className="flex flex-col items-center gap-3 p-4 rounded-xl border border-surface-200 bg-surface-50 hover:bg-white hover:border-brand-200 hover:shadow-md hover:-translate-y-1 transition-all group"
             >
-              <div className={`p-3 rounded-xl ${link.color} text-white group-hover:scale-110 transition-transform`}>
+              <div className={`p-3 rounded-xl ${link.color} text-white shadow-sm group-hover:scale-110 transition-transform`}>
                 <link.icon className="w-5 h-5" />
               </div>
-              <span className="text-xs font-medium text-gray-700 text-center">{link.name}</span>
+              <span className="text-xs font-semibold text-surface-700 text-center">{link.name}</span>
             </Link>
           ))}
         </div>
@@ -488,22 +490,22 @@ export default function DashboardPage() {
       {/* Modules Grid — only show modules the user has permissions for */}
       {visibleModules.length > 0 && (
       <div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Modules</h2>
+        <h2 className="text-xl font-bold text-surface-900 mb-6">Modules</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {visibleModules.map((module) => (
             <Link
               key={module.name}
               to={module.href}
-              className={`bg-white rounded-xl border-2 ${module.color} p-5 shadow-sm hover:shadow-md transition-all group`}
+              className={`card border-2 border-transparent hover:border-brand-500/30 p-6 group`}
             >
               <div className="flex items-start justify-between">
-                <div className="p-2 bg-gray-100 rounded-lg group-hover:bg-gray-200 transition-colors">
-                  <module.icon className="w-6 h-6 text-gray-700" />
+                <div className="p-3 bg-surface-100 rounded-xl group-hover:bg-brand-50 group-hover:text-brand-600 transition-colors">
+                  <module.icon className="w-6 h-6 text-surface-700 group-hover:text-brand-600 transition-colors" />
                 </div>
-                <ArrowRight className="w-5 h-5 text-gray-400 group-hover:text-gray-600 group-hover:translate-x-1 transition-all" />
+                <ArrowRight className="w-5 h-5 text-surface-400 group-hover:text-brand-500 group-hover:translate-x-1 transition-all" />
               </div>
-              <h3 className="text-lg font-semibold text-gray-900 mt-4">{module.name}</h3>
-              <p className="text-sm text-gray-500 mt-1">{module.description}</p>
+              <h3 className="text-lg font-bold text-surface-900 mt-5">{module.name}</h3>
+              <p className="text-sm font-medium text-surface-500 mt-1.5">{module.description}</p>
             </Link>
           ))}
         </div>
@@ -513,10 +515,10 @@ export default function DashboardPage() {
       {/* Activity & Alerts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Activity */}
-        <div className="bg-white rounded-xl border shadow-sm p-4">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">Recent Activity</h2>
-            <Link to="/encounters" className="text-sm text-blue-600 hover:underline flex items-center gap-1">
+        <div className="card p-6 border-none">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-bold text-surface-900">Recent Activity</h2>
+            <Link to="/encounters" className="text-sm font-semibold text-brand-600 hover:text-brand-700 hover:underline flex items-center gap-1">
               View all <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
@@ -542,9 +544,9 @@ export default function DashboardPage() {
         </div>
 
         {/* Alerts & Notifications */}
-        <div className="bg-white rounded-xl border shadow-sm p-4">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">Alerts</h2>
+        <div className="card p-6 border-none">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-bold text-surface-900">Alerts</h2>
             {alerts && alerts.length > 0 && (
               <span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded-full">{alerts.length} new</span>
             )}
@@ -600,15 +602,13 @@ function StatCardComponent({ label, value, icon: Icon, bgColor, iconColor, isCur
   isCurrency?: boolean;
 }) {
   return (
-    <div className="bg-white rounded-xl border p-4 shadow-sm">
-      <div className="flex items-center gap-3">
-        <div className={`p-2 ${bgColor} rounded-lg`}>
-          <Icon className={`w-5 h-5 ${iconColor}`} />
-        </div>
-        <div>
-          <p className="text-2xl font-bold text-gray-900">{isCurrency ? formatCurrency(value) : value}</p>
-          <p className="text-xs text-gray-500">{label}</p>
-        </div>
+    <div className="card border-none animate-slide-up flex items-center gap-4">
+      <div className={`p-3.5 ${bgColor} rounded-xl shadow-sm`}>
+        <Icon className={`w-6 h-6 ${iconColor}`} />
+      </div>
+      <div>
+        <p className="text-3xl font-bold text-surface-900 tracking-tight">{isCurrency ? formatCurrency(value) : value}</p>
+        <p className="text-sm font-semibold text-surface-500 mt-0.5">{label}</p>
       </div>
     </div>
   );

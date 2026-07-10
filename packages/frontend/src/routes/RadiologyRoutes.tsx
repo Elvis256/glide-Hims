@@ -10,6 +10,7 @@ import RoleRoute, {
 import { ROLES } from '../components/RoleRoute';
 
 // Lazy-loaded pages
+const RadiologyPage = lazy(() => import('../pages/RadiologyPage'));
 const RadiologyQueuePage = lazy(() => import('../pages/radiology/RadiologyQueuePage'));
 const ImagingOrdersPage = lazy(() => import('../pages/radiology/ImagingOrdersPage'));
 const RadiologyResultsPage = lazy(() => import('../pages/radiology/RadiologyResultsPage'));
@@ -19,6 +20,7 @@ const CriticalResultsReadOnlyPage = lazy(() => import('../components/CriticalRes
 export default function RadiologyRoutes() {
   return (
     <Routes>
+      <Route index element={<ModuleRoute module="diagnostics"><RadiologyRoute><RadiologyPage /></RadiologyRoute></ModuleRoute>} />
       <Route path="queue" element={<ModuleRoute module="diagnostics"><RadiologyRoute><RadiologyQueuePage /></RadiologyRoute></ModuleRoute>} />
       <Route path="orders" element={<ModuleRoute module="diagnostics"><RadiologyRoute><ImagingOrdersPage /></RadiologyRoute></ModuleRoute>} />
       <Route path="results" element={<ModuleRoute module="diagnostics"><RadiologyRoute><RadiologyResultsPage /></RadiologyRoute></ModuleRoute>} />
