@@ -1,4 +1,5 @@
 import { Entity, Column, Index } from 'typeorm';
+import { Exclude } from 'class-transformer';
 import { BaseEntity } from './base.entity';
 
 /**
@@ -10,6 +11,7 @@ export class ApiKey extends BaseEntity {
   @Column({ type: 'varchar', length: 100 })
   name: string;
 
+  @Exclude()
   @Index({ unique: true })
   @Column({ type: 'varchar', length: 64, name: 'key_hash' })
   keyHash: string;
