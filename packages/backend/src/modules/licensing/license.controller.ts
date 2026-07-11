@@ -406,7 +406,7 @@ export class LicenseController {
    * local HMAC verification.
    */
   @Get(':key/export')
-  @Public()
+  @Auth()
   @Throttle({ default: { ttl: 60000, limit: 5 } })
   @ApiOperation({ summary: 'Export license for offline on-premise use' })
   async exportLicense(@Param('key') key: string) {

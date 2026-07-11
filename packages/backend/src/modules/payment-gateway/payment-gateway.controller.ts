@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Headers, Param, Post, Request } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Post, Request, Logger } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { Public } from '../auth/decorators/public.decorator';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { PaymentGatewayService } from './payment-gateway.service';
@@ -46,7 +47,8 @@ export class PaymentGatewayController {
    */
   @Post('webhook/:provider')
   @Public()
-  @ApiOperation({ summary: 'Provider-side webhook callback' })
+  @Throttle({ default: { ttl: 60000, limit: 30 } })
+  @ApiOperation({ summary: 'Provider-side webhook callback — signature verification required per-provider' })
   async webhook(
     @Param('provider') provider: string,
     @Headers() headers: Record<string, string>,

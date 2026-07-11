@@ -25,7 +25,15 @@ function getMfaKey(): Buffer | null {
     MFA_KEY_CACHE = null;
     return null;
   }
-  const salt = process.env.MFA_SALT || randomBytes(16).toString('hex');
+  const salt = process.env.MFA_SALT;
+  if (!salt) {
+    console.error(
+      'FATAL: MFA_SALT must be set when MFA_ENCRYPTION_KEY is configured. ' +
+      'MFA secrets cannot be encrypted/decrypted without a deterministic salt.',
+    );
+    MFA_KEY_CACHE = null;
+    return null;
+  }
   MFA_KEY_CACHE = scryptSync(encKey, salt, 32);
   return MFA_KEY_CACHE;
 }

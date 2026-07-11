@@ -1,5 +1,4 @@
 import { applyDecorators, UseGuards } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiUnauthorizedResponse, ApiForbiddenResponse } from '@nestjs/swagger';
 import { RolesGuard } from '../guards/roles.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
@@ -58,7 +57,7 @@ export function AuthWithPermissions(...permissions: string[]) {
 export function AuthWithModule(module: string, ...permissions: string[]) {
   const decorators = [
     RequireModule(module),
-    UseGuards(AuthGuard('jwt'), PermissionsGuard, ModuleGuard),
+    UseGuards(GlobalJwtAuthGuard, PermissionsGuard, ModuleGuard),
     ApiBearerAuth(),
     ApiUnauthorizedResponse({ description: 'Unauthorized' }),
     ApiForbiddenResponse({ description: 'Insufficient permissions or module not enabled' }),
@@ -81,7 +80,7 @@ export function AuthWithOwnership(permission: string, ownershipConfig: ResourceO
   return applyDecorators(
     RequirePermissions(permission),
     ResourceOwnership(ownershipConfig),
-    UseGuards(AuthGuard('jwt'), PermissionsGuard, OwnershipGuard),
+    UseGuards(GlobalJwtAuthGuard, PermissionsGuard, OwnershipGuard),
     ApiBearerAuth(),
     ApiUnauthorizedResponse({ description: 'Unauthorized' }),
     ApiForbiddenResponse({ description: 'Insufficient permissions or access denied' }),
