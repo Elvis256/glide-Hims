@@ -5,8 +5,10 @@ import { ApiTags } from '@nestjs/swagger';
 import { ComplianceRecord, ComplianceRecordType } from './compliance-record.entity';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
 
 @ApiTags('Compliance')
+@RequireModule('finance')
 @Controller('compliance')
 export class ComplianceController {
   constructor(

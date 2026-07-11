@@ -11,12 +11,14 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
 import { Response } from 'express';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
 import { SkipTransform } from '../../common/interceptors/response-transform.interceptor';
 import { ExportService } from './export.service';
 
 const SUPPORTED_ENTITIES = ['users', 'audit-logs', 'patients', 'invoices', 'inventory'];
 
 @ApiTags('export')
+@RequireModule('reports')
 @Controller('export')
 export class ExportController {
   private readonly logger = new Logger(ExportController.name);

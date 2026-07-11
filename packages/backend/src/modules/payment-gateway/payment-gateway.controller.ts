@@ -3,9 +3,11 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { Public } from '../auth/decorators/public.decorator';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { PaymentGatewayService } from './payment-gateway.service';
+import { RequireModule } from '../auth/decorators/module.decorator';
 import { InitiatePaymentRequest } from './payment-gateway.types';
 
 @ApiTags('payment-gateway')
+@RequireModule('billing')
 @Controller('payment-gateway')
 export class PaymentGatewayController {
   constructor(private readonly service: PaymentGatewayService) {}

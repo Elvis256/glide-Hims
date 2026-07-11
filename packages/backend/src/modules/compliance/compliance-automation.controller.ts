@@ -1,9 +1,11 @@
 import { Controller, Get, Post, Param, Query, Logger } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
 import { ComplianceAutomationService } from './compliance-automation.service';
 
 @ApiTags('Compliance Automation')
+@RequireModule('finance')
 @Controller('compliance')
 export class ComplianceAutomationController {
   private readonly logger = new Logger(ComplianceAutomationController.name);

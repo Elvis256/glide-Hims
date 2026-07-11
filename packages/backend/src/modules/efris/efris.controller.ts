@@ -2,11 +2,13 @@ import { Controller, Get, Post, Put, Body, Param, Query, Request } from '@nestjs
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { EfrisService } from './efris.service';
+import { RequireModule } from '../auth/decorators/module.decorator';
 import { UpsertEfrisConfigDto } from './efris.dto';
 import { EfrisDocumentStatus } from '../../database/entities/pos-compliance.entity';
 
 @ApiTags('EFRIS')
 @ApiBearerAuth()
+@RequireModule('finance')
 @Controller('efris')
 export class EfrisController {
   constructor(private readonly service: EfrisService) {}

@@ -15,6 +15,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireFacilityAccess } from '../auth/decorators/facility-access.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
 import { AppointmentsService } from './appointments.service';
 import {
   CreateAppointmentDto,
@@ -26,6 +27,7 @@ import { AppointmentStatus } from './entities/appointment.entity';
 
 @ApiTags('Appointments')
 @ApiBearerAuth()
+@RequireModule('registration')
 @RequireFacilityAccess()
 @Controller('appointments')
 export class AppointmentsController {

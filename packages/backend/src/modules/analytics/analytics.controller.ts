@@ -13,9 +13,11 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger'
 import { AnalyticsService } from './analytics.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
 
 @ApiTags('Analytics')
 @ApiBearerAuth()
+@RequireModule('reports')
 @Controller('analytics')
 export class AnalyticsController {
   private readonly logger = new Logger(AnalyticsController.name);

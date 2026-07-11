@@ -17,6 +17,7 @@ import {
   MaxLength,
 } from 'class-validator';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
 import { PatientConsentService } from './patient-consent.service';
 import { ConsentType } from '../../database/entities/patient-consent.entity';
 
@@ -45,6 +46,7 @@ export class WithdrawConsentDto {
 }
 
 @ApiTags('Patient Consents')
+@RequireModule('registration')
 @Controller('patients/:patientId/consents')
 export class PatientConsentController {
   constructor(private readonly consentService: PatientConsentService) {}

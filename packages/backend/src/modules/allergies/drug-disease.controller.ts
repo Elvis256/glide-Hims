@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, Query } from '@nestjs/common';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
 import { DrugDiseaseService } from './drug-disease.service';
 import {
   IsString,
@@ -71,6 +72,7 @@ export class UpdateDrugDiseaseInteractionDto {
   isActive?: boolean;
 }
 
+@RequireModule('pharmacy')
 @Controller('drug-disease-interactions')
 export class DrugDiseaseController {
   constructor(private readonly service: DrugDiseaseService) {}

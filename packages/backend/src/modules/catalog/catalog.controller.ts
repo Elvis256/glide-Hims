@@ -1,7 +1,9 @@
 import { Controller, Get, Query, Request, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { RequireModule } from '../auth/decorators/module.decorator';
 import { CatalogService } from './catalog.service';
 
+@RequireModule('stores')
 @UseGuards(AuthGuard('jwt'))
 @Controller('catalog')
 export class CatalogController {

@@ -72,15 +72,20 @@ export class ModuleGuard implements CanActivate {
     const cacheKey = `tenant_modules:${tenantId}`;
     let enabledSidebarCodes: string[] | null = await this.cacheService.get(cacheKey);
 
-    if (!enabledSidebarCodes) {
-      enabledSidebarCodes = await this.resolveTenantModules(tenantId);
-      if (enabledSidebarCodes) {
-        await this.cacheService.set(cacheKey, enabledSidebarCodes, 30);
+    if (enabledSidebarCodes === null || enabledSidebarCodes === undefined) {
+      const resolved = await this.resolveTenantModules(tenantId);
+      if (resolved === null) {
+        // DB error — fail open (don't block all users due to transient DB issue)
+        // but DON'T cache the error state so the next request retries
+        this.logger.warn(`Module resolution failed for tenant ${tenantId}, allowing access (fail-open)`);
+        return true;
       }
+      enabledSidebarCodes = resolved;
+      await this.cacheService.set(cacheKey, enabledSidebarCodes, 30);
     }
 
-    // If no modules configured, allow all (tenant hasn't set up yet)
-    if (!enabledSidebarCodes || enabledSidebarCodes.length === 0) {
+    // No modules configured → tenant hasn't set up yet → allow all
+    if (enabledSidebarCodes.length === 0) {
       return true;
     }
 
@@ -109,7 +114,7 @@ export class ModuleGuard implements CanActivate {
    *   - With no license and no tenant config, falls back to facility_mode preset.
    *   - Empty result = allow-all (tenant hasn't configured anything yet).
    */
-  private async resolveTenantModules(tenantId: string): Promise<string[]> {
+  private async resolveTenantModules(tenantId: string): Promise<string[] | null> {
     try {
       // License upper bound (if any active license exists)
       const licenseRow = await this.dataSource.query(
@@ -187,7 +192,7 @@ export class ModuleGuard implements CanActivate {
       return [];
     } catch (err) {
       this.logger.error(`Failed to resolve tenant modules for ${tenantId}: ${err}`);
-      return [];
+      return null;
     }
   }
 }

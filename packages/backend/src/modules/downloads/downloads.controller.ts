@@ -18,8 +18,10 @@ import * as fs from 'fs';
 import { DownloadsService } from './downloads.service';
 import { CreateInstallerDto, UpdateInstallerDto } from './installer.dto';
 import { meetsTier } from '../../common/constants/license-tiers.constants';
+import { RequireModule } from '../auth/decorators/module.decorator';
 
 @ApiTags('Downloads')
+@RequireModule('reports')
 @Controller('downloads')
 export class DownloadsController {
   constructor(private readonly svc: DownloadsService) {}

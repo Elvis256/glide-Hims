@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
 import { SchedulesService } from './schedules.service';
 import {
   CreateDoctorScheduleDto,
@@ -21,6 +22,7 @@ import {
 
 @ApiTags('Schedules')
 @ApiBearerAuth()
+@RequireModule('hr')
 @Controller('schedules')
 export class SchedulesController {
   constructor(private readonly schedulesService: SchedulesService) {}
