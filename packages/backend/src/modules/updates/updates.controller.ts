@@ -110,10 +110,11 @@ export class UpdatesController {
   }
 
   /**
-   * Download update package
+   * Download update package — requires authentication.
+   * License validation should be added before production use.
    */
   @Get('download/:version')
-  @Public()
+  @Auth()
   @ApiOperation({ summary: 'Download update package' })
   async downloadUpdate(
     @Param('version') version: string,

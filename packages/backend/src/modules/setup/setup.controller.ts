@@ -55,6 +55,7 @@ export class SetupController {
 
   @Post('initialize')
   @Public()
+  @Throttle({ default: { ttl: 60000, limit: 3 } })
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Initialize system with organization, facility, and admin user' })
   @ApiResponse({ status: 201, description: 'Setup completed successfully' })

@@ -186,7 +186,9 @@ export class AuthController {
         })
         .catch(() => undefined);
       this.setAuthCookies(res, result.accessToken, result.refreshToken, result.expiresIn);
-      return result;
+      // Redact tokens from response body — they're delivered via httpOnly cookies
+      const { accessToken: _a, refreshToken: _r, ...safeResult } = result;
+      return safeResult as AuthResponseDto;
     } catch (err) {
       const status = err instanceof HttpException ? err.getStatus() : 500;
       const message = err instanceof Error ? err.message : 'Refresh failed';

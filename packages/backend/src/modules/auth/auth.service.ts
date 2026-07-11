@@ -99,11 +99,24 @@ export class AuthService {
         ],
       });
 
-      // Fall back to any matching user (for on-premise single-tenant mode)
+      // Fall back to tenant user lookup ONLY in on-premise single-tenant mode
+      // (multi-tenant must never allow cross-tenant login without tenantId)
       if (!user) {
-        user = await this.userRepository.findOne({
-          where: [{ username }, { email: username }],
-        });
+        const deploymentMode = this.configService.get<string>('DEPLOYMENT_MODE', 'on-premise');
+        if (deploymentMode === 'on-premise') {
+          const activeTenants = await this.tenantRepository.find({
+            where: { status: 'active' },
+            take: 2,
+          });
+          if (activeTenants.length === 1) {
+            user = await this.userRepository.findOne({
+              where: [
+                { username, tenantId: activeTenants[0].id },
+                { email: username, tenantId: activeTenants[0].id },
+              ],
+            });
+          }
+        }
       }
     }
 
@@ -392,7 +405,7 @@ export class AuthService {
 
     // Enforce MFA via password policy: if the policy requires MFA and the user
     // hasn't enrolled, block full login and signal the client to prompt enrollment.
-    const mfaPolicy = await this.getPasswordPolicy(facilityId);
+    const mfaPolicy = await this.getPasswordPolicy(facilityId, user.tenantId);
     if (mfaPolicy?.requireMfa && !user.mfaEnabled) {
       this.logger.warn(
         `Login blocked for user ${user.id}: password policy requires MFA but user has not enrolled`,
@@ -405,10 +418,15 @@ export class AuthService {
         'MFA enrollment required by policy',
         user.tenantId,
       );
+      // Issue a short-lived MFA enrollment token instead of leaking userId
+      const enrollmentToken = this.jwtService.sign(
+        { sub: user.id, purpose: 'mfa-enrollment' },
+        { expiresIn: '10m' },
+      );
       throw new BadRequestException({
         message: 'MFA enrollment required',
         mustEnrollMfa: true,
-        userId: user.id,
+        enrollmentToken,
       });
     }
 
@@ -537,136 +555,166 @@ export class AuthService {
     userAgent?: string,
   ): Promise<AuthResponseDto> {
     try {
-      // Server-side refresh token validation (checks revocation, expiry, reuse)
-      const storedToken = await this.refreshTokenService.validateRefreshToken(refreshToken);
-      if (!storedToken) {
-        throw new UnauthorizedException('Invalid refresh token');
-      }
-
+      // Verify JWT signature first (outside transaction — stateless check)
       const payload = this.jwtService.verify<JwtPayload>(refreshToken, {
         secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
       });
 
-      const user = await this.userRepository.findOne({
-        where: { id: payload.sub },
-      });
+      // Wrap the entire rotation in a transaction with pessimistic lock
+      // to prevent TOCTOU race conditions on concurrent refresh requests
+      return await this.dataSource.transaction(async (manager) => {
+        // Server-side refresh token validation with lock
+        const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+        const storedToken = await manager.getRepository(this.refreshTokenService['refreshTokenRepository'].target).findOne({
+          where: { tokenHash },
+          lock: { mode: 'pessimistic_write' },
+        });
 
-      if (!user || user.status !== 'active') {
-        throw new UnauthorizedException('Invalid refresh token');
-      }
+        if (!storedToken) {
+          throw new UnauthorizedException('Invalid refresh token');
+        }
 
-      // Verify tokenVersion for token revocation
-      if (payload.tokenVersion !== undefined && payload.tokenVersion !== user.tokenVersion) {
-        this.logger.warn(
-          `Refresh token reuse detected for user ${user.id}. Revoking all sessions.`,
-        );
+        if (storedToken.isRevoked) {
+          // Token reuse detected — revoke the entire family
+          this.logger.warn(
+            `Refresh token reuse detected for family ${storedToken.tokenFamily}, user ${storedToken.userId}. Revoking entire family.`,
+          );
+          await manager.update(storedToken.constructor, { tokenFamily: storedToken.tokenFamily, isRevoked: false }, { isRevoked: true });
+          throw new UnauthorizedException('Invalid refresh token');
+        }
+
+        if (storedToken.expiresAt < new Date()) {
+          throw new UnauthorizedException('Invalid refresh token');
+        }
+
+        // Lock user row to prevent concurrent tokenVersion updates
+        const user = await manager.getRepository(User).findOne({
+          where: { id: payload.sub },
+          lock: { mode: 'pessimistic_write' },
+        });
+
+        if (!user || user.status !== 'active') {
+          throw new UnauthorizedException('Invalid refresh token');
+        }
+
+        // Verify tokenVersion for token revocation
+        if (payload.tokenVersion !== undefined && payload.tokenVersion !== user.tokenVersion) {
+          this.logger.warn(
+            `Refresh token version mismatch for user ${user.id}. Revoking all sessions.`,
+          );
+          user.tokenVersion += 1;
+          await manager.save(User, user);
+          await this.refreshTokenService.revokeAllUserTokens(user.id);
+          throw new UnauthorizedException('Token has been revoked');
+        }
+
+        // Rotate: bump tokenVersion so this refresh token cannot be used again
         user.tokenVersion += 1;
-        await this.userRepository.save(user);
-        await this.refreshTokenService.revokeAllUserTokens(user.id);
-        throw new UnauthorizedException('Token has been revoked');
-      }
+        await manager.save(User, user);
 
-      // Rotate: bump tokenVersion so this refresh token cannot be used again
-      user.tokenVersion += 1;
-      await this.userRepository.save(user);
+        // Get current roles
+        const userRoles = await this.userRoleRepository.find({
+          where: { userId: user.id },
+          relations: ['role', 'facility'],
+        });
 
-      // Get current roles
-      const userRoles = await this.userRoleRepository.find({
-        where: { userId: user.id },
-        relations: ['role', 'facility'],
-      });
+        const roles = userRoles.map((ur) => ur.role.name);
+        const roleIds = userRoles.map((ur) => ur.roleId);
+        const roleFacilityId = userRoles.find((ur) => ur.facilityId)?.facilityId;
+        const roleFacility = userRoles.find((ur) => ur.facility)?.facility;
+        const facilityId = roleFacilityId || user.facilityId;
+        let facility = roleFacility;
+        if (!facility && user.facilityId) {
+          facility =
+            (await this.facilityRepository.findOne({ where: { id: user.facilityId } })) ?? undefined;
+        }
 
-      const roles = userRoles.map((ur) => ur.role.name);
-      const roleIds = userRoles.map((ur) => ur.roleId);
-      // Get facility: prefer user_roles.facilityId, fall back to user.facilityId
-      const roleFacilityId = userRoles.find((ur) => ur.facilityId)?.facilityId;
-      const roleFacility = userRoles.find((ur) => ur.facility)?.facility;
-      const facilityId = roleFacilityId || user.facilityId;
-      let facility = roleFacility;
-      if (!facility && user.facilityId) {
-        facility =
-          (await this.facilityRepository.findOne({ where: { id: user.facilityId } })) ?? undefined;
-      }
+        // Get permissions for all user's roles
+        let permissions: string[] = [];
+        if (roleIds.length > 0) {
+          const rolePermissions = await this.rolePermissionRepository.find({
+            where: { roleId: In(roleIds) },
+            relations: ['permission'],
+          });
+          permissions = [...new Set(rolePermissions.map((rp) => rp.permission.code))];
+        }
 
-      // Get permissions for all user's roles
-      let permissions: string[] = [];
-      if (roleIds.length > 0) {
-        const rolePermissions = await this.rolePermissionRepository.find({
-          where: { roleId: In(roleIds) },
+        // Get direct user permissions
+        const directPermissions = await this.userPermissionRepository.find({
+          where: { userId: user.id },
           relations: ['permission'],
         });
-        permissions = [...new Set(rolePermissions.map((rp) => rp.permission.code))];
-      }
+        const directPermissionCodes = directPermissions.map((up) => up.permission.code);
+        permissions = [...new Set([...permissions, ...directPermissionCodes])];
 
-      // Get direct user permissions (in addition to role permissions)
-      const directPermissions = await this.userPermissionRepository.find({
-        where: { userId: user.id },
-        relations: ['permission'],
-      });
-      const directPermissionCodes = directPermissions.map((up) => up.permission.code);
-
-      // Combine role permissions + direct permissions (remove duplicates)
-      permissions = [...new Set([...permissions, ...directPermissionCodes])];
-
-      const newPayload: JwtPayload = {
-        sub: user.id,
-        username: user.username,
-        email: user.email,
-        tenantId: payload.tenantId || user.tenantId,
-        roles,
-        facilityId,
-        tokenVersion: user.tokenVersion,
-      };
-
-      const accessToken = this.jwtService.sign(newPayload);
-      const newRefreshToken = this.jwtService.sign(
-        { ...newPayload, jti: crypto.randomUUID() },
-        {
-          secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
-          expiresIn: this.configService.get<string>('JWT_REFRESH_EXPIRES_IN', '7d'),
-        },
-      );
-
-      // Rotate server-side refresh token record
-      await this.refreshTokenService.rotateRefreshToken(
-        refreshToken,
-        newRefreshToken,
-        ipAddress,
-        userAgent,
-      );
-
-      // Update session token hash after rotation
-      await this.sessionService.updateSessionToken(refreshToken, newRefreshToken);
-
-      // Calculate expiresIn from JWT_EXPIRES_IN config
-      const expiresInConfig = this.configService.get<string>('JWT_EXPIRES_IN', '8h');
-      const expiresInSeconds = this.parseExpiryToSeconds(expiresInConfig);
-
-      return {
-        accessToken,
-        refreshToken: newRefreshToken,
-        expiresIn: expiresInSeconds,
-        user: {
-          id: user.id,
+        const newPayload: JwtPayload = {
+          sub: user.id,
           username: user.username,
-          fullName: user.fullName,
           email: user.email,
+          tenantId: payload.tenantId || user.tenantId,
           roles,
-          permissions,
-          isSystemAdmin: user.isSystemAdmin || false,
-          tenantId: user.tenantId,
           facilityId,
-          facility: facility
-            ? {
-                id: facility.id,
-                name: facility.name,
-                type: facility.type,
-                location: facility.location,
-                contact: facility.contact,
-              }
-            : undefined,
-        },
-      };
+          tokenVersion: user.tokenVersion,
+        };
+
+        const accessToken = this.jwtService.sign(newPayload);
+        const newRefreshToken = this.jwtService.sign(
+          { ...newPayload, jti: crypto.randomUUID() },
+          {
+            secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
+            expiresIn: this.configService.get<string>('JWT_REFRESH_EXPIRES_IN', '7d'),
+          },
+        );
+
+        // Mark old token as revoked and create new one (within transaction)
+        const newTokenHash = crypto.createHash('sha256').update(newRefreshToken).digest('hex');
+        storedToken.isRevoked = true;
+        storedToken.replacedByHash = newTokenHash;
+        await manager.save(storedToken);
+
+        // Create new token record in the same family
+        await this.refreshTokenService.createRefreshToken(
+          user.id,
+          storedToken.tenantId,
+          newRefreshToken,
+          ipAddress,
+          userAgent,
+          storedToken.tokenFamily,
+        );
+
+        // Update session token hash after rotation
+        await this.sessionService.updateSessionToken(refreshToken, newRefreshToken);
+
+        // Calculate expiresIn from JWT_EXPIRES_IN config
+        const expiresInConfig = this.configService.get<string>('JWT_EXPIRES_IN', '8h');
+        const expiresInSeconds = this.parseExpiryToSeconds(expiresInConfig);
+
+        return {
+          accessToken,
+          refreshToken: newRefreshToken,
+          expiresIn: expiresInSeconds,
+          user: {
+            id: user.id,
+            username: user.username,
+            fullName: user.fullName,
+            email: user.email,
+            roles,
+            permissions,
+            isSystemAdmin: user.isSystemAdmin || false,
+            tenantId: user.tenantId,
+            facilityId,
+            facility: facility
+              ? {
+                  id: facility.id,
+                  name: facility.name,
+                  type: facility.type,
+                  location: facility.location,
+                  contact: facility.contact,
+                }
+              : undefined,
+          },
+        };
+      });
     } catch (error) {
       if (error instanceof UnauthorizedException) {
         throw error;
@@ -719,8 +767,10 @@ export class AuthService {
 
     user.passwordHash = newHash;
     user.mustChangePassword = false;
-    user.tokenVersion = (user.tokenVersion || 0) + 1;
     await this.userRepository.save(user);
+
+    // Invalidate all tokens, sessions, and caches for this user
+    await this.invalidateUserTokens(userId);
   }
 
   async validatePasswordPolicy(
@@ -805,19 +855,19 @@ export class AuthService {
     }
   }
 
-  async getPasswordPolicy(facilityId?: string): Promise<PasswordPolicy | null> {
+  async getPasswordPolicy(facilityId?: string, tenantId?: string): Promise<PasswordPolicy | null> {
     // Try facility-specific policy first
     if (facilityId) {
-      const facilityPolicy = await this.passwordPolicyRepository.findOne({
-        where: { facilityId, isActive: true },
-      });
+      const where: Record<string, any> = { facilityId, isActive: true };
+      if (tenantId) where.tenantId = tenantId;
+      const facilityPolicy = await this.passwordPolicyRepository.findOne({ where });
       if (facilityPolicy) return facilityPolicy;
     }
 
-    // Fall back to default policy
-    return this.passwordPolicyRepository.findOne({
-      where: { isDefault: true, isActive: true },
-    });
+    // Fall back to default policy (tenant-scoped if tenantId provided)
+    const defaultWhere: Record<string, any> = { isDefault: true, isActive: true };
+    if (tenantId) defaultWhere.tenantId = tenantId;
+    return this.passwordPolicyRepository.findOne({ where: defaultWhere });
   }
 
   /**
@@ -1009,6 +1059,29 @@ export class AuthService {
       this.logger.warn(
         `Admin ${admin.username} impersonating non-active tenant ${tenant.id} (${tenant.status})`,
       );
+    }
+
+    // Verify support access grant — same check as enterTenant()
+    if (admin.tenantId !== targetTenantId) {
+      const tierResult = await this.dataSource.query(
+        `SELECT access_tier FROM support_access_grants
+         WHERE granted_to_id = $1 AND tenant_id = $2
+         AND revoked_at IS NULL AND expires_at > NOW()
+         AND deleted_at IS NULL
+         ORDER BY access_tier DESC
+         LIMIT 1`,
+        [admin.id, targetTenantId],
+      );
+      const supportAccessTier =
+        tierResult.length > 0 ? tierResult[0].access_tier : SupportAccessTier.NONE;
+      if (supportAccessTier === SupportAccessTier.NONE) {
+        this.logger.warn(
+          `Impersonation blocked: admin ${admin.id} has no support access grant for tenant ${targetTenantId}`,
+        );
+        throw new ForbiddenException(
+          'No active support access grant for this organization.',
+        );
+      }
     }
 
     const userRoles = await this.userRoleRepository.find({
@@ -1485,8 +1558,10 @@ export class AuthService {
 
     user.passwordHash = hashedPassword;
     user.mustChangePassword = true;
-    user.tokenVersion = (user.tokenVersion || 0) + 1;
     await this.userRepository.save(user);
+
+    // Invalidate all tokens, sessions, and caches for target user
+    await this.invalidateUserTokens(targetUserId);
 
     // Audit log
     try {
@@ -1501,7 +1576,7 @@ export class AuthService {
         }),
       );
     } catch (e) {
-      this.logger.warn(`Failed to create audit log for admin password reset: ${e.message}`);
+      this.logger.warn(`Failed to create audit log for admin password reset: ${(e as Error).message}`);
     }
 
     this.logger.log(`Admin ${adminUserId} reset password for user ${targetUserId}`);

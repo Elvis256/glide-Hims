@@ -12,6 +12,7 @@ import {
   RESOURCE_OWNERSHIP_KEY,
   ResourceOwnershipConfig,
 } from '../decorators/resource-ownership.decorator';
+import { isSuperAdmin } from '../../../common/constants/roles.constants';
 
 @Injectable()
 export class OwnershipGuard implements CanActivate {
@@ -123,8 +124,7 @@ export class OwnershipGuard implements CanActivate {
     const roles = Array.isArray(user.roles)
       ? user.roles.map((r: any) => (typeof r === 'string' ? r : r.name))
       : [];
-    const SUPER_ADMIN_ROLES = ['super admin', 'superadmin'];
-    return roles.some((r: string) => SUPER_ADMIN_ROLES.includes(r.toLowerCase().trim()));
+    return user.isSystemAdmin || isSuperAdmin(roles);
   }
 
   private resolveColumnName(entityMeta: any, propertyName: string): string | null {

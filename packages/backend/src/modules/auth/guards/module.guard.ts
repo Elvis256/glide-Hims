@@ -75,10 +75,10 @@ export class ModuleGuard implements CanActivate {
     if (enabledSidebarCodes === null || enabledSidebarCodes === undefined) {
       const resolved = await this.resolveTenantModules(tenantId);
       if (resolved === null) {
-        // DB error — fail open (don't block all users due to transient DB issue)
-        // but DON'T cache the error state so the next request retries
-        this.logger.warn(`Module resolution failed for tenant ${tenantId}, allowing access (fail-open)`);
-        return true;
+        // DB error — fail closed for security. If modules can't be resolved,
+        // only allow always-allowed modules (admin, registration).
+        this.logger.warn(`Module resolution failed for tenant ${tenantId}, restricting to always-allowed modules`);
+        return requiredModules.every((m) => alwaysAllowed.includes(m));
       }
       enabledSidebarCodes = resolved;
       await this.cacheService.set(cacheKey, enabledSidebarCodes, 30);

@@ -30,7 +30,11 @@ export class FeatureGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest();
-    const tenantId = request.user?.tenantId || request.headers['x-tenant-id'];
+    const tenantId = request.user?.tenantId;
+    if (!tenantId) {
+      // Do not fall back to x-tenant-id header — it's unauthenticated and forgeable
+      return true; // Let auth guard handle unauthenticated users
+    }
 
     const isEnabled = await this.featureFlagsService.isEnabled(requiredFeature, tenantId);
 

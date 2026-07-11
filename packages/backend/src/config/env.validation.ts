@@ -10,7 +10,7 @@ export const envValidationSchema = Joi.object({
 
   // Authentication
   JWT_SECRET: Joi.string().min(32).required(),
-  JWT_REFRESH_SECRET: Joi.string().required(),
+  JWT_REFRESH_SECRET: Joi.string().min(32).required(),
   JWT_EXPIRES_IN: Joi.string().default('1d'),
 
   // Redis
@@ -27,6 +27,11 @@ export const envValidationSchema = Joi.object({
   // Encryption (required in production)
   MFA_ENCRYPTION_KEY: Joi.string().when('NODE_ENV', {
     is: 'production',
+    then: Joi.required(),
+    otherwise: Joi.optional(),
+  }),
+  MFA_SALT: Joi.string().min(16).when('MFA_ENCRYPTION_KEY', {
+    is: Joi.exist(),
     then: Joi.required(),
     otherwise: Joi.optional(),
   }),
