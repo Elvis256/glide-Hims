@@ -14,6 +14,7 @@ import { Request } from 'express';
 import { AllergiesService } from './allergies.service';
 import { CreatePatientAllergyBodyDto, UpdatePatientAllergyBodyDto } from './allergies.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
 
 interface AuthenticatedRequest extends Request {
   user?: { id: string; tenantId?: string; facilityId?: string; roles?: string[]; permissions?: string[]; isSystemAdmin?: boolean; };
@@ -21,6 +22,7 @@ interface AuthenticatedRequest extends Request {
 
 
 @ApiTags('allergies')
+@RequireModule('doctors')
 @Controller('patients/:patientId/allergies')
 export class AllergiesController {
   constructor(private readonly allergies: AllergiesService) {}

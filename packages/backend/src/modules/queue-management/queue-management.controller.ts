@@ -25,7 +25,9 @@ import {
   ServiceConfigDto,
 } from './dto/queue.dto';
 import { RequireFacilityAccess } from '../auth/decorators/facility-access.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
 
+@RequireModule('registration')
 @Controller('queue')
 @UseGuards(AuthGuard('jwt'))
 @RequireFacilityAccess()

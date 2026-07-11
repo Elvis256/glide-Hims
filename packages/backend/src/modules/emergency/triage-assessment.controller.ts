@@ -1,9 +1,11 @@
 import { Controller, Post, Get, Body, Param, Query } from '@nestjs/common';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
 import { TriageAssessmentService } from './triage-assessment.service';
 import { CreateTriageAssessmentDto } from './dto/create-triage-assessment.dto';
 
+@RequireModule('emergency')
 @Controller('triage-assessments')
 export class TriageAssessmentController {
   constructor(private readonly triageService: TriageAssessmentService) {}

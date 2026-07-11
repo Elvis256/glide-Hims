@@ -13,6 +13,7 @@ import { Response } from 'express';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { ReportsService } from './reports.service';
 import { AuthWithModule } from '../auth/decorators/auth.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
 import { SkipTransform } from '../../common/interceptors/response-transform.interceptor';
 import {
   DashboardQueryDto,
@@ -87,6 +88,7 @@ function assertExportSize(rows: any[]): void {
 
 @ApiTags('Reports')
 @ApiBearerAuth()
+@RequireModule('reports')
 @Controller('reports')
 export class ReportsController {
   constructor(private readonly svc: ReportsService) {}

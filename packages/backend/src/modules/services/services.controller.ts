@@ -23,10 +23,12 @@ import {
   UpdateServiceConsumableDto,
 } from './services.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
 import { ServiceTier } from '../../database/entities/service-category.entity';
 
 @ApiTags('Services')
 @ApiBearerAuth()
+@RequireModule('billing')
 @Controller('services')
 export class ServicesController {
   constructor(private readonly service: ServicesService) {}

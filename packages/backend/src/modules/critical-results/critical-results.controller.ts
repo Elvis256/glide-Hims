@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, Req } from '@
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
 import { AcknowledgeCriticalResultDto, CriticalResultsService } from './critical-results.service';
 
 interface AuthenticatedRequest extends Request {
@@ -10,6 +11,7 @@ interface AuthenticatedRequest extends Request {
 
 
 @ApiTags('critical-results')
+@RequireModule('diagnostics')
 @Controller('critical-results')
 export class CriticalResultsController {
   constructor(private readonly svc: CriticalResultsService) {}

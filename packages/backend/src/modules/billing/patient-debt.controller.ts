@@ -10,6 +10,7 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import { IsString, IsOptional, MaxLength } from 'class-validator';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
 import { PatientDebtService } from './patient-debt.service';
 
 class VisitBlockReasonDto {
@@ -20,6 +21,7 @@ class VisitBlockReasonDto {
 }
 
 @ApiTags('Patient Debt')
+@RequireModule('billing')
 @Controller('patients/:patientId/debt')
 export class PatientDebtController {
   constructor(private readonly debtService: PatientDebtService) {}

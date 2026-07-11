@@ -18,7 +18,9 @@ import {
   VerifyBiometricDto,
 } from './dto/biometric.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
 
+@RequireModule('registration')
 @Controller('biometrics')
 export class BiometricsController {
   constructor(private readonly biometricsService: BiometricsService) {}

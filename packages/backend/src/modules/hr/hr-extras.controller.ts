@@ -15,6 +15,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
 import {
   PerformanceImprovementPlan,
   PipStatus,
@@ -25,6 +26,7 @@ import { Employee } from '../../database/entities/employee.entity';
 
 @ApiTags('HR - PIP / Goals / Letters')
 @ApiBearerAuth()
+@RequireModule('hr')
 @Controller('hr')
 export class HrExtrasController {
   constructor(

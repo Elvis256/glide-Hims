@@ -28,6 +28,7 @@ import {
   LinkUserDto,
 } from './dto/patient.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { RequireModule } from '../auth/decorators/module.decorator';
 import { DocumentCategory } from '../../database/entities/patient-document.entity';
 import { validateFileContent } from '../../common/file-validation';
 
@@ -51,6 +52,7 @@ interface AuthenticatedRequest extends Request {
 }
 
 @ApiTags('patients')
+@RequireModule('registration')
 @Controller('patients')
 export class PatientsController {
   constructor(private readonly patientsService: PatientsService) {}
