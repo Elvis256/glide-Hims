@@ -249,8 +249,11 @@ export class AuditService {
       .andWhere('log.entityId = :entityId', { entityId })
       .orderBy('log.createdAt', 'DESC');
 
+    // Always scope by tenantId to prevent cross-tenant audit log access
     if (tenantId) {
       query.andWhere('log.tenantId = :tenantId', { tenantId });
+    } else {
+      this.logger.warn('getEntityAuditLog called without tenantId — results not tenant-scoped');
     }
 
     return query.getMany();
@@ -268,6 +271,8 @@ export class AuditService {
 
     if (tenantId) {
       query.andWhere('log.tenantId = :tenantId', { tenantId });
+    } else {
+      this.logger.warn('getUserAuditLog called without tenantId — results not tenant-scoped');
     }
 
     return query.getMany();
@@ -291,6 +296,8 @@ export class AuditService {
 
     if (tenantId) {
       query.andWhere('log.tenantId = :tenantId', { tenantId });
+    } else {
+      this.logger.warn('getAuditLogsByAction called without tenantId — results not tenant-scoped');
     }
 
     return query.getMany();

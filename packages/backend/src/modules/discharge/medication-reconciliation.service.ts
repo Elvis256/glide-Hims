@@ -229,6 +229,7 @@ export class MedicationReconciliationService {
           where: ids.map((sourceId) => ({
             id: sourceId,
             status: ActiveMedicationStatus.ACTIVE,
+            ...(tenantId ? { tenantId } : {}),
           })),
         });
 

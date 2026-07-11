@@ -750,7 +750,7 @@ export class SurgeryService {
     const caseIds = cases.map((c) => c.id);
     if (caseIds.length === 0) return { surgeries: 0, consumables: [], totalCost: 0 };
 
-    const consumables = await this.consumableRepo
+    const consumablesQb = this.consumableRepo
       .createQueryBuilder('c')
       .select('c.itemId', 'itemId')
       .addSelect('c.itemName', 'itemName')
@@ -758,7 +758,9 @@ export class SurgeryService {
       .addSelect('SUM(c.quantityUsed)', 'totalQuantity')
       .addSelect('SUM(c.totalCost)', 'totalCost')
       .addSelect('COUNT(DISTINCT c.surgeryCaseId)', 'surgeryCount')
-      .where('c.surgeryCaseId IN (:...caseIds)', { caseIds })
+      .where('c.surgeryCaseId IN (:...caseIds)', { caseIds });
+    if (tenantId) consumablesQb.andWhere('c.tenant_id = :tenantId', { tenantId });
+    const consumables = await consumablesQb
       .groupBy('c.itemId')
       .addGroupBy('c.itemName')
       .addGroupBy('c.category')

@@ -153,13 +153,13 @@ export class FacilitiesService {
     if (departments.length === 0) return [];
 
     const deptIds = departments.map((d) => d.id);
-    const staffCounts = await this.userRepository
+    const staffQb = this.userRepository
       .createQueryBuilder('user')
       .select('user.departmentId', 'departmentId')
       .addSelect('COUNT(user.id)', 'count')
-      .where('user.departmentId IN (:...deptIds)', { deptIds })
-      .groupBy('user.departmentId')
-      .getRawMany();
+      .where('user.departmentId IN (:...deptIds)', { deptIds });
+    if (tenantId) staffQb.andWhere('user.tenant_id = :tenantId', { tenantId });
+    const staffCounts = await staffQb.groupBy('user.departmentId').getRawMany();
 
     const countMap = new Map(staffCounts.map((c) => [c.departmentId, parseInt(c.count)]));
 
@@ -178,13 +178,13 @@ export class FacilitiesService {
     if (departments.length === 0) return [];
 
     const deptIds = departments.map((d) => d.id);
-    const staffCounts = await this.userRepository
+    const staffQb2 = this.userRepository
       .createQueryBuilder('user')
       .select('user.departmentId', 'departmentId')
       .addSelect('COUNT(user.id)', 'count')
-      .where('user.departmentId IN (:...deptIds)', { deptIds })
-      .groupBy('user.departmentId')
-      .getRawMany();
+      .where('user.departmentId IN (:...deptIds)', { deptIds });
+    if (tenantId) staffQb2.andWhere('user.tenant_id = :tenantId', { tenantId });
+    const staffCounts = await staffQb2.groupBy('user.departmentId').getRawMany();
 
     const countMap = new Map(staffCounts.map((c) => [c.departmentId, parseInt(c.count)]));
 

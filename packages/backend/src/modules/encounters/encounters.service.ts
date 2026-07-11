@@ -240,7 +240,7 @@ export class EncountersService {
     // Fix 2: Validate department belongs to facility (if provided)
     if (dto.departmentId) {
       const department = await this.departmentRepository.findOne({
-        where: { id: dto.departmentId, facilityId: dto.facilityId },
+        where: { id: dto.departmentId, facilityId: dto.facilityId, ...(tenantId ? { tenantId } : {}) },
       });
       if (!department) {
         throw new BadRequestException(
@@ -263,7 +263,7 @@ export class EncountersService {
         throw new BadRequestException('Insurance policy is required when payer type is insurance');
       }
       const policy = await this.insurancePolicyRepository.findOne({
-        where: { id: dto.insurancePolicyId, patientId: dto.patientId },
+        where: { id: dto.insurancePolicyId, patientId: dto.patientId, ...(tenantId ? { tenantId } : {}) },
         relations: ['provider'],
       });
       if (!policy) {
@@ -550,7 +550,7 @@ export class EncountersService {
       // Need encounter's facilityId — we'll validate inside the transaction
       // after we have the locked row, but we can pre-check the department exists
       const department = await this.departmentRepository.findOne({
-        where: { id: dto.departmentId },
+        where: { id: dto.departmentId, ...(tenantId ? { tenantId } : {}) },
       });
       if (!department) {
         throw new BadRequestException('Department not found');

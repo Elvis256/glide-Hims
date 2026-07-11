@@ -51,6 +51,9 @@ export class ClaimExportService {
     if (days > MAX_RANGE_DAYS) {
       throw new BadRequestException(`Date range exceeds ${MAX_RANGE_DAYS} days`);
     }
+    if (!tenantId) {
+      this.logger.warn('exportBatchCsv called without tenantId — results are not tenant-scoped');
+    }
     const provider = await this.providerRepo.findOne({
       where: { id: providerId, ...(tenantId ? { tenantId } : {}) },
     });

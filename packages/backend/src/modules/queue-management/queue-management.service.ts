@@ -232,9 +232,9 @@ export class QueueManagementService {
   }
 
   async getServiceConfig(facilityId: string, tenantId?: string): Promise<Record<string, any>> {
-    const setting = await this.systemSettingRepository.findOne({
-      where: { key: `${SERVICE_CONFIG_KEY}.${facilityId}` },
-    });
+    const where: any = { key: `${SERVICE_CONFIG_KEY}.${facilityId}` };
+    if (tenantId) where.tenantId = tenantId;
+    const setting = await this.systemSettingRepository.findOne({ where });
     if (!setting) return this.getDefaultServiceConfig();
     return setting.value;
   }
@@ -287,9 +287,9 @@ export class QueueManagementService {
     dto: ServiceConfigDto,
     tenantId?: string,
   ): Promise<Record<string, any>> {
-    const existing = await this.systemSettingRepository.findOne({
-      where: { key: `${SERVICE_CONFIG_KEY}.${facilityId}` },
-    });
+    const configWhere: any = { key: `${SERVICE_CONFIG_KEY}.${facilityId}` };
+    if (tenantId) configWhere.tenantId = tenantId;
+    const existing = await this.systemSettingRepository.findOne({ where: configWhere });
     const merged = { ...(existing?.value || this.getDefaultServiceConfig()), ...dto };
     if (existing) {
       existing.value = merged;
@@ -300,6 +300,7 @@ export class QueueManagementService {
           key: `${SERVICE_CONFIG_KEY}.${facilityId}`,
           value: merged,
           description: 'Queue management service configuration for facility',
+          ...(tenantId ? { tenantId } : {}),
         }),
       );
     }
@@ -781,11 +782,11 @@ export class QueueManagementService {
 
     // Generate invoice number
     const datePrefix = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const lastInvoice = await this.invoiceRepository
+    const invQb = this.invoiceRepository
       .createQueryBuilder('inv')
-      .where('inv.invoice_number LIKE :prefix', { prefix: `INV${datePrefix}%` })
-      .orderBy('inv.invoice_number', 'DESC')
-      .getOne();
+      .where('inv.invoice_number LIKE :prefix', { prefix: `INV${datePrefix}%` });
+    if (tenantId) invQb.andWhere('inv.tenant_id = :tenantId', { tenantId });
+    const lastInvoice = await invQb.orderBy('inv.invoice_number', 'DESC').getOne();
     let seq = 1;
     if (lastInvoice) {
       seq = parseInt(lastInvoice.invoiceNumber.slice(-4), 10) + 1;

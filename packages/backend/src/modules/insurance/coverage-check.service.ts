@@ -28,8 +28,11 @@ export class CoverageCheckService {
       status: PolicyStatus.ACTIVE,
       effectiveDate: LessThan(today),
       expiryDate: MoreThan(today),
+      ...(tenantId ? { tenantId } : {}),
     };
-    if (tenantId) where.tenantId = tenantId;
+    if (!tenantId) {
+      this.logger.warn('checkCoverage called without tenantId — query is not tenant-scoped');
+    }
 
     const activePolicies = await this.policyRepo.find({
       where,

@@ -10,6 +10,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { DataSource } from 'typeorm';
 import { AnalyticsService } from './analytics.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -21,7 +22,10 @@ import { RequireModule } from '../auth/decorators/module.decorator';
 @Controller('analytics')
 export class AnalyticsController {
   private readonly logger = new Logger(AnalyticsController.name);
-  constructor(private readonly analyticsService: AnalyticsService) {}
+  constructor(
+    private readonly analyticsService: AnalyticsService,
+    private readonly dataSource: DataSource,
+  ) {}
 
   @Get('admin-dashboard')
   @AuthWithPermissions('analytics.read')
@@ -154,9 +158,20 @@ export class AnalyticsController {
     if (m < 1 || m > 12 || y < 2000 || y > 2100) {
       throw new BadRequestException('month must be 1-12 and year must be 2000-2100');
     }
+    const resolvedFacilityId = facilityId || user.facilityId;
+    // Validate that the requested facility belongs to the caller's tenant
+    if (resolvedFacilityId && user.tenantId) {
+      const fac = await this.dataSource.query(
+        'SELECT id FROM facilities WHERE id = $1 AND tenant_id = $2',
+        [resolvedFacilityId, user.tenantId],
+      );
+      if (fac.length === 0) {
+        throw new ForbiddenException('Facility does not belong to your organization');
+      }
+    }
     return this.analyticsService.getHMIS105Report(
       user.tenantId,
-      facilityId || user.facilityId,
+      resolvedFacilityId,
       m,
       y,
     );
