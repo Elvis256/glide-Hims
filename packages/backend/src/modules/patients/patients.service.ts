@@ -77,7 +77,7 @@ export class PatientsService {
   private async generateMRN(manager: EntityManager, tenantId?: string): Promise<string> {
     // Get hospital name from system settings
     const hospitalNameSetting = await manager.getRepository(SystemSetting).findOne({
-      where: { key: 'hospital_name' },
+      where: { key: 'hospital_name', ...(tenantId ? { tenantId } : {}) },
     });
 
     const hospitalName = hospitalNameSetting?.value?.name || 'HOSP';
@@ -686,29 +686,32 @@ export class PatientsService {
       // Snapshot the secondary patient before merge
       const secondarySnapshot = { ...secondary };
 
-      // Move encounters from secondary to primary
-      const encounterResult = await manager
+      // Move encounters from secondary to primary (tenant-scoped)
+      const encQb = manager
         .createQueryBuilder()
         .update('encounters')
         .set({ patientId: primaryId })
-        .where('patient_id = :secondaryId', { secondaryId })
-        .execute();
+        .where('patient_id = :secondaryId', { secondaryId });
+      if (tenantId) encQb.andWhere('tenant_id = :tenantId', { tenantId });
+      const encounterResult = await encQb.execute();
 
-      // Move documents from secondary to primary
-      const docResult = await manager
+      // Move documents from secondary to primary (tenant-scoped)
+      const docQb = manager
         .createQueryBuilder()
         .update('patient_documents')
         .set({ patientId: primaryId })
-        .where('patient_id = :secondaryId', { secondaryId })
-        .execute();
+        .where('patient_id = :secondaryId', { secondaryId });
+      if (tenantId) docQb.andWhere('tenant_id = :tenantId', { tenantId });
+      const docResult = await docQb.execute();
 
-      // Move notes from secondary to primary
-      const noteResult = await manager
+      // Move notes from secondary to primary (tenant-scoped)
+      const noteQb = manager
         .createQueryBuilder()
         .update('patient_notes')
         .set({ patientId: primaryId })
-        .where('patient_id = :secondaryId', { secondaryId })
-        .execute();
+        .where('patient_id = :secondaryId', { secondaryId });
+      if (tenantId) noteQb.andWhere('tenant_id = :tenantId', { tenantId });
+      const noteResult = await noteQb.execute();
 
       // Merge allergies (union)
       const primaryAllergies = primary.allergies || [];
@@ -786,8 +789,10 @@ export class PatientsService {
       throw new ConflictException('Patient already has a linked user account');
     }
 
-    // Verify user exists
-    const userExists = await this.dataSource.query('SELECT id FROM users WHERE id = $1', [userId]);
+    // Verify user exists (tenant-scoped to prevent cross-tenant linking)
+    const userExists = tenantId
+      ? await this.dataSource.query('SELECT id FROM users WHERE id = $1 AND tenant_id = $2', [userId, tenantId])
+      : await this.dataSource.query('SELECT id FROM users WHERE id = $1', [userId]);
 
     if (userExists.length === 0) {
       throw new NotFoundException('User not found');

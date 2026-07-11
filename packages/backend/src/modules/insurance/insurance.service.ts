@@ -373,13 +373,14 @@ export class InsuranceService {
   private async generateClaimNumber(
     manager: import('typeorm').EntityManager,
     facilityId: string,
+    tenantId?: string,
   ): Promise<string> {
     const today = new Date();
     const prefix = `CLM${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}`;
     const lockKey = `insurance:claim-number:${facilityId}:${prefix}`;
     await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [lockKey]);
     const count = await manager.count(InsuranceClaim, {
-      where: { facilityId, claimNumber: Between(`${prefix}0001`, `${prefix}9999`) },
+      where: { facilityId, claimNumber: Between(`${prefix}0001`, `${prefix}9999`), ...(tenantId ? { tenantId } : {}) },
     });
     return `${prefix}${String(count + 1).padStart(4, '0')}`;
   }
@@ -402,7 +403,7 @@ export class InsuranceService {
     }
 
     const savedClaim = await this.dataSource.transaction(async (manager) => {
-      const claimNumber = await this.generateClaimNumber(manager, dto.facilityId);
+      const claimNumber = await this.generateClaimNumber(manager, dto.facilityId, tenantId);
       const claim = manager.create(InsuranceClaim, {
         ...dto,
         claimNumber,
@@ -680,15 +681,16 @@ export class InsuranceService {
         const annualLimit = Number(policy.annualLimit || 0);
         if (annualLimit > 0) {
           const used = Number(policy.usedAmount || 0);
-          const otherApproved = await manager
+          const otherApprovedQb = manager
             .createQueryBuilder(InsuranceClaim, 'c')
             .select('COALESCE(SUM(c.total_approved - c.total_paid), 0)', 'sum')
             .where('c.policy_id = :pid', { pid: claim.policyId })
             .andWhere('c.id != :cid', { cid: claim.id })
             .andWhere('c.status IN (:...statuses)', {
               statuses: [ClaimStatus.APPROVED, ClaimStatus.PARTIALLY_APPROVED],
-            })
-            .getRawOne<{ sum: string }>();
+            });
+          if (tenantId) otherApprovedQb.andWhere('c.tenant_id = :tenantId', { tenantId });
+          const otherApproved = await otherApprovedQb.getRawOne<{ sum: string }>();
           const reserved = Number(otherApproved?.sum || 0);
           const headroom = Math.max(0, annualLimit - used - reserved);
           if (approvedAmount > headroom) {
@@ -889,13 +891,14 @@ export class InsuranceService {
   private async generatePreAuthNumber(
     manager: import('typeorm').EntityManager,
     facilityId: string,
+    tenantId?: string,
   ): Promise<string> {
     const today = new Date();
     const prefix = `PA${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}`;
     const lockKey = `insurance:preauth-number:${facilityId}:${prefix}`;
     await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [lockKey]);
     const count = await manager.count(PreAuthorization, {
-      where: { facilityId, authNumber: Between(`${prefix}0001`, `${prefix}9999`) },
+      where: { facilityId, authNumber: Between(`${prefix}0001`, `${prefix}9999`), ...(tenantId ? { tenantId } : {}) },
     });
     return `${prefix}${String(count + 1).padStart(4, '0')}`;
   }
@@ -919,14 +922,15 @@ export class InsuranceService {
     if (policy.annualLimit && dto.estimatedCost !== undefined) {
       const used = Number(policy.usedAmount || 0);
       const limit = Number(policy.annualLimit);
-      const outstanding = await this.preAuthRepo
+      const outstandingQb = this.preAuthRepo
         .createQueryBuilder('pa')
         .select('COALESCE(SUM(pa.approved_amount), 0)', 'sum')
         .where('pa.policy_id = :pid', { pid: policy.id })
         .andWhere('pa.status IN (:...statuses)', {
           statuses: [PreAuthStatus.APPROVED, PreAuthStatus.PARTIALLY_APPROVED],
-        })
-        .getRawOne<{ sum: string }>();
+        });
+      if (tenantId) outstandingQb.andWhere('pa.tenant_id = :tenantId', { tenantId });
+      const outstanding = await outstandingQb.getRawOne<{ sum: string }>();
       const reserved = Number(outstanding?.sum || 0);
       const remaining = Math.max(0, limit - used - reserved);
       if (dto.estimatedCost > remaining) {
@@ -945,7 +949,7 @@ export class InsuranceService {
     }
 
     return this.dataSource.transaction(async (manager) => {
-      const authNumber = await this.generatePreAuthNumber(manager, dto.facilityId);
+      const authNumber = await this.generatePreAuthNumber(manager, dto.facilityId, tenantId);
 
       const preAuth = manager.create(PreAuthorization, {
         ...dto,
@@ -1495,7 +1499,7 @@ export class InsuranceService {
       // the SAME number format (4-digit padded) as createClaim, and so the
       // count(...)+1 race between concurrent encounter-billing flows is
       // closed.
-      const claimNumber = await this.generateClaimNumber(manager, facilityId);
+      const claimNumber = await this.generateClaimNumber(manager, facilityId, tenantId);
 
       const claim = manager.create(InsuranceClaim, {
         claimNumber,

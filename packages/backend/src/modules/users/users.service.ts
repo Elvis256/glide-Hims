@@ -1005,8 +1005,13 @@ export class UsersService {
   }
 
   async removeRole(userId: string, roleId: string, tenantId?: string): Promise<void> {
-    const where = { userId, roleId };
-    // user_role records may have NULL tenant_id (assigned before multi-tenant)
+    // Scope by tenantId when available; also match NULL tenant_id for legacy records
+    const where = tenantId
+      ? [
+          { userId, roleId, tenantId },
+          { userId, roleId, tenantId: IsNull() },
+        ]
+      : { userId, roleId };
     const userRole = await this.userRoleRepository.findOne({ where, relations: ['role'] });
 
     if (!userRole) {
@@ -1408,7 +1413,10 @@ export class UsersService {
     });
     const rolesByName = new Map(roles.map((r) => [r.name.toLowerCase(), r]));
 
-    // Pre-fetch existing usernames in this tenant
+    // Pre-fetch existing usernames scoped to tenant
+    if (!tenantId) {
+      this.logger.warn('bulkImport called without tenantId — username dedup will be global');
+    }
     const existingUsers = await this.userRepository.find({
       where: tenantId ? { tenantId } : undefined,
       select: ['username'],

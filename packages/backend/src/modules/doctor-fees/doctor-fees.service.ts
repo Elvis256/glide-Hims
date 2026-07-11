@@ -64,9 +64,15 @@ export class DoctorFeesService {
   }
 
   async listProfiles(tenantId?: string): Promise<DoctorFeeProfile[]> {
-    const where: any = {};
-    if (tenantId) where.tenantId = tenantId;
-    return this.profileRepo.find({ where, relations: ['doctor'], order: { createdAt: 'DESC' } });
+    if (!tenantId) {
+      this.logger.warn('listProfiles called without tenantId — returning empty to prevent cross-tenant leak');
+      return [];
+    }
+    return this.profileRepo.find({
+      where: { tenantId },
+      relations: ['doctor'],
+      order: { createdAt: 'DESC' },
+    });
   }
 
   async upsertProfile(
@@ -74,7 +80,9 @@ export class DoctorFeesService {
     dto: UpsertDoctorFeeProfileDto,
     tenantId?: string,
   ): Promise<DoctorFeeProfile> {
-    const doctor = await this.userRepo.findOne({ where: { id: doctorId } });
+    const doctor = await this.userRepo.findOne({
+      where: { id: doctorId, ...(tenantId ? { tenantId } : {}) },
+    });
     if (!doctor) throw new NotFoundException(`Doctor ${doctorId} not found`);
 
     const feeMode = dto.feeMode ?? DoctorFeeMode.FLAT;

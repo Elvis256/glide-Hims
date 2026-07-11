@@ -729,7 +729,7 @@ export class IpdService {
       // safest non-invasive default; pharmacists can override with a reason.
       if (dto.status === MedicationStatus.ADMINISTERED && med.admissionId && med.drugName) {
         const admission = await manager.findOne(Admission, {
-          where: { id: med.admissionId },
+          where: { id: med.admissionId, ...(tenantId ? { tenantId } : {}) },
           relations: ['patient'],
         });
         const allergies = admission?.patient?.allergies || [];
