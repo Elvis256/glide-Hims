@@ -57,7 +57,11 @@ export class OrdersService {
     private readonly auditLogService: AuditLogService,
   ) {}
 
-  private async generateOrderNumber(orderType: OrderType): Promise<string> {
+  private async generateOrderNumber(
+    orderType: OrderType,
+    tenantId: string,
+    manager: import('typeorm').EntityManager,
+  ): Promise<string> {
     const prefix =
       orderType === OrderType.LAB
         ? 'LAB'
@@ -69,11 +73,17 @@ export class OrdersService {
     const date = new Date();
     const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
 
-    // Count orders of this type created today using LIKE pattern match
-    const count = await this.orderRepository
-      .createQueryBuilder('order')
+    // Serialize per tenant/type/day: count-based numbering against a UNIQUE
+    // column raced under concurrent ordering (and counted without a tenant
+    // filter).
+    await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+      `order_num_${prefix}${dateStr}_${tenantId}`,
+    ]);
+    const count = await manager
+      .createQueryBuilder(Order, 'order')
       .where('order.orderType = :orderType', { orderType })
       .andWhere('order.orderNumber LIKE :pattern', { pattern: `${prefix}${dateStr}%` })
+      .andWhere('order.tenant_id = :tenantId', { tenantId })
       .getCount();
 
     const seq = String(count + 1).padStart(4, '0');
@@ -91,18 +101,20 @@ export class OrdersService {
       throw new NotFoundException('Encounter not found');
     }
 
-    const orderNumber = await this.generateOrderNumber(dto.orderType);
+    const savedOrder = await this.orderRepository.manager.transaction(async (manager) => {
+      const orderNumber = await this.generateOrderNumber(dto.orderType, tid, manager);
 
-    const order = this.orderRepository.create({
-      ...dto,
-      orderNumber,
-      orderedById: userId,
-      status: OrderStatus.PENDING,
-      priority: dto.priority || OrderPriority.ROUTINE,
-      tenantId: tid,
+      const order = manager.create(Order, {
+        ...dto,
+        orderNumber,
+        orderedById: userId,
+        status: OrderStatus.PENDING,
+        priority: dto.priority || OrderPriority.ROUTINE,
+        tenantId: tid,
+      });
+
+      return manager.save(Order, order);
     });
-
-    const savedOrder = await this.orderRepository.save(order);
 
     this.auditLogService
       .log({
@@ -112,7 +124,7 @@ export class OrdersService {
         userId,
         tenantId,
         newValue: {
-          orderNumber,
+          orderNumber: savedOrder.orderNumber,
           orderType: dto.orderType,
           status: OrderStatus.PENDING,
           encounterId: dto.encounterId,

@@ -37,7 +37,7 @@ export class Appointment {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'appointment_number', unique: true })
+  @Column({ name: 'appointment_number' })
   appointmentNumber: string;
 
   @Column({ name: 'patient_id' })

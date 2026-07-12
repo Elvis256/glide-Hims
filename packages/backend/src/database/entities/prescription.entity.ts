@@ -17,7 +17,7 @@ export enum PrescriptionStatus {
 @Index(['encounter'])
 @Index(['status', 'createdAt'])
 export class Prescription extends BaseEntity {
-  @Column({ name: 'prescription_number', unique: true })
+  @Column({ name: 'prescription_number' })
   prescriptionNumber: string;
 
   @Column({
