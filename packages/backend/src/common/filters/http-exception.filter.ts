@@ -33,6 +33,13 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         message = exceptionResponse;
         error = HttpStatus[status] || 'Error';
       }
+    } else if (this.isHttpError(exception)) {
+      // Errors from express middleware (body-parser, raw-body) carry a
+      // proper 4xx status — e.g. PayloadTooLargeError (413) when a request
+      // exceeds the body size limit. Surface them instead of masking as 500.
+      status = (exception as any).status || (exception as any).statusCode;
+      message = (exception as Error).message;
+      error = HttpStatus[status] || 'Error';
     } else {
       status = HttpStatus.INTERNAL_SERVER_ERROR;
       message = 'An unexpected error occurred';
@@ -69,5 +76,12 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     }
 
     response.status(status).json(responseBody);
+  }
+
+  /** True for express/http-errors style errors with a valid 4xx client status. */
+  private isHttpError(exception: unknown): boolean {
+    if (!(exception instanceof Error)) return false;
+    const status = (exception as any).status || (exception as any).statusCode;
+    return typeof status === 'number' && status >= 400 && status < 500;
   }
 }
