@@ -477,7 +477,7 @@ export class VitalsService {
     return vital;
   }
 
-  async update(id: string, dto: UpdateVitalDto, tenantId?: string): Promise<Vital> {
+  async update(id: string, dto: UpdateVitalDto, tenantId?: string, userId?: string): Promise<Vital> {
     const vital = await this.findOne(id, tenantId);
 
     // Recalculate BMI if height or weight changed
@@ -485,13 +485,50 @@ export class VitalsService {
     const height = dto.height ?? vital.height;
     const bmi = this.calculateBMI(weight, height);
 
+    const changedFields = Object.keys(dto).filter(
+      (k) => (dto as any)[k] !== undefined && (dto as any)[k] !== (vital as any)[k],
+    );
+
     Object.assign(vital, dto, { bmi });
-    return this.vitalRepository.save(vital);
+    const saved = await this.vitalRepository.save(vital);
+
+    // A corrected observation must carry a corrected score: recompute
+    // NEWS2/MEWS and re-emit deterioration if warranted — otherwise a fixed
+    // typo (e.g. BP 80 instead of 180) leaves the stale risk level behind.
+    await this.applyScoresAndEmit(saved, vital.encounter, tenantId);
+
+    if (userId && changedFields.length > 0) {
+      this.auditLogService
+        .log({
+          userId,
+          action: 'VITAL_UPDATED',
+          entityType: 'Vital',
+          entityId: id,
+          newValue: { changedFields, encounterId: vital.encounterId },
+          tenantId,
+        })
+        .catch((err) => this.logger.warn(`Audit log failed: ${err.message}`));
+    }
+
+    return saved;
   }
 
-  async delete(id: string, tenantId?: string): Promise<void> {
+  async delete(id: string, tenantId?: string, userId?: string): Promise<void> {
     const vital = await this.findOne(id, tenantId);
     await this.vitalRepository.softRemove(vital);
+
+    if (userId) {
+      this.auditLogService
+        .log({
+          userId,
+          action: 'VITAL_DELETED',
+          entityType: 'Vital',
+          entityId: id,
+          oldValue: { encounterId: vital.encounterId, recordedAt: vital.recordedAt },
+          tenantId,
+        })
+        .catch((err) => this.logger.warn(`Audit log failed: ${err.message}`));
+    }
   }
 
   // Get patient's vital history across encounters
