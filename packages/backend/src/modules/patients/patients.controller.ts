@@ -243,7 +243,7 @@ export class PatientsController {
     @Body() dto: UpdatePatientDto,
     @Req() req: AuthenticatedRequest,
   ) {
-    const patient = await this.patientsService.update(id, dto, req.user!.tenantId);
+    const patient = await this.patientsService.update(id, dto, req.user!.tenantId, req.user!.id);
     return { message: 'Patient updated', data: patient };
   }
 
@@ -251,7 +251,7 @@ export class PatientsController {
   @AuthWithPermissions('patients.delete')
   @ApiOperation({ summary: 'Delete patient (soft delete)' })
   async remove(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthenticatedRequest) {
-    await this.patientsService.remove(id, req.user!.tenantId);
+    await this.patientsService.remove(id, req.user!.tenantId, req.user!.id);
     return { message: 'Patient deleted' };
   }
 
@@ -376,8 +376,8 @@ export class PatientsController {
       primaryId,
       secondaryId,
       userId,
-      tenantId,
       body.reason,
+      tenantId,
     );
     return { message: 'Patients merged successfully', data: result };
   }
