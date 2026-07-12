@@ -980,6 +980,9 @@ export class UsersService {
       roleId: dto.roleId,
       facilityId: dto.facilityId,
       departmentId: dto.departmentId,
+      // Without this the row landed with NULL tenant_id — invisible to
+      // getUserRoles' tenant filter and skipping the duplicate check above
+      tenantId: tid,
     });
 
     const savedUserRole = await this.userRoleRepository.save(userRole);
