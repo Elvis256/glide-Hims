@@ -25,9 +25,15 @@ UBUNTU_ISO="ubuntu-${UBUNTU_VERSION}-live-server-amd64.iso"
 UBUNTU_URL="https://releases.ubuntu.com/${UBUNTU_VERSION}/${UBUNTU_ISO}"
 
 # Tooling check
-for cmd in xorriso 7z wget sha256sum; do
+for cmd in xorriso 7z wget sha256sum openssl; do
   command -v "$cmd" >/dev/null || { echo "Missing dependency: $cmd. Install with apt."; exit 1; }
 done
+
+# Unique OS credentials per ISO build — never ship a shared default password.
+# The generated password is written to <iso>.credentials.txt for the
+# installing technician, and the OS forces a change on first login.
+ADMIN_PASSWORD="$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-16)"
+ADMIN_HASH="$(openssl passwd -6 "$ADMIN_PASSWORD")"
 
 # Cache the Ubuntu base ISO
 CACHE="$HOME/.cache/glide-hims-iso"
@@ -57,8 +63,9 @@ autoinstall:
   identity:
     hostname: hims-server
     username: admin
-    # Default password: admin (CHANGE on first login). Hash for "admin":
-    password: "$6$rounds=4096$b8FEjC4e$AlH7s1fQXoKZrG1bMv1L9v5MHYM4Al0QlrU2eqRnkDpSmYvMvgcuBJqm9l4/7GZw8.qj8oP1J0Y0OqQwQ7Gv00"
+    # Unique per-build password (see <iso>.credentials.txt); the hash is
+    # substituted below and a change is forced on first login.
+    password: "__ADMIN_HASH__"
   ssh:
     install-server: true
     allow-pw: true
@@ -70,8 +77,16 @@ autoinstall:
     - cp -r /cdrom/glide /target/opt/glide-hims-install/
     - curtin in-target -- bash -c "cd /opt/glide-hims-install/glide && tar -xzf glide-hims-fieldkit-*.tar.gz"
     - curtin in-target -- bash -c "cd /opt/glide-hims-install/glide/glide-hims-fieldkit-* && ./standalone/install.sh --image standalone/image.tar --non-interactive"
+    # Expire the initial password so the first (console or SSH) login forces
+    # the technician to set their own.
+    - curtin in-target -- chage -d 0 admin
 YAML
 touch "$WORK/iso/server/meta-data"
+
+# Inject the per-build password hash (heredoc above is quoted so the crypt
+# string's $ characters survive; hash alphabet is [a-zA-Z0-9./$] — safe with
+# the | delimiter).
+sed -i "s|__ADMIN_HASH__|${ADMIN_HASH}|" "$WORK/iso/server/user-data"
 
 # GRUB tweak — point to our autoinstall and shorten timeout
 GRUB_CFG="$WORK/iso/boot/grub/grub.cfg"
@@ -96,5 +111,19 @@ xorriso -as mkisofs \
   xorriso -as mkisofs -r -V "GLIDE_HIMS_${VERSION}" -J -o "$OUT_ISO" "$WORK/iso"
 
 sha256sum "$OUT_ISO" > "${OUT_ISO}.sha256"
+
+# Credentials file for the installing technician — deliver out-of-band with
+# the USB stick; do NOT copy it onto the stick itself.
+CRED_FILE="${OUT_ISO}.credentials.txt"
+umask 177
+cat > "$CRED_FILE" <<EOF
+Glide-HIMS installer ISO ${VERSION} — OS login (unique to this build)
+username: admin
+password: ${ADMIN_PASSWORD}
+The system forces a password change on first login.
+EOF
+umask 022
+
 echo "✅ ISO ready: $OUT_ISO ($(du -h "$OUT_ISO" | awk '{print $1}'))"
+echo "   OS credentials: $CRED_FILE (deliver out-of-band; not on the USB stick)"
 echo "   Write to USB:  sudo dd if=$OUT_ISO of=/dev/sdX bs=4M status=progress conv=fsync"
