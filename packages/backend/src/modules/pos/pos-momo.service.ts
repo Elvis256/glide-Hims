@@ -7,7 +7,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, MoreThanOrEqual } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import {
   PosMobileMoneyTransaction,
@@ -194,7 +194,12 @@ export class PosMomoService {
     return this.buildStatusResponse(tx);
   }
 
-  private async handleSuccess(tx: PosMobileMoneyTransaction, userId: string, tenantId: string) {
+  private async handleSuccess(
+    tx: PosMobileMoneyTransaction,
+    userId: string,
+    tenantId: string,
+    expectedStatus: MomoTransactionStatus = MomoTransactionStatus.PENDING,
+  ) {
     // Claim the transaction under a row lock: the user-polling path and the
     // reconciliation cron can both observe PENDING and would otherwise both
     // flip it and complete the sale twice. (The previous "transaction" never
@@ -204,7 +209,7 @@ export class PosMomoService {
         where: { id: tx.id, tenantId },
         lock: { mode: 'pessimistic_write' },
       });
-      if (!locked || locked.status !== MomoTransactionStatus.PENDING) return false;
+      if (!locked || locked.status !== expectedStatus) return false;
 
       locked.status = MomoTransactionStatus.SUCCESS;
       locked.completedAt = new Date();
@@ -240,6 +245,88 @@ export class PosMomoService {
         { failureReason: `PAID but sale completion failed: ${msg}`.slice(0, 500) },
       );
     }
+  }
+
+  /**
+   * Reconcile TIMEOUT transactions against the gateway: money that landed
+   * AFTER the 5-minute window previously had no recovery path. Late
+   * successes are claimed (TIMEOUT → SUCCESS) and the sale completion is
+   * attempted; if the sale was meanwhile paid another way, the tx is
+   * flagged for a manual refund.
+   */
+  async reconcileTimedOut(tenantId: string, userId: string) {
+    const tid = requireTenantId(tenantId);
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const timedOut = await this.momoRepo.find({
+      where: {
+        status: MomoTransactionStatus.TIMEOUT,
+        tenantId: tid,
+        requestedAt: MoreThanOrEqual(since),
+      },
+      order: { requestedAt: 'DESC' },
+      take: 100,
+    });
+
+    const results: Array<{
+      transactionId: string;
+      saleId: string;
+      amount: number;
+      gatewayStatus: string;
+      action: string;
+    }> = [];
+
+    for (const tx of timedOut) {
+      if (!tx.externalReference) {
+        results.push({
+          transactionId: tx.id,
+          saleId: tx.saleId,
+          amount: Number(tx.amount),
+          gatewayStatus: 'unknown (no external reference)',
+          action: 'none',
+        });
+        continue;
+      }
+      try {
+        const providerKey = this.resolveProviderKey(tx.provider as 'mtn' | 'airtel');
+        const { status: gwStatus } = await this.gatewayService.getStatus(
+          providerKey,
+          tx.externalReference,
+        );
+        if (gwStatus === 'success') {
+          await this.handleSuccess(tx, userId, tenantId, MomoTransactionStatus.TIMEOUT);
+          results.push({
+            transactionId: tx.id,
+            saleId: tx.saleId,
+            amount: Number(tx.amount),
+            gatewayStatus: 'success',
+            action: 'late success — transaction marked SUCCESS, sale completion attempted',
+          });
+        } else {
+          results.push({
+            transactionId: tx.id,
+            saleId: tx.saleId,
+            amount: Number(tx.amount),
+            gatewayStatus: gwStatus,
+            action: 'none',
+          });
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        results.push({
+          transactionId: tx.id,
+          saleId: tx.saleId,
+          amount: Number(tx.amount),
+          gatewayStatus: `poll failed: ${msg}`,
+          action: 'none',
+        });
+      }
+    }
+
+    return {
+      checked: timedOut.length,
+      lateSuccesses: results.filter((r) => r.gatewayStatus === 'success').length,
+      results,
+    };
   }
 
   private buildStatusResponse(tx: PosMobileMoneyTransaction) {

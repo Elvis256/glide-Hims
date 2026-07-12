@@ -198,4 +198,13 @@ export class PosController {
   cancelMoMo(@Param('transactionId') txId: string, @Request() req: any) {
     return this.momoService.cancel(txId, req.user.id, req.user.tenantId);
   }
+
+  @Post('sales/mobile-money/reconcile-timeouts')
+  @AuthWithPermissions('pos.payment.mobile_money')
+  @ApiOperation({
+    summary: 'Reconcile timed-out Mobile Money transactions against the gateway (late successes)',
+  })
+  reconcileMoMoTimeouts(@Request() req: any) {
+    return this.momoService.reconcileTimedOut(req.user.tenantId, req.user.id);
+  }
 }

@@ -150,18 +150,29 @@ export class PosService {
     });
     if (!shift) throw new NotFoundException('Shift not found');
 
-    // Get payment splits for this shift period
-    const splits = await this.dataSource
+    // Payment splits for THIS shift. Splits are stamped with shift_id at
+    // write time; the old tenant-wide time-window filter counted overlapping
+    // shifts on other registers. Legacy rows (shift_id IS NULL) fall back to
+    // the time window.
+    const qb = this.dataSource
       .createQueryBuilder()
       .select('ps.payment_method', 'paymentMethod')
       .addSelect('SUM(ps.amount)', 'total')
       .addSelect('COUNT(DISTINCT ps.sale_id)', 'saleCount')
       .from('pos_payment_splits', 'ps')
-      .where('ps.tenant_id = :tenantId', { tenantId })
-      .andWhere('ps.created_at >= :openedAt', { openedAt: shift.openedAt })
-      .andWhere(shift.closedAt ? 'ps.created_at <= :closedAt' : '1=1', { closedAt: shift.closedAt })
-      .groupBy('ps.payment_method')
-      .getRawMany();
+      .where('ps.tenant_id = :tenantId', { tenantId });
+    if (shift.closedAt) {
+      qb.andWhere(
+        `(ps.shift_id = :shiftId OR (ps.shift_id IS NULL AND ps.created_at BETWEEN :openedAt AND :closedAt))`,
+        { shiftId: shift.id, openedAt: shift.openedAt, closedAt: shift.closedAt },
+      );
+    } else {
+      qb.andWhere(`(ps.shift_id = :shiftId OR (ps.shift_id IS NULL AND ps.created_at >= :openedAt))`, {
+        shiftId: shift.id,
+        openedAt: shift.openedAt,
+      });
+    }
+    const splits = await qb.groupBy('ps.payment_method').getRawMany();
 
     return {
       shift,

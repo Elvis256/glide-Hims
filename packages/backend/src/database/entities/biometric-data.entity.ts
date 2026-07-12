@@ -1,6 +1,7 @@
 import { Entity, Column, ManyToOne, JoinColumn, Index, Unique } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { User } from './user.entity';
+import { piiColumnTransformer } from '../../common/crypto/pii-crypto';
 
 export type FingerIndex =
   | 'right_thumb'
@@ -28,7 +29,10 @@ export class BiometricData extends BaseEntity {
   @Column({ name: 'finger_index', type: 'varchar', length: 20 })
   fingerIndex: FingerIndex;
 
-  @Column({ name: 'template_data', type: 'text' })
+  // Encrypted at rest (AES-256-GCM via pii-crypto): unlike a password, a
+  // leaked fingerprint template can never be rotated. The transformer
+  // tolerates legacy plaintext rows; migration 72 re-encrypts them.
+  @Column({ name: 'template_data', type: 'text', transformer: piiColumnTransformer })
   templateData: string; // Base64 encoded fingerprint template
 
   @Column({ name: 'quality_score', type: 'int', nullable: true })
