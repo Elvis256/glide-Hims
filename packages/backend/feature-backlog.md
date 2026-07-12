@@ -29,22 +29,8 @@ Legend: 💰 revenue/compliance · 🏥 clinical value · ✨ UX polish
   clinical safety feature for labour wards).
 
 ## Portal / Biometrics
-- 🏥 **Biometric template encryption at rest** — fingerprint templates are
-  stored plaintext in `biometric_data.templateData`; unlike passwords they
-  can never be rotated. Encrypt with pii-crypto.
-- ✨ **`POST /biometrics/verify` is spoofable** — any users.read caller can
-  stamp lastVerifiedAt without an actual match; deprecate in favour of
-  verify-proxy which stamps server-side.
 - ✨ **Portal discharge instructions + follow-up view** — pairs with the
   discharge backlog item; the portal now has working lab results.
-
-## POS / Payments
-- 💰 **Shift report scoped by time window only** — `getShiftReport` aggregates
-  payment splits tenant-wide between openedAt/closedAt; overlapping shifts on
-  other registers pollute the numbers. Splits need a shiftId link.
-- 💰 **MoMo late-success after timeout** — a transaction marked TIMEOUT whose
-  money later lands at the provider has no refund/replay flow; needs a
-  reconciliation report for TIMEOUT txs that succeeded gateway-side.
 
 ## Surgery
 - 🏥 **WHO Surgical Safety Checklist (sign-in / time-out / sign-out)** — only a
@@ -80,3 +66,13 @@ Legend: 💰 revenue/compliance · 🏥 clinical value · ✨ UX polish
 - ✅ **Nurse shift-handover summary** — `GET /ipd/wards/:id/handover`: per
   active admission — bed, allergies, latest vitals + NEWS, overdue/due-soon
   meds, latest nursing note.
+- ✅ **Biometric template encryption at rest** — AES-256-GCM via pii-crypto
+  transformer; migration 72 re-encrypted existing rows.
+- ✅ **Spoofable `POST /biometrics/verify`** — restricted to system admins;
+  verify-proxy is the real path.
+- ✅ **Shift report scoping** — splits were already shift-stamped; the report
+  now filters by shift_id (time-window fallback for legacy rows).
+- ✅ **MoMo timeout reconciliation** — `POST /pos/sales/mobile-money/
+  reconcile-timeouts` polls the gateway for TIMEOUT txs; late successes are
+  claimed (TIMEOUT→SUCCESS) and sale completion attempted, with manual-refund
+  flagging when the sale was paid another way.

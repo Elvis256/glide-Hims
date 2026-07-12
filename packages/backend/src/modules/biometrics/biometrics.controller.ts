@@ -91,11 +91,14 @@ export class BiometricsController {
   }
 
   /**
-   * Record a successful verification
+   * DEPRECATED: client-asserted verification stamp.
+   * SECURITY: any users.read caller could stamp lastVerifiedAt without a real
+   * fingerprint match. Restricted to system admins during migration —
+   * verify-proxy performs the match server-side and stamps automatically.
    */
   @Post('verify')
   @HttpCode(HttpStatus.OK)
-  @AuthWithPermissions('users.read')
+  @AuthWithPermissions('system.admin')
   async recordVerification(@Body() body: RecordVerificationDto, @Request() req: any) {
     await this.biometricsService.recordVerification(
       body.userId,
