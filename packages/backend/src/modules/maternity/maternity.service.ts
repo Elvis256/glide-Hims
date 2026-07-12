@@ -1,4 +1,6 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, Optional } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
+import { NotificationsService } from '../notifications/notifications.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, LessThanOrEqual, MoreThanOrEqual, In, DataSource } from 'typeorm';
 import {
@@ -61,7 +63,72 @@ export class MaternityService {
     private immunizationRepo: Repository<ImmunizationSchedule>,
     private readonly auditLogService: AuditLogService,
     private readonly dataSource: DataSource,
+    @Optional()
+    private readonly notificationsService: NotificationsService | null,
   ) {}
+
+  private readonly cronLogger = new Logger(MaternityService.name);
+
+  /**
+   * Daily EPI defaulter SMS reminders. Cross-tenant (system context, like
+   * the other maintenance crons); respects patient SMS opt-out; each dose
+   * is reminded at most once every 7 days via last_defaulter_reminder_at.
+   */
+  @Cron('0 9 * * *', { name: 'epi-defaulter-sms' })
+  async sendEpiDefaulterReminders(): Promise<void> {
+    if (!this.notificationsService) return;
+    try {
+      const rows: Array<{
+        id: string;
+        vaccine_name: string;
+        dose_number: number;
+        due_date: string;
+        facility_id: string;
+        tenant_id: string;
+        phone: string | null;
+        sms_opt_out: boolean;
+        full_name: string;
+      }> = await this.immunizationRepo.query(
+        `SELECT s.id, s.vaccine_name, s.dose_number, s.due_date, s.facility_id, s.tenant_id,
+                p.phone, p.sms_opt_out, p.full_name
+           FROM immunization_schedules s
+           JOIN delivery_outcomes d ON d.id = s.delivery_outcome_id
+           JOIN labour_records lr ON lr.id = d.labour_record_id
+           JOIN antenatal_registrations reg ON reg.id = lr.registration_id
+           JOIN patients p ON p.id = reg.patient_id
+          WHERE s.status IN ('scheduled', 'due', 'overdue')
+            AND s.grace_period_end < CURRENT_DATE
+            AND (s.last_defaulter_reminder_at IS NULL
+                 OR s.last_defaulter_reminder_at < NOW() - INTERVAL '7 days')
+            AND p.phone IS NOT NULL
+            AND p.deleted_at IS NULL
+          ORDER BY s.grace_period_end ASC
+          LIMIT 200`,
+      );
+      if (rows.length === 0) return;
+
+      let sent = 0;
+      for (const row of rows) {
+        const message =
+          `Reminder: your baby's ${row.vaccine_name} (dose ${row.dose_number}) vaccination ` +
+          `was due on ${String(row.due_date).slice(0, 10)}. Please visit the clinic as soon as possible.`;
+        const ok = await this.notificationsService.sendSmsToPatient({
+          patient: { phone: row.phone || undefined, smsOptOut: row.sms_opt_out, fullName: row.full_name },
+          facilityId: row.facility_id,
+          message,
+          tenantId: row.tenant_id,
+        });
+        // Stamp even on skip/failure? Only on success — failed sends retry tomorrow
+        if (ok) {
+          await this.immunizationRepo.update({ id: row.id }, { lastDefaulterReminderAt: new Date() });
+          sent++;
+        }
+      }
+      this.cronLogger.log(`EPI defaulter reminders: ${sent}/${rows.length} SMS sent`);
+    } catch (err: any) {
+      this.cronLogger.error(`EPI defaulter reminder cron failed: ${err.message}`);
+    }
+  }
 
   // ============ ANC REGISTRATION ============
 

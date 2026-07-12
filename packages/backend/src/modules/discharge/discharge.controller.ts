@@ -95,4 +95,16 @@ export class DischargeController {
   async printDischargeSummary(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     return this.dischargeService.printDischargeSummary(id, req.user?.tenantId);
   }
+
+  @Post(':id/finalize')
+  @AuthWithPermissions('discharge.update')
+  async finalizeSummary(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.dischargeService.finalizeSummary(id, req.user?.id, req.user?.tenantId);
+  }
+
+  @Post(':id/sign')
+  @AuthWithPermissions('discharge.update')
+  async signSummary(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.dischargeService.signSummary(id, req.user?.id, req.user?.tenantId);
+  }
 }

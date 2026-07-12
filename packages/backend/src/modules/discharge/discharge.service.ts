@@ -1,7 +1,11 @@
 import { Injectable, NotFoundException, BadRequestException, Logger, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, DataSource } from 'typeorm';
-import { DischargeSummary, DischargeType } from '../../database/entities/discharge-summary.entity';
+import {
+  DischargeSummary,
+  DischargeType,
+  DischargeDocumentStatus,
+} from '../../database/entities/discharge-summary.entity';
 import { Encounter, EncounterStatus } from '../../database/entities/encounter.entity';
 import { CreateDischargeSummaryDto, DischargeSummaryFilterDto } from './dto/discharge.dto';
 import { VitalsService } from '../vitals/vitals.service';
@@ -235,6 +239,12 @@ export class DischargeService {
     tenantId?: string,
   ): Promise<DischargeSummary> {
     const summary = await this.findOne(id, tenantId);
+    // Lifecycle: only DRAFT summaries are editable
+    if (summary.documentStatus !== DischargeDocumentStatus.DRAFT) {
+      throw new BadRequestException(
+        `Discharge summary is ${summary.documentStatus} and can no longer be edited`,
+      );
+    }
     // Identity/linkage fields are immutable after creation
     const {
       encounterId: _e,
@@ -245,6 +255,51 @@ export class DischargeService {
     Object.assign(summary, updatable);
     if (dischargeDate) summary.dischargeDate = new Date(dischargeDate);
     return this.dischargeSummaryRepository.save(summary);
+  }
+
+  /** DRAFT → FINALIZED: freezes the document for signing. */
+  async finalizeSummary(id: string, userId: string, tenantId?: string): Promise<DischargeSummary> {
+    const tid = requireTenantId(tenantId);
+    return this.dataSource.transaction(async (manager) => {
+      const summary = await manager.findOne(DischargeSummary, {
+        where: { id, tenantId: tid },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!summary) throw new NotFoundException('Discharge summary not found');
+      if (summary.documentStatus !== DischargeDocumentStatus.DRAFT) {
+        throw new BadRequestException(
+          `Only draft summaries can be finalized (current: ${summary.documentStatus})`,
+        );
+      }
+      summary.documentStatus = DischargeDocumentStatus.FINALIZED;
+      summary.finalizedById = userId;
+      summary.finalizedAt = new Date();
+      return manager.save(summary);
+    });
+  }
+
+  /** FINALIZED → SIGNED: physician sign-off; the document becomes a record. */
+  async signSummary(id: string, userId: string, tenantId?: string): Promise<DischargeSummary> {
+    const tid = requireTenantId(tenantId);
+    return this.dataSource.transaction(async (manager) => {
+      const summary = await manager.findOne(DischargeSummary, {
+        where: { id, tenantId: tid },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!summary) throw new NotFoundException('Discharge summary not found');
+      if (summary.documentStatus === DischargeDocumentStatus.SIGNED) {
+        throw new BadRequestException('Summary is already signed');
+      }
+      if (summary.documentStatus !== DischargeDocumentStatus.FINALIZED) {
+        throw new BadRequestException(
+          `Summary must be finalized before signing (current: ${summary.documentStatus})`,
+        );
+      }
+      summary.documentStatus = DischargeDocumentStatus.SIGNED;
+      summary.signedById = userId;
+      summary.signedAt = new Date();
+      return manager.save(summary);
+    });
   }
 
   async getStats(facilityId: string, fromDate: Date, toDate: Date, tenantId?: string) {
@@ -277,10 +332,32 @@ export class DischargeService {
       },
     });
 
+    // 30-day readmission: discharges in the window where the same patient
+    // has a later admission within 30 days of the discharge date
+    const readmissionRow = await this.dischargeSummaryRepository.query(
+      `SELECT COUNT(*)::int AS readmitted
+         FROM discharge_summaries ds
+        WHERE ds.facility_id = $1
+          AND ds.tenant_id = $2
+          AND ds.discharge_date BETWEEN $3 AND $4
+          AND ds.deleted_at IS NULL
+          AND EXISTS (
+            SELECT 1 FROM admissions a
+             WHERE a.patient_id = ds.patient_id
+               AND a.tenant_id = ds.tenant_id
+               AND a."admissionDate" > ds.discharge_date
+               AND a."admissionDate" <= ds.discharge_date + INTERVAL '30 days'
+          )`,
+      [facilityId, tid, fromDate, toDate],
+    );
+    const readmitted = Number(readmissionRow?.[0]?.readmitted || 0);
+
     return {
       total,
       byType,
       amaRate: total > 0 ? ((amaCount / total) * 100).toFixed(2) : 0,
+      readmittedWithin30Days: readmitted,
+      readmissionRate30d: total > 0 ? ((readmitted / total) * 100).toFixed(2) : 0,
     };
   }
 

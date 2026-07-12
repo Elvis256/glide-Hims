@@ -170,6 +170,13 @@ export class SurgeryController {
     return this.surgeryService.cancelSurgery(id, dto, req.user?.tenantId);
   }
 
+  @Put('cases/:id/reconfirm')
+  @AuthWithPermissions('surgery.update')
+  @ApiOperation({ summary: 'Reconfirm a postponed surgery back onto the schedule' })
+  reconfirmSurgery(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.surgeryService.reconfirmSurgery(id, req.user?.tenantId);
+  }
+
   // ============ SCHEDULE & DASHBOARD ============
 
   @Get('dashboard')

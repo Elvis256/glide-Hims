@@ -118,6 +118,10 @@ export class ImmunizationSchedule {
   @Column({ type: 'enum', enum: ImmunizationStatus, default: ImmunizationStatus.SCHEDULED })
   status: ImmunizationStatus;
 
+  /** Last defaulter SMS reminder for this dose (dedup for the daily cron). */
+  @Column({ type: 'timestamptz', nullable: true, name: 'last_defaulter_reminder_at' })
+  lastDefaulterReminderAt?: Date;
+
   @Column({ type: 'timestamp', nullable: true, name: 'administered_at' })
   administeredAt: Date;
 

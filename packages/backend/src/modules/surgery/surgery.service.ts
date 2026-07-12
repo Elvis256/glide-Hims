@@ -516,6 +516,62 @@ export class SurgeryService {
     return this.surgeryCaseRepo.save(surgeryCase);
   }
 
+  /**
+   * POSTPONED → SCHEDULED. Postponed cases hold a new date/time but nothing
+   * moved them back onto the day lists — this closes that gap. The held slot
+   * is conflict-checked again since other cases may have taken it meanwhile.
+   */
+  async reconfirmSurgery(id: string, tenantId?: string): Promise<SurgeryCase> {
+    const tid = requireTenantId(tenantId);
+    return this.dataSource.transaction(async (manager) => {
+      const surgeryCase = await manager.findOne(SurgeryCase, {
+        where: { id, tenantId: tid },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!surgeryCase) throw new NotFoundException('Surgery case not found');
+      if (surgeryCase.status !== SurgeryStatus.POSTPONED) {
+        throw new BadRequestException(
+          `Only postponed surgeries can be reconfirmed (current: ${surgeryCase.status})`,
+        );
+      }
+
+      const dateStr =
+        surgeryCase.scheduledDate instanceof Date
+          ? surgeryCase.scheduledDate.toISOString().slice(0, 10)
+          : String(surgeryCase.scheduledDate);
+      const conflicts = await this.checkTheatreConflicts(
+        surgeryCase.theatreId,
+        dateStr,
+        surgeryCase.scheduledTime,
+        surgeryCase.estimatedDurationMinutes,
+        surgeryCase.id,
+        tenantId,
+      );
+      if (conflicts.length > 0) {
+        throw new BadRequestException(
+          `Theatre has ${conflicts.length} conflicting surgery at the held slot — postpone again with a new time`,
+        );
+      }
+
+      surgeryCase.status = SurgeryStatus.SCHEDULED;
+      surgeryCase.preOpNotes = `${surgeryCase.preOpNotes || ''}\n[RECONFIRMED]`.trim();
+      const saved = await manager.save(surgeryCase);
+
+      this.auditLogService
+        .log({
+          action: 'RECONFIRM_SURGERY',
+          entityType: 'SurgeryCase',
+          entityId: id,
+          tenantId,
+          oldValue: { status: SurgeryStatus.POSTPONED },
+          newValue: { status: SurgeryStatus.SCHEDULED },
+        })
+        .catch(() => {});
+
+      return saved;
+    });
+  }
+
   async cancelSurgery(id: string, dto: CancelSurgeryDto, tenantId?: string): Promise<SurgeryCase> {
     const tid = requireTenantId(tenantId);
     return this.dataSource.transaction(async (manager) => {

@@ -14,6 +14,12 @@ export enum DischargeType {
   REFERRAL = 'referral',
 }
 
+export enum DischargeDocumentStatus {
+  DRAFT = 'draft',
+  FINALIZED = 'finalized',
+  SIGNED = 'signed',
+}
+
 export enum DischargeDestination {
   HOME = 'home',
   OTHER_FACILITY = 'other_facility',
@@ -48,6 +54,27 @@ export class DischargeSummary extends BaseEntity {
 
   @Column({ name: 'discharge_date', type: 'timestamptz' })
   dischargeDate: Date;
+
+  // Document lifecycle: draft (editable) → finalized (frozen) → signed
+  @Column({
+    name: 'document_status',
+    type: 'varchar',
+    length: 20,
+    default: DischargeDocumentStatus.DRAFT,
+  })
+  documentStatus: DischargeDocumentStatus;
+
+  @Column({ name: 'finalized_by_id', type: 'uuid', nullable: true })
+  finalizedById?: string;
+
+  @Column({ name: 'finalized_at', type: 'timestamptz', nullable: true })
+  finalizedAt?: Date;
+
+  @Column({ name: 'signed_by_id', type: 'uuid', nullable: true })
+  signedById?: string;
+
+  @Column({ name: 'signed_at', type: 'timestamptz', nullable: true })
+  signedAt?: Date;
 
   // Clinical Summary
   @Column({ name: 'chief_complaint', type: 'text' })

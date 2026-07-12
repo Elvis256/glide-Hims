@@ -7,7 +7,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, In, LessThanOrEqual } from 'typeorm';
 import { Ward, WardStatus } from '../../database/entities/ward.entity';
 import { Bed, BedStatus } from '../../database/entities/bed.entity';
 import { Admission, AdmissionStatus } from '../../database/entities/admission.entity';
@@ -663,6 +663,120 @@ export class IpdService {
       );
       return saved;
     });
+  }
+
+  // ========== SHIFT HANDOVER ==========
+
+  /**
+   * One-call nurse shift-handover summary for a ward: every active
+   * admission with its bed, latest vitals (+NEWS), medication status
+   * (overdue / due within 4h) and most recent nursing note.
+   */
+  async getWardHandover(wardId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
+    const ward = await this.wardRepo.findOne({ where: { id: wardId, tenantId: tid } });
+    if (!ward) throw new NotFoundException('Ward not found');
+
+    const admissions = await this.admissionRepo.find({
+      where: { wardId, status: AdmissionStatus.ADMITTED, tenantId: tid },
+      relations: ['patient', 'bed', 'attendingDoctor'],
+      order: { admissionDate: 'ASC' },
+    });
+    if (admissions.length === 0) {
+      return { ward: { id: ward.id, name: ward.name }, generatedAt: new Date(), patients: [] };
+    }
+
+    const admissionIds = admissions.map((a) => a.id);
+    const patientIds = admissions.map((a) => a.patientId).filter(Boolean);
+    const now = new Date();
+    const dueSoonCutoff = new Date(now.getTime() + 4 * 60 * 60 * 1000);
+
+    const [latestVitals, medRows, latestNotes] = await Promise.all([
+      // Latest vital per patient
+      this.admissionRepo.query(
+        `SELECT DISTINCT ON (v.patient_id)
+                v.patient_id, v.temperature, v.pulse, v.bp_systolic, v.bp_diastolic,
+                v.respiratory_rate, v.oxygen_saturation, v.news_score, v.recorded_at
+           FROM vitals v
+          WHERE v.patient_id = ANY($1) AND v.tenant_id = $2 AND v.deleted_at IS NULL
+          ORDER BY v.patient_id, v.recorded_at DESC`,
+        [patientIds, tid],
+      ),
+      // Scheduled meds: overdue + due in the next 4 hours
+      this.medAdminRepo.find({
+        where: {
+          admissionId: In(admissionIds),
+          status: MedicationStatus.SCHEDULED,
+          scheduledTime: LessThanOrEqual(dueSoonCutoff),
+          tenantId: tid,
+        },
+        order: { scheduledTime: 'ASC' },
+      }),
+      // Latest nursing note per admission
+      this.admissionRepo.query(
+        `SELECT DISTINCT ON (n."admissionId")
+                n."admissionId" AS admission_id, n.content, n.type, n.shift, n."noteTime"
+           FROM nursing_notes n
+          WHERE n."admissionId" = ANY($1) AND n.tenant_id = $2 AND n.deleted_at IS NULL
+          ORDER BY n."admissionId", n."noteTime" DESC`,
+        [admissionIds, tid],
+      ),
+    ]);
+
+    const vitalsByPatient = new Map<string, any>(latestVitals.map((v: any) => [v.patient_id, v]));
+    const notesByAdmission = new Map<string, any>(latestNotes.map((n: any) => [n.admission_id, n]));
+    const medsByAdmission = new Map<string, any[]>();
+    for (const m of medRows) {
+      const list = medsByAdmission.get(m.admissionId) || [];
+      list.push(m);
+      medsByAdmission.set(m.admissionId, list);
+    }
+
+    return {
+      ward: { id: ward.id, name: ward.name },
+      generatedAt: now,
+      patients: admissions.map((a) => {
+        const v = vitalsByPatient.get(a.patientId);
+        const meds = medsByAdmission.get(a.id) || [];
+        const note = notesByAdmission.get(a.id);
+        return {
+          admissionId: a.id,
+          admissionNumber: a.admissionNumber,
+          admittedAt: a.admissionDate,
+          patient: {
+            id: a.patient?.id,
+            name: a.patient?.fullName,
+            mrn: a.patient?.mrn,
+            allergies: a.patient?.allergies || [],
+          },
+          bed: a.bed?.bedNumber,
+          attendingDoctor: a.attendingDoctor?.fullName,
+          diagnosis: a.admissionDiagnosis,
+          latestVitals: v
+            ? {
+                recordedAt: v.recorded_at,
+                temperature: v.temperature,
+                pulse: v.pulse,
+                bp: v.bp_systolic ? `${v.bp_systolic}/${v.bp_diastolic}` : null,
+                respiratoryRate: v.respiratory_rate,
+                spo2: v.oxygen_saturation,
+                newsScore: v.news_score,
+              }
+            : null,
+          medications: {
+            overdue: meds
+              .filter((m) => new Date(m.scheduledTime) < now)
+              .map((m) => ({ drug: m.drugName, dose: m.dose, scheduledTime: m.scheduledTime })),
+            dueSoon: meds
+              .filter((m) => new Date(m.scheduledTime) >= now)
+              .map((m) => ({ drug: m.drugName, dose: m.dose, scheduledTime: m.scheduledTime })),
+          },
+          latestNursingNote: note
+            ? { note: note.content, type: note.type, shift: note.shift, at: note.noteTime }
+            : null,
+        };
+      }),
+    };
   }
 
   // ========== NURSING NOTES ==========
