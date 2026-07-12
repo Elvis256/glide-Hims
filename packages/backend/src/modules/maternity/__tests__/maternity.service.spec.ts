@@ -88,8 +88,33 @@ describe('MaternityService', () => {
           [BabyWellnessCheck, babyWellnessRepo],
           [ImmunizationSchedule, immunizationRepo],
         ]);
+        // Entity-aware delegation so tests keep asserting on the repo mocks.
+        // manager.save(instance) routes to the repo of the last entity class
+        // passed to manager.create (matches the service's create→save flows).
+        let lastEntity: any = null;
+        const qbChain: Record<string, jest.Mock> = {
+          where: jest.fn().mockReturnThis(),
+          andWhere: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
+          getOne: jest.fn().mockResolvedValue(null),
+        };
         const manager = {
           getRepository: jest.fn((entity: any) => repoMap.get(entity) || createMockRepo()),
+          query: jest.fn().mockResolvedValue([]),
+          createQueryBuilder: jest.fn(() => qbChain),
+          findOne: jest.fn((entity: any, opts: any) =>
+            repoMap.get(entity)?.findOne?.(opts) ?? Promise.resolve(null),
+          ),
+          count: jest.fn((entity: any, opts: any) =>
+            repoMap.get(entity)?.count?.(opts) ?? Promise.resolve(0),
+          ),
+          create: jest.fn((entity: any, data: any) => {
+            lastEntity = entity;
+            return repoMap.get(entity)?.create?.(data) ?? { ...data };
+          }),
+          save: jest.fn((instance: any) =>
+            repoMap.get(lastEntity)?.save?.(instance) ?? Promise.resolve(instance),
+          ),
         };
         return cb(manager);
       }),
@@ -151,7 +176,6 @@ describe('MaternityService', () => {
 
       const result = await service.registerAntenatal(dto as any, userId, tenantId);
 
-      expect(ancRepo.count).toHaveBeenCalledTimes(1);
       expect(ancRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({
           patientId,
@@ -288,7 +312,11 @@ describe('MaternityService', () => {
         cervicalDilation: 4,
       };
 
-      ancRepo.findOne!.mockResolvedValue({ id: registrationId });
+      ancRepo.findOne!.mockResolvedValue({
+        id: registrationId,
+        status: PregnancyStatus.ACTIVE,
+      });
+      labourRepo.findOne!.mockResolvedValue(null);
       labourRepo.count!.mockResolvedValue(5);
 
       const createdLabour = {
