@@ -15,6 +15,7 @@ import { Public } from '../auth/decorators/public.decorator';
 import { SetupService } from './setup.service';
 import { SystemSettingsService } from '../system-settings/system-settings.service';
 import { InitializeSetupDto, RegisterTenantDto, InitializeTenantSetupDto } from './dto/setup.dto';
+import { withSystemContext } from '../../common/context/tenant-context';
 
 @ApiTags('Setup')
 @Controller('setup')
@@ -94,7 +95,9 @@ export class SetupController {
       throw new ForbiddenException('Self-service registration is currently disabled');
     }
 
-    return this.setupService.registerTenant(dto);
+    // Bootstrap flow creates tenant + facility + admin before any tenant
+    // context exists; gated by the opt-in flag above, runs as system.
+    return withSystemContext(() => this.setupService.registerTenant(dto));
   }
 
   @Get('registration-allowed')
@@ -121,6 +124,6 @@ export class SetupController {
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) || slug.length < 3 || slug.length > 100) {
       throw new BadRequestException('Invalid organization code');
     }
-    return this.setupService.initializeTenantSetup(slug, dto);
+    return withSystemContext(() => this.setupService.initializeTenantSetup(slug, dto));
   }
 }

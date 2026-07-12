@@ -5,6 +5,7 @@ import { Public } from '../auth/decorators/public.decorator';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { PaymentGatewayService } from './payment-gateway.service';
 import { RequireModule } from '../auth/decorators/module.decorator';
+import { withSystemContext } from '../../common/context/tenant-context';
 import { InitiatePaymentRequest } from './payment-gateway.types';
 
 @ApiTags('payment-gateway')
@@ -54,7 +55,9 @@ export class PaymentGatewayController {
     @Headers() headers: Record<string, string>,
     @Body() body: any,
   ) {
-    const event = await this.service.handleWebhook(provider, headers, body);
+    // Signature-verified provider callback; must read/write payment rows
+    // across whichever tenant owns the transaction, so runs as system.
+    const event = await withSystemContext(() => this.service.handleWebhook(provider, headers, body));
     return { received: true, status: event.status };
   }
 }
