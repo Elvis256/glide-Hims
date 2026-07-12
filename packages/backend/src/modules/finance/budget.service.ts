@@ -50,7 +50,7 @@ export class BudgetService {
     dto: Partial<Budget> & { name: string; facilityId: string; fiscalYear: number },
     tenantId?: string,
   ): Promise<Budget> {
-    const budget = this.budgetRepo.create({ ...dto, ...(tenantId ? { tenantId } : {}) });
+    const budget = this.budgetRepo.create({ ...dto, tenantId: requireTenantId(tenantId) });
     return this.budgetRepo.save(budget);
   }
 
@@ -63,7 +63,7 @@ export class BudgetService {
 
   async findOne(id: string, tenantId?: string): Promise<Budget> {
     const budget = await this.budgetRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
       relations: ['lines', 'lines.account'],
     });
     if (!budget) throw new NotFoundException('Budget not found');
@@ -85,7 +85,7 @@ export class BudgetService {
     const line = this.budgetLineRepo.create({
       ...dto,
       budgetId,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: requireTenantId(tenantId),
     });
     return this.budgetLineRepo.save(line);
   }
@@ -96,7 +96,7 @@ export class BudgetService {
     tenantId?: string,
   ): Promise<BudgetLine> {
     const line = await this.budgetLineRepo.findOne({
-      where: { id: lineId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: lineId, tenantId: requireTenantId(tenantId) },
     });
     if (!line) throw new NotFoundException('Budget line not found');
     Object.assign(line, dto);
@@ -164,7 +164,7 @@ export class BudgetService {
         facilityId,
         fiscalYear,
         status: BudgetStatus.APPROVED,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
       relations: ['lines'],
     });
@@ -176,7 +176,7 @@ export class BudgetService {
           facilityId,
           fiscalYear,
           status: BudgetStatus.ACTIVE,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         },
         relations: ['lines'],
       });
@@ -465,7 +465,7 @@ export class BudgetService {
         const reservations = await reservationRepo.find({
           where: {
             budgetId: budget.id,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
             status: In([ReservationStatus.PENDING, ReservationStatus.APPROVED]),
           },
         });

@@ -192,7 +192,7 @@ export class BatchRecallService {
 
   async findOne(id: string, tenantId?: string): Promise<BatchRecall> {
     const recall = await this.recallRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
       relations: ['actions'],
     });
     if (!recall) throw new NotFoundException('Batch recall not found');

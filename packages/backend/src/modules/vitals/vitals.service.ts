@@ -15,6 +15,14 @@ export interface EarlyWarningScores {
   mewsScore: number;
   newsComponents: Record<string, number>;
   clinicalRiskLevel: ClinicalRiskLevel;
+  /**
+   * False when optional NEWS2 parameters (temperature, systolic BP, AVPU)
+   * were not recorded. Missing parameters score 0, so an incomplete score is
+   * a floor, not a valid NEWS2 — surface "incomplete obs" in the UI rather
+   * than a falsely reassuring low score.
+   */
+  isComplete: boolean;
+  missingParameters: string[];
 }
 
 export interface VitalAlert {
@@ -94,6 +102,10 @@ export class VitalsService {
     const onO2 = params.supplementalOxygen ?? false;
 
     const components: Record<string, number> = {};
+    const missingParameters: string[] = [];
+    if (temp == null) missingParameters.push('temperature');
+    if (sbp == null) missingParameters.push('bpSystolic');
+    if (!params.consciousnessLevel) missingParameters.push('consciousnessLevel');
 
     // --- NEWS2 Scoring (Scale 1 — standard SpO2) ---
     // Respiration rate
@@ -196,7 +208,14 @@ export class VitalsService {
       clinicalRiskLevel = ClinicalRiskLevel.LOW;
     }
 
-    return { newsScore, mewsScore, newsComponents: components, clinicalRiskLevel };
+    return {
+      newsScore,
+      mewsScore,
+      newsComponents: components,
+      clinicalRiskLevel,
+      isComplete: missingParameters.length === 0,
+      missingParameters,
+    };
   }
 
   /** Apply early warning scores to a vital record and emit deterioration event if needed. */
@@ -219,7 +238,9 @@ export class VitalsService {
 
     vital.newsScore = scores.newsScore;
     vital.mewsScore = scores.mewsScore;
-    vital.newsComponents = scores.newsComponents;
+    vital.newsComponents = scores.isComplete
+      ? scores.newsComponents
+      : { ...scores.newsComponents, _missing: scores.missingParameters };
     vital.clinicalRiskLevel = scores.clinicalRiskLevel;
     await this.vitalRepository.save(vital);
 

@@ -904,7 +904,7 @@ export class SetupService {
       const codeSuffix = facilityId.replace(/-/g, '').slice(0, 8).toUpperCase();
       const code = `GEN-${codeSuffix}`;
       const existing = await manager.findOne(Department, {
-        where: { code, ...(tenantId ? { tenantId } : {}) } as any,
+        where: { code, tenantId } as any,
       });
       if (existing) return;
       const dept = manager.create(Department, {

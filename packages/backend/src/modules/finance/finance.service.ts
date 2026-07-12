@@ -62,7 +62,7 @@ export class FinanceService {
       where: {
         facilityId: dto.facilityId,
         accountCode: dto.accountCode,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
     });
     if (existing) {
@@ -77,12 +77,12 @@ export class FinanceService {
       accountCategory: dto.accountCategory,
       description: dto.description,
       isHeader: dto.isHeader || false,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: requireTenantId(tenantId),
     });
 
     if (dto.parentId) {
       const parent = await this.accountRepo.findOne({
-        where: { id: dto.parentId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: dto.parentId, tenantId: requireTenantId(tenantId) },
       });
       if (parent) account.parent = parent;
     }
@@ -165,7 +165,7 @@ export class FinanceService {
     tenantId?: string,
   ): Promise<ChartOfAccount> {
     const account = await this.accountRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
     });
     if (!account) throw new NotFoundException('Account not found');
 
@@ -175,7 +175,7 @@ export class FinanceService {
 
   async deactivateAccount(id: string, tenantId?: string): Promise<ChartOfAccount> {
     const account = await this.accountRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
     });
     if (!account) throw new NotFoundException('Account not found');
 
@@ -187,7 +187,7 @@ export class FinanceService {
 
     // Check for journal entries
     const hasEntries = await this.journalLineRepo.count({
-      where: { accountId: id, ...(tenantId ? { tenantId } : {}) },
+      where: { accountId: id, tenantId: requireTenantId(tenantId) },
     });
     if (hasEntries > 0) {
       // Soft delete - just deactivate
@@ -207,7 +207,7 @@ export class FinanceService {
       where: {
         facilityId: dto.facilityId,
         fiscalYear: dto.year,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
     });
     if (existing) {
@@ -242,7 +242,7 @@ export class FinanceService {
         startDate,
         endDate,
         status: PeriodStatus.OPEN,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       });
       periods.push(await this.fiscalPeriodRepo.save(period));
     }
@@ -263,7 +263,7 @@ export class FinanceService {
 
   async closePeriod(id: string, userId: string, tenantId?: string): Promise<FiscalPeriod> {
     const period = await this.fiscalPeriodRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
     });
     if (!period) throw new NotFoundException('Fiscal period not found');
 
@@ -280,7 +280,7 @@ export class FinanceService {
 
   async openPeriod(id: string, tenantId?: string): Promise<FiscalPeriod> {
     const period = await this.fiscalPeriodRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
     });
     if (!period) throw new NotFoundException('Fiscal period not found');
 
@@ -303,7 +303,7 @@ export class FinanceService {
 
   async lockPeriod(id: string, userId: string, tenantId?: string): Promise<FiscalPeriod> {
     const period = await this.fiscalPeriodRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
     });
     if (!period) throw new NotFoundException('Fiscal period not found');
 
@@ -330,7 +330,7 @@ export class FinanceService {
     tenantId?: string,
   ): Promise<JournalEntry> {
     const original = await this.journalRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
       relations: ['lines', 'lines.account', 'fiscalPeriod'],
     });
     if (!original) throw new NotFoundException('Journal entry not found');
@@ -373,7 +373,7 @@ export class FinanceService {
         createdById: userId,
         isReversal: true,
         reversalOfId: original.id,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       });
       const savedReversal = await manager.save(JournalEntry, reversal);
       reversalId = savedReversal.id;
@@ -438,13 +438,13 @@ export class FinanceService {
       await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [key]);
       const repo = manager.getRepository(JournalEntry);
       const count = await repo.count({
-        where: { facilityId, ...(tenantId ? { tenantId } : {}) },
+        where: { facilityId, tenantId: requireTenantId(tenantId) },
       });
       return `JE${yyyymm}${String(count + 1).padStart(5, '0')}`;
     }
 
     const count = await this.journalRepo.count({
-      where: { facilityId, ...(tenantId ? { tenantId } : {}) },
+      where: { facilityId, tenantId: requireTenantId(tenantId) },
     });
     return `JE${yyyymm}${String(count + 1).padStart(5, '0')}`;
   }
@@ -459,7 +459,7 @@ export class FinanceService {
         facilityId,
         startDate: LessThanOrEqual(date),
         endDate: MoreThanOrEqual(date),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
     });
 
@@ -538,7 +538,7 @@ export class FinanceService {
         totalCredit,
         status: JournalStatus.DRAFT,
         createdById: userId,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       });
 
       const savedJournal = await manager.save(JournalEntry, journal);
@@ -562,7 +562,7 @@ export class FinanceService {
       // rows are visible (default repo uses a different connection from the
       // pool which would not yet see the uncommitted writes).
       const created = await manager.findOne(JournalEntry, {
-        where: { id: savedJournal.id, ...(tenantId ? { tenantId } : {}) },
+        where: { id: savedJournal.id, tenantId: requireTenantId(tenantId) },
         relations: ['lines', 'lines.account', 'fiscalPeriod', 'createdBy'],
       });
       if (!created) throw new NotFoundException('Journal entry not found');
@@ -572,7 +572,7 @@ export class FinanceService {
 
   private async validateGLAccount(accountId: string, tenantId?: string): Promise<void> {
     const account = await this.accountRepo.findOne({
-      where: { id: accountId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: accountId, tenantId: requireTenantId(tenantId) },
     });
 
     if (!account) {
@@ -594,7 +594,7 @@ export class FinanceService {
 
   async getJournalEntry(id: string, tenantId?: string): Promise<JournalEntry> {
     const journal = await this.journalRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
       relations: ['lines', 'lines.account', 'fiscalPeriod', 'createdBy'],
     });
     if (!journal) throw new NotFoundException('Journal entry not found');
@@ -638,14 +638,14 @@ export class FinanceService {
     return this.dataSource.transaction(async (manager) => {
       // Lock the journal entry row first (no relations — PostgreSQL FOR UPDATE can't handle LEFT JOINs)
       const locked = await manager.findOne(JournalEntry, {
-        where: { id, ...(tenantId ? { tenantId } : {}) },
+        where: { id, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!locked) throw new NotFoundException('Journal entry not found');
 
       // Now load full journal with relations (outside the lock)
       const journal = await manager.findOne(JournalEntry, {
-        where: { id, ...(tenantId ? { tenantId } : {}) },
+        where: { id, tenantId: requireTenantId(tenantId) },
         relations: ['lines', 'lines.account', 'fiscalPeriod', 'createdBy'],
       });
       if (!journal) throw new NotFoundException('Journal entry not found');
@@ -688,7 +688,7 @@ export class FinanceService {
       // Fiscal period must be open for posting
       if (journal.fiscalPeriodId) {
         const period = await manager.findOne(FiscalPeriod, {
-          where: { id: journal.fiscalPeriodId, ...(tenantId ? { tenantId } : {}) },
+          where: { id: journal.fiscalPeriodId, tenantId: requireTenantId(tenantId) },
         });
         if (period && period.status !== PeriodStatus.OPEN) {
           throw new BadRequestException(
@@ -700,7 +700,7 @@ export class FinanceService {
       // Update account balances with pessimistic locking
       for (const line of journal.lines) {
         const account = await manager.findOne(ChartOfAccount, {
-          where: { id: line.accountId, ...(tenantId ? { tenantId } : {}) },
+          where: { id: line.accountId, tenantId: requireTenantId(tenantId) },
           lock: { mode: 'pessimistic_write' },
         });
         if (!account) continue;
@@ -733,7 +733,7 @@ export class FinanceService {
 
   async getTrialBalance(facilityId: string, asOfDate?: string, tenantId?: string) {
     const accounts = await this.accountRepo.find({
-      where: { facilityId, isActive: true, isHeader: false, ...(tenantId ? { tenantId } : {}) },
+      where: { facilityId, isActive: true, isHeader: false, tenantId: requireTenantId(tenantId) },
       order: { accountCode: 'ASC' },
     });
 
@@ -789,7 +789,7 @@ export class FinanceService {
     tenantId?: string,
   ) {
     const accounts = await this.accountRepo.find({
-      where: { facilityId, isActive: true, ...(tenantId ? { tenantId } : {}) },
+      where: { facilityId, isActive: true, tenantId: requireTenantId(tenantId) },
       order: { accountCode: 'ASC' },
     });
 
@@ -820,7 +820,7 @@ export class FinanceService {
 
   async getBalanceSheet(facilityId: string, asOfDate?: string, tenantId?: string) {
     const accounts = await this.accountRepo.find({
-      where: { facilityId, isActive: true, ...(tenantId ? { tenantId } : {}) },
+      where: { facilityId, isActive: true, tenantId: requireTenantId(tenantId) },
       order: { accountCode: 'ASC' },
     });
 
@@ -862,16 +862,16 @@ export class FinanceService {
   async getDashboard(facilityId: string, tenantId?: string) {
     const [totalAccounts, draftJournals, postedJournals, openPeriods] = await Promise.all([
       this.accountRepo.count({
-        where: { facilityId, isActive: true, ...(tenantId ? { tenantId } : {}) },
+        where: { facilityId, isActive: true, tenantId: requireTenantId(tenantId) },
       }),
       this.journalRepo.count({
-        where: { facilityId, status: JournalStatus.DRAFT, ...(tenantId ? { tenantId } : {}) },
+        where: { facilityId, status: JournalStatus.DRAFT, tenantId: requireTenantId(tenantId) },
       }),
       this.journalRepo.count({
-        where: { facilityId, status: JournalStatus.POSTED, ...(tenantId ? { tenantId } : {}) },
+        where: { facilityId, status: JournalStatus.POSTED, tenantId: requireTenantId(tenantId) },
       }),
       this.fiscalPeriodRepo.count({
-        where: { facilityId, status: PeriodStatus.OPEN, ...(tenantId ? { tenantId } : {}) },
+        where: { facilityId, status: PeriodStatus.OPEN, tenantId: requireTenantId(tenantId) },
       }),
     ]);
 
@@ -902,7 +902,7 @@ export class FinanceService {
         accountCategory: category,
         isActive: true,
         isHeader: false,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
     });
   }
@@ -1051,7 +1051,7 @@ export class FinanceService {
             facilityId: params.facilityId,
             accountCode: '1200',
             isActive: true,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           },
         }));
       const revenueAcc =
@@ -1065,7 +1065,7 @@ export class FinanceService {
             facilityId: params.facilityId,
             accountCode: '4100',
             isActive: true,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           },
         }));
       if (!arAcc || !revenueAcc) {
@@ -1131,7 +1131,7 @@ export class FinanceService {
             facilityId: params.facilityId,
             accountCode: '1200',
             isActive: true,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           },
         }));
       // Map payment method to cash/bank account
@@ -1150,7 +1150,7 @@ export class FinanceService {
           facilityId: params.facilityId,
           accountCode: cashCode,
           isActive: true,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         },
       });
       if (!arAcc || !cashAcc) {
@@ -1218,7 +1218,7 @@ export class FinanceService {
             facilityId: params.facilityId,
             accountCode: cashCode,
             isActive: true,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           },
         })) ||
         (await this.findAccountByCategory(params.facilityId, AccountCategory.CASH, tenantId));
@@ -1233,7 +1233,7 @@ export class FinanceService {
             facilityId: params.facilityId,
             accountCode: '4100',
             isActive: true,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           },
         }));
       if (!cashAcc || !revenueAcc) {
@@ -1304,7 +1304,7 @@ export class FinanceService {
             facilityId: params.facilityId,
             accountCode: '1200',
             isActive: true,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           },
         }));
       if (!bankAcc || !arAcc) {
@@ -1372,7 +1372,7 @@ export class FinanceService {
             facilityId: params.facilityId,
             accountCode: '1200',
             isActive: true,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           },
         }));
       const revenueAcc =
@@ -1386,7 +1386,7 @@ export class FinanceService {
             facilityId: params.facilityId,
             accountCode: '4100',
             isActive: true,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           },
         }));
       if (!arAcc || !revenueAcc) {
@@ -1450,7 +1450,7 @@ export class FinanceService {
             facilityId: params.facilityId,
             accountCode: '5100',
             isActive: true,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           },
         }));
       const salaryPayableAcc =
@@ -1460,7 +1460,7 @@ export class FinanceService {
             facilityId: params.facilityId,
             accountCode: '2201',
             isActive: true,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           },
         }));
       if (!salaryExpAcc || !salaryPayableAcc) {
@@ -1475,7 +1475,7 @@ export class FinanceService {
           facilityId: params.facilityId,
           accountCode: '2202',
           isActive: true,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         },
       });
       const nssfAcc = await this.accountRepo.findOne({
@@ -1483,7 +1483,7 @@ export class FinanceService {
           facilityId: params.facilityId,
           accountCode: '2203',
           isActive: true,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         },
       });
 
@@ -1555,13 +1555,13 @@ export class FinanceService {
   ): Promise<JournalEntry | null> {
     try {
       const period = await this.fiscalPeriodRepo.findOne({
-        where: { id: periodId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: periodId, tenantId: requireTenantId(tenantId) },
       });
       if (!period) throw new NotFoundException('Fiscal period not found');
 
       // Get all revenue and expense accounts with non-zero balances
       const accounts = await this.accountRepo.find({
-        where: { facilityId, isActive: true, isHeader: false, ...(tenantId ? { tenantId } : {}) },
+        where: { facilityId, isActive: true, isHeader: false, tenantId: requireTenantId(tenantId) },
       });
 
       const retainedEarnings = accounts.find((a) => a.accountCode === '3002');
@@ -1849,7 +1849,7 @@ export class FinanceService {
         facilityId,
         accountCategory: AccountCategory.CASH,
         isActive: true,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
     });
     const closingCash = cashAccounts.reduce((sum, acc) => sum + Number(acc.currentBalance), 0);

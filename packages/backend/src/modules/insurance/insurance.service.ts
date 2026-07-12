@@ -379,7 +379,7 @@ export class InsuranceService {
     const lockKey = `insurance:claim-number:${facilityId}:${prefix}`;
     await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [lockKey]);
     const count = await manager.count(InsuranceClaim, {
-      where: { facilityId, claimNumber: Between(`${prefix}0001`, `${prefix}9999`), ...(tenantId ? { tenantId } : {}) },
+      where: { facilityId, claimNumber: Between(`${prefix}0001`, `${prefix}9999`), tenantId: requireTenantId(tenantId) },
     });
     return `${prefix}${String(count + 1).padStart(4, '0')}`;
   }
@@ -412,7 +412,7 @@ export class InsuranceService {
         admissionDate: dto.admissionDate ? new Date(dto.admissionDate) : undefined,
         dischargeDate: dto.dischargeDate ? new Date(dto.dischargeDate) : undefined,
         totalClaimed: 0,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       });
 
       const saved = await manager.save(InsuranceClaim, claim);
@@ -449,7 +449,7 @@ export class InsuranceService {
             quantity: itemDto.quantity || 1,
             claimedAmount: (itemDto.quantity || 1) * itemDto.unitPrice,
             serviceDate: new Date(itemDto.serviceDate),
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           });
           await manager.save(ClaimItem, item);
           totalClaimed += item.claimedAmount;
@@ -485,7 +485,7 @@ export class InsuranceService {
 
     // Check for duplicate items in this claim
     const existingItems = await this.claimItemRepo.find({
-      where: { claimId, ...(tenantId ? { tenantId } : {}) },
+      where: { claimId, tenantId: requireTenantId(tenantId) },
     });
     const duplicateItem = existingItems.find(
       (item) =>
@@ -505,7 +505,7 @@ export class InsuranceService {
       quantity: dto.quantity || 1,
       claimedAmount: (dto.quantity || 1) * dto.unitPrice,
       serviceDate: new Date(dto.serviceDate),
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: requireTenantId(tenantId),
     });
 
     const savedItem = await this.claimItemRepo.save(item);
@@ -560,7 +560,7 @@ export class InsuranceService {
 
   async getClaim(id: string, tenantId?: string): Promise<InsuranceClaim> {
     const claim = await this.claimRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
       relations: ['provider', 'policy', 'patient', 'items', 'submittedBy', 'encounter'],
     });
     if (!claim) throw new NotFoundException('Claim not found');
@@ -573,7 +573,7 @@ export class InsuranceService {
     // transmission.
     return this.dataSource.transaction(async (manager) => {
       const claim = await manager.findOne(InsuranceClaim, {
-        where: { id, ...(tenantId ? { tenantId } : {}) },
+        where: { id, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!claim) throw new NotFoundException('Claim not found');
@@ -636,7 +636,7 @@ export class InsuranceService {
   ): Promise<InsuranceClaim> {
     return this.dataSource.transaction(async (manager) => {
       const claim = await manager.findOne(InsuranceClaim, {
-        where: { id, ...(tenantId ? { tenantId } : {}) },
+        where: { id, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!claim) throw new NotFoundException('Claim not found');
@@ -673,7 +673,7 @@ export class InsuranceService {
         // also summing approved-but-unpaid amounts on prior claims so the
         // approver cannot authorize over the ceiling.
         const policy = await manager.findOne(InsurancePolicy, {
-          where: { id: claim.policyId, ...(tenantId ? { tenantId } : {}) },
+          where: { id: claim.policyId, tenantId: requireTenantId(tenantId) },
           lock: { mode: 'pessimistic_read' },
         });
         if (!policy) throw new NotFoundException('Policy not found');
@@ -739,7 +739,7 @@ export class InsuranceService {
             denialCode: saved.denialCode || null,
           },
           reason: dto.notes,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         })
         .catch((err) =>
           this.logger.error(`Audit log failed for processClaim ${saved.id}: ${err.message}`),
@@ -762,7 +762,7 @@ export class InsuranceService {
 
     const { saved, settledInBilling } = await this.dataSource.transaction(async (manager) => {
       const claim = await manager.findOne(InsuranceClaim, {
-        where: { id, ...(tenantId ? { tenantId } : {}) },
+        where: { id, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!claim) throw new NotFoundException('Claim not found');
@@ -803,7 +803,7 @@ export class InsuranceService {
       const delta = paidAmount - previouslyPaid;
 
       const policy = await manager.findOne(InsurancePolicy, {
-        where: { id: claim.policyId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: claim.policyId, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!policy) throw new NotFoundException('Policy not found');
@@ -849,7 +849,7 @@ export class InsuranceService {
             paymentReference: dto.paymentReference,
             mirrored: Boolean(mirror),
           },
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         })
         .catch((err) =>
           this.logger.error(`Audit log failed for recordPayment ${savedClaim.id}: ${err.message}`),
@@ -897,7 +897,7 @@ export class InsuranceService {
     const lockKey = `insurance:preauth-number:${facilityId}:${prefix}`;
     await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [lockKey]);
     const count = await manager.count(PreAuthorization, {
-      where: { facilityId, authNumber: Between(`${prefix}0001`, `${prefix}9999`), ...(tenantId ? { tenantId } : {}) },
+      where: { facilityId, authNumber: Between(`${prefix}0001`, `${prefix}9999`), tenantId: requireTenantId(tenantId) },
     });
     return `${prefix}${String(count + 1).padStart(4, '0')}`;
   }
@@ -961,7 +961,7 @@ export class InsuranceService {
         expectedDischargeDate: dto.expectedDischargeDate
           ? new Date(dto.expectedDischargeDate)
           : undefined,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       });
 
       return manager.save(PreAuthorization, preAuth);
@@ -992,7 +992,7 @@ export class InsuranceService {
 
   async getPreAuth(id: string, tenantId?: string): Promise<PreAuthorization> {
     const preAuth = await this.preAuthRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
       relations: ['policy', 'policy.provider', 'patient', 'requestedBy'],
     });
     if (!preAuth) throw new NotFoundException('Pre-authorization not found');
@@ -1073,7 +1073,7 @@ export class InsuranceService {
           denialReason: saved.denialReason || null,
         },
         reason: dto.notes,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       })
       .catch((err) =>
         this.logger.error(`Audit log failed for processPreAuth ${saved.id}: ${err.message}`),
@@ -1421,7 +1421,7 @@ export class InsuranceService {
   ): Promise<InsuranceClaim> {
     // Get the encounter with policy
     const encounter = await this.encounterRepo.findOne({
-      where: { id: encounterId, facilityId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: encounterId, facilityId, tenantId: requireTenantId(tenantId) },
       relations: ['insurancePolicy', 'patient'],
     });
 
@@ -1439,7 +1439,7 @@ export class InsuranceService {
 
     // Check if claim already exists
     const existingClaim = await this.claimRepo.findOne({
-      where: { encounterId, ...(tenantId ? { tenantId } : {}) },
+      where: { encounterId, tenantId: requireTenantId(tenantId) },
     });
 
     if (existingClaim) {
@@ -1448,7 +1448,7 @@ export class InsuranceService {
 
     // Get the invoice for this encounter
     const invoice = await this.invoiceRepo.findOne({
-      where: { encounterId, ...(tenantId ? { tenantId } : {}) },
+      where: { encounterId, tenantId: requireTenantId(tenantId) },
       relations: ['items'],
     });
 
@@ -1458,7 +1458,7 @@ export class InsuranceService {
 
     // Get the policy to get provider info
     const policy = await this.policyRepo.findOne({
-      where: { id: encounter.insurancePolicyId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: encounter.insurancePolicyId, tenantId: requireTenantId(tenantId) },
     });
 
     if (!policy) {
@@ -1514,7 +1514,7 @@ export class InsuranceService {
         patientResponsibility: Number(invoice.patientResponsibility || 0),
         status: ClaimStatus.DRAFT,
         serviceDate: encounter.startTime,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       });
 
       const savedClaim = await manager.save(InsuranceClaim, claim);
@@ -1535,7 +1535,7 @@ export class InsuranceService {
             serviceDate: encounter.startTime,
             status: ClaimItemStatus.PENDING,
             providerNotes: item.coverageNote || undefined,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           }),
         );
 

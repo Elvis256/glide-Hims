@@ -24,7 +24,7 @@ export class InvoiceMatchingService {
 
   private async generateMatchNumber(facilityId: string, tenantId?: string): Promise<string> {
     const count = await this.matchRepo.count({
-      where: { facilityId, ...(tenantId ? { tenantId } : {}) },
+      where: { facilityId, tenantId: requireTenantId(tenantId) },
     });
     const date = new Date();
     return `INV${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(count + 1).padStart(5, '0')}`;
@@ -37,7 +37,7 @@ export class InvoiceMatchingService {
   ): Promise<InvoiceMatch> {
     // Get PO first to verify it exists and get supplier ID
     const po = await this.poRepo.findOne({
-      where: { id: dto.purchaseOrderId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: dto.purchaseOrderId, tenantId: requireTenantId(tenantId) },
       relations: ['items', 'supplier'],
     });
     if (!po) throw new NotFoundException('Purchase order not found');
@@ -48,7 +48,7 @@ export class InvoiceMatchingService {
         vendorInvoiceNumber: dto.invoiceNumber,
         supplierId: po.supplierId,
         status: InvoiceMatchStatus.PENDING,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
     });
 
@@ -66,7 +66,7 @@ export class InvoiceMatchingService {
       );
     }
     const grn = await this.grnRepo.findOne({
-      where: { id: dto.grnId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: dto.grnId, tenantId: requireTenantId(tenantId) },
       relations: ['items'],
     });
     if (!grn) throw new NotFoundException('Goods Receipt Note not found');
@@ -90,7 +90,7 @@ export class InvoiceMatchingService {
       poTotal: poAmount,
       grnTotal: grnAmount,
       status: InvoiceMatchStatus.PENDING,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: requireTenantId(tenantId),
     });
 
     const savedMatch = await this.matchRepo.save(match);
@@ -123,7 +123,7 @@ export class InvoiceMatchingService {
         invoicePrice: itemDto.invoicePrice,
         qtyMatch,
         priceMatch,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       });
       await this.matchItemRepo.save(item);
     }
@@ -178,7 +178,7 @@ export class InvoiceMatchingService {
 
   async findOne(id: string, tenantId?: string): Promise<InvoiceMatch> {
     const match = await this.matchRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
       relations: [
         'purchaseOrder',
         'purchaseOrder.items',
@@ -200,7 +200,7 @@ export class InvoiceMatchingService {
     tenantId?: string,
   ): Promise<InvoiceMatchItem> {
     const item = await this.matchItemRepo.findOne({
-      where: { id: matchItemId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: matchItemId, tenantId: requireTenantId(tenantId) },
       relations: ['match'],
     });
     if (!item) throw new NotFoundException('Match item not found');
@@ -211,7 +211,7 @@ export class InvoiceMatchingService {
 
     // Check if all items are resolved
     const allItems = await this.matchItemRepo.find({
-      where: { matchId: item.matchId, ...(tenantId ? { tenantId } : {}) },
+      where: { matchId: item.matchId, tenantId: requireTenantId(tenantId) },
     });
     const allResolved = allItems.every((i) => i.qtyMatch && i.priceMatch);
 

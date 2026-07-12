@@ -36,7 +36,7 @@ export class PettyCashService {
       currentBalance: dto.imprestAmount,
       custodianId: dto.custodianId,
       isActive: dto.isActive ?? true,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: requireTenantId(tenantId),
     });
     return this.fundRepo.save(fund);
   }
@@ -78,7 +78,7 @@ export class PettyCashService {
 
       // Lock the fund to prevent concurrent modifications
       const fund = await fundRepo.findOne({
-        where: { id: fundId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: fundId, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!fund) throw new NotFoundException(`Petty cash fund ${fundId} not found`);
@@ -120,7 +120,7 @@ export class PettyCashService {
         receiptReference: dto.receiptNumber,
         approvedBy: dto.approvedById,
         recordedBy: actingUserId || dto.approvedById || fund.custodianId,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       });
 
       await fundRepo.save(fund);
@@ -139,7 +139,7 @@ export class PettyCashService {
       const txnRepo = manager.getRepository(PettyCashTransaction);
 
       const fund = await fundRepo.findOne({
-        where: { id: fundId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: fundId, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!fund) throw new NotFoundException(`Petty cash fund ${fundId} not found`);
@@ -180,7 +180,7 @@ export class PettyCashService {
         description: `Replenishment to imprest amount`,
         recordedBy: approvedById,
         approvedBy: approvedById,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       });
 
       await fundRepo.save(fund);
@@ -222,7 +222,7 @@ export class PettyCashService {
       const priorTxns = await this.txnRepo.find({
         where: {
           fundId,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         },
         order: { createdAt: 'ASC' },
       });
