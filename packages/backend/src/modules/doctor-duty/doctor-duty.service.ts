@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { DoctorDuty, DutyStatus } from '../../database/entities/doctor-duty.entity';
 import { User } from '../../database/entities/user.entity';
 import {
@@ -18,6 +18,7 @@ export class DoctorDutyService {
     private readonly doctorDutyRepo: Repository<DoctorDuty>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    private readonly dataSource: DataSource,
   ) {}
 
   async checkIn(
@@ -29,45 +30,53 @@ export class DoctorDutyService {
     const tid = requireTenantId(tenantId);
     const today = new Date().toISOString().split('T')[0];
 
-    // Check if already checked in today
-    const existing = await this.doctorDutyRepo.findOne({
-      where: {
+    return this.dataSource.transaction(async (manager) => {
+      // Serialize per doctor+day — the check-then-insert below raced,
+      // producing duplicate duty rows that double-list on the duty board
+      await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+        `doctor_duty:${tid}:${dto.doctorId}:${today}`,
+      ]);
+
+      // Check if already checked in today
+      const existing = await manager.findOne(DoctorDuty, {
+        where: {
+          doctorId: dto.doctorId,
+          facilityId,
+          dutyDate: new Date(today),
+          tenantId: tid,
+        },
+      });
+
+      if (existing && existing.status === DutyStatus.ON_DUTY) {
+        throw new ConflictException('Doctor is already on duty');
+      }
+
+      if (existing) {
+        // Update existing record
+        existing.status = DutyStatus.ON_DUTY;
+        existing.checkInTime = new Date().toTimeString().split(' ')[0];
+        existing.roomNumber = dto.roomNumber || existing.roomNumber;
+        existing.departmentId = dto.departmentId || existing.departmentId;
+        if (dto.maxPatients != null) existing.maxPatients = dto.maxPatients;
+        return manager.save(DoctorDuty, existing);
+      }
+
+      // Create new duty record
+      const duty = manager.create(DoctorDuty, {
         doctorId: dto.doctorId,
         facilityId,
+        departmentId: dto.departmentId,
         dutyDate: new Date(today),
+        status: DutyStatus.ON_DUTY,
+        checkInTime: new Date().toTimeString().split(' ')[0],
+        roomNumber: dto.roomNumber,
+        ...(dto.maxPatients != null ? { maxPatients: dto.maxPatients } : {}),
+        markedById,
         tenantId: tid,
-      },
+      });
+
+      return manager.save(DoctorDuty, duty);
     });
-
-    if (existing && existing.status === DutyStatus.ON_DUTY) {
-      throw new ConflictException('Doctor is already on duty');
-    }
-
-    if (existing) {
-      // Update existing record
-      existing.status = DutyStatus.ON_DUTY;
-      existing.checkInTime = new Date().toTimeString().split(' ')[0];
-      existing.roomNumber = dto.roomNumber || existing.roomNumber;
-      existing.departmentId = dto.departmentId || existing.departmentId;
-      if (dto.maxPatients != null) existing.maxPatients = dto.maxPatients;
-      return this.doctorDutyRepo.save(existing);
-    }
-
-    // Create new duty record
-    const duty = this.doctorDutyRepo.create({
-      doctorId: dto.doctorId,
-      facilityId,
-      departmentId: dto.departmentId,
-      dutyDate: new Date(today),
-      status: DutyStatus.ON_DUTY,
-      checkInTime: new Date().toTimeString().split(' ')[0],
-      roomNumber: dto.roomNumber,
-      ...(dto.maxPatients != null ? { maxPatients: dto.maxPatients } : {}),
-      markedById,
-      tenantId: tid,
-    });
-
-    return this.doctorDutyRepo.save(duty);
   }
 
   async checkOut(id: string, notes?: string, tenantId?: string): Promise<DoctorDuty> {
