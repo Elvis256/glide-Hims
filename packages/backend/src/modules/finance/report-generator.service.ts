@@ -2,7 +2,7 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ChartOfAccount } from '../../database/entities/chart-of-account.entity';
-import * as XLSX from 'xlsx';
+import * as ExcelJS from 'exceljs';
 import * as PDFDocument from 'pdfkit';
 
 /**
@@ -237,7 +237,7 @@ export class ReportGeneratorService {
    * Export report to Excel format using xlsx library
    */
   async exportToExcel(report: ReportData): Promise<Buffer> {
-    const wb = XLSX.utils.book_new();
+    const wb = new ExcelJS.Workbook();
 
     // Sanitize cell values to prevent formula injection (CWE-1236)
     const FORMULA_LEADERS = /^[=+\-@\t\r\n]/;
@@ -253,34 +253,33 @@ export class ReportGeneratorService {
       return clean;
     });
 
-    const ws = XLSX.utils.json_to_sheet(sanitizedRows);
-
-    // Auto-size columns based on content
+    const ws = wb.addWorksheet(report.reportName.substring(0, 31));
     if (report.rows.length > 0) {
       const colKeys = Object.keys(report.rows[0]);
-      ws['!cols'] = colKeys.map((key) => {
+      // Auto-size columns based on content
+      ws.columns = colKeys.map((key) => {
         const maxLen = Math.max(
           key.length,
           ...report.rows.map((r) => String(r[key] ?? '').length),
         );
-        return { wch: Math.min(maxLen + 2, 50) };
+        return { header: key, key, width: Math.min(maxLen + 2, 50) };
       });
+      for (const row of sanitizedRows) ws.addRow(row);
     }
-
-    XLSX.utils.book_append_sheet(wb, ws, report.reportName.substring(0, 31));
 
     // Add summary sheet if summary data exists
     if (report.summary?.totalValues) {
-      const summaryRows = Object.entries(report.summary.totalValues).map(([key, val]) => ({
-        Metric: key,
-        Value: val,
-      }));
-      const summaryWs = XLSX.utils.json_to_sheet(summaryRows);
-      XLSX.utils.book_append_sheet(wb, summaryWs, 'Summary');
+      const summaryWs = wb.addWorksheet('Summary');
+      summaryWs.columns = [
+        { header: 'Metric', key: 'Metric' },
+        { header: 'Value', key: 'Value' },
+      ];
+      for (const [key, val] of Object.entries(report.summary.totalValues)) {
+        summaryWs.addRow({ Metric: key, Value: val });
+      }
     }
 
-    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-    return Buffer.from(buf);
+    return Buffer.from(await wb.xlsx.writeBuffer());
   }
 
   /**

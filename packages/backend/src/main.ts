@@ -12,6 +12,7 @@ import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import helmet from 'helmet';
 import * as cookieParser from 'cookie-parser';
+import * as express from 'express';
 import { AppModule } from './app.module';
 import { GlobalJwtAuthGuard } from './modules/auth/guards/global-jwt.guard';
 import { SecurityAuditInterceptor } from './common/interceptors/security-audit.interceptor';
@@ -91,9 +92,15 @@ async function bootstrap() {
   // Cookie parser for httpOnly JWT cookies
   app.use(cookieParser());
 
-  // Increase body size limit for logo uploads (base64 encoded images)
-  app.useBodyParser('json', { limit: '10mb' });
-  app.useBodyParser('urlencoded', { extended: true, limit: '10mb' } as any);
+  // Body size limits: large JSON bodies are only legitimate where base64
+  // images (branding/logos) or offline-sync batches are posted; every other
+  // endpoint gets a 1mb ceiling so a single request can't buffer 10mb of
+  // attacker-controlled JSON. Webhook routes stay on the Nest parser below
+  // because they need rawBody for signature verification.
+  const largeJson = express.json({ limit: '10mb' });
+  app.use(['/api/v1/system-settings', '/api/v1/facilities', '/api/v1/sync'], largeJson);
+  app.useBodyParser('json', { limit: '1mb' });
+  app.useBodyParser('urlencoded', { extended: true, limit: '1mb' } as any);
   const reflector = app.get(Reflector);
 
   // Global JWT authentication guard - all endpoints require auth by default

@@ -23,7 +23,7 @@ import {
   AlertTriangle,
   Pill,
 } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { servicesService, type Service, labService } from '../../../services';
 import { formatCurrency, CURRENCY_SYMBOL } from '../../../lib/currency';
 import {
@@ -277,15 +277,23 @@ export default function PricingManagementPage() {
       ]);
     });
 
-    const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols'] = [
-      { wch: 10 }, { wch: 16 }, { wch: 38 }, { wch: 20 },
-      { wch: 18 }, { wch: 24 }, { wch: 2 }, { wch: 40 },
-    ];
-
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Price List');
-    XLSX.writeFile(wb, `Insurance_Prices_${provider.name.replace(/\s+/g, '_')}_Template.xlsx`);
+    (async () => {
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('Price List');
+      const widths = [10, 16, 38, 20, 18, 24, 2, 40];
+      ws.columns = widths.map((w) => ({ width: w }));
+      rows.forEach((r) => ws.addRow(r));
+      const buf = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buf], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Insurance_Prices_${provider.name.replace(/\s+/g, '_')}_Template.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    })();
   }, [provs, priceListData, services, labTests, medications]);
 
   const handleFileUpload = useCallback(async (file: File) => {
@@ -295,9 +303,13 @@ export default function PricingManagementPage() {
 
     try {
       const data = await file.arrayBuffer();
-      const wb = XLSX.read(data);
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(data);
+      const ws = wb.worksheets[0];
+      const rows: any[][] = [];
+      ws?.eachRow((row) => {
+        rows.push((row.values as any[]).slice(1).map(excelCellValue));
+      });
       const dataRows = rows.slice(1); // skip header
 
       const providerPrices = priceListData.filter(
@@ -972,4 +984,16 @@ export default function PricingManagementPage() {
       )}
     </div>
   );
+}
+
+/** Normalize an ExcelJS cell value (rich text, formulas, dates) to a plain value. */
+function excelCellValue(value: any): any {
+  if (value == null) return '';
+  if (typeof value === 'object' && !(value instanceof Date)) {
+    if (Array.isArray(value.richText)) return value.richText.map((t: any) => t.text).join('');
+    if (value.text != null) return String(value.text);
+    if (value.result != null) return excelCellValue(value.result);
+    return '';
+  }
+  return value;
 }
