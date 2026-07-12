@@ -386,6 +386,32 @@ export class QueueManagementService {
     while (true) {
       try {
         txResult = await this.dataSource.transaction(async (manager) => {
+          // Patient lock FIRST (consistent ordering with the ticket lock below
+          // avoids deadlocks): validateQueueRequest ran before this
+          // transaction, so two concurrent requests for the SAME patient can
+          // both pass its duplicate checks. Re-run them under the lock.
+          await manager.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
+            `queue_patient:${dto.patientId}`,
+          ]);
+          const dupQueue = await manager.findOne(Queue, {
+            where: {
+              patientId: dto.patientId,
+              facilityId,
+              status: In([
+                QueueStatus.WAITING,
+                QueueStatus.CALLED,
+                QueueStatus.IN_SERVICE,
+                QueueStatus.PENDING_PAYMENT,
+              ]),
+              tenantId: tid,
+            },
+          });
+          if (dupQueue) {
+            throw new BadRequestException(
+              `Patient is already in queue with token ${dupQueue.ticketNumber}`,
+            );
+          }
+
           await manager.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
             `queue:${facilityId}:${servicePointPrefix}:${queueDateKey}`,
           ]);
@@ -445,6 +471,7 @@ export class QueueManagementService {
 
           // Auto-create consultation invoice (non-blocking within the transaction)
           let txInvoice: Invoice | null = null;
+          let effectiveInitialStatus = initialQueueStatus;
           try {
             txInvoice = await this.createConsultationInvoice(
               dto.patientId,
@@ -461,10 +488,19 @@ export class QueueManagementService {
             );
             this.logger.log(`Invoice ${txInvoice.invoiceNumber} created for token ${ticketNumber}`);
           } catch (err) {
-            // Non-blocking: if invoice creation fails, still issue the token
+            // Non-blocking: if invoice creation fails, still issue the token —
+            // but never gate the patient on a payment that has no invoice to
+            // pay (PENDING_PAYMENT with no invoice is an unrecoverable dead
+            // end at the cashier). Downgrade to WAITING and flag for billing.
             this.logger.warn(
               `Failed to auto-create invoice for token ${ticketNumber}: ${err.message}`,
             );
+            if (effectiveInitialStatus === QueueStatus.PENDING_PAYMENT) {
+              effectiveInitialStatus = QueueStatus.WAITING;
+              this.logger.warn(
+                `Token ${ticketNumber}: PENDING_PAYMENT downgraded to WAITING (no invoice); bill manually`,
+              );
+            }
           }
 
           // Mirror the resolved doctor onto the encounter so doctor-scoped
@@ -490,7 +526,7 @@ export class QueueManagementService {
             facilityId,
             createdById: userId,
             encounterId: txEncounter.id,
-            status: initialQueueStatus,
+            status: effectiveInitialStatus,
             priority: resolvedPriority,
             visitType: dto.visitType,
             chiefComplaintAtToken: dto.chiefComplaintAtToken,
@@ -548,7 +584,7 @@ export class QueueManagementService {
       await this.updateDoctorQueueCount(finalAssignedDoctorId, facilityId, tenantId);
     }
 
-    await this.writeAuditLog(saved.id, 'QUEUE_CREATED', userId, null, initialQueueStatus);
+    await this.writeAuditLog(saved.id, 'QUEUE_CREATED', userId, null, saved.status);
 
     const result = await this.queueRepository.findOne({
       where: { id: saved.id, tenantId: tid },
@@ -791,9 +827,20 @@ export class QueueManagementService {
       `Consultation fee resolved to ${fee} via ${feeSource} (doctor=${assignedDoctorId ?? '-'}, dept=${departmentId ?? '-'})`,
     );
 
-    // Generate invoice number
+    // Generate invoice number. Serialize with the same advisory-lock key the
+    // billing module uses conceptually: MAX+1 against a UNIQUE column races
+    // whenever two tokens are issued concurrently at different service
+    // points/facilities (the addToQueue lock doesn't cover that).
     const datePrefix = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const invQb = this.invoiceRepository
+    if (manager) {
+      // Same key as BillingService.generateInvoiceNumber so both generators
+      // serialize against each other, not just against themselves.
+      await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+        `inv_num_${datePrefix}_${tid}`,
+      ]);
+    }
+    const invRepo = manager ? manager.getRepository(Invoice) : this.invoiceRepository;
+    const invQb = invRepo
       .createQueryBuilder('inv')
       .where('inv.invoice_number LIKE :prefix', { prefix: `INV${datePrefix}%` });
     invQb.andWhere('inv.tenant_id = :tenantId', { tenantId: tid });
@@ -1448,18 +1495,7 @@ export class QueueManagementService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     queue.queueDate = today;
-    queue.ticketNumber = await this.generateTicketNumber(
-      queue.facilityId,
-      dto.nextServicePoint as ServicePoint,
-      today,
-      tenantId,
-    );
-    queue.sequenceNumber = await this.getNextSequenceNumber(
-      queue.facilityId,
-      dto.nextServicePoint as ServicePoint,
-      today,
-      tenantId,
-    );
+
     queue.estimatedWaitMinutes = await this.calculateSmartWaitTime(
       queue.facilityId,
       dto.nextServicePoint as ServicePoint,
@@ -1475,55 +1511,47 @@ export class QueueManagementService {
     queue.counterNumber = null;
     queue.roomNumber = null;
 
-    try {
-      const saved = await this.queueRepository.save(queue);
-
-      // Sync encounter to correct intermediate status based on destination
-      const encounterStatus = this.mapServicePointToEncounterStatus(dto.nextServicePoint);
-      await this.syncEncounterStatus(queue.encounterId, encounterStatus);
-      await this.writeAuditLog(
-        id,
-        `TRANSFERRED_${prevServicePoint.toUpperCase()}_TO_${dto.nextServicePoint.toUpperCase()}`,
-        userId,
-        prevStatus,
-        QueueStatus.WAITING,
-        dto.transferReason,
+    // Ticket/sequence regeneration must be serialized the same way as
+    // addToQueue — the old transfer path generated numbers with no lock and
+    // relied on a single retry, so concurrent transfers/token issuance at the
+    // same service point could still collide on the unique index.
+    const destPrefix = this.getServicePointPrefix(dto.nextServicePoint as string);
+    const dateKey = today.toISOString().slice(0, 10);
+    const saved = await this.dataSource.transaction(async (manager) => {
+      await manager.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
+        `queue:${queue.facilityId}:${destPrefix}:${dateKey}`,
+      ]);
+      queue.ticketNumber = await this.generateTicketNumber(
+        queue.facilityId,
+        dto.nextServicePoint as ServicePoint,
+        today,
+        tenantId,
+        manager,
       );
+      queue.sequenceNumber = await this.getNextSequenceNumber(
+        queue.facilityId,
+        dto.nextServicePoint as ServicePoint,
+        today,
+        tenantId,
+        manager,
+      );
+      return manager.save(queue);
+    });
 
-      this.fireTransferNotification(saved, prevServicePoint, dto, tenantId);
-      return saved;
-    } catch (error) {
-      // Retry once on unique constraint violation (race condition on ticket number)
-      if (error?.code === '23505' || error?.message?.includes('duplicate key')) {
-        this.logger.warn(`Ticket collision during transfer for queue ${id}, retrying...`);
-        queue.ticketNumber = await this.generateTicketNumber(
-          queue.facilityId,
-          dto.nextServicePoint as ServicePoint,
-          today,
-          tenantId,
-        );
-        queue.sequenceNumber = await this.getNextSequenceNumber(
-          queue.facilityId,
-          dto.nextServicePoint as ServicePoint,
-          today,
-          tenantId,
-        );
-        const saved = await this.queueRepository.save(queue);
-        const encounterStatus = this.mapServicePointToEncounterStatus(dto.nextServicePoint);
-        await this.syncEncounterStatus(queue.encounterId, encounterStatus);
-        await this.writeAuditLog(
-          id,
-          `TRANSFERRED_${prevServicePoint.toUpperCase()}_TO_${dto.nextServicePoint.toUpperCase()}`,
-          userId,
-          prevStatus,
-          QueueStatus.WAITING,
-          dto.transferReason,
-        );
-        this.fireTransferNotification(saved, prevServicePoint, dto, tenantId);
-        return saved;
-      }
-      throw error;
-    }
+    // Sync encounter to correct intermediate status based on destination
+    const encounterStatus = this.mapServicePointToEncounterStatus(dto.nextServicePoint);
+    await this.syncEncounterStatus(queue.encounterId, encounterStatus);
+    await this.writeAuditLog(
+      id,
+      `TRANSFERRED_${prevServicePoint.toUpperCase()}_TO_${dto.nextServicePoint.toUpperCase()}`,
+      userId,
+      prevStatus,
+      QueueStatus.WAITING,
+      dto.transferReason,
+    );
+
+    this.fireTransferNotification(saved, prevServicePoint, dto, tenantId);
+    return saved;
   }
 
   /** Best-effort in-app notification to staff at the destination service point. */
@@ -1591,41 +1619,52 @@ export class QueueManagementService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const ticketNumber = await this.generateTicketNumber(
-      encounter.facilityId,
-      servicePoint as ServicePoint,
-      today,
-      tenantId,
-    );
-    const sequenceNumber = await this.getNextSequenceNumber(
-      encounter.facilityId,
-      servicePoint as ServicePoint,
-      today,
-      tenantId,
-    );
+    // Same serialization as addToQueue/transfer: numbers must be generated
+    // under the per-(facility, service point, date) advisory lock.
+    const spPrefix = this.getServicePointPrefix(servicePoint);
+    const spDateKey = today.toISOString().slice(0, 10);
+    const saved = await this.dataSource.transaction(async (manager) => {
+      await manager.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
+        `queue:${encounter.facilityId}:${spPrefix}:${spDateKey}`,
+      ]);
+      const ticketNumber = await this.generateTicketNumber(
+        encounter.facilityId,
+        servicePoint as ServicePoint,
+        today,
+        tenantId,
+        manager,
+      );
+      const sequenceNumber = await this.getNextSequenceNumber(
+        encounter.facilityId,
+        servicePoint as ServicePoint,
+        today,
+        tenantId,
+        manager,
+      );
 
-    const newQueue = this.queueRepository.create({
-      ticketNumber,
-      sequenceNumber,
-      queueDate: today,
-      servicePoint: servicePoint as ServicePoint,
-      status: QueueStatus.WAITING,
-      priority: QueuePriority.ROUTINE,
-      patientId: encounter.patientId,
-      encounterId,
-      facilityId: encounter.facilityId,
-      createdById: encounter.createdById,
-      transferReason: reason || '',
-      tenantId: tid,
+      const newQueue = manager.create(Queue, {
+        ticketNumber,
+        sequenceNumber,
+        queueDate: today,
+        servicePoint: servicePoint as ServicePoint,
+        status: QueueStatus.WAITING,
+        priority: QueuePriority.ROUTINE,
+        patientId: encounter.patientId,
+        encounterId,
+        facilityId: encounter.facilityId,
+        createdById: encounter.createdById,
+        transferReason: reason || '',
+        tenantId: tid,
+      });
+
+      return manager.save(Queue, newQueue);
     });
-
-    const saved = await this.queueRepository.save(newQueue);
 
     const encounterStatus = this.mapServicePointToEncounterStatus(servicePoint);
     await this.syncEncounterStatus(encounterId, encounterStatus);
 
     this.logger.log(
-      `Created new queue entry ${ticketNumber} for encounter ${encounterId} at ${servicePoint}`,
+      `Created new queue entry ${saved.ticketNumber} for encounter ${encounterId} at ${servicePoint}`,
     );
 
     return saved;
@@ -1954,15 +1993,26 @@ export class QueueManagementService {
       const encounter = await this.encounterRepository.findOne({ where: { id: encounterId } });
       if (!encounter || encounter.status === status) return;
 
-      // Only sync if the encounter is in a state that logically allows this transition
+      // Only sync if the encounter is in a state that logically allows this
+      // transition. Every non-terminal state may cancel (cancelFromQueue used
+      // to be silently skipped here, leaving the visit open and blocking the
+      // patient's next token) and may admit (IPD moves were skipped too).
       const safeTransitions: Partial<Record<string, string[]>> = {
-        registered: ['triage', 'waiting', 'in_consultation'],
-        triage: ['waiting', 'in_consultation'],
-        waiting: ['in_consultation'],
-        in_consultation: ['pending_lab', 'pending_pharmacy', 'pending_payment', 'completed'],
-        pending_lab: ['in_consultation', 'return_to_doctor'],
-        pending_pharmacy: ['in_consultation', 'return_to_doctor'],
-        pending_payment: ['completed', 'return_to_doctor'],
+        registered: ['triage', 'waiting', 'in_consultation', 'admitted', 'cancelled'],
+        triage: ['waiting', 'in_consultation', 'admitted', 'cancelled'],
+        waiting: ['in_consultation', 'admitted', 'cancelled'],
+        in_consultation: [
+          'pending_lab',
+          'pending_pharmacy',
+          'pending_payment',
+          'completed',
+          'admitted',
+          'cancelled',
+        ],
+        pending_lab: ['in_consultation', 'return_to_doctor', 'cancelled'],
+        pending_pharmacy: ['in_consultation', 'return_to_doctor', 'cancelled'],
+        pending_payment: ['completed', 'return_to_doctor', 'cancelled'],
+        return_to_doctor: ['in_consultation', 'completed', 'admitted', 'cancelled'],
       };
 
       const allowed = safeTransitions[encounter.status] || [];
