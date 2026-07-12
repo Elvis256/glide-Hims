@@ -105,6 +105,7 @@ export class AppointmentsController {
       facilityId,
       body.cancellationReason,
       req.user?.tenantId,
+      req.user?.id || req.user?.sub,
     );
   }
 
