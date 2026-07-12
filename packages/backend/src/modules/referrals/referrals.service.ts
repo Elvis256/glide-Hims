@@ -9,6 +9,7 @@ import {
   CompleteReferralDto,
   ReferralFilterDto,
 } from './dto/referral.dto';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class ReferralsService {
@@ -23,6 +24,7 @@ export class ReferralsService {
     facilityId: string,
     tenantId?: string,
   ): Promise<Referral> {
+    const tid = requireTenantId(tenantId);
     const referralNumber = await this.generateReferralNumber(facilityId);
 
     // Calculate expiry date (default 30 days)
@@ -37,7 +39,7 @@ export class ReferralsService {
       expiryDate,
       status: ReferralStatus.PENDING,
     });
-    if (tenantId) referral.tenantId = tenantId;
+    referral.tenantId = tid;
 
     return this.referralRepository.save(referral);
   }
@@ -47,6 +49,7 @@ export class ReferralsService {
     facilityId: string,
     tenantId?: string,
   ): Promise<Referral[]> {
+    const tid = requireTenantId(tenantId);
     const query = this.referralRepository
       .createQueryBuilder('referral')
       .leftJoinAndSelect('referral.patient', 'patient')
@@ -60,9 +63,7 @@ export class ReferralsService {
       { facilityId },
     );
 
-    if (tenantId) {
-      query.andWhere('referral.tenant_id = :tenantId', { tenantId });
-    }
+    query.andWhere('referral.tenant_id = :tenantId', { tenantId: tid });
 
     if (filter.status) {
       query.andWhere('referral.status = :status', { status: filter.status });
@@ -89,8 +90,9 @@ export class ReferralsService {
   }
 
   async findOne(id: string, tenantId?: string): Promise<Referral> {
+    const tid = requireTenantId(tenantId);
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     const referral = await this.referralRepository.findOne({
       where,
@@ -113,8 +115,9 @@ export class ReferralsService {
   }
 
   async findByPatient(patientId: string, tenantId?: string): Promise<Referral[]> {
+    const tid = requireTenantId(tenantId);
     const where: any = { patientId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     return this.referralRepository.find({
       where,
@@ -124,8 +127,9 @@ export class ReferralsService {
   }
 
   async getIncomingReferrals(facilityId: string, tenantId?: string): Promise<Referral[]> {
+    const tid = requireTenantId(tenantId);
     const where: any = { toFacilityId: facilityId, status: ReferralStatus.PENDING };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     return this.referralRepository.find({
       where,
@@ -135,8 +139,9 @@ export class ReferralsService {
   }
 
   async getOutgoingReferrals(facilityId: string, tenantId?: string): Promise<Referral[]> {
+    const tid = requireTenantId(tenantId);
     const where: any = { fromFacilityId: facilityId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     return this.referralRepository.find({
       where,
@@ -226,42 +231,44 @@ export class ReferralsService {
   }
 
   async checkExpiredReferrals(tenantId?: string): Promise<number> {
+    const tid = requireTenantId(tenantId);
     const now = new Date();
     const where: any = {
       status: ReferralStatus.PENDING,
       expiryDate: LessThanOrEqual(now),
     };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     const result = await this.referralRepository.update(where, { status: ReferralStatus.EXPIRED });
 
     return result.affected || 0;
   }
 
   async getReferralStats(facilityId: string, fromDate: Date, toDate: Date, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const incomingWhere: any = {
       toFacilityId: facilityId,
       createdAt: Between(fromDate, toDate),
     };
-    if (tenantId) incomingWhere.tenantId = tenantId;
+    incomingWhere.tenantId = tid;
 
     const outgoingWhere: any = {
       fromFacilityId: facilityId,
       createdAt: Between(fromDate, toDate),
     };
-    if (tenantId) outgoingWhere.tenantId = tenantId;
+    outgoingWhere.tenantId = tid;
 
     const completedWhere: any = {
       toFacilityId: facilityId,
       status: ReferralStatus.COMPLETED,
       createdAt: Between(fromDate, toDate),
     };
-    if (tenantId) completedWhere.tenantId = tenantId;
+    completedWhere.tenantId = tid;
 
     const pendingWhere: any = {
       toFacilityId: facilityId,
       status: ReferralStatus.PENDING,
     };
-    if (tenantId) pendingWhere.tenantId = tenantId;
+    pendingWhere.tenantId = tid;
 
     const incoming = await this.referralRepository.count({ where: incomingWhere });
     const outgoing = await this.referralRepository.count({ where: outgoingWhere });

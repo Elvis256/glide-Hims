@@ -29,6 +29,7 @@ import {
   CreateStorageConditionDto,
   UpdateStorageConditionDto,
 } from './item-classifications.dto';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class ItemClassificationsService {
@@ -53,17 +54,18 @@ export class ItemClassificationsService {
 
   // ============ CATEGORIES ============
   async createCategory(dto: CreateCategoryDto, tenantId?: string): Promise<ItemCategory> {
+    const tid = requireTenantId(tenantId);
     // Auto-generate code from name if not provided
     if (!dto.code || !dto.code.trim()) {
       dto.code = await this.generateCategoryCode(dto.name, dto.facilityId, tenantId);
     }
 
     const existing = await this.categoryRepo.findOne({
-      where: { facilityId: dto.facilityId, code: dto.code, ...(tenantId ? { tenantId } : {}) },
+      where: { facilityId: dto.facilityId, code: dto.code, tenantId: tid },
     });
     if (existing) throw new ConflictException(`Category with code ${dto.code} already exists`);
 
-    const category = this.categoryRepo.create({ ...dto, ...(tenantId ? { tenantId } : {}) });
+    const category = this.categoryRepo.create({ ...dto, tenantId: tid });
     return this.categoryRepo.save(category);
   }
 
@@ -72,6 +74,7 @@ export class ItemClassificationsService {
     facilityId: string,
     tenantId?: string,
   ): Promise<string> {
+    const tid = requireTenantId(tenantId);
     // Create code from first 3 chars of name uppercased, e.g. "Antibiotics" -> "ANT"
     const prefix =
       name
@@ -82,7 +85,7 @@ export class ItemClassificationsService {
     let counter = 1;
     while (true) {
       const existing = await this.categoryRepo.findOne({
-        where: { facilityId, code, ...(tenantId ? { tenantId } : {}) },
+        where: { facilityId, code, tenantId: tid },
       });
       if (!existing) return code;
       code = `${prefix}${counter}`;
@@ -91,6 +94,7 @@ export class ItemClassificationsService {
   }
 
   async getCategories(facilityId: string, includeInactive = false, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const where: any = {};
     if (facilityId && facilityId.trim() !== '') {
       where.facilityId = facilityId;
@@ -98,7 +102,7 @@ export class ItemClassificationsService {
     if (!includeInactive) {
       where.isActive = true;
     }
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     return this.categoryRepo.find({
       where,
       relations: ['subcategories'],
@@ -107,8 +111,9 @@ export class ItemClassificationsService {
   }
 
   async getCategory(id: string, tenantId?: string): Promise<ItemCategory> {
+    const tid = requireTenantId(tenantId);
     const category = await this.categoryRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
       relations: ['subcategories'],
     });
     if (!category) throw new NotFoundException('Category not found');
@@ -132,21 +137,23 @@ export class ItemClassificationsService {
 
   // ============ SUBCATEGORIES ============
   async createSubcategory(dto: CreateSubcategoryDto, tenantId?: string): Promise<ItemSubcategory> {
+    const tid = requireTenantId(tenantId);
     const existing = await this.subcategoryRepo.findOne({
-      where: { categoryId: dto.categoryId, code: dto.code, ...(tenantId ? { tenantId } : {}) },
+      where: { categoryId: dto.categoryId, code: dto.code, tenantId: tid },
     });
     if (existing) throw new ConflictException(`Subcategory with code ${dto.code} already exists`);
 
-    const subcategory = this.subcategoryRepo.create({ ...dto, ...(tenantId ? { tenantId } : {}) });
+    const subcategory = this.subcategoryRepo.create({ ...dto, tenantId: tid });
     return this.subcategoryRepo.save(subcategory);
   }
 
   async getSubcategories(categoryId: string, includeInactive = false, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const where: any = { categoryId };
     if (!includeInactive) {
       where.isActive = true;
     }
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     return this.subcategoryRepo.find({
       where,
       order: { sortOrder: 'ASC', name: 'ASC' },
@@ -158,8 +165,9 @@ export class ItemClassificationsService {
     dto: UpdateSubcategoryDto,
     tenantId?: string,
   ): Promise<ItemSubcategory> {
+    const tid = requireTenantId(tenantId);
     const subcategory = await this.subcategoryRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
     });
     if (!subcategory) throw new NotFoundException('Subcategory not found');
     Object.assign(subcategory, dto);
@@ -167,8 +175,9 @@ export class ItemClassificationsService {
   }
 
   async deleteSubcategory(id: string, tenantId?: string): Promise<void> {
+    const tid = requireTenantId(tenantId);
     const subcategory = await this.subcategoryRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
     });
     if (!subcategory) throw new NotFoundException('Subcategory not found');
     await this.subcategoryRepo.softRemove(subcategory);
@@ -176,16 +185,18 @@ export class ItemClassificationsService {
 
   // ============ BRANDS ============
   async createBrand(dto: CreateBrandDto, tenantId?: string): Promise<ItemBrand> {
+    const tid = requireTenantId(tenantId);
     const existing = await this.brandRepo.findOne({
-      where: { facilityId: dto.facilityId, code: dto.code, ...(tenantId ? { tenantId } : {}) },
+      where: { facilityId: dto.facilityId, code: dto.code, tenantId: tid },
     });
     if (existing) throw new ConflictException(`Brand with code ${dto.code} already exists`);
 
-    const brand = this.brandRepo.create({ ...dto, ...(tenantId ? { tenantId } : {}) });
+    const brand = this.brandRepo.create({ ...dto, tenantId: tid });
     return this.brandRepo.save(brand);
   }
 
   async getBrands(facilityId: string, includeInactive = false, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const where: any = {};
     if (facilityId && facilityId.trim() !== '') {
       where.facilityId = facilityId;
@@ -193,7 +204,7 @@ export class ItemClassificationsService {
     if (!includeInactive) {
       where.isActive = true;
     }
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     return this.brandRepo.find({
       where,
       order: { name: 'ASC' },
@@ -201,8 +212,9 @@ export class ItemClassificationsService {
   }
 
   async updateBrand(id: string, dto: UpdateBrandDto, tenantId?: string): Promise<ItemBrand> {
+    const tid = requireTenantId(tenantId);
     const brand = await this.brandRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
     });
     if (!brand) throw new NotFoundException('Brand not found');
     Object.assign(brand, dto);
@@ -210,8 +222,9 @@ export class ItemClassificationsService {
   }
 
   async deleteBrand(id: string, tenantId?: string): Promise<void> {
+    const tid = requireTenantId(tenantId);
     const brand = await this.brandRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
     });
     if (!brand) throw new NotFoundException('Brand not found');
     await this.brandRepo.softRemove(brand);
@@ -219,16 +232,18 @@ export class ItemClassificationsService {
 
   // ============ TAGS ============
   async createTag(dto: CreateTagDto, tenantId?: string): Promise<ItemTag> {
+    const tid = requireTenantId(tenantId);
     const existing = await this.tagRepo.findOne({
-      where: { facilityId: dto.facilityId, code: dto.code, ...(tenantId ? { tenantId } : {}) },
+      where: { facilityId: dto.facilityId, code: dto.code, tenantId: tid },
     });
     if (existing) throw new ConflictException(`Tag with code ${dto.code} already exists`);
 
-    const tag = this.tagRepo.create({ ...dto, ...(tenantId ? { tenantId } : {}) });
+    const tag = this.tagRepo.create({ ...dto, tenantId: tid });
     return this.tagRepo.save(tag);
   }
 
   async getTags(facilityId: string, tagType?: string, includeInactive = false, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const where: any = {};
     if (facilityId && facilityId.trim() !== '') {
       where.facilityId = facilityId;
@@ -239,7 +254,7 @@ export class ItemClassificationsService {
     if (!includeInactive) {
       where.isActive = true;
     }
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     return this.tagRepo.find({
       where,
       order: { sortOrder: 'ASC', name: 'ASC' },
@@ -247,30 +262,34 @@ export class ItemClassificationsService {
   }
 
   async updateTag(id: string, dto: UpdateTagDto, tenantId?: string): Promise<ItemTag> {
-    const tag = await this.tagRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
+    const tid = requireTenantId(tenantId);
+    const tag = await this.tagRepo.findOne({ where: { id, tenantId: tid } });
     if (!tag) throw new NotFoundException('Tag not found');
     Object.assign(tag, dto);
     return this.tagRepo.save(tag);
   }
 
   async deleteTag(id: string, tenantId?: string): Promise<void> {
-    const tag = await this.tagRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
+    const tid = requireTenantId(tenantId);
+    const tag = await this.tagRepo.findOne({ where: { id, tenantId: tid } });
     if (!tag) throw new NotFoundException('Tag not found');
     await this.tagRepo.softRemove(tag);
   }
 
   // ============ UNITS ============
   async createUnit(dto: CreateUnitDto, tenantId?: string): Promise<ItemUnit> {
+    const tid = requireTenantId(tenantId);
     const existing = await this.unitRepo.findOne({
-      where: { facilityId: dto.facilityId, code: dto.code, ...(tenantId ? { tenantId } : {}) },
+      where: { facilityId: dto.facilityId, code: dto.code, tenantId: tid },
     });
     if (existing) throw new ConflictException(`Unit with code ${dto.code} already exists`);
 
-    const unit = this.unitRepo.create({ ...dto, ...(tenantId ? { tenantId } : {}) });
+    const unit = this.unitRepo.create({ ...dto, tenantId: tid });
     return this.unitRepo.save(unit);
   }
 
   async getUnits(facilityId: string, includeInactive = false, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const where: any = {};
     if (facilityId && facilityId.trim() !== '') {
       where.facilityId = facilityId;
@@ -278,7 +297,7 @@ export class ItemClassificationsService {
     if (!includeInactive) {
       where.isActive = true;
     }
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     return this.unitRepo.find({
       where,
       order: { sortOrder: 'ASC', name: 'ASC' },
@@ -286,30 +305,34 @@ export class ItemClassificationsService {
   }
 
   async updateUnit(id: string, dto: UpdateUnitDto, tenantId?: string): Promise<ItemUnit> {
-    const unit = await this.unitRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
+    const tid = requireTenantId(tenantId);
+    const unit = await this.unitRepo.findOne({ where: { id, tenantId: tid } });
     if (!unit) throw new NotFoundException('Unit not found');
     Object.assign(unit, dto);
     return this.unitRepo.save(unit);
   }
 
   async deleteUnit(id: string, tenantId?: string): Promise<void> {
-    const unit = await this.unitRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
+    const tid = requireTenantId(tenantId);
+    const unit = await this.unitRepo.findOne({ where: { id, tenantId: tid } });
     if (!unit) throw new NotFoundException('Unit not found');
     await this.unitRepo.softRemove(unit);
   }
 
   // ============ FORMULATIONS ============
   async createFormulation(dto: CreateFormulationDto, tenantId?: string): Promise<ItemFormulation> {
+    const tid = requireTenantId(tenantId);
     const existing = await this.formulationRepo.findOne({
-      where: { facilityId: dto.facilityId, code: dto.code, ...(tenantId ? { tenantId } : {}) },
+      where: { facilityId: dto.facilityId, code: dto.code, tenantId: tid },
     });
     if (existing) throw new ConflictException(`Formulation with code ${dto.code} already exists`);
 
-    const formulation = this.formulationRepo.create({ ...dto, ...(tenantId ? { tenantId } : {}) });
+    const formulation = this.formulationRepo.create({ ...dto, tenantId: tid });
     return this.formulationRepo.save(formulation);
   }
 
   async getFormulations(facilityId: string, includeInactive = false, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const where: any = {};
     if (facilityId && facilityId.trim() !== '') {
       where.facilityId = facilityId;
@@ -317,7 +340,7 @@ export class ItemClassificationsService {
     if (!includeInactive) {
       where.isActive = true;
     }
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     return this.formulationRepo.find({
       where,
       order: { name: 'ASC' },
@@ -329,8 +352,9 @@ export class ItemClassificationsService {
     dto: UpdateFormulationDto,
     tenantId?: string,
   ): Promise<ItemFormulation> {
+    const tid = requireTenantId(tenantId);
     const formulation = await this.formulationRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
     });
     if (!formulation) throw new NotFoundException('Formulation not found');
     Object.assign(formulation, dto);
@@ -338,8 +362,9 @@ export class ItemClassificationsService {
   }
 
   async deleteFormulation(id: string, tenantId?: string): Promise<void> {
+    const tid = requireTenantId(tenantId);
     const formulation = await this.formulationRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
     });
     if (!formulation) throw new NotFoundException('Formulation not found');
     await this.formulationRepo.softRemove(formulation);
@@ -347,16 +372,18 @@ export class ItemClassificationsService {
 
   // ============ STRENGTHS ============
   async createStrength(dto: CreateStrengthDto, tenantId?: string): Promise<ItemStrength> {
+    const tid = requireTenantId(tenantId);
     const existing = await this.strengthRepo.findOne({
-      where: { facilityId: dto.facilityId, code: dto.code, ...(tenantId ? { tenantId } : {}) },
+      where: { facilityId: dto.facilityId, code: dto.code, tenantId: tid },
     });
     if (existing) throw new ConflictException(`Strength with code ${dto.code} already exists`);
 
-    const strength = this.strengthRepo.create({ ...dto, ...(tenantId ? { tenantId } : {}) });
+    const strength = this.strengthRepo.create({ ...dto, tenantId: tid });
     return this.strengthRepo.save(strength);
   }
 
   async getStrengths(facilityId: string, includeInactive = false, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const where: any = {};
     if (facilityId && facilityId.trim() !== '') {
       where.facilityId = facilityId;
@@ -364,7 +391,7 @@ export class ItemClassificationsService {
     if (!includeInactive) {
       where.isActive = true;
     }
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     return this.strengthRepo.find({
       where,
       order: { sortOrder: 'ASC', name: 'ASC' },
@@ -376,8 +403,9 @@ export class ItemClassificationsService {
     dto: UpdateStrengthDto,
     tenantId?: string,
   ): Promise<ItemStrength> {
+    const tid = requireTenantId(tenantId);
     const strength = await this.strengthRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
     });
     if (!strength) throw new NotFoundException('Strength not found');
     Object.assign(strength, dto);
@@ -385,8 +413,9 @@ export class ItemClassificationsService {
   }
 
   async deleteStrength(id: string, tenantId?: string): Promise<void> {
+    const tid = requireTenantId(tenantId);
     const strength = await this.strengthRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
     });
     if (!strength) throw new NotFoundException('Strength not found');
     await this.strengthRepo.softRemove(strength);
@@ -397,17 +426,19 @@ export class ItemClassificationsService {
     dto: CreateStorageConditionDto,
     tenantId?: string,
   ): Promise<StorageCondition> {
+    const tid = requireTenantId(tenantId);
     const existing = await this.storageRepo.findOne({
-      where: { facilityId: dto.facilityId, code: dto.code, ...(tenantId ? { tenantId } : {}) },
+      where: { facilityId: dto.facilityId, code: dto.code, tenantId: tid },
     });
     if (existing)
       throw new ConflictException(`Storage condition with code ${dto.code} already exists`);
 
-    const storage = this.storageRepo.create({ ...dto, ...(tenantId ? { tenantId } : {}) });
+    const storage = this.storageRepo.create({ ...dto, tenantId: tid });
     return this.storageRepo.save(storage);
   }
 
   async getStorageConditions(facilityId: string, includeInactive = false, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const where: any = {};
     if (facilityId && facilityId.trim() !== '') {
       where.facilityId = facilityId;
@@ -415,7 +446,7 @@ export class ItemClassificationsService {
     if (!includeInactive) {
       where.isActive = true;
     }
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     return this.storageRepo.find({
       where,
       order: { name: 'ASC' },
@@ -427,8 +458,9 @@ export class ItemClassificationsService {
     dto: UpdateStorageConditionDto,
     tenantId?: string,
   ): Promise<StorageCondition> {
+    const tid = requireTenantId(tenantId);
     const storage = await this.storageRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
     });
     if (!storage) throw new NotFoundException('Storage condition not found');
     Object.assign(storage, dto);
@@ -436,8 +468,9 @@ export class ItemClassificationsService {
   }
 
   async deleteStorageCondition(id: string, tenantId?: string): Promise<void> {
+    const tid = requireTenantId(tenantId);
     const storage = await this.storageRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
     });
     if (!storage) throw new NotFoundException('Storage condition not found');
     await this.storageRepo.softRemove(storage);

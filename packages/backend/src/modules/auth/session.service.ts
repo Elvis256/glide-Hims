@@ -4,6 +4,7 @@ import { Repository, LessThan } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { Session } from '../../database/entities/session.entity';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class SessionService {
@@ -63,8 +64,8 @@ export class SessionService {
   }
 
   async getUserSessions(userId: string, tenantId?: string): Promise<Session[]> {
-    const where: any = { userId, isActive: true };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { userId, isActive: true, tenantId: tid };
 
     return this.sessionRepository.find({
       where,

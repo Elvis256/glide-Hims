@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { requireTenantId } from '../../common/utils/tenant.util';
 import {
   DrugDiseaseInteraction,
   DrugDiseaseSeverity,
@@ -36,13 +37,14 @@ export class DrugDiseaseService {
    */
   async checkDrugDiseaseInteractions(input: DrugDiseaseCheckInput): Promise<SafetyAlert[]> {
     const { patientId, drugIds, drugIdToName, encounterId, tenantId } = input;
+    const tid = requireTenantId(tenantId);
     if (drugIds.length === 0) return [];
 
     // 1. Gather ICD-10 codes from chronic conditions
     const chronicConditions = await this.chronicRepo.find({
       where: {
         patientId,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
       relations: ['diagnosis'],
     });
@@ -57,7 +59,7 @@ export class DrugDiseaseService {
     // 2. Gather ICD-10 codes from current encounter clinical notes
     if (encounterId) {
       const notes = await this.clinicalNoteRepo.find({
-        where: { encounterId, ...(tenantId ? { tenantId } : {}) },
+        where: { encounterId, tenantId: tid },
       });
       for (const note of notes) {
         if (Array.isArray(note.diagnoses)) {
@@ -86,7 +88,7 @@ export class DrugDiseaseService {
         '(ddi.drug_id IN (:...drugIds) OR ddi.drug_classification_id IS NOT NULL)',
         { drugIds },
       )
-      .andWhere(tenantId ? 'ddi.tenant_id = :tenantId' : '1=1', { tenantId })
+      .andWhere('ddi.tenant_id = :tenantId', { tenantId: tid })
       .getMany();
 
     for (const rule of rules) {
@@ -132,35 +134,40 @@ export class DrugDiseaseService {
     data: Partial<DrugDiseaseInteraction>,
     tenantId?: string,
   ): Promise<DrugDiseaseInteraction> {
+    const tid = requireTenantId(tenantId);
     const rule = this.interactionRepo.create({
       ...data,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
     return this.interactionRepo.save(rule);
   }
 
   async findAll(tenantId?: string): Promise<DrugDiseaseInteraction[]> {
+    const tid = requireTenantId(tenantId);
     return this.interactionRepo.find({
-      where: { ...(tenantId ? { tenantId } : {}), isActive: true },
+      where: { tenantId: tid, isActive: true },
       order: { icd10Code: 'ASC' },
     });
   }
 
   async findOne(id: string, tenantId?: string): Promise<DrugDiseaseInteraction> {
+    const tid = requireTenantId(tenantId);
     const rule = await this.interactionRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
     });
     if (!rule) throw new NotFoundException('Drug-disease interaction rule not found');
     return rule;
   }
 
   async findByDrug(drugId: string, tenantId?: string): Promise<DrugDiseaseInteraction[]> {
+    const tid = requireTenantId(tenantId);
     return this.interactionRepo.find({
-      where: { drugId, isActive: true, ...(tenantId ? { tenantId } : {}) },
+      where: { drugId, isActive: true, tenantId: tid },
     });
   }
 
   async findByDiagnosis(icd10Code: string, tenantId?: string): Promise<DrugDiseaseInteraction[]> {
+    const tid = requireTenantId(tenantId);
     // Exact and prefix match
     return this.interactionRepo
       .createQueryBuilder('ddi')
@@ -169,7 +176,7 @@ export class DrugDiseaseService {
         '(ddi.icd10_code = :code OR :code LIKE ddi.icd10_code || \'%\')',
         { code: icd10Code },
       )
-      .andWhere(tenantId ? 'ddi.tenant_id = :tenantId' : '1=1', { tenantId })
+      .andWhere('ddi.tenant_id = :tenantId', { tenantId: tid })
       .getMany();
   }
 

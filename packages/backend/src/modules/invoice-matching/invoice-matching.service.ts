@@ -9,6 +9,7 @@ import {
 import { PurchaseOrder } from '../../database/entities/purchase-order.entity';
 import { GoodsReceiptNote } from '../../database/entities/goods-receipt.entity';
 import { CreateInvoiceMatchDto, ApproveMatchDto } from './dto/invoice-match.dto';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class InvoiceMatchingService {

@@ -5,6 +5,7 @@ import { Supplier } from '../../database/entities/supplier.entity';
 import { PurchaseOrder } from '../../database/entities/purchase-order.entity';
 import { GoodsReceiptNote, GoodsReceiptItem } from '../../database/entities/goods-receipt.entity';
 import { InvoiceMatch } from '../../database/entities/invoice-match.entity';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 export interface ScoreBreakdown {
   delivery: number;
@@ -75,16 +76,17 @@ export class SupplierScoringService {
     dateFrom?: string,
     dateTo?: string,
   ): Promise<{ scores: ScoreBreakdown; metrics: SupplierScorecard['metrics'] }> {
+    const tid = requireTenantId(tenantId);
     const deliveryResult = await this.calculateDeliveryScore(
       supplierId,
-      tenantId,
+      tid,
       dateFrom,
       dateTo,
     );
-    const qualityResult = await this.calculateQualityScore(supplierId, tenantId, dateFrom, dateTo);
+    const qualityResult = await this.calculateQualityScore(supplierId, tid, dateFrom, dateTo);
     const invoiceResult = await this.calculateInvoiceAccuracyScore(
       supplierId,
-      tenantId,
+      tid,
       dateFrom,
       dateTo,
     );
@@ -120,8 +122,9 @@ export class SupplierScoringService {
     dateFrom?: string,
     dateTo?: string,
   ): Promise<SupplierScorecard> {
+    const tid = requireTenantId(tenantId);
     const supplier = await this.supplierRepo.findOneOrFail({
-      where: { id: supplierId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: supplierId, tenantId: tid },
     });
     const { scores, metrics } = await this.calculateScore(supplierId, tenantId, dateFrom, dateTo);
 
@@ -132,7 +135,7 @@ export class SupplierScoringService {
       .orderBy('po.order_date', 'DESC')
       .limit(10);
 
-    if (tenantId) recentPOQuery.andWhere('po.tenant_id = :tenantId', { tenantId });
+    recentPOQuery.andWhere('po.tenant_id = :tenantId', { tenantId: tid });
 
     const recentPOs = await recentPOQuery.getMany();
 
@@ -160,8 +163,9 @@ export class SupplierScoringService {
   }
 
   async getSupplierRankings(tenantId?: string): Promise<SupplierRanking[]> {
+    const tid = requireTenantId(tenantId);
     const query = this.supplierRepo.createQueryBuilder('s');
-    if (tenantId) query.where('s.tenant_id = :tenantId', { tenantId });
+    query.where('s.tenant_id = :tenantId', { tenantId: tid });
 
     const suppliers = await query.getMany();
 
@@ -194,7 +198,7 @@ export class SupplierScoringService {
 
   private async calculateDeliveryScore(
     supplierId: string,
-    tenantId?: string,
+    tenantId: string,
     dateFrom?: string,
     dateTo?: string,
   ): Promise<{ score: number; totalPOs: number; onTime: number }> {
@@ -207,7 +211,7 @@ export class SupplierScoringService {
         statuses: ['partially_received', 'fully_received', 'closed'],
       });
 
-    if (tenantId) query.andWhere('po.tenant_id = :tenantId', { tenantId });
+    query.andWhere('po.tenant_id = :tenantId', { tenantId });
     if (dateFrom) query.andWhere('po.order_date >= :dateFrom', { dateFrom });
     if (dateTo) query.andWhere('po.order_date <= :dateTo', { dateTo });
 
@@ -225,7 +229,7 @@ export class SupplierScoringService {
         .orderBy('grn.received_at', 'ASC')
         .limit(1);
 
-      if (tenantId) grnQuery.andWhere('grn.tenant_id = :tenantId', { tenantId });
+      grnQuery.andWhere('grn.tenant_id = :tenantId', { tenantId });
 
       const grn = await grnQuery.getOne();
 
@@ -247,7 +251,7 @@ export class SupplierScoringService {
 
   private async calculateQualityScore(
     supplierId: string,
-    tenantId?: string,
+    tenantId: string,
     dateFrom?: string,
     dateTo?: string,
   ): Promise<{ score: number; totalItems: number; accepted: number; rejected: number }> {
@@ -257,7 +261,7 @@ export class SupplierScoringService {
       .where('grn.supplier_id = :supplierId', { supplierId })
       .andWhere('grn.status != :cancelled', { cancelled: 'cancelled' });
 
-    if (tenantId) grnQuery.andWhere('grn.tenant_id = :tenantId', { tenantId });
+    grnQuery.andWhere('grn.tenant_id = :tenantId', { tenantId });
     if (dateFrom) grnQuery.andWhere('grn.received_at >= :dateFrom', { dateFrom });
     if (dateTo) grnQuery.andWhere('grn.received_at <= :dateTo', { dateTo });
 
@@ -299,7 +303,7 @@ export class SupplierScoringService {
 
   private async calculateInvoiceAccuracyScore(
     supplierId: string,
-    tenantId?: string,
+    tenantId: string,
     dateFrom?: string,
     dateTo?: string,
   ): Promise<{ score: number; totalInvoices: number; matched: number }> {
@@ -307,7 +311,7 @@ export class SupplierScoringService {
       .createQueryBuilder('im')
       .where('im.supplier_id = :supplierId', { supplierId });
 
-    if (tenantId) query.andWhere('im.tenant_id = :tenantId', { tenantId });
+    query.andWhere('im.tenant_id = :tenantId', { tenantId });
     if (dateFrom) query.andWhere('im.invoice_date >= :dateFrom', { dateFrom });
     if (dateTo) query.andWhere('im.invoice_date <= :dateTo', { dateTo });
 

@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike, DataSource } from 'typeorm';
 import { randomBytes } from 'crypto';
+import { requireTenantId } from '../../common/utils/tenant.util';
 import { Store } from '../../database/entities/store.entity';
 import {
   StockTransfer,
@@ -65,9 +66,8 @@ export class StoresService {
       });
     }
 
-    if (tenantId) {
-      qb.andWhere('item.tenantId = :tenantId', { tenantId });
-    }
+    const tid = requireTenantId(tenantId);
+    qb.andWhere('item.tenantId = :tenantId', { tenantId: tid });
 
     const rawItems = await qb.orderBy('item.name', 'ASC').take(limit).getRawAndEntities();
 
@@ -79,8 +79,8 @@ export class StoresService {
   }
 
   async getItem(id: string, tenantId?: string) {
-    const where: any = { id, deletedAt: null };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { id, deletedAt: null, tenantId: tid };
     const item = await this.itemRepo.findOne({ where });
     if (!item) throw new NotFoundException('Item not found');
     return item;
@@ -88,27 +88,27 @@ export class StoresService {
 
   // Stores
   async createStore(dto: CreateStoreDto, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     return this.storeRepo.save(
       this.storeRepo.create({
         ...dto,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       }),
     );
   }
 
   async findAllStores(facilityId?: string, type?: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const query = this.storeRepo.createQueryBuilder('s').where('s.isActive = true');
     if (facilityId) query.andWhere('s.facilityId = :facilityId', { facilityId });
     if (type) query.andWhere('s.type = :type', { type });
-    if (tenantId) {
-      query.andWhere('s.tenant_id = :tenantId', { tenantId });
-    }
+    query.andWhere('s.tenant_id = :tenantId', { tenantId: tid });
     return query.orderBy('s.name', 'ASC').getMany();
   }
 
   async findStore(id: string, tenantId?: string) {
-    const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { id, tenantId: tid };
     const store = await this.storeRepo.findOne({ where });
     if (!store) throw new NotFoundException('Store not found');
     return store;
@@ -147,6 +147,7 @@ export class StoresService {
       throw new BadRequestException(`Destination store "${toStore.name}" is inactive`);
     }
 
+    const tid = requireTenantId(tenantId);
     const transfer = this.transferRepo.create({
       transferNumber,
       fromStoreId: dto.fromStoreId,
@@ -154,7 +155,7 @@ export class StoresService {
       reason: dto.reason as TransferReason,
       status: TransferStatus.REQUESTED,
       requestedById: userId,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
     const saved = await this.transferRepo.save(transfer);
 
@@ -170,6 +171,7 @@ export class StoresService {
   }
 
   async findAllTransfers(storeId?: string, status?: TransferStatus, limit = 50, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const query = this.transferRepo
       .createQueryBuilder('t')
       .leftJoinAndSelect('t.fromStore', 'fs')
@@ -177,15 +179,13 @@ export class StoresService {
     if (storeId)
       query.andWhere('(t.fromStoreId = :storeId OR t.toStoreId = :storeId)', { storeId });
     if (status) query.andWhere('t.status = :status', { status });
-    if (tenantId) {
-      query.andWhere('t.tenant_id = :tenantId', { tenantId });
-    }
+    query.andWhere('t.tenant_id = :tenantId', { tenantId: tid });
     return query.orderBy('t.createdAt', 'DESC').take(limit).getMany();
   }
 
   async findTransfer(id: string, tenantId?: string) {
-    const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { id, tenantId: tid };
     const transfer = await this.transferRepo.findOne({
       where,
       relations: ['fromStore', 'toStore', 'requestedBy'],
@@ -196,7 +196,8 @@ export class StoresService {
   }
 
   async approveTransfer(id: string, dto: ApproveTransferDto, userId: string, tenantId?: string) {
-    const transfer = await this.findTransfer(id, tenantId);
+    const tid = requireTenantId(tenantId);
+    const transfer = await this.findTransfer(id, tid);
     if (transfer.status !== TransferStatus.REQUESTED) {
       throw new BadRequestException('Transfer is not in requested status');
     }
@@ -215,7 +216,7 @@ export class StoresService {
       const transferRepo = manager.getRepository(StockTransfer);
 
       const fromStore = await manager.getRepository(Store).findOne({
-        where: { id: transfer.fromStoreId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: transfer.fromStoreId, tenantId: tid },
       });
       if (!fromStore) throw new NotFoundException('Source store not found');
 
@@ -233,7 +234,7 @@ export class StoresService {
             itemId: item.itemId,
             facilityId: fromStore.facilityId,
             storeId: transfer.fromStoreId,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: tid,
           },
           lock: { mode: 'pessimistic_write' },
         });
@@ -253,7 +254,7 @@ export class StoresService {
             itemId: item.itemId,
             facilityId: fromStore.facilityId,
             storeId: null as any,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: tid,
           },
           lock: { mode: 'pessimistic_write' },
         });
@@ -283,7 +284,7 @@ export class StoresService {
             referenceId: id,
             notes: `Transfer to ${transfer.toStore?.name || transfer.toStoreId}`,
             createdById: userId,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: tid,
           }),
         );
       }
@@ -295,12 +296,13 @@ export class StoresService {
         shippedAt: new Date(),
       });
 
-      return this.findTransfer(id, tenantId);
+      return this.findTransfer(id, tid);
     });
   }
 
   async receiveTransfer(id: string, dto: ReceiveTransferDto, userId: string, tenantId?: string) {
-    const transfer = await this.findTransfer(id, tenantId);
+    const tid = requireTenantId(tenantId);
+    const transfer = await this.findTransfer(id, tid);
     if (transfer.status !== TransferStatus.IN_TRANSIT) {
       throw new BadRequestException('Transfer is not in transit');
     }
@@ -312,7 +314,7 @@ export class StoresService {
       const transferRepo = manager.getRepository(StockTransfer);
 
       const toStore = await manager.getRepository(Store).findOne({
-        where: { id: transfer.toStoreId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: transfer.toStoreId, tenantId: tid },
       });
       if (!toStore) throw new NotFoundException('Destination store not found');
 
@@ -330,7 +332,7 @@ export class StoresService {
             itemId: item.itemId,
             facilityId: toStore.facilityId,
             storeId: transfer.toStoreId,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: tid,
           },
           lock: { mode: 'pessimistic_write' },
         });
@@ -342,7 +344,7 @@ export class StoresService {
             totalQuantity: 0,
             reservedQuantity: 0,
             availableQuantity: 0,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: tid,
           });
         }
         balance.totalQuantity += qty;
@@ -357,7 +359,7 @@ export class StoresService {
               itemId: item.itemId,
               facilityId: toStore.facilityId,
               storeId: null as any,
-              ...(tenantId ? { tenantId } : {}),
+              tenantId: tid,
             },
             lock: { mode: 'pessimistic_write' },
           });
@@ -368,7 +370,7 @@ export class StoresService {
               totalQuantity: 0,
               reservedQuantity: 0,
               availableQuantity: 0,
-              ...(tenantId ? { tenantId } : {}),
+              tenantId: tid,
             });
           }
           facilityBalance.totalQuantity += qty;
@@ -396,7 +398,7 @@ export class StoresService {
             referenceId: id,
             notes: `Transfer from ${transfer.fromStore?.name || transfer.fromStoreId}`,
             createdById: userId,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: tid,
           }),
         );
       }
@@ -407,12 +409,13 @@ export class StoresService {
         receivedAt: new Date(),
       });
 
-      return this.findTransfer(id, tenantId);
+      return this.findTransfer(id, tid);
     });
   }
 
   async cancelTransfer(id: string, userId: string, tenantId?: string) {
-    const transfer = await this.findTransfer(id, tenantId);
+    const tid = requireTenantId(tenantId);
+    const transfer = await this.findTransfer(id, tid);
     if (transfer.status === TransferStatus.RECEIVED) {
       throw new BadRequestException('Cannot cancel a received transfer');
     }
@@ -425,7 +428,7 @@ export class StoresService {
         const transferRepo = manager.getRepository(StockTransfer);
 
         const fromStore = await manager.getRepository(Store).findOne({
-          where: { id: transfer.fromStoreId, ...(tenantId ? { tenantId } : {}) },
+          where: { id: transfer.fromStoreId, tenantId: tid },
         });
         if (!fromStore) throw new NotFoundException('Source store not found');
 
@@ -439,7 +442,7 @@ export class StoresService {
               itemId: item.itemId,
               facilityId: fromStore.facilityId,
               storeId: transfer.fromStoreId,
-              ...(tenantId ? { tenantId } : {}),
+              tenantId: tid,
             },
             lock: { mode: 'pessimistic_write' },
           });
@@ -456,7 +459,7 @@ export class StoresService {
               itemId: item.itemId,
               facilityId: fromStore.facilityId,
               storeId: null as any,
-              ...(tenantId ? { tenantId } : {}),
+              tenantId: tid,
             },
             lock: { mode: 'pessimistic_write' },
           });
@@ -480,7 +483,7 @@ export class StoresService {
               referenceId: id,
               notes: `Transfer cancelled – stock returned from ${transfer.toStore?.name || transfer.toStoreId}`,
               createdById: userId,
-              ...(tenantId ? { tenantId } : {}),
+              tenantId: tid,
             }),
           );
         }
@@ -490,7 +493,7 @@ export class StoresService {
         });
       });
 
-      return this.findTransfer(id, tenantId);
+      return this.findTransfer(id, tid);
     }
 
     // For requested (not yet dispatched) transfers, just cancel
@@ -538,9 +541,8 @@ export class StoresService {
       qb.andWhere('item.reorderLevel > 0'); // Would need stock balance join for actual low stock check
     }
 
-    if (tenantId) {
-      qb.andWhere('item.tenant_id = :tenantId', { tenantId });
-    }
+    const tid2 = requireTenantId(tenantId);
+    qb.andWhere('item.tenant_id = :tenantId', { tenantId: tid2 });
 
     const [items, total] = await qb
       .orderBy('item.name', 'ASC')
@@ -673,8 +675,8 @@ export class StoresService {
     facilityId: string,
     tenantId?: string,
   ) {
-    const where: any = { id: itemId, deletedAt: null };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { id: itemId, deletedAt: null, tenantId: tid };
     const item = await this.itemRepo.findOne({ where });
     if (!item) throw new NotFoundException('Item not found');
 
@@ -722,8 +724,8 @@ export class StoresService {
 
   // Get stock movements for an item
   async getStockMovements(itemId: string, limit = 50, tenantId?: string) {
-    const where: any = { itemId, deletedAt: null };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { itemId, deletedAt: null, tenantId: tid };
     return this.stockLedgerRepo.find({
       where,
       order: { createdAt: 'DESC' },
@@ -733,8 +735,8 @@ export class StoresService {
   }
 
   async getInventoryItem(id: string, tenantId?: string) {
-    const where: any = { id, deletedAt: null };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { id, deletedAt: null, tenantId: tid };
     const item = await this.itemRepo.findOne({
       where,
       relations: ['itemCategory', 'brand', 'formulation'],
@@ -742,7 +744,7 @@ export class StoresService {
     if (!item) throw new NotFoundException('Item not found');
 
     const balance = await this.stockBalanceRepo.findOne({
-      where: { itemId: id, ...(tenantId ? { tenantId } : {}) },
+      where: { itemId: id, tenantId: tid },
     });
 
     return {
@@ -753,6 +755,7 @@ export class StoresService {
   }
 
   async getLowStockItems(tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     // Get items where current stock is at or below reorder level
     const qb = this.itemRepo
       .createQueryBuilder('item')
@@ -762,9 +765,7 @@ export class StoresService {
       .andWhere('item.deletedAt IS NULL')
       .andWhere('(sb.totalQuantity IS NULL OR sb.totalQuantity <= item.reorderLevel)');
 
-    if (tenantId) {
-      qb.andWhere('item.tenantId = :tenantId', { tenantId });
-    }
+    qb.andWhere('item.tenantId = :tenantId', { tenantId: tid });
 
     const items = await qb.orderBy('item.name', 'ASC').getMany();
 
@@ -772,6 +773,7 @@ export class StoresService {
   }
 
   async getExpiringSoon(facilityId?: string, daysAhead = 90, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     // Audit Phase 1.7 — previous implementation joined StockBalance (which has no
     // expiryDate column), so the requiresExpiryTracking filter never narrowed by
     // actual expiry: every tracked item appeared as "expiring soon". Switched to
@@ -789,7 +791,7 @@ export class StoresService {
         .andWhere('sl.quantity > 0');
 
       if (facilityId) qb.andWhere('sl.facilityId = :facilityId', { facilityId });
-      if (tenantId) qb.andWhere('sl.tenant_id = :tenantId', { tenantId });
+      qb.andWhere('sl.tenant_id = :tenantId', { tenantId: tid });
 
       const rows = await qb.orderBy('sl.expiryDate', 'ASC').getMany();
       const today = new Date();
@@ -825,8 +827,9 @@ export class StoresService {
     storeId: string,
     tenantId?: string,
   ): Promise<StockBalance> {
+    const tid = requireTenantId(tenantId);
     let balance = await this.stockBalanceRepo.findOne({
-      where: { itemId, facilityId, storeId, ...(tenantId ? { tenantId } : {}) },
+      where: { itemId, facilityId, storeId, tenantId: tid },
     });
     if (!balance) {
       balance = this.stockBalanceRepo.create({
@@ -836,13 +839,14 @@ export class StoresService {
         totalQuantity: 0,
         reservedQuantity: 0,
         availableQuantity: 0,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       });
     }
     return balance;
   }
 
   async listMovements(itemId?: string, limit = 50, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const qb = this.stockLedgerRepo
       .createQueryBuilder('sl')
       .leftJoinAndSelect('sl.item', 'item')
@@ -855,9 +859,7 @@ export class StoresService {
     if (itemId) {
       qb.andWhere('sl.item_id = :itemId', { itemId });
     }
-    if (tenantId) {
-      qb.andWhere('sl.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('sl.tenant_id = :tenantId', { tenantId: tid });
     return qb.getMany();
   }
 
@@ -887,6 +889,7 @@ export class StoresService {
   }
 
   async getCategorySummary(tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const qb = this.stockBalanceRepo
       .createQueryBuilder('sb')
       .leftJoinAndSelect('sb.item', 'item')
@@ -895,9 +898,7 @@ export class StoresService {
       .addSelect('SUM(sb.totalQuantity)', 'totalQuantity')
       .groupBy('item.category');
 
-    if (tenantId) {
-      qb.andWhere('sb.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('sb.tenant_id = :tenantId', { tenantId: tid });
 
     return qb.getRawMany();
   }

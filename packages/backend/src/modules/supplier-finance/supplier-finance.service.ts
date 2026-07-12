@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, LessThanOrEqual, LessThan, DataSource } from 'typeorm';
+import { requireTenantId } from '../../common/utils/tenant.util';
 import {
   SupplierPayment,
   SupplierPaymentItem,
@@ -55,7 +56,7 @@ export class SupplierFinanceService {
     // audit BUG-014: count was global per facility — collided across tenants
     // when two tenants shared a facility id. Scope by tenant when supplied.
     const where: any = { facilityId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     const count = await this.paymentRepo.count({ where });
     const date = new Date();
     return `PV${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(count + 1).padStart(5, '0')}`;
@@ -120,7 +121,7 @@ export class SupplierFinanceService {
         remarks: data.remarks,
         status: PaymentVoucherStatus.DRAFT,
         preparedBy: userId,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       });
 
       const saved = (await paymentRepo.save(payment)) as SupplierPayment;
@@ -146,7 +147,7 @@ export class SupplierFinanceService {
 
   async getPaymentVoucher(id: string, tenantId?: string): Promise<SupplierPayment> {
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     const payment = await this.paymentRepo.findOne({
       where,
       relations: [
@@ -195,9 +196,7 @@ export class SupplierFinanceService {
         endDate: filters.endDate,
       });
     }
-    if (tenantId) {
-      qb.andWhere('p.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('p.tenant_id = :tenantId', { tenantId: requireTenantId(tenantId) });
 
     const [data, total] = await qb
       .orderBy('p.createdAt', 'DESC')
@@ -216,7 +215,7 @@ export class SupplierFinanceService {
     return this.dataSource.transaction(async (manager) => {
       const payRepoTx = manager.getRepository(SupplierPayment);
       const payment = await payRepoTx.findOne({
-        where: { id, ...(tenantId ? { tenantId } : {}) },
+        where: { id, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!payment) throw new NotFoundException('Payment voucher not found');
@@ -249,7 +248,7 @@ export class SupplierFinanceService {
     return this.dataSource.transaction(async (manager) => {
       const payRepoTx = manager.getRepository(SupplierPayment);
       const payment = await payRepoTx.findOne({
-        where: { id, ...(tenantId ? { tenantId } : {}) },
+        where: { id, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!payment) throw new NotFoundException('Payment voucher not found');
@@ -317,7 +316,7 @@ export class SupplierFinanceService {
     return this.dataSource.transaction(async (manager) => {
       const payRepoTx = manager.getRepository(SupplierPayment);
       const payment = await payRepoTx.findOne({
-        where: { id, ...(tenantId ? { tenantId } : {}) },
+        where: { id, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!payment) throw new NotFoundException('Payment voucher not found');
@@ -386,7 +385,7 @@ export class SupplierFinanceService {
     return this.dataSource.transaction(async (manager) => {
       const payRepoTx = manager.getRepository(SupplierPayment);
       const payment = await payRepoTx.findOne({
-        where: { id, ...(tenantId ? { tenantId } : {}) },
+        where: { id, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!payment) throw new NotFoundException('Payment voucher not found');
@@ -419,7 +418,7 @@ export class SupplierFinanceService {
     tenantId?: string,
   ): Promise<string> {
     const where: any = { facilityId, noteType: type };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     const count = await this.creditNoteRepo.count({ where });
     const date = new Date();
     const prefix = type === CreditNoteType.CREDIT_NOTE ? 'CN' : 'DN';
@@ -497,7 +496,7 @@ export class SupplierFinanceService {
         status: CreditNoteStatus.DRAFT,
         createdBy: userId,
         notes: data.notes,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       });
 
       const saved = (await noteRepo.save(creditNote)) as SupplierCreditNote;
@@ -525,7 +524,7 @@ export class SupplierFinanceService {
 
   async getCreditNote(id: string, tenantId?: string): Promise<SupplierCreditNote> {
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     const note = await this.creditNoteRepo.findOne({
       where,
       relations: ['supplier', 'items', 'createdByUser', 'approvedByUser'],
@@ -571,9 +570,7 @@ export class SupplierFinanceService {
         endDate: filters.endDate,
       });
     }
-    if (tenantId) {
-      qb.andWhere('cn.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('cn.tenant_id = :tenantId', { tenantId: requireTenantId(tenantId) });
 
     const [data, total] = await qb
       .orderBy('cn.createdAt', 'DESC')
@@ -592,7 +589,7 @@ export class SupplierFinanceService {
     return this.dataSource.transaction(async (manager) => {
       const cnRepoTx = manager.getRepository(SupplierCreditNote);
       const note = await cnRepoTx.findOne({
-        where: { id, ...(tenantId ? { tenantId } : {}) },
+        where: { id, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!note) throw new NotFoundException('Credit/Debit note not found');
@@ -637,7 +634,7 @@ export class SupplierFinanceService {
     return this.dataSource.transaction(async (manager) => {
       const cnRepoTx = manager.getRepository(SupplierCreditNote);
       const note = await cnRepoTx.findOne({
-        where: { id: creditNoteId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: creditNoteId, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!note) throw new NotFoundException('Credit/Debit note not found');
@@ -680,7 +677,7 @@ export class SupplierFinanceService {
     return this.dataSource.transaction(async (manager) => {
       const cnRepoTx = manager.getRepository(SupplierCreditNote);
       const note = await cnRepoTx.findOne({
-        where: { id, ...(tenantId ? { tenantId } : {}) },
+        where: { id, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!note) throw new NotFoundException('Credit/Debit note not found');
@@ -726,7 +723,7 @@ export class SupplierFinanceService {
     closingBalance: number;
   }> {
     const supplier = await this.supplierRepo.findOne({
-      where: { id: supplierId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: supplierId, tenantId: requireTenantId(tenantId) },
     });
     if (!supplier) throw new NotFoundException('Supplier not found');
 
@@ -744,7 +741,7 @@ export class SupplierFinanceService {
       where: {
         supplierId,
         postedAt: Between(startDate, endDate),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
       order: { postedAt: 'ASC' },
     });
@@ -766,7 +763,7 @@ export class SupplierFinanceService {
         supplierId,
         status: PaymentVoucherStatus.PAID,
         paidAt: Between(startDate, endDate),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
       order: { paidAt: 'ASC' },
     });
@@ -789,7 +786,7 @@ export class SupplierFinanceService {
         noteType: CreditNoteType.CREDIT_NOTE,
         status: CreditNoteStatus.APPROVED,
         approvedAt: Between(startDate, endDate),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
       order: { approvedAt: 'ASC' },
     });
@@ -812,7 +809,7 @@ export class SupplierFinanceService {
         noteType: CreditNoteType.DEBIT_NOTE,
         status: CreditNoteStatus.APPROVED,
         approvedAt: Between(startDate, endDate),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
       order: { approvedAt: 'ASC' },
     });
@@ -833,16 +830,16 @@ export class SupplierFinanceService {
 
     // Calculate running balance
         const previousGrns = await this.grnRepo.find({
-      where: { supplierId, postedAt: LessThan(startDate), ...(tenantId ? { tenantId } : {}) },
+      where: { supplierId, postedAt: LessThan(startDate), tenantId: requireTenantId(tenantId) },
     });
     const previousPayments = await this.paymentRepo.find({
-      where: { supplierId, status: PaymentVoucherStatus.PAID, paidAt: LessThan(startDate), ...(tenantId ? { tenantId } : {}) },
+      where: { supplierId, status: PaymentVoucherStatus.PAID, paidAt: LessThan(startDate), tenantId: requireTenantId(tenantId) },
     });
     const previousCreditNotes = await this.creditNoteRepo.find({
-      where: { supplierId, noteType: CreditNoteType.CREDIT_NOTE, status: CreditNoteStatus.APPROVED, approvedAt: LessThan(startDate), ...(tenantId ? { tenantId } : {}) },
+      where: { supplierId, noteType: CreditNoteType.CREDIT_NOTE, status: CreditNoteStatus.APPROVED, approvedAt: LessThan(startDate), tenantId: requireTenantId(tenantId) },
     });
     const previousDebitNotes = await this.creditNoteRepo.find({
-      where: { supplierId, noteType: CreditNoteType.DEBIT_NOTE, status: CreditNoteStatus.APPROVED, approvedAt: LessThan(startDate), ...(tenantId ? { tenantId } : {}) },
+      where: { supplierId, noteType: CreditNoteType.DEBIT_NOTE, status: CreditNoteStatus.APPROVED, approvedAt: LessThan(startDate), tenantId: requireTenantId(tenantId) },
     });
 
     let openingBalance = 0;
@@ -889,7 +886,7 @@ export class SupplierFinanceService {
     };
   }> {
     const suppliers = await this.supplierRepo.find({
-      where: { status: SupplierStatus.ACTIVE, ...(tenantId ? { tenantId } : {}) },
+      where: { status: SupplierStatus.ACTIVE, tenantId: requireTenantId(tenantId) },
     });
     const today = new Date();
 
@@ -913,7 +910,7 @@ export class SupplierFinanceService {
           facilityId,
           supplierId: supplier.id,
           status: GRNStatus.POSTED,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         },
       });
 
@@ -923,7 +920,7 @@ export class SupplierFinanceService {
           facilityId,
           supplierId: supplier.id,
           status: PaymentVoucherStatus.PAID,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         },
       });
 
@@ -994,7 +991,7 @@ export class SupplierFinanceService {
       where: {
         facilityId,
         paymentDate: Between(startDate, endDate),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
       relations: ['supplier'],
     });
@@ -1070,7 +1067,7 @@ export class SupplierFinanceService {
     blockReason?: string;
   }> {
     const grn = await this.grnRepo.findOne({
-      where: { id: grnId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: grnId, tenantId: requireTenantId(tenantId) },
       relations: ['items', 'items.item', 'supplier', 'purchaseOrder'],
     });
     if (!grn) throw new NotFoundException('GRN not found');
@@ -1083,7 +1080,7 @@ export class SupplierFinanceService {
       grn.supplier?.name || grn.purchaseOrder?.supplier?.name || 'Unknown';
 
     const existing = await this.creditNoteRepo.find({
-      where: { grnId, noteType: CreditNoteType.DEBIT_NOTE, ...(tenantId ? { tenantId } : {}) },
+      where: { grnId, noteType: CreditNoteType.DEBIT_NOTE, tenantId: requireTenantId(tenantId) },
       select: ['id', 'noteNumber', 'status', 'totalAmount'],
     });
 

@@ -25,6 +25,7 @@ import {
 } from './dto/surgery.dto';
 import { InventoryService } from '../inventory/inventory.service';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class SurgeryService {
@@ -47,17 +48,19 @@ export class SurgeryService {
   // ============ THEATRE MANAGEMENT ============
 
   async createTheatre(dto: CreateTheatreDto, tenantId?: string): Promise<Theatre> {
+    const tid = requireTenantId(tenantId);
     const theatre = this.theatreRepo.create({
       ...dto,
       type: dto.type as TheatreType,
     });
-    if (tenantId) theatre.tenantId = tenantId;
+    theatre.tenantId = tid;
     return this.theatreRepo.save(theatre);
   }
 
   async getTheatres(facilityId: string, tenantId?: string): Promise<Theatre[]> {
+    const tid = requireTenantId(tenantId);
     const where: any = { facilityId, isActive: true };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     return this.theatreRepo.find({
       where,
@@ -66,8 +69,9 @@ export class SurgeryService {
   }
 
   async getTheatreById(id: string, tenantId?: string): Promise<Theatre> {
+    const tid = requireTenantId(tenantId);
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     const theatre = await this.theatreRepo.findOne({
       where,
@@ -90,6 +94,7 @@ export class SurgeryService {
   // ============ SURGERY SCHEDULING ============
 
   private async generateCaseNumber(facilityId: string, tenantId?: string): Promise<string> {
+    const tid = requireTenantId(tenantId);
     const today = new Date();
     const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
 
@@ -102,7 +107,7 @@ export class SurgeryService {
       where: {
         facilityId,
         createdAt: Between(startOfDay, endOfDay),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
     });
 
@@ -114,13 +119,14 @@ export class SurgeryService {
     userId: string,
     tenantId?: string,
   ): Promise<SurgeryCase> {
+    const tid = requireTenantId(tenantId);
     return this.dataSource.transaction(async (manager) => {
       // Lock the theatre row to prevent concurrent scheduling race conditions
       const theatreQb = manager
         .createQueryBuilder(Theatre, 'theatre')
         .setLock('pessimistic_write')
         .where('theatre.id = :id', { id: dto.theatreId });
-      if (tenantId) theatreQb.andWhere('theatre.tenant_id = :tenantId', { tenantId });
+      theatreQb.andWhere('theatre.tenant_id = :tenantId', { tenantId: tid });
       const theatre = await theatreQb.getOne();
 
       if (!theatre) {
@@ -133,7 +139,7 @@ export class SurgeryService {
           theatreId: dto.theatreId,
           scheduledDate: new Date(dto.scheduledDate),
           status: SurgeryStatus.SCHEDULED,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         },
       });
 
@@ -175,7 +181,7 @@ export class SurgeryService {
         createdById: userId,
         status: SurgeryStatus.SCHEDULED,
       });
-      if (tenantId) surgeryCase.tenantId = tenantId;
+      surgeryCase.tenantId = tid;
 
       const saved = await manager.save(surgeryCase);
 
@@ -206,12 +212,13 @@ export class SurgeryService {
     excludeCaseId?: string,
     tenantId?: string,
   ): Promise<SurgeryCase[]> {
+    const tid = requireTenantId(tenantId);
     const where: any = {
       theatreId,
       scheduledDate: new Date(date),
       status: SurgeryStatus.SCHEDULED,
     };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     const cases = await this.surgeryCaseRepo.find({
       where,
@@ -237,8 +244,9 @@ export class SurgeryService {
   // ============ SURGERY WORKFLOW ============
 
   async getCaseById(id: string, tenantId?: string): Promise<SurgeryCase> {
+    const tid = requireTenantId(tenantId);
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     const surgeryCase = await this.surgeryCaseRepo.findOne({
       where,
@@ -447,6 +455,7 @@ export class SurgeryService {
   // ============ SCHEDULE & DASHBOARD ============
 
   async getTodaySchedule(facilityId: string, tenantId?: string): Promise<SurgeryCase[]> {
+    const tid = requireTenantId(tenantId);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
@@ -457,7 +466,7 @@ export class SurgeryService {
       scheduledDate: Between(today, tomorrow),
       status: SurgeryStatus.SCHEDULED,
     };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     return this.surgeryCaseRepo.find({
       where,
@@ -471,6 +480,7 @@ export class SurgeryService {
     date: string,
     tenantId?: string,
   ): Promise<SurgeryCase[]> {
+    const tid = requireTenantId(tenantId);
     const targetDate = new Date(date);
     targetDate.setHours(0, 0, 0, 0);
     const nextDay = new Date(targetDate);
@@ -480,7 +490,7 @@ export class SurgeryService {
       facilityId,
       scheduledDate: Between(targetDate, nextDay),
     };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     return this.surgeryCaseRepo.find({
       where,
@@ -494,6 +504,7 @@ export class SurgeryService {
     startDate?: string,
     tenantId?: string,
   ): Promise<SurgeryCase[]> {
+    const tid = requireTenantId(tenantId);
     const start = startDate ? new Date(startDate) : new Date();
     start.setHours(0, 0, 0, 0);
     const end = new Date(start);
@@ -503,7 +514,7 @@ export class SurgeryService {
       facilityId,
       scheduledDate: Between(start, end),
     };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     return this.surgeryCaseRepo.find({
       where,
@@ -513,6 +524,7 @@ export class SurgeryService {
   }
 
   async getDashboard(facilityId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
@@ -523,16 +535,16 @@ export class SurgeryService {
       scheduledDate: Between(today, tomorrow),
       status: SurgeryStatus.SCHEDULED,
     };
-    if (tenantId) todayScheduledWhere.tenantId = tenantId;
+    todayScheduledWhere.tenantId = tid;
 
     const inProgressWhere: any = { facilityId, status: SurgeryStatus.IN_PROGRESS };
-    if (tenantId) inProgressWhere.tenantId = tenantId;
+    inProgressWhere.tenantId = tid;
 
     const postOpWhere: any = { facilityId, status: SurgeryStatus.POST_OP };
-    if (tenantId) postOpWhere.tenantId = tenantId;
+    postOpWhere.tenantId = tid;
 
     const theatreWhere: any = { facilityId, isActive: true };
-    if (tenantId) theatreWhere.tenantId = tenantId;
+    theatreWhere.tenantId = tid;
 
     const [todayScheduled, inProgress, postOp, theatres] = await Promise.all([
       this.surgeryCaseRepo.count({
@@ -572,9 +584,10 @@ export class SurgeryService {
     options: { status?: SurgeryStatus; limit?: number; offset?: number },
     tenantId?: string,
   ) {
+    const tid = requireTenantId(tenantId);
     const where: any = { facilityId };
     if (options.status) where.status = options.status;
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     const [data, total] = await this.surgeryCaseRepo.findAndCount({
       where,
@@ -598,7 +611,7 @@ export class SurgeryService {
 
     // Get item details
     const itemWhere: any = { id: dto.itemId };
-    if (tenantId) itemWhere.tenantId = tenantId;
+    itemWhere.tenantId = requireTenantId(tenantId);
     const item = await this.itemRepo.findOne({ where: itemWhere });
     if (!item) throw new NotFoundException('Item not found');
 
@@ -623,7 +636,7 @@ export class SurgeryService {
       notes: dto.notes,
       recordedById: userId,
     });
-    if (tenantId) consumable.tenantId = tenantId;
+    consumable.tenantId = requireTenantId(tenantId);
 
     const saved = await this.consumableRepo.save(consumable);
 
@@ -664,8 +677,9 @@ export class SurgeryService {
   }
 
   async getConsumables(surgeryCaseId: string, tenantId?: string): Promise<SurgeryConsumable[]> {
+    const tid = requireTenantId(tenantId);
     const where: any = { surgeryCaseId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     return this.consumableRepo.find({
       where,
@@ -707,8 +721,9 @@ export class SurgeryService {
     updates: Partial<RecordConsumableDto>,
     tenantId?: string,
   ): Promise<SurgeryConsumable> {
+    const tid = requireTenantId(tenantId);
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     const consumable = await this.consumableRepo.findOne({ where });
     if (!consumable) throw new NotFoundException('Consumable not found');
@@ -723,8 +738,9 @@ export class SurgeryService {
   }
 
   async deleteConsumable(id: string, tenantId?: string): Promise<void> {
+    const tid = requireTenantId(tenantId);
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     const consumable = await this.consumableRepo.findOne({ where });
     if (!consumable) throw new NotFoundException('Consumable not found');
@@ -737,11 +753,12 @@ export class SurgeryService {
     endDate: string,
     tenantId?: string,
   ) {
+    const tid = requireTenantId(tenantId);
     const where: any = {
       facilityId,
       actualStartTime: Between(new Date(startDate), new Date(endDate)),
     };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     const cases = await this.surgeryCaseRepo.find({
       where,
@@ -759,7 +776,7 @@ export class SurgeryService {
       .addSelect('SUM(c.totalCost)', 'totalCost')
       .addSelect('COUNT(DISTINCT c.surgeryCaseId)', 'surgeryCount')
       .where('c.surgeryCaseId IN (:...caseIds)', { caseIds });
-    if (tenantId) consumablesQb.andWhere('c.tenant_id = :tenantId', { tenantId });
+    consumablesQb.andWhere('c.tenant_id = :tenantId', { tenantId: tid });
     const consumables = await consumablesQb
       .groupBy('c.itemId')
       .addGroupBy('c.itemName')

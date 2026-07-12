@@ -22,6 +22,7 @@ import {
   evaluateWestgardRules,
 } from '../../database/entities/lab-qc.entity';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class LabSuppliesService {
@@ -53,7 +54,7 @@ export class LabSuppliesService {
   // ==================== REAGENTS ====================
 
   async createReagent(data: Partial<LabReagent>, tenantId?: string): Promise<LabReagent> {
-    const reagent = this.reagentRepo.create({ ...data, ...(tenantId ? { tenantId } : {}) });
+    const reagent = this.reagentRepo.create({ ...data, tenantId: requireTenantId(tenantId) });
     return this.reagentRepo.save(reagent);
   }
 
@@ -63,7 +64,7 @@ export class LabSuppliesService {
     tenantId?: string,
   ): Promise<LabReagent> {
     const reagent = await this.reagentRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
     });
     if (!reagent) throw new NotFoundException('Reagent not found');
     Object.assign(reagent, data);
@@ -72,7 +73,7 @@ export class LabSuppliesService {
 
   async getReagent(id: string, tenantId?: string): Promise<LabReagent> {
     const reagent = await this.reagentRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
       relations: ['lots'],
     });
     if (!reagent) throw new NotFoundException('Reagent not found');
@@ -86,19 +87,18 @@ export class LabSuppliesService {
   ): Promise<LabReagent[]> {
     const where: any = { facilityId };
     if (category) where.category = category;
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     return this.reagentRepo.find({ where, order: { name: 'ASC' } });
   }
 
   async getLowStockReagents(facilityId: string, tenantId?: string): Promise<LabReagent[]> {
+    const tid = requireTenantId(tenantId);
     const qb = this.reagentRepo
       .createQueryBuilder('r')
       .where('r.facilityId = :facilityId', { facilityId })
       .andWhere('r.stockQuantity <= r.reorderLevel')
       .andWhere('r.isActive = true');
-    if (tenantId) {
-      qb.andWhere('r.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('r.tenant_id = :tenantId', { tenantId: tid });
     return qb.orderBy('r.stockQuantity', 'ASC').getMany();
   }
 
@@ -117,9 +117,7 @@ export class LabSuppliesService {
       .andWhere('lot.expiryDate <= :futureDate', { futureDate })
       .andWhere('lot.currentQuantity > 0')
       .andWhere('lot.isActive = true');
-    if (tenantId) {
-      qb.andWhere('lot.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('lot.tenant_id = :tenantId', { tenantId: requireTenantId(tenantId) });
     return qb.orderBy('lot.expiryDate', 'ASC').getMany();
   }
 
@@ -142,7 +140,7 @@ export class LabSuppliesService {
     // P0: wrap in transaction with pessimistic lock to prevent lost stock updates
     return this.dataSource.transaction(async (manager) => {
       const reagent = await manager.findOne(LabReagent, {
-        where: { id: data.reagentId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: data.reagentId, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!reagent) throw new NotFoundException('Reagent not found');
@@ -150,7 +148,7 @@ export class LabSuppliesService {
       const lot = manager.getRepository(ReagentLot).create({
         ...data,
         currentQuantity: data.initialQuantity,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       });
       const saved = await manager.save(lot);
 
@@ -186,7 +184,7 @@ export class LabSuppliesService {
 
   async openLot(lotId: string, tenantId?: string): Promise<ReagentLot> {
     const lot = await this.lotRepo.findOne({
-      where: { id: lotId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: lotId, tenantId: requireTenantId(tenantId) },
     });
     if (!lot) throw new NotFoundException('Lot not found');
     lot.openedDate = new Date();
@@ -201,7 +199,7 @@ export class LabSuppliesService {
     // P0: wrap in transaction with pessimistic lock to prevent stock going negative
     return this.dataSource.transaction(async (manager) => {
       const lot = await manager.findOne(ReagentLot, {
-        where: { id: data.lotId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: data.lotId, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!lot) throw new NotFoundException('Lot not found');
@@ -214,7 +212,7 @@ export class LabSuppliesService {
         ...data,
         consumedAt: new Date(),
         facilityId: lot.facilityId,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       });
       const saved = await manager.save(consumption);
 
@@ -224,7 +222,7 @@ export class LabSuppliesService {
 
       // Update reagent stock (lock reagent too)
       const reagent = await manager.findOne(LabReagent, {
-        where: { id: lot.reagentId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: lot.reagentId, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (reagent) {
@@ -283,9 +281,7 @@ export class LabSuppliesService {
       .leftJoinAndSelect('lot.reagent', 'reagent')
       .where('c.facilityId = :facilityId', { facilityId })
       .andWhere('c.consumedAt BETWEEN :startDate AND :endDate', { startDate, endDate });
-    if (tenantId) {
-      consumptions.andWhere('c.tenant_id = :tenantId', { tenantId });
-    }
+    consumptions.andWhere('c.tenant_id = :tenantId', { tenantId: requireTenantId(tenantId) });
     const results = await consumptions.getMany();
 
     const byReagent: Record<string, number> = {};
@@ -310,7 +306,7 @@ export class LabSuppliesService {
   // ==================== EQUIPMENT ====================
 
   async createEquipment(data: Partial<LabEquipment>, tenantId?: string): Promise<LabEquipment> {
-    const equipment = this.equipmentRepo.create({ ...data, ...(tenantId ? { tenantId } : {}) });
+    const equipment = this.equipmentRepo.create({ ...data, tenantId: requireTenantId(tenantId) });
     return this.equipmentRepo.save(equipment);
   }
 
@@ -320,7 +316,7 @@ export class LabSuppliesService {
     tenantId?: string,
   ): Promise<LabEquipment> {
     const equipment = await this.equipmentRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
     });
     if (!equipment) throw new NotFoundException('Equipment not found');
     Object.assign(equipment, data);
@@ -329,7 +325,7 @@ export class LabSuppliesService {
 
   async getEquipment(id: string, tenantId?: string): Promise<LabEquipment> {
     const equipment = await this.equipmentRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
       relations: ['calibrations', 'maintenances', 'responsiblePerson'],
     });
     if (!equipment) throw new NotFoundException('Equipment not found');
@@ -343,7 +339,7 @@ export class LabSuppliesService {
   ): Promise<LabEquipment[]> {
     const where: any = { facilityId };
     if (category) where.category = category;
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     return this.equipmentRepo.find({ where, order: { name: 'ASC' } });
   }
 
@@ -361,7 +357,7 @@ export class LabSuppliesService {
         requiresCalibration: true,
         nextCalibrationDate: LessThan(futureDate),
         status: EquipmentStatus.OPERATIONAL,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
       order: { nextCalibrationDate: 'ASC' },
     });
@@ -373,7 +369,7 @@ export class LabSuppliesService {
     userId?: string,
   ): Promise<EquipmentCalibration> {
     const equipment = await this.equipmentRepo.findOne({
-      where: { id: data.equipmentId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: data.equipmentId, tenantId: requireTenantId(tenantId) },
     });
     if (!equipment) throw new NotFoundException('Equipment not found');
 
@@ -382,7 +378,7 @@ export class LabSuppliesService {
       throw new BadRequestException(`Cannot calibrate equipment with status '${equipment.status}'`);
     }
 
-    const calibration = this.calibrationRepo.create({ ...data, ...(tenantId ? { tenantId } : {}) });
+    const calibration = this.calibrationRepo.create({ ...data, tenantId: requireTenantId(tenantId) });
     const saved = await this.calibrationRepo.save(calibration);
 
     // Update equipment
@@ -434,7 +430,7 @@ export class LabSuppliesService {
     userId?: string,
   ): Promise<EquipmentMaintenance> {
     const equipment = await this.equipmentRepo.findOne({
-      where: { id: data.equipmentId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: data.equipmentId, tenantId: requireTenantId(tenantId) },
     });
     if (!equipment) throw new NotFoundException('Equipment not found');
 
@@ -445,7 +441,7 @@ export class LabSuppliesService {
       );
     }
 
-    const maintenance = this.maintenanceRepo.create({ ...data, ...(tenantId ? { tenantId } : {}) });
+    const maintenance = this.maintenanceRepo.create({ ...data, tenantId: requireTenantId(tenantId) });
     const saved = await this.maintenanceRepo.save(maintenance);
 
     // Update equipment
@@ -485,7 +481,7 @@ export class LabSuppliesService {
   // ==================== QC MATERIALS ====================
 
   async createQCMaterial(data: Partial<QCMaterial>, tenantId?: string): Promise<QCMaterial> {
-    const material = this.qcMaterialRepo.create({ ...data, ...(tenantId ? { tenantId } : {}) });
+    const material = this.qcMaterialRepo.create({ ...data, tenantId: requireTenantId(tenantId) });
     return this.qcMaterialRepo.save(material);
   }
 
@@ -496,7 +492,7 @@ export class LabSuppliesService {
   ): Promise<QCMaterial[]> {
     const where: any = { facilityId, isActive: true };
     if (testCode) where.testCode = testCode;
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     return this.qcMaterialRepo.find({ where, order: { testCode: 'ASC', level: 'ASC' } });
   }
 
@@ -508,7 +504,7 @@ export class LabSuppliesService {
     userId?: string,
   ): Promise<QCResult> {
     const material = await this.qcMaterialRepo.findOne({
-      where: { id: data.qcMaterialId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: data.qcMaterialId, tenantId: requireTenantId(tenantId) },
     });
     if (!material) throw new NotFoundException('QC Material not found');
 
@@ -523,7 +519,7 @@ export class LabSuppliesService {
       where: {
         qcMaterialId: data.qcMaterialId,
         facilityId: data.facilityId,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
       order: { runDate: 'DESC' },
       take: 10,
@@ -546,7 +542,7 @@ export class LabSuppliesService {
       zScore,
       status: evaluation.status,
       violatedRules: evaluation.violatedRules,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: requireTenantId(tenantId),
     });
 
     const saved = await this.qcResultRepo.save(result);
@@ -589,7 +585,7 @@ export class LabSuppliesService {
         facilityId,
         testCode,
         runDate: Between(startDate, endDate),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
       relations: ['performedByUser', 'qcMaterial'],
       order: { runDate: 'ASC' },
@@ -611,7 +607,7 @@ export class LabSuppliesService {
     };
   }> {
     const material = await this.qcMaterialRepo.findOne({
-      where: { id: qcMaterialId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: qcMaterialId, tenantId: requireTenantId(tenantId) },
     });
     if (!material) throw new NotFoundException('QC Material not found');
 
@@ -622,7 +618,7 @@ export class LabSuppliesService {
       where: {
         qcMaterialId,
         runDate: MoreThan(startDate),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
       order: { runDate: 'ASC' },
     });
@@ -669,7 +665,7 @@ export class LabSuppliesService {
       where: {
         facilityId,
         runDate: Between(startDate, endDate),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
     });
 

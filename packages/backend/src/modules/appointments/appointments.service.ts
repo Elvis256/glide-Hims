@@ -18,6 +18,7 @@ import {
 } from './dto/appointment.dto';
 import { QueueManagementService } from '../queue-management/queue-management.service';
 import { ServicePoint } from '../../database/entities/queue.entity';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class AppointmentsService {
@@ -33,10 +34,11 @@ export class AppointmentsService {
   ) {}
 
   private async generateAppointmentNumber(tenantId?: string): Promise<string> {
+    const tid = requireTenantId(tenantId);
     const today = new Date();
     const datePrefix = today.toISOString().slice(0, 10).replace(/-/g, '');
     const where: any = { appointmentNumber: Like(`APT${datePrefix}%`) };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     const count = await this.appointmentRepository.count({ where });
     return `APT${datePrefix}${String(count + 1).padStart(4, '0')}`;
   }
@@ -47,13 +49,14 @@ export class AppointmentsService {
     userId: string,
     tenantId?: string,
   ): Promise<Appointment> {
+    const tid = requireTenantId(tenantId);
     // Check for double-booking: provider must not have an overlapping appointment
     const conflictWhere: any = {
       doctorId: dto.doctorId,
       appointmentDate: dto.appointmentDate,
       facilityId,
     };
-    if (tenantId) conflictWhere.tenantId = tenantId;
+    conflictWhere.tenantId = tid;
 
     const existingAppointments = await this.appointmentRepository.find({
       where: conflictWhere,
@@ -85,13 +88,14 @@ export class AppointmentsService {
       appointmentNumber,
       facilityId,
       createdBy: userId,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
 
     return this.appointmentRepository.save(appointment);
   }
 
   async findAll(query: AppointmentQueryDto, facilityId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const { date, patientId, doctorId, status, type, search, page = 1, limit = 20 } = query;
 
     const qb = this.appointmentRepository
@@ -100,9 +104,7 @@ export class AppointmentsService {
       .leftJoinAndSelect('appointment.doctor', 'doctor')
       .where('appointment.facilityId = :facilityId', { facilityId });
 
-    if (tenantId) {
-      qb.andWhere('appointment.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('appointment.tenant_id = :tenantId', { tenantId: tid });
 
     if (date) {
       qb.andWhere('appointment.appointmentDate = :date', { date });
@@ -150,8 +152,9 @@ export class AppointmentsService {
   }
 
   async findOne(id: string, facilityId: string, tenantId?: string): Promise<Appointment> {
+    const tid = requireTenantId(tenantId);
     const where: any = { id, facilityId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     const appointment = await this.appointmentRepository.findOne({
       where,
       relations: ['patient', 'doctor'],
@@ -191,6 +194,7 @@ export class AppointmentsService {
   }
 
   async getStats(facilityId: string, date?: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const targetDate = date || new Date().toISOString().slice(0, 10);
 
     const qb = this.appointmentRepository
@@ -198,9 +202,7 @@ export class AppointmentsService {
       .where('appointment.facilityId = :facilityId', { facilityId })
       .andWhere('appointment.appointmentDate = :date', { date: targetDate });
 
-    if (tenantId) {
-      qb.andWhere('appointment.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('appointment.tenant_id = :tenantId', { tenantId: tid });
 
     const total = await qb.getCount();
 

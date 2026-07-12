@@ -16,6 +16,7 @@ import {
   CreatePermissionDto,
   AssignPermissionDto,
 } from './dto/role.dto';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 /**
  * Authenticated caller context used to gate privileged role/permission mutations.
@@ -49,8 +50,9 @@ export class RolesService {
     tenantId?: string,
     caller?: RoleMutationCaller,
   ): Promise<Role> {
+    const tid = requireTenantId(tenantId);
     const existing = await this.roleRepository.findOne({
-      where: { name: dto.name, ...(tenantId ? { tenantId } : {}) },
+      where: { name: dto.name, tenantId: tid },
     });
     if (existing) throw new ConflictException('Role name already exists');
     // SECURITY: isSystemRole on the DTO is user-controlled. Only a platform
@@ -65,7 +67,7 @@ export class RolesService {
     const role = this.roleRepository.create({
       ...sanitized,
       status: 'active',
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
     const saved = await this.roleRepository.save(role);
     return Array.isArray(saved) ? saved[0] : saved;
@@ -85,21 +87,15 @@ export class RolesService {
   }
 
   async findAllRoles(tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     let roles: Role[];
-    if (tenantId) {
-      // SECURITY: Include tenant-specific roles AND system roles (isSystemRole=true)
-      roles = await this.roleRepository
-        .createQueryBuilder('role')
-        .leftJoinAndSelect('role.parentRole', 'parentRole')
-        .where('(role.tenant_id = :tenantId OR role.is_system_role = true)', { tenantId })
-        .orderBy('role.name', 'ASC')
-        .getMany();
-    } else {
-      roles = await this.roleRepository.find({
-        relations: ['parentRole'],
-        order: { name: 'ASC' },
-      });
-    }
+    // SECURITY: Include tenant-specific roles AND system roles (isSystemRole=true)
+    roles = await this.roleRepository
+      .createQueryBuilder('role')
+      .leftJoinAndSelect('role.parentRole', 'parentRole')
+      .where('(role.tenant_id = :tenantId OR role.is_system_role = true)', { tenantId: tid })
+      .orderBy('role.name', 'ASC')
+      .getMany();
 
     // Get user counts and permissions (including inherited) for each role
     const rolesWithDetails = await Promise.all(
@@ -137,18 +133,13 @@ export class RolesService {
   }
 
   async findOneRole(id: string, tenantId?: string) {
-    let role: Role | null;
-    if (tenantId) {
-      // SECURITY: Include tenant-specific roles AND system roles
-      role = await this.roleRepository
-        .createQueryBuilder('role')
-        .where('role.id = :id', { id })
-        .andWhere('(role.tenant_id = :tenantId OR role.is_system_role = true)', { tenantId })
-        .getOne();
-    } else {
-      // System admin context: still filter to system roles only for safety
-      role = await this.roleRepository.findOne({ where: [{ id, isSystemRole: true }] });
-    }
+    const tid = requireTenantId(tenantId);
+    // SECURITY: Include tenant-specific roles AND system roles
+    const role = await this.roleRepository
+      .createQueryBuilder('role')
+      .where('role.id = :id', { id })
+      .andWhere('(role.tenant_id = :tenantId OR role.is_system_role = true)', { tenantId: tid })
+      .getOne();
     if (!role) throw new NotFoundException('Role not found');
     return role;
   }
@@ -307,6 +298,7 @@ export class RolesService {
   }
 
   async getRoleUsers(roleId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const role = await this.findOneRole(roleId, tenantId);
     const rows = await this.dataSource
       .getRepository('UserRole')
@@ -314,7 +306,7 @@ export class RolesService {
       .innerJoin('users', 'u', 'u.id = ur.user_id')
       .leftJoin('facilities', 'f', 'f.id = ur.facility_id')
       .where('ur.role_id = :roleId', { roleId })
-      .andWhere(tenantId ? 'u.tenant_id = :tid' : '1=1', tenantId ? { tid: tenantId } : {})
+      .andWhere('u.tenant_id = :tid', { tid })
       .andWhere('u.deleted_at IS NULL')
       .select([
         'u.id AS id',
@@ -430,10 +422,11 @@ export class RolesService {
     if (!caller?.isSystemAdmin) {
       throw new ForbiddenException('Only platform administrators may create permission codes');
     }
+    const tid = requireTenantId(tenantId);
     const existing = await this.permissionRepository.findOne({ where: { code: dto.code } });
     if (existing) throw new ConflictException('Permission code already exists');
     return this.permissionRepository.save(
-      this.permissionRepository.create({ ...dto, ...(tenantId ? { tenantId } : {}) }),
+      this.permissionRepository.create({ ...dto, tenantId: tid }),
     );
   }
 
@@ -448,10 +441,11 @@ export class RolesService {
     tenantId?: string,
     description?: string,
   ): Promise<Role> {
+    const tid = requireTenantId(tenantId);
     const source = await this.findOneRole(sourceRoleId, tenantId);
 
     const nameClash = await this.roleRepository.findOne({
-      where: { name: newName, ...(tenantId ? { tenantId } : {}) },
+      where: { name: newName, tenantId: tid },
     });
     if (nameClash) throw new ConflictException('Role name already exists');
 
@@ -462,7 +456,7 @@ export class RolesService {
         status: 'active',
         isSystemRole: false, // clones are always tenant-scoped, never system
         parentRoleId: source.parentRoleId ?? undefined,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       } as any);
       const saved = await manager.save(clone);
 
@@ -479,17 +473,16 @@ export class RolesService {
   }
 
   async findAllPermissions(module?: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const qb = this.permissionRepository.createQueryBuilder('permission');
 
     if (module) {
       qb.where('permission.module = :module', { module });
     }
     // Include shared permissions (NULL tenant) and tenant-specific ones
-    if (tenantId) {
-      qb.andWhere('(permission.tenant_id = :tenantId OR permission.tenant_id IS NULL)', {
-        tenantId,
-      });
-    }
+    qb.andWhere('(permission.tenant_id = :tenantId OR permission.tenant_id IS NULL)', {
+      tenantId: tid,
+    });
 
     return qb.orderBy('permission.module', 'ASC').addOrderBy('permission.code', 'ASC').getMany();
   }

@@ -40,6 +40,7 @@ import { IdentityGuardService } from '../../common/services/identity-guard.servi
 import { FollowUpsService } from '../follow-ups/follow-ups.service';
 import { FollowUpType } from '../../database/entities/follow-up.entity';
 import { StateMachine } from '../../common/fsm/state-machine';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class EncountersService {
@@ -202,9 +203,10 @@ export class EncountersService {
   };
 
   async create(dto: CreateEncounterDto, userId: string, tenantId?: string): Promise<Encounter> {
+    const tid = requireTenantId(tenantId);
     // Verify patient exists
     const patient = await this.patientRepository.findOne({
-      where: { id: dto.patientId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: dto.patientId, tenantId: tid },
     });
 
     if (!patient) {
@@ -228,7 +230,7 @@ export class EncountersService {
 
     // Fix 1: Validate facility exists and is active
     const facility = await this.facilityRepository.findOne({
-      where: { id: dto.facilityId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: dto.facilityId, tenantId: tid },
     });
     if (!facility) {
       throw new NotFoundException('Facility not found');
@@ -240,7 +242,7 @@ export class EncountersService {
     // Fix 2: Validate department belongs to facility (if provided)
     if (dto.departmentId) {
       const department = await this.departmentRepository.findOne({
-        where: { id: dto.departmentId, facilityId: dto.facilityId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: dto.departmentId, facilityId: dto.facilityId, tenantId: tid },
       });
       if (!department) {
         throw new BadRequestException(
@@ -254,7 +256,7 @@ export class EncountersService {
 
     // Fix 3: Validate attending provider if pre-assigned at registration
     if (dto.attendingProviderId) {
-      await this.identityGuard.assertAssignableProvider(dto.attendingProviderId, tenantId);
+      await this.identityGuard.assertAssignableProvider(dto.attendingProviderId, tid);
     }
 
     // Validate insurance policy if payer type is insurance
@@ -263,7 +265,7 @@ export class EncountersService {
         throw new BadRequestException('Insurance policy is required when payer type is insurance');
       }
       const policy = await this.insurancePolicyRepository.findOne({
-        where: { id: dto.insurancePolicyId, patientId: dto.patientId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: dto.insurancePolicyId, patientId: dto.patientId, tenantId: tid },
         relations: ['provider'],
       });
       if (!policy) {
@@ -322,7 +324,7 @@ export class EncountersService {
           patientId: dto.patientId,
           type: encounterType,
           status: In(activeStatuses),
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         },
         lock: { mode: 'pessimistic_write' },
       });
@@ -334,12 +336,12 @@ export class EncountersService {
         });
       }
 
-      const visitNumber = await this.generateVisitNumber(manager, tenantId);
+      const visitNumber = await this.generateVisitNumber(manager, tid);
       const queueNumber = await this.getNextQueueNumber(
         manager,
         dto.facilityId,
         dto.departmentId,
-        tenantId,
+        tid,
       );
 
       const encounter = manager.create(Encounter, {
@@ -348,7 +350,7 @@ export class EncountersService {
         queueNumber,
         createdById: userId,
         status: EncounterStatus.REGISTERED,
-        tenantId: tenantId || undefined,
+        tenantId: tid,
       });
 
       const saved = await manager.save(Encounter, encounter);
@@ -364,11 +366,10 @@ export class EncountersService {
               ...consultConfig.codes.map((code) => ({ code })),
               { name: ILike(consultConfig.namePattern) },
             ]);
-          if (tenantId)
-            consultServiceQb.andWhere(
-              '(service.tenant_id = :tenantId OR service.tenant_id IS NULL)',
-              { tenantId },
-            );
+          consultServiceQb.andWhere(
+            '(service.tenant_id = :tenantId OR service.tenant_id IS NULL)',
+            { tenantId: tid },
+          );
           const consultService = await consultServiceQb.getOne();
           const unitPrice = consultService?.basePrice ? Number(consultService.basePrice) : 0;
 
@@ -388,7 +389,7 @@ export class EncountersService {
               serviceId: consultService?.id,
             },
             userId,
-            tenantId,
+            tid,
           );
         } catch (err) {
           this.logger.warn(
@@ -409,6 +410,7 @@ export class EncountersService {
     query: EncounterQueryDto,
     tenantId?: string,
   ): Promise<{ data: Encounter[]; total: number }> {
+    const tid = requireTenantId(tenantId);
     const {
       search,
       status,
@@ -431,9 +433,7 @@ export class EncountersService {
       .leftJoinAndSelect('encounter.attendingProvider', 'provider')
       .leftJoinAndSelect('encounter.department', 'department');
 
-    if (tenantId) {
-      qb.andWhere('encounter.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('encounter.tenant_id = :tenantId', { tenantId: tid });
 
     if (search) {
       qb.andWhere(
@@ -501,8 +501,8 @@ export class EncountersService {
   }
 
   async findOne(id: string, tenantId?: string): Promise<Encounter> {
-    const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { id, tenantId: tid };
     const encounter = await this.encounterRepository.findOne({
       where,
       relations: ['patient', 'facility', 'department', 'attendingProvider', 'createdBy'],
@@ -516,8 +516,9 @@ export class EncountersService {
   }
 
   async findByVisitNumber(visitNumber: string, tenantId?: string): Promise<Encounter> {
+    const tid = requireTenantId(tenantId);
     const encounter = await this.encounterRepository.findOne({
-      where: { visitNumber, ...(tenantId ? { tenantId } : {}) },
+      where: { visitNumber, tenantId: tid },
       relations: ['patient', 'facility', 'department', 'attendingProvider'],
     });
 
@@ -540,9 +541,10 @@ export class EncountersService {
     userId: string,
     tenantId?: string,
   ): Promise<Encounter> {
+    const tid = requireTenantId(tenantId);
     // Validate provider before transaction (cheap fail-fast)
     if (dto.attendingProviderId) {
-      await this.identityGuard.assertAssignableProvider(dto.attendingProviderId, tenantId);
+      await this.identityGuard.assertAssignableProvider(dto.attendingProviderId, tid);
     }
 
     // Validate department belongs to the encounter's facility (if changing)
@@ -550,7 +552,7 @@ export class EncountersService {
       // Need encounter's facilityId — we'll validate inside the transaction
       // after we have the locked row, but we can pre-check the department exists
       const department = await this.departmentRepository.findOne({
-        where: { id: dto.departmentId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: dto.departmentId, tenantId: tid },
       });
       if (!department) {
         throw new BadRequestException('Department not found');
@@ -562,7 +564,7 @@ export class EncountersService {
 
     const result = await this.dataSource.transaction(async (manager) => {
       const encounter = await manager.findOne(Encounter, {
-        where: { id, ...(tenantId ? { tenantId } : {}) },
+        where: { id, tenantId: tid },
         lock: { mode: 'pessimistic_write' },
       });
 
@@ -704,6 +706,7 @@ export class EncountersService {
     reason?: string,
     tenantId?: string,
   ): Promise<Encounter> {
+    const tid = requireTenantId(tenantId);
     // Enhancement: cancellation always requires a reason
     if (status === EncounterStatus.CANCELLED && !reason?.trim()) {
       throw new BadRequestException('A reason is required when cancelling an encounter');
@@ -712,13 +715,13 @@ export class EncountersService {
     // If a different provider is being assigned, validate they exist + are a doctor
     // before opening the transaction (cheap fail-fast).
     if (attendingProviderId && attendingProviderId !== actorUserId) {
-      await this.identityGuard.assertAssignableProvider(attendingProviderId, tenantId);
+      await this.identityGuard.assertAssignableProvider(attendingProviderId, tid);
     }
 
     const saved = await this.dataSource.transaction(async (manager) => {
       // Lock row first without relations (FOR UPDATE can't apply to outer joins)
       const encounter = await manager.findOne(Encounter, {
-        where: { id, ...(tenantId ? { tenantId } : {}) },
+        where: { id, tenantId: tid },
         lock: { mode: 'pessimistic_write' },
       });
 
@@ -885,9 +888,10 @@ export class EncountersService {
     timestampKey: string,
     tenantId?: string,
   ): Promise<Encounter> {
+    const tid = requireTenantId(tenantId);
     return this.dataSource.transaction(async (manager) => {
       const encounter = await manager.findOne(Encounter, {
-        where: { id, ...(tenantId ? { tenantId } : {}) },
+        where: { id, tenantId: tid },
         lock: { mode: 'pessimistic_write' },
       });
 
@@ -1168,6 +1172,7 @@ export class EncountersService {
     doctorId?: string,
     encounterType?: EncounterType,
   ): Promise<(Encounter & QueueItem)[]> {
+    const tid = requireTenantId(tenantId);
     const qb = this.encounterRepository
       .createQueryBuilder('encounter')
       .leftJoinAndSelect('encounter.patient', 'patient')
@@ -1183,9 +1188,7 @@ export class EncountersService {
         ],
       });
 
-    if (tenantId) {
-      qb.andWhere('encounter.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('encounter.tenant_id = :tenantId', { tenantId: tid });
 
     if (departmentId) {
       qb.andWhere('encounter.department_id = :departmentId', { departmentId });
@@ -1224,6 +1227,7 @@ export class EncountersService {
     departmentId?: string,
     tenantId?: string,
   ): Promise<(Encounter & QueueItem)[]> {
+    const tid = requireTenantId(tenantId);
     const qb = this.encounterRepository
       .createQueryBuilder('encounter')
       .leftJoinAndSelect('encounter.patient', 'patient')
@@ -1234,9 +1238,7 @@ export class EncountersService {
         statuses: [EncounterStatus.PENDING_PHARMACY, EncounterStatus.RETURN_TO_PHARMACY],
       });
 
-    if (tenantId) {
-      qb.andWhere('encounter.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('encounter.tenant_id = :tenantId', { tenantId: tid });
 
     if (departmentId) {
       qb.andWhere('encounter.department_id = :departmentId', { departmentId });
@@ -1315,7 +1317,7 @@ export class EncountersService {
     const warnings: string[] = []; // non-blocking — surface to UI but allow completion
 
     const encounter = await this.encounterRepository.findOne({
-      where: { id: encounterId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: encounterId, tenantId: requireTenantId(tenantId) },
     });
     if (!encounter) {
       throw new NotFoundException('Encounter not found');
@@ -1571,10 +1573,11 @@ export class EncountersService {
       );
     }
 
+    const tid = requireTenantId(tenantId);
     await this.dataSource.transaction(async (manager) => {
       // Re-fetch with lock inside the transaction
       const locked = await manager.findOne(Encounter, {
-        where: { id, ...(tenantId ? { tenantId } : {}) },
+        where: { id, tenantId: tid },
         lock: { mode: 'pessimistic_write' },
       });
       if (!locked) {
@@ -1672,10 +1675,11 @@ export class EncountersService {
   }> {
     const clinicalNoteScore = this.computeNoteCompletenessScore(dto);
 
+    const tid = requireTenantId(tenantId);
     const result = await this.dataSource.transaction(async (manager) => {
       // Fetch encounter with pessimistic lock (no relations to avoid FOR UPDATE on outer join)
       const encounter = await manager.findOne(Encounter, {
-        where: { id: encounterId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: encounterId, tenantId: tid },
         lock: { mode: 'pessimistic_write' },
       });
 
@@ -1729,7 +1733,7 @@ export class EncountersService {
         diagnoses: dto.diagnoses,
         followUpDate: dto.followUpDate ? new Date(dto.followUpDate) : undefined,
         followUpNotes: dto.followUpNotes,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       });
       const savedNote = await manager.save(ClinicalNote, clinicalNote);
 

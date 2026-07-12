@@ -7,6 +7,7 @@ import {
 } from '../../database/entities/medication-adherence.entity';
 import { Prescription, PrescriptionItem } from '../../database/entities/prescription.entity';
 import { RecordAdherenceDto } from './dto/adherence.dto';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 // Map common frequency codes to number of daily doses
 const FREQUENCY_MAP: Record<string, string[]> = {
@@ -52,8 +53,9 @@ export class AdherenceService {
   ) {}
 
   async generateSchedule(prescriptionId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const where: any = { id: prescriptionId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     const prescription = await this.prescriptionRepo.findOne({
       where,
@@ -73,7 +75,7 @@ export class AdherenceService {
 
       // Check if schedule already exists for this item
       const existingCount = await this.adherenceRepo.count({
-        where: { prescriptionItemId: item.id, ...(tenantId ? { tenantId } : {}) },
+        where: { prescriptionItemId: item.id, tenantId: tid },
       });
       if (existingCount > 0) continue;
 
@@ -88,7 +90,7 @@ export class AdherenceService {
             scheduledDate,
             scheduledTime: time,
             status: AdherenceStatus.PENDING,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: tid,
           });
           records.push(record);
         }
@@ -103,8 +105,9 @@ export class AdherenceService {
   }
 
   async recordAdherence(recordId: string, dto: RecordAdherenceDto, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const where: any = { id: recordId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     const record = await this.adherenceRepo.findOne({ where });
     if (!record) {
@@ -133,8 +136,9 @@ export class AdherenceService {
     dateTo?: string,
     tenantId?: string,
   ) {
+    const tid = requireTenantId(tenantId);
     const where: any = { patientId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     if (dateFrom && dateTo) {
       where.scheduledDate = Between(new Date(dateFrom), new Date(dateTo));
@@ -152,8 +156,9 @@ export class AdherenceService {
   }
 
   async getAdherenceSummary(patientId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const where: any = { patientId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     const totalRecords = await this.adherenceRepo.count({ where });
     const takenRecords = await this.adherenceRepo.count({
@@ -180,7 +185,7 @@ export class AdherenceService {
       .select('DISTINCT ar.prescription_item_id', 'prescriptionItemId')
       .where('ar.patient_id = :patientId', { patientId })
       .andWhere('ar.status = :status', { status: AdherenceStatus.PENDING })
-      .andWhere(tenantId ? 'ar.tenant_id = :tenantId' : '1=1', tenantId ? { tenantId } : {})
+      .andWhere('ar.tenant_id = :tenantId', { tenantId: tid })
       .getRawMany();
 
     return {

@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like, DataSource, IsNull } from 'typeorm';
 import { SystemSetting } from '../../database/entities/system-setting.entity';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class SystemSettingsService {
@@ -12,15 +13,16 @@ export class SystemSettingsService {
   ) {}
 
   async getAll(tenantId?: string): Promise<SystemSetting[]> {
+    const tid = requireTenantId(tenantId);
     return this.settingRepo.find({
-      where: tenantId ? { tenantId } : {},
+      where: { tenantId: tid },
       order: { key: 'ASC' },
     });
   }
 
   async getByKey(key: string, tenantId?: string): Promise<SystemSetting> {
-    const where: any = { key };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { key, tenantId: tid };
 
     const setting = await this.settingRepo.findOne({ where });
     if (!setting) {
@@ -35,8 +37,8 @@ export class SystemSettingsService {
     tenantId?: string,
     description?: string,
   ): Promise<SystemSetting> {
-    const where: any = { key };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { key, tenantId: tid };
 
     let setting = await this.settingRepo.findOne({ where });
 
@@ -44,7 +46,7 @@ export class SystemSettingsService {
       setting.value = value;
       if (description !== undefined) setting.description = description;
     } else {
-      setting = this.settingRepo.create({ key, value, tenantId, description });
+      setting = this.settingRepo.create({ key, value, tenantId: tid, description });
     }
 
     return this.settingRepo.save(setting);
@@ -56,8 +58,8 @@ export class SystemSettingsService {
   }
 
   async getByPrefix(prefix: string, tenantId?: string): Promise<SystemSetting[]> {
-    const where: any = { key: Like(`${prefix}%`) };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { key: Like(`${prefix}%`), tenantId: tid };
 
     return this.settingRepo.find({
       where,

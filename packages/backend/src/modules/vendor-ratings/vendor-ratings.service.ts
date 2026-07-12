@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { VendorRating, VendorRatingSummary } from '../../database/entities/vendor-rating.entity';
 import { Supplier } from '../../database/entities/supplier.entity';
 import { CreateVendorRatingDto, UpdateVendorRatingDto } from './dto/vendor-rating.dto';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class VendorRatingsService {
@@ -20,6 +21,7 @@ export class VendorRatingsService {
     userId: string,
     tenantId?: string,
   ): Promise<VendorRating> {
+    const tid = requireTenantId(tenantId);
     const overall =
       (dto.deliveryTimeRating + dto.qualityRating + dto.priceRating + dto.serviceRating) / 4;
 
@@ -34,7 +36,7 @@ export class VendorRatingsService {
       overallRating: overall,
       comments: dto.comments,
       ratedById: userId,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
 
     const saved = await this.ratingRepo.save(rating);
@@ -43,6 +45,7 @@ export class VendorRatingsService {
   }
 
   async findAll(facilityId: string, options: { supplierId?: string } = {}, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const qb = this.ratingRepo
       .createQueryBuilder('rating')
       .leftJoinAndSelect('rating.supplier', 'supplier')
@@ -53,16 +56,15 @@ export class VendorRatingsService {
     if (options.supplierId) {
       qb.andWhere('rating.supplierId = :supplierId', { supplierId: options.supplierId });
     }
-    if (tenantId) {
-      qb.andWhere('rating.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('rating.tenant_id = :tenantId', { tenantId: tid });
 
     return qb.orderBy('rating.createdAt', 'DESC').getMany();
   }
 
   async findOne(id: string, tenantId?: string): Promise<VendorRating> {
+    const tid = requireTenantId(tenantId);
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     const rating = await this.ratingRepo.findOne({
       where,
       relations: ['supplier', 'purchaseOrder', 'ratedBy'],
@@ -99,8 +101,9 @@ export class VendorRatingsService {
   }
 
   async getSummary(supplierId: string, tenantId?: string): Promise<VendorRatingSummary | null> {
+    const tid = requireTenantId(tenantId);
     const where: any = { supplierId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     return this.summaryRepo.findOne({
       where,
       relations: ['supplier'],
@@ -108,8 +111,9 @@ export class VendorRatingsService {
   }
 
   async getAllSummaries(tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const where: any = {};
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     return this.summaryRepo.find({
       where,
       relations: ['supplier'],
@@ -118,8 +122,9 @@ export class VendorRatingsService {
   }
 
   async getTopVendors(limit: number = 10, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const where: any = {};
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     return this.summaryRepo.find({
       where,
       relations: ['supplier'],
@@ -129,12 +134,13 @@ export class VendorRatingsService {
   }
 
   private async updateSummary(supplierId: string, tenantId?: string): Promise<void> {
+    const tid = requireTenantId(tenantId);
     const ratings = await this.ratingRepo.find({
-      where: { supplierId, ...(tenantId ? { tenantId } : {}) },
+      where: { supplierId, tenantId: tid },
     });
 
     if (ratings.length === 0) {
-      await this.summaryRepo.softDelete({ supplierId, ...(tenantId ? { tenantId } : {}) });
+      await this.summaryRepo.softDelete({ supplierId, tenantId: tid });
       return;
     }
 
@@ -148,7 +154,7 @@ export class VendorRatingsService {
     const avgOverall = (avgDeliveryTime + avgQuality + avgPrice + avgService) / 4;
 
     let summary = await this.summaryRepo.findOne({
-      where: { supplierId, ...(tenantId ? { tenantId } : {}) },
+      where: { supplierId, tenantId: tid },
     });
 
     // Determine trend
@@ -179,7 +185,7 @@ export class VendorRatingsService {
         avgOverall,
         lastReviewDate: new Date(),
         trend: 'stable',
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       });
     }
 

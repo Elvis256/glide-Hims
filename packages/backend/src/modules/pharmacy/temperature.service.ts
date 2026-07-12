@@ -7,6 +7,7 @@ import {
   AlertType,
   StorageType,
 } from '../../database/entities/temperature-log.entity';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 // Default temperature ranges (°C)
 const DEFAULT_RANGES: Record<StorageType, { min: number; max: number }> = {
@@ -31,11 +32,12 @@ export class TemperatureService {
     tenantId?: string,
     facilityId?: string,
   ) {
+    const tid = requireTenantId(tenantId);
     // Find the sensor to determine acceptable range
     const sensor = await this.sensorRepo.findOne({
       where: {
         sensorId,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
     });
 
@@ -65,7 +67,7 @@ export class TemperatureService {
       recordedAt: new Date(),
       isAlert,
       alertType: alertType ?? undefined,
-      tenantId,
+      tenantId: tid,
       facilityId,
     } as Partial<TemperatureLog>);
 
@@ -80,8 +82,9 @@ export class TemperatureService {
   }
 
   async getSensorReadings(sensorId: string, dateFrom?: string, dateTo?: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const where: Record<string, any> = { sensorId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     if (dateFrom && dateTo) {
       where.recordedAt = Between(new Date(dateFrom), new Date(dateTo));
@@ -115,11 +118,12 @@ export class TemperatureService {
   }
 
   async getActiveAlerts(tenantId?: string, facilityId?: string) {
+    const tid = requireTenantId(tenantId);
     const where: Record<string, any> = {
       isAlert: true,
       acknowledgedAt: IsNull(),
     };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     if (facilityId) where.facilityId = facilityId;
 
     return this.logRepo.find({
@@ -129,8 +133,9 @@ export class TemperatureService {
   }
 
   async acknowledgeAlert(alertId: string, userId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const alert = await this.logRepo.findOne({
-      where: { id: alertId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: alertId, tenantId: tid },
     });
 
     if (!alert) {
@@ -143,8 +148,9 @@ export class TemperatureService {
   }
 
   async getSensors(tenantId?: string, facilityId?: string) {
+    const tid = requireTenantId(tenantId);
     const where: any = {};
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     if (facilityId) where.facilityId = facilityId;
 
     const sensors = await this.sensorRepo.find({
@@ -156,7 +162,7 @@ export class TemperatureService {
     const result = await Promise.all(
       sensors.map(async (sensor) => {
         const latestReading = await this.logRepo.findOne({
-          where: { sensorId: sensor.sensorId, ...(tenantId ? { tenantId } : {}) },
+          where: { sensorId: sensor.sensorId, tenantId: tid },
           order: { recordedAt: 'DESC' },
         });
         return {
@@ -181,6 +187,7 @@ export class TemperatureService {
     data: Partial<TemperatureSensor>,
     tenantId?: string,
   ): Promise<TemperatureSensor> {
+    const tid = requireTenantId(tenantId);
     // Apply default ranges if not provided
     const storageType = data.storageType || StorageType.REFRIGERATED;
     const defaults = DEFAULT_RANGES[storageType];
@@ -189,7 +196,7 @@ export class TemperatureService {
       ...data,
       minTemp: data.minTemp ?? defaults.min,
       maxTemp: data.maxTemp ?? defaults.max,
-      tenantId,
+      tenantId: tid,
     });
     return this.sensorRepo.save(sensor);
   }

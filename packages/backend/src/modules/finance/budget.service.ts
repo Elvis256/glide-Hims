@@ -16,6 +16,7 @@ import {
 } from '../../database/entities/budget-reservation.entity';
 import { JournalEntry, JournalStatus } from '../../database/entities/journal-entry.entity';
 import { sumCents, fromCents, toCents } from '../../common/utils/money';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 export interface BudgetCheckResult {
   withinBudget: boolean;

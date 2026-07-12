@@ -8,6 +8,7 @@ import {
   CreatePatientMembershipDto,
   UpdatePatientMembershipDto,
 } from './membership.dto';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class MembershipService {
@@ -20,30 +21,31 @@ export class MembershipService {
 
   // Schemes
   async createScheme(dto: CreateMembershipSchemeDto, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const where: any = { code: dto.code };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     const exists = await this.schemeRepo.findOne({ where });
     if (exists) throw new ConflictException('Scheme code already exists');
     const scheme = this.schemeRepo.create({
       ...dto,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
     return this.schemeRepo.save(scheme);
   }
 
   async findAllSchemes(facilityId?: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const query = this.schemeRepo.createQueryBuilder('s').where('s.isActive = true');
     if (facilityId)
       query.andWhere('(s.facilityId = :facilityId OR s.facilityId IS NULL)', { facilityId });
-    if (tenantId) {
-      query.andWhere('s.tenant_id = :tenantId', { tenantId });
-    }
+    query.andWhere('s.tenant_id = :tenantId', { tenantId: tid });
     return query.orderBy('s.name', 'ASC').getMany();
   }
 
   async findScheme(id: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     const scheme = await this.schemeRepo.findOne({ where });
     if (!scheme) throw new NotFoundException('Scheme not found');
     return scheme;
@@ -57,6 +59,7 @@ export class MembershipService {
 
   // Patient Memberships
   async createMembership(dto: CreatePatientMembershipDto, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const scheme = await this.findScheme(dto.schemeId, tenantId);
     const membershipNumber = `MEM-${Date.now()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
     const endDate =
@@ -68,14 +71,15 @@ export class MembershipService {
       membershipNumber,
       endDate,
       status: 'active',
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
     return this.membershipRepo.save(membership);
   }
 
   async findPatientMemberships(patientId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const where: any = { patientId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     return this.membershipRepo.find({
       where,
       order: { createdAt: 'DESC' },
@@ -83,8 +87,9 @@ export class MembershipService {
   }
 
   async findActiveMembership(patientId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const where: any = { patientId, status: 'active' };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     return this.membershipRepo.findOne({
       where,
       order: { createdAt: 'DESC' },
@@ -92,8 +97,9 @@ export class MembershipService {
   }
 
   async updateMembership(id: string, dto: UpdatePatientMembershipDto, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     const membership = await this.membershipRepo.findOne({ where });
     if (!membership) throw new NotFoundException('Membership not found');
     Object.assign(membership, dto);
@@ -108,10 +114,11 @@ export class MembershipService {
   }
 
   async findAllMemberships(planId?: string, status?: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const qb = this.membershipRepo.createQueryBuilder('m').orderBy('m.createdAt', 'DESC');
     if (planId) qb.andWhere('m.schemeId = :planId', { planId });
     if (status) qb.andWhere('m.status = :status', { status });
-    if (tenantId) qb.andWhere('m.tenant_id = :tenantId', { tenantId });
+    qb.andWhere('m.tenant_id = :tenantId', { tenantId: tid });
     return qb.getMany();
   }
 }

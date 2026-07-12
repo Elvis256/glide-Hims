@@ -5,6 +5,7 @@ import { Cron } from '@nestjs/schedule';
 import { Invoice, InvoiceStatus } from '../../database/entities/invoice.entity';
 import { Patient, PatientDebtStatus } from '../../database/entities/patient.entity';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class PatientDebtService {
@@ -23,9 +24,10 @@ export class PatientDebtService {
     patientId: string,
     tenantId?: string,
   ): Promise<{ debtStatus: PatientDebtStatus; totalOutstanding: number }> {
+    const tid = requireTenantId(tenantId);
     return this.dataSource.transaction(async (manager) => {
       const patient = await manager.findOne(Patient, {
-        where: { id: patientId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: patientId, tenantId: tid },
         lock: { mode: 'pessimistic_write' },
       });
       if (!patient) {
@@ -46,9 +48,9 @@ export class PatientDebtService {
           AND status IN ('pending', 'partially_paid')
           AND balance_due > 0
           AND deleted_at IS NULL
-          ${tenantId ? 'AND tenant_id = $2' : ''}
+          AND tenant_id = $2
         `,
-        tenantId ? [patientId, tenantId] : [patientId],
+        [patientId, tid],
       );
 
       const row = rows[0] || {};
@@ -89,8 +91,9 @@ export class PatientDebtService {
     agingBuckets: { current: number; overdue30: number; overdue60: number; overdue90: number };
     unpaidInvoices: Array<{ id: string; invoiceNumber: string; balanceDue: number; createdAt: Date }>;
   }> {
+    const tid = requireTenantId(tenantId);
     const patient = await this.patientRepo.findOne({
-      where: { id: patientId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: patientId, tenantId: tid },
     });
     if (!patient) {
       throw new NotFoundException('Patient not found');
@@ -100,7 +103,7 @@ export class PatientDebtService {
       where: {
         patientId,
         status: In([InvoiceStatus.PENDING, InvoiceStatus.PARTIALLY_PAID]),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
       order: { createdAt: 'ASC' },
     });
@@ -149,8 +152,9 @@ export class PatientDebtService {
     reason?: string;
     tenantId?: string;
   }): Promise<void> {
+    const tid = requireTenantId(params.tenantId);
     const patient = await this.patientRepo.findOne({
-      where: { id: params.patientId, ...(params.tenantId ? { tenantId: params.tenantId } : {}) },
+      where: { id: params.patientId, tenantId: tid },
     });
     if (!patient) {
       throw new NotFoundException('Patient not found');

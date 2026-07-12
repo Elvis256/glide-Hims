@@ -13,6 +13,7 @@ import {
   CancelFollowUpDto,
   FollowUpFilterDto,
 } from './dto/follow-up.dto';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class FollowUpsService {
@@ -27,7 +28,8 @@ export class FollowUpsService {
     facilityId: string,
     tenantId?: string,
   ): Promise<FollowUp> {
-    const appointmentNumber = await this.generateAppointmentNumber(tenantId);
+    const tid = requireTenantId(tenantId);
+    const appointmentNumber = await this.generateAppointmentNumber(tid);
 
     const followUp = this.followUpRepository.create({
       ...dto,
@@ -39,7 +41,7 @@ export class FollowUpsService {
       priority: dto.priority || FollowUpPriority.MEDIUM,
     });
 
-    if (tenantId) followUp.tenantId = tenantId;
+    followUp.tenantId = tid;
 
     return this.followUpRepository.save(followUp);
   }
@@ -49,6 +51,7 @@ export class FollowUpsService {
     facilityId: string,
     tenantId?: string,
   ): Promise<FollowUp[]> {
+    const tid = requireTenantId(tenantId);
     const query = this.followUpRepository
       .createQueryBuilder('followUp')
       .leftJoinAndSelect('followUp.patient', 'patient')
@@ -56,9 +59,7 @@ export class FollowUpsService {
       .leftJoinAndSelect('followUp.department', 'department')
       .where('followUp.facility_id = :facilityId', { facilityId });
 
-    if (tenantId) {
-      query.andWhere('followUp.tenant_id = :tenantId', { tenantId });
-    }
+    query.andWhere('followUp.tenant_id = :tenantId', { tenantId: tid });
 
     if (filter.patientId) {
       query.andWhere('followUp.patient_id = :patientId', { patientId: filter.patientId });
@@ -85,8 +86,9 @@ export class FollowUpsService {
   }
 
   async findOne(id: string, tenantId?: string): Promise<FollowUp> {
+    const tid = requireTenantId(tenantId);
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     const followUp = await this.followUpRepository.findOne({
       where,
       relations: [
@@ -108,8 +110,9 @@ export class FollowUpsService {
   }
 
   async findByPatient(patientId: string, tenantId?: string): Promise<FollowUp[]> {
+    const tid = requireTenantId(tenantId);
     const where: any = { patientId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     return this.followUpRepository.find({
       where,
       relations: ['provider', 'department'],
@@ -118,6 +121,7 @@ export class FollowUpsService {
   }
 
   async getUpcoming(patientId: string, tenantId?: string): Promise<FollowUp[]> {
+    const tid = requireTenantId(tenantId);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -126,7 +130,7 @@ export class FollowUpsService {
       scheduledDate: MoreThanOrEqual(today),
       status: FollowUpStatus.SCHEDULED,
     };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     return this.followUpRepository.find({
       where,
@@ -140,6 +144,7 @@ export class FollowUpsService {
     departmentId?: string,
     tenantId?: string,
   ): Promise<FollowUp[]> {
+    const tid = requireTenantId(tenantId);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
@@ -155,9 +160,7 @@ export class FollowUpsService {
         tomorrow,
       });
 
-    if (tenantId) {
-      query.andWhere('followUp.tenant_id = :tenantId', { tenantId });
-    }
+    query.andWhere('followUp.tenant_id = :tenantId', { tenantId: tid });
 
     if (departmentId) {
       query.andWhere('followUp.department_id = :departmentId', { departmentId });
@@ -281,6 +284,7 @@ export class FollowUpsService {
   }
 
   async sendReminders(tenantId?: string): Promise<number> {
+    const tid = requireTenantId(tenantId);
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     tomorrow.setHours(0, 0, 0, 0);
@@ -294,7 +298,7 @@ export class FollowUpsService {
         smsReminder: true,
         reminderSent: false,
         scheduledDate: Between(tomorrow, dayAfter),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
       relations: ['patient'],
     });
@@ -311,11 +315,12 @@ export class FollowUpsService {
   }
 
   async getStats(facilityId: string, fromDate: Date, toDate: Date, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const baseWhere: any = {
       facilityId,
       scheduledDate: Between(fromDate, toDate),
     };
-    if (tenantId) baseWhere.tenantId = tenantId;
+    baseWhere.tenantId = tid;
 
     const total = await this.followUpRepository.count({
       where: { ...baseWhere },
@@ -353,6 +358,7 @@ export class FollowUpsService {
   }
 
   private async generateAppointmentNumber(tenantId?: string): Promise<string> {
+    const tid = requireTenantId(tenantId);
     const today = new Date();
     const year = today.getFullYear();
     const month = String(today.getMonth() + 1).padStart(2, '0');
@@ -362,7 +368,7 @@ export class FollowUpsService {
     const qb = this.followUpRepository
       .createQueryBuilder('followUp')
       .where('followUp.appointment_number LIKE :prefix', { prefix: `${prefix}%` });
-    if (tenantId) qb.andWhere('followUp.tenant_id = :tenantId', { tenantId });
+    qb.andWhere('followUp.tenant_id = :tenantId', { tenantId: tid });
     const lastAppointment = await qb.orderBy('followUp.appointment_number', 'DESC').getOne();
 
     let sequence = 1;

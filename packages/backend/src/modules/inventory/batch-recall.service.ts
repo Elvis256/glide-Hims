@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
+import { requireTenantId } from '../../common/utils/tenant.util';
 import {
   BatchRecall,
   BatchRecallAction,
@@ -36,8 +37,9 @@ export class BatchRecallService {
     userId: string,
     tenantId?: string,
   ): Promise<BatchRecall> {
+    const tid = requireTenantId(tenantId);
     // Generate recall number
-    const count = await this.recallRepo.count({ where: tenantId ? { tenantId } : {} });
+    const count = await this.recallRepo.count({ where: { tenantId: tid } });
     const recallNumber = `RCL-${String(count + 1).padStart(6, '0')}`;
 
     // Calculate affected quantity from batch stock
@@ -46,7 +48,7 @@ export class BatchRecallService {
         batchNumber: dto.batchNumber,
         itemId: dto.itemId,
         ...(dto.facilityId ? { facilityId: dto.facilityId } : {}),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
     });
     const affectedQuantity = batchStocks.reduce((sum, bs) => sum + Number(bs.quantity), 0);
@@ -63,7 +65,7 @@ export class BatchRecallService {
       facilityId: dto.facilityId,
       initiatedById: userId,
       notes: dto.notes,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
 
     const saved = await this.recallRepo.save(recall);
@@ -76,6 +78,7 @@ export class BatchRecallService {
   }
 
   async quarantineBatch(recallId: string, userId: string, tenantId?: string): Promise<BatchRecall> {
+    const tid = requireTenantId(tenantId);
     const recall = await this.findOne(recallId, tenantId);
 
     if (recall.status === RecallStatus.COMPLETED || recall.status === RecallStatus.CANCELLED) {
@@ -90,7 +93,7 @@ export class BatchRecallService {
       .where('batchNumber = :batchNumber', { batchNumber: recall.batchNumber })
       .andWhere('itemId = :itemId', { itemId: recall.itemId })
       .andWhere("status != 'recalled'")
-      .andWhere(tenantId ? 'tenant_id = :tenantId' : '1=1', tenantId ? { tenantId } : {})
+      .andWhere('tenant_id = :tenantId', { tenantId: tid })
       .execute();
 
     const quarantinedQty = await this.batchStockRepo
@@ -99,7 +102,7 @@ export class BatchRecallService {
       .where('bs.batchNumber = :batchNumber', { batchNumber: recall.batchNumber })
       .andWhere('bs.itemId = :itemId', { itemId: recall.itemId })
       .andWhere("bs.status = 'recalled'")
-      .andWhere(tenantId ? 'bs.tenant_id = :tenantId' : '1=1', tenantId ? { tenantId } : {})
+      .andWhere('bs.tenant_id = :tenantId', { tenantId: tid })
       .getRawOne();
 
     recall.quarantinedQuantity = Number(quarantinedQty?.total || 0);
@@ -113,7 +116,7 @@ export class BatchRecallService {
       description: `Quarantined ${result.affected} batch stock records. Total quantity: ${recall.quarantinedQuantity}`,
       performedAt: new Date(),
       performedById: userId,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
     await this.actionRepo.save(action);
 

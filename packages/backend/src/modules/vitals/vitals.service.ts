@@ -8,6 +8,7 @@ import { CreateVitalDto, UpdateVitalDto } from './vitals.dto';
 import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
 import { InAppNotificationType } from '../../database/entities/in-app-notification.entity';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 export interface EarlyWarningScores {
   newsScore: number;
@@ -242,13 +243,14 @@ export class VitalsService {
     limit = 20,
     tenantId?: string,
   ): Promise<Pick<Vital, 'id' | 'recordedAt' | 'newsScore' | 'mewsScore' | 'clinicalRiskLevel'>[]> {
+    const tid = requireTenantId(tenantId);
     const qb = this.vitalRepository
       .createQueryBuilder('v')
       .select(['v.id', 'v.recordedAt', 'v.newsScore', 'v.mewsScore', 'v.clinicalRiskLevel'])
       .where('v.patient_id = :patientId', { patientId })
       .andWhere('v.news_score IS NOT NULL');
 
-    if (tenantId) qb.andWhere('v.tenant_id = :tenantId', { tenantId });
+    qb.andWhere('v.tenant_id = :tenantId', { tenantId: tid });
 
     return qb.orderBy('v.recorded_at', 'DESC').take(limit).getMany();
   }
@@ -302,9 +304,9 @@ export class VitalsService {
     userId: string,
     tenantId?: string,
   ): Promise<Vital & { alerts?: VitalAlert[] }> {
+    const tid = requireTenantId(tenantId);
     // Verify encounter exists
-    const encounterWhere: any = { id: dto.encounterId };
-    if (tenantId) encounterWhere.tenantId = tenantId;
+    const encounterWhere: any = { id: dto.encounterId, tenantId: tid };
     const encounter = await this.encounterRepository.findOne({
       where: encounterWhere,
     });
@@ -325,7 +327,7 @@ export class VitalsService {
       patientId: encounter.patientId,
       source: VitalSource.OPD_ENCOUNTER,
       recordedById: userId,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
 
     const savedVital = await this.vitalRepository.save(vital);
@@ -400,7 +402,7 @@ export class VitalsService {
               encounterId: encounter.id,
               patientId: encounter.patientId,
             },
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: tid,
           })
           .catch((err) =>
             this.logger.error(
@@ -420,8 +422,8 @@ export class VitalsService {
   }
 
   async findByEncounter(encounterId: string, tenantId?: string): Promise<Vital[]> {
-    const where: any = { encounterId, deletedAt: IsNull() };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { encounterId, deletedAt: IsNull(), tenantId: tid };
     return this.vitalRepository.find({
       where,
       order: { recordedAt: 'DESC' },
@@ -430,8 +432,8 @@ export class VitalsService {
   }
 
   async findLatestByEncounter(encounterId: string, tenantId?: string): Promise<Vital | null> {
-    const where: any = { encounterId, deletedAt: IsNull() };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { encounterId, deletedAt: IsNull(), tenantId: tid };
     return this.vitalRepository.findOne({
       where,
       order: { recordedAt: 'DESC' },
@@ -440,8 +442,8 @@ export class VitalsService {
   }
 
   async findOne(id: string, tenantId?: string): Promise<Vital> {
-    const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { id, tenantId: tid };
     const vital = await this.vitalRepository.findOne({
       where,
       relations: ['encounter', 'recordedBy'],
@@ -473,6 +475,7 @@ export class VitalsService {
 
   // Get patient's vital history across encounters
   async getPatientVitalHistory(patientId: string, limit = 10, tenantId?: string): Promise<Vital[]> {
+    const tid = requireTenantId(tenantId);
     // Prefer the denormalized patient_id column (covers mirrored rows that
     // have no encounter), but also include legacy rows where it was null
     // by joining through the encounter.
@@ -482,9 +485,7 @@ export class VitalsService {
       .leftJoinAndSelect('vital.recordedBy', 'recordedBy')
       .where('(vital.patient_id = :patientId OR encounter.patient_id = :patientId)', { patientId });
 
-    if (tenantId) {
-      qb.andWhere('vital.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('vital.tenant_id = :tenantId', { tenantId: tid });
 
     return qb.orderBy('vital.recordedAt', 'DESC').take(limit).getMany();
   }
@@ -535,6 +536,7 @@ export class VitalsService {
     bloodGlucose?: number | null;
     weight?: number | null;
   }): Promise<Vital | null> {
+    const tid = requireTenantId(params.tenantId);
     try {
       // Merge flat params with vitals object (flat params take precedence for triage callers)
       const v = {
@@ -576,7 +578,7 @@ export class VitalsService {
         recordedAt: params.recordedAt ?? new Date(),
         consciousnessLevel: (params.consciousnessLevel as ConsciousnessLevel) || null,
         supplementalOxygen: params.supplementalOxygen ?? false,
-        ...(params.tenantId ? { tenantId: params.tenantId } : {}),
+        tenantId: tid,
       } as Partial<Vital>);
 
       const saved = await this.vitalRepository.save(vital);
@@ -649,7 +651,7 @@ export class VitalsService {
               patientId: params.patientId,
               encounterId: params.encounterId ?? null,
             },
-            ...(params.tenantId ? { tenantId: params.tenantId } : {}),
+            tenantId: tid,
           })
           .catch((err) =>
             this.logger.error(

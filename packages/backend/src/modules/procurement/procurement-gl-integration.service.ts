@@ -19,6 +19,7 @@ import { JournalEntry, JournalStatus } from '../../database/entities/journal-ent
 import { JournalEntryLine } from '../../database/entities/journal-entry-line.entity';
 import { Supplier } from '../../database/entities/supplier.entity';
 import { Item } from '../../database/entities/inventory.entity';
+import { requireTenantId } from '../../common/utils/tenant.util';
 import { FinanceService } from '../finance/finance.service';
 import { BudgetService } from '../finance/budget.service';
 import {
@@ -71,10 +72,11 @@ export class ProcurementGLIntegrationService {
    * Header + balanced line items written in one transaction (audit BUG-017).
    */
   async postGRNReceiptToGL(grnId: string, userId: string, tenantId?: string): Promise<any> {
+    const tid = requireTenantId(tenantId);
     // audit BUG-010: GRN fetch was tenant-blind, so any user could post any
     // tenant's GRN to its own tenant's GL.
     const grnWhere: any = { id: grnId };
-    if (tenantId) grnWhere.tenantId = tenantId;
+    grnWhere.tenantId = tid;
 
     const grn = await this.grnRepo.findOne({
       where: grnWhere,
@@ -90,7 +92,7 @@ export class ProcurementGLIntegrationService {
 
     const accountWhere = (code: string): any => {
       const w: any = { accountCode: code };
-      if (tenantId) w.tenantId = tenantId;
+      w.tenantId = tid;
       return w;
     };
     const inventoryAccount = await this.chartOfAccountRepo.findOne({
@@ -126,7 +128,7 @@ export class ProcurementGLIntegrationService {
         status: JournalStatus.POSTED,
         reference: grnId,
         createdById: userId,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       });
       const savedEntry = (await entryRepo.save(journalEntry)) as JournalEntry;
 
@@ -141,7 +143,7 @@ export class ProcurementGLIntegrationService {
           debit: totalAmount,
           credit: 0,
           lineNumber: 1,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         }),
         lineRepo.create({
           journalEntryId: savedEntry.id,
@@ -150,7 +152,7 @@ export class ProcurementGLIntegrationService {
           debit: 0,
           credit: totalAmount,
           lineNumber: 2,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         }),
       ];
       await lineRepo.save(lines);
@@ -170,8 +172,9 @@ export class ProcurementGLIntegrationService {
    * Encumber budget on PO creation
    */
   async encumberBudgetForPO(poId: string, departmentId: string, tenantId?: string): Promise<any> {
+    const tid = requireTenantId(tenantId);
     const where: any = { id: poId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     const po = await this.poRepo.findOne({ where, relations: ['items'] });
     if (!po) throw new NotFoundException(`PO ${poId} not found`);
 
@@ -196,8 +199,9 @@ export class ProcurementGLIntegrationService {
    * Mark budget reservation as spent on GRN receipt
    */
   async markGRNBudgetSpent(grnId: string, tenantId?: string): Promise<any> {
+    const tid = requireTenantId(tenantId);
     const where: any = { id: grnId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     const grn = await this.grnRepo.findOne({ where, relations: ['purchaseOrder'] });
     if (!grn) throw new NotFoundException(`GRN ${grnId} not found`);
 
@@ -223,12 +227,11 @@ export class ProcurementGLIntegrationService {
     invoiceId: string,
     tenantId?: string,
   ): Promise<ThreeWayMatchDto> {
+    const tid = requireTenantId(tenantId);
     const poWhere: any = { id: poId };
     const grnWhere: any = { id: grnId };
-    if (tenantId) {
-      poWhere.tenantId = tenantId;
-      grnWhere.tenantId = tenantId;
-    }
+    poWhere.tenantId = tid;
+    grnWhere.tenantId = tid;
     const po = await this.poRepo.findOne({ where: poWhere, relations: ['items'] });
     const grn = await this.grnRepo.findOne({ where: grnWhere, relations: ['items'] });
 
@@ -271,8 +274,9 @@ export class ProcurementGLIntegrationService {
     departmentId: string,
     tenantId?: string,
   ): Promise<EncumbranceStatus[]> {
+    const tid = requireTenantId(tenantId);
     const where: any = { departmentId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     const pos = await this.poRepo.find({ where });
 
     return pos.map((po) => ({
@@ -295,9 +299,10 @@ export class ProcurementGLIntegrationService {
     facilityId?: string,
     tenantId?: string,
   ): Promise<ReconciliationReportDto> {
+    const tid = requireTenantId(tenantId);
     const where: any = {};
     if (facilityId) where.facilityId = facilityId;
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     // Date filtering — receivedAt for GRNs, createdAt for POs
     const grnWhere = { ...where, receivedAt: Between(startDate, endDate) };
     const poWhere = { ...where, createdAt: Between(startDate, endDate) };
@@ -328,7 +333,8 @@ export class ProcurementGLIntegrationService {
    * Get integration dashboard summary
    */
   async getIntegrationSummary(tenantId?: string): Promise<any> {
-    const tenantWhere: any = tenantId ? { tenantId } : {};
+    const tid = requireTenantId(tenantId);
+    const tenantWhere: any = { tenantId: tid };
 
     const pendingGRNs = await this.grnRepo.find({
       where: { status: GRNStatus.APPROVED, ...tenantWhere },

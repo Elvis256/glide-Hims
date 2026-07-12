@@ -9,6 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as crypto from 'crypto';
 import { ApiKey, WebhookDeliveryLog } from '../../../database/entities/api-key.entity';
+import { requireTenantId } from '../../../common/utils/tenant.util';
 
 @Injectable()
 export class ApiKeyService {
@@ -64,8 +65,8 @@ export class ApiKeyService {
   }
 
   async listApiKeys(tenantId?: string): Promise<ApiKey[]> {
-    const where: any = {};
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { tenantId: tid };
     return this.apiKeyRepo.find({ where, order: { createdAt: 'DESC' } });
   }
 
@@ -191,9 +192,9 @@ export class ApiKeyService {
     tenantId?: string,
     limit = 100,
   ): Promise<WebhookDeliveryLog[]> {
-    const where: any = {};
+    const tid = requireTenantId(tenantId);
+    const where: any = { tenantId: tid };
     if (webhookId) where.webhookId = webhookId;
-    if (tenantId) where.tenantId = tenantId;
     return this.webhookLogRepo.find({
       where,
       order: { createdAt: 'DESC' },
@@ -207,8 +208,8 @@ export class ApiKeyService {
     failed: number;
     avgDurationMs: number;
   }> {
-    const where: any = {};
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { tenantId: tid };
 
     const logs = await this.webhookLogRepo.find({ where });
     const successful = logs.filter((l) => l.status === 'success').length;

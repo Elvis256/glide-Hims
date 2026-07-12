@@ -37,6 +37,7 @@ import {
 } from './dto/finance.dto';
 import { InvoiceStatus } from '../../database/entities/invoice.entity';
 import { sumCents, eqCents, fromCents, toCents } from '../../common/utils/money';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class FinanceService {

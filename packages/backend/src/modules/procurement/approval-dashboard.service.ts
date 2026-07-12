@@ -7,6 +7,7 @@ import {
 } from '../../database/entities/procurement-approval-chain.entity';
 import { PurchaseRequest } from '../../database/entities/purchase-request.entity';
 import { PurchaseOrder } from '../../database/entities/purchase-order.entity';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class ApprovalDashboardService {
@@ -27,12 +28,14 @@ export class ApprovalDashboardService {
     facilityId?: string,
     tenantId?: string,
   ): Promise<any[]> {
+    const tid = requireTenantId(tenantId);
+
     const chains = await this.chainRepository
       .createQueryBuilder('chain')
       .leftJoinAndSelect('chain.approver', 'approver')
       .where('chain.status = :status', { status: ApprovalChainStatus.PENDING })
       .andWhere('LOWER(chain.requiredRole) = LOWER(:role)', { role })
-      .andWhere('chain.tenantId = :tenantId', { tenantId })
+      .andWhere('chain.tenantId = :tenantId', { tenantId: tid })
       .orderBy('chain.createdAt', 'ASC')
       .getMany();
 
@@ -40,8 +43,8 @@ export class ApprovalDashboardService {
     for (const chain of chains) {
       const doc =
         chain.documentType === 'PR'
-          ? await this.prRepository.findOne({ where: { id: chain.documentId } })
-          : await this.poRepository.findOne({ where: { id: chain.documentId } });
+          ? await this.prRepository.findOne({ where: { id: chain.documentId, tenantId: tid } })
+          : await this.poRepository.findOne({ where: { id: chain.documentId, tenantId: tid } });
 
       if (!doc || (facilityId && doc.facilityId !== facilityId)) {
         continue;
@@ -78,13 +81,15 @@ export class ApprovalDashboardService {
     documentType: 'PR' | 'PO',
     tenantId: string,
   ): Promise<any[]> {
+    const tid = requireTenantId(tenantId);
+
     const chains = await this.chainRepository
       .createQueryBuilder('chain')
       .leftJoinAndSelect('chain.approver', 'approver')
       .leftJoinAndSelect('chain.approvedBy', 'approvedBy')
       .where('chain.documentId = :documentId', { documentId })
       .andWhere('chain.documentType = :documentType', { documentType })
-      .andWhere('chain.tenantId = :tenantId', { tenantId })
+      .andWhere('chain.tenantId = :tenantId', { tenantId: tid })
       .orderBy('chain.approvalLevel', 'ASC')
       .addOrderBy('chain.createdAt', 'ASC')
       .getMany();
@@ -108,11 +113,13 @@ export class ApprovalDashboardService {
    * Get approval bottlenecks (levels taking >5 days on average)
    */
   async getApprovalBottlenecks(facilityId: string, tenantId: string): Promise<any[]> {
+    const tid = requireTenantId(tenantId);
+
     // Query all approved chains with timestamps
     const chains = await this.chainRepository
       .createQueryBuilder('chain')
       .where('chain.status = :status', { status: ApprovalChainStatus.APPROVED })
-      .andWhere('chain.tenantId = :tenantId', { tenantId })
+      .andWhere('chain.tenantId = :tenantId', { tenantId: tid })
       .andWhere('chain.approvedAt IS NOT NULL')
       .getMany();
 
@@ -122,8 +129,8 @@ export class ApprovalDashboardService {
     for (const chain of chains) {
       const doc =
         chain.documentType === 'PR'
-          ? await this.prRepository.findOne({ where: { id: chain.documentId } })
-          : await this.poRepository.findOne({ where: { id: chain.documentId } });
+          ? await this.prRepository.findOne({ where: { id: chain.documentId, tenantId: tid } })
+          : await this.poRepository.findOne({ where: { id: chain.documentId, tenantId: tid } });
 
       if (!doc || doc.facilityId !== facilityId) {
         continue;
@@ -166,11 +173,13 @@ export class ApprovalDashboardService {
     daysPending: number = 5,
     tenantId: string,
   ): Promise<any[]> {
+    const tid = requireTenantId(tenantId);
+
     const chains = await this.chainRepository
       .createQueryBuilder('chain')
       .leftJoinAndSelect('chain.approver', 'approver')
       .where('chain.status = :status', { status: ApprovalChainStatus.PENDING })
-      .andWhere('chain.tenantId = :tenantId', { tenantId })
+      .andWhere('chain.tenantId = :tenantId', { tenantId: tid })
       .getMany();
 
     const cutoffDate = new Date();
@@ -181,8 +190,8 @@ export class ApprovalDashboardService {
       if (new Date(chain.createdAt) < cutoffDate) {
         const doc =
           chain.documentType === 'PR'
-            ? await this.prRepository.findOne({ where: { id: chain.documentId } })
-            : await this.poRepository.findOne({ where: { id: chain.documentId } });
+            ? await this.prRepository.findOne({ where: { id: chain.documentId, tenantId: tid } })
+            : await this.poRepository.findOne({ where: { id: chain.documentId, tenantId: tid } });
 
         if (!doc || doc.facilityId !== facilityId) {
           continue;
@@ -218,24 +227,14 @@ export class ApprovalDashboardService {
    * Get high-level dashboard summary
    */
   async getDashboardSummary(facilityId: string, tenantId: string): Promise<any> {
-    if (!tenantId) {
-      return {
-        pending: 0,
-        approved: 0,
-        rejected: 0,
-        avgApprovalDays: 0,
-        bottlenecks: 0,
-        escalations: 0,
-        escalationList: [],
-      };
-    }
+    const tid = requireTenantId(tenantId);
 
     // Count by status
     const chainStats = await this.chainRepository
       .createQueryBuilder('chain')
       .select('chain.status', 'status')
       .addSelect('COUNT(*)', 'count')
-      .where('chain.tenantId = :tenantId', { tenantId })
+      .where('chain.tenantId = :tenantId', { tenantId: tid })
       .groupBy('chain.status')
       .getRawMany();
 
@@ -250,16 +249,16 @@ export class ApprovalDashboardService {
     }
 
     // Get bottlenecks and escalations
-    const bottlenecks = facilityId ? await this.getApprovalBottlenecks(facilityId, tenantId) : [];
+    const bottlenecks = facilityId ? await this.getApprovalBottlenecks(facilityId, tid) : [];
     const escalations = facilityId
-      ? await this.getEscalationCandidates(facilityId, 5, tenantId)
+      ? await this.getEscalationCandidates(facilityId, 5, tid)
       : [];
 
     // Calculate average approval time for approved items
     const approvedChains = await this.chainRepository
       .createQueryBuilder('chain')
       .where('chain.status = :status', { status: ApprovalChainStatus.APPROVED })
-      .andWhere('chain.tenantId = :tenantId', { tenantId })
+      .andWhere('chain.tenantId = :tenantId', { tenantId: tid })
       .andWhere('chain.approvedAt IS NOT NULL')
       .getMany();
 
@@ -269,8 +268,8 @@ export class ApprovalDashboardService {
     for (const chain of approvedChains) {
       const doc =
         chain.documentType === 'PR'
-          ? await this.prRepository.findOne({ where: { id: chain.documentId } })
-          : await this.poRepository.findOne({ where: { id: chain.documentId } });
+          ? await this.prRepository.findOne({ where: { id: chain.documentId, tenantId: tid } })
+          : await this.poRepository.findOne({ where: { id: chain.documentId, tenantId: tid } });
 
       if (doc && (!facilityId || doc.facilityId === facilityId)) {
         const days = Math.floor(

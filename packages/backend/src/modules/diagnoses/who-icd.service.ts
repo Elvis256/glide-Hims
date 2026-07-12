@@ -7,6 +7,7 @@ import { Repository, IsNull } from 'typeorm';
 import { AxiosResponse } from 'axios';
 import { Diagnosis, DiagnosisCategory, ICDVersion } from '../../database/entities/diagnosis.entity';
 import { ICD10Code } from '../../database/entities/icd10-code.entity';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 interface WHOTokenResponse {
   access_token: string;
@@ -444,8 +445,9 @@ export class WHOICDService {
     version: 'ICD-10' | 'ICD-11' = 'ICD-10',
     tenantId?: string,
   ): Promise<Diagnosis | null> {
+    const tid = requireTenantId(tenantId);
     const findWhere: any = { icd10Code: code, deletedAt: IsNull() };
-    if (tenantId) findWhere.tenantId = tenantId;
+    findWhere.tenantId = tid;
     const existing = await this.diagnosisRepo.findOne({
       where: findWhere,
     });
@@ -464,7 +466,7 @@ export class WHOICDService {
       category: this.mapChapterToCategory(match.chapter),
       chapterName: match.chapter,
       isActive: true,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
 
     return this.diagnosisRepo.save(diagnosis);
@@ -474,12 +476,13 @@ export class WHOICDService {
     codes: Array<{ code: string; title: string; chapter?: string }>,
     tenantId?: string,
   ): Promise<number> {
+    const tid = requireTenantId(tenantId);
     let imported = 0;
 
     for (const item of codes) {
       try {
         const findWhere: any = { icd10Code: item.code, deletedAt: IsNull() };
-        if (tenantId) findWhere.tenantId = tenantId;
+        findWhere.tenantId = tid;
         const existing = await this.diagnosisRepo.findOne({
           where: findWhere,
         });
@@ -492,7 +495,7 @@ export class WHOICDService {
               category: this.mapChapterToCategory(item.chapter),
               chapterName: item.chapter,
               isActive: true,
-              ...(tenantId ? { tenantId } : {}),
+              tenantId: tid,
             }),
           );
           imported++;

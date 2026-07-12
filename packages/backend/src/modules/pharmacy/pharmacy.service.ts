@@ -68,6 +68,7 @@ import { MedicationSafetyService } from '../allergies/medication-safety.service'
 import { BillingService } from '../billing/billing.service';
 import { Patient } from '../../database/entities/patient.entity';
 import { Store } from '../../database/entities/store.entity';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 // C4: VAT rate is loaded per-tenant from efris_config, fallback to UG default.
 // This is retrieved in getDefaultVatRate() which caches the result.
@@ -207,6 +208,7 @@ export class PharmacyService {
     facilityId?: string,
     tenantId?: string,
   ): Promise<{ pending: number; dispensed: number }> {
+    const tid = requireTenantId(tenantId);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -215,11 +217,8 @@ export class PharmacyService {
       .createQueryBuilder('p')
       .where('p.status IN (:...statuses)', {
         statuses: [PrescriptionStatus.PENDING, PrescriptionStatus.PARTIALLY_DISPENSED],
-      });
-
-    if (tenantId) {
-      pendingQuery.andWhere('p.tenant_id = :tenantId', { tenantId });
-    }
+      })
+      .andWhere('p.tenant_id = :tenantId', { tenantId: tid });
 
     const pending = await pendingQuery.getCount();
 
@@ -227,11 +226,8 @@ export class PharmacyService {
     const dispensedQuery = this.prescriptionRepo
       .createQueryBuilder('p')
       .where('p.status = :status', { status: PrescriptionStatus.DISPENSED })
-      .andWhere('p.updatedAt >= :today', { today });
-
-    if (tenantId) {
-      dispensedQuery.andWhere('p.tenant_id = :tenantId', { tenantId });
-    }
+      .andWhere('p.updatedAt >= :today', { today })
+      .andWhere('p.tenant_id = :tenantId', { tenantId: tid });
 
     const dispensed = await dispensedQuery.getCount();
 
@@ -239,10 +235,11 @@ export class PharmacyService {
   }
 
   async createSale(dto: CreatePharmacySaleDto, userId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     // D2: Offline idempotency — if clientSaleId provided and a sale with that key exists, return it
     if (dto.clientSaleId) {
       const existing = await this.saleRepo.findOne({
-        where: { clientSaleId: dto.clientSaleId, ...(tenantId ? { tenantId } : {}) },
+        where: { clientSaleId: dto.clientSaleId, tenantId: tid },
       });
       if (existing) {
         const existingItems = await this.saleItemRepo.find({ where: { saleId: existing.id } });
@@ -306,7 +303,7 @@ export class PharmacyService {
             where: {
               prescriptionId: dto.prescriptionId,
               status: SaleStatus.COMPLETED,
-              ...(tenantId ? { tenantId } : {}),
+              tenantId: tid,
             },
           });
           if (existingSale) {
@@ -353,7 +350,7 @@ export class PharmacyService {
           originalOfflineTimestamp: dto.originalOfflineTimestamp
             ? new Date(dto.originalOfflineTimestamp)
             : undefined,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         });
         const saved = await manager.save(PharmacySale, sale);
 
@@ -364,7 +361,7 @@ export class PharmacyService {
 
           if (item.itemId) {
             const drug = await manager.findOne(Item, {
-              where: { id: item.itemId, ...(tenantId ? { tenantId } : {}) },
+              where: { id: item.itemId, tenantId: tid },
             });
             if (drug && drug.status !== 'active') {
               throw new BadRequestException(
@@ -398,7 +395,7 @@ export class PharmacyService {
             taxCode: item.taxCode,
             taxExemptionReason: item.taxExemptionReason,
             instructions: item.instructions,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: tid,
           });
           if (item.expiryDate) {
             saleItem.expiryDate = new Date(item.expiryDate);
@@ -416,7 +413,7 @@ export class PharmacyService {
         // Treat that as the idempotent path and return the winning row.
         if (dto.clientSaleId && err?.code === '23505') {
           const dup = await this.saleRepo.findOne({
-            where: { clientSaleId: dto.clientSaleId, ...(tenantId ? { tenantId } : {}) },
+            where: { clientSaleId: dto.clientSaleId, tenantId: tid },
           });
           if (dup) return dup.id;
         }
@@ -431,6 +428,7 @@ export class PharmacyService {
    * Controlled substances are flagged `cacheable=false` so they cannot be sold offline.
    */
   async getItemsSyncBundle(tenantId: string | undefined, since?: string, limit = 100, offset = 0) {
+    const tid = requireTenantId(tenantId);
     const qb = this.inventoryRepo
       .createQueryBuilder('item')
       .select([
@@ -446,9 +444,8 @@ export class PharmacyService {
       .where(`item.status = 'active'`)
       .orderBy('item.updatedAt', 'DESC')
       .take(limit)
-      .skip(offset);
-
-    if (tenantId) qb.andWhere('item.tenantId = :tenantId', { tenantId });
+      .skip(offset)
+      .andWhere('item.tenantId = :tenantId', { tenantId: tid });
     if (since) {
       const sinceDate = new Date(since);
       if (!isNaN(sinceDate.getTime())) {
@@ -483,12 +480,13 @@ export class PharmacyService {
     limit = 50,
     tenantId?: string,
   ) {
+    const tid = requireTenantId(tenantId);
     const query = this.saleRepo
       .createQueryBuilder('s')
       .leftJoinAndSelect('s.store', 'st')
       .leftJoin('s.patient', 'p')
       .addSelect(['p.id', 'p.mrn', 'p.fullName']);
-    if (tenantId) query.andWhere('s.tenant_id = :tenantId', { tenantId });
+    query.andWhere('s.tenant_id = :tenantId', { tenantId: tid });
     if (storeId) query.andWhere('s.storeId = :storeId', { storeId });
     if (status) query.andWhere('s.status = :status', { status });
     if (date) {
@@ -502,8 +500,8 @@ export class PharmacyService {
   }
 
   async findSale(id: string, tenantId?: string) {
-    const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { id, tenantId: tid };
     const sale = await this.saleRepo.findOne({
       where,
       relations: ['store', 'soldBy'],
@@ -520,20 +518,20 @@ export class PharmacyService {
     }
     if (!sale) throw new NotFoundException('Sale not found');
     // C3: filter soft-deleted sale items
-    const itemWhere: any = { saleId: id, deletedAt: IsNull() };
-    if (tenantId) itemWhere.tenantId = tenantId;
+    const itemWhere: any = { saleId: id, deletedAt: IsNull(), tenantId: tid };
     const items = await this.saleItemRepo.find({ where: itemWhere });
     return { ...sale, items };
   }
 
   async completeSale(id: string, dto: CompleteSaleDto, userId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     // Validate and deduct stock within a single transaction for full consistency.
     // The sale itself is row-locked inside the txn so two concurrent
     // completeSale calls on the same sale id cannot both pass the
     // status==PENDING check and double-deduct stock (P0).
     const txnResult = await this.dataSource.transaction(async (manager) => {
       const sale = await manager.findOne(PharmacySale, {
-        where: { id, ...(tenantId ? { tenantId } : {}) },
+        where: { id, tenantId: tid },
         lock: { mode: 'pessimistic_write' },
       });
       if (!sale) throw new NotFoundException('Sale not found');
@@ -628,7 +626,7 @@ export class PharmacyService {
         // know now because failure to pick a batch for such an item must be
         // fatal rather than silently falling through to facility-level balance.
         const inventoryRow = await inventoryRepo.findOne({
-          where: { id: item.itemId, ...(tenantId ? { tenantId } : {}) },
+          where: { id: item.itemId, tenantId: tid },
         });
 
         const candidates = await batchStockRepo
@@ -639,7 +637,7 @@ export class PharmacyService {
           .andWhere('(bs.quantity - COALESCE(bs.reservedQuantity, 0)) >= :qty', {
             qty: item.quantity,
           })
-          .andWhere(tenantId ? 'bs.tenantId = :tenantId' : '1=1', tenantId ? { tenantId } : {})
+          .andWhere('bs.tenantId = :tenantId', { tenantId: tid })
           .orderBy('bs.expiryDate', 'ASC', 'NULLS LAST')
           .addOrderBy('bs.createdAt', 'ASC')
           .getMany();
@@ -675,9 +673,7 @@ export class PharmacyService {
           .where('sb.itemId IN (:...itemIds)', { itemIds })
           .andWhere('sb.facilityId = :facilityId', { facilityId })
           .orderBy('sb.itemId', 'ASC');
-        if (tenantId) {
-          stockQuery.andWhere('sb.tenantId = :tenantId', { tenantId });
-        }
+        stockQuery.andWhere('sb.tenantId = :tenantId', { tenantId: tid });
         allStockBalances = await stockQuery.getMany();
       }
       const stockMap = new Map(allStockBalances.map((sb) => [sb.itemId, sb]));
@@ -692,9 +688,7 @@ export class PharmacyService {
           .where('bs.facilityId = :facilityId', { facilityId })
           .orderBy('bs.itemId', 'ASC')
           .addOrderBy('bs.batchNumber', 'ASC');
-        if (tenantId) {
-          batchQuery.andWhere('bs.tenantId = :tenantId', { tenantId });
-        }
+        batchQuery.andWhere('bs.tenantId = :tenantId', { tenantId: tid });
         const orConditions = batchItems.map(
           (_: any, idx: number) =>
             `(bs.itemId = :bItemId${idx} AND bs.batchNumber = :bBatch${idx})`,

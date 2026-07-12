@@ -16,13 +16,7 @@ import {
   Waiver,
   WaiverStatus,
 } from '../../database/entities/finance-extended.entity';
-
-function requireTenant(tenantId?: string): string {
-  if (!tenantId) {
-    throw new ForbiddenException('Tenant context required');
-  }
-  return tenantId;
-}
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class PatientFinanceService {
@@ -54,6 +48,7 @@ export class PatientFinanceService {
     },
     tenantId?: string,
   ): Promise<PatientCreditNote> {
+    const tid = requireTenantId(tenantId);
     const creditNote = this.creditNoteRepo.create({
       patientId: dto.patientId,
       invoiceId: dto.invoiceId,
@@ -63,7 +58,7 @@ export class PatientFinanceService {
       createdBy: dto.issuedById,
       facilityId: dto.facilityId,
       status: CreditNoteStatus.DRAFT,
-      tenantId,
+      tenantId: tid,
     });
     return this.creditNoteRepo.save(creditNote);
   }
@@ -73,10 +68,10 @@ export class PatientFinanceService {
     facilityId?: string,
     tenantId?: string,
   ): Promise<PatientCreditNote[]> {
-    const where: any = {};
+    const tid = requireTenantId(tenantId);
+    const where: any = { tenantId: tid };
     if (patientId) where.patientId = patientId;
     if (facilityId) where.facilityId = facilityId;
-    if (tenantId) where.tenantId = tenantId;
     return this.creditNoteRepo.find({ where, order: { createdAt: 'DESC' } });
   }
 
@@ -85,7 +80,7 @@ export class PatientFinanceService {
     approverUserId: string,
     tenantId?: string,
   ): Promise<PatientCreditNote> {
-    const tid = requireTenant(tenantId);
+    const tid = requireTenantId(tenantId);
     const note = await this.creditNoteRepo.findOne({
       where: { id: creditNoteId, tenantId: tid },
     });
@@ -118,7 +113,7 @@ export class PatientFinanceService {
     amount: number,
     tenantId?: string,
   ): Promise<PatientCreditNote> {
-    const tid = requireTenant(tenantId);
+    const tid = requireTenantId(tenantId);
 
     return this.dataSource.transaction(async (manager) => {
       const repo = manager.getRepository(PatientCreditNote);
@@ -169,6 +164,7 @@ export class PatientFinanceService {
     },
     tenantId?: string,
   ): Promise<PatientDeposit> {
+    const tid = requireTenantId(tenantId);
     const deposit = this.depositRepo.create({
       patientId: dto.patientId,
       depositNumber: dto.depositNumber,
@@ -179,14 +175,14 @@ export class PatientFinanceService {
       receivedBy: dto.receivedById,
       notes: dto.notes,
       status: DepositStatus.ACTIVE,
-      tenantId,
+      tenantId: tid,
     });
     return this.depositRepo.save(deposit);
   }
 
   async getPatientDeposits(patientId: string, tenantId?: string): Promise<PatientDeposit[]> {
-    const where: any = { patientId };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { patientId, tenantId: tid };
     return this.depositRepo.find({ where, order: { createdAt: 'DESC' } });
   }
 
@@ -202,8 +198,9 @@ export class PatientFinanceService {
       const appRepo = manager.getRepository(DepositApplication);
 
       // Lock the deposit row to prevent concurrent applications
+      const tid = requireTenantId(tenantId);
       const deposit = await depositRepo.findOne({
-        where: { id: depositId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: depositId, tenantId: tid },
         lock: { mode: 'pessimistic_write' },
       });
       if (!deposit) {
@@ -225,7 +222,7 @@ export class PatientFinanceService {
         invoiceId,
         amount,
         appliedBy: appliedById,
-        tenantId,
+        tenantId: tid,
       });
       const savedApplication = await appRepo.save(application);
 
@@ -239,7 +236,7 @@ export class PatientFinanceService {
         .createQueryBuilder('a')
         .select('COALESCE(SUM(a.amount), 0)', 'sum')
         .where('a.deposit_id = :depositId', { depositId })
-        .andWhere(tenantId ? 'a.tenant_id = :tenantId' : '1=1', { tenantId })
+        .andWhere('a.tenant_id = :tenantId', { tenantId: tid })
         .getRawOne();
       const totalApplied = Number(sumRow?.sum ?? 0);
       const newBalance = Number(deposit.amount) - totalApplied;
@@ -261,8 +258,8 @@ export class PatientFinanceService {
     patientId: string,
     tenantId?: string,
   ): Promise<{ totalDeposits: number; totalApplied: number; availableBalance: number }> {
-    const where: any = { patientId };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { patientId, tenantId: tid };
 
     const deposits = await this.depositRepo.find({ where });
 
@@ -286,6 +283,7 @@ export class PatientFinanceService {
     },
     tenantId?: string,
   ): Promise<Waiver> {
+    const tid = requireTenantId(tenantId);
     const waiver = this.waiverRepo.create({
       invoiceId: dto.invoiceId,
       patientId: dto.patientId,
@@ -294,16 +292,16 @@ export class PatientFinanceService {
       requestedBy: dto.requestedById,
       facilityId: dto.facilityId,
       status: WaiverStatus.PENDING,
-      tenantId,
+      tenantId: tid,
     });
     return this.waiverRepo.save(waiver);
   }
 
   async findAllWaivers(facilityId?: string, status?: string, tenantId?: string): Promise<Waiver[]> {
-    const where: any = {};
+    const tid = requireTenantId(tenantId);
+    const where: any = { tenantId: tid };
     if (facilityId) where.facilityId = facilityId;
     if (status) where.status = status;
-    if (tenantId) where.tenantId = tenantId;
     return this.waiverRepo.find({ where, order: { createdAt: 'DESC' } });
   }
 
@@ -314,7 +312,7 @@ export class PatientFinanceService {
     notes?: string,
     tenantId?: string,
   ): Promise<Waiver> {
-    const tid = requireTenant(tenantId);
+    const tid = requireTenantId(tenantId);
     if (!userId) throw new ForbiddenException('Authenticated user required');
 
     return this.dataSource.transaction(async (manager) => {
@@ -362,8 +360,8 @@ export class PatientFinanceService {
     reason: string,
     tenantId?: string,
   ): Promise<Waiver> {
-    const where: any = { id: waiverId };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { id: waiverId, tenantId: tid };
 
     const waiver = await this.waiverRepo.findOne({ where });
     if (!waiver) {

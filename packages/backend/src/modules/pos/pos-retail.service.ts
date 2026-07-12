@@ -55,6 +55,7 @@ import {
   GetReprintReceiptOptions,
   UpdateRetailCustomerDto,
 } from './pos-retail.dto';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 function generateReturnNumber(): string {
   const ts = Date.now().toString(36).toUpperCase();
@@ -319,8 +320,9 @@ export class PosRetailService {
     tenantId: string,
     referenceId: string,
   ): Promise<void> {
+    const tid = requireTenantId(tenantId);
     const stockBalance = await manager.findOne(StockBalance, {
-      where: { itemId, facilityId, ...(tenantId ? { tenantId } : {}) },
+      where: { itemId, facilityId, tenantId: tid },
       lock: { mode: 'pessimistic_write' },
     });
     if (stockBalance) {
@@ -341,7 +343,7 @@ export class PosRetailService {
         notes: 'POS Return restock',
         createdById: 'system',
         facilityId,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       }),
     );
   }
@@ -673,10 +675,11 @@ export class PosRetailService {
   // ─── B5: Barcode lookup ───────────────────────────────────────────────────
 
   async getItemByBarcode(barcode: string, tenantId: string, facilityId?: string) {
+    const tid = requireTenantId(tenantId);
     const item = await this.itemRepo
       .createQueryBuilder('i')
       .where('i.barcode = :barcode', { barcode })
-      .andWhere(tenantId ? 'i.tenant_id = :tenantId' : '1=1', { tenantId })
+      .andWhere('i.tenant_id = :tenantId', { tenantId: tid })
       .getOne();
 
     if (!item) throw new NotFoundException(`No item found for barcode "${barcode}"`);
@@ -684,7 +687,7 @@ export class PosRetailService {
     let availableQty = 0;
     if (facilityId) {
       const sb = await this.stockBalanceRepo.findOne({
-        where: { itemId: item.id, facilityId, ...(tenantId ? { tenantId } : {}) },
+        where: { itemId: item.id, facilityId, tenantId: tid },
       });
       availableQty = sb ? Number(sb.availableQuantity) : 0;
     }

@@ -36,6 +36,7 @@ import {
 import { BulkImportResult, BulkImportRowError } from './dto/bulk-import.dto';
 import { SubscriptionLimitsService } from '../licensing/subscription-limits.service';
 import * as XLSX from 'xlsx';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 // Improvement #6: Role → StaffCategory mapping utility
 const ROLE_CATEGORY_MAP: Record<string, StaffCategory> = {
@@ -500,8 +501,9 @@ export class UsersService {
   }
 
   async findOne(id: string, tenantId?: string): Promise<User> {
+    const tid = requireTenantId(tenantId);
     const user = await this.userRepository.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
     });
 
     if (!user) {
@@ -512,16 +514,17 @@ export class UsersService {
   }
 
   async findOneWithRoles(id: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const user = await this.findOne(id, tenantId);
 
     const userRoles = await this.userRoleRepository.find({
-      where: { userId: id, ...(tenantId ? { tenantId } : {}) },
+      where: { userId: id, tenantId: tid },
       relations: ['role', 'facility', 'department'],
     });
 
     // Get employee profile if linked
     const employee = await this.employeeRepository.findOne({
-      where: { userId: id, ...(tenantId ? { tenantId } : {}) },
+      where: { userId: id, tenantId: tid },
       relations: ['facility'],
     });
 
@@ -558,10 +561,11 @@ export class UsersService {
     tenantId?: string,
     caller?: any,
   ): Promise<Employee> {
+    const tid = requireTenantId(tenantId);
     const user = await this.findOne(userId, tenantId);
 
     const employee = await this.employeeRepository.findOne({
-      where: { id: employeeId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: employeeId, tenantId: tid },
     });
 
     if (!employee) {
@@ -579,7 +583,7 @@ export class UsersService {
     }
 
     const existingLink = await this.employeeRepository.findOne({
-      where: { userId, ...(tenantId ? { tenantId } : {}) },
+      where: { userId, tenantId: tid },
     });
 
     if (existingLink && existingLink.id !== employeeId) {
@@ -612,11 +616,12 @@ export class UsersService {
   }
 
   async unlinkUserFromEmployee(userId: string, tenantId?: string, caller?: any): Promise<void> {
+    const tid = requireTenantId(tenantId);
     // Make sure the target user is in the caller's tenant (404s on mismatch).
     await this.findOne(userId, tenantId);
 
     const employee = await this.employeeRepository.findOne({
-      where: { userId, ...(tenantId ? { tenantId } : {}) },
+      where: { userId, tenantId: tid },
     });
 
     if (!employee) {
@@ -663,6 +668,7 @@ export class UsersService {
     tenantId: string | undefined,
     options: { search?: string; limit?: number; offset?: number } = {},
   ): Promise<{ data: any[]; total: number }> {
+    const tid = requireTenantId(tenantId);
     const limit = Math.min(Math.max(options.limit ?? 50, 1), 500);
     const offset = Math.max(options.offset ?? 0, 0);
 
@@ -671,9 +677,7 @@ export class UsersService {
       .leftJoin(Employee, 'emp', 'emp.user_id = user.id')
       .where('emp.id IS NULL');
 
-    if (tenantId) {
-      qb.andWhere('user.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('user.tenant_id = :tenantId', { tenantId: tid });
     if (options.search) {
       qb.andWhere('(user.username ILIKE :q OR user.full_name ILIKE :q OR user.email ILIKE :q)', {
         q: `%${options.search}%`,
@@ -704,14 +708,13 @@ export class UsersService {
     tenantId: string | undefined,
     options: { facilityId?: string; search?: string; limit?: number; offset?: number } = {},
   ): Promise<{ data: any[]; total: number }> {
+    const tid = requireTenantId(tenantId);
     const limit = Math.min(Math.max(options.limit ?? 50, 1), 500);
     const offset = Math.max(options.offset ?? 0, 0);
 
     const qb = this.employeeRepository.createQueryBuilder('emp').where('emp.user_id IS NULL');
 
-    if (tenantId) {
-      qb.andWhere('emp.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('emp.tenant_id = :tenantId', { tenantId: tid });
     if (options.facilityId) {
       qb.andWhere('emp.facility_id = :facilityId', { facilityId: options.facilityId });
     }
@@ -790,8 +793,9 @@ export class UsersService {
   }
 
   async getEmployeeByUserId(userId: string, tenantId?: string): Promise<Employee | null> {
+    const tid = requireTenantId(tenantId);
     return this.employeeRepository.findOne({
-      where: { userId, ...(tenantId ? { tenantId } : {}) },
+      where: { userId, tenantId: tid },
       relations: ['facility'],
     });
   }
@@ -850,7 +854,7 @@ export class UsersService {
     // Improvement #5: Sync HR fields to linked employee record
     try {
       const employee = await this.employeeRepository.findOne({
-        where: { userId: id, ...(tenantId ? { tenantId } : {}) },
+        where: { userId: id, tenantId: requireTenantId(tenantId) },
       });
       if (employee) {
         let employeeUpdated = false;
@@ -888,7 +892,8 @@ export class UsersService {
     tenantId?: string,
     caller?: { id?: string; userId?: string; isSystemAdmin?: boolean },
   ): Promise<void> {
-    const user = await this.findOne(id, tenantId);
+    const tid = requireTenantId(tenantId);
+    const user = await this.findOne(id, tid);
 
     // Fix 14: self-deletion guard
     const callerId = caller?.id || caller?.userId;
@@ -902,28 +907,26 @@ export class UsersService {
     }
 
     // Fix 14: last-admin guard — count remaining admins for tenant before deleting
-    if (tenantId) {
-      const adminRoles = await this.roleRepository.find({
-        where: [
-          { name: 'Administrator', isSystemRole: true },
-          { name: 'Super Admin', isSystemRole: true },
-        ],
-      });
-      if (adminRoles.length > 0) {
-        const adminRoleIds = adminRoles.map((r) => r.id);
-        const adminCount = await this.userRoleRepository
-          .createQueryBuilder('ur')
-          .innerJoin('ur.user', 'u')
-          .where('ur.roleId IN (:...roleIds)', { roleIds: adminRoleIds })
-          .andWhere('u.tenantId = :tenantId', { tenantId })
-          .andWhere('u.id != :userId', { userId: id })
-          .andWhere('u.deletedAt IS NULL')
-          .getCount();
-        if (adminCount === 0) {
-          throw new BadRequestException(
-            'Cannot delete the last administrator for this organization',
-          );
-        }
+    const adminRoles = await this.roleRepository.find({
+      where: [
+        { name: 'Administrator', isSystemRole: true },
+        { name: 'Super Admin', isSystemRole: true },
+      ],
+    });
+    if (adminRoles.length > 0) {
+      const adminRoleIds = adminRoles.map((r) => r.id);
+      const adminCount = await this.userRoleRepository
+        .createQueryBuilder('ur')
+        .innerJoin('ur.user', 'u')
+        .where('ur.roleId IN (:...roleIds)', { roleIds: adminRoleIds })
+        .andWhere('u.tenantId = :tenantId', { tenantId: tid })
+        .andWhere('u.id != :userId', { userId: id })
+        .andWhere('u.deletedAt IS NULL')
+        .getCount();
+      if (adminCount === 0) {
+        throw new BadRequestException(
+          'Cannot delete the last administrator for this organization',
+        );
       }
     }
 
@@ -958,12 +961,13 @@ export class UsersService {
     await this.assertCallerCanGrantRole(role, caller);
 
     // Check if role is already assigned with same scope
+    const tid = requireTenantId(tenantId);
     const existing = await this.userRoleRepository.findOne({
       where: {
         userId,
         roleId: dto.roleId,
         facilityId: dto.facilityId || undefined,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
     });
 
@@ -1038,8 +1042,8 @@ export class UsersService {
   }
 
   async getUserRoles(userId: string, tenantId?: string): Promise<any[]> {
-    const where: any = { userId };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { userId, tenantId: tid };
     const userRoles = await this.userRoleRepository.find({
       where,
       relations: ['role', 'facility'],
@@ -1089,9 +1093,10 @@ export class UsersService {
 
   // Direct user permission management
   async getUserPermissions(userId: string, tenantId?: string): Promise<UserPermission[]> {
+    const tid = requireTenantId(tenantId);
     await this.findOne(userId, tenantId);
     return this.userPermissionRepository.find({
-      where: { userId, ...(tenantId ? { tenantId } : {}) },
+      where: { userId, tenantId: tid },
       relations: ['permission'],
     });
   }
@@ -1102,10 +1107,11 @@ export class UsersService {
     grantedBy: string,
     tenantId?: string,
   ): Promise<UserPermission> {
+    const tid = requireTenantId(tenantId);
     await this.findOne(userId, tenantId);
 
     const permission = await this.permissionRepository.findOne({
-      where: { id: dto.permissionId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: dto.permissionId, tenantId: tid },
     });
     if (!permission) {
       throw new NotFoundException('Permission not found');
@@ -1113,7 +1119,7 @@ export class UsersService {
 
     // Check if already assigned
     const existing = await this.userPermissionRepository.findOne({
-      where: { userId, permissionId: dto.permissionId, ...(tenantId ? { tenantId } : {}) },
+      where: { userId, permissionId: dto.permissionId, tenantId: tid },
     });
     if (existing) {
       throw new ConflictException('Permission already assigned to this user');
@@ -1150,8 +1156,9 @@ export class UsersService {
   }
 
   async removePermission(userId: string, permissionId: string, tenantId?: string): Promise<void> {
+    const tid = requireTenantId(tenantId);
     const userPermission = await this.userPermissionRepository.findOne({
-      where: { userId, permissionId, ...(tenantId ? { tenantId } : {}) },
+      where: { userId, permissionId, tenantId: tid },
       relations: ['permission'],
     });
     if (!userPermission) {
@@ -1203,18 +1210,18 @@ export class UsersService {
   }
 
   async removeAllUserPermissions(userId: string, tenantId?: string): Promise<void> {
+    const tid = requireTenantId(tenantId);
     await this.findOne(userId, tenantId);
-    const where: any = { userId };
-    if (tenantId) where.tenantId = tenantId;
-    await this.userPermissionRepository.delete(where);
+    await this.userPermissionRepository.delete({ userId, tenantId: tid });
   }
 
   /**
    * Check if user has an associated employee record
    */
   async hasEmployeeRecord(userId: string, tenantId?: string): Promise<boolean> {
+    const tid = requireTenantId(tenantId);
     const employee = await this.employeeRepository.findOne({
-      where: { userId, ...(tenantId ? { tenantId } : {}) },
+      where: { userId, tenantId: tid },
     });
     return !!employee;
   }
@@ -1223,8 +1230,9 @@ export class UsersService {
    * Get employee record for a user
    */
   async getEmployeeForUser(userId: string, tenantId?: string): Promise<Employee | null> {
+    const tid = requireTenantId(tenantId);
     return this.employeeRepository.findOne({
-      where: { userId, ...(tenantId ? { tenantId } : {}) },
+      where: { userId, tenantId: tid },
       relations: ['facility'],
     });
   }
@@ -1233,8 +1241,9 @@ export class UsersService {
    * Validate user has employee profile - throws if not linked
    */
   async validateUserHasEmployee(userId: string, tenantId?: string): Promise<Employee> {
+    const tid = requireTenantId(tenantId);
     const employee = await this.employeeRepository.findOne({
-      where: { userId, ...(tenantId ? { tenantId } : {}) },
+      where: { userId, tenantId: tid },
       relations: ['facility'],
     });
     if (!employee) {
@@ -1249,13 +1258,12 @@ export class UsersService {
    * Improvement #3: Backfill employees for users that don't have one
    */
   async backfillEmployees(tenantId?: string): Promise<{ created: number; skipped: number }> {
+    const tid = requireTenantId(tenantId);
     const qb = this.userRepository
       .createQueryBuilder('user')
       .leftJoin(Employee, 'emp', 'emp.user_id = user.id')
       .where('emp.id IS NULL');
-    if (tenantId) {
-      qb.andWhere('user.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('user.tenant_id = :tenantId', { tenantId: tid });
     const usersWithoutEmployee = await qb.getMany();
 
     let created = 0;
@@ -1727,8 +1735,8 @@ export class UsersService {
 
   async bulkForcePasswordReset(userIds: string[], tenantId?: string) {
     if (!userIds?.length) throw new BadRequestException('No user IDs provided');
-    const where: any = { id: In(userIds) };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { id: In(userIds), tenantId: tid };
     const result = await this.userRepository.update(where, {
       mustChangePassword: true,
     } as any);

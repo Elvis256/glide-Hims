@@ -97,6 +97,9 @@ export class Appointment {
   @Column({ type: 'timestamptz', name: 'checked_in_at', nullable: true })
   checkedInAt: Date | null;
 
+  @Column({ type: 'uuid', nullable: true, name: 'tenant_id' })
+  tenantId?: string;
+
   @Column({ name: 'created_by' })
   createdBy: string;
 

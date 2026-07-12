@@ -8,6 +8,7 @@ import { Vital } from '../../database/entities/vital.entity';
 import { Encounter } from '../../database/entities/encounter.entity';
 import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
 import { InAppNotificationType } from '../../database/entities/in-app-notification.entity';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 export interface DeteriorationEvent {
   vitalId: string;
@@ -42,13 +43,14 @@ export class DeteriorationMonitorService {
   async handleDeteriorationEvent(payload: DeteriorationEvent): Promise<void> {
     try {
       const { patientId, newsScore, tenantId, facilityId } = payload;
+      const tid = requireTenantId(tenantId);
 
       // Find the patient's active queue entry
       const activeQueue = await this.queueRepo.findOne({
         where: {
           patientId,
           status: In([QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE]),
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         },
         order: { createdAt: 'DESC' },
       });

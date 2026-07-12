@@ -7,6 +7,7 @@ import {
   LabelType,
 } from '../../database/entities/drug-label-template.entity';
 import { PrescriptionItem, Prescription } from '../../database/entities/prescription.entity';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 // Default Luganda translations for common directions
 const DEFAULT_LUGANDA_DIRECTIONS: Record<string, string> = {
@@ -32,8 +33,9 @@ export class LabelService {
   ) {}
 
   async generateLabel(prescriptionItemId: string, language: string = 'en', tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const item = await this.prescriptionItemRepo.findOne({
-      where: { id: prescriptionItemId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: prescriptionItemId, tenantId: tid },
       relations: ['prescription'],
     });
 
@@ -46,7 +48,7 @@ export class LabelService {
       where: {
         language,
         isDefault: true,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
     });
 
@@ -57,7 +59,7 @@ export class LabelService {
         where: {
           drugName: item.drugName,
           language,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         },
       });
     }
@@ -114,8 +116,9 @@ export class LabelService {
   }
 
   async getTemplates(tenantId?: string, language?: string) {
+    const tid = requireTenantId(tenantId);
     const where: any = {};
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     if (language) where.language = language;
     return this.templateRepo.find({ where, order: { language: 'ASC', isDefault: 'DESC' } });
   }
@@ -124,26 +127,29 @@ export class LabelService {
     data: Partial<DrugLabelTemplate>,
     tenantId?: string,
   ): Promise<DrugLabelTemplate> {
+    const tid = requireTenantId(tenantId);
     const template = this.templateRepo.create({
       ...data,
-      tenantId,
+      tenantId: tid,
     });
     return this.templateRepo.save(template);
   }
 
   async getTranslation(drugName: string, language: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     return this.translationRepo.findOne({
       where: {
         drugName,
         language,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
     });
   }
 
   async getTranslations(tenantId?: string, language?: string) {
+    const tid = requireTenantId(tenantId);
     const where: any = {};
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     if (language) where.language = language;
     return this.translationRepo.find({ where, order: { drugName: 'ASC' } });
   }
@@ -152,9 +158,10 @@ export class LabelService {
     data: Partial<CommonDrugTranslation>,
     tenantId?: string,
   ): Promise<CommonDrugTranslation> {
+    const tid = requireTenantId(tenantId);
     const translation = this.translationRepo.create({
       ...data,
-      tenantId,
+      tenantId: tid,
     });
     return this.translationRepo.save(translation);
   }

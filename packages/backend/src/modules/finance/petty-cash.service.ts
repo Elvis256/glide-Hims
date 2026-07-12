@@ -14,6 +14,7 @@ import {
 } from '../../database/entities/finance-extended.entity';
 import { CreatePettyCashFundDto, RecordTransactionDto } from './dto/petty-cash.dto';
 import { sumCents, fromCents, toCents, cmpMoney } from '../../common/utils/money';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class PettyCashService {

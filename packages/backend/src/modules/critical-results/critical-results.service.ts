@@ -16,6 +16,7 @@ import {
 import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
 import { InAppNotificationType } from '../../database/entities/in-app-notification.entity';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 export interface FlagCriticalResultDto {
   resourceType: CriticalResultResourceType;
@@ -66,7 +67,7 @@ export class CriticalResultsService {
    * updates severity if escalated and returns the existing row.
    */
   async flag(dto: FlagCriticalResultDto): Promise<CriticalResultAlert> {
-    const tenantId = dto.tenantId ?? undefined;
+    const tenantId = requireTenantId(dto.tenantId ?? undefined);
     const existing = await this.alertRepo.findOne({
       where: {
         tenantId,
@@ -92,7 +93,7 @@ export class CriticalResultsService {
     const slaDeadline = new Date(flaggedAt.getTime() + slaMin * 60_000);
 
     const alert = this.alertRepo.create({
-      ...(tenantId ? { tenantId } : {}),
+      tenantId,
       resourceType: dto.resourceType,
       resourceId: dto.resourceId,
       orderId: dto.orderId ?? null,
@@ -168,8 +169,9 @@ export class CriticalResultsService {
     resourceType?: 'lab' | 'radiology';
     limit?: number;
   }) {
+    const tid = requireTenantId(opts.tenantId);
     const where: any = {};
-    if (opts.tenantId) where.tenantId = opts.tenantId;
+    where.tenantId = tid;
     if (opts.status) where.status = opts.status;
     if (opts.assignedToId) where.assignedToId = opts.assignedToId;
     if (opts.patientId) where.patientId = opts.patientId;
@@ -185,15 +187,17 @@ export class CriticalResultsService {
   }
 
   async countPending(tenantId?: string, assignedToId?: string): Promise<number> {
+    const tid = requireTenantId(tenantId);
     const where: any = { status: 'pending' };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     if (assignedToId) where.assignedToId = assignedToId;
     return this.alertRepo.count({ where });
   }
 
   async getById(id: string, tenantId?: string): Promise<CriticalResultAlert> {
+    const tid = requireTenantId(tenantId);
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     const alert = await this.alertRepo.findOne({
       where,
       relations: ['patient', 'assignedTo', 'flaggedBy', 'acknowledgedBy', 'escalatedTo'],
@@ -208,8 +212,9 @@ export class CriticalResultsService {
     resourceType?: 'lab' | 'radiology';
     sinceDays?: number;
   }) {
+    const tid = requireTenantId(opts.tenantId);
     const qb = this.alertRepo.createQueryBuilder('a');
-    if (opts.tenantId) qb.andWhere('a.tenant_id = :t', { t: opts.tenantId });
+    qb.andWhere('a.tenant_id = :t', { t: tid });
     if (opts.flaggedById) qb.andWhere('a.flagged_by_id = :f', { f: opts.flaggedById });
     if (opts.resourceType) qb.andWhere('a.resource_type = :r', { r: opts.resourceType });
     if (opts.sinceDays && opts.sinceDays > 0) {

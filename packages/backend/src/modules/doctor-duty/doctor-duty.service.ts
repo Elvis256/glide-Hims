@@ -9,6 +9,7 @@ import {
   CheckInDto,
   DoctorDutyFilterDto,
 } from './dto/doctor-duty.dto';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class DoctorDutyService {
@@ -25,6 +26,7 @@ export class DoctorDutyService {
     facilityId: string,
     tenantId?: string,
   ): Promise<DoctorDuty> {
+    const tid = requireTenantId(tenantId);
     const today = new Date().toISOString().split('T')[0];
 
     // Check if already checked in today
@@ -33,7 +35,7 @@ export class DoctorDutyService {
         doctorId: dto.doctorId,
         facilityId,
         dutyDate: new Date(today),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
     });
 
@@ -62,15 +64,16 @@ export class DoctorDutyService {
       roomNumber: dto.roomNumber,
       ...(dto.maxPatients != null ? { maxPatients: dto.maxPatients } : {}),
       markedById,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
 
     return this.doctorDutyRepo.save(duty);
   }
 
   async checkOut(id: string, notes?: string, tenantId?: string): Promise<DoctorDuty> {
+    const tid = requireTenantId(tenantId);
     const duty = await this.doctorDutyRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
     });
     if (!duty) {
       throw new NotFoundException('Duty record not found');
@@ -84,8 +87,9 @@ export class DoctorDutyService {
   }
 
   async updateStatus(id: string, status: DutyStatus, tenantId?: string): Promise<DoctorDuty> {
+    const tid = requireTenantId(tenantId);
     const duty = await this.doctorDutyRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
     });
     if (!duty) {
       throw new NotFoundException('Duty record not found');
@@ -125,9 +129,7 @@ export class DoctorDutyService {
       query.andWhere('duty.status = :status', { status: filter.status });
     }
 
-    if (tenantId) {
-      query.andWhere('duty.tenant_id = :tenantId', { tenantId });
-    }
+    query.andWhere('duty.tenant_id = :tenantId', { tenantId: requireTenantId(tenantId) });
 
     return query.orderBy('duty.checkInTime', 'ASC').getMany();
   }
@@ -146,9 +148,7 @@ export class DoctorDutyService {
       .andWhere('user.status = :status', { status: 'active' })
       .orderBy('user.fullName', 'ASC');
 
-    if (tenantId) {
-      qb.andWhere('user.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('user.tenant_id = :tenantId', { tenantId: requireTenantId(tenantId) });
 
     return qb.getMany();
   }
@@ -168,7 +168,7 @@ export class DoctorDutyService {
       where: {
         facilityId,
         dutyDate: new Date(targetDate),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
     });
 
@@ -200,9 +200,10 @@ export class DoctorDutyService {
     count: number,
     tenantId?: string,
   ): Promise<void> {
+    const tid = requireTenantId(tenantId);
     const today = new Date().toISOString().split('T')[0];
     await this.doctorDutyRepo.update(
-      { doctorId, facilityId, dutyDate: new Date(today), ...(tenantId ? { tenantId } : {}) },
+      { doctorId, facilityId, dutyDate: new Date(today), tenantId: tid },
       { currentQueueCount: count },
     );
   }
@@ -213,6 +214,7 @@ export class DoctorDutyService {
     facilityId: string,
     tenantId?: string,
   ): Promise<DoctorDuty> {
+    const tid = requireTenantId(tenantId);
     const date = dto.dutyDate || new Date().toISOString().split('T')[0];
 
     const duty = this.doctorDutyRepo.create({
@@ -220,15 +222,16 @@ export class DoctorDutyService {
       dutyDate: new Date(date),
       facilityId,
       markedById,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
 
     return this.doctorDutyRepo.save(duty);
   }
 
   async update(id: string, dto: UpdateDoctorDutyDto, tenantId?: string): Promise<DoctorDuty> {
+    const tid = requireTenantId(tenantId);
     const duty = await this.doctorDutyRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
     });
     if (!duty) {
       throw new NotFoundException('Duty record not found');
@@ -239,8 +242,9 @@ export class DoctorDutyService {
   }
 
   async findOne(id: string, tenantId?: string): Promise<DoctorDuty> {
+    const tid = requireTenantId(tenantId);
     const duty = await this.doctorDutyRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
       relations: ['doctor', 'department'],
     });
     if (!duty) {

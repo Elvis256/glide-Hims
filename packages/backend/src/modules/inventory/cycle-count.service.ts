@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { requireTenantId } from '../../common/utils/tenant.util';
 import {
   CycleCount,
   CycleCountItem,
@@ -29,8 +30,9 @@ export class CycleCountService {
     userId: string,
     tenantId?: string,
   ): Promise<CycleCount> {
+    const tid = requireTenantId(tenantId);
     // Generate count number
-    const count = await this.cycleCountRepo.count({ where: tenantId ? { tenantId } : {} });
+    const count = await this.cycleCountRepo.count({ where: { tenantId: tid } });
     const countNumber = `CC-${String(count + 1).padStart(6, '0')}`;
 
     const cycleCount = this.cycleCountRepo.create({
@@ -40,14 +42,14 @@ export class CycleCountService {
       notes: dto.notes,
       createdById: userId,
       status: CycleCountStatus.DRAFT,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
 
     const saved = await this.cycleCountRepo.save(cycleCount);
 
     // Auto-populate items from current stock balances at the facility
     const stockBalances = await this.stockBalanceRepo.find({
-      where: { facilityId: dto.facilityId, ...(tenantId ? { tenantId } : {}) },
+      where: { facilityId: dto.facilityId, tenantId: tid },
       relations: ['item'],
     });
 
@@ -59,7 +61,7 @@ export class CycleCountService {
       systemQuantity: Number(sb.totalQuantity),
       unitCost: Number((sb as any).item?.costPrice || 0),
       varianceStatus: VarianceStatus.NONE,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     }));
 
     if (items.length > 0) {
@@ -95,8 +97,9 @@ export class CycleCountService {
       await this.cycleCountRepo.save(cycleCount);
     }
 
+    const tid = requireTenantId(tenantId);
     const item = await this.itemRepo.findOne({
-      where: { cycleCountId, id: itemId, ...(tenantId ? { tenantId } : {}) },
+      where: { cycleCountId, id: itemId, tenantId: tid },
     });
     if (!item) throw new NotFoundException('Cycle count item not found');
 
@@ -138,8 +141,9 @@ export class CycleCountService {
     notes: string,
     tenantId?: string,
   ): Promise<CycleCountItem> {
+    const tid = requireTenantId(tenantId);
     const item = await this.itemRepo.findOne({
-      where: { cycleCountId, id: itemId, ...(tenantId ? { tenantId } : {}) },
+      where: { cycleCountId, id: itemId, tenantId: tid },
     });
     if (!item) throw new NotFoundException('Cycle count item not found');
 
@@ -163,8 +167,9 @@ export class CycleCountService {
       throw new BadRequestException('Cycle count must be approved before applying adjustments');
     }
 
+    const tid = requireTenantId(tenantId);
     const items = await this.itemRepo.find({
-      where: { cycleCountId, ...(tenantId ? { tenantId } : {}) },
+      where: { cycleCountId, tenantId: tid },
     });
 
     // Apply adjustments via inventoryService for items with variance
@@ -211,8 +216,9 @@ export class CycleCountService {
     }
 
     // Check all items have been counted
+    const tid = requireTenantId(tenantId);
     const uncounted = await this.itemRepo.count({
-      where: { cycleCountId, countedQuantity: null as any, ...(tenantId ? { tenantId } : {}) },
+      where: { cycleCountId, countedQuantity: null as any, tenantId: tid },
     });
     if (uncounted > 0) {
       throw new BadRequestException(`${uncounted} items have not been counted yet`);
@@ -249,8 +255,9 @@ export class CycleCountService {
   }
 
   async findOne(id: string, tenantId?: string): Promise<CycleCount> {
+    const tid = requireTenantId(tenantId);
     const cycleCount = await this.cycleCountRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
       relations: ['items'],
     });
     if (!cycleCount) throw new NotFoundException('Cycle count not found');
@@ -261,10 +268,10 @@ export class CycleCountService {
     query: { status?: string; facilityId?: string; page?: number; limit?: number },
     tenantId?: string,
   ) {
-    const where: any = {};
+    const tid = requireTenantId(tenantId);
+    const where: any = { tenantId: tid };
     if (query.status) where.status = query.status;
     if (query.facilityId) where.facilityId = query.facilityId;
-    if (tenantId) where.tenantId = tenantId;
 
     const page = query.page || 1;
     const limit = query.limit || 20;
@@ -280,8 +287,9 @@ export class CycleCountService {
   }
 
   private async updateCycleCountSummary(cycleCountId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const items = await this.itemRepo.find({
-      where: { cycleCountId, ...(tenantId ? { tenantId } : {}) },
+      where: { cycleCountId, tenantId: tid },
     });
 
     const itemsCounted = items.filter((i) => i.countedQuantity !== null).length;

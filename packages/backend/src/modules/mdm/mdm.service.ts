@@ -9,6 +9,7 @@ import {
   ApprovalStatus,
 } from '../../database/entities/master-data-version.entity';
 import { MasterDataVersionQueryDto, ApproveVersionDto, CreateApprovalRuleDto } from './dto/mdm.dto';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class MdmService {
@@ -34,12 +35,13 @@ export class MdmService {
     },
     tenantId?: string,
   ): Promise<MasterDataVersion> {
+    const tid = requireTenantId(tenantId);
     // Get current version number
     const lastVersion = await this.versionRepository.findOne({
       where: {
         entityType: params.entityType,
         entityId: params.entityId,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
       order: { versionNumber: 'DESC' },
     });
@@ -73,7 +75,7 @@ export class MdmService {
       approvedAt: approvalStatus === ApprovalStatus.AUTO_APPROVED ? new Date() : undefined,
       ipAddress: params.ipAddress,
       userAgent: params.userAgent,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
 
     return this.versionRepository.save(version);
@@ -96,6 +98,7 @@ export class MdmService {
     query: MasterDataVersionQueryDto,
     tenantId?: string,
   ): Promise<MasterDataVersion[]> {
+    const tid = requireTenantId(tenantId);
     const qb = this.versionRepository
       .createQueryBuilder('version')
       .leftJoinAndSelect('version.changedByUser', 'changedBy')
@@ -127,15 +130,14 @@ export class MdmService {
       qb.andWhere('version.createdAt <= :toDate', { toDate: new Date(query.toDate) });
     }
 
-    if (tenantId) {
-      qb.andWhere('version.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('version.tenant_id = :tenantId', { tenantId: tid });
     return qb.orderBy('version.createdAt', 'DESC').limit(100).getMany();
   }
 
   async getVersion(id: string, tenantId?: string): Promise<MasterDataVersion> {
+    const tid = requireTenantId(tenantId);
     const version = await this.versionRepository.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
       relations: ['changedByUser', 'approvedByUser'],
     });
     if (!version) throw new NotFoundException('Version not found');
@@ -147,17 +149,19 @@ export class MdmService {
     entityId: string,
     tenantId?: string,
   ): Promise<MasterDataVersion[]> {
+    const tid = requireTenantId(tenantId);
     return this.versionRepository.find({
-      where: { entityType, entityId, ...(tenantId ? { tenantId } : {}) },
+      where: { entityType, entityId, tenantId: tid },
       relations: ['changedByUser'],
       order: { versionNumber: 'DESC' },
     });
   }
 
   async getPendingApprovals(facilityId?: string, tenantId?: string): Promise<MasterDataVersion[]> {
+    const tid = requireTenantId(tenantId);
     const where: any = { approvalStatus: ApprovalStatus.PENDING };
     if (facilityId) where.facilityId = facilityId;
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     return this.versionRepository.find({
       where,
@@ -245,8 +249,9 @@ export class MdmService {
     versionNumber: number,
     tenantId?: string,
   ): Promise<MasterDataVersion | null> {
+    const tid = requireTenantId(tenantId);
     const targetVersion = await this.versionRepository.findOne({
-      where: { entityType, entityId, versionNumber, ...(tenantId ? { tenantId } : {}) },
+      where: { entityType, entityId, versionNumber, tenantId: tid },
     });
 
     if (!targetVersion) return null;
@@ -260,10 +265,11 @@ export class MdmService {
     facilityId?: string,
     tenantId?: string,
   ): Promise<MasterDataApprovalRule | null> {
+    const tid = requireTenantId(tenantId);
     // Try facility-specific rule first
     if (facilityId) {
       const facilityRule = await this.ruleRepository.findOne({
-        where: { entityType, facilityId, isActive: true, ...(tenantId ? { tenantId } : {}) },
+        where: { entityType, facilityId, isActive: true, tenantId: tid },
       });
       if (facilityRule) return facilityRule;
     }
@@ -274,7 +280,7 @@ export class MdmService {
         entityType,
         facilityId: undefined,
         isActive: true,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
     });
   }
@@ -283,10 +289,11 @@ export class MdmService {
     dto: CreateApprovalRuleDto,
     tenantId?: string,
   ): Promise<MasterDataApprovalRule> {
+    const tid = requireTenantId(tenantId);
     const rule = this.ruleRepository.create({
       ...dto,
       isActive: true,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
     return this.ruleRepository.save(rule);
   }
@@ -295,9 +302,10 @@ export class MdmService {
     facilityId?: string,
     tenantId?: string,
   ): Promise<MasterDataApprovalRule[]> {
+    const tid = requireTenantId(tenantId);
     const where: any = { isActive: true };
     if (facilityId) where.facilityId = facilityId;
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     return this.ruleRepository.find({ where });
   }
@@ -307,8 +315,9 @@ export class MdmService {
     dto: Partial<CreateApprovalRuleDto>,
     tenantId?: string,
   ): Promise<MasterDataApprovalRule> {
+    const tid = requireTenantId(tenantId);
     const rule = await this.ruleRepository.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
     });
     if (!rule) throw new NotFoundException('Approval rule not found');
 
@@ -317,8 +326,9 @@ export class MdmService {
   }
 
   async deleteApprovalRule(id: string, tenantId?: string): Promise<void> {
+    const tid = requireTenantId(tenantId);
     const rule = await this.ruleRepository.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
     });
     if (!rule) throw new NotFoundException('Approval rule not found');
 
@@ -337,6 +347,7 @@ export class MdmService {
     byAction: Record<string, number>;
     pendingApprovals: number;
   }> {
+    const tid = requireTenantId(tenantId);
     const since = new Date();
     since.setDate(since.getDate() - days);
 
@@ -347,9 +358,7 @@ export class MdmService {
     if (facilityId) {
       qb.andWhere('version.facilityId = :facilityId', { facilityId });
     }
-    if (tenantId) {
-      qb.andWhere('version.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('version.tenant_id = :tenantId', { tenantId: tid });
 
     const versions = await qb.getMany();
 

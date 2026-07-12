@@ -11,6 +11,7 @@ import {
   SafetyAlert,
 } from '../../database/entities/prescription-safety-override.entity';
 import { PatientActiveMedicationService } from '../prescriptions/patient-active-medication.service';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 export interface PrescriptionLineLite {
   drugId?: string;
@@ -81,6 +82,7 @@ export class MedicationSafetyService {
 
   async runSafetyChecks(input: RunSafetyChecksInput): Promise<SafetyResult> {
     const { patientId, encounterId, drugIds, lines, tenantId } = input;
+    const tid = requireTenantId(tenantId);
     const alerts: SafetyAlert[] = [];
     const degradedReasons: string[] = [];
 
@@ -227,6 +229,7 @@ export class MedicationSafetyService {
   }
 
   async recordOverride(input: RecordOverrideInput): Promise<PrescriptionSafetyOverride> {
+    const tid = requireTenantId(input.tenantId);
     const row = this.overrideRepo.create({
       prescriptionId: input.prescriptionId,
       patientId: input.patientId,
@@ -237,7 +240,7 @@ export class MedicationSafetyService {
       cosignerId: input.cosignerId,
       cosigned: !!input.cosignerId,
       overriddenAt: new Date(),
-      ...(input.tenantId ? { tenantId: input.tenantId } : {}),
+      tenantId: tid,
     });
     const saved = await this.overrideRepo.save(row);
 
