@@ -6,6 +6,7 @@ import { PatientPortalGuard } from './patient-portal.guard';
 import { RequestOtpDto, VerifyOtpDto } from './dto/portal.dto';
 import { Throttle } from '@nestjs/throttler';
 import { Response } from 'express';
+import { withSystemContext } from '../../common/context/tenant-context';
 
 const PORTAL_COOKIE = 'portalToken';
 const PORTAL_TTL_SECONDS = 7 * 24 * 60 * 60;
@@ -21,7 +22,9 @@ export class PatientPortalController {
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiOperation({ summary: 'Send a 6-digit OTP to the patient phone' })
   requestOtp(@Body() dto: RequestOtpDto) {
-    return this.service.requestOtp(dto.phone);
+    // Pre-auth patient lookup by phone spans tenants; rate-limited and
+    // OTP-gated, so it runs as system under RLS.
+    return withSystemContext(() => this.service.requestOtp(dto.phone));
   }
 
   @Public()
@@ -30,7 +33,9 @@ export class PatientPortalController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiOperation({ summary: 'Verify the OTP and receive a patient access token' })
   async verifyOtp(@Body() dto: VerifyOtpDto, @Res({ passthrough: true }) res: Response) {
-    const { accessToken, patient } = await this.service.verifyOtp(dto.phone, dto.code);
+    const { accessToken, patient } = await withSystemContext(() =>
+      this.service.verifyOtp(dto.phone, dto.code),
+    );
     // F-04: token is set as an httpOnly cookie so XSS cannot exfiltrate it.
     res.cookie(PORTAL_COOKIE, accessToken, {
       httpOnly: true,

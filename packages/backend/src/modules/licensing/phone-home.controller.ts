@@ -16,6 +16,7 @@ import { Request as ExpressRequest } from 'express';
 import { PhoneHomeService, PhoneHomePayload } from './phone-home.service';
 import { Auth } from '../auth/decorators/auth.decorator';
 import { Public } from '../auth/decorators/public.decorator';
+import { withSystemContext } from '../../common/context/tenant-context';
 
 @ApiTags('Phone Home')
 @Controller('phone-home')
@@ -41,7 +42,9 @@ export class PhoneHomeController {
       req.socket.remoteAddress ||
       'unknown';
 
-    return this.phoneHomeService.receiveHeartbeat(payload, ipAddress);
+    // Trusted server-to-server flow (HMAC-validated license key inside):
+    // runs in system context so RLS on licenses/deployments doesn't block it.
+    return withSystemContext(() => this.phoneHomeService.receiveHeartbeat(payload, ipAddress));
   }
 
   /**

@@ -19,6 +19,7 @@ import { LicenseService, GenerateLicenseDto } from './license.service';
 import { UpdateClientService } from './update-client.service';
 import { Auth } from '../auth/decorators/auth.decorator';
 import { Public } from '../auth/decorators/public.decorator';
+import { withSystemContext } from '../../common/context/tenant-context';
 
 @ApiTags('Licensing')
 @Controller('license')
@@ -43,7 +44,11 @@ export class LicenseController {
   @Throttle({ default: { ttl: 60000, limit: 5 } })
   @ApiOperation({ summary: 'Validate a license key' })
   async validateLicense(@Body() body: { licenseKey: string }) {
-    const result = await this.licenseService.validateLicense(body.licenseKey);
+    // Key-based validation is a trusted server flow (HMAC-signed key): must
+    // see the license row regardless of tenant GUC, so runs as system.
+    const result = await withSystemContext(() =>
+      this.licenseService.validateLicense(body.licenseKey),
+    );
 
     if (!result.valid) {
       throw new HttpException({ valid: false, error: result.error }, HttpStatus.UNAUTHORIZED);
@@ -146,22 +151,29 @@ export class LicenseController {
     if (!body?.licenseKey) {
       throw new HttpException('licenseKey is required', HttpStatus.BAD_REQUEST);
     }
-    const result = await this.licenseService.validateLicense(body.licenseKey);
-    if (!result.valid || !result.license) {
-      throw new HttpException(
-        { valid: false, error: result.error || 'Invalid license key' },
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-    // Bind the license to this tenant if it is unassigned, otherwise require a match.
-    const license = result.license;
-    if (license.tenantId && tenantId && license.tenantId !== tenantId) {
-      throw new ForbiddenException('This license is registered to a different organisation');
-    }
-    if (!license.tenantId && tenantId) {
-      license.tenantId = tenantId;
-      await this.licenseService['licenseRepository'].save(license);
-    }
+    // Activation must see (and bind) an unassigned license row, which the
+    // tenant GUC would hide under RLS. Caller authority is already checked
+    // above and the key itself is HMAC-signed, so the lookup+bind runs as
+    // system with an explicit tenant-match guard in between.
+    const license = await withSystemContext(async () => {
+      const result = await this.licenseService.validateLicense(body.licenseKey);
+      if (!result.valid || !result.license) {
+        throw new HttpException(
+          { valid: false, error: result.error || 'Invalid license key' },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      // Bind the license to this tenant if it is unassigned, otherwise require a match.
+      const lic = result.license;
+      if (lic.tenantId && tenantId && lic.tenantId !== tenantId) {
+        throw new ForbiddenException('This license is registered to a different organisation');
+      }
+      if (!lic.tenantId && tenantId) {
+        lic.tenantId = tenantId;
+        await this.licenseService['licenseRepository'].save(lic);
+      }
+      return lic;
+    });
     return {
       message: 'License activated',
       licenseType: license.licenseType,

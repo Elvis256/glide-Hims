@@ -31,6 +31,7 @@ import { MonitoringService } from './monitoring.service';
 import { BackupService } from '../backup/backup.service';
 import { Public } from '../auth/decorators/public.decorator';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { withSystemContext } from '../../common/context/tenant-context';
 import {
   CreateDeploymentDto,
   UpdateDeploymentDto,
@@ -192,10 +193,14 @@ export class DeploymentController {
       ((req.headers['x-forwarded-for'] as string) || '').split(',')[0].trim() ||
       req.socket.remoteAddress ||
       undefined;
-    return this.updateService.reportRolloutResult(rolloutId, {
-      ...body,
-      ipAddress,
-    });
+    // Client installs report back with a license key, pre-tenant-context;
+    // validated inside the service, runs as system under RLS.
+    return withSystemContext(() =>
+      this.updateService.reportRolloutResult(rolloutId, {
+        ...body,
+        ipAddress,
+      }),
+    );
   }
 
   @Get('rollouts/:rolloutId/reports')
@@ -218,7 +223,7 @@ export class DeploymentController {
   @Public()
   @Throttle({ default: { ttl: 60000, limit: 3 } })
   async serveSourceBundle(@Query('licenseKey') licenseKey: string, @Res() res: Response) {
-    await this.deploymentService.assertValidInstallerLicense(licenseKey);
+    await withSystemContext(() => this.deploymentService.assertValidInstallerLicense(licenseKey));
 
     const projectRoot = path.resolve(__dirname, '..', '..', '..', '..', '..');
     const filename = `glide-hims-source-${new Date().toISOString().slice(0, 10)}.tar.gz`;

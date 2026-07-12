@@ -14,6 +14,7 @@ import { Public } from '../auth/decorators/public.decorator';
 import { HrService } from './hr.service';
 import { TenantsService } from '../tenants/tenants.service';
 import { CreateJobApplicationDto } from './dto/hr.dto';
+import { withTenant } from '../../common/context/tenant-context';
 
 @ApiTags('Careers (Public)')
 @Controller('careers')
@@ -61,7 +62,9 @@ export class CareersPublicController {
     @Query('facilityId') facilityId?: string,
   ) {
     const resolvedTenantId = await this.resolveTenantId(tenantSlug, tenantId);
-    return this.hrService.getPublishedJobs(facilityId, resolvedTenantId);
+    return withTenant(resolvedTenantId, () =>
+      this.hrService.getPublishedJobs(facilityId, resolvedTenantId),
+    );
   }
 
   @Public()
@@ -76,7 +79,9 @@ export class CareersPublicController {
     @Query('tenantId') tenantId?: string,
   ) {
     const resolvedTenantId = await this.resolveTenantId(tenantSlug, tenantId);
-    return this.hrService.getPublishedJobById(id, resolvedTenantId);
+    return withTenant(resolvedTenantId, () =>
+      this.hrService.getPublishedJobById(id, resolvedTenantId),
+    );
   }
 
   @Public()
@@ -92,6 +97,8 @@ export class CareersPublicController {
     @Query('tenantId') tenantId?: string,
   ) {
     const resolvedTenantId = await this.resolveTenantId(tenantSlug, tenantId);
-    return this.hrService.createJobApplication({ ...dto, jobPostingId: id }, resolvedTenantId);
+    return withTenant(resolvedTenantId, () =>
+      this.hrService.createJobApplication({ ...dto, jobPostingId: id }, resolvedTenantId),
+    );
   }
 }
