@@ -8,8 +8,11 @@ export default new DataSource({
   type: 'postgres',
   host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT || '5432', 10),
-  username: process.env.DB_USERNAME,
-  password: process.env.DB_PASSWORD,
+  // Migrations must run as the table OWNER (DDL rights + RLS bypass for
+  // backfills). The app itself runs as the non-owner runtime role so that
+  // row-level security applies to it. See common/database/rls-driver-patch.ts.
+  username: process.env.DB_MIGRATION_USERNAME || process.env.DB_USERNAME,
+  password: process.env.DB_MIGRATION_PASSWORD || process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
   entities: [
     join(__dirname, '../**/*.entity{.ts,.js}'),
