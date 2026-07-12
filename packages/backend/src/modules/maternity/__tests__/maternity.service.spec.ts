@@ -24,6 +24,7 @@ import { PostnatalVisit } from '../../../database/entities/postnatal-visit.entit
 import { BabyWellnessCheck } from '../../../database/entities/baby-wellness-check.entity';
 import { ImmunizationSchedule } from '../../../database/entities/immunization-schedule.entity';
 import { AuditLogService } from '../../../common/interceptors/audit-log.service';
+import { DataSource } from 'typeorm';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -58,6 +59,7 @@ describe('MaternityService', () => {
   let pncRepo: MockRepo;
   let babyWellnessRepo: MockRepo;
   let immunizationRepo: MockRepo;
+  let mockDataSource: { transaction: jest.Mock };
 
   const tenantId = 'tenant-uuid-1';
   const userId = 'user-uuid-1';
@@ -73,6 +75,26 @@ describe('MaternityService', () => {
     babyWellnessRepo = createMockRepo();
     immunizationRepo = createMockRepo();
 
+    // DataSource.transaction mock delegates to the same repo mocks
+    // so tests can set up expectations on labourRepo, ancRepo, etc.
+    mockDataSource = {
+      transaction: jest.fn((cb: (manager: any) => Promise<any>) => {
+        const repoMap = new Map<any, MockRepo>([
+          [LabourRecord, labourRepo],
+          [AntenatalRegistration, ancRepo],
+          [AntenatalVisit, visitRepo],
+          [DeliveryOutcome, outcomeRepo],
+          [PostnatalVisit, pncRepo],
+          [BabyWellnessCheck, babyWellnessRepo],
+          [ImmunizationSchedule, immunizationRepo],
+        ]);
+        const manager = {
+          getRepository: jest.fn((entity: any) => repoMap.get(entity) || createMockRepo()),
+        };
+        return cb(manager);
+      }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         MaternityService,
@@ -84,6 +106,7 @@ describe('MaternityService', () => {
         { provide: getRepositoryToken(BabyWellnessCheck), useValue: babyWellnessRepo },
         { provide: getRepositoryToken(ImmunizationSchedule), useValue: immunizationRepo },
         { provide: AuditLogService, useValue: mockAuditLogService },
+        { provide: DataSource, useValue: mockDataSource },
       ],
     }).compile();
 
@@ -407,7 +430,7 @@ describe('MaternityService', () => {
       outcomeRepo.create!.mockReturnValue(createdOutcome);
       outcomeRepo.save!.mockResolvedValue({ ...createdOutcome });
 
-      const result = await service.recordBabyOutcome(dto as any, tenantId);
+      const result = await service.recordBabyOutcome(dto as any, userId, tenantId);
 
       expect(labourRepo.findOne).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -443,7 +466,7 @@ describe('MaternityService', () => {
         birthWeight: 3.5,
       };
 
-      await expect(service.recordBabyOutcome(dto as any, tenantId)).rejects.toThrow(
+      await expect(service.recordBabyOutcome(dto as any, userId, tenantId)).rejects.toThrow(
         NotFoundException,
       );
       expect(outcomeRepo.create).not.toHaveBeenCalled();
@@ -472,7 +495,7 @@ describe('MaternityService', () => {
       outcomeRepo.create!.mockImplementation((data: any) => ({ ...data, id: 'outcome-uuid-2' }));
       outcomeRepo.save!.mockImplementation(async (entity: any) => ({ ...entity }));
 
-      const result = await service.recordBabyOutcome(dto as any, tenantId);
+      const result = await service.recordBabyOutcome(dto as any, userId, tenantId);
 
       expect(outcomeRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({

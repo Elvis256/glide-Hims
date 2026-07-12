@@ -18,6 +18,7 @@ import { InAppNotificationsService } from '../../in-app-notifications/in-app-not
 import { QueueManagementService } from '../../queue-management/queue-management.service';
 import { DrugManagementService } from '../../drug-management/drug-management.service';
 import { MedicationSafetyService } from '../../allergies/medication-safety.service';
+import { PatientActiveMedicationService } from '../patient-active-medication.service';
 import { IdentityGuardService } from '../../../common/services/identity-guard.service';
 
 // ---------------------------------------------------------------------------
@@ -236,6 +237,13 @@ describe('PrescriptionsService', () => {
           useValue: {
             runSafetyChecks: jest.fn().mockResolvedValue(safePassing()),
             recordOverride: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          provide: PatientActiveMedicationService,
+          useValue: {
+            activateFromDispensation: jest.fn().mockResolvedValue(undefined),
+            findActiveForPatient: jest.fn().mockResolvedValue([]),
           },
         },
         {

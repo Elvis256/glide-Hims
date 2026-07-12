@@ -347,7 +347,8 @@ describe('UsageMeterService', () => {
 
   describe('getBillingUsage', () => {
     it('should return billable usage by metric type', async () => {
-      const events = [
+      // Only billable events are returned by the repository query (service filters with billable: true in WHERE clause)
+      const billableEvents = [
         {
           tenantId: 'tenant-123',
           metricType: UsageMetricType.API_CALLS,
@@ -360,15 +361,9 @@ describe('UsageMeterService', () => {
           amount: 100,
           billable: true,
         },
-        {
-          tenantId: 'tenant-123',
-          metricType: UsageMetricType.API_CALLS,
-          amount: 1000,
-          billable: false,
-        },
       ];
 
-      mockRepositories.eventRepository.find.mockResolvedValue(events);
+      mockRepositories.eventRepository.find.mockResolvedValue(billableEvents);
 
       const result = await service.getBillingUsage(
         'tenant-123',
