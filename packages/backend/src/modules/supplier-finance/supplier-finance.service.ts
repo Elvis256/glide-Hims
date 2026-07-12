@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
   ForbiddenException,
@@ -30,6 +31,8 @@ import { AuditLogService } from '../../common/interceptors/audit-log.service';
 
 @Injectable()
 export class SupplierFinanceService {
+  private readonly logger = new Logger(SupplierFinanceService.name);
+
   constructor(
     @InjectRepository(SupplierPayment)
     private paymentRepo: Repository<SupplierPayment>,
@@ -52,14 +55,31 @@ export class SupplierFinanceService {
 
   // ==================== SUPPLIER PAYMENTS ====================
 
-  private async generateVoucherNumber(facilityId: string, tenantId?: string): Promise<string> {
-    // audit BUG-014: count was global per facility — collided across tenants
-    // when two tenants shared a facility id. Scope by tenant when supplied.
-    const where: any = { facilityId };
-    where.tenantId = requireTenantId(tenantId);
-    const count = await this.paymentRepo.count({ where });
+  // voucher_number is unique per (tenant_id, voucher_number) with no facility
+  // component — facility-scoped counting collided across facilities within a
+  // tenant, and the unlocked count raced concurrent creates. MAX+1 per
+  // tenant+month under an advisory lock, inside the caller's transaction.
+  private async generateVoucherNumber(
+    tenantId: string | undefined,
+    manager: import('typeorm').EntityManager,
+  ): Promise<string> {
+    const tid = requireTenantId(tenantId);
     const date = new Date();
-    return `PV${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(count + 1).padStart(5, '0')}`;
+    const prefix = `PV${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}`;
+
+    await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+      `supplier:voucher-number:${tid}:${prefix}`,
+    ]);
+
+    const last = await manager
+      .createQueryBuilder(SupplierPayment, 'p')
+      .where('p.voucher_number LIKE :prefix', { prefix: `${prefix}%` })
+      .andWhere('p.tenant_id = :tid', { tid })
+      .orderBy('p.voucher_number', 'DESC')
+      .getOne();
+
+    const seq = last ? (parseInt(last.voucherNumber.slice(prefix.length), 10) || 0) + 1 : 1;
+    return `${prefix}${String(seq).padStart(5, '0')}`;
   }
 
   async createPaymentVoucher(
@@ -89,8 +109,6 @@ export class SupplierFinanceService {
     userId: string,
     tenantId?: string,
   ): Promise<SupplierPayment> {
-    const voucherNumber = await this.generateVoucherNumber(data.facilityId, tenantId);
-
     const withholdingTax = data.withholdingTax || 0;
     const otherDeductions = data.otherDeductions || 0;
     const netAmount = data.grossAmount - withholdingTax - otherDeductions;
@@ -101,6 +119,8 @@ export class SupplierFinanceService {
     const savedPayment = await this.dataSource.transaction(async (manager) => {
       const paymentRepo = manager.getRepository(SupplierPayment);
       const paymentItemRepo = manager.getRepository(SupplierPaymentItem);
+
+      const voucherNumber = await this.generateVoucherNumber(tenantId, manager);
 
       const payment = paymentRepo.create({
         facilityId: data.facilityId,
@@ -362,16 +382,24 @@ export class SupplierFinanceService {
         })
         .catch(() => {});
 
-      // Auto-post journal entry best-effort (inside transaction context for data,
-      // but failure should not roll back payment)
+      // Auto-post journal entry best-effort (failure should not roll back the
+      // payment). tenantId was previously omitted, so requireTenantId inside
+      // the journal path threw and every supplier payment silently skipped GL.
       this.financeService
-        .autoPostPaymentJournal({
-          facilityId: payment.facilityId,
-          paymentReference: payment.voucherNumber,
-          amount: Number(payment.netAmount ?? payment.grossAmount) || 0,
-          userId,
-        })
-        .catch(() => {});
+        .autoPostPaymentJournal(
+          {
+            facilityId: payment.facilityId,
+            paymentReference: payment.voucherNumber,
+            amount: Number(payment.netAmount ?? payment.grossAmount) || 0,
+            userId,
+          },
+          tenantId,
+        )
+        .catch((err) =>
+          this.logger.warn(
+            `GL auto-post failed for supplier payment ${payment.voucherNumber}: ${err.message}`,
+          ),
+        );
 
       return saved;
     });
@@ -412,17 +440,30 @@ export class SupplierFinanceService {
 
   // ==================== CREDIT/DEBIT NOTES ====================
 
+  // Same tenant-scoped MAX+1 pattern as voucher numbers above
   private async generateNoteNumber(
-    facilityId: string,
     type: CreditNoteType,
-    tenantId?: string,
+    tenantId: string | undefined,
+    manager: import('typeorm').EntityManager,
   ): Promise<string> {
-    const where: any = { facilityId, noteType: type };
-    where.tenantId = requireTenantId(tenantId);
-    const count = await this.creditNoteRepo.count({ where });
+    const tid = requireTenantId(tenantId);
     const date = new Date();
-    const prefix = type === CreditNoteType.CREDIT_NOTE ? 'CN' : 'DN';
-    return `${prefix}${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(count + 1).padStart(5, '0')}`;
+    const typePrefix = type === CreditNoteType.CREDIT_NOTE ? 'CN' : 'DN';
+    const prefix = `${typePrefix}${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}`;
+
+    await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+      `supplier:note-number:${tid}:${prefix}`,
+    ]);
+
+    const last = await manager
+      .createQueryBuilder(SupplierCreditNote, 'n')
+      .where('n.note_number LIKE :prefix', { prefix: `${prefix}%` })
+      .andWhere('n.tenant_id = :tid', { tid })
+      .orderBy('n.note_number', 'DESC')
+      .getOne();
+
+    const seq = last ? (parseInt(last.noteNumber.slice(prefix.length), 10) || 0) + 1 : 1;
+    return `${prefix}${String(seq).padStart(5, '0')}`;
   }
 
   async createCreditNote(
@@ -449,8 +490,6 @@ export class SupplierFinanceService {
     userId: string,
     tenantId?: string,
   ): Promise<SupplierCreditNote> {
-    const noteNumber = await this.generateNoteNumber(data.facilityId, data.noteType, tenantId);
-
     let subtotalAmount = 0;
     let taxAmount = 0;
 
@@ -477,6 +516,8 @@ export class SupplierFinanceService {
     const savedNote = await this.dataSource.transaction(async (manager) => {
       const noteRepo = manager.getRepository(SupplierCreditNote);
       const noteItemRepo = manager.getRepository(SupplierCreditNoteItem);
+
+      const noteNumber = await this.generateNoteNumber(data.noteType, tenantId, manager);
 
       const creditNote = noteRepo.create({
         facilityId: data.facilityId,
