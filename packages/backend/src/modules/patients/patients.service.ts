@@ -325,7 +325,12 @@ export class PatientsService {
     return patient;
   }
 
-  async update(id: string, dto: UpdatePatientDto, tenantId?: string): Promise<Patient> {
+  async update(
+    id: string,
+    dto: UpdatePatientDto,
+    tenantId?: string,
+    userId?: string,
+  ): Promise<Patient> {
     const tid = requireTenantId(tenantId);
     const patient = await this.findOne(id, tid);
 
@@ -342,13 +347,65 @@ export class PatientsService {
       }
     }
 
+    const changedFields = Object.keys(dto).filter(
+      (k) => (dto as any)[k] !== undefined && (dto as any)[k] !== (patient as any)[k],
+    );
     Object.assign(patient, dto);
-    return this.patientRepository.save(patient);
+    const saved = await this.patientRepository.save(patient);
+
+    if (userId && changedFields.length > 0) {
+      this.auditLogRepository
+        .save({
+          userId,
+          action: 'PATIENT_UPDATED',
+          entityType: 'Patient',
+          entityId: id,
+          newValue: { mrn: patient.mrn, changedFields }, // field names only — no PII values
+          tenantId: tid,
+        })
+        .catch((err) => this.logger.warn(`Audit log failed: ${err.message}`));
+    }
+
+    return saved;
   }
 
-  async remove(id: string, tenantId?: string): Promise<void> {
-    const patient = await this.findOne(id, tenantId);
+  async remove(id: string, tenantId?: string, userId?: string): Promise<void> {
+    const tid = requireTenantId(tenantId);
+    const patient = await this.findOne(id, tid);
+
+    // Guard: never delete a patient who is mid-visit or owes money — that
+    // orphans the active encounter and silently writes off the debt.
+    const [activeEncounters] = await this.dataSource.query(
+      `SELECT count(*)::int AS n FROM encounters
+        WHERE patient_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+          AND status NOT IN ('completed', 'cancelled')`,
+      [id, tid],
+    );
+    if (activeEncounters?.n > 0) {
+      throw new ConflictException(
+        `Patient has ${activeEncounters.n} active encounter(s). Complete or cancel them before deleting.`,
+      );
+    }
+    if (Number(patient.totalOutstandingBalance) > 0) {
+      throw new ConflictException(
+        `Patient has an outstanding balance of ${patient.totalOutstandingBalance}. Settle or write off before deleting.`,
+      );
+    }
+
     await this.patientRepository.softRemove(patient);
+
+    if (userId) {
+      this.auditLogRepository
+        .save({
+          userId,
+          action: 'PATIENT_DELETED',
+          entityType: 'Patient',
+          entityId: id,
+          oldValue: { mrn: patient.mrn },
+          tenantId: tid,
+        })
+        .catch((err) => this.logger.warn(`Audit log failed: ${err.message}`));
+    }
   }
 
   async checkDuplicates(dto: CreatePatientDto, tenantId?: string): Promise<DuplicateCheckResult> {
@@ -588,15 +645,17 @@ export class PatientsService {
   }
 
   async getDocumentStats(patientId: string, userRoles: string[], tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const accessibleCategories = this.getAccessibleCategories(userRoles);
+    if (accessibleCategories.length === 0) return []; // empty IN () is invalid SQL
 
     const statsQb = this.documentRepository
       .createQueryBuilder('doc')
       .select('doc.category', 'category')
       .addSelect('COUNT(*)', 'count')
       .where('doc.patientId = :patientId', { patientId })
-      .andWhere('doc.category IN (:...categories)', { categories: accessibleCategories });
-    if (tenantId) statsQb.andWhere('doc.tenant_id = :tenantId', { tenantId });
+      .andWhere('doc.category IN (:...categories)', { categories: accessibleCategories })
+      .andWhere('doc.tenant_id = :tenantId', { tenantId: tid });
     const stats = await statsQb.groupBy('doc.category').getRawMany();
 
     return stats;
@@ -682,40 +741,57 @@ export class PatientsService {
     if (primaryId === secondaryId) {
       throw new BadRequestException('Cannot merge a patient with themselves');
     }
+    const tid = requireTenantId(tenantId);
 
-    const primary = await this.findOne(primaryId, tenantId);
-    const secondary = await this.findOne(secondaryId, tenantId);
+    const primary = await this.findOne(primaryId, tid);
+    const secondary = await this.findOne(secondaryId, tid);
 
     return this.dataSource.transaction(async (manager) => {
       // Snapshot the secondary patient before merge
       const secondarySnapshot = { ...secondary };
 
-      // Move encounters from secondary to primary (tenant-scoped)
-      const encQb = manager
-        .createQueryBuilder()
-        .update('encounters')
-        .set({ patientId: primaryId })
-        .where('patient_id = :secondaryId', { secondaryId });
-      if (tenantId) encQb.andWhere('tenant_id = :tenantId', { tenantId });
-      const encounterResult = await encQb.execute();
+      // Re-point EVERY table that references the patient — clinical history,
+      // appointments, invoices/debt, consents, active medications, queue
+      // entries, etc. Discovered dynamically so new tables are covered
+      // automatically. Each table gets its own savepoint: a unique-constraint
+      // collision on one table (e.g. an idempotent link row that exists for
+      // both patients) must not abort the whole merge.
+      const patientIdTables: Array<{ table_name: string }> = await manager.query(
+        `SELECT c.table_name
+           FROM information_schema.columns c
+           JOIN information_schema.tables t
+             ON t.table_name = c.table_name AND t.table_schema = 'public'
+          WHERE c.table_schema = 'public'
+            AND c.column_name = 'patient_id'
+            AND t.table_type = 'BASE TABLE'
+            AND c.table_name NOT IN ('patients', 'patient_merges')
+          ORDER BY c.table_name`,
+      );
 
-      // Move documents from secondary to primary (tenant-scoped)
-      const docQb = manager
-        .createQueryBuilder()
-        .update('patient_documents')
-        .set({ patientId: primaryId })
-        .where('patient_id = :secondaryId', { secondaryId });
-      if (tenantId) docQb.andWhere('tenant_id = :tenantId', { tenantId });
-      const docResult = await docQb.execute();
+      const movedCounts: Record<string, number> = {};
+      const skippedTables: string[] = [];
+      for (const { table_name } of patientIdTables) {
+        await manager.query(`SAVEPOINT merge_tbl`);
+        try {
+          const result = await manager.query(
+            `UPDATE "${table_name}" SET patient_id = $1 WHERE patient_id = $2 AND tenant_id = $3`,
+            [primaryId, secondaryId, tid],
+          );
+          const affected = Array.isArray(result) ? (result[1] ?? 0) : 0;
+          if (affected > 0) movedCounts[table_name] = affected;
+          await manager.query(`RELEASE SAVEPOINT merge_tbl`);
+        } catch (err) {
+          await manager.query(`ROLLBACK TO SAVEPOINT merge_tbl`);
+          skippedTables.push(table_name);
+          this.logger.warn(
+            `Patient merge: could not re-point ${table_name} (${(err as Error).message}); rows left on merged record`,
+          );
+        }
+      }
 
-      // Move notes from secondary to primary (tenant-scoped)
-      const noteQb = manager
-        .createQueryBuilder()
-        .update('patient_notes')
-        .set({ patientId: primaryId })
-        .where('patient_id = :secondaryId', { secondaryId });
-      if (tenantId) noteQb.andWhere('tenant_id = :tenantId', { tenantId });
-      const noteResult = await noteQb.execute();
+      const encounterResult = { affected: movedCounts['encounters'] || 0 };
+      const docResult = { affected: movedCounts['patient_documents'] || 0 };
+      const noteResult = { affected: movedCounts['patient_notes'] || 0 };
 
       // Merge allergies (union)
       const primaryAllergies = primary.allergies || [];
@@ -753,9 +829,11 @@ export class PatientsService {
           encountersMoved: encounterResult.affected || 0,
           documentsMoved: docResult.affected || 0,
           notesMoved: noteResult.affected || 0,
+          movedCounts,
+          ...(skippedTables.length ? { skippedTables } : {}),
         },
         reason,
-        tenantId: requireTenantId(tenantId),
+        tenantId: tid,
       });
 
       const savedMerge = await manager.save(PatientMerge, merge);
@@ -770,10 +848,8 @@ export class PatientsService {
   }
 
   async getMergeHistory(tenantId?: string): Promise<PatientMerge[]> {
-    const where: any = {};
-    if (tenantId) where.tenantId = tenantId;
     return this.mergeRepository.find({
-      where,
+      where: { tenantId: requireTenantId(tenantId) },
       relations: ['primaryPatient', 'secondaryPatient', 'mergedBy'],
       order: { createdAt: 'DESC' },
       take: 50,
@@ -794,12 +870,24 @@ export class PatientsService {
     }
 
     // Verify user exists (tenant-scoped to prevent cross-tenant linking)
-    const userExists = tenantId
-      ? await this.dataSource.query('SELECT id FROM users WHERE id = $1 AND tenant_id = $2', [userId, tenantId])
-      : await this.dataSource.query('SELECT id FROM users WHERE id = $1', [userId]);
+    const tid = requireTenantId(tenantId);
+    const userExists = await this.dataSource.query(
+      'SELECT id FROM users WHERE id = $1 AND tenant_id = $2',
+      [userId, tid],
+    );
 
     if (userExists.length === 0) {
       throw new NotFoundException('User not found');
+    }
+
+    // One user account maps to at most one patient record
+    const alreadyLinked = await this.patientRepository.findOne({
+      where: { userId, tenantId: tid },
+    });
+    if (alreadyLinked) {
+      throw new ConflictException(
+        `This user account is already linked to patient ${alreadyLinked.mrn}`,
+      );
     }
 
     // Update patient with user ID
