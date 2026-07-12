@@ -38,7 +38,10 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       // proper 4xx status — e.g. PayloadTooLargeError (413) when a request
       // exceeds the body size limit. Surface them instead of masking as 500.
       status = (exception as any).status || (exception as any).statusCode;
-      message = (exception as Error).message;
+      message =
+        status === HttpStatus.PAYLOAD_TOO_LARGE
+          ? 'The uploaded content is too large. Maximum is 10 MB for settings/facility uploads and 1 MB for other requests — try a smaller image or file.'
+          : (exception as Error).message;
       error = HttpStatus[status] || 'Error';
     } else {
       status = HttpStatus.INTERNAL_SERVER_ERROR;

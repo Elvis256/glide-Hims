@@ -557,24 +557,37 @@ export class ScheduledTasksService {
       const sickMonthlyAccrual = 10 / 12; // ~0.83 days per month
       const maxAnnualBalance = 42; // 2 years cap
       const maxSickBalance = 20; // 2 years cap
+      const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
       let updatedCount = 0;
+      let skippedCount = 0;
       for (const user of users) {
+        // Idempotency: a re-run in the same month (restart at the month
+        // boundary, manual trigger) must not double-accrue
+        if (user.leaveLastAccruedMonth === currentMonth) {
+          skippedCount++;
+          continue;
+        }
+
         const newAnnual = Math.min(
-          (user.annualLeaveBalance || 0) + annualMonthlyAccrual,
+          Number(user.annualLeaveBalance || 0) + annualMonthlyAccrual,
           maxAnnualBalance,
         );
-        const newSick = Math.min((user.sickLeaveBalance || 0) + sickMonthlyAccrual, maxSickBalance);
+        const newSick = Math.min(
+          Number(user.sickLeaveBalance || 0) + sickMonthlyAccrual,
+          maxSickBalance,
+        );
 
-        if (newAnnual !== user.annualLeaveBalance || newSick !== user.sickLeaveBalance) {
-          user.annualLeaveBalance = Math.round(newAnnual * 100) / 100;
-          user.sickLeaveBalance = Math.round(newSick * 100) / 100;
-          await this.userRepo.save(user);
-          updatedCount++;
-        }
+        user.annualLeaveBalance = Math.round(newAnnual * 100) / 100;
+        user.sickLeaveBalance = Math.round(newSick * 100) / 100;
+        user.leaveLastAccruedMonth = currentMonth;
+        await this.userRepo.save(user);
+        updatedCount++;
       }
 
-      this.logger.log(`Leave accrual completed. Updated ${updatedCount} of ${users.length} users`);
+      this.logger.log(
+        `Leave accrual completed. Updated ${updatedCount}, skipped ${skippedCount} (already accrued) of ${users.length} users`,
+      );
     } catch (error) {
       this.logger.error(
         'Monthly leave accrual failed',

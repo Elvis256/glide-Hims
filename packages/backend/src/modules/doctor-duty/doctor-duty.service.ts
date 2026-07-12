@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, ConflictException } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, LessThan, Repository } from 'typeorm';
 import { DoctorDuty, DutyStatus } from '../../database/entities/doctor-duty.entity';
 import { User } from '../../database/entities/user.entity';
 import {
@@ -13,6 +14,8 @@ import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class DoctorDutyService {
+  private readonly logger = new Logger(DoctorDutyService.name);
+
   constructor(
     @InjectRepository(DoctorDuty)
     private readonly doctorDutyRepo: Repository<DoctorDuty>,
@@ -77,6 +80,31 @@ export class DoctorDutyService {
 
       return manager.save(DoctorDuty, duty);
     });
+  }
+
+  /**
+   * Nightly sweep: duty rows from previous days left ON_DUTY (doctor forgot
+   * to check out) stayed on the duty board forever. Runs cross-tenant in
+   * system context by design (same as the other maintenance crons).
+   */
+  @Cron('30 0 * * *', { name: 'doctor-duty-auto-checkout' })
+  async autoCheckoutStaleDuties(): Promise<void> {
+    const today = new Date().toISOString().split('T')[0];
+    const stale = await this.doctorDutyRepo.find({
+      where: {
+        status: In([DutyStatus.ON_DUTY, DutyStatus.ON_BREAK, DutyStatus.IN_CONSULTATION]),
+        dutyDate: LessThan(new Date(today)),
+      },
+    });
+    if (stale.length === 0) return;
+
+    for (const duty of stale) {
+      duty.status = DutyStatus.OFF_DUTY;
+      duty.checkOutTime = duty.checkOutTime || '23:59:59';
+      duty.notes = `${duty.notes || ''} [auto-checkout]`.trim();
+    }
+    await this.doctorDutyRepo.save(stale);
+    this.logger.log(`Auto-checked-out ${stale.length} stale doctor duty record(s)`);
   }
 
   async checkOut(id: string, notes?: string, tenantId?: string): Promise<DoctorDuty> {

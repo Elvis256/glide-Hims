@@ -233,12 +233,31 @@ export class User extends BaseEntity {
   @Column({ type: 'varchar', length: 50, nullable: true, name: 'bank_account_number' })
   bankAccountNumber?: string;
 
-  // Leave balances
-  @Column({ type: 'int', default: 21, name: 'annual_leave_balance' })
+  // Leave balances — numeric(5,2): monthly accrual is fractional (1.75 d),
+  // int columns silently truncated it
+  @Column({
+    type: 'numeric',
+    precision: 5,
+    scale: 2,
+    default: 21,
+    name: 'annual_leave_balance',
+    transformer: { to: (v: number) => v, from: (v: string | null) => Number(v ?? 0) },
+  })
   annualLeaveBalance: number;
 
-  @Column({ type: 'int', default: 10, name: 'sick_leave_balance' })
+  @Column({
+    type: 'numeric',
+    precision: 5,
+    scale: 2,
+    default: 10,
+    name: 'sick_leave_balance',
+    transformer: { to: (v: number) => v, from: (v: string | null) => Number(v ?? 0) },
+  })
   sickLeaveBalance: number;
+
+  /** 'YYYY-MM' of the last monthly leave accrual — makes the cron idempotent */
+  @Column({ type: 'varchar', length: 7, nullable: true, name: 'leave_last_accrued_month' })
+  leaveLastAccruedMonth?: string;
 
   // Tenant relation (tenantId column inherited from BaseEntity)
   @ManyToOne(() => Tenant)

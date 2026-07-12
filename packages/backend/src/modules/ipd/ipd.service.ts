@@ -385,9 +385,13 @@ export class IpdService {
             patientId: dto.patientId,
             serviceCode: `BED-${bed?.bedNumber || dto.bedId.slice(0, 8)}`,
             description:
-              `Bed Charge – ${ward?.name || 'Ward'} Bed ${bed?.bedNumber || ''}`.trim(),
+              `Bed Charge (first night) – ${ward?.name || 'Ward'} Bed ${bed?.bedNumber || ''}`.trim(),
             quantity: 1,
-            unitPrice: 0, // Admin sets price via settings
+            // First night at the bed's configured daily rate. Previously 0
+            // ("admin sets price") which meant the line was never priced.
+            // computeBedDayCharges skips one day at discharge when this
+            // charge exists, so the night is not billed twice.
+            unitPrice: Number(bed?.dailyRate || 0),
             chargeType: 'inpatient',
             referenceType: 'admission',
             referenceId: saved.id,
