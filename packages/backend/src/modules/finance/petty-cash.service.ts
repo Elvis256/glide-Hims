@@ -44,13 +44,13 @@ export class PettyCashService {
   async findAllFunds(facilityId?: string, tenantId?: string): Promise<PettyCashFund[]> {
     const where: any = {};
     if (facilityId) where.facilityId = facilityId;
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     return this.fundRepo.find({ where, order: { name: 'ASC' } });
   }
 
   async findFund(id: string, tenantId?: string): Promise<PettyCashFund> {
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     const fund = await this.fundRepo.findOne({
       where,
       relations: ['transactions'],
@@ -201,7 +201,7 @@ export class PettyCashService {
     const fund = await this.findFund(fundId, tenantId);
 
     const where: any = { fundId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     if (startDate && endDate) {
       where.createdAt = Between(new Date(startDate), new Date(endDate));
     } else if (startDate) {

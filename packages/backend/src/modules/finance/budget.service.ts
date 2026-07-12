@@ -57,7 +57,7 @@ export class BudgetService {
   async findAll(facilityId?: string, tenantId?: string): Promise<Budget[]> {
     const where: any = {};
     if (facilityId) where.facilityId = facilityId;
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     return this.budgetRepo.find({ where, relations: ['lines'], order: { createdAt: 'DESC' } });
   }
 
@@ -271,7 +271,7 @@ export class BudgetService {
       isActive: true,
       deletedAt: IsNull(),
     };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
 
     // Assume fiscal year starts Jan 1
     const fiscalYearStart = new Date(`${year}-01-01`);
@@ -315,9 +315,7 @@ export class BudgetService {
         .andWhere('je.status = :status', { status: JournalStatus.POSTED })
         .andWhere('acc.accountType = :type', { type: 'EXPENSE' });
 
-      if (tenantId) {
-        qb.andWhere('je.tenantId = :tenantId', { tenantId });
-      }
+      qb.andWhere('je.tenantId = :tenantId', { tenantId: requireTenantId(tenantId) });
 
       const entries = await qb.getMany();
 
@@ -354,7 +352,7 @@ export class BudgetService {
       budgetId,
       status: In([ReservationStatus.PENDING, ReservationStatus.APPROVED]),
     };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
 
     const reservations = await this.reservationRepo.find({ where });
     return fromCents(reservations.reduce((sum, r) => sum + toCents(r.reservedAmount), 0));
@@ -451,9 +449,7 @@ export class BudgetService {
           .where('b.facility_id = :facilityId', { facilityId })
           .andWhere('b.is_active = TRUE')
           .andWhere('b.deleted_at IS NULL');
-        if (tenantId) {
-          qb.andWhere('b.tenant_id = :tenantId', { tenantId });
-        }
+        qb.andWhere('b.tenant_id = :tenantId', { tenantId: requireTenantId(tenantId) });
         const budget = await qb.orderBy('b.fiscal_year_start', 'DESC').getOne();
 
         if (!budget) {
@@ -508,7 +504,7 @@ export class BudgetService {
    */
   async approveReservation(reservationId: string, tenantId?: string): Promise<BudgetReservation> {
     const where: any = { id: reservationId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
 
     const reservation = await this.reservationRepo.findOne({ where });
     if (!reservation) {
@@ -524,7 +520,7 @@ export class BudgetService {
    */
   async releaseReservation(reservationId: string, tenantId?: string): Promise<BudgetReservation> {
     const where: any = { id: reservationId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
 
     const reservation = await this.reservationRepo.findOne({ where });
     if (!reservation) {
@@ -541,7 +537,7 @@ export class BudgetService {
    */
   async markReservationSpent(documentId: string, tenantId?: string): Promise<void> {
     const where: any = { documentId, status: ReservationStatus.APPROVED };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
 
     const reservations = await this.reservationRepo.find({ where });
     for (const res of reservations) {
@@ -558,7 +554,7 @@ export class BudgetService {
     tenantId?: string,
   ): Promise<BudgetReservation[]> {
     const where: any = { documentId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
 
     return this.reservationRepo.find({
       where,
