@@ -100,57 +100,66 @@ export class PosRetailService {
       relations: ['items', 'store'],
     });
     if (!sale) throw new NotFoundException('Original sale not found');
-    if (sale.status !== SaleStatus.COMPLETED) {
-      throw new BadRequestException('Only completed sales can be returned');
-    }
-
-    // Compute already-returned quantities per sale item
-    const existingReturns = await this.returnItemRepo
-      .createQueryBuilder('ri')
-      .innerJoin('ri.pharmacyReturn', 'r')
-      .where('r.original_sale_id = :saleId', { saleId: sale.id })
-      .andWhere('r.status != :voided', { voided: ReturnStatus.VOIDED })
-      .andWhere(tenantId ? 'r.tenant_id = :tenantId' : '1=1', { tenantId })
-      .getMany();
-
-    const returnedQtyMap = new Map<string, number>();
-    for (const ri of existingReturns) {
-      const prev = returnedQtyMap.get(ri.originalSaleItemId) || 0;
-      returnedQtyMap.set(ri.originalSaleItemId, prev + ri.qtyReturned);
-    }
-
-    // Validate return lines
-    let totalRefund = 0;
-    const returnItemsData: Array<{
-      saleItem: PharmacySaleItem;
-      qtyReturned: number;
-      restockable: boolean;
-    }> = [];
-
-    for (const line of dto.items) {
-      const saleItem = sale.items.find((i) => i.id === line.saleItemId);
-      if (!saleItem) {
-        throw new BadRequestException(`Sale item ${line.saleItemId} not found in sale`);
-      }
-      const alreadyReturned = returnedQtyMap.get(saleItem.id) || 0;
-      const returnable = saleItem.quantity - alreadyReturned;
-      if (line.qtyReturned <= 0 || line.qtyReturned > returnable) {
-        throw new BadRequestException(
-          `Cannot return ${line.qtyReturned} of "${saleItem.itemName}" — returnable qty is ${returnable}`,
-        );
-      }
-      const lineGross = (Number(saleItem.grossAmount) / saleItem.quantity) * line.qtyReturned;
-      totalRefund += lineGross;
-      returnItemsData.push({
-        saleItem,
-        qtyReturned: line.qtyReturned,
-        restockable: line.restockable !== false,
-      });
-    }
 
     let savedReturn!: PharmacyReturn;
+    let totalRefund = 0;
 
     await this.dataSource.transaction(async (manager) => {
+      // Lock the sale row and validate INSIDE the txn: two concurrent
+      // returns previously both passed the returnable-qty check outside,
+      // over-returning stock and double-refunding.
+      const lockedSale = await manager.findOne(PharmacySale, {
+        where: { id: dto.originalSaleId, tenantId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!lockedSale) throw new NotFoundException('Original sale not found');
+      if (lockedSale.status !== SaleStatus.COMPLETED) {
+        throw new BadRequestException('Only completed sales can be returned');
+      }
+
+      // Compute already-returned quantities per sale item
+      const existingReturns = await manager
+        .createQueryBuilder(PharmacyReturnItem, 'ri')
+        .innerJoin('ri.pharmacyReturn', 'r')
+        .where('r.original_sale_id = :saleId', { saleId: sale.id })
+        .andWhere('r.status != :voided', { voided: ReturnStatus.VOIDED })
+        .andWhere('r.tenant_id = :tenantId', { tenantId })
+        .getMany();
+
+      const returnedQtyMap = new Map<string, number>();
+      for (const ri of existingReturns) {
+        const prev = returnedQtyMap.get(ri.originalSaleItemId) || 0;
+        returnedQtyMap.set(ri.originalSaleItemId, prev + ri.qtyReturned);
+      }
+
+      // Validate return lines
+      const returnItemsData: Array<{
+        saleItem: PharmacySaleItem;
+        qtyReturned: number;
+        restockable: boolean;
+      }> = [];
+
+      for (const line of dto.items) {
+        const saleItem = sale.items.find((i) => i.id === line.saleItemId);
+        if (!saleItem) {
+          throw new BadRequestException(`Sale item ${line.saleItemId} not found in sale`);
+        }
+        const alreadyReturned = returnedQtyMap.get(saleItem.id) || 0;
+        const returnable = saleItem.quantity - alreadyReturned;
+        if (line.qtyReturned <= 0 || line.qtyReturned > returnable) {
+          throw new BadRequestException(
+            `Cannot return ${line.qtyReturned} of "${saleItem.itemName}" — returnable qty is ${returnable}`,
+          );
+        }
+        const lineGross = (Number(saleItem.grossAmount) / saleItem.quantity) * line.qtyReturned;
+        totalRefund += lineGross;
+        returnItemsData.push({
+          saleItem,
+          qtyReturned: line.qtyReturned,
+          restockable: line.restockable !== false,
+        });
+      }
+
       const facilityId = sale.store?.facilityId;
 
       // Restock inventory (where restockable = true)
@@ -361,10 +370,6 @@ export class PosRetailService {
       relations: ['items', 'store'],
     });
     if (!sale) throw new NotFoundException('Sale not found');
-    if (sale.status !== SaleStatus.COMPLETED) {
-      throw new BadRequestException('Only completed sales can be voided');
-    }
-    if (sale.voidedAt) throw new BadRequestException('Sale is already voided');
 
     // Manager PIN verification
     await this.verifyManagerPin(dto.managerPin, tenantId);
@@ -377,6 +382,32 @@ export class PosRetailService {
     const facilityId = sale.store?.facilityId;
 
     await this.dataSource.transaction(async (manager) => {
+      // Lock + re-validate inside the txn (concurrent void/void and
+      // void/return raced the checks and double-restocked)
+      const lockedSale = await manager.findOne(PharmacySale, {
+        where: { id: saleId, tenantId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!lockedSale) throw new NotFoundException('Sale not found');
+      if (lockedSale.status !== SaleStatus.COMPLETED) {
+        throw new BadRequestException('Only completed sales can be voided');
+      }
+      if (lockedSale.voidedAt) throw new BadRequestException('Sale is already voided');
+
+      // A void restocks FULL quantities — with prior partial returns that
+      // would double-count the returned stock. Handle those via returns.
+      const priorReturn = await manager
+        .createQueryBuilder(PharmacyReturn, 'r')
+        .where('r.original_sale_id = :saleId', { saleId })
+        .andWhere('r.status != :voided', { voided: ReturnStatus.VOIDED })
+        .andWhere('r.tenant_id = :tenantId', { tenantId })
+        .getOne();
+      if (priorReturn) {
+        throw new BadRequestException(
+          `Sale has returns recorded against it (${priorReturn.returnNumber}); void is not allowed — process the remainder as a return`,
+        );
+      }
+
       // Restock all items
       if (facilityId) {
         for (const item of sale.items) {

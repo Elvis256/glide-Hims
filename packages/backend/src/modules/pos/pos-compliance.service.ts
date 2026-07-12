@@ -108,12 +108,16 @@ export class PosComplianceService {
     tenantId: string,
   ): Promise<PosZReport> {
     return this.dataSource.transaction(async (manager) => {
+      // Lock WITHOUT relations (FOR UPDATE cannot be applied to the nullable
+      // side of the outer join a relation adds); load register separately
       const shift = await manager.findOne(PosShift, {
         where: { id: shiftId, tenantId },
-        relations: ['register'],
         lock: { mode: 'pessimistic_write' },
       });
       if (!shift) throw new NotFoundException('Shift not found');
+      shift.register = (await manager.findOne(PosRegister, {
+        where: { id: shift.registerId, tenantId },
+      }))!;
       if (shift.status === 'z_finalized') {
         throw new BadRequestException(
           'Z-report has already been generated for this shift. Z-reports are immutable.',
@@ -306,7 +310,12 @@ export class PosComplianceService {
   private async nextZReportNumber(manager: any, tenantId: string): Promise<string> {
     const today = new Date();
     const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
-    // Simple per-day counter; collision-resistant for low/medium volume.
+    // Advisory lock: the shift-row lock held by the caller does not serialize
+    // z-report generation across DIFFERENT shifts, so the per-day counter
+    // could hand out the same number twice.
+    await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+      `pos:z-report-number:${tenantId}:${dateStr}`,
+    ]);
     const count = await manager
       .getRepository(PosZReport)
       .createQueryBuilder('z')
