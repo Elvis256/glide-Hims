@@ -1,4 +1,4 @@
-import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
+import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index, Unique } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Facility } from './facility.entity';
 import { User } from './user.entity';
@@ -23,12 +23,12 @@ export enum PRPriority {
 }
 
 @Entity('purchase_requests')
-@Index(['requestNumber'], { unique: true })
+@Unique(['tenantId', 'requestNumber'])
 @Index(['status'])
 @Index(['createdAt'])
 @Index(['facilityId', 'status'])
 export class PurchaseRequest extends BaseEntity {
-  @Column({ name: 'request_number', unique: true })
+  @Column({ name: 'request_number' })
   requestNumber: string;
 
   @Column({

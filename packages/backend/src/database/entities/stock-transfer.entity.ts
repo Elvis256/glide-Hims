@@ -1,4 +1,4 @@
-import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
+import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index, Unique } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Facility } from './facility.entity';
 import { Store } from './store.entity';
@@ -27,10 +27,10 @@ export enum TransferReason {
 }
 
 @Entity('stock_transfers')
+@Unique(['tenantId', 'transferNumber'])
 @Index(['fromFacilityId'])
 @Index(['toFacilityId'])
 @Index(['status'])
-@Index(['transferNumber'], { unique: true })
 export class StockTransfer extends BaseEntity {
   @Column({ name: 'transfer_number' })
   transferNumber: string;

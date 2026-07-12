@@ -8,6 +8,7 @@ import {
   JoinColumn,
   OneToMany,
   Index,
+  Unique,
 } from 'typeorm';
 import { AntenatalRegistration } from './antenatal-registration.entity';
 import { Facility } from './facility.entity';
@@ -37,6 +38,7 @@ export enum LabourOutcome {
 }
 
 @Entity('labour_records')
+@Unique(['tenantId', 'labourNumber'])
 @Index(['facilityId', 'status'])
 export class LabourRecord {
   @PrimaryGeneratedColumn('uuid')
@@ -46,7 +48,7 @@ export class LabourRecord {
   @Index()
   tenantId?: string;
 
-  @Column({ length: 20, unique: true, name: 'labour_number' })
+  @Column({ length: 20, name: 'labour_number' })
   labourNumber: string;
 
   @Column({ type: 'uuid', name: 'registration_id' })

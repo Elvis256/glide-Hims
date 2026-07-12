@@ -7,6 +7,7 @@ import {
   ManyToOne,
   JoinColumn,
   Index,
+  Unique,
 } from 'typeorm';
 import { Facility } from './facility.entity';
 import { User } from './user.entity';
@@ -59,12 +60,13 @@ export enum StaffCategory {
 }
 
 @Entity('employees')
+@Unique(['tenantId', 'employeeNumber'])
 @Index(['facilityId', 'status'])
 export class Employee {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ length: 20, unique: true, name: 'employee_number' })
+  @Column({ length: 20, name: 'employee_number' })
   employeeNumber: string;
 
   // Link to user account (optional)

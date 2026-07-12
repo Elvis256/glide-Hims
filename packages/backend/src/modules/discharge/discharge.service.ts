@@ -36,10 +36,14 @@ export class DischargeService {
     tenantId?: string,
   ): Promise<DischargeSummary> {
     const tid = requireTenantId(tenantId);
-    return this.dataSource.transaction(async (manager) => {
-      // Validate encounter status — only ACTIVE/IN_PROGRESS encounters can be discharged
+    const { savedSummary, encounter } = await this.dataSource.transaction(async (manager) => {
+      // Lock the encounter row so concurrent discharges serialize on the
+      // status check (two simultaneous requests would otherwise both pass)
       const encounterWhere: any = { id: dto.encounterId, tenantId: tid };
-      const encounter = await manager.findOne(Encounter, { where: encounterWhere });
+      const encounter = await manager.findOne(Encounter, {
+        where: encounterWhere,
+        lock: { mode: 'pessimistic_write' },
+      });
       if (!encounter) {
         throw new NotFoundException('Encounter not found');
       }
@@ -59,7 +63,7 @@ export class DischargeService {
         throw new BadRequestException('Discharge summary already exists for this encounter');
       }
 
-      const dischargeNumber = await this.generateDischargeNumber(tenantId);
+      const dischargeNumber = await this.generateDischargeNumber(tid, manager);
 
       const summary = manager.create(DischargeSummary, {
         ...dto,
@@ -82,8 +86,14 @@ export class DischargeService {
         },
       );
 
-      // Mirror vitalSignsAtDischarge into the canonical `vitals` timeline.
-      // Done after the txn block (best-effort + outside the discharge txn).
+      return { savedSummary, encounter };
+    });
+
+    // Mirror vitalSignsAtDischarge into the canonical `vitals` timeline.
+    // Best-effort, outside the discharge txn: the vitals service uses its own
+    // connection, so running it inside would abort the discharge on failure
+    // and orphan a vital record if the discharge later rolled back.
+    try {
       const v = (dto as any).vitalSignsAtDischarge as
         | {
             temperature?: number;
@@ -124,24 +134,26 @@ export class DischargeService {
           },
         });
       }
+    } catch (err: any) {
+      this.logger.warn(`Failed to mirror discharge vitals: ${err?.message}`);
+    }
 
-      // Auto-initialize medication reconciliation (best-effort)
-      if (this.medReconciliationService && encounter.patientId) {
-        try {
-          await this.medReconciliationService.initializeReconciliation({
-            encounterId: dto.encounterId,
-            patientId: encounter.patientId,
-            facilityId,
-            dischargeSummaryId: savedSummary.id,
-            tenantId,
-          });
-        } catch (err: any) {
-          this.logger.warn(`Failed to initialize medication reconciliation: ${err?.message}`);
-        }
+    // Auto-initialize medication reconciliation (best-effort)
+    if (this.medReconciliationService && encounter.patientId) {
+      try {
+        await this.medReconciliationService.initializeReconciliation({
+          encounterId: dto.encounterId,
+          patientId: encounter.patientId,
+          facilityId,
+          dischargeSummaryId: savedSummary.id,
+          tenantId,
+        });
+      } catch (err: any) {
+        this.logger.warn(`Failed to initialize medication reconciliation: ${err?.message}`);
       }
+    }
 
-      return savedSummary;
-    });
+    return savedSummary;
   }
 
   async findAll(
@@ -223,7 +235,15 @@ export class DischargeService {
     tenantId?: string,
   ): Promise<DischargeSummary> {
     const summary = await this.findOne(id, tenantId);
-    Object.assign(summary, dto);
+    // Identity/linkage fields are immutable after creation
+    const {
+      encounterId: _e,
+      patientId: _p,
+      dischargeDate,
+      ...updatable
+    } = dto as any;
+    Object.assign(summary, updatable);
+    if (dischargeDate) summary.dischargeDate = new Date(dischargeDate);
     return this.dischargeSummaryRepository.save(summary);
   }
 
@@ -301,20 +321,26 @@ export class DischargeService {
     };
   }
 
-  private async generateDischargeNumber(tenantId?: string): Promise<string> {
-    const tid = requireTenantId(tenantId);
+  private async generateDischargeNumber(
+    tid: string,
+    manager: import('typeorm').EntityManager,
+  ): Promise<string> {
     const today = new Date();
     const year = today.getFullYear();
     const month = String(today.getMonth() + 1).padStart(2, '0');
     const prefix = `DC${year}${month}`;
 
-    const qb = this.dischargeSummaryRepository
-      .createQueryBuilder('discharge')
-      .where('discharge.discharge_number LIKE :prefix', { prefix: `${prefix}%` });
+    // Serialize concurrent generation for this tenant+month; released on commit
+    await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+      `discharge_number:${tid}:${prefix}`,
+    ]);
 
-    qb.andWhere('discharge.tenant_id = :tenantId', { tenantId: tid });
-
-    const lastSummary = await qb.orderBy('discharge.discharge_number', 'DESC').getOne();
+    const lastSummary = await manager
+      .createQueryBuilder(DischargeSummary, 'discharge')
+      .where('discharge.discharge_number LIKE :prefix', { prefix: `${prefix}%` })
+      .andWhere('discharge.tenant_id = :tenantId', { tenantId: tid })
+      .orderBy('discharge.discharge_number', 'DESC')
+      .getOne();
 
     let sequence = 1;
     if (lastSummary) {

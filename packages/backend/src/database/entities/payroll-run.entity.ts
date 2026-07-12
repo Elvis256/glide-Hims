@@ -8,6 +8,7 @@ import {
   JoinColumn,
   OneToMany,
   Index,
+  Unique,
 } from 'typeorm';
 import { Facility } from './facility.entity';
 import { User } from './user.entity';
@@ -22,12 +23,13 @@ export enum PayrollStatus {
 }
 
 @Entity('payroll_runs')
+@Unique(['tenantId', 'payrollNumber'])
 @Index(['facilityId', 'month', 'year'])
 export class PayrollRun {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ length: 20, unique: true, name: 'payroll_number' })
+  @Column({ length: 20, name: 'payroll_number' })
   payrollNumber: string;
 
   @Column({ type: 'int' })

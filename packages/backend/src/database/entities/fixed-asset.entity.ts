@@ -1,4 +1,4 @@
-import { Entity, Column, ManyToOne, JoinColumn, OneToMany, Index } from 'typeorm';
+import { Entity, Column, ManyToOne, JoinColumn, OneToMany, Index, Unique } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Facility } from './facility.entity';
 import { Department } from './department.entity';
@@ -97,6 +97,7 @@ export enum AssetCondition {
 }
 
 @Entity('fixed_assets')
+@Unique(['tenantId', 'serialNumber'])
 @Index(['assetCode'], { unique: true, where: 'deleted_at IS NULL' })
 @Index(['serialNumber'], {
   unique: true,

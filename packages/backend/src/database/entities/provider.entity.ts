@@ -30,11 +30,11 @@ export enum ProviderStatus {
 }
 
 @Entity('providers')
-@Index(['licenseNumber'], {
+@Index(['tenantId', 'licenseNumber'], {
   unique: true,
   where: 'deleted_at IS NULL AND license_number IS NOT NULL',
 })
-@Index(['registrationNumber'], {
+@Index(['tenantId', 'registrationNumber'], {
   unique: true,
   where: 'deleted_at IS NULL AND registration_number IS NOT NULL',
 })

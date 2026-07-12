@@ -1,4 +1,4 @@
-import { Entity, Column, ManyToOne, JoinColumn, Index } from 'typeorm';
+import { Entity, Column, ManyToOne, JoinColumn, Index, Unique } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Patient } from './patient.entity';
 import { Encounter } from './encounter.entity';
@@ -24,12 +24,12 @@ export enum DischargeDestination {
 }
 
 @Entity('discharge_summaries')
-@Index(['dischargeNumber'], { unique: true })
+@Unique(['tenantId', 'dischargeNumber'])
 @Index(['patient'])
 @Index(['encounter'], { unique: true })
 @Index(['dischargeDate'])
 export class DischargeSummary extends BaseEntity {
-  @Column({ name: 'discharge_number', unique: true })
+  @Column({ name: 'discharge_number' })
   dischargeNumber: string;
 
   @Column({

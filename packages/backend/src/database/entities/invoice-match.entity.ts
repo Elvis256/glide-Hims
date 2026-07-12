@@ -1,4 +1,4 @@
-import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
+import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index, Unique } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Facility } from './facility.entity';
 import { User } from './user.entity';
@@ -17,10 +17,11 @@ export enum InvoiceMatchStatus {
 }
 
 @Entity('invoice_matches')
+@Unique(['tenantId', 'matchNumber'])
 @Index(['status'])
 @Index(['dueDate'])
 export class InvoiceMatch extends BaseEntity {
-  @Column({ name: 'match_number', unique: true })
+  @Column({ name: 'match_number' })
   matchNumber: string;
 
   @Column({ name: 'vendor_invoice_number' })

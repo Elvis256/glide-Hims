@@ -1,4 +1,4 @@
-import { Entity, Column, ManyToOne, JoinColumn, Index } from 'typeorm';
+import { Entity, Column, ManyToOne, JoinColumn, Index, Unique } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Facility } from './facility.entity';
 
@@ -57,10 +57,10 @@ export class MembershipScheme extends BaseEntity {
 }
 
 @Entity('patient_memberships')
+@Unique(['tenantId', 'membershipNumber'])
 @Index(['patientId', 'schemeId'])
-@Index(['membershipNumber'], { unique: true })
 export class PatientMembership extends BaseEntity {
-  @Column({ name: 'membership_number', unique: true })
+  @Column({ name: 'membership_number' })
   membershipNumber: string;
 
   @Column({ name: 'patient_id' })

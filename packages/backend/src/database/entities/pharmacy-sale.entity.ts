@@ -1,4 +1,4 @@
-import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
+import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index, Unique } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Store } from './store.entity';
 import { Patient } from './patient.entity';
@@ -41,13 +41,13 @@ export enum SaleStatus {
 }
 
 @Entity('pharmacy_sales')
-@Index(['saleNumber'], { unique: true })
+@Unique(['tenantId', 'saleNumber'])
 @Index(['store', 'createdAt'])
 @Index(['patient'])
 @Index(['status', 'createdAt'])
 @Index(['prescriptionId'])
 export class PharmacySale extends BaseEntity {
-  @Column({ name: 'sale_number', unique: true })
+  @Column({ name: 'sale_number' })
   saleNumber: string;
 
   @Column({

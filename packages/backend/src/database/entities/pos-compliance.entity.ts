@@ -219,6 +219,7 @@ export class PosCashDrawerEvent extends BaseEntity {
 // ─── Z-Report (immutable) ────────────────────────────────────────────────────
 
 @Entity('pos_z_reports')
+@Unique(['tenantId', 'reportNumber'])
 @Unique('UQ_z_report_shift', ['shiftId'])
 @Index(['tenantId', 'generatedAt'])
 export class PosZReport extends BaseEntity {
@@ -236,7 +237,7 @@ export class PosZReport extends BaseEntity {
   @JoinColumn({ name: 'register_id' })
   register: PosRegister;
 
-  @Column({ name: 'report_number', unique: true })
+  @Column({ name: 'report_number' })
   reportNumber: string;
 
   @Column({ name: 'generated_at', type: 'timestamptz' })

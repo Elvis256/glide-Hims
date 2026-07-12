@@ -1,4 +1,4 @@
-import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
+import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index, Unique } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Item } from './inventory.entity';
 import { Facility } from './facility.entity';
@@ -25,11 +25,12 @@ export enum ReturnReason {
 }
 
 @Entity('supplier_returns')
+@Unique(['tenantId', 'returnNumber'])
 @Index(['facilityId', 'createdAt'])
 @Index(['status'])
 @Index(['supplierId'])
 export class SupplierReturn extends BaseEntity {
-  @Column({ name: 'return_number', unique: true })
+  @Column({ name: 'return_number' })
   returnNumber: string;
 
   @ManyToOne(() => Supplier)

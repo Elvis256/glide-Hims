@@ -1,4 +1,4 @@
-import { Entity, Column, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
+import { Entity, Column, ManyToOne, JoinColumn, OneToMany, Unique } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Facility } from './facility.entity';
 import { InsuranceProvider } from './insurance-provider.entity';
@@ -30,6 +30,7 @@ export enum ClaimType {
 }
 
 @Entity('insurance_claims')
+@Unique(['tenantId', 'claimNumber'])
 export class InsuranceClaim extends BaseEntity {
   @Column({ name: 'facility_id' })
   facilityId: string;
@@ -38,7 +39,7 @@ export class InsuranceClaim extends BaseEntity {
   @JoinColumn({ name: 'facility_id' })
   facility: Facility;
 
-  @Column({ name: 'claim_number', unique: true })
+  @Column({ name: 'claim_number' })
   claimNumber: string;
 
   @Column({ name: 'provider_id' })
