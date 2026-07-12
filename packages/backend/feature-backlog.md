@@ -20,6 +20,10 @@ Legend: 💰 revenue/compliance · 🏥 clinical value · ✨ UX polish
   appointment reminders.
 
 ## Platform
+- ✨ **Platform number generators unserialized** — SaaS quotation
+  (`nextQuotationNumber`) and contract (`nextContractNumber`) use unlocked
+  MAX+1. Single-operator today, but add advisory locks if multiple platform
+  admins ever work concurrently.
 - ✨ **PayloadTooLarge → 413** — GlobalExceptionFilter maps body-parser's
   PayloadTooLargeError to a generic 500. Should return 413 with a friendly
   "file too large (max 10 MB)" message. Users are hitting this today via
