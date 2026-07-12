@@ -277,7 +277,7 @@ export class FacilitiesService {
 
   async findUnitsByFacility(facilityId: string, tenantId?: string) {
     const where: any = { facilityId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     return this.unitRepository.find({
       where,
       relations: ['department'],
@@ -287,7 +287,7 @@ export class FacilitiesService {
 
   async findOneUnit(id: string, tenantId?: string): Promise<Unit> {
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     const unit = await this.unitRepository.findOne({
       where,
       relations: ['department'],
