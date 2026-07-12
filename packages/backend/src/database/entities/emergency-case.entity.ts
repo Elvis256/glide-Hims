@@ -36,7 +36,7 @@ export enum ArrivalMode {
 @Index(['triageLevel', 'status'])
 @Index(['facility', 'createdAt'])
 export class EmergencyCase extends BaseEntity {
-  @Column({ name: 'case_number', unique: true })
+  @Column({ name: 'case_number' })
   caseNumber: string;
 
   @Column({ name: 'triage_level', type: 'enum', enum: TriageLevel })

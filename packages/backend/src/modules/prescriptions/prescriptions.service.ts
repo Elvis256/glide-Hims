@@ -81,15 +81,21 @@ export class PrescriptionsService {
     private dataSource: DataSource,
   ) {}
 
-  private async generatePrescriptionNumber(tenantId?: string): Promise<string> {
+  private async generatePrescriptionNumber(
+    tenantId: string,
+    manager: import('typeorm').EntityManager,
+  ): Promise<string> {
     const today = new Date();
     const datePrefix = today.toISOString().slice(0, 10).replace(/-/g, '');
 
-    const result = await this.dataSource.query(
-      `SELECT prescription_number FROM prescriptions 
-       WHERE prescription_number LIKE $1 
+    await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+      `rx_num_${datePrefix}_${tenantId}`,
+    ]);
+    const result = await manager.query(
+      `SELECT prescription_number FROM prescriptions
+       WHERE prescription_number LIKE $1
        AND tenant_id = $2
-       ORDER BY prescription_number DESC LIMIT 1 FOR UPDATE`,
+       ORDER BY prescription_number DESC LIMIT 1`,
       [`RX${datePrefix}%`, tenantId],
     );
 
@@ -191,10 +197,13 @@ export class PrescriptionsService {
       });
     }
 
-    const prescriptionNumber = await this.generatePrescriptionNumber(tenantId);
-
     // Use a transaction with row-level locking to prevent race conditions
     const saved = await this.dataSource.transaction(async (manager) => {
+      // Number generation must happen INSIDE the transaction under an
+      // advisory lock — the old pre-transaction SELECT ... FOR UPDATE
+      // released its lock immediately (auto-commit) and never serialized
+      // concurrent prescribers.
+      const prescriptionNumber = await this.generatePrescriptionNumber(tid, manager);
       const prescription = manager.create(Prescription, {
         prescriptionNumber,
         encounterId: dto.encounterId,

@@ -1,4 +1,4 @@
-import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
+import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index, Unique } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Encounter } from './encounter.entity';
 import { User } from './user.entity';
@@ -22,13 +22,13 @@ export enum PaymentType {
 }
 
 @Entity('invoices')
-@Index(['invoiceNumber'], { unique: true })
+@Unique(['tenantId', 'invoiceNumber'])
 @Index(['encounter'])
 @Index(['patient'])
 @Index(['status', 'createdAt'])
 @Index(['insurancePolicyId'])
 export class Invoice extends BaseEntity {
-  @Column({ name: 'invoice_number', unique: true })
+  @Column({ name: 'invoice_number' })
   invoiceNumber: string;
 
   @Column({
@@ -218,11 +218,11 @@ export enum PaymentStatus {
 
 @Entity('payments')
 @Index(['invoice'])
-@Index(['receiptNumber'], { unique: true })
+@Unique(['tenantId', 'receiptNumber'])
 @Index(['paidAt'])
 @Index(['transactionReference'])
 export class Payment extends BaseEntity {
-  @Column({ name: 'receipt_number', unique: true })
+  @Column({ name: 'receipt_number' })
   receiptNumber: string;
 
   @Column({ type: 'decimal', precision: 12, scale: 2 })

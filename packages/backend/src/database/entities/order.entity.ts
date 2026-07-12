@@ -27,7 +27,7 @@ export enum OrderPriority {
 @Index(['encounter', 'orderType'])
 @Index(['status', 'createdAt'])
 export class Order extends BaseEntity {
-  @Column({ name: 'order_number', unique: true })
+  @Column({ name: 'order_number' })
   orderNumber: string;
 
   @Column({
