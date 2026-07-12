@@ -121,6 +121,8 @@ const mockDataSource = {
   transaction: jest.fn(),
 };
 
+const TEST_TENANT_ID = 'test-tenant-id';
+
 describe('BillingService', () => {
   let service: BillingService;
 
@@ -193,6 +195,16 @@ describe('BillingService', () => {
         status: 'in_progress',
       });
 
+      // Mock transaction manager to return encounter for GL posting lookup
+      const mockManager = createMockManager();
+      mockManager.findOne.mockImplementation(async (entity: any, opts: any) => {
+        if (entity === Encounter || entity?.name === 'Encounter') {
+          return { id: 'encounter-1', facilityId: 'facility-1', status: 'in_progress' };
+        }
+        return null;
+      });
+      mockDataSource.transaction.mockImplementation(async (cb: any) => cb(mockManager));
+
       const result = await service.createInvoice(createInvoiceDto as any, 'user-1', 'tenant-1');
 
       expect(result).toBeDefined();
@@ -229,7 +241,7 @@ describe('BillingService', () => {
         payments: [],
       });
 
-      const result = await service.createInvoice(simpleDto as any, 'user-1');
+      const result = await service.createInvoice(simpleDto as any, 'user-1', TEST_TENANT_ID);
 
       const createCall = mockInvoiceRepo.create.mock.calls[0][0];
       expect(createCall.subtotal).toBe(300);
@@ -299,7 +311,7 @@ describe('BillingService', () => {
       mockDataSource.transaction.mockImplementation(async (cb: any) => cb(mockManager));
 
       const dto = { invoiceId: 'inv-1', amount: 80, method: 'cash' };
-      await service.recordPayment(dto as any, 'user-1');
+      await service.recordPayment(dto as any, 'user-1', TEST_TENANT_ID);
 
       const updateCall = mockManager.update.mock.calls.find((c: any) => c[0] === Invoice);
       expect(updateCall).toBeDefined();
@@ -323,7 +335,7 @@ describe('BillingService', () => {
 
       const dto = { invoiceId: 'inv-1', amount: 75, method: 'cash' };
 
-      await expect(service.recordPayment(dto as any, 'user-1')).rejects.toThrow(
+      await expect(service.recordPayment(dto as any, 'user-1', TEST_TENANT_ID)).rejects.toThrow(
         BadRequestException,
       );
     });
@@ -335,7 +347,7 @@ describe('BillingService', () => {
 
       const dto = { invoiceId: 'nonexistent', amount: 100, method: 'cash' };
 
-      await expect(service.recordPayment(dto as any, 'user-1')).rejects.toThrow(NotFoundException);
+      await expect(service.recordPayment(dto as any, 'user-1', TEST_TENANT_ID)).rejects.toThrow(NotFoundException);
     });
 
     it('should throw BadRequestException when invoice is already fully paid', async () => {
@@ -353,7 +365,7 @@ describe('BillingService', () => {
 
       const dto = { invoiceId: 'inv-1', amount: 10, method: 'cash' };
 
-      await expect(service.recordPayment(dto as any, 'user-1')).rejects.toThrow(
+      await expect(service.recordPayment(dto as any, 'user-1', TEST_TENANT_ID)).rejects.toThrow(
         BadRequestException,
       );
     });
@@ -364,7 +376,7 @@ describe('BillingService', () => {
       const invoice = { id: 'inv-1', invoiceNumber: 'INV001', items: [], payments: [] };
       mockInvoiceRepo.findOne.mockResolvedValueOnce(invoice);
 
-      const result = await service.findInvoice('inv-1');
+      const result = await service.findInvoice('inv-1', TEST_TENANT_ID);
 
       expect(result).toEqual(invoice);
     });
@@ -372,7 +384,7 @@ describe('BillingService', () => {
     it('should throw NotFoundException when invoice not found', async () => {
       mockInvoiceRepo.findOne.mockResolvedValueOnce(null);
 
-      await expect(service.findInvoice('nonexistent')).rejects.toThrow(NotFoundException);
+      await expect(service.findInvoice('nonexistent', TEST_TENANT_ID)).rejects.toThrow(NotFoundException);
     });
   });
 });

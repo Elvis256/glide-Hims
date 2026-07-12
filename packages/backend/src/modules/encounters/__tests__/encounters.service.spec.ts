@@ -6,13 +6,18 @@ import { Encounter, EncounterType, PayerType } from '../../../database/entities/
 import { Patient } from '../../../database/entities/patient.entity';
 import { Service } from '../../../database/entities/service-category.entity';
 import { InsurancePolicy } from '../../../database/entities/insurance-policy.entity';
+import { Facility } from '../../../database/entities/facility.entity';
+import { Department } from '../../../database/entities/department.entity';
 import { InAppNotificationsService } from '../../in-app-notifications/in-app-notifications.service';
 import { BillingService } from '../../billing/billing.service';
 import { QueueManagementService } from '../../queue-management/queue-management.service';
 import { InsuranceService } from '../../insurance/insurance.service';
 import { AuditLogService } from '../../../common/interceptors/audit-log.service';
 import { IdentityGuardService } from '../../../common/services/identity-guard.service';
+import { FollowUpsService } from '../../follow-ups/follow-ups.service';
 import { BadRequestException } from '@nestjs/common';
+
+const TEST_TENANT_ID = 'test-tenant-id';
 
 describe('EncountersService', () => {
   let service: EncountersService;
@@ -63,6 +68,19 @@ describe('EncountersService', () => {
 
   const mockIdentityGuardService = {};
 
+  const mockFollowUpsService = {
+    createFollowUp: jest.fn(),
+    getFollowUps: jest.fn(),
+  };
+
+  const mockFacilityRepo = {
+    findOne: jest.fn(),
+  };
+
+  const mockDepartmentRepo = {
+    findOne: jest.fn(),
+  };
+
   const mockEntityManager = {
     getRepository: jest.fn().mockImplementation((entity) => {
       if (entity === Encounter) return mockEncounterRepo;
@@ -91,6 +109,8 @@ describe('EncountersService', () => {
         { provide: getRepositoryToken(Patient), useValue: mockPatientRepo },
         { provide: getRepositoryToken(Service), useValue: mockServiceRepo },
         { provide: getRepositoryToken(InsurancePolicy), useValue: mockInsurancePolicyRepo },
+        { provide: getRepositoryToken(Facility), useValue: mockFacilityRepo },
+        { provide: getRepositoryToken(Department), useValue: mockDepartmentRepo },
         { provide: InAppNotificationsService, useValue: mockInAppNotificationsService },
         { provide: BillingService, useValue: mockBillingService },
         { provide: QueueManagementService, useValue: mockQueueService },
@@ -98,6 +118,7 @@ describe('EncountersService', () => {
         { provide: DataSource, useValue: mockDataSource },
         { provide: AuditLogService, useValue: mockAuditLogService },
         { provide: IdentityGuardService, useValue: mockIdentityGuardService },
+        { provide: FollowUpsService, useValue: mockFollowUpsService },
       ],
     }).compile();
 
@@ -115,7 +136,9 @@ describe('EncountersService', () => {
 
     it('should create an encounter successfully with transaction', async () => {
       mockPatientRepo.findOne.mockResolvedValue({ id: 'patient-1', tenantId: 'tenant-1' });
+      mockFacilityRepo.findOne.mockResolvedValue({ id: 'facility-1', status: 'active', tenantId: 'tenant-1' });
       mockEncounterRepo.findOne.mockResolvedValue(null); // No active encounter
+      mockDepartmentRepo.findOne.mockResolvedValue({ id: 'dept-1', facilityId: 'facility-1', tenantId: 'tenant-1', status: 'active' });
 
       // Mock generateVisitNumber and getNextQueueNumber logic within manager
       mockEncounterRepo.createQueryBuilder.mockReturnValue({
@@ -136,6 +159,7 @@ describe('EncountersService', () => {
 
     it('should throw BadRequestException if patient has active encounter', async () => {
       mockPatientRepo.findOne.mockResolvedValue({ id: 'patient-1', tenantId: 'tenant-1' });
+      mockFacilityRepo.findOne.mockResolvedValue({ id: 'facility-1', status: 'active', tenantId: 'tenant-1' });
       mockEncounterRepo.findOne.mockResolvedValue({ id: 'active-enc' });
 
       await expect(service.create(createDto, 'user-1', 'tenant-1')).rejects.toThrow(

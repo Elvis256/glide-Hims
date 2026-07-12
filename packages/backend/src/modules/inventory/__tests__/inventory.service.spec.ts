@@ -48,6 +48,8 @@ const mockDataSource = {
   transaction: jest.fn(),
 };
 
+const TEST_TENANT_ID = 'test-tenant-id';
+
 describe('InventoryService', () => {
   let service: InventoryService;
 
@@ -100,7 +102,7 @@ describe('InventoryService', () => {
       mockItemRepo.create.mockReturnValueOnce({ id: 'item-1', ...dto });
       mockItemRepo.save.mockResolvedValueOnce({ id: 'item-1', ...dto });
 
-      const result = await service.createItem(dto as any);
+      const result = await service.createItem(dto as any, TEST_TENANT_ID);
 
       expect(result).toEqual(expect.objectContaining({ code: 'MED-001' }));
       expect(mockItemRepo.create).toHaveBeenCalledWith(
@@ -112,7 +114,7 @@ describe('InventoryService', () => {
     it('should throw BadRequestException when item code already exists', async () => {
       mockItemRepo.findOne.mockResolvedValueOnce({ id: 'existing', code: 'MED-001' });
 
-      await expect(service.createItem({ code: 'MED-001', name: 'Test' } as any)).rejects.toThrow(
+      await expect(service.createItem({ code: 'MED-001', name: 'Test' } as any, TEST_TENANT_ID)).rejects.toThrow(
         BadRequestException,
       );
     });
@@ -136,14 +138,14 @@ describe('InventoryService', () => {
       const item = { id: 'item-1', code: 'MED-001', name: 'Paracetamol' };
       mockItemRepo.findOne.mockResolvedValueOnce(item);
 
-      const result = await service.findItemById('item-1');
+      const result = await service.findItemById('item-1', TEST_TENANT_ID);
       expect(result).toEqual(item);
     });
 
     it('should throw NotFoundException when item not found', async () => {
       mockItemRepo.findOne.mockResolvedValueOnce(null);
 
-      await expect(service.findItemById('nonexistent')).rejects.toThrow(NotFoundException);
+      await expect(service.findItemById('nonexistent', TEST_TENANT_ID)).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -171,7 +173,7 @@ describe('InventoryService', () => {
       mockManager.findOne.mockResolvedValueOnce(existingBalance);
       mockDataSource.transaction.mockImplementation(async (cb: any) => cb(mockManager));
 
-      const result = await service.receiveStock(receiveDto as any, 'user-1');
+      const result = await service.receiveStock(receiveDto as any, 'user-1', TEST_TENANT_ID);
 
       expect(result).toBeDefined();
       expect(result.quantity).toBe(50);
@@ -193,7 +195,7 @@ describe('InventoryService', () => {
       mockManager.findOne.mockResolvedValueOnce(null); // no existing balance
       mockDataSource.transaction.mockImplementation(async (cb: any) => cb(mockManager));
 
-      const result = await service.receiveStock(receiveDto as any, 'user-1');
+      const result = await service.receiveStock(receiveDto as any, 'user-1', TEST_TENANT_ID);
 
       expect(result.balanceAfter).toBe(50); // 0 + 50
 
@@ -212,7 +214,7 @@ describe('InventoryService', () => {
     it('should throw NotFoundException when item does not exist', async () => {
       mockItemRepo.findOne.mockResolvedValueOnce(null);
 
-      await expect(service.receiveStock(receiveDto as any, 'user-1')).rejects.toThrow(
+      await expect(service.receiveStock(receiveDto as any, 'user-1', TEST_TENANT_ID)).rejects.toThrow(
         NotFoundException,
       );
     });
@@ -241,7 +243,7 @@ describe('InventoryService', () => {
       mockManager.findOne.mockResolvedValueOnce(existingBalance);
       mockDataSource.transaction.mockImplementation(async (cb: any) => cb(mockManager));
 
-      const result = await service.adjustStock(adjustDto as any, 'user-1');
+      const result = await service.adjustStock(adjustDto as any, 'user-1', TEST_TENANT_ID);
 
       expect(result.quantity).toBe(-20); // 80 - 100
       expect(result.balanceAfter).toBe(80);
@@ -266,7 +268,7 @@ describe('InventoryService', () => {
       mockManager.findOne.mockResolvedValueOnce(existingBalance);
       mockDataSource.transaction.mockImplementation(async (cb: any) => cb(mockManager));
 
-      const result = await service.adjustStock({ ...adjustDto, newQuantity: 120 } as any, 'user-1');
+      const result = await service.adjustStock({ ...adjustDto, newQuantity: 120 } as any, 'user-1', TEST_TENANT_ID);
 
       expect(result.quantity).toBe(70); // 120 - 50
       expect(result.balanceAfter).toBe(120);
@@ -283,7 +285,7 @@ describe('InventoryService', () => {
       });
       mockDataSource.transaction.mockImplementation(async (cb: any) => cb(mockManager));
 
-      const result = await service.adjustStock(adjustDto as any, 'user-1');
+      const result = await service.adjustStock(adjustDto as any, 'user-1', TEST_TENANT_ID);
 
       expect(result.notes).toContain('Inventory count correction');
     });
@@ -321,7 +323,7 @@ describe('InventoryService', () => {
         .mockResolvedValueOnce(toBalance); // destination balance
       mockDataSource.transaction.mockImplementation(async (cb: any) => cb(mockManager));
 
-      const result = await service.transferStock(transferDto as any, 'user-1');
+      const result = await service.transferStock(transferDto as any, 'user-1', TEST_TENANT_ID);
 
       expect(result.from).toBeDefined();
       expect(result.to).toBeDefined();
@@ -350,7 +352,7 @@ describe('InventoryService', () => {
       mockManager.findOne.mockResolvedValueOnce(fromBalance);
       mockDataSource.transaction.mockImplementation(async (cb: any) => cb(mockManager));
 
-      await expect(service.transferStock(transferDto as any, 'user-1')).rejects.toThrow(
+      await expect(service.transferStock(transferDto as any, 'user-1', TEST_TENANT_ID)).rejects.toThrow(
         BadRequestException,
       );
     });
@@ -360,7 +362,7 @@ describe('InventoryService', () => {
       mockManager.findOne.mockResolvedValueOnce(null);
       mockDataSource.transaction.mockImplementation(async (cb: any) => cb(mockManager));
 
-      await expect(service.transferStock(transferDto as any, 'user-1')).rejects.toThrow(
+      await expect(service.transferStock(transferDto as any, 'user-1', TEST_TENANT_ID)).rejects.toThrow(
         BadRequestException,
       );
     });
@@ -380,7 +382,7 @@ describe('InventoryService', () => {
         .mockResolvedValueOnce(null); // no destination balance
       mockDataSource.transaction.mockImplementation(async (cb: any) => cb(mockManager));
 
-      const result = await service.transferStock(transferDto as any, 'user-1');
+      const result = await service.transferStock(transferDto as any, 'user-1', TEST_TENANT_ID);
 
       expect(result.to.balanceAfter).toBe(20);
 
@@ -413,7 +415,7 @@ describe('InventoryService', () => {
       mockManager.findOne.mockResolvedValueOnce(balance);
       mockDataSource.transaction.mockImplementation(async (cb: any) => cb(mockManager));
 
-      await service.deductStock('item-1', 'facility-1', 10, 'prescription', 'rx-1', 'user-1');
+      await service.deductStock('item-1', 'facility-1', 10, 'prescription', 'rx-1', 'user-1', TEST_TENANT_ID);
 
       expect(mockManager.save).toHaveBeenCalledWith(
         StockLedger,
@@ -441,7 +443,7 @@ describe('InventoryService', () => {
       mockDataSource.transaction.mockImplementation(async (cb: any) => cb(mockManager));
 
       await expect(
-        service.deductStock('item-1', 'facility-1', 10, 'prescription', 'rx-1', 'user-1'),
+        service.deductStock('item-1', 'facility-1', 10, 'prescription', 'rx-1', 'user-1', TEST_TENANT_ID),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -451,7 +453,7 @@ describe('InventoryService', () => {
       mockDataSource.transaction.mockImplementation(async (cb: any) => cb(mockManager));
 
       await expect(
-        service.deductStock('item-1', 'facility-1', 10, 'prescription', 'rx-1', 'user-1'),
+        service.deductStock('item-1', 'facility-1', 10, 'prescription', 'rx-1', 'user-1', TEST_TENANT_ID),
       ).rejects.toThrow(BadRequestException);
     });
   });

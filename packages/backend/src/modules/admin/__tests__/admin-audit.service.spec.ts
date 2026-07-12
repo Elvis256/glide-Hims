@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { REQUEST } from '@nestjs/core';
 import { AdminAuditService } from '../services/admin-audit.service';
 import {
   AdminAuditLog,
@@ -31,6 +32,8 @@ describe('AdminAuditService', () => {
     createdAt: new Date('2024-01-15T10:00:00Z'),
     updatedAt: new Date('2024-01-15T10:00:00Z'),
     isArchived: false,
+    previousHash: undefined,
+    hash: '85c80bfe9f9aec76e0b5aac7a3a575683fdf05647c8c1a3e2569ba3bcedab656',
   } as AdminAuditLog;
 
   const mockQueryBuilder = {
@@ -60,6 +63,13 @@ describe('AdminAuditService', () => {
             findOne: jest.fn(),
             update: jest.fn(),
             createQueryBuilder: jest.fn(),
+          },
+        },
+        {
+          provide: REQUEST,
+          useValue: {
+            ip: '127.0.0.1',
+            headers: { 'user-agent': 'test-agent' },
           },
         },
       ],
@@ -371,8 +381,8 @@ describe('AdminAuditService', () => {
     it('should export as JSON', async () => {
       const result = await service.exportAuditLogs({}, 'json');
 
-      expect(result).toContain('"id":"log-123"');
-      expect(result).toContain('"action":"create"');
+      expect(result).toContain('"id": "log-123"');
+      expect(result).toContain('"action": "create"');
     });
 
     it('should export as CSV', async () => {
@@ -380,7 +390,7 @@ describe('AdminAuditService', () => {
 
       expect(result).toContain('Timestamp');
       expect(result).toContain('Admin User ID');
-      expect(result).toContain('log-123');
+      expect(result).toContain('org-001');
     });
 
     it('should include headers in CSV', async () => {

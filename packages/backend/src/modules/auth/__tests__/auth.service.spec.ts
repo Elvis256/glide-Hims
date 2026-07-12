@@ -26,6 +26,7 @@ const mockUserRepo = {
   findOne: jest.fn(),
   save: jest.fn(),
   create: jest.fn(),
+  increment: jest.fn().mockResolvedValue({ affected: 1 }),
 };
 
 const mockUserRoleRepo = {
@@ -63,6 +64,7 @@ const mockUserPermissionRepo = {
 
 const mockTenantRepo = {
   findOne: jest.fn(),
+  find: jest.fn().mockResolvedValue([]),
 };
 
 const mockLoginHistoryRepo = {
@@ -92,6 +94,7 @@ const mockRefreshTokenService = {
   revokeRefreshToken: jest.fn().mockResolvedValue(undefined),
   revokeAllUserRefreshTokens: jest.fn().mockResolvedValue(undefined),
   revokeAllUserTokens: jest.fn().mockResolvedValue(undefined),
+  refreshTokenRepository: { target: 'RefreshToken' },
 };
 
 const mockSessionService = {
@@ -100,6 +103,7 @@ const mockSessionService = {
   updateSessionToken: jest.fn().mockResolvedValue(undefined),
   revokeSession: jest.fn().mockResolvedValue(undefined),
   revokeAllUserSessions: jest.fn().mockResolvedValue(undefined),
+  revokeAllSessions: jest.fn().mockResolvedValue(undefined),
 };
 
 const mockDataSource = {
@@ -342,6 +346,37 @@ describe('AuthService', () => {
   });
 
   describe('refreshToken', () => {
+    // refreshToken now wraps its logic in this.dataSource.transaction().
+    // We must mock the transaction to execute the callback with a manager
+    // that provides getRepository() etc.
+
+    function setupRefreshTokenTransaction(userOverrides?: Partial<User>) {
+      const user = { ...mockUser, tokenVersion: 0, ...userOverrides };
+      const mockStoredToken = {
+        id: 'rt-1',
+        tokenHash: 'hash',
+        userId: user.id,
+        tenantId: user.tenantId,
+        tokenFamily: 'family-1',
+        isRevoked: false,
+        expiresAt: new Date(Date.now() + 86400000),
+        constructor: { name: 'RefreshToken' },
+      };
+
+      const mockManager = {
+        getRepository: jest.fn().mockReturnValue({
+          findOne: jest.fn()
+            .mockResolvedValueOnce(mockStoredToken) // stored token lookup
+            .mockResolvedValueOnce(user), // user lookup
+        }),
+        save: jest.fn().mockImplementation((data: any) => Promise.resolve(data)),
+        update: jest.fn().mockResolvedValue({}),
+      };
+
+      mockDataSource.transaction.mockImplementation(async (cb: any) => cb(mockManager));
+      return { user, mockManager, mockStoredToken };
+    }
+
     it('should return new tokens for valid refresh token', async () => {
       const payload = {
         sub: 'user-1',
@@ -353,7 +388,7 @@ describe('AuthService', () => {
       };
 
       mockJwtService.verify.mockReturnValueOnce(payload);
-      mockUserRepo.findOne.mockResolvedValueOnce({ ...mockUser });
+      setupRefreshTokenTransaction();
       mockUserRoleRepo.find.mockResolvedValueOnce([
         {
           roleId: 'role-1',
@@ -389,14 +424,34 @@ describe('AuthService', () => {
 
     it('should throw UnauthorizedException when user is inactive', async () => {
       mockJwtService.verify.mockReturnValueOnce({ sub: 'user-1' });
-      mockUserRepo.findOne.mockResolvedValueOnce({ ...mockUser, status: 'inactive' });
+      setupRefreshTokenTransaction({ status: 'inactive' as any });
 
       await expect(service.refreshToken('valid-token')).rejects.toThrow(UnauthorizedException);
     });
 
     it('should throw UnauthorizedException when user not found', async () => {
       mockJwtService.verify.mockReturnValueOnce({ sub: 'nonexistent' });
-      mockUserRepo.findOne.mockResolvedValueOnce(null);
+      // Set up transaction where user lookup returns null
+      const mockStoredToken = {
+        id: 'rt-1',
+        tokenHash: 'hash',
+        userId: 'nonexistent',
+        tenantId: 'tenant-1',
+        tokenFamily: 'family-1',
+        isRevoked: false,
+        expiresAt: new Date(Date.now() + 86400000),
+        constructor: { name: 'RefreshToken' },
+      };
+      const mockManager = {
+        getRepository: jest.fn().mockReturnValue({
+          findOne: jest.fn()
+            .mockResolvedValueOnce(mockStoredToken) // stored token
+            .mockResolvedValueOnce(null), // user not found
+        }),
+        save: jest.fn().mockImplementation((data: any) => Promise.resolve(data)),
+        update: jest.fn().mockResolvedValue({}),
+      };
+      mockDataSource.transaction.mockImplementation(async (cb: any) => cb(mockManager));
 
       await expect(service.refreshToken('valid-token')).rejects.toThrow(UnauthorizedException);
     });

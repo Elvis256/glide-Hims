@@ -1,14 +1,44 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException } from '@nestjs/common';
+import { DataSource } from 'typeorm';
 import { GLReconciliationService } from '../gl-reconciliation.service';
 import { JournalEntry } from '../../../database/entities/journal-entry.entity';
 import { ChartOfAccount, AccountType } from '../../../database/entities/chart-of-account.entity';
+import {
+  GlReconciliation,
+  GlReconciliationItem,
+} from '../../../database/entities/finance-extended.entity';
+
+const TEST_TENANT_ID = 'test-tenant-id';
 
 describe('GLReconciliationService', () => {
   let service: GLReconciliationService;
   let journalEntryRepo: any;
   let chartOfAccountRepo: any;
+
+  function createMockTransactionManager(overrides: Record<string, any> = {}) {
+    return {
+      findOne: jest.fn().mockResolvedValue(null),
+      save: jest.fn().mockImplementation((_entity: any, data: any) => Promise.resolve(data)),
+      create: jest.fn((_entity: any, data: any) => data),
+      getRepository: jest.fn().mockReturnValue({
+        createQueryBuilder: jest.fn().mockReturnValue({
+          innerJoin: jest.fn().mockReturnThis(),
+          innerJoinAndSelect: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          andWhere: jest.fn().mockReturnThis(),
+          getMany: jest.fn().mockResolvedValue([]),
+          getRawMany: jest.fn().mockResolvedValue([]),
+        }),
+      }),
+      ...overrides,
+    };
+  }
+
+  const mockDataSource = {
+    transaction: jest.fn((cb: any) => cb(createMockTransactionManager())),
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -23,9 +53,11 @@ describe('GLReconciliationService', () => {
               getRepository: jest.fn().mockReturnValue({
                 createQueryBuilder: jest.fn().mockReturnValue({
                   innerJoin: jest.fn().mockReturnThis(),
+                  innerJoinAndSelect: jest.fn().mockReturnThis(),
                   where: jest.fn().mockReturnThis(),
                   andWhere: jest.fn().mockReturnThis(),
                   getMany: jest.fn().mockResolvedValue([]),
+                  getRawMany: jest.fn().mockResolvedValue([]),
                 }),
               }),
             },
@@ -38,6 +70,26 @@ describe('GLReconciliationService', () => {
             findOne: jest.fn(),
           },
         },
+        {
+          provide: getRepositoryToken(GlReconciliation),
+          useValue: {
+            find: jest.fn().mockResolvedValue([]),
+            findOne: jest.fn(),
+            save: jest.fn(),
+            create: jest.fn((data: any) => data),
+            count: jest.fn().mockResolvedValue(0),
+          },
+        },
+        {
+          provide: getRepositoryToken(GlReconciliationItem),
+          useValue: {
+            find: jest.fn().mockResolvedValue([]),
+            findOne: jest.fn(),
+            save: jest.fn(),
+            create: jest.fn((data: any) => data),
+          },
+        },
+        { provide: DataSource, useValue: mockDataSource },
       ],
     }).compile();
 
@@ -51,7 +103,7 @@ describe('GLReconciliationService', () => {
   });
 
   describe('markAsReconciled', () => {
-    it('should throw NotImplementedException', async () => {
+    it('should mark account as reconciled within a transaction', async () => {
       const accountId = 'acc-1';
       const fiscalPeriodId = 'period-1';
       const userId = 'user-1';
@@ -62,17 +114,19 @@ describe('GLReconciliationService', () => {
         accountCode: '1000',
         accountName: 'Cash',
         accountType: AccountType.ASSET,
+        facilityId: 'facility-1',
       };
 
-      chartOfAccountRepo.findOne.mockResolvedValue(mockAccount);
+      const mockManager = createMockTransactionManager();
+      mockManager.findOne
+        .mockResolvedValueOnce(mockAccount) // account lookup
+        .mockResolvedValueOnce(null); // existing recon lookup
+      mockDataSource.transaction.mockImplementation((cb: any) => cb(mockManager));
 
-      await expect(
-        service.markAsReconciled(accountId, fiscalPeriodId, userId, 'tenant-1', notes),
-      ).rejects.toThrow('GL reconciliation persistence is not yet implemented');
+      await service.markAsReconciled(accountId, fiscalPeriodId, userId, 'tenant-1', notes);
 
-      expect(chartOfAccountRepo.findOne).toHaveBeenCalledWith({
-        where: { id: accountId, tenantId: 'tenant-1' },
-      });
+      expect(mockDataSource.transaction).toHaveBeenCalled();
+      expect(mockManager.save).toHaveBeenCalled();
     });
 
     it('should throw NotFoundException for non-existent account', async () => {
@@ -80,7 +134,9 @@ describe('GLReconciliationService', () => {
       const fiscalPeriodId = 'period-1';
       const userId = 'user-1';
 
-      chartOfAccountRepo.findOne.mockResolvedValue(null);
+      const mockManager = createMockTransactionManager();
+      mockManager.findOne.mockResolvedValueOnce(null); // account not found
+      mockDataSource.transaction.mockImplementation((cb: any) => cb(mockManager));
 
       await expect(
         service.markAsReconciled(accountId, fiscalPeriodId, userId, 'tenant-1'),
@@ -97,13 +153,18 @@ describe('GLReconciliationService', () => {
         accountCode: '1000',
         accountName: 'Cash',
         accountType: AccountType.ASSET,
+        facilityId: 'facility-1',
       };
 
-      chartOfAccountRepo.findOne.mockResolvedValue(mockAccount);
+      const mockManager = createMockTransactionManager();
+      mockManager.findOne
+        .mockResolvedValueOnce(mockAccount) // account lookup
+        .mockResolvedValueOnce(null); // existing recon lookup
+      mockDataSource.transaction.mockImplementation((cb: any) => cb(mockManager));
 
-      await expect(
-        service.markAsReconciled(accountId, fiscalPeriodId, userId, 'tenant-1'),
-      ).rejects.toThrow('GL reconciliation persistence is not yet implemented');
+      await service.markAsReconciled(accountId, fiscalPeriodId, userId, 'tenant-1');
+
+      expect(mockManager.save).toHaveBeenCalled();
     });
   });
 
@@ -207,6 +268,12 @@ describe('GLReconciliationService', () => {
         },
       ];
 
+      const mockManager = createMockTransactionManager();
+      mockManager.findOne
+        .mockResolvedValueOnce({ id: accountId, accountCode: '1000', accountName: 'Cash', facilityId: 'facility-1' }) // account lookup
+        .mockResolvedValueOnce(null); // existing recon lookup
+      mockDataSource.transaction.mockImplementation((cb: any) => cb(mockManager));
+
       const result = await service.reconcileWithExternal(
         accountId,
         fiscalPeriodId,
@@ -216,7 +283,7 @@ describe('GLReconciliationService', () => {
 
       expect(result).toBeDefined();
       expect(result.matched).toBe(0);
-      expect(result.unmatched).toBe(0);
+      expect(result.unmatched).toBe(2); // 2 external items, 0 GL lines → all unmatched
       expect(Array.isArray(result.discrepancies)).toBe(true);
     });
 
@@ -224,6 +291,12 @@ describe('GLReconciliationService', () => {
       const accountId = 'acc-1';
       const fiscalPeriodId = 'period-1';
       const externalData: any[] = [];
+
+      const mockManager = createMockTransactionManager();
+      mockManager.findOne
+        .mockResolvedValueOnce({ id: accountId, accountCode: '1000', accountName: 'Cash', facilityId: 'facility-1' }) // account lookup
+        .mockResolvedValueOnce(null); // existing recon lookup
+      mockDataSource.transaction.mockImplementation((cb: any) => cb(mockManager));
 
       const result = await service.reconcileWithExternal(
         accountId,

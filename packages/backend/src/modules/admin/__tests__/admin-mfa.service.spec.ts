@@ -57,8 +57,8 @@ describe('AdminMFAService', () => {
     });
 
     it('should throw error if user is not system admin', async () => {
-      const nonAdminUser = { ...mockUser, isSystemAdmin: false };
-      mockUserRepository.findOne.mockResolvedValue(nonAdminUser);
+      // Service queries with { isSystemAdmin: true }, so non-admin returns null from DB
+      mockUserRepository.findOne.mockResolvedValue(null);
 
       await expect(service.generateMFASecret('user-123')).rejects.toThrow(BadRequestException);
     });
