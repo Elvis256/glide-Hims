@@ -134,6 +134,14 @@ export class IpdController {
     return this.ipdService.getWardOccupancy(facilityId, req?.user?.tenantId);
   }
 
+  @Get('wards/:id/handover')
+  @AuthWithPermissions('ipd.read')
+  @ApiOperation({ summary: 'Nurse shift-handover summary for a ward' })
+  getWardHandover(@Param('id') id: string, @Request() req: any) {
+    validateUuid(id);
+    return this.ipdService.getWardHandover(id, req.user?.tenantId);
+  }
+
   @Get('wards/:id')
   @AuthWithPermissions('ipd.read')
   @ApiOperation({ summary: 'Get ward by ID' })

@@ -7,11 +7,6 @@ decisions: pick what to build.
 Legend: 💰 revenue/compliance · 🏥 clinical value · ✨ UX polish
 
 ## Discharge / IPD
-- 🏥 **Discharge summary lifecycle** — add draft → finalized → signed states
-  (like med reconciliation). Today summaries are editable forever with no
-  sign-off, weakening their standing as legal documents.
-- 🏥 **30-day readmission rate** — discharge stats already compute AMA rate;
-  readmission is a core hospital KPI and the encounter data already exists.
 - 🏥 **Discharge checklist gate** — block discharge until pending lab results
   acknowledged, invoices settled or debt-flagged, and med reconciliation
   signed. All three exist today but are unenforced/independent.
@@ -21,9 +16,6 @@ Legend: 💰 revenue/compliance · 🏥 clinical value · ✨ UX polish
 - 🏥 **Discharge planning / expected discharge date** — bed board already shows
   `expectedDischarge`; a simple "planned discharges today" list would help ward
   managers free beds proactively.
-- ✨ **Nurse shift-handover summary** — nursing notes + med schedule + latest
-  vitals per admission already exist; a single handover endpoint/printout is
-  low-effort, high-value.
 
 ## Platform
 - ✨ **Platform number generators unserialized** — SaaS quotation
@@ -35,12 +27,6 @@ Legend: 💰 revenue/compliance · 🏥 clinical value · ✨ UX polish
 - 🏥 **Partograph charting** — labour progress records dilation/station but has
   no WHO partograph time-series view or alert-line breach detection (major
   clinical safety feature for labour wards).
-- ✨ **Postponed surgery re-confirmation** — POSTPONED cases hold a new
-  date/time but nothing moves them back to SCHEDULED; they never appear on
-  day lists. Needs a "reconfirm" action (also applies to Surgery module).
-- 🏥 **EPI defaulter SMS reminders** — defaulter list exists
-  (`getImmunizationDefaulters`); hooking it to the notifications module would
-  directly improve vaccination coverage.
 
 ## Portal / Biometrics
 - 🏥 **Biometric template encryption at rest** — fingerprint templates are
@@ -81,3 +67,16 @@ Legend: 💰 revenue/compliance · 🏥 clinical value · ✨ UX polish
   (migration 69); balances converted to numeric(5,2) — the int columns were
   silently truncating the fractional monthly accrual.
 - ✅ **Doctor duty auto-checkout** — nightly sweep closes stale ON_DUTY rows.
+- ✅ **Discharge summary lifecycle** — draft → finalized → signed
+  (migration 70); edits blocked once finalized; `POST /discharge/:id/finalize`
+  and `/sign` endpoints.
+- ✅ **30-day readmission rate** — added to `GET /discharge/stats`
+  (`readmittedWithin30Days`, `readmissionRate30d`).
+- ✅ **Postponed surgery re-confirmation** — `PUT /surgery/cases/:id/reconfirm`
+  moves POSTPONED → SCHEDULED with a conflict re-check at the held slot.
+- ✅ **EPI defaulter SMS reminders** — daily 09:00 cron texts caregivers of
+  overdue doses (opt-out respected, 7-day dedup via
+  `last_defaulter_reminder_at`, migration 71).
+- ✅ **Nurse shift-handover summary** — `GET /ipd/wards/:id/handover`: per
+  active admission — bed, allergies, latest vitals + NEWS, overdue/due-soon
+  meds, latest nursing note.

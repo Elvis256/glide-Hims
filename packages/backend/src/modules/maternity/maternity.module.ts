@@ -9,6 +9,7 @@ import { BabyWellnessCheck } from '../../database/entities/baby-wellness-check.e
 import { ImmunizationSchedule } from '../../database/entities/immunization-schedule.entity';
 import { MaternityService } from './maternity.service';
 import { MaternityController } from './maternity.controller';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { MaternityController } from './maternity.controller';
       BabyWellnessCheck,
       ImmunizationSchedule,
     ]),
+    NotificationsModule,
   ],
   controllers: [MaternityController],
   providers: [MaternityService],
