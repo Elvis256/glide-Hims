@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
 import { MembershipScheme, PatientMembership } from '../../database/entities/membership.entity';
 import {
   CreateMembershipSchemeDto,
@@ -61,6 +61,24 @@ export class MembershipService {
   async createMembership(dto: CreatePatientMembershipDto, tenantId?: string) {
     const tid = requireTenantId(tenantId);
     const scheme = await this.findScheme(dto.schemeId, tenantId);
+
+    // A patient holding two live memberships on the same scheme is a data
+    // error (double-discount risk)
+    const overlapping = await this.membershipRepo.findOne({
+      where: {
+        patientId: dto.patientId,
+        schemeId: dto.schemeId,
+        status: 'active',
+        endDate: MoreThanOrEqual(new Date()),
+        tenantId: tid,
+      },
+    });
+    if (overlapping) {
+      throw new ConflictException(
+        `Patient already has an active membership on this scheme (${overlapping.membershipNumber})`,
+      );
+    }
+
     const membershipNumber = `MEM-${Date.now()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
     const endDate =
       dto.endDate ||
@@ -88,7 +106,15 @@ export class MembershipService {
 
   async findActiveMembership(patientId: string, tenantId?: string) {
     const tid = requireTenantId(tenantId);
-    const where: any = { patientId, status: 'active' };
+    // Nothing flips status to 'expired' automatically, so the date window is
+    // the real gate — without it, expired memberships kept earning discounts
+    const today = new Date();
+    const where: any = {
+      patientId,
+      status: 'active',
+      startDate: LessThanOrEqual(today),
+      endDate: MoreThanOrEqual(today),
+    };
     where.tenantId = tid;
     return this.membershipRepo.findOne({
       where,
