@@ -19,6 +19,7 @@ export enum ReminderType {
 
 export enum ReminderStatus {
   PENDING = 'pending',
+  PROCESSING = 'processing',
   SENT = 'sent',
   DELIVERED = 'delivered',
   READ = 'read',
