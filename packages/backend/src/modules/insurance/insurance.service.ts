@@ -340,7 +340,7 @@ export class InsuranceService {
       effectiveDate: LessThan(today),
       expiryDate: MoreThan(today),
     };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     return this.policyRepo.find({
       where,
       relations: ['provider', 'patient'],
@@ -365,23 +365,28 @@ export class InsuranceService {
   }
 
   // ============ CLAIMS ============
-  // Generates the next claim number under a transactional advisory lock so
-  // concurrent createClaim calls within the same facility+month cannot collide
-  // on the count(...)+1 pattern. The lock is released when the caller's
-  // transaction commits or rolls back. Format: CLM<YYYY><MM><4-digit-seq>.
+  // Generates the next claim number under a transactional advisory lock.
+  // Scoped per TENANT (not facility): the number carries no facility
+  // component and the unique constraint is (tenant_id, claim_number), so
+  // facility-scoped counting produced same-tenant collisions.
+  // Format: CLM<YYYY><MM><4-digit-seq>.
   private async generateClaimNumber(
     manager: import('typeorm').EntityManager,
-    facilityId: string,
     tenantId?: string,
   ): Promise<string> {
+    const tid = requireTenantId(tenantId);
     const today = new Date();
     const prefix = `CLM${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}`;
-    const lockKey = `insurance:claim-number:${facilityId}:${prefix}`;
+    const lockKey = `insurance:claim-number:${tid}:${prefix}`;
     await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [lockKey]);
-    const count = await manager.count(InsuranceClaim, {
-      where: { facilityId, claimNumber: Between(`${prefix}0001`, `${prefix}9999`), tenantId: requireTenantId(tenantId) },
-    });
-    return `${prefix}${String(count + 1).padStart(4, '0')}`;
+    const last = await manager
+      .createQueryBuilder(InsuranceClaim, 'c')
+      .where('c.claim_number LIKE :prefix', { prefix: `${prefix}%` })
+      .andWhere('c.tenant_id = :tid', { tid })
+      .orderBy('c.claim_number', 'DESC')
+      .getOne();
+    const seq = last ? (parseInt(last.claimNumber.slice(prefix.length), 10) || 0) + 1 : 1;
+    return `${prefix}${String(seq).padStart(4, '0')}`;
   }
 
   async createClaim(dto: CreateClaimDto, tenantId?: string): Promise<InsuranceClaim> {
@@ -402,7 +407,7 @@ export class InsuranceService {
     }
 
     const savedClaim = await this.dataSource.transaction(async (manager) => {
-      const claimNumber = await this.generateClaimNumber(manager, dto.facilityId, tenantId);
+      const claimNumber = await this.generateClaimNumber(manager, tenantId);
       const claim = manager.create(InsuranceClaim, {
         ...dto,
         claimNumber,
@@ -469,11 +474,7 @@ export class InsuranceService {
     dto: CreateClaimItemDto,
     tenantId?: string,
   ): Promise<ClaimItem> {
-    const claim = await this.getClaim(claimId, tenantId);
-
-    if (claim.status !== ClaimStatus.DRAFT) {
-      throw new BadRequestException('Can only add items to draft claims');
-    }
+    const tid = requireTenantId(tenantId);
 
     // Validate amounts
     if (dto.unitPrice < 0) {
@@ -483,38 +484,52 @@ export class InsuranceService {
       throw new BadRequestException('Quantity must be positive');
     }
 
-    // Check for duplicate items in this claim
-    const existingItems = await this.claimItemRepo.find({
-      where: { claimId, tenantId: requireTenantId(tenantId) },
-    });
-    const duplicateItem = existingItems.find(
-      (item) =>
-        item.serviceCode === dto.serviceCode &&
-        new Date(item.serviceDate).toISOString().slice(0, 10) ===
-          new Date(dto.serviceDate).toISOString().slice(0, 10),
-    );
-    if (duplicateItem) {
-      throw new BadRequestException(
-        `Duplicate claim item: ${dto.serviceCode} already exists for ${dto.serviceDate}`,
+    // Lock the claim so concurrent adds serialize: the duplicate check and
+    // the totalClaimed increment were racy outside a transaction.
+    return this.dataSource.transaction(async (manager) => {
+      const claim = await manager.findOne(InsuranceClaim, {
+        where: { id: claimId, tenantId: tid },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!claim) throw new NotFoundException('Claim not found');
+
+      if (claim.status !== ClaimStatus.DRAFT) {
+        throw new BadRequestException('Can only add items to draft claims');
+      }
+
+      // Check for duplicate items in this claim
+      const existingItems = await manager.find(ClaimItem, {
+        where: { claimId, tenantId: tid },
+      });
+      const duplicateItem = existingItems.find(
+        (item) =>
+          item.serviceCode === dto.serviceCode &&
+          new Date(item.serviceDate).toISOString().slice(0, 10) ===
+            new Date(dto.serviceDate).toISOString().slice(0, 10),
       );
-    }
+      if (duplicateItem) {
+        throw new BadRequestException(
+          `Duplicate claim item: ${dto.serviceCode} already exists for ${dto.serviceDate}`,
+        );
+      }
 
-    const item = this.claimItemRepo.create({
-      claimId,
-      ...dto,
-      quantity: dto.quantity || 1,
-      claimedAmount: (dto.quantity || 1) * dto.unitPrice,
-      serviceDate: new Date(dto.serviceDate),
-      tenantId: requireTenantId(tenantId),
+      const item = manager.create(ClaimItem, {
+        claimId,
+        ...dto,
+        quantity: dto.quantity || 1,
+        claimedAmount: (dto.quantity || 1) * dto.unitPrice,
+        serviceDate: new Date(dto.serviceDate),
+        tenantId: tid,
+      });
+
+      const savedItem = await manager.save(ClaimItem, item);
+
+      // Update claim total
+      claim.totalClaimed = Number(claim.totalClaimed) + Number(savedItem.claimedAmount);
+      await manager.save(InsuranceClaim, claim);
+
+      return savedItem;
     });
-
-    const savedItem = await this.claimItemRepo.save(item);
-
-    // Update claim total
-    claim.totalClaimed = Number(claim.totalClaimed) + Number(savedItem.claimedAmount);
-    await this.claimRepo.save(claim);
-
-    return savedItem;
   }
 
   async getClaims(
@@ -535,9 +550,7 @@ export class InsuranceService {
       .leftJoinAndSelect('claim.patient', 'patient')
       .where('claim.facilityId = :facilityId', { facilityId });
 
-    if (tenantId) {
-      query.andWhere('claim.tenant_id = :tenantId', { tenantId });
-    }
+    query.andWhere('claim.tenant_id = :tenantId', { tenantId: requireTenantId(tenantId) });
 
     if (filters?.status) {
       query.andWhere('claim.status = :status', { status: filters.status });
@@ -571,7 +584,7 @@ export class InsuranceService {
     // Lock the claim row inside a txn so two concurrent submitClaim calls
     // cannot both flip DRAFT → SUBMITTED and double-dispatch the electronic
     // transmission.
-    return this.dataSource.transaction(async (manager) => {
+    const saved = await this.dataSource.transaction(async (manager) => {
       const claim = await manager.findOne(InsuranceClaim, {
         where: { id, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
@@ -595,36 +608,41 @@ export class InsuranceService {
       claim.submittedById = userId;
       claim.items = items;
 
-      const saved = await manager.save(InsuranceClaim, claim);
-
-      const provider = saved.providerId
-        ? await manager.findOne(InsuranceProvider, { where: { id: saved.providerId } })
-        : null;
-
-      // Dispatch electronic transmission if the provider supports it. Failures
-      // are captured in metadata; the claim itself stays SUBMITTED so a clerk
-      // can retry via the same endpoint or fall back to manual export.
-      if (provider?.apiEndpoint) {
-        const result = await this.claimExportService.submitElectronically(saved, provider);
-        saved.metadata = {
-          ...(saved.metadata || {}),
-          electronicSubmission: {
-            attemptedAt: new Date().toISOString(),
-            transmitted: result.transmitted,
-            ack: result.ack ?? null,
-            error: result.error ?? null,
-          },
-        };
-        if (result.transmitted) {
-          saved.status = ClaimStatus.ACKNOWLEDGED;
-          const externalId = result.ack?.claimId || result.ack?.id || result.ack?.referenceId;
-          if (externalId) saved.metadata.externalClaimId = externalId;
-        }
-        await manager.save(InsuranceClaim, saved);
-      }
-
-      return saved;
+      return manager.save(InsuranceClaim, claim);
     });
+
+    // Dispatch electronic transmission AFTER the commit. Inside the txn the
+    // HTTP call held the row lock for the network round-trip, and a rollback
+    // after a successful transmit would have "un-submitted" a claim the
+    // insurer already received. Failures are captured in metadata; the claim
+    // stays SUBMITTED so a clerk can retry or fall back to manual export.
+    const provider = saved.providerId
+      ? await this.providerRepo.findOne({ where: { id: saved.providerId } })
+      : null;
+
+    if (provider?.apiEndpoint) {
+      // Reload with relations: the locked load couldn't join patient/policy,
+      // and the transmission payload needs memberNumber + patient details
+      const full = await this.getClaim(saved.id, tenantId);
+      const result = await this.claimExportService.submitElectronically(full, provider);
+      full.metadata = {
+        ...(full.metadata || {}),
+        electronicSubmission: {
+          attemptedAt: new Date().toISOString(),
+          transmitted: result.transmitted,
+          ack: result.ack ?? null,
+          error: result.error ?? null,
+        },
+      };
+      if (result.transmitted) {
+        full.status = ClaimStatus.ACKNOWLEDGED;
+        const externalId = result.ack?.claimId || result.ack?.id || result.ack?.referenceId;
+        if (externalId) full.metadata.externalClaimId = externalId;
+      }
+      return this.claimRepo.save(full);
+    }
+
+    return saved;
   }
 
   async processClaim(
@@ -688,7 +706,9 @@ export class InsuranceService {
             .andWhere('c.status IN (:...statuses)', {
               statuses: [ClaimStatus.APPROVED, ClaimStatus.PARTIALLY_APPROVED],
             });
-          if (tenantId) otherApprovedQb.andWhere('c.tenant_id = :tenantId', { tenantId });
+          otherApprovedQb.andWhere('c.tenant_id = :tenantId', {
+            tenantId: requireTenantId(tenantId),
+          });
           const otherApproved = await otherApprovedQb.getRawOne<{ sum: string }>();
           const reserved = Number(otherApproved?.sum || 0);
           const headroom = Math.max(0, annualLimit - used - reserved);
@@ -886,20 +906,26 @@ export class InsuranceService {
   }
 
   // ============ PRE-AUTHORIZATIONS ============
-  // Pre-auth number generator — same advisory-lock pattern as claims above.
+  // Pre-auth number generator — same tenant-scoped advisory-lock pattern as
+  // claims above (auth_number is (tenant_id, auth_number) unique with no
+  // facility component).
   private async generatePreAuthNumber(
     manager: import('typeorm').EntityManager,
-    facilityId: string,
     tenantId?: string,
   ): Promise<string> {
+    const tid = requireTenantId(tenantId);
     const today = new Date();
     const prefix = `PA${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}`;
-    const lockKey = `insurance:preauth-number:${facilityId}:${prefix}`;
+    const lockKey = `insurance:preauth-number:${tid}:${prefix}`;
     await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [lockKey]);
-    const count = await manager.count(PreAuthorization, {
-      where: { facilityId, authNumber: Between(`${prefix}0001`, `${prefix}9999`), tenantId: requireTenantId(tenantId) },
-    });
-    return `${prefix}${String(count + 1).padStart(4, '0')}`;
+    const last = await manager
+      .createQueryBuilder(PreAuthorization, 'pa')
+      .where('pa.auth_number LIKE :prefix', { prefix: `${prefix}%` })
+      .andWhere('pa.tenant_id = :tid', { tid })
+      .orderBy('pa.auth_number', 'DESC')
+      .getOne();
+    const seq = last ? (parseInt(last.authNumber.slice(prefix.length), 10) || 0) + 1 : 1;
+    return `${prefix}${String(seq).padStart(4, '0')}`;
   }
 
   async createPreAuth(
@@ -928,7 +954,9 @@ export class InsuranceService {
         .andWhere('pa.status IN (:...statuses)', {
           statuses: [PreAuthStatus.APPROVED, PreAuthStatus.PARTIALLY_APPROVED],
         });
-      if (tenantId) outstandingQb.andWhere('pa.tenant_id = :tenantId', { tenantId });
+      outstandingQb.andWhere('pa.tenant_id = :tenantId', {
+        tenantId: requireTenantId(tenantId),
+      });
       const outstanding = await outstandingQb.getRawOne<{ sum: string }>();
       const reserved = Number(outstanding?.sum || 0);
       const remaining = Math.max(0, limit - used - reserved);
@@ -948,7 +976,7 @@ export class InsuranceService {
     }
 
     return this.dataSource.transaction(async (manager) => {
-      const authNumber = await this.generatePreAuthNumber(manager, dto.facilityId, tenantId);
+      const authNumber = await this.generatePreAuthNumber(manager, tenantId);
 
       const preAuth = manager.create(PreAuthorization, {
         ...dto,
@@ -978,7 +1006,7 @@ export class InsuranceService {
     tenantId?: string,
   ): Promise<PreAuthorization[]> {
     const where: any = { facilityId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     if (filters?.status) where.status = filters.status;
     if (filters?.patientId) where.patientId = filters.patientId;
     if (filters?.policyId) where.policyId = filters.policyId;
@@ -1000,14 +1028,21 @@ export class InsuranceService {
   }
 
   async submitPreAuth(id: string, tenantId?: string): Promise<PreAuthorization> {
-    const preAuth = await this.getPreAuth(id, tenantId);
+    const tid = requireTenantId(tenantId);
+    return this.dataSource.transaction(async (manager) => {
+      const preAuth = await manager.findOne(PreAuthorization, {
+        where: { id, tenantId: tid },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!preAuth) throw new NotFoundException('Pre-authorization not found');
 
-    if (preAuth.status !== PreAuthStatus.PENDING) {
-      throw new BadRequestException('Pre-authorization already submitted');
-    }
+      if (preAuth.status !== PreAuthStatus.PENDING) {
+        throw new BadRequestException('Pre-authorization already submitted');
+      }
 
-    preAuth.status = PreAuthStatus.SUBMITTED;
-    return this.preAuthRepo.save(preAuth);
+      preAuth.status = PreAuthStatus.SUBMITTED;
+      return manager.save(PreAuthorization, preAuth);
+    });
   }
 
   async processPreAuth(
@@ -1017,7 +1052,13 @@ export class InsuranceService {
     tenantId?: string,
     userId?: string,
   ): Promise<PreAuthorization> {
-    const preAuth = await this.getPreAuth(id, tenantId);
+    const tid = requireTenantId(tenantId);
+    return this.dataSource.transaction(async (manager) => {
+    const preAuth = await manager.findOne(PreAuthorization, {
+      where: { id, tenantId: tid },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (!preAuth) throw new NotFoundException('Pre-authorization not found');
 
     if (preAuth.status !== PreAuthStatus.SUBMITTED && preAuth.status !== PreAuthStatus.PENDING) {
       throw new BadRequestException('Pre-authorization cannot be processed');
@@ -1057,7 +1098,7 @@ export class InsuranceService {
 
     if (dto.notes) preAuth.notes = dto.notes;
 
-    const saved = await this.preAuthRepo.save(preAuth);
+    const saved = await manager.save(PreAuthorization, preAuth);
 
     await this.auditLogService
       .log({
@@ -1073,13 +1114,14 @@ export class InsuranceService {
           denialReason: saved.denialReason || null,
         },
         reason: dto.notes,
-        tenantId: requireTenantId(tenantId),
+        tenantId: tid,
       })
       .catch((err) =>
         this.logger.error(`Audit log failed for processPreAuth ${saved.id}: ${err.message}`),
       );
 
     return saved;
+    });
   }
 
   // ============ REPORTS ============
@@ -1494,11 +1536,23 @@ export class InsuranceService {
     }, 0);
 
     return this.dataSource.transaction(async (manager) => {
+      // Serialize per encounter and re-check the duplicate inside the txn —
+      // the pre-check above is advisory only (two concurrent calls both pass)
+      await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+        `insurance:claim-enc:${requireTenantId(tenantId)}:${encounterId}`,
+      ]);
+      const dupe = await manager.findOne(InsuranceClaim, {
+        where: { encounterId, tenantId: requireTenantId(tenantId) },
+      });
+      if (dupe) {
+        throw new BadRequestException('A claim already exists for this encounter');
+      }
+
       // Use the shared generator under advisory lock so this path produces
       // the SAME number format (4-digit padded) as createClaim, and so the
       // count(...)+1 race between concurrent encounter-billing flows is
       // closed.
-      const claimNumber = await this.generateClaimNumber(manager, facilityId, tenantId);
+      const claimNumber = await this.generateClaimNumber(manager, tenantId);
 
       const claim = manager.create(InsuranceClaim, {
         claimNumber,

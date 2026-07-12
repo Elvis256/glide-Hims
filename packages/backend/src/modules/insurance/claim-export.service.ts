@@ -326,6 +326,8 @@ export class ClaimExportService {
           ...(provider.apiKey ? { Authorization: `Bearer ${provider.apiKey}` } : {}),
         },
         body: JSON.stringify(payload),
+        // A hung insurer endpoint must not stall the request indefinitely
+        signal: AbortSignal.timeout(30_000),
       });
       const ack = await res.json().catch(() => ({}));
       if (!res.ok) {
