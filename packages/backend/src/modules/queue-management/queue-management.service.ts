@@ -315,6 +315,9 @@ export class QueueManagementService {
   private getDefaultServiceConfig(): Record<string, any> {
     return {
       opdEntryPoint: ServicePoint.TRIAGE,
+      // When true, call-next may pull PENDING_PAYMENT patients (post-pay style
+      // facilities). Default off so pre-pay facilities keep the payment gate.
+      allowCallUnpaid: false,
       capacityLimits: {},
       priorityRules: [
         { condition: 'elderly', priority: QueuePriority.ELDERLY, label: 'Elderly (65+)' },
@@ -976,11 +979,19 @@ export class QueueManagementService {
     tenantId?: string,
   ): Promise<Queue | null> {
     const tid = requireTenantId(tenantId);
-    // Prefer WAITING patients first, then fall back to CALLED (re-call) and PENDING_PAYMENT
-    for (const statuses of [
+    const config = await this.getServiceConfig(facilityId, tenantId);
+    const allowCallUnpaid = config?.allowCallUnpaid === true;
+
+    // Prefer WAITING patients first, then fall back to CALLED (re-call).
+    // PENDING_PAYMENT patients are only callable when the facility explicitly
+    // allows consulting before payment (allowCallUnpaid / post-pay style).
+    const passes: QueueStatus[][] = [
       [QueueStatus.WAITING],
-      [QueueStatus.CALLED, QueueStatus.PENDING_PAYMENT],
-    ]) {
+      allowCallUnpaid
+        ? [QueueStatus.CALLED, QueueStatus.PENDING_PAYMENT]
+        : [QueueStatus.CALLED],
+    ];
+    for (const statuses of passes) {
       const qb = this.queueRepository
         .createQueryBuilder('queue')
         .leftJoinAndSelect('queue.patient', 'patient')
@@ -991,6 +1002,16 @@ export class QueueManagementService {
         .andWhere('queue.status IN (:...statuses)', { statuses })
         .andWhere('queue.on_hold = false');
       qb.andWhere('queue.tenant_id = :tenantId', { tenantId: tid });
+
+      // Respect appointment doctor assignment at consultation: pooled
+      // (unassigned) patients are available to everyone; assigned patients
+      // only to their doctor.
+      if (dto.servicePoint === ServicePoint.CONSULTATION) {
+        qb.andWhere(
+          '(queue.assigned_doctor_id IS NULL OR queue.assigned_doctor_id = :callerId)',
+          { callerId: userId },
+        );
+      }
       const result = await qb
         .orderBy('queue.priority', 'ASC')
         .addOrderBy('queue.sequence_number', 'ASC')
@@ -1032,8 +1053,15 @@ export class QueueManagementService {
       return queue;
     }
 
-    // Auto-transition pending_payment → waiting so patient can be called
+    // Auto-transition pending_payment → waiting so patient can be called —
+    // only where the facility explicitly allows consulting before payment.
     if (queue.status === QueueStatus.PENDING_PAYMENT) {
+      const config = await this.getServiceConfig(queue.facilityId, tenantId);
+      if (config?.allowCallUnpaid !== true) {
+        throw new BadRequestException(
+          'Patient has a pending payment and cannot be called yet. Collect payment first, or enable "allow call unpaid" in queue settings for post-pay workflows.',
+        );
+      }
       queue.status = QueueStatus.WAITING;
       await this.queueRepository.save(queue);
       this.logger.log(`Queue ${id}: PENDING_PAYMENT → WAITING (auto-transition on call)`);

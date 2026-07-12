@@ -232,9 +232,16 @@ export class AppointmentsService {
   ): Promise<Appointment> {
     const appointment = await this.findOne(appointmentId, facilityId, tenantId);
 
+    // Recovery path: a previous check-in marked the appointment CHECKED_IN but
+    // queue creation failed (no queueId). Allow re-running check-in to retry
+    // queue creation instead of stranding the patient.
+    const isQueueRecovery =
+      appointment.status === AppointmentStatus.CHECKED_IN && !appointment.queueId;
+
     if (
       appointment.status !== AppointmentStatus.SCHEDULED &&
-      appointment.status !== AppointmentStatus.CONFIRMED
+      appointment.status !== AppointmentStatus.CONFIRMED &&
+      !isQueueRecovery
     ) {
       throw new BadRequestException(
         `Cannot check in appointment with status "${appointment.status}". Only SCHEDULED or CONFIRMED appointments can be checked in.`,
@@ -242,9 +249,11 @@ export class AppointmentsService {
     }
 
     // Step 1: Update appointment to CHECKED_IN
-    appointment.status = AppointmentStatus.CHECKED_IN;
-    appointment.checkedInAt = new Date();
-    await this.appointmentRepository.save(appointment);
+    if (!isQueueRecovery) {
+      appointment.status = AppointmentStatus.CHECKED_IN;
+      appointment.checkedInAt = new Date();
+      await this.appointmentRepository.save(appointment);
+    }
 
     // Step 2: Create queue entry via QueueManagementService (has its own transaction)
     if (this.queueService) {
@@ -274,9 +283,14 @@ export class AppointmentsService {
           .where('id = :id', { id: queueEntry.id })
           .execute();
       } catch (err) {
-        // Queue creation failed — appointment is still CHECKED_IN, recoverable via retry
+        // Queue creation failed — appointment stays CHECKED_IN without a queueId,
+        // which the guard above now accepts for a retry. Surface the failure so
+        // the front desk knows the patient has no ticket yet.
         this.logger.warn(
           `Failed to create queue entry for appointment ${appointmentId}: ${err.message}`,
+        );
+        throw new BadRequestException(
+          `Appointment checked in but queue ticket creation failed: ${err.message}. Retry check-in to issue the ticket.`,
         );
       }
     }

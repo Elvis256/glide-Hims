@@ -540,7 +540,7 @@ export class PatientsService {
     tenantId?: string,
   ): Promise<PatientDocument> {
     const document = await this.documentRepository.findOne({
-      where: { id: documentId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: documentId, tenantId: requireTenantId(tenantId) },
       relations: ['uploader'],
     });
 
@@ -569,7 +569,7 @@ export class PatientsService {
     tenantId?: string,
   ): Promise<void> {
     const document = await this.documentRepository.findOne({
-      where: { id: documentId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: documentId, tenantId: requireTenantId(tenantId) },
     });
 
     if (!document) {
@@ -618,7 +618,7 @@ export class PatientsService {
       type: dto.type,
       content: dto.content,
       createdById: userId,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: requireTenantId(tenantId),
     });
 
     return this.noteRepository.save(note);
@@ -626,7 +626,7 @@ export class PatientsService {
 
   async getNotes(patientId: string, tenantId?: string): Promise<PatientNote[]> {
     return this.noteRepository.find({
-      where: { patientId, ...(tenantId ? { tenantId } : {}) },
+      where: { patientId, tenantId: requireTenantId(tenantId) },
       relations: ['createdBy'],
       order: { createdAt: 'DESC' },
     });
@@ -634,7 +634,7 @@ export class PatientsService {
 
   async getNote(noteId: string, tenantId?: string): Promise<PatientNote> {
     const note = await this.noteRepository.findOne({
-      where: { id: noteId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: noteId, tenantId: requireTenantId(tenantId) },
       relations: ['createdBy'],
     });
 
@@ -652,7 +652,7 @@ export class PatientsService {
     tenantId?: string,
   ): Promise<void> {
     const note = await this.noteRepository.findOne({
-      where: { id: noteId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: noteId, tenantId: requireTenantId(tenantId) },
     });
 
     if (!note) {
@@ -755,7 +755,7 @@ export class PatientsService {
           notesMoved: noteResult.affected || 0,
         },
         reason,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       });
 
       const savedMerge = await manager.save(PatientMerge, merge);
@@ -838,7 +838,7 @@ export class PatientsService {
     };
   }> {
     const patient = await this.patientRepository.findOne({
-      where: { id: patientId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: patientId, tenantId: requireTenantId(tenantId) },
       relations: ['user'],
     });
 

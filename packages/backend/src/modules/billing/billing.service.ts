@@ -160,7 +160,7 @@ export class BillingService {
     // Insurance pre-authorization enforcement
     if (dto.insurancePolicyId) {
       const policy = await this.dataSource.getRepository(InsurancePolicy).findOne({
-        where: { id: dto.insurancePolicyId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: dto.insurancePolicyId, tenantId: requireTenantId(tenantId) },
       });
       if (policy) {
         if (policy.status !== PolicyStatus.ACTIVE) {
@@ -175,7 +175,7 @@ export class BillingService {
             policyId: dto.insurancePolicyId,
             patientId: dto.patientId,
             status: PreAuthStatus.APPROVED,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           },
           order: { approvedAt: 'DESC' },
         });
@@ -243,7 +243,7 @@ export class BillingService {
         // Stamp tenant_id explicitly: cascading inserts run under a fresh
         // queryRunner inside dataSource.transaction() that does not inherit
         // the request's queryRunner.data, so TenantSubscriber cannot fill it in.
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       });
     });
 
@@ -282,7 +282,7 @@ export class BillingService {
         paymentType: dto.paymentType,
         insurancePolicyId: dto.insurancePolicyId,
         items,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       });
 
       const savedInvoice = await manager.save(Invoice, invoice);
@@ -290,7 +290,7 @@ export class BillingService {
       // Auto-post to General Ledger: DR Accounts Receivable, CR Revenue
       if (dto.encounterId) {
         const encounter = await manager.findOne(Encounter, {
-          where: { id: dto.encounterId, ...(tenantId ? { tenantId } : {}) },
+          where: { id: dto.encounterId, tenantId: requireTenantId(tenantId) },
         });
         // P1: Throw when caller supplies an encounterId that doesn't exist (or belongs to another tenant)
         if (!encounter) {
@@ -400,7 +400,7 @@ export class BillingService {
     let policyActive = true;
     if (dto.paymentType === PaymentType.INSURANCE && dto.insurancePolicyId) {
       const policy = await this.dataSource.getRepository(InsurancePolicy).findOne({
-        where: { id: dto.insurancePolicyId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: dto.insurancePolicyId, tenantId: requireTenantId(tenantId) },
       });
       if (!policy) {
         warnings.push('Insurance policy not found — treating as cash for preview.');
@@ -419,7 +419,7 @@ export class BillingService {
     let membershipDiscountPercent = 0;
     if (dto.membershipId) {
       const mem = await this.dataSource.getRepository(PatientMembership).findOne({
-        where: { id: dto.membershipId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: dto.membershipId, tenantId: requireTenantId(tenantId) },
         relations: ['scheme'],
       });
       if (mem) {
@@ -511,7 +511,7 @@ export class BillingService {
     let facilityId: string | undefined;
     if (dto.encounterId) {
       const enc = await this.encounterRepository.findOne({
-        where: { id: dto.encounterId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: dto.encounterId, tenantId: requireTenantId(tenantId) },
       });
       facilityId = enc?.facilityId;
     }
@@ -556,7 +556,7 @@ export class BillingService {
     let facilityId: string | undefined;
     if (invoice.encounterId) {
       const enc = await this.encounterRepository.findOne({
-        where: { id: invoice.encounterId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: invoice.encounterId, tenantId: requireTenantId(tenantId) },
       });
       facilityId = enc?.facilityId;
     }
@@ -730,7 +730,7 @@ export class BillingService {
         ...dto,
         invoiceId,
         amount,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       });
       await manager.save(item);
 
@@ -971,7 +971,7 @@ export class BillingService {
     return this.dataSource.transaction(async (manager) => {
       // Lock the invoice row for update to prevent concurrent payment issues
       const invoice = await manager.findOne(Invoice, {
-        where: { id: dto.invoiceId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: dto.invoiceId, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
 
@@ -1013,7 +1013,7 @@ export class BillingService {
         const existing = await manager.findOne(Payment, {
           where: {
             transactionReference: dto.transactionReference,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           },
         });
         if (existing) {
@@ -1051,7 +1051,7 @@ export class BillingService {
         transactionReference: dto.transactionReference || receiptNumber,
         notes: dto.notes,
         receivedById: userId,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       });
 
       const savedPayment = await manager.save(payment);
@@ -1170,7 +1170,7 @@ export class BillingService {
 
       // Load full invoice with relations for GL posting and notifications
       const fullInvoice = await manager.findOne(Invoice, {
-        where: { id: invoice.id, ...(tenantId ? { tenantId } : {}) },
+        where: { id: invoice.id, tenantId: requireTenantId(tenantId) },
         relations: ['patient', 'encounter'],
       });
 
@@ -1231,7 +1231,7 @@ export class BillingService {
             status: savedPayment.status,
             invoiceFullyPaid,
           },
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         })
         .catch((err) =>
           this.logger.error(
@@ -1277,7 +1277,7 @@ export class BillingService {
 
   async getPaymentsByInvoice(invoiceId: string, tenantId?: string): Promise<Payment[]> {
     return this.paymentRepository.find({
-      where: { invoiceId, ...(tenantId ? { tenantId } : {}) },
+      where: { invoiceId, tenantId: requireTenantId(tenantId) },
       order: { paidAt: 'DESC' },
       relations: ['receivedBy'],
     });
@@ -1349,7 +1349,7 @@ export class BillingService {
 
       // Lock payment to prevent concurrent void
       const payment = await paymentRepo.findOne({
-        where: { id: paymentId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: paymentId, tenantId: requireTenantId(tenantId) },
         relations: ['invoice', 'invoice.encounter'],
         lock: { mode: 'pessimistic_write' },
       });
@@ -1451,7 +1451,7 @@ export class BillingService {
           oldValue: { status: PaymentStatus.COMPLETED, amount: Number(payment.amount) },
           newValue: { status: PaymentStatus.VOIDED, receiptNumber: payment.receiptNumber },
           reason,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         })
         .catch((err) =>
           this.logger.error(`Audit log failed for voidPayment ${payment.id}: ${err.message}`),
@@ -1486,7 +1486,7 @@ export class BillingService {
       const invoiceRepo = manager.getRepository(Invoice);
 
       const original = await paymentRepo.findOne({
-        where: { id: paymentId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: paymentId, tenantId: requireTenantId(tenantId) },
         relations: ['invoice', 'invoice.encounter'],
         lock: { mode: 'pessimistic_write' },
       });
@@ -1541,7 +1541,7 @@ export class BillingService {
         transactionReference: `REFUND-${original.receiptNumber}`,
         notes: `Partial refund of payment ${original.receiptNumber}: ${reason}`,
         receivedById: userId,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       });
       const savedRefund = await manager.save(refund);
 
@@ -1607,7 +1607,7 @@ export class BillingService {
           oldValue: { amount: Number(original.amount), receiptNumber: original.receiptNumber },
           newValue: { refundAmount, refundReceipt, status: original.status },
           reason,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         })
         .catch((err) =>
           this.logger.error(`Audit log failed for refundPayment ${original.id}: ${err.message}`),
@@ -1636,12 +1636,12 @@ export class BillingService {
     return this.dataSource.transaction(async (manager) => {
       const txnRef = `CLAIM-${claimNumber}`;
       const existing = await manager.findOne(Payment, {
-        where: { transactionReference: txnRef, ...(tenantId ? { tenantId } : {}) },
+        where: { transactionReference: txnRef, tenantId: requireTenantId(tenantId) },
       });
       if (existing) return existing;
 
       const invoice = await manager.findOne(Invoice, {
-        where: { id: invoiceId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: invoiceId, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!invoice) return null;
@@ -1658,7 +1658,7 @@ export class BillingService {
         transactionReference: txnRef,
         notes: `Insurance settlement for claim ${claimNumber}${paymentReference ? ` (ref ${paymentReference})` : ''}`,
         receivedById: userId,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       });
       const saved = await manager.save(payment);
 
@@ -1677,7 +1677,7 @@ export class BillingService {
 
   async getPayment(paymentId: string, tenantId?: string): Promise<Payment> {
     const payment = await this.paymentRepository.findOne({
-      where: { id: paymentId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: paymentId, tenantId: requireTenantId(tenantId) },
       relations: ['invoice', 'invoice.items', 'invoice.patient', 'receivedBy'],
     });
     if (!payment) {
@@ -1899,7 +1899,7 @@ export class BillingService {
     // P1: Wrap in transaction with pessimistic lock to prevent race with recordPayment()
     return this.dataSource.transaction(async (manager) => {
       const invoice = await manager.findOne(Invoice, {
-        where: { id, ...(tenantId ? { tenantId } : {}) },
+        where: { id, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
 
@@ -2005,7 +2005,7 @@ export class BillingService {
             },
             newValue: { status: InvoiceStatus.CANCELLED },
             reason,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           })
           .catch((err) =>
             this.logger.error(`Audit log failed for cancelInvoice ${invoice.id}: ${err.message}`),
@@ -2027,7 +2027,7 @@ export class BillingService {
       const paymentRepo = manager.getRepository(Payment);
 
       const invoice = await invoiceRepo.findOne({
-        where: { id, ...(tenantId ? { tenantId } : {}) },
+        where: { id, tenantId: requireTenantId(tenantId) },
         relations: ['patient', 'payments', 'encounter'],
         lock: { mode: 'pessimistic_write' },
       });
@@ -2143,7 +2143,7 @@ export class BillingService {
             },
             newValue: { status: InvoiceStatus.REFUNDED, refundAmount },
             reason: reason || 'No reason provided',
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           })
           .catch((err) =>
             this.logger.error(`Audit log failed for refundInvoice ${invoice.id}: ${err.message}`),
@@ -2183,7 +2183,7 @@ export class BillingService {
         where: {
           encounterId: params.encounterId,
           status: In([InvoiceStatus.DRAFT, InvoiceStatus.PENDING, InvoiceStatus.PARTIALLY_PAID]),
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         },
         lock: { mode: 'pessimistic_write' },
       });
@@ -2206,7 +2206,7 @@ export class BillingService {
             status: InvoiceStatus.PENDING,
             ...(params.insurancePolicyId ? { insurancePolicyId: params.insurancePolicyId } : {}),
             ...(params.paymentType ? { paymentType: params.paymentType as PaymentType } : {}),
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           }),
         );
       }
@@ -2337,7 +2337,7 @@ export class BillingService {
           insuranceAmount: insuranceCoveredAmount || 0,
           copayAmount: patientCopay || 0,
           coverageNote: coverageNote,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         }),
       );
 
@@ -2360,7 +2360,7 @@ export class BillingService {
             unitPrice: resolvedUnitPrice,
             amount,
           },
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         })
         .catch((err) => this.logger.error(`Audit log failed for addBillableItem: ${err.message}`));
 
@@ -2386,7 +2386,7 @@ export class BillingService {
         where: {
           referenceType: params.referenceType,
           referenceId: params.referenceId,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         },
       });
       if (!existing) return false;
@@ -2435,7 +2435,7 @@ export class BillingService {
               unitPrice: existing.unitPrice,
               amount: existing.amount,
             },
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           })
           .catch((err) =>
             this.logger.error(`Audit log failed for updateBillableItem: ${err.message}`),
@@ -2456,7 +2456,7 @@ export class BillingService {
     // P0: Wrap in transaction with pessimistic lock on parent invoice
     return this.dataSource.transaction(async (manager) => {
       const existing = await manager.findOne(InvoiceItem, {
-        where: { referenceType, referenceId, ...(tenantId ? { tenantId } : {}) },
+        where: { referenceType, referenceId, tenantId: requireTenantId(tenantId) },
       });
       if (!existing) return false;
 
@@ -2500,7 +2500,7 @@ export class BillingService {
               description: removedItem.description,
               amount: Number(removedItem.amount),
             },
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           })
           .catch((err) =>
             this.logger.error(`Audit log failed for removeBillableItem: ${err.message}`),
@@ -2802,7 +2802,7 @@ export class BillingService {
       // Lock the invoice row so a concurrent payment / cancel / write-off
       // cannot race against us between status check and status flip.
       const invoice = await manager.findOne(Invoice, {
-        where: { id: invoiceId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: invoiceId, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!invoice) throw new NotFoundException('Invoice not found');
@@ -2910,7 +2910,7 @@ export class BillingService {
           },
           newValue: { status: InvoiceStatus.WRITTEN_OFF, writeOffAmount, glPosted },
           reason,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         })
         .catch((err) =>
           this.logger.error(`Audit log failed for writeOffInvoice ${invoice.id}: ${err.message}`),
@@ -2924,7 +2924,7 @@ export class BillingService {
 
   async getReceiptPrintData(paymentId: string, tenantId?: string) {
     const payment = await this.paymentRepository.findOne({
-      where: { id: paymentId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: paymentId, tenantId: requireTenantId(tenantId) },
       relations: ['invoice', 'invoice.items', 'invoice.patient', 'invoice.encounter', 'receivedBy'],
     });
     if (!payment) throw new NotFoundException('Payment not found');

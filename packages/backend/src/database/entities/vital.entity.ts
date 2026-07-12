@@ -110,8 +110,10 @@ export class Vital extends BaseEntity {
   @Column({ name: 'mews_score', type: 'smallint', nullable: true })
   mewsScore: number | null;
 
+  // Per-parameter NEWS2 scores; may include `_missing: string[]` when the
+  // observation set was incomplete (missing params scored 0).
   @Column({ name: 'news_components', type: 'jsonb', nullable: true })
-  newsComponents: Record<string, number> | null;
+  newsComponents: Record<string, number | string[]> | null;
 
   @Column({
     name: 'consciousness_level',

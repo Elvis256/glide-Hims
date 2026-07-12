@@ -209,4 +209,8 @@ export class ServiceConfigDto {
 
   @IsOptional()
   capacityLimits?: Record<string, number>;
+
+  @IsOptional()
+  @IsBoolean()
+  allowCallUnpaid?: boolean;
 }

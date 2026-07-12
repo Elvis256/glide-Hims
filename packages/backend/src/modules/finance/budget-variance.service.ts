@@ -142,10 +142,10 @@ export class BudgetVarianceService {
     // ever reused (defence in depth).
     const budgetLines = await this.budgetLineRepository.find({
       where: {
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
         budget: {
           facilityId,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         },
       } as any,
       relations: ['account', 'budget'],
@@ -154,11 +154,11 @@ export class BudgetVarianceService {
     // Get actuals from GL — same tenant scoping.
     const lines = await this.journalEntryLineRepository.find({
       where: {
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
         journalEntry: {
           facilityId,
           journalDate: Between(startDate, endDate),
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         },
       } as any,
       relations: ['account', 'journalEntry'],
@@ -226,10 +226,10 @@ export class BudgetVarianceService {
     // Get budgets grouped by cost center
     const budgetLines = await this.budgetLineRepository.find({
       where: {
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
         budget: {
           facilityId,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         },
       } as any,
       relations: ['budget'],
@@ -238,11 +238,11 @@ export class BudgetVarianceService {
     // Get actuals by cost center
     const lines = await this.journalEntryLineRepository.find({
       where: {
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
         journalEntry: {
           facilityId,
           journalDate: Between(startDate, endDate),
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         },
       } as any,
       relations: ['journalEntry'],
@@ -317,7 +317,7 @@ export class BudgetVarianceService {
       const account = await this.accountRepository.findOne({
         where: {
           id: variance.accountId,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         } as any,
       });
 

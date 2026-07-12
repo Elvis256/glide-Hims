@@ -384,7 +384,7 @@ export class FacilitiesService {
     await this.findOneFacility(facilityId, tenantId);
 
     const employeeCount = await this.employeeRepository.count({
-      where: { facilityId, ...(tenantId ? { tenantId } : {}) },
+      where: { facilityId, tenantId: requireTenantId(tenantId) },
     });
 
     // bedCount: not yet modeled, return 0 for now

@@ -213,7 +213,7 @@ export class UsersService {
     // If linking to existing employee, verify it exists and isn't already linked
     if (employeeId) {
       const existingEmployee = await this.employeeRepository.findOne({
-        where: { id: employeeId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: employeeId, tenantId: requireTenantId(tenantId) },
       });
       if (!existingEmployee) {
         throw new NotFoundException('Employee not found');
@@ -1385,6 +1385,10 @@ export class UsersService {
     tenantId?: string,
     facilityId?: string,
   ): Promise<BulkImportResult> {
+    // Bulk import is a tenant-onboarding feature: creating users without a
+    // tenant would mint platform-level accounts and dedup globally.
+    const tid = requireTenantId(tenantId);
+
     // Guard: file size limit (5 MB)
     const MAX_FILE_SIZE = 5 * 1024 * 1024;
     if (file.size > MAX_FILE_SIZE) {
@@ -1415,18 +1419,15 @@ export class UsersService {
     const errors: BulkImportRowError[] = [];
     let successful = 0;
 
-    // Pre-fetch all roles for this tenant for name matching
+    // Pre-fetch all roles for this tenant (plus global roles) for name matching
     const roles = await this.roleRepository.find({
-      where: tenantId ? [{ tenantId }, { tenantId: IsNull() }] : undefined,
+      where: [{ tenantId: tid }, { tenantId: IsNull() }],
     });
     const rolesByName = new Map(roles.map((r) => [r.name.toLowerCase(), r]));
 
     // Pre-fetch existing usernames scoped to tenant
-    if (!tenantId) {
-      this.logger.warn('bulkImport called without tenantId — username dedup will be global');
-    }
     const existingUsers = await this.userRepository.find({
-      where: tenantId ? { tenantId } : undefined,
+      where: { tenantId: tid },
       select: ['username'],
     });
     const existingUsernames = new Set(existingUsers.map((u) => u.username.toLowerCase()));

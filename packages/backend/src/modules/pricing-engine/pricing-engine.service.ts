@@ -353,7 +353,7 @@ export class PricingEngineService {
       where: {
         ruleType: ruleType as PricingRuleType,
         isActive: true,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
     });
 
@@ -379,7 +379,7 @@ export class PricingEngineService {
     const priceList = this.insurancePriceListRepo.create({
       ...dto,
       createdById: userId,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: requireTenantId(tenantId),
     });
     return this.insurancePriceListRepo.save(priceList);
   }
@@ -399,7 +399,7 @@ export class PricingEngineService {
         discountPercent: item.discountPercent || 0,
         effectiveFrom: dto.effectiveFrom ? new Date(dto.effectiveFrom) : new Date(),
         createdById: userId,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       }),
     );
     return this.insurancePriceListRepo.save(priceLists);
@@ -516,12 +516,12 @@ export class PricingEngineService {
     let basePrice = 0;
     if (serviceId) {
       const service = await this.serviceRepo.findOne({
-        where: { id: serviceId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: serviceId, tenantId: requireTenantId(tenantId) },
       });
       basePrice = Number(service?.basePrice) || 0;
     } else if (labTestId) {
       const labTest = await this.labTestRepo.findOne({
-        where: { id: labTestId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: labTestId, tenantId: requireTenantId(tenantId) },
       });
       basePrice = Number(labTest?.price) || 0;
     }
@@ -546,7 +546,7 @@ export class PricingEngineService {
     const rule = this.pricingRuleRepo.create({
       ...dto,
       createdById: userId,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: requireTenantId(tenantId),
     });
     const saved = await this.pricingRuleRepo.save(rule);
     // P1: Audit log on pricing rule creation
@@ -562,7 +562,7 @@ export class PricingEngineService {
           discountType: saved.discountType,
           discountValue: saved.discountValue,
         },
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       })
       .catch(() => {});
     return saved;
@@ -601,7 +601,7 @@ export class PricingEngineService {
             discountValue: saved.discountValue,
             isActive: saved.isActive,
           },
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         })
         .catch(() => {});
     }
@@ -622,7 +622,7 @@ export class PricingEngineService {
           action: 'PRICING_RULE_DELETED',
           entityType: 'PricingRule',
           entityId: id,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         })
         .catch(() => {});
     }
@@ -649,7 +649,7 @@ export class PricingEngineService {
 
   // ==================== TAX RATES CRUD ====================
   async createTaxRate(dto: Partial<TaxRate>, tenantId?: string): Promise<TaxRate> {
-    const entity = this.taxRateRepo.create({ ...dto, ...(tenantId ? { tenantId } : {}) });
+    const entity = this.taxRateRepo.create({ ...dto, tenantId: requireTenantId(tenantId) });
     return this.taxRateRepo.save(entity);
   }
   async getTaxRates(tenantId?: string): Promise<TaxRate[]> {
@@ -675,7 +675,7 @@ export class PricingEngineService {
 
   // ==================== TAX EXEMPTIONS CRUD ====================
   async createTaxExemption(dto: Partial<TaxExemption>, tenantId?: string): Promise<TaxExemption> {
-    const entity = this.taxExemptionRepo.create({ ...dto, ...(tenantId ? { tenantId } : {}) });
+    const entity = this.taxExemptionRepo.create({ ...dto, tenantId: requireTenantId(tenantId) });
     return this.taxExemptionRepo.save(entity);
   }
   async getTaxExemptions(tenantId?: string): Promise<TaxExemption[]> {

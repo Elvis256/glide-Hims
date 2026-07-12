@@ -224,7 +224,7 @@ export class AssetsService {
     ctx?: ActorContext,
   ): Promise<FixedAsset> {
     const asset = await this.assetRepo.findOne({
-      where: { id, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(ctx?.tenantId) },
     });
     if (!asset) throw new NotFoundException('Asset not found');
     const before = { ...asset };
@@ -250,7 +250,7 @@ export class AssetsService {
           movedAt: new Date(),
           movedBy: ctx?.userId,
           reason: 'manual',
-          ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
+          tenantId: requireTenantId(ctx?.tenantId),
         }),
       );
     }
@@ -261,7 +261,7 @@ export class AssetsService {
 
   async getAsset(id: string, tenantId?: string): Promise<FixedAsset> {
     const asset = await this.assetRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
       relations: [
         'facility',
         'department',
@@ -321,7 +321,7 @@ export class AssetsService {
 
   async deleteAsset(id: string, ctx?: ActorContext): Promise<void> {
     const asset = await this.assetRepo.findOne({
-      where: { id, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(ctx?.tenantId) },
     });
     if (!asset) throw new NotFoundException('Asset not found');
     if (asset.status === AssetStatus.ACTIVE) {
@@ -373,7 +373,7 @@ export class AssetsService {
         where: {
           facilityId,
           status: AssetStatus.ACTIVE,
-          ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
+          tenantId: requireTenantId(ctx?.tenantId),
         },
         lock: { mode: 'pessimistic_write' },
       });
@@ -386,7 +386,7 @@ export class AssetsService {
             assetId: asset.id,
             periodYear: year,
             periodMonth: month,
-            ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
+            tenantId: requireTenantId(ctx?.tenantId),
           },
         });
         if (existing) continue;
@@ -411,7 +411,7 @@ export class AssetsService {
           accumulatedDepreciation: Number(asset.accumulatedDepreciation) + depAmount,
           closingBookValue: Number(asset.bookValue) - depAmount,
           isPosted: false,
-          ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
+          tenantId: requireTenantId(ctx?.tenantId),
         });
 
         const saved = await depRepoTx.save(depRecord);
@@ -483,7 +483,7 @@ export class AssetsService {
 
   async getDepreciationSchedule(assetId: string, tenantId?: string): Promise<AssetDepreciation[]> {
     return this.depreciationRepo.find({
-      where: { assetId, ...(tenantId ? { tenantId } : {}) },
+      where: { assetId, tenantId: requireTenantId(tenantId) },
       order: { periodYear: 'ASC', periodMonth: 'ASC' },
     });
   }
@@ -495,10 +495,10 @@ export class AssetsService {
     tenantId?: string,
   ): Promise<any> {
     const assets = await this.assetRepo.find({
-      where: { facilityId, status: AssetStatus.ACTIVE, ...(tenantId ? { tenantId } : {}) },
+      where: { facilityId, status: AssetStatus.ACTIVE, tenantId: requireTenantId(tenantId) },
     });
 
-    const depQuery: any = { periodYear: year, ...(tenantId ? { tenantId } : {}) };
+    const depQuery: any = { periodYear: year, tenantId: requireTenantId(tenantId) };
     if (month) depQuery.periodMonth = month;
     const periodDeps = await this.depreciationRepo.find({ where: depQuery });
 
@@ -539,7 +539,7 @@ export class AssetsService {
       const maintRepo = manager.getRepository(AssetMaintenance);
 
       const asset = await assetRepoTx.findOne({
-        where: { id: data.assetId, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+        where: { id: data.assetId, tenantId: requireTenantId(ctx?.tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!asset) throw new NotFoundException('Asset not found');
@@ -547,7 +547,7 @@ export class AssetsService {
       const m = maintRepo.create({
         ...data,
         facilityId: data.facilityId || asset.facilityId,
-        ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
+        tenantId: requireTenantId(ctx?.tenantId),
       });
       const saved = await maintRepo.save(m);
 
@@ -571,7 +571,7 @@ export class AssetsService {
 
   async getMaintenanceHistory(assetId: string, tenantId?: string): Promise<AssetMaintenance[]> {
     return this.maintenanceRepo.find({
-      where: { assetId, ...(tenantId ? { tenantId } : {}) },
+      where: { assetId, tenantId: requireTenantId(tenantId) },
       order: { maintenanceDate: 'DESC' },
     });
   }
@@ -588,7 +588,7 @@ export class AssetsService {
         facilityId,
         status: AssetStatus.ACTIVE,
         nextMaintenanceDate: LessThan(futureDate),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
       order: { nextMaintenanceDate: 'ASC' },
     });
@@ -606,7 +606,7 @@ export class AssetsService {
         facilityId,
         status: AssetStatus.ACTIVE,
         nextCalibrationDue: LessThan(futureDate),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
       order: { nextCalibrationDue: 'ASC' },
     });
@@ -623,7 +623,7 @@ export class AssetsService {
       where: {
         facilityId,
         amcEndDate: LessThan(futureDate),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
       order: { amcEndDate: 'ASC' },
     });
@@ -640,7 +640,7 @@ export class AssetsService {
       where: {
         facilityId,
         warrantyExpiry: LessThan(futureDate),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
       order: { warrantyExpiry: 'ASC' },
     });
@@ -655,7 +655,7 @@ export class AssetsService {
       const approvalRepo = manager.getRepository(AssetTransferApproval);
 
       const asset = await assetRepoTx.findOne({
-        where: { id: data.assetId, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+        where: { id: data.assetId, tenantId: requireTenantId(ctx?.tenantId) },
       });
       if (!asset) throw new NotFoundException('Asset not found');
       if (asset.status !== AssetStatus.ACTIVE) {
@@ -677,7 +677,7 @@ export class AssetsService {
         fromFacilityId: asset.facilityId,
         fromDepartmentId: asset.departmentId,
         status: 'pending',
-        ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
+        tenantId: requireTenantId(ctx?.tenantId),
       });
       const saved = await xferRepo.save(transfer);
 
@@ -692,7 +692,7 @@ export class AssetsService {
             transferId: saved.id,
             stage,
             decision: 'pending',
-            ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
+            tenantId: requireTenantId(ctx?.tenantId),
           }),
         );
       }
@@ -744,7 +744,7 @@ export class AssetsService {
       const approvalRepo = manager.getRepository(AssetTransferApproval);
 
       const transfer = await xferRepo.findOne({
-        where: { id: transferId, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+        where: { id: transferId, tenantId: requireTenantId(ctx?.tenantId) },
         relations: ['approvals'],
         lock: { mode: 'pessimistic_write' },
       });
@@ -809,7 +809,7 @@ export class AssetsService {
       const locRepo = manager.getRepository(AssetLocationHistory);
 
       const transfer = await xferRepo.findOne({
-        where: { id: transferId, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+        where: { id: transferId, tenantId: requireTenantId(ctx?.tenantId) },
         relations: ['approvals'],
         lock: { mode: 'pessimistic_write' },
       });
@@ -822,7 +822,7 @@ export class AssetsService {
       }
 
       const asset = await assetRepoTx.findOne({
-        where: { id: transfer.assetId, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+        where: { id: transfer.assetId, tenantId: requireTenantId(ctx?.tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!asset) throw new NotFoundException('Asset not found');
@@ -849,7 +849,7 @@ export class AssetsService {
           movedBy: ctx?.userId,
           reason: 'transfer',
           referenceId: transferId,
-          ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
+          tenantId: requireTenantId(ctx?.tenantId),
         }),
       );
 
@@ -860,7 +860,7 @@ export class AssetsService {
 
   async getTransferHistory(assetId: string, tenantId?: string): Promise<AssetTransfer[]> {
     return this.transferRepo.find({
-      where: { assetId, ...(tenantId ? { tenantId } : {}) },
+      where: { assetId, tenantId: requireTenantId(tenantId) },
       relations: ['approvals'],
       order: { transferDate: 'DESC' },
     });
@@ -874,7 +874,7 @@ export class AssetsService {
       const allocRepo = manager.getRepository(AssetAllocation);
 
       const asset = await assetRepoTx.findOne({
-        where: { id: data.assetId, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+        where: { id: data.assetId, tenantId: requireTenantId(ctx?.tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!asset) throw new NotFoundException('Asset not found');
@@ -888,7 +888,7 @@ export class AssetsService {
             AllocationStatus.DEPT_HEAD_APPROVED,
             AllocationStatus.ALLOCATED,
           ]),
-          ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
+          tenantId: requireTenantId(ctx?.tenantId),
         },
       });
       if (open) throw new BadRequestException('Asset already has an open allocation');
@@ -904,7 +904,7 @@ export class AssetsService {
         allocationNumber: no,
         requestedBy: ctx?.userId || data.requestedBy,
         status: AllocationStatus.REQUESTED,
-        ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
+        tenantId: requireTenantId(ctx?.tenantId),
       });
       const saved = (await allocRepo.save(allocation)) as unknown as AssetAllocation;
       await this.audit(ctx, 'asset.allocation.request', 'asset_allocation', saved.id, null, saved);
@@ -940,7 +940,7 @@ export class AssetsService {
       const allocRepo = manager.getRepository(AssetAllocation);
 
       const a = await allocRepo.findOne({
-        where: { id, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+        where: { id, tenantId: requireTenantId(ctx?.tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!a) throw new NotFoundException('Allocation not found');
@@ -968,7 +968,7 @@ export class AssetsService {
       const locRepo = manager.getRepository(AssetLocationHistory);
 
       const a = await allocRepo.findOne({
-        where: { id, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+        where: { id, tenantId: requireTenantId(ctx?.tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!a) throw new NotFoundException('Allocation not found');
@@ -977,7 +977,7 @@ export class AssetsService {
       }
 
       const asset = await assetRepoTx.findOne({
-        where: { id: a.assetId, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+        where: { id: a.assetId, tenantId: requireTenantId(ctx?.tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!asset) throw new NotFoundException('Asset not found');
@@ -1000,7 +1000,7 @@ export class AssetsService {
           movedBy: ctx?.userId,
           reason: 'allocation',
           referenceId: id,
-          ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
+          tenantId: requireTenantId(ctx?.tenantId),
         }),
       );
 
@@ -1020,7 +1020,7 @@ export class AssetsService {
       const allocRepo = manager.getRepository(AssetAllocation);
 
       const a = await allocRepo.findOne({
-        where: { id, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+        where: { id, tenantId: requireTenantId(ctx?.tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!a) throw new NotFoundException('Allocation not found');
@@ -1045,7 +1045,7 @@ export class AssetsService {
       const dispRepo = manager.getRepository(AssetDisposal);
 
       const asset = await assetRepoTx.findOne({
-        where: { id: data.assetId, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+        where: { id: data.assetId, tenantId: requireTenantId(ctx?.tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!asset) throw new NotFoundException('Asset not found');
@@ -1062,7 +1062,7 @@ export class AssetsService {
             DisposalStatus.COMMITTEE_APPROVAL,
             DisposalStatus.APPROVED,
           ]),
-          ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
+          tenantId: requireTenantId(ctx?.tenantId),
         },
       });
       if (open) throw new BadRequestException('Asset already has an open disposal request');
@@ -1087,7 +1087,7 @@ export class AssetsService {
         status: isMedical ? DisposalStatus.BIOMED_REVIEW : DisposalStatus.COMMITTEE_APPROVAL,
         attachments: data.attachments,
         notes: data.notes,
-        ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
+        tenantId: requireTenantId(ctx?.tenantId),
       });
       const saved = await dispRepo.save(disposal);
       await this.audit(ctx, 'asset.disposal.request', 'asset_disposal', saved.id, null, saved);
@@ -1122,7 +1122,7 @@ export class AssetsService {
       const dispRepo = manager.getRepository(AssetDisposal);
 
       const d = await dispRepo.findOne({
-        where: { id, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+        where: { id, tenantId: requireTenantId(ctx?.tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!d) throw new NotFoundException('Disposal not found');
@@ -1158,7 +1158,7 @@ export class AssetsService {
       const dispRepo = manager.getRepository(AssetDisposal);
 
       const d = await dispRepo.findOne({
-        where: { id, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+        where: { id, tenantId: requireTenantId(ctx?.tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!d) throw new NotFoundException('Disposal not found');
@@ -1210,7 +1210,7 @@ export class AssetsService {
       const assetRepoTx = manager.getRepository(FixedAsset);
 
       const d = await dispRepo.findOne({
-        where: { id, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+        where: { id, tenantId: requireTenantId(ctx?.tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!d) throw new NotFoundException('Disposal not found');
@@ -1219,7 +1219,7 @@ export class AssetsService {
       }
 
       const asset = await assetRepoTx.findOne({
-        where: { id: d.assetId, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+        where: { id: d.assetId, tenantId: requireTenantId(ctx?.tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!asset) throw new NotFoundException('Asset not found');
@@ -1330,7 +1330,7 @@ export class AssetsService {
     ctx?: ActorContext,
   ): Promise<FixedAsset> {
     const asset = await this.assetRepo.findOne({
-      where: { id, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(ctx?.tenantId) },
     });
     if (!asset) throw new NotFoundException('Asset not found');
     asset.disposalDate = data.disposalDate;
@@ -1358,7 +1358,7 @@ export class AssetsService {
   async createCategory(data: any, ctx?: ActorContext): Promise<AssetCategory> {
     const cat = this.categoryRepo.create({
       ...data,
-      ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
+      tenantId: requireTenantId(ctx?.tenantId),
     });
     const saved = (await this.categoryRepo.save(cat)) as unknown as AssetCategory;
     await this.audit(ctx, 'asset.category.create', 'asset_category', saved.id, null, saved);
@@ -1367,7 +1367,7 @@ export class AssetsService {
 
   async updateCategory(id: string, data: any, ctx?: ActorContext): Promise<AssetCategory> {
     const cat = await this.categoryRepo.findOne({
-      where: { id, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(ctx?.tenantId) },
     });
     if (!cat) throw new NotFoundException('Category not found');
     Object.assign(cat, data);
@@ -1388,7 +1388,7 @@ export class AssetsService {
 
   async getLocationHistory(assetId: string, tenantId?: string): Promise<AssetLocationHistory[]> {
     return this.locationHistoryRepo.find({
-      where: { assetId, ...(tenantId ? { tenantId } : {}) },
+      where: { assetId, tenantId: requireTenantId(tenantId) },
       order: { movedAt: 'DESC' },
     });
   }
@@ -1399,7 +1399,7 @@ export class AssetsService {
     ctx?: ActorContext,
   ): Promise<AssetLocationHistory> {
     const asset = await this.assetRepo.findOne({
-      where: { id: assetId, ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}) },
+      where: { id: assetId, tenantId: requireTenantId(ctx?.tenantId) },
     });
     if (!asset) throw new NotFoundException('Asset not found');
     if (data.departmentId !== undefined) asset.departmentId = data.departmentId;
@@ -1419,7 +1419,7 @@ export class AssetsService {
       movedBy: ctx?.userId,
       reason: data.reason || 'manual',
       notes: data.notes,
-      ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
+      tenantId: requireTenantId(ctx?.tenantId),
     });
     const saved = await this.locationHistoryRepo.save(hist);
     await this.audit(ctx, 'asset.location.update', 'fixed_asset', assetId, null, saved);
@@ -1430,7 +1430,7 @@ export class AssetsService {
 
   async getAssetRegister(facilityId: string, tenantId?: string): Promise<FixedAsset[]> {
     return this.assetRepo.find({
-      where: { facilityId, ...(tenantId ? { tenantId } : {}) },
+      where: { facilityId, tenantId: requireTenantId(tenantId) },
       relations: ['department', 'custodian'],
       order: { assetCode: 'ASC' },
     });
@@ -1438,7 +1438,7 @@ export class AssetsService {
 
   async getAssetValuation(facilityId: string, tenantId?: string): Promise<any> {
     const assets = await this.assetRepo.find({
-      where: { facilityId, status: AssetStatus.ACTIVE, ...(tenantId ? { tenantId } : {}) },
+      where: { facilityId, status: AssetStatus.ACTIVE, tenantId: requireTenantId(tenantId) },
     });
 
     const byClass: Record<string, any> = {};
@@ -1478,7 +1478,7 @@ export class AssetsService {
         facilityId,
         disposalDate: Between(startDate, endDate),
         status: In([AssetStatus.DISPOSED, AssetStatus.WRITTEN_OFF]),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
     });
 
@@ -1509,7 +1509,7 @@ export class AssetsService {
 
   async getAgeAnalysisReport(facilityId: string, tenantId?: string): Promise<any> {
     const assets = await this.assetRepo.find({
-      where: { facilityId, status: AssetStatus.ACTIVE, ...(tenantId ? { tenantId } : {}) },
+      where: { facilityId, status: AssetStatus.ACTIVE, tenantId: requireTenantId(tenantId) },
     });
     const now = new Date();
     const buckets: Record<string, { count: number; bookValue: number }> = {

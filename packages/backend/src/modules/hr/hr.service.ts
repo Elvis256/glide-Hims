@@ -886,7 +886,7 @@ export class HrService {
       throw new BadRequestException('Authenticated user context required');
     }
 
-    const tenantWhere = user?.tenantId ? { tenantId: user.tenantId } : {};
+    const tenantWhere = { tenantId: requireTenantId(user?.tenantId) };
     const selfEmp = await this.employeeRepo.findOne({
       where: { userId: callerUserId, ...tenantWhere },
     });

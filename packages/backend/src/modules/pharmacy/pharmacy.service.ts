@@ -724,7 +724,7 @@ export class PharmacyService {
         // (not the cached items.is_controlled flag) and writes a structured row to
         // controlled_substance_logs for narcotics inspectors / audit.
         const classification = await manager.findOne(DrugClassification, {
-          where: { itemId: inventoryItem.id, ...(tenantId ? { tenantId } : {}) },
+          where: { itemId: inventoryItem.id, tenantId: requireTenantId(tenantId) },
         });
         // C6: do NOT silently fall back to UNSCHEDULED for items the inventory
         // master flags as controlled. A missing classification row is a data
@@ -816,7 +816,7 @@ export class PharmacyService {
             pharmacistId: userId,
             witnessId: buyer?.witnessId || undefined,
             witnessName: buyer?.witnessName || undefined,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           };
           await ctrlLogRepo.save(ctrlLogRepo.create(ctrlLogEntry));
 
@@ -905,7 +905,7 @@ export class PharmacyService {
             notes: `POS Sale: ${sale.saleNumber}`,
             createdById: userId,
             facilityId: facilityId,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           }),
         );
       }
@@ -1127,7 +1127,7 @@ export class PharmacyService {
     return this.dataSource.transaction(async (manager) => {
       const saleRepo = manager.getRepository(PharmacySale);
       const sale = await saleRepo.findOne({
-        where: { id, ...(tenantId ? { tenantId } : {}) },
+        where: { id, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!sale) throw new NotFoundException('Sale not found');
@@ -1159,7 +1159,7 @@ export class PharmacyService {
             userId,
             oldValue: { status: oldStatus },
             newValue: { status: SaleStatus.CANCELLED, reason: reason || null },
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           }),
         )
         .catch((err) =>
@@ -1498,7 +1498,7 @@ export class PharmacyService {
           quantity,
           reservedQuantity: 0,
           status: 'active',
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         });
         batch = await batchRepo.save(created);
       }
@@ -1538,7 +1538,7 @@ export class PharmacyService {
               facilityId,
               expiryDate: parsedExpiry.toISOString().slice(0, 10),
             },
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           }),
         )
         .catch((err) =>
@@ -1552,7 +1552,7 @@ export class PharmacyService {
       // change) keyed by the batch id so reconciliation reports can join.
       if (item.isControlled) {
         const classification = await manager.findOne(DrugClassification, {
-          where: { itemId, ...(tenantId ? { tenantId } : {}) },
+          where: { itemId, tenantId: requireTenantId(tenantId) },
         });
         const schedule = classification?.schedule || null;
         const auditRepo = manager.getRepository(AuditLog);
@@ -1575,7 +1575,7 @@ export class PharmacyService {
                 expiryDate: parsedExpiry.toISOString().slice(0, 10),
                 unitCost: Number(item.unitCost) || 0,
               },
-              ...(tenantId ? { tenantId } : {}),
+              tenantId: requireTenantId(tenantId),
             }),
           )
           .catch((err) =>
@@ -1718,7 +1718,7 @@ export class PharmacyService {
             entityId: saved.id,
             userId,
             newValue: { itemId, batchNumber, facilityId, notes },
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           }),
         );
 
@@ -1773,7 +1773,7 @@ export class PharmacyService {
           entityId: saved.id,
           userId,
           newValue: { itemId, batchNumber, facilityId, notes },
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         }),
       );
 
@@ -1828,7 +1828,7 @@ export class PharmacyService {
           entityId: saved.id,
           userId,
           newValue: { itemId, batchNumber, facilityId, action, notes },
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         }),
       );
 
@@ -1868,10 +1868,11 @@ export class PharmacyService {
   // ─── B5: Barcode Scan ─────────────────────────────────────────────────────
 
   async getItemByBarcode(barcode: string, tenantId?: string, facilityId?: string) {
+    const tid = requireTenantId(tenantId);
     const item = await this.inventoryRepo
       .createQueryBuilder('i')
       .where('i.barcode = :barcode', { barcode })
-      .andWhere(tenantId ? 'i.tenant_id = :tenantId' : '1=1', tenantId ? { tenantId } : {})
+      .andWhere('i.tenant_id = :tenantId', { tenantId: tid })
       .getOne();
 
     if (!item) {
@@ -1883,7 +1884,7 @@ export class PharmacyService {
     let availableQty = 0;
     if (facilityId) {
       const sb = await this.stockBalanceRepo.findOne({
-        where: { itemId: item.id, facilityId, ...(tenantId ? { tenantId } : {}) },
+        where: { itemId: item.id, facilityId, tenantId: requireTenantId(tenantId) },
       });
       availableQty = sb ? Number(sb.availableQuantity) : 0;
     }
@@ -1904,7 +1905,7 @@ export class PharmacyService {
     let reprintCount = 0;
     if (options.duplicate) {
       const existing = await this.reprintRepo.findOne({
-        where: { saleId, ...(tenantId ? { tenantId } : {}) },
+        where: { saleId, tenantId: requireTenantId(tenantId) },
       });
       if (existing) {
         existing.reprintCount += 1;
@@ -1919,7 +1920,7 @@ export class PharmacyService {
             reprintedById: userId,
             reprintCount: 1,
             reprintedAt: new Date(),
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           }),
         );
         reprintCount = reprint.reprintCount;
