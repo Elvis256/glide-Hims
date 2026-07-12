@@ -47,6 +47,16 @@ Legend: 💰 revenue/compliance · 🏥 clinical value · ✨ UX polish
   (`getImmunizationDefaulters`); hooking it to the notifications module would
   directly improve vaccination coverage.
 
+## POS / Payments
+- 💰 **Shift report scoped by time window only** — `getShiftReport` aggregates
+  payment splits tenant-wide between openedAt/closedAt; overlapping shifts on
+  other registers pollute the numbers. Splits need a shiftId link.
+- 💰 **MoMo late-success after timeout** — a transaction marked TIMEOUT whose
+  money later lands at the provider has no refund/replay flow; needs a
+  reconciliation report for TIMEOUT txs that succeeded gateway-side.
+- ✨ **Manager PIN brute-force protection** — PIN verify is bcrypt'd but has no
+  attempt limiting; a 4-digit PIN is enumerable. Add lockout/backoff.
+
 ## Surgery
 - 🏥 **WHO Surgical Safety Checklist (sign-in / time-out / sign-out)** — only a
   free-form pre-op checklist exists today; the three-phase WHO checklist is

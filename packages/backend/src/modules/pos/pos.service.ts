@@ -61,39 +61,50 @@ export class PosService {
   // ─── Shifts ────────────────────────────────────────────────────────────────
 
   async openShift(dto: OpenShiftDto, cashierId: string, tenantId: string) {
-    // Verify no open shift for this cashier
-    const existing = await this.shiftRepo.findOne({
-      where: { cashierId, tenantId, status: 'open' },
-    });
-    if (existing) {
-      throw new BadRequestException(
-        'You already have an open shift. Close it before opening a new one.',
-      );
-    }
+    return this.dataSource.transaction(async (manager) => {
+      // Serialize per cashier and per register — the duplicate checks below
+      // raced outside a transaction (double-open on both axes)
+      await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+        `pos:shift-open:${tenantId}:${cashierId}`,
+      ]);
+      await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+        `pos:shift-open:${tenantId}:reg:${dto.registerId}`,
+      ]);
 
-    // Verify register exists and belongs to tenant
-    const register = await this.registerRepo.findOne({
-      where: { id: dto.registerId, tenantId, status: 'active' },
-    });
-    if (!register) throw new NotFoundException('Register not found or inactive');
+      // Verify no open shift for this cashier
+      const existing = await manager.findOne(PosShift, {
+        where: { cashierId, tenantId, status: 'open' },
+      });
+      if (existing) {
+        throw new BadRequestException(
+          'You already have an open shift. Close it before opening a new one.',
+        );
+      }
 
-    // Verify no other open shift on this register
-    const registerShift = await this.shiftRepo.findOne({
-      where: { registerId: dto.registerId, tenantId, status: 'open' },
-    });
-    if (registerShift) {
-      throw new BadRequestException('This register already has an open shift.');
-    }
+      // Verify register exists and belongs to tenant
+      const register = await manager.findOne(PosRegister, {
+        where: { id: dto.registerId, tenantId, status: 'active' },
+      });
+      if (!register) throw new NotFoundException('Register not found or inactive');
 
-    const shift = this.shiftRepo.create({
-      registerId: dto.registerId,
-      cashierId,
-      openedAt: new Date(),
-      openingBalance: dto.openingBalance,
-      status: 'open',
-      tenantId,
+      // Verify no other open shift on this register
+      const registerShift = await manager.findOne(PosShift, {
+        where: { registerId: dto.registerId, tenantId, status: 'open' },
+      });
+      if (registerShift) {
+        throw new BadRequestException('This register already has an open shift.');
+      }
+
+      const shift = manager.create(PosShift, {
+        registerId: dto.registerId,
+        cashierId,
+        openedAt: new Date(),
+        openingBalance: dto.openingBalance,
+        status: 'open',
+        tenantId,
+      });
+      return manager.save(PosShift, shift);
     });
-    return this.shiftRepo.save(shift);
   }
 
   async closeShift(dto: CloseShiftDto, cashierId: string, tenantId: string) {

@@ -176,26 +176,50 @@ export class PosMomoService {
 
   async cancel(transactionId: string, userId: string, tenantId: string) {
     const tid = requireTenantId(tenantId);
-    const tx = await this.momoRepo.findOne({
-      where: { id: transactionId, tenantId: tid },
+    // Row lock so cancel serializes with a concurrent success flip
+    const tx = await this.dataSource.transaction(async (manager) => {
+      const locked = await manager.findOne(PosMobileMoneyTransaction, {
+        where: { id: transactionId, tenantId: tid },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!locked) throw new NotFoundException(`Transaction ${transactionId} not found`);
+      if (locked.status !== MomoTransactionStatus.PENDING) {
+        return locked;
+      }
+      locked.status = MomoTransactionStatus.CANCELLED;
+      locked.failureReason = `Cancelled by user ${userId}`;
+      locked.completedAt = new Date();
+      return manager.save(PosMobileMoneyTransaction, locked);
     });
-    if (!tx) throw new NotFoundException(`Transaction ${transactionId} not found`);
-    if (tx.status !== MomoTransactionStatus.PENDING) {
-      return this.buildStatusResponse(tx);
-    }
-    tx.status = MomoTransactionStatus.CANCELLED;
-    tx.failureReason = `Cancelled by user ${userId}`;
-    tx.completedAt = new Date();
-    await this.momoRepo.save(tx);
     return this.buildStatusResponse(tx);
   }
 
   private async handleSuccess(tx: PosMobileMoneyTransaction, userId: string, tenantId: string) {
-    await this.dataSource.transaction(async () => {
-      tx.status = MomoTransactionStatus.SUCCESS;
-      tx.completedAt = new Date();
-      await this.momoRepo.save(tx);
+    // Claim the transaction under a row lock: the user-polling path and the
+    // reconciliation cron can both observe PENDING and would otherwise both
+    // flip it and complete the sale twice. (The previous "transaction" never
+    // used its manager, so it provided no atomicity at all.)
+    const claimed = await this.dataSource.transaction(async (manager) => {
+      const locked = await manager.findOne(PosMobileMoneyTransaction, {
+        where: { id: tx.id, tenantId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!locked || locked.status !== MomoTransactionStatus.PENDING) return false;
 
+      locked.status = MomoTransactionStatus.SUCCESS;
+      locked.completedAt = new Date();
+      locked.lastPolledAt = tx.lastPolledAt;
+      locked.retryCount = tx.retryCount;
+      await manager.save(PosMobileMoneyTransaction, locked);
+      tx.status = locked.status;
+      tx.completedAt = locked.completedAt;
+      return true;
+    });
+    if (!claimed) return;
+
+    // completeSale runs its own transaction; if it fails after the money was
+    // taken, flag the tx so reconciliation staff can finish the sale manually
+    try {
       await this.pharmacyService.completeSale(
         tx.saleId,
         {
@@ -206,7 +230,16 @@ export class PosMomoService {
         userId,
         tenantId,
       );
-    });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `MoMo tx ${tx.id} succeeded but completeSale failed — sale ${tx.saleId} needs manual completion: ${msg}`,
+      );
+      await this.momoRepo.update(
+        { id: tx.id },
+        { failureReason: `PAID but sale completion failed: ${msg}`.slice(0, 500) },
+      );
+    }
   }
 
   private buildStatusResponse(tx: PosMobileMoneyTransaction) {
