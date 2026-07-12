@@ -19,9 +19,14 @@ import { TenantInterceptor } from './common/interceptors/tenant.interceptor';
 import { ResponseTransformInterceptor } from './common/interceptors/response-transform.interceptor';
 import { correlationIdMiddleware } from './common/middleware/correlation-id.middleware';
 import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
+import { applyRlsDriverPatch } from './common/database/rls-driver-patch';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
+
+  // Must run before the TypeORM DataSource is created so every pooled
+  // connection carries the tenant GUC that RLS policies filter on.
+  applyRlsDriverPatch();
 
   // HTTPS configuration
   const sslKeyPath = join(__dirname, '..', 'ssl', 'server.key');
