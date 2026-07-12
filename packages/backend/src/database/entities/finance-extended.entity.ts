@@ -1,4 +1,4 @@
-import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
+import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index, Unique } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Facility } from './facility.entity';
 import { ChartOfAccount } from './chart-of-account.entity';
@@ -216,11 +216,12 @@ export enum CreditNoteStatus {
 }
 
 @Entity('patient_credit_notes')
+@Unique(['tenantId', 'noteNumber'])
 export class PatientCreditNote extends BaseEntity {
   @Column({ name: 'facility_id', type: 'uuid' })
   facilityId: string;
 
-  @Column({ name: 'note_number', unique: true })
+  @Column({ name: 'note_number' })
   noteNumber: string;
 
   @Column({ name: 'invoice_id', type: 'uuid' })
@@ -264,11 +265,12 @@ export enum DepositStatus {
 }
 
 @Entity('patient_deposits')
+@Unique(['tenantId', 'depositNumber'])
 export class PatientDeposit extends BaseEntity {
   @Column({ name: 'facility_id', type: 'uuid' })
   facilityId: string;
 
-  @Column({ name: 'deposit_number', unique: true })
+  @Column({ name: 'deposit_number' })
   depositNumber: string;
 
   @Column({ name: 'patient_id', type: 'uuid' })
@@ -528,6 +530,7 @@ export enum InterFacilityStatus {
 }
 
 @Entity('interfacility_transactions')
+@Unique(['tenantId', 'referenceNumber'])
 export class InterFacilityTransaction extends BaseEntity {
   @Column({ name: 'source_facility_id', type: 'uuid' })
   sourceFacilityId: string;
@@ -535,7 +538,7 @@ export class InterFacilityTransaction extends BaseEntity {
   @Column({ name: 'target_facility_id', type: 'uuid' })
   targetFacilityId: string;
 
-  @Column({ name: 'reference_number', unique: true })
+  @Column({ name: 'reference_number' })
   referenceNumber: string;
 
   @Column({ type: 'decimal', precision: 15, scale: 2 })

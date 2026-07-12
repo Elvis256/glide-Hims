@@ -22,6 +22,7 @@ export enum ReturnStatus {
 }
 
 @Entity('pharmacy_returns')
+@Unique(['tenantId', 'returnNumber'])
 @Index(['tenantId', 'originalSaleId'])
 @Index(['tenantId', 'returnedAt'])
 @Index(['tenantId', 'posShiftId'])
@@ -33,7 +34,7 @@ export class PharmacyReturn extends BaseEntity {
   @JoinColumn({ name: 'original_sale_id' })
   originalSale: PharmacySale;
 
-  @Column({ name: 'return_number', unique: true })
+  @Column({ name: 'return_number' })
   returnNumber: string;
 
   @Column({ type: 'timestamptz', name: 'returned_at' })

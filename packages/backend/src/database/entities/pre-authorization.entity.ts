@@ -1,4 +1,4 @@
-import { Entity, Column, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, Column, ManyToOne, JoinColumn, Unique } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Facility } from './facility.entity';
 import { InsurancePolicy } from './insurance-policy.entity';
@@ -25,6 +25,7 @@ export enum PreAuthType {
 }
 
 @Entity('pre_authorizations')
+@Unique(['tenantId', 'authNumber'])
 export class PreAuthorization extends BaseEntity {
   @Column({ name: 'facility_id' })
   facilityId: string;
@@ -33,7 +34,7 @@ export class PreAuthorization extends BaseEntity {
   @JoinColumn({ name: 'facility_id' })
   facility: Facility;
 
-  @Column({ name: 'auth_number', unique: true })
+  @Column({ name: 'auth_number' })
   authNumber: string;
 
   @Column({ name: 'policy_id' })

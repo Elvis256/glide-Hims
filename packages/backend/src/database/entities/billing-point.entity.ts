@@ -1,4 +1,4 @@
-import { Entity, Column, ManyToOne, JoinColumn, Index } from 'typeorm';
+import { Entity, Column, ManyToOne, JoinColumn, Index, Unique } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Facility } from './facility.entity';
 import { Department } from './department.entity';
@@ -69,10 +69,11 @@ export class BillingPoint extends BaseEntity {
 }
 
 @Entity('cashier_sessions')
+@Unique(['tenantId', 'sessionNumber'])
 @Index(['billingPoint', 'openedAt'])
 @Index(['cashier', 'status'])
 export class CashierSession extends BaseEntity {
-  @Column({ name: 'session_number', unique: true })
+  @Column({ name: 'session_number' })
   sessionNumber: string;
 
   @ManyToOne(() => BillingPoint)

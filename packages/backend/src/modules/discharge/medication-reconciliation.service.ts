@@ -182,6 +182,20 @@ export class MedicationReconciliationService {
     });
     if (!item) throw new NotFoundException('Reconciliation item not found');
 
+    // A completed/signed reconciliation is a clinical document — items frozen
+    const parent = await this.reconRepo.findOne({
+      where: { id: item.reconciliationId, tenantId: tid },
+    });
+    if (
+      parent &&
+      (parent.status === ReconciliationStatus.COMPLETED ||
+        parent.status === ReconciliationStatus.SIGNED)
+    ) {
+      throw new BadRequestException(
+        'Cannot modify items on a completed or signed reconciliation',
+      );
+    }
+
     if (dto.reconciliationStatus) item.reconciliationStatus = dto.reconciliationStatus;
     if (dto.dischargeDose !== undefined) item.dischargeDose = dto.dischargeDose;
     if (dto.dischargeFrequency !== undefined) item.dischargeFrequency = dto.dischargeFrequency;
@@ -204,23 +218,36 @@ export class MedicationReconciliationService {
     tenantId?: string,
   ): Promise<MedicationReconciliation> {
     const tid = requireTenantId(tenantId);
-    const recon = await this.findById(id, tenantId);
-
-    if (recon.status === ReconciliationStatus.COMPLETED || recon.status === ReconciliationStatus.SIGNED) {
-      throw new BadRequestException('Reconciliation is already completed');
-    }
-
-    // Validate all items are reviewed
-    const unreviewed = (recon.items || []).filter(
-      (i) => i.reconciliationStatus === ReconciliationItemStatus.PENDING_REVIEW,
-    );
-    if (unreviewed.length > 0) {
-      throw new BadRequestException(
-        `${unreviewed.length} item(s) still pending review`,
-      );
-    }
 
     return this.dataSource.transaction(async (manager) => {
+      // Lock + re-validate inside the txn so concurrent completes serialize
+      const recon = await manager.findOne(MedicationReconciliation, {
+        where: { id, tenantId: tid },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!recon) throw new NotFoundException('Medication reconciliation not found');
+
+      if (
+        recon.status === ReconciliationStatus.COMPLETED ||
+        recon.status === ReconciliationStatus.SIGNED
+      ) {
+        throw new BadRequestException('Reconciliation is already completed');
+      }
+
+      recon.items = await manager.find(MedicationReconciliationItem, {
+        where: { reconciliationId: id, tenantId: tid },
+      });
+
+      // Validate all items are reviewed
+      const unreviewed = (recon.items || []).filter(
+        (i) => i.reconciliationStatus === ReconciliationItemStatus.PENDING_REVIEW,
+      );
+      if (unreviewed.length > 0) {
+        throw new BadRequestException(
+          `${unreviewed.length} item(s) still pending review`,
+        );
+      }
+
       // Stop discontinued active medications
       const discontinuedItems = (recon.items || []).filter(
         (i) =>
@@ -296,17 +323,24 @@ export class MedicationReconciliationService {
     userId: string,
     tenantId?: string,
   ): Promise<MedicationReconciliation> {
-    requireTenantId(tenantId);
-    const recon = await this.findById(id, tenantId);
+    const tid = requireTenantId(tenantId);
 
-    if (recon.status !== ReconciliationStatus.COMPLETED) {
-      throw new BadRequestException('Reconciliation must be completed before signing');
-    }
+    return this.dataSource.transaction(async (manager) => {
+      const recon = await manager.findOne(MedicationReconciliation, {
+        where: { id, tenantId: tid },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!recon) throw new NotFoundException('Medication reconciliation not found');
 
-    recon.status = ReconciliationStatus.SIGNED;
-    recon.signedById = userId;
-    recon.signedAt = new Date();
+      if (recon.status !== ReconciliationStatus.COMPLETED) {
+        throw new BadRequestException('Reconciliation must be completed before signing');
+      }
 
-    return this.reconRepo.save(recon);
+      recon.status = ReconciliationStatus.SIGNED;
+      recon.signedById = userId;
+      recon.signedAt = new Date();
+
+      return manager.save(recon);
+    });
   }
 }

@@ -8,6 +8,7 @@ import {
   JoinColumn,
   OneToMany,
   Index,
+  Unique,
 } from 'typeorm';
 import { Patient } from './patient.entity';
 import { Facility } from './facility.entity';
@@ -29,6 +30,7 @@ export enum RiskLevel {
 }
 
 @Entity('antenatal_registrations')
+@Unique(['tenantId', 'ancNumber'])
 @Index(['facilityId', 'status'])
 export class AntenatalRegistration {
   @PrimaryGeneratedColumn('uuid')
@@ -38,7 +40,7 @@ export class AntenatalRegistration {
   @Index()
   tenantId?: string;
 
-  @Column({ length: 20, unique: true, name: 'anc_number' })
+  @Column({ length: 20, name: 'anc_number' })
   ancNumber: string;
 
   // Patient

@@ -1,4 +1,4 @@
-import { Entity, Column, ManyToOne, JoinColumn, OneToMany, Index } from 'typeorm';
+import { Entity, Column, ManyToOne, JoinColumn, OneToMany, Index, Unique } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Facility } from './facility.entity';
 import { Supplier } from './supplier.entity';
@@ -22,6 +22,7 @@ export enum PaymentMethod {
 }
 
 @Entity('supplier_payments')
+@Unique(['tenantId', 'voucherNumber'])
 @Index(['voucherNumber'], { unique: true, where: 'deleted_at IS NULL' })
 export class SupplierPayment extends BaseEntity {
   @Column({ type: 'uuid', name: 'facility_id' })

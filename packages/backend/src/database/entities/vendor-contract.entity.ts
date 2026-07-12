@@ -1,4 +1,4 @@
-import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
+import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index, Unique } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Facility } from './facility.entity';
 import { User } from './user.entity';
@@ -14,11 +14,11 @@ export enum ContractStatus {
 }
 
 @Entity('vendor_contracts')
-@Index(['contractNumber'], { unique: true })
+@Unique(['tenantId', 'contractNumber'])
 @Index(['status'])
 @Index(['endDate'])
 export class VendorContract extends BaseEntity {
-  @Column({ name: 'contract_number', unique: true })
+  @Column({ name: 'contract_number' })
   contractNumber: string;
 
   @ManyToOne(() => Supplier)

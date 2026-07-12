@@ -1,4 +1,4 @@
-import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
+import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index, Unique } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Patient } from './patient.entity';
 import { Facility } from './facility.entity';
@@ -51,11 +51,11 @@ export enum PayerType {
 }
 
 @Entity('encounters')
-@Index(['visitNumber'], { unique: true })
+@Unique(['tenantId', 'visitNumber'])
 @Index(['patient', 'status'])
 @Index(['facility', 'createdAt'])
 export class Encounter extends BaseEntity {
-  @Column({ name: 'visit_number', unique: true })
+  @Column({ name: 'visit_number' })
   visitNumber: string;
 
   @Column({
