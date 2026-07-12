@@ -96,7 +96,7 @@ export class FinanceService {
     tenantId?: string,
   ) {
     const where: any = { facilityId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     if (options.type) where.accountType = options.type;
     if (options.active !== undefined) where.isActive = options.active;
 
@@ -108,7 +108,7 @@ export class FinanceService {
 
   async getAccountTree(facilityId: string, tenantId?: string): Promise<any[]> {
     const where: any = { facilityId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
 
     const accounts = await this.accountRepo.find({
       where,
@@ -252,7 +252,7 @@ export class FinanceService {
 
   async getFiscalPeriods(facilityId: string, year?: number, tenantId?: string) {
     const where: any = { facilityId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     if (year) where.fiscalYear = year;
 
     return this.fiscalPeriodRepo.find({
@@ -353,11 +353,13 @@ export class FinanceService {
       reversalDate,
       tenantId,
     );
-    const journalNumber = await this.generateJournalNumber(original.facilityId, tenantId);
 
     let reversalId = '';
 
     await this.dataSource.transaction(async (manager) => {
+      // Number generated INSIDE the txn under the advisory lock
+      const journalNumber = await this.generateJournalNumber(tenantId, manager);
+
       // Create the reversing journal entry (swap debits and credits)
       const reversal = manager.create(JournalEntry, {
         journalNumber,
@@ -421,32 +423,34 @@ export class FinanceService {
 
   // ============ JOURNAL ENTRIES ============
 
+  // Journal numbers are unique per (tenant_id, journal_number) — DB
+  // constraint uq_journal_entries_tenant_journal_number — but the old
+  // generator counted per FACILITY with no facility component in the number,
+  // so the second facility in a tenant collided with unique_violation 500s
+  // on every auto-post path. Now MAX+1 per tenant+month under an advisory
+  // lock, always via the caller's transaction manager.
   private async generateJournalNumber(
-    facilityId: string,
-    tenantId?: string,
-    manager?: EntityManager,
+    tenantId: string | undefined,
+    manager: EntityManager,
   ): Promise<string> {
+    const tid = requireTenantId(tenantId);
     const date = new Date();
     const yyyymm = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}`;
+    const prefix = `JE${yyyymm}`;
 
-    // Acquire a per-(tenant, facility, month) advisory lock so that two
-    // concurrent createJournalEntry transactions cannot derive the same
-    // journalNumber. Lock is released at transaction end. Falls back to a
-    // plain count when no manager is provided (old call sites).
-    if (manager) {
-      const key = `je:${tenantId ?? 'global'}:${facilityId}:${yyyymm}`;
-      await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [key]);
-      const repo = manager.getRepository(JournalEntry);
-      const count = await repo.count({
-        where: { facilityId, tenantId: requireTenantId(tenantId) },
-      });
-      return `JE${yyyymm}${String(count + 1).padStart(5, '0')}`;
-    }
+    await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+      `je:${tid}:${yyyymm}`,
+    ]);
 
-    const count = await this.journalRepo.count({
-      where: { facilityId, tenantId: requireTenantId(tenantId) },
-    });
-    return `JE${yyyymm}${String(count + 1).padStart(5, '0')}`;
+    const last = await manager
+      .createQueryBuilder(JournalEntry, 'je')
+      .where('je.journal_number LIKE :prefix', { prefix: `${prefix}%` })
+      .andWhere('je.tenant_id = :tid', { tid })
+      .orderBy('je.journal_number', 'DESC')
+      .getOne();
+
+    const seq = last ? (parseInt(last.journalNumber.slice(prefix.length), 10) || 0) + 1 : 1;
+    return `${prefix}${String(seq).padStart(5, '0')}`;
   }
 
   private async getFiscalPeriodForDate(
@@ -515,17 +519,8 @@ export class FinanceService {
       fiscalPeriod = await this.getFiscalPeriodForDate(dto.facilityId, journalDate);
     }
 
-    const journalNumber = await this.generateJournalNumber(dto.facilityId, tenantId);
-
     return this.dataSource.transaction(async (manager) => {
-      // Re-derive inside the tx so the advisory lock and final number are
-      // committed atomically (prevents duplicate journalNumbers under load).
-      const finalJournalNumber = await this.generateJournalNumber(
-        dto.facilityId,
-        tenantId,
-        manager,
-      );
-      void journalNumber;
+      const finalJournalNumber = await this.generateJournalNumber(tenantId, manager);
       const journal = manager.create(JournalEntry, {
         journalNumber: finalJournalNumber,
         facilityId: dto.facilityId,
@@ -623,9 +618,7 @@ export class FinanceService {
       });
     }
 
-    if (tenantId) {
-      qb.andWhere('je.tenantId = :tenantId', { tenantId });
-    }
+    qb.andWhere('je.tenantId = :tenantId', { tenantId: requireTenantId(tenantId) });
     return qb.orderBy('je.journalDate', 'DESC').addOrderBy('je.journalNumber', 'DESC').getMany();
   }
 
@@ -703,7 +696,13 @@ export class FinanceService {
           where: { id: line.accountId, tenantId: requireTenantId(tenantId) },
           lock: { mode: 'pessimistic_write' },
         });
-        if (!account) continue;
+        if (!account) {
+          // Silently skipping would post the journal while updating only
+          // SOME account balances — the books would no longer tie out
+          throw new NotFoundException(
+            `GL account ${line.accountId} on line ${line.lineNumber} no longer exists; cannot post`,
+          );
+        }
 
         // Sprint-6 money-cents sweep: cents arithmetic for COA
         // balance updates so posting hundreds of JEL rows can't
@@ -1654,7 +1653,7 @@ export class FinanceService {
       .where('jl.account_id = :accountId', { accountId })
       .andWhere('je.status = :status', { status: JournalStatus.POSTED });
 
-    if (tenantId) qb.andWhere('jl.tenant_id = :tenantId', { tenantId });
+    qb.andWhere('jl.tenant_id = :tenantId', { tenantId: requireTenantId(tenantId) });
     if (options.startDate)
       qb.andWhere('je.journal_date >= :startDate', { startDate: options.startDate });
     if (options.endDate) qb.andWhere('je.journal_date <= :endDate', { endDate: options.endDate });
@@ -1764,15 +1763,12 @@ export class FinanceService {
       ])
       .where('je.status = :status', { status: JournalStatus.POSTED })
       .andWhere('je.facility_id = :facilityId', { facilityId })
+      .andWhere('je.tenant_id = :tenantId', { tenantId: requireTenantId(tenantId) })
       .andWhere('je.journal_date >= :startDate', { startDate })
       .andWhere('je.journal_date <= :endDate', { endDate })
       .groupBy('acc.account_category, acc.account_type, acc.account_code, acc.account_name')
       .orderBy('acc.account_code', 'ASC')
       .getRawMany();
-
-    if (tenantId) {
-      // Re-query with tenant filter if needed
-    }
 
     // Operating Activities: Revenue - Expenses + Changes in AR/AP
     const operating: any[] = [];

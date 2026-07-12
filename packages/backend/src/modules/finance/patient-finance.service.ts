@@ -361,22 +361,29 @@ export class PatientFinanceService {
     tenantId?: string,
   ): Promise<Waiver> {
     const tid = requireTenantId(tenantId);
-    const where: any = { id: waiverId, tenantId: tid };
 
-    const waiver = await this.waiverRepo.findOne({ where });
-    if (!waiver) {
-      throw new NotFoundException(`Waiver ${waiverId} not found`);
-    }
+    // Locked like approveWaiver — an unlocked reject racing an approve could
+    // clobber a just-approved waiver back to REJECTED
+    return this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(Waiver);
+      const waiver = await repo.findOne({
+        where: { id: waiverId, tenantId: tid },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!waiver) {
+        throw new NotFoundException(`Waiver ${waiverId} not found`);
+      }
 
-    if (waiver.status !== WaiverStatus.PENDING) {
-      throw new BadRequestException(
-        `Waiver is in status '${waiver.status}' and cannot be rejected`,
-      );
-    }
+      if (waiver.status !== WaiverStatus.PENDING) {
+        throw new BadRequestException(
+          `Waiver is in status '${waiver.status}' and cannot be rejected`,
+        );
+      }
 
-    waiver.status = WaiverStatus.REJECTED;
-    waiver.approvedBy = userId;
-    waiver.rejectionReason = reason;
-    return this.waiverRepo.save(waiver);
+      waiver.status = WaiverStatus.REJECTED;
+      waiver.approvedBy = userId;
+      waiver.rejectionReason = reason;
+      return repo.save(waiver);
+    });
   }
 }

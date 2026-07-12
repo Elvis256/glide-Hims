@@ -217,29 +217,33 @@ export class DonorFundService {
   ): Promise<InterFacilityTransaction> {
     const tid = requireTenant(tenantId);
 
-    const txn = await this.interFacilityRepo.findOne({
-      where: { id, tenantId: tid },
+    return this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(InterFacilityTransaction);
+      const txn = await repo.findOne({
+        where: { id, tenantId: tid },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!txn) {
+        throw new NotFoundException(`Inter-facility transaction ${id} not found`);
+      }
+
+      if (txn.status !== InterFacilityStatus.PENDING) {
+        throw new BadRequestException(
+          `Transaction is in status '${txn.status}' and cannot be approved`,
+        );
+      }
+
+      // Segregation of duties: initiator cannot also approve
+      if (txn.createdBy && txn.createdBy === userId) {
+        throw new ForbiddenException(
+          'You cannot approve an inter-facility transaction you initiated',
+        );
+      }
+
+      txn.status = InterFacilityStatus.CONFIRMED;
+      txn.confirmedBy = userId;
+      return repo.save(txn);
     });
-    if (!txn) {
-      throw new NotFoundException(`Inter-facility transaction ${id} not found`);
-    }
-
-    if (txn.status !== InterFacilityStatus.PENDING) {
-      throw new BadRequestException(
-        `Transaction is in status '${txn.status}' and cannot be approved`,
-      );
-    }
-
-    // Segregation of duties: initiator cannot also approve
-    if (txn.createdBy && txn.createdBy === userId) {
-      throw new ForbiddenException(
-        'You cannot approve an inter-facility transaction you initiated',
-      );
-    }
-
-    txn.status = InterFacilityStatus.CONFIRMED;
-    txn.confirmedBy = userId;
-    return this.interFacilityRepo.save(txn);
   }
 
   async settleInterFacility(
@@ -249,21 +253,25 @@ export class DonorFundService {
   ): Promise<InterFacilityTransaction> {
     const tid = requireTenant(tenantId);
 
-    const txn = await this.interFacilityRepo.findOne({
-      where: { id, tenantId: tid },
+    return this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(InterFacilityTransaction);
+      const txn = await repo.findOne({
+        where: { id, tenantId: tid },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!txn) {
+        throw new NotFoundException(`Inter-facility transaction ${id} not found`);
+      }
+
+      if (txn.status !== InterFacilityStatus.CONFIRMED) {
+        throw new BadRequestException(
+          `Transaction must be confirmed before settling (current status: '${txn.status}')`,
+        );
+      }
+
+      txn.status = InterFacilityStatus.SETTLED;
+      txn.settledAt = new Date();
+      return repo.save(txn);
     });
-    if (!txn) {
-      throw new NotFoundException(`Inter-facility transaction ${id} not found`);
-    }
-
-    if (txn.status !== InterFacilityStatus.CONFIRMED) {
-      throw new BadRequestException(
-        `Transaction must be confirmed before settling (current status: '${txn.status}')`,
-      );
-    }
-
-    txn.status = InterFacilityStatus.SETTLED;
-    txn.settledAt = new Date();
-    return this.interFacilityRepo.save(txn);
   }
 }
