@@ -20,11 +20,18 @@ const mockManager = {
   create: jest.fn((entity, data) => ({ id: 'new-id', ...data })),
   save: jest.fn((entity) => Promise.resolve({ id: 'new-id', ...entity })),
   find: jest.fn(),
+  // Delegate to the repo mocks so tests keep configuring those
+  findOne: jest.fn((_entity: any, opts: any) => mockSurgeryCaseRepo.findOne(opts)),
+  update: jest.fn((_entity: any, criteria: any, values: any) =>
+    mockTheatreRepo.update(criteria, values),
+  ),
+  query: jest.fn().mockResolvedValue([]),
   createQueryBuilder: jest.fn(() => ({
     setLock: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
-    getOne: jest.fn(),
+    orderBy: jest.fn().mockReturnThis(),
+    getOne: jest.fn().mockResolvedValue(null),
     getCount: jest.fn().mockResolvedValue(0),
   })),
 };
@@ -148,7 +155,12 @@ describe('SurgeryService', () => {
         setLock: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
-        getOne: jest.fn().mockResolvedValue({ id: 'theatre-1', name: 'Theatre A' }),
+        orderBy: jest.fn().mockReturnThis(),
+        // First getOne: the locked theatre; second: case-number MAX lookup
+        getOne: jest
+          .fn()
+          .mockResolvedValueOnce({ id: 'theatre-1', name: 'Theatre A' })
+          .mockResolvedValue(null),
         getCount: jest.fn().mockResolvedValue(0),
       };
       mockManager.createQueryBuilder.mockReturnValue(qb);
@@ -193,6 +205,7 @@ describe('SurgeryService', () => {
         setLock: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
         getOne: jest.fn().mockResolvedValue({ id: 'theatre-1' }),
         getCount: jest.fn().mockResolvedValue(0),
       };
@@ -223,6 +236,7 @@ describe('SurgeryService', () => {
         setLock: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
         getOne: jest.fn().mockResolvedValue(null),
         getCount: jest.fn().mockResolvedValue(0),
       };
@@ -492,6 +506,8 @@ describe('SurgeryService', () => {
 
       mockSurgeryCaseRepo.findOne.mockResolvedValue(existingCase);
       mockSurgeryCaseRepo.save.mockImplementation((entity: any) => Promise.resolve(entity));
+      // New slot is free
+      mockSurgeryCaseRepo.find.mockResolvedValue([]);
 
       const dto = {
         reason: 'Surgeon unavailable',

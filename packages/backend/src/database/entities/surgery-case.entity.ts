@@ -7,6 +7,7 @@ import {
   ManyToOne,
   JoinColumn,
   Index,
+  Unique,
 } from 'typeorm';
 import { Patient } from './patient.entity';
 import { Encounter } from './encounter.entity';
@@ -46,6 +47,7 @@ export enum AnesthesiaType {
 }
 
 @Entity('surgery_cases')
+@Unique(['tenantId', 'caseNumber'])
 export class SurgeryCase {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -54,7 +56,7 @@ export class SurgeryCase {
   @Index()
   tenantId?: string;
 
-  @Column({ length: 20, unique: true, name: 'case_number' })
+  @Column({ length: 20, name: 'case_number' })
   caseNumber: string;
 
   // Patient info
