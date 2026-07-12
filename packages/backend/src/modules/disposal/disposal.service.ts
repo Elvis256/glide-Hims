@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, FindOptionsWhere } from 'typeorm';
+import { requireTenantId } from '../../common/utils/tenant.util';
 import { DisposalRecord, ComplianceStatus } from '../../database/entities/disposal.entity';
 import { CreateDisposalDto, UpdateDisposalDto, DisposalQueryDto } from './disposal.dto';
 import { InventoryService } from '../inventory/inventory.service';
@@ -21,7 +22,7 @@ export class DisposalService {
       totalValue,
       disposedById: userId,
       complianceStatus: ComplianceStatus.PENDING_REVIEW,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: requireTenantId(tenantId),
     });
 
     const saved = await this.disposalRepository.save(disposal);
@@ -51,7 +52,7 @@ export class DisposalService {
     if (query.facilityId) where.facilityId = query.facilityId;
     if (query.disposalMethod) where.disposalMethod = query.disposalMethod;
     if (query.complianceStatus) where.complianceStatus = query.complianceStatus;
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
 
     const page = query.page || 1;
     const limit = query.limit || 20;
@@ -69,7 +70,7 @@ export class DisposalService {
 
   async findByFacility(facilityId: string, tenantId?: string) {
     return this.disposalRepository.find({
-      where: { facilityId, ...(tenantId ? { tenantId } : {}) },
+      where: { facilityId, tenantId: requireTenantId(tenantId) },
       relations: ['item', 'disposedBy', 'approvedBy'],
       order: { createdAt: 'DESC' },
     });
@@ -77,7 +78,7 @@ export class DisposalService {
 
   async findOne(id: string, tenantId?: string): Promise<DisposalRecord> {
     const record = await this.disposalRepository.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
       relations: ['item', 'facility', 'disposedBy', 'approvedBy'],
     });
     if (!record) throw new NotFoundException('Disposal record not found');
@@ -117,6 +118,7 @@ export class DisposalService {
   }
 
   async getStats(facilityId: string, startDate?: Date, endDate?: Date, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const qb = this.disposalRepository
       .createQueryBuilder('d')
       .select('d.disposalMethod', 'method')
@@ -129,14 +131,13 @@ export class DisposalService {
       qb.andWhere('d.disposalDate BETWEEN :startDate AND :endDate', { startDate, endDate });
     }
 
-    if (tenantId) {
-      qb.andWhere('d.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('d.tenant_id = :tenantId', { tenantId: tid });
 
     return qb.groupBy('d.disposalMethod').getRawMany();
   }
 
   async getSummary(facilityId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const qb = this.disposalRepository
       .createQueryBuilder('d')
       .select('d.complianceStatus', 'status')
@@ -144,9 +145,7 @@ export class DisposalService {
       .addSelect('SUM(d.totalValue)', 'totalValue')
       .where('d.facilityId = :facilityId', { facilityId });
 
-    if (tenantId) {
-      qb.andWhere('d.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('d.tenant_id = :tenantId', { tenantId: tid });
 
     return qb.groupBy('d.complianceStatus').getRawMany();
   }

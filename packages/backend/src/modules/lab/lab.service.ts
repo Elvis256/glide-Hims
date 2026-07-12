@@ -32,6 +32,7 @@ import { InAppNotificationsService } from '../in-app-notifications/in-app-notifi
 import { NotificationsService } from '../notifications/notifications.service';
 import { EncountersService } from '../encounters/encounters.service';
 import { CriticalResultsService } from '../critical-results/critical-results.service';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class LabService {
@@ -123,21 +124,23 @@ export class LabService {
 
   // ========== LAB TEST CATALOG ==========
   async createLabTest(dto: CreateLabTestDto, tenantId?: string): Promise<LabTest> {
+    const tid = requireTenantId(tenantId);
     this.validateReferenceRanges(dto.referenceRanges);
 
     const existing = await this.labTestRepo.findOne({
-      where: { code: dto.code, ...(tenantId ? { tenantId } : {}) },
+      where: { code: dto.code, tenantId: tid },
     });
     if (existing) throw new BadRequestException('Test code already exists');
 
-    const test = this.labTestRepo.create({ ...dto, ...(tenantId ? { tenantId } : {}) });
+    const test = this.labTestRepo.create({ ...dto, tenantId: tid });
     return this.labTestRepo.save(test);
   }
 
   async getLabTests(query: LabTestQueryDto, tenantId?: string): Promise<LabTest[]> {
+    const tid = requireTenantId(tenantId);
     const qb = this.labTestRepo.createQueryBuilder('test');
 
-    if (tenantId) qb.andWhere('test.tenant_id = :tenantId', { tenantId });
+    qb.andWhere('test.tenant_id = :tenantId', { tenantId: tid });
     if (query.category) qb.andWhere('test.category = :category', { category: query.category });
     if (query.status) qb.andWhere('test.status = :status', { status: query.status });
     if (query.search) {
@@ -150,8 +153,8 @@ export class LabService {
   }
 
   async getLabTest(id: string, tenantId?: string): Promise<LabTest> {
-    const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { id, tenantId: tid };
     const test = await this.labTestRepo.findOne({ where });
     if (!test) throw new NotFoundException('Lab test not found');
     return test;
@@ -176,8 +179,9 @@ export class LabService {
     userId: string,
     tenantId?: string,
   ): Promise<LabSample[]> {
+    const tid = requireTenantId(tenantId);
     const order = await this.orderRepo.findOne({
-      where: { id: orderId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: orderId, tenantId: tid },
       relations: ['encounter'],
     });
     if (!order) throw new NotFoundException(`Order not found: ${orderId}`);
@@ -215,7 +219,7 @@ export class LabService {
       for (const tc of testCodes) {
         // Resolve lab test by code, with keyword-based name fallback
         let labTest = await manager.findOne(LabTest, {
-          where: { code: tc.code, ...(tenantId ? { tenantId } : {}) },
+          where: { code: tc.code, tenantId: tid },
         });
         if (!labTest && tc.name) {
           const stopWords = new Set([
@@ -244,7 +248,7 @@ export class LabService {
                 {},
               ),
             );
-            if (tenantId) qb.andWhere('t.tenant_id = :tenantId', { tenantId });
+            qb.andWhere('t.tenant_id = :tenantId', { tenantId: tid });
             labTest = await qb.limit(1).getOne();
           }
         }
@@ -275,7 +279,7 @@ export class LabService {
             status: SampleStatus.COLLECTED,
             collectionTime: new Date(),
             collectedById: userId,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: tid,
           });
           sample = await manager.save(LabSample, sample);
           this.logger.log(
@@ -308,18 +312,18 @@ export class LabService {
     userId: string,
     tenantId?: string,
   ): Promise<LabSample> {
+    const tid = requireTenantId(tenantId);
     // Resolve labTestId from code if not provided
     let labTestId = dto.labTestId;
     if (!labTestId && dto.labTestCode) {
-      const tenantWhere = tenantId ? { tenantId } : {};
       // Try exact code match first
       let labTest = await this.labTestRepo.findOne({
-        where: { code: dto.labTestCode, ...tenantWhere },
+        where: { code: dto.labTestCode, tenantId: tid },
       });
       // Fallback: search by name keywords from the order's test entry
       if (!labTest) {
         const order = await this.orderRepo.findOne({
-          where: { id: dto.orderId, ...(tenantId ? { tenantId } : {}) },
+          where: { id: dto.orderId, tenantId: tid },
         });
         const testEntry = order?.testCodes?.find((t) => t.code === dto.labTestCode);
         if (testEntry?.name) {
@@ -349,7 +353,7 @@ export class LabService {
                 {},
               ),
             );
-            if (tenantId) qb.andWhere('t.tenant_id = :tenantId', { tenantId });
+            qb.andWhere('t.tenant_id = :tenantId', { tenantId: tid });
             labTest = await qb.limit(1).getOne();
           }
         }
@@ -366,11 +370,11 @@ export class LabService {
 
     // Validate that all referenced entities exist before creating sample
     const [order, labTest, patient, facility] = await Promise.all([
-      this.orderRepo.findOne({ where: { id: dto.orderId, ...(tenantId ? { tenantId } : {}) } }),
-      this.labTestRepo.findOne({ where: { id: labTestId, ...(tenantId ? { tenantId } : {}) } }),
-      this.patientRepo.findOne({ where: { id: dto.patientId, ...(tenantId ? { tenantId } : {}) } }),
+      this.orderRepo.findOne({ where: { id: dto.orderId, tenantId: tid } }),
+      this.labTestRepo.findOne({ where: { id: labTestId, tenantId: tid } }),
+      this.patientRepo.findOne({ where: { id: dto.patientId, tenantId: tid } }),
       this.facilityRepo.findOne({
-        where: { id: dto.facilityId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: dto.facilityId, tenantId: tid },
       }),
     ]);
 
@@ -403,11 +407,10 @@ export class LabService {
       // keyed by (order, test). Without this, two concurrent collect calls
       // both observe `existing=null` outside the txn, both pass the guard,
       // and both insert — there is no DB UNIQUE on (orderId, labTestId).
-      const dupLockKey = `lab_sample_dup_${dto.orderId}_${labTestId}_${tenantId || 'global'}`;
+      const dupLockKey = `lab_sample_dup_${dto.orderId}_${labTestId}_${tid}`;
       await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [dupLockKey]);
 
-      const dupWhere: any = { orderId: dto.orderId, labTestId };
-      if (tenantId) dupWhere.tenantId = tenantId;
+      const dupWhere: any = { orderId: dto.orderId, labTestId, tenantId: tid };
       const duplicate = await manager.findOne(LabSample, { where: dupWhere });
       if (duplicate) {
         throw new BadRequestException(
@@ -430,7 +433,7 @@ export class LabService {
         status: SampleStatus.COLLECTED,
         collectionTime: new Date(),
         collectedById: userId,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       });
 
       const savedSample = await manager.save(sample);
@@ -445,6 +448,7 @@ export class LabService {
     query: SampleQueryDto,
     tenantId?: string,
   ): Promise<{ data: LabSample[]; total: number; limit: number; offset: number }> {
+    const tid = requireTenantId(tenantId);
     const qb = this.sampleRepo
       .createQueryBuilder('sample')
       .leftJoinAndSelect('sample.patient', 'patient')
@@ -452,7 +456,7 @@ export class LabService {
       .leftJoinAndSelect('sample.order', 'order')
       .leftJoinAndSelect('sample.collectedBy', 'collectedBy');
 
-    if (tenantId) qb.andWhere('sample.tenant_id = :tenantId', { tenantId });
+    qb.andWhere('sample.tenant_id = :tenantId', { tenantId: tid });
     if (query.facilityId)
       qb.andWhere('sample.facilityId = :facilityId', { facilityId: query.facilityId });
     if (query.orderId) qb.andWhere('sample.orderId = :orderId', { orderId: query.orderId });
@@ -481,8 +485,8 @@ export class LabService {
   }
 
   async getSample(id: string, tenantId?: string): Promise<LabSample> {
-    const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { id, tenantId: tid };
     const sample = await this.sampleRepo.findOne({
       where,
       relations: ['patient', 'labTest', 'order', 'results', 'collectedBy', 'processedBy'],
@@ -497,6 +501,7 @@ export class LabService {
     userId: string,
     tenantId?: string,
   ): Promise<LabSample> {
+    const tid = requireTenantId(tenantId);
     // P1-3: lock the sample row inside a transaction and re-check status,
     // otherwise two concurrent receive calls both observe COLLECTED, both
     // pass the guard, and the second silently overwrites receivedTime.
@@ -506,7 +511,7 @@ export class LabService {
         .createQueryBuilder('s')
         .setLock('pessimistic_write')
         .where('s.id = :id', { id });
-      if (tenantId) qb.andWhere('s.tenant_id = :tenantId', { tenantId });
+      qb.andWhere('s.tenant_id = :tenantId', { tenantId: tid });
       const sample = await qb.getOne();
       if (!sample) throw new NotFoundException('Sample not found');
 
@@ -549,6 +554,7 @@ export class LabService {
   }
 
   async startProcessing(id: string, userId: string, tenantId?: string): Promise<LabSample> {
+    const tid = requireTenantId(tenantId);
     // P1-3: lock + re-check inside txn (same rationale as receiveSample).
     return this.dataSource.transaction(async (manager) => {
       const qb = manager
@@ -556,7 +562,7 @@ export class LabService {
         .createQueryBuilder('s')
         .setLock('pessimistic_write')
         .where('s.id = :id', { id });
-      if (tenantId) qb.andWhere('s.tenant_id = :tenantId', { tenantId });
+      qb.andWhere('s.tenant_id = :tenantId', { tenantId: tid });
       const sample = await qb.getOne();
       if (!sample) throw new NotFoundException('Sample not found');
 
@@ -600,6 +606,7 @@ export class LabService {
     userId: string,
     tenantId?: string,
   ): Promise<LabSample> {
+    const tid = requireTenantId(tenantId);
     // P1-4: TOCTOU — guard + status save must happen under one txn with
     // a row lock; otherwise a concurrent releaseResult can insert a
     // RELEASED row between the guard and the save, leaving the sample
@@ -613,7 +620,7 @@ export class LabService {
         .createQueryBuilder('s')
         .setLock('pessimistic_write')
         .where('s.id = :id', { id });
-      if (tenantId) qb.andWhere('s.tenant_id = :tenantId', { tenantId });
+      qb.andWhere('s.tenant_id = :tenantId', { tenantId: tid });
       const sample = await qb.getOne();
       if (!sample) throw new NotFoundException('Sample not found');
 
@@ -622,7 +629,7 @@ export class LabService {
           where: {
             sampleId: id,
             status: ResultStatus.RELEASED,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: tid,
           },
         });
         if (releasedResults.length > 0) {
@@ -654,7 +661,7 @@ export class LabService {
       let revertedOrderId: string | null = null;
       if (sample.orderId) {
         const order = await manager.getRepository(Order).findOne({
-          where: { id: sample.orderId, ...(tenantId ? { tenantId } : {}) },
+          where: { id: sample.orderId, tenantId: tid },
         });
         if (order && order.status === OrderStatus.IN_PROGRESS) {
           order.status = OrderStatus.PENDING;
@@ -785,7 +792,8 @@ export class LabService {
     userId: string,
     tenantId?: string,
   ): Promise<LabResult> {
-    const sample = await this.getSample(sampleId, tenantId);
+    const tid = requireTenantId(tenantId);
+    const sample = await this.getSample(sampleId, tid);
 
     // P2: numeric plausibility on per-result reference bounds.
     if (
@@ -912,7 +920,7 @@ export class LabService {
         abnormalFlag,
         status: ResultStatus.ENTERED,
         enteredById: userId,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       });
 
       const savedResult = await manager.save(LabResult, result);
@@ -928,7 +936,8 @@ export class LabService {
     tenantId?: string,
     opts: { canSeeUnreleased?: boolean } = {},
   ): Promise<LabResult[]> {
-    const where: any = { sampleId, ...(tenantId ? { tenantId } : {}) };
+    const tid = requireTenantId(tenantId);
+    const where: any = { sampleId, tenantId: tid };
     // P1-RBAC: clinicians without labqc.view see only released/amended
     // results — pending/entered/validated stay invisible until QC release.
     if (!opts.canSeeUnreleased) {
@@ -947,6 +956,7 @@ export class LabService {
     userId: string,
     tenantId?: string,
   ): Promise<LabResult> {
+    const tid = requireTenantId(tenantId);
     // P0: lock the result row INSIDE a transaction before checking status,
     // otherwise two concurrent reviewers can both observe status=ENTERED,
     // both pass the guard, and both stamp validatedBy — defeating the
@@ -957,7 +967,7 @@ export class LabService {
         .createQueryBuilder('lr')
         .setLock('pessimistic_write')
         .where('lr.id = :id', { id });
-      if (tenantId) qb.andWhere('lr.tenant_id = :tenantId', { tenantId });
+      qb.andWhere('lr.tenant_id = :tenantId', { tenantId: tid });
       const result = await qb.getOne();
       if (!result) throw new NotFoundException('Result not found');
 
@@ -1003,7 +1013,7 @@ export class LabService {
     // Notify ordering doctor + raise a critical-result alert if abnormal/critical
     try {
       const sample = await this.sampleRepo.findOne({
-        where: { id: savedResult.sampleId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: savedResult.sampleId, tenantId: tid },
         relations: ['order', 'order.encounter', 'order.encounter.patient'],
       });
       if (sample?.order?.orderedById && sample.order.encounter?.patient) {
@@ -1013,7 +1023,7 @@ export class LabService {
           savedResult.parameter || 'Lab test',
           sample.id,
           sample.order.encounter?.facilityId,
-          tenantId,
+          tid,
         );
       }
 
@@ -1041,6 +1051,7 @@ export class LabService {
   }
 
   async releaseResult(id: string, userId: string, tenantId?: string): Promise<LabResult> {
+    const tid = requireTenantId(tenantId);
     // P0: lock the result row INSIDE the transaction and re-check status.
     // The previous implementation read the result OUTSIDE the txn so two
     // concurrent release calls could both observe status=VALIDATED, both
@@ -1052,7 +1063,7 @@ export class LabService {
         .createQueryBuilder('lr')
         .setLock('pessimistic_write')
         .where('lr.id = :id', { id });
-      if (tenantId) resultQb.andWhere('lr.tenant_id = :tenantId', { tenantId });
+      resultQb.andWhere('lr.tenant_id = :tenantId', { tenantId: tid });
       const result = await resultQb.getOne();
       if (!result) throw new NotFoundException('Result not found');
 
@@ -1067,7 +1078,7 @@ export class LabService {
 
       // Lock the sample row to prevent concurrent modifications
       const lockedSample = await manager.findOne(LabSample, {
-        where: { id: result.sampleId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: result.sampleId, tenantId: tid },
         lock: { mode: 'pessimistic_write' },
       });
       if (lockedSample && lockedSample.status === SampleStatus.REJECTED) {
@@ -1097,7 +1108,7 @@ export class LabService {
 
       // Check if all results for sample are released
       const allResults = await manager.find(LabResult, {
-        where: { sampleId: result.sampleId, ...(tenantId ? { tenantId } : {}) },
+        where: { sampleId: result.sampleId, tenantId: tid },
       });
       const allReleased = allResults.every(
         (r) => r.id === id || r.status === ResultStatus.RELEASED,
@@ -1186,6 +1197,7 @@ export class LabService {
     userId: string,
     tenantId?: string,
   ): Promise<LabResult> {
+    const tid = requireTenantId(tenantId);
     // Concurrent amendments on the same result must not silently clobber
     // each other. We open a transaction and acquire a pessimistic write lock
     // on the row before reading-modifying-writing, so the second amender
@@ -1197,7 +1209,7 @@ export class LabService {
         .createQueryBuilder('lr')
         .setLock('pessimistic_write')
         .where('lr.id = :id', { id });
-      if (tenantId) qb.andWhere('lr.tenant_id = :tenantId', { tenantId });
+      qb.andWhere('lr.tenant_id = :tenantId', { tenantId: tid });
       const result = await qb.getOne();
       if (!result) throw new NotFoundException('Result not found');
 
@@ -1347,6 +1359,7 @@ export class LabService {
     facilityId?: string,
     tenantId?: string,
   ): Promise<{ pending: number; completed: number }> {
+    const tid = requireTenantId(tenantId);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -1356,9 +1369,7 @@ export class LabService {
         statuses: [SampleStatus.COLLECTED, SampleStatus.RECEIVED, SampleStatus.PROCESSING],
       });
 
-    if (tenantId) {
-      pendingQuery.andWhere('s.tenant_id = :tenantId', { tenantId });
-    }
+    pendingQuery.andWhere('s.tenant_id = :tenantId', { tenantId: tid });
     if (facilityId) {
       pendingQuery.andWhere('s.facilityId = :facilityId', { facilityId });
     }
@@ -1370,9 +1381,7 @@ export class LabService {
       .where('s.status = :status', { status: SampleStatus.COMPLETED })
       .andWhere('s.completedTime >= :today', { today });
 
-    if (tenantId) {
-      completedQuery.andWhere('s.tenant_id = :tenantId', { tenantId });
-    }
+    completedQuery.andWhere('s.tenant_id = :tenantId', { tenantId: tid });
     if (facilityId) {
       completedQuery.andWhere('s.facilityId = :facilityId', { facilityId });
     }
@@ -1383,18 +1392,19 @@ export class LabService {
   }
 
   async getLabQueue(facilityId: string, tenantId?: string): Promise<any> {
+    const tid = requireTenantId(tenantId);
     const pendingCollectionWhere: any = { orderType: OrderType.LAB, status: OrderStatus.PENDING };
-    if (tenantId) pendingCollectionWhere.tenantId = tenantId;
+    pendingCollectionWhere.tenantId = tid;
     const pendingCollection = await this.orderRepo.count({
       where: pendingCollectionWhere,
     });
 
     const pendingProcessing = await this.sampleRepo.count({
-      where: { facilityId, status: SampleStatus.RECEIVED, ...(tenantId ? { tenantId } : {}) },
+      where: { facilityId, status: SampleStatus.RECEIVED, tenantId: tid },
     });
 
     const inProgress = await this.sampleRepo.count({
-      where: { facilityId, status: SampleStatus.PROCESSING, ...(tenantId ? { tenantId } : {}) },
+      where: { facilityId, status: SampleStatus.PROCESSING, tenantId: tid },
     });
 
     const completedTodayQb = this.sampleRepo
@@ -1402,7 +1412,7 @@ export class LabService {
       .where('s.facilityId = :facilityId', { facilityId })
       .andWhere('s.status = :status', { status: SampleStatus.COMPLETED })
       .andWhere('DATE(s.completedTime) = CURRENT_DATE');
-    if (tenantId) completedTodayQb.andWhere('s.tenant_id = :tenantId', { tenantId });
+    completedTodayQb.andWhere('s.tenant_id = :tenantId', { tenantId: tid });
     const completedToday = await completedTodayQb.getCount();
 
     return {
@@ -1414,9 +1424,10 @@ export class LabService {
   }
 
   async getTurnaroundStats(facilityId: string, days = 7, tenantId?: string): Promise<any[]> {
+    const tid = requireTenantId(tenantId);
     // P1: validate facility exists and belongs to tenant
     const facility = await this.facilityRepo.findOne({
-      where: { id: facilityId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: facilityId, tenantId: tid },
     });
     if (!facility) throw new NotFoundException('Facility not found');
 
@@ -1434,9 +1445,7 @@ export class LabService {
         days: safeDays,
       });
 
-    if (tenantId) {
-      qb.andWhere('s.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('s.tenant_id = :tenantId', { tenantId: tid });
 
     const results = await qb.groupBy('DATE(s.collectionTime)').orderBy('date', 'DESC').getRawMany();
 
@@ -1464,6 +1473,7 @@ export class LabService {
     page = 1,
     limit = 50,
   ): Promise<{ data: LabResult[]; total: number }> {
+    const tid = requireTenantId(tenantId);
     const safePage = Math.max(Math.floor(page), 1);
     const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 200);
 
@@ -1477,13 +1487,11 @@ export class LabService {
       })
       .orderBy('result.createdAt', 'DESC');
 
-    if (tenantId) {
-      // P0: filter on the result row's own tenant_id, not the joined
-      // sample's. A NULL sample (orphaned/soft-deleted) would otherwise
-      // make the join-side filter pass silently and leak cross-tenant
-      // critical results.
-      qb.andWhere('result.tenant_id = :tenantId', { tenantId });
-    }
+    // P0: filter on the result row's own tenant_id, not the joined
+    // sample's. A NULL sample (orphaned/soft-deleted) would otherwise
+    // make the join-side filter pass silently and leak cross-tenant
+    // critical results.
+    qb.andWhere('result.tenant_id = :tenantId', { tenantId: tid });
     if (facilityId) {
       // P1: inner-join through sample to ensure only results from that
       // facility appear (left join would include results with NULL sample).

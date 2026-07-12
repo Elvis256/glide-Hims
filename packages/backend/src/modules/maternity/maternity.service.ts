@@ -40,6 +40,7 @@ import {
   AdministerVaccineDto,
 } from './dto/maternity.dto';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class MaternityService {
@@ -65,12 +66,13 @@ export class MaternityService {
   // ============ ANC REGISTRATION ============
 
   private async generateAncNumber(facilityId: string, tenantId?: string): Promise<string> {
+    const tid = requireTenantId(tenantId);
     const year = new Date().getFullYear();
     const count = await this.ancRepo.count({
       where: {
         facilityId,
         createdAt: MoreThanOrEqual(new Date(`${year}-01-01`)),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
     });
     return `ANC${year}-${String(count + 1).padStart(5, '0')}`;
@@ -123,7 +125,7 @@ export class MaternityService {
       registrationDate: new Date(),
       status: PregnancyStatus.ACTIVE,
     });
-    if (tenantId) registration.tenantId = tenantId;
+    registration.tenantId = requireTenantId(tenantId);
 
     const saved = await this.ancRepo.save(registration);
 
@@ -148,7 +150,7 @@ export class MaternityService {
   ) {
     const where: any = { facilityId };
     if (options.status) where.status = options.status;
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
 
     const [data, total] = await this.ancRepo.findAndCount({
       where,
@@ -175,7 +177,7 @@ export class MaternityService {
     tenantId?: string,
   ): Promise<AntenatalRegistration & { currentGestationalAge: number }> {
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
 
     const reg = await this.ancRepo.findOne({
       where,
@@ -202,7 +204,7 @@ export class MaternityService {
       status: PregnancyStatus.ACTIVE,
       edd: Between(today, futureDate),
     };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
 
     return this.ancRepo.find({
       where,
@@ -219,14 +221,14 @@ export class MaternityService {
     tenantId?: string,
   ): Promise<AntenatalVisit> {
     const regWhere: any = { id: dto.registrationId };
-    if (tenantId) regWhere.tenantId = tenantId;
+    regWhere.tenantId = requireTenantId(tenantId);
 
     const registration = await this.ancRepo.findOne({ where: regWhere });
     if (!registration) throw new NotFoundException('ANC registration not found');
 
     // Get visit number
     const visitCount = await this.visitRepo.count({
-      where: { registrationId: dto.registrationId, ...(tenantId ? { tenantId } : {}) },
+      where: { registrationId: dto.registrationId, tenantId: requireTenantId(tenantId) },
     });
 
     const visit = this.visitRepo.create({
@@ -259,7 +261,7 @@ export class MaternityService {
       nextVisitDate: dto.nextVisitDate ? new Date(dto.nextVisitDate) : undefined,
       seenById: userId,
     });
-    if (tenantId) visit.tenantId = tenantId;
+    visit.tenantId = requireTenantId(tenantId);
 
     const savedVisit = await this.visitRepo.save(visit);
 
@@ -279,7 +281,7 @@ export class MaternityService {
 
   async getVisits(registrationId: string, tenantId?: string): Promise<AntenatalVisit[]> {
     const where: any = { registrationId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
 
     return this.visitRepo.find({
       where,
@@ -303,7 +305,7 @@ export class MaternityService {
       where: {
         facilityId,
         createdAt: Between(startOfDay, endOfDay),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
     });
 
@@ -312,7 +314,7 @@ export class MaternityService {
 
   async admitLabour(dto: AdmitLabourDto, userId: string, tenantId?: string): Promise<LabourRecord> {
     const registration = await this.ancRepo.findOne({
-      where: { id: dto.registrationId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: dto.registrationId, tenantId: requireTenantId(tenantId) },
     });
     if (!registration) throw new NotFoundException('ANC registration not found');
 
@@ -330,7 +332,7 @@ export class MaternityService {
       cervicalDilation: dto.cervicalDilation,
       status: LabourStatus.ADMITTED,
     });
-    if (tenantId) labour.tenantId = tenantId;
+    labour.tenantId = requireTenantId(tenantId);
 
     const savedLabour = await this.labourRepo.save(labour);
 
@@ -350,7 +352,7 @@ export class MaternityService {
 
   async getLabourById(id: string, tenantId?: string): Promise<LabourRecord> {
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
 
     const labour = await this.labourRepo.findOne({
       where,
@@ -369,7 +371,7 @@ export class MaternityService {
       const labourRepoTx = manager.getRepository(LabourRecord);
 
       const labour = await labourRepoTx.findOne({
-        where: { id, ...(tenantId ? { tenantId } : {}) },
+        where: { id, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!labour) throw new NotFoundException('Labour record not found');
@@ -406,7 +408,7 @@ export class MaternityService {
       const ancRepoTx = manager.getRepository(AntenatalRegistration);
 
       const labour = await labourRepoTx.findOne({
-        where: { id, ...(tenantId ? { tenantId } : {}) },
+        where: { id, tenantId: requireTenantId(tenantId) },
         relations: ['registration', 'registration.patient', 'facility', 'deliveredBy'],
         lock: { mode: 'pessimistic_write' },
       });
@@ -426,7 +428,7 @@ export class MaternityService {
 
       // Update ANC registration status (atomic with labour save)
       await ancRepoTx.update(
-        { id: labour.registrationId, ...(tenantId ? { tenantId } : {}) },
+        { id: labour.registrationId, tenantId: requireTenantId(tenantId) },
         { status: PregnancyStatus.DELIVERED },
       );
 
@@ -453,7 +455,7 @@ export class MaternityService {
     tenantId?: string,
   ): Promise<DeliveryOutcome> {
     const labour = await this.labourRepo.findOne({
-      where: { id: dto.labourRecordId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: dto.labourRecordId, tenantId: requireTenantId(tenantId) },
     });
     if (!labour) throw new NotFoundException('Labour record not found');
 
@@ -480,7 +482,7 @@ export class MaternityService {
           ? BabyStatus.DECEASED
           : BabyStatus.ALIVE,
     });
-    if (tenantId) outcome.tenantId = tenantId;
+    outcome.tenantId = requireTenantId(tenantId);
 
     const savedOutcome = await this.outcomeRepo.save(outcome);
 
@@ -500,7 +502,7 @@ export class MaternityService {
 
   async getBabyOutcomes(labourRecordId: string, tenantId?: string): Promise<DeliveryOutcome[]> {
     const where: any = { labourRecordId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
 
     return this.outcomeRepo.find({
       where,
@@ -517,34 +519,34 @@ export class MaternityService {
     thirtyDaysAhead.setDate(thirtyDaysAhead.getDate() + 30);
 
     const activeRegWhere: any = { facilityId, status: PregnancyStatus.ACTIVE };
-    if (tenantId) activeRegWhere.tenantId = tenantId;
+    activeRegWhere.tenantId = requireTenantId(tenantId);
 
     const dueSoonWhere: any = {
       facilityId,
       status: PregnancyStatus.ACTIVE,
       edd: Between(today, thirtyDaysAhead),
     };
-    if (tenantId) dueSoonWhere.tenantId = tenantId;
+    dueSoonWhere.tenantId = requireTenantId(tenantId);
 
     const activeLabourWhere: any = {
       facilityId,
       status: LabourStatus.ADMITTED,
     };
-    if (tenantId) activeLabourWhere.tenantId = tenantId;
+    activeLabourWhere.tenantId = requireTenantId(tenantId);
 
     const deliveredWhere: any = {
       facilityId,
       status: LabourStatus.DELIVERED,
       deliveryTime: MoreThanOrEqual(startOfMonth),
     };
-    if (tenantId) deliveredWhere.tenantId = tenantId;
+    deliveredWhere.tenantId = requireTenantId(tenantId);
 
     const highRiskWhere: any = {
       facilityId,
       status: PregnancyStatus.ACTIVE,
       riskLevel: RiskLevel.HIGH,
     };
-    if (tenantId) highRiskWhere.tenantId = tenantId;
+    highRiskWhere.tenantId = requireTenantId(tenantId);
 
     const [activeRegistrations, dueSoon, activeLabours, deliveriesThisMonth, highRiskCount] =
       await Promise.all([
@@ -575,7 +577,7 @@ export class MaternityService {
       facilityId,
       status: LabourStatus.ADMITTED,
     };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
 
     return this.labourRepo.find({
       where,
@@ -592,7 +594,7 @@ export class MaternityService {
     tenantId?: string,
   ): Promise<PostnatalVisit> {
     const regWhere: any = { id: dto.registrationId };
-    if (tenantId) regWhere.tenantId = tenantId;
+    regWhere.tenantId = requireTenantId(tenantId);
 
     const registration = await this.ancRepo.findOne({
       where: regWhere,
@@ -602,7 +604,7 @@ export class MaternityService {
 
     // Calculate days postpartum
     const deliveryOutcome = await this.outcomeRepo.findOne({
-      where: { id: dto.deliveryOutcomeId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: dto.deliveryOutcomeId, tenantId: requireTenantId(tenantId) },
       relations: ['labourRecord'],
     });
     if (!deliveryOutcome) throw new NotFoundException('Delivery outcome not found');
@@ -668,14 +670,14 @@ export class MaternityService {
       nextVisitDate: dto.nextVisitDate ? new Date(dto.nextVisitDate) : undefined,
       seenById: userId,
     });
-    if (tenantId) visit.tenantId = tenantId;
+    visit.tenantId = requireTenantId(tenantId);
 
     return this.pncRepo.save(visit);
   }
 
   async getPostnatalVisits(registrationId: string, tenantId?: string): Promise<PostnatalVisit[]> {
     const where: any = { registrationId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
 
     return this.pncRepo.find({
       where,
@@ -686,7 +688,7 @@ export class MaternityService {
 
   async getPostnatalVisitById(id: string, tenantId?: string): Promise<PostnatalVisit> {
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
 
     const visit = await this.pncRepo.findOne({
       where,
@@ -705,7 +707,7 @@ export class MaternityService {
       labourRecord: { facilityId },
       timeOfBirth: MoreThanOrEqual(sixWeeksAgo),
     };
-    if (tenantId) outcomeWhere.tenantId = tenantId;
+    outcomeWhere.tenantId = requireTenantId(tenantId);
 
     const recentDeliveries = await this.outcomeRepo.find({
       where: outcomeWhere,
@@ -715,7 +717,7 @@ export class MaternityService {
     const duelist = [];
     for (const delivery of recentDeliveries) {
       const visits = await this.pncRepo.find({
-        where: { deliveryOutcomeId: delivery.id, ...(tenantId ? { tenantId } : {}) },
+        where: { deliveryOutcomeId: delivery.id, tenantId: requireTenantId(tenantId) },
       });
       const completedVisits = visits.map((v) => v.visitNumber);
       const daysPostpartum = Math.floor(
@@ -755,7 +757,7 @@ export class MaternityService {
     tenantId?: string,
   ): Promise<BabyWellnessCheck> {
     const delivery = await this.outcomeRepo.findOne({
-      where: { id: dto.deliveryOutcomeId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: dto.deliveryOutcomeId, tenantId: requireTenantId(tenantId) },
     });
     if (!delivery) throw new NotFoundException('Delivery outcome not found');
 
@@ -813,7 +815,7 @@ export class MaternityService {
       notes: dto.notes,
       checkedById: userId,
     });
-    if (tenantId) wellness.tenantId = tenantId;
+    wellness.tenantId = requireTenantId(tenantId);
 
     return this.babyWellnessRepo.save(wellness);
   }
@@ -823,7 +825,7 @@ export class MaternityService {
     tenantId?: string,
   ): Promise<BabyWellnessCheck[]> {
     const where: any = { deliveryOutcomeId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
 
     return this.babyWellnessRepo.find({
       where,
@@ -840,7 +842,7 @@ export class MaternityService {
     tenantId?: string,
   ): Promise<ImmunizationSchedule[]> {
     const delivery = await this.outcomeRepo.findOne({
-      where: { id: deliveryOutcomeId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: deliveryOutcomeId, tenantId: requireTenantId(tenantId) },
     });
     if (!delivery) throw new NotFoundException('Delivery outcome not found');
 
@@ -866,7 +868,7 @@ export class MaternityService {
         gracePeriodEnd,
         status: ImmunizationStatus.SCHEDULED,
       });
-      if (tenantId) schedule.tenantId = tenantId;
+      schedule.tenantId = requireTenantId(tenantId);
 
       schedules.push(schedule);
     }
@@ -879,7 +881,7 @@ export class MaternityService {
     tenantId?: string,
   ): Promise<ImmunizationSchedule[]> {
     const where: any = { deliveryOutcomeId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
 
     const schedules = await this.immunizationRepo.find({
       where,
@@ -912,7 +914,7 @@ export class MaternityService {
       const immunizationRepoTx = manager.getRepository(ImmunizationSchedule);
 
       const schedule = await immunizationRepoTx.findOne({
-        where: { id, ...(tenantId ? { tenantId } : {}) },
+        where: { id, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!schedule) throw new NotFoundException('Immunization schedule not found');
@@ -969,7 +971,7 @@ export class MaternityService {
       ]),
       dueDate: LessThanOrEqual(today),
     };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
 
     return this.immunizationRepo.find({
       where,
@@ -996,7 +998,7 @@ export class MaternityService {
       status: In([ImmunizationStatus.SCHEDULED, ImmunizationStatus.DUE]),
       gracePeriodEnd: LessThanOrEqual(cutoffDate),
     };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
 
     return this.immunizationRepo.find({
       where,

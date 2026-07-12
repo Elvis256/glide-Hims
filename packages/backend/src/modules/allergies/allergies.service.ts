@@ -19,6 +19,7 @@ import {
 } from '../../database/entities/patient-allergy.entity';
 import { Patient } from '../../database/entities/patient.entity';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 export interface CreatePatientAllergyDto {
   patientId: string;
@@ -63,8 +64,9 @@ export class AllergiesService {
     tenantId?: string,
     patientId?: string,
   ): Promise<PatientAllergy> {
+    const tid = requireTenantId(tenantId);
     const row = await this.allergyRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
     });
     if (!row) throw new NotFoundException('Allergy not found');
     if (patientId && row.patientId !== patientId) {
@@ -80,6 +82,7 @@ export class AllergiesService {
     tenantId?: string,
     extra?: Record<string, unknown>,
   ): Promise<void> {
+    const tid = requireTenantId(tenantId);
     try {
       await this.auditLogService.log({
         userId,
@@ -94,7 +97,7 @@ export class AllergiesService {
           severity: row.severity,
           ...(extra || {}),
         },
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       });
     } catch (err: any) {
       this.logger.error(`Audit log failed for allergy ${row.id}: ${err?.message || err}`);
@@ -102,8 +105,9 @@ export class AllergiesService {
   }
 
   async list(patientId: string, tenantId?: string): Promise<PatientAllergy[]> {
+    const tid = requireTenantId(tenantId);
     return this.allergyRepo.find({
-      where: { patientId, ...(tenantId ? { tenantId } : {}) },
+      where: { patientId, tenantId: tid },
       order: { recordedAt: 'DESC' },
     });
   }
@@ -115,8 +119,9 @@ export class AllergiesService {
    * to maximise match probability against the drug-classification table.
    */
   async getActiveAllergens(patientId: string, tenantId?: string): Promise<string[]> {
+    const tid = requireTenantId(tenantId);
     const rows = await this.allergyRepo.find({
-      where: { patientId, status: 'active', ...(tenantId ? { tenantId } : {}) },
+      where: { patientId, status: 'active', tenantId: tid },
     });
     const out = new Set<string>();
     for (const r of rows) {
@@ -132,8 +137,9 @@ export class AllergiesService {
    * matched allergy IDs to override audit records.
    */
   async getActiveAllergies(patientId: string, tenantId?: string): Promise<PatientAllergy[]> {
+    const tid = requireTenantId(tenantId);
     return this.allergyRepo.find({
-      where: { patientId, status: 'active', ...(tenantId ? { tenantId } : {}) },
+      where: { patientId, status: 'active', tenantId: tid },
     });
   }
 
@@ -142,11 +148,12 @@ export class AllergiesService {
     userId?: string,
     tenantId?: string,
   ): Promise<PatientAllergy> {
+    const tid = requireTenantId(tenantId);
     if (!dto.allergen?.trim()) {
       throw new BadRequestException('allergen is required');
     }
     const patient = await this.patientRepo.findOne({
-      where: { id: dto.patientId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: dto.patientId, tenantId: tid },
     });
     if (!patient) throw new NotFoundException('Patient not found');
 
@@ -157,7 +164,7 @@ export class AllergiesService {
         patientId: dto.patientId,
         allergenNormalized: normalized,
         status: 'active',
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
     });
     if (existing) return existing;
@@ -180,7 +187,7 @@ export class AllergiesService {
       recordedById: userId,
       recordedAt: new Date(),
       status: 'active',
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
     const saved = await this.allergyRepo.save(row);
     await this.writeAudit('ALLERGY_CREATED', saved, userId, tenantId);
@@ -240,9 +247,10 @@ export class AllergiesService {
   }
 
   async findByIds(ids: string[], tenantId?: string): Promise<PatientAllergy[]> {
+    const tid = requireTenantId(tenantId);
     if (!ids.length) return [];
     return this.allergyRepo.find({
-      where: { id: In(ids), ...(tenantId ? { tenantId } : {}) },
+      where: { id: In(ids), tenantId: tid },
     });
   }
 }

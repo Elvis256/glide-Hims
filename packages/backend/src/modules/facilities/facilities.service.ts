@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, ConflictException, Optional, Inject, forwardRef } from '@nestjs/common';
+import { requireTenantId } from '../../common/utils/tenant.util';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Facility } from '../../database/entities/facility.entity';
@@ -52,45 +53,45 @@ export class FacilitiesService {
 
   // Facility CRUD
   async createFacility(dto: CreateFacilityDto, tenantId?: string): Promise<Facility> {
+    const tid = requireTenantId(tenantId);
     // Subscription limit check
-    if (tenantId && this.subscriptionLimitsService) {
-      await this.subscriptionLimitsService.checkFacilityLimit(tenantId);
+    if (this.subscriptionLimitsService) {
+      await this.subscriptionLimitsService.checkFacilityLimit(tid);
     }
 
     const facility = this.facilityRepository.create({
       ...dto,
       status: 'active',
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
     return this.facilityRepository.save(facility);
   }
 
   async findAllFacilities(tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const query = this.facilityRepository
       .createQueryBuilder('facility')
       .leftJoinAndSelect('facility.parentFacility', 'parent');
 
-    if (tenantId) {
-      query.where('facility.tenantId = :tenantId', { tenantId });
-    }
+    query.where('facility.tenantId = :tenantId', { tenantId: tid });
 
     return query.orderBy('facility.name', 'ASC').getMany();
   }
 
   async findFacilitiesForUser(userFacilityId?: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     if (!userFacilityId) return [];
     const userFacility = await this.facilityRepository.findOne({
-      where: { id: userFacilityId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: userFacilityId, tenantId: tid },
     });
     if (!userFacility) return [];
     return this.findAllFacilities(userFacility.tenantId);
   }
 
   async findOneFacility(id: string, tenantId?: string): Promise<Facility> {
-    const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
     const facility = await this.facilityRepository.findOne({
-      where,
+      where: { id, tenantId: tid },
       relations: ['parentFacility'],
     });
     if (!facility) throw new NotFoundException('Facility not found');
@@ -110,15 +111,14 @@ export class FacilitiesService {
 
   // Department CRUD
   async createDepartment(dto: CreateDepartmentDto, tenantId?: string): Promise<Department> {
-    const codeWhere: any = { code: dto.code };
-    if (tenantId) codeWhere.tenantId = tenantId;
-    const existing = await this.departmentRepository.findOne({ where: codeWhere });
+    const tid = requireTenantId(tenantId);
+    const existing = await this.departmentRepository.findOne({ where: { code: dto.code, tenantId: tid } });
     if (existing) throw new ConflictException('Department code already exists');
 
     const department = this.departmentRepository.create({
       ...dto,
       status: 'active',
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
     return this.departmentRepository.save(department);
   }
@@ -142,10 +142,9 @@ export class FacilitiesService {
   }
 
   async findAllDepartments(facilityId: string, tenantId?: string) {
-    const where: any = { facilityId };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
     const departments = await this.departmentRepository.find({
-      where,
+      where: { facilityId, tenantId: tid },
       order: { name: 'ASC' },
       relations: ['children', 'headUser'],
     });
@@ -158,7 +157,7 @@ export class FacilitiesService {
       .select('user.departmentId', 'departmentId')
       .addSelect('COUNT(user.id)', 'count')
       .where('user.departmentId IN (:...deptIds)', { deptIds });
-    if (tenantId) staffQb.andWhere('user.tenant_id = :tenantId', { tenantId });
+    staffQb.andWhere('user.tenant_id = :tenantId', { tenantId: tid });
     const staffCounts = await staffQb.groupBy('user.departmentId').getRawMany();
 
     const countMap = new Map(staffCounts.map((c) => [c.departmentId, parseInt(c.count)]));
@@ -167,10 +166,9 @@ export class FacilitiesService {
   }
 
   async findAllDepartmentsGlobal(tenantId?: string) {
-    const where: any = {};
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
     const departments = await this.departmentRepository.find({
-      where,
+      where: { tenantId: tid },
       order: { name: 'ASC' },
       relations: ['facility', 'children', 'parent', 'headUser'],
     });
@@ -183,7 +181,7 @@ export class FacilitiesService {
       .select('user.departmentId', 'departmentId')
       .addSelect('COUNT(user.id)', 'count')
       .where('user.departmentId IN (:...deptIds)', { deptIds });
-    if (tenantId) staffQb2.andWhere('user.tenant_id = :tenantId', { tenantId });
+    staffQb2.andWhere('user.tenant_id = :tenantId', { tenantId: tid });
     const staffCounts = await staffQb2.groupBy('user.departmentId').getRawMany();
 
     const countMap = new Map(staffCounts.map((c) => [c.departmentId, parseInt(c.count)]));
@@ -192,18 +190,15 @@ export class FacilitiesService {
   }
 
   async findOneDepartment(id: string, tenantId?: string): Promise<any> {
-    const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
     const department = await this.departmentRepository.findOne({
-      where,
+      where: { id, tenantId: tid },
       relations: ['children', 'facility', 'headUser'],
     });
     if (!department) throw new NotFoundException('Department not found');
 
     // Get staff count
-    const staffCountWhere: any = { departmentId: id };
-    if (tenantId) staffCountWhere.tenantId = tenantId;
-    const staffCount = await this.userRepository.count({ where: staffCountWhere });
+    const staffCount = await this.userRepository.count({ where: { departmentId: id, tenantId: tid } });
 
     const { headUser, ...rest } = department;
     return {
@@ -221,10 +216,9 @@ export class FacilitiesService {
   }
 
   async getDepartmentStaff(departmentId: string, tenantId?: string) {
-    const where: any = { departmentId };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
     const users = await this.userRepository.find({
-      where,
+      where: { departmentId, tenantId: tid },
       order: { fullName: 'ASC' },
     });
     return users.map((u) => ({
@@ -239,9 +233,8 @@ export class FacilitiesService {
   }
 
   async updateDepartment(id: string, dto: UpdateDepartmentDto, tenantId?: string): Promise<any> {
-    const deptWhere: any = { id };
-    if (tenantId) deptWhere.tenantId = tenantId;
-    const department = await this.departmentRepository.findOne({ where: deptWhere });
+    const tid = requireTenantId(tenantId);
+    const department = await this.departmentRepository.findOne({ where: { id, tenantId: tid } });
     if (!department) throw new NotFoundException('Department not found');
     // Explicitly handle headUserId null to allow removing head
     if ('headUserId' in dto) {
@@ -260,26 +253,24 @@ export class FacilitiesService {
 
   // Unit CRUD
   async createUnit(dto: CreateUnitDto, tenantId?: string): Promise<Unit> {
-    const unitWhere: any = { departmentId: dto.departmentId, code: dto.code };
-    if (tenantId) unitWhere.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
     const existing = await this.unitRepository.findOne({
-      where: unitWhere,
+      where: { departmentId: dto.departmentId, code: dto.code, tenantId: tid },
     });
     if (existing) throw new ConflictException('Unit code already exists in this department');
 
     const unit = this.unitRepository.create({
       ...dto,
       status: 'active',
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
     return this.unitRepository.save(unit);
   }
 
   async findAllUnits(departmentId: string, tenantId?: string) {
-    const where: any = { departmentId };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
     return this.unitRepository.find({
-      where,
+      where: { departmentId, tenantId: tid },
       order: { name: 'ASC' },
     });
   }

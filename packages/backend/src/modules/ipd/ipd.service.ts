@@ -44,6 +44,7 @@ import { BedBoardService } from './bed-board.service';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
 import { VitalsService } from '../vitals/vitals.service';
 import { VitalSource } from '../../database/entities/vital.entity';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class IpdService {
@@ -70,18 +71,20 @@ export class IpdService {
 
   // ========== WARD MANAGEMENT ==========
   async createWard(dto: CreateWardDto, tenantId?: string): Promise<Ward> {
+    const tid = requireTenantId(tenantId);
     const ward = this.wardRepo.create(dto);
-    if (tenantId) ward.tenantId = tenantId;
+    ward.tenantId = tid;
     return this.wardRepo.save(ward);
   }
 
   async getWards(query: WardQueryDto, tenantId?: string): Promise<Ward[]> {
+    const tid = requireTenantId(tenantId);
     const qb = this.wardRepo
       .createQueryBuilder('ward')
       .leftJoinAndSelect('ward.facility', 'facility')
       .leftJoinAndSelect('ward.beds', 'beds');
 
-    if (tenantId) qb.andWhere('ward.tenant_id = :tenantId', { tenantId });
+    qb.andWhere('ward.tenant_id = :tenantId', { tenantId: tid });
     if (query.facilityId)
       qb.andWhere('ward.facilityId = :facilityId', { facilityId: query.facilityId });
     if (query.type) qb.andWhere('ward.type = :type', { type: query.type });
@@ -91,8 +94,9 @@ export class IpdService {
   }
 
   async getWard(id: string, tenantId?: string): Promise<Ward> {
+    const tid = requireTenantId(tenantId);
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     const ward = await this.wardRepo.findOne({
       where,
       relations: ['facility', 'beds', 'admissions', 'admissions.patient'],
@@ -108,6 +112,7 @@ export class IpdService {
   }
 
   async getWardOccupancy(facilityId?: string, tenantId?: string): Promise<any[]> {
+    const tid = requireTenantId(tenantId);
     const qb = this.wardRepo
       .createQueryBuilder('ward')
       .select('ward.id', 'id')
@@ -117,7 +122,7 @@ export class IpdService {
       .addSelect('ward.occupiedBeds', 'occupiedBeds');
 
     if (facilityId) qb.where('ward.facilityId = :facilityId', { facilityId });
-    if (tenantId) qb.andWhere('ward.tenant_id = :tenantId', { tenantId });
+    qb.andWhere('ward.tenant_id = :tenantId', { tenantId: tid });
 
     const wards = await qb.getRawMany();
     return wards.map((w) => ({
@@ -129,14 +134,16 @@ export class IpdService {
 
   // ========== BED MANAGEMENT ==========
   async createBed(dto: CreateBedDto, tenantId?: string): Promise<Bed> {
+    const tid = requireTenantId(tenantId);
     const bed = this.bedRepo.create(dto);
-    if (tenantId) bed.tenantId = tenantId;
+    bed.tenantId = tid;
     const saved = await this.bedRepo.save(bed);
     await this.updateWardBedCount(dto.wardId, tenantId);
     return saved;
   }
 
   async bulkCreateBeds(dto: BulkCreateBedsDto, tenantId?: string): Promise<Bed[]> {
+    const tid = requireTenantId(tenantId);
     const beds: Bed[] = [];
     for (let i = 1; i <= dto.count; i++) {
       const bed = this.bedRepo.create({
@@ -145,7 +152,7 @@ export class IpdService {
         type: dto.type,
         dailyRate: dto.dailyRate || 0,
       });
-      if (tenantId) bed.tenantId = tenantId;
+      bed.tenantId = tid;
       beds.push(bed);
     }
     const saved = await this.bedRepo.save(beds);
@@ -154,11 +161,12 @@ export class IpdService {
   }
 
   async getBeds(wardId?: string, tenantId?: string): Promise<Bed[]> {
+    const tid = requireTenantId(tenantId);
     if (!wardId) {
       return [];
     }
     const where: any = { wardId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     return this.bedRepo.find({
       where,
       order: { bedNumber: 'ASC' },
@@ -166,20 +174,22 @@ export class IpdService {
   }
 
   async getAvailableBeds(wardId?: string, tenantId?: string): Promise<Bed[]> {
+    const tid = requireTenantId(tenantId);
     const qb = this.bedRepo
       .createQueryBuilder('bed')
       .leftJoinAndSelect('bed.ward', 'ward')
       .where('bed.status = :status', { status: BedStatus.AVAILABLE });
 
-    if (tenantId) qb.andWhere('bed.tenant_id = :tenantId', { tenantId });
+    qb.andWhere('bed.tenant_id = :tenantId', { tenantId: tid });
     if (wardId) qb.andWhere('bed.wardId = :wardId', { wardId });
 
     return qb.orderBy('ward.name', 'ASC').addOrderBy('bed.bedNumber', 'ASC').getMany();
   }
 
   async getBed(id: string, tenantId?: string): Promise<Bed> {
+    const tid = requireTenantId(tenantId);
     const bed = await this.bedRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
       relations: ['ward'],
     });
     if (!bed) throw new NotFoundException('Bed not found');
@@ -187,15 +197,17 @@ export class IpdService {
   }
 
   async updateBed(id: string, dto: UpdateBedDto, tenantId?: string): Promise<Bed> {
-    const bed = await this.bedRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
+    const tid = requireTenantId(tenantId);
+    const bed = await this.bedRepo.findOne({ where: { id, tenantId: tid } });
     if (!bed) throw new NotFoundException('Bed not found');
     Object.assign(bed, dto);
     return this.bedRepo.save(bed);
   }
 
   async markBedAvailable(id: string, tenantId?: string): Promise<Bed> {
+    const tid = requireTenantId(tenantId);
     const bed = await this.bedRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
       relations: ['ward'],
     });
     if (!bed) throw new NotFoundException('Bed not found');
@@ -218,11 +230,12 @@ export class IpdService {
   }
 
   private async updateWardBedCount(wardId: string, tenantId?: string): Promise<void> {
+    const tid = requireTenantId(tenantId);
     const totalBeds = await this.bedRepo.count({
-      where: { wardId, ...(tenantId ? { tenantId } : {}) },
+      where: { wardId, tenantId: tid },
     });
     const occupiedBeds = await this.bedRepo.count({
-      where: { wardId, status: BedStatus.OCCUPIED, ...(tenantId ? { tenantId } : {}) },
+      where: { wardId, status: BedStatus.OCCUPIED, tenantId: tid },
     });
     await this.wardRepo.update(wardId, { totalBeds, occupiedBeds });
   }
@@ -233,13 +246,14 @@ export class IpdService {
     userId: string,
     tenantId?: string,
   ): Promise<Admission> {
+    const tid = requireTenantId(tenantId);
     return this.dataSource.transaction(async (manager) => {
       // Check for duplicate admission — patient must not already be admitted
       const existingAdmission = await manager.findOne(Admission, {
         where: {
           patientId: dto.patientId,
           status: AdmissionStatus.ADMITTED,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         },
       });
       if (existingAdmission) {
@@ -253,7 +267,7 @@ export class IpdService {
         .createQueryBuilder(Bed, 'bed')
         .setLock('pessimistic_write')
         .where('bed.id = :id', { id: dto.bedId });
-      if (tenantId) bedQb.andWhere('bed.tenant_id = :tenantId', { tenantId });
+      bedQb.andWhere('bed.tenant_id = :tenantId', { tenantId: tid });
       const bed = await bedQb.getOne();
 
       if (!bed) throw new NotFoundException('Bed not found');
@@ -275,7 +289,7 @@ export class IpdService {
           start: todayStart,
           end: todayEnd,
         });
-      if (tenantId) dailyCountQb.andWhere('admission.tenant_id = :tenantId', { tenantId });
+      dailyCountQb.andWhere('admission.tenant_id = :tenantId', { tenantId: tid });
       const dailyCount = await dailyCountQb.getCount();
 
       const admissionNumber = `ADM${dateStr}${(dailyCount + 1).toString().padStart(4, '0')}`;
@@ -293,7 +307,7 @@ export class IpdService {
         admissionNumber,
         admissionDate: new Date(),
         admittedById: userId,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       };
 
       const admission = manager.create(Admission, admissionData);
@@ -304,13 +318,13 @@ export class IpdService {
 
       // Update ward bed count
       const totalBeds = await manager.count(Bed, {
-        where: { wardId: dto.wardId, ...(tenantId ? { tenantId } : {}) },
+        where: { wardId: dto.wardId, tenantId: tid },
       });
       const occupiedBeds = await manager.count(Bed, {
         where: {
           wardId: dto.wardId,
           status: BedStatus.OCCUPIED,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         },
       });
       await manager.update(Ward, dto.wardId, { totalBeds, occupiedBeds });
@@ -331,10 +345,10 @@ export class IpdService {
       if (dto.encounterId) {
         try {
           const ward = await manager.findOne(Ward, {
-            where: { id: dto.wardId, ...(tenantId ? { tenantId } : {}) },
+            where: { id: dto.wardId, tenantId: tid },
           });
           const bed = await manager.findOne(Bed, {
-            where: { id: dto.bedId, ...(tenantId ? { tenantId } : {}) },
+            where: { id: dto.bedId, tenantId: tid },
           });
           await this.billingService.addBillableItem(
             {
@@ -367,6 +381,7 @@ export class IpdService {
     query: AdmissionQueryDto,
     tenantId?: string,
   ): Promise<{ data: Admission[]; total: number }> {
+    const tid = requireTenantId(tenantId);
     const qb = this.admissionRepo
       .createQueryBuilder('admission')
       .leftJoinAndSelect('admission.patient', 'patient')
@@ -374,7 +389,7 @@ export class IpdService {
       .leftJoinAndSelect('admission.bed', 'bed')
       .leftJoinAndSelect('admission.attendingDoctor', 'doctor');
 
-    if (tenantId) qb.andWhere('admission.tenant_id = :tenantId', { tenantId });
+    qb.andWhere('admission.tenant_id = :tenantId', { tenantId: tid });
     if (query.wardId) qb.andWhere('admission.wardId = :wardId', { wardId: query.wardId });
     if (query.patientId)
       qb.andWhere('admission.patientId = :patientId', { patientId: query.patientId });
@@ -394,8 +409,9 @@ export class IpdService {
   }
 
   async getAdmission(id: string, tenantId?: string): Promise<Admission> {
+    const tid = requireTenantId(tenantId);
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     const admission = await this.admissionRepo.findOne({
       where,
       relations: [
@@ -414,8 +430,9 @@ export class IpdService {
   }
 
   async getCurrentAdmission(patientId: string, tenantId?: string): Promise<Admission | null> {
+    const tid = requireTenantId(tenantId);
     return this.admissionRepo.findOne({
-      where: { patientId, status: AdmissionStatus.ADMITTED, ...(tenantId ? { tenantId } : {}) },
+      where: { patientId, status: AdmissionStatus.ADMITTED, tenantId: tid },
       relations: ['ward', 'bed'],
     });
   }
@@ -426,9 +443,10 @@ export class IpdService {
     userId: string,
     tenantId?: string,
   ): Promise<Admission> {
+    const tid = requireTenantId(tenantId);
     return this.dataSource.transaction(async (manager) => {
       const admission = await manager.findOne(Admission, {
-        where: { id, ...(tenantId ? { tenantId } : {}) },
+        where: { id, tenantId: tid },
         relations: ['patient', 'ward', 'bed', 'encounter', 'attendingDoctor'],
       });
 
@@ -450,13 +468,13 @@ export class IpdService {
 
       // Update ward bed count
       const totalBeds = await manager.count(Bed, {
-        where: { wardId: admission.wardId, ...(tenantId ? { tenantId } : {}) },
+        where: { wardId: admission.wardId, tenantId: tid },
       });
       const occupiedBeds = await manager.count(Bed, {
         where: {
           wardId: admission.wardId,
           status: BedStatus.OCCUPIED,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         },
       });
       await manager.update(Ward, admission.wardId, { totalBeds, occupiedBeds });
@@ -512,6 +530,7 @@ export class IpdService {
     userId: string,
     tenantId?: string,
   ): Promise<Admission> {
+    const tid = requireTenantId(tenantId);
     return this.dataSource.transaction(async (manager) => {
       // Read admission inside transaction with pessimistic lock to prevent race conditions
       const admissionQb = manager
@@ -523,7 +542,7 @@ export class IpdService {
         .leftJoinAndSelect('admission.encounter', 'encounter')
         .leftJoinAndSelect('admission.attendingDoctor', 'doctor')
         .where('admission.id = :id', { id });
-      if (tenantId) admissionQb.andWhere('admission.tenant_id = :tenantId', { tenantId });
+      admissionQb.andWhere('admission.tenant_id = :tenantId', { tenantId: tid });
       const admission = await admissionQb.getOne();
 
       if (!admission) throw new NotFoundException('Admission not found');
@@ -539,7 +558,7 @@ export class IpdService {
         .createQueryBuilder(Bed, 'bed')
         .setLock('pessimistic_write')
         .where('bed.id = :id', { id: dto.toBedId });
-      if (tenantId) newBedQb.andWhere('bed.tenant_id = :tenantId', { tenantId });
+      newBedQb.andWhere('bed.tenant_id = :tenantId', { tenantId: tid });
       const newBed = await newBedQb.getOne();
 
       if (!newBed) throw new NotFoundException('New bed not found');
@@ -573,7 +592,7 @@ export class IpdService {
         .addSelect('COUNT(*)::int', 'total')
         .addSelect(`COUNT(*) FILTER (WHERE b.status = '${BedStatus.OCCUPIED}')::int`, 'occupied')
         .where('b.wardId IN (:...wardIds)', { wardIds })
-        .andWhere(tenantId ? 'b.tenantId = :tenantId' : '1=1', tenantId ? { tenantId } : {})
+        .andWhere('b.tenantId = :tenantId', { tenantId: tid })
         .groupBy('b.wardId')
         .getRawMany();
       for (const stat of bedStats) {
@@ -601,9 +620,10 @@ export class IpdService {
     userId: string,
     tenantId?: string,
   ): Promise<NursingNote> {
+    const tid = requireTenantId(tenantId);
     // Verify admission exists and is active
     const admission = await this.admissionRepo.findOne({
-      where: { id: dto.admissionId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: dto.admissionId, tenantId: tid },
     });
     if (!admission) throw new NotFoundException('Admission not found');
     if (admission.status !== AdmissionStatus.ADMITTED) {
@@ -614,7 +634,7 @@ export class IpdService {
       ...dto,
       nurseId: userId,
       noteTime: new Date(),
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
     const saved = await this.nursingNoteRepo.save(note);
     this.logger.log(
@@ -648,8 +668,9 @@ export class IpdService {
   }
 
   async getNursingNotes(admissionId: string, tenantId?: string): Promise<NursingNote[]> {
+    const tid = requireTenantId(tenantId);
     return this.nursingNoteRepo.find({
-      where: { admissionId, ...(tenantId ? { tenantId } : {}) },
+      where: { admissionId, tenantId: tid },
       relations: ['nurse'],
       order: { noteTime: 'DESC' },
     });
@@ -661,9 +682,10 @@ export class IpdService {
     userId: string,
     tenantId?: string,
   ): Promise<MedicationAdministration> {
+    const tid = requireTenantId(tenantId);
     // Verify admission exists and is active
     const admission = await this.admissionRepo.findOne({
-      where: { id: dto.admissionId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: dto.admissionId, tenantId: tid },
     });
     if (!admission) throw new NotFoundException('Admission not found');
     if (admission.status !== AdmissionStatus.ADMITTED) {
@@ -679,7 +701,7 @@ export class IpdService {
       notes: dto.notes,
       scheduledTime: new Date(dto.scheduledTime),
       status: MedicationStatus.SCHEDULED,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
     const saved = await this.medAdminRepo.save(med);
     this.logger.log(
@@ -693,10 +715,11 @@ export class IpdService {
     date?: string,
     tenantId?: string,
   ): Promise<MedicationAdministration[]> {
+    const tid = requireTenantId(tenantId);
     const qb = this.medAdminRepo
       .createQueryBuilder('med')
       .where('med.admissionId = :admissionId', { admissionId });
-    if (tenantId) qb.andWhere('med.tenant_id = :tenantId', { tenantId });
+    qb.andWhere('med.tenant_id = :tenantId', { tenantId: tid });
 
     if (date) {
       qb.andWhere('DATE(med.scheduledTime) = :date', { date });
@@ -711,10 +734,11 @@ export class IpdService {
     userId: string,
     tenantId?: string,
   ): Promise<MedicationAdministration> {
+    const tid = requireTenantId(tenantId);
     return this.dataSource.transaction(async (manager) => {
       // C2: pessimistic lock prevents two nurses double-administering the same dose.
       const med = await manager.findOne(MedicationAdministration, {
-        where: { id, ...(tenantId ? { tenantId } : {}) },
+        where: { id, tenantId: tid },
         lock: { mode: 'pessimistic_write' },
       });
       if (!med) throw new NotFoundException('Medication schedule not found');
@@ -729,7 +753,7 @@ export class IpdService {
       // safest non-invasive default; pharmacists can override with a reason.
       if (dto.status === MedicationStatus.ADMINISTERED && med.admissionId && med.drugName) {
         const admission = await manager.findOne(Admission, {
-          where: { id: med.admissionId, ...(tenantId ? { tenantId } : {}) },
+          where: { id: med.admissionId, tenantId: tid },
           relations: ['patient'],
         });
         const allergies = admission?.patient?.allergies || [];
@@ -782,7 +806,7 @@ export class IpdService {
             admissionId: saved.admissionId,
             allergyOverrideReason: dto.allergyOverrideReason || null,
           },
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         })
         .catch((err) =>
           this.logger.error(`Audit log failed for med admin ${saved.id}: ${err.message}`),
@@ -797,15 +821,14 @@ export class IpdService {
 
   // ========== DASHBOARD STATS ==========
   async getIpdStats(facilityId?: string, tenantId?: string): Promise<any> {
+    const tid = requireTenantId(tenantId);
     const admissionQb = this.admissionRepo.createQueryBuilder('a').leftJoin('a.ward', 'w');
 
     if (facilityId) {
       admissionQb.where('w.facilityId = :facilityId', { facilityId });
     }
 
-    if (tenantId) {
-      admissionQb.andWhere('a.tenant_id = :tenantId', { tenantId });
-    }
+    admissionQb.andWhere('a.tenant_id = :tenantId', { tenantId: tid });
 
     const activeAdmissions = await admissionQb
       .clone()

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between } from 'typeorm';
 import { PurchaseOrder, POStatus } from '../../database/entities/purchase-order.entity';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 export interface ApprovalBottleneck {
   level: number;
@@ -35,8 +36,8 @@ export class ApprovalAnalyticsService {
     private poRepository: Repository<PurchaseOrder>,
   ) {}
 
-  private tenantWhere(tenantId: string | undefined): { tenantId?: string } {
-    return tenantId ? { tenantId } : {};
+  private tenantWhere(tenantId: string | undefined): { tenantId: string } {
+    return { tenantId: requireTenantId(tenantId) };
   }
 
   /**

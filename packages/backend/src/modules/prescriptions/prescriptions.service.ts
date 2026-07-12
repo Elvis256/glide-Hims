@@ -44,6 +44,7 @@ import { DrugManagementService } from '../drug-management/drug-management.servic
 import { MedicationSafetyService } from '../allergies/medication-safety.service';
 import { PatientActiveMedicationService } from './patient-active-medication.service';
 import { IdentityGuardService } from '../../common/services/identity-guard.service';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class PrescriptionsService {
@@ -106,8 +107,9 @@ export class PrescriptionsService {
     userId: string,
     tenantId?: string,
   ): Promise<Prescription> {
+    const tid = requireTenantId(tenantId);
     const encounter = await this.encounterRepository.findOne({
-      where: { id: dto.encounterId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: dto.encounterId, tenantId: tid },
     });
 
     if (!encounter) {
@@ -143,8 +145,8 @@ export class PrescriptionsService {
     for (const item of dto.items) {
       const inv = await this.inventoryRepo.findOne({
         where: [
-          { code: item.drugCode, ...(tenantId ? { tenantId } : {}) },
-          { name: ILike(`%${item.drugName}%`), ...(tenantId ? { tenantId } : {}) },
+          { code: item.drugCode, tenantId: tid },
+          { name: ILike(`%${item.drugName}%`), tenantId: tid },
         ],
       });
       if (inv) {
@@ -201,7 +203,7 @@ export class PrescriptionsService {
         prescriberSignature: dto.prescriberSignature || undefined,
         prescriberSignedAt: dto.prescriberSignature ? new Date() : undefined,
         items: dto.items.map((item) => manager.create(PrescriptionItem, item)),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       });
 
       const savedPrescription = await manager.save(prescription);
@@ -214,8 +216,8 @@ export class PrescriptionsService {
         for (const item of dto.items) {
           const inventoryItem = await manager.findOne(Item, {
             where: [
-              { code: item.drugCode, ...(tenantId ? { tenantId } : {}) },
-              { name: ILike(`%${item.drugName}%`), ...(tenantId ? { tenantId } : {}) },
+              { code: item.drugCode, tenantId: tid },
+              { name: ILike(`%${item.drugName}%`), tenantId: tid },
             ],
           });
 
@@ -228,9 +230,7 @@ export class PrescriptionsService {
                 itemId: inventoryItem.id,
                 facilityId,
               });
-            if (tenantId) {
-              sbQuery.andWhere('sb.tenant_id = :tenantId', { tenantId });
-            }
+            sbQuery.andWhere('sb.tenant_id = :tenantId', { tenantId: tid });
             const stockBalance = await sbQuery.getOne();
 
             if (stockBalance) {
@@ -298,7 +298,7 @@ export class PrescriptionsService {
     // Notify pharmacy staff
     try {
       const patient = await this.encounterRepository.findOne({
-        where: { id: dto.encounterId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: dto.encounterId, tenantId: tid },
         relations: ['patient'],
       });
       await this.inAppNotificationsService.notifyNewPrescription(
@@ -317,8 +317,8 @@ export class PrescriptionsService {
         // Look up price from inventory
         const invItem = await this.inventoryRepo.findOne({
           where: [
-            { code: item.drugCode, ...(tenantId ? { tenantId } : {}) },
-            { name: ILike(`%${item.drugName}%`), ...(tenantId ? { tenantId } : {}) },
+            { code: item.drugCode, tenantId: tid },
+            { name: ILike(`%${item.drugName}%`), tenantId: tid },
           ],
         });
         let unitPrice = 0;
@@ -352,6 +352,7 @@ export class PrescriptionsService {
     query: PrescriptionQueryDto,
     tenantId?: string,
   ): Promise<{ data: Prescription[]; total: number }> {
+    const tid = requireTenantId(tenantId);
     const { status, encounterId, patientId, page = 1, limit = 20 } = query;
 
     const qb = this.prescriptionRepository
@@ -361,9 +362,7 @@ export class PrescriptionsService {
       .leftJoinAndSelect('encounter.patient', 'patient')
       .leftJoinAndSelect('prescription.prescribedBy', 'prescribedBy');
 
-    if (tenantId) {
-      qb.andWhere('prescription.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('prescription.tenant_id = :tenantId', { tenantId: tid });
 
     if (status) {
       qb.andWhere('prescription.status = :status', { status });
@@ -386,8 +385,8 @@ export class PrescriptionsService {
   }
 
   async findOne(id: string, tenantId?: string): Promise<Prescription> {
-    const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { id, tenantId: tid };
     const prescription = await this.prescriptionRepository.findOne({
       where,
       relations: ['items', 'encounter', 'encounter.patient', 'prescribedBy'],
@@ -407,8 +406,8 @@ export class PrescriptionsService {
   }
 
   async findByNumber(prescriptionNumber: string, tenantId?: string): Promise<Prescription> {
-    const where: any = { prescriptionNumber };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { prescriptionNumber, tenantId: tid };
     const prescription = await this.prescriptionRepository.findOne({
       where,
       relations: ['items', 'encounter', 'encounter.patient', 'prescribedBy'],
@@ -428,6 +427,7 @@ export class PrescriptionsService {
   }
 
   async getPharmacyQueue(tenantId?: string): Promise<any[]> {
+    const tid = requireTenantId(tenantId);
     const qb = this.prescriptionRepository
       .createQueryBuilder('prescription')
       .leftJoinAndSelect('prescription.items', 'items')
@@ -442,9 +442,7 @@ export class PrescriptionsService {
         ],
       });
 
-    if (tenantId) {
-      qb.andWhere('prescription.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('prescription.tenant_id = :tenantId', { tenantId: tid });
 
     const prescriptions = await qb.orderBy('prescription.createdAt', 'ASC').getMany();
 
@@ -463,8 +461,9 @@ export class PrescriptionsService {
     userId: string,
     tenantId?: string,
   ): Promise<Dispensation> {
+    const tid = requireTenantId(tenantId);
     const item = await this.itemRepository.findOne({
-      where: { id: dto.prescriptionItemId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: dto.prescriptionItemId, tenantId: tid },
       relations: ['prescription', 'prescription.encounter'],
     });
 
@@ -480,8 +479,8 @@ export class PrescriptionsService {
     // ─── Medication-safety check at dispense time ───────────────────────
     const inv = await this.inventoryRepo.findOne({
       where: [
-        { code: item.drugCode, ...(tenantId ? { tenantId } : {}) },
-        { name: ILike(`%${item.drugName}%`), ...(tenantId ? { tenantId } : {}) },
+        { code: item.drugCode, tenantId: tid },
+        { name: ILike(`%${item.drugName}%`), tenantId: tid },
       ],
     });
     if (inv) {
@@ -539,7 +538,7 @@ export class PrescriptionsService {
       unitPrice: resolvedPrice,
       totalPrice: resolvedPrice * dto.quantity,
       dispensedById: userId,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
 
     await this.dispensationRepository.save(dispensation);
@@ -581,8 +580,9 @@ export class PrescriptionsService {
   }
 
   private async updatePrescriptionStatus(prescriptionId: string, tenantId?: string): Promise<void> {
+    const tid = requireTenantId(tenantId);
     const prescription = await this.prescriptionRepository.findOne({
-      where: { id: prescriptionId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: prescriptionId, tenantId: tid },
       relations: ['items'],
     });
 
@@ -608,6 +608,7 @@ export class PrescriptionsService {
     userId: string,
     tenantId?: string,
   ): Promise<Prescription> {
+    const tid = requireTenantId(tenantId);
     return this.dataSource.transaction(async (manager) => {
       const prescriptionRepo = manager.getRepository(Prescription);
       const itemRepo = manager.getRepository(PrescriptionItem);
@@ -617,7 +618,7 @@ export class PrescriptionsService {
       const stockLedgerRepo = manager.getRepository(StockLedger);
 
       const prescription = await prescriptionRepo.findOne({
-        where: { id: dto.prescriptionId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: dto.prescriptionId, tenantId: tid },
         relations: ['items', 'encounter', 'encounter.patient'],
       });
 
@@ -662,8 +663,8 @@ export class PrescriptionsService {
       for (const item of prescription.items) {
         const inventoryItem = await inventoryRepo.findOne({
           where: [
-            { code: item.drugCode, ...(tenantId ? { tenantId } : {}) },
-            { name: ILike(`%${item.drugName}%`), ...(tenantId ? { tenantId } : {}) },
+            { code: item.drugCode, tenantId: tid },
+            { name: ILike(`%${item.drugName}%`), tenantId: tid },
           ],
         });
         if (inventoryItem) {
@@ -855,7 +856,7 @@ export class PrescriptionsService {
           expiryDate: itemDto.expiryDate ? new Date(itemDto.expiryDate) : undefined,
           dispensedById: userId,
           dispensedAt: new Date(),
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         });
         await dispensationRepo.save(dispensation);
 
@@ -915,13 +916,13 @@ export class PrescriptionsService {
           null;
         const inventoryItem = await inventoryRepo.findOne({
           where: [
-            { code: item.drugCode, ...(tenantId ? { tenantId } : {}) },
-            { name: ILike(`%${item.drugName}%`), ...(tenantId ? { tenantId } : {}) },
+            { code: item.drugCode, tenantId: tid },
+            { name: ILike(`%${item.drugName}%`), tenantId: tid },
           ],
         });
         if (inventoryItem && facilityId) {
           const stockBalance = await stockBalanceRepo.findOne({
-            where: { itemId: inventoryItem.id, facilityId, ...(tenantId ? { tenantId } : {}) },
+            where: { itemId: inventoryItem.id, facilityId, tenantId: tid },
             lock: { mode: 'pessimistic_write' },
           });
           if (stockBalance) {
@@ -958,7 +959,7 @@ export class PrescriptionsService {
                 notes: `Dispensed: Rx ${prescription.prescriptionNumber}`,
                 createdById: userId,
                 facilityId,
-                ...(tenantId ? { tenantId } : {}),
+                tenantId: tid,
               }),
             );
           }
@@ -974,8 +975,8 @@ export class PrescriptionsService {
         // Look up drug classification to check schedule
         const inventoryItem = await inventoryRepo.findOne({
           where: [
-            { code: item.drugCode, ...(tenantId ? { tenantId } : {}) },
-            { name: ILike(`%${item.drugName}%`), ...(tenantId ? { tenantId } : {}) },
+            { code: item.drugCode, tenantId: tid },
+            { name: ILike(`%${item.drugName}%`), tenantId: tid },
           ],
         });
 
@@ -1023,7 +1024,7 @@ export class PrescriptionsService {
                 where: {
                   prescriptionItemId: item.id,
                   ...(facilityId ? { facilityId } : {}),
-                  ...(tenantId ? { tenantId } : {}),
+                  tenantId: tid,
                 },
                 order: { createdAt: 'DESC' },
               });
@@ -1038,7 +1039,7 @@ export class PrescriptionsService {
                   runningBalance: previousBalance - itemDto.quantity,
                   dispensedById: userId,
                   facilityId: facilityId || undefined,
-                  ...(tenantId ? { tenantId } : {}),
+                  tenantId: tid,
                 }),
               );
             }
@@ -1076,8 +1077,9 @@ export class PrescriptionsService {
   }
 
   async cancelPrescription(id: string, tenantId?: string): Promise<Prescription> {
+    const tid = requireTenantId(tenantId);
     const prescription = await this.prescriptionRepository.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
       relations: ['items', 'encounter'],
     });
 
@@ -1098,14 +1100,14 @@ export class PrescriptionsService {
 
         const inventoryItem = await this.inventoryRepo.findOne({
           where: [
-            { code: item.drugCode, ...(tenantId ? { tenantId } : {}) },
-            { name: ILike(`%${item.drugName}%`), ...(tenantId ? { tenantId } : {}) },
+            { code: item.drugCode, tenantId: tid },
+            { name: ILike(`%${item.drugName}%`), tenantId: tid },
           ],
         });
 
         if (inventoryItem) {
           const stockBalance = await this.stockBalanceRepo.findOne({
-            where: { itemId: inventoryItem.id, facilityId, ...(tenantId ? { tenantId } : {}) },
+            where: { itemId: inventoryItem.id, facilityId, tenantId: tid },
           });
 
           if (stockBalance && Number(stockBalance.reservedQuantity) > 0) {
@@ -1186,8 +1188,9 @@ export class PrescriptionsService {
     dto: UpdatePrescriptionItemDto,
     tenantId?: string,
   ): Promise<PrescriptionItem> {
+    const tid = requireTenantId(tenantId);
     const item = await this.itemRepository.findOne({
-      where: { id: itemId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: itemId, tenantId: tid },
       relations: ['prescription', 'prescription.encounter'],
     });
     if (!item) throw new NotFoundException('Prescription item not found');
@@ -1208,13 +1211,13 @@ export class PrescriptionsService {
       if (facilityId) {
         const invItem = await this.inventoryRepo.findOne({
           where: [
-            { code: item.drugCode, ...(tenantId ? { tenantId } : {}) },
-            { name: ILike(`%${item.drugName}%`), ...(tenantId ? { tenantId } : {}) },
+            { code: item.drugCode, tenantId: tid },
+            { name: ILike(`%${item.drugName}%`), tenantId: tid },
           ],
         });
         if (invItem) {
           const sb = await this.stockBalanceRepo.findOne({
-            where: { itemId: invItem.id, facilityId, ...(tenantId ? { tenantId } : {}) },
+            where: { itemId: invItem.id, facilityId, tenantId: tid },
           });
           if (sb) {
             const diff = dto.quantity - oldQuantity;
@@ -1260,8 +1263,9 @@ export class PrescriptionsService {
     itemId: string,
     tenantId?: string,
   ): Promise<Prescription> {
+    const tid = requireTenantId(tenantId);
     const prescription = await this.prescriptionRepository.findOne({
-      where: { id: prescriptionId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: prescriptionId, tenantId: tid },
       relations: ['items', 'encounter'],
     });
     if (!prescription) throw new NotFoundException('Prescription not found');
@@ -1280,13 +1284,13 @@ export class PrescriptionsService {
       if (undispensedQty > 0) {
         const invItem = await this.inventoryRepo.findOne({
           where: [
-            { code: item.drugCode, ...(tenantId ? { tenantId } : {}) },
-            { name: ILike(`%${item.drugName}%`), ...(tenantId ? { tenantId } : {}) },
+            { code: item.drugCode, tenantId: tid },
+            { name: ILike(`%${item.drugName}%`), tenantId: tid },
           ],
         });
         if (invItem) {
           const sb = await this.stockBalanceRepo.findOne({
-            where: { itemId: invItem.id, facilityId, ...(tenantId ? { tenantId } : {}) },
+            where: { itemId: invItem.id, facilityId, tenantId: tid },
           });
           if (sb && Number(sb.reservedQuantity) > 0) {
             const releaseQty = Math.min(undispensedQty, Number(sb.reservedQuantity));
@@ -1322,6 +1326,7 @@ export class PrescriptionsService {
   }
 
   async search(query: string, tenantId?: string): Promise<Prescription[]> {
+    const tid = requireTenantId(tenantId);
     const q = `%${query}%`;
     const qb = this.prescriptionRepository
       .createQueryBuilder('p')
@@ -1344,9 +1349,7 @@ export class PrescriptionsService {
       excludedStatuses: [PrescriptionStatus.DISPENSED, PrescriptionStatus.CANCELLED],
     });
 
-    if (tenantId) {
-      qb.andWhere('p.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('p.tenant_id = :tenantId', { tenantId: tid });
 
     return qb
       .orderBy('p.createdAt', 'DESC')
@@ -1367,8 +1370,9 @@ export class PrescriptionsService {
     userId: string,
     tenantId?: string,
   ): Promise<MedicationAdministration> {
+    const tid = requireTenantId(tenantId);
     const item = await this.itemRepository.findOne({
-      where: { id: prescriptionItemId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: prescriptionItemId, tenantId: tid },
       relations: ['prescription'],
     });
     if (!item) throw new NotFoundException('Prescription item not found');
@@ -1408,7 +1412,7 @@ export class PrescriptionsService {
       doseGiven: dto.doseGiven,
       routeOfAdministration: dto.routeOfAdministration,
       notes: dto.notes,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
     return this.adminRepository.save(record);
   }
@@ -1417,14 +1421,16 @@ export class PrescriptionsService {
     prescriptionId: string,
     tenantId?: string,
   ): Promise<MedicationAdministration[]> {
+    const tid = requireTenantId(tenantId);
     return this.adminRepository.find({
-      where: { prescriptionId, ...(tenantId ? { tenantId } : {}) },
+      where: { prescriptionId, tenantId: tid },
       relations: ['prescriptionItem', 'administeredBy'],
       order: { administeredAt: 'DESC' },
     });
   }
 
   async getTimingAnalytics(dateFrom?: string, dateTo?: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     // Defence-in-depth: cap the analytics window even if a caller bypasses
     // the controller-level DTO. Without this an attacker (or a UI bug) can
     // request a multi-decade window and force getMany() to load every
@@ -1454,7 +1460,7 @@ export class PrescriptionsService {
       .where('p.dispensedAt IS NOT NULL')
       .andWhere('p.dispensingStartedAt IS NOT NULL');
 
-    if (tenantId) qb.andWhere('p.tenant_id = :tenantId', { tenantId });
+    qb.andWhere('p.tenant_id = :tenantId', { tenantId: tid });
     if (from) qb.andWhere('p.createdAt >= :dateFrom', { dateFrom: from });
     if (to) qb.andWhere('p.createdAt < :dateTo', { dateTo: to });
 
@@ -1505,8 +1511,9 @@ export class PrescriptionsService {
   // ─── Feature 1: E-Prescription Digital Signatures ───
 
   async verifySignature(prescriptionId: string, tenantId?: string): Promise<Prescription> {
+    const tid = requireTenantId(tenantId);
     const prescription = await this.prescriptionRepository.findOne({
-      where: { id: prescriptionId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: prescriptionId, tenantId: tid },
     });
     if (!prescription) {
       throw new NotFoundException('Prescription not found');
@@ -1530,12 +1537,13 @@ export class PrescriptionsService {
     notes?: string;
     tenantId?: string;
   }): Promise<ControlledSubstanceLog> {
+    const tid = requireTenantId(data.tenantId);
     // Calculate running balance
     const lastLog = await this.controlledSubstanceLogRepository.findOne({
       where: {
         prescriptionItemId: data.prescriptionItemId,
         ...(data.facilityId ? { facilityId: data.facilityId } : {}),
-        ...(data.tenantId ? { tenantId: data.tenantId } : {}),
+        tenantId: tid,
       },
       order: { createdAt: 'DESC' },
     });
@@ -1550,7 +1558,7 @@ export class PrescriptionsService {
       dispensedById: data.dispensedById,
       facilityId: data.facilityId,
       notes: data.notes,
-      ...(data.tenantId ? { tenantId: data.tenantId } : {}),
+      tenantId: tid,
     });
 
     return this.controlledSubstanceLogRepository.save(log);
@@ -1562,8 +1570,9 @@ export class PrescriptionsService {
     actorUserId: string,
     tenantId?: string,
   ): Promise<ControlledSubstanceLog> {
+    const tid = requireTenantId(tenantId);
     const log = await this.controlledSubstanceLogRepository.findOne({
-      where: { id: logId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: logId, tenantId: tid },
     });
     if (!log) {
       throw new NotFoundException('Controlled substance log entry not found');
@@ -1592,8 +1601,9 @@ export class PrescriptionsService {
     actorUserId: string,
     tenantId?: string,
   ): Promise<ControlledSubstanceLog> {
+    const tid = requireTenantId(tenantId);
     const log = await this.controlledSubstanceLogRepository.findOne({
-      where: { id: logId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: logId, tenantId: tid },
     });
     if (!log) {
       throw new NotFoundException('Controlled substance log entry not found');
@@ -1622,11 +1632,12 @@ export class PrescriptionsService {
     facilityId: string,
     tenantId?: string,
   ): Promise<ControlledSubstanceLog[]> {
+    const tid = requireTenantId(tenantId);
     return this.controlledSubstanceLogRepository.find({
       where: {
         prescriptionItemId: itemId,
         facilityId,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
       relations: ['prescriptionItem', 'dispensation', 'dispensedBy', 'witness', 'doubleCheckBy'],
       order: { createdAt: 'DESC' },
@@ -1637,6 +1648,7 @@ export class PrescriptionsService {
     query: NarcoticsRegisterQueryDto,
     tenantId?: string,
   ): Promise<{ data: ControlledSubstanceLog[]; total: number }> {
+    const tid = requireTenantId(tenantId);
     const { facilityId, drugSchedule, dateFrom, dateTo, page = 1, limit = 50 } = query;
 
     const qb = this.controlledSubstanceLogRepository
@@ -1647,9 +1659,7 @@ export class PrescriptionsService {
       .leftJoinAndSelect('log.witness', 'witness')
       .leftJoinAndSelect('log.doubleCheckBy', 'doubleCheckBy');
 
-    if (tenantId) {
-      qb.andWhere('log.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('log.tenant_id = :tenantId', { tenantId: tid });
     if (facilityId) {
       qb.andWhere('log.facility_id = :facilityId', { facilityId });
     }

@@ -19,6 +19,7 @@ import {
 } from '../../database/entities/patient-active-medication.entity';
 import { Prescription, PrescriptionItem } from '../../database/entities/prescription.entity';
 import { DischargeSummary } from '../../database/entities/discharge-summary.entity';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class MedicationReconciliationService {
@@ -48,12 +49,13 @@ export class MedicationReconciliationService {
     tenantId?: string;
   }): Promise<MedicationReconciliation> {
     const { encounterId, patientId, facilityId, dischargeSummaryId, tenantId } = params;
+    const tid = requireTenantId(tenantId);
 
     // Check for existing reconciliation
     const existing = await this.reconRepo.findOne({
       where: {
         encounterId,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
     });
     if (existing) return existing;
@@ -65,7 +67,7 @@ export class MedicationReconciliationService {
         facilityId,
         dischargeSummaryId,
         status: ReconciliationStatus.DRAFT,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       });
       const savedRecon = await manager.save(recon);
 
@@ -76,7 +78,7 @@ export class MedicationReconciliationService {
         where: {
           patientId,
           status: ActiveMedicationStatus.ACTIVE,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         },
       });
 
@@ -94,7 +96,7 @@ export class MedicationReconciliationService {
           route: med.route,
           duration: med.duration,
           reconciliationStatus: ReconciliationItemStatus.PENDING_REVIEW,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         });
       }
 
@@ -102,7 +104,7 @@ export class MedicationReconciliationService {
       const prescriptions = await manager.find(Prescription, {
         where: {
           encounterId,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         },
         relations: ['items'],
       });
@@ -123,7 +125,7 @@ export class MedicationReconciliationService {
             duration: item.duration,
             instructions: item.instructions,
             reconciliationStatus: ReconciliationItemStatus.PENDING_REVIEW,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: tid,
           });
         }
       }
@@ -141,8 +143,9 @@ export class MedicationReconciliationService {
     dischargeSummaryId: string,
     tenantId?: string,
   ): Promise<MedicationReconciliation | null> {
+    const tid = requireTenantId(tenantId);
     return this.reconRepo.findOne({
-      where: { dischargeSummaryId, ...(tenantId ? { tenantId } : {}) },
+      where: { dischargeSummaryId, tenantId: tid },
       relations: ['items'],
     });
   }
@@ -151,8 +154,9 @@ export class MedicationReconciliationService {
     id: string,
     tenantId?: string,
   ): Promise<MedicationReconciliation> {
+    const tid = requireTenantId(tenantId);
     const recon = await this.reconRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
       relations: ['items'],
     });
     if (!recon) throw new NotFoundException('Medication reconciliation not found');
@@ -172,8 +176,9 @@ export class MedicationReconciliationService {
     userId: string,
     tenantId?: string,
   ): Promise<MedicationReconciliationItem> {
+    const tid = requireTenantId(tenantId);
     const item = await this.itemRepo.findOne({
-      where: { id: itemId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: itemId, tenantId: tid },
     });
     if (!item) throw new NotFoundException('Reconciliation item not found');
 
@@ -198,6 +203,7 @@ export class MedicationReconciliationService {
     userId: string,
     tenantId?: string,
   ): Promise<MedicationReconciliation> {
+    const tid = requireTenantId(tenantId);
     const recon = await this.findById(id, tenantId);
 
     if (recon.status === ReconciliationStatus.COMPLETED || recon.status === ReconciliationStatus.SIGNED) {
@@ -229,7 +235,7 @@ export class MedicationReconciliationService {
           where: ids.map((sourceId) => ({
             id: sourceId,
             status: ActiveMedicationStatus.ACTIVE,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: tid,
           })),
         });
 
@@ -290,6 +296,7 @@ export class MedicationReconciliationService {
     userId: string,
     tenantId?: string,
   ): Promise<MedicationReconciliation> {
+    requireTenantId(tenantId);
     const recon = await this.findById(id, tenantId);
 
     if (recon.status !== ReconciliationStatus.COMPLETED) {

@@ -9,6 +9,7 @@ import {
   ProblemSearchDto,
   MarkResolvedDto,
 } from './dto/problems.dto';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class ProblemsService {
@@ -20,18 +21,20 @@ export class ProblemsService {
   ) {}
 
   async create(facilityId: string, dto: CreateProblemDto, userId?: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const problem = this.problemRepo.create({
       ...dto,
       facilityId,
       diagnosedById: userId,
       lastReviewedAt: new Date(),
       lastReviewedById: userId,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
     return this.problemRepo.save(problem);
   }
 
   async findAll(facilityId: string, query: ProblemSearchDto, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const { patientId, status, search, page = 1, limit = 50 } = query;
 
     const qb = this.problemRepo
@@ -41,9 +44,7 @@ export class ProblemsService {
       .where('p.facilityId = :facilityId', { facilityId })
       .andWhere('p.deletedAt IS NULL');
 
-    if (tenantId) {
-      qb.andWhere('p.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('p.tenant_id = :tenantId', { tenantId: tid });
 
     if (patientId) {
       qb.andWhere('p.patientId = :patientId', { patientId });
@@ -101,15 +102,14 @@ export class ProblemsService {
   }
 
   async findByPatient(patientId: string, status?: ProblemStatus, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const qb = this.problemRepo
       .createQueryBuilder('p')
       .leftJoinAndSelect('p.diagnosis', 'diagnosis')
       .where('p.patientId = :patientId', { patientId })
       .andWhere('p.deletedAt IS NULL');
 
-    if (tenantId) {
-      qb.andWhere('p.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('p.tenant_id = :tenantId', { tenantId: tid });
 
     if (status) {
       qb.andWhere('p.status = :status', { status });
@@ -137,8 +137,9 @@ export class ProblemsService {
   }
 
   async findOne(id: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const where: any = { id, deletedAt: null as any };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     const problem = await this.problemRepo.findOne({
       where,
@@ -174,8 +175,9 @@ export class ProblemsService {
   }
 
   async update(id: string, dto: UpdateProblemDto, userId?: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     const problem = await this.problemRepo.findOneBy(where);
     if (!problem) {
@@ -191,8 +193,9 @@ export class ProblemsService {
   }
 
   async markResolved(id: string, dto: MarkResolvedDto, userId?: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     const problem = await this.problemRepo.findOneBy(where);
     if (!problem) {
@@ -211,8 +214,9 @@ export class ProblemsService {
   }
 
   async remove(id: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     const problem = await this.problemRepo.findOneBy(where);
     if (!problem) {
@@ -223,6 +227,7 @@ export class ProblemsService {
   }
 
   async getPatientStats(patientId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const qb = this.problemRepo
       .createQueryBuilder('p')
       .select('p.status', 'status')
@@ -230,9 +235,7 @@ export class ProblemsService {
       .where('p.patientId = :patientId', { patientId })
       .andWhere('p.deletedAt IS NULL');
 
-    if (tenantId) {
-      qb.andWhere('p.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('p.tenant_id = :tenantId', { tenantId: tid });
 
     const counts = await qb.groupBy('p.status').getRawMany();
 

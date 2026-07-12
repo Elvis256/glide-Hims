@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
 import { FinanceAuditLog } from '../../database/entities/finance-extended.entity';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class FinanceAuditService {
@@ -25,6 +26,7 @@ export class FinanceAuditService {
     },
     tenantId?: string,
   ): Promise<FinanceAuditLog> {
+    const tid = requireTenantId(tenantId);
     const entry = this.auditRepo.create({
       action: dto.action,
       entityType: dto.entityType,
@@ -34,7 +36,7 @@ export class FinanceAuditService {
       oldValue: dto.oldValues,
       newValue: dto.newValues,
       ipAddress: dto.ipAddress,
-      tenantId,
+      tenantId: tid,
     });
     return this.auditRepo.save(entry);
   }
@@ -52,8 +54,8 @@ export class FinanceAuditService {
     },
     tenantId?: string,
   ): Promise<{ data: FinanceAuditLog[]; total: number }> {
-    const where: any = {};
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { tenantId: tid };
     if (filters.entityType) where.entityType = filters.entityType;
     if (filters.entityId) where.entityId = filters.entityId;
     if (filters.userId) where.userId = filters.userId;

@@ -7,6 +7,7 @@ import {
   DiagnosisCategory,
 } from '../../database/entities/diagnosis.entity';
 import { CreateDiagnosisDto, UpdateDiagnosisDto, DiagnosisSearchDto } from './dto/diagnosis.dto';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class DiagnosesService {
@@ -16,8 +17,9 @@ export class DiagnosesService {
   ) {}
 
   async create(dto: CreateDiagnosisDto, tenantId?: string): Promise<Diagnosis> {
+    const tid = requireTenantId(tenantId);
     const findWhere: any = { icd10Code: dto.icd10Code };
-    if (tenantId) findWhere.tenantId = tenantId;
+    findWhere.tenantId = tid;
     const existing = await this.diagnosisRepository.findOne({
       where: findWhere,
     });
@@ -26,7 +28,7 @@ export class DiagnosesService {
     const diagnosis = this.diagnosisRepository.create({
       ...dto,
       isActive: true,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
     return this.diagnosisRepository.save(diagnosis);
   }
@@ -35,13 +37,12 @@ export class DiagnosesService {
     query: DiagnosisSearchDto,
     tenantId?: string,
   ): Promise<{ data: Diagnosis[]; total: number; page: number; limit: number }> {
+    const tid = requireTenantId(tenantId);
     const page = query.page ?? 1;
     const limit = Math.min(query.limit ?? 50, 200);
     const qb = this.diagnosisRepository.createQueryBuilder('diagnosis');
 
-    if (tenantId) {
-      qb.andWhere('diagnosis.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('diagnosis.tenant_id = :tenantId', { tenantId: tid });
 
     if (query.search) {
       qb.andWhere(
@@ -78,16 +79,18 @@ export class DiagnosesService {
   }
 
   async findOne(id: string, tenantId?: string): Promise<Diagnosis> {
+    const tid = requireTenantId(tenantId);
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     const diagnosis = await this.diagnosisRepository.findOne({ where });
     if (!diagnosis) throw new NotFoundException('Diagnosis not found');
     return diagnosis;
   }
 
   async findByCode(icd10Code: string, tenantId?: string): Promise<Diagnosis | null> {
+    const tid = requireTenantId(tenantId);
     const where: any = { icd10Code };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     return this.diagnosisRepository.findOne({ where });
   }
 
@@ -103,12 +106,13 @@ export class DiagnosesService {
   }
 
   async seedCommonDiagnoses(tenantId?: string): Promise<{ created: number; skipped: number }> {
+    const tid = requireTenantId(tenantId);
     let created = 0;
     let skipped = 0;
 
     for (const diag of COMMON_DIAGNOSES) {
       const findWhere: any = { icd10Code: diag.icd10Code };
-      if (tenantId) findWhere.tenantId = tenantId;
+      findWhere.tenantId = tid;
       const existing = await this.diagnosisRepository.findOne({
         where: findWhere,
       });
@@ -121,7 +125,7 @@ export class DiagnosesService {
         this.diagnosisRepository.create({
           ...diag,
           isActive: true,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         }),
       );
       created++;
@@ -135,8 +139,9 @@ export class DiagnosesService {
   }
 
   async getNotifiableDiseases(tenantId?: string): Promise<Diagnosis[]> {
+    const tid = requireTenantId(tenantId);
     const where: any = { isNotifiable: true, isActive: true };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     return this.diagnosisRepository.find({
       where,
       order: { name: 'ASC' },
@@ -144,8 +149,9 @@ export class DiagnosesService {
   }
 
   async getChronicConditions(tenantId?: string): Promise<Diagnosis[]> {
+    const tid = requireTenantId(tenantId);
     const where: any = { isChronic: true, isActive: true };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     return this.diagnosisRepository.find({
       where,
       order: { name: 'ASC' },

@@ -9,6 +9,7 @@ import {
 import { Encounter } from '../../database/entities/encounter.entity';
 import { Patient } from '../../database/entities/patient.entity';
 import { Item } from '../../database/entities/inventory.entity';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 export interface PrescriptionItemDraft {
   prescriptionItemId: string;
@@ -53,8 +54,9 @@ export class PrescriptionLookupService {
    * Returns full Rx with items + remaining quantities + patient summary.
    */
   async findByCode(code: string, tenantId?: string): Promise<any> {
+    const tid = requireTenantId(tenantId);
     const where: any = { prescriptionNumber: code };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     const prescription = await this.prescriptionRepo.findOne({
       where,
@@ -120,8 +122,9 @@ export class PrescriptionLookupService {
     selections: PrescriptionItemDraft[],
     tenantId?: string,
   ): Promise<FromPrescriptionDraft> {
+    const tid = requireTenantId(tenantId);
     const where: any = { id: prescriptionId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     const prescription = await this.prescriptionRepo.findOne({
       where,
@@ -167,12 +170,10 @@ export class PrescriptionLookupService {
 
       // Look up inventory item by drug code (match against item.code or barcode)
       const inventoryItem = await this.itemRepo.findOne({
-        where: tenantId
-          ? [
-              { code: rxItem.drugCode, tenantId },
-              { barcode: rxItem.drugCode, tenantId },
-            ]
-          : [{ code: rxItem.drugCode }, { barcode: rxItem.drugCode }],
+        where: [
+          { code: rxItem.drugCode, tenantId: tid },
+          { barcode: rxItem.drugCode, tenantId: tid },
+        ],
       });
 
       const price = inventoryItem ? Number(inventoryItem.sellingPrice ?? 0) : 0;

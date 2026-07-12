@@ -18,6 +18,7 @@ import { PaymentGatewayService } from '../payment-gateway/payment-gateway.servic
 import { PharmacyService } from '../pharmacy/pharmacy.service';
 import { PosShiftGuardService } from './services/pos-shift-guard.service';
 import { InitiateMomoPaymentDto } from './pos-momo.dto';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 const MOMO_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const MOMO_MIN_POLL_AGE_MS = 30 * 1000; // 30s before first poll
@@ -53,8 +54,9 @@ export class PosMomoService {
   }
 
   async initiate(saleId: string, dto: InitiateMomoPaymentDto, userId: string, tenantId: string) {
+    const tid = requireTenantId(tenantId);
     const sale = await this.saleRepo.findOne({
-      where: { id: saleId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: saleId, tenantId: tid },
     });
     if (!sale) throw new NotFoundException(`Sale ${saleId} not found`);
     if (sale.status !== SaleStatus.PENDING) {
@@ -119,8 +121,9 @@ export class PosMomoService {
   }
 
   async getStatus(transactionId: string, userId: string, tenantId: string) {
+    const tid = requireTenantId(tenantId);
     const tx = await this.momoRepo.findOne({
-      where: { id: transactionId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: transactionId, tenantId: tid },
     });
     if (!tx) throw new NotFoundException(`Transaction ${transactionId} not found`);
 
@@ -172,8 +175,9 @@ export class PosMomoService {
   }
 
   async cancel(transactionId: string, userId: string, tenantId: string) {
+    const tid = requireTenantId(tenantId);
     const tx = await this.momoRepo.findOne({
-      where: { id: transactionId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: transactionId, tenantId: tid },
     });
     if (!tx) throw new NotFoundException(`Transaction ${transactionId} not found`);
     if (tx.status !== MomoTransactionStatus.PENDING) {

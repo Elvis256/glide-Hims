@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { ClinicalNote } from '../../database/entities/clinical-note.entity';
 import { Encounter } from '../../database/entities/encounter.entity';
 import { CreateClinicalNoteDto, UpdateClinicalNoteDto } from './clinical-notes.dto';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class ClinicalNotesService {
@@ -40,8 +41,9 @@ export class ClinicalNotesService {
     userId: string,
     tenantId?: string,
   ): Promise<ClinicalNote> {
+    const tid = requireTenantId(tenantId);
     const encounter = await this.encounterRepository.findOne({
-      where: { id: dto.encounterId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: dto.encounterId, tenantId: tid },
     });
 
     if (!encounter) {
@@ -51,7 +53,7 @@ export class ClinicalNotesService {
     const note = this.noteRepository.create({
       ...dto,
       providerId: userId,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
 
     const savedNote = await this.noteRepository.save(note);
@@ -63,8 +65,9 @@ export class ClinicalNotesService {
   }
 
   async findByEncounter(encounterId: string, tenantId?: string): Promise<ClinicalNote[]> {
+    const tid = requireTenantId(tenantId);
     const where: any = { encounterId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     return this.noteRepository.find({
       where,
       order: { createdAt: 'DESC' },
@@ -73,8 +76,9 @@ export class ClinicalNotesService {
   }
 
   async findOne(id: string, tenantId?: string): Promise<ClinicalNote> {
+    const tid = requireTenantId(tenantId);
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     const note = await this.noteRepository.findOne({
       where,
       relations: ['encounter', 'provider'],
@@ -130,15 +134,14 @@ export class ClinicalNotesService {
     limit = 20,
     tenantId?: string,
   ): Promise<ClinicalNote[]> {
+    const tid = requireTenantId(tenantId);
     const qb = this.noteRepository
       .createQueryBuilder('note')
       .leftJoinAndSelect('note.encounter', 'encounter')
       .leftJoinAndSelect('note.provider', 'provider')
       .where('encounter.patient_id = :patientId', { patientId });
 
-    if (tenantId) {
-      qb.andWhere('note.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('note.tenant_id = :tenantId', { tenantId: tid });
 
     return qb.orderBy('note.created_at', 'DESC').take(limit).getMany();
   }

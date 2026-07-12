@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like, ILike } from 'typeorm';
 import { Supplier, SupplierStatus, SupplierType } from '../../database/entities/supplier.entity';
 import { CreateSupplierDto, UpdateSupplierDto } from './dto/suppliers.dto';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class SuppliersService {
@@ -12,11 +13,11 @@ export class SuppliersService {
   ) {}
 
   async create(dto: CreateSupplierDto, tenantId?: string): Promise<Supplier> {
+    const tid = requireTenantId(tenantId);
     const code = dto.code?.trim() || (await this.generateCode(tenantId));
 
     // Check for duplicate code
-    const where: any = { code };
-    if (tenantId) where.tenantId = tenantId;
+    const where: any = { code, tenantId: tid };
     const existing = await this.supplierRepo.findOne({ where });
     if (existing) {
       throw new ConflictException(`Supplier with code ${code} already exists`);
@@ -27,22 +28,21 @@ export class SuppliersService {
       code,
       type: dto.type || SupplierType.GENERAL,
       status: SupplierStatus.ACTIVE,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
 
     return this.supplierRepo.save(supplier);
   }
 
   private async generateCode(tenantId?: string): Promise<string> {
+    const tid = requireTenantId(tenantId);
     const qb = this.supplierRepo
       .createQueryBuilder('s')
       .select('s.code', 'code')
       .where("s.code LIKE 'SUP-%'")
       .orderBy('s.code', 'DESC')
       .limit(1);
-    if (tenantId) {
-      qb.andWhere('s.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('s.tenant_id = :tenantId', { tenantId: tid });
     const last = await qb.getRawOne();
     let nextNum = 1;
     if (last?.code) {
@@ -63,6 +63,7 @@ export class SuppliersService {
     },
     tenantId?: string,
   ) {
+    const tid = requireTenantId(tenantId);
     const { type, status, search, page = 1, limit = 50 } = options;
 
     const qb = this.supplierRepo.createQueryBuilder('supplier');
@@ -90,9 +91,7 @@ export class SuppliersService {
       });
     }
 
-    if (tenantId) {
-      qb.andWhere('supplier.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('supplier.tenant_id = :tenantId', { tenantId: tid });
 
     const [data, total] = await qb
       .orderBy('supplier.name', 'ASC')
@@ -104,8 +103,8 @@ export class SuppliersService {
   }
 
   async findOne(id: string, tenantId?: string): Promise<Supplier> {
-    const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { id, tenantId: tid };
     const supplier = await this.supplierRepo.findOne({ where });
     if (!supplier) {
       throw new NotFoundException('Supplier not found');
@@ -114,8 +113,8 @@ export class SuppliersService {
   }
 
   async findByCode(code: string, tenantId?: string): Promise<Supplier | null> {
-    const where: any = { code };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { code, tenantId: tid };
     return this.supplierRepo.findOne({ where });
   }
 
@@ -131,11 +130,11 @@ export class SuppliersService {
   }
 
   async getActiveSuppliers(facilityId: string, tenantId?: string): Promise<Supplier[]> {
-    const where: any = { status: SupplierStatus.ACTIVE };
+    const tid = requireTenantId(tenantId);
+    const where: any = { status: SupplierStatus.ACTIVE, tenantId: tid };
     if (facilityId && facilityId.trim() !== '') {
       where.facilityId = facilityId;
     }
-    if (tenantId) where.tenantId = tenantId;
     return this.supplierRepo.find({
       where,
       order: { name: 'ASC' },
@@ -143,9 +142,9 @@ export class SuppliersService {
   }
 
   async getDashboard(facilityId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const hasFacility = facilityId && facilityId.trim() !== '';
-    const whereClause: any = hasFacility ? { facilityId } : {};
-    if (tenantId) whereClause.tenantId = tenantId;
+    const whereClause: any = hasFacility ? { facilityId, tenantId: tid } : { tenantId: tid };
 
     const [totalSuppliers, activeSuppliers, byType] = await Promise.all([
       this.supplierRepo.count({ where: whereClause }),
@@ -158,13 +157,7 @@ export class SuppliersService {
         if (hasFacility) {
           qb.where('s.facilityId = :facilityId', { facilityId });
         }
-        if (tenantId) {
-          if (hasFacility) {
-            qb.andWhere('s.tenant_id = :tenantId', { tenantId });
-          } else {
-            qb.where('s.tenant_id = :tenantId', { tenantId });
-          }
-        }
+        qb.andWhere('s.tenant_id = :tenantId', { tenantId: tid });
         return qb.groupBy('s.type').getRawMany();
       })(),
     ]);

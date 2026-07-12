@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { Item } from '../../database/entities/inventory.entity';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 export interface CatalogItemResult {
   id: string;
@@ -32,7 +33,8 @@ export class CatalogService {
     storeId?: string;
     tenantId?: string;
   }): Promise<CatalogItemResult[]> {
-    const { q = '', module = 'all', limit = 20, tenantId } = params;
+    const { q = '', module = 'all', limit = 20 } = params;
+    const tid = requireTenantId(params.tenantId);
 
     const qb = this.itemRepo
       .createQueryBuilder('item')
@@ -50,11 +52,8 @@ export class CatalogService {
         'item.status',
       ])
       .where('item.status != :inactive', { inactive: 'inactive' })
+      .andWhere('item.tenant_id = :tenantId', { tenantId: tid })
       .take(limit);
-
-    if (tenantId) {
-      qb.andWhere('item.tenant_id = :tenantId', { tenantId });
-    }
 
     // Module filter
     if (module === 'pharmacy') {
@@ -104,9 +103,9 @@ export class CatalogService {
 
   async getItemsByIds(ids: string[], tenantId?: string): Promise<CatalogItemResult[]> {
     if (!ids || ids.length === 0) return [];
+    const tid = requireTenantId(tenantId);
 
-    const where: Record<string, unknown> = { id: In(ids) };
-    if (tenantId) where['tenantId'] = tenantId;
+    const where: Record<string, unknown> = { id: In(ids), tenantId: tid };
 
     const items = await this.itemRepo.find({ where: where as any });
 

@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CostCenter } from '../../database/entities/finance-extended.entity';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class CostCenterService {
@@ -11,20 +12,22 @@ export class CostCenterService {
   ) {}
 
   async create(dto: Partial<CostCenter>, tenantId?: string): Promise<CostCenter> {
-    const entity = this.costCenterRepo.create({ ...dto, ...(tenantId ? { tenantId } : {}) });
+    const tid = requireTenantId(tenantId);
+    const entity = this.costCenterRepo.create({ ...dto, tenantId: tid });
     return this.costCenterRepo.save(entity);
   }
 
   async findAll(facilityId?: string, tenantId?: string): Promise<CostCenter[]> {
-    const where: any = {};
+    const tid = requireTenantId(tenantId);
+    const where: any = { tenantId: tid };
     if (facilityId) where.facilityId = facilityId;
-    if (tenantId) where.tenantId = tenantId;
     return this.costCenterRepo.find({ where, order: { name: 'ASC' } });
   }
 
   async findOne(id: string, tenantId?: string): Promise<CostCenter> {
+    const tid = requireTenantId(tenantId);
     const cc = await this.costCenterRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
     });
     if (!cc) throw new NotFoundException('Cost center not found');
     return cc;

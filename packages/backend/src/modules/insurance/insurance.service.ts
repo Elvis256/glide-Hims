@@ -11,6 +11,7 @@ import { Repository, Between, LessThan, MoreThan, IsNull, DataSource, Not } from
 import { FinanceService } from '../finance/finance.service';
 import { BillingService } from '../billing/billing.service';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
+import { requireTenantId } from '../../common/utils/tenant.util';
 import { InsuranceProvider } from '../../database/entities/insurance-provider.entity';
 import { InsurancePolicy, PolicyStatus } from '../../database/entities/insurance-policy.entity';
 import { InsuranceClaim, ClaimStatus } from '../../database/entities/insurance-claim.entity';
@@ -65,11 +66,12 @@ export class InsuranceService {
 
   // ============ DASHBOARD ============
   async getDashboard(facilityId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const today = new Date();
     const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
     const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
-    const tenantFilter = tenantId ? { tenantId } : {};
+    const tenantFilter = { tenantId: tid };
 
     const [
       totalProviders,
@@ -97,14 +99,14 @@ export class InsuranceService {
         .select('COALESCE(SUM(claim.totalClaimed), 0)', 'total')
         .where('claim.facilityId = :facilityId', { facilityId })
         .andWhere('claim.createdAt >= :startOfMonth', { startOfMonth })
-        .andWhere(tenantId ? 'claim.tenant_id = :tenantId' : '1=1', tenantId ? { tenantId } : {})
+        .andWhere('claim.tenant_id = :tenantId', { tenantId })
         .getRawOne(),
       this.claimRepo
         .createQueryBuilder('claim')
         .select('COALESCE(SUM(claim.totalApproved), 0)', 'total')
         .where('claim.facilityId = :facilityId', { facilityId })
         .andWhere('claim.createdAt >= :startOfMonth', { startOfMonth })
-        .andWhere(tenantId ? 'claim.tenant_id = :tenantId' : '1=1', tenantId ? { tenantId } : {})
+        .andWhere('claim.tenant_id = :tenantId', { tenantId })
         .getRawOne(),
       this.claimRepo
         .createQueryBuilder('claim')
@@ -112,13 +114,13 @@ export class InsuranceService {
         .where('claim.facilityId = :facilityId', { facilityId })
         .andWhere('claim.status = :status', { status: ClaimStatus.PAID })
         .andWhere('claim.paidAt >= :startOfMonth', { startOfMonth })
-        .andWhere(tenantId ? 'claim.tenant_id = :tenantId' : '1=1', tenantId ? { tenantId } : {})
+        .andWhere('claim.tenant_id = :tenantId', { tenantId })
         .getRawOne(),
     ]);
 
     // Enhanced KPIs
-    const tenantCond = tenantId ? 'claim.tenant_id = :tenantId' : '1=1';
-    const tenantParams = tenantId ? { tenantId } : {};
+    const tenantCond = 'claim.tenant_id = :tenantId';
+    const tenantParams = { tenantId };
 
     const [
       approvalRateResult,
@@ -235,10 +237,8 @@ export class InsuranceService {
 
   // ============ PROVIDERS ============
   async createProvider(dto: CreateProviderDto, tenantId?: string): Promise<InsuranceProvider> {
-    const provider = this.providerRepo.create({
-      ...dto,
-      ...(tenantId ? { tenantId } : {}),
-    });
+    const tid = requireTenantId(tenantId);
+    const provider = this.providerRepo.create({ ...dto, tenantId: tid });
     return this.providerRepo.save(provider);
   }
 
@@ -247,18 +247,17 @@ export class InsuranceService {
     filters?: { active?: boolean },
     tenantId?: string,
   ): Promise<InsuranceProvider[]> {
-    const where: any = { facilityId };
+    const tid = requireTenantId(tenantId);
+    const where: any = { facilityId, tenantId: tid };
     if (filters?.active !== undefined) {
       where.isActive = filters.active;
     }
-    if (tenantId) where.tenantId = tenantId;
     return this.providerRepo.find({ where, order: { name: 'ASC' } });
   }
 
   async getProvider(id: string, tenantId?: string): Promise<InsuranceProvider> {
-    const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
-    const provider = await this.providerRepo.findOne({ where });
+    const tid = requireTenantId(tenantId);
+    const provider = await this.providerRepo.findOne({ where: { id, tenantId: tid } });
     if (!provider) throw new NotFoundException('Insurance provider not found');
     return provider;
   }
@@ -296,11 +295,12 @@ export class InsuranceService {
       throw new BadRequestException('copayPercentage must be between 0 and 100');
     }
 
+    const tid = requireTenantId(tenantId);
     const policy = this.policyRepo.create({
       ...dto,
       effectiveDate: effective,
       expiryDate: expiry,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
     return this.policyRepo.save(policy);
   }
@@ -309,11 +309,11 @@ export class InsuranceService {
     filters: { providerId?: string; patientId?: string; status?: PolicyStatus },
     tenantId?: string,
   ): Promise<InsurancePolicy[]> {
-    const where: any = {};
+    const tid = requireTenantId(tenantId);
+    const where: any = { tenantId: tid };
     if (filters.providerId) where.providerId = filters.providerId;
     if (filters.patientId) where.patientId = filters.patientId;
     if (filters.status) where.status = filters.status;
-    if (tenantId) where.tenantId = tenantId;
 
     return this.policyRepo.find({
       where,
@@ -323,10 +323,9 @@ export class InsuranceService {
   }
 
   async getPolicy(id: string, tenantId?: string): Promise<InsurancePolicy> {
-    const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
     const policy = await this.policyRepo.findOne({
-      where,
+      where: { id, tenantId: tid },
       relations: ['provider', 'patient'],
     });
     if (!policy) throw new NotFoundException('Insurance policy not found');
@@ -1114,8 +1113,8 @@ export class InsuranceService {
     endDate: string,
     tenantId?: string,
   ) {
-    const tenantCond = tenantId ? 'claim.tenant_id = :tenantId' : '1=1';
-    const tenantParams = tenantId ? { tenantId } : {};
+    const tenantCond = 'claim.tenant_id = :tenantId';
+    const tenantParams = { tenantId };
     const dateRange = { startDate: new Date(startDate), endDate: new Date(endDate) };
 
     const [

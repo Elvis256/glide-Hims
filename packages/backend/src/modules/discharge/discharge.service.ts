@@ -7,6 +7,7 @@ import { CreateDischargeSummaryDto, DischargeSummaryFilterDto } from './dto/disc
 import { VitalsService } from '../vitals/vitals.service';
 import { VitalSource } from '../../database/entities/vital.entity';
 import { MedicationReconciliationService } from './medication-reconciliation.service';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 const DISCHARGEABLE_STATUSES: EncounterStatus[] = [
   EncounterStatus.ADMITTED,
@@ -34,10 +35,10 @@ export class DischargeService {
     facilityId: string,
     tenantId?: string,
   ): Promise<DischargeSummary> {
+    const tid = requireTenantId(tenantId);
     return this.dataSource.transaction(async (manager) => {
       // Validate encounter status — only ACTIVE/IN_PROGRESS encounters can be discharged
-      const encounterWhere: any = { id: dto.encounterId };
-      if (tenantId) encounterWhere.tenantId = tenantId;
+      const encounterWhere: any = { id: dto.encounterId, tenantId: tid };
       const encounter = await manager.findOne(Encounter, { where: encounterWhere });
       if (!encounter) {
         throw new NotFoundException('Encounter not found');
@@ -49,8 +50,7 @@ export class DischargeService {
       }
 
       // Check if discharge summary already exists for this encounter
-      const existingWhere: any = { encounterId: dto.encounterId };
-      if (tenantId) existingWhere.tenantId = tenantId;
+      const existingWhere: any = { encounterId: dto.encounterId, tenantId: tid };
       const existing = await manager.findOne(DischargeSummary, {
         where: existingWhere,
       });
@@ -67,7 +67,7 @@ export class DischargeService {
         dischargeDate: new Date(dto.dischargeDate),
         facilityId,
         dischargedById: userId,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       });
 
       const savedSummary = await manager.save(DischargeSummary, summary);
@@ -75,7 +75,7 @@ export class DischargeService {
       // Update encounter status within same transaction
       await manager.update(
         Encounter,
-        { id: dto.encounterId, ...(tenantId ? { tenantId } : {}) },
+        { id: dto.encounterId, tenantId: tid },
         {
           status: EncounterStatus.DISCHARGED,
           endTime: new Date(dto.dischargeDate),
@@ -149,6 +149,7 @@ export class DischargeService {
     facilityId: string,
     tenantId?: string,
   ): Promise<DischargeSummary[]> {
+    const tid = requireTenantId(tenantId);
     const query = this.dischargeSummaryRepository
       .createQueryBuilder('discharge')
       .leftJoinAndSelect('discharge.patient', 'patient')
@@ -156,9 +157,7 @@ export class DischargeService {
       .leftJoinAndSelect('discharge.dischargedBy', 'dischargedBy')
       .where('discharge.facility_id = :facilityId', { facilityId });
 
-    if (tenantId) {
-      query.andWhere('discharge.tenant_id = :tenantId', { tenantId });
-    }
+    query.andWhere('discharge.tenant_id = :tenantId', { tenantId: tid });
 
     if (filter.patientId) {
       query.andWhere('discharge.patient_id = :patientId', { patientId: filter.patientId });
@@ -179,8 +178,8 @@ export class DischargeService {
   }
 
   async findOne(id: string, tenantId?: string): Promise<DischargeSummary> {
-    const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { id, tenantId: tid };
     const summary = await this.dischargeSummaryRepository.findOne({
       where,
       relations: ['patient', 'encounter', 'facility', 'dischargedBy', 'attendingPhysician'],
@@ -194,8 +193,8 @@ export class DischargeService {
   }
 
   async findByEncounter(encounterId: string, tenantId?: string): Promise<DischargeSummary> {
-    const where: any = { encounterId };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { encounterId, tenantId: tid };
     const summary = await this.dischargeSummaryRepository.findOne({
       where,
       relations: ['patient', 'dischargedBy', 'attendingPhysician'],
@@ -209,8 +208,8 @@ export class DischargeService {
   }
 
   async findByPatient(patientId: string, tenantId?: string): Promise<DischargeSummary[]> {
-    const where: any = { patientId };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { patientId, tenantId: tid };
     return this.dischargeSummaryRepository.find({
       where,
       relations: ['encounter', 'dischargedBy'],
@@ -229,12 +228,12 @@ export class DischargeService {
   }
 
   async getStats(facilityId: string, fromDate: Date, toDate: Date, tenantId?: string) {
-    const tenantFilter = tenantId ? { tenantId } : {};
+    const tid = requireTenantId(tenantId);
     const total = await this.dischargeSummaryRepository.count({
       where: {
         facilityId,
         dischargeDate: Between(fromDate, toDate),
-        ...tenantFilter,
+        tenantId: tid,
       },
     });
 
@@ -245,9 +244,7 @@ export class DischargeService {
       .where('discharge.facility_id = :facilityId', { facilityId })
       .andWhere('discharge.discharge_date BETWEEN :fromDate AND :toDate', { fromDate, toDate });
 
-    if (tenantId) {
-      byTypeQb.andWhere('discharge.tenant_id = :tenantId', { tenantId });
-    }
+    byTypeQb.andWhere('discharge.tenant_id = :tenantId', { tenantId: tid });
 
     const byType = await byTypeQb.groupBy('discharge.type').getRawMany();
 
@@ -256,7 +253,7 @@ export class DischargeService {
         facilityId,
         type: DischargeType.AGAINST_MEDICAL_ADVICE,
         dischargeDate: Between(fromDate, toDate),
-        ...tenantFilter,
+        tenantId: tid,
       },
     });
 
@@ -305,6 +302,7 @@ export class DischargeService {
   }
 
   private async generateDischargeNumber(tenantId?: string): Promise<string> {
+    const tid = requireTenantId(tenantId);
     const today = new Date();
     const year = today.getFullYear();
     const month = String(today.getMonth() + 1).padStart(2, '0');
@@ -314,9 +312,7 @@ export class DischargeService {
       .createQueryBuilder('discharge')
       .where('discharge.discharge_number LIKE :prefix', { prefix: `${prefix}%` });
 
-    if (tenantId) {
-      qb.andWhere('discharge.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('discharge.tenant_id = :tenantId', { tenantId: tid });
 
     const lastSummary = await qb.orderBy('discharge.discharge_number', 'DESC').getOne();
 

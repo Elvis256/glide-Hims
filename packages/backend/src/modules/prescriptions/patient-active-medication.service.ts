@@ -7,6 +7,7 @@ import {
   ActiveMedicationStatus,
 } from '../../database/entities/patient-active-medication.entity';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 export interface ActivateFromDispensationParams {
   patientId: string;
@@ -63,12 +64,13 @@ export class PatientActiveMedicationService {
    * Creates an active medication record so the drug appears in cross-encounter DDI checks.
    */
   async activateFromDispensation(params: ActivateFromDispensationParams): Promise<PatientActiveMedication> {
+    const tid = requireTenantId(params.tenantId);
     // Avoid duplicates for the same prescription item
     const existing = await this.repo.findOne({
       where: {
         prescriptionItemId: params.prescriptionItemId,
         status: ActiveMedicationStatus.ACTIVE,
-        ...(params.tenantId ? { tenantId: params.tenantId } : {}),
+        tenantId: tid,
       },
     });
     if (existing) return existing;
@@ -98,7 +100,7 @@ export class PatientActiveMedicationService {
       expectedEndDate,
       status: ActiveMedicationStatus.ACTIVE,
       facilityId: params.facilityId,
-      ...(params.tenantId ? { tenantId: params.tenantId } : {}),
+      tenantId: tid,
     });
 
     return this.repo.save(record);
@@ -109,11 +111,12 @@ export class PatientActiveMedicationService {
     patientId: string,
     tenantId?: string,
   ): Promise<PatientActiveMedication[]> {
+    const tid = requireTenantId(tenantId);
     return this.repo.find({
       where: {
         patientId,
         status: ActiveMedicationStatus.ACTIVE,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
       order: { startDate: 'DESC' },
     });
@@ -126,10 +129,11 @@ export class PatientActiveMedicationService {
     page = 1,
     limit = 50,
   ): Promise<{ data: PatientActiveMedication[]; total: number }> {
+    const tid = requireTenantId(tenantId);
     const [data, total] = await this.repo.findAndCount({
       where: {
         patientId,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
       order: { startDate: 'DESC' },
       take: Math.min(limit, 200),
@@ -145,8 +149,9 @@ export class PatientActiveMedicationService {
     reason: string,
     tenantId?: string,
   ): Promise<PatientActiveMedication> {
+    const tid = requireTenantId(tenantId);
     const med = await this.repo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
     });
     if (!med) throw new NotFoundException('Active medication not found');
     if (med.status !== ActiveMedicationStatus.ACTIVE) {
@@ -206,12 +211,13 @@ export class PatientActiveMedicationService {
     reason: string,
     tenantId?: string,
   ): Promise<void> {
+    const tid = requireTenantId(tenantId);
     if (ids.length === 0) return;
     const meds = await this.repo.find({
       where: {
         id: In(ids),
         status: ActiveMedicationStatus.ACTIVE,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
     });
 

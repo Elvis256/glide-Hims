@@ -9,6 +9,7 @@ import {
   EntityManager,
   IsNull,
 } from 'typeorm';
+import { requireTenantId } from '../../common/utils/tenant.util';
 import {
   Item,
   StockLedger,
@@ -38,20 +39,21 @@ export class InventoryService {
   // ============ ITEM MANAGEMENT ============
 
   async createItem(dto: CreateItemDto, tenantId?: string): Promise<Item> {
+    const tid = requireTenantId(tenantId);
     // Wrap auto-code generation + uniqueness check + insert in a single
     // transaction so two concurrent createItem calls cannot both read the
     // same max-suffix and produce duplicate item codes (P1).
     return this.dataSource.transaction(async (manager) => {
-      const code = dto.code?.trim() || (await this.generateItemCode(manager, dto.isDrug, tenantId));
+      const code = dto.code?.trim() || (await this.generateItemCode(manager, dto.isDrug, tid));
 
       const existing = await manager.findOne(Item, {
-        where: { code, ...(tenantId ? { tenantId } : {}) },
+        where: { code, tenantId: tid },
       });
       if (existing) {
         throw new BadRequestException(`Item with code ${code} already exists`);
       }
 
-      const item = manager.create(Item, { ...dto, code, ...(tenantId ? { tenantId } : {}) });
+      const item = manager.create(Item, { ...dto, code, tenantId: tid });
       return manager.save(Item, item);
     });
   }
@@ -61,11 +63,12 @@ export class InventoryService {
     isDrug?: boolean,
     tenantId?: string,
   ): Promise<string> {
+    const tid = requireTenantId(tenantId);
     const prefix = isDrug ? 'DRG' : 'ITM';
     // Advisory lock keyed by tenant+prefix prevents two concurrent
     // createItem calls from each reading the same DRG-00042 row and
     // producing duplicate codes. Released on txn commit/rollback.
-    const lockKey = `inventory:item-code:${tenantId || 'global'}:${prefix}`;
+    const lockKey = `inventory:item-code:${tid}:${prefix}`;
     await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [lockKey]);
 
     const qb = manager
@@ -74,9 +77,7 @@ export class InventoryService {
       .where('item.code LIKE :codePrefix', { codePrefix: `${prefix}-%` })
       .orderBy('item.code', 'DESC')
       .limit(1);
-    if (tenantId) {
-      qb.andWhere('item.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('item.tenant_id = :tenantId', { tenantId: tid });
     const last = await qb.getRawOne();
     let nextNum = 1;
     if (last?.code) {
@@ -96,12 +97,10 @@ export class InventoryService {
     tenantId?: string;
   }) {
     const { page = 1, limit = 20, search, category, isDrug, status, tenantId } = params;
+    const tid = requireTenantId(tenantId);
 
     // Build base filter conditions
-    const baseWhere: FindOptionsWhere<Item> = {};
-    if (tenantId) {
-      baseWhere.tenantId = tenantId;
-    }
+    const baseWhere: FindOptionsWhere<Item> = { tenantId: tid };
     if (category) {
       baseWhere.category = category;
     }
@@ -143,8 +142,9 @@ export class InventoryService {
   }
 
   async findItemById(id: string, tenantId?: string): Promise<Item> {
+    const tid = requireTenantId(tenantId);
     const item = await this.itemRepository.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
       relations: [
         'itemCategory',
         'subcategory',
@@ -178,8 +178,9 @@ export class InventoryService {
     facilityId: string,
     tenantId?: string,
   ): Promise<StockBalance | null> {
+    const tid = requireTenantId(tenantId);
     return this.stockBalanceRepository.findOne({
-      where: { itemId, facilityId, ...(tenantId ? { tenantId } : {}) },
+      where: { itemId, facilityId, tenantId: tid },
       relations: ['item'],
     });
   }
@@ -193,15 +194,13 @@ export class InventoryService {
     tenantId?: string;
   }) {
     const { facilityId, page = 1, limit = 20, search, lowStock, tenantId } = params;
+    const tid = requireTenantId(tenantId);
 
     const query = this.stockBalanceRepository
       .createQueryBuilder('sb')
       .leftJoinAndSelect('sb.item', 'item')
-      .where('sb.facilityId = :facilityId', { facilityId });
-
-    if (tenantId) {
-      query.andWhere('sb.tenant_id = :tenantId', { tenantId });
-    }
+      .where('sb.facilityId = :facilityId', { facilityId })
+      .andWhere('sb.tenant_id = :tenantId', { tenantId: tid });
 
     if (search) {
       query.andWhere('(item.name ILIKE :search OR item.code ILIKE :search)', {
@@ -274,6 +273,7 @@ export class InventoryService {
       tenantId,
       allowNegative,
     } = params;
+    const tid = requireTenantId(tenantId);
 
     if (signedQuantity === undefined && setTotalQuantity === undefined) {
       throw new BadRequestException('Either signedQuantity or setTotalQuantity must be provided');
@@ -287,7 +287,7 @@ export class InventoryService {
       facilityId,
       storeId: storeId ?? IsNull(),
     };
-    if (tenantId) balanceWhere.tenantId = tenantId;
+    balanceWhere.tenantId = tid;
 
     let balance = await manager.findOne(StockBalance, {
       where: balanceWhere,
@@ -319,7 +319,7 @@ export class InventoryService {
       referenceId,
       notes,
       createdById: userId,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
     await manager.save(StockLedger, ledger);
 
@@ -336,7 +336,7 @@ export class InventoryService {
         reservedQuantity: 0,
         availableQuantity: newBalance,
         lastMovementAt: new Date(),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       });
     }
     await manager.save(StockBalance, balance);
@@ -466,16 +466,14 @@ export class InventoryService {
       limit = 50,
       tenantId,
     } = params;
+    const tid = requireTenantId(tenantId);
 
     const query = this.stockLedgerRepository
       .createQueryBuilder('sl')
       .leftJoinAndSelect('sl.item', 'item')
       .leftJoinAndSelect('sl.createdBy', 'user')
-      .where('sl.facilityId = :facilityId', { facilityId });
-
-    if (tenantId) {
-      query.andWhere('sl.tenant_id = :tenantId', { tenantId });
-    }
+      .where('sl.facilityId = :facilityId', { facilityId })
+      .andWhere('sl.tenant_id = :tenantId', { tenantId: tid });
 
     if (itemId) {
       query.andWhere('sl.itemId = :itemId', { itemId });
@@ -500,18 +498,18 @@ export class InventoryService {
   }
 
   async getLowStockItems(facilityId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const qb = this.stockBalanceRepository
       .createQueryBuilder('sb')
       .leftJoinAndSelect('sb.item', 'item')
       .where('sb.facilityId = :facilityId', { facilityId })
-      .andWhere('sb.availableQuantity <= item.reorderLevel');
-    if (tenantId) {
-      qb.andWhere('sb.tenant_id = :tenantId', { tenantId });
-    }
+      .andWhere('sb.availableQuantity <= item.reorderLevel')
+      .andWhere('sb.tenant_id = :tenantId', { tenantId: tid });
     return qb.orderBy('sb.availableQuantity', 'ASC').getMany();
   }
 
   async getExpiringItems(facilityId: string, daysAhead: number = 90, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const expiryDate = new Date();
     expiryDate.setDate(expiryDate.getDate() + daysAhead);
 
@@ -521,12 +519,13 @@ export class InventoryService {
       .where('sl.facilityId = :facilityId', { facilityId })
       .andWhere('sl.expiryDate IS NOT NULL')
       .andWhere('sl.expiryDate <= :expiryDate', { expiryDate })
-      .andWhere('sl.quantity > 0');
-    if (tenantId) qb.andWhere('sl.tenant_id = :tenantId', { tenantId });
+      .andWhere('sl.quantity > 0')
+      .andWhere('sl.tenant_id = :tenantId', { tenantId: tid });
     return qb.orderBy('sl.expiryDate', 'ASC').getMany();
   }
 
   async getExpiredItems(facilityId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -536,8 +535,8 @@ export class InventoryService {
       .where('sl.facilityId = :facilityId', { facilityId })
       .andWhere('sl.expiryDate IS NOT NULL')
       .andWhere('sl.expiryDate < :today', { today })
-      .andWhere('sl.quantity > 0');
-    if (tenantId) qb2.andWhere('sl.tenant_id = :tenantId', { tenantId });
+      .andWhere('sl.quantity > 0')
+      .andWhere('sl.tenant_id = :tenantId', { tenantId: tid });
     return qb2.orderBy('sl.expiryDate', 'ASC').getMany();
   }
 
@@ -578,8 +577,9 @@ export class InventoryService {
     userId: string,
     tenantId?: string,
   ): Promise<void> {
+    const tid = requireTenantId(tenantId);
     const balance = await manager.findOne(StockBalance, {
-      where: { itemId, facilityId, ...(tenantId ? { tenantId } : {}) },
+      where: { itemId, facilityId, tenantId: tid },
       lock: { mode: 'pessimistic_write' },
     });
     if (!balance || balance.availableQuantity < quantity) {
@@ -599,7 +599,7 @@ export class InventoryService {
         referenceType,
         referenceId,
         createdById: userId,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       }),
     );
 
@@ -650,9 +650,8 @@ export class InventoryService {
       .andWhere('sl.createdAt >= :startDate', { startDate })
       .andWhere('sl.quantity < 0');
 
-    if (tenantId) {
-      qb.andWhere('sl.tenant_id = :tenantId', { tenantId });
-    }
+    const tid = requireTenantId(tenantId);
+    qb.andWhere('sl.tenant_id = :tenantId', { tenantId: tid });
 
     if (category && category !== 'all') {
       qb.andWhere('item.category = :category', { category });
@@ -773,6 +772,7 @@ export class InventoryService {
    * Returns affected patients and dispensation details for traceability
    */
   async recallBatch(batchNumber: string, facilityId?: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const qb = this.stockLedgerRepository
       .createQueryBuilder('sl')
       .leftJoinAndSelect('sl.item', 'item')
@@ -782,9 +782,7 @@ export class InventoryService {
     if (facilityId) {
       qb.andWhere('sl.facilityId = :facilityId', { facilityId });
     }
-    if (tenantId) {
-      qb.andWhere('sl.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('sl.tenant_id = :tenantId', { tenantId: tid });
 
     const movements = await qb.orderBy('sl.createdAt', 'DESC').getMany();
 

@@ -10,6 +10,7 @@ import {
   TreatmentPlanFilterDto,
 } from './dto/treatment-plan.dto';
 import { v4 as uuidv4 } from 'uuid';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class TreatmentPlansService {
@@ -23,7 +24,8 @@ export class TreatmentPlansService {
     userId: string,
     tenantId?: string,
   ): Promise<TreatmentPlan> {
-    const planNumber = await this.generatePlanNumber(tenantId);
+    const tid = requireTenantId(tenantId);
+    const planNumber = await this.generatePlanNumber(tid);
 
     const plan = this.treatmentPlanRepository.create({
       ...dto,
@@ -33,22 +35,21 @@ export class TreatmentPlansService {
       createdById: userId,
       status: TreatmentPlanStatus.DRAFT,
       revisionNumber: 1,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     } as any);
 
     return this.treatmentPlanRepository.save(plan) as unknown as Promise<TreatmentPlan>;
   }
 
   async findAll(filter: TreatmentPlanFilterDto, tenantId?: string): Promise<TreatmentPlan[]> {
+    const tid = requireTenantId(tenantId);
     const query = this.treatmentPlanRepository
       .createQueryBuilder('plan')
       .leftJoinAndSelect('plan.patient', 'patient')
       .leftJoinAndSelect('plan.primaryProvider', 'primaryProvider')
       .leftJoinAndSelect('plan.createdBy', 'createdBy');
 
-    if (tenantId) {
-      query.andWhere('plan.tenant_id = :tenantId', { tenantId });
-    }
+    query.andWhere('plan.tenant_id = :tenantId', { tenantId: tid });
 
     if (filter.patientId) {
       query.andWhere('plan.patient_id = :patientId', { patientId: filter.patientId });
@@ -72,8 +73,9 @@ export class TreatmentPlansService {
   }
 
   async findOne(id: string, tenantId?: string): Promise<TreatmentPlan> {
+    const tid = requireTenantId(tenantId);
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     const plan = await this.treatmentPlanRepository.findOne({
       where,
@@ -88,8 +90,9 @@ export class TreatmentPlansService {
   }
 
   async findByPatient(patientId: string, tenantId?: string): Promise<TreatmentPlan[]> {
+    const tid = requireTenantId(tenantId);
     const where: any = { patientId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     return this.treatmentPlanRepository.find({
       where,
@@ -99,8 +102,9 @@ export class TreatmentPlansService {
   }
 
   async getActivePlans(patientId: string, tenantId?: string): Promise<TreatmentPlan[]> {
+    const tid = requireTenantId(tenantId);
     const where: any = { patientId, status: TreatmentPlanStatus.ACTIVE };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     return this.treatmentPlanRepository.find({
       where,
@@ -209,14 +213,15 @@ export class TreatmentPlansService {
     userId: string,
     tenantId?: string,
   ): Promise<TreatmentPlan> {
-    const oldPlan = await this.findOne(id, tenantId);
+    const tid = requireTenantId(tenantId);
+    const oldPlan = await this.findOne(id, tid);
 
     // Mark old plan as revised
     oldPlan.status = TreatmentPlanStatus.REVISED;
     await this.treatmentPlanRepository.save(oldPlan);
 
     // Create new version
-    const newPlanNumber = await this.generatePlanNumber(tenantId);
+    const newPlanNumber = await this.generatePlanNumber(tid);
     const newPlan = this.treatmentPlanRepository.create({
       ...oldPlan,
       id: undefined,
@@ -229,7 +234,7 @@ export class TreatmentPlansService {
       createdAt: undefined,
       updatedAt: undefined,
       ...dto.updates,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     } as any);
 
     return this.treatmentPlanRepository.save(newPlan) as unknown as Promise<TreatmentPlan>;
@@ -242,7 +247,7 @@ export class TreatmentPlansService {
     return this.treatmentPlanRepository.save(plan);
   }
 
-  private async generatePlanNumber(tenantId?: string): Promise<string> {
+  private async generatePlanNumber(tenantId: string): Promise<string> {
     const today = new Date();
     const year = today.getFullYear();
     const month = String(today.getMonth() + 1).padStart(2, '0');
@@ -251,7 +256,7 @@ export class TreatmentPlansService {
     const qb = this.treatmentPlanRepository
       .createQueryBuilder('plan')
       .where('plan.plan_number LIKE :prefix', { prefix: `${prefix}%` });
-    if (tenantId) qb.andWhere('plan.tenant_id = :tenantId', { tenantId });
+    qb.andWhere('plan.tenant_id = :tenantId', { tenantId });
     const lastPlan = await qb.orderBy('plan.plan_number', 'DESC').getOne();
 
     let sequence = 1;

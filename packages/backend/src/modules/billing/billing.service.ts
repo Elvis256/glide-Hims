@@ -34,6 +34,7 @@ import { PreAuthorization, PreAuthStatus } from '../../database/entities/pre-aut
 import { InsurancePolicy, PolicyStatus } from '../../database/entities/insurance-policy.entity';
 import { MembershipScheme, PatientMembership } from '../../database/entities/membership.entity';
 import { multiply, add, subtract, divide, roundCurrency } from '../../common/utils/currency';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class BillingService {

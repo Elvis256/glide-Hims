@@ -11,6 +11,7 @@ import { GroupPermission } from '../../database/entities/group-permission.entity
 import { RolePermissionGroup } from '../../database/entities/role-permission-group.entity';
 import { Permission } from '../../database/entities/permission.entity';
 import { Role } from '../../database/entities/role.entity';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class PermissionGroupsService {
@@ -62,10 +63,9 @@ export class PermissionGroupsService {
   }
 
   async findAll(tenantId?: string): Promise<any[]> {
+    const tid = requireTenantId(tenantId);
     const qb = this.groupRepository.createQueryBuilder('g');
-    if (tenantId) {
-      qb.where('(g.tenant_id = :tenantId OR g.tenant_id IS NULL)', { tenantId });
-    }
+    qb.where('(g.tenant_id = :tenantId OR g.tenant_id IS NULL)', { tenantId: tid });
     const groups = await qb.orderBy('g.name', 'ASC').getMany();
 
     return Promise.all(
@@ -89,8 +89,8 @@ export class PermissionGroupsService {
   }
 
   async findOne(id: string, tenantId?: string): Promise<any> {
-    const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { id, tenantId: tid };
     const group = await this.groupRepository.findOne({ where });
     if (!group) throw new NotFoundException('Permission group not found');
 
@@ -114,15 +114,16 @@ export class PermissionGroupsService {
     dto: { name: string; description?: string; permissionIds?: string[] },
     tenantId?: string,
   ) {
+    const tid = requireTenantId(tenantId);
     const existing = await this.groupRepository.findOne({
-      where: { name: dto.name, ...(tenantId ? { tenantId } : {}) },
+      where: { name: dto.name, tenantId: tid },
     });
     if (existing) throw new ConflictException('Permission group name already exists');
 
     const group = this.groupRepository.create({
       name: dto.name,
       description: dto.description,
-      tenantId: tenantId || (null as any),
+      tenantId: tid,
     });
     const saved = await this.groupRepository.save(group);
 
@@ -143,8 +144,8 @@ export class PermissionGroupsService {
   }
 
   async update(id: string, dto: { name?: string; description?: string }, tenantId?: string) {
-    const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { id, tenantId: tid };
     const group = await this.groupRepository.findOne({ where });
     if (!group) throw new NotFoundException('Permission group not found');
     Object.assign(group, dto);
@@ -153,8 +154,8 @@ export class PermissionGroupsService {
   }
 
   async delete(id: string, tenantId?: string) {
-    const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { id, tenantId: tid };
     const group = await this.groupRepository.findOne({ where });
     if (!group) throw new NotFoundException('Permission group not found');
     await this.groupPermRepository.delete({ groupId: id });

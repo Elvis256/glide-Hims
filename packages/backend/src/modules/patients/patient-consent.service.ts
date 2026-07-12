@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull } from 'typeorm';
 import { PatientConsent, ConsentType } from '../../database/entities/patient-consent.entity';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class PatientConsentService {
@@ -25,6 +26,7 @@ export class PatientConsentService {
     witnessedById?: string;
     tenantId?: string;
   }): Promise<PatientConsent> {
+    const tid = requireTenantId(params.tenantId);
     const version = params.version || '1.0';
 
     // Idempotent: if same patient+type+version already active, return it
@@ -35,7 +37,7 @@ export class PatientConsentService {
         version,
         withdrawnAt: IsNull(),
         deletedAt: IsNull(),
-        ...(params.tenantId ? { tenantId: params.tenantId } : {}),
+        tenantId: tid,
       },
     });
     if (existing) {
@@ -52,19 +54,20 @@ export class PatientConsentService {
       userAgent: params.userAgent || null,
       recordedById: params.recordedById || null,
       witnessedById: params.witnessedById || null,
-      ...(params.tenantId ? { tenantId: params.tenantId } : {}),
+      tenantId: tid,
     });
 
     return this.consentRepo.save(consent);
   }
 
   async getActiveConsents(patientId: string, tenantId?: string): Promise<PatientConsent[]> {
+    const tid = requireTenantId(tenantId);
     return this.consentRepo.find({
       where: {
         patientId,
         withdrawnAt: IsNull(),
         deletedAt: IsNull(),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
       order: { acceptedAt: 'DESC' },
     });
@@ -77,12 +80,13 @@ export class PatientConsentService {
     withdrawnById: string;
     tenantId?: string;
   }): Promise<PatientConsent> {
+    const tid = requireTenantId(params.tenantId);
     const consent = await this.consentRepo.findOne({
       where: {
         id: params.consentId,
         patientId: params.patientId,
         withdrawnAt: IsNull(),
-        ...(params.tenantId ? { tenantId: params.tenantId } : {}),
+        tenantId: tid,
       },
     });
     if (!consent) {
@@ -113,10 +117,11 @@ export class PatientConsentService {
   }
 
   async getConsentHistory(patientId: string, tenantId?: string): Promise<PatientConsent[]> {
+    const tid = requireTenantId(tenantId);
     return this.consentRepo.find({
       where: {
         patientId,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
       order: { createdAt: 'DESC' },
       withDeleted: true,

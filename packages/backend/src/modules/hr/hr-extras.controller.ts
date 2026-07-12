@@ -23,6 +23,7 @@ import {
 import { EmployeeGoal, GoalStatus } from '../../database/entities/employee-goal.entity';
 import { LetterTemplate, LetterTemplateType } from '../../database/entities/letter-template.entity';
 import { Employee } from '../../database/entities/employee.entity';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @ApiTags('HR - PIP / Goals / Letters')
 @ApiBearerAuth()
@@ -45,9 +46,10 @@ export class HrExtrasController {
   @AuthWithPermissions('hr.create')
   @ApiOperation({ summary: 'Create PIP' })
   async createPip(@Body() dto: any, @Request() req: any) {
+    const tid = requireTenantId(req.user?.tenantId);
     const pip = this.pipRepo.create({
       ...dto,
-      tenantId: req.user?.tenantId,
+      tenantId: tid,
     });
     return this.pipRepo.save(pip);
   }
@@ -61,10 +63,10 @@ export class HrExtrasController {
     @Query('status') status?: PipStatus,
     @Request() req?: any,
   ) {
-    const where: any = { facilityId };
+    const tid = requireTenantId(req?.user?.tenantId);
+    const where: any = { facilityId, tenantId: tid };
     if (employeeId) where.employeeId = employeeId;
     if (status) where.status = status;
-    if (req?.user?.tenantId) where.tenantId = req.user.tenantId;
     return this.pipRepo.find({ where, order: { createdAt: 'DESC' } });
   }
 
@@ -72,8 +74,8 @@ export class HrExtrasController {
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Update PIP' })
   async updatePip(@Param('id') id: string, @Body() dto: any, @Request() req: any) {
-    const where: any = { id };
-    if (req.user?.tenantId) where.tenantId = req.user.tenantId;
+    const tid = requireTenantId(req.user?.tenantId);
+    const where: any = { id, tenantId: tid };
     const pip = await this.pipRepo.findOne({ where });
     if (!pip) throw new NotFoundException('PIP not found');
     Object.assign(pip, dto);
@@ -84,8 +86,8 @@ export class HrExtrasController {
   @AuthWithPermissions('hr.delete')
   @ApiOperation({ summary: 'Delete PIP' })
   async deletePip(@Param('id') id: string, @Request() req: any) {
-    const where: any = { id };
-    if (req.user?.tenantId) where.tenantId = req.user.tenantId;
+    const tid = requireTenantId(req.user?.tenantId);
+    const where: any = { id, tenantId: tid };
     const pip = await this.pipRepo.findOne({ where });
     if (!pip) throw new NotFoundException('PIP not found');
     await this.pipRepo.softRemove(pip);
@@ -97,9 +99,10 @@ export class HrExtrasController {
   @AuthWithPermissions('hr.create')
   @ApiOperation({ summary: 'Create employee goal' })
   async createGoal(@Body() dto: any, @Request() req: any) {
+    const tid = requireTenantId(req.user?.tenantId);
     const goal = this.goalRepo.create({
       ...dto,
-      tenantId: req.user?.tenantId,
+      tenantId: tid,
     });
     return this.goalRepo.save(goal);
   }
@@ -113,10 +116,10 @@ export class HrExtrasController {
     @Query('status') status?: GoalStatus,
     @Request() req?: any,
   ) {
-    const where: any = { facilityId };
+    const tid = requireTenantId(req?.user?.tenantId);
+    const where: any = { facilityId, tenantId: tid };
     if (employeeId) where.employeeId = employeeId;
     if (status) where.status = status;
-    if (req?.user?.tenantId) where.tenantId = req.user.tenantId;
     return this.goalRepo.find({ where, order: { createdAt: 'DESC' } });
   }
 
@@ -124,10 +127,10 @@ export class HrExtrasController {
   @AuthWithPermissions('hr.read')
   @ApiOperation({ summary: "List current user's goals" })
   async myGoals(@Request() req: any) {
+    const tid = requireTenantId(req.user?.tenantId);
     const emp = await this.employeeRepo.findOne({ where: { userId: req.user.id } });
     if (!emp) return [];
-    const where: any = { employeeId: emp.id };
-    if (req.user?.tenantId) where.tenantId = req.user.tenantId;
+    const where: any = { employeeId: emp.id, tenantId: tid };
     return this.goalRepo.find({ where, order: { createdAt: 'DESC' } });
   }
 
@@ -135,8 +138,8 @@ export class HrExtrasController {
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Update goal' })
   async updateGoal(@Param('id') id: string, @Body() dto: any, @Request() req: any) {
-    const where: any = { id };
-    if (req.user?.tenantId) where.tenantId = req.user.tenantId;
+    const tid = requireTenantId(req.user?.tenantId);
+    const where: any = { id, tenantId: tid };
     const goal = await this.goalRepo.findOne({ where });
     if (!goal) throw new NotFoundException('Goal not found');
     Object.assign(goal, dto);
@@ -147,8 +150,8 @@ export class HrExtrasController {
   @AuthWithPermissions('hr.delete')
   @ApiOperation({ summary: 'Delete goal' })
   async deleteGoal(@Param('id') id: string, @Request() req: any) {
-    const where: any = { id };
-    if (req.user?.tenantId) where.tenantId = req.user.tenantId;
+    const tid = requireTenantId(req.user?.tenantId);
+    const where: any = { id, tenantId: tid };
     const goal = await this.goalRepo.findOne({ where });
     if (!goal) throw new NotFoundException('Goal not found');
     await this.goalRepo.remove(goal);
@@ -160,7 +163,8 @@ export class HrExtrasController {
   @AuthWithPermissions('hr.create')
   @ApiOperation({ summary: 'Create letter template' })
   async createLetter(@Body() dto: any, @Request() req: any) {
-    const tpl = this.letterRepo.create({ ...dto, tenantId: req.user?.tenantId });
+    const tid = requireTenantId(req.user?.tenantId);
+    const tpl = this.letterRepo.create({ ...dto, tenantId: tid });
     return this.letterRepo.save(tpl);
   }
 
@@ -168,9 +172,9 @@ export class HrExtrasController {
   @AuthWithPermissions('hr.read')
   @ApiOperation({ summary: 'List letter templates' })
   async listLetters(@Query('type') type?: LetterTemplateType, @Request() req?: any) {
-    const where: any = {};
+    const tid = requireTenantId(req?.user?.tenantId);
+    const where: any = { tenantId: tid };
     if (type) where.type = type;
-    if (req?.user?.tenantId) where.tenantId = req.user.tenantId;
     return this.letterRepo.find({ where, order: { name: 'ASC' } });
   }
 
@@ -178,8 +182,8 @@ export class HrExtrasController {
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Update letter template' })
   async updateLetter(@Param('id') id: string, @Body() dto: any, @Request() req: any) {
-    const where: any = { id };
-    if (req.user?.tenantId) where.tenantId = req.user.tenantId;
+    const tid = requireTenantId(req.user?.tenantId);
+    const where: any = { id, tenantId: tid };
     const tpl = await this.letterRepo.findOne({ where });
     if (!tpl) throw new NotFoundException('Template not found');
     Object.assign(tpl, dto);
@@ -190,8 +194,8 @@ export class HrExtrasController {
   @AuthWithPermissions('hr.delete')
   @ApiOperation({ summary: 'Delete letter template' })
   async deleteLetter(@Param('id') id: string, @Request() req: any) {
-    const where: any = { id };
-    if (req.user?.tenantId) where.tenantId = req.user.tenantId;
+    const tid = requireTenantId(req.user?.tenantId);
+    const where: any = { id, tenantId: tid };
     const tpl = await this.letterRepo.findOne({ where });
     if (!tpl) throw new NotFoundException('Template not found');
     await this.letterRepo.remove(tpl);
@@ -207,8 +211,8 @@ export class HrExtrasController {
     @Request() req: any,
     @Res() res: any,
   ) {
-    const where: any = { id };
-    if (req.user?.tenantId) where.tenantId = req.user.tenantId;
+    const tid = requireTenantId(req.user?.tenantId);
+    const where: any = { id, tenantId: tid };
     const tpl = await this.letterRepo.findOne({ where });
     if (!tpl) throw new NotFoundException('Template not found');
 
@@ -217,7 +221,7 @@ export class HrExtrasController {
       const emp = await this.employeeRepo.findOne({
         where: {
           id: body.employeeId,
-          ...(req.user?.tenantId ? { tenantId: req.user.tenantId } : {}),
+          tenantId: tid,
         },
       });
       if (emp) ctx.employee = emp;

@@ -4,6 +4,7 @@ import { Repository, LessThan, MoreThan } from 'typeorm';
 import { InsurancePolicy, PolicyStatus } from '../../database/entities/insurance-policy.entity';
 import { InsuranceProvider } from '../../database/entities/insurance-provider.entity';
 import { CheckCoverageDto, CoverageDetailResponse } from './dto/coverage-check.dto';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class CoverageCheckService {
@@ -20,6 +21,7 @@ export class CoverageCheckService {
     dto: CheckCoverageDto,
     tenantId?: string,
   ): Promise<{ covered: boolean; coverageDetails: CoverageDetailResponse[] }> {
+    const tid = requireTenantId(tenantId);
     const today = new Date();
 
     // Find patient's active policies
@@ -28,11 +30,8 @@ export class CoverageCheckService {
       status: PolicyStatus.ACTIVE,
       effectiveDate: LessThan(today),
       expiryDate: MoreThan(today),
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     };
-    if (!tenantId) {
-      this.logger.warn('checkCoverage called without tenantId — query is not tenant-scoped');
-    }
 
     const activePolicies = await this.policyRepo.find({
       where,

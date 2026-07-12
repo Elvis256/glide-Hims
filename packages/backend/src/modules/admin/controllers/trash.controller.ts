@@ -16,6 +16,7 @@ import { AuthWithPermissions } from '../../auth/decorators/auth.decorator';
 import { User } from '../../../database/entities/user.entity';
 import { Patient } from '../../../database/entities/patient.entity';
 import { Role } from '../../../database/entities/role.entity';
+import { requireTenantId } from '../../../common/utils/tenant.util';
 
 // Fix 11: type-specific permissions instead of blanket 'users.delete'
 const TRASH_TYPES: Record<string, { entity: any; label: string; permission: string }> = {
@@ -38,6 +39,7 @@ export class TrashController {
   @ApiQuery({ name: 'limit', required: false })
   async list(@Query('type') type?: string, @Query('limit') limit?: number, @Request() req?: any) {
     const tenantId = req?.user?.tenantId;
+    const tid = requireTenantId(tenantId);
     const userPerms: string[] = req?.user?.permissions || [];
     const types = type ? [type] : Object.keys(TRASH_TYPES);
     const result: any[] = [];
@@ -48,7 +50,7 @@ export class TrashController {
       if (userPerms.length > 0 && !userPerms.includes(meta.permission)) continue;
       const repo = this.dataSource.getRepository(meta.entity);
       const where: any = { deletedAt: Not(IsNull()) };
-      if (tenantId) where.tenantId = tenantId;
+      where.tenantId = tid;
       const items = await repo.find({
         where,
         withDeleted: true,
@@ -81,17 +83,12 @@ export class TrashController {
     }
     const repo = this.dataSource.getRepository(meta.entity);
     const tenantId = req?.user?.tenantId;
+    const tid = requireTenantId(tenantId);
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     const found = await repo.findOne({ where, withDeleted: true });
     if (!found) throw new NotFoundException(`${meta.label} not found`);
-    // Restore must include the tenant predicate too. Without it, the
-    // unscoped repo.restore() emits a single-PK UPDATE that would
-    // happily un-delete a row we already verified, but it is also the
-    // wrong semantics: future refactors that re-use the criteria
-    // builder would silently drop tenant isolation. Keep the explicit
-    // tenant filter so the SQL itself is safe in isolation.
-    const restoreCriteria = tenantId ? { id, tenantId } : { id };
+    const restoreCriteria = { id, tenantId: tid };
     await repo.restore(restoreCriteria);
     return { success: true, type, id, label: meta.label };
   }

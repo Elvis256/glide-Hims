@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, IsNull, LessThanOrEqual, MoreThanOrEqual, Or } from 'typeorm';
 import { roundCurrency, multiply, divide, subtract, add } from '../../common/utils/currency';
+import { requireTenantId } from '../../common/utils/tenant.util';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
 import { InsurancePriceList } from '../../database/entities/insurance-price-list.entity';
 import {

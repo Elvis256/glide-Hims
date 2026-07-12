@@ -25,6 +25,7 @@ import { CreatePatientDto, UpdatePatientDto, PatientSearchDto } from './dto/pati
 import { hashPii } from '../../common/crypto/pii-crypto';
 import { checkDuplicates, DuplicateMatch } from './duplicate-detector.util';
 import { PatientConsentService } from './patient-consent.service';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 export interface UploadDocumentDto {
   category: DocumentCategory;
@@ -75,9 +76,10 @@ export class PatientsService {
   ) {}
 
   private async generateMRN(manager: EntityManager, tenantId?: string): Promise<string> {
+    const tid = requireTenantId(tenantId);
     // Get hospital name from system settings
     const hospitalNameSetting = await manager.getRepository(SystemSetting).findOne({
-      where: { key: 'hospital_name', ...(tenantId ? { tenantId } : {}) },
+      where: { key: 'hospital_name', tenantId: tid },
     });
 
     const hospitalName = hospitalNameSetting?.value?.name || 'HOSP';
@@ -88,7 +90,7 @@ export class PatientsService {
     // Get current date in YYYYMMDD format
     const date = new Date();
     const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
-    const lockKey = `mrn_gen_${dateStr}_${tenantId || 'global'}`;
+    const lockKey = `mrn_gen_${dateStr}_${tid}`;
 
     // Use advisory lock to prevent concurrent generation collisions
     await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [lockKey]);
@@ -101,8 +103,7 @@ export class PatientsService {
       const mrn = `${prefix}${dateStr}${random}`;
 
       // Check if MRN already exists
-      const whereCondition: any = { mrn };
-      if (tenantId) whereCondition.tenantId = tenantId;
+      const whereCondition: any = { mrn, tenantId: tid };
       const existing = await manager.getRepository(Patient).findOne({ where: whereCondition });
       if (!existing) return mrn;
     }
@@ -138,14 +139,14 @@ export class PatientsService {
   }
 
   async create(dto: CreatePatientDto, userId?: string, tenantId?: string): Promise<Patient> {
+    const tid = requireTenantId(tenantId);
     const savedPatient = await this.dataSource.transaction(async (manager) => {
       // 1. Generate unique MRN (includes advisory lock)
-      const mrn = await this.generateMRN(manager, tenantId);
+      const mrn = await this.generateMRN(manager, tid);
 
       // 2. Check national ID uniqueness with lock inside transaction
       if (dto.nationalId) {
-        const whereCondition: any = { nationalIdHash: hashPii(dto.nationalId, 'generic') };
-        if (tenantId) whereCondition.tenantId = tenantId;
+        const whereCondition: any = { nationalIdHash: hashPii(dto.nationalId, 'generic'), tenantId: tid };
         const existing = await manager.findOne(Patient, {
           where: whereCondition,
           lock: { mode: 'pessimistic_write' },
@@ -186,7 +187,7 @@ export class PatientsService {
         ...dto,
         mrn,
         status: 'active',
-        tenantId: tenantId || undefined,
+        tenantId: tid,
       });
 
       return manager.save(Patient, patient);
@@ -240,6 +241,7 @@ export class PatientsService {
   }
 
   async findAll(query: PatientSearchDto, tenantId?: string, facilityId?: string) {
+    const tid = requireTenantId(tenantId);
     const { page = 1, limit = 20, search, mrn, nationalId, phone } = query;
     const skip = (page - 1) * limit;
 
@@ -249,9 +251,7 @@ export class PatientsService {
     // soft-removed patients would otherwise show up in receptionist search.
     queryBuilder.where('patient.deletedAt IS NULL');
 
-    if (tenantId) {
-      queryBuilder.andWhere('patient.tenantId = :tenantId', { tenantId });
-    }
+    queryBuilder.andWhere('patient.tenantId = :tenantId', { tenantId: tid });
 
     // Facility filter: prefer patients with encounters at this facility, but don't exclude new patients
     // New patients (no encounters yet) must still be searchable for OPD token issuance
@@ -310,30 +310,31 @@ export class PatientsService {
   }
 
   async findOne(id: string, tenantId?: string): Promise<Patient> {
-    const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { id, tenantId: tid };
     const patient = await this.patientRepository.findOne({ where });
     if (!patient) throw new NotFoundException('Patient not found');
     return patient;
   }
 
   async findByMRN(mrn: string, tenantId?: string): Promise<Patient> {
-    const where: any = { mrn };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { mrn, tenantId: tid };
     const patient = await this.patientRepository.findOne({ where });
     if (!patient) throw new NotFoundException('Patient not found');
     return patient;
   }
 
   async update(id: string, dto: UpdatePatientDto, tenantId?: string): Promise<Patient> {
-    const patient = await this.findOne(id, tenantId);
+    const tid = requireTenantId(tenantId);
+    const patient = await this.findOne(id, tid);
 
     // Check for duplicate national ID if updating
     if (dto.nationalId && dto.nationalId !== patient.nationalId) {
       const existing = await this.patientRepository.findOne({
         where: {
           nationalIdHash: hashPii(dto.nationalId, 'generic'),
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         },
       });
       if (existing) {
@@ -351,6 +352,7 @@ export class PatientsService {
   }
 
   async checkDuplicates(dto: CreatePatientDto, tenantId?: string): Promise<DuplicateCheckResult> {
+    const tid = requireTenantId(tenantId);
     // Get all potential candidates for duplicate checking
     // We cast a wide net and let the utility narrow it down with confidence scoring
     const candidates: Patient[] = [];
@@ -360,7 +362,7 @@ export class PatientsService {
       const byNationalId = await this.patientRepository.find({
         where: {
           nationalIdHash: hashPii(dto.nationalId, 'generic'),
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         },
       });
       candidates.push(...byNationalId);
@@ -372,7 +374,7 @@ export class PatientsService {
       .where('DATE(patient.dateOfBirth) = DATE(:dob)', {
         dob: new Date(dto.dateOfBirth).toISOString().split('T')[0],
       });
-    if (tenantId) byDobQb.andWhere('patient.tenantId = :tenantId', { tenantId });
+    byDobQb.andWhere('patient.tenantId = :tenantId', { tenantId: tid });
     const byDob = await byDobQb.getMany();
     candidates.push(...byDob);
 
@@ -382,7 +384,7 @@ export class PatientsService {
       const byNameQb = this.patientRepository
         .createQueryBuilder('patient')
         .where('SIMILARITY(patient.fullName, :name) > 0.3', { name: dto.fullName });
-      if (tenantId) byNameQb.andWhere('patient.tenantId = :tenantId', { tenantId });
+      byNameQb.andWhere('patient.tenantId = :tenantId', { tenantId: tid });
       const byName = await byNameQb.getMany();
       candidates.push(...byName);
     } catch (error) {
@@ -390,7 +392,7 @@ export class PatientsService {
       const byNameFallbackQb = this.patientRepository
         .createQueryBuilder('patient')
         .where('patient.fullName ILIKE :name', { name: `%${dto.fullName}%` });
-      if (tenantId) byNameFallbackQb.andWhere('patient.tenantId = :tenantId', { tenantId });
+      byNameFallbackQb.andWhere('patient.tenantId = :tenantId', { tenantId: tid });
       const byNameFallback = await byNameFallbackQb.getMany();
       candidates.push(...byNameFallback);
     }
@@ -477,8 +479,9 @@ export class PatientsService {
 
     tenantId?: string,
   ): Promise<PatientDocument> {
+    const tid = requireTenantId(tenantId);
     // Verify patient exists (scoped by tenant)
-    await this.findOne(patientId, tenantId);
+    await this.findOne(patientId, tid);
 
     const document = this.documentRepository.create({
       patientId,
@@ -493,7 +496,7 @@ export class PatientsService {
       notes: dto.notes,
       tags: dto.tags,
       uploadedBy,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
 
     return this.documentRepository.save(document);
@@ -506,6 +509,7 @@ export class PatientsService {
 
     tenantId?: string,
   ): Promise<PatientDocument[]> {
+    const tid = requireTenantId(tenantId);
     // Get accessible categories for this user
     const accessibleCategories = this.getAccessibleCategories(userRoles);
 
@@ -520,7 +524,7 @@ export class PatientsService {
       .andWhere('doc.category IN (:...categories)', {
         categories: category ? [category] : accessibleCategories,
       });
-    if (tenantId) queryBuilder.andWhere('doc.tenant_id = :tenantId', { tenantId });
+    queryBuilder.andWhere('doc.tenant_id = :tenantId', { tenantId: tid });
 
     // If a specific category was requested, verify user has access
     if (category && !accessibleCategories.includes(category)) {

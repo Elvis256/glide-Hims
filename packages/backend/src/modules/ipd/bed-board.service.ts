@@ -5,6 +5,7 @@ import { Ward } from '../../database/entities/ward.entity';
 import { Bed, BedStatus } from '../../database/entities/bed.entity';
 import { Admission, AdmissionStatus } from '../../database/entities/admission.entity';
 import { BedTransfer } from '../../database/entities/bed-transfer.entity';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 /**
  * Bed-board, census, and short-term reservations.
@@ -37,12 +38,13 @@ export class BedBoardService {
    * 5–30 wards a typical facility has.
    */
   async getBedBoard(facilityId?: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     await this.expirePastReservations(tenantId);
 
     const wards = await this.wardRepo.find({
       where: {
         ...(facilityId ? { facilityId } : {}),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
       order: { name: 'ASC' },
     });
@@ -50,7 +52,7 @@ export class BedBoardService {
 
     const wardIds = wards.map((w) => w.id);
     const beds = await this.bedRepo.find({
-      where: { wardId: In(wardIds), ...(tenantId ? { tenantId } : {}) },
+      where: { wardId: In(wardIds), tenantId: tid },
       order: { bedNumber: 'ASC' },
     });
 
@@ -58,7 +60,7 @@ export class BedBoardService {
       where: {
         bedId: In(beds.map((b) => b.id)),
         status: AdmissionStatus.ADMITTED,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
       relations: ['patient', 'attendingDoctor'],
     });
@@ -112,6 +114,7 @@ export class BedBoardService {
    * occupancy per ward (admitted-on-day / total-beds).
    */
   async getCensus(facilityId: string, dateFrom: string, dateTo: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const start = new Date(dateFrom);
     const end = new Date(dateTo);
     end.setHours(23, 59, 59, 999);
@@ -119,13 +122,13 @@ export class BedBoardService {
     const wards = await this.wardRepo.find({
       where: {
         ...(facilityId ? { facilityId } : {}),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
     });
     const totalBeds = await this.bedRepo.count({
       where: {
-        ward: { facilityId, ...(tenantId ? { tenantId } : {}) } as any,
-        ...(tenantId ? { tenantId } : {}),
+        ward: { facilityId, tenantId: tid } as any,
+        tenantId: tid,
       },
     });
 
@@ -138,7 +141,7 @@ export class BedBoardService {
           AdmissionStatus.ABSCONDED,
         ]),
         dischargeDate: Between(start, end),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
       select: ['id', 'admissionDate', 'dischargeDate', 'wardId'],
     });
@@ -157,12 +160,12 @@ export class BedBoardService {
         {
           admissionDate: Between(new Date(0), end) as any,
           dischargeDate: IsNull() as any,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         },
         {
           admissionDate: Between(new Date(0), end) as any,
           dischargeDate: Between(start, new Date('9999-12-31')) as any,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         },
       ],
       select: ['id', 'admissionDate', 'dischargeDate', 'wardId'],
@@ -210,8 +213,9 @@ export class BedBoardService {
     userId: string,
     tenantId?: string,
   ): Promise<Bed> {
+    const tid = requireTenantId(tenantId);
     const bed = await this.bedRepo.findOne({
-      where: { id: bedId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: bedId, tenantId: tid },
     });
     if (!bed) throw new NotFoundException('Bed not found');
     if (bed.status !== BedStatus.AVAILABLE) {
@@ -227,8 +231,9 @@ export class BedBoardService {
   }
 
   async releaseReservation(bedId: string, tenantId?: string): Promise<Bed> {
+    const tid = requireTenantId(tenantId);
     const bed = await this.bedRepo.findOne({
-      where: { id: bedId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: bedId, tenantId: tid },
     });
     if (!bed) throw new NotFoundException('Bed not found');
     if (bed.status !== BedStatus.RESERVED) {
@@ -246,14 +251,15 @@ export class BedBoardService {
    * day after midnight bills as a full day (industry standard).
    */
   async computeBedDayCharges(admissionId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const admission = await this.admissionRepo.findOne({
-      where: { id: admissionId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: admissionId, tenantId: tid },
       relations: ['bed', 'ward'],
     });
     if (!admission) throw new NotFoundException('Admission not found');
 
     const transfers = await this.transferRepo.find({
-      where: { admissionId, ...(tenantId ? { tenantId } : {}) },
+      where: { admissionId, tenantId: tid },
       relations: ['fromBed', 'fromWard', 'toBed', 'toWard'],
       order: { transferTime: 'ASC' },
     });
@@ -303,9 +309,10 @@ export class BedBoardService {
 
   /** Auto-clear RESERVED beds whose hold has expired. Cheap to call per request. */
   private async expirePastReservations(tenantId?: string): Promise<void> {
+    const tid = requireTenantId(tenantId);
     const now = new Date();
     const reserved = await this.bedRepo.find({
-      where: { status: BedStatus.RESERVED, ...(tenantId ? { tenantId } : {}) },
+      where: { status: BedStatus.RESERVED, tenantId: tid },
     });
     const expiredBeds: typeof reserved = [];
     for (const bed of reserved) {

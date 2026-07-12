@@ -8,6 +8,7 @@ import {
 import { NotificationsGateway } from './notifications.gateway';
 import { UserRole } from '../../database/entities/user-role.entity';
 import { Role } from '../../database/entities/role.entity';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 export interface CreateNotificationDto {
   targetUserId: string;
@@ -37,9 +38,10 @@ export class InAppNotificationsService {
 
   /** Create a notification, save it, and push via WebSocket */
   async create(dto: CreateNotificationDto, tenantId?: string): Promise<InAppNotification> {
+    const tid = requireTenantId(tenantId);
     const notification = this.notifRepo.create({
       ...dto,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
     const saved = await this.notifRepo.save(notification);
     this.gateway.sendToUser(dto.targetUserId, {
@@ -72,15 +74,14 @@ export class InAppNotificationsService {
     facilityId?: string,
     tenantId?: string,
   ): Promise<string[]> {
+    const tid = requireTenantId(tenantId);
     const roleQb = this.roleRepo
       .createQueryBuilder('role')
       .where('LOWER(role.name) IN (:...names)', {
         names: roleNames.map((n) => n.toLowerCase()),
       });
 
-    if (tenantId) {
-      roleQb.andWhere('(role.tenant_id = :tenantId OR role.is_system_role = true)', { tenantId });
-    }
+    roleQb.andWhere('(role.tenant_id = :tenantId OR role.is_system_role = true)', { tenantId: tid });
 
     const roles = await roleQb.getMany();
 
@@ -95,17 +96,15 @@ export class InAppNotificationsService {
       qb.andWhere('(ur.facilityId = :facilityId OR ur.facilityId IS NULL)', { facilityId });
     }
 
-    if (tenantId) {
-      qb.andWhere('ur.tenantId = :tenantId', { tenantId });
-    }
+    qb.andWhere('ur.tenantId = :tenantId', { tenantId: tid });
 
     const rows = await qb.getRawMany();
     return rows.map((r) => r.userId);
   }
 
   async getForUser(userId: string, page = 1, limit = 30, tenantId?: string) {
-    const where: any = { targetUserId: userId };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { targetUserId: userId, tenantId: tid };
     const [data, total] = await this.notifRepo.findAndCount({
       where,
       order: { createdAt: 'DESC' },
@@ -116,20 +115,20 @@ export class InAppNotificationsService {
   }
 
   async getUnreadCount(userId: string, tenantId?: string): Promise<number> {
-    const where: any = { targetUserId: userId, isRead: false };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { targetUserId: userId, isRead: false, tenantId: tid };
     return this.notifRepo.count({ where });
   }
 
   async markRead(id: string, userId: string, tenantId?: string): Promise<void> {
-    const where: any = { id, targetUserId: userId };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { id, targetUserId: userId, tenantId: tid };
     await this.notifRepo.update(where, { isRead: true, readByUserId: userId, readAt: new Date() });
   }
 
   async markAllRead(userId: string, tenantId?: string): Promise<void> {
-    const where: any = { targetUserId: userId, isRead: false };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { targetUserId: userId, isRead: false, tenantId: tid };
     await this.notifRepo.update(where, { isRead: true, readByUserId: userId, readAt: new Date() });
   }
 

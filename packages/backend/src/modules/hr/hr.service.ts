@@ -66,6 +66,7 @@ import { Role } from '../../database/entities/role.entity';
 import { UserRole } from '../../database/entities/user-role.entity';
 import { AuditLog } from '../../database/entities/audit-log.entity';
 import { FinanceService } from '../finance/finance.service';
+import { requireTenantId } from '../../common/utils/tenant.util';
 import * as bcrypt from 'bcrypt';
 import {
   CreateEmployeeDto,
@@ -197,7 +198,7 @@ export class HrService {
       .leftJoinAndSelect('userRoles.role', 'role')
       .where('u.deletedAt IS NULL');
 
-    if (tenantId) qb.andWhere('u.tenantId = :tenantId', { tenantId });
+    qb.andWhere('u.tenantId = :tenantId', { tenantId: requireTenantId(tenantId) });
     if (options.status) qb.andWhere('u.status = :status', { status: options.status });
     if (options.departmentId)
       qb.andWhere('u.departmentId = :deptId', { deptId: options.departmentId });
@@ -252,7 +253,7 @@ export class HrService {
 
   async getStaffById(id: string, tenantId?: string) {
     const user = await this.userRepo.findOne({
-      where: { id, deletedAt: IsNull(), ...(tenantId ? { tenantId } : {}) },
+      where: { id, deletedAt: IsNull(), tenantId: requireTenantId(tenantId) },
       relations: ['department', 'facility', 'userRoles', 'userRoles.role'],
     });
     if (!user) throw new NotFoundException('Staff member not found');
@@ -312,7 +313,7 @@ export class HrService {
   async getStaffDashboard(facilityId?: string, tenantId?: string) {
     const baseQb = () => {
       const qb = this.userRepo.createQueryBuilder('u').where('u.deletedAt IS NULL');
-      if (tenantId) qb.andWhere('u.tenantId = :tenantId', { tenantId });
+      qb.andWhere('u.tenantId = :tenantId', { tenantId: requireTenantId(tenantId) });
       if (facilityId) {
         qb.andWhere(
           '(u.facilityId = :facilityId OR u.facilityId IS NULL OR EXISTS (SELECT 1 FROM user_roles ur2 WHERE ur2.user_id = u.id AND ur2.facility_id = :facilityId))',
@@ -331,7 +332,7 @@ export class HrService {
 
     // Get pending leave requests count
     const pendingLeave = await this.leaveRepo.count({
-      where: { status: LeaveStatus.PENDING, ...(tenantId ? { tenantId } : {}) },
+      where: { status: LeaveStatus.PENDING, tenantId: requireTenantId(tenantId) },
     });
 
     return {
@@ -353,7 +354,7 @@ export class HrService {
       .addSelect('user.staffCategory', 'staffCategory')
       .addSelect('COUNT(user.id)', 'count')
       .where('user.deletedAt IS NULL');
-    if (tenantId) qb.andWhere('user.tenant_id = :tenantId', { tenantId });
+    qb.andWhere('user.tenant_id = :tenantId', { tenantId: requireTenantId(tenantId) });
     const stats = await qb.groupBy('user.jobTitle').addGroupBy('user.staffCategory').getRawMany();
 
     return stats.map((s) => ({
@@ -369,7 +370,7 @@ export class HrService {
       where: {
         staffCategory: category as StaffCategory,
         deletedAt: IsNull(),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
       select: [
         'id',
@@ -433,7 +434,7 @@ export class HrService {
   ) {
     // Check for existing email
     const existingEmail = await this.userRepo.findOne({
-      where: { email: dto.email, ...(tenantId ? { tenantId } : {}) },
+      where: { email: dto.email, tenantId: requireTenantId(tenantId) },
     });
     if (existingEmail) {
       throw new ConflictException('A user with this email already exists');
@@ -449,7 +450,7 @@ export class HrService {
 
     // Check for existing username
     const existingUsername = await this.userRepo.findOne({
-      where: { username, ...(tenantId ? { tenantId } : {}) },
+      where: { username, tenantId: requireTenantId(tenantId) },
     });
     if (existingUsername) {
       throw new ConflictException('A user with this username already exists');
@@ -488,7 +489,7 @@ export class HrService {
       bankAccountNumber: dto.bankAccountNumber,
       annualLeaveBalance: 21,
       sickLeaveBalance: 10,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: requireTenantId(tenantId),
     });
 
     const savedUser = await this.userRepo.save(user);
@@ -496,7 +497,7 @@ export class HrService {
     // Assign role if provided
     if (dto.roleId) {
       const role = await this.roleRepo.findOne({
-        where: { id: dto.roleId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: dto.roleId, tenantId: requireTenantId(tenantId) },
       });
       if (role) {
         const userRole = this.userRoleRepo.create({
@@ -528,7 +529,7 @@ export class HrService {
 
   // Deactivate staff member (unified - updates user status)
   async deactivateStaff(id: string, reason?: string, tenantId?: string) {
-    const user = await this.userRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
+    const user = await this.userRepo.findOne({ where: { id, tenantId: requireTenantId(tenantId) } });
     if (!user) throw new NotFoundException('Staff member not found');
 
     user.status = 'inactive';
@@ -539,7 +540,7 @@ export class HrService {
 
   // Reactivate staff member
   async reactivateStaff(id: string, tenantId?: string) {
-    const user = await this.userRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
+    const user = await this.userRepo.findOne({ where: { id, tenantId: requireTenantId(tenantId) } });
     if (!user) throw new NotFoundException('Staff member not found');
 
     user.status = 'active';
@@ -561,7 +562,7 @@ export class HrService {
     tenantId?: string,
   ) {
     const user = await this.userRepo.findOne({
-      where: { id: userId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: userId, tenantId: requireTenantId(tenantId) },
     });
     if (!user) throw new NotFoundException('Staff member not found');
 
@@ -585,7 +586,7 @@ export class HrService {
 
     // 3. Record termination in employee if linked
     const employee = await this.employeeRepo.findOne({
-      where: { userId, ...(tenantId ? { tenantId } : {}) },
+      where: { userId, tenantId: requireTenantId(tenantId) },
     });
     if (employee) {
       employee.status = EmploymentStatus.TERMINATED;
@@ -648,7 +649,7 @@ export class HrService {
   ): Promise<{ departmentId?: string; department?: string }> {
     if (departmentId) {
       const dept = await this.departmentRepo.findOne({
-        where: { id: departmentId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: departmentId, tenantId: requireTenantId(tenantId) },
       });
       if (!dept) {
         throw new BadRequestException('Department not found in this tenant');
@@ -660,7 +661,7 @@ export class HrService {
       const match = await this.departmentRepo
         .createQueryBuilder('d')
         .where('LOWER(TRIM(d.name)) = LOWER(:name)', { name: trimmed })
-        .andWhere(tenantId ? 'd.tenant_id = :tenantId' : '1=1', { tenantId })
+        .andWhere('d.tenant_id = :tenantId', { tenantId: requireTenantId(tenantId) })
         .getOne();
       return { departmentId: match?.id, department: trimmed };
     }
@@ -707,7 +708,7 @@ export class HrService {
           bankName: dto.bankName,
           bankAccountNumber: dto.bankAccountNumber,
           status: EmploymentStatus.ACTIVE,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         });
         return await this.employeeRepo.save(employee);
       } catch (err: any) {
@@ -733,7 +734,7 @@ export class HrService {
   ) {
     const where: any = {};
     if (facilityId) where.facilityId = facilityId;
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     if (options.status) where.status = options.status;
     // departmentId (FK) is preferred when both are supplied
     if (options.departmentId) where.departmentId = options.departmentId;
@@ -752,7 +753,7 @@ export class HrService {
 
   async getEmployeeById(id: string, tenantId?: string): Promise<Employee> {
     const employee = await this.employeeRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
       relations: ['facility', 'user', 'departmentRef'],
     });
     if (!employee) throw new NotFoundException('Employee not found');
@@ -809,7 +810,7 @@ export class HrService {
       where: {
         employeeId: dto.employeeId,
         date: new Date(dto.date),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
     });
 
@@ -836,7 +837,7 @@ export class HrService {
       status: dto.status || 'present',
       notes: dto.notes,
       facilityId,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: requireTenantId(tenantId),
     });
 
     return this.attendanceRepo.save(record);
@@ -964,7 +965,7 @@ export class HrService {
     tenantId?: string,
   ) {
     const where: any = { facilityId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     if (options.employeeId) where.employeeId = options.employeeId;
     if (options.startDate && options.endDate) {
       where.date = Between(new Date(options.startDate), new Date(options.endDate));
@@ -1039,7 +1040,7 @@ export class HrService {
       daysRequested,
       reason: dto.reason,
       status: LeaveStatus.PENDING,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: requireTenantId(tenantId),
     });
 
     const saved = await this.leaveRepo.save(leave);
@@ -1145,7 +1146,7 @@ export class HrService {
       const employeeRepo = manager.getRepository(Employee);
 
       const leave = await leaveRepo.findOne({
-        where: { id, ...(tenantId ? { tenantId } : {}) },
+        where: { id, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!leave) throw new NotFoundException('Leave request not found');
@@ -1219,7 +1220,7 @@ export class HrService {
       .createQueryBuilder('leave')
       .leftJoinAndSelect('leave.employee', 'employee')
       .where('employee.facilityId = :facilityId', { facilityId });
-    if (tenantId) qb.andWhere('leave.tenantId = :tenantId', { tenantId });
+    qb.andWhere('leave.tenantId = :tenantId', { tenantId: requireTenantId(tenantId) });
 
     if (options.status) {
       qb.andWhere('leave.status = :status', { status: options.status });
@@ -1267,7 +1268,7 @@ export class HrService {
           month: dto.month,
           year: dto.year,
         })
-        .andWhere(tenantId ? 'p.tenantId = :tenantId' : '1=1', tenantId ? { tenantId } : {})
+        .andWhere('p.tenantId = :tenantId', { tenantId: requireTenantId(tenantId) })
         .getOne();
       if (existing) {
         throw new BadRequestException(`Payroll for ${dto.month}/${dto.year} already exists`);
@@ -1287,7 +1288,7 @@ export class HrService {
         payPeriodEnd,
         status: PayrollStatus.DRAFT,
         createdById: userId,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       });
 
       const saved = await prRepo.save(payroll);
@@ -1313,7 +1314,7 @@ export class HrService {
         .createQueryBuilder('p')
         .setLock('pessimistic_write')
         .where('p.id = :id', { id })
-        .andWhere(tenantId ? 'p.tenantId = :tenantId' : '1=1', tenantId ? { tenantId } : {})
+        .andWhere('p.tenantId = :tenantId', { tenantId: requireTenantId(tenantId) })
         .getOne();
       if (!payroll) throw new NotFoundException('Payroll run not found');
 
@@ -1332,7 +1333,7 @@ export class HrService {
           facilityId: payroll.facilityId,
           status: 'active',
           deletedAt: IsNull(),
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         },
       });
 
@@ -1392,7 +1393,7 @@ export class HrService {
           netSalary,
           daysWorked: 22,
           isPaid: false,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         });
         await payslipRepoTx.save(payslip);
 
@@ -1462,7 +1463,7 @@ export class HrService {
     return this.dataSource.transaction(async (manager) => {
       const prRepo = manager.getRepository(PayrollRun);
       const payroll = await prRepo.findOne({
-        where: { id, ...(tenantId ? { tenantId } : {}) },
+        where: { id, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!payroll) throw new NotFoundException('Payroll run not found');
@@ -1505,7 +1506,7 @@ export class HrService {
         .createQueryBuilder('p')
         .setLock('pessimistic_write')
         .where('p.id = :id', { id })
-        .andWhere(tenantId ? 'p.tenantId = :tenantId' : '1=1', tenantId ? { tenantId } : {})
+        .andWhere('p.tenantId = :tenantId', { tenantId: requireTenantId(tenantId) })
         .getOne();
       if (!payroll) throw new NotFoundException('Payroll run not found');
       if (payroll.status !== PayrollStatus.COMPLETED) {
@@ -1513,7 +1514,7 @@ export class HrService {
       }
       await manager
         .getRepository(Payslip)
-        .update({ payrollRunId: id, ...(tenantId ? { tenantId } : {}) }, { isPaid: true });
+        .update({ payrollRunId: id, tenantId: requireTenantId(tenantId) }, { isPaid: true });
       payroll.status = PayrollStatus.PAID;
       const saved = await manager.save(payroll);
       this.logger.log(`[HR_NOTIFY] payroll.paid id=${id}`);
@@ -1536,7 +1537,7 @@ export class HrService {
   // ============ PAYROLL EXPORTS ============
   async exportPayrollPaye(id: string, tenantId?: string) {
     const payroll = await this.payrollRunRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
     });
     if (!payroll) throw new NotFoundException('Payroll run not found');
     const slips = await this.payslipRepo.find({
@@ -1553,7 +1554,7 @@ export class HrService {
 
   async exportPayrollNssf(id: string, tenantId?: string) {
     const payroll = await this.payrollRunRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
     });
     if (!payroll) throw new NotFoundException('Payroll run not found');
     const slips = await this.payslipRepo.find({
@@ -1570,7 +1571,7 @@ export class HrService {
 
   async exportPayrollBank(id: string, tenantId?: string) {
     const payroll = await this.payrollRunRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
     });
     if (!payroll) throw new NotFoundException('Payroll run not found');
     const slips = await this.payslipRepo.find({
@@ -1589,7 +1590,7 @@ export class HrService {
 
   async resetPayrollRun(id: string, tenantId?: string): Promise<PayrollRun> {
     const payroll = await this.payrollRunRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
     });
     if (!payroll) throw new NotFoundException('Payroll run not found');
 
@@ -1610,7 +1611,7 @@ export class HrService {
       // we never want a runaway DELETE if the join is ever loosened).
       await manager.delete(Payslip, {
         payrollRunId: payroll.id,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       });
 
       payroll.employeeCount = 0;
@@ -1683,7 +1684,7 @@ export class HrService {
     tenantId?: string,
   ) {
     const where: any = { facilityId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     if (options.year) where.year = options.year;
     if (options.status) where.status = options.status;
 
@@ -1695,7 +1696,7 @@ export class HrService {
 
   async getPayslips(payrollRunId: string, tenantId?: string): Promise<Payslip[]> {
     return this.payslipRepo.find({
-      where: { payrollRunId, ...(tenantId ? { tenantId } : {}) },
+      where: { payrollRunId, tenantId: requireTenantId(tenantId) },
       relations: ['employee'],
       order: { employee: { fullName: 'ASC' } },
     });
@@ -1703,7 +1704,7 @@ export class HrService {
 
   async getEmployeePayslips(employeeId: string, tenantId?: string): Promise<Payslip[]> {
     return this.payslipRepo.find({
-      where: { employeeId, ...(tenantId ? { tenantId } : {}) },
+      where: { employeeId, tenantId: requireTenantId(tenantId) },
       relations: ['payrollRun'],
       order: { createdAt: 'DESC' },
     });
@@ -1711,7 +1712,7 @@ export class HrService {
 
   async getMyPayslips(userId: string, year?: number, tenantId?: string): Promise<Payslip[]> {
     const whereClause: any = { employeeId: userId };
-    if (tenantId) whereClause.tenantId = tenantId;
+    whereClause.tenantId = requireTenantId(tenantId);
 
     if (year) {
       whereClause.payrollRun = { year };
@@ -1728,15 +1729,15 @@ export class HrService {
 
   async getDashboard(facilityId: string, tenantId?: string) {
     const [totalEmployees, activeEmployees, pendingLeaves, todayAttendance] = await Promise.all([
-      this.employeeRepo.count({ where: { facilityId, ...(tenantId ? { tenantId } : {}) } }),
+      this.employeeRepo.count({ where: { facilityId, tenantId: requireTenantId(tenantId) } }),
       this.employeeRepo.count({
-        where: { facilityId, status: EmploymentStatus.ACTIVE, ...(tenantId ? { tenantId } : {}) },
+        where: { facilityId, status: EmploymentStatus.ACTIVE, tenantId: requireTenantId(tenantId) },
       }),
       this.leaveRepo.count({
         where: {
           status: LeaveStatus.PENDING,
           employee: { facilityId },
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         },
       }),
       this.attendanceRepo.count({
@@ -1744,7 +1745,7 @@ export class HrService {
           facilityId,
           date: new Date(),
           status: 'present',
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         },
       }),
     ]);
@@ -1789,7 +1790,7 @@ export class HrService {
       color: dto.color,
       description: dto.description,
       isActive: true,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: requireTenantId(tenantId),
     });
 
     return this.shiftDefRepo.save(shift);
@@ -1801,7 +1802,7 @@ export class HrService {
     tenantId?: string,
   ): Promise<ShiftDefinition[]> {
     const where: any = { facilityId, isActive: true };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     if (departmentId) where.departmentId = departmentId;
 
     return this.shiftDefRepo.find({
@@ -1817,7 +1818,7 @@ export class HrService {
     tenantId?: string,
   ): Promise<ShiftDefinition> {
     const shift = await this.shiftDefRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
     });
     if (!shift) throw new NotFoundException('Shift definition not found');
 
@@ -1827,7 +1828,7 @@ export class HrService {
 
   async deleteShiftDefinition(id: string, tenantId?: string): Promise<void> {
     const shift = await this.shiftDefRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
     });
     if (!shift) throw new NotFoundException('Shift definition not found');
     shift.isActive = false;
@@ -1847,7 +1848,7 @@ export class HrService {
         employeeId: dto.employeeId,
         rosterDate: new Date(dto.rosterDate),
         status: In([RosterStatus.SCHEDULED, RosterStatus.CONFIRMED]),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
     });
 
@@ -1857,7 +1858,7 @@ export class HrService {
 
     // Check shift coverage
     const shift = await this.shiftDefRepo.findOne({
-      where: { id: dto.shiftDefinitionId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: dto.shiftDefinitionId, tenantId: requireTenantId(tenantId) },
     });
     if (!shift) throw new NotFoundException('Shift definition not found');
 
@@ -1866,7 +1867,7 @@ export class HrService {
         shiftDefinitionId: dto.shiftDefinitionId,
         rosterDate: new Date(dto.rosterDate),
         status: In([RosterStatus.SCHEDULED, RosterStatus.CONFIRMED]),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
     });
 
@@ -1882,7 +1883,7 @@ export class HrService {
       status: RosterStatus.SCHEDULED,
       notes: dto.notes,
       createdById: userId,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: requireTenantId(tenantId),
     });
 
     return this.rosterRepo.save(roster);
@@ -1953,7 +1954,7 @@ export class HrService {
         start: new Date(startDate),
         end: new Date(endDate),
       });
-    if (tenantId) qb.andWhere('roster.tenant_id = :tenantId', { tenantId });
+    qb.andWhere('roster.tenant_id = :tenantId', { tenantId: requireTenantId(tenantId) });
 
     if (options?.employeeId) {
       qb.andWhere('roster.employeeId = :employeeId', { employeeId: options.employeeId });
@@ -1977,7 +1978,7 @@ export class HrService {
     tenantId?: string,
   ): Promise<StaffRoster> {
     const roster = await this.rosterRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
     });
     if (!roster) throw new NotFoundException('Roster entry not found');
 
@@ -1995,7 +1996,7 @@ export class HrService {
     tenantId?: string,
   ): Promise<StaffRoster> {
     const roster = await this.rosterRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
       relations: ['shiftDefinition'],
     });
     if (!roster) throw new NotFoundException('Roster entry not found');
@@ -2033,7 +2034,7 @@ export class HrService {
       const swapRepo = manager.getRepository(ShiftSwapRequest);
 
       const requesterRoster = await rosterRepo.findOne({
-        where: { id: dto.requesterRosterId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: dto.requesterRosterId, tenantId: requireTenantId(tenantId) },
         relations: ['employee'],
       });
       if (!requesterRoster) throw new NotFoundException('Requester roster not found');
@@ -2047,7 +2048,7 @@ export class HrService {
         isMutualSwap: !!dto.targetRosterId,
         reason: dto.reason,
         status: SwapRequestStatus.PENDING,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       });
 
       requesterRoster.status = RosterStatus.SWAP_PENDING;
@@ -2068,7 +2069,7 @@ export class HrService {
       const rosterRepo = manager.getRepository(StaffRoster);
 
       const swap = await swapRepo.findOne({
-        where: { id, ...(tenantId ? { tenantId } : {}) },
+        where: { id, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
       });
       if (!swap) throw new NotFoundException('Swap request not found');
@@ -2096,7 +2097,7 @@ export class HrService {
       const rosterRepo = manager.getRepository(StaffRoster);
 
       const swap = await swapRepo.findOne({
-        where: { id, ...(tenantId ? { tenantId } : {}) },
+        where: { id, tenantId: requireTenantId(tenantId) },
         relations: ['requesterRoster', 'targetRoster'],
         lock: { mode: 'pessimistic_write' },
       });
@@ -2161,7 +2162,7 @@ export class HrService {
     tenantId?: string,
   ): Promise<ShiftSwapRequest[]> {
     const where: any = { facilityId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     if (status) where.status = status;
 
     return this.swapRepo.find({
@@ -2228,7 +2229,7 @@ export class HrService {
       closingDate: dto.closingDate ? new Date(dto.closingDate) : undefined,
       positionsAvailable: dto.positionsAvailable || 1,
       status: JobStatus.DRAFT,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: requireTenantId(tenantId),
     });
     return this.jobPostingRepo.save(posting as JobPosting);
   }
@@ -2239,7 +2240,7 @@ export class HrService {
     tenantId?: string,
   ): Promise<JobPosting[]> {
     const where: any = { facilityId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     if (status) where.status = status;
     return this.jobPostingRepo.find({
       where,
@@ -2250,7 +2251,7 @@ export class HrService {
 
   async getJobPostingById(id: string, tenantId?: string): Promise<JobPosting> {
     const posting = await this.jobPostingRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
       relations: ['department'],
     });
     if (!posting) throw new NotFoundException('Job posting not found');
@@ -2277,14 +2278,14 @@ export class HrService {
 
   async getPublishedJobs(facilityId?: string, tenantId?: string): Promise<JobPosting[]> {
     const where: any = { status: JobStatus.OPEN };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     if (facilityId) where.facilityId = facilityId;
     return this.jobPostingRepo.find({ where, order: { createdAt: 'DESC' } });
   }
 
   async getPublishedJobById(id: string, tenantId?: string): Promise<JobPosting> {
     const where: any = { id, status: JobStatus.OPEN };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     const posting = await this.jobPostingRepo.findOne({ where });
     if (!posting) throw new NotFoundException('Job posting not found');
     return posting;
@@ -2305,7 +2306,7 @@ export class HrService {
       coverLetter: dto.coverLetter,
       resumeUrl: dto.resumeUrl,
       status: ApplicationStatus.SUBMITTED,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: requireTenantId(tenantId),
     });
 
     // Increment applications count
@@ -2321,7 +2322,7 @@ export class HrService {
     tenantId?: string,
   ): Promise<JobApplication[]> {
     const where: any = { jobPostingId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     if (status) where.status = status;
     return this.jobApplicationRepo.find({
       where,
@@ -2336,7 +2337,7 @@ export class HrService {
     tenantId?: string,
   ): Promise<JobApplication> {
     const application = await this.jobApplicationRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
     });
     if (!application) throw new NotFoundException('Application not found');
 
@@ -2357,7 +2358,7 @@ export class HrService {
         employeeId: dto.employeeId,
         appraisalPeriod: dto.appraisalPeriod as any,
         year: dto.year,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
     });
     if (existing) {
@@ -2372,7 +2373,7 @@ export class HrService {
       year: dto.year,
       status: AppraisalStatus.DRAFT,
       ...(dto.questions ? { questions: dto.questions } : {}),
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: requireTenantId(tenantId),
     });
     return this.appraisalRepo.save(appraisal);
   }
@@ -2383,7 +2384,7 @@ export class HrService {
     tenantId?: string,
   ): Promise<PerformanceAppraisal[]> {
     const where: any = { facilityId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     if (options?.employeeId) where.employeeId = options.employeeId;
     if (options?.year) where.year = options.year;
     if (options?.status) where.status = options.status;
@@ -2397,7 +2398,7 @@ export class HrService {
 
   async getAppraisalById(id: string, tenantId?: string): Promise<PerformanceAppraisal> {
     const appraisal = await this.appraisalRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
       relations: ['employee', 'employee.departmentRef', 'reviewer'],
     });
     if (!appraisal) throw new NotFoundException('Appraisal not found');
@@ -2512,7 +2513,7 @@ export class HrService {
   async getMyAppraisals(userId: string, tenantId?: string): Promise<PerformanceAppraisal[]> {
     // employeeId now references users table directly
     return this.appraisalRepo.find({
-      where: { employeeId: userId, ...(tenantId ? { tenantId } : {}) },
+      where: { employeeId: userId, tenantId: requireTenantId(tenantId) },
       relations: ['employee', 'employee.departmentRef', 'reviewer'],
       order: { year: 'DESC', createdAt: 'DESC' },
     });
@@ -2523,7 +2524,7 @@ export class HrService {
     tenantId?: string,
   ): Promise<PerformanceAppraisal[]> {
     return this.appraisalRepo.find({
-      where: { employeeId, ...(tenantId ? { tenantId } : {}) },
+      where: { employeeId, tenantId: requireTenantId(tenantId) },
       relations: ['employee', 'reviewer'],
       order: { year: 'DESC', createdAt: 'DESC' },
     });
@@ -2539,7 +2540,7 @@ export class HrService {
         department: { name: dto.department },
         status: 'active',
         deletedAt: IsNull(),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
     });
 
@@ -2553,7 +2554,7 @@ export class HrService {
           employeeId: user.id,
           appraisalPeriod: dto.appraisalPeriod as any,
           year: dto.year,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         },
       });
       if (existing) {
@@ -2568,7 +2569,7 @@ export class HrService {
         appraisalPeriod: dto.appraisalPeriod as any,
         year: dto.year,
         status: AppraisalStatus.DRAFT,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       });
       await this.appraisalRepo.save(appraisal);
       created++;
@@ -2598,7 +2599,7 @@ export class HrService {
       providesCertification: dto.providesCertification || false,
       certificationName: dto.certificationName,
       status: TrainingStatus.SCHEDULED,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: requireTenantId(tenantId),
     });
     return this.trainingProgramRepo.save(program);
   }
@@ -2609,7 +2610,7 @@ export class HrService {
     tenantId?: string,
   ): Promise<TrainingProgram[]> {
     const where: any = { facilityId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     if (status) where.status = status;
     return this.trainingProgramRepo.find({
       where,
@@ -2619,7 +2620,7 @@ export class HrService {
 
   async getTrainingProgramById(id: string, tenantId?: string): Promise<TrainingProgram> {
     const program = await this.trainingProgramRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
     });
     if (!program) throw new NotFoundException('Training program not found');
     return program;
@@ -2653,7 +2654,7 @@ export class HrService {
       where: {
         trainingProgramId: dto.trainingProgramId,
         employeeId: dto.employeeId,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
     });
     if (existing) {
@@ -2663,7 +2664,7 @@ export class HrService {
     // Check max participants
     if (program.maxParticipants) {
       const enrolledCount = await this.trainingEnrollmentRepo.count({
-        where: { trainingProgramId: dto.trainingProgramId, ...(tenantId ? { tenantId } : {}) },
+        where: { trainingProgramId: dto.trainingProgramId, tenantId: requireTenantId(tenantId) },
       });
       if (enrolledCount >= program.maxParticipants) {
         throw new BadRequestException('Training program is at full capacity');
@@ -2674,7 +2675,7 @@ export class HrService {
       trainingProgramId: dto.trainingProgramId,
       employeeId: dto.employeeId,
       status: EnrollmentStatus.ENROLLED,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: requireTenantId(tenantId),
     });
     return this.trainingEnrollmentRepo.save(enrollment);
   }
@@ -2684,7 +2685,7 @@ export class HrService {
     tenantId?: string,
   ): Promise<TrainingEnrollment[]> {
     return this.trainingEnrollmentRepo.find({
-      where: { trainingProgramId, ...(tenantId ? { tenantId } : {}) },
+      where: { trainingProgramId, tenantId: requireTenantId(tenantId) },
       relations: ['employee'],
       order: { enrolledAt: 'DESC' },
     });
@@ -2692,7 +2693,7 @@ export class HrService {
 
   async getEmployeeTrainings(employeeId: string, tenantId?: string): Promise<TrainingEnrollment[]> {
     return this.trainingEnrollmentRepo.find({
-      where: { employeeId, ...(tenantId ? { tenantId } : {}) },
+      where: { employeeId, tenantId: requireTenantId(tenantId) },
       relations: ['trainingProgram'],
       order: { enrolledAt: 'DESC' },
     });
@@ -2704,7 +2705,7 @@ export class HrService {
     tenantId?: string,
   ): Promise<TrainingEnrollment> {
     const enrollment = await this.trainingEnrollmentRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
     });
     if (!enrollment) throw new NotFoundException('Enrollment not found');
 
@@ -2725,20 +2726,20 @@ export class HrService {
   async getRecruitmentStats(facilityId: string, tenantId?: string) {
     const [openPositions, totalApplications, shortlisted, hired] = await Promise.all([
       this.jobPostingRepo.count({
-        where: { facilityId, status: JobStatus.OPEN, ...(tenantId ? { tenantId } : {}) },
+        where: { facilityId, status: JobStatus.OPEN, tenantId: requireTenantId(tenantId) },
       }),
       this.jobApplicationRepo.count({
-        where: { jobPosting: { facilityId, ...(tenantId ? { tenantId } : {}) } },
+        where: { jobPosting: { facilityId, tenantId: requireTenantId(tenantId) } },
       }),
       this.jobApplicationRepo.count({
         where: {
-          jobPosting: { facilityId, ...(tenantId ? { tenantId } : {}) },
+          jobPosting: { facilityId, tenantId: requireTenantId(tenantId) },
           status: ApplicationStatus.SHORTLISTED,
         },
       }),
       this.jobApplicationRepo.count({
         where: {
-          jobPosting: { facilityId, ...(tenantId ? { tenantId } : {}) },
+          jobPosting: { facilityId, tenantId: requireTenantId(tenantId) },
           status: ApplicationStatus.HIRED,
         },
       }),
@@ -2751,20 +2752,20 @@ export class HrService {
 
   async getTrainingStats(facilityId: string, tenantId?: string) {
     const [totalPrograms, activePrograms, totalEnrollments, completed] = await Promise.all([
-      this.trainingProgramRepo.count({ where: { facilityId, ...(tenantId ? { tenantId } : {}) } }),
+      this.trainingProgramRepo.count({ where: { facilityId, tenantId: requireTenantId(tenantId) } }),
       this.trainingProgramRepo.count({
         where: {
           facilityId,
           status: TrainingStatus.IN_PROGRESS,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         },
       }),
       this.trainingEnrollmentRepo.count({
-        where: { trainingProgram: { facilityId, ...(tenantId ? { tenantId } : {}) } },
+        where: { trainingProgram: { facilityId, tenantId: requireTenantId(tenantId) } },
       }),
       this.trainingEnrollmentRepo.count({
         where: {
-          trainingProgram: { facilityId, ...(tenantId ? { tenantId } : {}) },
+          trainingProgram: { facilityId, tenantId: requireTenantId(tenantId) },
           status: EnrollmentStatus.COMPLETED,
         },
       }),
@@ -2777,7 +2778,7 @@ export class HrService {
 
   async getAppraisalStats(facilityId: string, year: number, tenantId?: string) {
     const [total, pending, completed] = await Promise.all([
-      this.appraisalRepo.count({ where: { facilityId, year, ...(tenantId ? { tenantId } : {}) } }),
+      this.appraisalRepo.count({ where: { facilityId, year, tenantId: requireTenantId(tenantId) } }),
       this.appraisalRepo.count({
         where: {
           facilityId,
@@ -2787,7 +2788,7 @@ export class HrService {
             AppraisalStatus.SELF_REVIEW,
             AppraisalStatus.MANAGER_REVIEW,
           ]),
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         },
       }),
       this.appraisalRepo.count({
@@ -2795,7 +2796,7 @@ export class HrService {
           facilityId,
           year,
           status: In([AppraisalStatus.COMPLETED, AppraisalStatus.ACKNOWLEDGED]),
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         },
       }),
     ]);
@@ -2808,7 +2809,7 @@ export class HrService {
         facilityId,
         year,
       });
-    if (tenantId) avgQb.andWhere('a.tenant_id = :tenantId', { tenantId });
+    avgQb.andWhere('a.tenant_id = :tenantId', { tenantId: requireTenantId(tenantId) });
     const avgResult = await avgQb.getRawOne();
 
     return {
@@ -2823,14 +2824,14 @@ export class HrService {
 
   async getStaffDocuments(userId: string, tenantId?: string) {
     return this.documentRepo.find({
-      where: { userId, ...(tenantId ? { tenantId } : {}) },
+      where: { userId, tenantId: requireTenantId(tenantId) },
       order: { createdAt: 'DESC' },
     });
   }
 
   async getDocumentById(documentId: string, tenantId?: string) {
     return this.documentRepo.findOne({
-      where: { id: documentId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: documentId, tenantId: requireTenantId(tenantId) },
     });
   }
 
@@ -2862,7 +2863,7 @@ export class HrService {
       expiryDate: data.expiryDate ? new Date(data.expiryDate) : undefined,
       notes: data.notes,
       status: DocumentStatus.PENDING,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: requireTenantId(tenantId),
     } as DeepPartial<StaffDocument>);
 
     return this.documentRepo.save(document);
@@ -2875,7 +2876,7 @@ export class HrService {
     tenantId?: string,
   ) {
     const document = await this.documentRepo.findOne({
-      where: { id: documentId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: documentId, tenantId: requireTenantId(tenantId) },
     });
     if (!document) throw new NotFoundException('Document not found');
 
@@ -2888,7 +2889,7 @@ export class HrService {
 
   async deleteDocument(documentId: string, tenantId?: string) {
     const document = await this.documentRepo.findOne({
-      where: { id: documentId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: documentId, tenantId: requireTenantId(tenantId) },
     });
     if (!document) throw new NotFoundException('Document not found');
 
@@ -2900,13 +2901,13 @@ export class HrService {
   async getDocumentStats(tenantId?: string) {
     const [total, valid, expiringSoon, expired] = await Promise.all([
       this.documentRepo.count({
-        where: { deletedAt: IsNull(), ...(tenantId ? { tenantId } : {}) },
+        where: { deletedAt: IsNull(), tenantId: requireTenantId(tenantId) },
       }),
       this.documentRepo.count({
         where: {
           status: DocumentStatus.VERIFIED,
           deletedAt: IsNull(),
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         },
       }),
       this.documentRepo.count({
@@ -2914,14 +2915,14 @@ export class HrService {
           status: DocumentStatus.VERIFIED,
           expiryDate: Between(new Date(), new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)),
           deletedAt: IsNull(),
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         },
       }),
       this.documentRepo.count({
         where: {
           expiryDate: LessThanOrEqual(new Date()),
           deletedAt: IsNull(),
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         },
       }),
     ]);
@@ -2931,7 +2932,7 @@ export class HrService {
 
   async getLeaveBalances(facilityId?: string, tenantId?: string): Promise<any[]> {
     const where: any = { status: Not(EmploymentStatus.TERMINATED) };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     if (facilityId) where.facilityId = facilityId;
     const employees = await this.employeeRepo.find({ where, take: 200 });
 
@@ -2947,7 +2948,7 @@ export class HrService {
             employeeId: emp.id,
             status: LeaveStatus.APPROVED,
             startDate: Between(new Date(yearStart), new Date(yearEnd)),
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           },
         });
         const usedAnnual = approved
@@ -2990,7 +2991,7 @@ export class HrService {
     const action = this.disciplinaryRepo.create({
       ...dto,
       issuedById: userId,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: requireTenantId(tenantId),
     });
     const saved = await this.disciplinaryRepo.save(action);
     return Array.isArray(saved) ? saved[0] : saved;
@@ -3004,7 +3005,7 @@ export class HrService {
     const where: any = {};
     if (employeeId) where.employeeId = employeeId;
     if (facilityId) where.facilityId = facilityId;
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     return this.disciplinaryRepo.find({
       where,
       relations: ['employee', 'issuedBy'],
@@ -3046,7 +3047,7 @@ export class HrService {
     const record = this.salaryHistoryRepo.create({
       ...dto,
       approvedById: userId,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: requireTenantId(tenantId),
     });
     const saved = await this.salaryHistoryRepo.save(record);
     const result = Array.isArray(saved) ? saved[0] : saved;
@@ -3070,7 +3071,7 @@ export class HrService {
 
   async getSalaryHistory(employeeId: string, tenantId?: string): Promise<SalaryHistory[]> {
     return this.salaryHistoryRepo.find({
-      where: { employeeId, ...(tenantId ? { tenantId } : {}) },
+      where: { employeeId, tenantId: requireTenantId(tenantId) },
       relations: ['approvedBy'],
       order: { effectiveDate: 'DESC' },
     });
@@ -3081,7 +3082,7 @@ export class HrService {
   async createOnboardingTask(dto: any, tenantId?: string): Promise<OnboardingTask> {
     const task = this.onboardingTaskRepo.create({
       ...dto,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: requireTenantId(tenantId),
     });
     const saved = await this.onboardingTaskRepo.save(task);
     return Array.isArray(saved) ? saved[0] : saved;
@@ -3155,7 +3156,7 @@ export class HrService {
         employeeId,
         facilityId,
         dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 2 weeks
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       }),
     );
     return this.onboardingTaskRepo.save(tasks);
@@ -3163,7 +3164,7 @@ export class HrService {
 
   async getOnboardingTasks(employeeId: string, tenantId?: string): Promise<OnboardingTask[]> {
     return this.onboardingTaskRepo.find({
-      where: { employeeId, ...(tenantId ? { tenantId } : {}) },
+      where: { employeeId, tenantId: requireTenantId(tenantId) },
       relations: ['assignedTo', 'completedBy'],
       order: { sortOrder: 'ASC' },
     });
@@ -3204,7 +3205,7 @@ export class HrService {
     const run = await this.payrollRunRepo.findOne({ where: { id: payrollRunId } });
     if (!run) throw new NotFoundException('Payroll run not found');
     const payslips = await this.payslipRepo.find({
-      where: { payrollRunId, ...(tenantId ? { tenantId } : {}) },
+      where: { payrollRunId, tenantId: requireTenantId(tenantId) },
       relations: ['employee'],
     });
     const totalPaye = payslips.reduce((s, p) => s + Number(p.paye || 0), 0);
@@ -3234,7 +3235,7 @@ export class HrService {
   async getTaxReport(year: number, facilityId?: string, tenantId?: string): Promise<any> {
     const where: any = { year, status: In([PayrollStatus.COMPLETED, PayrollStatus.PAID]) };
     if (facilityId) where.facilityId = facilityId;
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     const runs = await this.payrollRunRepo.find({ where, order: { month: 'ASC' } });
     const monthlyData = [];
     for (const run of runs) {

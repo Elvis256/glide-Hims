@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, DataSource } from 'typeorm';
 import { Patient } from '../../database/entities/patient.entity';
-import { Encounter } from '../../database/entities/encounter.entity';
+import { Encounter, EncounterStatus } from '../../database/entities/encounter.entity';
 import { Invoice, Payment } from '../../database/entities/invoice.entity';
 import { Order } from '../../database/entities/order.entity';
 import { Admission } from '../../database/entities/admission.entity';
@@ -10,6 +10,7 @@ import { EmergencyCase } from '../../database/entities/emergency-case.entity';
 import { AuditLog } from '../../database/entities/audit-log.entity';
 import { Item, StockBalance, StockLedger } from '../../database/entities/inventory.entity';
 import { LabResult, AbnormalFlag, ResultStatus } from '../../database/entities/lab-result.entity';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class AnalyticsService {
@@ -44,6 +45,7 @@ export class AnalyticsService {
   ) {}
 
   // Admin Dashboard Analytics
+  // System admin: cross-tenant view allowed when tenantId is omitted
   async getAdminDashboard(tenantId?: string) {
     const tenantFilter = tenantId ? 'AND tenant_id = $1' : '';
     const params = tenantId ? [tenantId] : [];
@@ -237,6 +239,7 @@ export class AnalyticsService {
 
   // Executive Dashboard KPIs
   async getExecutiveDashboard(facilityId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -256,18 +259,18 @@ export class AnalyticsService {
       admissionsActive,
       emergenciesToday,
     ] = await Promise.all([
-      tenantId ? this.patientRepo.count({ where: { tenantId } }) : this.patientRepo.count(),
-      this.countPatientsSince(today, tenantId),
-      this.countPatientsSince(monthStart, tenantId),
-      this.countEncountersSince(facilityId, today, tenantId),
-      this.countEncountersSince(facilityId, monthStart, tenantId),
-      this.getRevenueSum(facilityId, today, tenantId),
-      this.getRevenueSum(facilityId, monthStart, tenantId),
-      this.getRevenueSum(facilityId, yearStart, tenantId),
-      this.getCollectionsSum(facilityId, monthStart, tenantId),
-      this.getOutstandingBalance(facilityId, tenantId),
-      this.countActiveAdmissions(facilityId, tenantId),
-      this.countEmergenciesSince(facilityId, today, tenantId),
+      this.patientRepo.count({ where: { tenantId: tid } }),
+      this.countPatientsSince(today, tid),
+      this.countPatientsSince(monthStart, tid),
+      this.countEncountersSince(facilityId, today, tid),
+      this.countEncountersSince(facilityId, monthStart, tid),
+      this.getRevenueSum(facilityId, today, tid),
+      this.getRevenueSum(facilityId, monthStart, tid),
+      this.getRevenueSum(facilityId, yearStart, tid),
+      this.getCollectionsSum(facilityId, monthStart, tid),
+      this.getOutstandingBalance(facilityId, tid),
+      this.countActiveAdmissions(facilityId, tid),
+      this.countEmergenciesSince(facilityId, today, tid),
     ]);
 
     return {
@@ -304,39 +307,27 @@ export class AnalyticsService {
     period: 'day' | 'week' | 'month' | 'year' = 'month',
     tenantId?: string,
   ) {
+    const tid = requireTenantId(tenantId);
     const { startDate, groupBy } = this.getPeriodParams(period);
     // Registration trend
-    const regParams: any[] = [startDate];
-    let regSql = `
-      SELECT 
+    const regSql = `
+      SELECT
         DATE_TRUNC('${groupBy}', created_at) as period,
         COUNT(*) as count
       FROM patients
-      WHERE created_at >= $1`;
-    if (tenantId) {
-      regSql += ` AND tenant_id = $${regParams.length + 1}`;
-      regParams.push(tenantId);
-    }
-    regSql += `
+      WHERE created_at >= $1 AND tenant_id = $2
       GROUP BY DATE_TRUNC('${groupBy}', created_at)
       ORDER BY period`;
-    const registrationTrend = await this.patientRepo.query(regSql, regParams);
+    const registrationTrend = await this.patientRepo.query(regSql, [startDate, tid]);
 
     // Gender distribution
-    const genderParams: any[] = [];
-    let genderSql = `SELECT gender, COUNT(*) as count FROM patients`;
-    if (tenantId) {
-      genderSql += ` WHERE tenant_id = $${genderParams.length + 1}`;
-      genderParams.push(tenantId);
-    }
-    genderSql += ` GROUP BY gender`;
-    const genderDistribution = await this.patientRepo.query(genderSql, genderParams);
+    const genderSql = `SELECT gender, COUNT(*) as count FROM patients WHERE tenant_id = $1 GROUP BY gender`;
+    const genderDistribution = await this.patientRepo.query(genderSql, [tid]);
 
     // Age distribution
-    const ageParams: any[] = [];
-    let ageSql = `
-      SELECT 
-        CASE 
+    const ageSql = `
+      SELECT
+        CASE
           WHEN EXTRACT(YEAR FROM AGE(date_of_birth)) < 5 THEN '0-4'
           WHEN EXTRACT(YEAR FROM AGE(date_of_birth)) < 18 THEN '5-17'
           WHEN EXTRACT(YEAR FROM AGE(date_of_birth)) < 35 THEN '18-34'
@@ -346,32 +337,21 @@ export class AnalyticsService {
         END as age_group,
         COUNT(*) as count
       FROM patients
-      WHERE date_of_birth IS NOT NULL`;
-    if (tenantId) {
-      ageSql += ` AND tenant_id = $${ageParams.length + 1}`;
-      ageParams.push(tenantId);
-    }
-    ageSql += `
+      WHERE date_of_birth IS NOT NULL AND tenant_id = $1
       GROUP BY age_group
       ORDER BY age_group`;
-    const ageDistribution = await this.patientRepo.query(ageSql, ageParams);
+    const ageDistribution = await this.patientRepo.query(ageSql, [tid]);
 
     // Blood group distribution
-    const bloodParams: any[] = [];
-    let bloodSql = `
+    const bloodSql = `
       SELECT
         COALESCE(blood_group, 'Unknown') as blood_group,
         COUNT(*) as count
       FROM patients
-      WHERE deleted_at IS NULL`;
-    if (tenantId) {
-      bloodSql += ` AND tenant_id = $${bloodParams.length + 1}`;
-      bloodParams.push(tenantId);
-    }
-    bloodSql += `
+      WHERE deleted_at IS NULL AND tenant_id = $1
       GROUP BY blood_group
       ORDER BY count DESC`;
-    const bloodGroupDistribution = await this.patientRepo.query(bloodSql, bloodParams);
+    const bloodGroupDistribution = await this.patientRepo.query(bloodSql, [tid]);
 
     return {
       registrationTrend,
@@ -387,61 +367,46 @@ export class AnalyticsService {
     period: 'day' | 'week' | 'month' | 'year' = 'month',
     tenantId?: string,
   ) {
+    const tid = requireTenantId(tenantId);
     const { startDate, groupBy } = this.getPeriodParams(period);
 
     // Encounter volume trend
-    const encTrendParams: any[] = [facilityId, startDate];
-    let encTrendSql = `
-      SELECT 
+    const encTrendSql = `
+      SELECT
         DATE_TRUNC('${groupBy}', created_at) as period,
         type as encounter_type,
         COUNT(*) as count
       FROM encounters
-      WHERE facility_id = $1 AND created_at >= $2`;
-    if (tenantId) {
-      encTrendSql += ` AND tenant_id = $${encTrendParams.length + 1}`;
-      encTrendParams.push(tenantId);
-    }
-    encTrendSql += `
+      WHERE facility_id = $1 AND created_at >= $2 AND tenant_id = $3
       GROUP BY DATE_TRUNC('${groupBy}', created_at), type
       ORDER BY period`;
-    const encounterTrend = await this.encounterRepo.query(encTrendSql, encTrendParams);
+    const encounterTrend = await this.encounterRepo.query(encTrendSql, [facilityId, startDate, tid]);
 
     // Top diagnoses from clinical_notes JSON
-    const diagParams: any[] = [facilityId, startDate];
-    let diagSql = `
-      SELECT 
+    const diagSql = `
+      SELECT
         d->>'description' as diagnosis,
         d->>'code' as code,
         COUNT(*) as count
       FROM clinical_notes cn
       JOIN encounters e ON e.id = cn.encounter_id,
         jsonb_array_elements(cn.diagnoses::jsonb) AS d
-      WHERE e.facility_id = $1 AND cn.created_at >= $2 AND cn.diagnoses IS NOT NULL`;
-    if (tenantId) {
-      diagSql += ` AND e.tenant_id = $${diagParams.length + 1}`;
-      diagParams.push(tenantId);
-    }
-    diagSql += `
+      WHERE e.facility_id = $1 AND cn.created_at >= $2 AND cn.diagnoses IS NOT NULL
+        AND e.tenant_id = $3
       GROUP BY d->>'description', d->>'code'
       ORDER BY count DESC
       LIMIT 10`;
-    const topDiagnoses = await this.encounterRepo.query(diagSql, diagParams);
+    const topDiagnoses = await this.encounterRepo.query(diagSql, [facilityId, startDate, tid]);
 
     // Encounter by type
-    const encTypeParams: any[] = [facilityId, startDate];
-    let encTypeSql = `
-      SELECT 
+    const encTypeSql = `
+      SELECT
         type as encounter_type,
         COUNT(*) as count
       FROM encounters
-      WHERE facility_id = $1 AND created_at >= $2`;
-    if (tenantId) {
-      encTypeSql += ` AND tenant_id = $${encTypeParams.length + 1}`;
-      encTypeParams.push(tenantId);
-    }
-    encTypeSql += ` GROUP BY type`;
-    const encountersByType = await this.encounterRepo.query(encTypeSql, encTypeParams);
+      WHERE facility_id = $1 AND created_at >= $2 AND tenant_id = $3
+      GROUP BY type`;
+    const encountersByType = await this.encounterRepo.query(encTypeSql, [facilityId, startDate, tid]);
 
     return {
       encounterTrend,
@@ -456,35 +421,30 @@ export class AnalyticsService {
     period: 'day' | 'week' | 'month' | 'year' = 'month',
     tenantId?: string,
   ) {
+    const tid = requireTenantId(tenantId);
     const { startDate, groupBy } = this.getPeriodParams(period);
 
     // Revenue trend
-    const revTrendParams: any[] = [facilityId, startDate];
-    let revTrendSql = `
-      SELECT 
+    const revTrendSql = `
+      SELECT
         DATE_TRUNC('${groupBy}', i.created_at) as period,
         SUM(i.total_amount) as revenue,
         COUNT(*) as invoice_count
       FROM invoices i
       LEFT JOIN encounters e ON e.id = i.encounter_id
       WHERE (e.facility_id = $1)
-        AND i.created_at >= $2 AND i.status != 'cancelled' AND i.deleted_at IS NULL`;
-    if (tenantId) {
-      revTrendSql += ` AND i.tenant_id = $${revTrendParams.length + 1}`;
-      revTrendParams.push(tenantId);
-    }
-    revTrendSql += `
+        AND i.created_at >= $2 AND i.status != 'cancelled' AND i.deleted_at IS NULL
+        AND i.tenant_id = $3
       GROUP BY DATE_TRUNC('${groupBy}', i.created_at)
       ORDER BY period`;
-    const revenueTrend = await this.invoiceRepo.query(revTrendSql, revTrendParams).catch((err) => {
+    const revenueTrend = await this.invoiceRepo.query(revTrendSql, [facilityId, startDate, tid]).catch((err) => {
       this.logger.warn('Analytics query failed: ' + err.message);
       return [];
     });
 
     // Collections trend
-    const collTrendParams: any[] = [facilityId, startDate];
-    let collTrendSql = `
-      SELECT 
+    const collTrendSql = `
+      SELECT
         DATE_TRUNC('${groupBy}', p.created_at) as period,
         SUM(p.amount) as collections,
         p.method as payment_method,
@@ -493,50 +453,40 @@ export class AnalyticsService {
       JOIN invoices i ON i.id = p.invoice_id
       LEFT JOIN encounters e ON e.id = i.encounter_id
       WHERE (e.facility_id = $1)
-        AND p.created_at >= $2 AND p.deleted_at IS NULL`;
-    if (tenantId) {
-      collTrendSql += ` AND p.tenant_id = $${collTrendParams.length + 1}`;
-      collTrendParams.push(tenantId);
-    }
-    collTrendSql += `
+        AND p.created_at >= $2 AND p.deleted_at IS NULL
+        AND p.tenant_id = $3
       GROUP BY DATE_TRUNC('${groupBy}', p.created_at), p.method
       ORDER BY period`;
     const collectionsTrend = await this.paymentRepo
-      .query(collTrendSql, collTrendParams)
+      .query(collTrendSql, [facilityId, startDate, tid])
       .catch((err) => {
         this.logger.warn('Analytics query failed: ' + err.message);
         return [];
       });
 
     // Revenue by department/service
-    const revDeptParams: any[] = [facilityId, startDate];
-    let revDeptSql = `
-      SELECT 
+    const revDeptSql = `
+      SELECT
         COALESCE(INITCAP(e.type::text), 'General') as department,
         SUM(i.total_amount) as revenue,
         COUNT(*) as count
       FROM invoices i
       LEFT JOIN encounters e ON e.id = i.encounter_id
       WHERE (e.facility_id = $1)
-        AND i.created_at >= $2 AND i.status != 'cancelled' AND i.deleted_at IS NULL`;
-    if (tenantId) {
-      revDeptSql += ` AND i.tenant_id = $${revDeptParams.length + 1}`;
-      revDeptParams.push(tenantId);
-    }
-    revDeptSql += `
+        AND i.created_at >= $2 AND i.status != 'cancelled' AND i.deleted_at IS NULL
+        AND i.tenant_id = $3
       GROUP BY e.type
       ORDER BY revenue DESC`;
     const revenueByDepartment = await this.invoiceRepo
-      .query(revDeptSql, revDeptParams)
+      .query(revDeptSql, [facilityId, startDate, tid])
       .catch((err) => {
         this.logger.warn('Analytics query failed: ' + err.message);
         return [];
       });
 
     // Payment methods distribution
-    const payMethodParams: any[] = [facilityId, startDate];
-    let payMethodSql = `
-      SELECT 
+    const payMethodSql = `
+      SELECT
         p.method as payment_method,
         SUM(p.amount) as total,
         COUNT(*) as count
@@ -544,24 +494,20 @@ export class AnalyticsService {
       JOIN invoices i ON i.id = p.invoice_id
       LEFT JOIN encounters e ON e.id = i.encounter_id
       WHERE (e.facility_id = $1)
-        AND p.created_at >= $2 AND p.deleted_at IS NULL`;
-    if (tenantId) {
-      payMethodSql += ` AND p.tenant_id = $${payMethodParams.length + 1}`;
-      payMethodParams.push(tenantId);
-    }
-    payMethodSql += ` GROUP BY p.method`;
+        AND p.created_at >= $2 AND p.deleted_at IS NULL
+        AND p.tenant_id = $3
+      GROUP BY p.method`;
     const paymentMethods = await this.paymentRepo
-      .query(payMethodSql, payMethodParams)
+      .query(payMethodSql, [facilityId, startDate, tid])
       .catch((err) => {
         this.logger.warn('Analytics query failed: ' + err.message);
         return [];
       });
 
     // Outstanding by age
-    const outAgeParams: any[] = [facilityId];
-    let outAgeSql = `
-      SELECT 
-        CASE 
+    const outAgeSql = `
+      SELECT
+        CASE
           WHEN i.created_at >= NOW() - INTERVAL '30 days' THEN '0-30 days'
           WHEN i.created_at >= NOW() - INTERVAL '60 days' THEN '31-60 days'
           WHEN i.created_at >= NOW() - INTERVAL '90 days' THEN '61-90 days'
@@ -571,22 +517,18 @@ export class AnalyticsService {
         COUNT(*) as count
       FROM invoices i
       LEFT JOIN encounters e ON e.id = i.encounter_id
-      WHERE (e.facility_id = $1) 
-        AND i.status NOT IN ('paid', 'cancelled') AND i.balance_due > 0 AND i.deleted_at IS NULL`;
-    if (tenantId) {
-      outAgeSql += ` AND i.tenant_id = $${outAgeParams.length + 1}`;
-      outAgeParams.push(tenantId);
-    }
-    outAgeSql += ` GROUP BY age_bucket`;
-    const outstandingByAge = await this.invoiceRepo.query(outAgeSql, outAgeParams).catch((err) => {
+      WHERE (e.facility_id = $1)
+        AND i.status NOT IN ('paid', 'cancelled') AND i.balance_due > 0 AND i.deleted_at IS NULL
+        AND i.tenant_id = $2
+      GROUP BY age_bucket`;
+    const outstandingByAge = await this.invoiceRepo.query(outAgeSql, [facilityId, tid]).catch((err) => {
       this.logger.warn('Analytics query failed: ' + err.message);
       return [];
     });
 
     // Recent transactions
-    const recentTxParams: any[] = [facilityId, startDate];
-    let recentTxSql = `
-      SELECT 
+    const recentTxSql = `
+      SELECT
         i.id,
         i.invoice_number,
         i.total_amount,
@@ -600,36 +542,28 @@ export class AnalyticsService {
       LEFT JOIN encounters e ON e.id = i.encounter_id
       LEFT JOIN patients p2 ON p2.id = i.patient_id
       WHERE (e.facility_id = $1)
-        AND i.deleted_at IS NULL AND i.created_at >= $2`;
-    if (tenantId) {
-      recentTxSql += ` AND i.tenant_id = $${recentTxParams.length + 1}`;
-      recentTxParams.push(tenantId);
-    }
-    recentTxSql += `
+        AND i.deleted_at IS NULL AND i.created_at >= $2
+        AND i.tenant_id = $3
       ORDER BY i.created_at DESC
       LIMIT 20`;
     const recentTransactions = await this.invoiceRepo
-      .query(recentTxSql, recentTxParams)
+      .query(recentTxSql, [facilityId, startDate, tid])
       .catch((err) => {
         this.logger.warn('Analytics query failed: ' + err.message);
         return [];
       });
 
     // Collections total for the period
-    const collTotalParams: any[] = [facilityId, startDate];
-    let collTotalSql = `
+    const collTotalSql = `
       SELECT COALESCE(SUM(p.amount), 0) as total
       FROM payments p
       JOIN invoices i ON i.id = p.invoice_id
       LEFT JOIN encounters e ON e.id = i.encounter_id
       WHERE (e.facility_id = $1)
-        AND p.created_at >= $2 AND p.deleted_at IS NULL`;
-    if (tenantId) {
-      collTotalSql += ` AND p.tenant_id = $${collTotalParams.length + 1}`;
-      collTotalParams.push(tenantId);
-    }
+        AND p.created_at >= $2 AND p.deleted_at IS NULL
+        AND p.tenant_id = $3`;
     const collectionsTotal = await this.paymentRepo
-      .query(collTotalSql, collTotalParams)
+      .query(collTotalSql, [facilityId, startDate, tid])
       .catch((err) => {
         this.logger.warn('Analytics query failed: ' + err.message);
         return [{ total: 0 }];
@@ -648,10 +582,10 @@ export class AnalyticsService {
 
   // Operational Analytics
   async getOperationalAnalytics(facilityId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     // Bed occupancy - wards uses camelCase column
-    const bedParams: any[] = [facilityId];
-    let bedSql = `
-      SELECT 
+    const bedSql = `
+      SELECT
         w.name as ward,
         COUNT(CASE WHEN a.status = 'admitted' THEN 1 END) as occupied,
         w."totalBeds" as total,
@@ -659,61 +593,45 @@ export class AnalyticsService {
       FROM wards w
       LEFT JOIN beds b ON b."wardId" = w.id
       LEFT JOIN admissions a ON a."bedId" = b.id AND a.status = 'admitted'
-      WHERE w."facilityId" = $1`;
-    if (tenantId) {
-      bedSql += ` AND w.tenant_id = $${bedParams.length + 1}`;
-      bedParams.push(tenantId);
-    }
-    bedSql += ` GROUP BY w.id, w.name, w."totalBeds"`;
-    const bedOccupancy = await this.admissionRepo.query(bedSql, bedParams);
+      WHERE w."facilityId" = $1 AND w.tenant_id = $2
+      GROUP BY w.id, w.name, w."totalBeds"`;
+    const bedOccupancy = await this.admissionRepo.query(bedSql, [facilityId, tid]);
 
     // Lab turnaround time - join orders through encounter for facility filter
-    const labTATParams: any[] = [facilityId];
-    let labTATSql = `
-      SELECT 
+    const labTATSql = `
+      SELECT
         AVG(EXTRACT(EPOCH FROM (o.completed_at - o.created_at))/3600) as avg_tat_hours,
         COUNT(*) as total_tests,
         COUNT(CASE WHEN o.status = 'completed' THEN 1 END) as completed_tests
       FROM orders o
       JOIN encounters e ON e.id = o.encounter_id
-      WHERE e.facility_id = $1 AND o.order_type = 'lab' AND o.created_at >= NOW() - INTERVAL '30 days'`;
-    if (tenantId) {
-      labTATSql += ` AND o.tenant_id = $${labTATParams.length + 1}`;
-      labTATParams.push(tenantId);
-    }
-    const labTAT = await this.orderRepo.query(labTATSql, labTATParams);
+      WHERE e.facility_id = $1 AND o.order_type = 'lab' AND o.created_at >= NOW() - INTERVAL '30 days'
+        AND o.tenant_id = $2`;
+    const labTAT = await this.orderRepo.query(labTATSql, [facilityId, tid]);
 
     // Average length of stay - join through encounter
-    const losParams: any[] = [facilityId];
-    let losSql = `
-      SELECT 
+    const losSql = `
+      SELECT
         AVG(EXTRACT(DAY FROM (a."dischargeDate" - a."admissionDate"))) as avg_los_days
       FROM admissions a
       JOIN encounters e ON e.id = a."encounterId"
-      WHERE e.facility_id = $1 
-        AND a.status = 'discharged' 
+      WHERE e.facility_id = $1
+        AND a.status = 'discharged'
         AND a."dischargeDate" IS NOT NULL
-        AND a."admissionDate" >= NOW() - INTERVAL '90 days'`;
-    if (tenantId) {
-      losSql += ` AND a.tenant_id = $${losParams.length + 1}`;
-      losParams.push(tenantId);
-    }
-    const avgLOS = await this.admissionRepo.query(losSql, losParams);
+        AND a."admissionDate" >= NOW() - INTERVAL '90 days'
+        AND a.tenant_id = $2`;
+    const avgLOS = await this.admissionRepo.query(losSql, [facilityId, tid]);
 
     // Emergency response
-    const emParams: any[] = [facilityId];
-    let emSql = `
-      SELECT 
+    const emSql = `
+      SELECT
         triage_level,
         COUNT(*) as count
       FROM emergency_cases
-      WHERE facility_id = $1 AND created_at >= NOW() - INTERVAL '30 days'`;
-    if (tenantId) {
-      emSql += ` AND tenant_id = $${emParams.length + 1}`;
-      emParams.push(tenantId);
-    }
-    emSql += ` GROUP BY triage_level`;
-    const emergencyMetrics = await this.emergencyRepo.query(emSql, emParams);
+      WHERE facility_id = $1 AND created_at >= NOW() - INTERVAL '30 days'
+        AND tenant_id = $2
+      GROUP BY triage_level`;
+    const emergencyMetrics = await this.emergencyRepo.query(emSql, [facilityId, tid]);
 
     return {
       bedOccupancy,
@@ -725,69 +643,45 @@ export class AnalyticsService {
 
   // Summary report for a date range
   async getSummaryReport(facilityId: string, startDate: Date, endDate: Date, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const [patientStats, encounterStats, revenueStats, admissionStats] = await Promise.all([
-      (() => {
-        const params: any[] = [startDate, endDate];
-        let sql = `
-          SELECT 
-            COUNT(*) as new_patients
-          FROM patients
-          WHERE created_at BETWEEN $1 AND $2`;
-        if (tenantId) {
-          sql += ` AND tenant_id = $${params.length + 1}`;
-          params.push(tenantId);
-        }
-        return this.patientRepo.query(sql, params);
-      })(),
+      this.patientRepo.query(
+        `SELECT COUNT(*) as new_patients
+         FROM patients
+         WHERE created_at BETWEEN $1 AND $2 AND tenant_id = $3`,
+        [startDate, endDate, tid],
+      ),
 
-      (() => {
-        const params: any[] = [facilityId, startDate, endDate];
-        let sql = `
-          SELECT 
-            type as encounter_type,
-            COUNT(*) as count
-          FROM encounters
-          WHERE facility_id = $1 AND created_at BETWEEN $2 AND $3`;
-        if (tenantId) {
-          sql += ` AND tenant_id = $${params.length + 1}`;
-          params.push(tenantId);
-        }
-        sql += ` GROUP BY type`;
-        return this.encounterRepo.query(sql, params);
-      })(),
+      this.encounterRepo.query(
+        `SELECT
+           type as encounter_type,
+           COUNT(*) as count
+         FROM encounters
+         WHERE facility_id = $1 AND created_at BETWEEN $2 AND $3 AND tenant_id = $4
+         GROUP BY type`,
+        [facilityId, startDate, endDate, tid],
+      ),
 
-      (() => {
-        const params: any[] = [facilityId, startDate, endDate];
-        let sql = `
-          SELECT 
-            SUM(i.total_amount) as total_billed,
-            SUM(i.amount_paid) as total_collected,
-            COUNT(*) as invoice_count
-          FROM invoices i
-          JOIN encounters e ON e.id = i.encounter_id
-          WHERE e.facility_id = $1 AND i.created_at BETWEEN $2 AND $3`;
-        if (tenantId) {
-          sql += ` AND i.tenant_id = $${params.length + 1}`;
-          params.push(tenantId);
-        }
-        return this.invoiceRepo.query(sql, params);
-      })(),
+      this.invoiceRepo.query(
+        `SELECT
+           SUM(i.total_amount) as total_billed,
+           SUM(i.amount_paid) as total_collected,
+           COUNT(*) as invoice_count
+         FROM invoices i
+         JOIN encounters e ON e.id = i.encounter_id
+         WHERE e.facility_id = $1 AND i.created_at BETWEEN $2 AND $3 AND i.tenant_id = $4`,
+        [facilityId, startDate, endDate, tid],
+      ),
 
-      (() => {
-        const params: any[] = [facilityId, startDate, endDate];
-        let sql = `
-          SELECT 
-            COUNT(*) as total_admissions,
-            COUNT(CASE WHEN a.status = 'discharged' THEN 1 END) as discharges
-          FROM admissions a
-          JOIN encounters e ON e.id = a."encounterId"
-          WHERE e.facility_id = $1 AND a."admissionDate" BETWEEN $2 AND $3`;
-        if (tenantId) {
-          sql += ` AND a.tenant_id = $${params.length + 1}`;
-          params.push(tenantId);
-        }
-        return this.admissionRepo.query(sql, params);
-      })(),
+      this.admissionRepo.query(
+        `SELECT
+           COUNT(*) as total_admissions,
+           COUNT(CASE WHEN a.status = 'discharged' THEN 1 END) as discharges
+         FROM admissions a
+         JOIN encounters e ON e.id = a."encounterId"
+         WHERE e.facility_id = $1 AND a."admissionDate" BETWEEN $2 AND $3 AND a.tenant_id = $4`,
+        [facilityId, startDate, endDate, tid],
+      ),
     ]);
 
     return {
@@ -801,29 +695,23 @@ export class AnalyticsService {
 
   // Helper methods
   private async countPatientsSince(since: Date, tenantId?: string): Promise<number> {
-    const tenantFilter = tenantId ? ' AND tenant_id = $2' : '';
-    const params = tenantId ? [since, tenantId] : [since];
+    const tid = requireTenantId(tenantId);
     const result = await this.patientRepo.query(
-      `
-      SELECT COUNT(*) as count FROM patients WHERE created_at >= $1${tenantFilter}
-    `,
-      params,
+      `SELECT COUNT(*) as count FROM patients WHERE created_at >= $1 AND tenant_id = $2`,
+      [since, tid],
     );
     return parseInt(result[0]?.count || 0);
   }
 
   private async countActiveAdmissions(facilityId: string, tenantId?: string): Promise<number> {
-    const params: any[] = [facilityId];
-    let sql = `
-      SELECT COUNT(*) as count 
-      FROM admissions a
-      JOIN encounters e ON e.id = a."encounterId"
-      WHERE e.facility_id = $1 AND a.status = 'admitted'`;
-    if (tenantId) {
-      sql += ` AND a.tenant_id = $${params.length + 1}`;
-      params.push(tenantId);
-    }
-    const result = await this.admissionRepo.query(sql, params);
+    const tid = requireTenantId(tenantId);
+    const result = await this.admissionRepo.query(
+      `SELECT COUNT(*) as count
+       FROM admissions a
+       JOIN encounters e ON e.id = a."encounterId"
+       WHERE e.facility_id = $1 AND a.status = 'admitted' AND a.tenant_id = $2`,
+      [facilityId, tid],
+    );
     return parseInt(result[0]?.count || 0);
   }
 
@@ -832,13 +720,11 @@ export class AnalyticsService {
     since: Date,
     tenantId?: string,
   ): Promise<number> {
-    const params: any[] = [facilityId, since];
-    let sql = `SELECT COUNT(*) as count FROM encounters WHERE facility_id = $1 AND created_at >= $2`;
-    if (tenantId) {
-      sql += ` AND tenant_id = $${params.length + 1}`;
-      params.push(tenantId);
-    }
-    const result = await this.encounterRepo.query(sql, params);
+    const tid = requireTenantId(tenantId);
+    const result = await this.encounterRepo.query(
+      `SELECT COUNT(*) as count FROM encounters WHERE facility_id = $1 AND created_at >= $2 AND tenant_id = $3`,
+      [facilityId, since, tid],
+    );
     return parseInt(result[0]?.count || 0);
   }
 
@@ -847,29 +733,25 @@ export class AnalyticsService {
     since: Date,
     tenantId?: string,
   ): Promise<number> {
-    const params: any[] = [facilityId, since];
-    let sql = `SELECT COUNT(*) as count FROM emergency_cases WHERE facility_id = $1 AND created_at >= $2`;
-    if (tenantId) {
-      sql += ` AND tenant_id = $${params.length + 1}`;
-      params.push(tenantId);
-    }
-    const result = await this.emergencyRepo.query(sql, params);
+    const tid = requireTenantId(tenantId);
+    const result = await this.emergencyRepo.query(
+      `SELECT COUNT(*) as count FROM emergency_cases WHERE facility_id = $1 AND created_at >= $2 AND tenant_id = $3`,
+      [facilityId, since, tid],
+    );
     return parseInt(result[0]?.count || 0);
   }
 
   private async getRevenueSum(facilityId: string, since: Date, tenantId?: string): Promise<number> {
-    const params: any[] = [facilityId, since];
-    let sql = `
-      SELECT COALESCE(SUM(i.total_amount), 0) as total
-      FROM invoices i
-      LEFT JOIN encounters e ON e.id = i.encounter_id
-      WHERE (e.facility_id = $1)
-        AND i.created_at >= $2 AND i.status != 'cancelled' AND i.deleted_at IS NULL`;
-    if (tenantId) {
-      sql += ` AND i.tenant_id = $${params.length + 1}`;
-      params.push(tenantId);
-    }
-    const result = await this.invoiceRepo.query(sql, params);
+    const tid = requireTenantId(tenantId);
+    const result = await this.invoiceRepo.query(
+      `SELECT COALESCE(SUM(i.total_amount), 0) as total
+       FROM invoices i
+       LEFT JOIN encounters e ON e.id = i.encounter_id
+       WHERE (e.facility_id = $1)
+         AND i.created_at >= $2 AND i.status != 'cancelled' AND i.deleted_at IS NULL
+         AND i.tenant_id = $3`,
+      [facilityId, since, tid],
+    );
     return parseFloat(result[0]?.total || 0);
   }
 
@@ -878,35 +760,31 @@ export class AnalyticsService {
     since: Date,
     tenantId?: string,
   ): Promise<number> {
-    const params: any[] = [facilityId, since];
-    let sql = `
-      SELECT COALESCE(SUM(p.amount), 0) as total
-      FROM payments p
-      JOIN invoices i ON i.id = p.invoice_id
-      LEFT JOIN encounters e ON e.id = i.encounter_id
-      WHERE (e.facility_id = $1)
-        AND p.created_at >= $2 AND p.deleted_at IS NULL`;
-    if (tenantId) {
-      sql += ` AND p.tenant_id = $${params.length + 1}`;
-      params.push(tenantId);
-    }
-    const result = await this.paymentRepo.query(sql, params);
+    const tid = requireTenantId(tenantId);
+    const result = await this.paymentRepo.query(
+      `SELECT COALESCE(SUM(p.amount), 0) as total
+       FROM payments p
+       JOIN invoices i ON i.id = p.invoice_id
+       LEFT JOIN encounters e ON e.id = i.encounter_id
+       WHERE (e.facility_id = $1)
+         AND p.created_at >= $2 AND p.deleted_at IS NULL
+         AND p.tenant_id = $3`,
+      [facilityId, since, tid],
+    );
     return parseFloat(result[0]?.total || 0);
   }
 
   private async getOutstandingBalance(facilityId: string, tenantId?: string): Promise<number> {
-    const params: any[] = [facilityId];
-    let sql = `
-      SELECT COALESCE(SUM(i.balance_due), 0) as outstanding
-      FROM invoices i
-      LEFT JOIN encounters e ON e.id = i.encounter_id
-      WHERE (e.facility_id = $1)
-        AND i.status NOT IN ('paid', 'cancelled') AND i.deleted_at IS NULL`;
-    if (tenantId) {
-      sql += ` AND i.tenant_id = $${params.length + 1}`;
-      params.push(tenantId);
-    }
-    const result = await this.invoiceRepo.query(sql, params);
+    const tid = requireTenantId(tenantId);
+    const result = await this.invoiceRepo.query(
+      `SELECT COALESCE(SUM(i.balance_due), 0) as outstanding
+       FROM invoices i
+       LEFT JOIN encounters e ON e.id = i.encounter_id
+       WHERE (e.facility_id = $1)
+         AND i.status NOT IN ('paid', 'cancelled') AND i.deleted_at IS NULL
+         AND i.tenant_id = $2`,
+      [facilityId, tid],
+    );
     return parseFloat(result[0]?.outstanding || 0);
   }
 
@@ -948,6 +826,7 @@ export class AnalyticsService {
 
   // Recent Activity - fetch real activities from various sources
   async getRecentActivity(facilityId: string, limit = 10, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const activities: Array<{
       type: string;
       title: string;
@@ -957,10 +836,8 @@ export class AnalyticsService {
     }> = [];
 
     // Get recent patient registrations (tenant-scoped)
-    const patientWhere: any = {};
-    if (tenantId) patientWhere.tenantId = tenantId;
     const recentPatients = await this.patientRepo.find({
-      where: patientWhere,
+      where: { tenantId: tid },
       order: { createdAt: 'DESC' },
       take: 3,
       select: ['id', 'fullName', 'mrn', 'createdAt'],
@@ -976,10 +853,8 @@ export class AnalyticsService {
     });
 
     // Get recent completed encounters
-    const encounterWhere: any = { facilityId, status: 'completed' };
-    if (tenantId) encounterWhere.tenantId = tenantId;
     const recentEncounters = await this.encounterRepo.find({
-      where: encounterWhere,
+      where: { facilityId, status: EncounterStatus.COMPLETED, tenantId: tid },
       order: { updatedAt: 'DESC' },
       take: 3,
       relations: ['patient'],
@@ -995,8 +870,7 @@ export class AnalyticsService {
     });
 
     // Get recent lab results (via sample -> patient)
-    const labResultWhere: any = { status: 'validated' };
-    if (tenantId) labResultWhere.tenantId = tenantId;
+    const labResultWhere: any = { status: 'validated', tenantId: tid };
     const recentLabResults = await this.labResultRepo.find({
       where: labResultWhere,
       order: { updatedAt: 'DESC' },
@@ -1014,10 +888,8 @@ export class AnalyticsService {
     });
 
     // Get recent payments
-    const paymentWhere: any = {};
-    if (tenantId) paymentWhere.tenantId = tenantId;
     const recentPayments = await this.paymentRepo.find({
-      where: paymentWhere,
+      where: { tenantId: tid },
       order: { createdAt: 'DESC' },
       take: 3,
       relations: ['invoice', 'invoice.encounter', 'invoice.encounter.patient'],
@@ -1040,6 +912,7 @@ export class AnalyticsService {
 
   // Dashboard Alerts - fetch real alerts from various sources
   async getDashboardAlerts(facilityId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const alerts: Array<{
       type: 'critical' | 'warning' | 'info';
       title: string;
@@ -1051,7 +924,7 @@ export class AnalyticsService {
     const criticalLabResults = await this.labResultRepo.count({
       where: {
         abnormalFlag: In([AbnormalFlag.CRITICAL_LOW, AbnormalFlag.CRITICAL_HIGH]),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
     });
     if (criticalLabResults > 0) {
@@ -1068,8 +941,8 @@ export class AnalyticsService {
       .createQueryBuilder('sb')
       .innerJoin('sb.item', 'item')
       .where('sb.available_quantity <= item.reorder_level')
-      .andWhere('item.reorder_level > 0');
-    if (tenantId) lowStockQb.andWhere('sb.tenant_id = :tenantId', { tenantId });
+      .andWhere('item.reorder_level > 0')
+      .andWhere('sb.tenant_id = :tenantId', { tenantId: tid });
     const lowStockItems = await lowStockQb.getCount();
     if (lowStockItems > 0) {
       alerts.push({
@@ -1082,7 +955,7 @@ export class AnalyticsService {
 
     // Check for pending lab results awaiting validation
     const pendingLabValidation = await this.labResultRepo.count({
-      where: { status: ResultStatus.ENTERED, ...(tenantId ? { tenantId } : {}) },
+      where: { status: ResultStatus.ENTERED, tenantId: tid },
     });
     if (pendingLabValidation > 0) {
       alerts.push({
@@ -1102,8 +975,8 @@ export class AnalyticsService {
       .andWhere('invoice.balance_due > 0')
       .andWhere('invoice.created_at < :date', {
         date: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
-      });
-    if (tenantId) overdueQb.andWhere('invoice.tenant_id = :tenantId', { tenantId });
+      })
+      .andWhere('invoice.tenant_id = :tenantId', { tenantId: tid });
     const overdueInvoices = await overdueQb.getCount();
     if (overdueInvoices > 0) {
       alerts.push({
@@ -1118,6 +991,7 @@ export class AnalyticsService {
   }
 
   async getMortalityStatistics(tenantId?: string, range: string = 'month') {
+    const tid = requireTenantId(tenantId);
     const now = new Date();
     let startDate: Date;
 
@@ -1142,20 +1016,15 @@ export class AnalyticsService {
       .leftJoinAndSelect('a.patient', 'patient')
       .leftJoinAndSelect('a.ward', 'ward')
       .where('a.status = :status', { status: 'deceased' })
-      .andWhere('a.dischargeDate >= :startDate', { startDate });
-
-    if (tenantId) {
-      qb.andWhere('a.tenant_id = :tenantId', { tenantId });
-    }
+      .andWhere('a.dischargeDate >= :startDate', { startDate })
+      .andWhere('a.tenant_id = :tenantId', { tenantId: tid });
 
     const deceased = await qb.getMany();
 
     const totalAdmissionsQb = this.admissionRepo
       .createQueryBuilder('a')
-      .where('a.admissionDate >= :startDate', { startDate });
-    if (tenantId) {
-      totalAdmissionsQb.andWhere('a.tenant_id = :tenantId', { tenantId });
-    }
+      .where('a.admissionDate >= :startDate', { startDate })
+      .andWhere('a.tenant_id = :tenantId', { tenantId: tid });
     const totalAdmissions = await totalAdmissionsQb.getCount();
 
     const totalDeaths = deceased.length;
@@ -1234,10 +1103,8 @@ export class AnalyticsService {
       const monthlyAdmissionsQb = this.admissionRepo
         .createQueryBuilder('a')
         .where('a.admissionDate >= :monthStart', { monthStart })
-        .andWhere('a.admissionDate <= :monthEnd', { monthEnd });
-      if (tenantId) {
-        monthlyAdmissionsQb.andWhere('a.tenant_id = :tenantId', { tenantId });
-      }
+        .andWhere('a.admissionDate <= :monthEnd', { monthEnd })
+        .andWhere('a.tenant_id = :tenantId', { tenantId: tid });
       const monthAdmissions = await monthlyAdmissionsQb.getCount();
 
       monthlyTrend.push({
@@ -1271,15 +1138,16 @@ export class AnalyticsService {
     month: number,
     year: number,
   ) {
+    const tid = requireTenantId(tenantId);
     const startDate = new Date(year, month - 1, 1);
     const endDate = new Date(year, month, 1);
 
     const [sectionA, sectionB, sectionC, sectionD, sectionE] = await Promise.all([
-      this.hmis105SectionA(facilityId, startDate, endDate, tenantId),
-      this.hmis105SectionB(facilityId, startDate, endDate, tenantId),
-      this.hmis105SectionC(facilityId, startDate, endDate, tenantId),
-      this.hmis105SectionD(facilityId, startDate, endDate, tenantId),
-      this.hmis105SectionE(facilityId, startDate, endDate, tenantId),
+      this.hmis105SectionA(facilityId, startDate, endDate, tid),
+      this.hmis105SectionB(facilityId, startDate, endDate, tid),
+      this.hmis105SectionC(facilityId, startDate, endDate, tid),
+      this.hmis105SectionD(facilityId, startDate, endDate, tid),
+      this.hmis105SectionE(facilityId, startDate, endDate, tid),
     ]);
 
     return {
@@ -1305,9 +1173,9 @@ export class AnalyticsService {
     endDate: Date,
     tenantId?: string,
   ) {
+    const tid = requireTenantId(tenantId);
     // ── Top 20 diagnoses by age band / sex ──
-    const topParams: any[] = [facilityId, startDate, endDate];
-    let topSql = `
+    const topSql = `
       SELECT
         d->>'code'        AS code,
         d->>'description' AS diagnosis,
@@ -1330,16 +1198,12 @@ export class AnalyticsService {
         AND cn.created_at <  $3
         AND cn.diagnoses IS NOT NULL
         AND e.deleted_at IS NULL
-        AND cn.deleted_at IS NULL`;
-    if (tenantId) {
-      topSql += ` AND e.tenant_id = $${topParams.length + 1}`;
-      topParams.push(tenantId);
-    }
-    topSql += `
+        AND cn.deleted_at IS NULL
+        AND e.tenant_id = $4
       GROUP BY d->>'code', d->>'description', age_band, sex
       ORDER BY count DESC`;
 
-    const rawDiagnoses = await this.encounterRepo.query(topSql, topParams).catch((err) => {
+    const rawDiagnoses = await this.encounterRepo.query(topSql, [facilityId, startDate, endDate, tid]).catch((err) => {
       this.logger.warn('HMIS105 SectionA top diagnoses failed: ' + err.message);
       return [];
     });
@@ -1370,8 +1234,7 @@ export class AnalyticsService {
       .slice(0, 20);
 
     // ── Diagnosis groups by ICD-10 chapter (first letter of code) ──
-    const grpParams: any[] = [facilityId, startDate, endDate];
-    let grpSql = `
+    const grpSql = `
       SELECT
         UPPER(LEFT(d->>'code', 1))  AS chapter_letter,
         CASE
@@ -1394,16 +1257,12 @@ export class AnalyticsService {
         AND cn.diagnoses IS NOT NULL
         AND d->>'code' IS NOT NULL
         AND e.deleted_at IS NULL
-        AND cn.deleted_at IS NULL`;
-    if (tenantId) {
-      grpSql += ` AND e.tenant_id = $${grpParams.length + 1}`;
-      grpParams.push(tenantId);
-    }
-    grpSql += `
+        AND cn.deleted_at IS NULL
+        AND e.tenant_id = $4
       GROUP BY chapter_letter, age_band, sex
       ORDER BY chapter_letter`;
 
-    const rawGroups = await this.encounterRepo.query(grpSql, grpParams).catch((err) => {
+    const rawGroups = await this.encounterRepo.query(grpSql, [facilityId, startDate, endDate, tid]).catch((err) => {
       this.logger.warn('HMIS105 SectionA diagnosis groups failed: ' + err.message);
       return [];
     });
@@ -1439,9 +1298,9 @@ export class AnalyticsService {
     endDate: Date,
     tenantId?: string,
   ) {
+    const tid = requireTenantId(tenantId);
     // Tests performed grouped by test category
-    const catParams: any[] = [facilityId, startDate, endDate];
-    let catSql = `
+    const catSql = `
       SELECT
         lt.category,
         COUNT(DISTINCT ls.id) AS total_samples,
@@ -1454,23 +1313,18 @@ export class AnalyticsService {
       WHERE ls.facility_id = $1
         AND ls.created_at >= $2
         AND ls.created_at <  $3
-        AND ls.deleted_at IS NULL`;
-    if (tenantId) {
-      catSql += ` AND ls.tenant_id = $${catParams.length + 1}`;
-      catParams.push(tenantId);
-    }
-    catSql += `
+        AND ls.deleted_at IS NULL
+        AND ls.tenant_id = $4
       GROUP BY lt.category
       ORDER BY total_samples DESC`;
 
-    const byCategory = await this.encounterRepo.query(catSql, catParams).catch((err) => {
+    const byCategory = await this.encounterRepo.query(catSql, [facilityId, startDate, endDate, tid]).catch((err) => {
       this.logger.warn('HMIS105 SectionB lab by category failed: ' + err.message);
       return [];
     });
 
     // Totals
-    const totParams: any[] = [facilityId, startDate, endDate];
-    let totSql = `
+    const totSql = `
       SELECT
         COUNT(DISTINCT ls.id) AS total_samples,
         COUNT(lr.id)          AS total_results
@@ -1479,13 +1333,10 @@ export class AnalyticsService {
       WHERE ls.facility_id = $1
         AND ls.created_at >= $2
         AND ls.created_at <  $3
-        AND ls.deleted_at IS NULL`;
-    if (tenantId) {
-      totSql += ` AND ls.tenant_id = $${totParams.length + 1}`;
-      totParams.push(tenantId);
-    }
+        AND ls.deleted_at IS NULL
+        AND ls.tenant_id = $4`;
 
-    const totals = await this.encounterRepo.query(totSql, totParams).catch((err) => {
+    const totals = await this.encounterRepo.query(totSql, [facilityId, startDate, endDate, tid]).catch((err) => {
       this.logger.warn('HMIS105 SectionB lab totals failed: ' + err.message);
       return [{ total_samples: 0, total_results: 0 }];
     });
@@ -1514,9 +1365,9 @@ export class AnalyticsService {
     endDate: Date,
     tenantId?: string,
   ) {
+    const tid = requireTenantId(tenantId);
     // Top 20 dispensed medicines by quantity
-    const medParams: any[] = [facilityId, startDate, endDate];
-    let medSql = `
+    const medSql = `
       SELECT
         pi.drug_name,
         pi.drug_code,
@@ -1529,24 +1380,19 @@ export class AnalyticsService {
         AND p.created_at <  $3
         AND pi.is_dispensed = true
         AND p.deleted_at IS NULL
-        AND pi.deleted_at IS NULL`;
-    if (tenantId) {
-      medSql += ` AND p.tenant_id = $${medParams.length + 1}`;
-      medParams.push(tenantId);
-    }
-    medSql += `
+        AND pi.deleted_at IS NULL
+        AND p.tenant_id = $4
       GROUP BY pi.drug_name, pi.drug_code
       ORDER BY total_dispensed DESC
       LIMIT 20`;
 
-    const topMedicines = await this.encounterRepo.query(medSql, medParams).catch((err) => {
+    const topMedicines = await this.encounterRepo.query(medSql, [facilityId, startDate, endDate, tid]).catch((err) => {
       this.logger.warn('HMIS105 SectionC top medicines failed: ' + err.message);
       return [];
     });
 
     // Total prescriptions filled
-    const rxParams: any[] = [facilityId, startDate, endDate];
-    let rxSql = `
+    const rxSql = `
       SELECT
         COUNT(*) FILTER (WHERE p.status IN ('DISPENSED','PARTIALLY_DISPENSED','COLLECTED')) AS filled,
         COUNT(*) AS total
@@ -1555,20 +1401,16 @@ export class AnalyticsService {
       WHERE e.facility_id = $1
         AND p.created_at >= $2
         AND p.created_at <  $3
-        AND p.deleted_at IS NULL`;
-    if (tenantId) {
-      rxSql += ` AND p.tenant_id = $${rxParams.length + 1}`;
-      rxParams.push(tenantId);
-    }
+        AND p.deleted_at IS NULL
+        AND p.tenant_id = $4`;
 
-    const rxTotals = await this.encounterRepo.query(rxSql, rxParams).catch((err) => {
+    const rxTotals = await this.encounterRepo.query(rxSql, [facilityId, startDate, endDate, tid]).catch((err) => {
       this.logger.warn('HMIS105 SectionC prescription totals failed: ' + err.message);
       return [{ filled: 0, total: 0 }];
     });
 
     // Stock-out days: count days with zero balance_after on SALE movements
-    const soParams: any[] = [facilityId, startDate, endDate];
-    let soSql = `
+    const soSql = `
       SELECT
         i.name AS item_name,
         COUNT(DISTINCT DATE(sl.created_at)) AS stockout_days
@@ -1579,17 +1421,13 @@ export class AnalyticsService {
         AND sl.created_at <  $3
         AND sl.balance_after = 0
         AND i.is_drug = true
-        AND sl.deleted_at IS NULL`;
-    if (tenantId) {
-      soSql += ` AND sl.tenant_id = $${soParams.length + 1}`;
-      soParams.push(tenantId);
-    }
-    soSql += `
+        AND sl.deleted_at IS NULL
+        AND sl.tenant_id = $4
       GROUP BY i.name
       ORDER BY stockout_days DESC
       LIMIT 20`;
 
-    const stockOuts = await this.encounterRepo.query(soSql, soParams).catch((err) => {
+    const stockOuts = await this.encounterRepo.query(soSql, [facilityId, startDate, endDate, tid]).catch((err) => {
       this.logger.warn('HMIS105 SectionC stock-out days failed: ' + err.message);
       return [];
     });
@@ -1612,14 +1450,20 @@ export class AnalyticsService {
 
   /**
    * Section D: Maternal Health – ANC visits, deliveries, birth outcomes.
+   * NOTE: Maternity tables (antenatal_visits, antenatal_registrations,
+   * labour_records, delivery_outcomes) do not have tenant_id columns.
+   * Tenant isolation relies on facility_id filtering only.
+   * tenantId is accepted for API consistency but cannot be applied to these queries.
    */
   private async hmis105SectionD(
     facilityId: string,
     startDate: Date,
     endDate: Date,
-    _tenantId?: string,
+    tenantId?: string,
   ) {
-    // ANC visits (first vs return) – maternity tables have no tenant_id
+    // Validate tenant context even though maternity tables lack tenant_id columns
+    requireTenantId(tenantId);
+    // ANC visits (first vs return) – maternity tables have no tenant_id column
     const ancParams: any[] = [facilityId, startDate, endDate];
     const ancSql = `
       SELECT
@@ -1718,9 +1562,9 @@ export class AnalyticsService {
     endDate: Date,
     tenantId?: string,
   ) {
+    const tid = requireTenantId(tenantId);
     // OPD attendance (new encounters = first for that patient in month, rest = return)
-    const opdParams: any[] = [facilityId, startDate, endDate];
-    let opdSql = `
+    const opdSql = `
       SELECT
         COUNT(*) AS total_opd,
         COUNT(*) FILTER (WHERE e.type = 'OPD') AS opd_visits,
@@ -1736,22 +1580,17 @@ export class AnalyticsService {
           AND e.created_at >= $2
           AND e.created_at <  $3
           AND e.status != 'CANCELLED'
-          AND e.deleted_at IS NULL`;
-    if (tenantId) {
-      opdSql += ` AND e.tenant_id = $${opdParams.length + 1}`;
-      opdParams.push(tenantId);
-    }
-    opdSql += `
+          AND e.deleted_at IS NULL
+          AND e.tenant_id = $4
       ) e`;
 
-    const opdData = await this.encounterRepo.query(opdSql, opdParams).catch((err) => {
+    const opdData = await this.encounterRepo.query(opdSql, [facilityId, startDate, endDate, tid]).catch((err) => {
       this.logger.warn('HMIS105 SectionE OPD attendance failed: ' + err.message);
       return [{ total_opd: 0, opd_visits: 0, new_visits: 0, return_visits: 0 }];
     });
 
     // Admissions, discharges, deaths
-    const admParams: any[] = [facilityId, startDate, endDate];
-    let admSql = `
+    const admSql = `
       SELECT
         COUNT(*) FILTER (WHERE a.admission_date >= $2 AND a.admission_date < $3) AS admissions,
         COUNT(*) FILTER (WHERE a.discharge_date >= $2 AND a.discharge_date < $3 AND a.status = 'DISCHARGED') AS discharges,
@@ -1763,32 +1602,25 @@ export class AnalyticsService {
         AND (
           (a.admission_date >= $2 AND a.admission_date < $3)
           OR (a.discharge_date >= $2 AND a.discharge_date < $3)
-        )`;
-    if (tenantId) {
-      admSql += ` AND a.tenant_id = $${admParams.length + 1}`;
-      admParams.push(tenantId);
-    }
+        )
+        AND a.tenant_id = $4`;
 
-    const admData = await this.admissionRepo.query(admSql, admParams).catch((err) => {
+    const admData = await this.admissionRepo.query(admSql, [facilityId, startDate, endDate, tid]).catch((err) => {
       this.logger.warn('HMIS105 SectionE admissions failed: ' + err.message);
       return [{ admissions: 0, discharges: 0, deaths: 0 }];
     });
 
     // Referrals out
-    const refParams: any[] = [facilityId, startDate, endDate];
-    let refSql = `
+    const refSql = `
       SELECT COUNT(*) AS referrals_out
       FROM referrals r
       WHERE r.from_facility_id = $1
         AND r.created_at >= $2
         AND r.created_at <  $3
-        AND r.deleted_at IS NULL`;
-    if (tenantId) {
-      refSql += ` AND r.tenant_id = $${refParams.length + 1}`;
-      refParams.push(tenantId);
-    }
+        AND r.deleted_at IS NULL
+        AND r.tenant_id = $4`;
 
-    const refData = await this.encounterRepo.query(refSql, refParams).catch((err) => {
+    const refData = await this.encounterRepo.query(refSql, [facilityId, startDate, endDate, tid]).catch((err) => {
       this.logger.warn('HMIS105 SectionE referrals failed: ' + err.message);
       return [{ referrals_out: 0 }];
     });

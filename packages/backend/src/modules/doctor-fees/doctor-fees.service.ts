@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, MoreThanOrEqual, Repository } from 'typeorm';
+import { requireTenantId } from '../../common/utils/tenant.util';
 import {
   DoctorFeeProfile,
   DoctorFeeMode,
@@ -44,8 +45,8 @@ export class DoctorFeesService {
   // ─── CRUD ──────────────────────────────────────────────────────────────────
 
   async getProfile(doctorId: string, tenantId?: string): Promise<DoctorFeeProfile | null> {
-    const where: any = { doctorId };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { doctorId, tenantId: tid };
     return this.profileRepo.findOne({ where });
   }
 
@@ -55,8 +56,8 @@ export class DoctorFeesService {
     tenantId?: string,
   ): Promise<Map<string, DoctorFeeProfile>> {
     if (doctorIds.length === 0) return new Map();
-    const where: any = { doctorId: In(doctorIds) };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { doctorId: In(doctorIds), tenantId: tid };
     const profiles = await this.profileRepo.find({ where });
     const map = new Map<string, DoctorFeeProfile>();
     for (const p of profiles) map.set(p.doctorId, p);
@@ -64,12 +65,9 @@ export class DoctorFeesService {
   }
 
   async listProfiles(tenantId?: string): Promise<DoctorFeeProfile[]> {
-    if (!tenantId) {
-      this.logger.warn('listProfiles called without tenantId — returning empty to prevent cross-tenant leak');
-      return [];
-    }
+    const tid = requireTenantId(tenantId);
     return this.profileRepo.find({
-      where: { tenantId },
+      where: { tenantId: tid },
       relations: ['doctor'],
       order: { createdAt: 'DESC' },
     });
@@ -80,8 +78,9 @@ export class DoctorFeesService {
     dto: UpsertDoctorFeeProfileDto,
     tenantId?: string,
   ): Promise<DoctorFeeProfile> {
+    const tid = requireTenantId(tenantId);
     const doctor = await this.userRepo.findOne({
-      where: { id: doctorId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: doctorId, tenantId: tid },
     });
     if (!doctor) throw new NotFoundException(`Doctor ${doctorId} not found`);
 
@@ -108,7 +107,7 @@ export class DoctorFeesService {
     if (!existing) {
       existing = this.profileRepo.create({
         doctorId,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       } as Partial<DoctorFeeProfile>) as DoctorFeeProfile;
     }
     Object.assign(existing!, {
@@ -131,6 +130,7 @@ export class DoctorFeesService {
   }
 
   async deleteProfile(doctorId: string, tenantId?: string): Promise<void> {
+    requireTenantId(tenantId);
     const profile = await this.getProfile(doctorId, tenantId);
     if (!profile) return;
     await this.profileRepo.softRemove(profile);
@@ -158,9 +158,10 @@ export class DoctorFeesService {
     facilityId: string,
     tenantId?: string,
   ): Promise<number | null> {
+    const tid = requireTenantId(tenantId);
     if (!departmentId) return null;
     const dept = await this.deptRepo.findOne({
-      where: { id: departmentId, ...(tenantId ? { tenantId } : {}) } as any,
+      where: { id: departmentId, tenantId: tid } as any,
     });
     if (!dept) return null;
     const code = (dept.code || dept.name || '').trim().toUpperCase().replace(/\s+/g, '_');
@@ -169,7 +170,7 @@ export class DoctorFeesService {
         where: {
           code: `OPD-CONSULT-${code}`,
           isActive: true,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         } as any,
       });
       if (svc) return Number(svc.basePrice);
@@ -179,7 +180,7 @@ export class DoctorFeesService {
         code: 'OPD-CONSULT',
         department: dept.name,
         isActive: true,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       } as any,
     });
     return fallback ? Number(fallback.basePrice) : null;
@@ -196,6 +197,7 @@ export class DoctorFeesService {
     windowDays: number,
     tenantId?: string,
   ): Promise<boolean> {
+    const tid = requireTenantId(tenantId);
     if (!windowDays || windowDays <= 0) return false;
     const since = new Date();
     since.setDate(since.getDate() - windowDays);
@@ -203,8 +205,8 @@ export class DoctorFeesService {
       patientId,
       attendingProviderId: doctorId,
       startTime: MoreThanOrEqual(since),
+      tenantId: tid,
     };
-    if (tenantId) where.tenantId = tenantId;
     const recent = await this.encounterRepo.findOne({ where, order: { startTime: 'DESC' } });
     return !!recent;
   }
@@ -222,7 +224,8 @@ export class DoctorFeesService {
     patientId?: string;
     when?: Date;
   }): Promise<ResolvedDoctorFee | null> {
-    const { doctorId, departmentId, facilityId, tenantId, patientId } = opts;
+    const { doctorId, departmentId, facilityId, patientId } = opts;
+    const tenantId = requireTenantId(opts.tenantId);
     if (!doctorId) return null;
 
     const profile = await this.getProfile(doctorId, tenantId);

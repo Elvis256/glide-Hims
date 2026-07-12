@@ -29,6 +29,7 @@ import {
 } from '../../database/entities/fixed-asset.entity';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
 import { FinanceService } from '../finance/finance.service';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 interface ActorContext {
   userId?: string;
@@ -146,10 +147,11 @@ export class AssetsService {
   // ==================== ASSET CRUD ====================
 
   async createAsset(data: Partial<FixedAsset>, ctx?: ActorContext): Promise<FixedAsset> {
+    const tid = requireTenantId(ctx?.tenantId);
     if (!data.assetCode) {
       data.assetCode = await this.genSequentialNumber(
         'AST',
-        ctx?.tenantId,
+        tid,
         this.assetRepo,
         'assetCode',
       );
@@ -162,7 +164,7 @@ export class AssetsService {
         (Number(data.installationCost) || 0) -
         (Number(data.salvageValue) || 0),
       accumulatedDepreciation: 0,
-      ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
+      tenantId: tid,
     });
 
     // Apply category defaults if categoryId set and asset fields blank
@@ -208,7 +210,7 @@ export class AssetsService {
         movedBy: ctx?.userId,
         reason: 'manual',
         notes: 'Asset created',
-        ...(ctx?.tenantId ? { tenantId: ctx.tenantId } : {}),
+        tenantId: tid,
       }),
     );
 

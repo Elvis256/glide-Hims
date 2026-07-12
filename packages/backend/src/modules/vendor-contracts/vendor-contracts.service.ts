@@ -12,6 +12,7 @@ import {
   CreateAmendmentDto,
   RenewContractDto,
 } from './dto/vendor-contract.dto';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class VendorContractsService {
@@ -27,6 +28,7 @@ export class VendorContractsService {
     userId: string,
     tenantId?: string,
   ): Promise<VendorContract> {
+    const tid = requireTenantId(tenantId);
     const contract = this.contractRepo.create({
       contractNumber: dto.contractNumber,
       supplierId: dto.supplierId,
@@ -40,7 +42,7 @@ export class VendorContractsService {
       notes: dto.notes,
       status: ContractStatus.DRAFT,
       createdById: userId,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
 
     const saved = await this.contractRepo.save(contract);
@@ -52,6 +54,7 @@ export class VendorContractsService {
     options: { status?: ContractStatus; supplierId?: string } = {},
     tenantId?: string,
   ) {
+    const tid = requireTenantId(tenantId);
     const qb = this.contractRepo
       .createQueryBuilder('contract')
       .leftJoinAndSelect('contract.supplier', 'supplier')
@@ -71,16 +74,15 @@ export class VendorContractsService {
     if (options.supplierId) {
       qb.andWhere('contract.supplierId = :supplierId', { supplierId: options.supplierId });
     }
-    if (tenantId) {
-      qb.andWhere('contract.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('contract.tenant_id = :tenantId', { tenantId: tid });
 
     return qb.orderBy('contract.endDate', 'ASC').getMany();
   }
 
   async findOne(id: string, tenantId?: string): Promise<VendorContract> {
+    const tid = requireTenantId(tenantId);
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     const contract = await this.contractRepo.findOne({
       where,
       relations: ['supplier', 'amendments', 'createdBy'],
@@ -123,10 +125,11 @@ export class VendorContractsService {
     userId: string,
     tenantId?: string,
   ): Promise<ContractAmendment> {
+    const tid = requireTenantId(tenantId);
     const contract = await this.findOne(dto.contractId, tenantId);
 
     const amendCountWhere1: any = { contractId: dto.contractId };
-    if (tenantId) amendCountWhere1.tenantId = tenantId;
+    amendCountWhere1.tenantId = tid;
     const count = await this.amendmentRepo.count({ where: amendCountWhere1 });
 
     const amendment = this.amendmentRepo.create({
@@ -136,7 +139,7 @@ export class VendorContractsService {
       changes: dto.changes,
       effectiveDate: new Date(dto.effectiveDate),
       createdById: userId,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
 
     const saved = await this.amendmentRepo.save(amendment);
@@ -156,6 +159,7 @@ export class VendorContractsService {
     userId: string,
     tenantId?: string,
   ): Promise<VendorContract> {
+    const tid = requireTenantId(tenantId);
     const contract = await this.findOne(id, tenantId);
     if (
       ![ContractStatus.ACTIVE, ContractStatus.EXPIRING_SOON, ContractStatus.EXPIRED].includes(
@@ -166,7 +170,7 @@ export class VendorContractsService {
     }
 
     const amendCountWhere2: any = { contractId: id };
-    if (tenantId) amendCountWhere2.tenantId = tenantId;
+    amendCountWhere2.tenantId = tid;
     const count = await this.amendmentRepo.count({ where: amendCountWhere2 });
 
     const amendment = this.amendmentRepo.create({
@@ -179,7 +183,7 @@ export class VendorContractsService {
       },
       effectiveDate: new Date(),
       createdById: userId,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
     await this.amendmentRepo.save(amendment);
 
@@ -204,6 +208,7 @@ export class VendorContractsService {
     daysAhead: number = 30,
     tenantId?: string,
   ): Promise<VendorContract[]> {
+    const tid = requireTenantId(tenantId);
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + daysAhead);
 
@@ -212,7 +217,7 @@ export class VendorContractsService {
       status: ContractStatus.ACTIVE,
       endDate: LessThan(futureDate),
     };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     const contracts = await this.contractRepo.find({
       where,
@@ -237,16 +242,11 @@ export class VendorContractsService {
   }
 
   async getStats(facilityId: string, tenantId?: string) {
-    const activeWhere: any = { facilityId, status: ContractStatus.ACTIVE };
-    const expiringWhere: any = { facilityId, status: ContractStatus.EXPIRING_SOON };
-    const expiredWhere: any = { facilityId, status: ContractStatus.EXPIRED };
-    const totalWhere: any = { facilityId };
-    if (tenantId) {
-      activeWhere.tenantId = tenantId;
-      expiringWhere.tenantId = tenantId;
-      expiredWhere.tenantId = tenantId;
-      totalWhere.tenantId = tenantId;
-    }
+    const tid = requireTenantId(tenantId);
+    const activeWhere: any = { facilityId, status: ContractStatus.ACTIVE, tenantId: tid };
+    const expiringWhere: any = { facilityId, status: ContractStatus.EXPIRING_SOON, tenantId: tid };
+    const expiredWhere: any = { facilityId, status: ContractStatus.EXPIRED, tenantId: tid };
+    const totalWhere: any = { facilityId, tenantId: tid };
 
     const [active, expiringSoon, expired, total] = await Promise.all([
       this.contractRepo.count({ where: activeWhere }),
@@ -258,10 +258,8 @@ export class VendorContractsService {
     const qb = this.contractRepo
       .createQueryBuilder('contract')
       .where('contract.facilityId = :facilityId', { facilityId })
-      .andWhere('contract.status = :status', { status: ContractStatus.ACTIVE });
-    if (tenantId) {
-      qb.andWhere('contract.tenant_id = :tenantId', { tenantId });
-    }
+      .andWhere('contract.status = :status', { status: ContractStatus.ACTIVE })
+      .andWhere('contract.tenant_id = :tenantId', { tenantId: tid });
     const totalValue = await qb.select('SUM(contract.value)', 'sum').getRawOne();
 
     return { active, expiringSoon, expired, total, totalActiveValue: totalValue?.sum || 0 };

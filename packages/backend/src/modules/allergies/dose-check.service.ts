@@ -7,6 +7,7 @@ import { Encounter } from '../../database/entities/encounter.entity';
 import { DrugClassification } from '../../database/entities/drug-classification.entity';
 import { Item } from '../../database/entities/inventory.entity';
 import { SafetyAlert } from '../../database/entities/prescription-safety-override.entity';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 export interface DoseCheckLine {
   drugId?: string;
@@ -177,6 +178,7 @@ export class DoseCheckService {
   ) {}
 
   async runDoseChecks(input: DoseCheckInput): Promise<SafetyAlert[]> {
+    const tid = requireTenantId(input.tenantId);
     const alerts: SafetyAlert[] = [];
 
     let age: number | null = null;
@@ -185,7 +187,7 @@ export class DoseCheckService {
     if (input.patientId) {
       try {
         const patient = await this.patientRepo.findOne({
-          where: { id: input.patientId, ...(input.tenantId ? { tenantId: input.tenantId } : {}) },
+          where: { id: input.patientId, tenantId: tid },
         });
         age = patient ? ageYears(patient.dateOfBirth) : null;
 
@@ -194,7 +196,7 @@ export class DoseCheckService {
           const enc = await this.encounterRepo.find({
             where: {
               patientId: input.patientId,
-              ...(input.tenantId ? { tenantId: input.tenantId } : {}),
+              tenantId: tid,
             },
             select: ['id'],
             take: 50,
@@ -223,7 +225,7 @@ export class DoseCheckService {
       const classifications = await this.classificationRepo.find({
         where: drugIds.map((id) => ({
           itemId: id,
-          ...(input.tenantId ? { tenantId: input.tenantId } : {}),
+          tenantId: tid,
         })) as any,
       });
       for (const c of classifications) classByItemId.set(c.itemId, c);

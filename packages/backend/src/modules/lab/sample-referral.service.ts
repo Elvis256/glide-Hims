@@ -25,6 +25,7 @@ import {
   SampleReferralQueryDto,
   TATStatsQueryDto,
 } from './dto/sample-referral.dto';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class SampleReferralService {
@@ -67,8 +68,9 @@ export class SampleReferralService {
     userId: string,
     tenantId?: string,
   ): Promise<SampleReferral> {
+    const tid = requireTenantId(tenantId);
     const sample = await this.sampleRepo.findOne({
-      where: { id: dto.sampleId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: dto.sampleId, tenantId: tid },
       relations: ['patient'],
     });
     if (!sample) throw new NotFoundException('Lab sample not found');
@@ -87,7 +89,7 @@ export class SampleReferralService {
     // advisory lock taken inside generateReferralNumber actually serialises
     // the (count → insert) sequence.
     return this.dataSource.transaction(async (manager) => {
-      const referralNumber = await this.generateReferralNumber(manager, tenantId);
+      const referralNumber = await this.generateReferralNumber(manager, tid);
 
       const referral = manager.create(SampleReferral, {
         referralNumber,
@@ -105,7 +107,7 @@ export class SampleReferralService {
         notes: dto.notes,
         collectedAt: new Date(),
         collectedById: userId,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       });
 
       return manager.save(referral);

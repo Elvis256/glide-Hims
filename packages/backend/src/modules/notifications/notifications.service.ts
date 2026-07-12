@@ -20,6 +20,7 @@ import {
   ScheduleReminderDto,
   TestNotificationDto,
 } from './dto/notification.dto';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class NotificationsService {
@@ -40,7 +41,8 @@ export class NotificationsService {
     type?: NotificationType,
     tenantId?: string,
   ): Promise<NotificationConfig[]> {
-    const where: any = { facilityId, ...(tenantId ? { tenantId } : {}) };
+    const tid = requireTenantId(tenantId);
+    const where: any = { facilityId, tenantId: tid };
     if (type) where.type = type;
     return this.configRepo.find({ where });
   }
@@ -49,14 +51,15 @@ export class NotificationsService {
     dto: CreateNotificationConfigDto,
     tenantId?: string,
   ): Promise<NotificationConfig> {
+    const tid = requireTenantId(tenantId);
     let config = await this.configRepo.findOne({
-      where: { facilityId: dto.facilityId, type: dto.type, ...(tenantId ? { tenantId } : {}) },
+      where: { facilityId: dto.facilityId, type: dto.type, tenantId: tid },
     });
 
     if (config) {
       Object.assign(config, dto);
     } else {
-      config = this.configRepo.create({ ...dto, ...(tenantId ? { tenantId } : {}) });
+      config = this.configRepo.create({ ...dto, tenantId: tid });
     }
 
     return this.configRepo.save(config);
@@ -419,8 +422,9 @@ export class NotificationsService {
     userId?: string,
     tenantId?: string,
   ): Promise<PatientReminder> {
+    const tid = requireTenantId(tenantId);
     const patient = await this.patientRepo.findOne({
-      where: { id: dto.patientId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: dto.patientId, tenantId: tid },
     });
     if (!patient) throw new Error('Patient not found');
 
@@ -435,7 +439,7 @@ export class NotificationsService {
       referenceId: dto.referenceId,
       scheduledFor: new Date(),
       createdById: userId,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
 
     await this.reminderRepo.save(reminder);
@@ -452,11 +456,12 @@ export class NotificationsService {
     userId?: string,
     tenantId?: string,
   ): Promise<PatientReminder> {
+    const tid = requireTenantId(tenantId);
     const reminder = this.reminderRepo.create({
       facilityId,
       ...dto,
       createdById: userId,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
 
     return this.reminderRepo.save(reminder);
@@ -469,7 +474,7 @@ export class NotificationsService {
       const patient =
         reminder.patient ||
         (await this.patientRepo.findOne({
-          where: { id: reminder.patientId, ...(tenantId ? { tenantId } : {}) },
+          where: { id: reminder.patientId, tenantId: requireTenantId(tenantId) },
         }));
 
       if (!patient) {
@@ -565,12 +570,13 @@ export class NotificationsService {
 
   // Process pending reminders (called by cron job)
   async processPendingReminders(tenantId?: string): Promise<number> {
+    const tid = requireTenantId(tenantId);
     const now = new Date();
     const pendingReminders = await this.reminderRepo.find({
       where: {
         status: ReminderStatus.PENDING,
         scheduledFor: LessThanOrEqual(now),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
       take: 100,
     });
@@ -588,7 +594,8 @@ export class NotificationsService {
     limit = 50,
     tenantId?: string,
   ): Promise<PatientReminder[]> {
-    const where: any = { facilityId, ...(tenantId ? { tenantId } : {}) };
+    const tid = requireTenantId(tenantId);
+    const where: any = { facilityId, tenantId: tid };
     if (patientId) where.patientId = patientId;
 
     return this.reminderRepo.find({
@@ -599,8 +606,9 @@ export class NotificationsService {
   }
 
   async cancelReminder(id: string, tenantId?: string): Promise<PatientReminder> {
+    const tid = requireTenantId(tenantId);
     const reminder = await this.reminderRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
     });
     if (!reminder) throw new Error('Reminder not found');
 
@@ -616,9 +624,10 @@ export class NotificationsService {
     receiptNumber?: string,
     tenantId?: string,
   ): Promise<{ success: boolean; channel?: string; error?: string }> {
+    const tid = requireTenantId(tenantId);
     try {
       const patient = await this.patientRepo.findOne({
-        where: { id: patientId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: patientId, tenantId: tid },
       });
       if (!patient) {
         return { success: false, error: 'Patient not found' };
@@ -691,7 +700,7 @@ export class NotificationsService {
         scheduledFor: new Date(),
         status: ReminderStatus.SENT,
         sentAt: new Date(),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       });
       await this.reminderRepo.save(reminder);
 
@@ -705,8 +714,9 @@ export class NotificationsService {
   // Template Management — stored in a single notification_config with type TEMPLATE
   // Templates are kept as an array in extraConfig.templates
   async getTemplates(facilityId: string, tenantId?: string): Promise<any[]> {
+    const tid = requireTenantId(tenantId);
     const config = await this.configRepo.findOne({
-      where: { facilityId, type: NotificationType.TEMPLATE, ...(tenantId ? { tenantId } : {}) },
+      where: { facilityId, type: NotificationType.TEMPLATE, tenantId: tid },
     });
 
     if (config?.extraConfig?.templates) {
@@ -754,7 +764,7 @@ export class NotificationsService {
       type: NotificationType.TEMPLATE,
       isEnabled: true,
       extraConfig: { templates: defaults },
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     } as any);
     await this.configRepo.save(newConfig);
 
@@ -762,9 +772,10 @@ export class NotificationsService {
   }
 
   async createTemplate(dto: any, tenantId?: string): Promise<any> {
+    const tid = requireTenantId(tenantId);
     const facilityId = dto.facilityId;
     let config = await this.configRepo.findOne({
-      where: { facilityId, type: NotificationType.TEMPLATE, ...(tenantId ? { tenantId } : {}) },
+      where: { facilityId, type: NotificationType.TEMPLATE, tenantId: tid },
     });
 
     const newTemplate = {
@@ -779,7 +790,7 @@ export class NotificationsService {
         type: NotificationType.TEMPLATE,
         isEnabled: true,
         extraConfig: { templates: [newTemplate] },
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       } as Partial<NotificationConfig>);
     } else {
       const templates = config.extraConfig?.templates || [];
@@ -792,9 +803,10 @@ export class NotificationsService {
   }
 
   async updateTemplate(id: string, dto: any, tenantId?: string): Promise<any> {
+    const tid = requireTenantId(tenantId);
     const facilityId = dto.facilityId;
     const config = await this.configRepo.findOne({
-      where: { facilityId, type: NotificationType.TEMPLATE, ...(tenantId ? { tenantId } : {}) },
+      where: { facilityId, type: NotificationType.TEMPLATE, tenantId: tid },
     });
     if (!config?.extraConfig?.templates) throw new NotFoundException('Template not found');
 
@@ -814,7 +826,8 @@ export class NotificationsService {
     facilityId?: string,
     tenantId?: string,
   ): Promise<{ success: boolean }> {
-    const where: any = { type: NotificationType.TEMPLATE, ...(tenantId ? { tenantId } : {}) };
+    const tid = requireTenantId(tenantId);
+    const where: any = { type: NotificationType.TEMPLATE, tenantId: tid };
     if (facilityId) where.facilityId = facilityId;
 
     const config = await this.configRepo.findOne({ where });
@@ -844,12 +857,13 @@ export class NotificationsService {
     userId?: string,
     tenantId?: string,
   ): Promise<{ sent: number; failed: number; errors: string[] }> {
+    const tid = requireTenantId(tenantId);
     const { facilityId, patientIds, channel, subject, message, type } = dto;
     let sent = 0;
     let failed = 0;
     const errors: string[] = [];
 
-    const configs = await this.getConfig(facilityId, undefined, tenantId);
+    const configs = await this.getConfig(facilityId, undefined, tid);
     const smsConfig = configs.find((c) => c.type === NotificationType.SMS && c.isEnabled);
     const emailConfig = configs.find((c) => c.type === NotificationType.EMAIL && c.isEnabled);
     const whatsappConfig = configs.find((c) => c.type === NotificationType.WHATSAPP && c.isEnabled);
@@ -857,7 +871,7 @@ export class NotificationsService {
     for (const patientId of patientIds) {
       try {
         const patient = await this.patientRepo.findOne({
-          where: { id: patientId, ...(tenantId ? { tenantId } : {}) },
+          where: { id: patientId, tenantId: tid },
         });
         if (!patient) {
           errors.push(`Patient ${patientId} not found`);
@@ -915,7 +929,7 @@ export class NotificationsService {
             status: ReminderStatus.SENT,
             sentAt: new Date(),
             createdById: userId,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: tid,
           });
           await this.reminderRepo.save(reminder);
           sent++;

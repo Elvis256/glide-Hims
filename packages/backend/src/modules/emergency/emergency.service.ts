@@ -24,6 +24,7 @@ import {
 import { VitalsService } from '../vitals/vitals.service';
 import { VitalSource } from '../../database/entities/vital.entity';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class EmergencyService {
@@ -49,6 +50,7 @@ export class EmergencyService {
     manager: import('typeorm').EntityManager,
     tenantId?: string,
   ): Promise<string> {
+    const tid = requireTenantId(tenantId);
     const now = new Date();
     const prefix = `EM${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
@@ -59,9 +61,7 @@ export class EmergencyService {
       .setLock('pessimistic_write')
       .where('ec.arrivalTime BETWEEN :startOfDay AND :endOfDay', { startOfDay, endOfDay });
 
-    if (tenantId) {
-      qb.andWhere('ec.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('ec.tenant_id = :tenantId', { tenantId: tid });
 
     const count = await qb.getCount();
     return `${prefix}-${String(count + 1).padStart(4, '0')}`;
@@ -74,13 +74,14 @@ export class EmergencyService {
     userId: string,
     tenantId?: string,
   ): Promise<EmergencyCase> {
+    const tid = requireTenantId(tenantId);
     // Wrap encounter + case creation in a single transaction so that a failure
     // of either insert rolls both back. Previously the two `save()` calls were
     // independent: a crash between them left an orphaned Encounter with no
     // EmergencyCase, corrupting the ER record on every admission.
     return this.dataSource.transaction(async (manager) => {
       const patientWhere: any = { id: dto.patientId };
-      if (tenantId) patientWhere.tenantId = tenantId;
+      patientWhere.tenantId = tid;
       const patient = await manager.findOne(Patient, { where: patientWhere });
       if (!patient) throw new NotFoundException('Patient not found');
 
@@ -95,7 +96,7 @@ export class EmergencyService {
         facilityId,
         createdById: userId,
         startTime: new Date(),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       });
       await manager.save(encounter);
 
@@ -116,7 +117,7 @@ export class EmergencyService {
         status: TriageStatus.PENDING,
         encounterId: encounter.id,
         facilityId,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       });
 
       const savedCase = await manager.save(emergencyCase);
@@ -155,8 +156,9 @@ export class EmergencyService {
     nurseId: string,
     tenantId?: string,
   ): Promise<EmergencyCase> {
+    const tid = requireTenantId(tenantId);
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     const emergencyCase = await this.caseRepo.findOne({ where });
     if (!emergencyCase) throw new NotFoundException('Emergency case not found');
 
@@ -187,7 +189,7 @@ export class EmergencyService {
     // Update encounter status
     if (emergencyCase.encounterId) {
       await this.encounterRepo.update(
-        { id: emergencyCase.encounterId, ...(tenantId ? { tenantId } : {}) },
+        { id: emergencyCase.encounterId, tenantId: tid },
         { status: EncounterStatus.WAITING },
       );
     }
@@ -217,7 +219,7 @@ export class EmergencyService {
     let triagePatientId: string | null = null;
     if (savedCase.encounterId) {
       const enc = await this.encounterRepo.findOne({
-        where: { id: savedCase.encounterId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: savedCase.encounterId, tenantId: tid },
         select: ['id', 'patientId'],
       });
       triagePatientId = enc?.patientId ?? null;
@@ -256,8 +258,9 @@ export class EmergencyService {
     doctorId?: string,
     tenantId?: string,
   ): Promise<EmergencyCase> {
+    const tid = requireTenantId(tenantId);
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     const emergencyCase = await this.caseRepo.findOne({ where });
     if (!emergencyCase) throw new NotFoundException('Emergency case not found');
 
@@ -274,7 +277,7 @@ export class EmergencyService {
     // Update encounter status
     if (emergencyCase.encounterId) {
       await this.encounterRepo.update(
-        { id: emergencyCase.encounterId, ...(tenantId ? { tenantId } : {}) },
+        { id: emergencyCase.encounterId, tenantId: tid },
         {
           status: EncounterStatus.IN_CONSULTATION,
           attendingProviderId: emergencyCase.attendingDoctorId,
@@ -313,8 +316,9 @@ export class EmergencyService {
     dto: DischargeEmergencyDto,
     tenantId?: string,
   ): Promise<EmergencyCase> {
+    const tid = requireTenantId(tenantId);
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     const emergencyCase = await this.caseRepo.findOne({ where });
     if (!emergencyCase) throw new NotFoundException('Emergency case not found');
 
@@ -343,7 +347,7 @@ export class EmergencyService {
     // Update encounter
     if (emergencyCase.encounterId) {
       await this.encounterRepo.update(
-        { id: emergencyCase.encounterId, ...(tenantId ? { tenantId } : {}) },
+        { id: emergencyCase.encounterId, tenantId: tid },
         {
           status: EncounterStatus.DISCHARGED,
           endTime: new Date(),
@@ -382,8 +386,9 @@ export class EmergencyService {
     dto: AdmitFromEmergencyDto,
     tenantId?: string,
   ): Promise<EmergencyCase> {
+    const tid = requireTenantId(tenantId);
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     const emergencyCase = await this.caseRepo.findOne({ where, relations: ['encounter'] });
     if (!emergencyCase) throw new NotFoundException('Emergency case not found');
 
@@ -394,7 +399,7 @@ export class EmergencyService {
     // Update encounter to admitted
     if (emergencyCase.encounterId) {
       await this.encounterRepo.update(
-        { id: emergencyCase.encounterId, ...(tenantId ? { tenantId } : {}) },
+        { id: emergencyCase.encounterId, tenantId: tid },
         { status: EncounterStatus.ADMITTED },
       );
     }
@@ -426,7 +431,7 @@ export class EmergencyService {
       .orderBy('ec.triageLevel', 'ASC')
       .addOrderBy('ec.arrivalTime', 'ASC');
 
-    if (tenantId) qb.andWhere('ec.tenant_id = :tenantId', { tenantId });
+    qb.andWhere('ec.tenant_id = :tenantId', { tenantId: requireTenantId(tenantId) });
     if (status) qb.andWhere('ec.status = :status', { status });
     if (triageLevel) qb.andWhere('ec.triageLevel = :triageLevel', { triageLevel });
     if (facilityId) qb.andWhere('ec.facilityId = :facilityId', { facilityId });
@@ -438,8 +443,9 @@ export class EmergencyService {
   }
 
   async getCase(id: string, tenantId?: string): Promise<EmergencyCase> {
+    const tid = requireTenantId(tenantId);
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     const emergencyCase = await this.caseRepo.findOne({
       where,
       relations: ['encounter', 'encounter.patient', 'triageNurse', 'attendingDoctor'],
@@ -450,6 +456,7 @@ export class EmergencyService {
 
   // ========== DASHBOARD ==========
   async getEmergencyDashboard(facilityId: string, tenantId?: string): Promise<any> {
+    const tid = requireTenantId(tenantId);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -468,9 +475,7 @@ export class EmergencyService {
         ],
       });
 
-    if (tenantId) {
-      byTriageLevelQb.andWhere('ec.tenant_id = :tenantId', { tenantId });
-    }
+    byTriageLevelQb.andWhere('ec.tenant_id = :tenantId', { tenantId: tid });
 
     const byTriageLevel = await byTriageLevelQb.groupBy('ec.triageLevel').getRawMany();
 
@@ -482,9 +487,7 @@ export class EmergencyService {
       .where('ec.facilityId = :facilityId', { facilityId })
       .andWhere('ec.arrivalTime >= :today', { today });
 
-    if (tenantId) {
-      byStatusQb.andWhere('ec.tenant_id = :tenantId', { tenantId });
-    }
+    byStatusQb.andWhere('ec.tenant_id = :tenantId', { tenantId: tid });
 
     const byStatus = await byStatusQb.groupBy('ec.status').getRawMany();
 
@@ -493,7 +496,7 @@ export class EmergencyService {
       facilityId,
       arrivalTime: MoreThanOrEqual(today),
     };
-    if (tenantId) todayTotalWhere.tenantId = tenantId;
+    todayTotalWhere.tenantId = tid;
 
     const todayTotal = await this.caseRepo.count({
       where: todayTotalWhere,
@@ -514,9 +517,7 @@ export class EmergencyService {
       .andWhere('ec.arrivalTime >= :today', { today })
       .andWhere('ec.triageTime IS NOT NULL');
 
-    if (tenantId) {
-      avgWaitQb.andWhere('ec.tenant_id = :tenantId', { tenantId });
-    }
+    avgWaitQb.andWhere('ec.tenant_id = :tenantId', { tenantId: tid });
 
     const avgWaitTime = await avgWaitQb.getRawOne();
 
@@ -526,13 +527,13 @@ export class EmergencyService {
         facilityId,
         triageLevel: TriageLevel.RESUSCITATION,
         status: TriageStatus.IN_TREATMENT,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
       {
         facilityId,
         triageLevel: TriageLevel.EMERGENT,
         status: TriageStatus.IN_TREATMENT,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
     ];
 
@@ -560,11 +561,12 @@ export class EmergencyService {
 
   // ========== QUEUE - sorted by triage priority ==========
   async getTriageQueue(facilityId: string, tenantId?: string): Promise<EmergencyCase[]> {
+    const tid = requireTenantId(tenantId);
     return this.caseRepo.find({
       where: {
         facilityId,
         status: TriageStatus.PENDING,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
       relations: ['encounter', 'encounter.patient'],
       order: { arrivalTime: 'ASC' },
@@ -572,11 +574,12 @@ export class EmergencyService {
   }
 
   async getTreatmentQueue(facilityId: string, tenantId?: string): Promise<EmergencyCase[]> {
+    const tid = requireTenantId(tenantId);
     return this.caseRepo.find({
       where: {
         facilityId,
         status: TriageStatus.TRIAGED,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
       relations: ['encounter', 'encounter.patient', 'triageNurse'],
       order: { triageLevel: 'ASC', triageTime: 'ASC' }, // Critical first

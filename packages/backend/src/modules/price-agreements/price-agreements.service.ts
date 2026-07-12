@@ -11,6 +11,7 @@ import {
   UpdatePriceAgreementDto,
   ComparePricesDto,
 } from './dto/price-agreement.dto';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class PriceAgreementsService {
@@ -26,6 +27,7 @@ export class PriceAgreementsService {
     userId: string,
     tenantId?: string,
   ): Promise<PriceAgreement> {
+    const tid = requireTenantId(tenantId);
     const agreement = this.agreementRepo.create({
       supplierId: dto.supplierId,
       facilityId: dto.facilityId,
@@ -42,7 +44,7 @@ export class PriceAgreementsService {
       status: PriceAgreementStatus.PENDING,
       createdById: userId,
       priceHistory: [{ price: dto.unitPrice, date: new Date().toISOString(), changePercent: 0 }],
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
 
     const saved = await this.agreementRepo.save(agreement);
@@ -54,6 +56,7 @@ export class PriceAgreementsService {
     options: { status?: PriceAgreementStatus; supplierId?: string; itemCode?: string } = {},
     tenantId?: string,
   ) {
+    const tid = requireTenantId(tenantId);
     const qb = this.agreementRepo
       .createQueryBuilder('agreement')
       .leftJoinAndSelect('agreement.supplier', 'supplier')
@@ -68,16 +71,15 @@ export class PriceAgreementsService {
     if (options.itemCode) {
       qb.andWhere('agreement.itemCode = :itemCode', { itemCode: options.itemCode });
     }
-    if (tenantId) {
-      qb.andWhere('agreement.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('agreement.tenant_id = :tenantId', { tenantId: tid });
 
     return qb.orderBy('agreement.validTo', 'ASC').getMany();
   }
 
   async findOne(id: string, tenantId?: string): Promise<PriceAgreement> {
+    const tid = requireTenantId(tenantId);
     const agreement = await this.agreementRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
       relations: ['supplier', 'createdBy', 'approvedBy'],
     });
     if (!agreement) throw new NotFoundException('Price agreement not found');
@@ -142,6 +144,7 @@ export class PriceAgreementsService {
   }
 
   async comparePrices(facilityId: string, dto: ComparePricesDto, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const now = new Date();
     const agreements = await this.agreementRepo.find({
       where: {
@@ -150,7 +153,7 @@ export class PriceAgreementsService {
         status: PriceAgreementStatus.ACTIVE,
         validFrom: LessThan(now),
         validTo: MoreThan(now),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
       relations: ['supplier'],
       order: { unitPrice: 'ASC' },
@@ -197,6 +200,7 @@ export class PriceAgreementsService {
     daysAhead: number = 30,
     tenantId?: string,
   ): Promise<PriceAgreement[]> {
+    const tid = requireTenantId(tenantId);
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + daysAhead);
 
@@ -205,46 +209,45 @@ export class PriceAgreementsService {
         facilityId,
         status: PriceAgreementStatus.ACTIVE,
         validTo: LessThan(futureDate),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
       relations: ['supplier'],
     });
   }
 
   async getStats(facilityId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const [active, pending, expired, total] = await Promise.all([
       this.agreementRepo.count({
         where: {
           facilityId,
           status: PriceAgreementStatus.ACTIVE,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         },
       }),
       this.agreementRepo.count({
         where: {
           facilityId,
           status: PriceAgreementStatus.PENDING,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         },
       }),
       this.agreementRepo.count({
         where: {
           facilityId,
           status: PriceAgreementStatus.EXPIRED,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         },
       }),
-      this.agreementRepo.count({ where: { facilityId, ...(tenantId ? { tenantId } : {}) } }),
+      this.agreementRepo.count({ where: { facilityId, tenantId: tid } }),
     ]);
 
     const uniqueItems = await this.agreementRepo
       .createQueryBuilder('agreement')
       .where('agreement.facilityId = :facilityId', { facilityId })
       .andWhere('agreement.status = :status', { status: PriceAgreementStatus.ACTIVE })
+      .andWhere('agreement.tenant_id = :tenantId', { tenantId: tid })
       .select('COUNT(DISTINCT agreement.itemCode)', 'count');
-    if (tenantId) {
-      uniqueItems.andWhere('agreement.tenant_id = :tenantId', { tenantId });
-    }
     const uniqueResult = await uniqueItems.getRawOne();
 
     return {

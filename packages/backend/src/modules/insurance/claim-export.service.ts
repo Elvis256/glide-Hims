@@ -7,6 +7,7 @@ import {
   InsuranceProvider,
   ClaimSubmissionMethod,
 } from '../../database/entities/insurance-provider.entity';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 /**
  * Generates artefacts insurers can ingest: CSV batch (NHIS-style portal upload),
@@ -51,18 +52,16 @@ export class ClaimExportService {
     if (days > MAX_RANGE_DAYS) {
       throw new BadRequestException(`Date range exceeds ${MAX_RANGE_DAYS} days`);
     }
-    if (!tenantId) {
-      this.logger.warn('exportBatchCsv called without tenantId — results are not tenant-scoped');
-    }
+    const tid = requireTenantId(tenantId);
     const provider = await this.providerRepo.findOne({
-      where: { id: providerId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: providerId, tenantId: tid },
     });
     if (!provider) throw new NotFoundException('Provider not found');
 
     const claims = await this.claimRepo.find({
       where: {
         providerId,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
         serviceDate: Between(from, to),
       },
       relations: ['patient', 'policy', 'items', 'encounter'],
@@ -142,8 +141,9 @@ export class ClaimExportService {
     claimId: string,
     tenantId?: string,
   ): Promise<{ filename: string; pdf: Buffer }> {
+    const tid = requireTenantId(tenantId);
     const claim = await this.claimRepo.findOne({
-      where: { id: claimId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: claimId, tenantId: tid },
       relations: ['provider', 'policy', 'patient', 'items', 'encounter', 'facility'],
     });
     if (!claim) throw new NotFoundException('Claim not found');

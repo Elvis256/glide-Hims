@@ -42,6 +42,7 @@ import {
   ServiceConfigDto,
 } from './dto/queue.dto';
 import { COVERAGE_METHODS } from '../../shared/payment-methods';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 const SERVICE_CONFIG_KEY = 'queue.serviceConfig';
 
@@ -90,6 +91,7 @@ export class QueueManagementService {
     servicePointCapacityLimit: number | null;
     billingMode: 'pre_pay' | 'post_pay';
   }> {
+    const tid = requireTenantId(tenantId);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -98,7 +100,7 @@ export class QueueManagementService {
         where: {
           id: dto.departmentId,
           facilityId,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         },
       });
 
@@ -120,7 +122,7 @@ export class QueueManagementService {
         where: {
           doctorId: dto.assignedDoctorId,
           facilityId,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         },
       });
 
@@ -136,7 +138,7 @@ export class QueueManagementService {
         patientId: dto.patientId,
         facilityId,
         status: In([QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE]),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
       relations: ['patient'],
     });
@@ -168,7 +170,7 @@ export class QueueManagementService {
           EncounterStatus.RETURN_TO_PHARMACY,
           EncounterStatus.RETURN_TO_LAB,
         ]),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
       order: { createdAt: 'DESC' },
     });
@@ -191,7 +193,7 @@ export class QueueManagementService {
           servicePoint: dto.servicePoint as ServicePoint,
           status: In([QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE]),
           queueDate: today,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         },
       });
 
@@ -232,8 +234,9 @@ export class QueueManagementService {
   }
 
   async getServiceConfig(facilityId: string, tenantId?: string): Promise<Record<string, any>> {
+    const tid = requireTenantId(tenantId);
     const where: any = { key: `${SERVICE_CONFIG_KEY}.${facilityId}` };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     const setting = await this.systemSettingRepository.findOne({ where });
     if (!setting) return this.getDefaultServiceConfig();
     return setting.value;
@@ -252,6 +255,7 @@ export class QueueManagementService {
     consultationFee: number | null;
     modeByPayer: Record<string, 'pre_pay' | 'post_pay'>;
   }> {
+    const tid = requireTenantId(tenantId);
     const baseKeys = ['billing.mode', 'billing.consultationFee'];
     const payerKeys = [
       'cash',
@@ -263,7 +267,7 @@ export class QueueManagementService {
       'membership',
     ].map((p) => `billing.mode.${p}`);
     const allKeys = [...baseKeys, ...payerKeys];
-    const where = tenantId ? { tenantId, key: In(allKeys) } : { key: In(allKeys) };
+    const where = { tenantId: tid, key: In(allKeys) };
     const rows = await this.systemSettingRepository.find({ where: where as any });
     const map = new Map<string, any>();
     for (const r of rows) map.set(r.key, r.value);
@@ -287,8 +291,9 @@ export class QueueManagementService {
     dto: ServiceConfigDto,
     tenantId?: string,
   ): Promise<Record<string, any>> {
+    const tid = requireTenantId(tenantId);
     const configWhere: any = { key: `${SERVICE_CONFIG_KEY}.${facilityId}` };
-    if (tenantId) configWhere.tenantId = tenantId;
+    configWhere.tenantId = tid;
     const existing = await this.systemSettingRepository.findOne({ where: configWhere });
     const merged = { ...(existing?.value || this.getDefaultServiceConfig()), ...dto };
     if (existing) {
@@ -300,7 +305,7 @@ export class QueueManagementService {
           key: `${SERVICE_CONFIG_KEY}.${facilityId}`,
           value: merged,
           description: 'Queue management service configuration for facility',
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         }),
       );
     }
@@ -343,6 +348,7 @@ export class QueueManagementService {
     facilityId: string,
     tenantId?: string,
   ): Promise<Queue> {
+    const tid = requireTenantId(tenantId);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -412,7 +418,7 @@ export class QueueManagementService {
             // doctor's Sign & Complete gate can distinguish post-pay
             // (pay at checkout) from pre-pay (clear before being seen).
             billingMode: dto.billingMode || validation.billingMode || 'post_pay',
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: tid,
           });
           const txEncounter = (await manager.save(encounter)) as Encounter;
 
@@ -486,7 +492,7 @@ export class QueueManagementService {
             visitType: dto.visitType,
             chiefComplaintAtToken: dto.chiefComplaintAtToken,
             patientConditionFlags: dto.patientConditionFlags,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: tid,
           });
 
           queue.estimatedWaitMinutes = await this.calculateSmartWaitTime(
@@ -542,7 +548,7 @@ export class QueueManagementService {
     await this.writeAuditLog(saved.id, 'QUEUE_CREATED', userId, null, initialQueueStatus);
 
     const result = await this.queueRepository.findOne({
-      where: { id: saved.id, ...(tenantId ? { tenantId } : {}) },
+      where: { id: saved.id, tenantId: tid },
       relations: ['patient', 'encounter'],
     });
 
@@ -607,7 +613,8 @@ export class QueueManagementService {
     departmentId?: string;
     patientId?: string;
   }): Promise<{ fee: number | null; source: string; metadata?: Record<string, any> }> {
-    const { facilityId, tenantId, doctorId, departmentId, patientId } = opts;
+    const { facilityId, doctorId, departmentId, patientId } = opts;
+    const tenantId = requireTenantId(opts.tenantId);
 
     // 1. Doctor fee profile (overrides everything when present + active)
     if (doctorId) {
@@ -639,7 +646,7 @@ export class QueueManagementService {
     // 1b. Legacy per-doctor system_setting override (kept for back-compat)
     if (doctorId) {
       const where: any = { key: `billing.consultationFee.doctor.${doctorId}` };
-      if (tenantId) where.tenantId = tenantId;
+      where.tenantId = tenantId;
       const setting = await this.systemSettingRepository.findOne({ where });
       const raw = setting?.value;
       const num = raw != null && !isNaN(Number(raw)) ? Number(raw) : null;
@@ -649,7 +656,7 @@ export class QueueManagementService {
     // 2 & 3. Per-department resolution
     if (departmentId) {
       const dept = await this.departmentRepository.findOne({
-        where: { id: departmentId, ...(tenantId ? { tenantId } : {}) } as any,
+        where: { id: departmentId, tenantId } as any,
       });
       if (dept) {
         const deptCode = (dept.code || dept.name || '')
@@ -663,7 +670,7 @@ export class QueueManagementService {
             where: {
               code: `OPD-CONSULT-${deptCode}`,
               isActive: true,
-              ...(tenantId ? { tenantId } : {}),
+              tenantId,
             } as any,
           });
           if (specialtyService) {
@@ -679,7 +686,7 @@ export class QueueManagementService {
             code: 'OPD-CONSULT',
             department: dept.name,
             isActive: true,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId,
           } as any,
         });
         if (deptScopedService) {
@@ -697,7 +704,7 @@ export class QueueManagementService {
         code: 'OPD-CONSULT',
         facilityId,
         isActive: true,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId,
       } as any,
     });
     if (facilityService) {
@@ -756,6 +763,7 @@ export class QueueManagementService {
     assignedDoctorId?: string,
     departmentId?: string,
   ): Promise<Invoice> {
+    const tid = requireTenantId(tenantId);
     let fee = feeOverride;
     let feeSource = 'override';
     let feeMetadata: Record<string, any> | undefined;
@@ -785,7 +793,7 @@ export class QueueManagementService {
     const invQb = this.invoiceRepository
       .createQueryBuilder('inv')
       .where('inv.invoice_number LIKE :prefix', { prefix: `INV${datePrefix}%` });
-    if (tenantId) invQb.andWhere('inv.tenant_id = :tenantId', { tenantId });
+    invQb.andWhere('inv.tenant_id = :tenantId', { tenantId: tid });
     const lastInvoice = await invQb.orderBy('inv.invoice_number', 'DESC').getOne();
     let seq = 1;
     if (lastInvoice) {
@@ -808,7 +816,7 @@ export class QueueManagementService {
       unitPrice: fee,
       amount: fee,
       ...(feeMetadata ? { feeMetadata } : {}),
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
 
     // Create the invoice
@@ -827,7 +835,7 @@ export class QueueManagementService {
       insurancePolicyId: insurancePolicyId || undefined,
       status: InvoiceStatus.PENDING,
       items: [item],
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
 
     return manager ? manager.save(invoice) : this.invoiceRepository.save(invoice);
@@ -836,6 +844,7 @@ export class QueueManagementService {
   // ─── Get Queue ────────────────────────────────────────────────────────────
 
   async getQueue(filter: QueueFilterDto, facilityId: string, tenantId?: string): Promise<Queue[]> {
+    const tid = requireTenantId(tenantId);
     const today = filter.date ? new Date(filter.date) : new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -857,9 +866,7 @@ export class QueueManagementService {
         ],
       });
 
-    if (tenantId) {
-      query.andWhere('queue.tenant_id = :tenantId', { tenantId });
-    }
+    query.andWhere('queue.tenant_id = :tenantId', { tenantId: tid });
 
     if (filter.servicePoint) {
       query.andWhere('queue.servicePoint = :servicePoint', { servicePoint: filter.servicePoint });
@@ -890,6 +897,7 @@ export class QueueManagementService {
     facilityId: string,
     tenantId?: string,
   ): Promise<Queue[]> {
+    const tid = requireTenantId(tenantId);
     const qb = this.queueRepository
       .createQueryBuilder('queue')
       .leftJoinAndSelect('queue.patient', 'patient')
@@ -903,9 +911,7 @@ export class QueueManagementService {
         statuses: [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE],
       });
 
-    if (tenantId) {
-      qb.andWhere('queue.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('queue.tenant_id = :tenantId', { tenantId: tid });
 
     return qb.orderBy('queue.priority', 'ASC').addOrderBy('queue.sequence_number', 'ASC').getMany();
   }
@@ -921,6 +927,7 @@ export class QueueManagementService {
     myOnly = false,
     viewAll = false,
   ): Promise<Queue[]> {
+    const tid = requireTenantId(tenantId);
     const qb = this.queueRepository
       .createQueryBuilder('queue')
       .leftJoinAndSelect('queue.patient', 'patient')
@@ -938,9 +945,7 @@ export class QueueManagementService {
         ],
       });
 
-    if (tenantId) {
-      qb.andWhere('queue.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('queue.tenant_id = :tenantId', { tenantId: tid });
 
     if (viewAll) {
       // Admin/manager view: every consultation queue entry in the facility,
@@ -970,6 +975,7 @@ export class QueueManagementService {
     facilityId: string,
     tenantId?: string,
   ): Promise<Queue | null> {
+    const tid = requireTenantId(tenantId);
     // Prefer WAITING patients first, then fall back to CALLED (re-call) and PENDING_PAYMENT
     for (const statuses of [
       [QueueStatus.WAITING],
@@ -984,7 +990,7 @@ export class QueueManagementService {
         .andWhere('queue.servicePoint = :servicePoint', { servicePoint: dto.servicePoint })
         .andWhere('queue.status IN (:...statuses)', { statuses })
         .andWhere('queue.on_hold = false');
-      if (tenantId) qb.andWhere('queue.tenant_id = :tenantId', { tenantId });
+      qb.andWhere('queue.tenant_id = :tenantId', { tenantId: tid });
       const result = await qb
         .orderBy('queue.priority', 'ASC')
         .addOrderBy('queue.sequence_number', 'ASC')
@@ -1155,10 +1161,11 @@ export class QueueManagementService {
     facilityId: string,
     tenantId?: string,
   ): Promise<string | undefined> {
+    const tid = requireTenantId(tenantId);
     const todayStr = new Date().toISOString().split('T')[0];
     const dutyDate = new Date(todayStr);
     const baseWhere: any = { facilityId, dutyDate };
-    if (tenantId) baseWhere.tenantId = tenantId;
+    baseWhere.tenantId = tid;
 
     const candidates: string[] = [];
     if (queue.assignedDoctorId) candidates.push(queue.assignedDoctorId);
@@ -1193,6 +1200,7 @@ export class QueueManagementService {
   // ─── Start / Complete Service ─────────────────────────────────────────────
 
   async startService(id: string, userId: string, tenantId?: string): Promise<Queue> {
+    const tid = requireTenantId(tenantId);
     const queue = await this.findOne(id, tenantId);
 
     // Payment enforcement: block service start for unpaid patients
@@ -1201,7 +1209,7 @@ export class QueueManagementService {
         where: {
           encounterId: queue.encounterId,
           status: In([InvoiceStatus.PAID, InvoiceStatus.PARTIALLY_PAID]),
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         },
       });
 
@@ -1267,11 +1275,12 @@ export class QueueManagementService {
   // ─── Find by Encounter ID ────────────────────────────────────────────────
 
   async findByEncounterId(encounterId: string, tenantId?: string): Promise<Queue | null> {
+    const tid = requireTenantId(tenantId);
     return this.queueRepository.findOne({
       where: {
         encounterId,
         status: In([QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE]),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
       order: { createdAt: 'DESC' },
     });
@@ -1520,11 +1529,12 @@ export class QueueManagementService {
     reason?: string,
     tenantId?: string,
   ): Promise<Queue | null> {
+    const tid = requireTenantId(tenantId);
     const queue = await this.queueRepository.findOne({
       where: {
         encounterId,
         status: In([QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE]),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
       order: { createdAt: 'DESC' },
     });
@@ -1546,7 +1556,7 @@ export class QueueManagementService {
     // No active queue entry — create one from the encounter so the patient
     // appears in the target service point's queue (e.g. laboratory, radiology).
     const encounter = await this.encounterRepository.findOne({
-      where: { id: encounterId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: encounterId, tenantId: tid },
     });
     if (!encounter) return null;
 
@@ -1578,7 +1588,7 @@ export class QueueManagementService {
       facilityId: encounter.facilityId,
       createdById: encounter.createdById,
       transferReason: reason || '',
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
 
     const saved = await this.queueRepository.save(newQueue);
@@ -1653,6 +1663,7 @@ export class QueueManagementService {
   }
 
   async requeuePatient(id: string, userId: string, tenantId?: string): Promise<Queue> {
+    const tid = requireTenantId(tenantId);
     const queue = await this.findOne(id, tenantId);
     if (![QueueStatus.SKIPPED, QueueStatus.NO_SHOW].includes(queue.status)) {
       throw new BadRequestException('Only skipped or no-show patients can be requeued');
@@ -1661,7 +1672,7 @@ export class QueueManagementService {
     today.setHours(0, 0, 0, 0);
 
     // Check capacity before requeuing
-    const config = await this.getServiceConfig(queue.facilityId);
+    const config = await this.getServiceConfig(queue.facilityId, tenantId);
     const capacityLimits: Record<string, number> = config.capacityLimits || {};
     const limit = capacityLimits[queue.servicePoint];
     if (limit) {
@@ -1671,7 +1682,7 @@ export class QueueManagementService {
           servicePoint: queue.servicePoint,
           queueDate: today,
           status: In([QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE]),
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         },
       });
       if (activeCount >= limit) {
@@ -1729,8 +1740,9 @@ export class QueueManagementService {
   // ─── Find / Stats ─────────────────────────────────────────────────────────
 
   async findOne(id: string, tenantId?: string): Promise<Queue> {
+    const tid = requireTenantId(tenantId);
     const queue = await this.queueRepository.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
       relations: ['patient', 'encounter', 'servingUser', 'department'],
     });
     if (!queue) throw new NotFoundException('Queue entry not found');
@@ -1742,6 +1754,7 @@ export class QueueManagementService {
     facilityId: string,
     tenantId?: string,
   ): Promise<Queue[]> {
+    const tid = requireTenantId(tenantId);
     const qb = this.queueRepository
       .createQueryBuilder('queue')
       .where('queue.patient_id = :patientId', { patientId })
@@ -1749,11 +1762,12 @@ export class QueueManagementService {
       .andWhere('queue.status IN (:...statuses)', {
         statuses: [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE],
       });
-    if (tenantId) qb.andWhere('queue.tenant_id = :tenantId', { tenantId });
+    qb.andWhere('queue.tenant_id = :tenantId', { tenantId: tid });
     return qb.orderBy('queue.created_at', 'DESC').getMany();
   }
 
   async getQueueStats(facilityId: string, servicePoint?: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -1774,7 +1788,7 @@ export class QueueManagementService {
           },
         )
         .andWhere('queue.status = :status', { status });
-      if (tenantId) qb.andWhere('queue.tenant_id = :tenantId', { tenantId });
+      qb.andWhere('queue.tenant_id = :tenantId', { tenantId: tid });
       if (servicePoint) qb.andWhere('queue.servicePoint = :servicePoint', { servicePoint });
       return qb.getCount();
     };
@@ -1803,7 +1817,7 @@ export class QueueManagementService {
         ],
       })
       .andWhere('queue.actual_wait_minutes IS NOT NULL');
-    if (tenantId) avgWaitQuery.andWhere('queue.tenant_id = :tenantId', { tenantId });
+    avgWaitQuery.andWhere('queue.tenant_id = :tenantId', { tenantId: tid });
     if (servicePoint) avgWaitQuery.andWhere('queue.servicePoint = :servicePoint', { servicePoint });
     const avgWaitResult = await avgWaitQuery.getRawOne();
 
@@ -1821,7 +1835,7 @@ export class QueueManagementService {
         ],
       })
       .andWhere('queue.service_duration_minutes IS NOT NULL');
-    if (tenantId) avgServiceQuery.andWhere('queue.tenant_id = :tenantId', { tenantId });
+    avgServiceQuery.andWhere('queue.tenant_id = :tenantId', { tenantId: tid });
     if (servicePoint)
       avgServiceQuery.andWhere('queue.servicePoint = :servicePoint', { servicePoint });
     const avgServiceResult = await avgServiceQuery.getRawOne();
@@ -1838,8 +1852,9 @@ export class QueueManagementService {
   }
 
   async getQueueAuditLog(queueId: string, tenantId?: string): Promise<any[]> {
+    const tid = requireTenantId(tenantId);
     return this.auditLogRepository.find({
-      where: { entityType: 'queue', entityId: queueId, ...(tenantId ? { tenantId } : {}) },
+      where: { entityType: 'queue', entityId: queueId, tenantId: tid },
       order: { createdAt: 'DESC' },
     });
   }
@@ -1851,23 +1866,26 @@ export class QueueManagementService {
     facilityId: string,
     tenantId?: string,
   ): Promise<QueueDisplay> {
+    const tid = requireTenantId(tenantId);
     const display = this.queueDisplayRepository.create({
       ...dto,
       facilityId,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     } as DeepPartial<QueueDisplay>);
     return this.queueDisplayRepository.save(display) as unknown as QueueDisplay;
   }
 
   async getDisplays(facilityId: string, tenantId?: string): Promise<QueueDisplay[]> {
+    const tid = requireTenantId(tenantId);
     return this.queueDisplayRepository.find({
-      where: { facilityId, isActive: true, ...(tenantId ? { tenantId } : {}) },
+      where: { facilityId, isActive: true, tenantId: tid },
     });
   }
 
   async getDisplayQueue(displayCode: string, tenantId?: string): Promise<Queue[]> {
+    const tid = requireTenantId(tenantId);
     const display = await this.queueDisplayRepository.findOne({
-      where: { displayCode, isActive: true, ...(tenantId ? { tenantId } : {}) },
+      where: { displayCode, isActive: true, tenantId: tid },
     });
     if (!display) throw new NotFoundException('Display not found');
     const displayQb = this.queueRepository
@@ -1880,7 +1898,7 @@ export class QueueManagementService {
       .andWhere('queue.status IN (:...statuses)', {
         statuses: [QueueStatus.CALLED, QueueStatus.IN_SERVICE],
       });
-    if (tenantId) displayQb.andWhere('queue.tenant_id = :tenantId', { tenantId });
+    displayQb.andWhere('queue.tenant_id = :tenantId', { tenantId: tid });
     return displayQb
       .orderBy('queue.called_at', 'DESC')
       .take(display.displaySettings?.maxDisplay || 10)
@@ -1979,6 +1997,7 @@ export class QueueManagementService {
     today: Date,
     tenantId?: string,
   ): Promise<number> {
+    const tid = requireTenantId(tenantId);
     const sevenDaysAgo = new Date(today);
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
@@ -1993,7 +2012,7 @@ export class QueueManagementService {
       .andWhere('queue.queue_date BETWEEN :from AND :to', { from: sevenDaysAgo, to: today })
       .andWhere('queue.actual_wait_minutes IS NOT NULL')
       .andWhere('queue.sequence_number > 0');
-    if (tenantId) actualWaitQb.andWhere('queue.tenant_id = :tenantId', { tenantId });
+    actualWaitQb.andWhere('queue.tenant_id = :tenantId', { tenantId: tid });
     const actualResult = await actualWaitQb.getRawOne();
 
     if (actualResult?.avgPerPatient && Number(actualResult.avgPerPatient) > 0) {
@@ -2009,7 +2028,7 @@ export class QueueManagementService {
       .andWhere('queue.servicePoint = :servicePoint', { servicePoint })
       .andWhere('queue.queue_date BETWEEN :from AND :to', { from: sevenDaysAgo, to: today })
       .andWhere('queue.service_duration_minutes IS NOT NULL');
-    if (tenantId) serviceQb.andWhere('queue.tenant_id = :tenantId', { tenantId });
+    serviceQb.andWhere('queue.tenant_id = :tenantId', { tenantId: tid });
     const serviceResult = await serviceQb.getRawOne();
 
     const avgPerPatient = serviceResult?.avgService
@@ -2057,6 +2076,7 @@ export class QueueManagementService {
     tenantId?: string,
     manager?: EntityManager,
   ): Promise<string> {
+    const tid = requireTenantId(tenantId);
     const prefix = this.getServicePointPrefix(servicePoint);
     const maxRetries = 5;
     const repo = manager ? manager.getRepository(Queue) : this.queueRepository;
@@ -2068,7 +2088,7 @@ export class QueueManagementService {
         .where('queue.facility_id = :facilityId', { facilityId })
         .andWhere('queue.ticketNumber LIKE :prefix', { prefix: `${prefix}%` })
         .andWhere('queue.queue_date = :date', { date })
-        .andWhere(tenantId ? 'queue.tenant_id = :tenantId' : '1=1', { tenantId })
+        .andWhere('queue.tenant_id = :tenantId', { tenantId: tid })
         .getRawOne();
 
       const lastNum = last?.maxTicket ? parseInt(last.maxTicket.replace(prefix, ''), 10) : 0;
@@ -2077,7 +2097,7 @@ export class QueueManagementService {
 
       // Check uniqueness before returning
       const exists = await repo.count({
-        where: { facilityId, ticketNumber, queueDate: date, ...(tenantId ? { tenantId } : {}) },
+        where: { facilityId, ticketNumber, queueDate: date, tenantId: tid },
       });
       if (exists === 0) return ticketNumber;
     }
@@ -2119,6 +2139,7 @@ export class QueueManagementService {
     tenantId?: string,
     manager?: EntityManager,
   ): Promise<number> {
+    const tid = requireTenantId(tenantId);
     const maxRetries = 5;
     const repo = manager ? manager.getRepository(Queue) : this.queueRepository;
 
@@ -2128,7 +2149,7 @@ export class QueueManagementService {
           facilityId,
           servicePoint: servicePoint as ServicePoint,
           queueDate: date,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         },
         order: { sequenceNumber: 'DESC' },
       });
@@ -2141,7 +2162,7 @@ export class QueueManagementService {
           servicePoint: servicePoint as ServicePoint,
           queueDate: date,
           sequenceNumber: nextSeq,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         },
       });
       if (exists === 0) return nextSeq;
@@ -2157,13 +2178,14 @@ export class QueueManagementService {
     date: Date,
     tenantId?: string,
   ): Promise<number> {
+    const tid = requireTenantId(tenantId);
     return this.queueRepository.count({
       where: {
         facilityId,
         servicePoint: servicePoint as ServicePoint,
         status: QueueStatus.WAITING,
         queueDate: date,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
     });
   }
@@ -2184,6 +2206,7 @@ export class QueueManagementService {
     departmentId?: string,
     tenantId?: string,
   ): Promise<string | null> {
+    const tid = requireTenantId(tenantId);
     const today = new Date().toISOString().split('T')[0];
     const baseWhere = `duty.facility_id = :facilityId
         AND duty.duty_date = :today
@@ -2201,7 +2224,7 @@ export class QueueManagementService {
         .orderBy('duty.current_queue_count', 'ASC')
         .addOrderBy('duty.check_in_time', 'ASC')
         .limit(1);
-      if (tenantId) qb.andWhere('duty.tenant_id = :tenantId', { tenantId });
+      qb.andWhere('duty.tenant_id = :tenantId', { tenantId: tid });
       return qb;
     };
 
@@ -2241,12 +2264,13 @@ export class QueueManagementService {
     facilityId: string,
     tenantId?: string,
   ): Promise<void> {
+    const tid = requireTenantId(tenantId);
     const waitingCount = await this.queueRepository.count({
       where: {
         facilityId,
         assignedDoctorId: doctorId,
         status: QueueStatus.WAITING,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
     });
     const todayStr = new Date().toISOString().split('T')[0];
@@ -2259,6 +2283,7 @@ export class QueueManagementService {
   // ─── Patient Journey Tracker ─────────────────────────────────────────────
 
   async getPatientJourneys(facilityId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -2277,7 +2302,7 @@ export class QueueManagementService {
           QueueStatus.PENDING_PAYMENT,
         ],
       });
-    if (tenantId) qb.andWhere('queue.tenant_id = :tenantId', { tenantId });
+    qb.andWhere('queue.tenant_id = :tenantId', { tenantId: tid });
     qb.orderBy('queue.created_at', 'ASC');
 
     const allEntries = await qb.getMany();
@@ -2454,11 +2479,12 @@ export class QueueManagementService {
     reason: string,
     tenantId?: string,
   ): Promise<Queue | null> {
+    const tid = requireTenantId(tenantId);
     const activeQueue = await this.queueRepository.findOne({
       where: {
         patientId,
         status: In([QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE]),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
       order: { createdAt: 'DESC' },
     });

@@ -8,6 +8,7 @@ import {
   DrugSchedule,
   TherapeuticClass,
 } from '../../database/entities/drug-classification.entity';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class DrugManagementService {
@@ -32,7 +33,7 @@ export class DrugManagementService {
       data.requiresDoubleCheck = true;
     }
 
-    if (tenantId) data.tenantId = tenantId;
+    data.tenantId = requireTenantId(tenantId);
 
     const classification = this.classificationRepo.create(data);
     return this.classificationRepo.save(classification);
@@ -44,7 +45,7 @@ export class DrugManagementService {
     tenantId?: string,
   ): Promise<DrugClassification> {
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     const classification = await this.classificationRepo.findOne({ where });
     if (!classification) throw new NotFoundException('Classification not found');
     Object.assign(classification, data);
@@ -53,13 +54,13 @@ export class DrugManagementService {
 
   async getClassification(itemId: string, tenantId?: string): Promise<DrugClassification | null> {
     const where: any = { itemId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     return this.classificationRepo.findOne({ where });
   }
 
   async getClassificationById(id: string, tenantId?: string): Promise<DrugClassification> {
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     const classification = await this.classificationRepo.findOne({ where });
     if (!classification) throw new NotFoundException('Classification not found');
     return classification;
@@ -78,9 +79,7 @@ export class DrugManagementService {
   ): Promise<DrugClassification[]> {
     const qb = this.classificationRepo.createQueryBuilder('c');
 
-    if (tenantId) {
-      qb.andWhere('c.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('c.tenant_id = :tenantId', { tenantId: requireTenantId(tenantId) });
 
     if (filters?.schedule) {
       qb.andWhere('c.schedule = :schedule', { schedule: filters.schedule });
@@ -108,7 +107,7 @@ export class DrugManagementService {
 
   async getControlledSubstances(tenantId?: string): Promise<DrugClassification[]> {
     const where: any = { isControlled: true };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     return this.classificationRepo.find({
       where,
       order: { schedule: 'ASC', genericName: 'ASC' },
@@ -117,7 +116,7 @@ export class DrugManagementService {
 
   async getNarcotics(tenantId?: string): Promise<DrugClassification[]> {
     const where: any = { isNarcotic: true };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     return this.classificationRepo.find({
       where,
       order: { genericName: 'ASC' },
@@ -126,7 +125,7 @@ export class DrugManagementService {
 
   async getHighAlertMedications(tenantId?: string): Promise<DrugClassification[]> {
     const where: any = { highAlert: true };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     return this.classificationRepo.find({
       where,
       order: { genericName: 'ASC' },
@@ -135,7 +134,7 @@ export class DrugManagementService {
 
   async getFormularyDrugs(tenantId?: string): Promise<DrugClassification[]> {
     const where: any = { isOnFormulary: true };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     return this.classificationRepo.find({
       where,
       order: { therapeuticClass: 'ASC', genericName: 'ASC' },
@@ -147,7 +146,7 @@ export class DrugManagementService {
     tenantId?: string,
   ): Promise<DrugClassification[]> {
     const where: any = { therapeuticClass };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     return this.classificationRepo.find({
       where,
       order: { genericName: 'ASC' },
@@ -161,9 +160,7 @@ export class DrugManagementService {
         query: `%${query}%`,
       });
 
-    if (tenantId) {
-      qb.andWhere('c.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('c.tenant_id = :tenantId', { tenantId: requireTenantId(tenantId) });
 
     return qb.orderBy('c.genericName', 'ASC').take(50).getMany();
   }
@@ -177,10 +174,9 @@ export class DrugManagementService {
     // Check if interaction already exists (in either direction)
     const whereA: any = { drugAId: data.drugAId, drugBId: data.drugBId };
     const whereB: any = { drugAId: data.drugBId, drugBId: data.drugAId };
-    if (tenantId) {
-      whereA.tenantId = tenantId;
-      whereB.tenantId = tenantId;
-    }
+    const _tid = requireTenantId(tenantId);
+    whereA.tenantId = _tid;
+    whereB.tenantId = _tid;
     const existing = await this.interactionRepo.findOne({
       where: [whereA, whereB],
     });
@@ -189,7 +185,7 @@ export class DrugManagementService {
       throw new BadRequestException('Drug interaction already exists');
     }
 
-    if (tenantId) data.tenantId = tenantId;
+    data.tenantId = requireTenantId(tenantId);
 
     const interaction = this.interactionRepo.create(data);
     return this.interactionRepo.save(interaction);
@@ -201,7 +197,7 @@ export class DrugManagementService {
     tenantId?: string,
   ): Promise<DrugInteraction> {
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     const interaction = await this.interactionRepo.findOne({ where });
     if (!interaction) throw new NotFoundException('Interaction not found');
     Object.assign(interaction, data);
@@ -211,10 +207,9 @@ export class DrugManagementService {
   async getInteractionsForDrug(drugId: string, tenantId?: string): Promise<DrugInteraction[]> {
     const whereA: any = { drugAId: drugId, isActive: true };
     const whereB: any = { drugBId: drugId, isActive: true };
-    if (tenantId) {
-      whereA.tenantId = tenantId;
-      whereB.tenantId = tenantId;
-    }
+    const _tid = requireTenantId(tenantId);
+    whereA.tenantId = _tid;
+    whereB.tenantId = _tid;
     return this.interactionRepo.find({
       where: [whereA, whereB],
       order: { severity: 'DESC' },
@@ -234,6 +229,7 @@ export class DrugManagementService {
       management?: string;
     }>;
   }> {
+    const tid = requireTenantId(tenantId);
     if (drugIds.length < 2) {
       return { hasInteractions: false, interactions: [] };
     }
@@ -251,10 +247,8 @@ export class DrugManagementService {
       for (let j = i + 1; j < drugIds.length; j++) {
         const whereA: any = { drugAId: drugIds[i], drugBId: drugIds[j], isActive: true };
         const whereB: any = { drugAId: drugIds[j], drugBId: drugIds[i], isActive: true };
-        if (tenantId) {
-          whereA.tenantId = tenantId;
-          whereB.tenantId = tenantId;
-        }
+        whereA.tenantId = tid;
+        whereB.tenantId = tid;
         const interaction = await this.interactionRepo.findOne({
           where: [whereA, whereB],
         });
@@ -280,10 +274,9 @@ export class DrugManagementService {
   async getMajorInteractions(tenantId?: string): Promise<DrugInteraction[]> {
     const whereA: any = { severity: 'major', isActive: true };
     const whereB: any = { severity: 'contraindicated', isActive: true };
-    if (tenantId) {
-      whereA.tenantId = tenantId;
-      whereB.tenantId = tenantId;
-    }
+    const _tid = requireTenantId(tenantId);
+    whereA.tenantId = _tid;
+    whereB.tenantId = _tid;
     return this.interactionRepo.find({
       where: [whereA, whereB],
       order: { severity: 'DESC' },
@@ -296,14 +289,14 @@ export class DrugManagementService {
     data: Partial<DrugAllergyClass>,
     tenantId?: string,
   ): Promise<DrugAllergyClass> {
-    if (tenantId) data.tenantId = tenantId;
+    data.tenantId = requireTenantId(tenantId);
     const allergyClass = this.allergyClassRepo.create(data);
     return this.allergyClassRepo.save(allergyClass);
   }
 
   async listAllergyClasses(tenantId?: string): Promise<DrugAllergyClass[]> {
     const where: any = {};
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     return this.allergyClassRepo.find({ where, order: { className: 'ASC' } });
   }
 
@@ -317,8 +310,9 @@ export class DrugManagementService {
     crossReactiveRisk: boolean;
     matchedClasses: string[];
   }> {
+    const tid = requireTenantId(tenantId);
     const classWhere: any = { itemId: drugId };
-    if (tenantId) classWhere.tenantId = tenantId;
+    classWhere.tenantId = tid;
     const classification = await this.classificationRepo.findOne({ where: classWhere });
     if (!classification) {
       return { hasRisk: false, directMatch: false, crossReactiveRisk: false, matchedClasses: [] };
@@ -339,7 +333,7 @@ export class DrugManagementService {
 
     // Check allergy classes
     const allergyClassWhere: any = {};
-    if (tenantId) allergyClassWhere.tenantId = tenantId;
+    allergyClassWhere.tenantId = tid;
     const allergyClasses = await this.allergyClassRepo.find({ where: allergyClassWhere });
     for (const allergyClass of allergyClasses) {
       if (patientAllergies.includes(allergyClass.className)) {
@@ -378,7 +372,7 @@ export class DrugManagementService {
     total: number;
   }> {
     const where: any = { isControlled: true };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     const controlled = await this.classificationRepo.find({ where });
 
     const bySchedule: Record<string, number> = {};
@@ -407,7 +401,7 @@ export class DrugManagementService {
     byTherapeuticClass: Record<string, { onFormulary: number; total: number }>;
   }> {
     const where: any = {};
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     const all = await this.classificationRepo.find({ where });
 
     let onFormulary = 0;

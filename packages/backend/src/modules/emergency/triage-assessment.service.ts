@@ -6,6 +6,7 @@ import { Queue } from '../../database/entities/queue.entity';
 import { VitalsService } from '../vitals/vitals.service';
 import { VitalSource } from '../../database/entities/vital.entity';
 import { CreateTriageAssessmentDto } from './dto/create-triage-assessment.dto';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class TriageAssessmentService {
@@ -24,14 +25,15 @@ export class TriageAssessmentService {
     userId: string,
     tenantId?: string,
   ): Promise<TriageAssessment> {
+    const tid = requireTenantId(tenantId);
     const queue = await this.queueRepo.findOne({
-      where: { id: dto.queueId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: dto.queueId, tenantId: tid },
     });
     if (!queue) throw new NotFoundException('Queue entry not found');
 
     // Check for existing triage assessment on this queue
     const existing = await this.triageRepo.findOne({
-      where: { queueId: dto.queueId, ...(tenantId ? { tenantId } : {}) },
+      where: { queueId: dto.queueId, tenantId: tid },
     });
     if (existing) {
       throw new BadRequestException(
@@ -69,7 +71,7 @@ export class TriageAssessmentService {
       disposition: dto.disposition,
       nursingNotes: dto.nursingNotes,
       assessedById: userId,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
 
     const saved = await this.triageRepo.save(assessment);
@@ -133,13 +135,14 @@ export class TriageAssessmentService {
     userId: string,
     tenantId?: string,
   ): Promise<TriageAssessment> {
+    const tid = requireTenantId(tenantId);
     const original = await this.triageRepo.findOne({
-      where: { id: originalId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: originalId, tenantId: tid },
     });
     if (!original) throw new NotFoundException('Original triage assessment not found');
 
     const queue = await this.queueRepo.findOne({
-      where: { id: original.queueId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: original.queueId, tenantId: tid },
     });
     if (!queue) throw new NotFoundException('Queue entry not found');
 
@@ -173,7 +176,7 @@ export class TriageAssessmentService {
       nursingNotes: dto.nursingNotes,
       assessedById: userId,
       reassessmentOf: originalId,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
 
     const saved = await this.triageRepo.save(assessment);
@@ -232,22 +235,25 @@ export class TriageAssessmentService {
   }
 
   async getByQueue(queueId: string, tenantId?: string): Promise<TriageAssessment[]> {
+    const tid = requireTenantId(tenantId);
     return this.triageRepo.find({
-      where: { queueId, ...(tenantId ? { tenantId } : {}) },
+      where: { queueId, tenantId: tid },
       order: { createdAt: 'DESC' },
     });
   }
 
   async getByEncounter(encounterId: string, tenantId?: string): Promise<TriageAssessment[]> {
+    const tid = requireTenantId(tenantId);
     return this.triageRepo.find({
-      where: { encounterId, ...(tenantId ? { tenantId } : {}) },
+      where: { encounterId, tenantId: tid },
       order: { createdAt: 'DESC' },
     });
   }
 
   async getById(id: string, tenantId?: string): Promise<TriageAssessment> {
+    const tid = requireTenantId(tenantId);
     const a = await this.triageRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: tid },
     });
     if (!a) throw new NotFoundException('Triage assessment not found');
     return a;

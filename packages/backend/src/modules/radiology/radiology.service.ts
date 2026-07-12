@@ -27,6 +27,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { FinanceService } from '../finance/finance.service';
 import { CriticalResultsService } from '../critical-results/critical-results.service';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class RadiologyService {
@@ -61,7 +62,7 @@ export class RadiologyService {
       location: dto.location,
       isActive: true,
       isAvailable: true,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: requireTenantId(tenantId),
     });
     return this.modalityRepo.save(modality);
   }
@@ -74,7 +75,7 @@ export class RadiologyService {
     const where: any = { facilityId };
     if (options.type) where.modalityType = options.type;
     if (options.active !== undefined) where.isActive = options.active;
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
 
     return this.modalityRepo.find({
       where,
@@ -124,7 +125,7 @@ export class RadiologyService {
         status: ImagingOrderStatus.ORDERED,
         orderedById: userId,
         orderedAt: new Date(),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       });
 
       const savedOrder = await manager.save(order);
@@ -155,7 +156,7 @@ export class RadiologyService {
 
   async getOrder(id: string, tenantId?: string): Promise<ImagingOrder> {
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     const order = await this.orderRepo.findOne({
       where,
       relations: ['patient', 'modality', 'orderedBy', 'performedBy'],
@@ -182,9 +183,7 @@ export class RadiologyService {
       .leftJoinAndSelect('imgOrder.orderedBy', 'orderedBy')
       .where('imgOrder.facilityId = :facilityId', { facilityId });
 
-    if (tenantId) {
-      qb.andWhere('imgOrder.tenantId = :tenantId', { tenantId });
-    }
+    qb.andWhere('imgOrder.tenantId = :tenantId', { tenantId: requireTenantId(tenantId) });
 
     if (options.status) {
       qb.andWhere('imgOrder.status = :status', { status: options.status });
@@ -218,7 +217,7 @@ export class RadiologyService {
         ImagingOrderStatus.IN_PROGRESS,
       ]),
     };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     return this.orderRepo.find({
       where,
       relations: ['patient', 'modality', 'orderedBy'],
@@ -357,7 +356,7 @@ export class RadiologyService {
     }
 
     const existing = await this.resultRepo.findOne({
-      where: { imagingOrderId: dto.imagingOrderId, ...(tenantId ? { tenantId } : {}) },
+      where: { imagingOrderId: dto.imagingOrderId, tenantId: requireTenantId(tenantId) },
     });
     if (existing) {
       throw new BadRequestException('Result already exists for this order');
@@ -372,7 +371,7 @@ export class RadiologyService {
       isCritical: dto.isCritical || false,
       reportedById: userId,
       reportedAt: new Date(),
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: requireTenantId(tenantId),
     });
 
     await this.resultRepo.save(result);
@@ -427,7 +426,7 @@ export class RadiologyService {
     // Notify ordering doctor
     try {
       const fullOrder = await this.orderRepo.findOne({
-        where: { id: dto.imagingOrderId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: dto.imagingOrderId, tenantId: requireTenantId(tenantId) },
         relations: ['patient', 'facility'],
       });
       if (order.orderedById) {
@@ -494,7 +493,7 @@ export class RadiologyService {
 
   async getResult(orderId: string, tenantId?: string): Promise<ImagingResult | null> {
     return this.resultRepo.findOne({
-      where: { imagingOrderId: orderId, ...(tenantId ? { tenantId } : {}) },
+      where: { imagingOrderId: orderId, tenantId: requireTenantId(tenantId) },
       relations: ['reportedBy', 'verifiedBy'],
     });
   }
@@ -504,7 +503,7 @@ export class RadiologyService {
       where: {
         facilityId,
         status: ImagingOrderStatus.COMPLETED,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
       relations: ['patient', 'modality', 'performedBy'],
       order: { performedAt: 'ASC' },
@@ -514,12 +513,13 @@ export class RadiologyService {
   // ============ DASHBOARD ============
 
   async getDashboard(facilityId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    const tenantFilter = tenantId ? { tenantId } : {};
+    const tenantFilter = { tenantId: tid };
 
     const [totalModalities, pendingOrders, todayOrders, completedPendingReport, reportedToday] =
       await Promise.all([
@@ -560,9 +560,7 @@ export class RadiologyService {
       .where('imgOrder.facilityId = :facilityId', { facilityId })
       .andWhere('imgOrder.orderedAt BETWEEN :today AND :tomorrow', { today, tomorrow });
 
-    if (tenantId) {
-      ordersByModalityQb.andWhere('imgOrder.tenantId = :tenantId', { tenantId });
-    }
+    ordersByModalityQb.andWhere('imgOrder.tenantId = :tenantId', { tenantId: tid });
 
     const ordersByModality = await ordersByModalityQb.groupBy('modality.modalityType').getRawMany();
 
@@ -589,7 +587,7 @@ export class RadiologyService {
         facilityId,
         status: ImagingOrderStatus.REPORTED,
         orderedAt: Between(new Date(startDate), new Date(endDate)),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
     });
 

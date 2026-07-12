@@ -4,6 +4,7 @@ import { Repository, Between, FindOptionsWhere } from 'typeorm';
 import { Budget, BudgetLine } from '../../database/entities/finance-extended.entity';
 import { JournalEntryLine } from '../../database/entities/journal-entry-line.entity';
 import { ChartOfAccount, AccountType } from '../../database/entities/chart-of-account.entity';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 /**
  * Resolve a YYYY-MM period string to its true [start, end] day window.

@@ -55,6 +55,7 @@ import {
   CreateGoodsReceiptDto,
   InspectGRNDto,
 } from './dto/procurement.dto';
+import { requireTenantId } from '../../common/utils/tenant.util';
 import { FinanceService } from '../finance/finance.service';
 import { BudgetService } from '../finance/budget.service';
 import { UsersService } from '../users/users.service';
@@ -151,11 +152,12 @@ export class ProcurementService {
   // ============ PURCHASE REQUEST ============
 
   private async generatePRNumber(facilityId: string, tenantId?: string): Promise<string> {
+    const tid = requireTenantId(tenantId);
     return this.dataSource.transaction(async (manager) => {
       const prRepo = manager.getRepository(PurchaseRequest);
 
       const where: any = { facilityId, deletedAt: IsNull() };
-      if (tenantId) where.tenantId = tenantId;
+      where.tenantId = tid;
 
       const count = await prRepo.count({ where });
       const date = new Date();
@@ -168,13 +170,14 @@ export class ProcurementService {
     userId: string,
     tenantId?: string,
   ): Promise<PurchaseRequest> {
+    const tid = requireTenantId(tenantId);
     try {
       this.logger.log(`Creating PR for facility ${dto.facilityId} with ${dto.items.length} items`);
 
       // Validate facility exists
       const facilityRepo = this.dataSource.getRepository('Facility');
       const facilityWhere: any = { id: dto.facilityId };
-      if (tenantId) facilityWhere.tenantId = tenantId;
+      facilityWhere.tenantId = tid;
       const facility = await facilityRepo.findOne({ where: facilityWhere });
       if (!facility) {
         throw new BadRequestException('Facility not found or does not belong to this tenant');
@@ -184,7 +187,7 @@ export class ProcurementService {
       if (dto.departmentId) {
         const deptRepo = this.dataSource.getRepository('Department');
         const deptWhere: any = { id: dto.departmentId };
-        if (tenantId) deptWhere.tenantId = tenantId;
+        deptWhere.tenantId = tid;
         const department = await deptRepo.findOne({ where: deptWhere });
         if (!department) {
           throw new BadRequestException('Department not found or does not belong to this tenant');
@@ -206,7 +209,7 @@ export class ProcurementService {
 
         // Validate item exists
         const itemWhere: any = { id: item.itemId };
-        if (tenantId) itemWhere.tenantId = tenantId;
+        itemWhere.tenantId = tid;
         const existingItem = await this.itemRepo.findOne({ where: itemWhere });
         if (!existingItem) {
           throw new BadRequestException(
@@ -242,7 +245,7 @@ export class ProcurementService {
             notes: dto.notes,
             status: PRStatus.DRAFT,
             requestedById: userId,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: tid,
           });
 
           const savedPR = await prRepo.save(pr);
@@ -259,7 +262,7 @@ export class ProcurementService {
               unitPriceEstimated: item.unitPriceEstimated || 0,
               specifications: item.specifications,
               notes: item.notes,
-              ...(tenantId ? { tenantId } : {}),
+              tenantId: tid,
             }),
           );
 
@@ -284,6 +287,7 @@ export class ProcurementService {
     dto: UpdatePurchaseRequestDto,
     tenantId?: string,
   ): Promise<PurchaseRequest> {
+    const tid = requireTenantId(tenantId);
     const pr = await this.getPurchaseRequest(prId, tenantId);
 
     if (pr.status !== PRStatus.DRAFT) {
@@ -295,7 +299,7 @@ export class ProcurementService {
     if (dto.departmentId) {
       const deptRepo = this.dataSource.getRepository('Department');
       const deptWhere: any = { id: dto.departmentId };
-      if (tenantId) deptWhere.tenantId = tenantId;
+      deptWhere.tenantId = tid;
       const department = await deptRepo.findOne({ where: deptWhere });
       if (!department) {
         throw new BadRequestException('Department not found or does not belong to this tenant');
@@ -323,7 +327,7 @@ export class ProcurementService {
           );
         }
         const itemWhere: any = { id: item.itemId };
-        if (tenantId) itemWhere.tenantId = tenantId;
+        itemWhere.tenantId = tid;
         const existingItem = await this.itemRepo.findOne({ where: itemWhere });
         if (!existingItem) {
           throw new BadRequestException(
@@ -367,9 +371,7 @@ export class ProcurementService {
             unitPriceEstimated: item.unitPriceEstimated || 0,
             specifications: item.specifications,
             notes: item.notes,
-            ...(tenantId || pr.tenantId
-              ? { tenantId: tenantId || pr.tenantId }
-              : {}),
+            tenantId: tid,
           }),
         );
         await prItemRepo.save(newItems);
@@ -389,6 +391,7 @@ export class ProcurementService {
     items: CreatePRItemDto[],
     tenantId?: string,
   ): Promise<PurchaseRequest> {
+    const tid = requireTenantId(tenantId);
     const pr = await this.getPurchaseRequest(prId, tenantId);
 
     if (pr.status !== PRStatus.DRAFT) {
@@ -411,7 +414,7 @@ export class ProcurementService {
       }
 
       const itemWhere: any = { id: item.itemId };
-      if (tenantId) itemWhere.tenantId = tenantId;
+      itemWhere.tenantId = tid;
       const existingItem = await this.itemRepo.findOne({ where: itemWhere });
       if (!existingItem) {
         throw new BadRequestException(
@@ -432,7 +435,7 @@ export class ProcurementService {
         unitPriceEstimated: item.unitPriceEstimated || 0,
         specifications: item.specifications,
         notes: item.notes,
-        ...(tenantId || pr.tenantId ? { tenantId: tenantId || pr.tenantId } : {}),
+        tenantId: tid,
       }),
     );
 
@@ -524,8 +527,9 @@ export class ProcurementService {
   }
 
   async getPurchaseRequest(id: string, tenantId?: string): Promise<PurchaseRequest> {
+    const tid = requireTenantId(tenantId);
     const where: any = { id, deletedAt: IsNull() };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     const pr = await this.prRepo.findOne({
       where,
       relations: ['items', 'department', 'requestedBy', 'approvedBy', 'facility'],
@@ -544,6 +548,7 @@ export class ProcurementService {
     },
     tenantId?: string,
   ) {
+    const tid = requireTenantId(tenantId);
     const qb = this.prRepo
       .createQueryBuilder('pr')
       .leftJoinAndSelect('pr.items', 'items')
@@ -569,19 +574,18 @@ export class ProcurementService {
       });
     }
 
-    if (tenantId) {
-      qb.andWhere('pr.tenantId = :tenantId', { tenantId });
-    }
+    qb.andWhere('pr.tenantId = :tenantId', { tenantId: tid });
 
     return qb.orderBy('pr.createdAt', 'DESC').getMany();
   }
 
   async submitPurchaseRequest(id: string, tenantId?: string): Promise<PurchaseRequest> {
+    const tid = requireTenantId(tenantId);
     return this.dataSource.transaction(async (manager) => {
       const prRepo = manager.getRepository(PurchaseRequest);
 
       const where: any = { id, deletedAt: IsNull() };
-      if (tenantId) where.tenantId = tenantId;
+      where.tenantId = tid;
 
       const pr = await prRepo.findOne({
         where,
@@ -632,13 +636,14 @@ export class ProcurementService {
     tenantId?: string,
     userRoles?: string[],
   ): Promise<PurchaseRequest> {
+    const tid = requireTenantId(tenantId);
     return this.dataSource.transaction(async (manager) => {
       const prRepo = manager.getRepository(PurchaseRequest);
       const prItemRepo = manager.getRepository(PurchaseRequestItem);
       const chainRepo = manager.getRepository(ProcurementApprovalChain);
 
       const where: any = { id, deletedAt: IsNull() };
-      if (tenantId) where.tenantId = tenantId;
+      where.tenantId = tid;
 
       const pr = await prRepo.findOne({
         where,
@@ -673,7 +678,7 @@ export class ProcurementService {
         documentType: 'PR',
         status: ApprovalChainStatus.PENDING,
       };
-      if (tenantId) chainWhere.tenantId = tenantId;
+      chainWhere.tenantId = tid;
 
       const nextChain = await chainRepo.findOne({
         where: chainWhere,
@@ -812,12 +817,13 @@ export class ProcurementService {
     userId: string,
     tenantId?: string,
   ): Promise<PurchaseRequest> {
+    const tid = requireTenantId(tenantId);
     return this.dataSource.transaction(async (manager) => {
       const prRepo = manager.getRepository(PurchaseRequest);
       const chainRepo = manager.getRepository(ProcurementApprovalChain);
 
       const where: any = { id, deletedAt: IsNull() };
-      if (tenantId) where.tenantId = tenantId;
+      where.tenantId = tid;
 
       const pr = await prRepo.findOne({
         where,
@@ -831,7 +837,7 @@ export class ProcurementService {
 
       // Phase 2C: Reject approval chain
       const chainWhere: any = { documentId: id };
-      if (tenantId) chainWhere.tenantId = tenantId;
+      chainWhere.tenantId = tid;
 
       const chains = await chainRepo.find({ where: chainWhere });
       for (const chain of chains) {
@@ -871,8 +877,9 @@ export class ProcurementService {
   // ============ PURCHASE ORDER ============
 
   private async generatePONumber(facilityId: string, tenantId?: string): Promise<string> {
+    const tid = requireTenantId(tenantId);
     const count = await this.poRepo.count({
-      where: { facilityId, ...(tenantId ? { tenantId } : {}) },
+      where: { facilityId, tenantId: tid },
     });
     const date = new Date();
     return `PO${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(count + 1).padStart(5, '0')}`;
@@ -883,6 +890,7 @@ export class ProcurementService {
     userId: string,
     tenantId?: string,
   ): Promise<PurchaseOrder> {
+    const tid = requireTenantId(tenantId);
     return this.retryOnUniqueViolation('createPO', () =>
       this.dataSource.transaction(async (manager) => {
         const facilityRepo = manager.getRepository('Facility');
@@ -893,7 +901,7 @@ export class ProcurementService {
 
         // Validate facility exists
         const facilityWhere: any = { id: dto.facilityId };
-        if (tenantId) facilityWhere.tenantId = tenantId;
+        facilityWhere.tenantId = tid;
         const facility = await facilityRepo.findOne({ where: facilityWhere });
         if (!facility) {
           throw new BadRequestException('Facility not found or does not belong to this tenant');
@@ -902,7 +910,7 @@ export class ProcurementService {
         // Validate department exists (if provided for direct PO)
         if (dto.departmentId) {
           const deptWhere: any = { id: dto.departmentId };
-          if (tenantId) deptWhere.tenantId = tenantId;
+          deptWhere.tenantId = tid;
           const department = await deptRepo.findOne({ where: deptWhere });
           if (!department) {
             throw new BadRequestException('Department not found or does not belong to this tenant');
@@ -911,7 +919,7 @@ export class ProcurementService {
 
         // Verify supplier is active before creating PO
         const supplier = await this.supplierRepo.findOne({
-          where: { id: dto.supplierId, ...(tenantId ? { tenantId } : {}) },
+          where: { id: dto.supplierId, tenantId: tid },
         });
         if (!supplier) throw new NotFoundException('Supplier not found');
         if (supplier.status !== SupplierStatus.ACTIVE) {
@@ -1002,7 +1010,7 @@ export class ProcurementService {
           status: POStatus.DRAFT,
           createdById: userId,
           createdFrom: 'manual',
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         });
 
         const savedPO = await poRepo.save(po);
@@ -1021,7 +1029,7 @@ export class ProcurementService {
             discountPercent: item.discountPercent || 0,
             lineTotal: item.lineTotal,
             notes: item.notes,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: tid,
           }),
         );
 
@@ -1078,8 +1086,9 @@ export class ProcurementService {
       throw new BadRequestException('PR must be approved to create PO');
     }
 
+    const tidFromPR = requireTenantId(tenantId);
     const supplier = await this.supplierRepo.findOne({
-      where: { id: dto.supplierId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: dto.supplierId, tenantId: tidFromPR },
     });
     if (!supplier) throw new NotFoundException('Supplier not found');
     if (supplier.status !== SupplierStatus.ACTIVE) {
@@ -1147,8 +1156,9 @@ export class ProcurementService {
   }
 
   async getPurchaseOrder(id: string, tenantId?: string): Promise<PurchaseOrder> {
+    const tid = requireTenantId(tenantId);
     const where: any = { id, deletedAt: IsNull() };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     const po = await this.poRepo.findOne({
       where,
       relations: ['items', 'supplier', 'purchaseRequest', 'createdBy', 'approvedBy', 'facility'],
@@ -1192,9 +1202,8 @@ export class ProcurementService {
       });
     }
 
-    if (tenantId) {
-      qb.andWhere('po.tenantId = :tenantId', { tenantId });
-    }
+    const tidPO = requireTenantId(tenantId);
+    qb.andWhere('po.tenantId = :tenantId', { tenantId: tidPO });
 
     return qb.orderBy('po.createdAt', 'DESC').getMany();
   }
@@ -1204,8 +1213,9 @@ export class ProcurementService {
     userId: string,
     tenantId?: string,
   ): Promise<PurchaseOrder> {
+    const tidQuot = requireTenantId(tenantId);
     const quotation = await this.quotationRepo.findOne({
-      where: { id: dto.quotationId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: dto.quotationId, tenantId: tidQuot },
       relations: ['items', 'supplier', 'rfq'],
     });
     if (!quotation) throw new NotFoundException('Quotation not found');
@@ -1287,7 +1297,7 @@ export class ProcurementService {
     for (const item of poDto.items) {
       if (!item.itemId || item.itemId === item.itemCode) {
         const dbItem = await this.itemRepo.findOne({
-          where: { code: item.itemCode, ...(tenantId ? { tenantId } : {}) },
+          where: { code: item.itemCode, tenantId: tidQuot },
         });
         if (dbItem) item.itemId = dbItem.id;
       }
@@ -1311,12 +1321,13 @@ export class ProcurementService {
     tenantId?: string,
     userRoles?: string[],
   ): Promise<PurchaseOrder> {
+    const tid = requireTenantId(tenantId);
     return this.dataSource.transaction(async (manager) => {
       const poRepo = manager.getRepository(PurchaseOrder);
       const chainRepo = manager.getRepository(ProcurementApprovalChain);
 
       const po = await poRepo.findOne({
-        where: { id, deletedAt: IsNull(), ...(tenantId && { tenantId }) },
+        where: { id, deletedAt: IsNull(), tenantId: tid },
         lock: { mode: 'pessimistic_write' },
       });
 
@@ -1344,7 +1355,7 @@ export class ProcurementService {
         documentType: 'PO',
         status: ApprovalChainStatus.PENDING,
       };
-      if (tenantId) chainWhere.tenantId = tenantId;
+      chainWhere.tenantId = tid;
 
       const nextChain = await chainRepo.findOne({
         where: chainWhere,
@@ -1460,10 +1471,11 @@ export class ProcurementService {
   }
 
   async sendPurchaseOrder(id: string, userId: string, tenantId?: string): Promise<PurchaseOrder> {
+    const tid = requireTenantId(tenantId);
     return this.dataSource.transaction(async (manager) => {
       const poRepo = manager.getRepository(PurchaseOrder);
       const po = await poRepo.findOne({
-        where: { id, deletedAt: IsNull(), ...(tenantId ? { tenantId } : {}) },
+        where: { id, deletedAt: IsNull(), tenantId: tid },
         lock: { mode: 'pessimistic_write' },
       });
       if (!po) throw new NotFoundException('Purchase order not found');
@@ -1483,7 +1495,7 @@ export class ProcurementService {
           entityId: id,
           userId,
           newValue: { status: POStatus.SENT, sentAt: po.sentAt },
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         }),
       );
 
@@ -1497,10 +1509,11 @@ export class ProcurementService {
     tenantId?: string,
     reason?: string,
   ): Promise<PurchaseOrder> {
+    const tid = requireTenantId(tenantId);
     return this.dataSource.transaction(async (manager) => {
       const poRepo = manager.getRepository(PurchaseOrder);
       const po = await poRepo.findOne({
-        where: { id, deletedAt: IsNull(), ...(tenantId ? { tenantId } : {}) },
+        where: { id, deletedAt: IsNull(), tenantId: tid },
         lock: { mode: 'pessimistic_write' },
       });
       if (!po) throw new NotFoundException('Purchase order not found');
@@ -1525,7 +1538,7 @@ export class ProcurementService {
           userId,
           oldValue: { status: oldStatus },
           newValue: { status: POStatus.CANCELLED, reason: reason || null },
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         }),
       );
 
@@ -1536,8 +1549,9 @@ export class ProcurementService {
   // ============ GOODS RECEIPT NOTE ============
 
   private async generateGRNNumber(facilityId: string, tenantId?: string): Promise<string> {
+    const tid = requireTenantId(tenantId);
     const count = await this.grnRepo.count({
-      where: { facilityId, ...(tenantId ? { tenantId } : {}) },
+      where: { facilityId, tenantId: tid },
     });
     const date = new Date();
     return `GRN${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(count + 1).padStart(5, '0')}`;
@@ -1548,6 +1562,7 @@ export class ProcurementService {
     userId: string,
     tenantId?: string,
   ): Promise<GoodsReceiptNote> {
+    const tid = requireTenantId(tenantId);
     // Calculate totals + expiry validation up front (purely in-memory work).
     let totalQuantityReceived = 0;
     let totalValue = 0;
@@ -1584,7 +1599,7 @@ export class ProcurementService {
 
         if (dto.purchaseOrderId) {
           const po = await poRepoTx.findOne({
-            where: { id: dto.purchaseOrderId, ...(tenantId ? { tenantId } : {}) },
+            where: { id: dto.purchaseOrderId, tenantId: tid },
             lock: { mode: 'pessimistic_write' },
           });
           if (!po) throw new NotFoundException('Purchase Order not found');
@@ -1641,7 +1656,7 @@ export class ProcurementService {
           notes: dto.notes,
           status: GRNStatus.DRAFT,
           receivedById: userId,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         });
 
         const savedGRN = await grnRepo.save(grn);
@@ -1662,7 +1677,7 @@ export class ProcurementService {
             manufactureDate: item.manufactureDate ? new Date(item.manufactureDate) : undefined,
             purchaseOrderItemId: item.purchaseOrderItemId,
             notes: item.notes,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: tid,
           }),
         );
 
@@ -1721,8 +1736,9 @@ export class ProcurementService {
   }
 
   async getGoodsReceipt(id: string, tenantId?: string): Promise<GoodsReceiptNote> {
+    const tid = requireTenantId(tenantId);
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     const grn = await this.grnRepo.findOne({
       where,
       relations: [
@@ -1780,9 +1796,8 @@ export class ProcurementService {
       });
     }
 
-    if (tenantId) {
-      qb.andWhere('grn.tenant_id = :tenantId', { tenantId });
-    }
+    const tidGRN = requireTenantId(tenantId);
+    qb.andWhere('grn.tenant_id = :tenantId', { tenantId: tidGRN });
 
     return qb.orderBy('grn.receivedAt', 'DESC').getMany();
   }
@@ -1793,12 +1808,13 @@ export class ProcurementService {
     userId: string,
     tenantId?: string,
   ): Promise<GoodsReceiptNote> {
+    const tid = requireTenantId(tenantId);
     return this.dataSource.transaction(async (manager) => {
       const grnRepo = manager.getRepository(GoodsReceiptNote);
       const grnItemRepo = manager.getRepository(GoodsReceiptItem);
 
       const grn = await grnRepo.findOne({
-        where: { id, ...(tenantId ? { tenantId } : {}) },
+        where: { id, tenantId: tid },
         lock: { mode: 'pessimistic_write' },
       });
       if (!grn) throw new NotFoundException('GRN not found');
@@ -1843,7 +1859,7 @@ export class ProcurementService {
             status: GRNStatus.INSPECTED,
             inspectedItems: dto.inspectedItems.length,
           },
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         }),
       );
 
@@ -1857,11 +1873,12 @@ export class ProcurementService {
     tenantId?: string,
     userRoles?: string[],
   ): Promise<GoodsReceiptNote> {
+    const tid = requireTenantId(tenantId);
     return this.dataSource.transaction(async (manager) => {
       const grnRepo = manager.getRepository(GoodsReceiptNote);
 
       const grn = await grnRepo.findOne({
-        where: { id, ...(tenantId ? { tenantId } : {}) },
+        where: { id, tenantId: tid },
         lock: { mode: 'pessimistic_write' },
       });
       if (!grn) throw new NotFoundException('GRN not found');
@@ -1907,7 +1924,7 @@ export class ProcurementService {
           entityId: id,
           userId,
           newValue: { grnNumber: grn.grnNumber, status: GRNStatus.APPROVED },
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         }),
       );
 
@@ -1916,6 +1933,7 @@ export class ProcurementService {
   }
 
   async postGoodsReceipt(id: string, userId: string, tenantId?: string): Promise<GoodsReceiptNote> {
+    const tid = requireTenantId(tenantId);
     return this.dataSource.transaction(async (manager) => {
       const grnRepo = manager.getRepository(GoodsReceiptNote);
       const grnItemRepo = manager.getRepository(GoodsReceiptItem);
@@ -1927,7 +1945,7 @@ export class ProcurementService {
 
       // Lock the GRN row to prevent double-posting (no relations — FOR UPDATE can't use outer joins)
       const grn = await grnRepo.findOne({
-        where: { id, ...(tenantId ? { tenantId } : {}) },
+        where: { id, tenantId: tid },
         lock: { mode: 'pessimistic_write' },
       });
       if (!grn) throw new NotFoundException('GRN not found');
@@ -2019,7 +2037,7 @@ export class ProcurementService {
       // Update PO received quantities if linked
       if (grn.purchaseOrderId) {
         const po = await poRepo.findOne({
-          where: { id: grn.purchaseOrderId, ...(tenantId ? { tenantId } : {}) },
+          where: { id: grn.purchaseOrderId, tenantId: tid },
           relations: ['items'],
         });
         if (po) {
@@ -2065,7 +2083,7 @@ export class ProcurementService {
       // Try auto-completing the originating PR (best effort)
       if (grn.purchaseOrderId) {
         const po = await poRepo.findOne({
-          where: { id: grn.purchaseOrderId, ...(tenantId ? { tenantId } : {}) },
+          where: { id: grn.purchaseOrderId, tenantId: tid },
           select: ['id', 'purchaseRequestId'],
         });
         if (po?.purchaseRequestId) {
@@ -2086,14 +2104,15 @@ export class ProcurementService {
    * Called best-effort after GRN post and after invoice payment.
    */
   async tryAutoCompletePR(prId: string, tenantId?: string): Promise<boolean> {
+    const tid = requireTenantId(tenantId);
     const where: any = { id: prId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     const pr = await this.prRepo.findOne({ where });
     if (!pr) return false;
     if (pr.status !== PRStatus.FULLY_ORDERED) return false;
 
     const poWhere: any = { purchaseRequestId: prId };
-    if (tenantId) poWhere.tenantId = tenantId;
+    poWhere.tenantId = tid;
     const pos = await this.poRepo.find({ where: poWhere, select: ['id', 'status'] });
     if (pos.length === 0) return false;
 
@@ -2111,17 +2130,18 @@ export class ProcurementService {
   // ============ DASHBOARD ============
 
   async getDashboard(facilityId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
     const prWhere: any = { facilityId, deletedAt: IsNull() };
-    if (tenantId) prWhere.tenantId = tenantId;
+    prWhere.tenantId = tid;
     const poWhere: any = { facilityId, deletedAt: IsNull() };
-    if (tenantId) poWhere.tenantId = tenantId;
+    poWhere.tenantId = tid;
     const grnWhere: any = { facilityId, deletedAt: IsNull() };
-    if (tenantId) grnWhere.tenantId = tenantId;
+    grnWhere.tenantId = tid;
 
     const [pendingPRs, approvedPRs, pendingPOs, sentPOs, pendingGRNs, totalValueToday] =
       await Promise.all([
@@ -2150,9 +2170,7 @@ export class ProcurementService {
             .andWhere('grn.deletedAt IS NULL')
             .andWhere('grn.status = :status', { status: GRNStatus.POSTED })
             .andWhere('grn.postedAt BETWEEN :today AND :tomorrow', { today, tomorrow });
-          if (tenantId) {
-            qb.andWhere('grn.tenantId = :tenantId', { tenantId });
-          }
+          qb.andWhere('grn.tenantId = :tenantId', { tenantId: tid });
           return qb.getRawOne();
         })(),
       ]);
@@ -2182,7 +2200,8 @@ export class ProcurementService {
     grns: any[];
     invoices: any[];
   }> {
-    const tFilter = tenantId ? { tenantId } : {};
+    const tid = requireTenantId(tenantId);
+    const tFilter = { tenantId: tid };
 
     let prId: string | undefined;
     let poIds: string[] = [];
@@ -2295,28 +2314,28 @@ export class ProcurementService {
       createdAt: Date;
     }>
   > {
+    const tid = requireTenantId(tenantId);
     const term = `%${q.toLowerCase()}%`;
-    const tFilter = tenantId ? { tenantId } : {};
 
     const [prs, pos, grns, invoices] = await Promise.all([
       this.prRepo
         .createQueryBuilder('pr')
         .where('LOWER(pr.requestNumber) LIKE :term', { term })
-        .andWhere(tenantId ? 'pr.tenantId = :tenantId' : '1=1', { tenantId })
+        .andWhere('pr.tenantId = :tenantId', { tenantId: tid })
         .select(['pr.id', 'pr.requestNumber', 'pr.status', 'pr.createdAt'])
         .limit(10)
         .getMany(),
       this.poRepo
         .createQueryBuilder('po')
         .where('LOWER(po.orderNumber) LIKE :term', { term })
-        .andWhere(tenantId ? 'po.tenantId = :tenantId' : '1=1', { tenantId })
+        .andWhere('po.tenantId = :tenantId', { tenantId: tid })
         .select(['po.id', 'po.orderNumber', 'po.status', 'po.createdAt'])
         .limit(10)
         .getMany(),
       this.grnRepo
         .createQueryBuilder('grn')
         .where('LOWER(grn.grnNumber) LIKE :term', { term })
-        .andWhere(tenantId ? 'grn.tenantId = :tenantId' : '1=1', { tenantId })
+        .andWhere('grn.tenantId = :tenantId', { tenantId: tid })
         .select(['grn.id', 'grn.grnNumber', 'grn.status', 'grn.createdAt'])
         .limit(10)
         .getMany(),
@@ -2325,7 +2344,7 @@ export class ProcurementService {
         .where('(LOWER(inv.vendorInvoiceNumber) LIKE :term OR LOWER(inv.matchNumber) LIKE :term)', {
           term,
         })
-        .andWhere(tenantId ? 'inv.tenantId = :tenantId' : '1=1', { tenantId })
+        .andWhere('inv.tenantId = :tenantId', { tenantId: tid })
         .select([
           'inv.id',
           'inv.vendorInvoiceNumber',
@@ -2436,7 +2455,7 @@ export class ProcurementService {
 
     for (const [key, balances] of groups) {
       const [tenantId, facilityId] = key.split('::');
-      const tFilter = tenantId ? { tenantId } : {};
+      const tFilter = { tenantId: requireTenantId(tenantId) };
 
       // Find items already in a recent open PR for this facility
       const recentOpenPRs = await this.prRepo.find({
@@ -2526,7 +2545,7 @@ export class ProcurementService {
           status: PRStatus.DRAFT,
           requestedById:
             opts?.userId || recentOpenPRs[0]?.requestedById || (undefined as unknown as string),
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         });
         const savedPR = await this.prRepo.save(pr);
 
@@ -2540,7 +2559,7 @@ export class ProcurementService {
             quantityRequested: it.quantityRequested,
             unitPriceEstimated: it.unitPriceEstimated,
             notes: it.notes,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           }),
         );
         await this.prItemRepo.save(prItems);
@@ -2583,12 +2602,13 @@ export class ProcurementService {
     facilityId: string,
     tenantId?: string,
   ): Promise<ProcurementApprovalThreshold> {
+    const tid = requireTenantId(tenantId);
     const where: any = {
       facilityId,
       isActive: true,
       deletedAt: IsNull(),
     };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     let threshold = await this.approvalThresholdRepo.findOne({ where });
 
@@ -2600,7 +2620,7 @@ export class ProcurementService {
       // Director <= 50M, CFO above 50M.
       threshold = this.approvalThresholdRepo.create({
         facilityId,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
         level1MaxAmount: 500000,
         level2MaxAmount: 5000000,
         level3MaxAmount: 50000000,
@@ -2711,8 +2731,9 @@ export class ProcurementService {
     documentId: string,
     tenantId?: string,
   ): Promise<ProcurementApprovalChain[]> {
+    const tid = requireTenantId(tenantId);
     const where: any = { documentId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     return this.approvalChainRepo.find({
       where,
@@ -2728,11 +2749,12 @@ export class ProcurementService {
     documentId: string,
     tenantId?: string,
   ): Promise<ProcurementApprovalChain | null> {
+    const tid = requireTenantId(tenantId);
     const where: any = {
       documentId,
       status: ApprovalChainStatus.PENDING,
     };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     return this.approvalChainRepo.findOne({
       where,
@@ -2745,8 +2767,9 @@ export class ProcurementService {
    * Check if all approvals are complete
    */
   async isApprovalChainComplete(documentId: string, tenantId?: string): Promise<boolean> {
+    const tid = requireTenantId(tenantId);
     const where: any = { documentId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     const chains = await this.approvalChainRepo.find({ where });
     if (chains.length === 0) return true; // No chain = no approvals required
@@ -2772,8 +2795,9 @@ export class ProcurementService {
   }
 
   async _legacyGetEnrichedApprovalChain(documentId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const where: any = { documentId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     const rows = await this.approvalChainRepo.find({
       where,
@@ -2831,12 +2855,13 @@ export class ProcurementService {
       const chainRepo = manager.getRepository(ProcurementApprovalChain);
 
       // Get next pending approval
+      const tidApproval = requireTenantId(tenantId);
       const where: any = {
         documentId,
         documentType,
         status: ApprovalChainStatus.PENDING,
       };
-      if (tenantId) where.tenantId = tenantId;
+      where.tenantId = tidApproval;
 
       const chain = await chainRepo.findOne({
         where,
@@ -2867,11 +2892,12 @@ export class ProcurementService {
     comments: string,
     tenantId?: string,
   ): Promise<ProcurementApprovalChain[]> {
+    const tidReject = requireTenantId(tenantId);
     return this.dataSource.transaction(async (manager) => {
       const chainRepo = manager.getRepository(ProcurementApprovalChain);
 
       const where: any = { documentId };
-      if (tenantId) where.tenantId = tenantId;
+      where.tenantId = tidReject;
 
       const chains = await chainRepo.find({ where });
 

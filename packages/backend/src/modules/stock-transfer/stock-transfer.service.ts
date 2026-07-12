@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
+import { requireTenantId } from '../../common/utils/tenant.util';
 import { StockTransfer, TransferStatus } from '../../database/entities/stock-transfer.entity';
 import { StockTransferItem } from '../../database/entities/stock-transfer-item.entity';
 import { StockLedger, StockBalance, MovementType } from '../../database/entities/inventory.entity';
@@ -59,7 +60,7 @@ export class StockTransferService {
       notes: dto.notes,
       requestedById: userId,
       status: TransferStatus.REQUESTED,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: requireTenantId(tenantId),
       items: dto.items.map((item) => ({
         itemId: item.itemId,
         batchNumber: item.batchNumber,
@@ -67,7 +68,7 @@ export class StockTransferService {
         requestedQuantity: item.requestedQuantity,
         unitCost: item.unitCost,
         notes: item.notes,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       })),
     });
 
@@ -97,9 +98,8 @@ export class StockTransferService {
       .leftJoinAndSelect('transfer.items', 'items')
       .leftJoinAndSelect('items.item', 'item');
 
-    if (tenantId) {
-      qb.andWhere('transfer.tenantId = :tenantId', { tenantId });
-    }
+    const tid = requireTenantId(tenantId);
+    qb.andWhere('transfer.tenantId = :tenantId', { tenantId: tid });
 
     if (facilityId) {
       if (filters?.direction === 'incoming') {
@@ -128,8 +128,9 @@ export class StockTransferService {
   // ============ FIND ONE ============
 
   async findOne(id: string, tenantId?: string): Promise<StockTransfer> {
+    const tid = requireTenantId(tenantId);
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
 
     const transfer = await this.transferRepository.findOne({
       where,
@@ -238,7 +239,7 @@ export class StockTransferService {
             itemId: transferItem.itemId,
             facilityId: transfer.fromFacilityId,
             batchNumber: transferItem.batchNumber,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           },
           lock: { mode: 'pessimistic_write' },
         });
@@ -257,7 +258,7 @@ export class StockTransferService {
           where: {
             itemId: transferItem.itemId,
             facilityId: transfer.fromFacilityId,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           },
           lock: { mode: 'pessimistic_write' },
         });
@@ -292,7 +293,7 @@ export class StockTransferService {
                 ? `Transfer ${transfer.transferNumber} (intra-facility) from store ${transfer.fromStoreId} to ${transfer.toStoreId}`
                 : `Transfer ${transfer.transferNumber} shipped to ${transfer.toFacilityId}`,
             createdById: userId,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           });
           await manager.save(StockLedger, ledgerEntry);
         }
@@ -353,7 +354,7 @@ export class StockTransferService {
             itemId: transferItem.itemId,
             facilityId: transfer.toFacilityId,
             batchNumber: transferItem.batchNumber,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           },
           lock: { mode: 'pessimistic_write' },
         });
@@ -370,7 +371,7 @@ export class StockTransferService {
             quantity,
             reservedQuantity: 0,
             status: 'active',
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           });
           await manager.save(BatchStockBalance, destBatch);
         }
@@ -380,7 +381,7 @@ export class StockTransferService {
           where: {
             itemId: transferItem.itemId,
             facilityId: transfer.toFacilityId,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           },
           lock: { mode: 'pessimistic_write' },
         });
@@ -398,7 +399,7 @@ export class StockTransferService {
             reservedQuantity: 0,
             availableQuantity: toNewTotal,
             lastMovementAt: new Date(),
-            ...(tenantId ? { tenantId } : {}),
+            tenantId: requireTenantId(tenantId),
           });
         }
         await manager.save(StockBalance, toBalance);
@@ -421,7 +422,7 @@ export class StockTransferService {
               ? `Transfer ${transfer.transferNumber} (intra-facility) received in store ${transfer.toStoreId}`
               : `Transfer ${transfer.transferNumber} from ${transfer.fromFacilityId}`,
           createdById: userId,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         });
         await manager.save(StockLedger, toLedger);
 
@@ -434,7 +435,7 @@ export class StockTransferService {
             where: {
               itemId: transferItem.itemId,
               facilityId: transfer.fromFacilityId,
-              ...(tenantId ? { tenantId } : {}),
+              tenantId: requireTenantId(tenantId),
             },
             lock: { mode: 'pessimistic_write' },
           });
@@ -488,7 +489,7 @@ export class StockTransferService {
     return this.dataSource.transaction(async (manager) => {
       // Re-fetch with pessimistic lock inside transaction
       const lockedTransfer = await manager.findOne(StockTransfer, {
-        where: { id, ...(tenantId ? { tenantId } : {}) },
+        where: { id, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
         relations: ['items'],
       });
@@ -516,7 +517,7 @@ export class StockTransferService {
               itemId: transferItem.itemId,
               facilityId: lockedTransfer.fromFacilityId,
               batchNumber: transferItem.batchNumber,
-              ...(tenantId ? { tenantId } : {}),
+              tenantId: requireTenantId(tenantId),
             },
             lock: { mode: 'pessimistic_write' },
           });
@@ -530,7 +531,7 @@ export class StockTransferService {
             where: {
               itemId: transferItem.itemId,
               facilityId: lockedTransfer.fromFacilityId,
-              ...(tenantId ? { tenantId } : {}),
+              tenantId: requireTenantId(tenantId),
             },
             lock: { mode: 'pessimistic_write' },
           });
@@ -554,7 +555,7 @@ export class StockTransferService {
               referenceId: lockedTransfer.id,
               notes: `Transfer ${lockedTransfer.transferNumber} cancelled - stock restored`,
               createdById: userId,
-              ...(tenantId ? { tenantId } : {}),
+              tenantId: requireTenantId(tenantId),
             });
             await manager.save(StockLedger, reversalLedger);
           }
@@ -581,11 +582,10 @@ export class StockTransferService {
     rejectedThisMonth: number;
     cancelledThisMonth: number;
   }> {
+    const tid = requireTenantId(tenantId);
     const qb = this.transferRepository.createQueryBuilder('transfer');
 
-    if (tenantId) {
-      qb.andWhere('transfer.tenantId = :tenantId', { tenantId });
-    }
+    qb.andWhere('transfer.tenantId = :tenantId', { tenantId: tid });
 
     if (facilityId) {
       qb.andWhere(

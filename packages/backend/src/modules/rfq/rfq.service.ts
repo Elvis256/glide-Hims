@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not } from 'typeorm';
+import { requireTenantId } from '../../common/utils/tenant.util';
 import {
   RFQ,
   RFQItem,
@@ -77,7 +78,7 @@ export class RFQService {
         where: {
           purchaseRequestId: dto.purchaseRequestId,
           status: Not(RFQStatus.CANCELLED),
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         },
       });
       if (existing) {
@@ -101,7 +102,7 @@ export class RFQService {
         instructions: dto.instructions,
         status: RFQStatus.DRAFT,
         createdById: userId,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       });
       try {
         savedRFQ = await this.rfqRepo.save(rfq);
@@ -130,7 +131,7 @@ export class RFQService {
         quantity: item.quantity,
         unit: item.unit || 'unit',
         specifications: item.specifications,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       }),
     );
     await this.rfqItemRepo.save(items);
@@ -144,6 +145,7 @@ export class RFQService {
   }
 
   async findAll(facilityId: string, options: { status?: RFQStatus } = {}, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const qb = this.rfqRepo
       .createQueryBuilder('rfq')
       .leftJoinAndSelect('rfq.items', 'items')
@@ -168,15 +170,13 @@ export class RFQService {
       }
     }
 
-    if (tenantId) {
-      qb.andWhere('rfq.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('rfq.tenant_id = :tenantId', { tenantId: tid });
     return qb.orderBy('rfq.createdAt', 'DESC').getMany();
   }
 
   async findOne(id: string, tenantId?: string): Promise<RFQ> {
     const rfq = await this.rfqRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
       relations: [
         'items',
         'vendors',
@@ -212,7 +212,7 @@ export class RFQService {
     for (const vendorId of dto.vendorIds) {
       // Validate supplier is active before adding to RFQ
       const supplier = await this.supplierRepo.findOne({
-        where: { id: vendorId, ...(tenantId ? { tenantId } : {}) },
+        where: { id: vendorId, tenantId: requireTenantId(tenantId) },
       });
       if (!supplier) {
         throw new NotFoundException(`Supplier ${vendorId} not found`);
@@ -224,13 +224,13 @@ export class RFQService {
       }
 
       const exists = await this.rfqVendorRepo.findOne({
-        where: { rfqId: id, supplierId: vendorId, ...(tenantId ? { tenantId } : {}) },
+        where: { rfqId: id, supplierId: vendorId, tenantId: requireTenantId(tenantId) },
       });
       if (!exists) {
         const vendor = this.rfqVendorRepo.create({
           rfqId: id,
           supplierId: vendorId,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         });
         await this.rfqVendorRepo.save(vendor);
       }
@@ -305,7 +305,7 @@ export class RFQService {
       receivedDate: new Date(),
       notes: dto.notes,
       status: QuotationStatus.RECEIVED,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: requireTenantId(tenantId),
     });
 
     const savedQuotation = await this.quotationRepo.save(quotation);
@@ -321,7 +321,7 @@ export class RFQService {
         deliveryDays: item.deliveryDays,
         inStock: item.inStock ?? true,
         notes: item.notes,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       }),
     );
     await this.quotationItemRepo.save(items);
@@ -344,7 +344,7 @@ export class RFQService {
 
   async getQuotation(id: string, tenantId?: string): Promise<VendorQuotation> {
     const quotation = await this.quotationRepo.findOne({
-      where: { id, ...(tenantId ? { tenantId } : {}) },
+      where: { id, tenantId: requireTenantId(tenantId) },
       relations: ['items', 'supplier', 'rfq'],
     });
     if (!quotation) throw new NotFoundException('Quotation not found');
@@ -353,7 +353,7 @@ export class RFQService {
 
   async getQuotationsForRFQ(rfqId: string, tenantId?: string): Promise<VendorQuotation[]> {
     return this.quotationRepo.find({
-      where: { rfqId, ...(tenantId ? { tenantId } : {}) },
+      where: { rfqId, tenantId: requireTenantId(tenantId) },
       relations: ['items', 'supplier'],
       order: { totalAmount: 'ASC' },
     });
@@ -373,9 +373,7 @@ export class RFQService {
       .where('quotation.status = :status', { status: QuotationStatus.SELECTED })
       .andWhere('rfq.facilityId = :facilityId', { facilityId });
 
-    if (tenantId) {
-      qb.andWhere('quotation.tenantId = :tenantId', { tenantId });
-    }
+    qb.andWhere('quotation.tenantId = :tenantId', { tenantId: requireTenantId(tenantId) });
 
     const candidates = await qb.orderBy('quotation.createdAt', 'DESC').getMany();
     if (candidates.length === 0) return [];
@@ -403,7 +401,7 @@ export class RFQService {
       where: {
         rfqId: quotation.rfqId,
         status: QuotationStatus.RECEIVED,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       },
     });
     if (quotationCount < 3) {
@@ -430,7 +428,7 @@ export class RFQService {
         quotationId: quotation.id,
         level: levels[i],
         status: QuotationApprovalStatus.PENDING,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: requireTenantId(tenantId),
       });
       await this.approvalRepo.save(approval);
     }
@@ -457,9 +455,7 @@ export class RFQService {
       qb.andWhere('approval.level = :level', { level });
     }
 
-    if (tenantId) {
-      qb.andWhere('rfq.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('rfq.tenant_id = :tenantId', { tenantId: requireTenantId(tenantId) });
     return qb.orderBy('quotation.receivedDate', 'ASC').getMany();
   }
 
@@ -470,7 +466,7 @@ export class RFQService {
     tenantId?: string,
   ): Promise<QuotationApproval> {
     const approval = await this.approvalRepo.findOne({
-      where: { id: approvalId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: approvalId, tenantId: requireTenantId(tenantId) },
       relations: ['quotation', 'quotation.rfq'],
     });
     if (!approval) throw new NotFoundException('Approval not found');
@@ -485,7 +481,7 @@ export class RFQService {
       [ApprovalLevel.APPROVAL_3]: 3,
     };
     const allApprovals = await this.approvalRepo.find({
-      where: { quotationId: approval.quotationId, ...(tenantId ? { tenantId } : {}) },
+      where: { quotationId: approval.quotationId, tenantId: requireTenantId(tenantId) },
     });
     for (const prev of allApprovals) {
       if (
@@ -547,7 +543,7 @@ export class RFQService {
 
     // Check if all approvals are complete
     const updatedApprovals = await this.approvalRepo.find({
-      where: { quotationId: approval.quotationId, ...(tenantId ? { tenantId } : {}) },
+      where: { quotationId: approval.quotationId, tenantId: requireTenantId(tenantId) },
     });
     const allApproved = updatedApprovals.every(
       (a) => a.status === QuotationApprovalStatus.APPROVED,
@@ -575,7 +571,7 @@ export class RFQService {
     tenantId?: string,
   ): Promise<QuotationApproval> {
     const approval = await this.approvalRepo.findOne({
-      where: { id: approvalId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: approvalId, tenantId: requireTenantId(tenantId) },
       relations: ['quotation'],
     });
     if (!approval) throw new NotFoundException('Approval not found');

@@ -17,6 +17,7 @@ import {
   FingerIndex,
   VerifyBiometricDto,
 } from './dto/biometric.dto';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class BiometricsService {
@@ -36,9 +37,10 @@ export class BiometricsService {
    * Register a fingerprint for a user
    */
   async register(dto: RegisterBiometricDto, tenantId?: string): Promise<BiometricData> {
+    const tid = requireTenantId(tenantId);
     // Verify user exists
     const user = await this.userRepository.findOne({
-      where: { id: dto.userId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: dto.userId, tenantId: tid },
     });
     if (!user) {
       throw new NotFoundException('User not found');
@@ -50,7 +52,7 @@ export class BiometricsService {
         userId: dto.userId,
         fingerIndex: dto.fingerIndex,
         deletedAt: IsNull(),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: tid,
       },
     });
 
@@ -69,7 +71,7 @@ export class BiometricsService {
       templateData: dto.templateData,
       qualityScore: dto.qualityScore,
       registeredAt: new Date(),
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
 
     return this.biometricRepository.save(biometric);
@@ -82,8 +84,9 @@ export class BiometricsService {
     userId: string,
     tenantId?: string,
   ): Promise<{ enrolled: boolean; fingers: FingerIndex[] }> {
+    const tid = requireTenantId(tenantId);
     const records = await this.biometricRepository.find({
-      where: { userId, deletedAt: IsNull(), ...(tenantId ? { tenantId } : {}) },
+      where: { userId, deletedAt: IsNull(), tenantId: tid },
       select: ['fingerIndex'],
     });
 
@@ -97,8 +100,9 @@ export class BiometricsService {
    * Get all registered fingerprints for a user
    */
   async getUserBiometrics(userId: string, tenantId?: string): Promise<BiometricData[]> {
+    const tid = requireTenantId(tenantId);
     return this.biometricRepository.find({
-      where: { userId, deletedAt: IsNull(), ...(tenantId ? { tenantId } : {}) },
+      where: { userId, deletedAt: IsNull(), tenantId: tid },
       select: ['id', 'fingerIndex', 'qualityScore', 'registeredAt', 'lastVerifiedAt'],
     });
   }
@@ -112,8 +116,9 @@ export class BiometricsService {
     userId: string,
     tenantId?: string,
   ): Promise<{ templates: { fingerIndex: FingerIndex; templateData: string }[] }> {
+    const tid = requireTenantId(tenantId);
     const records = await this.biometricRepository.find({
-      where: { userId, deletedAt: IsNull(), ...(tenantId ? { tenantId } : {}) },
+      where: { userId, deletedAt: IsNull(), tenantId: tid },
       select: ['fingerIndex', 'templateData'],
     });
 
@@ -137,8 +142,9 @@ export class BiometricsService {
     dto: VerifyBiometricDto,
     tenantId?: string,
   ): Promise<{ matched: boolean; fingerIndex?: FingerIndex }> {
+    const tid = requireTenantId(tenantId);
     const stored = await this.biometricRepository.find({
-      where: { userId: dto.userId, deletedAt: IsNull(), ...(tenantId ? { tenantId } : {}) },
+      where: { userId: dto.userId, deletedAt: IsNull(), tenantId: tid },
       select: ['fingerIndex', 'templateData'],
     });
 
@@ -201,8 +207,9 @@ export class BiometricsService {
     fingerIndex: FingerIndex,
     tenantId?: string,
   ): Promise<void> {
+    const tid = requireTenantId(tenantId);
     await this.biometricRepository.update(
-      { userId, fingerIndex, deletedAt: IsNull(), ...(tenantId ? { tenantId } : {}) },
+      { userId, fingerIndex, deletedAt: IsNull(), tenantId: tid },
       { lastVerifiedAt: new Date() },
     );
   }
@@ -215,10 +222,11 @@ export class BiometricsService {
     fingerIndex: FingerIndex,
     tenantId?: string,
   ): Promise<void> {
+    const tid = requireTenantId(tenantId);
     const result = await this.biometricRepository.softDelete({
       userId,
       fingerIndex,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
     if (result.affected === 0) {
       throw new NotFoundException('Fingerprint record not found');
@@ -243,13 +251,14 @@ export class BiometricsService {
       remainingAmount?: number;
     } | null;
   }> {
+    const tid = requireTenantId(tenantId);
     const result = await this.dataSource.query(
       `
       SELECT e.insurance_coverage
       FROM employees e
-      WHERE e.user_id = $1${tenantId ? ' AND e.tenant_id = $2' : ''}
+      WHERE e.user_id = $1 AND e.tenant_id = $2
     `,
-      tenantId ? [userId, tenantId] : [userId],
+      [userId, tid],
     );
 
     if (result.length === 0) {
@@ -283,13 +292,14 @@ export class BiometricsService {
     dto: UpdateStaffCoverageDto,
     tenantId?: string,
   ): Promise<void> {
+    const tid = requireTenantId(tenantId);
     const result = await this.dataSource.query(
       `
       UPDATE employees
       SET insurance_coverage = $1
-      WHERE user_id = $2${tenantId ? ' AND tenant_id = $3' : ''}
+      WHERE user_id = $2 AND tenant_id = $3
     `,
-      tenantId ? [JSON.stringify(dto), userId, tenantId] : [JSON.stringify(dto), userId],
+      [JSON.stringify(dto), userId, tid],
     );
 
     if (result[1] === 0) {

@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, FindOptionsWhere, DataSource } from 'typeorm';
 import { randomBytes } from 'crypto';
+import { requireTenantId } from '../../common/utils/tenant.util';
 import {
   SupplierReturn,
   SupplierReturnItem,
@@ -55,7 +56,7 @@ export class SupplierReturnsService {
       totalValue,
       expectedCredit: totalValue,
       status: ReturnStatus.PENDING,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: requireTenantId(tenantId),
     });
 
     const saved = await this.dataSource.transaction(async (manager) => {
@@ -73,7 +74,7 @@ export class SupplierReturnsService {
           unitValue: item.unitValue || 0,
           totalValue: item.totalValue,
           notes: item.notes,
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: requireTenantId(tenantId),
         }),
       );
       await itemRepo.save(items);
@@ -90,7 +91,7 @@ export class SupplierReturnsService {
     if (query.supplierId) where.supplierId = query.supplierId;
     if (query.status) where.status = query.status;
     if (query.reason) where.reason = query.reason;
-    if (tenantId) (where as any).tenantId = tenantId;
+    (where as any).tenantId = requireTenantId(tenantId);
 
     const page = query.page || 1;
     const limit = query.limit || 20;
@@ -108,7 +109,7 @@ export class SupplierReturnsService {
 
   async findByFacility(facilityId: string, tenantId?: string) {
     const where: any = { facilityId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     return this.returnRepository.find({
       where,
       relations: ['supplier', 'createdBy', 'items', 'items.item'],
@@ -118,7 +119,7 @@ export class SupplierReturnsService {
 
   async findOne(id: string, tenantId?: string): Promise<SupplierReturn> {
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     const record = await this.returnRepository.findOne({
       where,
       relations: ['supplier', 'facility', 'createdBy', 'items', 'items.item'],
@@ -177,15 +178,14 @@ export class SupplierReturnsService {
   }
 
   async getStats(facilityId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const qb = this.returnRepository
       .createQueryBuilder('r')
       .select('r.status', 'status')
       .addSelect('COUNT(*)', 'count')
       .addSelect('SUM(r.totalValue)', 'totalValue')
       .where('r.facilityId = :facilityId', { facilityId });
-    if (tenantId) {
-      qb.andWhere('r.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('r.tenant_id = :tenantId', { tenantId: tid });
     const result = await qb.groupBy('r.status').getRawMany();
 
     return result;
@@ -193,7 +193,7 @@ export class SupplierReturnsService {
 
   async getBySupplier(supplierId: string, facilityId: string, tenantId?: string) {
     const where: any = { supplierId, facilityId };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = requireTenantId(tenantId);
     return this.returnRepository.find({
       where,
       relations: ['items', 'items.item'],
@@ -202,14 +202,13 @@ export class SupplierReturnsService {
   }
 
   async getSummary(facilityId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const pendingWhere: any = { facilityId, status: ReturnStatus.PENDING };
     const authorizedWhere: any = { facilityId, status: ReturnStatus.AUTHORIZED };
     const completedWhere: any = { facilityId, status: ReturnStatus.COMPLETED };
-    if (tenantId) {
-      pendingWhere.tenantId = tenantId;
-      authorizedWhere.tenantId = tenantId;
-      completedWhere.tenantId = tenantId;
-    }
+    pendingWhere.tenantId = tid;
+    authorizedWhere.tenantId = tid;
+    completedWhere.tenantId = tid;
 
     const pending = await this.returnRepository.count({
       where: pendingWhere,
@@ -225,9 +224,7 @@ export class SupplierReturnsService {
       .createQueryBuilder('r')
       .select('SUM(r.totalValue)', 'total')
       .where('r.facilityId = :facilityId', { facilityId });
-    if (tenantId) {
-      qb.andWhere('r.tenant_id = :tenantId', { tenantId });
-    }
+    qb.andWhere('r.tenant_id = :tenantId', { tenantId: tid });
     const totalValue = await qb.getRawOne();
 
     return {

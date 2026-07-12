@@ -19,6 +19,7 @@ import {
   ResolvedStep,
   ResolveApprovalChainInput,
 } from '../procurement/org-approval-resolver.service';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 export interface DocumentRef {
   module: string;
@@ -192,12 +193,13 @@ export class ApprovalsService {
   // ---------- Read ----------
 
   async getChain(ref: DocumentRef, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const where: any = {
       module: ref.module,
       documentType: ref.documentType,
       documentId: ref.documentId,
     };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     const rows = await this.chainRepo.find({
       where,
       relations: ['approver', 'approvedBy'],
@@ -206,7 +208,7 @@ export class ApprovalsService {
     if (rows.length === 0) return [];
     const namesByKey = await this.resolver.enrichSteps(
       rows.map((r) => ({ approverId: r.approverId, groupId: r.groupId })),
-      tenantId || '',
+      tid,
     );
     return rows.map((r) => {
       const key = `${r.approverId || ''}|${r.groupId || ''}`;
@@ -281,9 +283,9 @@ export class ApprovalsService {
     permissionCode: string,
     tenantId?: string,
   ): Promise<boolean> {
-    const tenantClause = tenantId ? 'AND (up.tenant_id = $3 OR up.tenant_id IS NULL)' : '';
-    const params: any[] = [userId, permissionCode];
-    if (tenantId) params.push(tenantId);
+    const tid = requireTenantId(tenantId);
+    const tenantClause = 'AND (up.tenant_id = $3 OR up.tenant_id IS NULL)';
+    const params: any[] = [userId, permissionCode, tid];
     const direct = await this.dataSource.query(
       `SELECT 1 FROM user_permissions up
        JOIN permissions p ON p.id = up.permission_id
@@ -337,9 +339,10 @@ export class ApprovalsService {
    * documentRef + level so a generic UI can render rows for any module.
    */
   async getInbox(userId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     if (!userId) return [];
     const where: any = { status: ApprovalChainStatus.PENDING };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     const all = await this.chainRepo.find({
       where,
       order: { createdAt: 'DESC' },
@@ -357,7 +360,7 @@ export class ApprovalsService {
     if (mine.length === 0) return [];
     const namesByKey = await this.resolver.enrichSteps(
       mine.map((r) => ({ approverId: r.approverId, groupId: r.groupId })),
-      tenantId || '',
+      tid,
     );
     return mine.map((r) => {
       const key = `${r.approverId || ''}|${r.groupId || ''}`;
@@ -586,12 +589,13 @@ export class ApprovalsService {
   // ---------- Audit ----------
 
   async listActions(ref: DocumentRef, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const where: any = {
       module: ref.module,
       documentType: ref.documentType,
       documentId: ref.documentId,
     };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     return this.actionRepo.find({ where, order: { createdAt: 'ASC' } });
   }
 

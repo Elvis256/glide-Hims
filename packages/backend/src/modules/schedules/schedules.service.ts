@@ -13,6 +13,7 @@ import {
   UpdateDoctorScheduleDto,
   ScheduleQueryDto,
 } from './dto/schedule.dto';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class SchedulesService {
@@ -28,6 +29,8 @@ export class SchedulesService {
     facilityId: string,
     tenantId?: string,
   ): Promise<DoctorSchedule> {
+    const tid = requireTenantId(tenantId);
+
     // Validate startTime < endTime
     if (dto.startTime >= dto.endTime) {
       throw new BadRequestException('Start time must be before end time');
@@ -41,11 +44,8 @@ export class SchedulesService {
       .andWhere('schedule.facilityId = :facilityId', { facilityId })
       .andWhere('schedule.isActive = :isActive', { isActive: true })
       .andWhere('schedule.startTime < :endTime', { endTime: dto.endTime })
-      .andWhere('schedule.endTime > :startTime', { startTime: dto.startTime });
-
-    if (tenantId) {
-      qb.andWhere('schedule.tenant_id = :tenantId', { tenantId });
-    }
+      .andWhere('schedule.endTime > :startTime', { startTime: dto.startTime })
+      .andWhere('schedule.tenant_id = :tenantId', { tenantId: tid });
 
     const existing = await qb.getOne();
 
@@ -59,23 +59,21 @@ export class SchedulesService {
       ...dto,
       facilityId,
     });
-    if (tenantId) (schedule as any).tenantId = tenantId;
+    (schedule as any).tenantId = tid;
 
     return this.scheduleRepository.save(schedule);
   }
 
   async findAll(query: ScheduleQueryDto, facilityId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const { doctorId, dayOfWeek, department, includeInactive } = query;
 
     try {
       const qb = this.scheduleRepository
         .createQueryBuilder('schedule')
         .leftJoinAndSelect('schedule.doctor', 'doctor')
-        .where('schedule.facilityId = :facilityId', { facilityId });
-
-      if (tenantId) {
-        qb.andWhere('schedule.tenant_id = :tenantId', { tenantId });
-      }
+        .where('schedule.facilityId = :facilityId', { facilityId })
+        .andWhere('schedule.tenant_id = :tenantId', { tenantId: tid });
 
       if (!includeInactive) {
         qb.andWhere('schedule.isActive = :isActive', { isActive: true });
@@ -127,8 +125,8 @@ export class SchedulesService {
   }
 
   async findOne(id: string, facilityId: string, tenantId?: string): Promise<DoctorSchedule> {
-    const where: any = { id, facilityId };
-    if (tenantId) where.tenantId = tenantId;
+    const tid = requireTenantId(tenantId);
+    const where: any = { id, facilityId, tenantId: tid };
 
     const schedule = await this.scheduleRepository.findOne({
       where,
@@ -148,26 +146,26 @@ export class SchedulesService {
     facilityId: string,
     tenantId?: string,
   ): Promise<DoctorSchedule> {
+    requireTenantId(tenantId);
     const schedule = await this.findOne(id, facilityId, tenantId);
     Object.assign(schedule, dto);
     return this.scheduleRepository.save(schedule);
   }
 
   async delete(id: string, facilityId: string, tenantId?: string): Promise<void> {
+    requireTenantId(tenantId);
     const schedule = await this.findOne(id, facilityId, tenantId);
     await this.scheduleRepository.softRemove(schedule);
   }
 
   async getDoctorsWithSchedules(facilityId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const qb = this.scheduleRepository
       .createQueryBuilder('schedule')
       .leftJoinAndSelect('schedule.doctor', 'doctor')
       .where('schedule.facilityId = :facilityId', { facilityId })
-      .andWhere('schedule.isActive = :isActive', { isActive: true });
-
-    if (tenantId) {
-      qb.andWhere('schedule.tenant_id = :tenantId', { tenantId });
-    }
+      .andWhere('schedule.isActive = :isActive', { isActive: true })
+      .andWhere('schedule.tenant_id = :tenantId', { tenantId: tid });
 
     const result = await qb
       .select('DISTINCT doctor.id', 'id')

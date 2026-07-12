@@ -25,6 +25,7 @@ import { ImagingModality } from '../../database/entities/imaging-modality.entity
 import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
 import { QueueManagementService } from '../queue-management/queue-management.service';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
+import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class OrdersService {
@@ -80,9 +81,10 @@ export class OrdersService {
   }
 
   async createOrder(dto: CreateOrderDto, userId: string, tenantId?: string): Promise<Order> {
+    const tid = requireTenantId(tenantId);
     // Verify encounter exists and get patient info
     const encounter = await this.encounterRepository.findOne({
-      where: { id: dto.encounterId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: dto.encounterId, tenantId: tid },
       relations: ['patient', 'facility'],
     });
     if (!encounter) {
@@ -97,7 +99,7 @@ export class OrdersService {
       orderedById: userId,
       status: OrderStatus.PENDING,
       priority: dto.priority || OrderPriority.ROUTINE,
-      ...(tenantId ? { tenantId } : {}),
+      tenantId: tid,
     });
 
     const savedOrder = await this.orderRepository.save(order);
@@ -138,7 +140,7 @@ export class OrdersService {
         for (const testCode of dto.testCodes) {
           // Find service by code to get price, fall back to lab_tests price
           const service = await this.serviceRepository.findOne({
-            where: { code: testCode.code, ...(tenantId ? { tenantId } : {}) },
+            where: { code: testCode.code, tenantId: tid },
           });
 
           let unitPrice = service?.basePrice ? Number(service.basePrice) : 0;
@@ -146,7 +148,7 @@ export class OrdersService {
 
           if (dto.orderType === OrderType.LAB) {
             const labTest = await this.labTestRepository.findOne({
-              where: { code: testCode.code, ...(tenantId ? { tenantId } : {}) },
+              where: { code: testCode.code, tenantId: tid },
             });
             if (labTest) {
               labTestId = labTest.id;
@@ -244,6 +246,8 @@ export class OrdersService {
       tenantId,
     } = params;
 
+    const tid = requireTenantId(tenantId);
+
     const query = this.orderRepository
       .createQueryBuilder('order')
       .leftJoinAndSelect('order.encounter', 'encounter')
@@ -252,9 +256,7 @@ export class OrdersService {
       .leftJoinAndSelect('order.completedBy', 'completedBy')
       .leftJoinAndSelect('order.reviewedBy', 'reviewedBy');
 
-    if (tenantId) {
-      query.andWhere('order.tenant_id = :tenantId', { tenantId });
-    }
+    query.andWhere('order.tenant_id = :tenantId', { tenantId: tid });
     if (orderType) {
       query.andWhere('order.orderType = :orderType', { orderType });
     }
@@ -321,10 +323,8 @@ export class OrdersService {
         FROM lab_samples s
         LEFT JOIN lab_results r ON r."sampleId" = s.id
         WHERE s."orderId" = ANY($1)`;
-      if (tenantId) {
-        rawSql += ` AND s.tenant_id = $${rawParams.length + 1}`;
-        rawParams.push(tenantId);
-      }
+      rawSql += ` AND s.tenant_id = $${rawParams.length + 1}`;
+      rawParams.push(tid);
       rawSql += `
         ORDER BY s."orderId", r.created_at`;
       const samplesWithResults = await this.dataSource.query(rawSql, rawParams);
@@ -365,8 +365,9 @@ export class OrdersService {
   }
 
   async findById(id: string, tenantId?: string): Promise<Order> {
+    const tid = requireTenantId(tenantId);
     const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
+    where.tenantId = tid;
     const order = await this.orderRepository.findOne({
       where,
       relations: ['encounter', 'encounter.patient', 'orderedBy', 'completedBy'],
@@ -378,8 +379,9 @@ export class OrdersService {
   }
 
   async findByEncounter(encounterId: string, tenantId?: string): Promise<Order[]> {
+    const tid = requireTenantId(tenantId);
     return this.orderRepository.find({
-      where: { encounterId, ...(tenantId ? { tenantId } : {}) },
+      where: { encounterId, tenantId: tid },
       relations: ['orderedBy', 'completedBy'],
       order: { createdAt: 'DESC' },
     });
@@ -421,7 +423,7 @@ export class OrdersService {
     }
 
     const updateWhere: any = { id };
-    if (tenantId) updateWhere.tenantId = tenantId;
+    updateWhere.tenantId = requireTenantId(tenantId);
     await this.orderRepository.update(updateWhere, updateData);
 
     this.auditLogService
@@ -484,15 +486,16 @@ export class OrdersService {
   }
 
   private async assertLabResultsReleased(orderId: string, tenantId?: string): Promise<void> {
+    const tid = requireTenantId(tenantId);
     const samples = await this.labSampleRepository.find({
-      where: { orderId, ...(tenantId ? { tenantId } : {}) },
+      where: { orderId, tenantId: tid },
     });
     if (samples.length === 0) {
       throw new BadRequestException('Cannot complete lab order — no samples found');
     }
     const sampleIds = samples.map((s) => s.id);
     const results = await this.labResultRepository.find({
-      where: { sampleId: In(sampleIds), ...(tenantId ? { tenantId } : {}) },
+      where: { sampleId: In(sampleIds), tenantId: tid },
     });
     if (results.length === 0) {
       throw new BadRequestException('Cannot complete lab order — no results have been entered');
@@ -546,10 +549,11 @@ export class OrdersService {
   }
 
   async reviewOrder(id: string, userId: string, tenantId?: string): Promise<Order> {
+    const tid = requireTenantId(tenantId);
     const order = await this.findById(id, tenantId);
 
     const reviewWhere: any = { id };
-    if (tenantId) reviewWhere.tenantId = tenantId;
+    reviewWhere.tenantId = tid;
     await this.orderRepository.update(reviewWhere, {
       reviewedById: userId,
       reviewedAt: new Date(),
@@ -581,6 +585,7 @@ export class OrdersService {
   // ============ STATS ============
 
   async getOrderStats(facilityId: string, orderType?: OrderType, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
     const today = new Date().toISOString().slice(0, 10);
 
     const baseQuery = this.orderRepository
@@ -588,9 +593,7 @@ export class OrdersService {
       .leftJoin('order.encounter', 'encounter')
       .where('encounter.facilityId = :facilityId', { facilityId });
 
-    if (tenantId) {
-      baseQuery.andWhere('order.tenant_id = :tenantId', { tenantId });
-    }
+    baseQuery.andWhere('order.tenant_id = :tenantId', { tenantId: tid });
     if (orderType) {
       baseQuery.andWhere('order.orderType = :orderType', { orderType });
     }
@@ -649,6 +652,7 @@ export class OrdersService {
     encounter: Encounter,
     tenantId?: string,
   ): Promise<void> {
+    const tid = requireTenantId(tenantId);
     try {
       const testCodes: Array<{ code: string; name: string }> = order.testCodes || [];
       if (!testCodes.length) return;
@@ -696,7 +700,7 @@ export class OrdersService {
           status: ImagingOrderStatus.ORDERED,
           orderedById: order.orderedById,
           orderedAt: order.createdAt || new Date(),
-          ...(tenantId ? { tenantId } : {}),
+          tenantId: tid,
         });
 
         await this.imagingOrderRepository.save(imagingOrder);
