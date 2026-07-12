@@ -50,6 +50,16 @@ export class SyncService {
 
   private static readonly SAFE_IDENTIFIER_PATTERN = /^[a-z_][a-z0-9_]*$/i;
 
+  // Columns a sync client must never write: tenant_id would move the record
+  // to another tenant; the timestamps/soft-delete are server-managed.
+  private static readonly PROTECTED_COLUMNS = new Set([
+    'id',
+    'tenant_id',
+    'created_at',
+    'updated_at',
+    'deleted_at',
+  ]);
+
   private validateTableName(tableName: string): string {
     if (!this.VALID_SYNC_TABLES.has(tableName)) {
       throw new BadRequestException(`Invalid sync table: ${tableName}`);
@@ -107,6 +117,12 @@ export class SyncService {
     const tid = requireTenantId(tenantId);
     // Wrap conflict detection + change application in a single transaction
     return this.dataSource.transaction(async (manager) => {
+      // Serialize per entity: two concurrent pushes for the same record
+      // could both pass conflict detection and silently last-write-win
+      await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+        `sync:${tid}:${change.entityType}:${change.entityId}`,
+      ]);
+
       // Create queue entry
       const queueEntry = manager.create(SyncQueue, {
         facilityId: dto.facilityId,
@@ -129,7 +145,7 @@ export class SyncService {
 
       // Check for conflicts (for updates and deletes)
       if (change.operation !== SyncOperation.CREATE) {
-        const conflict = await this.detectConflict(dto.facilityId, change, tid);
+        const conflict = await this.detectConflict(dto.facilityId, change, tid, manager);
 
         if (conflict) {
           queueEntry.status = SyncStatus.CONFLICT;
@@ -139,9 +155,11 @@ export class SyncService {
         }
       }
 
-      // Apply the change
+      // Apply the change through the SAME transaction manager — using the
+      // default connection here meant the data write escaped the transaction
+      // (a rollback would keep the applied change but lose the queue entry)
       try {
-        await this.applyChange(change, tid);
+        await this.applyChange(change, tid, manager);
         queueEntry.status = SyncStatus.SYNCED;
         queueEntry.syncedAt = new Date();
         await manager.save(queueEntry);
@@ -159,19 +177,20 @@ export class SyncService {
   private async detectConflict(
     facilityId: string,
     change: SyncChangeDto,
-    tenantId?: string,
+    tenantId: string | undefined,
+    manager: import('typeorm').EntityManager,
   ): Promise<SyncConflict | null> {
     const tid = requireTenantId(tenantId);
     const tableName = this.entityTableMap[change.entityType];
     if (!tableName) return null;
     this.validateTableName(tableName);
 
-    // Get current server version
+    // Get current server version (through the caller's transaction)
     let detectSql = `SELECT *, EXTRACT(EPOCH FROM "updated_at") * 1000 as server_timestamp FROM "${tableName}" WHERE "id" = $1`;
     const detectParams: any[] = [change.entityId];
     detectSql += ` AND "tenant_id" = $${detectParams.length + 1}`;
     detectParams.push(tid);
-    const serverRecord = await this.dataSource.query(detectSql, detectParams);
+    const serverRecord = await manager.query(detectSql, detectParams);
 
     if (!serverRecord || serverRecord.length === 0) {
       // Record doesn't exist on server
@@ -197,7 +216,7 @@ export class SyncService {
           clientUserId: '',
           tenantId: tid,
         });
-        return this.conflictRepo.save(conflict) as Promise<SyncConflict>;
+        return manager.save(SyncConflict, conflict) as Promise<SyncConflict>;
       }
       return null;
     }
@@ -235,7 +254,7 @@ export class SyncService {
           clientUserId: '',
           tenantId: tid,
         });
-        return this.conflictRepo.save(conflict) as Promise<SyncConflict>;
+        return manager.save(SyncConflict, conflict) as Promise<SyncConflict>;
       }
     }
 
@@ -283,8 +302,13 @@ export class SyncService {
     return null; // Can't auto-merge if there are real conflicts
   }
 
-  private async applyChange(change: SyncChangeDto, tenantId?: string): Promise<void> {
+  private async applyChange(
+    change: SyncChangeDto,
+    tenantId: string | undefined,
+    manager?: import('typeorm').EntityManager,
+  ): Promise<void> {
     const tid = requireTenantId(tenantId);
+    const db = manager ?? this.dataSource;
     const tableName = this.entityTableMap[change.entityType];
     if (!tableName) throw new BadRequestException(`Unknown entity type: ${change.entityType}`);
     this.validateTableName(tableName);
@@ -292,9 +316,14 @@ export class SyncService {
     switch (change.operation) {
       case SyncOperation.CREATE: {
         const insertPayload: any = { ...change.payload };
+        // Server-managed columns cannot be supplied by the client — a payload
+        // carrying tenant_id could plant the record in another tenant
+        for (const col of SyncService.PROTECTED_COLUMNS) {
+          if (col !== 'id') delete insertPayload[col];
+        }
         insertPayload.tenant_id = tid;
         const columns = Object.keys(insertPayload).map((k) => this.validateColumnName(k));
-        await this.dataSource.query(
+        await db.query(
           `INSERT INTO "${tableName}" (${columns.join(', ')}) VALUES (${columns.map((_, i) => `$${i + 1}`).join(', ')})`,
           Object.values(insertPayload),
         );
@@ -302,7 +331,12 @@ export class SyncService {
       }
 
       case SyncOperation.UPDATE: {
-        const filteredKeys = Object.keys(change.payload).filter((k) => !['id'].includes(k));
+        // Same guard: without it an UPDATE payload with tenant_id moved the
+        // record to another tenant (cross-tenant hijack through sync)
+        const filteredKeys = Object.keys(change.payload).filter(
+          (k) => !SyncService.PROTECTED_COLUMNS.has(k),
+        );
+        if (filteredKeys.length === 0) break;
         const setClauses = filteredKeys
           .map((k, i) => `${this.validateColumnName(k)} = $${i + 2}`)
           .join(', ');
@@ -311,7 +345,7 @@ export class SyncService {
         const updateParams: any[] = [change.entityId, ...updateValues];
         updateSql += ` AND "tenant_id" = $${updateParams.length + 1}`;
         updateParams.push(tid);
-        await this.dataSource.query(updateSql, updateParams);
+        await db.query(updateSql, updateParams);
         break;
       }
 
@@ -320,7 +354,7 @@ export class SyncService {
         const deleteParams: any[] = [change.entityId];
         deleteSql += ` AND "tenant_id" = $${deleteParams.length + 1}`;
         deleteParams.push(tid);
-        await this.dataSource.query(deleteSql, deleteParams);
+        await db.query(deleteSql, deleteParams);
         break;
       }
     }
@@ -411,16 +445,20 @@ export class SyncService {
     tenantId?: string,
   ): Promise<SyncConflict> {
     const tid = requireTenantId(tenantId);
-    const conflictWhere: any = { id };
-    conflictWhere.tenantId = tid;
-    const conflict = await this.conflictRepo.findOne({ where: conflictWhere });
-    if (!conflict) throw new NotFoundException('Conflict not found');
-
-    if (conflict.resolution !== ConflictResolution.PENDING) {
-      throw new BadRequestException('Conflict already resolved');
-    }
 
     return this.dataSource.transaction(async (manager) => {
+      // Lock + validate inside the txn so two concurrent resolutions of the
+      // same conflict cannot both apply (e.g. CLIENT_WINS then SERVER_WINS)
+      const conflict = await manager.findOne(SyncConflict, {
+        where: { id, tenantId: tid },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!conflict) throw new NotFoundException('Conflict not found');
+
+      if (conflict.resolution !== ConflictResolution.PENDING) {
+        throw new BadRequestException('Conflict already resolved');
+      }
+
       conflict.resolution = dto.resolution;
       conflict.resolvedById = userId;
       conflict.resolvedAt = new Date();
@@ -459,6 +497,7 @@ export class SyncService {
             payload: payloadToApply,
           },
           tid,
+          manager,
         );
       }
 

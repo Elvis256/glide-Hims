@@ -255,6 +255,7 @@ export class NotificationsService {
 
     const response = await fetch(`https://graph.facebook.com/v18.0/${phoneNumberId}/messages`, {
       method: 'POST',
+      signal: AbortSignal.timeout(30_000), // hung provider must not stall requests/crons
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${accessToken}`,
@@ -280,6 +281,7 @@ export class NotificationsService {
 
     const response = await fetch(apiUrl, {
       method: 'POST',
+      signal: AbortSignal.timeout(30_000), // hung provider must not stall requests/crons
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${config.smsApiKey}`,
@@ -311,6 +313,7 @@ export class NotificationsService {
       `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
       {
         method: 'POST',
+      signal: AbortSignal.timeout(30_000), // hung provider must not stall requests/crons
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
           Authorization: `Basic ${auth}`,
@@ -337,6 +340,7 @@ export class NotificationsService {
   ): Promise<void> {
     const response = await fetch('https://api.africastalking.com/version1/messaging', {
       method: 'POST',
+      signal: AbortSignal.timeout(30_000), // hung provider must not stall requests/crons
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         apiKey: config.smsApiKey!,
@@ -369,6 +373,7 @@ export class NotificationsService {
       `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
       {
         method: 'POST',
+      signal: AbortSignal.timeout(30_000), // hung provider must not stall requests/crons
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
           Authorization: `Basic ${auth}`,
@@ -396,6 +401,7 @@ export class NotificationsService {
     // Generic SMS API - customize based on provider
     const response = await fetch(config.smsApiUrl!, {
       method: 'POST',
+      signal: AbortSignal.timeout(30_000), // hung provider must not stall requests/crons
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${config.smsApiKey}`,
@@ -568,24 +574,40 @@ export class NotificationsService {
     await this.reminderRepo.save(reminder);
   }
 
-  // Process pending reminders (called by cron job)
+  // Process pending reminders (manual trigger / cron)
   async processPendingReminders(tenantId?: string): Promise<number> {
     const tid = requireTenantId(tenantId);
     const now = new Date();
+    const staleCutoff = new Date(now.getTime() - 15 * 60 * 1000);
+
     const pendingReminders = await this.reminderRepo.find({
-      where: {
-        status: ReminderStatus.PENDING,
-        scheduledFor: LessThanOrEqual(now),
-        tenantId: tid,
-      },
+      where: [
+        { status: ReminderStatus.PENDING, scheduledFor: LessThanOrEqual(now), tenantId: tid },
+        // Recover claims orphaned by a crash mid-send
+        {
+          status: ReminderStatus.PROCESSING,
+          updatedAt: LessThanOrEqual(staleCutoff),
+          tenantId: tid,
+        },
+      ],
       take: 100,
     });
 
+    let processed = 0;
     for (const reminder of pendingReminders) {
+      // Atomic claim: overlapping runs (double-click, cron overlap) both
+      // loaded the same PENDING rows and double-texted patients
+      const claim = await this.reminderRepo.update(
+        { id: reminder.id, status: reminder.status },
+        { status: ReminderStatus.PROCESSING },
+      );
+      if (!claim.affected) continue;
+      reminder.status = ReminderStatus.PROCESSING;
       await this.processReminder(reminder);
+      processed++;
     }
 
-    return pendingReminders.length;
+    return processed;
   }
 
   async getReminderHistory(
