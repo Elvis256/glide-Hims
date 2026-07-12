@@ -30,7 +30,7 @@ import {
   HmisMonthlyDto,
   HmisWeeklyDto,
 } from './reports.dto';
-import * as XLSX from 'xlsx';
+import * as ExcelJS from 'exceljs';
 
 // Max rows allowed in a single CSV/XLSX export. Beyond this we refuse to
 // allocate the buffer rather than risking an OOM in Node. Statutory reports
@@ -60,9 +60,10 @@ function rowsToCsv(rows: any[]): string {
   return [cols.join(','), ...rows.map((r) => cols.map((c) => escape(r[c])).join(','))].join('\n');
 }
 
-function rowsToXlsx(rows: any[], sheetName: string): Buffer {
-  const wb = XLSX.utils.book_new();
-  // Sanitize string cells before handing to the xlsx serializer so that
+async function rowsToXlsx(rows: any[], sheetName: string): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet(sheetName.slice(0, 31));
+  // Sanitize string cells before handing to the serializer so that
   // formula-leading values do not execute when the workbook is opened.
   const safeRows = (rows || []).map((row) => {
     const out: Record<string, any> = {};
@@ -72,9 +73,12 @@ function rowsToXlsx(rows: any[], sheetName: string): Buffer {
     }
     return out;
   });
-  const ws = XLSX.utils.json_to_sheet(safeRows);
-  XLSX.utils.book_append_sheet(wb, ws, sheetName.slice(0, 31));
-  return XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' }) as Buffer;
+  if (safeRows.length > 0) {
+    const cols = Object.keys(safeRows[0]);
+    ws.columns = cols.map((c) => ({ header: c, key: c }));
+    for (const row of safeRows) ws.addRow(row);
+  }
+  return Buffer.from(await wb.xlsx.writeBuffer());
 }
 
 function assertExportSize(rows: any[]): void {
@@ -210,7 +214,7 @@ export class ReportsController {
     return this.respondStatutory(data, data.rows, `mTrac_${q.week}`, q.format, res);
   }
 
-  private respondStatutory(
+  private async respondStatutory(
     payload: any,
     rows: any[],
     filename: string,
@@ -225,7 +229,7 @@ export class ReportsController {
     }
     if (format === 'xlsx') {
       assertExportSize(rows);
-      const buf = rowsToXlsx(rows, filename);
+      const buf = await rowsToXlsx(rows, filename);
       res.setHeader(
         'Content-Type',
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

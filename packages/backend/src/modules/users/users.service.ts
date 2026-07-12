@@ -35,7 +35,7 @@ import {
 } from './dto/user.dto';
 import { BulkImportResult, BulkImportRowError } from './dto/bulk-import.dto';
 import { SubscriptionLimitsService } from '../licensing/subscription-limits.service';
-import * as XLSX from 'xlsx';
+import * as ExcelJS from 'exceljs';
 import { requireTenantId } from '../../common/utils/tenant.util';
 
 // Improvement #6: Role → StaffCategory mapping utility
@@ -1397,7 +1397,7 @@ export class UsersService {
       );
     }
 
-    const rows = this.parseImportFile(file);
+    const rows = await this.parseImportFile(file);
 
     // Guard: row count limit
     const MAX_ROWS = 1000;
@@ -1692,22 +1692,39 @@ export class UsersService {
     return value.replace(/^[=+\-@\t\r]+/, '');
   }
 
-  private parseImportFile(file: Express.Multer.File): Record<string, string>[] {
+  private async parseImportFile(file: Express.Multer.File): Promise<Record<string, string>[]> {
+    // Legacy binary .xls is not supported by exceljs (we dropped the xlsx
+    // package over unpatched prototype-pollution/ReDoS CVEs on parse).
+    if (file.originalname?.endsWith('.xls') && !file.originalname?.endsWith('.xlsx')) {
+      throw new BadRequestException(
+        'Legacy .xls files are not supported. Save the file as .xlsx or .csv and retry.',
+      );
+    }
+
     const isExcel =
       file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-      file.mimetype === 'application/vnd.ms-excel' ||
-      file.originalname?.endsWith('.xlsx') ||
-      file.originalname?.endsWith('.xls');
+      file.originalname?.endsWith('.xlsx');
 
     if (isExcel) {
-      const workbook = XLSX.read(file.buffer, { type: 'buffer' });
-      const sheetName = workbook.SheetNames[0];
-      if (!sheetName) {
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(file.buffer as any);
+      const sheet = workbook.worksheets[0];
+      if (!sheet) {
         throw new BadRequestException('Excel file has no sheets');
       }
-      const rows = XLSX.utils.sheet_to_json<Record<string, string>>(workbook.Sheets[sheetName], {
-        defval: '',
-        raw: false,
+      const headers: string[] = [];
+      sheet.getRow(1).eachCell({ includeEmpty: true }, (cell, col) => {
+        headers[col] = excelCellToString(cell.value).trim();
+      });
+      const rows: Record<string, string>[] = [];
+      sheet.eachRow((row, rowNumber) => {
+        if (rowNumber === 1) return;
+        const rec: Record<string, string> = {};
+        headers.forEach((header, col) => {
+          if (!header) return;
+          rec[header] = excelCellToString(row.getCell(col).value);
+        });
+        if (Object.values(rec).some((v) => v !== '')) rows.push(rec);
       });
       return rows;
     }
@@ -1756,4 +1773,18 @@ export class UsersService {
     }
     return { affected: result.affected || 0, userIds };
   }
+}
+
+/** Normalize an ExcelJS cell value (rich text, formula results, dates) to a string. */
+function excelCellToString(value: ExcelJS.CellValue): string {
+  if (value == null) return '';
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'object') {
+    const v: any = value;
+    if (Array.isArray(v.richText)) return v.richText.map((t: any) => t.text).join('');
+    if (v.text != null) return String(v.text);
+    if (v.result != null) return excelCellToString(v.result);
+    return '';
+  }
+  return String(value);
 }

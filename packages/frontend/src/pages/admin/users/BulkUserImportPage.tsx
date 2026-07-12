@@ -11,7 +11,7 @@ import {
   ArrowLeft,
   Trash2,
 } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import api from '../../../services/api';
 
 interface ImportResult {
@@ -36,13 +36,24 @@ export default function BulkUserImportPage() {
     setResult(null);
     setParseError(null);
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
+    (async () => {
       try {
-        const data = e.target?.result;
-        const wb = XLSX.read(data, { type: 'binary' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const json = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+        let json: any[][];
+        if (f.name.toLowerCase().endsWith('.csv')) {
+          const text = await f.text();
+          json = text
+            .split(/\r?\n/)
+            .filter((line) => line.trim())
+            .map((line) => line.split(',').map((v) => v.trim()));
+        } else {
+          const wb = new ExcelJS.Workbook();
+          await wb.xlsx.load(await f.arrayBuffer());
+          const ws = wb.worksheets[0];
+          json = [];
+          ws?.eachRow((row) => {
+            json.push((row.values as any[]).slice(1).map(excelCellToString));
+          });
+        }
         if (json.length > 0) {
           setHeaders(json[0].map(String));
           setPreviewData(json.slice(1, 11));
@@ -50,10 +61,9 @@ export default function BulkUserImportPage() {
           setParseError('The file appears to be empty.');
         }
       } catch {
-        setParseError('Failed to parse file. Please upload a valid CSV or Excel file.');
+        setParseError('Failed to parse file. Please upload a valid CSV or .xlsx file.');
       }
-    };
-    reader.readAsBinaryString(f);
+    })();
   }, []);
 
   const handleDrop = useCallback(
@@ -346,4 +356,17 @@ export default function BulkUserImportPage() {
       )}
     </div>
   );
+}
+
+/** Normalize an ExcelJS cell value (rich text, formulas, dates) to a plain value. */
+function excelCellToString(value: any): any {
+  if (value == null) return '';
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'object') {
+    if (Array.isArray(value.richText)) return value.richText.map((t: any) => t.text).join('');
+    if (value.text != null) return String(value.text);
+    if (value.result != null) return excelCellToString(value.result);
+    return '';
+  }
+  return value;
 }

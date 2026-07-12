@@ -1,7 +1,7 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, FindOptionsWhere, MoreThanOrEqual, LessThanOrEqual, ILike } from 'typeorm';
-import * as XLSX from 'xlsx';
+import * as ExcelJS from 'exceljs';
 import { User } from '../../database/entities/user.entity';
 import { AuditLog } from '../../database/entities/audit-log.entity';
 import { Patient } from '../../database/entities/patient.entity';
@@ -72,7 +72,7 @@ export class ExportService {
     const filename = `${entity}-export-${timestamp}.${format}`;
 
     if (format === 'xlsx') {
-      const buffer = this.generateXlsx(headers, rows, entity);
+      const buffer = await this.generateXlsx(headers, rows, entity);
       return {
         buffer,
         filename,
@@ -345,11 +345,17 @@ export class ExportService {
     return lines.join('\n') + '\n';
   }
 
-  private generateXlsx(headers: string[], rows: Record<string, any>[], sheetName: string): Buffer {
-    const data = [headers, ...rows.map((row) => headers.map((h) => row[h] ?? ''))];
-    const workbook = XLSX.utils.book_new();
-    const worksheet = XLSX.utils.aoa_to_sheet(data);
-    XLSX.utils.book_append_sheet(workbook, worksheet, sheetName.slice(0, 31));
-    return Buffer.from(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }));
+  private async generateXlsx(
+    headers: string[],
+    rows: Record<string, any>[],
+    sheetName: string,
+  ): Promise<Buffer> {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet(sheetName.slice(0, 31));
+    worksheet.addRow(headers);
+    for (const row of rows) {
+      worksheet.addRow(headers.map((h) => row[h] ?? ''));
+    }
+    return Buffer.from(await workbook.xlsx.writeBuffer());
   }
 }
