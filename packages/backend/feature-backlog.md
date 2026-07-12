@@ -47,6 +47,13 @@ Legend: 💰 revenue/compliance · 🏥 clinical value · ✨ UX polish
   (`getImmunizationDefaulters`); hooking it to the notifications module would
   directly improve vaccination coverage.
 
+## HR / Scheduling
+- 💰 **Leave accrual idempotency** — the monthly cron has no "last accrued
+  month" marker; a manual re-run (or double cron fire) double-accrues leave.
+  Add `leave_last_accrued_month` on users and skip already-accrued.
+- ✨ **Doctor duty auto-checkout** — duty rows stay ON_DUTY forever if the
+  doctor forgets to check out; a nightly sweep should close them.
+
 ## POS / Payments
 - 💰 **Shift report scoped by time window only** — `getShiftReport` aggregates
   payment splits tenant-wide between openedAt/closedAt; overlapping shifts on

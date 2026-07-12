@@ -651,6 +651,8 @@ export class QueueManagementService {
     doctorId?: string;
     departmentId?: string;
     patientId?: string;
+    /** Encounter being billed — excluded from the follow-up lookback. */
+    excludeEncounterId?: string;
   }): Promise<{ fee: number | null; source: string; metadata?: Record<string, any> }> {
     const { facilityId, doctorId, departmentId, patientId } = opts;
     const tenantId = requireTenantId(opts.tenantId);
@@ -663,6 +665,7 @@ export class QueueManagementService {
         facilityId,
         tenantId,
         patientId,
+        excludeEncounterId: opts.excludeEncounterId,
       });
       if (dfp && dfp.fee != null) {
         return {
@@ -813,6 +816,7 @@ export class QueueManagementService {
         doctorId: assignedDoctorId,
         departmentId,
         patientId,
+        excludeEncounterId: encounterId,
       });
       fee = resolved.fee ?? undefined;
       feeSource = resolved.source;

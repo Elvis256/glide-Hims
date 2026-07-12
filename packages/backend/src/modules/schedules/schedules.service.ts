@@ -146,9 +146,34 @@ export class SchedulesService {
     facilityId: string,
     tenantId?: string,
   ): Promise<DoctorSchedule> {
-    requireTenantId(tenantId);
+    const tid = requireTenantId(tenantId);
     const schedule = await this.findOne(id, facilityId, tenantId);
     Object.assign(schedule, dto);
+
+    // Re-run the same validations as create() — updates could previously
+    // produce inverted time ranges or overlapping schedules
+    if (schedule.startTime >= schedule.endTime) {
+      throw new BadRequestException('Start time must be before end time');
+    }
+    if (schedule.isActive !== false) {
+      const overlap = await this.scheduleRepository
+        .createQueryBuilder('schedule')
+        .where('schedule.doctorId = :doctorId', { doctorId: schedule.doctorId })
+        .andWhere('schedule.dayOfWeek = :dayOfWeek', { dayOfWeek: schedule.dayOfWeek })
+        .andWhere('schedule.facilityId = :facilityId', { facilityId })
+        .andWhere('schedule.isActive = :isActive', { isActive: true })
+        .andWhere('schedule.id != :id', { id })
+        .andWhere('schedule.startTime < :endTime', { endTime: schedule.endTime })
+        .andWhere('schedule.endTime > :startTime', { startTime: schedule.startTime })
+        .andWhere('schedule.tenant_id = :tenantId', { tenantId: tid })
+        .getOne();
+      if (overlap) {
+        throw new ConflictException(
+          `Doctor already has an overlapping schedule on ${this.getDayName(schedule.dayOfWeek)} (${overlap.startTime}–${overlap.endTime}).`,
+        );
+      }
+    }
+
     return this.scheduleRepository.save(schedule);
   }
 

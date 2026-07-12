@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, MoreThanOrEqual, Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { requireTenantId } from '../../common/utils/tenant.util';
 import {
   DoctorFeeProfile,
@@ -10,7 +10,7 @@ import {
 import { Service as ServiceCatalog } from '../../database/entities/service-category.entity';
 import { Department } from '../../database/entities/department.entity';
 import { User } from '../../database/entities/user.entity';
-import { Encounter } from '../../database/entities/encounter.entity';
+import { Encounter, EncounterStatus } from '../../database/entities/encounter.entity';
 import { UpsertDoctorFeeProfileDto } from './doctor-fees.dto';
 
 export interface ResolvedDoctorFee {
@@ -196,18 +196,25 @@ export class DoctorFeesService {
     doctorId: string,
     windowDays: number,
     tenantId?: string,
+    excludeEncounterId?: string,
   ): Promise<boolean> {
     const tid = requireTenantId(tenantId);
     if (!windowDays || windowDays <= 0) return false;
     const since = new Date();
     since.setDate(since.getDate() - windowDays);
-    const where: any = {
-      patientId,
-      attendingProviderId: doctorId,
-      startTime: MoreThanOrEqual(since),
-      tenantId: tid,
-    };
-    const recent = await this.encounterRepo.findOne({ where, order: { startTime: 'DESC' } });
+    const qb = this.encounterRepo
+      .createQueryBuilder('e')
+      .where('e.patient_id = :patientId', { patientId })
+      .andWhere('e.attending_provider_id = :doctorId', { doctorId })
+      .andWhere('e.start_time >= :since', { since })
+      .andWhere('e.tenant_id = :tid', { tid })
+      // A cancelled visit is not a consultation the patient can follow up on
+      .andWhere('e.status != :cancelled', { cancelled: EncounterStatus.CANCELLED });
+    // Never let the visit currently being billed count as its own follow-up
+    if (excludeEncounterId) {
+      qb.andWhere('e.id != :excludeEncounterId', { excludeEncounterId });
+    }
+    const recent = await qb.orderBy('e.start_time', 'DESC').getOne();
     return !!recent;
   }
 
@@ -223,6 +230,8 @@ export class DoctorFeesService {
     tenantId?: string;
     patientId?: string;
     when?: Date;
+    /** The encounter being billed — excluded from the follow-up lookback. */
+    excludeEncounterId?: string;
   }): Promise<ResolvedDoctorFee | null> {
     const { doctorId, departmentId, facilityId, patientId } = opts;
     const tenantId = requireTenantId(opts.tenantId);
@@ -239,7 +248,13 @@ export class DoctorFeesService {
     // Follow-up shortcut — free or reduced
     let isFollowUp = false;
     if (patientId && profile.followUpWindowDays && profile.followUpWindowDays > 0) {
-      isFollowUp = await this.isFollowUp(patientId, doctorId, profile.followUpWindowDays, tenantId);
+      isFollowUp = await this.isFollowUp(
+        patientId,
+        doctorId,
+        profile.followUpWindowDays,
+        tenantId,
+        opts.excludeEncounterId,
+      );
     }
     if (isFollowUp) {
       const ffee = profile.followUpFee != null ? Number(profile.followUpFee) : 0;
