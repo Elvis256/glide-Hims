@@ -45,6 +45,7 @@ import { EfrisService } from '../efris/efris.service';
 import { PosShiftGuardService } from './services/pos-shift-guard.service';
 import { FinanceService } from '../finance/finance.service';
 import { SystemSettingsService } from '../system-settings/system-settings.service';
+import { CacheService } from '../cache/cache.service';
 import {
   CreateReturnDto,
   VoidSaleDto,
@@ -86,6 +87,7 @@ export class PosRetailService {
     private financeService: FinanceService,
     private settingsService: SystemSettingsService,
     private eventEmitter: EventEmitter2,
+    private cacheService: CacheService,
   ) {}
 
   // ─── B1: Returns ──────────────────────────────────────────────────────────
@@ -481,7 +483,20 @@ export class PosRetailService {
     );
   }
 
+  private static readonly PIN_MAX_ATTEMPTS = 5;
+  private static readonly PIN_LOCKOUT_SECONDS = 15 * 60;
+
   async verifyManagerPin(pin: string, tenantId: string): Promise<void> {
+    // Brute-force lockout: a 4-digit PIN is enumerable in <10k tries without
+    // attempt limiting. 5 failures locks PIN verification for 15 minutes.
+    const attemptsKey = `pos:pin-attempts:${tenantId}`;
+    const attempts = (await this.cacheService.get<number>(attemptsKey)) || 0;
+    if (attempts >= PosRetailService.PIN_MAX_ATTEMPTS) {
+      throw new ForbiddenException(
+        'Too many incorrect PIN attempts. Manager PIN is locked for 15 minutes.',
+      );
+    }
+
     const setting = await this.settingsService
       .getByKey('pos.manager_pin', tenantId)
       .catch(() => null);
@@ -489,7 +504,15 @@ export class PosRetailService {
       throw new ForbiddenException('Manager PIN is not configured. Set it in POS Settings.');
     }
     const matches = await bcrypt.compare(pin, setting.value);
-    if (!matches) throw new ForbiddenException('Invalid manager PIN');
+    if (!matches) {
+      await this.cacheService.set(
+        attemptsKey,
+        attempts + 1,
+        PosRetailService.PIN_LOCKOUT_SECONDS,
+      );
+      throw new ForbiddenException('Invalid manager PIN');
+    }
+    await this.cacheService.del(attemptsKey);
   }
 
   // ─── B3: Hold / Park Sale ─────────────────────────────────────────────────

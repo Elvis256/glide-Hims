@@ -267,6 +267,23 @@ export class BedBoardService {
     });
     if (!admission) throw new NotFoundException('Admission not found');
 
+    // If the first night was already billed at admission time (priced
+    // "Bed Charge (first night)" line), exclude one day here so the
+    // discharge invoice doesn't bill it again.
+    const preBilled = await this.admissionRepo.query(
+      `SELECT 1
+         FROM invoice_items ii
+         JOIN invoices i ON i.id = ii.invoice_id
+        WHERE ii.reference_type = 'admission'
+          AND ii.reference_id = $1
+          AND ii.unit_price > 0
+          AND i.tenant_id = $2
+          AND i.status NOT IN ('cancelled', 'written_off')
+        LIMIT 1`,
+      [admissionId, tid],
+    );
+    let daysAlreadyBilled = preBilled.length > 0 ? 1 : 0;
+
     const transfers = await this.transferRepo.find({
       where: { admissionId, tenantId: tid },
       relations: ['fromBed', 'fromWard', 'toBed', 'toWard'],
@@ -297,7 +314,12 @@ export class BedBoardService {
     return segments
       .filter((s) => s.bed && s.to > s.from)
       .map((s) => {
-        const days = Math.max(1, Math.ceil(this.hoursBetween(s.from, s.to) / 24));
+        let days = Math.max(1, Math.ceil(this.hoursBetween(s.from, s.to) / 24));
+        if (daysAlreadyBilled > 0) {
+          const deduct = Math.min(days, daysAlreadyBilled);
+          days -= deduct;
+          daysAlreadyBilled -= deduct;
+        }
         const rate = Number(s.bed!.dailyRate || 0);
         return {
           serviceCode: `BED-${s.bed!.bedNumber}`,
@@ -311,7 +333,7 @@ export class BedBoardService {
           referenceId: admissionId,
         };
       })
-      .filter((line) => line.unitPrice > 0); // skip zero-rate beds (unbilled)
+      .filter((line) => line.unitPrice > 0 && line.quantity > 0); // skip zero-rate beds and fully pre-billed segments
   }
 
   // ── helpers ────────────────────────────────────────────────────────────────

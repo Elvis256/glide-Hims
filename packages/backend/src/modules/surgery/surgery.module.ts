@@ -7,11 +7,13 @@ import { Item } from '../../database/entities/inventory.entity';
 import { SurgeryService } from './surgery.service';
 import { SurgeryController } from './surgery.controller';
 import { InventoryModule } from '../inventory/inventory.module';
+import { BillingModule } from '../billing/billing.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Theatre, SurgeryCase, SurgeryConsumable, Item]),
     forwardRef(() => InventoryModule),
+    forwardRef(() => BillingModule),
   ],
   controllers: [SurgeryController],
   providers: [SurgeryService],

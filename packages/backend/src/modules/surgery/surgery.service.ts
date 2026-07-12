@@ -1,4 +1,13 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Logger,
+  Optional,
+  Inject,
+  forwardRef,
+} from '@nestjs/common';
+import { BillingService } from '../billing/billing.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, In, MoreThanOrEqual, LessThanOrEqual, DataSource } from 'typeorm';
 import { Theatre, TheatreStatus, TheatreType } from '../../database/entities/theatre.entity';
@@ -11,7 +20,12 @@ import {
   SurgeryConsumable,
   ConsumableCategory,
 } from '../../database/entities/surgery-consumable.entity';
-import { Item, StockBalance } from '../../database/entities/inventory.entity';
+import {
+  Item,
+  StockBalance,
+  StockLedger,
+  MovementType,
+} from '../../database/entities/inventory.entity';
 import {
   ScheduleSurgeryDto,
   PreOpChecklistDto,
@@ -43,6 +57,9 @@ export class SurgeryService {
     private inventoryService: InventoryService,
     private dataSource: DataSource,
     private readonly auditLogService: AuditLogService,
+    @Optional()
+    @Inject(forwardRef(() => BillingService))
+    private readonly billingService: BillingService | null,
   ) {}
 
   // ============ THEATRE MANAGEMENT ============
@@ -389,9 +406,10 @@ export class SurgeryService {
     id: string,
     dto: CompleteSurgeryDto,
     tenantId?: string,
+    userId?: string,
   ): Promise<SurgeryCase> {
     const tid = requireTenantId(tenantId);
-    return this.dataSource.transaction(async (manager) => {
+    const completed = await this.dataSource.transaction(async (manager) => {
       const surgeryCase = await manager.findOne(SurgeryCase, {
         where: { id, tenantId: tid },
         lock: { mode: 'pessimistic_write' },
@@ -431,6 +449,60 @@ export class SurgeryService {
 
       return saved;
     });
+
+    // Post billable theatre consumables to the encounter invoice AFTER the
+    // commit (BillingService runs its own transactions). Previously
+    // billableTotal was computed for display but never billed — a straight
+    // revenue leak for theatre supplies. addBillableItem dedups on
+    // (referenceType, referenceId), so re-completing cannot double-bill.
+    await this.postConsumablesToBilling(completed, userId, tenantId);
+
+    return completed;
+  }
+
+  /** Best-effort: bill each billable consumable onto the case's encounter. */
+  private async postConsumablesToBilling(
+    surgeryCase: SurgeryCase,
+    userId?: string,
+    tenantId?: string,
+  ): Promise<void> {
+    if (!this.billingService || !surgeryCase.encounterId || !surgeryCase.patientId) return;
+    try {
+      const consumables = await this.consumableRepo.find({
+        where: {
+          surgeryCaseId: surgeryCase.id,
+          isBillable: true,
+          tenantId: requireTenantId(tenantId),
+        },
+      });
+      for (const c of consumables) {
+        try {
+          await this.billingService.addBillableItem(
+            {
+              encounterId: surgeryCase.encounterId,
+              patientId: surgeryCase.patientId,
+              serviceCode: c.itemCode || `SURG-CONS-${c.id.slice(0, 8)}`,
+              description: `Theatre consumable – ${c.itemName}`,
+              quantity: Number(c.quantityUsed),
+              unitPrice: Number(c.unitCost),
+              chargeType: 'procedure',
+              referenceType: 'surgery_consumable',
+              referenceId: c.id,
+            },
+            userId || 'system',
+            tenantId,
+          );
+        } catch (err: any) {
+          this.logger.warn(
+            `Billing consumable ${c.id} for surgery ${surgeryCase.caseNumber} failed: ${err.message}`,
+          );
+        }
+      }
+    } catch (err: any) {
+      this.logger.warn(
+        `Consumable billing sweep failed for surgery ${surgeryCase.caseNumber}: ${err.message}`,
+      );
+    }
   }
 
   async dischargeFromRecovery(id: string, tenantId?: string): Promise<SurgeryCase> {
@@ -802,7 +874,66 @@ export class SurgeryService {
 
     const consumable = await this.consumableRepo.findOne({ where });
     if (!consumable) throw new NotFoundException('Consumable not found');
-    await this.consumableRepo.softRemove(consumable);
+
+    // Already billed onto an invoice? Deleting would leave an orphaned
+    // charge — the invoice line must be removed first.
+    const billed = await this.dataSource.query(
+      `SELECT 1
+         FROM invoice_items ii
+         JOIN invoices i ON i.id = ii.invoice_id
+        WHERE ii.reference_type = 'surgery_consumable'
+          AND ii.reference_id = $1
+          AND i.tenant_id = $2
+          AND i.status NOT IN ('cancelled', 'written_off')
+        LIMIT 1`,
+      [id, tid],
+    );
+    if (billed.length > 0) {
+      throw new BadRequestException(
+        'This consumable has already been billed. Remove the invoice item first, then delete.',
+      );
+    }
+
+    await this.dataSource.transaction(async (manager) => {
+      // Return the stock that was deducted — deleting used to leave
+      // inventory permanently short by the consumed quantity
+      if (consumable.isDeductedFromStock) {
+        const surgeryCase = await manager.findOne(SurgeryCase, {
+          where: { id: consumable.surgeryCaseId, tenantId: tid },
+        });
+        const facilityId = surgeryCase?.facilityId;
+        if (facilityId) {
+          const qty = Number(consumable.quantityUsed);
+          const stockBalance = await manager.findOne(StockBalance, {
+            where: { itemId: consumable.itemId, facilityId, tenantId: tid },
+            lock: { mode: 'pessimistic_write' },
+          });
+          if (stockBalance) {
+            stockBalance.totalQuantity = Number(stockBalance.totalQuantity) + qty;
+            stockBalance.availableQuantity = Number(stockBalance.availableQuantity) + qty;
+            stockBalance.lastMovementAt = new Date();
+            await manager.save(StockBalance, stockBalance);
+          }
+          await manager.save(
+            StockLedger,
+            manager.create(StockLedger, {
+              itemId: consumable.itemId,
+              movementType: MovementType.RETURN,
+              quantity: qty,
+              balanceAfter: stockBalance ? Number(stockBalance.totalQuantity) : qty,
+              referenceType: 'surgery_consumable_delete',
+              referenceId: id,
+              notes: 'Stock returned on surgery consumable deletion',
+              createdById: 'system',
+              facilityId,
+              tenantId: tid,
+            }),
+          );
+        }
+      }
+
+      await manager.softRemove(SurgeryConsumable, consumable);
+    });
   }
 
   async getConsumablesReport(

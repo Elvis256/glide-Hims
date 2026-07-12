@@ -149,7 +149,7 @@ export class SurgeryController {
     @Body() dto: CompleteSurgeryDto,
     @Request() req: any,
   ) {
-    return this.surgeryService.completeSurgery(id, dto, req.user?.tenantId);
+    return this.surgeryService.completeSurgery(id, dto, req.user?.tenantId, req.user?.id);
   }
 
   @Put('cases/:id/discharge-recovery')
