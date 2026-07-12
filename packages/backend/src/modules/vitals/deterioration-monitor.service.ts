@@ -129,12 +129,17 @@ export class DeteriorationMonitorService {
     try {
       const sixtyMinAgo = new Date(Date.now() - 60 * 60 * 1000);
 
-      // Find WAITING queues created > 60 min ago
+      // Find WAITING queues created > 60 min ago. Skip entries alerted in the
+      // last hour (lastEscalatedAt) — this cron runs every 10 minutes and used
+      // to re-notify the same nurses about the same patient on every tick.
       const staleQueues = await this.queueRepo
         .createQueryBuilder('q')
         .where('q.status = :status', { status: QueueStatus.WAITING })
         .andWhere('q.created_at < :cutoff', { cutoff: sixtyMinAgo })
         .andWhere('q.on_hold = false')
+        .andWhere('(q.last_escalated_at IS NULL OR q.last_escalated_at < :cutoff)', {
+          cutoff: sixtyMinAgo,
+        })
         .getMany();
 
       if (staleQueues.length === 0) return;
@@ -187,6 +192,11 @@ export class DeteriorationMonitorService {
         } catch (e: any) {
           this.logger.warn(`Stale patient notification failed: ${e?.message}`);
         }
+
+        // Mark as alerted so the next ticks don't re-notify for an hour.
+        await this.queueRepo
+          .update(queue.id, { lastEscalatedAt: new Date() })
+          .catch((e) => this.logger.warn(`Failed to stamp lastEscalatedAt: ${e?.message}`));
       }
     } catch (err: any) {
       this.logger.error(`Stale waiting check failed: ${err?.message}`, err?.stack);
