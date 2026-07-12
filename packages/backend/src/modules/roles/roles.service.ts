@@ -266,7 +266,12 @@ export class RolesService {
     }
   }
 
-  async setParentRole(id: string, parentRoleId: string | null, tenantId?: string): Promise<Role> {
+  async setParentRole(
+    id: string,
+    parentRoleId: string | null,
+    tenantId?: string,
+    caller?: RoleMutationCaller,
+  ): Promise<Role> {
     const role = await this.findOneRole(id, tenantId);
     this.assertMutable(role, tenantId);
 
@@ -278,6 +283,13 @@ export class RolesService {
       if (parentRole.id === role.id) {
         throw new ConflictException('A role cannot be its own parent');
       }
+
+      // SECURITY: parenting grants the role every permission the parent
+      // carries (incl. inherited). Without this check, a caller with
+      // roles.update could parent a role they hold to a system role like
+      // Super Admin — full privilege escalation.
+      const parentPerms = await this.resolveRolePermissions(parentRole.id);
+      await this.assertCallerCanGrant(caller, parentPerms.all);
 
       // Prevent cycles: walk up from parent to ensure we don't hit this role
       let currentId = parentRoleId;

@@ -131,7 +131,12 @@ export class RolesController {
     @Body() body: SetParentRoleDto,
     @Request() req: any,
   ) {
-    const role = await this.rolesService.setParentRole(id, body.parentRoleId, req.user?.tenantId);
+    const role = await this.rolesService.setParentRole(
+      id,
+      body.parentRoleId,
+      req.user?.tenantId,
+      req.user,
+    );
     return { message: 'Parent role updated', data: role };
   }
 
