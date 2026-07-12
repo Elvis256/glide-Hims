@@ -94,7 +94,13 @@ export class ReferralsController {
     @Body() dto: AcceptReferralDto,
     @Request() req: any,
   ) {
-    return this.referralsService.accept(id, dto, req.user.sub, req.user?.tenantId);
+    return this.referralsService.accept(
+      id,
+      dto,
+      req.user.sub,
+      req.user?.tenantId,
+      req.user?.facilityId || req.headers['x-facility-id'],
+    );
   }
 
   @Post(':id/reject')
@@ -104,7 +110,13 @@ export class ReferralsController {
     @Body() dto: RejectReferralDto,
     @Request() req: any,
   ) {
-    return this.referralsService.reject(id, dto, req.user.sub, req.user?.tenantId);
+    return this.referralsService.reject(
+      id,
+      dto,
+      req.user.sub,
+      req.user?.tenantId,
+      req.user?.facilityId || req.headers['x-facility-id'],
+    );
   }
 
   @Post(':id/complete')
@@ -114,7 +126,12 @@ export class ReferralsController {
     @Body() dto: CompleteReferralDto,
     @Request() req: any,
   ) {
-    return this.referralsService.complete(id, dto, req.user?.tenantId);
+    return this.referralsService.complete(
+      id,
+      dto,
+      req.user?.tenantId,
+      req.user?.facilityId || req.headers['x-facility-id'],
+    );
   }
 
   @Post(':id/cancel')
@@ -124,6 +141,11 @@ export class ReferralsController {
     @Body('reason') reason: string,
     @Request() req: any,
   ) {
-    return this.referralsService.cancel(id, reason, req.user?.tenantId);
+    return this.referralsService.cancel(
+      id,
+      reason,
+      req.user?.tenantId,
+      req.user?.facilityId || req.headers['x-facility-id'],
+    );
   }
 }

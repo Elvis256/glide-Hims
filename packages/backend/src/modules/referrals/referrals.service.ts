@@ -25,23 +25,31 @@ export class ReferralsService {
     tenantId?: string,
   ): Promise<Referral> {
     const tid = requireTenantId(tenantId);
-    const referralNumber = await this.generateReferralNumber(facilityId);
 
     // Calculate expiry date (default 30 days)
     const expiryDate = new Date();
     expiryDate.setDate(expiryDate.getDate() + 30);
 
-    const referral = this.referralRepository.create({
-      ...dto,
-      referralNumber,
-      fromFacilityId: facilityId,
-      referredById: userId,
-      expiryDate,
-      status: ReferralStatus.PENDING,
-    });
-    referral.tenantId = tid;
+    // Serialize number generation per tenant/month: MAX+1 with no lock (and
+    // no tenant filter) raced under concurrent creates.
+    return this.referralRepository.manager.transaction(async (manager) => {
+      await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+        `referral_num_${tid}`,
+      ]);
+      const referralNumber = await this.generateReferralNumber(tid, manager);
 
-    return this.referralRepository.save(referral);
+      const referral = manager.create(Referral, {
+        ...dto,
+        referralNumber,
+        fromFacilityId: facilityId,
+        referredById: userId,
+        expiryDate,
+        status: ReferralStatus.PENDING,
+        tenantId: tid,
+      });
+
+      return manager.save(Referral, referral);
+    });
   }
 
   async findAll(
@@ -150,13 +158,37 @@ export class ReferralsService {
     });
   }
 
+  /**
+   * Receiving-side actions (accept/reject/complete) must come from the
+   * facility the referral is addressed to; cancel must come from either end.
+   * Without this, any user in a multi-facility tenant could act on another
+   * facility's referrals.
+   */
+  private assertFacilitySide(
+    referral: Referral,
+    facilityId: string | undefined,
+    side: 'to' | 'from' | 'either',
+  ): void {
+    if (!facilityId) return; // single-facility deployments have no context to check
+    const isTo = referral.toFacilityId === facilityId;
+    const isFrom = referral.fromFacilityId === facilityId;
+    const ok = side === 'to' ? isTo : side === 'from' ? isFrom : isTo || isFrom;
+    if (!ok) {
+      throw new BadRequestException(
+        `This referral is not addressed ${side === 'to' ? 'to' : 'from'} your facility`,
+      );
+    }
+  }
+
   async accept(
     id: string,
     dto: AcceptReferralDto,
     userId: string,
     tenantId?: string,
+    facilityId?: string,
   ): Promise<Referral> {
     const referral = await this.findOne(id, tenantId);
+    this.assertFacilitySide(referral, facilityId, 'to');
 
     if (referral.status !== ReferralStatus.PENDING) {
       throw new BadRequestException('Only pending referrals can be accepted');
@@ -184,8 +216,10 @@ export class ReferralsService {
     dto: RejectReferralDto,
     userId: string,
     tenantId?: string,
+    facilityId?: string,
   ): Promise<Referral> {
     const referral = await this.findOne(id, tenantId);
+    this.assertFacilitySide(referral, facilityId, 'to');
 
     if (referral.status !== ReferralStatus.PENDING) {
       throw new BadRequestException('Only pending referrals can be rejected');
@@ -197,8 +231,14 @@ export class ReferralsService {
     return this.referralRepository.save(referral);
   }
 
-  async complete(id: string, dto: CompleteReferralDto, tenantId?: string): Promise<Referral> {
+  async complete(
+    id: string,
+    dto: CompleteReferralDto,
+    tenantId?: string,
+    facilityId?: string,
+  ): Promise<Referral> {
     const referral = await this.findOne(id, tenantId);
+    this.assertFacilitySide(referral, facilityId, 'to');
 
     if (referral.status !== ReferralStatus.ACCEPTED) {
       throw new BadRequestException('Only accepted referrals can be completed');
@@ -217,8 +257,14 @@ export class ReferralsService {
     return this.referralRepository.save(referral);
   }
 
-  async cancel(id: string, reason: string, tenantId?: string): Promise<Referral> {
+  async cancel(
+    id: string,
+    reason: string,
+    tenantId?: string,
+    facilityId?: string,
+  ): Promise<Referral> {
     const referral = await this.findOne(id, tenantId);
+    this.assertFacilitySide(referral, facilityId, 'either');
 
     if (referral.status === ReferralStatus.COMPLETED) {
       throw new BadRequestException('Completed referrals cannot be cancelled');
@@ -278,15 +324,19 @@ export class ReferralsService {
     return { incoming, outgoing, completed, pending };
   }
 
-  private async generateReferralNumber(facilityId: string): Promise<string> {
+  private async generateReferralNumber(
+    tenantId: string,
+    manager: import('typeorm').EntityManager,
+  ): Promise<string> {
     const today = new Date();
     const year = today.getFullYear();
     const month = String(today.getMonth() + 1).padStart(2, '0');
     const prefix = `REF${year}${month}`;
 
-    const lastReferral = await this.referralRepository
-      .createQueryBuilder('referral')
+    const lastReferral = await manager
+      .createQueryBuilder(Referral, 'referral')
       .where('referral.referral_number LIKE :prefix', { prefix: `${prefix}%` })
+      .andWhere('referral.tenant_id = :tenantId', { tenantId })
       .orderBy('referral.referral_number', 'DESC')
       .getOne();
 
