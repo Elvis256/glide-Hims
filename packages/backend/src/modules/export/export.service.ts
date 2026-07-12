@@ -23,6 +23,8 @@ interface ExportResult {
 @Injectable()
 export class ExportService {
   private readonly logger = new Logger(ExportService.name);
+  /** Hard cap so a huge table cannot exhaust memory building one workbook. */
+  private static readonly MAX_EXPORT_ROWS = 50_000;
 
   constructor(
     @InjectRepository(User)
@@ -130,6 +132,7 @@ export class ExportService {
       where,
       relations: ['userRoles', 'userRoles.role', 'department'],
       order: { createdAt: 'DESC' },
+      take: ExportService.MAX_EXPORT_ROWS,
     });
 
     const rows = users.map((u) => ({
@@ -159,6 +162,7 @@ export class ExportService {
       where,
       relations: ['user'],
       order: { createdAt: 'DESC' },
+      take: ExportService.MAX_EXPORT_ROWS,
     });
 
     const rows = logs.map((l) => ({
@@ -189,6 +193,7 @@ export class ExportService {
     const patients = await this.patientRepository.find({
       where,
       order: { createdAt: 'DESC' },
+      take: ExportService.MAX_EXPORT_ROWS,
     });
 
     const rows = patients.map((p) => ({
@@ -221,6 +226,7 @@ export class ExportService {
       where,
       relations: ['patient'],
       order: { createdAt: 'DESC' },
+      take: ExportService.MAX_EXPORT_ROWS,
     });
 
     const rows = invoices.map((inv) => ({
@@ -252,6 +258,7 @@ export class ExportService {
       where,
       relations: ['itemCategory'],
       order: { name: 'ASC' },
+      take: ExportService.MAX_EXPORT_ROWS,
     });
 
     const rows = items.map((it) => ({
@@ -275,9 +282,12 @@ export class ExportService {
     searchFields: (keyof T)[],
   ): FindOptionsWhere<T> | FindOptionsWhere<T>[] {
     const base: Record<string, any> = {};
-    if (tenantId) {
-      base.tenantId = tenantId;
+    // Required: users/audit_logs are platform tables with no RLS policy, so
+    // a tenant-less caller would otherwise export EVERY tenant's data
+    if (!tenantId) {
+      throw new BadRequestException('Tenant context required for exports');
     }
+    base.tenantId = tenantId;
     if (filters.startDate) {
       base.createdAt = MoreThanOrEqual(new Date(filters.startDate));
     }
@@ -329,9 +339,17 @@ export class ExportService {
     return undefined;
   }
 
+  // Leading =, +, -, @, tab or CR turns a cell into a formula when the CSV
+  // is opened in Excel/LibreOffice — classic CSV injection via patient
+  // names, usernames, etc. Neutralize with a leading apostrophe.
+  private static readonly FORMULA_LEADERS = /^[=+\-@\t\r]/;
+
   private generateCsv(headers: string[], rows: Record<string, any>[]): string {
     const escapeCsv = (val: any): string => {
-      const str = val == null ? '' : String(val);
+      let str = val == null ? '' : String(val);
+      if (typeof val === 'string' && ExportService.FORMULA_LEADERS.test(str)) {
+        str = `'${str}`;
+      }
       if (str.includes(',') || str.includes('"') || str.includes('\n')) {
         return `"${str.replace(/"/g, '""')}"`;
       }
@@ -354,7 +372,14 @@ export class ExportService {
     const worksheet = workbook.addWorksheet(sheetName.slice(0, 31));
     worksheet.addRow(headers);
     for (const row of rows) {
-      worksheet.addRow(headers.map((h) => row[h] ?? ''));
+      worksheet.addRow(
+        headers.map((h) => {
+          const v = row[h] ?? '';
+          // Same formula-injection guard as CSV: ExcelJS writes plain strings
+          // but a leading = can still be interpreted on re-save/convert
+          return typeof v === 'string' && ExportService.FORMULA_LEADERS.test(v) ? `'${v}` : v;
+        }),
+      );
     }
     return Buffer.from(await workbook.xlsx.writeBuffer());
   }
