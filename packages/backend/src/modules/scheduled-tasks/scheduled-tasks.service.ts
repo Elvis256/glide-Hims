@@ -408,7 +408,7 @@ export class ScheduledTasksService {
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
       const result = await this.batchStockRepo.manager.query(
-        `DELETE FROM sync_conflicts WHERE status = 'resolved' AND updated_at < $1`,
+        `DELETE FROM sync_conflicts WHERE resolution <> 'pending' AND updated_at < $1`,
         [thirtyDaysAgo],
       );
 
