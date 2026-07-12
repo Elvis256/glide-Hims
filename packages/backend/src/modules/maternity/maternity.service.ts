@@ -65,17 +65,31 @@ export class MaternityService {
 
   // ============ ANC REGISTRATION ============
 
-  private async generateAncNumber(facilityId: string, tenantId?: string): Promise<string> {
-    const tid = requireTenantId(tenantId);
+  /**
+   * MAX+1 per TENANT under an advisory lock. The old version counted per
+   * FACILITY but the number carries no facility component — two facilities
+   * in one tenant produced the same ANC number.
+   */
+  private async generateAncNumber(
+    tid: string,
+    manager: import('typeorm').EntityManager,
+  ): Promise<string> {
     const year = new Date().getFullYear();
-    const count = await this.ancRepo.count({
-      where: {
-        facilityId,
-        createdAt: MoreThanOrEqual(new Date(`${year}-01-01`)),
-        tenantId: tid,
-      },
-    });
-    return `ANC${year}-${String(count + 1).padStart(5, '0')}`;
+    const prefix = `ANC${year}-`;
+
+    await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+      `anc_number:${tid}:${year}`,
+    ]);
+
+    const last = await manager
+      .createQueryBuilder(AntenatalRegistration, 'r')
+      .where('r.anc_number LIKE :prefix', { prefix: `${prefix}%` })
+      .andWhere('r.tenant_id = :tid', { tid })
+      .orderBy('r.anc_number', 'DESC')
+      .getOne();
+
+    const seq = last ? (parseInt(last.ancNumber.slice(prefix.length), 10) || 0) + 1 : 1;
+    return `${prefix}${String(seq).padStart(5, '0')}`;
   }
 
   private calculateEdd(lmpDate: Date): Date {
@@ -96,13 +110,29 @@ export class MaternityService {
     userId: string,
     tenantId?: string,
   ): Promise<AntenatalRegistration> {
+    const tid = requireTenantId(tenantId);
     const lmpDate = new Date(dto.lmpDate);
     const edd = this.calculateEdd(lmpDate);
     const gestationalAge = this.calculateGestationalAge(lmpDate);
 
-    const ancNumber = await this.generateAncNumber(dto.facilityId, tenantId);
+    const saved = await this.dataSource.transaction(async (manager) => {
+      // Serialize per patient so two concurrent registrations can't both pass
+      await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+        `anc_reg:${tid}:${dto.patientId}`,
+      ]);
 
-    const registration = this.ancRepo.create({
+      const activePregnancy = await manager.findOne(AntenatalRegistration, {
+        where: { patientId: dto.patientId, status: PregnancyStatus.ACTIVE, tenantId: tid },
+      });
+      if (activePregnancy) {
+        throw new BadRequestException(
+          `Patient already has an active pregnancy (${activePregnancy.ancNumber}). Close it before registering a new one.`,
+        );
+      }
+
+      const ancNumber = await this.generateAncNumber(tid, manager);
+
+      const registration = manager.create(AntenatalRegistration, {
       ancNumber,
       patientId: dto.patientId,
       facilityId: dto.facilityId,
@@ -124,10 +154,11 @@ export class MaternityService {
       registeredById: userId,
       registrationDate: new Date(),
       status: PregnancyStatus.ACTIVE,
-    });
-    registration.tenantId = requireTenantId(tenantId);
+      });
+      registration.tenantId = tid;
 
-    const saved = await this.ancRepo.save(registration);
+      return manager.save(registration);
+    });
 
     this.auditLogService
       .log({
@@ -220,18 +251,24 @@ export class MaternityService {
     userId: string,
     tenantId?: string,
   ): Promise<AntenatalVisit> {
-    const regWhere: any = { id: dto.registrationId };
-    regWhere.tenantId = requireTenantId(tenantId);
+    const tid = requireTenantId(tenantId);
+    const savedVisit = await this.dataSource.transaction(async (manager) => {
+      // Serialize per registration so concurrent visits get distinct numbers
+      await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+        `anc_visit:${tid}:${dto.registrationId}`,
+      ]);
 
-    const registration = await this.ancRepo.findOne({ where: regWhere });
-    if (!registration) throw new NotFoundException('ANC registration not found');
+      const registration = await manager.findOne(AntenatalRegistration, {
+        where: { id: dto.registrationId, tenantId: tid },
+      });
+      if (!registration) throw new NotFoundException('ANC registration not found');
 
-    // Get visit number
-    const visitCount = await this.visitRepo.count({
-      where: { registrationId: dto.registrationId, tenantId: requireTenantId(tenantId) },
-    });
+      // Get visit number
+      const visitCount = await manager.count(AntenatalVisit, {
+        where: { registrationId: dto.registrationId, tenantId: tid },
+      });
 
-    const visit = this.visitRepo.create({
+      const visit = manager.create(AntenatalVisit, {
       registrationId: dto.registrationId,
       visitNumber: visitCount + 1,
       visitDate: new Date(dto.visitDate),
@@ -260,10 +297,11 @@ export class MaternityService {
       plan: dto.plan,
       nextVisitDate: dto.nextVisitDate ? new Date(dto.nextVisitDate) : undefined,
       seenById: userId,
-    });
-    visit.tenantId = requireTenantId(tenantId);
+      });
+      visit.tenantId = tid;
 
-    const savedVisit = await this.visitRepo.save(visit);
+      return manager.save(visit);
+    });
 
     this.auditLogService
       .log({
@@ -292,49 +330,89 @@ export class MaternityService {
 
   // ============ LABOUR & DELIVERY ============
 
-  private async generateLabourNumber(facilityId: string, tenantId?: string): Promise<string> {
+  /**
+   * MAX+1 per TENANT under an advisory lock (old version counted per facility
+   * with no facility component in the number — same-tenant collision).
+   */
+  private async generateLabourNumber(
+    tid: string,
+    manager: import('typeorm').EntityManager,
+  ): Promise<string> {
     const today = new Date();
-    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+    const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(
+      today.getDate(),
+    ).padStart(2, '0')}`;
+    const prefix = `LBR${dateStr}-`;
 
-    const startOfDay = new Date(today);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(today);
-    endOfDay.setHours(23, 59, 59, 999);
+    await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+      `labour_number:${tid}:${dateStr}`,
+    ]);
 
-    const count = await this.labourRepo.count({
-      where: {
-        facilityId,
-        createdAt: Between(startOfDay, endOfDay),
-        tenantId: requireTenantId(tenantId),
-      },
-    });
+    const last = await manager
+      .createQueryBuilder(LabourRecord, 'l')
+      .where('l.labour_number LIKE :prefix', { prefix: `${prefix}%` })
+      .andWhere('l.tenant_id = :tid', { tid })
+      .orderBy('l.labour_number', 'DESC')
+      .getOne();
 
-    return `LBR${dateStr}-${String(count + 1).padStart(4, '0')}`;
+    const seq = last ? (parseInt(last.labourNumber.slice(prefix.length), 10) || 0) + 1 : 1;
+    return `${prefix}${String(seq).padStart(4, '0')}`;
   }
 
   async admitLabour(dto: AdmitLabourDto, userId: string, tenantId?: string): Promise<LabourRecord> {
-    const registration = await this.ancRepo.findOne({
-      where: { id: dto.registrationId, tenantId: requireTenantId(tenantId) },
+    const tid = requireTenantId(tenantId);
+    const savedLabour = await this.dataSource.transaction(async (manager) => {
+      // Serialize per registration so two concurrent admits can't both pass
+      await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+        `labour_admit:${tid}:${dto.registrationId}`,
+      ]);
+
+      const registration = await manager.findOne(AntenatalRegistration, {
+        where: { id: dto.registrationId, tenantId: tid },
+      });
+      if (!registration) throw new NotFoundException('ANC registration not found');
+      if (registration.status !== PregnancyStatus.ACTIVE) {
+        throw new BadRequestException(
+          `Cannot admit labour: pregnancy status is '${registration.status}'`,
+        );
+      }
+
+      const existingLabour = await manager.findOne(LabourRecord, {
+        where: {
+          registrationId: dto.registrationId,
+          status: In([
+            LabourStatus.ADMITTED,
+            LabourStatus.FIRST_STAGE,
+            LabourStatus.SECOND_STAGE,
+            LabourStatus.THIRD_STAGE,
+          ]),
+          tenantId: tid,
+        },
+      });
+      if (existingLabour) {
+        throw new BadRequestException(
+          `An active labour record already exists (${existingLabour.labourNumber})`,
+        );
+      }
+
+      const labourNumber = await this.generateLabourNumber(tid, manager);
+
+      const labour = manager.create(LabourRecord, {
+        labourNumber,
+        registrationId: dto.registrationId,
+        facilityId: dto.facilityId,
+        gestationalAgeAtDelivery: dto.gestationalAgeAtDelivery,
+        admissionTime: new Date(),
+        admissionNotes: dto.admissionNotes,
+        bpSystolic: dto.bpSystolic,
+        bpDiastolic: dto.bpDiastolic,
+        cervicalDilation: dto.cervicalDilation,
+        status: LabourStatus.ADMITTED,
+      });
+      labour.tenantId = tid;
+
+      return manager.save(labour);
     });
-    if (!registration) throw new NotFoundException('ANC registration not found');
-
-    const labourNumber = await this.generateLabourNumber(dto.facilityId, tenantId);
-
-    const labour = this.labourRepo.create({
-      labourNumber,
-      registrationId: dto.registrationId,
-      facilityId: dto.facilityId,
-      gestationalAgeAtDelivery: dto.gestationalAgeAtDelivery,
-      admissionTime: new Date(),
-      admissionNotes: dto.admissionNotes,
-      bpSystolic: dto.bpSystolic,
-      bpDiastolic: dto.bpDiastolic,
-      cervicalDilation: dto.cervicalDilation,
-      status: LabourStatus.ADMITTED,
-    });
-    labour.tenantId = requireTenantId(tenantId);
-
-    const savedLabour = await this.labourRepo.save(labour);
 
     this.auditLogService
       .log({
@@ -375,6 +453,15 @@ export class MaternityService {
         lock: { mode: 'pessimistic_write' },
       });
       if (!labour) throw new NotFoundException('Labour record not found');
+      if (
+        labour.status === LabourStatus.DELIVERED ||
+        labour.status === LabourStatus.POSTPARTUM ||
+        labour.status === LabourStatus.DISCHARGED
+      ) {
+        throw new BadRequestException(
+          `Cannot update labour progress: labour is already '${labour.status}'`,
+        );
+      }
 
       if (dto.cervicalDilation !== undefined) labour.cervicalDilation = dto.cervicalDilation;
       if (dto.station !== undefined) labour.station = dto.station;
@@ -407,12 +494,16 @@ export class MaternityService {
       const labourRepoTx = manager.getRepository(LabourRecord);
       const ancRepoTx = manager.getRepository(AntenatalRegistration);
 
+      // Lock WITHOUT relations (FOR UPDATE cannot be applied to the nullable
+      // side of the outer joins the relations would add)
       const labour = await labourRepoTx.findOne({
         where: { id, tenantId: requireTenantId(tenantId) },
-        relations: ['registration', 'registration.patient', 'facility', 'deliveredBy'],
         lock: { mode: 'pessimistic_write' },
       });
       if (!labour) throw new NotFoundException('Labour record not found');
+      if (labour.status === LabourStatus.DELIVERED) {
+        throw new BadRequestException('Delivery has already been recorded for this labour');
+      }
 
       labour.deliveryTime = new Date();
       labour.deliveryMode = dto.deliveryMode;
@@ -459,9 +550,23 @@ export class MaternityService {
     });
     if (!labour) throw new NotFoundException('Labour record not found');
 
+    const babyNumber = dto.babyNumber || 1;
+    const duplicate = await this.outcomeRepo.findOne({
+      where: {
+        labourRecordId: dto.labourRecordId,
+        babyNumber,
+        tenantId: requireTenantId(tenantId),
+      },
+    });
+    if (duplicate) {
+      throw new BadRequestException(
+        `An outcome for baby #${babyNumber} is already recorded on this labour`,
+      );
+    }
+
     const outcome = this.outcomeRepo.create({
       labourRecordId: dto.labourRecordId,
-      babyNumber: dto.babyNumber || 1,
+      babyNumber,
       timeOfBirth: labour.deliveryTime || new Date(),
       outcome: dto.outcome,
       sex: dto.sex,
@@ -528,9 +633,16 @@ export class MaternityService {
     };
     dueSoonWhere.tenantId = requireTenantId(tenantId);
 
+    // All pre-delivery stages count as active — filtering only ADMITTED made
+    // patients vanish from the board once progress was first recorded
     const activeLabourWhere: any = {
       facilityId,
-      status: LabourStatus.ADMITTED,
+      status: In([
+        LabourStatus.ADMITTED,
+        LabourStatus.FIRST_STAGE,
+        LabourStatus.SECOND_STAGE,
+        LabourStatus.THIRD_STAGE,
+      ]),
     };
     activeLabourWhere.tenantId = requireTenantId(tenantId);
 
@@ -575,7 +687,12 @@ export class MaternityService {
   async getActiveLabours(facilityId: string, tenantId?: string): Promise<LabourRecord[]> {
     const where: any = {
       facilityId,
-      status: LabourStatus.ADMITTED,
+      status: In([
+        LabourStatus.ADMITTED,
+        LabourStatus.FIRST_STAGE,
+        LabourStatus.SECOND_STAGE,
+        LabourStatus.THIRD_STAGE,
+      ]),
     };
     where.tenantId = requireTenantId(tenantId);
 
@@ -608,6 +725,19 @@ export class MaternityService {
       relations: ['labourRecord'],
     });
     if (!deliveryOutcome) throw new NotFoundException('Delivery outcome not found');
+
+    const existingVisit = await this.pncRepo.findOne({
+      where: {
+        deliveryOutcomeId: dto.deliveryOutcomeId,
+        visitNumber: dto.visitNumber,
+        tenantId: requireTenantId(tenantId),
+      },
+    });
+    if (existingVisit) {
+      throw new BadRequestException(
+        `PNC visit #${dto.visitNumber} is already recorded for this delivery`,
+      );
+    }
 
     const deliveryDate = deliveryOutcome.timeOfBirth;
     const visitDate = new Date(dto.visitDate);
@@ -845,6 +975,13 @@ export class MaternityService {
       where: { id: deliveryOutcomeId, tenantId: requireTenantId(tenantId) },
     });
     if (!delivery) throw new NotFoundException('Delivery outcome not found');
+
+    // Idempotent: calling twice must not duplicate the EPI schedule
+    const existing = await this.immunizationRepo.find({
+      where: { deliveryOutcomeId, tenantId: requireTenantId(tenantId) },
+      order: { ageInWeeksDue: 'ASC', vaccineName: 'ASC' },
+    });
+    if (existing.length > 0) return existing;
 
     const birthDate = delivery.timeOfBirth;
     const schedules: ImmunizationSchedule[] = [];
