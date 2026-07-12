@@ -179,6 +179,8 @@ export class BiometricsService {
               'X-API-Key': fingerprintApiKey,
               'Content-Type': 'application/json',
             },
+            // A hung matcher must not stall login/verification requests
+            timeout: 15_000,
           },
         ),
       );

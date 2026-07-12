@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import {
   MasterDataVersion,
   MasterDataApprovalRule,
@@ -179,7 +179,14 @@ export class MdmService {
     const version = await this.getVersion(id, tenantId);
 
     if (version.approvalStatus !== ApprovalStatus.PENDING) {
-      throw new Error('Version is not pending approval');
+      throw new BadRequestException('Version is not pending approval');
+    }
+
+    // Maker-checker: the user who made the change cannot approve it
+    if (version.changedBy && version.changedBy === approvedBy) {
+      throw new BadRequestException(
+        'Segregation of duties: the user who made the change cannot approve it',
+      );
     }
 
     version.approvalStatus = ApprovalStatus.APPROVED;
@@ -199,7 +206,7 @@ export class MdmService {
     const version = await this.getVersion(id, tenantId);
 
     if (version.approvalStatus !== ApprovalStatus.PENDING) {
-      throw new Error('Version is not pending approval');
+      throw new BadRequestException('Version is not pending approval');
     }
 
     version.approvalStatus = ApprovalStatus.REJECTED;
@@ -274,11 +281,12 @@ export class MdmService {
       if (facilityRule) return facilityRule;
     }
 
-    // Fall back to global rule
+    // Fall back to the GLOBAL rule (facility_id IS NULL). `undefined` here
+    // was silently dropped by TypeORM, matching any facility's rule instead.
     return this.ruleRepository.findOne({
       where: {
         entityType,
-        facilityId: undefined,
+        facilityId: IsNull(),
         isActive: true,
         tenantId: tid,
       },

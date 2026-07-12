@@ -13,7 +13,7 @@ import { Patient } from '../../database/entities/patient.entity';
 import { AuditLog } from '../../database/entities/audit-log.entity';
 import { Invoice } from '../../database/entities/invoice.entity';
 import { Appointment } from '../appointments/entities/appointment.entity';
-import { LabSample } from '../../database/entities/lab-sample.entity';
+import { LabSample, SampleStatus } from '../../database/entities/lab-sample.entity';
 import { Prescription } from '../../database/entities/prescription.entity';
 import { CacheService } from '../cache/cache.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -21,6 +21,7 @@ import { hashPii } from '../../common/crypto/pii-crypto';
 
 const OTP_TTL_SECONDS = 5 * 60;
 const OTP_MAX_ATTEMPTS = 5;
+const OTP_RESEND_COOLDOWN_SECONDS = 60;
 const PORTAL_TOKEN_TTL = '7d';
 
 interface OtpEntry {
@@ -57,6 +58,16 @@ export class PatientPortalService {
 
   async requestOtp(phone: string): Promise<{ ok: true; expiresInSeconds: number }> {
     const phoneHash = hashPii(phone, 'phone');
+
+    // Resend cooldown: without it the endpoint can be looped to SMS-bomb a
+    // patient's phone (harassment + per-message cost). Applied before the
+    // patient lookup so unknown numbers behave identically (no presence leak).
+    const cooldownKey = `portal:otp:cooldown:${phoneHash}`;
+    if (await this.cache.get(cooldownKey)) {
+      return { ok: true, expiresInSeconds: OTP_TTL_SECONDS };
+    }
+    await this.cache.set(cooldownKey, 1, OTP_RESEND_COOLDOWN_SECONDS);
+
     const patient = await this.patients.findOne({ where: { phoneHash } });
     if (!patient) {
       // Do not leak presence — pretend success and short-circuit.
@@ -184,7 +195,9 @@ export class PatientPortalService {
       .leftJoinAndSelect('s.results', 'r')
       .leftJoinAndSelect('s.test', 't')
       .where('s.patientId = :patientId', { patientId })
-      .andWhere('s.status = :status', { status: 'COMPLETED' })
+      // NB: enum value is lowercase — the old uppercase literal matched
+      // nothing, so patients always saw an empty results list
+      .andWhere('s.status = :status', { status: SampleStatus.COMPLETED })
       .orderBy('s.updatedAt', 'DESC')
       .limit(100)
       .getMany();
