@@ -47,6 +47,16 @@ Legend: 💰 revenue/compliance · 🏥 clinical value · ✨ UX polish
   (`getImmunizationDefaulters`); hooking it to the notifications module would
   directly improve vaccination coverage.
 
+## Portal / Biometrics
+- 🏥 **Biometric template encryption at rest** — fingerprint templates are
+  stored plaintext in `biometric_data.templateData`; unlike passwords they
+  can never be rotated. Encrypt with pii-crypto.
+- ✨ **`POST /biometrics/verify` is spoofable** — any users.read caller can
+  stamp lastVerifiedAt without an actual match; deprecate in favour of
+  verify-proxy which stamps server-side.
+- ✨ **Portal discharge instructions + follow-up view** — pairs with the
+  discharge backlog item; the portal now has working lab results.
+
 ## HR / Scheduling
 - 💰 **Leave accrual idempotency** — the monthly cron has no "last accrued
   month" marker; a manual re-run (or double cron fire) double-accrues leave.
