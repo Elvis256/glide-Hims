@@ -1,4 +1,4 @@
-import { Entity, Column, ManyToOne, OneToMany, JoinColumn } from 'typeorm';
+import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Unique } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Encounter } from './encounter.entity';
 import { Ward } from './ward.entity';
@@ -21,8 +21,9 @@ export enum AdmissionType {
 }
 
 @Entity('admissions')
+@Unique(['tenantId', 'admissionNumber'])
 export class Admission extends BaseEntity {
-  @Column({ unique: true })
+  @Column({  })
   admissionNumber: string;
 
   @Column({ type: 'enum', enum: AdmissionType, default: AdmissionType.EMERGENCY })

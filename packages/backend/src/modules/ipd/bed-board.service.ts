@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, IsNull, Not, In } from 'typeorm';
+import { Repository, Between, IsNull, Not, In, DataSource } from 'typeorm';
 import { Ward } from '../../database/entities/ward.entity';
 import { Bed, BedStatus } from '../../database/entities/bed.entity';
 import { Admission, AdmissionStatus } from '../../database/entities/admission.entity';
@@ -29,6 +29,7 @@ export class BedBoardService {
     @InjectRepository(Bed) private readonly bedRepo: Repository<Bed>,
     @InjectRepository(Admission) private readonly admissionRepo: Repository<Admission>,
     @InjectRepository(BedTransfer) private readonly transferRepo: Repository<BedTransfer>,
+    private readonly dataSource: DataSource,
   ) {}
 
   /**
@@ -214,34 +215,42 @@ export class BedBoardService {
     tenantId?: string,
   ): Promise<Bed> {
     const tid = requireTenantId(tenantId);
-    const bed = await this.bedRepo.findOne({
-      where: { id: bedId, tenantId: tid },
+    return this.dataSource.transaction(async (manager) => {
+      // Lock: a concurrent admission also locks the bed row, so reserve
+      // cannot clobber a just-occupied bed
+      const bed = await manager.findOne(Bed, {
+        where: { id: bedId, tenantId: tid },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!bed) throw new NotFoundException('Bed not found');
+      if (bed.status !== BedStatus.AVAILABLE) {
+        throw new BadRequestException(`Bed is ${bed.status}; only AVAILABLE beds can be reserved`);
+      }
+      const hours = Math.min(Math.max(holdHours || 4, 1), 72);
+      const until = new Date(Date.now() + hours * 3600 * 1000);
+      bed.status = BedStatus.RESERVED;
+      bed.notes = JSON.stringify({
+        reserved: { until: until.toISOString(), by: userId, reason: reason || '' },
+      });
+      return manager.save(bed);
     });
-    if (!bed) throw new NotFoundException('Bed not found');
-    if (bed.status !== BedStatus.AVAILABLE) {
-      throw new BadRequestException(`Bed is ${bed.status}; only AVAILABLE beds can be reserved`);
-    }
-    const hours = Math.min(Math.max(holdHours || 4, 1), 72);
-    const until = new Date(Date.now() + hours * 3600 * 1000);
-    bed.status = BedStatus.RESERVED;
-    bed.notes = JSON.stringify({
-      reserved: { until: until.toISOString(), by: userId, reason: reason || '' },
-    });
-    return this.bedRepo.save(bed);
   }
 
   async releaseReservation(bedId: string, tenantId?: string): Promise<Bed> {
     const tid = requireTenantId(tenantId);
-    const bed = await this.bedRepo.findOne({
-      where: { id: bedId, tenantId: tid },
+    return this.dataSource.transaction(async (manager) => {
+      const bed = await manager.findOne(Bed, {
+        where: { id: bedId, tenantId: tid },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!bed) throw new NotFoundException('Bed not found');
+      if (bed.status !== BedStatus.RESERVED) {
+        throw new BadRequestException('Bed is not reserved');
+      }
+      bed.status = BedStatus.AVAILABLE;
+      bed.notes = '';
+      return manager.save(bed);
     });
-    if (!bed) throw new NotFoundException('Bed not found');
-    if (bed.status !== BedStatus.RESERVED) {
-      throw new BadRequestException('Bed is not reserved');
-    }
-    bed.status = BedStatus.AVAILABLE;
-    bed.notes = '';
-    return this.bedRepo.save(bed);
   }
 
   /**

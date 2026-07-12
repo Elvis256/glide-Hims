@@ -1,4 +1,4 @@
-import { Entity, Column, ManyToOne, JoinColumn, Index } from 'typeorm';
+import { Entity, Column, ManyToOne, JoinColumn, Index, Unique } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Facility } from './facility.entity';
 
@@ -16,11 +16,11 @@ export enum SupplierType {
 }
 
 @Entity('suppliers')
-@Index(['code'], { unique: true })
+@Unique(['tenantId', 'code'])
 @Index(['name'])
 @Index(['status'])
 export class Supplier extends BaseEntity {
-  @Column({ unique: true })
+  @Column({  })
   code: string;
 
   @Column()

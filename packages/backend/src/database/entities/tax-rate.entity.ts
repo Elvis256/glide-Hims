@@ -1,4 +1,4 @@
-import { Entity, Column } from 'typeorm';
+import { Entity, Column, Unique } from 'typeorm';
 import { BaseEntity } from './base.entity';
 
 export enum TaxType {
@@ -9,11 +9,12 @@ export enum TaxType {
 }
 
 @Entity('tax_rates')
+@Unique(['tenantId', 'code'])
 export class TaxRate extends BaseEntity {
   @Column({ length: 100 })
   name: string;
 
-  @Column({ length: 20, unique: true })
+  @Column({ length: 20 })
   code: string;
 
   @Column({ type: 'decimal', precision: 5, scale: 2 })

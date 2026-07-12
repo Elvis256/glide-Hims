@@ -12,9 +12,9 @@ export enum MembershipType {
 }
 
 @Entity('membership_schemes')
-@Index(['code'], { unique: true })
+@Unique(['tenantId', 'code'])
 export class MembershipScheme extends BaseEntity {
-  @Column({ unique: true })
+  @Column({  })
   code: string;
 
   @Column()

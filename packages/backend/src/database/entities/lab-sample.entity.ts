@@ -1,4 +1,4 @@
-import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
+import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index, Unique } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Order } from './order.entity';
 import { Patient } from './patient.entity';
@@ -22,12 +22,13 @@ export enum SamplePriority {
 }
 
 @Entity('lab_samples')
+@Unique(['tenantId', 'sampleNumber'])
 @Index(['status', 'createdAt'])
 @Index(['orderId', 'labTestId'])
 @Index(['facilityId', 'status', 'createdAt'])
 @Index(['facilityId', 'collectionTime'])
 export class LabSample extends BaseEntity {
-  @Column({ unique: true })
+  @Column({  })
   sampleNumber: string;
 
   @Column({ nullable: true })

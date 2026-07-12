@@ -1,4 +1,4 @@
-import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
+import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index, Unique } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Facility } from './facility.entity';
 
@@ -10,9 +10,9 @@ export enum ServiceTier {
 }
 
 @Entity('service_categories')
-@Index(['code'], { unique: true })
+@Unique(['tenantId', 'code'])
 export class ServiceCategory extends BaseEntity {
-  @Column({ unique: true })
+  @Column({  })
   code: string;
 
   @Column()
@@ -36,10 +36,10 @@ export class ServiceCategory extends BaseEntity {
 }
 
 @Entity('services')
-@Index(['code'], { unique: true })
+@Unique(['tenantId', 'code'])
 @Index(['category'])
 export class Service extends BaseEntity {
-  @Column({ unique: true })
+  @Column()
   code: string;
 
   @Column()
@@ -125,9 +125,9 @@ export class ServicePrice extends BaseEntity {
 }
 
 @Entity('service_packages')
-@Index(['code'], { unique: true })
+@Unique(['tenantId', 'code'])
 export class ServicePackage extends BaseEntity {
-  @Column({ unique: true })
+  @Column()
   code: string;
 
   @Column()
