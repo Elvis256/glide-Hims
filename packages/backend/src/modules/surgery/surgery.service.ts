@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, MoreThanOrEqual, LessThanOrEqual, DataSource } from 'typeorm';
+import { Repository, Between, In, MoreThanOrEqual, LessThanOrEqual, DataSource } from 'typeorm';
 import { Theatre, TheatreStatus, TheatreType } from '../../database/entities/theatre.entity';
 import {
   SurgeryCase,
@@ -93,26 +93,42 @@ export class SurgeryService {
 
   // ============ SURGERY SCHEDULING ============
 
-  private async generateCaseNumber(facilityId: string, tenantId?: string): Promise<string> {
-    const tid = requireTenantId(tenantId);
+  /**
+   * MAX+1 per TENANT under an advisory lock. The old version counted per
+   * facility with no facility component in the number (same-tenant collision)
+   * and read through the repository, escaping the caller's transaction.
+   */
+  private async generateCaseNumber(
+    tid: string,
+    manager: import('typeorm').EntityManager,
+  ): Promise<string> {
     const today = new Date();
-    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+    const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(
+      today.getDate(),
+    ).padStart(2, '0')}`;
+    const prefix = `SUR${dateStr}-`;
 
-    const startOfDay = new Date(today);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(today);
-    endOfDay.setHours(23, 59, 59, 999);
+    await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+      `surgery_case_number:${tid}:${dateStr}`,
+    ]);
 
-    const count = await this.surgeryCaseRepo.count({
-      where: {
-        facilityId,
-        createdAt: Between(startOfDay, endOfDay),
-        tenantId: tid,
-      },
-    });
+    const last = await manager
+      .createQueryBuilder(SurgeryCase, 's')
+      .where('s.case_number LIKE :prefix', { prefix: `${prefix}%` })
+      .andWhere('s.tenant_id = :tid', { tid })
+      .orderBy('s.case_number', 'DESC')
+      .getOne();
 
-    return `SUR${dateStr}-${String(count + 1).padStart(4, '0')}`;
+    const seq = last ? (parseInt(last.caseNumber.slice(prefix.length), 10) || 0) + 1 : 1;
+    return `${prefix}${String(seq).padStart(4, '0')}`;
   }
+
+  /** Statuses that occupy a theatre slot for conflict purposes. */
+  private static readonly SLOT_BLOCKING_STATUSES = [
+    SurgeryStatus.SCHEDULED,
+    SurgeryStatus.PRE_OP,
+    SurgeryStatus.IN_PROGRESS,
+  ];
 
   async scheduleSurgery(
     dto: ScheduleSurgeryDto,
@@ -133,12 +149,14 @@ export class SurgeryService {
         throw new NotFoundException('Theatre not found');
       }
 
-      // Check theatre availability within the lock
+      // Check theatre availability within the lock. PRE_OP and IN_PROGRESS
+      // cases still occupy the slot — checking only SCHEDULED allowed
+      // double-booking as soon as a case moved to pre-op.
       const existingCases = await manager.find(SurgeryCase, {
         where: {
           theatreId: dto.theatreId,
           scheduledDate: new Date(dto.scheduledDate),
-          status: SurgeryStatus.SCHEDULED,
+          status: In(SurgeryService.SLOT_BLOCKING_STATUSES),
           tenantId: tid,
         },
       });
@@ -158,7 +176,7 @@ export class SurgeryService {
         );
       }
 
-      const caseNumber = await this.generateCaseNumber(dto.facilityId, tenantId);
+      const caseNumber = await this.generateCaseNumber(tid, manager);
 
       const surgeryCase = manager.create(SurgeryCase, {
         caseNumber,
@@ -216,7 +234,7 @@ export class SurgeryService {
     const where: any = {
       theatreId,
       scheduledDate: new Date(date),
-      status: SurgeryStatus.SCHEDULED,
+      status: In(SurgeryService.SLOT_BLOCKING_STATUSES),
     };
     where.tenantId = tid;
 
@@ -287,9 +305,15 @@ export class SurgeryService {
   }
 
   async startSurgery(id: string, dto: StartSurgeryDto, tenantId?: string): Promise<SurgeryCase> {
-    const surgeryCase = await this.getCaseById(id, tenantId);
+    const tid = requireTenantId(tenantId);
+    return this.dataSource.transaction(async (manager) => {
+      const surgeryCase = await manager.findOne(SurgeryCase, {
+        where: { id, tenantId: tid },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!surgeryCase) throw new NotFoundException('Surgery case not found');
 
-    if (
+      if (
       surgeryCase.status !== SurgeryStatus.PRE_OP &&
       surgeryCase.status !== SurgeryStatus.SCHEDULED
     ) {
@@ -314,16 +338,17 @@ export class SurgeryService {
       );
     }
 
+    const previousStatus = surgeryCase.status;
     surgeryCase.status = SurgeryStatus.IN_PROGRESS;
     surgeryCase.actualStartTime = new Date();
 
     if (dto.anesthesiaNotes) surgeryCase.anesthesiaNotes = dto.anesthesiaNotes;
     if (dto.nursingTeam) surgeryCase.nursingTeam = dto.nursingTeam;
 
-    // Update theatre status
-    await this.theatreRepo.update(surgeryCase.theatreId, { status: TheatreStatus.IN_USE });
+    // Update theatre status atomically with the case
+    await manager.update(Theatre, surgeryCase.theatreId, { status: TheatreStatus.IN_USE });
 
-    const saved = await this.surgeryCaseRepo.save(surgeryCase);
+    const saved = await manager.save(surgeryCase);
 
     this.auditLogService
       .log({
@@ -331,12 +356,13 @@ export class SurgeryService {
         entityType: 'SurgeryCase',
         entityId: id,
         tenantId,
-        oldValue: { status: SurgeryStatus.PRE_OP },
+        oldValue: { status: previousStatus },
         newValue: { status: SurgeryStatus.IN_PROGRESS },
       })
       .catch(() => {});
 
     return saved;
+    });
   }
 
   async updateIntraOpNotes(
@@ -364,40 +390,47 @@ export class SurgeryService {
     dto: CompleteSurgeryDto,
     tenantId?: string,
   ): Promise<SurgeryCase> {
-    const surgeryCase = await this.getCaseById(id, tenantId);
+    const tid = requireTenantId(tenantId);
+    return this.dataSource.transaction(async (manager) => {
+      const surgeryCase = await manager.findOne(SurgeryCase, {
+        where: { id, tenantId: tid },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!surgeryCase) throw new NotFoundException('Surgery case not found');
 
-    if (surgeryCase.status !== SurgeryStatus.IN_PROGRESS) {
-      throw new BadRequestException('Only in-progress surgeries can be completed');
-    }
+      if (surgeryCase.status !== SurgeryStatus.IN_PROGRESS) {
+        throw new BadRequestException('Only in-progress surgeries can be completed');
+      }
 
-    surgeryCase.status = SurgeryStatus.POST_OP;
-    surgeryCase.actualEndTime = new Date();
-    surgeryCase.operativeFindings = dto.operativeFindings;
-    surgeryCase.operativeNotes = dto.operativeNotes;
-    if (dto.bloodLossMl !== undefined) surgeryCase.bloodLossMl = dto.bloodLossMl;
-    if (dto.postOpDiagnosis) surgeryCase.postOpDiagnosis = dto.postOpDiagnosis;
-    if (dto.postOpInstructions) surgeryCase.postOpInstructions = dto.postOpInstructions;
-    if (dto.recoveryNotes) surgeryCase.recoveryNotes = dto.recoveryNotes;
-    surgeryCase.dischargeDestination = dto.dischargeDestination;
-    surgeryCase.dischargeFromTheatre = new Date();
+      surgeryCase.status = SurgeryStatus.POST_OP;
+      surgeryCase.actualEndTime = new Date();
+      surgeryCase.operativeFindings = dto.operativeFindings;
+      surgeryCase.operativeNotes = dto.operativeNotes;
+      if (dto.bloodLossMl !== undefined) surgeryCase.bloodLossMl = dto.bloodLossMl;
+      if (dto.postOpDiagnosis) surgeryCase.postOpDiagnosis = dto.postOpDiagnosis;
+      if (dto.postOpInstructions) surgeryCase.postOpInstructions = dto.postOpInstructions;
+      if (dto.recoveryNotes) surgeryCase.recoveryNotes = dto.recoveryNotes;
+      surgeryCase.dischargeDestination = dto.dischargeDestination;
+      surgeryCase.dischargeFromTheatre = new Date();
 
-    // Update theatre to cleaning
-    await this.theatreRepo.update(surgeryCase.theatreId, { status: TheatreStatus.CLEANING });
+      // Update theatre to cleaning atomically with the case
+      await manager.update(Theatre, surgeryCase.theatreId, { status: TheatreStatus.CLEANING });
 
-    const saved = await this.surgeryCaseRepo.save(surgeryCase);
+      const saved = await manager.save(surgeryCase);
 
-    this.auditLogService
-      .log({
-        action: 'COMPLETE_SURGERY',
-        entityType: 'SurgeryCase',
-        entityId: id,
-        tenantId,
-        oldValue: { status: SurgeryStatus.IN_PROGRESS },
-        newValue: { status: SurgeryStatus.POST_OP },
-      })
-      .catch(() => {});
+      this.auditLogService
+        .log({
+          action: 'COMPLETE_SURGERY',
+          entityType: 'SurgeryCase',
+          entityId: id,
+          tenantId,
+          oldValue: { status: SurgeryStatus.IN_PROGRESS },
+          newValue: { status: SurgeryStatus.POST_OP },
+        })
+        .catch(() => {});
 
-    return saved;
+      return saved;
+    });
   }
 
   async dischargeFromRecovery(id: string, tenantId?: string): Promise<SurgeryCase> {
@@ -412,44 +445,67 @@ export class SurgeryService {
   }
 
   async cancelSurgery(id: string, dto: CancelSurgeryDto, tenantId?: string): Promise<SurgeryCase> {
-    const surgeryCase = await this.getCaseById(id, tenantId);
+    const tid = requireTenantId(tenantId);
+    return this.dataSource.transaction(async (manager) => {
+      const surgeryCase = await manager.findOne(SurgeryCase, {
+        where: { id, tenantId: tid },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!surgeryCase) throw new NotFoundException('Surgery case not found');
 
-    if (surgeryCase.status === SurgeryStatus.IN_PROGRESS) {
-      throw new BadRequestException('Cannot cancel surgery that is in progress');
-    }
+      if (surgeryCase.status === SurgeryStatus.IN_PROGRESS) {
+        throw new BadRequestException('Cannot cancel surgery that is in progress');
+      }
 
-    if (surgeryCase.status === SurgeryStatus.COMPLETED) {
-      throw new BadRequestException('Cannot cancel completed surgery');
-    }
+      if (surgeryCase.status === SurgeryStatus.COMPLETED) {
+        throw new BadRequestException('Cannot cancel completed surgery');
+      }
 
-    if (dto.newDate && dto.newTime) {
-      // Postpone
-      surgeryCase.status = SurgeryStatus.POSTPONED;
-      surgeryCase.scheduledDate = new Date(dto.newDate);
-      surgeryCase.scheduledTime = dto.newTime;
-      surgeryCase.preOpNotes = `${surgeryCase.preOpNotes || ''}\n[POSTPONED] ${dto.reason}`.trim();
-    } else {
-      // Cancel
-      surgeryCase.status = SurgeryStatus.CANCELLED;
-      surgeryCase.preOpNotes = `${surgeryCase.preOpNotes || ''}\n[CANCELLED] ${dto.reason}`.trim();
-    }
+      const previousStatus = surgeryCase.status;
 
-    const saved = await this.surgeryCaseRepo.save(surgeryCase);
+      if (dto.newDate && dto.newTime) {
+        // Postpone — the new slot must be free (this path skipped the
+        // conflict check entirely before)
+        const conflicts = await this.checkTheatreConflicts(
+          surgeryCase.theatreId,
+          dto.newDate,
+          dto.newTime,
+          surgeryCase.estimatedDurationMinutes,
+          surgeryCase.id,
+          tenantId,
+        );
+        if (conflicts.length > 0) {
+          throw new BadRequestException(
+            `Theatre has ${conflicts.length} conflicting surgery at the requested new time`,
+          );
+        }
+        surgeryCase.status = SurgeryStatus.POSTPONED;
+        surgeryCase.scheduledDate = new Date(dto.newDate);
+        surgeryCase.scheduledTime = dto.newTime;
+        surgeryCase.preOpNotes =
+          `${surgeryCase.preOpNotes || ''}\n[POSTPONED] ${dto.reason}`.trim();
+      } else {
+        // Cancel
+        surgeryCase.status = SurgeryStatus.CANCELLED;
+        surgeryCase.preOpNotes =
+          `${surgeryCase.preOpNotes || ''}\n[CANCELLED] ${dto.reason}`.trim();
+      }
 
-    this.auditLogService
-      .log({
-        action: 'CANCEL_SURGERY',
-        entityType: 'SurgeryCase',
-        entityId: id,
-        tenantId,
-        oldValue: {
-          status: surgeryCase.status === SurgeryStatus.POSTPONED ? 'previous' : 'previous',
-        },
-        newValue: { status: saved.status, reason: dto.reason },
-      })
-      .catch(() => {});
+      const saved = await manager.save(surgeryCase);
 
-    return saved;
+      this.auditLogService
+        .log({
+          action: 'CANCEL_SURGERY',
+          entityType: 'SurgeryCase',
+          entityId: id,
+          tenantId,
+          oldValue: { status: previousStatus },
+          newValue: { status: saved.status, reason: dto.reason },
+        })
+        .catch(() => {});
+
+      return saved;
+    });
   }
 
   // ============ SCHEDULE & DASHBOARD ============
@@ -461,10 +517,12 @@ export class SurgeryService {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
+    // PRE_OP and IN_PROGRESS cases are still today's workload — filtering
+    // only SCHEDULED made cases vanish from the list once prepped
     const where: any = {
       facilityId,
       scheduledDate: Between(today, tomorrow),
-      status: SurgeryStatus.SCHEDULED,
+      status: In(SurgeryService.SLOT_BLOCKING_STATUSES),
     };
     where.tenantId = tid;
 
