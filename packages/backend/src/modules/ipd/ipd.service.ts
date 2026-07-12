@@ -200,6 +200,15 @@ export class IpdService {
     const tid = requireTenantId(tenantId);
     const bed = await this.bedRepo.findOne({ where: { id, tenantId: tid } });
     if (!bed) throw new NotFoundException('Bed not found');
+    // Occupancy transitions happen only via admission/discharge/transfer —
+    // directly flipping an OCCUPIED bed (or into OCCUPIED) corrupts the board
+    if (dto.status && dto.status !== bed.status) {
+      if (bed.status === BedStatus.OCCUPIED || dto.status === BedStatus.OCCUPIED) {
+        throw new BadRequestException(
+          'Bed occupancy cannot be changed directly; use admission, discharge, or transfer',
+        );
+      }
+    }
     Object.assign(bed, dto);
     return this.bedRepo.save(bed);
   }
@@ -247,7 +256,13 @@ export class IpdService {
     tenantId?: string,
   ): Promise<Admission> {
     const tid = requireTenantId(tenantId);
-    return this.dataSource.transaction(async (manager) => {
+    const saved = await this.dataSource.transaction(async (manager) => {
+      // Serialize per patient: without this, two concurrent admissions for the
+      // same patient both pass the duplicate check below
+      await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+        `admission:${tid}:${dto.patientId}`,
+      ]);
+
       // Check for duplicate admission — patient must not already be admitted
       const existingAdmission = await manager.findOne(Admission, {
         where: {
@@ -272,27 +287,36 @@ export class IpdService {
 
       if (!bed) throw new NotFoundException('Bed not found');
       if (bed.status !== BedStatus.AVAILABLE) throw new BadRequestException('Bed is not available');
+      if (bed.wardId && bed.wardId !== dto.wardId) {
+        throw new BadRequestException(
+          'Selected bed does not belong to the selected ward',
+        );
+      }
 
-      // Generate admission number with pessimistic locking
+      // Generate admission number: MAX+1 under a tenant+day advisory lock
+      // (count-based numbering regresses on deletes; FOR UPDATE cannot lock
+      // an aggregate query anyway)
       const now = new Date();
-      const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+      const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(
+        now.getDate(),
+      ).padStart(2, '0')}`;
+      const prefix = `ADM${dateStr}`;
 
-      // Lock and count today's admissions to prevent race condition
-      // Create separate date objects to avoid mutation issues
-      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-      const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+      await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+        `admission_number:${tid}:${prefix}`,
+      ]);
 
-      const dailyCountQb = manager
+      const lastAdmission = await manager
         .createQueryBuilder(Admission, 'admission')
-        .setLock('pessimistic_write')
-        .where('admission.admissionDate >= :start AND admission.admissionDate <= :end', {
-          start: todayStart,
-          end: todayEnd,
-        });
-      dailyCountQb.andWhere('admission.tenant_id = :tenantId', { tenantId: tid });
-      const dailyCount = await dailyCountQb.getCount();
+        .where('admission.admissionNumber LIKE :prefix', { prefix: `${prefix}%` })
+        .andWhere('admission.tenant_id = :tenantId', { tenantId: tid })
+        .orderBy('admission.admissionNumber', 'DESC')
+        .getOne();
 
-      const admissionNumber = `ADM${dateStr}${(dailyCount + 1).toString().padStart(4, '0')}`;
+      const sequence = lastAdmission
+        ? (parseInt(lastAdmission.admissionNumber.slice(prefix.length), 10) || 0) + 1
+        : 1;
+      const admissionNumber = `${prefix}${sequence.toString().padStart(4, '0')}`;
 
       // Create admission
       const admissionData = {
@@ -341,40 +365,44 @@ export class IpdService {
         `Admission created: ${admissionNumber} for patient ${dto.patientId} by user ${userId}`,
       );
 
-      // Auto-bill admission/bed charge if encounter is linked
-      if (dto.encounterId) {
-        try {
-          const ward = await manager.findOne(Ward, {
-            where: { id: dto.wardId, tenantId: tid },
-          });
-          const bed = await manager.findOne(Bed, {
-            where: { id: dto.bedId, tenantId: tid },
-          });
-          await this.billingService.addBillableItem(
-            {
-              encounterId: dto.encounterId,
-              patientId: dto.patientId,
-              serviceCode: `BED-${bed?.bedNumber || dto.bedId.slice(0, 8)}`,
-              description:
-                `Bed Charge – ${ward?.name || 'Ward'} Bed ${bed?.bedNumber || ''}`.trim(),
-              quantity: 1,
-              unitPrice: 0, // Admin sets price via settings
-              chargeType: 'inpatient',
-              referenceType: 'admission',
-              referenceId: saved.id,
-            },
-            userId,
-            tenantId,
-          );
-        } catch (err) {
-          this.logger.warn(
-            `Auto bed-billing failed for admission ${admissionNumber}: ${err.message}`,
-          );
-        }
-      }
-
       return saved;
     });
+
+    // Auto-bill admission/bed charge if encounter is linked. Outside the txn:
+    // BillingService uses its own connection, so a success inside the txn
+    // followed by a rollback would leave an orphaned billable item.
+    if (dto.encounterId) {
+      try {
+        const ward = await this.wardRepo.findOne({
+          where: { id: dto.wardId, tenantId: tid },
+        });
+        const bed = await this.bedRepo.findOne({
+          where: { id: dto.bedId, tenantId: tid },
+        });
+        await this.billingService.addBillableItem(
+          {
+            encounterId: dto.encounterId,
+            patientId: dto.patientId,
+            serviceCode: `BED-${bed?.bedNumber || dto.bedId.slice(0, 8)}`,
+            description:
+              `Bed Charge – ${ward?.name || 'Ward'} Bed ${bed?.bedNumber || ''}`.trim(),
+            quantity: 1,
+            unitPrice: 0, // Admin sets price via settings
+            chargeType: 'inpatient',
+            referenceType: 'admission',
+            referenceId: saved.id,
+          },
+          userId,
+          tenantId,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `Auto bed-billing failed for admission ${saved.admissionNumber}: ${err.message}`,
+        );
+      }
+    }
+
+    return saved;
   }
 
   async getAdmissions(
@@ -444,11 +472,14 @@ export class IpdService {
     tenantId?: string,
   ): Promise<Admission> {
     const tid = requireTenantId(tenantId);
-    return this.dataSource.transaction(async (manager) => {
-      const admission = await manager.findOne(Admission, {
-        where: { id, tenantId: tid },
-        relations: ['patient', 'ward', 'bed', 'encounter', 'attendingDoctor'],
-      });
+    const saved = await this.dataSource.transaction(async (manager) => {
+      // Lock so concurrent discharge/transfer serialize on the status check
+      const admission = await manager
+        .createQueryBuilder(Admission, 'admission')
+        .setLock('pessimistic_write')
+        .where('admission.id = :id', { id })
+        .andWhere('admission.tenant_id = :tenantId', { tenantId: tid })
+        .getOne();
 
       if (!admission) throw new NotFoundException('Admission not found');
       if (admission.status !== AdmissionStatus.ADMITTED) {
@@ -479,49 +510,62 @@ export class IpdService {
       });
       await manager.update(Ward, admission.wardId, { totalBeds, occupiedBeds });
 
-      // Update encounter
-      await manager.update(Encounter, admission.encounterId, {
-        status: EncounterStatus.COMPLETED,
-        endTime: new Date(),
-      });
-
-      // Auto-generate the inpatient invoice for bed-days (handles transfers).
-      // We compute outside the transaction's manager because BillingService owns
-      // its own validation + numbering; failures are logged but don't roll back
-      // the discharge (a clerk can re-run billing manually).
-      let invoiceId: string | undefined;
-      try {
-        const bedLines = await this.bedBoardService.computeBedDayCharges(saved.id, tenantId);
-        if (bedLines.length) {
-          const invoice = await this.billingService.createInvoice(
-            {
-              patientId: saved.patientId,
-              encounterId: saved.encounterId,
-              items: bedLines as any,
-            } as any,
-            userId,
-            tenantId,
-          );
-          invoiceId = invoice.id;
-          saved.metadata = {
-            ...(saved.metadata || {}),
-            inpatientInvoiceId: invoiceId,
-          };
-          await manager.save(saved);
-        }
-      } catch (err: any) {
-        this.logger.warn(
-          `Auto-bill on discharge failed for admission ${saved.admissionNumber}: ${err.message}`,
-        );
+      // Update encounter (optional at admission time)
+      if (admission.encounterId) {
+        await manager.update(Encounter, admission.encounterId, {
+          status: EncounterStatus.COMPLETED,
+          endTime: new Date(),
+        });
       }
 
-      this.logger.log(
-        `Patient discharged: admission ${admission.admissionNumber}, patient ${admission.patientId} by user ${userId}${
-          invoiceId ? ` (invoice ${invoiceId})` : ''
-        }`,
-      );
       return saved;
     });
+
+    // Auto-generate the inpatient invoice for bed-days (handles transfers).
+    // AFTER the txn commits: BillingService + computeBedDayCharges use their
+    // own connections — inside the txn they could not see the just-set
+    // dischargeDate (wrong bed-day count) and a rollback would orphan the
+    // invoice. Failures are logged but don't undo the discharge (a clerk can
+    // re-run billing manually).
+    let invoiceId: string | undefined;
+    try {
+      const bedLines = await this.bedBoardService.computeBedDayCharges(saved.id, tenantId);
+      if (bedLines.length) {
+        const invoice = await this.billingService.createInvoice(
+          {
+            patientId: saved.patientId,
+            encounterId: saved.encounterId,
+            items: bedLines as any,
+          } as any,
+          userId,
+          tenantId,
+        );
+        invoiceId = invoice.id;
+        saved.metadata = {
+          ...(saved.metadata || {}),
+          inpatientInvoiceId: invoiceId,
+        };
+        await this.admissionRepo.save(saved);
+      }
+    } catch (err: any) {
+      this.logger.warn(
+        `Auto-bill on discharge failed for admission ${saved.admissionNumber}: ${err.message}`,
+      );
+    }
+
+    this.logger.log(
+      `Patient discharged: admission ${saved.admissionNumber}, patient ${saved.patientId} by user ${userId}${
+        invoiceId ? ` (invoice ${invoiceId})` : ''
+      }`,
+    );
+
+    // Preserve the pre-existing response shape (relations loaded)
+    return (
+      (await this.admissionRepo.findOne({
+        where: { id: saved.id, tenantId: tid },
+        relations: ['patient', 'ward', 'bed', 'encounter', 'attendingDoctor'],
+      })) ?? saved
+    );
   }
 
   async transferBed(
@@ -564,6 +608,9 @@ export class IpdService {
       if (!newBed) throw new NotFoundException('New bed not found');
       if (newBed.status !== BedStatus.AVAILABLE)
         throw new BadRequestException('New bed is not available');
+      if (newBed.wardId && newBed.wardId !== dto.toWardId) {
+        throw new BadRequestException('Selected bed does not belong to the selected ward');
+      }
 
       // Record transfer
       const transfer = manager.create(BedTransfer, {

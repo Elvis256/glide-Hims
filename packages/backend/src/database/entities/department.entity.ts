@@ -1,9 +1,10 @@
-import { Entity, Column, ManyToOne, OneToMany, JoinColumn } from 'typeorm';
+import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Unique } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Facility } from './facility.entity';
 import { User } from './user.entity';
 
 @Entity('departments')
+@Unique(['tenantId', 'code'])
 export class Department extends BaseEntity {
   @Column({ type: 'uuid', name: 'facility_id' })
   facilityId: string;
@@ -25,7 +26,7 @@ export class Department extends BaseEntity {
   @Column({ type: 'varchar', length: 255 })
   name: string;
 
-  @Column({ type: 'varchar', length: 50, unique: true })
+  @Column({ type: 'varchar', length: 50 })
   code: string;
 
   @Column({ type: 'text', nullable: true })

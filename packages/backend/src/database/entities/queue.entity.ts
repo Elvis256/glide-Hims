@@ -1,4 +1,4 @@
-import { Entity, Column, ManyToOne, JoinColumn, Index } from 'typeorm';
+import { Entity, Column, ManyToOne, JoinColumn, Index, Unique } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Patient } from './patient.entity';
 import { Encounter } from './encounter.entity';
@@ -291,11 +291,12 @@ export class Queue extends BaseEntity {
 
 // Queue display configuration
 @Entity('queue_displays')
+@Unique(['tenantId', 'displayCode'])
 export class QueueDisplay extends BaseEntity {
   @Column()
   name: string;
 
-  @Column({ name: 'display_code', unique: true })
+  @Column({ name: 'display_code' })
   displayCode: string;
 
   @Column({ name: 'service_points', type: 'jsonb' })

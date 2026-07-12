@@ -1,4 +1,4 @@
-import { Entity, Column, ManyToOne, JoinColumn, Index } from 'typeorm';
+import { Entity, Column, ManyToOne, JoinColumn, Index, Unique } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Facility } from './facility.entity';
 import { Store } from './store.entity';
@@ -39,12 +39,12 @@ export enum MovementType {
 }
 
 @Entity('items')
-@Index(['code'], { unique: true })
+@Unique(['tenantId', 'code'])
 @Index(['categoryId'])
 @Index(['subcategoryId'])
 @Index(['brandId'])
 export class Item extends BaseEntity {
-  @Column({ unique: true })
+  @Column({  })
   code: string;
 
   @Column()

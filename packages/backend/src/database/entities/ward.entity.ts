@@ -1,4 +1,4 @@
-import { Entity, Column, ManyToOne, OneToMany, JoinColumn } from 'typeorm';
+import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Unique } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Facility } from './facility.entity';
 
@@ -19,11 +19,12 @@ export enum WardStatus {
 }
 
 @Entity('wards')
+@Unique(['tenantId', 'code'])
 export class Ward extends BaseEntity {
   @Column()
   name: string;
 
-  @Column({ unique: true })
+  @Column({  })
   code: string;
 
   @Column({ type: 'enum', enum: WardType, default: WardType.GENERAL })

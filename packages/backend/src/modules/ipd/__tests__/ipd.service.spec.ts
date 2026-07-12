@@ -56,6 +56,7 @@ function createMockManager() {
     update: jest.fn().mockResolvedValue(undefined),
     count: jest.fn().mockResolvedValue(0),
     increment: jest.fn().mockResolvedValue(undefined),
+    query: jest.fn().mockResolvedValue([]),
   };
 
   // Default query-builder chain used by pessimistic-lock queries
@@ -67,6 +68,7 @@ function createMockManager() {
     select: jest.fn().mockReturnThis(),
     addSelect: jest.fn().mockReturnThis(),
     groupBy: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
     getOne: jest.fn().mockResolvedValue(null),
     getCount: jest.fn().mockResolvedValue(0),
     getRawMany: jest.fn().mockResolvedValue([]),
@@ -368,7 +370,8 @@ describe('IpdService', () => {
         metadata: null,
       };
 
-      mgr.findOne.mockResolvedValueOnce(admission);
+      const { qbChain } = { qbChain: (mgr.createQueryBuilder as jest.Mock)() };
+      qbChain.getOne.mockResolvedValueOnce(admission);
 
       // ward bed counts after discharge
       mgr.count
@@ -377,6 +380,11 @@ describe('IpdService', () => {
 
       // save returns the updated admission
       mgr.save.mockImplementation((entity: any) => Promise.resolve({ ...entity }));
+
+      // post-txn reload returns the saved admission
+      (admissionRepo.findOne as jest.Mock).mockImplementation((opts: any) =>
+        Promise.resolve(null),
+      );
 
       // bedBoardService returns no charge lines (simple case)
       bedBoardService.computeBedDayCharges.mockResolvedValue([]);
@@ -410,8 +418,8 @@ describe('IpdService', () => {
     // -------------------------------------------------------------------
     it('should throw BadRequestException when patient is not currently admitted', async () => {
       dataSource.transaction.mockImplementation((cb: any) => {
-        const { mgr: freshMgr } = createMockManager();
-        freshMgr.findOne.mockResolvedValueOnce({
+        const { mgr: freshMgr, qbChain: freshQb } = createMockManager();
+        freshQb.getOne.mockResolvedValueOnce({
           id: ADMISSION_ID,
           status: AdmissionStatus.DISCHARGED,
         });

@@ -479,11 +479,12 @@ export enum FundRestriction {
 }
 
 @Entity('donor_funds')
+@Unique(['tenantId', 'fundCode'])
 export class DonorFund extends BaseEntity {
   @Column({ name: 'facility_id', type: 'uuid' })
   facilityId: string;
 
-  @Column({ name: 'fund_code', unique: true })
+  @Column({ name: 'fund_code' })
   fundCode: string;
 
   @Column()

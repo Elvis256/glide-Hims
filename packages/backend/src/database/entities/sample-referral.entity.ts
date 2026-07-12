@@ -1,4 +1,4 @@
-import { Entity, Column, ManyToOne, JoinColumn, Index } from 'typeorm';
+import { Entity, Column, ManyToOne, JoinColumn, Index, Unique } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { LabSample } from './lab-sample.entity';
 import { Patient } from './patient.entity';
@@ -23,11 +23,12 @@ export enum ReferralPriority {
 }
 
 @Entity('sample_referrals')
+@Unique(['tenantId', 'referralNumber'])
 @Index(['stage', 'createdAt'])
 @Index(['fromFacilityId', 'stage'])
 @Index(['toFacilityId', 'stage'])
 export class SampleReferral extends BaseEntity {
-  @Column({ unique: true })
+  @Column({  })
   referralNumber: string;
 
   @Column({ type: 'uuid' })

@@ -16,10 +16,10 @@ export enum BillingPointType {
 }
 
 @Entity('billing_points')
-@Index(['code'], { unique: true })
+@Unique(['tenantId', 'code'])
 @Index(['facility'])
 export class BillingPoint extends BaseEntity {
-  @Column({ unique: true })
+  @Column({  })
   code: string;
 
   @Column()

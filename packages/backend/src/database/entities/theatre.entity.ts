@@ -8,6 +8,7 @@ import {
   JoinColumn,
   OneToMany,
   Index,
+  Unique,
 } from 'typeorm';
 import { Facility } from './facility.entity';
 
@@ -31,6 +32,7 @@ export enum TheatreStatus {
 }
 
 @Entity('theatres')
+@Unique(['tenantId', 'code'])
 export class Theatre {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -42,7 +44,7 @@ export class Theatre {
   @Column({ length: 100 })
   name: string;
 
-  @Column({ length: 20, unique: true })
+  @Column({ length: 20 })
   code: string;
 
   @Column({ type: 'enum', enum: TheatreType, default: TheatreType.GENERAL })
