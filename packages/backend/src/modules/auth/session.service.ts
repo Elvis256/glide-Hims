@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan } from 'typeorm';
+import { Repository, LessThan, EntityManager } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { Session } from '../../database/entities/session.entity';
@@ -187,16 +187,23 @@ export class SessionService {
 
   /**
    * Update the token hash on a session after token rotation (refresh).
+   * @param manager Pass the surrounding transaction's EntityManager when called
+   * inside a transaction (never check out a pooled connection while holding locks).
    */
-  async updateSessionToken(oldRefreshToken: string, newRefreshToken: string): Promise<void> {
+  async updateSessionToken(
+    oldRefreshToken: string,
+    newRefreshToken: string,
+    manager?: EntityManager,
+  ): Promise<void> {
+    const repo = manager ? manager.getRepository(Session) : this.sessionRepository;
     const oldHash = this.hashToken(oldRefreshToken);
-    const session = await this.sessionRepository.findOne({
+    const session = await repo.findOne({
       where: { tokenHash: oldHash, isActive: true },
     });
     if (session) {
       session.tokenHash = this.hashToken(newRefreshToken);
       session.lastActivityAt = new Date();
-      await this.sessionRepository.save(session);
+      await repo.save(session);
     }
   }
 

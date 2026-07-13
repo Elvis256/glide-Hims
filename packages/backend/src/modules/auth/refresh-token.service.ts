@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan } from 'typeorm';
+import { Repository, LessThan, EntityManager } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { RefreshToken } from '../../database/entities/refresh-token.entity';
@@ -38,6 +38,13 @@ export class RefreshTokenService {
     }
   }
 
+  /**
+   * @param manager Pass the surrounding transaction's EntityManager when calling
+   * inside a transaction. Using the default (pooled) repository from within a
+   * transaction that holds a FOR UPDATE lock on the user row deadlocks: this
+   * INSERT takes a FK KEY SHARE lock on users which conflicts with FOR UPDATE,
+   * while the transaction's connection waits in JS for this call to return.
+   */
   async createRefreshToken(
     userId: string,
     tenantId: string | undefined,
@@ -45,13 +52,15 @@ export class RefreshTokenService {
     ipAddress?: string,
     userAgent?: string,
     familyId?: string,
+    manager?: EntityManager,
   ): Promise<RefreshToken> {
+    const repo = manager ? manager.getRepository(RefreshToken) : this.refreshTokenRepository;
     const tokenHash = this.hashToken(token);
     const tokenFamily = familyId || crypto.randomUUID();
     const expiresIn = this.configService.get<string>('JWT_REFRESH_EXPIRES_IN', '7d');
     const expiresAt = new Date(Date.now() + this.parseExpiryToMs(expiresIn));
 
-    const record = this.refreshTokenRepository.create({
+    const record = repo.create({
       userId,
       tenantId,
       tokenHash,
@@ -61,7 +70,7 @@ export class RefreshTokenService {
       expiresAt,
     });
 
-    return this.refreshTokenRepository.save(record);
+    return repo.save(record);
   }
 
   async validateRefreshToken(token: string): Promise<RefreshToken | null> {
