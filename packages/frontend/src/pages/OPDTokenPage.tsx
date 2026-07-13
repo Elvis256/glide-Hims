@@ -201,10 +201,12 @@ export default function OPDTokenPage() {
     if (urlPatientId && !selectedPatient) {
       patientsService.getById(urlPatientId).then(patient => {
         if (patient) {
+          // Service Patient and store PatientRecord differ slightly (optional
+          // timestamps) — shapes are display-compatible here
           setSelectedPatient({
             ...patient,
             paymentType: 'cash' as const,
-          });
+          } as unknown as PatientRecord);
         }
       }).catch(err => {
         console.error('Failed to load patient:', err);
@@ -581,66 +583,80 @@ export default function OPDTokenPage() {
   // Success screen after token issued
   if (issuedToken && selectedPatient) {
     return (
-      <div className="max-w-lg mx-auto">
+      <div className="max-w-lg mx-auto p-6">
         {/* Screen View */}
-        <div className="card text-center py-6 print:hidden">
-          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <CheckCircle className="w-10 h-10 text-green-600" />
+        <div className="print:hidden">
+          <div className="text-center mb-5">
+            <div className="w-14 h-14 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
+              <CheckCircle className="w-8 h-8 text-emerald-600" />
+            </div>
+            <h2 className="text-2xl font-bold text-surface-900 mb-2">Token Issued!</h2>
+
+            {/*
+             * Truth source = backend-issued queue status:
+             *   pending_payment → patient must clear billing counter first (pre-pay flows)
+             *   anything else (waiting/called/in_service) → patient is already in queue
+             *     (post-pay flows, or coverage methods that bypass the counter)
+             */}
+            {issuedToken.status === 'pending_payment' ? (
+              <span className="inline-flex items-center gap-2 px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-sm font-medium">
+                <Banknote className="w-4 h-4" />
+                Proceed to Billing Counter to pay
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-2 px-3 py-1 bg-teal-100 text-teal-700 rounded-full text-sm font-medium">
+                <Users className="w-4 h-4" />
+                Patient is now in queue
+              </span>
+            )}
           </div>
-          
-          <h2 className="text-2xl font-bold text-gray-900 mb-1">Token Issued!</h2>
 
-          {/*
-           * Truth source = backend-issued queue status:
-           *   pending_payment → patient must clear billing counter first (pre-pay flows)
-           *   anything else (waiting/called/in_service) → patient is already in queue
-           *     (post-pay flows, or coverage methods that bypass the counter)
-           */}
-          {issuedToken.status === 'pending_payment' ? (
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-sm font-medium mb-4">
-              <Banknote className="w-4 h-4" />
-              Proceed to Billing Counter to pay
+          {/* Paper token */}
+          <div className="bg-white rounded-2xl border border-surface-200 shadow-[0_8px_30px_rgba(15,23,42,0.08)] overflow-hidden mb-4">
+            {/* Facility strip */}
+            <div className="bg-brand-700 text-white text-center px-4 py-2.5">
+              <p className="text-sm font-semibold tracking-wide">{inst.name}</p>
+              <p className="text-[11px] text-brand-200 uppercase tracking-widest">OPD Queue Token</p>
             </div>
-          ) : (
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-teal-100 text-teal-700 rounded-full text-sm font-medium mb-4">
-              <Users className="w-4 h-4" />
-              Patient is now in queue
-            </div>
-          )}
 
-          {/* Invoice info */}
-          {(issuedToken as any).invoiceNumber && (
-            <p className="text-xs text-gray-500 mb-2">
-              Invoice: <span className="font-mono font-medium">{(issuedToken as any).invoiceNumber}</span>
-              {' '}&bull;{' '}UGX {Number((issuedToken as any).invoiceAmount || 0).toLocaleString()}
-            </p>
-          )}
-          
-          <div className="bg-blue-50 rounded-lg p-6 my-4">
-            <p className="text-sm text-gray-600 mb-1">Token Number</p>
-            <p className="text-4xl font-mono font-bold text-blue-700 mb-4">
-              {issuedToken.ticketNumber}
-            </p>
-            
-            <div className="border-t border-blue-200 pt-4 mt-4">
-              <div className="flex items-center justify-center gap-2 text-gray-600 mb-2">
-                <UserCircle className="w-5 h-5" />
-                <span className="font-medium">{selectedPatient.fullName}</span>
-              </div>
-              <p className="text-sm text-gray-500">MRN: {selectedPatient.mrn}</p>
+            <div className="px-6 py-5 text-center">
+              <p className="text-xs text-surface-500 uppercase tracking-widest mb-1">Token Number</p>
+              <p className="text-6xl font-mono font-extrabold text-surface-900 tracking-tight leading-none">
+                {issuedToken.ticketNumber}
+              </p>
             </div>
-            
-            <div className="border-t border-blue-200 pt-4 mt-4 grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <p className="text-gray-500">Department</p>
-                <p className="font-medium capitalize">{departments?.find(d => d.id === selectedDepartment)?.name || selectedDepartment}</p>
+
+            {/* Perforation */}
+            <div className="relative border-t-2 border-dashed border-surface-200 mx-4">
+              <span className="absolute -left-6 -top-2.5 w-5 h-5 bg-surface-50 rounded-full border border-surface-200" />
+              <span className="absolute -right-6 -top-2.5 w-5 h-5 bg-surface-50 rounded-full border border-surface-200" />
+            </div>
+
+            <div className="px-6 py-4">
+              <div className="flex items-center justify-center gap-2 text-surface-800 mb-1">
+                <UserCircle className="w-5 h-5 text-surface-400" />
+                <span className="font-semibold">{selectedPatient.fullName}</span>
               </div>
-              <div>
-                <p className="text-gray-500">Date</p>
-                <p className="font-medium">
-                  {new Date().toLocaleDateString()}
+              <p className="text-sm text-surface-500 text-center mb-4">MRN: {selectedPatient.mrn}</p>
+
+              <div className="grid grid-cols-2 gap-3 text-sm bg-surface-50 rounded-xl p-3">
+                <div>
+                  <p className="text-xs text-surface-500">Department</p>
+                  <p className="font-medium text-surface-900 capitalize">{departments?.find(d => d.id === selectedDepartment)?.name || selectedDepartment}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-surface-500">Date</p>
+                  <p className="font-medium text-surface-900">{new Date().toLocaleDateString()}</p>
+                </div>
+              </div>
+
+              {/* Invoice info */}
+              {(issuedToken as any).invoiceNumber && (
+                <p className="text-xs text-surface-500 text-center mt-3">
+                  Invoice <span className="font-mono font-medium">{(issuedToken as any).invoiceNumber}</span>
+                  {' '}&bull;{' '}UGX {Number((issuedToken as any).invoiceAmount || 0).toLocaleString()}
                 </p>
-              </div>
+              )}
             </div>
           </div>
 
@@ -700,7 +716,7 @@ export default function OPDTokenPage() {
             </div>
           )}
 
-          <p className="text-sm text-gray-500 mb-4">
+          <p className="text-sm text-surface-500 mb-4 text-center">
             {issuedToken.status === 'pending_payment'
               ? 'Patient will join waiting queue after payment'
               : 'Please wait for your number to be called'}
@@ -729,10 +745,10 @@ export default function OPDTokenPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-4 flex-shrink-0">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">OPD Token</h1>
-          <p className="text-gray-500 text-sm">Issue queue tokens for outpatient visits</p>
+          <h1 className="text-xl font-bold text-surface-900 tracking-tight">OPD Token</h1>
+          <p className="text-surface-500 text-sm">Issue queue tokens for outpatient visits</p>
         </div>
-        <div className="flex items-center gap-2 text-gray-500 text-sm">
+        <div className="flex items-center gap-2 text-surface-500 text-sm bg-white border border-surface-200 rounded-xl px-3 py-1.5">
           <Calendar className="w-4 h-4" />
           <span>{new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
         </div>
