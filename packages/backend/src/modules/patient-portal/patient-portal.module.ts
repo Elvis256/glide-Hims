@@ -8,6 +8,7 @@ import { Appointment } from '../appointments/entities/appointment.entity';
 import { LabSample } from '../../database/entities/lab-sample.entity';
 import { Prescription } from '../../database/entities/prescription.entity';
 import { AuditLog } from '../../database/entities/audit-log.entity';
+import { DischargeSummary } from '../../database/entities/discharge-summary.entity';
 import { CacheModule } from '../cache/cache.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PatientPortalService } from './patient-portal.service';
@@ -16,7 +17,15 @@ import { PatientPortalGuard } from './patient-portal.guard';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Patient, Invoice, Appointment, LabSample, Prescription, AuditLog]),
+    TypeOrmModule.forFeature([
+      Patient,
+      Invoice,
+      Appointment,
+      LabSample,
+      Prescription,
+      AuditLog,
+      DischargeSummary,
+    ]),
     CacheModule,
     NotificationsModule,
     JwtModule.registerAsync({

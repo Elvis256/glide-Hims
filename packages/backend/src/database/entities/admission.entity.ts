@@ -38,6 +38,10 @@ export class Admission extends BaseEntity {
   @Column({ type: 'timestamp', nullable: true })
   dischargeDate: Date;
 
+  /** Planned discharge date for bed management / discharge planning. */
+  @Column({ type: 'date', name: 'expected_discharge_date', nullable: true })
+  expectedDischargeDate?: string | null;
+
   @Column({ type: 'text', nullable: true })
   admissionReason: string;
 

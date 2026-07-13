@@ -665,6 +665,75 @@ export class IpdService {
     });
   }
 
+  // ========== DISCHARGE PLANNING ==========
+
+  async setExpectedDischargeDate(
+    admissionId: string,
+    expectedDischargeDate: string | null,
+    tenantId?: string,
+  ): Promise<Admission> {
+    const tid = requireTenantId(tenantId);
+    const admission = await this.admissionRepo.findOne({
+      where: { id: admissionId, tenantId: tid },
+    });
+    if (!admission) throw new NotFoundException('Admission not found');
+    if (admission.status !== AdmissionStatus.ADMITTED) {
+      throw new BadRequestException('Expected discharge date applies to active admissions only');
+    }
+    if (expectedDischargeDate && Number.isNaN(new Date(expectedDischargeDate).getTime())) {
+      throw new BadRequestException('Invalid expected discharge date');
+    }
+    admission.expectedDischargeDate = expectedDischargeDate;
+    return this.admissionRepo.save(admission);
+  }
+
+  /**
+   * Discharge-planning board: active admissions grouped by planned discharge —
+   * overdue, today, next 7 days, and those with no date set. Helps ward
+   * managers free beds proactively.
+   */
+  async getDischargePlanning(facilityId: string, tenantId?: string) {
+    const tid = requireTenantId(tenantId);
+    const admissions = await this.admissionRepo
+      .createQueryBuilder('a')
+      .leftJoinAndSelect('a.patient', 'patient')
+      .leftJoinAndSelect('a.ward', 'ward')
+      .leftJoinAndSelect('a.bed', 'bed')
+      .leftJoin('a.ward', 'w')
+      .where('a.status = :status', { status: AdmissionStatus.ADMITTED })
+      .andWhere('a.tenant_id = :tid', { tid })
+      .andWhere('w.facilityId = :facilityId', { facilityId })
+      .orderBy('a.expected_discharge_date', 'ASC', 'NULLS LAST')
+      .getMany();
+
+    const today = new Date().toISOString().slice(0, 10);
+    const weekAhead = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+    const summarize = (a: Admission) => ({
+      admissionId: a.id,
+      admissionNumber: a.admissionNumber,
+      patient: { id: a.patient?.id, name: a.patient?.fullName, mrn: a.patient?.mrn },
+      ward: a.ward?.name,
+      bed: a.bed?.bedNumber,
+      admittedAt: a.admissionDate,
+      expectedDischargeDate: a.expectedDischargeDate ?? null,
+    });
+
+    const dated = admissions.filter((a) => a.expectedDischargeDate);
+    return {
+      generatedAt: new Date(),
+      overdue: dated.filter((a) => String(a.expectedDischargeDate) < today).map(summarize),
+      today: dated.filter((a) => String(a.expectedDischargeDate) === today).map(summarize),
+      upcoming: dated
+        .filter(
+          (a) =>
+            String(a.expectedDischargeDate) > today && String(a.expectedDischargeDate) <= weekAhead,
+        )
+        .map(summarize),
+      unplanned: admissions.filter((a) => !a.expectedDischargeDate).map(summarize),
+    };
+  }
+
   // ========== SHIFT HANDOVER ==========
 
   /**
