@@ -81,12 +81,12 @@ export const mdmService = {
       return Array.isArray(data) ? data : (data?.data || []);
     },
     create: async (data: Partial<ApprovalRule>): Promise<ApprovalRule> => {
-      const response = await api.post('/mdm/approval-rules', data);
-      return response.data;
+      const response = await api.post<{ message: string; data: ApprovalRule }>('/mdm/approval-rules', data);
+      return response.data.data;
     },
     update: async (id: string, data: Partial<ApprovalRule>): Promise<ApprovalRule> => {
-      const response = await api.put(`/mdm/approval-rules/${id}`, data);
-      return response.data;
+      const response = await api.put<{ message: string; data: ApprovalRule }>(`/mdm/approval-rules/${id}`, data);
+      return response.data.data;
     },
   },
   getStatistics: async (): Promise<any> => {

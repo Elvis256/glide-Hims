@@ -111,13 +111,13 @@ export const facilitiesService = {
   },
 
   create: async (data: CreateFacilityDto): Promise<Facility> => {
-    const response = await api.post<Facility>('/facilities', data);
-    return response.data;
+    const response = await api.post<{ message: string; data: Facility }>('/facilities', data);
+    return response.data.data;
   },
 
   update: async (id: string, data: Partial<CreateFacilityDto>): Promise<Facility> => {
-    const response = await api.patch<Facility>(`/facilities/${id}`, data);
-    return response.data;
+    const response = await api.patch<{ message: string; data: Facility }>(`/facilities/${id}`, data);
+    return response.data.data;
   },
 
   delete: async (id: string): Promise<void> => {
@@ -135,12 +135,12 @@ export const facilitiesService = {
       return response.data;
     },
     create: async (facilityId: string, data: Omit<CreateDepartmentDto, 'facilityId'>): Promise<Department> => {
-      const response = await api.post<Department>(`/facilities/${facilityId}/departments`, { ...data, facilityId });
-      return response.data;
+      const response = await api.post<{ message: string; data: Department }>(`/facilities/${facilityId}/departments`, { ...data, facilityId });
+      return response.data.data;
     },
     update: async (id: string, data: Partial<CreateDepartmentDto>): Promise<Department> => {
-      const response = await api.patch<Department>(`/facilities/departments/${id}`, data);
-      return response.data;
+      const response = await api.patch<{ message: string; data: Department }>(`/facilities/departments/${id}`, data);
+      return response.data.data;
     },
     delete: async (id: string): Promise<void> => {
       await api.delete(`/facilities/departments/${id}`);
@@ -162,12 +162,12 @@ export const facilitiesService = {
       return response.data;
     },
     create: async (departmentId: string, data: Omit<CreateUnitDto, 'departmentId'>): Promise<Unit> => {
-      const response = await api.post<Unit>(`/facilities/departments/${departmentId}/units`, { ...data, departmentId });
-      return response.data;
+      const response = await api.post<{ message: string; data: Unit }>(`/facilities/departments/${departmentId}/units`, { ...data, departmentId });
+      return response.data.data;
     },
     update: async (id: string, data: Partial<CreateUnitDto>): Promise<Unit> => {
-      const response = await api.patch<Unit>(`/facilities/units/${id}`, data);
-      return response.data;
+      const response = await api.patch<{ message: string; data: Unit }>(`/facilities/units/${id}`, data);
+      return response.data.data;
     },
     delete: async (id: string): Promise<void> => {
       await api.delete(`/facilities/units/${id}`);

@@ -51,14 +51,14 @@ export const rolesService = {
 
   // Create role
   create: async (data: CreateRoleDto): Promise<Role> => {
-    const response = await api.post<Role>('/roles', data);
-    return response.data;
+    const response = await api.post<{ message: string; data: Role }>('/roles', data);
+    return response.data.data;
   },
 
   // Update role
   update: async (id: string, data: UpdateRoleDto): Promise<Role> => {
-    const response = await api.patch<Role>(`/roles/${id}`, data);
-    return response.data;
+    const response = await api.patch<{ message: string; data: Role }>(`/roles/${id}`, data);
+    return response.data.data;
   },
 
   // Delete role
@@ -68,8 +68,8 @@ export const rolesService = {
 
   // Clone a role (copies all directly-assigned permissions)
   clone: async (id: string, name: string, description?: string): Promise<Role> => {
-    const response = await api.post<Role>(`/roles/${id}/clone`, { name, description });
-    return response.data;
+    const response = await api.post<{ message: string; data: Role }>(`/roles/${id}/clone`, { name, description });
+    return response.data.data;
   },
 
   // Assign permission to role

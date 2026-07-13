@@ -41,12 +41,12 @@ export const providersService = {
     return response.data;
   },
   create: async (data: Partial<Provider>): Promise<Provider> => {
-    const response = await api.post('/providers', data);
-    return response.data;
+    const response = await api.post<{ message: string; data: Provider }>('/providers', data);
+    return response.data.data;
   },
   update: async (id: string, data: Partial<Provider>): Promise<Provider> => {
-    const response = await api.patch(`/providers/${id}`, data);
-    return response.data;
+    const response = await api.patch<{ message: string; data: Provider }>(`/providers/${id}`, data);
+    return response.data.data;
   },
   delete: async (id: string): Promise<void> => {
     await api.delete(`/providers/${id}`);
