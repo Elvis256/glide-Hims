@@ -67,7 +67,11 @@ export class SurgeryService {
     @Optional()
     @Inject(forwardRef(() => BillingService))
     private readonly billingService: BillingService | null,
+    // NB: @Inject(forwardRef(...)) is required — with a bare @Optional() and a
+    // union parameter type, Nest silently injects undefined and enforcement
+    // would always read as disabled (caught by the E2E test).
     @Optional()
+    @Inject(forwardRef(() => SystemSettingsService))
     private readonly settingsService: SystemSettingsService | null,
   ) {}
 
