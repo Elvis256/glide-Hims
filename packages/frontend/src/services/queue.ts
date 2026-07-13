@@ -18,7 +18,8 @@ export interface QueueEntry {
   tokenNumber?: string;
   servicePoint: string;
   priority: number;
-  status: 'waiting' | 'called' | 'in_service' | 'completed' | 'skipped' | 'no_show' | 'cancelled';
+  // Matches backend QueueStatus enum — pending_payment = pre-pay entry awaiting billing counter
+  status: 'pending_payment' | 'waiting' | 'called' | 'in_service' | 'completed' | 'skipped' | 'no_show' | 'cancelled';
   estimatedWaitMinutes?: number;
   notes?: string;
   roomNumber?: string;
