@@ -67,6 +67,31 @@ export class SystemSettingsService {
     });
   }
 
+  /** Read a single platform-scoped setting (tenant_id IS NULL). */
+  async getPlatformByKey(key: string): Promise<SystemSetting> {
+    const setting = await this.settingRepo.findOne({
+      where: { key, tenantId: IsNull() },
+    });
+    if (!setting) {
+      throw new NotFoundException(`Platform setting with key "${key}" not found`);
+    }
+    return setting;
+  }
+
+  /** Upsert a platform-scoped setting (tenant_id IS NULL). */
+  async upsertPlatform(key: string, value: any, description?: string): Promise<SystemSetting> {
+    let setting = await this.settingRepo.findOne({
+      where: { key, tenantId: IsNull() },
+    });
+    if (setting) {
+      setting.value = value;
+      if (description !== undefined) setting.description = description;
+    } else {
+      setting = this.settingRepo.create({ key, value, tenantId: null as any, description });
+    }
+    return this.settingRepo.save(setting);
+  }
+
   /** Platform-level settings (tenant_id IS NULL, key starts with platform.) */
   async getPlatformSettings(): Promise<SystemSetting[]> {
     return this.settingRepo.find({
