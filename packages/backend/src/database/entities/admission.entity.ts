@@ -71,12 +71,15 @@ export class Admission extends BaseEntity {
   @JoinColumn({ name: 'patientId' })
   patient: Patient;
 
-  @Column({ type: 'uuid' })
-  encounterId: string;
+  // Nullable: direct admissions (e.g. external referrals) have no prior
+  // encounter — the DTO and service have always treated this as optional,
+  // but the column was NOT NULL and 500'd on insert (migration 76 fixes)
+  @Column({ type: 'uuid', nullable: true })
+  encounterId?: string | null;
 
-  @ManyToOne(() => Encounter)
+  @ManyToOne(() => Encounter, { nullable: true })
   @JoinColumn({ name: 'encounterId' })
-  encounter: Encounter;
+  encounter?: Encounter | null;
 
   @Column({ type: 'uuid' })
   wardId: string;
