@@ -13,6 +13,11 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
  */
 export function getApiErrorMessage(error: unknown, fallback = 'An unexpected error occurred'): string {
   if (axios.isAxiosError(error)) {
+    // Request timed out (no response) — surface a friendly message instead of
+    // axios's "timeout of 30000ms exceeded"
+    if (error.code === 'ECONNABORTED' && !error.response) {
+      return 'The server took too long to respond. Please try again.';
+    }
     // Try to get message from response body (NestJS format)
     const data = error.response?.data;
     if (data?.message) {
@@ -55,6 +60,9 @@ export function getApiErrorMessage(error: unknown, fallback = 'An unexpected err
 export const api = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true,
+  // Fail loudly instead of spinning forever when the backend hangs
+  // (2026-07-13 incident: a DB deadlock left "Signing in..." infinite)
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -101,6 +109,17 @@ api.interceptors.request.use(
 
     if (config.headers && !config.headers['x-request-id']) {
       config.headers['x-request-id'] = createRequestId();
+    }
+
+    // Uploads and file downloads legitimately run long on slow links —
+    // give them a bigger budget than the 30s default. Explicit per-call
+    // timeouts (anything other than the default) are respected.
+    if (config.timeout === api.defaults.timeout) {
+      const isUpload = typeof FormData !== 'undefined' && config.data instanceof FormData;
+      const isFileDownload = config.responseType === 'blob' || config.responseType === 'arraybuffer';
+      if (isUpload || isFileDownload) {
+        config.timeout = 120000;
+      }
     }
 
     return config;
@@ -189,6 +208,7 @@ api.interceptors.response.use(
         try {
           const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {}, {
             withCredentials: true,
+            timeout: 30000,
           });
           
           const refreshData = response.data?.data || response.data;
