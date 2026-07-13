@@ -74,6 +74,7 @@ interface InsuranceProviderInfo {
 // Use canonical shared payment-method type for the entire platform.
 import type { PaymentMethod as PaymentType } from '../shared/payment-methods';
 import PaymentMethodPicker from '../components/PaymentMethodPicker';
+import { Select as UiSelect } from '../components/ui';
 
 export default function OPDTokenPage() {
   const navigate = useNavigate();
@@ -754,13 +755,19 @@ export default function OPDTokenPage() {
         </div>
       </div>
 
-      {/* Main Content - 3 columns */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-4 min-h-0 overflow-hidden">
-        {/* Column 1: Patient & Department */}
-        <div className="flex flex-col gap-4 min-h-0">
-          {/* Patient Search */}
-          <div className="card p-4 flex-shrink-0">
-            <h2 className="text-sm font-semibold mb-2">1. Select Patient</h2>
+      {/* Main Content — sequential flow (left) + context rail (right) */}
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 min-h-0 overflow-hidden">
+        {/* Left: the flow */}
+        <div className="lg:col-span-2 flex flex-col min-h-0">
+          <div className="flex-1 overflow-y-auto space-y-3 pr-1 pb-1">
+          {/* Step 1: Patient */}
+          <div className="card p-4">
+            <h2 className="text-sm font-semibold mb-2 flex items-center gap-2">
+              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${selectedPatient ? 'bg-emerald-100 text-emerald-700' : 'bg-brand-50 text-brand-700 ring-1 ring-brand-400'}`}>
+                {selectedPatient ? '✓' : '1'}
+              </span>
+              Patient
+            </h2>
             {selectedPatient ? (
               <div className="bg-blue-50 rounded-lg p-2">
                 <div className="flex items-center justify-between mb-2">
@@ -892,11 +899,20 @@ export default function OPDTokenPage() {
             )}
           </div>
 
-          {/* Department Selection (hidden in simple workflow mode — auto-uses default department) */}
-          {user?.workflowMode !== 'simple' && (
-          <div className="card p-4 flex-1 min-h-0 flex flex-col">
-            <h2 className="text-sm font-semibold mb-2 flex-shrink-0">2. Department <span className="text-xs text-gray-400 font-normal">(optional — leave blank for General OPD)</span></h2>
-            <div className="grid grid-cols-2 gap-1.5 flex-1 overflow-y-auto content-start">
+          {/* Step 2: Visit details — appears once a patient is chosen */}
+          {selectedPatient && (
+          <div className="card p-4">
+            <h2 className="text-sm font-semibold mb-3 flex items-center gap-2">
+              <span className="w-5 h-5 rounded-full bg-brand-50 text-brand-700 ring-1 ring-brand-400 flex items-center justify-center text-xs font-bold">2</span>
+              Visit Details
+            </h2>
+            <div className="space-y-4">
+
+            {/* Department (hidden in simple workflow mode — auto-uses default department) */}
+            {user?.workflowMode !== 'simple' && (
+            <div>
+              <h3 className="text-xs font-semibold text-surface-500 uppercase tracking-wide mb-2">Department <span className="text-surface-400 font-normal normal-case">(optional — General OPD if blank)</span></h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-40 overflow-y-auto content-start">
               <button
                 onClick={() => { setSelectedDepartment(''); setSelectedDoctor('any'); }}
                 className={`p-2 rounded border text-left transition-colors text-xs ${
@@ -930,110 +946,54 @@ export default function OPDTokenPage() {
                 </p>
               )}
             </div>
-          </div>
-          )}
-        </div>
-
-        {/* Column 2: Doctor Selection */}
-        <div className="card p-4 flex flex-col min-h-0 lg:col-span-2">
-          <div className="flex items-center justify-between mb-2 flex-shrink-0">
-            <h2 className="text-sm font-semibold">3. Select Doctor (Optional)</h2>
-            <Link 
-              to="/doctors/on-duty" 
-              className="text-xs text-blue-600 hover:underline flex items-center gap-1"
-            >
-              <UserCheck className="w-3 h-3" />
-              Manage
-            </Link>
-          </div>
-          
-          {/* Warning if no doctors on duty */}
-          {!doctorsLoading && availableDoctors.length === 0 && (
-            <div className="mb-2 p-2 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
-              <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-              <div className="text-xs">
-                <p className="font-medium text-amber-800">No doctors checked in</p>
-                <p className="text-amber-600">
-                  <Link to="/doctors/on-duty" className="underline">Check in doctors</Link> to assign patients
-                </p>
-              </div>
             </div>
-          )}
-          
-          {/* Any Doctor Option */}
-          <button
-            onClick={() => setSelectedDoctor('any')}
-            className={`w-full p-2 rounded border-2 text-left mb-2 flex-shrink-0 ${
-              selectedDoctor === 'any' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <Users className={`w-5 h-5 ${selectedDoctor === 'any' ? 'text-blue-600' : 'text-gray-500'}`} />
-              <div>
-                <p className={`text-sm font-medium ${selectedDoctor === 'any' ? 'text-blue-700' : 'text-gray-900'}`}>
-                  Any Available Doctor
-                </p>
-                <p className="text-xs text-gray-500">Auto-assigned • Shortest wait</p>
-              </div>
-            </div>
-          </button>
-
-          {/* Doctor List */}
-          <div className="flex-1 overflow-y-auto space-y-1.5">
-            {doctorsLoading && (
-              <div className="flex justify-center py-4">
-                <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
-              </div>
             )}
-            {availableDoctors.map((doctor) => (
-              <button
-                key={doctor.id}
-                onClick={() => doctor.available && setSelectedDoctor(doctor.id)}
-                disabled={!doctor.available}
-                className={`w-full p-2 rounded border text-left transition-colors ${
-                  selectedDoctor === doctor.id
-                    ? 'border-blue-500 bg-blue-50'
-                    : doctor.available
-                      ? 'border-gray-200 hover:border-gray-300'
-                      : 'border-gray-100 bg-gray-50 opacity-50'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Stethoscope className={`w-4 h-4 ${selectedDoctor === doctor.id ? 'text-blue-600' : 'text-gray-500'}`} />
-                    <div>
-                      <p className={`text-sm font-medium ${selectedDoctor === doctor.id ? 'text-blue-700' : 'text-gray-900'}`}>
-                        {doctor.name}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {doctor.specialization}
-                        {doctor.roomNumber && ` • Room ${doctor.roomNumber}`}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    {doctor.available ? (
-                      <>
-                        <p className="text-xs font-medium">{doctor.currentQueue} waiting</p>
-                        <p className="text-xs text-green-600">Available</p>
-                      </>
-                    ) : (
-                      <p className="text-xs text-red-500">Unavailable</p>
-                    )}
+
+            {/* Doctor — compact row (optional; usually "Any") */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-xs font-semibold text-surface-500 uppercase tracking-wide">Doctor <span className="text-surface-400 font-normal normal-case">(optional)</span></h3>
+                <Link
+                  to="/doctors/on-duty"
+                  className="text-xs text-brand-600 hover:underline flex items-center gap-1"
+                >
+                  <UserCheck className="w-3 h-3" />
+                  Manage
+                </Link>
+              </div>
+
+              {/* Warning if no doctors on duty */}
+              {!doctorsLoading && availableDoctors.length === 0 && (
+                <div className="mb-2 p-2 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div className="text-xs">
+                    <p className="font-medium text-amber-800">No doctors checked in</p>
+                    <p className="text-amber-600">
+                      <Link to="/doctors/on-duty" className="underline">Check in doctors</Link> to assign patients
+                    </p>
                   </div>
                 </div>
-              </button>
-            ))}
-          </div>
-        </div>
+              )}
 
-        {/* Column 3: Clinical Info + Queue Summary & Issue Button */}
-        <div className="flex flex-col min-h-0 overflow-hidden">
-          {/* Scrollable content area */}
-          <div className="flex flex-col gap-3 flex-1 min-h-0 overflow-y-auto pb-1">
-          {/* Visit Type */}
-          <div className="card p-3 flex-shrink-0">
-            <h2 className="text-sm font-semibold mb-2">Visit Type</h2>
+              <UiSelect
+                value={selectedDoctor}
+                onChange={(e) => setSelectedDoctor(e.target.value)}
+                disabled={doctorsLoading}
+              >
+                <option value="any">Any available doctor — auto-assigned, shortest wait</option>
+                {availableDoctors.map((doctor) => (
+                  <option key={doctor.id} value={doctor.id} disabled={!doctor.available}>
+                    {doctor.name} — {doctor.specialization}
+                    {doctor.roomNumber ? ` · Room ${doctor.roomNumber}` : ''}
+                    {doctor.available ? ` · ${doctor.currentQueue} waiting` : ' · unavailable'}
+                  </option>
+                ))}
+              </UiSelect>
+            </div>
+
+            {/* Visit Type */}
+            <div>
+            <h3 className="text-xs font-semibold text-surface-500 uppercase tracking-wide mb-2">Visit Type</h3>
             <div className="grid grid-cols-2 gap-1.5">
               {[
                 { value: 'new_visit', label: 'New Visit', icon: <ArrowRight className="w-3 h-3" />, color: 'blue' },
@@ -1068,15 +1028,15 @@ export default function OPDTokenPage() {
           </div>
 
           {/* Chief Complaint */}
-          <div className="card p-3 flex-shrink-0">
-            <h2 className="text-sm font-semibold mb-2 flex items-center gap-1">
+          <div>
+            <h3 className="text-xs font-semibold text-surface-500 uppercase tracking-wide mb-2 flex items-center gap-1">
               <MessageSquare className="w-3.5 h-3.5" /> Chief Complaint
               {visitType === 'new_visit' || visitType === 'emergency' ? (
-                <span className="text-red-500 ml-0.5">*</span>
+                <span className="text-rose-500 ml-0.5">*</span>
               ) : (
-                <span className="text-xs text-gray-400 font-normal ml-1">(optional)</span>
+                <span className="text-surface-400 font-normal normal-case ml-1">(optional)</span>
               )}
-            </h2>
+            </h3>
             <textarea
               value={chiefComplaint}
               onChange={(e) => setChiefComplaint(e.target.value)}
@@ -1087,9 +1047,9 @@ export default function OPDTokenPage() {
           </div>
 
           {/* Patient Condition Flags */}
-          <div className="card p-3 flex-shrink-0">
-            <h2 className="text-sm font-semibold mb-2">Patient Condition</h2>
-            <p className="text-xs text-gray-500 mb-2">Select all that apply — auto-adjusts priority</p>
+          <div>
+            <h3 className="text-xs font-semibold text-surface-500 uppercase tracking-wide mb-1">Patient Condition</h3>
+            <p className="text-xs text-surface-500 mb-2">Select all that apply — auto-adjusts priority</p>
             <div className="flex flex-wrap gap-1.5">
               {[
                 { flag: 'elderly', label: 'Elderly', icon: <UserCircle className="w-3 h-3" /> },
@@ -1134,165 +1094,17 @@ export default function OPDTokenPage() {
             )}
           </div>
 
-          <div className="card p-3 flex flex-col flex-shrink-0">
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="text-sm font-semibold">Today's Queue</h2>
-              <div className="flex items-center gap-2 text-xs text-gray-500">
-                <span title="Active in queue today (waiting + serving + billing)">
-                  <span className="font-medium text-gray-700">{queueAnalytics.active.length}</span> active
-                  {queueAnalytics.totalToday > queueAnalytics.active.length && (
-                    <span className="text-gray-400"> / {queueAnalytics.totalToday}</span>
-                  )}
-                </span>
-                <span className="text-gray-300">|</span>
-                <span title={queueAnalytics.estimatedWait > 0 ? `Based on ${queueAnalytics.waiting.length + queueAnalytics.pendingPayment.length} ahead × ~15m` : 'No wait'}>
-                  ⏱ {queueAnalytics.estimatedWait > 0 ? `~${queueAnalytics.estimatedWait}m` : '0m'}
-                </span>
-                <span className="text-gray-300">|</span>
-                <span title="Now serving" className="font-mono text-blue-600 font-medium">
-                  #{queueAnalytics.nowServing?.ticketNumber || '---'}
-                </span>
-              </div>
-            </div>
-
-            {/* Currently-serving banner */}
-            {queueAnalytics.nowServing && (
-              <div className="mb-2 px-2 py-1.5 bg-blue-50 border border-blue-200 rounded flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="font-mono font-bold text-blue-700">#{queueAnalytics.nowServing.ticketNumber}</span>
-                  <span className="truncate text-gray-700">
-                    {queueAnalytics.nowServing.patient?.fullName || 'Patient'}
-                  </span>
-                </div>
-                <span className="text-[10px] uppercase tracking-wide text-blue-600 font-medium">
-                  {queueAnalytics.nowServing.status === 'called' ? 'Called' : 'In service'}
-                </span>
-              </div>
-            )}
-
-            {/* Last issued ticket */}
-            {queueAnalytics.lastIssued && (
-              <div className="mb-2 text-[11px] text-gray-500 flex items-center justify-between">
-                <span>Last issued</span>
-                <span className="font-mono font-medium text-gray-700">
-                  #{queueAnalytics.lastIssued.ticketNumber}
-                </span>
-              </div>
-            )}
-
-            <div className="space-y-1.5 flex-shrink-0">
-              <div className="flex items-center justify-between px-2 py-1 bg-amber-50 rounded">
-                <div className="flex items-center gap-1.5">
-                  <Banknote className="w-3.5 h-3.5 text-amber-600" />
-                  <span className="text-xs text-amber-700">At Billing</span>
-                </div>
-                <span className="text-base font-bold text-amber-700">
-                  {queueAnalytics.pendingPayment.length}
-                </span>
-              </div>
-              <div className="flex items-center justify-between px-2 py-1 bg-yellow-50 rounded">
-                <div className="flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5 text-yellow-600" />
-                  <span className="text-xs text-yellow-700">Waiting</span>
-                </div>
-                <span className="text-base font-bold text-yellow-700">
-                  {queueAnalytics.waiting.length}
-                </span>
-              </div>
-              <div className="flex items-center justify-between px-2 py-1 bg-blue-50 rounded">
-                <div className="flex items-center gap-1.5">
-                  <UserCircle className="w-3.5 h-3.5 text-blue-600" />
-                  <span className="text-xs text-blue-700">Serving</span>
-                </div>
-                <span className="text-base font-bold text-blue-700">
-                  {queueAnalytics.inService.length + queueAnalytics.called.length}
-                </span>
-              </div>
-              <div className="flex items-center justify-between px-2 py-1 bg-green-50 rounded">
-                <div className="flex items-center gap-1.5">
-                  <CheckCircle className="w-3.5 h-3.5 text-green-600" />
-                  <span className="text-xs text-green-700">Done</span>
-                </div>
-                <span className="text-base font-bold text-green-700">
-                  {queueAnalytics.completed.length}
-                </span>
-              </div>
-            </div>
-            
-            {/* Queue List */}
-            <div className="mt-2 pt-2 border-t">
-              <p className="text-xs text-gray-500 mb-1">Patients in Queue:</p>
-              <div className="overflow-y-auto space-y-1 max-h-[100px]">
-                {queueAnalytics.active.length > 0 ? (
-                  queueAnalytics.active
-                    .slice(0, 10)
-                    .map((entry) => (
-                      <div 
-                        key={entry.id} 
-                        className={`flex items-center justify-between p-1.5 rounded text-xs group ${
-                          entry.status === 'called' || entry.status === 'in_service'
-                            ? 'bg-blue-100'
-                            : entry.status === 'pending_payment'
-                            ? 'bg-amber-50'
-                            : 'bg-gray-50 hover:bg-gray-100'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 min-w-0 flex-1">
-                          <span className={`font-mono font-bold ${
-                            entry.status === 'called' || entry.status === 'in_service'
-                              ? 'text-blue-700'
-                              : entry.status === 'pending_payment'
-                              ? 'text-amber-700'
-                              : 'text-gray-700'
-                          }`}>
-                            {entry.ticketNumber}
-                          </span>
-                          <span className="truncate text-gray-600">
-                            {entry.patient?.fullName || 'Patient'}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          {entry.status === 'called' && (
-                            <span className="text-xs bg-blue-600 text-white px-1.5 py-0.5 rounded">
-                              Now
-                            </span>
-                          )}
-                          {entry.status === 'in_service' && (
-                            <span className="text-xs bg-blue-500 text-white px-1.5 py-0.5 rounded">
-                              Serving
-                            </span>
-                          )}
-                          {entry.status === 'pending_payment' && (
-                            <span className="text-xs bg-amber-500 text-white px-1.5 py-0.5 rounded">
-                              Pay
-                            </span>
-                          )}
-                          <button
-                            onClick={() => handleRemoveFromQueue(entry.id, entry.patient?.fullName || 'Patient')}
-                            className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-100 rounded transition-opacity"
-                            title="Remove from queue"
-                          >
-                            <X className="w-3 h-3 text-red-500" />
-                          </button>
-                        </div>
-                      </div>
-                    ))
-                ) : (
-                  <p className="text-xs text-gray-400 text-center py-2">No patients waiting</p>
-                )}
-                {queueAnalytics.active.length > 10 && (
-                  <p className="text-xs text-gray-400 text-center">
-                    +{queueAnalytics.active.length - 10} more...
-                  </p>
-                )}
-              </div>
-            </div>
+          </div>{/* end step-2 sections */}
           </div>
+          )}{/* end step 2 */}
 
-          {/* Payment Type Selection */}
+          {/* Step 3: Payment */}
           {selectedPatient && (
-            <div className="card p-3 flex-shrink-0">
-              <h2 className="text-sm font-semibold mb-2">4. Payment Method</h2>
+            <div className="card p-4">
+              <h2 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-brand-50 text-brand-700 ring-1 ring-brand-400 flex items-center justify-center text-xs font-bold">3</span>
+                Payment
+              </h2>
               
               {/* Canonical payment-method picker — driven by Admin → Finance → Payment Methods.
                   Replaces the previous bespoke two-row chip grid so every payment surface
@@ -1625,7 +1437,7 @@ export default function OPDTokenPage() {
             </div>
           )}
 
-          </div>{/* end scrollable content */}
+          </div>{/* end left scroll region */}
 
           {/* Already in queue warning — shown immediately when patient selected */}
           {existingQueueEntry && (
@@ -1655,27 +1467,231 @@ export default function OPDTokenPage() {
             </div>
           )}
 
-          {/* Issue Button — always visible at bottom */}
-          <button
-            onClick={handleIssueToken}
-            disabled={!selectedPatient || !!existingQueueEntry || issueTokenMutation.isPending}
-            className="btn-primary py-3 flex items-center justify-center gap-2 disabled:opacity-50 mt-2 flex-shrink-0"
-            title="Tip: Ctrl/⌘+Enter to issue"
-          >
-            {issueTokenMutation.isPending ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : (
-              <>
-                <Receipt className="w-5 h-5" />
-                {existingQueueEntry ? 'Already in Queue' : 'Issue Token'}
-                {selectedPatient && !existingQueueEntry && (
-                  <kbd className="hidden sm:inline ml-2 px-1.5 py-0.5 text-[10px] font-mono bg-white/20 border border-white/30 rounded">
-                    Ctrl+↵
-                  </kbd>
-                )}
-              </>
+          {/* Sticky action bar — fee summary + Issue always visible */}
+          <div className="mt-2 flex items-center gap-3 bg-white border border-surface-200 rounded-2xl px-4 py-3 shadow-[0_-2px_12px_rgba(15,23,42,0.06)] flex-shrink-0">
+            <div className="min-w-0">
+              <p className="text-xs text-surface-500">Consultation fee</p>
+              <p className="text-base font-bold text-surface-900 leading-tight">
+                UGX {Number(CONSULTATION_FEE || 0).toLocaleString()}
+                <span className="ml-2 text-xs font-medium text-surface-500 capitalize">{paymentType.replace(/_/g, ' ')}</span>
+              </p>
+            </div>
+            <div className="flex-1" />
+            <button
+              onClick={handleIssueToken}
+              disabled={!selectedPatient || !!existingQueueEntry || issueTokenMutation.isPending}
+              className="btn-primary py-3 px-8 flex items-center justify-center gap-2 disabled:opacity-50"
+              title="Tip: Ctrl/⌘+Enter to issue"
+            >
+              {issueTokenMutation.isPending ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <>
+                  <Receipt className="w-5 h-5" />
+                  {existingQueueEntry ? 'Already in Queue' : 'Issue Token'}
+                  {selectedPatient && !existingQueueEntry && (
+                    <kbd className="hidden sm:inline ml-2 px-1.5 py-0.5 text-[10px] font-mono bg-white/20 border border-white/30 rounded">
+                      Ctrl+↵
+                    </kbd>
+                  )}
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Right rail: live token preview + queue monitor */}
+        <div className="flex flex-col gap-3 min-h-0 overflow-y-auto pb-1">
+          {/* Token preview — builds up as the form is filled */}
+          <div className="bg-white rounded-2xl border border-surface-200 shadow-[0_4px_20px_rgba(15,23,42,0.06)] overflow-hidden flex-shrink-0">
+            <div className="bg-brand-700 text-white text-center px-4 py-2">
+              <p className="text-[11px] uppercase tracking-widest text-brand-200">Token Preview</p>
+            </div>
+            <div className="px-4 py-4 text-center">
+              <p className="text-4xl font-mono font-extrabold tracking-tight leading-none text-surface-300">
+                {queueAnalytics.lastIssued ? `#${String(queueAnalytics.lastIssued.ticketNumber).replace(/^#/, '')}` : '#—'}
+              </p>
+              <p className="text-[10px] text-surface-400 mt-1 uppercase tracking-wide">last issued — new token follows</p>
+            </div>
+            <div className="border-t-2 border-dashed border-surface-200 mx-3" />
+            <div className="px-4 py-3 text-sm space-y-1.5">
+              <div className="flex justify-between gap-2">
+                <span className="text-surface-500">Patient</span>
+                <span className="font-medium text-surface-900 truncate">{selectedPatient?.fullName || '—'}</span>
+              </div>
+              <div className="flex justify-between gap-2">
+                <span className="text-surface-500">Department</span>
+                <span className="font-medium text-surface-900 truncate">
+                  {selectedDepartment ? (departments?.find(d => d.id === selectedDepartment)?.name || '—') : 'General OPD'}
+                </span>
+              </div>
+              <div className="flex justify-between gap-2">
+                <span className="text-surface-500">Doctor</span>
+                <span className="font-medium text-surface-900 truncate">
+                  {selectedDoctor === 'any' ? 'Any available' : (availableDoctors.find(d => d.id === selectedDoctor)?.name || '—')}
+                </span>
+              </div>
+              <div className="flex justify-between gap-2">
+                <span className="text-surface-500">Visit</span>
+                <span className="font-medium text-surface-900 capitalize">{visitType.replace(/_/g, ' ')}</span>
+              </div>
+              <div className="flex justify-between gap-2 pt-1 border-t border-surface-100">
+                <span className="text-surface-500">Fee</span>
+                <span className="font-bold text-surface-900">UGX {Number(CONSULTATION_FEE || 0).toLocaleString()}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Queue monitor */}
+          <div className="card p-3 flex flex-col flex-shrink-0">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-sm font-semibold">Today's Queue</h2>
+              <div className="flex items-center gap-2 text-xs text-gray-500">
+                <span title="Active in queue today (waiting + serving + billing)">
+                  <span className="font-medium text-gray-700">{queueAnalytics.active.length}</span> active
+                  {queueAnalytics.totalToday > queueAnalytics.active.length && (
+                    <span className="text-gray-400"> / {queueAnalytics.totalToday}</span>
+                  )}
+                </span>
+                <span className="text-gray-300">|</span>
+                <span title={queueAnalytics.estimatedWait > 0 ? `Based on ${queueAnalytics.waiting.length + queueAnalytics.pendingPayment.length} ahead × ~15m` : 'No wait'}>
+                  ⏱ {queueAnalytics.estimatedWait > 0 ? `~${queueAnalytics.estimatedWait}m` : '0m'}
+                </span>
+              </div>
+            </div>
+            {/* Currently-serving banner */}
+            {queueAnalytics.nowServing && (
+              <div className="mb-2 px-2 py-1.5 bg-blue-50 border border-blue-200 rounded flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-mono font-bold text-blue-700">#{queueAnalytics.nowServing.ticketNumber}</span>
+                  <span className="truncate text-gray-700">
+                    {queueAnalytics.nowServing.patient?.fullName || 'Patient'}
+                  </span>
+                </div>
+                <span className="text-[10px] uppercase tracking-wide text-blue-600 font-medium">
+                  {queueAnalytics.nowServing.status === 'called' ? 'Called' : 'In service'}
+                </span>
+              </div>
             )}
-          </button>
+
+            {/* Last issued ticket */}
+            {queueAnalytics.lastIssued && (
+              <div className="mb-2 text-[11px] text-gray-500 flex items-center justify-between">
+                <span>Last issued</span>
+                <span className="font-mono font-medium text-gray-700">
+                  #{queueAnalytics.lastIssued.ticketNumber}
+                </span>
+              </div>
+            )}
+
+            <div className="space-y-1.5 flex-shrink-0">
+              <div className="flex items-center justify-between px-2 py-1 bg-amber-50 rounded">
+                <div className="flex items-center gap-1.5">
+                  <Banknote className="w-3.5 h-3.5 text-amber-600" />
+                  <span className="text-xs text-amber-700">At Billing</span>
+                </div>
+                <span className="text-base font-bold text-amber-700">
+                  {queueAnalytics.pendingPayment.length}
+                </span>
+              </div>
+              <div className="flex items-center justify-between px-2 py-1 bg-yellow-50 rounded">
+                <div className="flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-yellow-600" />
+                  <span className="text-xs text-yellow-700">Waiting</span>
+                </div>
+                <span className="text-base font-bold text-yellow-700">
+                  {queueAnalytics.waiting.length}
+                </span>
+              </div>
+              <div className="flex items-center justify-between px-2 py-1 bg-blue-50 rounded">
+                <div className="flex items-center gap-1.5">
+                  <UserCircle className="w-3.5 h-3.5 text-blue-600" />
+                  <span className="text-xs text-blue-700">Serving</span>
+                </div>
+                <span className="text-base font-bold text-blue-700">
+                  {queueAnalytics.inService.length + queueAnalytics.called.length}
+                </span>
+              </div>
+              <div className="flex items-center justify-between px-2 py-1 bg-green-50 rounded">
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle className="w-3.5 h-3.5 text-green-600" />
+                  <span className="text-xs text-green-700">Done</span>
+                </div>
+                <span className="text-base font-bold text-green-700">
+                  {queueAnalytics.completed.length}
+                </span>
+              </div>
+            </div>
+            
+            {/* Queue List */}
+            <div className="mt-2 pt-2 border-t">
+              <p className="text-xs text-gray-500 mb-1">Patients in Queue:</p>
+              <div className="overflow-y-auto space-y-1 max-h-[100px]">
+                {queueAnalytics.active.length > 0 ? (
+                  queueAnalytics.active
+                    .slice(0, 10)
+                    .map((entry) => (
+                      <div 
+                        key={entry.id} 
+                        className={`flex items-center justify-between p-1.5 rounded text-xs group ${
+                          entry.status === 'called' || entry.status === 'in_service'
+                            ? 'bg-blue-100'
+                            : entry.status === 'pending_payment'
+                            ? 'bg-amber-50'
+                            : 'bg-gray-50 hover:bg-gray-100'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <span className={`font-mono font-bold ${
+                            entry.status === 'called' || entry.status === 'in_service'
+                              ? 'text-blue-700'
+                              : entry.status === 'pending_payment'
+                              ? 'text-amber-700'
+                              : 'text-gray-700'
+                          }`}>
+                            {entry.ticketNumber}
+                          </span>
+                          <span className="truncate text-gray-600">
+                            {entry.patient?.fullName || 'Patient'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {entry.status === 'called' && (
+                            <span className="text-xs bg-blue-600 text-white px-1.5 py-0.5 rounded">
+                              Now
+                            </span>
+                          )}
+                          {entry.status === 'in_service' && (
+                            <span className="text-xs bg-blue-500 text-white px-1.5 py-0.5 rounded">
+                              Serving
+                            </span>
+                          )}
+                          {entry.status === 'pending_payment' && (
+                            <span className="text-xs bg-amber-500 text-white px-1.5 py-0.5 rounded">
+                              Pay
+                            </span>
+                          )}
+                          <button
+                            onClick={() => handleRemoveFromQueue(entry.id, entry.patient?.fullName || 'Patient')}
+                            className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-100 rounded transition-opacity"
+                            title="Remove from queue"
+                          >
+                            <X className="w-3 h-3 text-red-500" />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                ) : (
+                  <p className="text-xs text-gray-400 text-center py-2">No patients waiting</p>
+                )}
+                {queueAnalytics.active.length > 10 && (
+                  <p className="text-xs text-gray-400 text-center">
+                    +{queueAnalytics.active.length - 10} more...
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
       
