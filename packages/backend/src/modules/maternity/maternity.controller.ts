@@ -118,6 +118,16 @@ export class MaternityController {
     return this.maternityService.admitLabour(dto, req.user.id, req.user?.tenantId);
   }
 
+  // NB: must be declared BEFORE labour/:id — otherwise 'active' is captured
+  // by the :id param and rejected by ParseUUIDPipe
+  @Get('labour/active')
+  @AuthWithPermissions('maternity.read')
+  @ApiOperation({ summary: 'Get active labours' })
+  @ApiQuery({ name: 'facilityId', required: true })
+  getActiveLabours(@Query('facilityId') facilityId: string, @Request() req: any) {
+    return this.maternityService.getActiveLabours(facilityId, req.user?.tenantId);
+  }
+
   @Get('labour/:id')
   @AuthWithPermissions('maternity.read')
   @ApiOperation({ summary: 'Get labour record by ID' })
@@ -183,14 +193,6 @@ export class MaternityController {
   @ApiOperation({ summary: 'Get baby outcomes for a labour' })
   getBabyOutcomes(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     return this.maternityService.getBabyOutcomes(id, req.user?.tenantId);
-  }
-
-  @Get('labour/active')
-  @AuthWithPermissions('maternity.read')
-  @ApiOperation({ summary: 'Get active labours' })
-  @ApiQuery({ name: 'facilityId', required: true })
-  getActiveLabours(@Query('facilityId') facilityId: string, @Request() req: any) {
-    return this.maternityService.getActiveLabours(facilityId, req.user?.tenantId);
   }
 
   // ============ DASHBOARD ============

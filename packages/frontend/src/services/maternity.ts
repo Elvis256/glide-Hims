@@ -234,6 +234,86 @@ export interface AdmitLabourDto {
   cervicalDilation?: number;
 }
 
+// ── Partograph ───────────────────────────────────────────────────────────────
+
+export interface PartographObservation {
+  id: string;
+  labourRecordId: string;
+  observedAt: string;
+  cervicalDilationCm?: number | null;
+  descentFifths?: number | null;
+  contractionsPer10Min?: number | null;
+  contractionDurationSeconds?: number | null;
+  fetalHeartRate?: number | null;
+  liquor?: string | null;
+  moulding?: string | null;
+  pulse?: number | null;
+  bpSystolic?: number | null;
+  bpDiastolic?: number | null;
+  temperature?: number | null;
+  oxytocinUnitsPerLitre?: number | null;
+  oxytocinDropsPerMin?: number | null;
+  notes?: string | null;
+  createdAt: string;
+}
+
+export type PartographProgressStatus =
+  | 'latent_phase'
+  | 'normal'
+  | 'alert_line_crossed'
+  | 'action_line_crossed';
+
+export interface PartographLineParams {
+  startAt: string;
+  startDilationCm: number;
+  cmPerHour: number;
+}
+
+export interface PartographData {
+  labour: {
+    id: string;
+    labourNumber: string;
+    status: string;
+    admissionTime: string;
+    patient: { id: string; name: string; mrn: string } | null;
+  };
+  observations: PartographObservation[];
+  analysis: {
+    progressStatus: PartographProgressStatus;
+    activePhaseStartAt: string | null;
+    activePhaseStartDilationCm: number | null;
+    alertLine: PartographLineParams | null;
+    actionLine: PartographLineParams | null;
+    latestFetalHeartRate: number | null;
+    fetalHeartRateAbnormal: boolean;
+  };
+}
+
+export interface RecordPartographObservationDto {
+  observedAt?: string;
+  cervicalDilationCm?: number;
+  descentFifths?: number;
+  contractionsPer10Min?: number;
+  contractionDurationSeconds?: number;
+  fetalHeartRate?: number;
+  liquor?: string;
+  moulding?: string;
+  pulse?: number;
+  bpSystolic?: number;
+  bpDiastolic?: number;
+  temperature?: number;
+  oxytocinUnitsPerLitre?: number;
+  oxytocinDropsPerMin?: number;
+  notes?: string;
+}
+
+export interface RecordPartographResult {
+  observation: PartographObservation;
+  progressStatus: PartographProgressStatus;
+  fhrAbnormal: boolean;
+  alerts: string[];
+}
+
 export interface UpdateLabourProgressDto {
   cervicalDilation?: number;
   station?: number;
@@ -459,6 +539,13 @@ export const maternityService = {
 
     getActive: (facilityId: string) =>
       api.get<LabourRecord[]>('/maternity/labour/active', { params: { facilityId } }),
+
+    // Partograph
+    getPartograph: (labourId: string) =>
+      api.get<PartographData>(`/maternity/labour/${labourId}/partograph`),
+
+    recordPartographObservation: (labourId: string, data: RecordPartographObservationDto) =>
+      api.post<RecordPartographResult>(`/maternity/labour/${labourId}/partograph`, data),
   },
 
   // Postnatal Care

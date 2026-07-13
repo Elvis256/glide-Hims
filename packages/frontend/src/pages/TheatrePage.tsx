@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { useFacilityId } from '../lib/facility';
+import WhoChecklistPanel from '../components/surgery/WhoChecklistPanel';
 import {
   Calendar,
   Clock,
@@ -88,6 +89,7 @@ export default function TheatrePage() {
     new Date().toISOString().slice(0, 10)
   );
   const [selectedCase, setSelectedCase] = useState<SurgeryCase | null>(null);
+  const [whoChecklistCase, setWhoChecklistCase] = useState<SurgeryCase | null>(null);
   const [loading, setLoading] = useState(true);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'schedule' | 'theatres'>('dashboard');
@@ -503,6 +505,17 @@ export default function TheatrePage() {
 
               {/* Action Buttons */}
               <div className="pt-4 border-t space-y-2">
+                {['scheduled', 'pre_op', 'in_progress', 'post_op', 'completed'].includes(
+                  selectedCase.status,
+                ) && (
+                  <button
+                    onClick={() => setWhoChecklistCase(selectedCase)}
+                    className="w-full py-2 bg-teal-600 text-white rounded hover:bg-teal-700 flex items-center justify-center gap-2"
+                  >
+                    <CheckCircle className="w-4 h-4" />
+                    WHO Safety Checklist
+                  </button>
+                )}
                 {selectedCase.status === 'scheduled' && (
                   <>
                     <button className="w-full py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600 flex items-center justify-center gap-2">
@@ -539,6 +552,15 @@ export default function TheatrePage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* WHO Surgical Safety Checklist */}
+      {whoChecklistCase && (
+        <WhoChecklistPanel
+          caseId={whoChecklistCase.id}
+          caseNumber={whoChecklistCase.caseNumber}
+          onClose={() => setWhoChecklistCase(null)}
+        />
       )}
 
       {/* Schedule Surgery Modal (placeholder) */}
