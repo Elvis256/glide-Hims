@@ -68,22 +68,22 @@ export const problemsService = {
 
   // Create problem
   create: async (facilityId: string, data: CreateProblemDto): Promise<Problem> => {
-    const response = await api.post(`/problems`, data, {
+    const response = await api.post<{ message: string; data: Problem }>(`/problems`, data, {
       params: { facilityId },
     });
-    return response.data;
+    return response.data.data;
   },
 
   // Update problem
   update: async (id: string, data: Partial<CreateProblemDto>): Promise<Problem> => {
-    const response = await api.patch(`/problems/${id}`, data);
-    return response.data;
+    const response = await api.patch<{ message: string; data: Problem }>(`/problems/${id}`, data);
+    return response.data.data;
   },
 
   // Mark as resolved
   markResolved: async (id: string, resolvedDate?: string, notes?: string): Promise<Problem> => {
-    const response = await api.patch(`/problems/${id}/resolve`, { resolvedDate, notes });
-    return response.data;
+    const response = await api.patch<{ message: string; data: Problem }>(`/problems/${id}/resolve`, { resolvedDate, notes });
+    return response.data.data;
   },
 
   // Delete problem

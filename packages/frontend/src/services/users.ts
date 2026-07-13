@@ -219,7 +219,13 @@ export const usersService = {
           limit: 200,
         },
       });
-      return (response.data || []).map((l) => ({
+      const body = response.data as unknown as { data?: unknown[] } | unknown[];
+      const logs = (Array.isArray(body) ? body : body?.data || []) as Array<{
+        id: string; userId: string; user?: { username?: string; firstName?: string; lastName?: string };
+        action: string; entityType: string; entityId?: string; ipAddress?: string; createdAt: string;
+        oldValue?: Record<string, unknown>; newValue?: Record<string, unknown>;
+      }>;
+      return logs.map((l) => ({
         id: l.id,
         userId: l.userId,
         userName: l.user ? `${l.user.firstName || ''} ${l.user.lastName || ''}`.trim() || l.user.username || 'System' : 'System',
@@ -239,7 +245,7 @@ export const usersService = {
     // Get direct permissions for a user
     get: async (userId: string): Promise<UserPermission[]> => {
       const response = await api.get<{ data: UserPermission[] }>(`/users/${userId}/permissions`);
-      return response.data;
+      return response.data.data;
     },
 
     // Assign a permission directly to a user
@@ -248,7 +254,7 @@ export const usersService = {
         permissionId,
         notes,
       });
-      return response.data;
+      return response.data.data;
     },
 
     // Remove a direct permission from a user
@@ -261,7 +267,7 @@ export const usersService = {
       const response = await api.post<{ data: UserPermission[] }>(`/users/${userId}/permissions/bulk`, {
         permissionIds,
       });
-      return response.data;
+      return response.data.data;
     },
 
     // Remove all direct permissions from a user
