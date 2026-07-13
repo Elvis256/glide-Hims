@@ -36,6 +36,7 @@ import {
   PhoneCall,
 } from 'lucide-react';
 import { queueService, type QueueEntry } from '../../services/queue';
+import { Button, Input, Select, StatCard, EmptyState, Skeleton, Badge, cn } from '../../components/ui';
 import { vitalsService } from '../../services/vitals';
 import { systemSettingsService } from '../../services/system-settings';
 import { usePermissions } from '../../components/PermissionGate';
@@ -510,7 +511,8 @@ export default function TriageQueuePage() {
   // Stats calculations
   const waitingCount = allQueue.filter((p) => p.status === 'waiting').length;
   const inTriageCount = allQueue.filter((p) => p.status === 'in-triage').length;
-  const completedToday = allQueue.filter((p) => p.status === 'completed' || p.status === 'transferred').length;
+  // mapStatus already folds 'transferred' into 'completed'
+  const completedToday = allQueue.filter((p) => p.status === 'completed').length;
   const avgWaitTime = allQueue.length > 0 
     ? Math.round(allQueue.reduce((a, b) => a + b.waitTime, 0) / allQueue.length) 
     : 0;
@@ -635,115 +637,71 @@ export default function TriageQueuePage() {
     <div className="h-[calc(100vh-120px)] flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <button
             onClick={() => navigate(-1)}
-            className="p-2 hover:bg-gray-100 rounded-lg"
+            className="p-1.5 hover:bg-surface-100 rounded-lg text-surface-500"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <div className="flex items-center gap-2">
-            <ListOrdered className="w-6 h-6 text-teal-600" />
-            <div>
-              <h1 className="text-xl font-bold text-gray-900">Triage Queue</h1>
-              <p className="text-sm text-gray-500">Patients waiting for triage assessment</p>
-            </div>
+          <div>
+            <h1 className="text-xl font-bold text-surface-900 tracking-tight">Triage Queue</h1>
+            <p className="text-sm text-surface-500">Patients waiting for triage assessment</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-sm text-gray-500">
-            Last updated: {lastRefresh.toLocaleTimeString()}
+          <span className="text-sm text-surface-400 hidden md:inline">
+            Updated {lastRefresh.toLocaleTimeString()}
           </span>
-          <button
-            onClick={handleRefresh}
-            className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-          >
-            <RefreshCw className="w-4 h-4" />
+          <Button variant="secondary" icon={RefreshCw} onClick={handleRefresh}>
             Refresh
-          </button>
+          </Button>
           {canUpdateTriage && (
-            <button
+            <Button
+              size="lg"
+              icon={PlayCircle}
               onClick={() => callNextMutation.mutate()}
-              disabled={waitingCount === 0 || callNextMutation.isPending}
-              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-teal-600 to-teal-700 text-white font-semibold rounded-lg shadow hover:from-teal-700 hover:to-teal-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              loading={callNextMutation.isPending}
+              disabled={waitingCount === 0}
             >
-              <PlayCircle className="w-5 h-5" />
               Call Next
-            </button>
+            </Button>
           )}
         </div>
       </div>
 
       {/* Stats Dashboard */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="flex items-center gap-2 text-gray-500 text-sm mb-1">
-            <Clock className="w-4 h-4" />
-            Waiting
-          </div>
-          <p className="text-2xl font-bold text-gray-900">{waitingCount}</p>
-        </div>
-        <div className="bg-teal-50 rounded-xl border border-teal-200 p-4">
-          <div className="flex items-center gap-2 text-teal-600 text-sm mb-1">
-            <Activity className="w-4 h-4" />
-            In Triage
-          </div>
-          <p className="text-2xl font-bold text-teal-700">{inTriageCount}</p>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="flex items-center gap-2 text-gray-500 text-sm mb-1">
-            <CheckCircle className="w-4 h-4" />
-            Triaged Today
-          </div>
-          <p className="text-2xl font-bold text-gray-900">{completedToday}</p>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="flex items-center gap-2 text-gray-500 text-sm mb-1">
-            <Timer className="w-4 h-4" />
-            Avg Wait
-          </div>
-          <p className="text-2xl font-bold text-gray-900">{avgWaitTime}m</p>
-        </div>
-        <div className="bg-red-50 rounded-xl border border-red-200 p-4">
-          <div className="flex items-center gap-2 text-red-600 text-sm mb-1">
-            <AlertTriangle className="w-4 h-4" />
-            Critical/Urgent
-          </div>
-          <p className="text-2xl font-bold text-red-700">{criticalCount + urgentCount}</p>
-        </div>
-        <div className="bg-green-50 rounded-xl border border-green-200 p-4">
-          <div className="flex items-center gap-2 text-green-600 text-sm mb-1">
-            <TrendingUp className="w-4 h-4" />
-            Routine
-          </div>
-          <p className="text-2xl font-bold text-green-700">{routineCount}</p>
-        </div>
+        <StatCard icon={Clock} label="Waiting" value={waitingCount} tone="neutral" />
+        <StatCard icon={Activity} label="In Triage" value={inTriageCount} tone="brand" />
+        <StatCard icon={CheckCircle} label="Triaged Today" value={completedToday} tone="success" />
+        <StatCard icon={Timer} label="Avg Wait" value={`${avgWaitTime}m`} tone="neutral" />
+        <StatCard icon={AlertTriangle} label="Critical/Urgent" value={criticalCount + urgentCount} tone="danger" />
+        <StatCard icon={TrendingUp} label="Routine" value={routineCount} tone="success" />
       </div>
 
       {/* Search & Filters */}
-      <div className="flex items-center gap-4 mb-4">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            type="text"
+      <div className="flex items-center gap-3 mb-4">
+        <div className="flex-1 max-w-md">
+          <Input
+            icon={Search}
             placeholder="Search by name, MRN, or complaint..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm"
           />
         </div>
         <div className="flex items-center gap-2">
-          <Filter className="w-4 h-4 text-gray-400" />
-          <select
+          <Filter className="w-4 h-4 text-surface-400" />
+          <Select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+            className="w-40"
           >
             <option value="all">All Status</option>
             <option value="waiting">Not Started</option>
             <option value="in-progress">In Progress</option>
             <option value="completed">Completed</option>
-          </select>
+          </Select>
         </div>
       </div>
 
@@ -762,16 +720,15 @@ export default function TriageQueuePage() {
           </div>
           <div className="flex-1 overflow-y-auto space-y-3 pr-2">
             {isLoading ? (
-              <div className="flex items-center justify-center h-32">
-                <Loader2 className="w-8 h-8 animate-spin text-teal-600" />
+              <div className="space-y-3">
+                {[0, 1, 2].map(i => <Skeleton key={i} className="h-28 w-full rounded-2xl" />)}
               </div>
             ) : filteredQueue.length === 0 ? (
-              <div className="flex items-center justify-center h-32 text-gray-500">
-                <div className="text-center">
-                  <ListOrdered className="w-12 h-12 text-gray-300 mx-auto mb-2" />
-                  <p>No patients in queue</p>
-                </div>
-              </div>
+              <EmptyState
+                icon={ListOrdered}
+                title="No patients in queue"
+                description="Patients sent to triage from registration will appear here."
+              />
             ) : (
               filteredQueue.map((patient) => {
                 const priority = priorityColors[patient.priority] || priorityColors.routine;
@@ -788,9 +745,9 @@ export default function TriageQueuePage() {
                     onDragEnd={handleDragEnd}
                     onClick={() => setSelectedPatient(patient)}
                     className={`
-                      bg-white rounded-xl border-2 p-4 cursor-pointer transition-all hover:shadow-md
+                      bg-white rounded-2xl border-2 p-4 cursor-pointer transition-all hover:shadow-md
                       ${priority.border} ${priority.bg}
-                      ${selectedPatient?.id === patient.id ? 'ring-2 ring-teal-500' : ''}
+                      ${selectedPatient?.id === patient.id ? 'ring-2 ring-brand-500' : ''}
                       ${draggedItem === patient.id ? 'opacity-50' : ''}
                       ${isLongWait && patient.status === 'waiting' ? 'animate-pulse' : ''}
                     `}
@@ -809,9 +766,7 @@ export default function TriageQueuePage() {
                             {priority.label}
                           </span>
                           {patient.status === 'in-triage' && (
-                            <span className="px-2 py-0.5 text-xs font-medium rounded bg-teal-100 text-teal-700 border border-teal-300">
-                              In Progress
-                            </span>
+                            <Badge tone="brand" dot>In Progress</Badge>
                           )}
                         </div>
                         <p className="text-sm text-gray-500 mt-1">{patient.mrn} • {patient.age}y • {patient.gender}</p>
@@ -838,40 +793,43 @@ export default function TriageQueuePage() {
                           </div>
                         </div>
                       </div>
+                      {/* Tablet-sized action targets */}
                       <div className="flex flex-col gap-2">
-                        <button
+                        <Button
+                          variant="secondary"
+                          icon={PhoneCall}
                           onClick={(e) => {
                             e.stopPropagation();
                             callPatientMutation.mutate(patient.id);
                           }}
                           disabled={!canUpdateTriage || !['waiting', 'pending_payment', 'transferred'].includes(patient.status) || callPatientMutation.isPending}
-                          className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="justify-start"
                         >
-                          <PhoneCall className="w-4 h-4" />
                           Call
-                        </button>
-                        <button
+                        </Button>
+                        <Button
+                          icon={Play}
                           onClick={(e) => {
                             e.stopPropagation();
                             handleStartTriage(patient);
                           }}
                           disabled={!canUpdateTriage || patient.status === 'completed'}
-                          className="flex items-center gap-1 px-3 py-1.5 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700 disabled:opacity-50"
+                          className="justify-start"
                         >
-                          <Play className="w-4 h-4" />
                           {patient.status === 'in-triage' ? 'Continue' : 'Start'}
-                        </button>
-                        <button
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          icon={Stethoscope}
                           onClick={(e) => {
                             e.stopPropagation();
                             handleQuickTriage(patient);
                           }}
                           disabled={!canUpdateTriage}
-                          className="flex items-center gap-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
+                          className="justify-start"
                         >
-                          <Stethoscope className="w-4 h-4" />
                           Quick
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   </div>
