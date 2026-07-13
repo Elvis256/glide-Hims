@@ -8,12 +8,21 @@ import { SurgeryService } from './surgery.service';
 import { SurgeryController } from './surgery.controller';
 import { InventoryModule } from '../inventory/inventory.module';
 import { BillingModule } from '../billing/billing.module';
+import { SurgerySafetyChecklist } from '../../database/entities/surgery-safety-checklist.entity';
+import { SystemSettingsModule } from '../system-settings/system-settings.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Theatre, SurgeryCase, SurgeryConsumable, Item]),
+    TypeOrmModule.forFeature([
+      Theatre,
+      SurgeryCase,
+      SurgeryConsumable,
+      Item,
+      SurgerySafetyChecklist,
+    ]),
     forwardRef(() => InventoryModule),
     forwardRef(() => BillingModule),
+    SystemSettingsModule,
   ],
   controllers: [SurgeryController],
   providers: [SurgeryService],

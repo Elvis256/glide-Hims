@@ -8,6 +8,11 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { BillingService } from '../billing/billing.service';
+import {
+  SurgerySafetyChecklist,
+  WhoChecklistPhase,
+} from '../../database/entities/surgery-safety-checklist.entity';
+import { SystemSettingsService } from '../system-settings/system-settings.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, In, MoreThanOrEqual, LessThanOrEqual, DataSource } from 'typeorm';
 import { Theatre, TheatreStatus, TheatreType } from '../../database/entities/theatre.entity';
@@ -52,6 +57,8 @@ export class SurgeryService {
     private surgeryCaseRepo: Repository<SurgeryCase>,
     @InjectRepository(SurgeryConsumable)
     private consumableRepo: Repository<SurgeryConsumable>,
+    @InjectRepository(SurgerySafetyChecklist)
+    private safetyChecklistRepo: Repository<SurgerySafetyChecklist>,
     @InjectRepository(Item)
     private itemRepo: Repository<Item>,
     private inventoryService: InventoryService,
@@ -60,6 +67,8 @@ export class SurgeryService {
     @Optional()
     @Inject(forwardRef(() => BillingService))
     private readonly billingService: BillingService | null,
+    @Optional()
+    private readonly settingsService: SystemSettingsService | null,
   ) {}
 
   // ============ THEATRE MANAGEMENT ============
@@ -321,6 +330,198 @@ export class SurgeryService {
     return this.surgeryCaseRepo.save(surgeryCase);
   }
 
+  // ============ WHO SURGICAL SAFETY CHECKLIST ============
+
+  /**
+   * Required items per WHO phase. Booleans must be true; string items must be
+   * one of the listed values (or any non-empty string when the list is null).
+   */
+  private static readonly WHO_PHASE_ITEMS: Record<
+    WhoChecklistPhase,
+    Record<string, string[] | null | 'boolean'>
+  > = {
+    sign_in: {
+      identityProcedureConsentConfirmed: 'boolean',
+      siteMarked: ['yes', 'not_applicable'],
+      anesthesiaSafetyCheckComplete: 'boolean',
+      pulseOximeterFunctioning: 'boolean',
+      knownAllergy: ['yes', 'no'],
+      difficultAirwayOrAspirationRisk: ['yes', 'no'],
+      significantBloodLossRisk: ['yes', 'no'],
+    },
+    time_out: {
+      teamIntroducedByNameAndRole: 'boolean',
+      patientSiteProcedureConfirmed: 'boolean',
+      antibioticProphylaxisWithin60Min: ['yes', 'not_applicable'],
+      surgeonReviewedCriticalSteps: 'boolean',
+      anesthesiaReviewedConcerns: 'boolean',
+      nursingConfirmedSterility: 'boolean',
+      essentialImagingDisplayed: ['yes', 'not_applicable'],
+    },
+    sign_out: {
+      procedureNameRecorded: 'boolean',
+      instrumentSpongeNeedleCountsCorrect: ['yes', 'not_applicable'],
+      specimenLabelled: ['yes', 'not_applicable', 'no_specimen'],
+      equipmentProblemsIdentified: null, // free text, 'none' if none
+      recoveryConcernsReviewed: 'boolean',
+    },
+  };
+
+  /** Fetch (auto-creating an empty row) the WHO checklist for a case. */
+  async getWhoChecklist(surgeryCaseId: string, tenantId?: string): Promise<SurgerySafetyChecklist> {
+    const tid = requireTenantId(tenantId);
+    const surgeryCase = await this.surgeryCaseRepo.findOne({
+      where: { id: surgeryCaseId, tenantId: tid },
+    });
+    if (!surgeryCase) throw new NotFoundException('Surgery case not found');
+
+    let checklist = await this.safetyChecklistRepo.findOne({
+      where: { surgeryCaseId, tenantId: tid },
+    });
+    if (!checklist) {
+      checklist = await this.safetyChecklistRepo.save(
+        this.safetyChecklistRepo.create({
+          surgeryCaseId,
+          facilityId: surgeryCase.facilityId,
+          tenantId: tid,
+        }),
+      );
+    }
+    return checklist;
+  }
+
+  /**
+   * Complete a WHO phase. Phases are ordered (sign_in → time_out → sign_out),
+   * validated against the WHO item set, completed exactly once, and matched
+   * to the surgery's workflow position.
+   */
+  async completeWhoPhase(
+    surgeryCaseId: string,
+    phase: WhoChecklistPhase,
+    items: Record<string, unknown>,
+    userId: string,
+    tenantId?: string,
+  ): Promise<SurgerySafetyChecklist> {
+    const tid = requireTenantId(tenantId);
+    const spec = SurgeryService.WHO_PHASE_ITEMS[phase];
+    if (!spec) throw new BadRequestException(`Unknown checklist phase: ${phase}`);
+
+    // Validate every required item
+    const problems: string[] = [];
+    for (const [key, rule] of Object.entries(spec)) {
+      const value = items?.[key];
+      if (rule === 'boolean') {
+        if (value !== true) problems.push(`${key} must be confirmed`);
+      } else if (Array.isArray(rule)) {
+        if (typeof value !== 'string' || !rule.includes(value)) {
+          problems.push(`${key} must be one of: ${rule.join(', ')}`);
+        }
+      } else {
+        if (typeof value !== 'string' || !value.trim()) {
+          problems.push(`${key} is required (enter 'none' if not applicable)`);
+        }
+      }
+    }
+    if (problems.length > 0) {
+      throw new BadRequestException(`WHO ${phase} checklist incomplete: ${problems.join('; ')}`);
+    }
+
+    return this.dataSource.transaction(async (manager) => {
+      const surgeryCase = await manager.findOne(SurgeryCase, {
+        where: { id: surgeryCaseId, tenantId: tid },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!surgeryCase) throw new NotFoundException('Surgery case not found');
+
+      let checklist = await manager.findOne(SurgerySafetyChecklist, {
+        where: { surgeryCaseId, tenantId: tid },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!checklist) {
+        checklist = manager.create(SurgerySafetyChecklist, {
+          surgeryCaseId,
+          facilityId: surgeryCase.facilityId,
+          tenantId: tid,
+        });
+      }
+
+      // Phase ordering + workflow position
+      if (phase === 'sign_in') {
+        if (checklist.signInCompletedAt) {
+          throw new BadRequestException('Sign-in phase is already completed');
+        }
+        if (
+          ![SurgeryStatus.SCHEDULED, SurgeryStatus.PRE_OP].includes(surgeryCase.status)
+        ) {
+          throw new BadRequestException(
+            `Sign-in happens before induction — surgery is already ${surgeryCase.status}`,
+          );
+        }
+        checklist.signIn = items;
+        checklist.signInCompletedById = userId;
+        checklist.signInCompletedAt = new Date();
+      } else if (phase === 'time_out') {
+        if (!checklist.signInCompletedAt) {
+          throw new BadRequestException('Complete the sign-in phase first');
+        }
+        if (checklist.timeOutCompletedAt) {
+          throw new BadRequestException('Time-out phase is already completed');
+        }
+        if (
+          ![SurgeryStatus.SCHEDULED, SurgeryStatus.PRE_OP].includes(surgeryCase.status)
+        ) {
+          throw new BadRequestException(
+            `Time-out happens before incision — surgery is already ${surgeryCase.status}`,
+          );
+        }
+        checklist.timeOut = items;
+        checklist.timeOutCompletedById = userId;
+        checklist.timeOutCompletedAt = new Date();
+      } else {
+        if (!checklist.timeOutCompletedAt) {
+          throw new BadRequestException('Complete the time-out phase first');
+        }
+        if (checklist.signOutCompletedAt) {
+          throw new BadRequestException('Sign-out phase is already completed');
+        }
+        if (
+          ![SurgeryStatus.IN_PROGRESS, SurgeryStatus.POST_OP].includes(surgeryCase.status)
+        ) {
+          throw new BadRequestException(
+            `Sign-out happens at the end of surgery — surgery is ${surgeryCase.status}`,
+          );
+        }
+        checklist.signOut = items;
+        checklist.signOutCompletedById = userId;
+        checklist.signOutCompletedAt = new Date();
+      }
+
+      const saved = await manager.save(SurgerySafetyChecklist, checklist);
+
+      this.auditLogService
+        .log({
+          action: `WHO_CHECKLIST_${phase.toUpperCase()}_COMPLETED`,
+          entityType: 'SurgerySafetyChecklist',
+          entityId: saved.id,
+          userId,
+          tenantId,
+          newValue: { surgeryCaseId, phase, caseNumber: surgeryCase.caseNumber },
+        })
+        .catch(() => {});
+
+      return saved;
+    });
+  }
+
+  /** Whether the tenant enforces the WHO checklist against the surgery workflow. */
+  private async whoEnforcementEnabled(tenantId: string): Promise<boolean> {
+    if (!this.settingsService) return false;
+    const setting = await this.settingsService
+      .getByKey('surgery.who_checklist.enforce', tenantId)
+      .catch(() => null);
+    return String(setting?.value ?? '').toLowerCase() === 'true';
+  }
+
   async startSurgery(id: string, dto: StartSurgeryDto, tenantId?: string): Promise<SurgeryCase> {
     const tid = requireTenantId(tenantId);
     return this.dataSource.transaction(async (manager) => {
@@ -353,6 +554,19 @@ export class SurgeryService {
       throw new BadRequestException(
         `Pre-operative checklist is incomplete. ${uncheckedItems.length} item(s) not checked: ${uncheckedItems.map((i) => i.item).join(', ')}`,
       );
+    }
+
+    // WHO checklist gate (opt-in per tenant): incision must not start until
+    // sign-in AND time-out phases are completed
+    if (await this.whoEnforcementEnabled(tid)) {
+      const who = await manager.findOne(SurgerySafetyChecklist, {
+        where: { surgeryCaseId: id, tenantId: tid },
+      });
+      if (!who?.signInCompletedAt || !who?.timeOutCompletedAt) {
+        throw new BadRequestException(
+          'WHO Surgical Safety Checklist: sign-in and time-out phases must be completed before starting surgery',
+        );
+      }
     }
 
     const previousStatus = surgeryCase.status;
@@ -418,6 +632,19 @@ export class SurgeryService {
 
       if (surgeryCase.status !== SurgeryStatus.IN_PROGRESS) {
         throw new BadRequestException('Only in-progress surgeries can be completed');
+      }
+
+      // WHO checklist gate (opt-in per tenant): the sign-out phase (counts,
+      // specimen labelling, recovery concerns) precedes leaving the OR
+      if (await this.whoEnforcementEnabled(tid)) {
+        const who = await manager.findOne(SurgerySafetyChecklist, {
+          where: { surgeryCaseId: id, tenantId: tid },
+        });
+        if (!who?.signOutCompletedAt) {
+          throw new BadRequestException(
+            'WHO Surgical Safety Checklist: complete the sign-out phase before completing the surgery',
+          );
+        }
       }
 
       surgeryCase.status = SurgeryStatus.POST_OP;
