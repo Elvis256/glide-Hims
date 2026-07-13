@@ -319,7 +319,7 @@ export class SaasRevenueService {
   // ============================================================
   async getCurrencyRates(): Promise<CurrencyRates> {
     try {
-      const s = await this.settings.getByKey(CURRENCY_RATES_KEY);
+      const s = await this.settings.getPlatformByKey(CURRENCY_RATES_KEY);
       const v = (s.value || {}) as Partial<CurrencyRates>;
       return {
         base: v.base || DEFAULT_CURRENCY_RATES.base,
@@ -344,10 +344,11 @@ export class SaasRevenueService {
     }
     rates[base] = 1;
     const merged: CurrencyRates = { base, rates, updatedAt: new Date().toISOString() };
-    await this.settings.upsert(
+    // Platform-scoped (tenant_id IS NULL): FX rates are global, and the old
+    // tenant-required upsert threw "Missing tenant context" from the cron
+    await this.settings.upsertPlatform(
       CURRENCY_RATES_KEY,
       merged,
-      undefined,
       'SaaS plan FX rates relative to base',
     );
     return merged;
@@ -418,10 +419,9 @@ export class SaasRevenueService {
       } else missing.push(ccy);
     }
     const out: CurrencyRates = { base, rates: merged, updatedAt: new Date().toISOString() };
-    await this.settings.upsert(
+    await this.settings.upsertPlatform(
       CURRENCY_RATES_KEY,
       out,
-      undefined,
       `SaaS plan FX rates refreshed from ${url}`,
     );
     return { ...out, _refreshed: { provider: url, updated, missing } } as any;
