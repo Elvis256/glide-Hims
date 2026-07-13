@@ -10,6 +10,7 @@ import {
   Request,
   ParseUUIDPipe,
   UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
@@ -175,6 +176,38 @@ export class SurgeryController {
   @ApiOperation({ summary: 'Reconfirm a postponed surgery back onto the schedule' })
   reconfirmSurgery(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     return this.surgeryService.reconfirmSurgery(id, req.user?.tenantId);
+  }
+
+  // ============ WHO SURGICAL SAFETY CHECKLIST ============
+
+  @Get('cases/:id/who-checklist')
+  @AuthWithPermissions('surgery.read')
+  @ApiOperation({ summary: 'Get the WHO surgical safety checklist for a case' })
+  getWhoChecklist(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.surgeryService.getWhoChecklist(id, req.user?.tenantId);
+  }
+
+  @Put('cases/:id/who-checklist/:phase')
+  @AuthWithPermissions('surgery.update')
+  @ApiOperation({
+    summary: 'Complete a WHO checklist phase (sign_in | time_out | sign_out)',
+  })
+  completeWhoPhase(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('phase') phase: string,
+    @Body() body: { items: Record<string, unknown> },
+    @Request() req: any,
+  ) {
+    if (!['sign_in', 'time_out', 'sign_out'].includes(phase)) {
+      throw new BadRequestException('phase must be sign_in, time_out or sign_out');
+    }
+    return this.surgeryService.completeWhoPhase(
+      id,
+      phase as 'sign_in' | 'time_out' | 'sign_out',
+      body?.items || {},
+      req.user?.id,
+      req.user?.tenantId,
+    );
   }
 
   // ============ SCHEDULE & DASHBOARD ============

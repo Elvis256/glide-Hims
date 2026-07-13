@@ -17,11 +17,6 @@ Legend: 💰 revenue/compliance · 🏥 clinical value · ✨ UX polish
   no WHO partograph time-series view or alert-line breach detection (major
   clinical safety feature for labour wards).
 
-## Surgery
-- 🏥 **WHO Surgical Safety Checklist (sign-in / time-out / sign-out)** — only a
-  free-form pre-op checklist exists today; the three-phase WHO checklist is
-  the standard theatre-safety instrument.
-
 ---
 
 ## Shipped (July 2026)
@@ -72,3 +67,9 @@ Legend: 💰 revenue/compliance · 🏥 clinical value · ✨ UX polish
   (migration 73), `PATCH /ipd/admissions/:id/expected-discharge`, and
   `GET /ipd/discharge-planning` grouping overdue / today / upcoming /
   unplanned.
+- ✅ **WHO Surgical Safety Checklist** — three-phase (sign-in / time-out /
+  sign-out) per case (migration 74, RLS'd), full WHO item validation, phase
+  ordering + workflow-position checks, exactly-once completion per phase with
+  audit. `GET/PUT /surgery/cases/:id/who-checklist[/:phase]`. Workflow gating
+  (start requires sign-in+time-out, complete requires sign-out) is opt-in via
+  the `surgery.who_checklist.enforce` tenant setting for a safe rollout.

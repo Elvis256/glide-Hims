@@ -10,6 +10,7 @@ import {
   SurgeryType,
 } from '../../../database/entities/surgery-case.entity';
 import { SurgeryConsumable } from '../../../database/entities/surgery-consumable.entity';
+import { SurgerySafetyChecklist } from '../../../database/entities/surgery-safety-checklist.entity';
 import { Item } from '../../../database/entities/inventory.entity';
 import { InventoryService } from '../../inventory/inventory.service';
 import { AuditLogService } from '../../../common/interceptors/audit-log.service';
@@ -65,6 +66,12 @@ const mockConsumableRepo = {
   findOne: jest.fn(),
   softRemove: jest.fn(),
   createQueryBuilder: jest.fn(),
+};
+
+const mockChecklistRepo = {
+  create: jest.fn((data) => ({ ...data })),
+  save: jest.fn((entity) => Promise.resolve({ id: 'checklist-1', ...entity })),
+  findOne: jest.fn().mockResolvedValue(null),
 };
 
 const mockItemRepo = {
@@ -131,6 +138,7 @@ describe('SurgeryService', () => {
         { provide: getRepositoryToken(Theatre), useValue: mockTheatreRepo },
         { provide: getRepositoryToken(SurgeryCase), useValue: mockSurgeryCaseRepo },
         { provide: getRepositoryToken(SurgeryConsumable), useValue: mockConsumableRepo },
+        { provide: getRepositoryToken(SurgerySafetyChecklist), useValue: mockChecklistRepo },
         { provide: getRepositoryToken(Item), useValue: mockItemRepo },
         { provide: InventoryService, useValue: mockInventoryService },
         { provide: DataSource, useValue: mockDataSource },
@@ -574,6 +582,92 @@ describe('SurgeryService', () => {
       await expect(service.updatePreOpChecklist('case-1', dto as any, 'tenant-1')).rejects.toThrow(
         /Cannot update pre-op checklist at this stage/,
       );
+    });
+  });
+
+  // ================================================================
+  // WHO Surgical Safety Checklist
+  // ================================================================
+  describe('completeWhoPhase', () => {
+    const validSignIn = {
+      identityProcedureConsentConfirmed: true,
+      siteMarked: 'yes',
+      anesthesiaSafetyCheckComplete: true,
+      pulseOximeterFunctioning: true,
+      knownAllergy: 'no',
+      difficultAirwayOrAspirationRisk: 'no',
+      significantBloodLossRisk: 'no',
+    };
+
+    it('should reject an incomplete sign-in phase before touching the DB', async () => {
+      await expect(
+        service.completeWhoPhase(
+          'case-1',
+          'sign_in',
+          { identityProcedureConsentConfirmed: true },
+          'user-1',
+          'tenant-1',
+        ),
+      ).rejects.toThrow(/checklist incomplete/);
+    });
+
+    it('should complete a valid sign-in on a scheduled case', async () => {
+      const existingCase = buildSurgeryCase({ status: SurgeryStatus.SCHEDULED });
+      // 1st findOne: the surgery case; 2nd: no existing checklist row
+      mockSurgeryCaseRepo.findOne
+        .mockResolvedValueOnce(existingCase)
+        .mockResolvedValueOnce(null);
+      mockManager.save.mockImplementation((entity: any, data?: any) =>
+        Promise.resolve({ id: 'checklist-1', ...(data ?? entity) }),
+      );
+
+      const result = await service.completeWhoPhase(
+        'case-1',
+        'sign_in',
+        validSignIn,
+        'user-1',
+        'tenant-1',
+      );
+
+      expect(result.signIn).toEqual(validSignIn);
+      expect(result.signInCompletedById).toBe('user-1');
+      expect(result.signInCompletedAt).toBeInstanceOf(Date);
+    });
+
+    it('should refuse time-out before sign-in is completed', async () => {
+      const existingCase = buildSurgeryCase({ status: SurgeryStatus.PRE_OP });
+      mockSurgeryCaseRepo.findOne
+        .mockResolvedValueOnce(existingCase)
+        .mockResolvedValueOnce({ id: 'checklist-1', signInCompletedAt: null });
+
+      await expect(
+        service.completeWhoPhase(
+          'case-1',
+          'time_out',
+          {
+            teamIntroducedByNameAndRole: true,
+            patientSiteProcedureConfirmed: true,
+            antibioticProphylaxisWithin60Min: 'yes',
+            surgeonReviewedCriticalSteps: true,
+            anesthesiaReviewedConcerns: true,
+            nursingConfirmedSterility: true,
+            essentialImagingDisplayed: 'not_applicable',
+          },
+          'user-1',
+          'tenant-1',
+        ),
+      ).rejects.toThrow(/Complete the sign-in phase first/);
+    });
+
+    it('should refuse sign-in once surgery is in progress', async () => {
+      const existingCase = buildSurgeryCase({ status: SurgeryStatus.IN_PROGRESS });
+      mockSurgeryCaseRepo.findOne
+        .mockResolvedValueOnce(existingCase)
+        .mockResolvedValueOnce(null);
+
+      await expect(
+        service.completeWhoPhase('case-1', 'sign_in', validSignIn, 'user-1', 'tenant-1'),
+      ).rejects.toThrow(/before induction/);
     });
   });
 });
