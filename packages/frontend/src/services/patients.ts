@@ -156,8 +156,10 @@ export interface CreateNoteDto {
 export const patientsService = {
   // Create a new patient
   create: async (data: CreatePatientDto): Promise<Patient> => {
+    // Controller returns { message, data: patient } (inside the standard
+    // envelope, which the interceptor strips) — unwrap the inner data too.
     const response = await api.post<{ message: string; data: Patient }>('/patients', data);
-    return response.data;
+    return response.data.data;
   },
 
   // Check for duplicate patients before registration
@@ -187,7 +189,7 @@ export const patientsService = {
   // Update patient
   update: async (id: string, data: UpdatePatientDto): Promise<Patient> => {
     const response = await api.patch<{ message: string; data: Patient }>(`/patients/${id}`, data);
-    return response.data;
+    return response.data.data;
   },
 
   // Delete patient (soft delete)
@@ -218,7 +220,7 @@ export const patientsService = {
       formData,
       { headers: { 'Content-Type': 'multipart/form-data' } }
     );
-    return response.data;
+    return response.data.data;
   },
 
   // Get patient documents (filtered by role)
@@ -234,13 +236,13 @@ export const patientsService = {
     const response = await api.get<{ data: Array<{ category: string; count: number }> }>(
       `/patients/${patientId}/documents/stats`
     );
-    return response.data;
+    return response.data.data;
   },
 
   // Get document metadata
   getDocument: async (documentId: string): Promise<PatientDocument> => {
     const response = await api.get<{ data: PatientDocument }>(`/patients/documents/${documentId}`);
-    return response.data;
+    return response.data.data;
   },
 
   // Download document file (returns blob)
@@ -264,7 +266,7 @@ export const patientsService = {
       `/patients/${patientId}/notes`,
       dto
     );
-    return response.data;
+    return response.data.data;
   },
 
   // Get patient notes
@@ -277,7 +279,7 @@ export const patientsService = {
   // Get single note
   getNote: async (noteId: string): Promise<PatientNote> => {
     const response = await api.get<{ data: PatientNote }>(`/patients/notes/${noteId}`);
-    return response.data;
+    return response.data.data;
   },
 
   // Delete note
@@ -293,7 +295,7 @@ export const patientsService = {
       `/patients/${patientId}/link-user`,
       { userId }
     );
-    return response.data;
+    return response.data.data;
   },
 
   // Unlink user account from patient
@@ -301,7 +303,7 @@ export const patientsService = {
     const response = await api.delete<{ message: string; data: Patient }>(
       `/patients/${patientId}/unlink-user`
     );
-    return response.data;
+    return response.data.data;
   },
 
   // Get linked user information
@@ -327,7 +329,7 @@ export const patientsService = {
         };
       };
     }>(`/patients/${patientId}/linked-user`);
-    return response.data;
+    return response.data.data;
   },
 
   // Merge two patient records (secondary into primary)

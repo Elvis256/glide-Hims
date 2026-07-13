@@ -11,23 +11,32 @@ import { useBusinessConfig } from '../hooks/useBusinessConfig';
 import SearchableSelect from '../components/SearchableSelect';
 import {
   UserPlus,
-  Loader2,
   CheckCircle,
   ArrowLeft,
   User,
   Phone,
-  CreditCard,
   Users,
   AlertTriangle,
   Camera,
   Upload,
   X,
   Check,
-  ToggleLeft,
-  ToggleRight,
   Wallet,
   Stethoscope,
+  Pencil,
+  ArrowRight,
+  Zap,
 } from 'lucide-react';
+import {
+  Button,
+  Input,
+  Select,
+  Card,
+  Badge,
+  PageHeader,
+  Steps,
+  cn,
+} from '../components/ui';
 
 // Uganda Districts — now loaded dynamically via useUgandaLocation hook
 
@@ -119,20 +128,20 @@ const calculateAge = (dob: string): string => {
   if (!dob) return '';
   const birthDate = new Date(dob);
   const today = new Date();
-  
+
   let years = today.getFullYear() - birthDate.getFullYear();
   let months = today.getMonth() - birthDate.getMonth();
-  
+
   if (months < 0 || (months === 0 && today.getDate() < birthDate.getDate())) {
     years--;
     months += 12;
   }
-  
+
   if (today.getDate() < birthDate.getDate()) {
     months--;
     if (months < 0) months += 12;
   }
-  
+
   if (years === 0) {
     return months === 1 ? '1 month' : `${months} months`;
   } else if (years === 1) {
@@ -140,6 +149,8 @@ const calculateAge = (dob: string): string => {
   }
   return `${years} years`;
 };
+
+const STEPS = ['Identity', 'Contact & Address', 'Payment & Next of Kin'];
 
 export default function PatientRegistrationPage() {
   const navigate = useNavigate();
@@ -150,10 +161,10 @@ export default function PatientRegistrationPage() {
   const regFields = bizConfig.registrationFields;
   const [showSuccess, setShowSuccess] = useState(false);
   const [createdPatient, setCreatedPatient] = useState<{ id: string; mrn: string; fullName: string } | null>(null);
-  const [duplicates, setDuplicates] = useState<Array<{ 
-    id: string; 
-    mrn: string; 
-    fullName: string; 
+  const [duplicates, setDuplicates] = useState<Array<{
+    id: string;
+    mrn: string;
+    fullName: string;
     phone?: string;
     gender: string;
     dateOfBirth: string;
@@ -166,6 +177,7 @@ export default function PatientRegistrationPage() {
   const [quickRegistration, setQuickRegistration] = useState(false);
   const [showWebcam, setShowWebcam] = useState(false);
   const [billImmediately, setBillImmediately] = useState(false);
+  const [step, setStep] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -194,10 +206,6 @@ export default function PatientRegistrationPage() {
     () => location.parishes.map(p => ({ value: p.name, label: p.name })),
     [location.parishes]
   );
-  const villageOptions = useMemo(
-    () => location.villages.map(v => ({ value: v, label: v })),
-    [location.villages]
-  );
 
   const [formData, setFormData] = useState<FormData>({
     fullName: '',
@@ -225,23 +233,25 @@ export default function PatientRegistrationPage() {
   // Form validation
   const isNINValid = formData.nationalId ? validateNIN(formData.nationalId) : null;
   const calculatedAge = calculateAge(formData.dateOfBirth);
-  
-  const isFormValid = 
+
+  const isFormValid =
     formData.fullName.trim() !== '' &&
     formData.gender !== undefined &&
     formData.dateOfBirth !== '';
 
+  const isIdentityComplete = isFormValid && (isNINValid !== false);
+
   // Webcam handlers
   const startWebcam = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'user', width: 320, height: 240 } 
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: 320, height: 240 }
       });
       streamRef.current = stream;
       setShowWebcam(true);
     } catch (err) {
       console.error('Error accessing webcam:', err);
-      alert('Could not access webcam. Please check permissions.');
+      toast.error('Could not access webcam. Please check permissions.');
     }
   }, []);
 
@@ -346,7 +356,7 @@ export default function PatientRegistrationPage() {
     mutationFn: async (data: FormData) => {
       // Construct address from village/parish/subcounty/district
       const address = [data.parish, data.subcounty, data.district].filter(Boolean).join(', ') || data.address;
-      
+
       const apiData: CreatePatientDto = {
         fullName: data.fullName,
         gender: data.gender,
@@ -375,7 +385,7 @@ export default function PatientRegistrationPage() {
           photoUrl: data.photoUrl,
         },
       };
-      
+
       return patientsService.create(apiData);
     },
     onSuccess: (patient) => {
@@ -392,10 +402,11 @@ export default function PatientRegistrationPage() {
         nationalId: patient.nationalId,
         bloodGroup: patient.bloodGroup,
         createdAt: patient.createdAt,
-        paymentType: formData.paymentType || 'cash',
+        // 'corporate' predates the PatientRecord union — kept as-is for the local cache
+        paymentType: (formData.paymentType || 'cash') as PatientRecord['paymentType'],
         nextOfKin: formData.nextOfKin,
       };
-      
+
       addPatient(patientRecord);
       queryClient.invalidateQueries({ queryKey: ['patients'] });
       setCreatedPatient({
@@ -405,7 +416,7 @@ export default function PatientRegistrationPage() {
       });
       setShowSuccess(true);
       setShowDuplicateWarning(false);
-      
+
       if (billImmediately) {
           toast.success("Patient registered! Redirecting to Billing...");
           navigate(`/billing/opd/new?patientId=${patient.id}`);
@@ -415,7 +426,7 @@ export default function PatientRegistrationPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     // First check for duplicates
     const apiData: CreatePatientDto = {
       fullName: formData.fullName,
@@ -424,7 +435,7 @@ export default function PatientRegistrationPage() {
       nationalId: formData.nationalId || undefined,
       phone: formData.phone || undefined,
     };
-    
+
     checkDuplicatesMutation.mutate(apiData);
   };
 
@@ -464,6 +475,7 @@ export default function PatientRegistrationPage() {
     setDuplicates([]);
     setShowDuplicateWarning(false);
     setQuickRegistration(false);
+    setStep(0);
     stopWebcam();
   };
 
@@ -485,72 +497,86 @@ export default function PatientRegistrationPage() {
     },
   });
 
+  const isLastStep = quickRegistration || step === STEPS.length - 1;
+  const isSubmitting = createMutation.isPending || checkDuplicatesMutation.isPending;
+
+  // Collapsed summaries for completed steps
+  const identitySummary = [
+    formData.fullName,
+    formData.gender,
+    calculatedAge,
+    formData.nationalId && `NIN ${formData.nationalId}`,
+  ].filter(Boolean).join(' · ');
+
+  const contactSummary = [
+    formData.phone,
+    formData.email,
+    [formData.parish, formData.subcounty, formData.district].filter(Boolean).join(', '),
+  ].filter(Boolean).join(' · ') || 'No contact details provided';
+
   // Duplicate Warning Modal
   if (showDuplicateWarning && duplicates.length > 0) {
-    const getConfidenceColor = (level: string) => {
-      if (level === 'high') return 'bg-red-50 border-red-300';
-      if (level === 'medium') return 'bg-yellow-50 border-yellow-300';
-      return 'bg-blue-50 border-blue-300';
+    const confidenceCard = (level: string) => {
+      if (level === 'high') return 'bg-rose-50 border-rose-200';
+      if (level === 'medium') return 'bg-amber-50 border-amber-200';
+      return 'bg-brand-50 border-brand-200';
     };
-
-    const getConfidenceBadge = (level: string, score: number) => {
-      if (level === 'high') return <span className="px-2 py-0.5 text-xs font-semibold rounded bg-red-100 text-red-700">{score}% Match - HIGH</span>;
-      if (level === 'medium') return <span className="px-2 py-0.5 text-xs font-semibold rounded bg-yellow-100 text-yellow-700">{score}% Match - MEDIUM</span>;
-      return <span className="px-2 py-0.5 text-xs font-semibold rounded bg-blue-100 text-blue-700">{score}% Match - LOW</span>;
-    };
+    const confidenceTone = (level: string): 'danger' | 'warning' | 'info' =>
+      level === 'high' ? 'danger' : level === 'medium' ? 'warning' : 'info';
 
     return (
-      <div className="max-w-3xl mx-auto">
-        <div className="card p-6">
-          <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <AlertTriangle className="w-10 h-10 text-yellow-600" />
+      <div className="max-w-3xl mx-auto p-6">
+        <Card>
+          <div className="w-14 h-14 bg-amber-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <AlertTriangle className="w-8 h-8 text-amber-600" />
           </div>
-          <h2 className="text-xl font-bold text-gray-900 mb-2 text-center">Possible Duplicate Found</h2>
-          <p className="text-gray-500 mb-6 text-center">
+          <h2 className="text-xl font-bold text-surface-900 mb-1 text-center">Possible Duplicate Found</h2>
+          <p className="text-surface-500 mb-6 text-center text-sm">
             We found existing patients that may match this registration. Review carefully before proceeding.
           </p>
 
           {/* New Patient Data */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-            <h3 className="text-sm font-semibold text-blue-900 mb-2">NEW REGISTRATION</h3>
-            <p className="font-medium text-gray-900">{formData.fullName}</p>
-            <div className="grid grid-cols-2 gap-2 mt-2 text-sm text-gray-600">
+          <div className="bg-brand-50 border border-brand-200 rounded-xl p-4 mb-4">
+            <div className="text-xs font-semibold text-brand-800 uppercase tracking-wide mb-2">New Registration</div>
+            <p className="font-medium text-surface-900">{formData.fullName}</p>
+            <div className="grid grid-cols-2 gap-2 mt-2 text-sm text-surface-600">
               <div>DOB: {formData.dateOfBirth}</div>
-              <div>Gender: {formData.gender}</div>
+              <div className="capitalize">Gender: {formData.gender}</div>
               {formData.phone && <div>Phone: {formData.phone}</div>}
               {formData.nationalId && <div>National ID: {formData.nationalId}</div>}
             </div>
           </div>
 
-          <div className="text-sm font-semibold text-gray-700 mb-2">POTENTIAL MATCHES:</div>
-          <div className="space-y-3 mb-6 max-h-96 overflow-y-auto">
+          <div className="text-xs font-semibold text-surface-500 uppercase tracking-wide mb-2">Potential Matches</div>
+          <div className="space-y-3 mb-5 max-h-96 overflow-y-auto">
             {duplicates.map((dup) => (
-              <div key={dup.id} className={`border rounded-lg p-4 ${getConfidenceColor(dup.confidenceLevel)}`}>
-                <div className="flex justify-between items-start mb-2">
+              <div key={dup.id} className={cn('border rounded-xl p-4', confidenceCard(dup.confidenceLevel))}>
+                <div className="flex justify-between items-start mb-2 gap-2">
                   <div>
-                    <p className="font-medium text-gray-900">{dup.fullName}</p>
-                    <p className="text-sm text-gray-600">MRN: {dup.mrn}</p>
+                    <p className="font-medium text-surface-900">{dup.fullName}</p>
+                    <p className="text-sm text-surface-600">MRN: {dup.mrn}</p>
                   </div>
-                  {getConfidenceBadge(dup.confidenceLevel, dup.confidenceScore)}
+                  <Badge tone={confidenceTone(dup.confidenceLevel)}>
+                    {dup.confidenceScore}% match · {dup.confidenceLevel}
+                  </Badge>
                 </div>
-                
-                <div className="grid grid-cols-2 gap-2 text-sm text-gray-600 mb-2">
+
+                <div className="grid grid-cols-2 gap-2 text-sm text-surface-600 mb-2">
                   <div>DOB: {dup.dateOfBirth}</div>
-                  <div>Gender: {dup.gender}</div>
+                  <div className="capitalize">Gender: {dup.gender}</div>
                   {dup.phone && <div>Phone: {dup.phone}</div>}
-                  {dup.nationalId && <div>National ID: {dup.nationalId}</div>}
                 </div>
 
                 {dup.lastVisit && (
-                  <p className="text-xs text-gray-500 mb-2">
+                  <p className="text-xs text-surface-500 mb-2">
                     Last Visit: {new Date(dup.lastVisit).toLocaleDateString()}
                   </p>
                 )}
 
                 {dup.matchReasons.length > 0 && (
-                  <div className="mt-2 pt-2 border-t border-gray-300">
-                    <p className="text-xs font-semibold text-gray-700 mb-1">Match Reasons:</p>
-                    <ul className="text-xs text-gray-600 space-y-0.5">
+                  <div className="mt-2 pt-2 border-t border-surface-200">
+                    <p className="text-xs font-semibold text-surface-700 mb-1">Match Reasons:</p>
+                    <ul className="text-xs text-surface-600 space-y-0.5">
                       {dup.matchReasons.map((reason, idx) => (
                         <li key={idx}>• {reason}</li>
                       ))}
@@ -560,7 +586,7 @@ export default function PatientRegistrationPage() {
 
                 <button
                   onClick={() => navigate(`/patients/${dup.id}`)}
-                  className="mt-3 text-xs text-blue-600 hover:text-blue-800 font-medium"
+                  className="mt-3 text-xs text-brand-600 hover:text-brand-800 font-medium"
                 >
                   View Full Record →
                 </button>
@@ -568,585 +594,521 @@ export default function PatientRegistrationPage() {
             ))}
           </div>
 
-          <div className="bg-gray-50 border border-gray-200 rounded p-3 mb-4">
-            <p className="text-xs text-gray-600">
-              <strong>Note:</strong> Families may share phone numbers. Review all details carefully. 
+          <div className="bg-surface-50 border border-surface-200 rounded-xl p-3 mb-4">
+            <p className="text-xs text-surface-600">
+              <strong>Note:</strong> Families may share phone numbers. Review all details carefully.
               If this is truly a new patient, click "Register Anyway".
             </p>
           </div>
 
           <div className="flex gap-3">
-            <button onClick={() => setShowDuplicateWarning(false)} className="btn-secondary flex-1">
+            <Button variant="secondary" className="flex-1" onClick={() => setShowDuplicateWarning(false)}>
               Go Back & Edit
-            </button>
-            <button
-              onClick={handleProceedAnyway}
-              disabled={createMutation.isPending}
-              className="btn-primary flex-1 flex items-center justify-center gap-2"
-            >
-              {createMutation.isPending ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                'Register Anyway'
-              )}
-            </button>
+            </Button>
+            <Button className="flex-1" onClick={handleProceedAnyway} loading={createMutation.isPending}>
+              Register Anyway
+            </Button>
           </div>
-        </div>
+        </Card>
       </div>
     );
   }
 
   if (showSuccess && createdPatient) {
     return (
-      <div className="max-w-lg mx-auto">
-        <div className="card text-center py-8">
-          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <CheckCircle className="w-10 h-10 text-green-600" />
+      <div className="max-w-lg mx-auto p-6">
+        <Card className="text-center py-8">
+          <div className="w-14 h-14 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <CheckCircle className="w-8 h-8 text-emerald-600" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">{entityName.singular} Registered!</h2>
-          <p className="text-gray-500 mb-4">
+          <h2 className="text-2xl font-bold text-surface-900 mb-1">{entityName.singular} Registered!</h2>
+          <p className="text-surface-500 mb-5">
             {createdPatient.fullName} has been registered successfully.
           </p>
-          <div className="bg-blue-50 rounded-lg p-4 mb-6">
-            <p className="text-sm text-gray-600">{entityName.singular} ID</p>
-            <p className="text-2xl font-mono font-bold text-blue-700">{createdPatient.mrn}</p>
+          <div className="bg-brand-50 border border-brand-100 rounded-xl p-4 mb-6">
+            <p className="text-sm text-surface-600">{entityName.singular} ID</p>
+            <p className="text-2xl font-mono font-bold text-brand-700">{createdPatient.mrn}</p>
           </div>
           <div className="flex flex-col gap-3">
             <div className="flex gap-3">
-              <button onClick={handleReset} className="btn-secondary flex-1">
+              <Button variant="secondary" className="flex-1" onClick={handleReset}>
                 Register Another
-              </button>
-              <button
-                onClick={() => navigate('/opd/token')}
-                className="btn-primary flex-1"
-              >
+              </Button>
+              <Button className="flex-1" onClick={() => navigate('/opd/token')}>
                 Issue OPD Token
-              </button>
+              </Button>
             </div>
-            <button
+            <Button
+              variant="secondary"
+              icon={Stethoscope}
+              className="w-full border-amber-300 text-amber-700 hover:bg-amber-50"
               onClick={() => sendToTriageMutation.mutate(createdPatient.id)}
-              disabled={sendToTriageMutation.isPending}
-              className="btn-secondary w-full flex items-center justify-center gap-2 border-orange-300 text-orange-700 hover:bg-orange-50"
+              loading={sendToTriageMutation.isPending}
             >
-              {sendToTriageMutation.isPending ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Stethoscope className="w-4 h-4" />
-              )}
               Send to Triage Queue
-            </button>
+            </Button>
           </div>
-        </div>
+        </Card>
       </div>
     );
   }
 
-  return (
-    <div className="h-[calc(100vh-120px)] flex flex-col">
-      {/* Header with Quick Registration Toggle */}
-      <div className="flex items-center justify-between mb-4 flex-shrink-0">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => navigate(-1)}
-            className="p-2 hover:bg-gray-100 rounded-lg"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div>
-            <h1 className="text-xl font-bold text-gray-900">Register New {entityName.singular}</h1>
-            <p className="text-gray-500 text-sm">Enter {entityName.singular.toLowerCase()} details to create a new record</p>
+  // ─── Step sections ────────────────────────────────────────────────────────
+
+  const identityStep = (
+    <div className="space-y-4">
+      {/* Photo + name row */}
+      <div className="flex items-start gap-4">
+        <div className="relative shrink-0">
+          {formData.photoUrl ? (
+            <div className="relative">
+              <img
+                src={formData.photoUrl}
+                alt="Patient"
+                className="w-20 h-20 rounded-2xl object-cover border-2 border-surface-200"
+              />
+              <button
+                type="button"
+                onClick={removePhoto}
+                className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white rounded-full p-1 hover:bg-rose-600"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          ) : (
+            <div className="w-20 h-20 rounded-2xl bg-surface-100 flex items-center justify-center border-2 border-dashed border-surface-300">
+              <User className="w-8 h-8 text-surface-400" />
+            </div>
+          )}
+          <div className="flex gap-1 mt-2 justify-center">
+            <Button variant="ghost" size="sm" icon={Camera} onClick={startWebcam} title="Capture photo" />
+            <Button variant="ghost" size="sm" icon={Upload} onClick={() => fileInputRef.current?.click()} title="Upload photo" />
+            <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => setQuickRegistration(!quickRegistration)}
-          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors ${
-            quickRegistration 
-              ? 'bg-blue-50 border-blue-300 text-blue-700' 
-              : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
-          }`}
-        >
-          {quickRegistration ? (
-            <ToggleRight className="w-5 h-5" />
-          ) : (
-            <ToggleLeft className="w-5 h-5" />
-          )}
-          <span className="text-sm font-medium">Quick Registration</span>
-        </button>
+        <div className="flex-1 space-y-4">
+          <Input
+            label="Full Name"
+            placeholder={`${entityName.singular}'s full name`}
+            value={formData.fullName}
+            onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
+            required
+            autoFocus
+          />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Select
+              label="Gender"
+              value={formData.gender}
+              onChange={(e) => setFormData({ ...formData, gender: e.target.value as 'male' | 'female' | 'other' })}
+              required
+            >
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="other">Other</option>
+            </Select>
+            <Input
+              label="Date of Birth"
+              type="date"
+              value={formData.dateOfBirth}
+              onChange={(e) => setFormData({ ...formData, dateOfBirth: e.target.value })}
+              required
+              hint={calculatedAge ? `Age: ${calculatedAge}` : undefined}
+            />
+          </div>
+        </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0">
-        {/* Form Grid - All sections in one view */}
-        <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 min-h-0 overflow-y-auto">
-          {/* Column 1: Personal Info + Photo */}
-          <div className="space-y-3">
-            {/* Photo Section */}
-            <div className="card p-3">
-              <div className="flex items-center gap-2 mb-2">
-                <Camera className="w-4 h-4 text-blue-600" />
-                <h2 className="font-semibold text-sm">Patient Photo</h2>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="relative">
-                  {formData.photoUrl ? (
-                    <div className="relative">
-                      <img
-                        src={formData.photoUrl}
-                        alt="Patient"
-                        className="w-20 h-20 rounded-full object-cover border-2 border-gray-200"
-                      />
-                      <button
-                        type="button"
-                        onClick={removePhoto}
-                        className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="w-20 h-20 rounded-full bg-gray-100 flex items-center justify-center border-2 border-dashed border-gray-300">
-                      <User className="w-8 h-8 text-gray-400" />
-                    </div>
-                  )}
-                </div>
-                <div className="flex flex-col gap-2">
-                  <button
-                    type="button"
-                    onClick={startWebcam}
-                    className="flex items-center gap-1 px-3 py-1.5 text-xs bg-blue-50 text-blue-700 rounded hover:bg-blue-100"
-                  >
-                    <Camera className="w-3 h-3" />
-                    Capture
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center gap-1 px-3 py-1.5 text-xs bg-gray-50 text-gray-700 rounded hover:bg-gray-100"
-                  >
-                    <Upload className="w-3 h-3" />
-                    Upload
-                  </button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                  />
-                </div>
-              </div>
-              
-              {/* Webcam Modal */}
-              {showWebcam && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                  <div className="bg-white rounded-lg p-4 max-w-md">
-                    <div className="flex justify-between items-center mb-3">
-                      <h3 className="font-semibold">Capture Photo</h3>
-                      <button type="button" onClick={stopWebcam} className="text-gray-500 hover:text-gray-700">
-                        <X className="w-5 h-5" />
-                      </button>
-                    </div>
-                    <video
-                      ref={videoRef}
-                      autoPlay
-                      playsInline
-                      className="w-full rounded-lg mb-3"
-                    />
-                    <canvas ref={canvasRef} className="hidden" />
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={stopWebcam}
-                        className="btn-secondary flex-1"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        onClick={capturePhoto}
-                        className="btn-primary flex-1 flex items-center justify-center gap-2"
-                      >
-                        <Camera className="w-4 h-4" />
-                        Capture
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Personal Information */}
-            <div className="card p-4 flex flex-col">
-              <div className="flex items-center gap-2 mb-3">
-                <User className="w-4 h-4 text-blue-600" />
-                <h2 className="font-semibold text-sm">Personal Information</h2>
-              </div>
-              <div className="space-y-3 flex-1">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">
-                    Full Name <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.fullName}
-                    onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-                    className={`input text-sm py-1.5 ${!formData.fullName.trim() ? 'border-red-300' : ''}`}
-                    placeholder="Patient's full name"
-                    required
-                  />
-                  {!formData.fullName.trim() && (
-                    <p className="text-xs text-red-500 mt-0.5">Full name is required</p>
-                  )}
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">
-                      Gender <span className="text-red-500">*</span>
-                    </label>
-                    <select
-                      value={formData.gender}
-                      onChange={(e) => setFormData({ ...formData, gender: e.target.value as 'male' | 'female' | 'other' })}
-                      className="input text-sm py-1.5"
-                      required
-                    >
-                      <option value="male">Male</option>
-                      <option value="female">Female</option>
-                      <option value="other">Other</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">
-                      DOB <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="date"
-                      value={formData.dateOfBirth}
-                      onChange={(e) => setFormData({ ...formData, dateOfBirth: e.target.value })}
-                      className={`input text-sm py-1.5 ${!formData.dateOfBirth ? 'border-red-300' : ''}`}
-                      required
-                    />
-                    {calculatedAge && (
-                      <p className="text-xs text-blue-600 mt-0.5 font-medium">{calculatedAge}</p>
-                    )}
-                    {!formData.dateOfBirth && (
-                      <p className="text-xs text-red-500 mt-0.5">Date of birth is required</p>
-                    )}
-                  </div>
-                </div>
-                
-                {!quickRegistration && (
-                  <>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Nationality</label>
-                        <SearchableSelect
-                          options={countries}
-                          value={formData.nationality ?? ''}
-                          onChange={(val) => handleNationalityChange(val)}
-                          placeholder="Select country..."
-                          loading={countries.length === 0}
-                          className="text-sm"
-                        />
-                      </div>
-                      {regFields.religion && (
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Religion</label>
-                        <select
-                          value={formData.religion}
-                          onChange={(e) => setFormData({ ...formData, religion: e.target.value })}
-                          className="input text-sm py-1.5"
-                        >
-                          <option value="">Select...</option>
-                          {RELIGIONS.map(rel => (
-                            <option key={rel} value={rel}>{rel}</option>
-                          ))}
-                        </select>
-                      </div>
-                      )}
-                    </div>
-                    {(regFields.maritalStatus || regFields.bloodGroup) && (
-                    <div className="grid grid-cols-2 gap-2">
-                      {regFields.maritalStatus && (
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Marital Status</label>
-                        <select
-                          value={formData.maritalStatus}
-                          onChange={(e) => setFormData({ ...formData, maritalStatus: e.target.value })}
-                          className="input text-sm py-1.5"
-                        >
-                          <option value="">Select...</option>
-                          <option value="single">Single</option>
-                          <option value="married">Married</option>
-                          <option value="divorced">Divorced</option>
-                          <option value="widowed">Widowed</option>
-                        </select>
-                      </div>
-                      )}
-                      {regFields.bloodGroup && (
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Blood Group</label>
-                        <select
-                          value={formData.bloodGroup}
-                          onChange={(e) => setFormData({ ...formData, bloodGroup: e.target.value })}
-                          className="input text-sm py-1.5"
-                        >
-                          <option value="">Select...</option>
-                          <option value="A+">A+</option>
-                          <option value="A-">A-</option>
-                          <option value="B+">B+</option>
-                          <option value="B-">B-</option>
-                          <option value="AB+">AB+</option>
-                          <option value="AB-">AB-</option>
-                          <option value="O+">O+</option>
-                          <option value="O-">O-</option>
-                        </select>
-                      </div>
-                      )}
-                    </div>
-                    )}
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Occupation</label>
-                      <input
-                        type="text"
-                        value={formData.occupation}
-                        onChange={(e) => setFormData({ ...formData, occupation: e.target.value })}
-                        className="input text-sm py-1.5"
-                        placeholder="Occupation"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Known Allergies</label>
-                      <input
-                        type="text"
-                        value={formData.allergies}
-                        onChange={(e) => setFormData({ ...formData, allergies: e.target.value })}
-                        className="input text-sm py-1.5"
-                        placeholder="List allergies..."
-                      />
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {!quickRegistration && (
+          <div>
+            <label className="block text-sm font-medium text-surface-700 mb-1.5">Nationality</label>
+            <SearchableSelect
+              options={countries}
+              value={formData.nationality ?? ''}
+              onChange={(val) => handleNationalityChange(val)}
+              placeholder="Select country..."
+              loading={countries.length === 0}
+            />
           </div>
+        )}
+        <Input
+          label="National ID (NIN)"
+          placeholder="CM12345678ABCDE"
+          value={formData.nationalId}
+          onChange={(e) => setFormData({ ...formData, nationalId: e.target.value.toUpperCase() })}
+          maxLength={15}
+          error={formData.nationalId && !isNINValid ? 'Invalid NIN format' : undefined}
+          hint={
+            formData.nationalId && isNINValid
+              ? 'Valid NIN'
+              : 'Format: 2 letters + 8 digits + 5 alphanumeric'
+          }
+        />
+      </div>
 
-          {/* Column 2: Contact, ID & Payment */}
-          <div className="space-y-3">
-            <div className="card p-3">
-              <div className="flex items-center gap-2 mb-2">
-                <Phone className="w-4 h-4 text-blue-600" />
-                <h2 className="font-semibold text-sm">Contact Information</h2>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Phone</label>
-                  <input
-                    type="tel"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    className="input text-sm py-1.5"
-                    placeholder="+256..."
-                  />
-                </div>
-                {!quickRegistration && (
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
-                    <input
-                      type="email"
-                      value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      className="input text-sm py-1.5"
-                      placeholder="email@example.com"
-                    />
-                  </div>
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-2 mt-2">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">District</label>
-                  <SearchableSelect
-                    options={districtOptions}
-                    value={location.selectedDistrict}
-                    onChange={(val) => {
-                      location.setDistrict(val);
-                      setFormData(prev => ({ ...prev, district: val, subcounty: '', parish: '' }));
-                    }}
-                    placeholder="Select district..."
-                    loading={location.loadingDistricts}
-                    noOptionsText="No districts found"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Sub-county</label>
-                  <SearchableSelect
-                    options={subcountyOptions}
-                    value={location.selectedSubcounty}
-                    onChange={(val) => {
-                      location.setSubcounty(val);
-                      setFormData(prev => ({ ...prev, subcounty: val, parish: '' }));
-                    }}
-                    placeholder={location.loadingSubcounties ? 'Loading sub-counties...' : 'Type to search sub-county...'}
-                    loading={location.loadingSubcounties}
-                    disabled={false}
-                    noOptionsText="No sub-counties found"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2 mt-2">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Parish/Village</label>
-                  <SearchableSelect
-                    options={parishOptions}
-                    value={location.selectedParish}
-                    onChange={(val) => {
-                      location.setParish(val);
-                      setFormData(prev => ({ ...prev, parish: val }));
-                    }}
-                    placeholder={location.selectedSubcounty ? 'Select parish/village...' : 'Select sub-county first'}
-                    loading={location.loadingParishes}
-                    disabled={!location.selectedSubcounty}
-                    noOptionsText="No parishes found"
-                  />
-                </div>
-              </div>
+      {/* Webcam Modal */}
+      {showWebcam && (
+        <div className="fixed inset-0 bg-surface-900/50 flex items-center justify-center z-50 p-4">
+          <Card className="max-w-md w-full">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="font-semibold text-surface-900">Capture Photo</h3>
+              <Button variant="ghost" size="sm" icon={X} onClick={stopWebcam} />
             </div>
-
-            <div className="card p-3">
-              <div className="flex items-center gap-2 mb-2">
-                <CreditCard className="w-4 h-4 text-blue-600" />
-                <h2 className="font-semibold text-sm">Identification</h2>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  National ID (NIN)
-                  {formData.nationalId && (
-                    <span className="ml-2">
-                      {isNINValid ? (
-                        <Check className="w-4 h-4 text-green-500 inline" />
-                      ) : (
-                        <X className="w-4 h-4 text-red-500 inline" />
-                      )}
-                    </span>
-                  )}
-                </label>
-                <input
-                  type="text"
-                  value={formData.nationalId}
-                  onChange={(e) => setFormData({ ...formData, nationalId: e.target.value.toUpperCase() })}
-                  className={`input text-sm py-1.5 ${
-                    formData.nationalId 
-                      ? isNINValid 
-                        ? 'border-green-300 focus:border-green-500' 
-                        : 'border-red-300 focus:border-red-500'
-                      : ''
-                  }`}
-                  placeholder="CM12345678ABCDE"
-                  maxLength={15}
-                />
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Format: 2 letters + 8 digits + 5 alphanumeric (e.g., CM12345678ABCDE)
-                </p>
-                {formData.nationalId && !isNINValid && (
-                  <p className="text-xs text-red-500 mt-0.5">Invalid NIN format</p>
-                )}
-              </div>
+            <video ref={videoRef} autoPlay playsInline className="w-full rounded-xl mb-3" />
+            <canvas ref={canvasRef} className="hidden" />
+            <div className="flex gap-2">
+              <Button variant="secondary" className="flex-1" onClick={stopWebcam}>
+                Cancel
+              </Button>
+              <Button className="flex-1" icon={Camera} onClick={capturePhoto}>
+                Capture
+              </Button>
             </div>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
 
-          </div>
+  const contactStep = (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Input
+          label="Phone"
+          type="tel"
+          placeholder="+256..."
+          value={formData.phone}
+          onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+        />
+        <Input
+          label="Email"
+          type="email"
+          placeholder="email@example.com"
+          value={formData.email}
+          onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+        />
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-surface-700 mb-1.5">District</label>
+          <SearchableSelect
+            options={districtOptions}
+            value={location.selectedDistrict}
+            onChange={(val) => {
+              location.setDistrict(val);
+              setFormData(prev => ({ ...prev, district: val, subcounty: '', parish: '' }));
+            }}
+            placeholder="Select district..."
+            loading={location.loadingDistricts}
+            noOptionsText="No districts found"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-surface-700 mb-1.5">Sub-county</label>
+          <SearchableSelect
+            options={subcountyOptions}
+            value={location.selectedSubcounty}
+            onChange={(val) => {
+              location.setSubcounty(val);
+              setFormData(prev => ({ ...prev, subcounty: val, parish: '' }));
+            }}
+            placeholder={location.loadingSubcounties ? 'Loading sub-counties...' : 'Type to search...'}
+            loading={location.loadingSubcounties}
+            disabled={false}
+            noOptionsText="No sub-counties found"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-surface-700 mb-1.5">Parish/Village</label>
+          <SearchableSelect
+            options={parishOptions}
+            value={location.selectedParish}
+            onChange={(val) => {
+              location.setParish(val);
+              setFormData(prev => ({ ...prev, parish: val }));
+            }}
+            placeholder={location.selectedSubcounty ? 'Select parish/village...' : 'Select sub-county first'}
+            loading={location.loadingParishes}
+            disabled={!location.selectedSubcounty}
+            noOptionsText="No parishes found"
+          />
+        </div>
+      </div>
+    </div>
+  );
 
-          {/* Column 3: Next of Kin */}
-          {!quickRegistration && regFields.nextOfKin && (
-            <div className="card p-4 flex flex-col">
-              <div className="flex items-center gap-2 mb-3">
-                <Users className="w-4 h-4 text-blue-600" />
-                <h2 className="font-semibold text-sm">Next of Kin</h2>
-              </div>
-              <div className="space-y-3 flex-1">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Full Name</label>
-                  <input
-                    type="text"
-                    value={formData.nextOfKin?.name || ''}
-                    onChange={(e) => setFormData({ ...formData, nextOfKin: { ...formData.nextOfKin, name: e.target.value } })}
-                    className="input text-sm py-1.5"
-                    placeholder="Next of kin name"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Phone</label>
-                  <input
-                    type="tel"
-                    value={formData.nextOfKin?.phone || ''}
-                    onChange={(e) => setFormData({ ...formData, nextOfKin: { ...formData.nextOfKin, phone: e.target.value } })}
-                    className="input text-sm py-1.5"
-                    placeholder="+256..."
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Relationship</label>
-                  <select
-                    value={formData.nextOfKin?.relationship || ''}
-                    onChange={(e) => setFormData({ ...formData, nextOfKin: { ...formData.nextOfKin, relationship: e.target.value } })}
-                    className="input text-sm py-1.5"
-                  >
-                    <option value="">Select...</option>
-                    <option value="spouse">Spouse</option>
-                    <option value="parent">Parent</option>
-                    <option value="child">Child</option>
-                    <option value="sibling">Sibling</option>
-                    <option value="friend">Friend</option>
-                    <option value="other">Other</option>
-                  </select>
-                </div>
-              </div>
-            </div>
+  const detailsStep = (
+    <div className="space-y-5">
+      {/* Payment */}
+      <div>
+        <div className="text-xs font-semibold text-surface-500 uppercase tracking-wide mb-3">Payment</div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <Select
+            label="Payment Type"
+            value={formData.paymentType}
+            onChange={(e) => setFormData({ ...formData, paymentType: e.target.value as 'cash' | 'insurance' | 'corporate' })}
+          >
+            <option value="cash">Cash</option>
+            <option value="insurance">Insurance</option>
+            <option value="corporate">Corporate</option>
+          </Select>
+          {formData.paymentType === 'insurance' && (
+            <>
+              <Select
+                label="Insurance Provider"
+                value={formData.insuranceProvider}
+                onChange={(e) => setFormData({ ...formData, insuranceProvider: e.target.value })}
+              >
+                <option value="">Select...</option>
+                {INSURANCE_PROVIDERS.map(p => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </Select>
+              <Input
+                label="Member / Policy No."
+                placeholder="Policy number"
+                value={formData.insuranceId}
+                onChange={(e) => setFormData({ ...formData, insuranceId: e.target.value })}
+              />
+            </>
+          )}
+          {formData.paymentType === 'corporate' && (
+            <Select
+              label="Company"
+              value={formData.corporateName}
+              onChange={(e) => setFormData({ ...formData, corporateName: e.target.value })}
+            >
+              <option value="">Select...</option>
+              {CORPORATE_COMPANIES.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </Select>
           )}
         </div>
+      </div>
 
-        {/* Actions - Fixed at bottom */}
-        <div className="flex gap-4 mt-4 pt-4 border-t flex-shrink-0">
-          <button
-            type="button"
-            onClick={() => navigate(-1)}
-            className="btn-secondary px-8"
-          >
-            Cancel
-          </button>
-          <div className="flex items-center space-x-2 my-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
-            <input
-              type="checkbox"
-              id="billImmediately"
-              checked={billImmediately}
-              onChange={(e) => setBillImmediately(e.target.checked)}
-              className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+      {/* Next of Kin */}
+      {regFields.nextOfKin && (
+        <div>
+          <div className="text-xs font-semibold text-surface-500 uppercase tracking-wide mb-3">Next of Kin</div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Input
+              label="Full Name"
+              placeholder="Next of kin name"
+              value={formData.nextOfKin?.name || ''}
+              onChange={(e) => setFormData({ ...formData, nextOfKin: { ...formData.nextOfKin, name: e.target.value } })}
             />
-            <label htmlFor="billImmediately" className="flex items-center text-sm font-medium text-gray-700">
-              <Wallet className="w-4 h-4 mr-2 text-blue-600" />
-              Proceed directly to Billing after registration
-            </label>
+            <Input
+              label="Phone"
+              type="tel"
+              placeholder="+256..."
+              value={formData.nextOfKin?.phone || ''}
+              onChange={(e) => setFormData({ ...formData, nextOfKin: { ...formData.nextOfKin, phone: e.target.value } })}
+            />
+            <Select
+              label="Relationship"
+              value={formData.nextOfKin?.relationship || ''}
+              onChange={(e) => setFormData({ ...formData, nextOfKin: { ...formData.nextOfKin, relationship: e.target.value } })}
+            >
+              <option value="">Select...</option>
+              <option value="spouse">Spouse</option>
+              <option value="parent">Parent</option>
+              <option value="child">Child</option>
+              <option value="sibling">Sibling</option>
+              <option value="friend">Friend</option>
+              <option value="other">Other</option>
+            </Select>
           </div>
+        </div>
+      )}
 
-          <button
-              type="submit"
+      {/* Additional details */}
+      <div>
+        <div className="text-xs font-semibold text-surface-500 uppercase tracking-wide mb-3">Additional Details</div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {regFields.religion && (
+            <Select
+              label="Religion"
+              value={formData.religion}
+              onChange={(e) => setFormData({ ...formData, religion: e.target.value })}
+            >
+              <option value="">Select...</option>
+              {RELIGIONS.map(rel => (
+                <option key={rel} value={rel}>{rel}</option>
+              ))}
+            </Select>
+          )}
+          {regFields.maritalStatus && (
+            <Select
+              label="Marital Status"
+              value={formData.maritalStatus}
+              onChange={(e) => setFormData({ ...formData, maritalStatus: e.target.value })}
+            >
+              <option value="">Select...</option>
+              <option value="single">Single</option>
+              <option value="married">Married</option>
+              <option value="divorced">Divorced</option>
+              <option value="widowed">Widowed</option>
+            </Select>
+          )}
+          {regFields.bloodGroup && (
+            <Select
+              label="Blood Group"
+              value={formData.bloodGroup}
+              onChange={(e) => setFormData({ ...formData, bloodGroup: e.target.value })}
+            >
+              <option value="">Select...</option>
+              {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(bg => (
+                <option key={bg} value={bg}>{bg}</option>
+              ))}
+            </Select>
+          )}
+          <Input
+            label="Occupation"
+            placeholder="Occupation"
+            value={formData.occupation}
+            onChange={(e) => setFormData({ ...formData, occupation: e.target.value })}
+          />
+          <Input
+            label="Known Allergies"
+            placeholder="Comma-separated, e.g. Penicillin"
+            value={formData.allergies}
+            onChange={(e) => setFormData({ ...formData, allergies: e.target.value })}
+          />
+        </div>
+      </div>
+    </div>
+  );
 
-            disabled={createMutation.isPending || checkDuplicatesMutation.isPending || !isFormValid}
-            className={`btn-primary flex-1 flex items-center justify-center gap-2 ${
-              !isFormValid ? 'opacity-50 cursor-not-allowed' : ''
-            }`}
+  const stepContent = [identityStep, contactStep, detailsStep];
+  const stepSummaries = [identitySummary, contactSummary];
+
+  return (
+    <div className="p-6 max-w-4xl mx-auto">
+      <PageHeader
+        title={
+          <span className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => navigate(-1)}
+              className="p-1.5 hover:bg-surface-100 rounded-lg text-surface-500"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            Register New {entityName.singular}
+          </span>
+        }
+        subtitle={`Enter ${entityName.singular.toLowerCase()} details to create a new record`}
+        actions={
+          <Button
+            variant={quickRegistration ? 'primary' : 'secondary'}
+            icon={Zap}
+            onClick={() => setQuickRegistration(!quickRegistration)}
           >
-            {(createMutation.isPending || checkDuplicatesMutation.isPending) ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : (
-              <>
-                <UserPlus className="w-5 h-5" />
-                Register {entityName.singular}
-              </>
-            )}
-          </button>
+            Quick Registration
+          </Button>
+        }
+      >
+        {!quickRegistration && (
+          <Steps steps={STEPS} current={step} onStepClick={(i) => setStep(i)} />
+        )}
+      </PageHeader>
+
+      <form onSubmit={handleSubmit} className="space-y-3">
+        {quickRegistration ? (
+          <Card>
+            <div className="flex items-center gap-2 mb-4">
+              <Zap className="w-4 h-4 text-brand-600" />
+              <h2 className="font-semibold text-surface-900">Quick Registration</h2>
+              <Badge tone="brand">essentials only</Badge>
+            </div>
+            {identityStep}
+          </Card>
+        ) : (
+          <>
+            {/* Collapsed completed steps */}
+            {STEPS.map((label, i) => {
+              if (i >= step) return null;
+              return (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => setStep(i)}
+                  className="w-full flex items-center justify-between gap-3 bg-white rounded-2xl border border-surface-200/70 px-5 py-3 text-left hover:border-brand-300 transition-colors"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
+                      <Check className="w-3.5 h-3.5" />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-surface-900">{label}</div>
+                      <div className="text-sm text-surface-500 truncate capitalize">{stepSummaries[i]}</div>
+                    </div>
+                  </div>
+                  <Pencil className="w-4 h-4 text-surface-400 shrink-0" />
+                </button>
+              );
+            })}
+
+            {/* Active step */}
+            <Card>
+              <div className="flex items-center gap-2 mb-4">
+                {step === 0 && <User className="w-4 h-4 text-brand-600" />}
+                {step === 1 && <Phone className="w-4 h-4 text-brand-600" />}
+                {step === 2 && <Users className="w-4 h-4 text-brand-600" />}
+                <h2 className="font-semibold text-surface-900">{STEPS[step]}</h2>
+              </div>
+              {stepContent[step]}
+            </Card>
+          </>
+        )}
+
+        {/* Actions */}
+        <div className="flex flex-wrap items-center gap-3 pt-2">
+          <Button variant="secondary" onClick={() => navigate(-1)}>
+            Cancel
+          </Button>
+          <div className="flex-1" />
+          {isLastStep && (
+            <label className="flex items-center gap-2 text-sm font-medium text-surface-700 bg-surface-50 border border-surface-200 rounded-xl px-3 py-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={billImmediately}
+                onChange={(e) => setBillImmediately(e.target.checked)}
+                className="w-4 h-4 accent-brand-600"
+              />
+              <Wallet className="w-4 h-4 text-brand-600" />
+              Bill after registration
+            </label>
+          )}
+          {/* Distinct keys force a NEW DOM node when Continue becomes Register.
+              Without them the same <button> morphs to type="submit" during the
+              click's re-render and the browser fires a form submit. */}
+          {!isLastStep ? (
+            <Button
+              key="continue"
+              icon={ArrowRight}
+              onClick={() => setStep(step + 1)}
+              disabled={step === 0 && !isIdentityComplete}
+            >
+              Continue
+            </Button>
+          ) : (
+            <Button
+              key="register"
+              type="submit"
+              icon={UserPlus}
+              loading={isSubmitting}
+              disabled={!isFormValid || isSubmitting}
+              size="lg"
+            >
+              Register {entityName.singular}
+            </Button>
+          )}
         </div>
 
         {createMutation.isError && (
-          <div className="bg-red-50 text-red-700 p-3 rounded-lg text-sm mt-2">
+          <div className="bg-rose-50 border border-rose-200 text-rose-700 p-3 rounded-xl text-sm">
             Failed to register patient. Please try again.
           </div>
         )}
