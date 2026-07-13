@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { useFacilityId } from '../lib/facility';
+import PartographPanel from '../components/maternity/PartographPanel';
 import {
   Baby,
   Calendar,
@@ -57,11 +58,23 @@ export default function MaternityPage() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'anc' | 'labour'>('dashboard');
   const [selectedRegistration, setSelectedRegistration] = useState<Registration | null>(null);
   const [showRegisterModal, setShowRegisterModal] = useState(false);
+  const [partographLabourId, setPartographLabourId] = useState<string | null>(null);
+  const [activeLabours, setActiveLabours] = useState<any[]>([]);
 
   useEffect(() => {
     loadDashboard();
     loadRegistrations();
+    loadActiveLabours();
   }, []);
+
+  const loadActiveLabours = async () => {
+    try {
+      const response = await api.get(`/maternity/labour/active?facilityId=${facilityId}`);
+      setActiveLabours(response.data || []);
+    } catch (err) {
+      console.error('Error loading active labours:', err);
+    }
+  };
 
   const loadDashboard = async () => {
     try {
@@ -184,7 +197,11 @@ export default function MaternityPage() {
               </div>
               <div className="divide-y">
                 {dashboard.activeLabours.map((l: any) => (
-                  <div key={l.id} className="p-4 flex items-center justify-between hover:bg-gray-50">
+                  <button
+                    key={l.id}
+                    onClick={() => setPartographLabourId(l.id)}
+                    className="w-full p-4 flex items-center justify-between hover:bg-gray-50 text-left"
+                  >
                     <div>
                       <div className="font-medium">
                         {l.registration?.patient?.firstName} {l.registration?.patient?.lastName}
@@ -193,13 +210,16 @@ export default function MaternityPage() {
                         ANC: {l.registration?.ancNumber} • Admitted: {formatDate(l.admissionTime)}
                       </div>
                     </div>
-                    <div className="text-right">
-                      <div className="text-sm font-medium">
-                        Dilation: {l.cervicalDilation || 0} cm
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <div className="text-sm font-medium">
+                          Dilation: {l.cervicalDilation || 0} cm
+                        </div>
+                        <div className="text-xs text-gray-500">{l.status}</div>
                       </div>
-                      <div className="text-xs text-gray-500">{l.status}</div>
+                      <ChevronRight className="w-4 h-4 text-gray-400" />
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
@@ -272,13 +292,74 @@ export default function MaternityPage() {
 
       {/* Labour Ward Tab */}
       {activeTab === 'labour' && (
-        <div className="bg-white rounded-lg shadow p-12 text-center">
-          <Baby className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-          <p className="text-gray-500">Labour ward management coming soon</p>
-          <p className="text-sm text-gray-400 mt-2">
-            Admit patients, track labour progress, record deliveries
-          </p>
+        <div className="bg-white rounded-lg shadow">
+          <div className="px-4 py-3 border-b bg-pink-50 flex items-center justify-between">
+            <h3 className="font-semibold text-pink-800 flex items-center gap-2">
+              <Baby className="w-5 h-5" />
+              Labour Ward — active labours
+            </h3>
+            <button
+              onClick={loadActiveLabours}
+              className="text-sm text-pink-700 hover:underline"
+            >
+              Refresh
+            </button>
+          </div>
+          {activeLabours.length === 0 ? (
+            <div className="p-12 text-center">
+              <Baby className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+              <p className="text-gray-500">No active labours at the moment</p>
+              <p className="text-sm text-gray-400 mt-2">
+                Admitted labours appear here with their partographs
+              </p>
+            </div>
+          ) : (
+            <div className="divide-y">
+              {activeLabours.map((l: any) => (
+                <button
+                  key={l.id}
+                  onClick={() => setPartographLabourId(l.id)}
+                  className="w-full p-4 flex items-center justify-between hover:bg-gray-50 text-left"
+                >
+                  <div>
+                    <div className="font-medium">
+                      {l.registration?.patient?.firstName} {l.registration?.patient?.lastName}
+                      {l.registration?.patient?.fullName}
+                    </div>
+                    <div className="text-sm text-gray-500">
+                      {l.labourNumber} • Admitted: {formatDate(l.admissionTime)}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <div className="text-sm font-medium">
+                        Dilation: {l.cervicalDilation || 0} cm
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {String(l.status).replace(/_/g, ' ')}
+                      </div>
+                    </div>
+                    <span className="rounded bg-pink-100 px-2 py-1 text-xs font-medium text-pink-700">
+                      Partograph
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
+      )}
+
+      {/* Partograph slide-over */}
+      {partographLabourId && (
+        <PartographPanel
+          labourId={partographLabourId}
+          onClose={() => {
+            setPartographLabourId(null);
+            loadDashboard();
+            loadActiveLabours();
+          }}
+        />
       )}
 
       {/* Registration Detail Side Panel */}

@@ -188,6 +188,24 @@ export interface SurgeryCaseQuery {
   offset?: number;
 }
 
+// ── WHO Surgical Safety Checklist ────────────────────────────────────────────
+
+export type WhoChecklistPhase = 'sign_in' | 'time_out' | 'sign_out';
+
+export interface WhoChecklist {
+  id: string;
+  surgeryCaseId: string;
+  signIn?: Record<string, unknown> | null;
+  signInCompletedById?: string | null;
+  signInCompletedAt?: string | null;
+  timeOut?: Record<string, unknown> | null;
+  timeOutCompletedById?: string | null;
+  timeOutCompletedAt?: string | null;
+  signOut?: Record<string, unknown> | null;
+  signOutCompletedById?: string | null;
+  signOutCompletedAt?: string | null;
+}
+
 export const surgeryService = {
   // Theatres
   theatres: {
@@ -232,6 +250,18 @@ export const surgeryService = {
 
     cancel: (id: string, data: CancelSurgeryDto) =>
       api.put<SurgeryCase>(`/surgery/cases/${id}/cancel`, data),
+
+    reconfirm: (id: string) =>
+      api.put<SurgeryCase>(`/surgery/cases/${id}/reconfirm`),
+  },
+
+  // WHO Surgical Safety Checklist
+  whoChecklist: {
+    get: (caseId: string) =>
+      api.get<WhoChecklist>(`/surgery/cases/${caseId}/who-checklist`),
+
+    completePhase: (caseId: string, phase: WhoChecklistPhase, items: Record<string, unknown>) =>
+      api.put<WhoChecklist>(`/surgery/cases/${caseId}/who-checklist/${phase}`, { items }),
   },
 
   // Schedule & Dashboard
