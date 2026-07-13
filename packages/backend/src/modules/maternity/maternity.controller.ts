@@ -27,6 +27,10 @@ import {
 import { PregnancyStatus } from '../../database/entities/antenatal-registration.entity';
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
+import {
+  PartographService,
+  RecordPartographObservationDto,
+} from './partograph.service';
 
 @ApiTags('Maternity / Antenatal')
 @ApiBearerAuth()
@@ -34,7 +38,10 @@ import { ModuleGuard } from '../auth/guards/module.guard';
 @RequireModule('maternity')
 @Controller('maternity')
 export class MaternityController {
-  constructor(private readonly maternityService: MaternityService) {}
+  constructor(
+    private readonly maternityService: MaternityService,
+    private readonly partographService: PartographService,
+  ) {}
 
   // ============ ANC REGISTRATION ============
 
@@ -127,6 +134,30 @@ export class MaternityController {
     @Request() req: any,
   ) {
     return this.maternityService.updateLabourProgress(id, dto, req.user?.tenantId);
+  }
+
+  // ============ PARTOGRAPH ============
+
+  @Post('labour/:id/partograph')
+  @AuthWithPermissions('maternity.update')
+  @ApiOperation({
+    summary: 'Record a partograph observation (auto-checks WHO alert/action lines + FHR)',
+  })
+  recordPartographObservation(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RecordPartographObservationDto,
+    @Request() req: any,
+  ) {
+    return this.partographService.recordObservation(id, dto, req.user.id, req.user?.tenantId);
+  }
+
+  @Get('labour/:id/partograph')
+  @AuthWithPermissions('maternity.read')
+  @ApiOperation({
+    summary: 'Get the partograph series with WHO alert/action line parameters and progress status',
+  })
+  getPartograph(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.partographService.getPartograph(id, req.user?.tenantId);
   }
 
   @Put('labour/:id/delivery')

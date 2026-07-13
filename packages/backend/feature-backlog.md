@@ -12,11 +12,6 @@ Legend: 💰 revenue/compliance · 🏥 clinical value · ✨ UX polish
   MAX+1. Single-operator today, but add advisory locks if multiple platform
   admins ever work concurrently.
 
-## Maternity
-- 🏥 **Partograph charting** — labour progress records dilation/station but has
-  no WHO partograph time-series view or alert-line breach detection (major
-  clinical safety feature for labour wards).
-
 ---
 
 ## Shipped (July 2026)
@@ -73,3 +68,10 @@ Legend: 💰 revenue/compliance · 🏥 clinical value · ✨ UX polish
   audit. `GET/PUT /surgery/cases/:id/who-checklist[/:phase]`. Workflow gating
   (start requires sign-in+time-out, complete requires sign-out) is opt-in via
   the `surgery.who_checklist.enforce` tenant setting for a safe rollout.
+- ✅ **Partograph backend** — timed observations per labour (dilation, descent,
+  contractions, FHR, liquor, moulding, maternal vitals, oxytocin; migration
+  75, RLS'd). WHO alert line (1 cm/h from the first ≥4 cm observation) and
+  action line (+4 h) computed server-side; breaches alert the labour team
+  once per state change, abnormal FHR (<110/>160) alerts on every reading.
+  `POST/GET /maternity/labour/:id/partograph` returns the series plus line
+  parameters for frontend charting. 7 unit tests on the line math.
