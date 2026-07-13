@@ -98,8 +98,15 @@ export class DischargeController {
 
   @Post(':id/finalize')
   @AuthWithPermissions('discharge.update')
-  async finalizeSummary(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
-    return this.dischargeService.finalizeSummary(id, req.user?.id, req.user?.tenantId);
+  async finalizeSummary(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { override?: boolean; overrideReason?: string },
+    @Request() req: any,
+  ) {
+    return this.dischargeService.finalizeSummary(id, req.user?.id, req.user?.tenantId, {
+      override: body?.override,
+      overrideReason: body?.overrideReason,
+    });
   }
 
   @Post(':id/sign')

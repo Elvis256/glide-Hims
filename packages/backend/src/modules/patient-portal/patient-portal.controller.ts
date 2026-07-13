@@ -95,4 +95,12 @@ export class PatientPortalController {
   prescriptions(@Req() req: any) {
     return this.service.listPrescriptions(req.patientId, req.ip);
   }
+
+  @UseGuards(PatientPortalGuard)
+  @ApiBearerAuth()
+  @Get('discharge-summaries')
+  @ApiOperation({ summary: "List the patient's discharge instructions (finalized/signed only)" })
+  dischargeSummaries(@Req() req: any) {
+    return this.service.listDischargeSummaries(req.patientId, req.ip);
+  }
 }

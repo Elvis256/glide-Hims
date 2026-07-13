@@ -15,6 +15,11 @@ import { Invoice } from '../../database/entities/invoice.entity';
 import { Appointment } from '../appointments/entities/appointment.entity';
 import { LabSample, SampleStatus } from '../../database/entities/lab-sample.entity';
 import { Prescription } from '../../database/entities/prescription.entity';
+import {
+  DischargeSummary,
+  DischargeDocumentStatus,
+} from '../../database/entities/discharge-summary.entity';
+import { In } from 'typeorm';
 import { CacheService } from '../cache/cache.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { hashPii } from '../../common/crypto/pii-crypto';
@@ -48,6 +53,8 @@ export class PatientPortalService {
     @InjectRepository(Appointment) private readonly appointments: Repository<Appointment>,
     @InjectRepository(LabSample) private readonly labSamples: Repository<LabSample>,
     @InjectRepository(Prescription) private readonly prescriptions: Repository<Prescription>,
+    @InjectRepository(DischargeSummary)
+    private readonly dischargeSummaries: Repository<DischargeSummary>,
     private readonly cache: CacheService,
     private readonly jwt: JwtService,
     private readonly notifications: NotificationsService,
@@ -242,6 +249,36 @@ export class PatientPortalService {
         duration: it.duration,
         instructions: it.instructions,
       })),
+    }));
+  }
+
+  async listDischargeSummaries(patientId: string, ip?: string) {
+    // Only finalized/signed documents — drafts are still being written by
+    // clinicians and are not a patient-facing record yet
+    const rows = await this.dischargeSummaries.find({
+      where: {
+        patientId,
+        documentStatus: In([DischargeDocumentStatus.FINALIZED, DischargeDocumentStatus.SIGNED]),
+      },
+      order: { dischargeDate: 'DESC' },
+      take: 20,
+    });
+    this.logAccess(patientId, 'discharge_summaries', rows.length, ip);
+    return rows.map((d) => ({
+      id: d.id,
+      dischargeNumber: d.dischargeNumber,
+      dischargeDate: d.dischargeDate,
+      status: d.documentStatus,
+      diagnosis: d.finalDiagnosis,
+      medications: d.dischargeMedications,
+      instructions: {
+        general: d.dischargeInstructions,
+        diet: d.dietInstructions,
+        activity: d.activityInstructions,
+        woundCare: d.woundCareInstructions,
+        warningSigns: d.warningSigns,
+      },
+      followUp: d.followUpAppointments,
     }));
   }
 

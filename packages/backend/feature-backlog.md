@@ -6,17 +6,6 @@ decisions: pick what to build.
 
 Legend: 💰 revenue/compliance · 🏥 clinical value · ✨ UX polish
 
-## Discharge / IPD
-- 🏥 **Discharge checklist gate** — block discharge until pending lab results
-  acknowledged, invoices settled or debt-flagged, and med reconciliation
-  signed. All three exist today but are unenforced/independent.
-- ✨ **Patient-facing discharge instructions** — print payload already exists
-  (`printDischargeSummary`); surface it in the patient portal + SMS follow-up
-  appointment reminders.
-- 🏥 **Discharge planning / expected discharge date** — bed board already shows
-  `expectedDischarge`; a simple "planned discharges today" list would help ward
-  managers free beds proactively.
-
 ## Platform
 - ✨ **Platform number generators unserialized** — SaaS quotation
   (`nextQuotationNumber`) and contract (`nextContractNumber`) use unlocked
@@ -27,10 +16,6 @@ Legend: 💰 revenue/compliance · 🏥 clinical value · ✨ UX polish
 - 🏥 **Partograph charting** — labour progress records dilation/station but has
   no WHO partograph time-series view or alert-line breach detection (major
   clinical safety feature for labour wards).
-
-## Portal / Biometrics
-- ✨ **Portal discharge instructions + follow-up view** — pairs with the
-  discharge backlog item; the portal now has working lab results.
 
 ## Surgery
 - 🏥 **WHO Surgical Safety Checklist (sign-in / time-out / sign-out)** — only a
@@ -76,3 +61,14 @@ Legend: 💰 revenue/compliance · 🏥 clinical value · ✨ UX polish
   reconcile-timeouts` polls the gateway for TIMEOUT txs; late successes are
   claimed (TIMEOUT→SUCCESS) and sale completion attempted, with manual-refund
   flagging when the sale was paid another way.
+- ✅ **Discharge checklist gate** — finalization blocked while critical
+  results are unacknowledged, invoices unsettled (unless debt-flagged), or
+  med reconciliation incomplete; AMA/deceased/absconded exempt; override
+  requires a logged reason.
+- ✅ **Portal discharge instructions** — `GET /portal/discharge-summaries`
+  (finalized/signed only) with diet/activity/wound-care/warning-sign
+  instructions, medications and follow-ups.
+- ✅ **Discharge planning board** — `admissions.expected_discharge_date`
+  (migration 73), `PATCH /ipd/admissions/:id/expected-discharge`, and
+  `GET /ipd/discharge-planning` grouping overdue / today / upcoming /
+  unplanned.

@@ -220,6 +220,30 @@ export class IpdController {
     return this.ipdService.getAdmissions(query, req.user?.tenantId);
   }
 
+  @Get('discharge-planning')
+  @AuthWithPermissions('ipd.read')
+  @ApiOperation({ summary: 'Discharge-planning board: overdue / today / upcoming planned discharges' })
+  getDischargePlanning(@Query('facilityId') facilityId: string, @Request() req: any) {
+    validateUuid(facilityId, 'facilityId');
+    return this.ipdService.getDischargePlanning(facilityId, req.user?.tenantId);
+  }
+
+  @Patch('admissions/:id/expected-discharge')
+  @AuthWithPermissions('ipd.update')
+  @ApiOperation({ summary: 'Set or clear the planned discharge date for an admission' })
+  setExpectedDischarge(
+    @Param('id') id: string,
+    @Body() body: { expectedDischargeDate: string | null },
+    @Request() req: any,
+  ) {
+    validateUuid(id);
+    return this.ipdService.setExpectedDischargeDate(
+      id,
+      body?.expectedDischargeDate ?? null,
+      req.user?.tenantId,
+    );
+  }
+
   @Get('admissions/:id')
   @AuthWithPermissions('ipd.read')
   @ApiOperation({ summary: 'Get admission by ID' })

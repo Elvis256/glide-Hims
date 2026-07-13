@@ -257,8 +257,82 @@ export class DischargeService {
     return this.dischargeSummaryRepository.save(summary);
   }
 
-  /** DRAFT → FINALIZED: freezes the document for signing. */
-  async finalizeSummary(id: string, userId: string, tenantId?: string): Promise<DischargeSummary> {
+  /**
+   * Safety/revenue checklist evaluated before a summary can be finalized:
+   *  1. no open (pending/escalated) critical results on the encounter
+   *  2. encounter invoices settled — or the patient is already debt-flagged
+   *  3. medication reconciliation (when one exists) completed or signed
+   * Returns the list of failed items; empty = clear to finalize.
+   */
+  private async evaluateDischargeChecklist(
+    manager: import('typeorm').EntityManager,
+    summary: DischargeSummary,
+    tid: string,
+  ): Promise<string[]> {
+    const failures: string[] = [];
+    if (!summary.encounterId) return failures;
+
+    const [openCritical] = await manager.query(
+      `SELECT COUNT(*)::int AS n FROM critical_result_alerts
+        WHERE encounter_id = $1 AND tenant_id = $2
+          AND status IN ('pending', 'escalated') AND deleted_at IS NULL`,
+      [summary.encounterId, tid],
+    );
+    if (Number(openCritical?.n) > 0) {
+      failures.push(
+        `${openCritical.n} critical result(s) on this encounter have not been acknowledged`,
+      );
+    }
+
+    const [unsettled] = await manager.query(
+      `SELECT COUNT(*)::int AS n, COALESCE(SUM(i.balance_due), 0)::float AS balance
+         FROM invoices i
+        WHERE i.encounter_id = $1 AND i.tenant_id = $2
+          AND i.status IN ('draft', 'pending', 'partially_paid')
+          AND i.balance_due > 0 AND i.deleted_at IS NULL`,
+      [summary.encounterId, tid],
+    );
+    if (Number(unsettled?.n) > 0) {
+      // A patient already flagged into the debt workflow may leave with a
+      // tracked balance — that's what the debt module is for
+      const [debtFlagged] = await manager.query(
+        `SELECT 1 FROM patients
+          WHERE id = $1 AND tenant_id = $2
+            AND debt_status IS NOT NULL AND debt_status != 'none'
+          LIMIT 1`,
+        [summary.patientId, tid],
+      );
+      if (!debtFlagged) {
+        failures.push(
+          `${unsettled.n} invoice(s) with outstanding balance ${unsettled.balance} — settle or flag the patient into the debt workflow`,
+        );
+      }
+    }
+
+    const [recon] = await manager.query(
+      `SELECT status FROM medication_reconciliations
+        WHERE encounter_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+        ORDER BY created_at DESC LIMIT 1`,
+      [summary.encounterId, tid],
+    );
+    if (recon && !['completed', 'signed'].includes(recon.status)) {
+      failures.push(`medication reconciliation is still '${recon.status}'`);
+    }
+
+    return failures;
+  }
+
+  /**
+   * DRAFT → FINALIZED: freezes the document for signing. Gated by the
+   * discharge checklist; AMA/deceased/absconded discharges bypass it, and an
+   * explicit override with a reason is audit-logged.
+   */
+  async finalizeSummary(
+    id: string,
+    userId: string,
+    tenantId?: string,
+    options?: { override?: boolean; overrideReason?: string },
+  ): Promise<DischargeSummary> {
     const tid = requireTenantId(tenantId);
     return this.dataSource.transaction(async (manager) => {
       const summary = await manager.findOne(DischargeSummary, {
@@ -271,10 +345,37 @@ export class DischargeService {
           `Only draft summaries can be finalized (current: ${summary.documentStatus})`,
         );
       }
+
+      const checklistExempt = [
+        DischargeType.AGAINST_MEDICAL_ADVICE,
+        DischargeType.DECEASED,
+        DischargeType.ABSCONDED,
+      ].includes(summary.type);
+
+      if (!checklistExempt && !options?.override) {
+        const failures = await this.evaluateDischargeChecklist(manager, summary, tid);
+        if (failures.length > 0) {
+          throw new BadRequestException(
+            `Discharge checklist incomplete: ${failures.join('; ')}. ` +
+              `Resolve the items or finalize with an override reason.`,
+          );
+        }
+      }
+      if (options?.override && !options.overrideReason?.trim()) {
+        throw new BadRequestException('An override reason is required to bypass the checklist');
+      }
+
       summary.documentStatus = DischargeDocumentStatus.FINALIZED;
       summary.finalizedById = userId;
       summary.finalizedAt = new Date();
-      return manager.save(summary);
+      const saved = await manager.save(summary);
+
+      if (options?.override) {
+        this.logger.warn(
+          `Discharge checklist OVERRIDDEN for ${summary.dischargeNumber} by ${userId}: ${options.overrideReason}`,
+        );
+      }
+      return saved;
     });
   }
 
