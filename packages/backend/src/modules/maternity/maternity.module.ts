@@ -10,6 +10,9 @@ import { ImmunizationSchedule } from '../../database/entities/immunization-sched
 import { MaternityService } from './maternity.service';
 import { MaternityController } from './maternity.controller';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { InAppNotificationsModule } from '../in-app-notifications/in-app-notifications.module';
+import { PartographObservation } from '../../database/entities/partograph-observation.entity';
+import { PartographService } from './partograph.service';
 
 @Module({
   imports: [
@@ -21,11 +24,13 @@ import { NotificationsModule } from '../notifications/notifications.module';
       PostnatalVisit,
       BabyWellnessCheck,
       ImmunizationSchedule,
+      PartographObservation,
     ]),
     NotificationsModule,
+    InAppNotificationsModule,
   ],
   controllers: [MaternityController],
-  providers: [MaternityService],
-  exports: [MaternityService],
+  providers: [MaternityService, PartographService],
+  exports: [MaternityService, PartographService],
 })
 export class MaternityModule {}
