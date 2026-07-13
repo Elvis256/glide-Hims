@@ -23,6 +23,7 @@ import { RolePermission } from '../../database/entities/role-permission.entity';
 import { Permission } from '../../database/entities/permission.entity';
 import { UserPermission } from '../../database/entities/user-permission.entity';
 import { LoginHistory } from '../../database/entities/login-history.entity';
+import { RefreshToken } from '../../database/entities/refresh-token.entity';
 import { AuditLog } from '../../database/entities/audit-log.entity';
 import { LoginDto, AuthResponseDto, ChangePasswordDto, UpdateProfileDto } from './dto/auth.dto';
 import { RefreshTokenService } from './refresh-token.service';
@@ -561,11 +562,18 @@ export class AuthService {
       });
 
       // Wrap the entire rotation in a transaction with pessimistic lock
-      // to prevent TOCTOU race conditions on concurrent refresh requests
+      // to prevent TOCTOU race conditions on concurrent refresh requests.
+      //
+      // CRITICAL: every DB call inside this callback MUST go through `manager`.
+      // A repository call checks out a SECOND pooled connection; with the user
+      // row held FOR UPDATE here, the new-token INSERT's FK check (FOR KEY
+      // SHARE on users) deadlocks against it while this connection idles in
+      // JS awaiting the result — an undetectable app<->DB deadlock that
+      // zombies both connections until terminated (prod incident 2026-07-13).
       return await this.dataSource.transaction(async (manager) => {
         // Server-side refresh token validation with lock
         const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
-        const storedToken = await manager.getRepository(this.refreshTokenService['refreshTokenRepository'].target).findOne({
+        const storedToken = await manager.getRepository(RefreshToken).findOne({
           where: { tokenHash },
           lock: { mode: 'pessimistic_write' },
         });
@@ -604,7 +612,11 @@ export class AuthService {
           );
           user.tokenVersion += 1;
           await manager.save(User, user);
-          await this.refreshTokenService.revokeAllUserTokens(user.id);
+          await manager.update(
+            RefreshToken,
+            { userId: user.id, isRevoked: false },
+            { isRevoked: true },
+          );
           throw new UnauthorizedException('Token has been revoked');
         }
 
@@ -612,8 +624,8 @@ export class AuthService {
         user.tokenVersion += 1;
         await manager.save(User, user);
 
-        // Get current roles
-        const userRoles = await this.userRoleRepository.find({
+        // Get current roles (via manager — see transaction warning above)
+        const userRoles = await manager.find(UserRole, {
           where: { userId: user.id },
           relations: ['role', 'facility'],
         });
@@ -626,13 +638,13 @@ export class AuthService {
         let facility = roleFacility;
         if (!facility && user.facilityId) {
           facility =
-            (await this.facilityRepository.findOne({ where: { id: user.facilityId } })) ?? undefined;
+            (await manager.findOne(Facility, { where: { id: user.facilityId } })) ?? undefined;
         }
 
         // Get permissions for all user's roles
         let permissions: string[] = [];
         if (roleIds.length > 0) {
-          const rolePermissions = await this.rolePermissionRepository.find({
+          const rolePermissions = await manager.find(RolePermission, {
             where: { roleId: In(roleIds) },
             relations: ['permission'],
           });
@@ -640,7 +652,7 @@ export class AuthService {
         }
 
         // Get direct user permissions
-        const directPermissions = await this.userPermissionRepository.find({
+        const directPermissions = await manager.find(UserPermission, {
           where: { userId: user.id },
           relations: ['permission'],
         });
@@ -672,7 +684,8 @@ export class AuthService {
         storedToken.replacedByHash = newTokenHash;
         await manager.save(storedToken);
 
-        // Create new token record in the same family
+        // Create new token record in the same family (on THIS transaction's
+        // connection — the pooled variant deadlocks against our user row lock)
         await this.refreshTokenService.createRefreshToken(
           user.id,
           storedToken.tenantId,
@@ -680,10 +693,11 @@ export class AuthService {
           ipAddress,
           userAgent,
           storedToken.tokenFamily,
+          manager,
         );
 
         // Update session token hash after rotation
-        await this.sessionService.updateSessionToken(refreshToken, newRefreshToken);
+        await this.sessionService.updateSessionToken(refreshToken, newRefreshToken, manager);
 
         // Calculate expiresIn from JWT_EXPIRES_IN config
         const expiresInConfig = this.configService.get<string>('JWT_EXPIRES_IN', '8h');
