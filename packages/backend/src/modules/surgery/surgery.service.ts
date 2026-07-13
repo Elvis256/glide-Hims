@@ -635,14 +635,23 @@ export class SurgeryService {
       }
 
       // WHO checklist gate (opt-in per tenant): the sign-out phase (counts,
-      // specimen labelling, recovery concerns) precedes leaving the OR
+      // specimen labelling, recovery concerns) precedes leaving the OR.
+      // Transition rule: a case that started BEFORE enforcement was enabled
+      // has no time-out (and can never add one retroactively — wrong
+      // workflow position), so requiring sign-out would deadlock it. Only
+      // cases that entered the WHO flow (time-out done) are gated.
       if (await this.whoEnforcementEnabled(tid)) {
         const who = await manager.findOne(SurgerySafetyChecklist, {
           where: { surgeryCaseId: id, tenantId: tid },
         });
-        if (!who?.signOutCompletedAt) {
+        if (who?.timeOutCompletedAt && !who.signOutCompletedAt) {
           throw new BadRequestException(
             'WHO Surgical Safety Checklist: complete the sign-out phase before completing the surgery',
+          );
+        }
+        if (!who?.timeOutCompletedAt) {
+          this.logger.warn(
+            `Surgery ${surgeryCase.caseNumber} completed without WHO checklist (started pre-enforcement)`,
           );
         }
       }
