@@ -659,7 +659,7 @@ export default function PatientHistoryPage() {
                   )}
                   {canCreateEncounter && (
                     <button
-                      onClick={() => navigate(`/encounters/new?patientId=${activePatient.id}`)}
+                      onClick={() => navigate(`/doctor/encounters/new?patientId=${activePatient.id}`)}
                       className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-50 text-left"
                     >
                       <Plus className="w-4 h-4 text-green-500" />
@@ -668,7 +668,7 @@ export default function PatientHistoryPage() {
                   )}
                   <hr className="my-1" />
                   <button
-                    onClick={() => navigate(`/patients/${activePatient.id}/documents`)}
+                    onClick={() => navigate(`/patients/documents?patientId=${activePatient.id}`)}
                     className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-50 text-left"
                   >
                     <FileText className="w-4 h-4 text-purple-500" />

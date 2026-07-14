@@ -242,7 +242,7 @@ export class PatientsService {
 
   async findAll(query: PatientSearchDto, tenantId?: string, facilityId?: string) {
     const tid = requireTenantId(tenantId);
-    const { page = 1, limit = 20, search, mrn, nationalId, phone } = query;
+    const { page = 1, limit = 20, search, mrn, nationalId, phone, gender, paymentType, fromDate, toDate } = query;
     const skip = (page - 1) * limit;
 
     const queryBuilder = this.patientRepository.createQueryBuilder('patient');
@@ -290,6 +290,33 @@ export class PatientsService {
       queryBuilder.andWhere('patient.phoneHash = :phoneHash', {
         phoneHash: hashPii(phone, 'phone'),
       });
+    }
+
+    if (gender) {
+      queryBuilder.andWhere('patient.gender = :gender', { gender });
+    }
+
+    if (paymentType) {
+      // Payment preference is captured at registration into metadata.
+      // Cash is the default, so include patients with no recorded preference.
+      if (paymentType === 'cash') {
+        queryBuilder.andWhere(
+          "(patient.metadata->>'paymentType' = :paymentType OR patient.metadata->>'paymentType' IS NULL)",
+          { paymentType },
+        );
+      } else {
+        queryBuilder.andWhere("patient.metadata->>'paymentType' = :paymentType", { paymentType });
+      }
+    }
+
+    if (fromDate) {
+      queryBuilder.andWhere('patient.createdAt >= :fromDate', { fromDate });
+    }
+
+    if (toDate) {
+      const toEnd = new Date(toDate);
+      toEnd.setDate(toEnd.getDate() + 1);
+      queryBuilder.andWhere('patient.createdAt < :toEnd', { toEnd });
     }
 
     const [patients, total] = await queryBuilder

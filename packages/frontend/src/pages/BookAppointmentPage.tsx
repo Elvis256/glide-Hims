@@ -14,8 +14,7 @@ import {
 import { patientsService, type Patient } from '../services/patients';
 import { facilitiesService, type Department } from '../services/facilities';
 import { usersService, type User } from '../services/users';
-import { followUpsService } from '../services/follow-ups';
-import { useFacilityId } from '../lib/facility';
+import { appointmentsService } from '../services/appointments';
 import { toast } from 'sonner';
 import { asList } from '../utils/unwrapResponse';
 
@@ -25,7 +24,6 @@ const DEFAULT_SLOTS = ['08:00', '09:00', '10:00', '11:00', '14:00', '15:00', '16
 export default function BookAppointmentPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const facilityId = useFacilityId();
   const [step, setStep] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
@@ -50,39 +48,38 @@ export default function BookAppointmentPage() {
     queryFn: () => facilitiesService.departments.listAll(),
   });
 
-  // Fetch users (doctors/providers) - filter active users who can be doctors
+  // Fetch doctors (role-filtered — previously listed ALL active users)
   const { data: usersData, isLoading: doctorsLoading } = useQuery({
     queryKey: ['users-doctors'],
-    queryFn: () => usersService.list({ status: 'active', limit: 100 }),
+    queryFn: () => usersService.list({ role: 'Doctor', status: 'active', limit: 100 }),
   });
-  const allDoctors = asList(usersData);
-
-  // For now, show all active users as potential doctors (in production, filter by role)
-  const availableDoctors = allDoctors;
+  const availableDoctors = asList(usersData);
   const selectedDoctorData = availableDoctors.find((d: User) => d.id === selectedDoctor);
+  // Simple-mode tenants have no departments — department is optional in the
+  // backend, so don't gate doctor selection on it when none exist.
+  const activeDepartments = departments.filter((dept: Department) => dept.isActive);
 
   const bookMutation = useMutation({
     mutationFn: async () => {
       if (!selectedPatient) throw new Error('No patient selected');
-      return followUpsService.create({
+      // Books a real appointment (appointments module: numbering, doctor
+      // double-booking check, check-in → queue integration).
+      return appointmentsService.create({
         patientId: selectedPatient.id,
-        type: 'routine',
-        scheduledDate: selectedDate,
-        scheduledTime: selectedTime,
-        reason: reason || undefined,
-        departmentId: selectedDept || undefined,
-        providerId: selectedDoctor || undefined,
-        facilityId,
-        smsReminder: false,
-      } as any);
+        doctorId: selectedDoctor,
+        appointmentDate: selectedDate,
+        startTime: selectedTime,
+        type: 'consultation',
+        department: departments.find((d: Department) => d.id === selectedDept)?.name || undefined,
+        reasonForVisit: reason || undefined,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['appointments'] });
-      queryClient.invalidateQueries({ queryKey: ['follow-ups'] });
       setShowSuccess(true);
     },
-    onError: () => {
-      toast.error('Failed to book appointment. Please try again.');
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Failed to book appointment. Please try again.');
     },
   });
 
@@ -258,10 +255,12 @@ export default function BookAppointmentPage() {
                     <div className="flex items-center justify-center py-8">
                       <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
                     </div>
-                  ) : departments.length === 0 ? (
-                    <p className="text-gray-400 text-sm text-center py-8">No departments found</p>
+                  ) : activeDepartments.length === 0 ? (
+                    <p className="text-gray-400 text-sm text-center py-8">
+                      No departments configured — pick a doctor directly
+                    </p>
                   ) : (
-                    departments.filter((dept: Department) => dept.isActive).map((dept: Department) => (
+                    activeDepartments.map((dept: Department) => (
                       <button
                         key={dept.id}
                         onClick={() => { setSelectedDept(dept.id); setSelectedDoctor(''); }}
@@ -286,7 +285,7 @@ export default function BookAppointmentPage() {
                     <div className="flex items-center justify-center py-8">
                       <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
                     </div>
-                  ) : !selectedDept ? (
+                  ) : !selectedDept && activeDepartments.length > 0 ? (
                     <p className="text-gray-400 text-sm text-center py-8">Select a department first</p>
                   ) : availableDoctors.length === 0 ? (
                     <p className="text-gray-400 text-sm text-center py-8">No doctors available</p>

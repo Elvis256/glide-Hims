@@ -6,6 +6,7 @@ import api from '../services/api';
 import { queueService } from '../services/queue';
 import type { Patient } from '../types';
 import { usePermissions } from '../components/PermissionGate';
+import { confirmDialog } from '../components/ConfirmDialog';
 import { printService } from '../lib/print';
 import { useInstitutionInfo } from '../lib/useInstitutionInfo';
 import { toCsv, downloadBlob } from './reports/_reportUtils';
@@ -757,11 +758,16 @@ export default function PatientsPage() {
                                 )}
                                 {hasPermission('patients.delete') && (
                                   <button
-                                    onClick={() => {
-                                      if (confirm('Are you sure you want to deactivate this patient?')) {
+                                    onClick={async () => {
+                                      setActionMenuOpen(null);
+                                      if (await confirmDialog({
+                                        title: 'Deactivate patient',
+                                        message: `Deactivate ${patient.fullName}? They will be marked inactive but their records are kept.`,
+                                        confirmLabel: 'Deactivate',
+                                        variant: 'danger',
+                                      })) {
                                         deactivateMutation.mutate(patient.id);
                                       }
-                                      setActionMenuOpen(null);
                                     }}
                                     className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 text-red-600"
                                   >

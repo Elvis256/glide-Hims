@@ -59,9 +59,14 @@ export interface CreatePatientDto {
     nationalId?: string;
   };
   metadata?: Record<string, unknown>;
+  /** Override the server-side high-confidence duplicate guard (set after the
+   *  receptionist reviews the duplicate warning and confirms a new person). */
+  forceCreate?: boolean;
 }
 
-export interface UpdatePatientDto extends Partial<CreatePatientDto> {}
+export interface UpdatePatientDto extends Partial<CreatePatientDto> {
+  status?: 'active' | 'inactive';
+}
 
 export interface PatientSearchParams {
   search?: string;

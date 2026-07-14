@@ -75,6 +75,8 @@ export interface UserListParams {
   limit?: number;
   search?: string;
   status?: string;
+  /** Filter by exact role name (e.g. 'Doctor', 'Nurse', 'Cashier') */
+  role?: string;
 }
 
 export interface AssignRoleDto {
@@ -94,10 +96,14 @@ export interface UserPermission {
 }
 
 export const usersService = {
-  // List users
+  // List users — the response interceptor unwraps the backend's {data, meta}
+  // envelope into a flat array, so normalize both shapes to {data, total}.
   list: async (params?: UserListParams): Promise<{ data: User[]; total: number }> => {
     const response = await api.get('/users', { params });
-    return response.data;
+    const body: any = response.data;
+    if (Array.isArray(body)) return { data: body, total: body.length };
+    const data = body?.data || [];
+    return { data, total: body?.meta?.total ?? body?.total ?? data.length };
   },
 
   // Get user by ID
