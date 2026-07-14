@@ -328,6 +328,9 @@ export default function PatientEditPage() {
           relationship: data.nextOfKin.relationship,
         } : undefined,
         metadata: {
+          // Merge with existing metadata — a wholesale replace used to drop
+          // registration-time keys (paymentType, insuranceProvider, etc.)
+          ...((patient?.metadata as Record<string, unknown>) || {}),
           religion: data.religion,
           district: data.district,
           subcounty: data.subcounty,

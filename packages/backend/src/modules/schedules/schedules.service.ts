@@ -39,7 +39,8 @@ export class SchedulesService {
     // Check for overlapping schedule (same doctor, same day, overlapping time range)
     const qb = this.scheduleRepository
       .createQueryBuilder('schedule')
-      .where('schedule.doctorId = :doctorId', { doctorId: dto.doctorId })
+      .where('schedule.deletedAt IS NULL')
+      .andWhere('schedule.doctorId = :doctorId', { doctorId: dto.doctorId })
       .andWhere('schedule.dayOfWeek = :dayOfWeek', { dayOfWeek: dto.dayOfWeek })
       .andWhere('schedule.facilityId = :facilityId', { facilityId })
       .andWhere('schedule.isActive = :isActive', { isActive: true })
@@ -72,7 +73,8 @@ export class SchedulesService {
       const qb = this.scheduleRepository
         .createQueryBuilder('schedule')
         .leftJoinAndSelect('schedule.doctor', 'doctor')
-        .where('schedule.facilityId = :facilityId', { facilityId })
+        .where('schedule.deletedAt IS NULL')
+        .andWhere('schedule.facilityId = :facilityId', { facilityId })
         .andWhere('schedule.tenant_id = :tenantId', { tenantId: tid });
 
       if (!includeInactive) {
@@ -158,7 +160,8 @@ export class SchedulesService {
     if (schedule.isActive !== false) {
       const overlap = await this.scheduleRepository
         .createQueryBuilder('schedule')
-        .where('schedule.doctorId = :doctorId', { doctorId: schedule.doctorId })
+        .where('schedule.deletedAt IS NULL')
+        .andWhere('schedule.doctorId = :doctorId', { doctorId: schedule.doctorId })
         .andWhere('schedule.dayOfWeek = :dayOfWeek', { dayOfWeek: schedule.dayOfWeek })
         .andWhere('schedule.facilityId = :facilityId', { facilityId })
         .andWhere('schedule.isActive = :isActive', { isActive: true })
@@ -188,7 +191,8 @@ export class SchedulesService {
     const qb = this.scheduleRepository
       .createQueryBuilder('schedule')
       .leftJoinAndSelect('schedule.doctor', 'doctor')
-      .where('schedule.facilityId = :facilityId', { facilityId })
+      .where('schedule.deletedAt IS NULL')
+      .andWhere('schedule.facilityId = :facilityId', { facilityId })
       .andWhere('schedule.isActive = :isActive', { isActive: true })
       .andWhere('schedule.tenant_id = :tenantId', { tenantId: tid });
 

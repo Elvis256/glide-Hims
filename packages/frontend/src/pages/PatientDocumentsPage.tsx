@@ -1,9 +1,11 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import api from '../services/api';
 import type { Patient } from '../types';
 import { usePermissions } from '../components/PermissionGate';
+import { confirmDialog } from '../components/ConfirmDialog';
 import { printService } from '../lib/print';
 import {
   Search,
@@ -46,15 +48,17 @@ import {
   Copy,
 } from 'lucide-react';
 
-// Document category types
-type DocumentCategory = 
+// Document category types — values MUST match the backend DocumentCategory
+// enum: documents saved with unknown categories are excluded by the
+// role-based category filter and become invisible everywhere.
+type DocumentCategory =
   | 'all'
-  | 'id_documents'
-  | 'insurance_cards'
-  | 'medical_reports'
-  | 'lab_results'
-  | 'radiology_images'
-  | 'consent_forms'
+  | 'identification'
+  | 'insurance_card'
+  | 'medical_history'
+  | 'lab_report'
+  | 'imaging'
+  | 'consent'
   | 'other';
 
 type SortField = 'uploadedAt' | 'name' | 'category' | 'fileSize';
@@ -86,12 +90,12 @@ const documentCategories: Array<{
   color: string;
 }> = [
   { value: 'all', label: 'All Documents', icon: Folder, color: 'bg-gray-100 text-gray-700' },
-  { value: 'id_documents', label: 'ID Documents', icon: CreditCard, color: 'bg-blue-100 text-blue-700' },
-  { value: 'insurance_cards', label: 'Insurance Cards', icon: FileCheck, color: 'bg-green-100 text-green-700' },
-  { value: 'medical_reports', label: 'Medical Reports', icon: FileText, color: 'bg-purple-100 text-purple-700' },
-  { value: 'lab_results', label: 'Lab Results', icon: FileSpreadsheet, color: 'bg-yellow-100 text-yellow-700' },
-  { value: 'radiology_images', label: 'Radiology Images', icon: FileImage, color: 'bg-pink-100 text-pink-700' },
-  { value: 'consent_forms', label: 'Consent Forms', icon: ClipboardList, color: 'bg-orange-100 text-orange-700' },
+  { value: 'identification', label: 'ID Documents', icon: CreditCard, color: 'bg-blue-100 text-blue-700' },
+  { value: 'insurance_card', label: 'Insurance Cards', icon: FileCheck, color: 'bg-green-100 text-green-700' },
+  { value: 'medical_history', label: 'Medical Reports', icon: FileText, color: 'bg-purple-100 text-purple-700' },
+  { value: 'lab_report', label: 'Lab Results', icon: FileSpreadsheet, color: 'bg-yellow-100 text-yellow-700' },
+  { value: 'imaging', label: 'Radiology Images', icon: FileImage, color: 'bg-pink-100 text-pink-700' },
+  { value: 'consent', label: 'Consent Forms', icon: ClipboardList, color: 'bg-orange-100 text-orange-700' },
   { value: 'other', label: 'Other', icon: File, color: 'bg-gray-100 text-gray-600' },
 ];
 
@@ -116,6 +120,22 @@ export default function PatientDocumentsPage() {
   // State
   const [patientSearchTerm, setPatientSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [searchParams] = useSearchParams();
+  const urlPatientId = searchParams.get('patientId');
+
+  // Deep-link support: /patients/documents?patientId=<id>
+  useEffect(() => {
+    if (urlPatientId && !selectedPatient) {
+      api
+        .get(`/patients/${urlPatientId}`)
+        .then((res) => {
+          const p = res.data?.data || res.data;
+          if (p?.id) setSelectedPatient(p as Patient);
+        })
+        .catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlPatientId]);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [activeCategory, setActiveCategory] = useState<DocumentCategory>('all');
   const [viewMode, setViewMode] = useState<ViewMode>('list');
@@ -188,6 +208,7 @@ export default function PatientDocumentsPage() {
       return raw.map((r: any): PatientDocument => {
         const uploader = r.uploader || {};
         const uploaderName =
+          uploader.fullName ||
           [uploader.firstName, uploader.lastName].filter(Boolean).join(' ').trim() ||
           uploader.username ||
           uploader.email ||
@@ -285,10 +306,10 @@ export default function PatientDocumentsPage() {
     },
   });
 
-  // Delete mutation
+  // Delete mutation — backend route is /patients/documents/:documentId
   const deleteMutation = useMutation({
     mutationFn: async (docId: string) => {
-      await api.delete(`/patients/${selectedPatient?.id}/documents/${docId}`);
+      await api.delete(`/patients/documents/${docId}`);
     },
     onSuccess: () => {
       toast.success('Document deleted successfully');
@@ -299,10 +320,12 @@ export default function PatientDocumentsPage() {
     },
   });
 
-  // Bulk delete mutation
+  // Bulk delete — no backend bulk endpoint; delete sequentially
   const bulkDeleteMutation = useMutation({
     mutationFn: async (docIds: string[]) => {
-      await api.post(`/patients/${selectedPatient?.id}/documents/bulk-delete`, { ids: docIds });
+      for (const docId of docIds) {
+        await api.delete(`/patients/documents/${docId}`);
+      }
     },
     onSuccess: () => {
       toast.success(`${selectedDocIds.size} document(s) deleted successfully`);
@@ -638,15 +661,25 @@ export default function PatientDocumentsPage() {
     toast.success('Link copied to clipboard');
   };
 
-  const handleDelete = (doc: PatientDocument) => {
-    if (confirm(`Are you sure you want to delete "${doc.name}"?`)) {
+  const handleDelete = async (doc: PatientDocument) => {
+    if (await confirmDialog({
+      title: 'Delete document',
+      message: `Are you sure you want to delete "${doc.name}"?`,
+      confirmLabel: 'Delete',
+      variant: 'danger',
+    })) {
       deleteMutation.mutate(doc.id);
     }
   };
 
-  const handleBulkDelete = () => {
+  const handleBulkDelete = async () => {
     if (selectedDocIds.size === 0) return;
-    if (confirm(`Are you sure you want to delete ${selectedDocIds.size} document(s)?`)) {
+    if (await confirmDialog({
+      title: 'Delete documents',
+      message: `Are you sure you want to delete ${selectedDocIds.size} document(s)?`,
+      confirmLabel: 'Delete all',
+      variant: 'danger',
+    })) {
       bulkDeleteMutation.mutate(Array.from(selectedDocIds));
     }
   };

@@ -17,6 +17,7 @@ import { encountersService, type Encounter } from '../services/encounters';
 import { facilitiesService } from '../services';
 import integrationsService from '../services/integrations';
 import { usePermissions } from '../components/PermissionGate';
+import { confirmDialog } from '../components/ConfirmDialog';
 import PatientActivityTimeline from '../components/PatientActivityTimeline';
 import { printService } from '../lib/print';
 import { asList } from '../utils/unwrapResponse';
@@ -385,8 +386,13 @@ export default function PatientDetailPage() {
     }
   };
 
-  const handleDeleteDocument = (doc: PatientDocument) => {
-    if (confirm(`Delete "${doc.documentName}"?`)) {
+  const handleDeleteDocument = async (doc: PatientDocument) => {
+    if (await confirmDialog({
+      title: 'Delete document',
+      message: `Delete "${doc.documentName}"?`,
+      confirmLabel: 'Delete',
+      variant: 'danger',
+    })) {
       deleteMutation.mutate(doc.id);
     }
   };
@@ -838,7 +844,7 @@ export default function PatientDetailPage() {
                   <p className="text-gray-500">No visits found</p>
                   {canStartVisit ? (
                     <button
-                      onClick={() => navigate(`/encounters/new?patientId=${id}`)}
+                      onClick={() => navigate(`/doctor/encounters/new?patientId=${id}`)}
                       className="mt-3 text-blue-600 hover:underline text-sm"
                     >
                       Start a new visit
@@ -1196,8 +1202,13 @@ export default function PatientDetailPage() {
                           <span className="text-xs text-gray-500">{formatDateTime(note.createdAt)}</span>
                           {canWriteNotes && (
                             <button
-                              onClick={() => {
-                                if (confirm('Delete this note?')) {
+                              onClick={async () => {
+                                if (await confirmDialog({
+                                  title: 'Delete note',
+                                  message: 'Delete this note?',
+                                  confirmLabel: 'Delete',
+                                  variant: 'danger',
+                                })) {
                                   deleteNoteMutation.mutate(note.id);
                                 }
                               }}

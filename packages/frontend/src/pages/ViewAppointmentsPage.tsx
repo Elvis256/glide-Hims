@@ -1,89 +1,82 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   CalendarDays,
   Search,
   Clock,
   Stethoscope,
   Plus,
-  Eye,
   Edit,
   Phone,
   Loader2,
+  LogIn,
 } from 'lucide-react';
-import api from '../services/api';
-import { asList } from '../utils/unwrapResponse';
+import { appointmentsService, type Appointment, type AppointmentStatus } from '../services/appointments';
 
-interface Appointment {
-  id: string;
-  patientName: string;
-  patientMrn: string;
-  patientPhone: string;
-  doctor: string;
-  department: string;
-  date: string;
-  time: string;
-  status: 'scheduled' | 'confirmed' | 'completed' | 'cancelled' | 'no-show';
-  reason: string;
-}
+const STATUS_OPTIONS: { value: AppointmentStatus | 'all'; label: string }[] = [
+  { value: 'all', label: 'All Status' },
+  { value: 'scheduled', label: 'Scheduled' },
+  { value: 'confirmed', label: 'Confirmed' },
+  { value: 'checked_in', label: 'Checked In' },
+  { value: 'in_progress', label: 'In Progress' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'cancelled', label: 'Cancelled' },
+  { value: 'no_show', label: 'No-Show' },
+];
 
-interface AppointmentsResponse {
-  data: Appointment[];
-  total: number;
-}
+const STATUS_STYLES: Record<string, string> = {
+  scheduled: 'bg-blue-100 text-blue-700',
+  confirmed: 'bg-green-100 text-green-700',
+  checked_in: 'bg-teal-100 text-teal-700',
+  in_progress: 'bg-indigo-100 text-indigo-700',
+  completed: 'bg-gray-100 text-gray-700',
+  cancelled: 'bg-red-100 text-red-700',
+  no_show: 'bg-yellow-100 text-yellow-700',
+};
+
+const statusLabel = (status: string) =>
+  status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, ' ');
 
 export default function ViewAppointmentsPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>(new Date().toISOString().split('T')[0]);
 
-  // Fetch appointments from API
-  const { data: appointmentsData, isLoading, error } = useQuery({
+  // Fetch appointments from API (server-side filters; backend returns {data, meta})
+  const { data: listResult, isLoading, error } = useQuery({
     queryKey: ['appointments', dateFilter, statusFilter, searchTerm],
-    queryFn: async () => {
-      const params: Record<string, string> = {};
-      if (dateFilter) params.date = dateFilter;
-      if (statusFilter !== 'all') params.status = statusFilter;
-      if (searchTerm) params.search = searchTerm;
-      const response = await api.get<AppointmentsResponse>('/appointments', { params });
-      return response.data;
+    queryFn: () =>
+      appointmentsService.list({
+        date: dateFilter || undefined,
+        status: statusFilter !== 'all' ? (statusFilter as AppointmentStatus) : undefined,
+        search: searchTerm || undefined,
+        limit: 100,
+      }),
+  });
+
+  const appointments = listResult?.data || [];
+
+  // Check-in creates the queue entry for the patient (backend integration)
+  const checkInMutation = useMutation({
+    mutationFn: (id: string) => appointmentsService.checkIn(id),
+    onSuccess: () => {
+      toast.success('Patient checked in and added to the queue');
+      queryClient.invalidateQueries({ queryKey: ['appointments'] });
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Failed to check in appointment');
     },
   });
 
-  const appointments = asList(appointmentsData);
-
-  const filteredAppointments = appointments.filter((apt) => {
-    const matchesSearch = !searchTerm || 
-      apt.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      apt.patientMrn.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      apt.doctor.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || apt.status === statusFilter;
-    const matchesDate = !dateFilter || apt.date === dateFilter;
-    return matchesSearch && matchesStatus && matchesDate;
-  });
-
-  const getStatusBadge = (status: string) => {
-    const styles: Record<string, string> = {
-      scheduled: 'bg-blue-100 text-blue-700',
-      confirmed: 'bg-green-100 text-green-700',
-      completed: 'bg-gray-100 text-gray-700',
-      cancelled: 'bg-red-100 text-red-700',
-      'no-show': 'bg-yellow-100 text-yellow-700',
-    };
-    return (
-      <span className={`px-2 py-0.5 rounded text-xs font-medium ${styles[status] || 'bg-gray-100'}`}>
-        {status.charAt(0).toUpperCase() + status.slice(1).replace('-', ' ')}
-      </span>
-    );
-  };
-
   const stats = {
     total: appointments.length,
-    confirmed: appointments.filter(a => a.status === 'confirmed').length,
-    scheduled: appointments.filter(a => a.status === 'scheduled').length,
-    completed: appointments.filter(a => a.status === 'completed').length,
+    scheduled: appointments.filter((a) => a.status === 'scheduled').length,
+    confirmed: appointments.filter((a) => a.status === 'confirmed').length,
+    completed: appointments.filter((a) => a.status === 'completed').length,
   };
 
   return (
@@ -110,7 +103,7 @@ export default function ViewAppointmentsPage() {
       <div className="grid grid-cols-4 gap-3 mb-4 flex-shrink-0">
         <div className="card p-3 text-center">
           <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
-          <p className="text-xs text-gray-500">Total Today</p>
+          <p className="text-xs text-gray-500">Total</p>
         </div>
         <div className="card p-3 text-center">
           <p className="text-2xl font-bold text-blue-600">{stats.scheduled}</p>
@@ -149,12 +142,9 @@ export default function ViewAppointmentsPage() {
           onChange={(e) => setStatusFilter(e.target.value)}
           className="input py-2 text-sm w-36"
         >
-          <option value="all">All Status</option>
-          <option value="scheduled">Scheduled</option>
-          <option value="confirmed">Confirmed</option>
-          <option value="completed">Completed</option>
-          <option value="cancelled">Cancelled</option>
-          <option value="no-show">No-Show</option>
+          {STATUS_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
         </select>
       </div>
 
@@ -186,7 +176,7 @@ export default function ViewAppointmentsPage() {
                 <p>Failed to load appointments</p>
               </div>
             </div>
-          ) : filteredAppointments.length === 0 ? (
+          ) : appointments.length === 0 ? (
             <div className="flex items-center justify-center h-full text-gray-400">
               <div className="text-center">
                 <CalendarDays className="w-12 h-12 mx-auto mb-2 opacity-50" />
@@ -195,44 +185,53 @@ export default function ViewAppointmentsPage() {
             </div>
           ) : (
             <div className="divide-y">
-              {filteredAppointments.map((apt) => (
+              {appointments.map((apt: Appointment) => (
                 <div key={apt.id} className="grid grid-cols-7 gap-4 p-3 items-center hover:bg-gray-50">
                   <div className="flex items-center gap-2">
                     <Clock className="w-4 h-4 text-gray-400" />
-                    <span className="font-medium">{apt.time}</span>
+                    <span className="font-medium">{(apt.startTime || '').slice(0, 5)}</span>
                   </div>
                   <div className="col-span-2">
-                    <p className="font-medium text-gray-900">{apt.patientName}</p>
-                    <p className="text-xs text-gray-500">{apt.patientMrn}</p>
+                    <p className="font-medium text-gray-900">{apt.patient?.fullName || 'Unknown patient'}</p>
+                    <p className="text-xs text-gray-500">{apt.patient?.mrn || apt.appointmentNumber}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <Stethoscope className="w-4 h-4 text-gray-400" />
-                    <span className="text-sm">{apt.doctor}</span>
+                    <span className="text-sm">{apt.doctor?.fullName || '—'}</span>
                   </div>
-                  <div className="text-sm text-gray-600">{apt.department}</div>
-                  <div>{getStatusBadge(apt.status)}</div>
+                  <div className="text-sm text-gray-600">{apt.department || '—'}</div>
+                  <div>
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_STYLES[apt.status] || 'bg-gray-100'}`}>
+                      {statusLabel(apt.status)}
+                    </span>
+                  </div>
                   <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => navigate(`/appointments/manage?id=${apt.id}`)}
-                      className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
-                      title="View"
-                    >
-                      <Eye className="w-4 h-4" />
-                    </button>
+                    {(apt.status === 'scheduled' || apt.status === 'confirmed') && (
+                      <button
+                        onClick={() => checkInMutation.mutate(apt.id)}
+                        disabled={checkInMutation.isPending}
+                        className="p-1.5 text-gray-400 hover:text-teal-600 hover:bg-teal-50 rounded disabled:opacity-50"
+                        title="Check in (adds to queue)"
+                      >
+                        <LogIn className="w-4 h-4" />
+                      </button>
+                    )}
                     <button
                       onClick={() => navigate(`/appointments/manage?id=${apt.id}`)}
                       className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded"
-                      title="Edit"
+                      title="Reschedule / Cancel"
                     >
                       <Edit className="w-4 h-4" />
                     </button>
-                    <a
-                      href={`tel:${apt.patientPhone}`}
-                      className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded"
-                      title="Call"
-                    >
-                      <Phone className="w-4 h-4" />
-                    </a>
+                    {apt.patient?.phone && (
+                      <a
+                        href={`tel:${apt.patient.phone}`}
+                        className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded"
+                        title="Call"
+                      >
+                        <Phone className="w-4 h-4" />
+                      </a>
+                    )}
                   </div>
                 </div>
               ))}

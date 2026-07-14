@@ -41,8 +41,9 @@ export interface Appointment {
   notes?: string;
   cancellationReason?: string;
   createdBy: string;
-  patient?: { id: string; firstName: string; lastName: string; mrn?: string };
-  doctor?: { id: string; firstName: string; lastName: string };
+  // Patient and User entities store fullName (no firstName/lastName columns)
+  patient?: { id: string; fullName: string; mrn?: string; phone?: string };
+  doctor?: { id: string; fullName: string };
   createdAt: string;
   updatedAt: string;
 }
@@ -75,27 +76,58 @@ export interface AppointmentQueryDto {
   limit?: number;
 }
 
+export interface AppointmentListResult {
+  data: Appointment[];
+  meta: { total: number; page: number; limit: number; totalPages: number };
+}
+
 export const appointmentsService = {
-  create: (data: CreateAppointmentDto) =>
-    api.post<Appointment>('/appointments', data),
+  create: async (data: CreateAppointmentDto): Promise<Appointment> => {
+    const response = await api.post<Appointment>('/appointments', data);
+    return response.data;
+  },
 
-  list: (params?: AppointmentQueryDto) =>
-    api.get<Appointment[]>('/appointments', { params }),
+  // Backend returns { data, meta } (pagination)
+  list: async (params?: AppointmentQueryDto): Promise<AppointmentListResult> => {
+    const response = await api.get('/appointments', { params });
+    const body: any = response.data;
+    if (Array.isArray(body)) {
+      return { data: body, meta: { total: body.length, page: 1, limit: body.length, totalPages: 1 } };
+    }
+    return {
+      data: body?.data || [],
+      meta: body?.meta || { total: 0, page: 1, limit: 20, totalPages: 1 },
+    };
+  },
 
-  getById: (id: string) =>
-    api.get<Appointment>(`/appointments/${id}`),
+  getById: async (id: string): Promise<Appointment> => {
+    const response = await api.get<Appointment>(`/appointments/${id}`);
+    return response.data;
+  },
 
-  getStats: (date?: string) =>
-    api.get('/appointments/stats', { params: { date } }),
+  getStats: async (date?: string) => {
+    const response = await api.get('/appointments/stats', { params: { date } });
+    return response.data;
+  },
 
-  update: (id: string, data: UpdateAppointmentDto) =>
-    api.put<Appointment>(`/appointments/${id}`, data),
+  update: async (id: string, data: UpdateAppointmentDto): Promise<Appointment> => {
+    const response = await api.put<Appointment>(`/appointments/${id}`, data);
+    return response.data;
+  },
 
-  updateStatus: (id: string, status: AppointmentStatus, cancellationReason?: string) =>
-    api.patch<Appointment>(`/appointments/${id}/status`, { status, cancellationReason }),
+  updateStatus: async (id: string, status: AppointmentStatus, cancellationReason?: string): Promise<Appointment> => {
+    const response = await api.patch<Appointment>(`/appointments/${id}/status`, { status, cancellationReason });
+    return response.data;
+  },
 
-  delete: (id: string) =>
-    api.delete(`/appointments/${id}`),
+  checkIn: async (id: string): Promise<{ appointment: Appointment; queueEntry?: any }> => {
+    const response = await api.post(`/appointments/${id}/check-in`);
+    return response.data as any;
+  },
+
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/appointments/${id}`);
+  },
 };
 
 export default appointmentsService;

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   RefreshCw,
@@ -12,21 +12,23 @@ import {
   AlertTriangle,
   Loader2,
 } from 'lucide-react';
-import { followUpsService } from '../services';
-import type { FollowUp } from '../services';
+import { appointmentsService, type Appointment } from '../services/appointments';
 
 const availableSlots = ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '14:00', '14:30', '15:00', '15:30'];
+
+// Only non-terminal appointments can be rescheduled or cancelled
+const ACTIONABLE_STATUSES = ['scheduled', 'confirmed', 'checked_in'];
 
 export default function ManageAppointmentsPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const appointmentId = searchParams.get('id');
-  
-  const [appointments, setAppointments] = useState<FollowUp[]>([]);
+
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedAppointment, setSelectedAppointment] = useState<FollowUp | null>(null);
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [action, setAction] = useState<'reschedule' | 'cancel' | null>(null);
   const [newDate, setNewDate] = useState('');
   const [newTime, setNewTime] = useState('');
@@ -34,15 +36,20 @@ export default function ManageAppointmentsPage() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
+  const loadAppointments = useCallback(async () => {
+    const result = await appointmentsService.list({ limit: 100 });
+    return result.data.filter((a) => ACTIONABLE_STATUSES.includes(a.status));
+  }, []);
+
   useEffect(() => {
     const fetchAppointments = async () => {
       try {
         setLoading(true);
         setError(null);
-        const data = await followUpsService.findAll();
+        const data = await loadAppointments();
         setAppointments(data);
         if (appointmentId) {
-          const found = data.find(a => a.id === appointmentId);
+          const found = data.find((a) => a.id === appointmentId);
           if (found) setSelectedAppointment(found);
         }
       } catch (err) {
@@ -53,7 +60,7 @@ export default function ManageAppointmentsPage() {
       }
     };
     fetchAppointments();
-  }, [appointmentId]);
+  }, [appointmentId, loadAppointments]);
 
   const filteredAppointments = appointments.filter(
     (apt) =>
@@ -65,10 +72,9 @@ export default function ManageAppointmentsPage() {
     if (!selectedAppointment) return;
     try {
       setActionLoading(true);
-      await followUpsService.reschedule(selectedAppointment.id, {
-        newDate,
-        newTime: newTime || undefined,
-        reason: 'Rescheduled by staff',
+      await appointmentsService.update(selectedAppointment.id, {
+        appointmentDate: newDate,
+        startTime: newTime,
       });
       setShowSuccess(true);
       setTimeout(() => {
@@ -77,12 +83,11 @@ export default function ManageAppointmentsPage() {
         setAction(null);
         setNewDate('');
         setNewTime('');
-        // Refresh appointments
-        followUpsService.findAll().then(setAppointments);
+        loadAppointments().then(setAppointments).catch(() => {});
       }, 2000);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error rescheduling appointment:', err);
-      setError('Failed to reschedule appointment');
+      setError(err?.response?.data?.message || 'Failed to reschedule appointment');
     } finally {
       setActionLoading(false);
     }
@@ -92,21 +97,18 @@ export default function ManageAppointmentsPage() {
     if (!selectedAppointment) return;
     try {
       setActionLoading(true);
-      await followUpsService.cancel(selectedAppointment.id, {
-        cancellationReason: cancelReason,
-      });
+      await appointmentsService.updateStatus(selectedAppointment.id, 'cancelled', cancelReason);
       setShowSuccess(true);
       setTimeout(() => {
         setShowSuccess(false);
         setSelectedAppointment(null);
         setAction(null);
         setCancelReason('');
-        // Refresh appointments
-        followUpsService.findAll().then(setAppointments);
+        loadAppointments().then(setAppointments).catch(() => {});
       }, 2000);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error cancelling appointment:', err);
-      setError('Failed to cancel appointment');
+      setError(err?.response?.data?.message || 'Failed to cancel appointment');
     } finally {
       setActionLoading(false);
     }
@@ -132,7 +134,7 @@ export default function ManageAppointmentsPage() {
         {/* Left: Search & Select */}
         <div className="card p-4 flex flex-col min-h-0">
           <h2 className="text-sm font-semibold mb-3 flex-shrink-0">Select Appointment</h2>
-          
+
           <div className="relative mb-3 flex-shrink-0">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
@@ -149,7 +151,7 @@ export default function ManageAppointmentsPage() {
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
               </div>
-            ) : error ? (
+            ) : error && appointments.length === 0 ? (
               <div className="flex items-center justify-center py-12 text-red-500">
                 <AlertTriangle className="w-5 h-5 mr-2" />
                 <span>{error}</span>
@@ -157,7 +159,7 @@ export default function ManageAppointmentsPage() {
             ) : filteredAppointments.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-gray-400">
                 <Calendar className="w-12 h-12 mb-3 opacity-50" />
-                <p className="text-sm">No appointments found</p>
+                <p className="text-sm">No upcoming appointments found</p>
               </div>
             ) : (
               filteredAppointments.map((apt) => (
@@ -177,19 +179,19 @@ export default function ManageAppointmentsPage() {
                     </div>
                     <div>
                       <p className="font-medium text-gray-900">{apt.patient?.fullName || 'Unknown Patient'}</p>
-                      <p className="text-xs text-gray-500">{apt.patient?.mrn || 'No MRN'}</p>
+                      <p className="text-xs text-gray-500">{apt.patient?.mrn || apt.appointmentNumber}</p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-medium">{new Date(apt.scheduledDate).toLocaleDateString()}</p>
-                    <p className="text-xs text-gray-500">{apt.scheduledTime || '--:--'}</p>
+                    <p className="text-sm font-medium">{new Date(apt.appointmentDate).toLocaleDateString()}</p>
+                    <p className="text-xs text-gray-500">{(apt.startTime || '').slice(0, 5) || '--:--'}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
                   <Stethoscope className="w-3 h-3" />
-                  <span>{apt.provider?.fullName || 'No provider'}</span>
+                  <span>{apt.doctor?.fullName || 'No doctor'}</span>
                   <span>•</span>
-                  <span>{apt.department?.name || 'No department'}</span>
+                  <span>{apt.department || 'No department'}</span>
                 </div>
               </button>
             ))
@@ -232,29 +234,29 @@ export default function ManageAppointmentsPage() {
                   </div>
                   <div>
                     <p className="font-medium text-gray-900">{selectedAppointment.patient?.fullName || 'Unknown Patient'}</p>
-                    <p className="text-sm text-gray-500">{selectedAppointment.patient?.mrn || 'No MRN'}</p>
+                    <p className="text-sm text-gray-500">{selectedAppointment.patient?.mrn || selectedAppointment.appointmentNumber}</p>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <p className="text-gray-500">Date</p>
-                    <p className="font-medium">{new Date(selectedAppointment.scheduledDate).toLocaleDateString()}</p>
+                    <p className="font-medium">{new Date(selectedAppointment.appointmentDate).toLocaleDateString()}</p>
                   </div>
                   <div>
                     <p className="text-gray-500">Time</p>
-                    <p className="font-medium">{selectedAppointment.scheduledTime || '--:--'}</p>
+                    <p className="font-medium">{(selectedAppointment.startTime || '').slice(0, 5) || '--:--'}</p>
                   </div>
                   <div>
                     <p className="text-gray-500">Doctor</p>
-                    <p className="font-medium">{selectedAppointment.provider?.fullName || 'Not assigned'}</p>
+                    <p className="font-medium">{selectedAppointment.doctor?.fullName || 'Not assigned'}</p>
                   </div>
                   <div>
                     <p className="text-gray-500">Department</p>
-                    <p className="font-medium">{selectedAppointment.department?.name || 'Not assigned'}</p>
+                    <p className="font-medium">{selectedAppointment.department || 'Not assigned'}</p>
                   </div>
                   <div className="col-span-2">
                     <p className="text-gray-500">Reason</p>
-                    <p className="font-medium">{selectedAppointment.reason || 'No reason provided'}</p>
+                    <p className="font-medium">{selectedAppointment.reasonForVisit || 'No reason provided'}</p>
                   </div>
                 </div>
               </div>
@@ -320,9 +322,15 @@ export default function ManageAppointmentsPage() {
                     ))}
                   </div>
                 </div>
+                {error && (
+                  <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
+                    <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                    {error}
+                  </div>
+                )}
               </div>
               <div className="flex gap-3 mt-4 flex-shrink-0">
-                <button onClick={() => setAction(null)} className="btn-secondary" disabled={actionLoading}>
+                <button onClick={() => { setAction(null); setError(null); }} className="btn-secondary" disabled={actionLoading}>
                   Back
                 </button>
                 <button
@@ -342,7 +350,8 @@ export default function ManageAppointmentsPage() {
                 <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4 flex items-start gap-2">
                   <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
                   <p className="text-sm text-yellow-700">
-                    This action cannot be undone. The patient will be notified of the cancellation.
+                    This action cannot be undone. If the patient was already checked in they will
+                    also be removed from the queue.
                   </p>
                 </div>
                 <div>
@@ -356,9 +365,15 @@ export default function ManageAppointmentsPage() {
                     className="input py-2 h-24 resize-none"
                   />
                 </div>
+                {error && (
+                  <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3 mt-3">
+                    <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                    {error}
+                  </div>
+                )}
               </div>
               <div className="flex gap-3 mt-4 flex-shrink-0">
-                <button onClick={() => setAction(null)} className="btn-secondary" disabled={actionLoading}>
+                <button onClick={() => { setAction(null); setError(null); }} className="btn-secondary" disabled={actionLoading}>
                   Back
                 </button>
                 <button

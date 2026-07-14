@@ -163,7 +163,7 @@ const businessConfig: Record<string, {
     quickLinks: [
       { name: 'All Patients', href: '/patients', icon: Users, color: 'bg-cyan-500', permissions: ['patients.read'], moduleCode: 'registration' },
       { name: 'Register Patient', href: '/patients/new', icon: UserPlus, color: 'bg-blue-500', permissions: ['patients.create'], moduleCode: 'registration' },
-      { name: 'New Visit', href: '/encounters/new', icon: Stethoscope, color: 'bg-green-500', permissions: ['encounters.create'], moduleCode: 'doctors' },
+      { name: 'New Visit', href: '/doctor/encounters/new', icon: Stethoscope, color: 'bg-green-500', permissions: ['encounters.create'], moduleCode: 'doctors' },
       { name: 'Lab Queue', href: '/lab/queue', icon: FlaskConical, color: 'bg-purple-500', permissions: ['lab.read'], moduleCode: 'diagnostics' },
       { name: 'Pharmacy', href: '/pharmacy/queue', icon: Pill, color: 'bg-orange-500', permissions: ['pharmacy.read'], moduleCode: 'pharmacy' },
       { name: 'Billing', href: '/billing/invoices', icon: CreditCard, color: 'bg-teal-500', permissions: ['billing.read'], moduleCode: 'billing' },

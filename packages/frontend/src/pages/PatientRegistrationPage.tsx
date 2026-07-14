@@ -353,11 +353,14 @@ export default function PatientRegistrationPage() {
 
   // Create patient mutation
   const createMutation = useMutation({
-    mutationFn: async (data: FormData) => {
+    mutationFn: async (data: FormData & { forceCreate?: boolean }) => {
       // Construct address from village/parish/subcounty/district
       const address = [data.parish, data.subcounty, data.district].filter(Boolean).join(', ') || data.address;
 
       const apiData: CreatePatientDto = {
+        // Backend rejects high-confidence duplicates with 409 unless the
+        // receptionist explicitly confirms via "Register Anyway"
+        forceCreate: data.forceCreate || undefined,
         fullName: data.fullName,
         gender: data.gender,
         dateOfBirth: data.dateOfBirth,
@@ -441,7 +444,7 @@ export default function PatientRegistrationPage() {
 
   const handleProceedAnyway = () => {
     setShowDuplicateWarning(false);
-    createMutation.mutate(formData);
+    createMutation.mutate({ ...formData, forceCreate: true });
   };
 
   const handleReset = () => {

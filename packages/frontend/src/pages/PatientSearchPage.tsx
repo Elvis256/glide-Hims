@@ -669,7 +669,7 @@ export default function PatientSearchPage() {
                               </button>
                             )}
                             <button
-                              onClick={(e) => { e.stopPropagation(); addToRecentPatients(patient); navigate(`/encounters/new?patientId=${patient.id}`); }}
+                              onClick={(e) => { e.stopPropagation(); addToRecentPatients(patient); navigate(`/doctor/encounters/new?patientId=${patient.id}`); }}
                               className="btn-primary text-xs px-2 py-1 flex items-center gap-1"
                               title="New Visit"
                             >

@@ -188,7 +188,12 @@ export class CreatePatientDto {
   skipConsentValidation?: boolean;
 }
 
-export class UpdatePatientDto extends PartialType(CreatePatientDto) {}
+export class UpdatePatientDto extends PartialType(CreatePatientDto) {
+  @ApiPropertyOptional({ description: 'Record status', enum: ['active', 'inactive'] })
+  @IsOptional()
+  @IsIn(['active', 'inactive'])
+  status?: string;
+}
 
 export class MergePatientDto {
   @IsOptional()
@@ -226,6 +231,29 @@ export class PatientSearchDto {
   @IsString()
   @MaxLength(50)
   phone?: string;
+
+  @ApiPropertyOptional({ enum: ['male', 'female', 'other'] })
+  @IsOptional()
+  @IsIn(['male', 'female', 'other'])
+  gender?: string;
+
+  @ApiPropertyOptional({
+    description: 'Payment preference recorded at registration (stored in metadata)',
+    enum: ['cash', 'insurance', 'corporate', 'membership'],
+  })
+  @IsOptional()
+  @IsIn(['cash', 'insurance', 'corporate', 'membership'])
+  paymentType?: string;
+
+  @ApiPropertyOptional({ description: 'Registered on/after (YYYY-MM-DD)' })
+  @IsOptional()
+  @IsDateString()
+  fromDate?: string;
+
+  @ApiPropertyOptional({ description: 'Registered on/before (YYYY-MM-DD)' })
+  @IsOptional()
+  @IsDateString()
+  toDate?: string;
 
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()

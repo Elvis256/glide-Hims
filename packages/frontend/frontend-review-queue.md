@@ -47,7 +47,7 @@ inline, log the rest. No view is done until its element table is complete.
    to verify, real build only when deploying (dist/ is production).
 
 ## Blocks
-- [ ] 1. Registration: PatientsPage, PatientDetail/Edit, QuickRegModal, PatientRegistrationPage*, OPDTokenPage*, appointments (View/Manage/Schedules), CallNextPatientPage* (*recently rebuilt — verify only)
+- [x] 1. Registration: PatientsPage, PatientDetail/Edit, QuickRegModal, PatientRegistrationPage*, OPDTokenPage*, appointments (View/Manage/Schedules), CallNextPatientPage* (*recently rebuilt — verify only) — ✅ 2026-07-14, functional map in docs/modules/01-registration.md; also covered PatientSearch/Documents/History (registration routes not owned by any later block)
 - [ ] 2. Nursing: TriageQueuePage*, vitals pages, ward/nursing worklists (AdministerMeds, CarePlans, DressingLog, IVCannulation, Catheterization, FallRisk, IncidentReport, BloodSugar, DrugAllergies, AbnormalAlerts)
 - [ ] 3. Doctors: NewConsultationPage* (document mode — deep verify), CallNextPage*, EncounterDetail, SOAPNotes, referrals (sent/received), diagnosis/ProblemList, follow-ups, certificates
 - [ ] 4. Diagnostics: LabPage, lab queue/results/QC, sample mgmt, radiology queue/reporting, critical results pages
@@ -70,3 +70,30 @@ inline, log the rest. No view is done until its element table is complete.
 
 ## Findings log
 (append per block: P0 fixed inline w/ hash · P1 deferred · feature ideas)
+
+### Block 1 — Registration (2026-07-14)
+P0s fixed inline (backend deployed, migrations 77+78 applied, frontend built to dist):
+- Appointments trio incoherent: Book created FOLLOW-UPS, View listed the (empty) appointments module, Manage edited follow-ups — bookings invisible, View→Manage deep link never matched. All three wired to the appointments module (create / list+check-in / reschedule+cancel). E2E: book→view→manage→cancel live via UI.
+- ViewAppointmentsPage rendered nonexistent fields (patientName/date/time/'no-show') → list permanently empty + crash on search. Rewritten against backend shape.
+- PatientsPage filters (gender/paymentType/from/to) 400'd (forbidNonWhitelisted) → list went empty; added to PatientSearchDto + findAll (paymentType via metadata->>'paymentType').
+- PatientsPage Deactivate always 400'd (`status` not in UpdatePatientDto) → added (@IsIn active|inactive).
+- "Register Anyway" never sent forceCreate → 409 for high-confidence dups (the exact case the button serves). Fixed.
+- doctor_schedules had NO tenant_id column (service filtered on it): create 500'd, list silently empty — feature never worked. Migration 77 (column+backfill+RLS). Delete used softRemove without deleted_at → 500. Migration 78 + entity @DeleteDateColumn + `deletedAt IS NULL` guards on all 4 QB queries.
+- DoctorSchedulesPage: doctor dropdown queried users named "Doctor" (empty) → role=Doctor; grid showed "Dr. undefined undefined" (firstName/lastName vs fullName).
+- usersService.list envelope bug: interceptor flattens {data,meta} to array → `.data` undefined → empty doctor lists. Normalized in service.
+- Broken navs: /encounters/new (matches /encounters/:id → error page) in PatientDetail/Search/History + Dashboard quick action → /doctor/encounters/new; PatientHistory → /patients/:id/documents (no route) → /patients/documents?patientId= (deep-link support added to PatientDocumentsPage).
+- PatientDocumentsPage: category values didn't exist in backend enum → uploads stored but INVISIBLE everywhere (role-based category filter); aligned to DocumentCategory. Delete used wrong URL (404) → /patients/documents/:id; bulk delete (no backend) → sequential deletes.
+- PatientEditPage replaced metadata wholesale → erased paymentType/insurance keys from registration. Now merges.
+- BookAppointmentPage dead end on simple-mode tenants (no departments; doctors gated on dept) → dept optional when none configured. Doctors list = ALL active users → role=Doctor.
+- Dead code: routes/RegistrationRoutes.tsx deleted (unmounted duplicate of CoreRoutes registration section).
+- confirm() → confirmDialog: PatientsPage, DoctorSchedulesPage, PatientDetailPage ×2, PatientDocumentsPage ×2. Schedules mutations got onError toasts.
+
+P1 deferred:
+- Booking slots are a hardcoded list — should derive from doctor_schedules (slotDuration/maxPatients) + booked appointments; Manage reschedule same.
+- PatientsPage: Print Card / Print Cards / Bulk SMS = "coming soon" placeholders; client sort only sorts current page; select-all appears checked on empty page.
+- PatientHistoryPage: Export PDF/Excel + "Request Copy" are fake toasts; queries swallow errors into empty states.
+- PatientDocumentsPage: Share-link, edit-metadata, bulk-download buttons have NO backend endpoints (error-toast today) — build or remove.
+- PatientDetailPage: payments fetched unfiltered then client-matched; SMS gated only by patients.read; console.log leftover in handlePrintCard.
+- QuickRegModal registers gender='other' + DOB=today placeholders (data quality); axios error message not backend message.
+- ViewAppointmentsPage stats derive from fetched page (limit 100) not /appointments/stats.
+- appointments UI lacks confirm/no-show quick actions (backend transitions exist).

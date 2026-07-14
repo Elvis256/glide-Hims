@@ -6,6 +6,7 @@ import {
   JoinColumn,
   CreateDateColumn,
   UpdateDateColumn,
+  DeleteDateColumn,
 } from 'typeorm';
 import { User } from '../../../database/entities/user.entity';
 import { Facility } from '../../../database/entities/facility.entity';
@@ -14,6 +15,9 @@ import { Facility } from '../../../database/entities/facility.entity';
 export class DoctorSchedule {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  @Column({ name: 'tenant_id', type: 'uuid', nullable: true })
+  tenantId: string;
 
   @Column({ name: 'doctor_id' })
   doctorId: string;
@@ -64,4 +68,7 @@ export class DoctorSchedule {
 
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
+
+  @DeleteDateColumn({ name: 'deleted_at' })
+  deletedAt?: Date;
 }

@@ -15,6 +15,7 @@ import {
 import { schedulesService, type DoctorSchedule, type CreateScheduleDto } from '../services/schedules';
 import { usersService, type User } from '../services/users';
 import ErrorDisplay from '../components/ErrorDisplay';
+import { confirmDialog } from '../components/ConfirmDialog';
 import { asList } from '../utils/unwrapResponse';
 
 const weekDays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -34,7 +35,9 @@ export default function DoctorSchedulesPage() {
   const { data: doctors } = useQuery({
     queryKey: ['doctors-for-schedule'],
     queryFn: async () => {
-      const response = await usersService.list({ search: 'Doctor' });
+      // Filter by role — the old `search: 'Doctor'` matched users whose
+      // NAME contained "Doctor", i.e. nobody.
+      const response = await usersService.list({ role: 'Doctor', status: 'active', limit: 100 });
       return response.data || [];
     },
   });
@@ -46,6 +49,9 @@ export default function DoctorSchedulesPage() {
       queryClient.invalidateQueries({ queryKey: ['schedules'] });
       setShowAddModal(false);
     },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Failed to create schedule');
+    },
   });
 
   const updateMutation = useMutation({
@@ -56,6 +62,9 @@ export default function DoctorSchedulesPage() {
       queryClient.invalidateQueries({ queryKey: ['schedules'] });
       setEditingSchedule(null);
     },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Failed to update schedule');
+    },
   });
 
   const deleteMutation = useMutation({
@@ -63,6 +72,9 @@ export default function DoctorSchedulesPage() {
     onSuccess: () => {
       toast.success('Schedule deleted successfully');
       queryClient.invalidateQueries({ queryKey: ['schedules'] });
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Failed to delete schedule');
     },
   });
 
@@ -169,7 +181,7 @@ export default function DoctorSchedulesPage() {
             schedulesData.grouped.map(({ doctor, schedules }) => (
               <div key={doctor.id} className="grid grid-cols-8 border-b hover:bg-gray-50">
                 <div className="p-3 border-r font-medium text-sm">
-                  Dr. {doctor.firstName} {doctor.lastName}
+                  Dr. {doctor.fullName || [doctor.firstName, doctor.lastName].filter(Boolean).join(' ') || doctor.username || 'Unknown'}
                 </div>
                 {weekDaysMondayFirst.map((_, idx) => {
                   const dayOfWeek = dayIndexToSundayFirst(idx);
@@ -233,8 +245,13 @@ export default function DoctorSchedulesPage() {
           schedule={editingSchedule}
           onClose={() => setEditingSchedule(null)}
           onSubmit={(data) => updateMutation.mutate({ id: editingSchedule.id, data })}
-          onDelete={() => {
-            if (confirm('Are you sure you want to delete this schedule?')) {
+          onDelete={async () => {
+            if (await confirmDialog({
+              title: 'Delete schedule',
+              message: 'Are you sure you want to delete this schedule?',
+              confirmLabel: 'Delete',
+              variant: 'danger',
+            })) {
               deleteMutation.mutate(editingSchedule.id);
               setEditingSchedule(null);
             }
