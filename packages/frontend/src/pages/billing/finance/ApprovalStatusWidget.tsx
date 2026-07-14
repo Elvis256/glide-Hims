@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { AlertCircle, CheckCircle, Clock } from 'lucide-react';
 import { api } from '../../../services/api';
 
@@ -9,37 +10,25 @@ interface ApprovalStatus {
   total: number;
 }
 
+const DEFAULT_APPROVALS: ApprovalStatus = { pending: 0, approved: 0, rejected: 0, total: 0 };
+
 export const ApprovalStatusWidget: React.FC = () => {
-  const [status, setStatus] = useState<ApprovalStatus>({
-    pending: 0,
-    approved: 0,
-    rejected: 0,
-    total: 0,
+  const { data: status = DEFAULT_APPROVALS, isLoading: loading } = useQuery<ApprovalStatus>({
+    queryKey: ['finance', 'approval-status'],
+    queryFn: async () => {
+      const { data } = await api.get('/finance/approvals/status/summary');
+      return {
+        pending: data?.pendingCount || 0,
+        approved: data?.approvedCount || 0,
+        rejected: data?.rejectedCount || 0,
+        total:
+          (data?.pendingCount || 0) +
+          (data?.approvedCount || 0) +
+          (data?.rejectedCount || 0),
+      };
+    },
+    staleTime: 60_000,
   });
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchApprovalStatus = async () => {
-      try {
-        const { data } = await api.get('/finance/approvals/status/summary');
-        setStatus({
-          pending: data?.pendingCount || 0,
-          approved: data?.approvedCount || 0,
-          rejected: data?.rejectedCount || 0,
-          total:
-            (data?.pendingCount || 0) +
-            (data?.approvedCount || 0) +
-            (data?.rejectedCount || 0),
-        });
-      } catch (error) {
-        console.error('Failed to fetch approval status:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchApprovalStatus();
-  }, []);
 
   const pendingPercentage = status.total > 0 ? (status.pending / status.total) * 100 : 0;
   const approvedPercentage = status.total > 0 ? (status.approved / status.total) * 100 : 0;

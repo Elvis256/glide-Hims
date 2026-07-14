@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { TrendingUp, Zap } from 'lucide-react';
 import { api } from '../../../services/api';
 
@@ -10,36 +11,29 @@ interface PerformanceMetrics {
   recommendationsCount: number;
 }
 
+const DEFAULT_METRICS: PerformanceMetrics = {
+  avgQueryTime: 0,
+  cacheHitRate: 0,
+  indexHealth: 0,
+  tableFragmentation: 0,
+  recommendationsCount: 0,
+};
+
 export const PerformanceMetricsWidget: React.FC = () => {
-  const [metrics, setMetrics] = useState<PerformanceMetrics>({
-    avgQueryTime: 0,
-    cacheHitRate: 0,
-    indexHealth: 0,
-    tableFragmentation: 0,
-    recommendationsCount: 0,
+  const { data: metrics = DEFAULT_METRICS, isLoading: loading } = useQuery<PerformanceMetrics>({
+    queryKey: ['finance', 'performance-metrics'],
+    queryFn: async () => {
+      const { data } = await api.get('/finance/performance/metrics');
+      return {
+        avgQueryTime: data?.averageQueryTimeMs || 0,
+        cacheHitRate: data?.cacheHitRate || 0,
+        indexHealth: data?.indexHealthScore || 0,
+        tableFragmentation: data?.fragmentationPercentage || 0,
+        recommendationsCount: data?.optimizationCount || 0,
+      };
+    },
+    staleTime: 60_000,
   });
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchPerformanceMetrics = async () => {
-      try {
-        const { data } = await api.get('/finance/performance/metrics');
-        setMetrics({
-          avgQueryTime: data?.averageQueryTimeMs || 0,
-          cacheHitRate: data?.cacheHitRate || 0,
-          indexHealth: data?.indexHealthScore || 0,
-          tableFragmentation: data?.fragmentationPercentage || 0,
-          recommendationsCount: data?.optimizationCount || 0,
-        });
-      } catch (error) {
-        console.error('Failed to fetch performance metrics:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchPerformanceMetrics();
-  }, []);
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-6">
