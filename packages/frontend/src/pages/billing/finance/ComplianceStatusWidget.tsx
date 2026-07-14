@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import { ShieldCheck, AlertTriangle, CheckCircle } from 'lucide-react';
+import React from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { ShieldCheck, AlertTriangle } from 'lucide-react';
 import { api } from '../../../services/api';
 
 interface ComplianceStatus {
@@ -10,37 +11,30 @@ interface ComplianceStatus {
   violationCount: number;
 }
 
+const DEFAULT_COMPLIANCE: ComplianceStatus = {
+  score: 0,
+  status: 'compliant',
+  lastAudit: 'N/A',
+  policyCount: 0,
+  violationCount: 0,
+};
+
 export const ComplianceStatusWidget: React.FC = () => {
-  const [compliance, setCompliance] = useState<ComplianceStatus>({
-    score: 0,
-    status: 'compliant',
-    lastAudit: 'N/A',
-    policyCount: 0,
-    violationCount: 0,
+  const { data: compliance = DEFAULT_COMPLIANCE, isLoading: loading } = useQuery<ComplianceStatus>({
+    queryKey: ['finance', 'compliance-status'],
+    queryFn: async () => {
+      const { data } = await api.get('/finance/compliance/status/overall');
+      const score = data?.complianceScore || 0;
+      return {
+        score,
+        status: score >= 90 ? 'compliant' : score >= 70 ? 'warning' : 'critical',
+        lastAudit: data?.lastAuditDate || 'N/A',
+        policyCount: data?.activePolicies || 0,
+        violationCount: data?.violations || 0,
+      };
+    },
+    staleTime: 60_000,
   });
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchComplianceStatus = async () => {
-      try {
-        const { data } = await api.get('/finance/compliance/status/overall');
-        const score = data?.complianceScore || 0;
-        setCompliance({
-          score,
-          status: score >= 90 ? 'compliant' : score >= 70 ? 'warning' : 'critical',
-          lastAudit: data?.lastAuditDate || 'N/A',
-          policyCount: data?.activePolicies || 0,
-          violationCount: data?.violations || 0,
-        });
-      } catch (error) {
-        console.error('Failed to fetch compliance status:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchComplianceStatus();
-  }, []);
 
   const statusColors = {
     compliant: { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-200' },
