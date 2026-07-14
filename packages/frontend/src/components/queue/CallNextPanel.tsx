@@ -115,6 +115,7 @@ export default function CallNextPanel({
   const [currentPatient, setCurrentPatient] = useState<QueueEntry | null>(null);
   const [roomNumber, setRoomNumber] = useState(() => localStorage.getItem(`callNext_room_${servicePoint}`) || '');
   const [skipTarget, setSkipTarget] = useState<QueueEntry | null>(null);
+  const [lastPatient, setLastPatient] = useState<QueueEntry | null>(null);
 
   const { data: queue = [], isLoading } = useQuery({
     queryKey: queueKey,
@@ -145,6 +146,7 @@ export default function CallNextPanel({
   const completeMutation = useMutation({
     mutationFn: (id: string) => queueService.complete(id),
     onSuccess: () => {
+      setLastPatient(currentPatient);
       setCurrentPatient(null);
       queryClient.invalidateQueries({ queryKey: ['queue'] });
     },
@@ -161,6 +163,30 @@ export default function CallNextPanel({
       toast.success('Patient skipped');
     },
     onError: () => toast.error('Failed to skip patient'),
+  });
+
+  const noShowMutation = useMutation({
+    mutationFn: (id: string) => queueService.noShow(id),
+    onSuccess: () => {
+      setLastPatient(currentPatient);
+      setCurrentPatient(null);
+      queryClient.invalidateQueries({ queryKey: ['queue'] });
+      toast.warning('Patient marked as no-show');
+    },
+    onError: () => toast.error('Failed to mark no-show'),
+  });
+
+  const recallMutation = useMutation({
+    mutationFn: (id: string) => queueService.recall(id),
+    onSuccess: (data) => {
+      playCallChime();
+      setCurrentPatient(data);
+      setLastPatient(null);
+      announcePatient(data);
+      queryClient.invalidateQueries({ queryKey: ['queue'] });
+      toast.success('Patient recalled');
+    },
+    onError: () => toast.error('Failed to recall patient'),
   });
 
   const getWaitTime = (entry: QueueEntry) => {
@@ -282,6 +308,15 @@ export default function CallNextPanel({
 
                 <div className="flex justify-center gap-3 mt-6">
                   <Button
+                    variant="ghost"
+                    size="lg"
+                    onClick={() => noShowMutation.mutate(currentPatient.id)}
+                    loading={noShowMutation.isPending}
+                    className="text-rose-600 hover:bg-rose-50"
+                  >
+                    No Show
+                  </Button>
+                  <Button
                     variant="secondary"
                     size="lg"
                     icon={Volume2}
@@ -307,15 +342,27 @@ export default function CallNextPanel({
                 </div>
                 <h2 className="text-2xl font-bold text-surface-800">Ready to Call</h2>
                 <p className="text-surface-500 mt-1">{queue.length} patient{queue.length === 1 ? '' : 's'} waiting in queue</p>
-                <Button
-                  size="lg"
-                  icon={Volume2}
-                  className="mt-6 px-8"
-                  onClick={handleCallNext}
-                  loading={callNextMutation.isPending}
-                >
-                  Call First Patient
-                </Button>
+                <div className="mt-6 flex items-center gap-3">
+                  {lastPatient && (
+                    <Button
+                      variant="secondary"
+                      size="lg"
+                      onClick={() => recallMutation.mutate(lastPatient.id)}
+                      loading={recallMutation.isPending}
+                    >
+                      Recall {lastPatient.ticketNumber}
+                    </Button>
+                  )}
+                  <Button
+                    size="lg"
+                    icon={Volume2}
+                    className="px-8"
+                    onClick={handleCallNext}
+                    loading={callNextMutation.isPending}
+                  >
+                    Call First Patient
+                  </Button>
+                </div>
               </div>
             ) : (
               <Card className="flex-1 flex items-center justify-center">
