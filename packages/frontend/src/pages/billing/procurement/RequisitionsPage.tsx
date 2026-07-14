@@ -28,6 +28,7 @@ import SearchableSelect from '../../../components/SearchableSelect';
 import { ApprovalChainPreview } from '../../../components/procurement/ApprovalChainPreview';
 import { ApprovalChainTimeline } from '../../../components/procurement/ApprovalChainTimeline';
 import { formatCurrency } from '../../../lib/currency';
+import { toast } from 'sonner';
 
 type RequisitionStatus =
   | 'draft'
@@ -303,7 +304,7 @@ export default function RequisitionsPage() {
       navigate('/procurement/rfq', { state: { newRfqId: rfq?.id } });
     },
     onError: (err: any) => {
-      alert(
+      toast.error(
         `Could not convert to RFQ: ${err?.response?.data?.message || err?.message || 'Unknown error'}`,
       );
     },

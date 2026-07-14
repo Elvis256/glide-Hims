@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 
 import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
 
 type Tab = 'policies' | 'groups' | 'delegations';
 
@@ -222,7 +223,7 @@ export function StructureTab() {
       }
       setInlineCreate(null);
     } catch (err) {
-      alert(getApiErrorMessage(err) || 'Failed to create position');
+      toast.error(getApiErrorMessage(err) || 'Failed to create position');
     }
   };
 
@@ -355,7 +356,7 @@ export function StructureTab() {
               createPos.mutate(payload, {
                 onSuccess: () => setNewPos({ name: '', code: '', rank: 0 }),
                 onError: (err: any) =>
-                  alert(getApiErrorMessage(err) || 'Failed to create position'),
+                  toast.error(getApiErrorMessage(err) || 'Failed to create position'),
               });
             }}
             className="bg-blue-600 text-white rounded text-sm px-3 py-1 inline-flex items-center justify-center gap-1"

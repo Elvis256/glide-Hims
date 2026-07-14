@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { authService } from '../services/auth';
 import { useAuthStore } from '../store/auth';
 import { ShieldAlert, X } from 'lucide-react';
-import toast from 'react-hot-toast';
+import { toast } from 'sonner';
 
 interface MeResponse {
   impersonating?: boolean;

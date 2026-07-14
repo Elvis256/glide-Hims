@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import api from '../../../services/api';
+import { toast } from 'sonner';
 
 interface ImportResult {
   imported?: number;
@@ -99,7 +100,7 @@ export default function BulkUserImportPage() {
       link.remove();
       window.URL.revokeObjectURL(url);
     } catch {
-      alert('Failed to download template');
+      toast.error('Failed to download template');
     }
   };
 

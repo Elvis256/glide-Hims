@@ -31,6 +31,7 @@ import { toCsv, downloadBlob } from '../../reports/_reportUtils';
 import { facilitiesService, rolesService } from '../../../services';
 import { api } from '../../../services/api';
 import SearchableSelect from '../../../components/SearchableSelect';
+import { toast } from 'sonner';
 
 // Error Boundary Component
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
@@ -620,7 +621,7 @@ function StaffDirectoryPageContent() {
     setImportErrors(errors);
     
     if (successCount > 0) {
-      alert(`Successfully imported ${successCount} staff members.${errors.length ? ` ${errors.length} failed.` : ''}`);
+      toast.success(`Successfully imported ${successCount} staff members.${errors.length ? ` ${errors.length} failed.` : ''}`);
       if (errors.length === 0) {
         setShowImportModal(false);
         setImportFile(null);

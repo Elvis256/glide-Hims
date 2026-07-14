@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../services/api';
 import type { Facility, Department } from '../types';
+import { toast } from 'sonner';
 import {
   Plus,
   Search,
@@ -317,7 +318,7 @@ export default function FacilitiesPage() {
                           onClick={(e) => {
                             e.stopPropagation();
                             if (hasChildren) {
-                              alert('Cannot delete facility with branches. Delete branches first.');
+                              toast.error('Cannot delete facility with branches. Delete branches first.');
                               return;
                             }
                             if (confirm('Are you sure you want to delete this facility?')) {

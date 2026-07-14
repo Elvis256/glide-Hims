@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import api from '../../services/api';
 import { getObjectDiff } from './saas/_shared';
+import { toast } from 'sonner';
 import {
   ScrollText, RefreshCw, Loader2, AlertTriangle, Search, Download,
   ChevronLeft, ChevronRight, X, ShieldCheck, User as UserIcon, Receipt,
@@ -115,7 +116,7 @@ export default function SystemSaasAuditPage() {
       a.href = url; a.download = `saas-audit-${new Date().toISOString().slice(0, 10)}.csv`;
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
-    } catch (e: any) { alert(e?.response?.data?.message || 'Export failed'); }
+    } catch (e: any) { toast.error(e?.response?.data?.message || 'Export failed'); }
   };
 
   const userLabel = (log: AuditLog) => {

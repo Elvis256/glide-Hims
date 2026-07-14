@@ -18,6 +18,7 @@ import { KPICardWidget } from './KPICardWidget';
 import { ApprovalStatusWidget } from './ApprovalStatusWidget';
 import { ComplianceStatusWidget } from './ComplianceStatusWidget';
 import { PerformanceMetricsWidget } from './PerformanceMetricsWidget';
+import { toast } from 'sonner';
 
 interface DashboardMetrics {
   glBalance?: {
@@ -119,7 +120,7 @@ const FinanceDashboard: React.FC = () => {
   };
 
   const handleExportPDF = () => {
-    alert('PDF export functionality coming soon');
+    toast.error('PDF export functionality coming soon');
   };
 
   return (

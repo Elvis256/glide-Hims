@@ -8,6 +8,7 @@ import {
   FileText,
 } from 'lucide-react';
 import api from '../../../services/api';
+import { toast } from 'sonner';
 
 interface StandardReportDto {
   id: string;
@@ -55,7 +56,7 @@ const CustomReportBuilderPage: React.FC = () => {
       setGeneratedReport(response.data.data);
     } catch (error) {
       console.error('Error generating report:', error);
-      alert('Failed to generate report');
+      toast.error('Failed to generate report');
     } finally {
       setIsGenerating(false);
     }
@@ -81,7 +82,7 @@ const CustomReportBuilderPage: React.FC = () => {
       a.click();
     } catch (error) {
       console.error('Error exporting report:', error);
-      alert('Failed to export report');
+      toast.error('Failed to export report');
     }
   };
 

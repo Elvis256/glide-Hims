@@ -140,7 +140,7 @@ function NewSubModal({ plans, onClose, onSaved }: { plans: Plan[]; onClose: () =
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
-    if (!tenantId || !planId) return alert('Tenant and plan are required');
+    if (!tenantId || !planId) return toast.error('Tenant and plan are required');
     setSaving(true);
     try {
       await api.post('/saas-revenue/subscriptions', {
@@ -149,7 +149,7 @@ function NewSubModal({ plans, onClose, onSaved }: { plans: Plan[]; onClose: () =
         startTrial, autoRenew, notes: notes || undefined,
       });
       onSaved();
-    } catch (e: any) { alert(e?.response?.data?.message || 'Create failed'); }
+    } catch (e: any) { toast.error(e?.response?.data?.message || 'Create failed'); }
     finally { setSaving(false); }
   };
 

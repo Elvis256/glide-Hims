@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Download } from 'lucide-react';
 import api from '../services/api';
+import { toast } from 'sonner';
 
 interface ExportButtonProps {
   entity: string;
@@ -45,7 +46,7 @@ export default function ExportButton({ entity, label = 'Export', filters = {}, c
       window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Export failed:', error);
-      alert('Export failed. Please try again.');
+      toast.error('Export failed. Please try again.');
     } finally {
       setIsExporting(false);
     }
