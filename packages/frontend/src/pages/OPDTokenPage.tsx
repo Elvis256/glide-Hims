@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { usePatientStore, type PatientRecord } from '../store/patients';
@@ -10,6 +10,7 @@ import { biometricsService, type StaffCoverage } from '../services/biometrics';
 import api, { getApiErrorMessage } from '../services/api';
 import { formatQueueIssueError } from './opdTokenError';
 import FingerprintScanner from '../components/FingerprintScanner';
+import QuickRegModal from '../components/QuickRegModal';
 import { useInstitutionInfo } from '../lib/useInstitutionInfo';
 import { printService } from '../lib/print';
 import { toast } from 'sonner';
@@ -18,7 +19,6 @@ import {
   Loader2,
   UserCircle,
   Receipt,
-  Printer,
   CheckCircle,
   Clock,
   Calendar,
@@ -44,6 +44,9 @@ import {
   Pill,
   MessageSquare,
   Wallet,
+  UserPlus,
+  ChevronDown,
+  Pencil,
 } from 'lucide-react';
 
 interface Doctor {
@@ -70,11 +73,61 @@ interface InsuranceProviderInfo {
   isActive: boolean;
 }
 
-
 // Use canonical shared payment-method type for the entire platform.
 import type { PaymentMethod as PaymentType } from '../shared/payment-methods';
 import PaymentMethodPicker from '../components/PaymentMethodPicker';
-import { Select as UiSelect } from '../components/ui';
+import { Select as UiSelect, Badge, cn } from '../components/ui';
+
+// Fallback quick-pick complaints (facility can override via setting `opd.common_complaints`)
+const DEFAULT_COMPLAINTS = [
+  'Fever',
+  'Cough',
+  'Headache',
+  'Abdominal pain',
+  'Diarrhoea',
+  'Vomiting',
+  'Body weakness',
+  'Chest pain',
+  'Wound / Injury',
+  'Review',
+];
+
+type TicketEditor = 'visit' | 'department' | 'doctor' | 'payment' | null;
+
+/** Hide values that are still PII-ciphertext (legacy rows encrypted before the key rotation). */
+const displayable = (v?: string | null): string | undefined =>
+  v && !String(v).startsWith('v1:') ? String(v) : undefined;
+
+const PAYMENT_LABELS: Record<string, string> = {
+  cash: 'Cash',
+  mobile_money: 'Mobile Money',
+  card: 'Card',
+  bank_transfer: 'Bank Transfer',
+  cheque: 'Cheque',
+  insurance: 'Insurance',
+  membership: 'Membership',
+  hospital_scheme: 'Hospital Scheme',
+  staff: 'Staff Benefit',
+  credit: 'Credit / Corporate',
+};
+
+const VISIT_OPTIONS: Array<{ value: VisitType; label: string; icon: React.ReactNode }> = [
+  { value: 'new_visit', label: 'New Visit', icon: <ArrowRight className="w-3.5 h-3.5" /> },
+  { value: 'follow_up', label: 'Follow-up', icon: <RefreshCw className="w-3.5 h-3.5" /> },
+  { value: 'emergency', label: 'Emergency', icon: <Siren className="w-3.5 h-3.5" /> },
+  { value: 'referral', label: 'Referral', icon: <ArrowRight className="w-3.5 h-3.5" /> },
+  { value: 'lab_collection', label: 'Lab Only', icon: <FlaskConical className="w-3.5 h-3.5" /> },
+  { value: 'pharmacy_pickup', label: 'Pharmacy', icon: <Pill className="w-3.5 h-3.5" /> },
+];
+
+const CONDITION_OPTIONS = [
+  { flag: 'elderly', label: 'Elderly', icon: <UserCircle className="w-3.5 h-3.5" /> },
+  { flag: 'pregnant', label: 'Pregnant', icon: <Heart className="w-3.5 h-3.5" /> },
+  { flag: 'child', label: 'Child', icon: <Baby className="w-3.5 h-3.5" /> },
+  { flag: 'disabled', label: 'Wheelchair', icon: <Accessibility className="w-3.5 h-3.5" /> },
+  { flag: 'appears_unwell', label: 'Unwell', icon: <AlertCircle className="w-3.5 h-3.5" /> },
+  { flag: 'emergency', label: 'Critical', icon: <Siren className="w-3.5 h-3.5" /> },
+];
 
 export default function OPDTokenPage() {
   const navigate = useNavigate();
@@ -90,7 +143,7 @@ export default function OPDTokenPage() {
   const [selectedDoctor, setSelectedDoctor] = useState<string>('any'); // 'any' or doctor id
   const [issuedToken, setIssuedToken] = useState<QueueEntry | null>(null);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Enhanced payment type selection
   const [paymentType, setPaymentType] = useState<PaymentType>('cash');
   const [mobileMoneyProvider, setMobileMoneyProvider] = useState<'mtn' | 'airtel'>('mtn');
@@ -98,7 +151,7 @@ export default function OPDTokenPage() {
   const [insurance, setInsurance] = useState({ provider: '', policyNumber: '', expiryDate: '' });
   const [membership, setMembership] = useState({ cardNumber: '', balance: 0 });
   const [staffId, setStaffId] = useState('');
-  
+
   // Biometric verification state
   const [showFingerprintScanner, setShowFingerprintScanner] = useState(false);
   const [biometricVerified, setBiometricVerified] = useState(false);
@@ -106,11 +159,19 @@ export default function OPDTokenPage() {
   const [staffCoverage, setStaffCoverage] = useState<StaffCoverage | null>(null);
   const [checkingCoverage, setCheckingCoverage] = useState(false);
 
-  // New clinical fields
+  // Clinical fields
   const [visitType, setVisitType] = useState<VisitType>('new_visit');
   const [chiefComplaint, setChiefComplaint] = useState('');
   const [conditionFlags, setConditionFlags] = useState<string[]>([]);
   const [showQuickRegModal, setShowQuickRegModal] = useState(false);
+
+  // POS-flow UI state
+  const [activeEditor, setActiveEditor] = useState<TicketEditor>(null);
+  const [freeTextComplaint, setFreeTextComplaint] = useState(false);
+  const [highlightIdx, setHighlightIdx] = useState(0);
+  const [showQueuePanel, setShowQueuePanel] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Fetch tenant billing defaults (mode + consultation fee) — configured in Admin → System Settings
   const { data: billingConfig } = useQuery<{ mode: 'pre_pay' | 'post_pay'; consultationFee: number | null }>({
@@ -129,8 +190,8 @@ export default function OPDTokenPage() {
       const response = await api.get<Array<{ id: string; code: string; name: string; basePrice: number }>>('/services');
       const services = response.data;
       // Find consultation service by code or name
-      return services.find(s => 
-        s.code?.toLowerCase().includes('consult') || 
+      return services.find(s =>
+        s.code?.toLowerCase().includes('consult') ||
         s.name?.toLowerCase().includes('consultation')
       );
     },
@@ -141,7 +202,6 @@ export default function OPDTokenPage() {
     consultationService?.basePrice ?? billingConfig?.consultationFee ?? null;
 
   // Live preview of the resolved consultation fee for the currently-selected doctor + dept.
-  // Resolves the same chain the backend uses: doctor profile → specialty → tenant default.
   const { data: feePreview } = useQuery<{
     fee: number;
     source: string;
@@ -166,13 +226,32 @@ export default function OPDTokenPage() {
   const [consultationFeeInput, setConsultationFeeInput] = useState<string>('');
   const effectiveConsultationFee: number = consultationFeeInput.trim() !== ''
     ? Number(consultationFeeInput) || 0
-    : (defaultConsultationFee ?? 0);
+    : (feePreview?.fee ?? defaultConsultationFee ?? 0);
   const CONSULTATION_FEE = effectiveConsultationFee;
 
   // Per-visit billing timing override; defaults to tenant setting (post_pay if unset)
   const [billingMode, setBillingMode] = useState<'pre_pay' | 'post_pay' | ''>('');
   const effectiveBillingMode: 'pre_pay' | 'post_pay' =
     billingMode || billingConfig?.mode || 'post_pay';
+
+  // Facility-configurable quick-pick complaints
+  const { data: commonComplaints } = useQuery<string[]>({
+    queryKey: ['opd-common-complaints'],
+    queryFn: async () => {
+      try {
+        const res = await api.get<{ value?: unknown }>('/settings/opd.common_complaints');
+        const value = res.data?.value;
+        if (Array.isArray(value) && value.every(v => typeof v === 'string') && value.length > 0) {
+          return value as string[];
+        }
+      } catch {
+        // fall through to defaults
+      }
+      return DEFAULT_COMPLAINTS;
+    },
+    staleTime: 10 * 60 * 1000,
+  });
+  const complaintChips = commonComplaints || DEFAULT_COMPLAINTS;
 
   // Search patients from API with fallback to local store
   const { data: apiPatients, isLoading: searchLoading } = useQuery({
@@ -190,12 +269,55 @@ export default function OPDTokenPage() {
   // Combine API results with local store
   const localPatients = localSearchPatients(searchTerm);
   const apiList = apiPatients || [];
-  const patients = searchTerm.length >= 2 
+  const patients = searchTerm.length >= 2
     ? [...apiList.map((p: any) => ({
         ...p,
-        paymentType: 'cash' as const,
+        paymentType: (p.metadata?.paymentType === 'insurance' ? 'insurance' : 'cash') as PatientRecord['paymentType'],
       })), ...localPatients.filter(lp => !apiList.some((ap: any) => ap.id === lp.id))]
     : localPatients;
+
+  /**
+   * Select a patient and pre-fill the ticket from what the system already
+   * knows: stored payment preference, follow-up inference, last department.
+   * Edit-by-exception: the receptionist only touches what's different today.
+   */
+  const selectPatient = useCallback((p: PatientRecord & { metadata?: Record<string, any> }) => {
+    setSelectedPatient(p);
+    setActiveEditor(null);
+    setError(null);
+
+    // Payment default from the patient record (set at registration)
+    const meta = (p as any).metadata || {};
+    if (meta.paymentType === 'insurance' || p.paymentType === 'insurance') {
+      setPaymentType('insurance');
+      setInsurance(prev => ({
+        ...prev,
+        provider: meta.insuranceProvider || prev.provider,
+        policyNumber: meta.insuranceId || prev.policyNumber,
+      }));
+    } else {
+      setPaymentType('cash');
+    }
+
+    // Follow-up + last-department inference from the most recent encounter.
+    // Best-effort: any failure leaves the standard defaults untouched.
+    api.get('/encounters', { params: { patientId: p.id, limit: 1 } })
+      .then(res => {
+        const body: any = res.data;
+        const list = Array.isArray(body) ? body : (body?.data || []);
+        const last = list[0];
+        if (!last) return;
+        const lastDate = new Date(last.startTime || last.createdAt || 0).getTime();
+        const days = (Date.now() - lastDate) / 86400000;
+        if (days >= 0 && days <= 14) {
+          setVisitType('follow_up');
+        }
+        if (last.departmentId) {
+          setSelectedDepartment(prev => prev || last.departmentId);
+        }
+      })
+      .catch(() => { /* non-blocking inference */ });
+  }, []);
 
   // Load patient from URL param (when coming from patient profile)
   useEffect(() => {
@@ -204,7 +326,7 @@ export default function OPDTokenPage() {
         if (patient) {
           // Service Patient and store PatientRecord differ slightly (optional
           // timestamps) — shapes are display-compatible here
-          setSelectedPatient({
+          selectPatient({
             ...patient,
             paymentType: 'cash' as const,
           } as unknown as PatientRecord);
@@ -213,7 +335,7 @@ export default function OPDTokenPage() {
         console.error('Failed to load patient:', err);
       });
     }
-  }, [urlPatientId, selectedPatient]);
+  }, [urlPatientId, selectedPatient, selectPatient]);
 
   // Fetch queue statistics
   const { data: queueStats } = useQuery({
@@ -251,9 +373,6 @@ export default function OPDTokenPage() {
     },
     staleTime: 5 * 60 * 1000,
   });
-
-  // Department is optional — do NOT auto-select. Reception may leave it blank
-  // for general OPD; assignment happens at consultation if needed.
 
   // Fetch today's queue
   const { data: todayQueue } = useQuery({
@@ -299,8 +418,6 @@ export default function OPDTokenPage() {
     });
     const lastIssued = sortedByTicket[0] || null;
     const nowServing = called[0] || inService[0] || null;
-    // Estimated wait = (waiting + pending payment) × avg consultation (15m)
-    // Cap at backend value if reasonable; otherwise compute from queue length.
     const avgPerPatient = 15;
     const computedWait = (waiting.length + pendingPayment.length) * avgPerPatient;
     const rawBackendWait = queueStats?.averageWaitMinutes;
@@ -416,9 +533,6 @@ export default function OPDTokenPage() {
       return;
     }
 
-    // Department is optional — patient defaults to General OPD pool when not chosen.
-    // (Validation removed; backend already accepts undefined departmentId.)
-
     if (!chiefComplaint.trim()) {
       setError('Chief complaint is required before issuing token.');
       return;
@@ -463,64 +577,49 @@ export default function OPDTokenPage() {
     }
   };
 
-  // Keyboard shortcut: Ctrl/⌘+Enter to issue token from anywhere on the page
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-        if (selectedPatient && !existingQueueEntry && !issueTokenMutation.isPending) {
-          e.preventDefault();
-          handleIssueToken();
-        }
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPatient, existingQueueEntry, chiefComplaint, selectedDepartment, selectedDoctor, visitType, conditionFlags, paymentType]);
-  
   // Handle biometric verification for scheme/staff payments
   const handleStartBiometricVerification = async () => {
     if (!selectedPatient?.userId) {
       toast.error('This patient does not have a linked user account');
       return;
     }
-    
+
     setCheckingCoverage(true);
     try {
       // Check if user has enrolled fingerprints
       const enrollment = await biometricsService.checkEnrollment(selectedPatient.userId);
-      
+
       if (enrollment.enrolled) {
         setBiometricMode('verify');
       } else {
         setBiometricMode('register');
         toast.info('No fingerprints registered. Please register first.');
       }
-      
+
       // For staff payment, also check coverage
       if (paymentType === 'staff') {
         const coverage = await biometricsService.checkStaffCoverage(selectedPatient.userId);
         setStaffCoverage(coverage);
-        
+
         if (!coverage.hasEmployee) {
           toast.error('This user is not linked to an employee record');
           setCheckingCoverage(false);
           return;
         }
-        
+
         if (!coverage.coverage?.enabled) {
           toast.error('Staff insurance coverage is not enabled for this employee');
           setCheckingCoverage(false);
           return;
         }
-        
+
         if (coverage.coverage?.expired) {
           toast.error('Staff insurance coverage has expired');
           setCheckingCoverage(false);
           return;
         }
       }
-      
+
       setShowFingerprintScanner(true);
     } catch (err) {
       toast.error('Failed to check enrollment status');
@@ -528,19 +627,19 @@ export default function OPDTokenPage() {
       setCheckingCoverage(false);
     }
   };
-  
+
   const handleBiometricSuccess = () => {
     setBiometricVerified(true);
     setShowFingerprintScanner(false);
     toast.success('Identity verified successfully');
   };
 
-  const handlePrintToken = () => {
+  const handlePrintToken = useCallback(() => {
     if (!issuedToken || !selectedPatient) return;
     const deptName = departments?.find(d => d.id === selectedDepartment)?.name || selectedDepartment || '';
     const invoiceNum = (issuedToken as any).invoiceNumber || '';
     const invoiceAmt = Number((issuedToken as any).invoiceAmount) || 0;
-    const needsPayment = ['cash', 'mobile_money', 'card'].includes(paymentType);
+    const needsPayment = issuedToken.status === 'pending_payment';
 
     const header = printService.buildHeader(inst, 'receipt');
     const body = `
@@ -564,11 +663,16 @@ export default function OPDTokenPage() {
     `;
     const footer = printService.buildFooter(inst, 'receipt');
     printService.printReceipt(header + body + footer, { title: 'Queue Token' });
-  };
+  }, [issuedToken, selectedPatient, departments, selectedDepartment, inst]);
 
-  const handleReset = () => {
+  const handleReset = useCallback(() => {
+    if (resetTimerRef.current) {
+      clearTimeout(resetTimerRef.current);
+      resetTimerRef.current = null;
+    }
     setSelectedPatient(null);
     setSearchTerm('');
+    setSelectedDepartment('');
     setSelectedDoctor('any');
     setIssuedToken(null);
     setPaymentType('cash');
@@ -578,1123 +682,968 @@ export default function OPDTokenPage() {
     setBiometricVerified(false);
     setStaffCoverage(null);
     setError(null);
+    setVisitType('new_visit');
+    setChiefComplaint('');
+    setConditionFlags([]);
+    setConsultationFeeInput('');
+    setBillingMode('');
+    setActiveEditor(null);
+    setFreeTextComplaint(false);
+    setHighlightIdx(0);
     setSearchParams({});
-  };
+    // Back to State A: cursor ready for the next person
+    setTimeout(() => searchInputRef.current?.focus(), 50);
+  }, [setSearchParams]);
 
-  // Success screen after token issued
+  // ── State C: auto-print + flash + auto-reset ──────────────────────────────
+  useEffect(() => {
+    if (issuedToken && selectedPatient) {
+      handlePrintToken(); // printing IS the confirmation (thermal printer)
+      resetTimerRef.current = setTimeout(() => handleReset(), 5000);
+      return () => {
+        if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+      };
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [issuedToken]);
+
+  // ── Keyboard grammar ───────────────────────────────────────────────────────
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      const inField = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+
+      // Ctrl/⌘+Enter issues from anywhere (works inside fields too)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        if (selectedPatient && !issuedToken && !existingQueueEntry && !issueTokenMutation.isPending) {
+          e.preventDefault();
+          handleIssueToken();
+        }
+        return;
+      }
+
+      if (issuedToken) {
+        if (e.key === 'Enter' || e.key === 'Escape') {
+          e.preventDefault();
+          handleReset();
+        }
+        return;
+      }
+
+      if (e.key === 'Escape') {
+        if (activeEditor) {
+          setActiveEditor(null);
+        } else if (selectedPatient) {
+          handleReset();
+        }
+        return;
+      }
+
+      // Plain Enter on the ticket (not inside a field) → issue
+      if (e.key === 'Enter' && !inField && selectedPatient && !activeEditor) {
+        if (!existingQueueEntry && !issueTokenMutation.isPending) {
+          e.preventDefault();
+          handleIssueToken();
+        }
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPatient, existingQueueEntry, issuedToken, activeEditor, chiefComplaint, selectedDepartment, selectedDoctor, visitType, conditionFlags, paymentType]);
+
+  const deptName = selectedDepartment
+    ? (departments?.find(d => d.id === selectedDepartment)?.name || '—')
+    : 'General OPD';
+  const doctorName = selectedDoctor === 'any'
+    ? 'Any available'
+    : (availableDoctors.find(d => d.id === selectedDoctor)?.name || '—');
+
+  const toggleEditor = (ed: TicketEditor) =>
+    setActiveEditor(prev => (prev === ed ? null : ed));
+
+  // ── Ticket row helper ─────────────────────────────────────────────────────
+  const TicketRow = ({ editor, label, value, sub }: { editor: TicketEditor; label: string; value: React.ReactNode; sub?: React.ReactNode }) => (
+    <button
+      type="button"
+      onClick={() => toggleEditor(editor)}
+      className={cn(
+        'w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left transition-colors',
+        activeEditor === editor ? 'bg-brand-50/60' : 'hover:bg-surface-50',
+      )}
+    >
+      <span className="text-sm text-surface-500 w-24 shrink-0">{label}</span>
+      <span className="flex-1 min-w-0 text-right">
+        <span className="text-sm font-medium text-surface-900 truncate">{value}</span>
+        {sub && <span className="block text-xs text-surface-400 truncate">{sub}</span>}
+      </span>
+      <ChevronDown className={cn('w-4 h-4 text-surface-300 shrink-0 transition-transform', activeEditor === editor && 'rotate-180')} />
+    </button>
+  );
+
+  // ═══ State C: issued — flash, auto-printed, auto-reset ═══════════════════
   if (issuedToken && selectedPatient) {
+    const pending = issuedToken.status === 'pending_payment';
     return (
-      <div className="max-w-lg mx-auto p-6">
-        {/* Screen View */}
-        <div className="print:hidden">
-          <div className="text-center mb-5">
-            <div className="w-14 h-14 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
-              <CheckCircle className="w-8 h-8 text-emerald-600" />
-            </div>
-            <h2 className="text-2xl font-bold text-surface-900 mb-2">Token Issued!</h2>
-
-            {/*
-             * Truth source = backend-issued queue status:
-             *   pending_payment → patient must clear billing counter first (pre-pay flows)
-             *   anything else (waiting/called/in_service) → patient is already in queue
-             *     (post-pay flows, or coverage methods that bypass the counter)
-             */}
-            {issuedToken.status === 'pending_payment' ? (
-              <span className="inline-flex items-center gap-2 px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-sm font-medium">
-                <Banknote className="w-4 h-4" />
-                Proceed to Billing Counter to pay
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-2 px-3 py-1 bg-teal-100 text-teal-700 rounded-full text-sm font-medium">
-                <Users className="w-4 h-4" />
-                Patient is now in queue
-              </span>
-            )}
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
+        <div className="text-center animate-fade-in max-w-md w-full px-6">
+          <div className="w-14 h-14 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <CheckCircle className="w-8 h-8 text-emerald-600" />
           </div>
-
-          {/* Paper token */}
-          <div className="bg-white rounded-2xl border border-surface-200 shadow-[0_8px_30px_rgba(15,23,42,0.08)] overflow-hidden mb-4">
-            {/* Facility strip */}
-            <div className="bg-brand-700 text-white text-center px-4 py-2.5">
-              <p className="text-sm font-semibold tracking-wide">{inst.name}</p>
-              <p className="text-[11px] text-brand-200 uppercase tracking-widest">OPD Queue Token</p>
-            </div>
-
-            <div className="px-6 py-5 text-center">
-              <p className="text-xs text-surface-500 uppercase tracking-widest mb-1">Token Number</p>
-              <p className="text-6xl font-mono font-extrabold text-surface-900 tracking-tight leading-none">
-                {issuedToken.ticketNumber}
-              </p>
-            </div>
-
-            {/* Perforation */}
-            <div className="relative border-t-2 border-dashed border-surface-200 mx-4">
-              <span className="absolute -left-6 -top-2.5 w-5 h-5 bg-surface-50 rounded-full border border-surface-200" />
-              <span className="absolute -right-6 -top-2.5 w-5 h-5 bg-surface-50 rounded-full border border-surface-200" />
-            </div>
-
-            <div className="px-6 py-4">
-              <div className="flex items-center justify-center gap-2 text-surface-800 mb-1">
-                <UserCircle className="w-5 h-5 text-surface-400" />
-                <span className="font-semibold">{selectedPatient.fullName}</span>
-              </div>
-              <p className="text-sm text-surface-500 text-center mb-4">MRN: {selectedPatient.mrn}</p>
-
-              <div className="grid grid-cols-2 gap-3 text-sm bg-surface-50 rounded-xl p-3">
-                <div>
-                  <p className="text-xs text-surface-500">Department</p>
-                  <p className="font-medium text-surface-900 capitalize">{departments?.find(d => d.id === selectedDepartment)?.name || selectedDepartment}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-surface-500">Date</p>
-                  <p className="font-medium text-surface-900">{new Date().toLocaleDateString()}</p>
-                </div>
-              </div>
-
-              {/* Invoice info */}
-              {(issuedToken as any).invoiceNumber && (
-                <p className="text-xs text-surface-500 text-center mt-3">
-                  Invoice <span className="font-mono font-medium">{(issuedToken as any).invoiceNumber}</span>
-                  {' '}&bull;{' '}UGX {Number((issuedToken as any).invoiceAmount || 0).toLocaleString()}
-                </p>
-              )}
-            </div>
-          </div>
-
-          {/* Payment Instructions Section — only when backend marked the entry pending_payment. */}
-          {issuedToken.status === 'pending_payment' && (
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4 text-center">
-              <Banknote className="w-8 h-8 text-amber-600 mx-auto mb-2" />
-              <p className="text-sm font-semibold text-amber-800 mb-1">Billing Required</p>
-              <p className="text-xs text-amber-700 mb-3">
-                Invoice <span className="font-mono font-medium">{(issuedToken as any).invoiceNumber || ''}</span> for UGX {Number((issuedToken as any).invoiceAmount || 0).toLocaleString()} has been created.
-              </p>
-              <p className="text-xs text-amber-600">
-                Direct patient to <strong>Billing Counter</strong> to pay. Patient will join the waiting queue after payment is confirmed.
-              </p>
-            </div>
-          )}
-
-          {/* Post-pay flow with a counter-payable method — let cashier know charges accrue to a checkout bill. */}
-          {issuedToken.status !== 'pending_payment' && ['cash', 'mobile_money', 'card'].includes(paymentType) && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4 text-center">
-              <Wallet className="w-8 h-8 text-blue-600 mx-auto mb-2" />
-              <p className="text-sm font-semibold text-blue-800 mb-1">Pay at Checkout</p>
-              {(issuedToken as any).invoiceNumber ? (
-                <p className="text-xs text-blue-700 mb-1">
-                  Consultation logged to invoice{' '}
-                  <span className="font-mono font-medium">{(issuedToken as any).invoiceNumber}</span>
-                  {' '}(UGX {Number((issuedToken as any).invoiceAmount || 0).toLocaleString()}).
-                </p>
-              ) : null}
-              <p className="text-xs text-blue-700">
-                Consultation, labs and pharmacy will be settled together when the patient checks out.
-              </p>
-            </div>
-          )}
-
-          {/* Insurance patient — skips billing counter */}
-          {paymentType === 'insurance' && (
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4 text-center">
-              <Shield className="w-8 h-8 text-green-600 mx-auto mb-2" />
-              <p className="text-sm font-semibold text-green-800 mb-1">Insurance — No Payment Needed</p>
-              <p className="text-xs text-green-700">
-                {insurance.provider ? `Provider: ${insurance.provider}` : 'Claim will be filed automatically.'} Patient can proceed to waiting area.
-              </p>
-            </div>
-          )}
-
-          {/* Scheme/Staff/Membership — skips billing counter */}
-          {['hospital_scheme', 'staff', 'membership'].includes(paymentType) && (
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4 text-center">
-              <BadgeCheck className="w-8 h-8 text-green-600 mx-auto mb-2" />
-              <p className="text-sm font-semibold text-green-800 mb-1">
-                {paymentType === 'staff' ? 'Staff Benefit' : paymentType === 'hospital_scheme' ? 'Hospital Scheme' : 'Membership'} — No Payment Now
-              </p>
-              <p className="text-xs text-green-700">
-                Charges billed to {paymentType === 'staff' ? 'HR' : 'scheme'}. Patient can proceed to waiting area.
-              </p>
-            </div>
-          )}
-
-          <p className="text-sm text-surface-500 mb-4 text-center">
-            {issuedToken.status === 'pending_payment'
-              ? 'Patient will join waiting queue after payment'
-              : 'Please wait for your number to be called'}
+          <p className="text-sm text-surface-500 uppercase tracking-widest mb-1">Token issued · printing…</p>
+          <p className="text-7xl font-mono font-extrabold text-surface-900 tracking-tight mb-3">
+            {issuedToken.ticketNumber}
           </p>
+          <p className="text-lg font-semibold text-surface-800 mb-1">{selectedPatient.fullName}</p>
 
-          <div className="flex gap-3">
-            <button onClick={handleReset} className="btn-secondary flex-1">
-              Issue Another
+          {pending ? (
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-800 rounded-full text-base font-semibold mt-2">
+              <Banknote className="w-5 h-5" />
+              Direct patient to Billing Counter
+            </div>
+          ) : (
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-teal-100 text-teal-800 rounded-full text-base font-semibold mt-2">
+              <Users className="w-5 h-5" />
+              Patient joins the queue — wait to be called
+            </div>
+          )}
+
+          {(issuedToken as any).invoiceNumber && (
+            <p className="text-xs text-surface-500 mt-3">
+              Invoice <span className="font-mono">{(issuedToken as any).invoiceNumber}</span>
+              {' '}· UGX {Number((issuedToken as any).invoiceAmount || 0).toLocaleString()}
+            </p>
+          )}
+
+          <div className="mt-8 flex items-center justify-center gap-3">
+            <button onClick={handlePrintToken} className="btn-secondary text-sm">
+              Reprint
             </button>
-            <button
-              onClick={handlePrintToken}
-              className="btn-primary flex-1 flex items-center justify-center gap-2"
-            >
-              <Printer className="w-5 h-5" />
-              Print Token
+            <button onClick={handleReset} className="btn-primary px-6" autoFocus>
+              Next patient
+              <kbd className="ml-2 px-1.5 py-0.5 text-[10px] font-mono bg-white/20 border border-white/30 rounded">↵</kbd>
             </button>
           </div>
+          <p className="text-xs text-surface-400 mt-3">Returning to search automatically…</p>
         </div>
-
       </div>
     );
   }
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4 flex-shrink-0">
+      {/* Header: title + one-line ambient queue strip */}
+      <div className="flex items-center justify-between gap-4 mb-4 flex-shrink-0">
         <div>
           <h1 className="text-xl font-bold text-surface-900 tracking-tight">OPD Token</h1>
-          <p className="text-surface-500 text-sm">Issue queue tokens for outpatient visits</p>
+          <p className="text-surface-500 text-sm">Serve the next patient</p>
         </div>
-        <div className="flex items-center gap-2 text-surface-500 text-sm bg-white border border-surface-200 rounded-xl px-3 py-1.5">
-          <Calendar className="w-4 h-4" />
-          <span>{new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setShowQueuePanel(v => !v)}
+            className="flex items-center gap-3 text-sm text-surface-500 bg-white border border-surface-200 rounded-xl px-3 py-1.5 hover:border-brand-300 transition-colors"
+            title="Toggle queue details"
+          >
+            <span><span className="font-semibold text-surface-800">{queueAnalytics.active.length}</span> active</span>
+            <span className="text-surface-300">·</span>
+            <span>~{queueAnalytics.estimatedWait}m</span>
+            <span className="text-surface-300">·</span>
+            <span className="font-mono text-brand-600 font-medium">
+              {queueAnalytics.nowServing ? `#${queueAnalytics.nowServing.ticketNumber}` : '—'} serving
+            </span>
+            <span className="text-surface-300">·</span>
+            <span className="font-mono">last {queueAnalytics.lastIssued ? `#${queueAnalytics.lastIssued.ticketNumber}` : '—'}</span>
+            <ChevronDown className={cn('w-4 h-4 transition-transform', showQueuePanel && 'rotate-180')} />
+          </button>
+          <div className="hidden md:flex items-center gap-2 text-surface-500 text-sm bg-white border border-surface-200 rounded-xl px-3 py-1.5">
+            <Calendar className="w-4 h-4" />
+            <span>{new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+          </div>
         </div>
       </div>
 
-      {/* Main Content — sequential flow (left) + context rail (right) */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 min-h-0 overflow-hidden">
-        {/* Left: the flow */}
-        <div className="lg:col-span-2 flex flex-col min-h-0">
-          <div className="flex-1 overflow-y-auto space-y-3 pr-1 pb-1">
-          {/* Step 1: Patient */}
-          <div className="card p-4">
-            <h2 className="text-sm font-semibold mb-2 flex items-center gap-2">
-              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${selectedPatient ? 'bg-emerald-100 text-emerald-700' : 'bg-brand-50 text-brand-700 ring-1 ring-brand-400'}`}>
-                {selectedPatient ? '✓' : '1'}
-              </span>
-              Patient
-            </h2>
-            {selectedPatient ? (
-              <div className="bg-blue-50 rounded-lg p-2">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                      <UserCircle className="w-5 h-5 text-blue-600" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-gray-900 text-sm">{selectedPatient.fullName}</p>
-                      <div className="flex items-center gap-2 text-xs text-gray-500 mt-0.5 flex-wrap">
-                        <span>{selectedPatient.mrn}</span>
-                        {patientAge && (
-                          <>
-                            <span className="text-gray-300">·</span>
-                            <span>{patientAge}</span>
-                          </>
-                        )}
-                        {selectedPatient.gender && (
-                          <>
-                            <span className="text-gray-300">·</span>
-                            <span className="capitalize">{selectedPatient.gender}</span>
-                          </>
-                        )}
-                        {selectedPatient.phone && (
-                          <>
-                            <span className="text-gray-300">·</span>
-                            <span className="font-mono">{selectedPatient.phone}</span>
-                          </>
-                        )}
-                        {selectedPatient.bloodGroup && (
-                          <span className="px-1.5 py-0.5 bg-red-50 text-red-600 rounded">
-                            {selectedPatient.bloodGroup}
-                          </span>
-                        )}
-                      </div>
-                      {selectedPatient.allergies && (
-                        <p className="text-[10px] text-amber-700 mt-1 flex items-center gap-1">
-                          <AlertCircle className="w-3 h-3" /> Allergies: {selectedPatient.allergies}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  <button onClick={() => { setSelectedPatient(null); setSearchParams({}); setError(null); }} className="text-xs text-blue-600 hover:underline">
-                    Change
-                  </button>
-                </div>
-                {/* Payment Status */}
-                <div className="border-t border-blue-200 pt-2 mt-1">
-                  {paymentType === 'cash' && (
-                    <div className="flex items-center gap-1 text-xs">
-                      <Banknote className="w-3 h-3 text-green-600" />
-                      <span className="text-gray-700">Cash</span>
-                    </div>
-                  )}
-                  {paymentType === 'mobile_money' && (
-                    <div className="flex items-center gap-1 text-xs">
-                      <Smartphone className="w-3 h-3 text-yellow-600" />
-                      <span className="text-gray-700">{mobileMoneyProvider === 'mtn' ? 'MTN MoMo' : 'Airtel Money'}</span>
-                    </div>
-                  )}
-                  {paymentType === 'card' && (
-                    <div className="flex items-center gap-1 text-xs">
-                      <CreditCard className="w-3 h-3 text-blue-600" />
-                      <span className="text-gray-700">{cardType === 'visa' ? 'Visa' : 'Mastercard'}</span>
-                    </div>
-                  )}
-                  {paymentType === 'membership' && (
-                    <div className="flex items-center gap-1 text-xs">
-                      <BadgeCheck className="w-3 h-3 text-purple-600" />
-                      <span className="text-gray-700">Member: {membership.cardNumber || 'Card'}</span>
-                    </div>
-                  )}
-                  {paymentType === 'insurance' && (
-                    <div className="flex items-center gap-1 text-xs">
-                      <Shield className="w-3 h-3 text-blue-600" />
-                      <span className="text-gray-700">{insurance.provider || 'Insurance'}</span>
-                    </div>
-                  )}
-                  {paymentType === 'hospital_scheme' && (
-                    <div className="flex items-center gap-1 text-xs">
-                      <Building2 className="w-3 h-3 text-teal-600" />
-                      <span className="text-gray-700">Hospital Scheme</span>
-                    </div>
-                  )}
-                  {paymentType === 'staff' && (
-                    <div className="flex items-center gap-1 text-xs">
-                      <UserCheck className="w-3 h-3 text-orange-600" />
-                      <span className="text-gray-700">Staff: {staffId || 'Benefit'}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <div className="relative">
-                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="Search patient..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="input pl-8 py-1.5 text-sm"
-                    autoFocus
-                  />
-                </div>
-                {searchLoading && (
-                  <div className="flex justify-center py-2">
-                    <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                  </div>
-                )}
-                {patients && patients.length > 0 && (
-                  <div className="border rounded divide-y max-h-32 overflow-y-auto">
-                    {patients.map((patient) => (
-                      <button
-                        key={patient.id}
-                        onClick={() => setSelectedPatient(patient)}
-                        className="w-full flex items-center gap-2 p-2 hover:bg-gray-50 text-left"
-                      >
-                        <UserCircle className="w-5 h-5 text-gray-400" />
-                        <div>
-                          <p className="text-sm font-medium">{patient.fullName}</p>
-                          <p className="text-xs text-gray-500">{patient.mrn}</p>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+      {/* Collapsible queue panel (monitoring lives OFF the main flow) */}
+      {showQueuePanel && (
+        <div className="mb-4 card p-3 flex-shrink-0 max-h-56 overflow-y-auto">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3 text-center">
+            <div className="bg-amber-50 rounded-lg py-1.5"><p className="text-lg font-bold text-amber-700">{queueAnalytics.pendingPayment.length}</p><p className="text-xs text-amber-700">At Billing</p></div>
+            <div className="bg-yellow-50 rounded-lg py-1.5"><p className="text-lg font-bold text-yellow-700">{queueAnalytics.waiting.length}</p><p className="text-xs text-yellow-700">Waiting</p></div>
+            <div className="bg-brand-50 rounded-lg py-1.5"><p className="text-lg font-bold text-brand-700">{queueAnalytics.inService.length + queueAnalytics.called.length}</p><p className="text-xs text-brand-700">Serving</p></div>
+            <div className="bg-emerald-50 rounded-lg py-1.5"><p className="text-lg font-bold text-emerald-700">{queueAnalytics.completed.length}</p><p className="text-xs text-emerald-700">Done</p></div>
           </div>
-
-          {/* Step 2: Visit details — appears once a patient is chosen */}
-          {selectedPatient && (
-          <div className="card p-4">
-            <h2 className="text-sm font-semibold mb-3 flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-brand-50 text-brand-700 ring-1 ring-brand-400 flex items-center justify-center text-xs font-bold">2</span>
-              Visit Details
-            </h2>
-            <div className="space-y-4">
-
-            {/* Department (hidden in simple workflow mode — auto-uses default department) */}
-            {user?.workflowMode !== 'simple' && (
-            <div>
-              <h3 className="text-xs font-semibold text-surface-500 uppercase tracking-wide mb-2">Department <span className="text-surface-400 font-normal normal-case">(optional — General OPD if blank)</span></h3>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-40 overflow-y-auto content-start">
-              <button
-                onClick={() => { setSelectedDepartment(''); setSelectedDoctor('any'); }}
-                className={`p-2 rounded border text-left transition-colors text-xs ${
-                  !selectedDepartment
-                    ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
-              >
-                General OPD <span className="text-gray-400">(no dept)</span>
-              </button>
-              {clinicalDepartments.map((dept) => (
-                <button
-                  key={dept.id}
-                  onClick={() => { setSelectedDepartment(dept.id); setSelectedDoctor('any'); }}
-                  className={`p-2 rounded border text-left transition-colors text-xs ${
-                    selectedDepartment === dept.id
-                      ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium'
-                      : 'border-gray-200 hover:border-gray-300'
-                  }`}
-                >
-                  {dept.name}
-                </button>
-              ))}
-              {(!departments || departments.length === 0) && (
-                <p className="text-xs text-gray-400 col-span-2 text-center py-4">No departments configured</p>
-              )}
-              {departments && departments.length > 0 && clinicalDepartments.length === 0 && (
-                <p className="text-xs text-gray-400 col-span-2 text-center py-2">
-                  No clinical departments — use General OPD or set up departments under
-                  <Link to="/admin/hr/organisation" className="ml-1 text-blue-600 hover:underline">HR · Organisation</Link>
-                </p>
-              )}
-            </div>
-            </div>
-            )}
-
-            {/* Doctor — compact row (optional; usually "Any") */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-xs font-semibold text-surface-500 uppercase tracking-wide">Doctor <span className="text-surface-400 font-normal normal-case">(optional)</span></h3>
-                <Link
-                  to="/doctors/on-duty"
-                  className="text-xs text-brand-600 hover:underline flex items-center gap-1"
-                >
-                  <UserCheck className="w-3 h-3" />
-                  Manage
-                </Link>
-              </div>
-
-              {/* Warning if no doctors on duty */}
-              {!doctorsLoading && availableDoctors.length === 0 && (
-                <div className="mb-2 p-2 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                  <div className="text-xs">
-                    <p className="font-medium text-amber-800">No doctors checked in</p>
-                    <p className="text-amber-600">
-                      <Link to="/doctors/on-duty" className="underline">Check in doctors</Link> to assign patients
-                    </p>
+          {queueAnalytics.active.length > 0 ? (
+            <div className="space-y-1">
+              {queueAnalytics.active.slice(0, 15).map((entry: any) => (
+                <div key={entry.id} className="flex items-center justify-between px-2 py-1 rounded-lg text-sm bg-surface-50 group">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-mono font-bold text-surface-700">{entry.ticketNumber}</span>
+                    <span className="truncate text-surface-600">{entry.patient?.fullName || 'Patient'}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {entry.status === 'called' && <Badge tone="brand">Called</Badge>}
+                    {entry.status === 'in_service' && <Badge tone="brand" dot>Serving</Badge>}
+                    {entry.status === 'pending_payment' && <Badge tone="warning">Pay</Badge>}
+                    {entry.status === 'waiting' && <Badge tone="neutral">Waiting</Badge>}
+                    <button
+                      onClick={() => handleRemoveFromQueue(entry.id, entry.patient?.fullName || 'Patient')}
+                      className="opacity-0 group-hover:opacity-100 p-1 hover:bg-rose-100 rounded transition-opacity"
+                      title="Remove from queue"
+                    >
+                      <X className="w-3.5 h-3.5 text-rose-500" />
+                    </button>
                   </div>
                 </div>
-              )}
-
-              <UiSelect
-                value={selectedDoctor}
-                onChange={(e) => setSelectedDoctor(e.target.value)}
-                disabled={doctorsLoading}
-              >
-                <option value="any">Any available doctor — auto-assigned, shortest wait</option>
-                {availableDoctors.map((doctor) => (
-                  <option key={doctor.id} value={doctor.id} disabled={!doctor.available}>
-                    {doctor.name} — {doctor.specialization}
-                    {doctor.roomNumber ? ` · Room ${doctor.roomNumber}` : ''}
-                    {doctor.available ? ` · ${doctor.currentQueue} waiting` : ' · unavailable'}
-                  </option>
-                ))}
-              </UiSelect>
-            </div>
-
-            {/* Visit Type */}
-            <div>
-            <h3 className="text-xs font-semibold text-surface-500 uppercase tracking-wide mb-2">Visit Type</h3>
-            <div className="grid grid-cols-2 gap-1.5">
-              {[
-                { value: 'new_visit', label: 'New Visit', icon: <ArrowRight className="w-3 h-3" />, color: 'blue' },
-                { value: 'follow_up', label: 'Follow-up', icon: <RefreshCw className="w-3 h-3" />, color: 'green' },
-                { value: 'emergency', label: 'Emergency', icon: <Siren className="w-3 h-3" />, color: 'red' },
-                { value: 'referral', label: 'Referral', icon: <ArrowRight className="w-3 h-3" />, color: 'purple' },
-                { value: 'lab_collection', label: 'Lab Only', icon: <FlaskConical className="w-3 h-3" />, color: 'yellow' },
-                { value: 'pharmacy_pickup', label: 'Pharmacy', icon: <Pill className="w-3 h-3" />, color: 'teal' },
-              ].map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => setVisitType(opt.value as VisitType)}
-                  className={`p-1.5 rounded border text-xs flex items-center gap-1 transition-colors ${
-                    visitType === opt.value
-                      ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium'
-                      : 'border-gray-200 hover:border-gray-300'
-                  }`}
-                >
-                  {opt.icon}{opt.label}
-                </button>
               ))}
             </div>
-            {visitType !== 'new_visit' && visitType !== 'emergency' && visitType !== 'referral' && (
-              <p className="mt-1.5 text-xs text-green-700 bg-green-50 rounded px-2 py-1">
-                ✓ Routes directly to {
-                  visitType === 'follow_up' ? 'consultation' :
-                  visitType === 'lab_collection' ? 'laboratory' :
-                  visitType === 'pharmacy_pickup' ? 'pharmacy' : 'appropriate service point'
-                } — skips triage
-              </p>
-            )}
-          </div>
+          ) : (
+            <p className="text-sm text-surface-400 text-center py-2">Queue is empty</p>
+          )}
+        </div>
+      )}
 
-          {/* Chief Complaint */}
-          <div>
-            <h3 className="text-xs font-semibold text-surface-500 uppercase tracking-wide mb-2 flex items-center gap-1">
-              <MessageSquare className="w-3.5 h-3.5" /> Chief Complaint
-              {visitType === 'new_visit' || visitType === 'emergency' ? (
-                <span className="text-rose-500 ml-0.5">*</span>
-              ) : (
-                <span className="text-surface-400 font-normal normal-case ml-1">(optional)</span>
-              )}
-            </h3>
-            <textarea
-              value={chiefComplaint}
-              onChange={(e) => setChiefComplaint(e.target.value)}
-              placeholder="e.g. Fever and headache for 3 days..."
-              rows={2}
-              className="input text-sm w-full resize-none"
-            />
-          </div>
-
-          {/* Patient Condition Flags */}
-          <div>
-            <h3 className="text-xs font-semibold text-surface-500 uppercase tracking-wide mb-1">Patient Condition</h3>
-            <p className="text-xs text-surface-500 mb-2">Select all that apply — auto-adjusts priority</p>
-            <div className="flex flex-wrap gap-1.5">
-              {[
-                { flag: 'elderly', label: 'Elderly', icon: <UserCircle className="w-3 h-3" /> },
-                { flag: 'pregnant', label: 'Pregnant', icon: <Heart className="w-3 h-3" /> },
-                { flag: 'child', label: 'Child', icon: <Baby className="w-3 h-3" /> },
-                { flag: 'disabled', label: 'Wheelchair', icon: <Accessibility className="w-3 h-3" /> },
-                { flag: 'appears_unwell', label: 'Unwell', icon: <AlertCircle className="w-3 h-3" /> },
-                { flag: 'emergency', label: 'Critical', icon: <Siren className="w-3 h-3" /> },
-              ].map((c) => {
-                const active = conditionFlags.includes(c.flag);
-                return (
-                  <button
-                    key={c.flag}
-                    onClick={() => setConditionFlags(active
-                      ? conditionFlags.filter(f => f !== c.flag)
-                      : [...conditionFlags, c.flag]
-                    )}
-                    className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs border transition-colors ${
-                      active
-                        ? c.flag === 'emergency' || c.flag === 'appears_unwell'
-                          ? 'bg-red-100 border-red-400 text-red-700'
-                          : 'bg-amber-100 border-amber-400 text-amber-700'
-                        : 'bg-gray-50 border-gray-200 text-gray-600 hover:border-gray-400'
-                    }`}
-                  >
-                    {c.icon}{c.label}
-                  </button>
-                );
-              })}
-            </div>
-            {conditionFlags.length > 0 && (
-              <p className="mt-2 text-xs text-amber-700 bg-amber-50 rounded px-2 py-1">
-                Priority adjusted: {
-                  conditionFlags.includes('emergency') ? '🔴 Emergency' :
-                  conditionFlags.includes('appears_unwell') ? '🟠 Urgent' :
-                  conditionFlags.includes('elderly') ? '🟡 Elderly' :
-                  conditionFlags.includes('pregnant') ? '🟡 Pregnant' :
-                  conditionFlags.includes('child') ? '🟡 Pediatric' :
-                  conditionFlags.includes('disabled') ? '🟡 Priority' : ''
-                }
-              </p>
-            )}
-          </div>
-
-          </div>{/* end step-2 sections */}
-          </div>
-          )}{/* end step 2 */}
-
-          {/* Step 3: Payment */}
-          {selectedPatient && (
-            <div className="card p-4">
-              <h2 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                <span className="w-5 h-5 rounded-full bg-brand-50 text-brand-700 ring-1 ring-brand-400 flex items-center justify-center text-xs font-bold">3</span>
-                Payment
-              </h2>
-              
-              {/* Canonical payment-method picker — driven by Admin → Finance → Payment Methods.
-                  Replaces the previous bespoke two-row chip grid so every payment surface
-                  (OPD, POS, billing, vendors) renders identical options. */}
-              <PaymentMethodPicker
-                value={paymentType}
-                onChange={(m) => setPaymentType(m)}
-                className="mb-3"
+      {/* ═══ State A: WHO? — nothing but search ═══ */}
+      {!selectedPatient && (
+        <div className="flex-1 flex flex-col items-center pt-[8vh]">
+          <div className="w-full max-w-xl px-4">
+            <div className="relative">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-6 h-6 text-surface-400" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                placeholder="Type name, MRN or phone…"
+                value={searchTerm}
+                onChange={(e) => { setSearchTerm(e.target.value); setHighlightIdx(0); }}
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowDown') { e.preventDefault(); setHighlightIdx(i => Math.min(i + 1, (patients?.length || 1) - 1)); }
+                  if (e.key === 'ArrowUp') { e.preventDefault(); setHighlightIdx(i => Math.max(i - 1, 0)); }
+                  if (e.key === 'Enter' && patients && patients[highlightIdx]) {
+                    e.preventDefault();
+                    selectPatient(patients[highlightIdx] as any);
+                  }
+                }}
+                className="w-full pl-12 pr-4 py-4 text-lg bg-white border-2 border-surface-200 rounded-2xl shadow-sm
+                  focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10 focus:outline-none transition-all"
+                autoFocus
               />
-
-              {/* Mobile Money Options */}
-              {paymentType === 'mobile_money' && (
-                <div className="space-y-2 p-2 bg-yellow-50 rounded-lg">
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setMobileMoneyProvider('mtn')}
-                      className={`flex-1 py-2 rounded-lg text-sm font-medium ${
-                        mobileMoneyProvider === 'mtn' ? 'bg-yellow-400 text-black' : 'bg-white border'
-                      }`}
-                    >
-                      MTN MoMo
-                    </button>
-                    <button
-                      onClick={() => setMobileMoneyProvider('airtel')}
-                      className={`flex-1 py-2 rounded-lg text-sm font-medium ${
-                        mobileMoneyProvider === 'airtel' ? 'bg-red-500 text-white' : 'bg-white border'
-                      }`}
-                    >
-                      Airtel Money
-                    </button>
-                  </div>
-                  <p className="text-xs text-gray-600">
-                    Fee: UGX {CONSULTATION_FEE.toLocaleString()} • Payment at billing
-                  </p>
-                </div>
+              {searchLoading && (
+                <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 animate-spin text-brand-500" />
               )}
+            </div>
 
-              {/* Card Options */}
-              {paymentType === 'card' && (
-                <div className="space-y-2 p-2 bg-blue-50 rounded-lg">
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setCardType('visa')}
-                      className={`flex-1 py-2 rounded-lg text-sm font-medium ${
-                        cardType === 'visa' ? 'bg-blue-700 text-white' : 'bg-white border'
-                      }`}
-                    >
-                      Visa
-                    </button>
-                    <button
-                      onClick={() => setCardType('mastercard')}
-                      className={`flex-1 py-2 rounded-lg text-sm font-medium ${
-                        cardType === 'mastercard' ? 'bg-orange-500 text-white' : 'bg-white border'
-                      }`}
-                    >
-                      Mastercard
-                    </button>
-                  </div>
-                  <p className="text-xs text-gray-600">
-                    Fee: UGX {CONSULTATION_FEE.toLocaleString()} • POS at billing
-                  </p>
-                </div>
-              )}
-
-              {paymentType === 'insurance' && (
-                <div className="space-y-2">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Insurance Provider</label>
-                    <select
-                      value={insurance.provider}
-                      onChange={(e) => setInsurance({ ...insurance, provider: e.target.value })}
-                      className="input text-sm py-1.5"
-                    >
-                      <option value="">Select provider...</option>
-                      {(insuranceProviders || []).filter(p => p.isActive).map(provider => (
-                        <option key={provider.id} value={provider.code}>{provider.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Policy / Member Number</label>
-                    <input
-                      type="text"
-                      value={insurance.policyNumber}
-                      onChange={(e) => setInsurance({ ...insurance, policyNumber: e.target.value })}
-                      className="input text-sm py-1.5"
-                      placeholder="Policy #"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {paymentType === 'hospital_scheme' && (
-                <div className="space-y-3 p-3 bg-teal-50 rounded-lg">
-                  <div className="flex items-center gap-2 text-teal-700">
-                    <Building2 className="w-4 h-4" />
-                    <span className="text-sm font-medium">Hospital Insurance Scheme</span>
-                  </div>
-                  <p className="text-xs text-gray-600">
-                    For patients covered under hospital's own insurance scheme.
-                    Fingerprint verification required.
-                  </p>
-                  
-                  {/* Biometric Verification Status */}
-                  {biometricVerified ? (
-                    <div className="flex items-center gap-2 p-2 bg-green-100 rounded-lg text-green-700">
-                      <CheckCircle className="w-5 h-5" />
-                      <span className="text-sm font-medium">Identity Verified</span>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={handleStartBiometricVerification}
-                      disabled={checkingCoverage || !selectedPatient?.userId}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50"
-                    >
-                      {checkingCoverage ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Fingerprint className="w-4 h-4" />
-                      )}
-                      Verify Fingerprint
-                    </button>
-                  )}
-                  
-                  {!selectedPatient?.userId && (
-                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                      <p className="text-xs text-amber-800 font-medium mb-2">
-                        ⚠️ Patient not enrolled in Hospital Insurance Scheme
-                      </p>
-                      <p className="text-xs text-amber-700 mb-3">
-                        This patient needs to be enrolled first with biometric registration.
-                      </p>
-                      <button
-                        onClick={() => navigate(`/patients/hospital-scheme-enroll?mrn=${selectedPatient?.mrn}`)}
-                        className="btn-sm bg-amber-600 hover:bg-amber-700 text-white w-full"
-                      >
-                        Enroll Patient Now →
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {paymentType === 'membership' && (
-                <div className="space-y-2">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Membership Card Number</label>
-                    <input
-                      type="text"
-                      value={membership.cardNumber}
-                      onChange={(e) => setMembership({ ...membership, cardNumber: e.target.value })}
-                      className="input text-sm py-1.5"
-                      placeholder="Scan or enter card #"
-                    />
-                  </div>
-                  {membership.cardNumber && (
-                    <div className="p-2 bg-purple-50 rounded text-sm">
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-600">Prepaid Balance:</span>
-                        <span className="font-bold text-purple-700">UGX {membership.balance.toLocaleString()}</span>
-                      </div>
-                      {membership.balance < CONSULTATION_FEE && (
-                        <p className="text-xs text-red-500 mt-1">
-                          ⚠️ Insufficient balance. Top-up required.
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {paymentType === 'staff' && (
-                <div className="space-y-3 p-3 bg-orange-50 rounded-lg">
-                  <div className="flex items-center gap-2 text-orange-700">
-                    <UserCheck className="w-4 h-4" />
-                    <span className="text-sm font-medium">Staff Benefit</span>
-                  </div>
-                  
-                  {/* Staff Coverage Info */}
-                  {staffCoverage?.coverage && (
-                    <div className="text-xs space-y-1 p-2 bg-white rounded">
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Plan:</span>
-                        <span className="font-medium">{staffCoverage.coverage.planType || 'Standard'}</span>
-                      </div>
-                      {staffCoverage.coverage.coverageLimit && (
-                        <>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Limit:</span>
-                            <span className="font-medium">UGX {staffCoverage.coverage.coverageLimit.toLocaleString()}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Remaining:</span>
-                            <span className={`font-medium ${(staffCoverage.coverage.remainingAmount || 0) < CONSULTATION_FEE ? 'text-red-600' : 'text-green-600'}`}>
-                              UGX {(staffCoverage.coverage.remainingAmount || 0).toLocaleString()}
-                            </span>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )}
-                  
-                  {/* Biometric Verification */}
-                  {biometricVerified ? (
-                    <div className="flex items-center gap-2 p-2 bg-green-100 rounded-lg text-green-700">
-                      <CheckCircle className="w-5 h-5" />
-                      <span className="text-sm font-medium">Identity Verified</span>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={handleStartBiometricVerification}
-                      disabled={checkingCoverage || !selectedPatient?.userId}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50"
-                    >
-                      {checkingCoverage ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Fingerprint className="w-4 h-4" />
-                      )}
-                      Verify Staff Identity
-                    </button>
-                  )}
-                  
-                  {!selectedPatient?.userId && (
-                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                      <p className="text-xs text-amber-800 font-medium mb-2">
-                        ⚠️ Staff member not registered for insurance
-                      </p>
-                      <p className="text-xs text-amber-700 mb-3">
-                        This staff member needs biometric registration. Contact HR Department.
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {paymentType === 'cash' && (
-                <div className="space-y-3">
-                  <div className="space-y-1">
-                    <label className="text-xs text-gray-600 font-medium">Consultation Fee (UGX)</label>
-                    <input
-                      type="number"
-                      min={0}
-                      step={500}
-                      value={consultationFeeInput !== '' ? consultationFeeInput : (feePreview?.fee ?? defaultConsultationFee ?? '')}
-                      onChange={(e) => setConsultationFeeInput(e.target.value)}
-                      placeholder={feePreview?.fee != null ? String(feePreview.fee) : (defaultConsultationFee != null ? String(defaultConsultationFee) : 'Configure default in Settings')}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                    {feePreview && (() => {
-                      const docName =
-                        availableDoctors.find((d) => d.id === selectedDoctor)?.name ||
-                        'Selected doctor';
-                      const empMap: Record<string, string> = {
-                        permanent: 'Permanent staff',
-                        visiting: 'Visiting consultant',
-                        locum: 'Locum',
-                        contract: 'Contract',
-                      };
-                      let basis = '';
-                      switch (feePreview.feeMode) {
-                        case 'flat':
-                          basis = `${docName}'s flat rate`;
-                          break;
-                        case 'percent_of_specialty':
-                          basis = `${docName} — % of specialty rate`;
-                          break;
-                        case 'split':
-                          basis = `${docName} — revenue share`;
-                          break;
-                        default:
-                          basis = feePreview.isFollowUp
-                            ? `${docName} — follow-up rate`
-                            : `${docName}'s rate`;
-                      }
-                      const empLabel = feePreview.employmentType
-                        ? empMap[feePreview.employmentType] || feePreview.employmentType
-                        : null;
-                      return (
-                        <p className="text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded px-2 py-1">
-                          Resolved: <strong>{feePreview.fee.toLocaleString()} UGX</strong>
-                          {' · '}{basis}
-                          {feePreview.isFollowUp && feePreview.feeMode !== undefined && ' · follow-up'}
-                          {empLabel && <span className="text-blue-600/70"> · {empLabel}</span>}
-                        </p>
-                      );
-                    })()}
-                    {!feePreview && defaultConsultationFee == null && (
-                      <p className="text-xs text-amber-600">
-                        No default consultation fee configured. Set service <code>OPD-CONSULT</code> in the Service Catalog
-                        or system_setting <code>billing.consultationFee</code>.
-                      </p>
+            {/* Results as big tappable cards */}
+            {searchTerm.length >= 2 && patients && patients.length > 0 && (
+              <div className="mt-3 bg-white border border-surface-200 rounded-2xl shadow-lg divide-y divide-surface-100 overflow-hidden">
+                {patients.slice(0, 8).map((patient: any, i: number) => (
+                  <button
+                    key={patient.id}
+                    onClick={() => selectPatient(patient)}
+                    onMouseEnter={() => setHighlightIdx(i)}
+                    className={cn(
+                      'w-full flex items-center gap-3 px-4 py-3 text-left transition-colors',
+                      i === highlightIdx ? 'bg-brand-50' : 'hover:bg-surface-50',
                     )}
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-xs text-gray-600 font-medium">Payment Timing</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setBillingMode('post_pay')}
-                        className={`px-3 py-2 text-xs font-medium rounded-lg border ${
-                          effectiveBillingMode === 'post_pay'
-                            ? 'bg-blue-600 text-white border-blue-600'
-                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                        }`}
-                      >
-                        Pay at Checkout
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setBillingMode('pre_pay')}
-                        className={`px-3 py-2 text-xs font-medium rounded-lg border ${
-                          effectiveBillingMode === 'pre_pay'
-                            ? 'bg-blue-600 text-white border-blue-600'
-                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                        }`}
-                      >
-                        Pay Now (Billing Counter)
-                      </button>
+                  >
+                    <div className="w-10 h-10 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center font-bold text-sm shrink-0">
+                      {(patient.fullName || '?').split(/\s+/).slice(0, 2).map((w: string) => w[0]).join('').toUpperCase()}
                     </div>
-                    <p className="text-xs text-gray-500">
-                      {effectiveBillingMode === 'pre_pay'
-                        ? 'Patient pays the consultation fee upfront before being seen by the doctor.'
-                        : 'Patient is seen first; consultation, labs and pharmacy are settled in one bill at checkout.'}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-surface-900 truncate">{patient.fullName}</p>
+                      <p className="text-sm text-surface-500 truncate">
+                        {patient.mrn}
+                        {patient.gender && <span className="capitalize"> · {patient.gender}</span>}
+                        {displayable(patient.phone) && <span className="font-mono"> · {displayable(patient.phone)}</span>}
+                      </p>
+                    </div>
+                    {i === highlightIdx && (
+                      <kbd className="px-1.5 py-0.5 text-[10px] font-mono bg-surface-100 border border-surface-200 rounded text-surface-500">↵</kbd>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
 
-          </div>{/* end left scroll region */}
-
-          {/* Already in queue warning — shown immediately when patient selected */}
-          {existingQueueEntry && (
-            <div className="bg-amber-50 border border-amber-200 text-amber-800 px-3 py-2 rounded-lg text-sm mt-2">
-              <p>Patient <strong>{selectedPatient?.fullName}</strong> is already in queue with token <strong>{existingQueueEntry.ticketNumber}</strong></p>
-              <button
-                onClick={() => { setSelectedPatient(null); setError(null); setSearchTerm(''); setSearchParams({}); }}
-                className="mt-1 text-xs font-medium text-blue-600 hover:underline"
-              >
-                Select a different patient →
-              </button>
-            </div>
-          )}
-
-          {/* Error Display */}
-          {error && !existingQueueEntry && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm mt-2">
-              <p>{error}</p>
-              {error.includes('already in queue') && (
-                <button
-                  onClick={() => { setSelectedPatient(null); setError(null); setSearchTerm(''); setSearchParams({}); }}
-                  className="mt-1 text-xs font-medium text-blue-600 hover:underline"
-                >
-                  Select a different patient →
+            {searchTerm.length >= 2 && !searchLoading && patients && patients.length === 0 && (
+              <div className="mt-3 text-center py-6 bg-white border border-surface-200 rounded-2xl">
+                <p className="text-surface-500 mb-3">No patient found for “{searchTerm}”</p>
+                <button onClick={() => setShowQuickRegModal(true)} className="btn-primary inline-flex">
+                  <UserPlus className="w-4 h-4" /> Register new patient
                 </button>
-              )}
-            </div>
-          )}
+              </div>
+            )}
 
-          {/* Sticky action bar — fee summary + Issue always visible */}
-          <div className="mt-2 flex items-center gap-3 bg-white border border-surface-200 rounded-2xl px-4 py-3 shadow-[0_-2px_12px_rgba(15,23,42,0.06)] flex-shrink-0">
-            <div className="min-w-0">
-              <p className="text-xs text-surface-500">Consultation fee</p>
-              <p className="text-base font-bold text-surface-900 leading-tight">
-                UGX {Number(CONSULTATION_FEE || 0).toLocaleString()}
-                <span className="ml-2 text-xs font-medium text-surface-500 capitalize">{paymentType.replace(/_/g, ' ')}</span>
-              </p>
+            <div className="mt-4 flex items-center justify-center gap-4 text-sm">
+              <button onClick={() => setShowQuickRegModal(true)} className="text-brand-600 hover:underline flex items-center gap-1">
+                <UserPlus className="w-4 h-4" /> New patient
+              </button>
+              <span className="text-surface-300">·</span>
+              <Link to="/patients" className="text-brand-600 hover:underline">All patients</Link>
             </div>
-            <div className="flex-1" />
-            <button
-              onClick={handleIssueToken}
-              disabled={!selectedPatient || !!existingQueueEntry || issueTokenMutation.isPending}
-              className="btn-primary py-3 px-8 flex items-center justify-center gap-2 disabled:opacity-50"
-              title="Tip: Ctrl/⌘+Enter to issue"
-            >
-              {issueTokenMutation.isPending ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
+          </div>
+        </div>
+      )}
+
+      {/* ═══ State B: CONFIRM THE TICKET — pre-filled, edit by exception ═══ */}
+      {selectedPatient && (
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-2xl mx-auto px-2 pb-6">
+            <div className="bg-white rounded-2xl border border-surface-200 shadow-[0_4px_24px_rgba(15,23,42,0.07)] overflow-hidden">
+              {/* Patient header */}
+              <div className="flex items-center gap-3 px-4 py-3 bg-surface-50 border-b border-surface-200">
+                <div className="w-11 h-11 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center font-bold shrink-0">
+                  {(selectedPatient.fullName || '?').split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase()}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-bold text-surface-900 truncate">{selectedPatient.fullName}</p>
+                  <p className="text-sm text-surface-500 truncate">
+                    {selectedPatient.mrn}
+                    {patientAge && ` · ${patientAge}`}
+                    {selectedPatient.gender && <span className="capitalize"> · {selectedPatient.gender}</span>}
+                    {displayable(selectedPatient.phone) && <span className="font-mono"> · {displayable(selectedPatient.phone)}</span>}
+                  </p>
+                  {selectedPatient.allergies && (
+                    <p className="text-xs text-amber-700 mt-0.5 flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3 shrink-0" /> Allergies: {String(selectedPatient.allergies)}
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={handleReset}
+                  className="text-sm text-brand-600 hover:underline shrink-0"
+                  title="Esc"
+                >
+                  Change
+                </button>
+              </div>
+
+              {/* Already in queue → the ticket becomes a notice */}
+              {existingQueueEntry ? (
+                <div className="p-6 text-center">
+                  <div className="w-12 h-12 bg-amber-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                    <AlertCircle className="w-6 h-6 text-amber-600" />
+                  </div>
+                  <p className="text-surface-800 font-semibold mb-1">Already in today's queue</p>
+                  <p className="text-sm text-surface-500 mb-4">
+                    Token <span className="font-mono font-bold text-surface-800">{existingQueueEntry.ticketNumber}</span>
+                    {' '}· status: <span className="capitalize">{String(existingQueueEntry.status).replace(/_/g, ' ')}</span>
+                  </p>
+                  <button onClick={handleReset} className="btn-secondary">Next patient (Esc)</button>
+                </div>
               ) : (
                 <>
-                  <Receipt className="w-5 h-5" />
-                  {existingQueueEntry ? 'Already in Queue' : 'Issue Token'}
-                  {selectedPatient && !existingQueueEntry && (
-                    <kbd className="hidden sm:inline ml-2 px-1.5 py-0.5 text-[10px] font-mono bg-white/20 border border-white/30 rounded">
-                      Ctrl+↵
-                    </kbd>
-                  )}
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Right rail: live token preview + queue monitor */}
-        <div className="flex flex-col gap-3 min-h-0 overflow-y-auto pb-1">
-          {/* Token preview — builds up as the form is filled */}
-          <div className="bg-white rounded-2xl border border-surface-200 shadow-[0_4px_20px_rgba(15,23,42,0.06)] overflow-hidden flex-shrink-0">
-            <div className="bg-brand-700 text-white text-center px-4 py-2">
-              <p className="text-[11px] uppercase tracking-widest text-brand-200">Token Preview</p>
-            </div>
-            <div className="px-4 py-4 text-center">
-              <p className="text-4xl font-mono font-extrabold tracking-tight leading-none text-surface-300">
-                {queueAnalytics.lastIssued ? `#${String(queueAnalytics.lastIssued.ticketNumber).replace(/^#/, '')}` : '#—'}
-              </p>
-              <p className="text-[10px] text-surface-400 mt-1 uppercase tracking-wide">last issued — new token follows</p>
-            </div>
-            <div className="border-t-2 border-dashed border-surface-200 mx-3" />
-            <div className="px-4 py-3 text-sm space-y-1.5">
-              <div className="flex justify-between gap-2">
-                <span className="text-surface-500">Patient</span>
-                <span className="font-medium text-surface-900 truncate">{selectedPatient?.fullName || '—'}</span>
-              </div>
-              <div className="flex justify-between gap-2">
-                <span className="text-surface-500">Department</span>
-                <span className="font-medium text-surface-900 truncate">
-                  {selectedDepartment ? (departments?.find(d => d.id === selectedDepartment)?.name || '—') : 'General OPD'}
-                </span>
-              </div>
-              <div className="flex justify-between gap-2">
-                <span className="text-surface-500">Doctor</span>
-                <span className="font-medium text-surface-900 truncate">
-                  {selectedDoctor === 'any' ? 'Any available' : (availableDoctors.find(d => d.id === selectedDoctor)?.name || '—')}
-                </span>
-              </div>
-              <div className="flex justify-between gap-2">
-                <span className="text-surface-500">Visit</span>
-                <span className="font-medium text-surface-900 capitalize">{visitType.replace(/_/g, ' ')}</span>
-              </div>
-              <div className="flex justify-between gap-2 pt-1 border-t border-surface-100">
-                <span className="text-surface-500">Fee</span>
-                <span className="font-bold text-surface-900">UGX {Number(CONSULTATION_FEE || 0).toLocaleString()}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Queue monitor */}
-          <div className="card p-3 flex flex-col flex-shrink-0">
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="text-sm font-semibold">Today's Queue</h2>
-              <div className="flex items-center gap-2 text-xs text-gray-500">
-                <span title="Active in queue today (waiting + serving + billing)">
-                  <span className="font-medium text-gray-700">{queueAnalytics.active.length}</span> active
-                  {queueAnalytics.totalToday > queueAnalytics.active.length && (
-                    <span className="text-gray-400"> / {queueAnalytics.totalToday}</span>
-                  )}
-                </span>
-                <span className="text-gray-300">|</span>
-                <span title={queueAnalytics.estimatedWait > 0 ? `Based on ${queueAnalytics.waiting.length + queueAnalytics.pendingPayment.length} ahead × ~15m` : 'No wait'}>
-                  ⏱ {queueAnalytics.estimatedWait > 0 ? `~${queueAnalytics.estimatedWait}m` : '0m'}
-                </span>
-              </div>
-            </div>
-            {/* Currently-serving banner */}
-            {queueAnalytics.nowServing && (
-              <div className="mb-2 px-2 py-1.5 bg-blue-50 border border-blue-200 rounded flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="font-mono font-bold text-blue-700">#{queueAnalytics.nowServing.ticketNumber}</span>
-                  <span className="truncate text-gray-700">
-                    {queueAnalytics.nowServing.patient?.fullName || 'Patient'}
-                  </span>
-                </div>
-                <span className="text-[10px] uppercase tracking-wide text-blue-600 font-medium">
-                  {queueAnalytics.nowServing.status === 'called' ? 'Called' : 'In service'}
-                </span>
-              </div>
-            )}
-
-            {/* Last issued ticket */}
-            {queueAnalytics.lastIssued && (
-              <div className="mb-2 text-[11px] text-gray-500 flex items-center justify-between">
-                <span>Last issued</span>
-                <span className="font-mono font-medium text-gray-700">
-                  #{queueAnalytics.lastIssued.ticketNumber}
-                </span>
-              </div>
-            )}
-
-            <div className="space-y-1.5 flex-shrink-0">
-              <div className="flex items-center justify-between px-2 py-1 bg-amber-50 rounded">
-                <div className="flex items-center gap-1.5">
-                  <Banknote className="w-3.5 h-3.5 text-amber-600" />
-                  <span className="text-xs text-amber-700">At Billing</span>
-                </div>
-                <span className="text-base font-bold text-amber-700">
-                  {queueAnalytics.pendingPayment.length}
-                </span>
-              </div>
-              <div className="flex items-center justify-between px-2 py-1 bg-yellow-50 rounded">
-                <div className="flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5 text-yellow-600" />
-                  <span className="text-xs text-yellow-700">Waiting</span>
-                </div>
-                <span className="text-base font-bold text-yellow-700">
-                  {queueAnalytics.waiting.length}
-                </span>
-              </div>
-              <div className="flex items-center justify-between px-2 py-1 bg-blue-50 rounded">
-                <div className="flex items-center gap-1.5">
-                  <UserCircle className="w-3.5 h-3.5 text-blue-600" />
-                  <span className="text-xs text-blue-700">Serving</span>
-                </div>
-                <span className="text-base font-bold text-blue-700">
-                  {queueAnalytics.inService.length + queueAnalytics.called.length}
-                </span>
-              </div>
-              <div className="flex items-center justify-between px-2 py-1 bg-green-50 rounded">
-                <div className="flex items-center gap-1.5">
-                  <CheckCircle className="w-3.5 h-3.5 text-green-600" />
-                  <span className="text-xs text-green-700">Done</span>
-                </div>
-                <span className="text-base font-bold text-green-700">
-                  {queueAnalytics.completed.length}
-                </span>
-              </div>
-            </div>
-            
-            {/* Queue List */}
-            <div className="mt-2 pt-2 border-t">
-              <p className="text-xs text-gray-500 mb-1">Patients in Queue:</p>
-              <div className="overflow-y-auto space-y-1 max-h-[100px]">
-                {queueAnalytics.active.length > 0 ? (
-                  queueAnalytics.active
-                    .slice(0, 10)
-                    .map((entry) => (
-                      <div 
-                        key={entry.id} 
-                        className={`flex items-center justify-between p-1.5 rounded text-xs group ${
-                          entry.status === 'called' || entry.status === 'in_service'
-                            ? 'bg-blue-100'
-                            : entry.status === 'pending_payment'
-                            ? 'bg-amber-50'
-                            : 'bg-gray-50 hover:bg-gray-100'
-                        }`}
+                  {/* Complaint — the ONE required input: chips first, typing optional */}
+                  <div className="px-4 py-3 border-b border-surface-100">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm text-surface-500 flex items-center gap-1.5">
+                        <MessageSquare className="w-4 h-4" /> Complaint
+                        {(visitType === 'new_visit' || visitType === 'emergency') && <span className="text-rose-500">*</span>}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setFreeTextComplaint(v => !v)}
+                        className="text-xs text-brand-600 hover:underline flex items-center gap-1"
                       >
-                        <div className="flex items-center gap-2 min-w-0 flex-1">
-                          <span className={`font-mono font-bold ${
-                            entry.status === 'called' || entry.status === 'in_service'
-                              ? 'text-blue-700'
-                              : entry.status === 'pending_payment'
-                              ? 'text-amber-700'
-                              : 'text-gray-700'
-                          }`}>
-                            {entry.ticketNumber}
+                        <Pencil className="w-3 h-3" /> {freeTextComplaint ? 'Quick picks' : 'Type instead'}
+                      </button>
+                    </div>
+                    {freeTextComplaint ? (
+                      <textarea
+                        value={chiefComplaint}
+                        onChange={(e) => setChiefComplaint(e.target.value)}
+                        placeholder="e.g. Fever and headache for 3 days…"
+                        rows={2}
+                        className="input text-sm w-full resize-none"
+                        autoFocus
+                      />
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5">
+                        {complaintChips.map((c) => {
+                          const active = chiefComplaint === c;
+                          return (
+                            <button
+                              key={c}
+                              type="button"
+                              onClick={() => setChiefComplaint(active ? '' : c)}
+                              className={cn(
+                                'px-3 py-1.5 rounded-full text-sm border transition-colors',
+                                active
+                                  ? 'bg-brand-600 text-white border-brand-600 font-medium'
+                                  : 'bg-white border-surface-200 text-surface-700 hover:border-brand-300',
+                              )}
+                            >
+                              {c}
+                            </button>
+                          );
+                        })}
+                        {chiefComplaint && !complaintChips.includes(chiefComplaint) && (
+                          <span className="px-3 py-1.5 rounded-full text-sm bg-brand-600 text-white font-medium">
+                            {chiefComplaint}
                           </span>
-                          <span className="truncate text-gray-600">
-                            {entry.patient?.fullName || 'Patient'}
-                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Pre-answered lines — tap only what's different today */}
+                  <div className="divide-y divide-surface-100">
+                    <TicketRow
+                      editor="visit"
+                      label="Visit"
+                      value={VISIT_OPTIONS.find(v => v.value === visitType)?.label || visitType}
+                      sub={visitType === 'follow_up' ? 'inferred from recent visit' : undefined}
+                    />
+                    {activeEditor === 'visit' && (
+                      <div className="px-4 py-3 bg-brand-50/40">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                          {VISIT_OPTIONS.map((opt) => (
+                            <button
+                              key={opt.value}
+                              onClick={() => { setVisitType(opt.value); setActiveEditor(null); }}
+                              className={cn(
+                                'p-2 rounded-lg border text-sm flex items-center gap-1.5 transition-colors',
+                                visitType === opt.value
+                                  ? 'border-brand-500 bg-brand-50 text-brand-700 font-medium'
+                                  : 'border-surface-200 bg-white hover:border-surface-300',
+                              )}
+                            >
+                              {opt.icon}{opt.label}
+                            </button>
+                          ))}
                         </div>
-                        <div className="flex items-center gap-1">
-                          {entry.status === 'called' && (
-                            <span className="text-xs bg-blue-600 text-white px-1.5 py-0.5 rounded">
-                              Now
-                            </span>
-                          )}
-                          {entry.status === 'in_service' && (
-                            <span className="text-xs bg-blue-500 text-white px-1.5 py-0.5 rounded">
-                              Serving
-                            </span>
-                          )}
-                          {entry.status === 'pending_payment' && (
-                            <span className="text-xs bg-amber-500 text-white px-1.5 py-0.5 rounded">
-                              Pay
-                            </span>
-                          )}
-                          <button
-                            onClick={() => handleRemoveFromQueue(entry.id, entry.patient?.fullName || 'Patient')}
-                            className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-100 rounded transition-opacity"
-                            title="Remove from queue"
-                          >
-                            <X className="w-3 h-3 text-red-500" />
-                          </button>
+                        {visitType !== 'new_visit' && visitType !== 'emergency' && visitType !== 'referral' && (
+                          <p className="mt-2 text-xs text-emerald-700 bg-emerald-50 rounded px-2 py-1">
+                            ✓ Routes directly to {
+                              visitType === 'follow_up' ? 'consultation' :
+                              visitType === 'lab_collection' ? 'laboratory' :
+                              visitType === 'pharmacy_pickup' ? 'pharmacy' : 'appropriate service point'
+                            } — skips triage
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {user?.workflowMode !== 'simple' && (
+                      <>
+                        <TicketRow editor="department" label="Department" value={deptName} />
+                        {activeEditor === 'department' && (
+                          <div className="px-4 py-3 bg-brand-50/40">
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-44 overflow-y-auto content-start">
+                              <button
+                                onClick={() => { setSelectedDepartment(''); setSelectedDoctor('any'); setActiveEditor(null); }}
+                                className={cn(
+                                  'p-2 rounded-lg border text-left text-sm transition-colors',
+                                  !selectedDepartment
+                                    ? 'border-brand-500 bg-brand-50 text-brand-700 font-medium'
+                                    : 'border-surface-200 bg-white hover:border-surface-300',
+                                )}
+                              >
+                                General OPD <span className="text-surface-400">(no dept)</span>
+                              </button>
+                              {clinicalDepartments.map((dept) => (
+                                <button
+                                  key={dept.id}
+                                  onClick={() => { setSelectedDepartment(dept.id); setSelectedDoctor('any'); setActiveEditor(null); }}
+                                  className={cn(
+                                    'p-2 rounded-lg border text-left text-sm transition-colors',
+                                    selectedDepartment === dept.id
+                                      ? 'border-brand-500 bg-brand-50 text-brand-700 font-medium'
+                                      : 'border-surface-200 bg-white hover:border-surface-300',
+                                  )}
+                                >
+                                  {dept.name}
+                                </button>
+                              ))}
+                              {(!departments || departments.length === 0) && (
+                                <p className="text-xs text-surface-400 col-span-2 text-center py-4">No departments configured</p>
+                              )}
+                              {departments && departments.length > 0 && clinicalDepartments.length === 0 && (
+                                <p className="text-xs text-surface-400 col-span-2 text-center py-2">
+                                  No clinical departments — use General OPD or set up departments under
+                                  <Link to="/admin/hr/organisation" className="ml-1 text-brand-600 hover:underline">HR · Organisation</Link>
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    <TicketRow
+                      editor="doctor"
+                      label="Doctor"
+                      value={doctorName}
+                      sub={selectedDoctor === 'any' ? 'auto-assigned · shortest wait' : undefined}
+                    />
+                    {activeEditor === 'doctor' && (
+                      <div className="px-4 py-3 bg-brand-50/40 space-y-2">
+                        {!doctorsLoading && availableDoctors.length === 0 && (
+                          <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
+                            <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                            <div className="text-xs">
+                              <p className="font-medium text-amber-800">No doctors checked in</p>
+                              <p className="text-amber-600">
+                                <Link to="/doctors/on-duty" className="underline">Check in doctors</Link> to assign patients
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                        <UiSelect
+                          value={selectedDoctor}
+                          onChange={(e) => { setSelectedDoctor(e.target.value); setActiveEditor(null); }}
+                          disabled={doctorsLoading}
+                        >
+                          <option value="any">Any available doctor — auto-assigned, shortest wait</option>
+                          {availableDoctors.map((doctor) => (
+                            <option key={doctor.id} value={doctor.id} disabled={!doctor.available}>
+                              {doctor.name} — {doctor.specialization}
+                              {doctor.roomNumber ? ` · Room ${doctor.roomNumber}` : ''}
+                              {doctor.available ? ` · ${doctor.currentQueue} waiting` : ' · unavailable'}
+                            </option>
+                          ))}
+                        </UiSelect>
+                        <div className="text-right">
+                          <Link to="/doctors/on-duty" className="text-xs text-brand-600 hover:underline inline-flex items-center gap-1">
+                            <UserCheck className="w-3 h-3" /> Manage duty roster
+                          </Link>
                         </div>
                       </div>
-                    ))
-                ) : (
-                  <p className="text-xs text-gray-400 text-center py-2">No patients waiting</p>
-                )}
-                {queueAnalytics.active.length > 10 && (
-                  <p className="text-xs text-gray-400 text-center">
-                    +{queueAnalytics.active.length - 10} more...
-                  </p>
-                )}
-              </div>
+                    )}
+
+                    <TicketRow
+                      editor="payment"
+                      label="Payment"
+                      value={
+                        <>
+                          {PAYMENT_LABELS[paymentType] || paymentType}
+                          {' — UGX '}{Number(CONSULTATION_FEE || 0).toLocaleString()}
+                        </>
+                      }
+                      sub={
+                        paymentType === 'cash'
+                          ? (effectiveBillingMode === 'pre_pay' ? 'pay now at billing counter' : 'pay at checkout')
+                          : paymentType === 'insurance'
+                            ? (insurance.provider || 'select provider')
+                            : (paymentType === 'hospital_scheme' || paymentType === 'staff')
+                              ? (biometricVerified ? 'identity verified ✓' : 'fingerprint verification required')
+                              : undefined
+                      }
+                    />
+                    {activeEditor === 'payment' && (
+                      <div className="px-4 py-3 bg-brand-50/40 space-y-3">
+                        <PaymentMethodPicker
+                          value={paymentType}
+                          onChange={(m) => setPaymentType(m)}
+                        />
+
+                        {/* Mobile Money Options */}
+                        {paymentType === 'mobile_money' && (
+                          <div className="space-y-2 p-2 bg-yellow-50 rounded-lg">
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => setMobileMoneyProvider('mtn')}
+                                className={`flex-1 py-2 rounded-lg text-sm font-medium ${
+                                  mobileMoneyProvider === 'mtn' ? 'bg-yellow-400 text-black' : 'bg-white border'
+                                }`}
+                              >
+                                MTN MoMo
+                              </button>
+                              <button
+                                onClick={() => setMobileMoneyProvider('airtel')}
+                                className={`flex-1 py-2 rounded-lg text-sm font-medium ${
+                                  mobileMoneyProvider === 'airtel' ? 'bg-red-500 text-white' : 'bg-white border'
+                                }`}
+                              >
+                                Airtel Money
+                              </button>
+                            </div>
+                            <p className="text-xs text-gray-600">
+                              Fee: UGX {CONSULTATION_FEE.toLocaleString()} • Payment at billing
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Card Options */}
+                        {paymentType === 'card' && (
+                          <div className="space-y-2 p-2 bg-blue-50 rounded-lg">
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => setCardType('visa')}
+                                className={`flex-1 py-2 rounded-lg text-sm font-medium ${
+                                  cardType === 'visa' ? 'bg-blue-700 text-white' : 'bg-white border'
+                                }`}
+                              >
+                                Visa
+                              </button>
+                              <button
+                                onClick={() => setCardType('mastercard')}
+                                className={`flex-1 py-2 rounded-lg text-sm font-medium ${
+                                  cardType === 'mastercard' ? 'bg-orange-500 text-white' : 'bg-white border'
+                                }`}
+                              >
+                                Mastercard
+                              </button>
+                            </div>
+                            <p className="text-xs text-gray-600">
+                              Fee: UGX {CONSULTATION_FEE.toLocaleString()} • POS at billing
+                            </p>
+                          </div>
+                        )}
+
+                        {paymentType === 'insurance' && (
+                          <div className="space-y-2">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Insurance Provider</label>
+                              <select
+                                value={insurance.provider}
+                                onChange={(e) => setInsurance({ ...insurance, provider: e.target.value })}
+                                className="input text-sm py-1.5"
+                              >
+                                <option value="">Select provider...</option>
+                                {(insuranceProviders || []).filter(p => p.isActive).map(provider => (
+                                  <option key={provider.id} value={provider.code}>{provider.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Policy / Member Number</label>
+                              <input
+                                type="text"
+                                value={insurance.policyNumber}
+                                onChange={(e) => setInsurance({ ...insurance, policyNumber: e.target.value })}
+                                className="input text-sm py-1.5"
+                                placeholder="Policy #"
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {paymentType === 'hospital_scheme' && (
+                          <div className="space-y-3 p-3 bg-teal-50 rounded-lg">
+                            <div className="flex items-center gap-2 text-teal-700">
+                              <Building2 className="w-4 h-4" />
+                              <span className="text-sm font-medium">Hospital Insurance Scheme</span>
+                            </div>
+                            <p className="text-xs text-gray-600">
+                              For patients covered under hospital's own insurance scheme.
+                              Fingerprint verification required.
+                            </p>
+
+                            {biometricVerified ? (
+                              <div className="flex items-center gap-2 p-2 bg-green-100 rounded-lg text-green-700">
+                                <CheckCircle className="w-5 h-5" />
+                                <span className="text-sm font-medium">Identity Verified</span>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={handleStartBiometricVerification}
+                                disabled={checkingCoverage || !selectedPatient?.userId}
+                                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50"
+                              >
+                                {checkingCoverage ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <Fingerprint className="w-4 h-4" />
+                                )}
+                                Verify Fingerprint
+                              </button>
+                            )}
+
+                            {!selectedPatient?.userId && (
+                              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                                <p className="text-xs text-amber-800 font-medium mb-2">
+                                  ⚠️ Patient not enrolled in Hospital Insurance Scheme
+                                </p>
+                                <p className="text-xs text-amber-700 mb-3">
+                                  This patient needs to be enrolled first with biometric registration.
+                                </p>
+                                <button
+                                  onClick={() => navigate(`/patients/hospital-scheme-enroll?mrn=${selectedPatient?.mrn}`)}
+                                  className="btn-sm bg-amber-600 hover:bg-amber-700 text-white w-full"
+                                >
+                                  Enroll Patient Now →
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {paymentType === 'membership' && (
+                          <div className="space-y-2">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Membership Card Number</label>
+                              <input
+                                type="text"
+                                value={membership.cardNumber}
+                                onChange={(e) => setMembership({ ...membership, cardNumber: e.target.value })}
+                                className="input text-sm py-1.5"
+                                placeholder="Scan or enter card #"
+                              />
+                            </div>
+                            {membership.cardNumber && (
+                              <div className="p-2 bg-purple-50 rounded text-sm">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-gray-600">Prepaid Balance:</span>
+                                  <span className="font-bold text-purple-700">UGX {membership.balance.toLocaleString()}</span>
+                                </div>
+                                {membership.balance < CONSULTATION_FEE && (
+                                  <p className="text-xs text-red-500 mt-1">
+                                    ⚠️ Insufficient balance. Top-up required.
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {paymentType === 'staff' && (
+                          <div className="space-y-3 p-3 bg-orange-50 rounded-lg">
+                            <div className="flex items-center gap-2 text-orange-700">
+                              <UserCheck className="w-4 h-4" />
+                              <span className="text-sm font-medium">Staff Benefit</span>
+                            </div>
+
+                            {staffCoverage?.coverage && (
+                              <div className="text-xs space-y-1 p-2 bg-white rounded">
+                                <div className="flex justify-between">
+                                  <span className="text-gray-600">Plan:</span>
+                                  <span className="font-medium">{staffCoverage.coverage.planType || 'Standard'}</span>
+                                </div>
+                                {staffCoverage.coverage.coverageLimit && (
+                                  <>
+                                    <div className="flex justify-between">
+                                      <span className="text-gray-600">Limit:</span>
+                                      <span className="font-medium">UGX {staffCoverage.coverage.coverageLimit.toLocaleString()}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span className="text-gray-600">Remaining:</span>
+                                      <span className={`font-medium ${(staffCoverage.coverage.remainingAmount || 0) < CONSULTATION_FEE ? 'text-red-600' : 'text-green-600'}`}>
+                                        UGX {(staffCoverage.coverage.remainingAmount || 0).toLocaleString()}
+                                      </span>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            )}
+
+                            {biometricVerified ? (
+                              <div className="flex items-center gap-2 p-2 bg-green-100 rounded-lg text-green-700">
+                                <CheckCircle className="w-5 h-5" />
+                                <span className="text-sm font-medium">Identity Verified</span>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={handleStartBiometricVerification}
+                                disabled={checkingCoverage || !selectedPatient?.userId}
+                                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50"
+                              >
+                                {checkingCoverage ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <Fingerprint className="w-4 h-4" />
+                                )}
+                                Verify Staff Identity
+                              </button>
+                            )}
+
+                            {!selectedPatient?.userId && (
+                              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                                <p className="text-xs text-amber-800 font-medium mb-2">
+                                  ⚠️ Staff member not registered for insurance
+                                </p>
+                                <p className="text-xs text-amber-700 mb-3">
+                                  This staff member needs biometric registration. Contact HR Department.
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {paymentType === 'cash' && (
+                          <div className="space-y-3">
+                            <div className="space-y-1">
+                              <label className="text-xs text-gray-600 font-medium">Consultation Fee (UGX)</label>
+                              <input
+                                type="number"
+                                min={0}
+                                step={500}
+                                value={consultationFeeInput !== '' ? consultationFeeInput : (feePreview?.fee ?? defaultConsultationFee ?? '')}
+                                onChange={(e) => setConsultationFeeInput(e.target.value)}
+                                placeholder={feePreview?.fee != null ? String(feePreview.fee) : (defaultConsultationFee != null ? String(defaultConsultationFee) : 'Configure default in Settings')}
+                                className="input text-sm"
+                              />
+                              {feePreview && (() => {
+                                const docName =
+                                  availableDoctors.find((d) => d.id === selectedDoctor)?.name ||
+                                  'Selected doctor';
+                                const empMap: Record<string, string> = {
+                                  permanent: 'Permanent staff',
+                                  visiting: 'Visiting consultant',
+                                  locum: 'Locum',
+                                  contract: 'Contract',
+                                };
+                                let basis = '';
+                                switch (feePreview.feeMode) {
+                                  case 'flat':
+                                    basis = `${docName}'s flat rate`;
+                                    break;
+                                  case 'percent_of_specialty':
+                                    basis = `${docName} — % of specialty rate`;
+                                    break;
+                                  case 'split':
+                                    basis = `${docName} — revenue share`;
+                                    break;
+                                  default:
+                                    basis = feePreview.isFollowUp
+                                      ? `${docName} — follow-up rate`
+                                      : `${docName}'s rate`;
+                                }
+                                const empLabel = feePreview.employmentType
+                                  ? empMap[feePreview.employmentType] || feePreview.employmentType
+                                  : null;
+                                return (
+                                  <p className="text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded px-2 py-1">
+                                    Resolved: <strong>{feePreview.fee.toLocaleString()} UGX</strong>
+                                    {' · '}{basis}
+                                    {feePreview.isFollowUp && feePreview.feeMode !== undefined && ' · follow-up'}
+                                    {empLabel && <span className="text-blue-600/70"> · {empLabel}</span>}
+                                  </p>
+                                );
+                              })()}
+                              {!feePreview && defaultConsultationFee == null && (
+                                <p className="text-xs text-amber-600">
+                                  No default consultation fee configured. Set service <code>OPD-CONSULT</code> in the Service Catalog
+                                  or system_setting <code>billing.consultationFee</code>.
+                                </p>
+                              )}
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="text-xs text-gray-600 font-medium">Payment Timing</label>
+                              <div className="grid grid-cols-2 gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setBillingMode('post_pay')}
+                                  className={`px-3 py-2 text-xs font-medium rounded-lg border ${
+                                    effectiveBillingMode === 'post_pay'
+                                      ? 'bg-blue-600 text-white border-blue-600'
+                                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                                  }`}
+                                >
+                                  Pay at Checkout
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setBillingMode('pre_pay')}
+                                  className={`px-3 py-2 text-xs font-medium rounded-lg border ${
+                                    effectiveBillingMode === 'pre_pay'
+                                      ? 'bg-blue-600 text-white border-blue-600'
+                                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                                  }`}
+                                >
+                                  Pay Now (Billing Counter)
+                                </button>
+                              </div>
+                              <p className="text-xs text-gray-500">
+                                {effectiveBillingMode === 'pre_pay'
+                                  ? 'Patient pays the consultation fee upfront before being seen by the doctor.'
+                                  : 'Patient is seen first; consultation, labs and pharmacy are settled in one bill at checkout.'}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Condition flags — always visible (safety) */}
+                  <div className="px-4 py-3 border-t border-surface-100">
+                    <div className="flex flex-wrap gap-1.5 items-center">
+                      <span className="text-xs text-surface-400 mr-1">Condition:</span>
+                      {CONDITION_OPTIONS.map((c) => {
+                        const active = conditionFlags.includes(c.flag);
+                        return (
+                          <button
+                            key={c.flag}
+                            onClick={() => setConditionFlags(active
+                              ? conditionFlags.filter(f => f !== c.flag)
+                              : [...conditionFlags, c.flag]
+                            )}
+                            className={cn(
+                              'flex items-center gap-1 px-2.5 py-1 rounded-full text-xs border transition-colors',
+                              active
+                                ? c.flag === 'emergency' || c.flag === 'appears_unwell'
+                                  ? 'bg-rose-100 border-rose-400 text-rose-700 font-medium'
+                                  : 'bg-amber-100 border-amber-400 text-amber-700 font-medium'
+                                : 'bg-white border-surface-200 text-surface-500 hover:border-surface-400',
+                            )}
+                          >
+                            {c.icon}{c.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {conditionFlags.length > 0 && (
+                      <p className="mt-2 text-xs text-amber-700 bg-amber-50 rounded px-2 py-1">
+                        Priority adjusted: {
+                          conditionFlags.includes('emergency') ? '🔴 Emergency' :
+                          conditionFlags.includes('appears_unwell') ? '🟠 Urgent' :
+                          conditionFlags.includes('elderly') ? '🟡 Elderly' :
+                          conditionFlags.includes('pregnant') ? '🟡 Pregnant' :
+                          conditionFlags.includes('child') ? '🟡 Pediatric' :
+                          conditionFlags.includes('disabled') ? '🟡 Priority' : ''
+                        }
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Error */}
+                  {error && (
+                    <div className="mx-4 mb-3 bg-rose-50 border border-rose-200 text-rose-700 px-3 py-2 rounded-xl text-sm">
+                      {error}
+                    </div>
+                  )}
+
+                  {/* The one action */}
+                  <div className="p-4 pt-2">
+                    <button
+                      onClick={handleIssueToken}
+                      disabled={issueTokenMutation.isPending || !chiefComplaint.trim()}
+                      className="btn-primary w-full py-4 text-base flex items-center justify-center gap-2 disabled:opacity-50"
+                      title="Enter to issue"
+                    >
+                      {issueTokenMutation.isPending ? (
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                      ) : (
+                        <>
+                          <Receipt className="w-5 h-5" />
+                          Issue Token — UGX {Number(CONSULTATION_FEE || 0).toLocaleString()}
+                          <kbd className="hidden sm:inline ml-2 px-1.5 py-0.5 text-[10px] font-mono bg-white/20 border border-white/30 rounded">↵</kbd>
+                        </>
+                      )}
+                    </button>
+                    {!chiefComplaint.trim() && (
+                      <p className="text-xs text-surface-400 text-center mt-2">Pick a complaint chip above to enable</p>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
-      </div>
-      
+      )}
+
+      {/* Quick registration modal */}
+      {showQuickRegModal && (
+        <QuickRegModal
+          isOpen={showQuickRegModal}
+          onClose={() => setShowQuickRegModal(false)}
+          onSuccess={(patient: any) => {
+            setShowQuickRegModal(false);
+            if (patient?.id) selectPatient(patient);
+          }}
+        />
+      )}
+
       {/* Fingerprint Scanner Modal */}
       {showFingerprintScanner && selectedPatient?.userId && (
         <FingerprintScanner
