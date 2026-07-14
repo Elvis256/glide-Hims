@@ -1,4 +1,4 @@
-import { useState, useCallback, createContext, useContext, useRef } from 'react';
+import { useState, useCallback, createContext, useContext, useRef, useEffect } from 'react';
 import { AlertTriangle, Loader2, X } from 'lucide-react';
 
 /* ------------------------------------------------------------------ */
@@ -27,6 +27,21 @@ const ConfirmContext = createContext<ConfirmContextValue>({
 
 export const useConfirm = () => useContext(ConfirmContext);
 
+/* ------------------------------------------------------------------ */
+/*  Hookless imperative bridge — usable from any function, no hook     */
+/*  rules. `if (await confirmDialog('Delete this?')) { ... }`          */
+/*  Falls back to the native dialog if the provider isn't mounted so   */
+/*  a confirmation can never silently auto-cancel.                     */
+/* ------------------------------------------------------------------ */
+let providerConfirm: ((opts: ConfirmOptions) => Promise<boolean>) | null = null;
+
+export function confirmDialog(opts: ConfirmOptions | string): Promise<boolean> {
+  const options: ConfirmOptions =
+    typeof opts === 'string' ? { title: 'Please confirm', message: opts } : opts;
+  if (providerConfirm) return providerConfirm(options);
+  return Promise.resolve(window.confirm(options.message));
+}
+
 export function ConfirmProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<ConfirmState | null>(null);
   const [busy, setBusy] = useState(false);
@@ -36,6 +51,14 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
       setState({ ...opts, resolve });
     });
   }, []);
+
+  // Register this provider as the imperative confirmDialog() backend
+  useEffect(() => {
+    providerConfirm = confirm;
+    return () => {
+      providerConfirm = null;
+    };
+  }, [confirm]);
 
   const handleConfirm = () => {
     state?.resolve(true);
