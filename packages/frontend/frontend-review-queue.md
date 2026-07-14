@@ -4,6 +4,17 @@ Mirror of the backend journey review (2026-07, 20 blocks, complete). This pass
 covers the FRONTEND: every page read line-by-line + live E2E probe per module.
 Work top-to-bottom; mark blocks ✅ with commit hashes as they complete.
 
+## Deliverable (per block): FUNCTIONAL MAP + fixes
+Write `docs/modules/<nn>-<module>.md` documenting, for every page/flow:
+- **Functions** — what the user can do (each capability, who's allowed)
+- **Processes** — the workflow behind it: state machines, statuses, numbering,
+  crons/events touched, integration points (billing, queue, GL, notifications)
+- **Inputs** — forms/fields (required vs optional), URL params, upstream data
+  it consumes (e.g. token → complaint → consultation), settings that alter it
+- **Outputs** — records created/updated (tables), documents + numbers issued,
+  printed artifacts, queue/status transitions, downstream effects
+This doubles as training/sales/deployment documentation.
+
 ## Method (per block)
 1. Inventory: routes + pages + components + services the module touches
    (`routes/*.tsx` → pages → services). Note dead routes / unreachable pages.
