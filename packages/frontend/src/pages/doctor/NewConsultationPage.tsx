@@ -420,6 +420,29 @@ export default function NewConsultationPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<QueueEntry | null>(null);
   const [activeTab, setActiveTab] = useState('complaint');
+
+  // ── Document mode: all sections render stacked; the SOAP bar is scroll-spy nav ──
+  const contentRef = useRef<HTMLDivElement>(null);
+  const spyLockRef = useRef(false);
+  const goToSection = (id: string) => {
+    setActiveTab(id);
+    spyLockRef.current = true;
+    document.getElementById(`consult-sec-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setTimeout(() => { spyLockRef.current = false; }, 700);
+  };
+  const handleContentScroll = () => {
+    if (spyLockRef.current) return;
+    const c = contentRef.current;
+    if (!c) return;
+    const ids = ['complaint', 'history', 'ros', 'exam', 'results', 'assessment', 'orders', 'prescriptions', 'plan'];
+    const cTop = c.getBoundingClientRect().top;
+    let current = ids[0];
+    for (const id of ids) {
+      const el = document.getElementById(`consult-sec-${id}`);
+      if (el && el.getBoundingClientRect().top - cTop <= 90) current = id;
+    }
+    if (current !== activeTab) setActiveTab(current);
+  };
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(false);
   const [showQuickActions, setShowQuickActions] = useState(true);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
@@ -2022,7 +2045,7 @@ export default function NewConsultationPage() {
       return;
     }
     // Switch to orders tab
-    setActiveTab('orders');
+    goToSection('orders');
   };
 
   const handleOrderImaging = () => {
@@ -2031,7 +2054,7 @@ export default function NewConsultationPage() {
       return;
     }
     // Switch to orders tab
-    setActiveTab('orders');
+    goToSection('orders');
   };
 
   const handlePrescribe = () => {
@@ -2040,7 +2063,7 @@ export default function NewConsultationPage() {
       return;
     }
     // Switch to prescriptions tab
-    setActiveTab('prescriptions');
+    goToSection('prescriptions');
   };
 
   const handleNavigateToFullPage = (page: 'lab' | 'radiology' | 'prescription' | 'icd') => {
@@ -2079,7 +2102,7 @@ export default function NewConsultationPage() {
 
   const handleAddToProblemList = () => {
     if (!encounterId) { toast.error('Please start consultation first'); return; }
-    setActiveTab('assessment');
+    goToSection('assessment');
   };
 
   const handleGenerateCertificate = () => {
@@ -2678,7 +2701,7 @@ export default function NewConsultationPage() {
                             return (
                               <button
                                 key={tab.id}
-                                onClick={() => setActiveTab(tab.id)}
+                                onClick={() => goToSection(tab.id)}
                                 className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                                   isActive
                                     ? 'border-brand-600 text-brand-600'
@@ -2703,10 +2726,10 @@ export default function NewConsultationPage() {
                 );
               })()}
 
-              {/* Tab Content */}
-              <div className="flex-1 overflow-y-auto">
+              {/* The note as one scrollable document — SOAP bar is the map */}
+              <div ref={contentRef} onScroll={handleContentScroll} className="flex-1 overflow-y-auto">
                 {/* Chief Complaint Tab */}
-                {activeTab === 'complaint' && (
+                <section id="consult-sec-complaint" className="scroll-mt-2 pb-8 mb-8 border-b border-surface-200/70 last:border-0 last:mb-0">
                   <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Chief Complaint *</label>
@@ -2741,10 +2764,10 @@ export default function NewConsultationPage() {
                       </div>
                     </div>
                   </div>
-                )}
+                </section>
 
                 {/* History Tab */}
-                {activeTab === 'history' && (
+                <section id="consult-sec-history" className="scroll-mt-2 pb-8 mb-8 border-b border-surface-200/70 last:border-0 last:mb-0">
                   <div className="space-y-4">
                     {/* History of Present Illness */}
                     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -2867,10 +2890,10 @@ export default function NewConsultationPage() {
                       </div>
                     </div>
                   </div>
-                )}
+                </section>
 
                 {/* Review of Systems Tab */}
-                {activeTab === 'ros' && (
+                <section id="consult-sec-ros" className="scroll-mt-2 pb-8 mb-8 border-b border-surface-200/70 last:border-0 last:mb-0">
                   <div className="bg-white rounded-xl border border-gray-200 p-4">
                     {/* ROS toolbar */}
                     <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-100">
@@ -2967,10 +2990,10 @@ export default function NewConsultationPage() {
                       ))}
                     </div>
                   </div>
-                )}
+                </section>
 
                 {/* Physical Exam Tab */}
-                {activeTab === 'exam' && (
+                <section id="consult-sec-exam" className="scroll-mt-2 pb-8 mb-8 border-b border-surface-200/70 last:border-0 last:mb-0">
                   <div className="bg-white rounded-xl border border-gray-200 p-4">
                     {/* Encounter Vitals - auto-pulled from current encounter */}
                     {encounterVitals && (
@@ -3209,10 +3232,10 @@ export default function NewConsultationPage() {
                       })}
                     </div>
                   </div>
-                )}
+                </section>
 
                 {/* Results Tab - Lab & Imaging Results */}
-                {activeTab === 'results' && (
+                <section id="consult-sec-results" className="scroll-mt-2 pb-8 mb-8 border-b border-surface-200/70 last:border-0 last:mb-0">
                   <div className="space-y-4">
                     {/* Lab Results Section */}
                     <div className="bg-white rounded-xl border border-gray-200 p-4">
@@ -3353,7 +3376,7 @@ export default function NewConsultationPage() {
                           <FlaskConical className="w-12 h-12 mx-auto mb-2 opacity-50" />
                           <p className="text-sm">No lab results available</p>
                           <button
-                            onClick={() => setActiveTab('plan')}
+                            onClick={() => goToSection('plan')}
                             className="mt-2 text-sm text-blue-600 hover:underline"
                           >
                             Order Lab Tests →
@@ -3375,7 +3398,7 @@ export default function NewConsultationPage() {
                         <ImageIcon className="w-12 h-12 mx-auto mb-2 opacity-50" />
                         <p className="text-sm">No imaging results available</p>
                         <button
-                          onClick={() => setActiveTab('plan')}
+                          onClick={() => goToSection('plan')}
                           className="mt-2 text-sm text-blue-600 hover:underline"
                         >
                           Order Imaging →
@@ -3390,17 +3413,17 @@ export default function NewConsultationPage() {
                         Review the results above and proceed to the Assessment tab to add your diagnosis.
                       </p>
                       <button
-                        onClick={() => setActiveTab('assessment')}
+                        onClick={() => goToSection('assessment')}
                         className="mt-3 px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700"
                       >
                         Proceed to Assessment →
                       </button>
                     </div>
                   </div>
-                )}
+                </section>
 
                 {/* Assessment Tab */}
-                {activeTab === 'assessment' && (
+                <section id="consult-sec-assessment" className="scroll-mt-2 pb-8 mb-8 border-b border-surface-200/70 last:border-0 last:mb-0">
                   <div className="space-y-4">
                     <div className="bg-white rounded-xl border border-gray-200 p-4">
                       <div className="flex items-center justify-between mb-3">
@@ -3425,7 +3448,6 @@ export default function NewConsultationPage() {
                               onChange={(e) => setIcdSearchQuery(e.target.value)}
                               placeholder="Search ICD-10/11 codes (WHO database)..."
                               className="w-full pl-9 pr-10 py-2 border border-gray-300 rounded-lg text-sm"
-                              autoFocus
                             />
                             {icdSearchLoading && (
                               <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 animate-spin text-blue-500" />
@@ -3499,10 +3521,10 @@ export default function NewConsultationPage() {
                       />
                     </div>
                   </div>
-                )}
+                </section>
 
                 {/* Orders Tab */}
-                {activeTab === 'orders' && (
+                <section id="consult-sec-orders" className="scroll-mt-2 pb-8 mb-8 border-b border-surface-200/70 last:border-0 last:mb-0">
                   <div className="space-y-4">
                     {/* Encounter Orders Summary */}
                     <div className="bg-white rounded-xl border border-gray-200 p-4">
@@ -3961,10 +3983,10 @@ export default function NewConsultationPage() {
                       </div>
                     </div>
                   </div>
-                )}
+                </section>
 
                 {/* Prescriptions Tab */}
-                {activeTab === 'prescriptions' && (
+                <section id="consult-sec-prescriptions" className="scroll-mt-2 pb-8 mb-8 border-b border-surface-200/70 last:border-0 last:mb-0">
                   <div className="space-y-4">
                     <div className="bg-white rounded-xl border border-gray-200 p-4">
                       <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
@@ -3983,7 +4005,6 @@ export default function NewConsultationPage() {
                             onChange={(e) => setRxSearchQuery(e.target.value)}
                             placeholder="Search medications by name, generic name, or code..."
                             className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg text-sm"
-                            autoFocus
                           />
                           {drugSearchLoading && (
                             <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 animate-spin text-green-500" />
@@ -4363,10 +4384,10 @@ export default function NewConsultationPage() {
                       )}
                     </div>
                   </div>
-                )}
+                </section>
 
                 {/* Plan Tab */}
-                {activeTab === 'plan' && (
+                <section id="consult-sec-plan" className="scroll-mt-2 pb-8 mb-8 border-b border-surface-200/70 last:border-0 last:mb-0">
                   <div className="space-y-4">
                     {/* Treatment Plan */}
                     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -4481,7 +4502,7 @@ export default function NewConsultationPage() {
                       </div>
                     </div>
                   </div>
-                )}
+                </section>
               </div>
             </>
           ) : (
