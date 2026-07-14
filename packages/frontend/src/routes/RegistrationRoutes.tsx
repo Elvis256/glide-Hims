@@ -31,9 +31,9 @@ const ViewAppointmentsPage = lazy(() => import('../pages/ViewAppointmentsPage'))
 const DoctorSchedulesPage = lazy(() => import('../pages/DoctorSchedulesPage'));
 const ManageAppointmentsPage = lazy(() => import('../pages/ManageAppointmentsPage'));
 const NewBillPage = lazy(() => import('../pages/NewBillPage'));
-const CollectPaymentPage = lazy(() => import('../pages/CollectPaymentPage'));
+// CollectPayment + PendingPayments consolidated into the POS-style CashierPage
+const CashierPage = lazy(() => import('../pages/CashierPage'));
 const PrintReceiptPage = lazy(() => import('../pages/PrintReceiptPage'));
-const PendingPaymentsPage = lazy(() => import('../pages/PendingPaymentsPage'));
 const RefundsPage = lazy(() => import('../pages/RefundsPage'));
 const VerifyCoveragePage = lazy(() => import('../pages/VerifyCoveragePage'));
 const PreAuthorizationPage = lazy(() => import('../pages/PreAuthorizationPage'));
@@ -68,9 +68,9 @@ export default function RegistrationRoutes() {
       <Route path="schedules/doctors" element={<ReceptionistRoute><DoctorSchedulesPage /></ReceptionistRoute>} />
       <Route path="appointments/manage" element={<ReceptionistRoute><ManageAppointmentsPage /></ReceptionistRoute>} />
       <Route path="billing/reception/new" element={<ModuleRoute module="billing"><CashierRoute><NewBillPage /></CashierRoute></ModuleRoute>} />
-      <Route path="billing/reception/payment" element={<ModuleRoute module="billing"><CashierRoute><CollectPaymentPage /></CashierRoute></ModuleRoute>} />
+      <Route path="billing/reception/payment" element={<ModuleRoute module="billing"><CashierRoute><CashierPage /></CashierRoute></ModuleRoute>} />
       <Route path="billing/reception/receipt" element={<ModuleRoute module="billing"><CashierRoute><PrintReceiptPage /></CashierRoute></ModuleRoute>} />
-      <Route path="billing/reception/pending" element={<ModuleRoute module="billing"><CashierRoute><PendingPaymentsPage /></CashierRoute></ModuleRoute>} />
+      <Route path="billing/reception/pending" element={<ModuleRoute module="billing"><CashierRoute><CashierPage /></CashierRoute></ModuleRoute>} />
       <Route path="billing/reception/refunds" element={<ModuleRoute module="billing"><CashierRoute><RefundsPage /></CashierRoute></ModuleRoute>} />
       <Route path="insurance/verify" element={<ModuleRoute module="billing"><ReceptionistRoute><VerifyCoveragePage /></ReceptionistRoute></ModuleRoute>} />
       <Route path="insurance/preauth" element={<ModuleRoute module="billing"><ReceptionistRoute><PreAuthorizationPage /></ReceptionistRoute></ModuleRoute>} />
