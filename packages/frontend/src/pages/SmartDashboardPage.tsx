@@ -37,19 +37,19 @@ export default function SmartDashboardPage() {
     return <Navigate to="/radiology/queue" replace />;
   }
 
-  // Receptionists should go to Patient Search
+  // Receptionists land on their counter: the POS-style OPD token page
   if (roles.includes('Receptionist') && !roles.includes('Super Admin') && !roles.includes('Administrator')) {
-    return <Navigate to="/patients/search" replace />;
+    return <Navigate to="/opd/token" replace />;
   }
 
-  // Cashiers should go to Billing
+  // Cashiers land on their counter: the POS-style payment worklist
   if (roles.includes('Cashier') && !roles.includes('Super Admin') && !roles.includes('Administrator')) {
-    return <Navigate to="/billing/invoices" replace />;
+    return <Navigate to="/cashier" replace />;
   }
 
-  // Nurses should go to Nursing dashboard
+  // Nurses land on the triage queue (queue → tap patient → vitals)
   if (roles.includes('Nurse') && !roles.includes('Super Admin') && !roles.includes('Administrator')) {
-    return <Navigate to="/nursing/vitals/new" replace />;
+    return <Navigate to="/nursing/triage" replace />;
   }
 
   // Store Keepers should go to Stores
