@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, Loader2, UserPlus } from 'lucide-react';
-import { patientsService } from '../../services/patients';
+import { patientsService } from '../services/patients';
 import { toast } from 'sonner';
 
 interface QuickRegModalProps {
