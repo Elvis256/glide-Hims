@@ -45,22 +45,33 @@ if (!passphrase) {
   console.error('PII_ENCRYPTION_KEY not set in .env — aborting.');
   process.exit(1);
 }
-const aesKey = scryptSync(passphrase, SCRYPT_SALT, 32);
+// Current key first, then retired keys (PII_ENCRYPTION_KEY_PREVIOUS, comma-separated)
+const previousPassphrases = (process.env.PII_ENCRYPTION_KEY_PREVIOUS || '')
+  .split(',').map((s) => s.trim()).filter(Boolean);
+const aesKeys = [passphrase, ...previousPassphrases].map((p) => scryptSync(p, SCRYPT_SALT, 32));
+const aesKey = aesKeys[0];
 const hashKey = scryptSync(process.env.PII_HASH_KEY || passphrase, HASH_SALT, 32);
+console.log(`Keys loaded: 1 current + ${previousPassphrases.length} previous`);
 
+/** Try every key. Returns { plain, keyIdx } or null when no key opens it. */
 function decryptOnce(value) {
-  if (!value || !value.startsWith(VERSION_PREFIX)) return value;
-  try {
-    const buf = Buffer.from(value.slice(VERSION_PREFIX.length), 'base64');
-    const iv = buf.subarray(0, 12);
-    const tag = buf.subarray(12, 28);
-    const ct = buf.subarray(28);
-    const decipher = createDecipheriv('aes-256-gcm', aesKey, iv);
-    decipher.setAuthTag(tag);
-    return Buffer.concat([decipher.update(ct), decipher.final()]).toString('utf8');
-  } catch {
-    return value; // decryption failed — caller detects "no progress"
+  const buf = Buffer.from(value.slice(VERSION_PREFIX.length), 'base64');
+  const iv = buf.subarray(0, 12);
+  const tag = buf.subarray(12, 28);
+  const ct = buf.subarray(28);
+  for (let i = 0; i < aesKeys.length; i++) {
+    try {
+      const decipher = createDecipheriv('aes-256-gcm', aesKeys[i], iv);
+      decipher.setAuthTag(tag);
+      return {
+        plain: Buffer.concat([decipher.update(ct), decipher.final()]).toString('utf8'),
+        keyIdx: i,
+      };
+    } catch {
+      // wrong key — try next
+    }
   }
+  return null;
 }
 
 function encryptOnce(plain) {
@@ -94,11 +105,13 @@ function hashPii(plain, kind) {
 function peel(value) {
   let v = value;
   let layers = 0;
+  let usedOldKey = false;
   for (let i = 0; i < 6; i++) {
-    if (!v.startsWith(VERSION_PREFIX)) return { plain: v, layers };
+    if (!v.startsWith(VERSION_PREFIX)) return { plain: v, layers, usedOldKey };
     const d = decryptOnce(v);
-    if (d === v) return { error: 'undecryptable', layers };
-    v = d;
+    if (d === null) return { error: 'undecryptable', layers };
+    if (d.keyIdx > 0) usedOldKey = true;
+    v = d.plain;
     layers++;
   }
   return { error: 'too-deep', layers };
@@ -152,12 +165,12 @@ async function main() {
         }
         continue;
       }
-      if (res.layers <= 1) {
+      if (res.layers <= 1 && !res.usedOldKey) {
         stats.healthy++;
         continue;
       }
       stats.fixed++;
-      console.log(`  FIX patients.${col} id=${row.id} layers=${res.layers}`);
+      console.log(`  FIX patients.${col} id=${row.id} layers=${res.layers}${res.usedOldKey ? ' (old key)' : ''}`);
       sets.push(`${col} = $${vals.length + 1}`);
       vals.push(encryptOnce(res.plain));
       sets.push(`${hashCol} = $${vals.length + 1}`);
@@ -181,12 +194,12 @@ async function main() {
       console.log(`  UNDECRYPTABLE biometric_data.template_data id=${row.id} (${res.error})`);
       continue;
     }
-    if (res.layers <= 1) {
+    if (res.layers <= 1 && !res.usedOldKey) {
       stats.healthy++;
       continue;
     }
     stats.fixed++;
-    console.log(`  FIX biometric_data.template_data id=${row.id} layers=${res.layers}`);
+    console.log(`  FIX biometric_data.template_data id=${row.id} layers=${res.layers}${res.usedOldKey ? ' (old key)' : ''}`);
     if (apply) {
       await client.query(`UPDATE biometric_data SET template_data = $1 WHERE id = $2`, [
         encryptOnce(res.plain),

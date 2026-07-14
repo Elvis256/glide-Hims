@@ -11,9 +11,21 @@
  *   keep equality lookups (e.g. "find patient by national ID / phone") working
  *   on encrypted columns by indexing the hash instead.
  *
- * Configure with two env vars:
- *   PII_ENCRYPTION_KEY  — passphrase, scrypt-derived to a 32-byte AES key
- *   PII_HASH_KEY        — passphrase for the HMAC blind index
+ * Configure with env vars:
+ *   PII_ENCRYPTION_KEY           — passphrase, scrypt-derived to a 32-byte AES key
+ *   PII_ENCRYPTION_KEY_PREVIOUS  — comma-separated retired passphrases. Decryption
+ *                                  tries the current key first, then each of these,
+ *                                  so rows written under an old key keep reading
+ *                                  while they are re-encrypted.
+ *   PII_HASH_KEY                 — passphrase for the HMAC blind index
+ *
+ * KEY ROTATION RUNBOOK (never delete a key before step 3!):
+ *   1. Move the old passphrase into PII_ENCRYPTION_KEY_PREVIOUS and set the new
+ *      one as PII_ENCRYPTION_KEY. Restart the backend — reads keep working via
+ *      fallback, new writes use the new key.
+ *   2. Run `node scripts/fix-double-encrypted-pii.js --apply` — it re-encrypts
+ *      every value that only decrypts with a previous key.
+ *   3. When the script reports 0 old-key values, remove PII_ENCRYPTION_KEY_PREVIOUS.
  *
  * If PII_ENCRYPTION_KEY is missing the helpers fall back to plaintext storage
  * (with a one-time warning) so dev/local databases keep working without setup.
@@ -25,13 +37,14 @@ const VERSION_PREFIX = 'v1:';
 const SCRYPT_SALT = 'glide-hims-pii-v1';
 const HASH_SALT = 'glide-hims-pii-hash-v1';
 
-let aesKeyCache: Buffer | null | undefined; // undefined = not yet resolved
+let aesKeysCache: Buffer[] | null | undefined; // undefined = not yet resolved; [current, ...previous]
 let hashKeyCache: Buffer | null | undefined;
 let warnedMissingEnc = false;
 let warnedMissingHash = false;
 
-function getAesKey(): Buffer | null {
-  if (aesKeyCache !== undefined) return aesKeyCache;
+/** All decryption keys, current first, then retired keys (rotation fallback). */
+function getAesKeys(): Buffer[] | null {
+  if (aesKeysCache !== undefined) return aesKeysCache;
   const passphrase = process.env.PII_ENCRYPTION_KEY;
   if (!passphrase) {
     if (!warnedMissingEnc) {
@@ -40,11 +53,21 @@ function getAesKey(): Buffer | null {
       );
       warnedMissingEnc = true;
     }
-    aesKeyCache = null;
+    aesKeysCache = null;
     return null;
   }
-  aesKeyCache = scryptSync(passphrase, SCRYPT_SALT, 32);
-  return aesKeyCache;
+  const previous = (process.env.PII_ENCRYPTION_KEY_PREVIOUS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  aesKeysCache = [passphrase, ...previous].map((p) => scryptSync(p, SCRYPT_SALT, 32));
+  return aesKeysCache;
+}
+
+/** Current (write) key. */
+function getAesKey(): Buffer | null {
+  const keys = getAesKeys();
+  return keys ? keys[0] : null;
 }
 
 function getHashKey(): Buffer {
@@ -74,23 +97,45 @@ export function encryptPii(plain: string): string {
   return VERSION_PREFIX + Buffer.concat([iv, tag, ct]).toString('base64');
 }
 
-/** Decrypt a value. Returns the input as-is if it isn't a recognized ciphertext. */
+/**
+ * Decrypt a value, trying the current key first and then any retired keys
+ * from PII_ENCRYPTION_KEY_PREVIOUS (GCM's auth tag rejects wrong keys, so
+ * trying multiple keys is safe). Returns the input as-is if it isn't a
+ * recognized ciphertext or no key can open it.
+ */
 export function decryptPii(value: string): string {
-  if (value == null || value === '') return value;
-  if (!value.startsWith(VERSION_PREFIX)) return value; // legacy plaintext
-  const key = getAesKey();
-  if (!key) return value;
-  try {
-    const buf = Buffer.from(value.slice(VERSION_PREFIX.length), 'base64');
-    const iv = buf.subarray(0, 12);
-    const tag = buf.subarray(12, 28);
-    const ct = buf.subarray(28);
-    const decipher = createDecipheriv('aes-256-gcm', key, iv);
-    decipher.setAuthTag(tag);
-    return Buffer.concat([decipher.update(ct), decipher.final()]).toString('utf8');
-  } catch {
-    return value;
+  const res = decryptPiiDetailed(value);
+  return res ? res.plain : value;
+}
+
+/**
+ * Like decryptPii, but reports WHICH key opened the value (0 = current).
+ * `keyIndex > 0` means the row should be re-encrypted with the current key
+ * (see the rotation runbook above / scripts/fix-double-encrypted-pii.js).
+ * Returns null when the value is a v1 ciphertext no configured key can open.
+ */
+export function decryptPiiDetailed(value: string): { plain: string; keyIndex: number } | null {
+  if (value == null || value === '') return { plain: value, keyIndex: -1 };
+  if (!value.startsWith(VERSION_PREFIX)) return { plain: value, keyIndex: -1 }; // legacy plaintext
+  const keys = getAesKeys();
+  if (!keys) return { plain: value, keyIndex: -1 };
+  const buf = Buffer.from(value.slice(VERSION_PREFIX.length), 'base64');
+  const iv = buf.subarray(0, 12);
+  const tag = buf.subarray(12, 28);
+  const ct = buf.subarray(28);
+  for (let i = 0; i < keys.length; i++) {
+    try {
+      const decipher = createDecipheriv('aes-256-gcm', keys[i], iv);
+      decipher.setAuthTag(tag);
+      return {
+        plain: Buffer.concat([decipher.update(ct), decipher.final()]).toString('utf8'),
+        keyIndex: i,
+      };
+    } catch {
+      // wrong key — try the next one
+    }
   }
+  return null;
 }
 
 /**
