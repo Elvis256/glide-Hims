@@ -314,17 +314,42 @@ const templateContent: Record<string, Partial<ConsultationForm>> = {
   },
 };
 
-// Tabs for main content
-const mainTabs = [
-  { id: 'complaint', label: 'Chief Complaint', icon: FileText },
-  { id: 'history', label: 'History', icon: ClipboardList },
-  { id: 'ros', label: 'Review of Systems', icon: Activity },
-  { id: 'exam', label: 'Physical Exam', icon: Stethoscope },
-  { id: 'results', label: 'Results', icon: FlaskConical },
-  { id: 'assessment', label: 'Assessment', icon: FileCheck },
-  { id: 'orders', label: 'Orders', icon: TestTube },
-  { id: 'prescriptions', label: 'Rx', icon: Pill },
-  { id: 'plan', label: 'Plan', icon: Briefcase },
+// Tabs grouped by the clinical mental model doctors already carry: SOAP.
+// Nine flat tabs become four workflow stages — same sections, zero relearning.
+const TAB_GROUPS = [
+  {
+    key: 'S',
+    label: 'Subjective',
+    tabs: [
+      { id: 'complaint', label: 'Complaint', icon: FileText },
+      { id: 'history', label: 'History', icon: ClipboardList },
+      { id: 'ros', label: 'ROS', icon: Activity },
+    ],
+  },
+  {
+    key: 'O',
+    label: 'Objective',
+    tabs: [
+      { id: 'exam', label: 'Exam', icon: Stethoscope },
+      { id: 'results', label: 'Results', icon: FlaskConical },
+    ],
+  },
+  {
+    key: 'A',
+    label: 'Assessment',
+    tabs: [
+      { id: 'assessment', label: 'Diagnosis', icon: FileCheck },
+    ],
+  },
+  {
+    key: 'P',
+    label: 'Plan',
+    tabs: [
+      { id: 'orders', label: 'Orders', icon: TestTube },
+      { id: 'prescriptions', label: 'Rx', icon: Pill },
+      { id: 'plan', label: 'Plan & Follow-up', icon: Briefcase },
+    ],
+  },
 ];
 
 // Helper function to calculate age
@@ -2616,26 +2641,67 @@ export default function NewConsultationPage() {
                 </div>
               </div>
 
-              {/* Tabs */}
-              <div className="flex border-b border-gray-200 mb-4">
-                {mainTabs.map((tab) => {
-                  const Icon = tab.icon;
-                  return (
-                    <button
-                      key={tab.id}
-                      onClick={() => setActiveTab(tab.id)}
-                      className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-                        activeTab === tab.id
-                          ? 'border-blue-600 text-blue-600'
-                          : 'border-transparent text-gray-500 hover:text-gray-700'
-                      }`}
-                    >
-                      <Icon className="w-4 h-4" />
-                      {tab.label}
-                    </button>
-                  );
-                })}
-              </div>
+              {/* Tabs — SOAP-grouped with filled-section indicators */}
+              {(() => {
+                const filled: Record<string, boolean> = {
+                  complaint: !!form.chiefComplaint.trim(),
+                  history: !!(
+                    form.historyOfPresentIllness.trim() ||
+                    form.pastMedicalHistory.trim() ||
+                    form.pastSurgicalHistory.trim() ||
+                    form.familyHistory.trim()
+                  ),
+                  ros: form.reviewOfSystems.some(r => r.findings.length > 0 || r.notes.trim() !== ''),
+                  exam: form.physicalExam.some(s => s.findings.trim() !== '' || s.isNormal),
+                  results: false, // read-only reference tab
+                  assessment: form.diagnoses.length > 0 || !!form.clinicalImpression.trim(),
+                  orders: form.planItems.some(p => p.type === 'lab' || p.type === 'imaging'),
+                  prescriptions: form.planItems.some(p => p.type === 'prescription'),
+                  plan: !!form.followUpDate || !!form.followUpNotes.trim() ||
+                    form.planItems.some(p => p.type === 'referral' || p.type === 'followup' || p.type === 'education'),
+                };
+                return (
+                  <div className="flex items-end gap-1 border-b border-surface-200 mb-4 overflow-x-auto">
+                    {TAB_GROUPS.map((group, gi) => (
+                      <div key={group.key} className={`flex flex-col ${gi > 0 ? 'ml-3 pl-3 border-l border-surface-100' : ''}`}>
+                        <span
+                          className={`text-[10px] font-bold uppercase tracking-widest px-2 pb-0.5 ${
+                            group.tabs.some(t => t.id === activeTab) ? 'text-brand-600' : 'text-surface-400'
+                          }`}
+                        >
+                          {group.key} · {group.label}
+                        </span>
+                        <div className="flex">
+                          {group.tabs.map((tab) => {
+                            const Icon = tab.icon;
+                            const isActive = activeTab === tab.id;
+                            return (
+                              <button
+                                key={tab.id}
+                                onClick={() => setActiveTab(tab.id)}
+                                className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                                  isActive
+                                    ? 'border-brand-600 text-brand-600'
+                                    : 'border-transparent text-surface-500 hover:text-surface-800'
+                                }`}
+                              >
+                                <Icon className="w-4 h-4" />
+                                {tab.label}
+                                {filled[tab.id] && (
+                                  <span
+                                    className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-brand-500' : 'bg-emerald-500'}`}
+                                    title="Section has content"
+                                  />
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
 
               {/* Tab Content */}
               <div className="flex-1 overflow-y-auto">
