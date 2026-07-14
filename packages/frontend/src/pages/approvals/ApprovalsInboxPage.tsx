@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { api } from '../../services/api';
 import { approveStep, rejectStep } from '../../services/approvals';
+import { toast } from 'sonner';
 
 interface InboxRow {
   stepId: string;
@@ -50,7 +51,7 @@ export default function ApprovalsInboxPage() {
       await approveStep(row.stepId, comment);
       await load();
     } catch (e: any) {
-      alert(e?.response?.data?.message || e?.message || 'Approve failed');
+      toast.error(e?.response?.data?.message || e?.message || 'Approve failed');
     } finally {
       setBusy(null);
     }
@@ -64,7 +65,7 @@ export default function ApprovalsInboxPage() {
       await rejectStep(row.stepId, comment.trim());
       await load();
     } catch (e: any) {
-      alert(e?.response?.data?.message || e?.message || 'Reject failed');
+      toast.error(e?.response?.data?.message || e?.message || 'Reject failed');
     } finally {
       setBusy(null);
     }

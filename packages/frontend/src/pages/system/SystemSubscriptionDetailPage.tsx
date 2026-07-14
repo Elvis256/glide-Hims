@@ -42,7 +42,7 @@ export default function SystemSubscriptionDetailPage() {
     if (!id) return;
     setBusy(true);
     try { await api.post(`/saas-revenue/subscriptions/${id}/${path}`, body); await load(); }
-    catch (e: any) { alert(e?.response?.data?.message || 'Action failed'); }
+    catch (e: any) { toast.error(e?.response?.data?.message || 'Action failed'); }
     finally { setBusy(false); }
   };
 
@@ -85,7 +85,7 @@ export default function SystemSubscriptionDetailPage() {
               if (!confirm(`Sync this subscription's locked price from ${cur} to current plan price ${next}? Existing invoices are unaffected; future renewals will use the new price.`)) return;
               setBusy(true);
               try { await api.post(`/saas-revenue/subscriptions/${id}/sync-price`, {}); await load(); }
-              catch (e: any) { alert(e?.response?.data?.message || 'Sync failed'); }
+              catch (e: any) { toast.error(e?.response?.data?.message || 'Sync failed'); }
               finally { setBusy(false); }
             }} className="px-3 py-2 text-sm border border-blue-300 text-blue-700 rounded hover:bg-blue-50 inline-flex items-center gap-1"><TrendingUp className="w-4 h-4" /> Sync price</button>
           )}
@@ -231,7 +231,7 @@ function RecordPaymentModal({ invoice, onClose, onSaved }: { invoice: SaasInvoic
     try {
       await api.post(`/saas-revenue/invoices/${invoice.id}/payments`, { amountMinor, gateway, method, gatewayRef: gatewayRef || undefined, notes: notes || undefined });
       onSaved();
-    } catch (e: any) { alert(e?.response?.data?.message || 'Failed'); }
+    } catch (e: any) { toast.error(e?.response?.data?.message || 'Failed'); }
     finally { setSaving(false); }
   };
   return (
@@ -275,7 +275,7 @@ function ChangePlanModal({ sub, plans, onClose, onSaved }: { sub: Subscription; 
   const save = async () => {
     setSaving(true);
     try { await api.post(`/saas-revenue/subscriptions/${sub.id}/change-plan`, { planId, billingInterval }); onSaved(); }
-    catch (e: any) { alert(e?.response?.data?.message || 'Failed'); }
+    catch (e: any) { toast.error(e?.response?.data?.message || 'Failed'); }
     finally { setSaving(false); }
   };
   return (

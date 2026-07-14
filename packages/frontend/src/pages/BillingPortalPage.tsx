@@ -4,6 +4,7 @@ import { Loader2, RefreshCw, AlertTriangle, CheckCircle, CreditCard, Printer, Do
 import api from '../services/api';
 import { safeRedirect } from '../lib/safeRedirect';
 import { fmtMoney, fmtDate, INVOICE_STATUS_STYLES, SUB_STATUS_STYLES, unwrap, SaasInvoice, Subscription, SaasPayment } from './system/saas/_shared';
+import { toast } from 'sonner';
 
 interface PaymentMethod {
   id: string;
@@ -53,10 +54,10 @@ export default function BillingPortalPage() {
       const res = await api.post('/saas-revenue/portal/checkout', { invoiceId: inv.id, redirectUrl, gateway, enableRecurring: opts?.enableRecurring });
       const link = unwrap<any>(res)?.link;
       if (link) {
-        if (!safeRedirect(link)) alert('Refusing to redirect to an unrecognised payment gateway.');
+        if (!safeRedirect(link)) toast.error('Refusing to redirect to an unrecognised payment gateway.');
       }
-      else alert('Could not create checkout link');
-    } catch (e: any) { alert(e?.response?.data?.message || 'Failed'); }
+      else toast.error('Could not create checkout link');
+    } catch (e: any) { toast.error(e?.response?.data?.message || 'Failed'); }
     finally { setPaying(null); }
   };
 
@@ -67,10 +68,10 @@ export default function BillingPortalPage() {
       const res = await api.post('/saas-revenue/portal/charge-saved', { invoiceId: inv.id, paymentMethodId, redirectUrl });
       const link = unwrap<any>(res)?.link;
       if (link) {
-        if (!safeRedirect(link)) alert('Refusing to redirect to an unrecognised payment gateway.');
+        if (!safeRedirect(link)) toast.error('Refusing to redirect to an unrecognised payment gateway.');
       }
-      else alert('Charge submitted — awaiting confirmation');
-    } catch (e: any) { alert(e?.response?.data?.message || 'Failed'); }
+      else toast.error('Charge submitted — awaiting confirmation');
+    } catch (e: any) { toast.error(e?.response?.data?.message || 'Failed'); }
     finally { setPaying(null); }
   };
 
@@ -85,10 +86,10 @@ export default function BillingPortalPage() {
         const blob = new Blob([html], { type: 'text/html' });
         const url = URL.createObjectURL(blob);
         const w = window.open(url, '_blank', 'noopener,noreferrer');
-        if (!w) { URL.revokeObjectURL(url); alert('Pop-up blocked. Allow pop-ups to view invoices.'); return; }
+        if (!w) { URL.revokeObjectURL(url); toast.error('Pop-up blocked. Allow pop-ups to view invoices.'); return; }
         setTimeout(() => URL.revokeObjectURL(url), 60_000);
       })
-      .catch((e) => alert(`Could not open invoice: ${e.message}`));
+      .catch((e) => toast.error(`Could not open invoice: ${e.message}`));
   };
 
   const downloadPdf = async (inv: SaasInvoice) => {
@@ -100,7 +101,7 @@ export default function BillingPortalPage() {
       a.href = url; a.download = `${inv.invoiceNumber}.pdf`;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (e: any) { alert(`Could not download PDF: ${e?.response?.data?.message || e.message}`); }
+    } catch (e: any) { toast.error(`Could not download PDF: ${e?.response?.data?.message || e.message}`); }
   };
 
   const [showAddPm, setShowAddPm] = useState(false);
@@ -125,19 +126,19 @@ export default function BillingPortalPage() {
       setShowAddPm(false);
       setNewPm({ kind: 'card', label: '', brand: '', last4: '', expMonth: '', expYear: '', holderName: '', isDefault: false });
       await load();
-    } catch (e: any) { alert(e?.response?.data?.message || 'Failed to add payment method'); }
+    } catch (e: any) { toast.error(e?.response?.data?.message || 'Failed to add payment method'); }
     finally { setPmBusy(false); }
   };
 
   const setDefaultPm = async (id: string) => {
     try { await api.put(`/saas-revenue/portal/payment-methods/${id}/default`); await load(); }
-    catch (e: any) { alert(e?.response?.data?.message || 'Failed'); }
+    catch (e: any) { toast.error(e?.response?.data?.message || 'Failed'); }
   };
 
   const deletePm = async (id: string) => {
     if (!confirm('Remove this payment method?')) return;
     try { await api.delete(`/saas-revenue/portal/payment-methods/${id}`); await load(); }
-    catch (e: any) { alert(e?.response?.data?.message || 'Failed'); }
+    catch (e: any) { toast.error(e?.response?.data?.message || 'Failed'); }
   };
 
   if (loading || !data) return <div className="p-8 flex items-center gap-2 text-gray-500"><Loader2 className="w-5 h-5 animate-spin" /> Loading…</div>;
@@ -433,7 +434,7 @@ function WebhooksCard() {
   useEffect(() => { load(); }, []);
 
   const submit = async () => {
-    if (!form.url.trim()) { alert('URL is required'); return; }
+    if (!form.url.trim()) { toast.error('URL is required'); return; }
     setBusy(true);
     try {
       const r = await api.post('/saas-revenue/portal/webhooks', {
@@ -446,25 +447,25 @@ function WebhooksCard() {
       setForm({ url: '', events: ['*'], description: '' });
       if (created?.secretRevealed) setRevealedSecret({ id: created.id, secret: created.secret });
       await load();
-    } catch (e: any) { alert(e?.response?.data?.message || 'Failed to create endpoint'); }
+    } catch (e: any) { toast.error(e?.response?.data?.message || 'Failed to create endpoint'); }
     finally { setBusy(false); }
   };
 
   const toggle = async (ep: WebhookEndpoint) => {
     try { await api.put(`/saas-revenue/portal/webhooks/${ep.id}`, { enabled: !ep.enabled }); await load(); }
-    catch (e: any) { alert(e?.response?.data?.message || 'Failed'); }
+    catch (e: any) { toast.error(e?.response?.data?.message || 'Failed'); }
   };
   const remove = async (ep: WebhookEndpoint) => {
     if (!confirm(`Delete webhook ${ep.url}?`)) return;
     try { await api.delete(`/saas-revenue/portal/webhooks/${ep.id}`); await load(); }
-    catch (e: any) { alert(e?.response?.data?.message || 'Failed'); }
+    catch (e: any) { toast.error(e?.response?.data?.message || 'Failed'); }
   };
   const test = async (ep: WebhookEndpoint) => {
     try {
       const r = await api.post(`/saas-revenue/portal/webhooks/${ep.id}/test`);
       const d: any = unwrap<any>(r);
-      alert(`Test ping: ${d?.ok ? 'OK' : 'FAILED'}${d?.statusCode ? ` (HTTP ${d.statusCode})` : ''}${d?.error ? `\n${d.error}` : ''}`);
-    } catch (e: any) { alert(e?.response?.data?.message || 'Failed'); }
+      toast.error(`Test ping: ${d?.ok ? 'OK' : 'FAILED'}${d?.statusCode ? ` (HTTP ${d.statusCode})` : ''}${d?.error ? `\n${d.error}` : ''}`);
+    } catch (e: any) { toast.error(e?.response?.data?.message || 'Failed'); }
   };
   const rotate = async (ep: WebhookEndpoint) => {
     if (!confirm('Rotate signing secret? Existing receivers will need the new secret.')) return;
@@ -473,11 +474,11 @@ function WebhooksCard() {
       const d = unwrap<WebhookEndpoint & { secret: string }>(r);
       if (d) setRevealedSecret({ id: d.id, secret: d.secret });
       await load();
-    } catch (e: any) { alert(e?.response?.data?.message || 'Failed'); }
+    } catch (e: any) { toast.error(e?.response?.data?.message || 'Failed'); }
   };
   const retryDelivery = async (d: WebhookDelivery) => {
     try { await api.post(`/saas-revenue/portal/webhook-deliveries/${d.id}/retry`); setTimeout(load, 500); }
-    catch (e: any) { alert(e?.response?.data?.message || 'Failed'); }
+    catch (e: any) { toast.error(e?.response?.data?.message || 'Failed'); }
   };
 
   const toggleEvent = (ev: string) => {
@@ -625,7 +626,7 @@ function StatementCard() {
     try {
       const r = await api.get(`/saas-revenue/portal/statement?from=${from}&to=${to}`);
       setData(unwrap<StatementSummary>(r));
-    } catch (e: any) { alert(e?.response?.data?.message || 'Failed to load statement'); }
+    } catch (e: any) { toast.error(e?.response?.data?.message || 'Failed to load statement'); }
     finally { setLoading(false); }
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
@@ -639,7 +640,7 @@ function StatementCard() {
       a.href = url; a.download = `statement-${from}-to-${to}.${kind}`;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (e: any) { alert(`Could not download ${kind.toUpperCase()}: ${e?.response?.data?.message || e.message}`); }
+    } catch (e: any) { toast.error(`Could not download ${kind.toUpperCase()}: ${e?.response?.data?.message || e.message}`); }
   };
 
   const setPreset = (months: number) => {

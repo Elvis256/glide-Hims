@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { AlertTriangle, X, ShieldAlert, Pill } from 'lucide-react';
 import type { SafetyAlert } from '../services/prescriptions';
+import { toast } from 'sonner';
 
 interface Props {
   open: boolean;
@@ -158,7 +159,7 @@ export default function PrescriptionSafetyModal({
               className="mt-0.5"
             />
             <span>
-              I have reviewed the alert(s) above, judged the clinical benefit to outweigh the risk for this patient, and accept responsibility for prescribing.
+              I have reviewed the toast.error(s) above, judged the clinical benefit to outweigh the risk for this patient, and accept responsibility for prescribing.
             </span>
           </label>
 

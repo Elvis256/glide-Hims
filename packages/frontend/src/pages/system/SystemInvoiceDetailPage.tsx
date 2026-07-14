@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Loader2, Printer, Ban, ArrowLeft, ExternalLink, Plus, AlertTriangle, CheckCircle, Mail, Undo2, Upload, FileText, Image, Download, ShieldCheck, ShieldX } from 'lucide-react';
 import api from '../../services/api';
+import { toast } from 'sonner';
 import {
   SaasInvoice, SaasPayment, PaymentProof, INVOICE_STATUS_STYLES, VERIFICATION_STATUS_STYLES,
   VERIFICATION_STATUS_LABELS, fmtMoney, fmtDate, fmtDateTime, unwrap,
@@ -52,7 +53,7 @@ export default function SystemInvoiceDetailPage() {
     if (!confirm(`Void invoice ${inv.invoiceNumber}? This cannot be undone.`)) return;
     setVoiding(true);
     try { await api.post(`/saas-revenue/invoices/${inv.id}/void`, {}); await load(); }
-    catch (e: any) { alert(e?.response?.data?.message || 'Void failed'); }
+    catch (e: any) { toast.error(e?.response?.data?.message || 'Void failed'); }
     finally { setVoiding(false); }
   };
 
@@ -65,10 +66,10 @@ export default function SystemInvoiceDetailPage() {
         const blob = new Blob([html], { type: 'text/html' });
         const url = URL.createObjectURL(blob);
         const w = window.open(url, '_blank', 'noopener,noreferrer');
-        if (!w) { URL.revokeObjectURL(url); alert('Pop-up blocked. Allow pop-ups to print invoices.'); return; }
+        if (!w) { URL.revokeObjectURL(url); toast.error('Pop-up blocked. Allow pop-ups to print invoices.'); return; }
         setTimeout(() => URL.revokeObjectURL(url), 60_000);
       })
-      .catch((e) => alert(`Could not open invoice: ${e.message}`));
+      .catch((e) => toast.error(`Could not open invoice: ${e.message}`));
   };
 
   const onSend = async () => {
@@ -80,9 +81,9 @@ export default function SystemInvoiceDetailPage() {
     try {
       const res = await api.post(`/saas-revenue/invoices/${inv.id}/send-email`, to.trim() ? { to: to.trim() } : {});
       const data = unwrap<{ ok: boolean; to: string }>(res);
-      alert(`Sent to ${data?.to || to || '(default recipient)'}`);
+      toast.success(`Sent to ${data?.to || to || '(default recipient)'}`);
     } catch (e: any) {
-      alert(e?.response?.data?.message || 'Send failed');
+      toast.error(e?.response?.data?.message || 'Send failed');
     } finally { setSending(false); }
   };
 
@@ -203,13 +204,13 @@ export default function SystemInvoiceDetailPage() {
                             let amountMinor: number | undefined;
                             if (amtStr.trim()) {
                               const v = parseFloat(amtStr.trim());
-                              if (!isFinite(v) || v <= 0) { alert('Invalid amount'); return; }
+                              if (!isFinite(v) || v <= 0) { toast.error('Invalid amount'); return; }
                               amountMinor = Math.round(v * 100);
                             }
                             try {
                               await api.post(`/saas-revenue/payments/${p.id}/refund`, { amountMinor, reason });
                               await load();
-                            } catch (e: any) { alert(e?.response?.data?.message || 'Refund failed'); }
+                            } catch (e: any) { toast.error(e?.response?.data?.message || 'Refund failed'); }
                           }}
                           className="inline-flex items-center gap-1 px-2 py-1 border border-red-200 text-red-700 text-xs rounded hover:bg-red-50"
                         >
@@ -224,7 +225,7 @@ export default function SystemInvoiceDetailPage() {
                               try {
                                 await api.post(`/saas-revenue/payments/${p.id}/verify`, { status: 'verified', notes: notes || undefined });
                                 await load();
-                              } catch (e: any) { alert(e?.response?.data?.message || 'Verify failed'); }
+                              } catch (e: any) { toast.error(e?.response?.data?.message || 'Verify failed'); }
                             }}
                             className="inline-flex items-center gap-1 px-2 py-1 border border-emerald-200 text-emerald-700 text-xs rounded hover:bg-emerald-50"
                           >
@@ -237,7 +238,7 @@ export default function SystemInvoiceDetailPage() {
                               try {
                                 await api.post(`/saas-revenue/payments/${p.id}/verify`, { status: 'rejected', notes: notes || undefined });
                                 await load();
-                              } catch (e: any) { alert(e?.response?.data?.message || 'Reject failed'); }
+                              } catch (e: any) { toast.error(e?.response?.data?.message || 'Reject failed'); }
                             }}
                             className="inline-flex items-center gap-1 px-2 py-1 border border-red-200 text-red-700 text-xs rounded hover:bg-red-50"
                           >
@@ -286,7 +287,7 @@ function PaymentProofSection({ paymentId, proofs, onReload }: { paymentId: strin
       await api.post(`/saas-revenue/payments/${paymentId}/proofs`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       onReload();
     } catch (e: any) {
-      alert(e?.response?.data?.message || 'Upload failed');
+      toast.error(e?.response?.data?.message || 'Upload failed');
     } finally { setUploading(false); }
   };
 

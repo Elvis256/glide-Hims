@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { hrService } from '../../../services/hr';
 import { api } from '../../../services/api';
-import toast from 'react-hot-toast';
+import { toast } from 'sonner';
 import { Printer, LayoutGrid, GitBranch, Search, Users } from 'lucide-react';
 
 interface Employee {

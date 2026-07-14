@@ -5,6 +5,7 @@ import api from '../../services/api';
 import { exportToCsv } from '../../utils/csvExport';
 import { fmtMoney, fmtDate, unwrap } from './saas/_shared';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import { toast } from 'sonner';
 
 interface Dashboard {
   currency: string;
@@ -32,7 +33,7 @@ export default function SystemRevenuePage() {
   const openPlan = async (planId: string) => {
     setPlanDetail({ loading: true });
     try { const r = await api.get(`/saas-revenue/revenue/plans/${planId}`); setPlanDetail(unwrap<any>(r)); }
-    catch (e: any) { alert(e?.response?.data?.message || 'Failed'); setPlanDetail(null); }
+    catch (e: any) { toast.error(e?.response?.data?.message || 'Failed'); setPlanDetail(null); }
   };
 
   const load = async () => {
@@ -45,7 +46,7 @@ export default function SystemRevenuePage() {
   const executeRunCron = async () => {
     setRunning(true);
     try { await api.post('/saas-revenue/cron/run'); await load(); }
-    catch (e: any) { alert(e?.response?.data?.message || 'Failed'); }
+    catch (e: any) { toast.error(e?.response?.data?.message || 'Failed'); }
     finally { setRunning(false); }
   };
 
