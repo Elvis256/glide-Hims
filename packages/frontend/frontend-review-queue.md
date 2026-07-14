@@ -15,6 +15,18 @@ Write `docs/modules/<nn>-<module>.md` documenting, for every page/flow:
   printed artifacts, queue/status transitions, downstream effects
 This doubles as training/sales/deployment documentation.
 
+**Element-level coverage is mandatory.** For every VIEW (page, tab, modal,
+panel, drawer) the functional map includes a table of EVERY interactive
+element — button, link, icon-action, toggle, row-click, keyboard shortcut:
+
+| Element | Handler/target | Expected effect | Guard (perm/role) | Verified |
+|---|---|---|---|---|
+
+Verification states: ✅ works (E2E-probed) · 🔎 code-verified only · ❌ broken
+· 💀 dead (no-op onClick, unreachable route, always-disabled) · 🔒 unguarded
+(acts without required permission). Every ❌/💀/🔒 is a finding: fix P0s
+inline, log the rest. No view is done until its element table is complete.
+
 ## Method (per block)
 1. Inventory: routes + pages + components + services the module touches
    (`routes/*.tsx` → pages → services). Note dead routes / unreachable pages.
