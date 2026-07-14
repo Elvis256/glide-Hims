@@ -11,6 +11,7 @@ import api, { getApiErrorMessage } from '../services/api';
 import { formatQueueIssueError } from './opdTokenError';
 import FingerprintScanner from '../components/FingerprintScanner';
 import QuickRegModal from '../components/QuickRegModal';
+import { confirmDialog } from '../components/ConfirmDialog';
 import { useInstitutionInfo } from '../lib/useInstitutionInfo';
 import { printService } from '../lib/print';
 import { toast } from 'sonner';
@@ -513,10 +514,14 @@ export default function OPDTokenPage() {
     },
   });
 
-  const handleRemoveFromQueue = (id: string, patientName: string) => {
-    if (confirm(`Remove ${patientName} from queue?`)) {
-      cancelQueueMutation.mutate(id);
-    }
+  const handleRemoveFromQueue = async (id: string, patientName: string) => {
+    const ok = await confirmDialog({
+      title: 'Remove from queue',
+      message: `Remove ${patientName} from today's queue? Their token becomes invalid.`,
+      confirmLabel: 'Remove',
+      variant: 'warning',
+    });
+    if (ok) cancelQueueMutation.mutate(id);
   };
 
   const handleIssueToken = async () => {

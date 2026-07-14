@@ -26,6 +26,7 @@ import { printService } from '../lib/print';
 import { useInstitutionInfo } from '../lib/useInstitutionInfo';
 import { usePrintFormat } from '../lib/usePrintFormat';
 import PaymentMethodPicker from '../components/PaymentMethodPicker';
+import { confirmDialog } from '../components/ConfirmDialog';
 import type { PaymentMethod } from '../shared/payment-methods';
 import { Badge, EmptyState, Skeleton, cn, type BadgeTone } from '../components/ui';
 
@@ -864,10 +865,14 @@ export default function CashierPage() {
                                 </span>
                                 {isPayable && (
                                   <button
-                                    onClick={() => {
-                                      if (confirm(`Remove "${item.description}" from this invoice?`)) {
-                                        removeItemMutation.mutate({ invoiceId: selectedInvoice.id, itemId: item.id });
-                                      }
+                                    onClick={async () => {
+                                      const ok = await confirmDialog({
+                                        title: 'Remove invoice item',
+                                        message: `Remove "${item.description}" from this invoice? The amount due will be recalculated.`,
+                                        confirmLabel: 'Remove item',
+                                        variant: 'danger',
+                                      });
+                                      if (ok) removeItemMutation.mutate({ invoiceId: selectedInvoice.id, itemId: item.id });
                                     }}
                                     disabled={removeItemMutation.isPending}
                                     className="p-1 text-surface-300 hover:text-rose-600 hover:bg-rose-50 rounded"

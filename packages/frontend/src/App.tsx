@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import axios from 'axios';
 import { Toaster, toast } from 'sonner';
+import { ConfirmProvider } from './components/ConfirmDialog';
 import { useAuthStore } from './store/auth';
 import { useSessionTimeout } from './hooks/useSessionTimeout';
 import { api, getApiErrorMessage, SESSION_EXPIRED_EVENT } from './services/api';
@@ -496,12 +497,14 @@ function App() {
   return (
     <ErrorBoundary level="global">
       <QueryClientProvider client={queryClient}>
+        <ConfirmProvider>
         <Toaster position="top-right" richColors closeButton />
         <BrowserRouter>
           <SessionTimeoutWrapper>
             <AppRoutes />
           </SessionTimeoutWrapper>
         </BrowserRouter>
+        </ConfirmProvider>
       </QueryClientProvider>
     </ErrorBoundary>
   );
