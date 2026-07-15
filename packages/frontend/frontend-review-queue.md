@@ -43,8 +43,22 @@ inline, log the rest. No view is done until its element table is complete.
    - PII ciphertext display (displayable() guard pattern)
 3. E2E probe on tesy tenant (Dan login; playwright at /root/pro/node_modules/playwright; creds/method in memory). Exercise the module's main flow live.
 4. Fix P0s immediately in the block's commit; log P1s/features here.
-5. tsc gate: `npx tsc --noEmit --incremental false | grep <touched>`; build to /tmp
-   to verify, real build only when deploying (dist/ is production).
+5. tsc gate: **`npm run typecheck`** (= `tsc --noEmit -p tsconfig.app.json`), then
+   `| grep <touched>`; build to /tmp to verify, real build only when deploying
+   (dist/ is production).
+   ⚠️ NEVER use bare `npx tsc --noEmit` — the root tsconfig.json is `files: []`
+   + references, so it type-checks ZERO files and always exits clean. That
+   no-op was the "gate" for Blocks 1–3 and hid 493 real errors (incl. a dead
+   page and two latent white-screens in already-signed-off blocks).
+
+**Step 0 of every block: run `npm run typecheck` and triage the block's files
+FIRST, before the manual read.** tsc finds the campaign's own hunt-list classes
+for free and more reliably than reading:
+   - TS2339/TS2551 → fantasy field names (silently-undefined reads)
+   - TS2367 → enum-value drift ("vanishing worklist" filters that never match)
+   - TS2304/TS2552 → undefined identifier = runtime ReferenceError white-screen
+   - TS2353 → fantasy DTO fields (rejected by forbidNonWhitelisted)
+Baseline is 0 as of Block 3.5 — any new error is a regression, not noise.
 
 ## Blocks
 - [x] 1. Registration: PatientsPage, PatientDetail/Edit, QuickRegModal, PatientRegistrationPage*, OPDTokenPage*, appointments (View/Manage/Schedules), CallNextPatientPage* (*recently rebuilt — verify only) — ✅ e766979e 2026-07-14, functional map in docs/modules/01-registration.md; also covered PatientSearch/Documents/History (registration routes not owned by any later block)

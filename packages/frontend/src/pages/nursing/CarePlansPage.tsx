@@ -443,7 +443,7 @@ export default function CarePlansPage() {
       outcomeCriteria: bp.notes || '',
     }));
     return [...apiPlans, ...demoCarePlans.filter(p => p.patientId === selectedPatient?.id)];
-  }, [nursingNotes, selectedPatient, demoCarePlans]);
+  }, [backendCarePlans, selectedPatient, demoCarePlans]);
 
   const saving = createNoteMutation.isPending;
 

@@ -22,6 +22,7 @@ import {
   Heart,
   AlertCircle,
   Star,
+  Shield,
   Building2,
   Crown,
   UserX,
@@ -645,7 +646,7 @@ export default function WaitingPatientsPage() {
 
   // Transform queue entries
   const transformQueueEntry = (entry: QueueEntry & { 
-    patient?: { fullName: string; mrn: string; id: string; dateOfBirth?: string; gender?: string; paymentType?: string; allergies?: string[] }; 
+    patient?: { fullName: string; mrn: string; id: string; dateOfBirth?: string; gender?: string; metadata?: Record<string, any>; allergies?: string[] };
     encounter?: { chiefComplaint?: string; id: string; type?: string };
   }): WaitingPatient => {
     // Parse notes to extract meaningful info (filter out UUID-based preferred doctor notes)
@@ -679,7 +680,8 @@ export default function WaitingPatientsPage() {
       patientInfo: entry.patient ? {
         age: entry.patient.dateOfBirth ? calculateAge(entry.patient.dateOfBirth) : undefined,
         gender: entry.patient.gender as 'male' | 'female' | 'other',
-        paymentType: entry.patient.paymentType as 'cash' | 'insurance' | 'membership' | 'corporate',
+        // paymentType is not a column — it lives in patient.metadata (null = cash)
+        paymentType: (entry.patient.metadata?.paymentType ?? 'cash') as 'cash' | 'insurance' | 'membership' | 'corporate',
         allergies: entry.patient.allergies,
       } : undefined,
     };
@@ -702,7 +704,7 @@ export default function WaitingPatientsPage() {
     patientInfo: enc.patient ? {
       age: enc.patient.dateOfBirth ? calculateAge(enc.patient.dateOfBirth) : undefined,
       gender: enc.patient.gender,
-      paymentType: enc.patient.paymentType,
+      paymentType: enc.patient.metadata?.paymentType ?? 'cash',
       allergies: enc.patient.allergies,
     } : undefined,
   }));

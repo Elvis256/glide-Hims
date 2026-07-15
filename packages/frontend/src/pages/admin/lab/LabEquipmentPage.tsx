@@ -374,10 +374,11 @@ export default function LabEquipmentPage() {
   };
 
   const handleExportReport = () => {
+    // Each equipment record already nests its own calibrations/maintenances, so
+    // there is no separate top-level maintenance list to include.
     const report = {
       generatedAt: new Date().toISOString(),
       equipment,
-      maintenanceRecords,
       stats,
     };
     const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
