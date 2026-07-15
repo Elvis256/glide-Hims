@@ -293,11 +293,11 @@ function PatientPreviewModal({
                     Recent Vitals
                   </h4>
                   <div className="grid grid-cols-3 gap-2 text-sm">
-                    {preview.recentVitals.bloodPressureSystolic && (
+                    {preview.recentVitals.bpSystolic && (
                       <div className="bg-blue-50 rounded-lg p-2 text-center">
                         <p className="text-gray-500 text-xs">BP</p>
                         <p className="font-medium text-blue-700">
-                          {preview.recentVitals.bloodPressureSystolic}/{preview.recentVitals.bloodPressureDiastolic}
+                          {preview.recentVitals.bpSystolic}/{preview.recentVitals.bpDiastolic}
                         </p>
                       </div>
                     )}

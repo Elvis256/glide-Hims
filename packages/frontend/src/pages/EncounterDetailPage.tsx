@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../services/api';
 import type { Encounter, Vital, ClinicalNote, Prescription } from '../types';
@@ -273,6 +274,7 @@ function VitalsTab({ encounterId, vitals, onVitalsSaved }: VitalsTabProps) {
       onVitalsSaved();
       setShowForm(false);
     },
+    onError: () => toast.error('Failed to save vitals. Please try again.'),
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -489,6 +491,7 @@ function ConsultationTab({ encounterId, notes, onNotesSaved }: ConsultationTabPr
       onNotesSaved();
       setFormData({ subjective: '', objective: '', assessment: '', plan: '', followUpDate: '' });
     },
+    onError: () => toast.error('Failed to save clinical notes. Please try again.'),
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -678,6 +681,7 @@ function LabOrdersTab({ encounterId }: LabOrdersTabProps) {
       setClinicalNotes('');
       setPriority('routine');
     },
+    onError: () => toast.error('Failed to create lab order. Please try again.'),
   });
 
   const toggleTest = (test: LabTest) => {
@@ -906,6 +910,7 @@ function PrescriptionsTab({ encounterId, prescriptions, onPrescriptionSaved }: P
       setShowForm(false);
       setItems([]);
     },
+    onError: () => toast.error('Failed to save prescription. Please try again.'),
   });
 
   const createEmptyItem = (): PrescriptionItem => ({
@@ -1134,6 +1139,7 @@ function BillingTab({ encounterId, patientId }: BillingTabProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['invoices', encounterId] });
     },
+    onError: () => toast.error('Failed to create invoice. Please try again.'),
   });
 
   return (

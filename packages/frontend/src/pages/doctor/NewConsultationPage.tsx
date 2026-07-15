@@ -78,6 +78,8 @@ import AccessDenied from '../../components/AccessDenied';
 import PrescriptionSafetyModal from '../../components/PrescriptionSafetyModal';
 import { printService } from '../../lib/print';
 import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
+import api from '../../services/api';
+import { confirmDialog } from '../../components/ConfirmDialog';
 
 // Types
 interface Vitals {
@@ -2091,13 +2093,13 @@ export default function NewConsultationPage() {
   const handleRefer = () => {
     if (!selectedPatient) { toast.error('Please select a patient first'); return; }
     const params = `patientId=${selectedPatient.patientId}&encounterId=${encounterId}`;
-    navigate(`/referrals/new?${params}`);
+    navigate(`/doctor/referrals/new?${params}`);
   };
 
   const handleScheduleFollowUp = () => {
     if (!selectedPatient) { toast.error('Please select a patient first'); return; }
     const params = `patientId=${selectedPatient.patientId}&encounterId=${encounterId}`;
-    navigate(`/follow-ups/new?${params}`);
+    navigate(`/doctor/follow-ups/new?${params}`);
   };
 
   const handleAddToProblemList = () => {
@@ -2114,7 +2116,7 @@ export default function NewConsultationPage() {
   const handleSendToNextDept = () => {
     if (!selectedPatient) { toast.error('Please select a patient first'); return; }
     const params = `patientId=${selectedPatient.patientId}&encounterId=${encounterId}`;
-    navigate(`/referrals/new?${params}&internal=true`);
+    navigate(`/doctor/referrals/new?${params}&internal=true`);
   };
 
   const handlePrint = () => {
@@ -4284,8 +4286,8 @@ export default function NewConsultationPage() {
                                       </div>
                                       {!isDispensed && (
                                         <button
-                                          onClick={() => {
-                                            if (confirm(`Remove ${item.drugName} from prescription? Stock will be released.`)) {
+                                          onClick={async () => {
+                                            if (await confirmDialog({ title: 'Remove Item', message: `Remove ${item.drugName} from prescription? Stock will be released.`, variant: 'destructive' })) {
                                               removeRxItemMutation.mutate({ prescriptionId: rx.id, itemId: item.id });
                                             }
                                           }}

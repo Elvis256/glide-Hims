@@ -91,8 +91,9 @@ export default function OverdueFollowUpsPage() {
     try {
       if (!silent) setLoading(true);
       setError(null);
-      const data = await followUpsService.findAll({ status: 'missed' });
-      const transformed = data.map(transformFollowUp);
+      const raw = await followUpsService.findAll({ status: 'missed' });
+      const items = Array.isArray(raw) ? raw : (raw as any)?.data || [];
+      const transformed = items.map(transformFollowUp);
       setFollowUps(transformed);
     } catch (err) {
       setError('Failed to load overdue follow-ups');

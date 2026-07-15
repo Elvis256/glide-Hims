@@ -24,6 +24,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { referralsService, type Referral as ApiReferral, type ReferralStatus as ApiStatus, type ReferralPriority } from '../../../services/referrals';
+import { confirmDialog } from '../../../components/ConfirmDialog';
 
 type ReferralStatus = 'pending' | 'accepted' | 'declined' | 'completed';
 type UrgencyLevel = 'routine' | 'urgent' | 'emergency';
@@ -198,13 +199,29 @@ export default function SentReferralsPage() {
     );
   }, [referrals]);
 
-  const handleResend = (referral: Referral) => {
-    toast.success(`Referral for ${referral.patient.name} would be resent.`);
+  const handleResend = (_referral: Referral) => {
+    toast.info('Resend referrals not yet available');
   };
 
-  const handleCancel = (referral: Referral) => {
-    if (confirm(`Are you sure you want to cancel the referral for ${referral.patient.name}?`)) {
+  const cancelMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      referralsService.cancel(id, reason),
+    onSuccess: () => {
       toast.success('Referral cancelled.');
+      queryClient.invalidateQueries({ queryKey: ['referrals', 'outgoing'] });
+    },
+    onError: () => toast.error('Failed to cancel referral. Please try again.'),
+  });
+
+  const handleCancel = async (referral: Referral) => {
+    const confirmed = await confirmDialog({
+      title: 'Cancel Referral',
+      message: `Are you sure you want to cancel the referral for ${referral.patient.name}?`,
+      confirmLabel: 'Cancel Referral',
+      variant: 'danger',
+    });
+    if (confirmed) {
+      cancelMutation.mutate({ id: referral.id, reason: 'Cancelled by referring doctor' });
     }
   };
 
@@ -603,7 +620,7 @@ export default function SentReferralsPage() {
                 <button
                   onClick={() => {
                     navigate(
-                      `/doctor/appointments/new?patientId=${responseModal.patientId}&referralId=${responseModal.id}`,
+                      `/doctor/follow-ups/new?patientId=${responseModal.patientId}&referralId=${responseModal.id}`,
                     );
                     setResponseModal(null);
                   }}

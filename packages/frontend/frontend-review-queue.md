@@ -49,7 +49,7 @@ inline, log the rest. No view is done until its element table is complete.
 ## Blocks
 - [x] 1. Registration: PatientsPage, PatientDetail/Edit, QuickRegModal, PatientRegistrationPage*, OPDTokenPage*, appointments (View/Manage/Schedules), CallNextPatientPage* (*recently rebuilt — verify only) — ✅ e766979e 2026-07-14, functional map in docs/modules/01-registration.md; also covered PatientSearch/Documents/History (registration routes not owned by any later block)
 - [x] 2. Nursing: TriageQueuePage*, vitals pages, ward/nursing worklists (AdministerMeds, CarePlans, DressingLog, IVCannulation, Catheterization, FallRisk, IncidentReport, BloodSugar, DrugAllergies, AbnormalAlerts) — ✅ 7eab3742 2026-07-15, functional map in docs/modules/02-nursing.md; 34 pages reviewed, 21 permission gates added, 12 demo-mode fixes, VitalsPage field names fixed, MedSchedule crash fixed
-- [ ] 3. Doctors: NewConsultationPage* (document mode — deep verify), CallNextPage*, EncounterDetail, SOAPNotes, referrals (sent/received), diagnosis/ProblemList, follow-ups, certificates
+- [x] 3. Doctors: NewConsultationPage* (document mode — deep verify), CallNextPage*, EncounterDetail, SOAPNotes, referrals (sent/received), diagnosis/ProblemList, follow-ups, certificates — ✅ PENDING_HASH 2026-07-15, functional map in docs/modules/03-doctors.md; 44 pages reviewed, 17 P0 fixes (DDI import, 5 vital field renames, 4 envelope bugs, 3 broken nav routes, 4 honest stubs, 5 onError handlers), 3 confirm→confirmDialog
 - [ ] 4. Diagnostics: LabPage, lab queue/results/QC, sample mgmt, radiology queue/reporting, critical results pages
 - [ ] 5. Pharmacy: PharmacyQueuePage, DispenseMedication, sales, stock/batches, controlled register, templates
 - [ ] 6. Emergency: EmergencyPage, triage assessments, emergency cases
@@ -124,3 +124,39 @@ P1 deferred:
 
 Architectural finding:
 - **Nursing notes as universal backend**: every specialized page serializes structured data into a single text field on a nursing note. No queryable structure, no historical retrieval, dashboards compute from session-local state only. Backend has one endpoint (POST /ipd/nursing-notes) serving all use cases. Proper implementation needs dedicated entities for care plans, I/O, blood sugar, observations, wound management, incident reports.
+
+### Block 3 — Doctors (2026-07-15)
+P0s fixed inline (frontend built to /tmp, build verified):
+- NewConsultationPage: `api` not imported → DDI interaction check silently crashed (ReferenceError caught, safety check dead). Import added.
+- NewConsultationPage: 3 navigate paths to `/referrals/new` and `/follow-ups/new` were 404s → prefixed with `/doctor/`.
+- NewConsultationPage: `confirm()` → `confirmDialog` for Rx item removal.
+- SOAPNotesPage: `bloodPressureSystolic`/`bloodPressureDiastolic` (fantasy field names) → `bpSystolic`/`bpDiastolic`. BP was INVISIBLE on SOAP note page and abnormality alerts never fired.
+- WaitingPatientsPage: Same BP vital field name fix in patient preview modal.
+- ClinicalNotesPage: Envelope bug — `response.data` was `{message, data: ClinicalNote[]}` but code expected `ClinicalNote[]`. Notes never rendered. Fixed both queries + service methods.
+- EncountersPage: Patient search envelope bug — `response.data` was `{data, total}` not `Patient[]`. Search dropdown never showed results.
+- EncounterDetailPage: All 5 mutations (vitals, notes, prescriptions, lab orders, invoices) had NO `onError` handlers — failures were completely silent. Added toast.error to all.
+- NewReferralPage: `preferredDate` → `appointmentDate` (backend DTO field). User-entered preferred date was silently discarded on every referral.
+- SentReferralsPage: Cancel button showed fake success toast but never called API → wired to `referralsService.cancel()` with confirmDialog. Resend → honest stub. Follow-up route fixed.
+- ReferralsPage: "+ New Referral" button was dead (`setShowModal` with no modal) → navigates to `/doctor/referrals/new`. 3 `prompt()` calls → honest stubs. Silent `console.error` → toast.error.
+- FollowUpsPage: 3 envelope bugs on data/stats fetches; dead Schedule button → wired onClick; 4 silent error handlers → toast.error; `prompt()` → honest stub.
+- OverdueFollowUpsPage: `.map()` crash — `followUpsService.findAll()` returned envelope, not array.
+- PendingReviewsPage: Sign/Acknowledge/Accept buttons were entirely fake (client-side dismissedIds only, no API) → honest info stubs.
+- SickLeavePage: "Email" button showed fake `toast.success` → `toast.info('Email to employer not yet configured')`.
+- DeathCertificatePage: "Submit to Registry" showed fake success on legally significant action → honest stub.
+
+P1 deferred:
+- NewConsultationPage: patientSummary.activeProblems/currentMedications/alerts never populated from API; form not fully reset between patients (HPI/PMH carry over); imaging results section is a stub; hardcoded UGX; queue transfer on inline order creation is premature (pulls patient out mid-consult); voice dictation toggle is dead (no speech API wired).
+- SOAPNotesPage: saves structured SOAP as serialized text into encounter.notes (does NOT create ClinicalNote record); cosign_pending/addendum are fantasy workflows with no backend; patient allergies/medications from metadata are fantasy fields; auto-save failure is silent; copy-from-previous compares visitNumber vs UUID.
+- EncounterDetailPage: Generate Invoice dead (invoiceItems state never populated); status stepper missing 9 of 15 backend statuses; lab samples.list({}) fetches ALL samples (N+1); DrugAutocomplete only sets drugName, not drugCode; billing tab is display-only stub.
+- Referrals: NewReferralPage reason hardcoded to specialist_consultation; document attachments sidebar never sends selections in API call; incoming referrals vanish after acceptance (backend hardcodes status=PENDING in getIncomingReferrals query).
+- Diagnosis: hasPermission imported but unused on all 3 pages; DifferentialDx sends test names as code field; differential workup not persisted (lost on refresh); ProblemList uses confirm() (should be confirmDialog).
+- Follow-ups: ScheduleFollowUp currentEncounter.diagnosis always "Pending diagnosis" (fantasy); email reminder type is UI-only (backend has smsReminder boolean only); OverdueFollowUps Send Reminder triggers bulk send for ALL scheduled patients, not the clicked row; auto-reschedule to tomorrow without date picker.
+- Certificates: save errors silently swallowed (.catch(() => {})); patient selector loads flat 100-patient list (should search); no dedicated certificate entity — all stored as unstructured patient notes.
+- Reports: MedicalReportPage uses legacy bloodPressureSystolic as primary check; attendingProvider is fantasy field; N+1 query for lab/radiology results per sample; missing safeImageUrl() on logo img src.
+- Missing granular permission gates on many mutation buttons across the module (backend enforces via 403, but UI shows all buttons regardless of role).
+
+Architectural findings:
+- **SOAP notes not creating ClinicalNote records**: SOAPNotesPage serializes all structured SOAP data into a single text blob in `encounter.notes`. The backend has a proper `ClinicalNote` entity with structured fields (subjective, objective, assessment, plan) and `completeConsultation` endpoint, but neither is used. Clinical documentation is unqueryable.
+- **Envelope inconsistency**: Several pages use raw `api.get()` instead of typed service methods, encountering envelope bugs. The clinical-notes service had the same issue internally. Pattern: always check `Array.isArray(result) ? result : result?.data || []`.
+- **Fantasy vital field persistence**: `bloodPressureSystolic`/`bloodPressureDiastolic` was used across SOAPNotesPage, WaitingPatientsPage, and MedicalReportPage — the backend has used `bpSystolic`/`bpDiastolic` since the field name fix. This class of bug likely exists in other modules too.
+- **Certificate data loss**: All 4 certificate types are stored as unstructured text in patient notes. No versioning, no revocation, no certificate-specific queries possible.

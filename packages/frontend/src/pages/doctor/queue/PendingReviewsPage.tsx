@@ -215,18 +215,16 @@ export default function PendingReviewsPage() {
     }
   };
 
-  const handleSign = (review: PendingReview) => {
-    setDismissedIds(prev => new Set(prev).add(review.id));
-    toast.success(`Signed: ${review.type} for ${review.patientName}`);
+  const handleSign = (_review: PendingReview) => {
+    toast.info('Note signing will be available soon');
   };
 
   const handleDismiss = (review: PendingReview) => {
     setDismissedIds(prev => new Set(prev).add(review.id));
   };
 
-  const handleAcceptReferral = (review: PendingReview) => {
-    setDismissedIds(prev => new Set(prev).add(review.id));
-    toast.success(`Accepted referral for ${review.patientName}`);
+  const handleAcceptReferral = (_review: PendingReview) => {
+    toast.info('Accept referrals from the Received Referrals page');
   };
 
   const handleRejectReferral = (review: PendingReview) => {
