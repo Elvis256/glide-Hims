@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   ArrowLeft,
   ClipboardList,
@@ -34,6 +35,7 @@ import {
 import { patientsService } from '../../services/patients';
 import { ipdService, type CreateNursingNoteDto } from '../../services/ipd';
 import { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
 import { printService } from '../../lib/print';
 import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
 
@@ -396,6 +398,9 @@ export default function CarePlansPage() {
       setShowAddModal(false);
       setTimeout(() => setSaved(false), 2000);
     },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Failed to save care plan — please retry');
+    },
   });
 
   const filteredPatients = useMemo(() => {
@@ -691,25 +696,23 @@ export default function CarePlansPage() {
       createdBy: 'Current User',
     };
     
+    if (!admission?.id) {
+      toast.error('Patient must be admitted to record this data');
+      return;
+    }
+
     if (editingPlan) {
       setDemoCarePlans(prev => prev.map(p => p.id === editingPlan.id ? newPlan : p));
     } else {
       setDemoCarePlans(prev => [...prev, newPlan]);
     }
-    
-    // Also save to API if admission exists
-    if (admission?.id) {
-      const content = `Care Plan - ${formData.nursingDiagnosis}. Related to: ${formData.relatedTo}. Goals: ${formData.goals.map(g => g.description).join(', ')}. Interventions: ${formData.interventions.map(i => i.description).join(', ')}. Target: ${formData.targetDate}`;
-      createNoteMutation.mutate({
-        admissionId: admission.id,
-        type: 'assessment',
-        content,
-      });
-    } else {
-      setSaved(true);
-      setShowAddModal(false);
-      setTimeout(() => setSaved(false), 2000);
-    }
+
+    const content = `Care Plan - ${formData.nursingDiagnosis}. Related to: ${formData.relatedTo}. Goals: ${formData.goals.map(g => g.description).join(', ')}. Interventions: ${formData.interventions.map(i => i.description).join(', ')}. Target: ${formData.targetDate}`;
+    createNoteMutation.mutate({
+      admissionId: admission.id,
+      type: 'assessment',
+      content,
+    });
   }, [selectedPatient, formData, editingPlan, admission, createNoteMutation]);
 
   // Print care plan
@@ -730,6 +733,7 @@ export default function CarePlansPage() {
     }
   }, [selectedPlan]);
 
+  if (!canCreate) return <AccessDenied />;
 
   return (
     <div id="care-plans-content" className="h-[calc(100vh-120px)] flex flex-col">

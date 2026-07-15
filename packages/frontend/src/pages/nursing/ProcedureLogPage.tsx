@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import { patientsService, type Patient as ApiPatient } from '../../services/patients';
 import { ipdService, type CreateNursingNoteDto } from '../../services/ipd';
+import { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
 import { asList } from '../../utils/unwrapResponse';
 
 interface Patient {
@@ -88,6 +90,8 @@ const complications = [
 export default function ProcedureLogPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { hasPermission } = usePermissions();
+  const canAccess = hasPermission('nursing.read');
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
@@ -106,10 +110,10 @@ export default function ProcedureLogPage() {
   });
 
   // Debounce search
-  useState(() => {
+  useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(searchTerm), 300);
     return () => clearTimeout(timer);
-  });
+  }, [searchTerm]);
 
   // Search patients via API
   const { data: patientsData, isLoading: searchLoading } = useQuery({
@@ -180,6 +184,8 @@ export default function ProcedureLogPage() {
   }, [procedureList, categoryFilter]);
 
   const availableProcedures = formData.category ? procedureTypes[formData.category] || [] : [];
+
+  if (!canAccess) return <AccessDenied />;
 
   const handleSave = () => {
     if (!admissionData?.id) {

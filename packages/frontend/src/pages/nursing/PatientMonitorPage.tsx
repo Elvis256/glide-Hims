@@ -20,6 +20,8 @@ import {
 import { ipdService } from '../../services/ipd';
 import { vitalsService } from '../../services/vitals';
 import { asList } from '../../utils/unwrapResponse';
+import { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
 
 interface PatientVitals {
   id: string;
@@ -67,6 +69,8 @@ const generateAlerts = (vitals: { temperature?: number; pulse?: number; oxygenSa
 
 export default function PatientMonitorPage() {
   const navigate = useNavigate();
+  const { hasPermission } = usePermissions();
+  const canAccess = hasPermission('nursing.read');
   const [selectedWard, setSelectedWard] = useState('All Units');
   const [showCriticalOnly, setShowCriticalOnly] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
@@ -103,8 +107,8 @@ export default function PatientMonitorPage() {
       const v = {
         temperature: latest?.temperature,
         pulse: latest?.pulse,
-        bpSystolic: latest?.bloodPressureSystolic,
-        bpDiastolic: latest?.bloodPressureDiastolic,
+        bpSystolic: latest?.bpSystolic,
+        bpDiastolic: latest?.bpDiastolic,
         respiratoryRate: latest?.respiratoryRate,
         oxygenSaturation: latest?.oxygenSaturation,
       };
@@ -168,6 +172,8 @@ export default function PatientMonitorPage() {
       stable: all.filter((p) => p.status === 'stable').length,
     };
   }, [selectedWard]);
+
+  if (!canAccess) return <AccessDenied />;
 
   const handleRefresh = () => {
     setLastRefresh(new Date());

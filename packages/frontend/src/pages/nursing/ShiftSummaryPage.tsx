@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import { ipdService } from '../../services/ipd';
 import { asList } from '../../utils/unwrapResponse';
+import { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
 
 interface PatientMovement {
   id: string;
@@ -70,6 +72,8 @@ const movementTypeConfig = {
 
 export default function ShiftSummaryPage() {
   const navigate = useNavigate();
+  const { hasPermission } = usePermissions();
+  const canAccess = hasPermission('nursing.read');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedShift, setSelectedShift] = useState('morning');
 
@@ -124,6 +128,8 @@ export default function ShiftSummaryPage() {
   }), [ipdStats]);
 
   const isLoading = statsLoading || admissionsLoading;
+
+  if (!canAccess) return <AccessDenied />;
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">

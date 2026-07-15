@@ -39,6 +39,7 @@ import {
 import { patientsService } from '../../services/patients';
 import { ipdService, type CreateNursingNoteDto } from '../../services/ipd';
 import { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
 import { printService } from '../../lib/print';
 import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
 
@@ -366,6 +367,8 @@ export default function IncidentReportPage() {
     });
   }, [searchTerm, statusFilter, categoryFilter, severityFilter]);
 
+  if (!hasPermission('nursing.create')) return <AccessDenied />;
+
   // Staff member management
   const addStaffMember = () => {
     const newStaff: StaffMember = { id: Date.now().toString(), name: '', role: '', department: '' };
@@ -461,10 +464,8 @@ export default function IncidentReportPage() {
     setSubmittedRefNumber(refNumber);
     
     if (!admission?.id) {
-      // Demo mode - just show success
-      setSaved(true);
+      toast.error('Patient must be admitted to record this data');
       setShowConfirmDialog(false);
-      toast.success('Incident report submitted successfully. Supervisor notified.');
       return;
     }
 

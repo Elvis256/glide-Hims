@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -15,10 +15,10 @@ import {
   Droplets,
   Filter,
   Eye,
-  Loader2,
 } from 'lucide-react';
-import api from '../../services/api';
-import { asList } from '../../utils/unwrapResponse';
+import { toast } from 'sonner';
+import { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
 
 interface Alert {
   id: string;
@@ -39,8 +39,8 @@ interface Alert {
 const normalRanges = {
   temperature: { min: 36.1, max: 37.2, unit: '°C', criticalLow: 35, criticalHigh: 39 },
   pulse: { min: 60, max: 100, unit: 'bpm', criticalLow: 40, criticalHigh: 120 },
-  bloodPressureSystolic: { min: 90, max: 140, unit: 'mmHg', criticalLow: 70, criticalHigh: 180 },
-  bloodPressureDiastolic: { min: 60, max: 90, unit: 'mmHg', criticalLow: 40, criticalHigh: 110 },
+  bpSystolic: { min: 90, max: 140, unit: 'mmHg', criticalLow: 70, criticalHigh: 180 },
+  bpDiastolic: { min: 60, max: 90, unit: 'mmHg', criticalLow: 40, criticalHigh: 110 },
   respiratoryRate: { min: 12, max: 20, unit: '/min', criticalLow: 8, criticalHigh: 30 },
   oxygenSaturation: { min: 95, max: 100, unit: '%', criticalLow: 90, criticalHigh: 100 },
   bloodGlucose: { min: 70, max: 140, unit: 'mg/dL', criticalLow: 50, criticalHigh: 250 },
@@ -58,7 +58,7 @@ const vitalIcons: Record<string, React.ElementType> = {
 const vitalLabels: Record<string, string> = {
   temperature: 'Temperature',
   pulse: 'Pulse Rate',
-  bloodPressureSystolic: 'Blood Pressure',
+  bpSystolic: 'Blood Pressure',
   respiratoryRate: 'Respiratory Rate',
   oxygenSaturation: 'SpO2',
   bloodGlucose: 'Blood Glucose',
@@ -66,80 +66,15 @@ const vitalLabels: Record<string, string> = {
 
 export default function AbnormalAlertsPage() {
   const navigate = useNavigate();
+  const { hasPermission } = usePermissions();
+  const canAccess = hasPermission('vitals.read');
+
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'acknowledged' | 'resolved'>('all');
   const [severityFilter, setSeverityFilter] = useState<'all' | 'critical' | 'warning'>('all');
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
-  const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [alerts] = useState<Alert[]>([]);
 
-  // Fetch vitals and generate alerts from abnormal values
-  useEffect(() => {
-    const fetchVitals = async () => {
-      setLoading(true);
-      try {
-        // Get recent vitals from all patients
-        const response = await api.get('/vitals', { params: { limit: 100 } });
-        const vitals = asList(response.data);
-        
-        // Generate alerts from abnormal vitals
-        const generatedAlerts: Alert[] = [];
-        
-        for (const vital of vitals) {
-          const patient = vital.encounter?.patient;
-          if (!patient) continue;
-          
-          // Check each vital sign
-          const checkVital = (
-            type: keyof typeof normalRanges,
-            value: number | undefined | null,
-            formatValue?: (v: number) => string
-          ) => {
-            if (value == null) return;
-            const range = normalRanges[type];
-            const isAbnormal = value < range.min || value > range.max;
-            const isCritical = value < range.criticalLow || value > range.criticalHigh;
-            
-            if (isAbnormal) {
-              generatedAlerts.push({
-                id: `${vital.id}-${type}`,
-                patientId: patient.id,
-                patientName: patient.fullName || patient.full_name || 'Unknown',
-                patientMrn: patient.mrn,
-                vitalType: type,
-                value: formatValue ? formatValue(value) : `${value}${range.unit}`,
-                normalRange: `${range.min}-${range.max}${range.unit}`,
-                severity: isCritical ? 'critical' : 'warning',
-                status: 'active',
-                triggeredAt: vital.createdAt,
-              });
-            }
-          };
-          
-          checkVital('temperature', vital.temperature, (v) => `${v}°C`);
-          checkVital('pulse', vital.pulse, (v) => `${v} bpm`);
-          checkVital('bloodPressureSystolic', vital.bloodPressureSystolic, (v) => 
-            `${v}/${vital.bloodPressureDiastolic || 0} mmHg`
-          );
-          checkVital('respiratoryRate', vital.respiratoryRate, (v) => `${v}/min`);
-          checkVital('oxygenSaturation', vital.oxygenSaturation, (v) => `${v}%`);
-          checkVital('bloodGlucose', vital.bloodGlucose, (v) => `${v} mg/dL`);
-        }
-        
-        // Sort by date, most recent first
-        generatedAlerts.sort((a, b) => 
-          new Date(b.triggeredAt).getTime() - new Date(a.triggeredAt).getTime()
-        );
-        
-        setAlerts(generatedAlerts);
-      } catch (error) {
-        console.error('Failed to fetch vitals:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    fetchVitals();
-  }, []);
+  if (!canAccess) return <AccessDenied />;
 
   const filteredAlerts = alerts.filter((alert) => {
     if (statusFilter !== 'all' && alert.status !== statusFilter) return false;
@@ -161,12 +96,12 @@ export default function AbnormalAlertsPage() {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
-  const handleAcknowledge = (alertId: string) => {
-    console.log('Acknowledging alert:', alertId);
+  const handleAcknowledge = (_alertId: string) => {
+    toast.info('Acknowledge feature coming soon');
   };
 
-  const handleResolve = (alertId: string) => {
-    console.log('Resolving alert:', alertId);
+  const handleResolve = (_alertId: string) => {
+    toast.info('Resolve feature coming soon');
   };
 
   return (
@@ -295,15 +230,12 @@ export default function AbnormalAlertsPage() {
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 min-h-0">
         <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 flex flex-col min-h-0">
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            {loading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="w-8 h-8 animate-spin text-teal-600" />
-              </div>
-            ) : filteredAlerts.length === 0 ? (
+            {filteredAlerts.length === 0 ? (
               <div className="text-center py-12 text-gray-500">
                 <AlertTriangle className="w-12 h-12 mx-auto mb-2 text-gray-300" />
                 <p>No abnormal vitals detected</p>
-                <p className="text-sm">All patient vitals are within normal ranges</p>
+                <p className="text-sm">Alerts are generated from individual patient vital sign recordings.</p>
+                <p className="text-sm mt-1">Review patient vitals via the Vital Signs or Observation Chart pages.</p>
               </div>
             ) : (
               filteredAlerts.map((alert) => {

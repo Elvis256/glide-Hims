@@ -94,8 +94,8 @@ const hasAnyAbnormal = (vital: VitalRecord): boolean => {
   return (
     isAbnormal('temperature', vital.temperature) ||
     isAbnormal('pulse', vital.pulse) ||
-    isAbnormal('bpSystolic', vital.bloodPressureSystolic) ||
-    isAbnormal('bpDiastolic', vital.bloodPressureDiastolic) ||
+    isAbnormal('bpSystolic', vital.bpSystolic) ||
+    isAbnormal('bpDiastolic', vital.bpDiastolic) ||
     isAbnormal('respiratoryRate', vital.respiratoryRate) ||
     isAbnormal('oxygenSaturation', vital.oxygenSaturation) ||
     isAbnormal('painScale', vital.painScale)
@@ -210,8 +210,8 @@ export default function VitalsHistoryPage() {
           bVal = b.pulse || 0;
           break;
         case 'bp':
-          aVal = a.bloodPressureSystolic || 0;
-          bVal = b.bloodPressureSystolic || 0;
+          aVal = a.bpSystolic || 0;
+          bVal = b.bpSystolic || 0;
           break;
         case 'respiratoryRate':
           aVal = a.respiratoryRate || 0;
@@ -266,7 +266,7 @@ export default function VitalsHistoryPage() {
     return {
       temperature: last10.map(v => ({ value: v.temperature || 0 })),
       pulse: last10.map(v => ({ value: v.pulse || 0 })),
-      bp: last10.map(v => ({ value: v.bloodPressureSystolic || 0 })),
+      bp: last10.map(v => ({ value: v.bpSystolic || 0 })),
       respiratoryRate: last10.map(v => ({ value: v.respiratoryRate || 0 })),
       oxygenSaturation: last10.map(v => ({ value: v.oxygenSaturation || 0 })),
     };
@@ -764,11 +764,11 @@ export default function VitalsHistoryPage() {
                                     <Heart className="w-3 h-3 text-orange-500" /> BP
                                   </span>
                                   <span className={`font-medium ${
-                                    isAbnormal('bpSystolic', vital.bloodPressureSystolic) || isAbnormal('bpDiastolic', vital.bloodPressureDiastolic)
+                                    isAbnormal('bpSystolic', vital.bpSystolic) || isAbnormal('bpDiastolic', vital.bpDiastolic)
                                       ? 'text-red-600 bg-red-50 px-1 rounded' : 'text-gray-900'
                                   }`}>
-                                    {vital.bloodPressureSystolic && vital.bloodPressureDiastolic
-                                      ? `${vital.bloodPressureSystolic}/${vital.bloodPressureDiastolic}`
+                                    {vital.bpSystolic && vital.bpDiastolic
+                                      ? `${vital.bpSystolic}/${vital.bpDiastolic}`
                                       : '-'}
                                   </span>
                                 </div>
@@ -910,11 +910,11 @@ export default function VitalsHistoryPage() {
                                   {vital.temperature ? `${vital.temperature}°C` : '-'}
                                 </td>
                                 <td className={`text-center py-2 px-2 ${
-                                  isAbnormal('bpSystolic', vital.bloodPressureSystolic) || isAbnormal('bpDiastolic', vital.bloodPressureDiastolic)
+                                  isAbnormal('bpSystolic', vital.bpSystolic) || isAbnormal('bpDiastolic', vital.bpDiastolic)
                                     ? 'bg-red-100 text-red-700 font-medium' : ''
                                 }`}>
-                                  {vital.bloodPressureSystolic && vital.bloodPressureDiastolic
-                                    ? `${vital.bloodPressureSystolic}/${vital.bloodPressureDiastolic}`
+                                  {vital.bpSystolic && vital.bpDiastolic
+                                    ? `${vital.bpSystolic}/${vital.bpDiastolic}`
                                     : '-'}
                                 </td>
                                 <td className={`text-center py-2 px-2 ${
@@ -1028,9 +1028,9 @@ export default function VitalsHistoryPage() {
                                     let abnormal = false;
                                     
                                     if (row.key === 'bp') {
-                                      if (v.bloodPressureSystolic && v.bloodPressureDiastolic) {
-                                        value = `${v.bloodPressureSystolic}/${v.bloodPressureDiastolic}`;
-                                        abnormal = isAbnormal('bpSystolic', v.bloodPressureSystolic) || isAbnormal('bpDiastolic', v.bloodPressureDiastolic);
+                                      if (v.bpSystolic && v.bpDiastolic) {
+                                        value = `${v.bpSystolic}/${v.bpDiastolic}`;
+                                        abnormal = isAbnormal('bpSystolic', v.bpSystolic) || isAbnormal('bpDiastolic', v.bpDiastolic);
                                       }
                                     } else {
                                       const val = v[row.key as keyof VitalRecord] as number | undefined;
@@ -1043,10 +1043,10 @@ export default function VitalsHistoryPage() {
                                     let highlight = false;
                                     if (idx > 0 && comparisonVitals.length > 1) {
                                       const prevVal = row.key === 'bp'
-                                        ? comparisonVitals[idx - 1].bloodPressureSystolic
+                                        ? comparisonVitals[idx - 1].bpSystolic
                                         : comparisonVitals[idx - 1][row.key as keyof VitalRecord];
                                       const currVal = row.key === 'bp'
-                                        ? v.bloodPressureSystolic
+                                        ? v.bpSystolic
                                         : v[row.key as keyof VitalRecord];
                                       highlight = prevVal !== currVal;
                                     }

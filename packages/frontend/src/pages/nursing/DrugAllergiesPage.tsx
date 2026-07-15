@@ -28,6 +28,9 @@ import {
   type CreateAllergyDto,
 } from '../../services/allergies';
 import { asList } from '../../utils/unwrapResponse';
+import { confirmDialog } from '../../components/ConfirmDialog';
+import { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
 
 interface PatientLite {
   id: string;
@@ -93,6 +96,9 @@ const blankForm: NewAllergyForm = {
 };
 
 export default function DrugAllergiesPage() {
+  const { hasPermission } = usePermissions();
+  const canAccess = hasPermission('allergies.read');
+
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
@@ -201,6 +207,8 @@ export default function DrugAllergiesPage() {
     },
   });
 
+  if (!canAccess) return <AccessDenied />;
+
   const handleAddAllergy = () => {
     if (!newAllergy.allergen.trim()) {
       toast.error('Allergen is required');
@@ -209,13 +217,13 @@ export default function DrugAllergiesPage() {
     addAllergyMutation.mutate(newAllergy);
   };
 
-  const handleDelete = (a: PatientAllergy) => {
+  const handleDelete = async (a: PatientAllergy) => {
     if (a.status === 'active') {
-      if (confirm(`Mark "${a.allergen}" as inactive? (preferred over delete)`)) {
+      if (await confirmDialog({ title: 'Inactivate Allergy', message: `Mark "${a.allergen}" as inactive? (preferred over delete)`, confirmLabel: 'Inactivate', variant: 'warning' })) {
         inactivateMutation.mutate(a.id);
       }
     } else {
-      if (confirm(`Permanently delete "${a.allergen}"? This cannot be undone.`)) {
+      if (await confirmDialog({ title: 'Delete Allergy', message: `Permanently delete "${a.allergen}"? This cannot be undone.`, confirmLabel: 'Delete', variant: 'danger' })) {
         removeMutation.mutate(a.id);
       }
     }

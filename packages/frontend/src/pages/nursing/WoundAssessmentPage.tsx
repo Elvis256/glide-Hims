@@ -714,20 +714,19 @@ export default function WoundAssessmentPage() {
       assessment.notes && `Notes: ${assessment.notes}`,
     ].filter(Boolean).join('. ');
 
-    if (admission?.id) {
-      createNoteMutation.mutate({
-        admissionId: admission.id,
-        type: 'assessment',
-        content: `Wound Assessment: ${woundDetails}`,
-        vitals: {
-          painLevel: assessment.painLevel ? parseInt(assessment.painLevel) : undefined,
-        },
-      });
-    } else {
-      // Demo mode
-      toast.success('Wound assessment saved successfully');
-      setSaved(true);
+    if (!admission?.id) {
+      toast.error('Patient must be admitted to record this data');
+      return;
     }
+
+    createNoteMutation.mutate({
+      admissionId: admission.id,
+      type: 'assessment',
+      content: `Wound Assessment: ${woundDetails}`,
+      vitals: {
+        painLevel: assessment.painLevel ? parseInt(assessment.painLevel) : undefined,
+      },
+    });
   };
 
   const handleReset = () => {

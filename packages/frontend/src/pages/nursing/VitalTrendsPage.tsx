@@ -15,6 +15,8 @@ import {
 } from 'lucide-react';
 import { patientsService } from '../../services/patients';
 import { vitalsService, type VitalRecord } from '../../services/vitals';
+import { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
 
 interface TrendData {
   date: string;
@@ -44,6 +46,8 @@ const vitalConfig: Record<VitalType, { label: string; icon: React.ElementType; c
 
 export default function VitalTrendsPage() {
   const navigate = useNavigate();
+  const { hasPermission } = usePermissions();
+  const canAccess = hasPermission('vitals.read');
   const [searchTerm, setSearchTerm] = useState('');
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
@@ -114,8 +118,8 @@ export default function VitalTrendsPage() {
         date: new Date(v.createdAt).toISOString().split('T')[0],
         temperature: v.temperature || 0,
         pulse: v.pulse || 0,
-        bpSystolic: v.bloodPressureSystolic || 0,
-        bpDiastolic: v.bloodPressureDiastolic || 0,
+        bpSystolic: v.bpSystolic || 0,
+        bpDiastolic: v.bpDiastolic || 0,
         respiratoryRate: v.respiratoryRate || 0,
         oxygenSaturation: v.oxygenSaturation || 0,
       }))
@@ -171,6 +175,8 @@ export default function VitalTrendsPage() {
   };
 
   const stats = getLatestStats();
+
+  if (!canAccess) return <AccessDenied />;
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">

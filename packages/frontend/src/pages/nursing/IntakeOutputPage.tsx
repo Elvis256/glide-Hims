@@ -398,24 +398,24 @@ export default function IntakeOutputPage() {
         : undefined,
     };
     
-    setEntries((prev) => [...prev, entry].sort((a, b) => a.time.localeCompare(b.time)));
-    
-    // Save to backend if we have an admission
-    if (admission?.id) {
-      const ioData = addType === 'intake' 
-        ? { oralIntake: parseInt(newEntry.amount) }
-        : { urineOutput: parseInt(newEntry.amount) };
-      
-      createNoteMutation.mutate({
-        admissionId: admission.id,
-        type: 'observation',
-        content: `${addType === 'intake' ? 'Intake' : 'Output'}: ${newEntry.category}${newEntry.subCategory ? ` (${newEntry.subCategory})` : ''} - ${newEntry.amount}ml${newEntry.notes ? '. ' + newEntry.notes : ''}`,
-        intakeOutput: ioData,
-      });
-    } else {
-      toast.success('I/O entry added');
+    if (!admission?.id) {
+      toast.error('Patient must be admitted to record this data');
+      return;
     }
-    
+
+    setEntries((prev) => [...prev, entry].sort((a, b) => a.time.localeCompare(b.time)));
+
+    const ioData = addType === 'intake'
+      ? { oralIntake: parseInt(newEntry.amount) }
+      : { urineOutput: parseInt(newEntry.amount) };
+
+    createNoteMutation.mutate({
+      admissionId: admission.id,
+      type: 'observation',
+      content: `${addType === 'intake' ? 'Intake' : 'Output'}: ${newEntry.category}${newEntry.subCategory ? ` (${newEntry.subCategory})` : ''} - ${newEntry.amount}ml${newEntry.notes ? '. ' + newEntry.notes : ''}`,
+      intakeOutput: ioData,
+    });
+
     setNewEntry({
       time: new Date().toTimeString().slice(0, 5),
       category: '',
@@ -446,22 +446,23 @@ export default function IntakeOutputPage() {
       notes: `Quick action: ${action.label}`,
     };
     
-    setEntries((prev) => [...prev, entry].sort((a, b) => a.time.localeCompare(b.time)));
-    
-    if (admission?.id) {
-      const ioData = action.type === 'intake'
-        ? { oralIntake: action.amount }
-        : { urineOutput: action.amount };
-      
-      createNoteMutation.mutate({
-        admissionId: admission.id,
-        type: 'observation',
-        content: `${action.type === 'intake' ? 'Intake' : 'Output'}: ${action.label} - ${action.amount}ml`,
-        intakeOutput: ioData,
-      });
-    } else {
-      toast.success(`${action.label} recorded`);
+    if (!admission?.id) {
+      toast.error('Patient must be admitted to record this data');
+      return;
     }
+
+    setEntries((prev) => [...prev, entry].sort((a, b) => a.time.localeCompare(b.time)));
+
+    const ioData = action.type === 'intake'
+      ? { oralIntake: action.amount }
+      : { urineOutput: action.amount };
+
+    createNoteMutation.mutate({
+      admissionId: admission.id,
+      type: 'observation',
+      content: `${action.type === 'intake' ? 'Intake' : 'Output'}: ${action.label} - ${action.amount}ml`,
+      intakeOutput: ioData,
+    });
   }, [admission?.id, createNoteMutation]);
 
   const handleQuickActionWithAmount = useCallback(() => {
@@ -479,23 +480,24 @@ export default function IntakeOutputPage() {
       notes: `Quick action: ${selectedQuickAction.label}`,
     };
     
-    setEntries((prev) => [...prev, entry].sort((a, b) => a.time.localeCompare(b.time)));
-    
-    if (admission?.id) {
-      const ioData = selectedQuickAction.type === 'intake'
-        ? { oralIntake: quickActionAmount }
-        : { urineOutput: quickActionAmount };
-      
-      createNoteMutation.mutate({
-        admissionId: admission.id,
-        type: 'observation',
-        content: `${selectedQuickAction.type === 'intake' ? 'Intake' : 'Output'}: ${selectedQuickAction.label} - ${quickActionAmount}ml`,
-        intakeOutput: ioData,
-      });
-    } else {
-      toast.success(`${selectedQuickAction.label} recorded: ${quickActionAmount}ml`);
+    if (!admission?.id) {
+      toast.error('Patient must be admitted to record this data');
+      return;
     }
-    
+
+    setEntries((prev) => [...prev, entry].sort((a, b) => a.time.localeCompare(b.time)));
+
+    const ioData = selectedQuickAction.type === 'intake'
+      ? { oralIntake: quickActionAmount }
+      : { urineOutput: quickActionAmount };
+
+    createNoteMutation.mutate({
+      admissionId: admission.id,
+      type: 'observation',
+      content: `${selectedQuickAction.type === 'intake' ? 'Intake' : 'Output'}: ${selectedQuickAction.label} - ${quickActionAmount}ml`,
+      intakeOutput: ioData,
+    });
+
     setSelectedQuickAction(null);
     setQuickActionAmount(0);
   }, [selectedQuickAction, quickActionAmount, admission?.id, createNoteMutation]);

@@ -20,6 +20,8 @@ import {
 import { ipdService } from '../../services/ipd';
 import { printService } from '../../lib/print';
 import { asList } from '../../utils/unwrapResponse';
+import { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
 
 interface KeyEvent {
   id: string;
@@ -46,6 +48,8 @@ const eventTypeConfig = {
 
 export default function NursingDailyReportPage() {
   const navigate = useNavigate();
+  const { hasPermission } = usePermissions();
+  const canAccess = hasPermission('nursing.read');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedWard, setSelectedWard] = useState('all');
 
@@ -98,6 +102,8 @@ export default function NursingDailyReportPage() {
   }), [ipdStats]);
 
   const isLoading = statsLoading || admissionsLoading;
+
+  if (!canAccess) return <AccessDenied />;
 
   const handlePrint = () => {
     const el = document.getElementById('daily-report-content');
