@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { Loading } from '../../../components/Loading';
 import { hrService, type Employee, type CreateEmployeeDto } from '../../../services/hr';
+import { usersService, type EmployeeProfileDto } from '../../../services/users';
 import { toCsv, downloadBlob } from '../../reports/_reportUtils';
 import { facilitiesService, rolesService } from '../../../services';
 import { api } from '../../../services/api';
@@ -149,7 +150,6 @@ function StaffDirectoryPageContent() {
     retry: 1,
   });
   const defaultFacilityId = facilities?.[0]?.id;
-  console.log('[StaffDirectory] defaultFacilityId:', defaultFacilityId, 'facilitiesLoading:', facilitiesLoading);
 
   // Fetch departments
   const { data: departmentsList } = useQuery({
@@ -489,11 +489,6 @@ function StaffDirectoryPageContent() {
       'hire_date',
       'basic_salary',
       'national_id',
-      'address',
-      'emergency_contact_name',
-      'emergency_contact_phone',
-      'bank_name',
-      'bank_account_number',
     ];
     const example = [
       'John Doe',
@@ -504,28 +499,29 @@ function StaffDirectoryPageContent() {
       'IT',
       'Software Developer',
       'it_support',
-      'full_time',
+      'permanent',
       '1990-01-15',
       'male',
       '2024-01-01',
       '5000000',
       'CM12345678ABCD',
-      '123 Main Street, Kampala',
-      'Jane Doe',
-      '+256700000001',
-      'Stanbic Bank',
-      '9030012345678',
     ];
+    // Option lists MUST match database/entities/employee.entity.ts — that is the
+    // enum CreateEmployeeProfileDto validates against, and unknown values fail
+    // the row with a 400.
     const notes = [
       '# STAFF IMPORT TEMPLATE',
       '# Fields marked with * are required',
       '# ',
-      '# staff_category options: doctor, nurse, consultant, specialist, lab_technician, pharmacist, radiologist,',
-      '#   receptionist, cashier, administrator, hr_manager, store_keeper, accountant, it_support, other',
-      '# employment_type options: full_time, part_time, contract, temporary, intern',
+      '# staff_category options: doctor, nurse, consultant, lab_technician, pharmacist, radiologist,',
+      '#   receptionist, cashier, administrator, store_keeper, accountant, it_support, other',
+      '# employment_type options: permanent, contract, temporary, intern, consultant',
       '# gender options: male, female, other',
       '# date format: YYYY-MM-DD',
       '# department_code: Use department codes from the Departments page (e.g., IT, HR, OPD, LB)',
+      '# ',
+      '# Address, emergency contact and bank details are not accepted by the staff',
+      '# import API — add them per-employee from the HR module after importing.',
       '# ',
       '',
     ];
@@ -535,6 +531,10 @@ function StaffDirectoryPageContent() {
 
   const [showImportModal, setShowImportModal] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
+  // ALL parsed rows. Kept separate from importPreview, which is truncated to the
+  // first 5 for display — importing from the preview silently dropped every row
+  // after the 5th.
+  const [importRows, setImportRows] = useState<string[][]>([]);
   const [importPreview, setImportPreview] = useState<string[][]>([]);
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [importing, setImporting] = useState(false);
@@ -555,8 +555,10 @@ function StaffDirectoryPageContent() {
       if (lines.length < 2) {
         setImportErrors(['CSV must have headers and at least one data row']);
         setImportPreview([]);
+        setImportRows([]);
         return;
       }
+      setImportRows(lines);
       setImportPreview(lines.slice(0, 6)); // Show header + first 5 rows
     };
     reader.readAsText(file);
@@ -564,12 +566,16 @@ function StaffDirectoryPageContent() {
   };
 
   const handleImportSubmit = async () => {
-    if (!importFile || importPreview.length < 2) return;
+    if (!importFile || importRows.length < 2) return;
+    if (!defaultFacilityId) {
+      setImportErrors(['No facility available — cannot import staff.']);
+      return;
+    }
     setImporting(true);
     setImportErrors([]);
-    
-    const headers = importPreview[0].map(h => h.replace('*', '').trim());
-    const rows = importPreview.slice(1);
+
+    const headers = importRows[0].map(h => h.replace('*', '').trim());
+    const rows = importRows.slice(1);
     const errors: string[] = [];
     let successCount = 0;
     
@@ -590,27 +596,30 @@ function StaffDirectoryPageContent() {
       const dept = departments.find(d => d.code?.toLowerCase() === data.department_code?.toLowerCase());
       
       try {
-        await createEmployee.mutateAsync({
-          fullName: data.full_name,
-          email: data.email,
-          phoneNumber: data.phone_number || '',
+        // POST /users with employeeProfile — the successor to the deprecated
+        // POST /hr/staff. Only fields on CreateUserDto/CreateEmployeeProfileDto
+        // may be sent: the API runs forbidNonWhitelisted, so an unknown key
+        // fails the whole row with a 400.
+        await usersService.create({
           username: data.username || data.email.split('@')[0],
           password: data.password || 'TempPassword123!',
+          fullName: data.full_name,
+          email: data.email,
+          phone: data.phone_number || undefined,
+          facilityId: defaultFacilityId,
           departmentId: dept?.id,
-          jobTitle: data.job_title,
-          staffCategory: data.staff_category as any,
-          employmentType: data.employment_type as any,
-          dateOfBirth: data.date_of_birth ? new Date(data.date_of_birth) : undefined,
-          gender: data.gender,
-          hireDate: data.hire_date ? new Date(data.hire_date) : undefined,
-          basicSalary: data.basic_salary ? parseFloat(data.basic_salary) : undefined,
-          nationalId: data.national_id,
-          address: data.address,
-          emergencyContactName: data.emergency_contact_name,
-          emergencyContactPhone: data.emergency_contact_phone,
-          bankName: data.bank_name,
-          bankAccountNumber: data.bank_account_number,
-        } as any);
+          employeeProfile: {
+            facilityId: defaultFacilityId,
+            jobTitle: data.job_title || undefined,
+            staffCategory: data.staff_category || undefined,
+            employmentType: data.employment_type as EmployeeProfileDto['employmentType'],
+            dateOfBirth: data.date_of_birth || undefined,
+            gender: data.gender as EmployeeProfileDto['gender'],
+            hireDate: data.hire_date || undefined,
+            basicSalary: data.basic_salary ? parseFloat(data.basic_salary) : undefined,
+            nationalId: data.national_id || undefined,
+          },
+        });
         successCount++;
       } catch (err: any) {
         errors.push(`Row ${i + 2}: ${err.response?.data?.message || err.message || 'Failed to create'}`);
@@ -621,12 +630,16 @@ function StaffDirectoryPageContent() {
     setImportErrors(errors);
     
     if (successCount > 0) {
+      queryClient.invalidateQueries({ queryKey: ['staff'] });
       toast.success(`Successfully imported ${successCount} staff members.${errors.length ? ` ${errors.length} failed.` : ''}`);
       if (errors.length === 0) {
         setShowImportModal(false);
         setImportFile(null);
         setImportPreview([]);
+        setImportRows([]);
       }
+    } else if (errors.length > 0) {
+      toast.error(`Import failed — ${errors.length} row${errors.length > 1 ? 's' : ''} rejected.`);
     }
   };
 

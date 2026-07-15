@@ -15,7 +15,6 @@ import {
   ChevronDown,
   ChevronUp,
   X,
-  Download,
   Check,
   Loader2,
 } from 'lucide-react';
@@ -476,79 +475,6 @@ export default function FavoriteRxPage() {
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Import Common Modal */}
-      {showImportModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg w-full max-w-md m-4">
-            <div className="flex items-center justify-between p-4 border-b">
-              <h2 className="text-lg font-semibold">Import Common Prescriptions</h2>
-              <button onClick={() => setShowImportModal(false)} className="p-1 hover:bg-gray-100 rounded">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-4">
-              <p className="text-sm text-gray-600 mb-4">
-                Select from commonly used prescription templates to add to your favorites:
-              </p>
-              <div className="space-y-2">
-                {commonPrescriptions.map((rx, idx) => {
-                  const alreadyExists = templates.some(t => t.name === rx.name);
-                  return (
-                    <label 
-                      key={idx} 
-                      className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer ${
-                        alreadyExists ? 'bg-gray-100 opacity-60' : 'hover:bg-gray-50'
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        className="w-4 h-4 text-blue-600 rounded"
-                        disabled={alreadyExists}
-                        checked={selectedImports.has(idx)}
-                        onChange={(e) => {
-                          const newSet = new Set(selectedImports);
-                          if (e.target.checked) {
-                            newSet.add(idx);
-                          } else {
-                            newSet.delete(idx);
-                          }
-                          setSelectedImports(newSet);
-                        }}
-                      />
-                      <div className="flex-1">
-                        <div className="font-medium text-gray-900">{rx.name}</div>
-                        <div className="text-sm text-gray-500">{rx.category}</div>
-                      </div>
-                      {alreadyExists && (
-                        <span className="text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded">Already added</span>
-                      )}
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="flex justify-end gap-3 p-4 border-t">
-              <button
-                onClick={() => {
-                  setSelectedImports(new Set());
-                  setShowImportModal(false);
-                }}
-                className="px-4 py-2 border rounded-lg hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleImport}
-                disabled={selectedImports.size === 0}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Import Selected ({selectedImports.size})
               </button>
             </div>
           </div>

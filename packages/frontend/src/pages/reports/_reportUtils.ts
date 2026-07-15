@@ -11,23 +11,10 @@ export const num = (v: unknown): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
-export const csvEscape = (v: unknown): string => {
-  const s = v === null || v === undefined ? '' : String(v);
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-};
-
-export const toCsv = (rows: Array<Array<unknown>>): string =>
-  rows.map((r) => r.map(csvEscape).join(',')).join('\r\n');
-
-export const downloadBlob = (filename: string, mime: string, content: string) => {
-  const blob = new Blob([content], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-};
+// CSV helpers live in utils/csvExport.ts — single implementation so formula
+// injection is neutralised for every exporter in the app. Re-exported here
+// because ~29 report pages already import them from this module.
+export { csvEscape, toCsv, downloadBlob } from '../../utils/csvExport';
 
 export const fmtDateISODay = (d: Date): string => d.toISOString().slice(0, 10);
 

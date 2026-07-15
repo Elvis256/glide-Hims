@@ -35,6 +35,10 @@ export interface Permission {
   module?: string;
 }
 
+/** Mirrors backend CreateEmployeeProfileDto (modules/users/dto/user.dto.ts),
+ *  whose enums come from database/entities/employee.entity.ts.
+ *  NOTE: employee.entity.EmploymentType has NO full-time/part-time members —
+ *  those exist only on the unrelated user.entity.EmploymentType enum. */
 export interface EmployeeProfileDto {
   dateOfBirth?: string;
   gender?: 'male' | 'female' | 'other';
@@ -47,6 +51,7 @@ export interface EmployeeProfileDto {
   specialization?: string;
   facilityId?: string;
   hireDate?: string;
+  nationalId?: string;
 }
 
 export interface CreateUserDto {
@@ -58,6 +63,7 @@ export interface CreateUserDto {
   status?: 'active' | 'inactive';
   roleId?: string;
   facilityId?: string;
+  departmentId?: string | null;
   employeeProfile?: EmployeeProfileDto;
 }
 

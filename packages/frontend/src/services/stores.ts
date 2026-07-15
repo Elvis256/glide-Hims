@@ -149,6 +149,38 @@ export interface CreateTransferDto {
   notes?: string;
 }
 
+/** Mirrors backend DisposalMethod (database/entities/disposal.entity.ts). */
+export type DisposalMethod = 'incineration' | 'chemical' | 'landfill' | 'return_to_manufacturer';
+
+/** Mirrors backend ComplianceStatus (database/entities/disposal.entity.ts). */
+export type ComplianceStatus = 'compliant' | 'pending_review' | 'non_compliant';
+
+/** Mirrors backend DisposalRecord entity. Note: disposal_records are PER ITEM,
+ *  not per document — there is no multi-item disposal note. */
+export interface DisposalRecord {
+  id: string;
+  itemId: string;
+  item?: { id: string; name: string; sku?: string };
+  batchNumber?: string;
+  quantity: number;
+  unitValue: number;
+  totalValue: number;
+  disposalDate: string;
+  disposalMethod: DisposalMethod;
+  witness?: string;
+  witness2?: string;
+  certificateNumber?: string;
+  complianceStatus: ComplianceStatus;
+  reason?: string;
+  notes?: string;
+  facilityId: string;
+  disposedById: string;
+  disposedBy?: { id: string; fullName: string };
+  approvedById?: string;
+  approvedBy?: { id: string; fullName: string };
+  createdAt: string;
+}
+
 export const storesService = {
   // Items/Drugs
   items: {
@@ -198,6 +230,14 @@ export const storesService = {
     getMovements: async (itemId: string, limit?: number): Promise<StockMovement[]> => {
       const response = await api.get<StockMovement[]>(`/stores/inventory/${itemId}/movements`, { params: { limit } });
       return response.data;
+    },
+  },
+
+  // Disposal records (backend module: /disposal)
+  disposal: {
+    listByFacility: async (facilityId: string): Promise<DisposalRecord[]> => {
+      const response = await api.get<DisposalRecord[]>(`/disposal/facility/${facilityId}`);
+      return Array.isArray(response.data) ? response.data : [];
     },
   },
 

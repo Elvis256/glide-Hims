@@ -11,6 +11,8 @@ import {
   AlertTriangle,
   Loader2,
   Building2,
+  ArrowUpRight,
+  ArrowDownRight,
 } from 'lucide-react';
 import { formatCurrency } from '../../lib/currency';
 import { storesService } from '../../services/stores';

@@ -12,6 +12,7 @@ import {
   FileText,
   Loader2,
   TrendingUp,
+  PieChart,
 } from 'lucide-react';
 import { formatCurrency } from '../../lib/currency';
 import { storesService } from '../../services/stores';

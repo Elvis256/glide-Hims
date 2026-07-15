@@ -750,7 +750,7 @@ export default function InpatientMedsPage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Select ward...</option>
-                  {wards.filter((w) => w !== 'All Wards').map((ward) => (
+                  {wardOptions.filter((w) => w !== 'All Wards').map((ward) => (
                     <option key={ward} value={ward}>{ward}</option>
                   ))}
                 </select>

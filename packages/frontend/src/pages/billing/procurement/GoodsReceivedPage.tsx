@@ -605,6 +605,12 @@ interface CreateGRNModalProps {
 }
 
 function CreateGRNModal({ purchaseOrders, facilityId, isLoadingPO, isLoadingDirect, onClose, onSubmitFromPO, onSubmitDirect }: CreateGRNModalProps) {
+  // Resolved here rather than read from GoodsReceivedPage — this is a sibling
+  // component, so the page's catalogModule is not in scope.
+  const { category: __procCategory } = useProcurementCategory();
+  const catalogModule: 'pharmacy' | 'general' | 'all' =
+    __procCategory === 'drugs' ? 'pharmacy' : __procCategory === 'supplies' ? 'general' : 'all';
+
   const [mode, setMode] = useState<'po' | 'direct'>('po');
   const [selectedPOId, setSelectedPOId] = useState('');
   const [storeId, setStoreId] = useState('');

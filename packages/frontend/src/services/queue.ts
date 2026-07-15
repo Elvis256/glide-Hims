@@ -38,6 +38,10 @@ export interface QueueEntry {
   /** Persisted triage assessment (Save Draft / on completion). */
   triageData?: Record<string, any> | null;
   triageDataUpdatedAt?: string | null;
+  /** Backend column `assigned_doctor_id`. Always returned. */
+  assignedDoctorId?: string | null;
+  /** Relation, joined by getQueue() list endpoints only — not by findOne(). */
+  assignedDoctor?: { id: string; fullName?: string; username?: string } | null;
 }
 
 export type VisitType =

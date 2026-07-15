@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { formatCurrency } from '../../lib/currency';
 import { useFacilityId } from '../../lib/facility';
+import { toCsv, downloadBlob } from '../../utils/csvExport';
 import assetsService from '../../services/assets';
 import type { FixedAsset, AssetCategory, AssetClass, AssetCriticality } from '../../services/assets';
 import facilitiesService from '../../services/facilities';

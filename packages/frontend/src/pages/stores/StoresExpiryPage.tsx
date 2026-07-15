@@ -36,6 +36,15 @@ export default function StoresExpiryPage() {
     staleTime: 60000,
   });
 
+  const { data: disposalRecords = [] } = useQuery({
+    queryKey: ['stores-disposals', facilityId],
+    queryFn: () => storesService.disposal.listByFacility(facilityId!),
+    // Not gated on activeTab — the "Pending Disposals" stat card needs this count
+    // on the default tab too.
+    enabled: !!facilityId,
+    staleTime: 60000,
+  });
+
   const expiringItems = useMemo(() => rawExpiring.map((item) => ({
     id: item.id,
     name: item.name,
@@ -64,7 +73,7 @@ export default function StoresExpiryPage() {
   const criticalCount = expiringItems.filter((i) => i.daysToExpiry <= 7).length;
   const warningCount = expiringItems.filter((i) => i.daysToExpiry > 7 && i.daysToExpiry <= 30).length;
   const totalExpiringValue = expiringItems.filter((i) => i.daysToExpiry <= 30).reduce((sum, i) => sum + i.value, 0);
-  const pendingDisposals = 0;
+  const pendingDisposals = disposalRecords.filter((d) => d.complianceStatus === 'pending_review').length;
 
   const getExpiryBadge = (days: number) => {
     if (days <= 7) {
@@ -348,20 +357,19 @@ export default function StoresExpiryPage() {
             <table className="w-full">
               <thead className="bg-gray-50 sticky top-0">
                 <tr>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Disposal No</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Items</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Certificate No</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Item</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Total Value</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Date</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Method</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Approved By</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Status</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
                 {disposalRecords.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-12 text-center text-gray-500">
+                    <td colSpan={7} className="px-4 py-12 text-center text-gray-500">
                       <Trash2 className="w-12 h-12 mx-auto text-gray-300 mb-2" />
                       <p className="font-medium">No disposal records</p>
                       <p className="text-sm">Disposal records will appear here</p>
@@ -371,35 +379,33 @@ export default function StoresExpiryPage() {
                   disposalRecords.map((record) => (
                     <tr key={record.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3">
-                        <span className="font-mono text-blue-600">{record.disposalNo}</span>
+                        <span className="font-mono text-blue-600">{record.certificateNumber || '—'}</span>
                       </td>
-                      <td className="px-4 py-3">{record.items} items</td>
-                      <td className="px-4 py-3 font-medium">{formatCurrency(record.totalValue)}</td>
-                      <td className="px-4 py-3 text-gray-600">{record.disposalDate}</td>
-                      <td className="px-4 py-3 text-gray-600">{record.method}</td>
-                      <td className="px-4 py-3 text-gray-600">{record.approvedBy}</td>
                       <td className="px-4 py-3">
-                        {record.status === 'completed' ? (
+                        {record.item?.name || 'Unknown item'}
+                        <span className="text-gray-500"> × {record.quantity}</span>
+                      </td>
+                      <td className="px-4 py-3 font-medium">{formatCurrency(Number(record.totalValue) || 0)}</td>
+                      <td className="px-4 py-3 text-gray-600">{record.disposalDate ? new Date(record.disposalDate).toLocaleDateString() : '—'}</td>
+                      <td className="px-4 py-3 text-gray-600 capitalize">{record.disposalMethod?.replace(/_/g, ' ')}</td>
+                      <td className="px-4 py-3 text-gray-600">{record.approvedBy?.fullName || '—'}</td>
+                      <td className="px-4 py-3">
+                        {record.complianceStatus === 'compliant' ? (
                           <span className="flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-green-100 text-green-700 w-fit">
-                            <CheckCircle className="w-3 h-3" />
-                            Completed
-                          </span>
-                        ) : record.status === 'pending' ? (
-                          <span className="flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-700 w-fit">
-                            <Clock className="w-3 h-3" />
-                            Pending
-                          </span>
-                        ) : (
-                          <span className="flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-700 w-fit">
                             <CheckCircle className="w-3 h-3" />
                             Approved
                           </span>
+                        ) : record.complianceStatus === 'non_compliant' ? (
+                          <span className="flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-red-100 text-red-700 w-fit">
+                            <AlertTriangle className="w-3 h-3" />
+                            Non-compliant
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-700 w-fit">
+                            <Clock className="w-3 h-3" />
+                            Pending review
+                          </span>
                         )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <button className="text-blue-600 hover:text-blue-800 text-sm font-medium">
-                          View Details
-                        </button>
                       </td>
                     </tr>
                   ))
